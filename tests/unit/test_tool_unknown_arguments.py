@@ -68,7 +68,7 @@ def test_media_fetch_called_with_file_is_named_by_the_veto():
     msg = _guard().evaluate("media_fetch", {"file": "https://example.com/x.jpg"})
     assert msg is not None
     payload = json.loads(msg)
-    assert payload["status"] == "unavailable"
+    assert payload["status"] == "bad_arguments"
     assert "file" in payload["note"]
     for name in PARAM_NAMES["media_fetch"]:
         assert name in payload["note"]
@@ -140,7 +140,7 @@ def test_every_introspectable_tool_rejects_an_argument_it_does_not_declare(name)
     msg = _guard().evaluate(name, {probe: "x"})
     assert msg is not None, f"{name} silently accepted an undeclared argument"
     payload = json.loads(msg)
-    assert payload["status"] == "unavailable"
+    assert payload["status"] == "bad_arguments"
     assert probe in payload["note"]
 
 
@@ -190,7 +190,7 @@ async def test_the_veto_fires_before_the_tool_body_ever_runs():
     cancel_message = guard.cancel_messages[0]
     assert cancel_message is not None
     payload = json.loads(cancel_message)
-    assert payload["status"] == "unavailable"
+    assert payload["status"] == "bad_arguments"
     assert "bogus" in payload["note"]
     assert "text" in payload["note"]
     # The budget interaction: a call this guard vetoed must not spend the

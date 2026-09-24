@@ -11,6 +11,7 @@ in what `register_hooks` subscribes to, and in the object's own attribute set.
 from __future__ import annotations
 
 import inspect
+import json
 
 from strands.hooks import (
     AfterModelCallEvent,
@@ -28,11 +29,15 @@ from nora.obs.metrics import Metrics
 BUDGETS = {"place_info": 3, "now": 1}
 
 
-def _guard(metrics: Metrics | None = None, budgets: dict[str, int] | None = None) -> DreamGuard:
+def _guard(
+    metrics: Metrics | None = None, budgets: dict[str, int] | None = None,
+    param_names: dict[str, frozenset[str]] | None = None,
+) -> DreamGuard:
     return DreamGuard(
         adaptor="room_language",
         budgets=BUDGETS if budgets is None else budgets,
         metrics=metrics or Metrics(),
+        param_names=param_names,
     )
 
 
@@ -293,7 +298,7 @@ def test_the_guard_has_no_terminal_verb_and_nothing_that_could_end_a_turn():
     params = inspect.signature(DreamGuard.__init__).parameters
     assert set(params) == {
         "self", "adaptor", "budgets", "metrics", "result_caps",
-        "memory_tools", "memory_budget",
+        "memory_tools", "memory_budget", "param_names",
     }
     assert all(
         p.kind is inspect.Parameter.KEYWORD_ONLY
@@ -385,4 +390,90 @@ def test_a_guard_with_no_caps_behaves_exactly_as_before():
     _guard()._after_tool(event)
 
     assert event.result["content"] == [{"text": "x" * 100_000}]
+
+
+# ---- R-99: an argument the tool does not declare (design/social-per-network/
+# 30-link-owner-registry.md, added on review 2026-09-25) --------------------
+#
+# The Dreamer runs native tools built by the identical `build_tool_specs`
+# the tag path builds them from, so `media_fetch(file=...)`'s silent drop
+# (Strands' generated pydantic model ignores an undeclared key) is exactly as
+# reachable from a background pass as from a tag — and was silently exempt
+# from this rule until review caught it. `unknown_arguments_veto`
+# (`nora.agent.guards`) is the ONE function both `ReplyGuard` and `DreamGuard`
+# call, so these tests are the Dreamer-side half of the same property
+# `tests/unit/test_tool_unknown_arguments.py` proves for the tag path.
+
+
+def test_an_unknown_argument_is_refused_and_names_what_the_tool_accepts():
+    g = _guard(param_names={"place_info": frozenset({"name"})})
+    message = g.evaluate("place_info", {"bogus": "x"})
+    assert message is not None
+    payload = json.loads(message)
+    assert payload["status"] == "bad_arguments"
+    assert "bogus" in payload["note"]
+    assert "name" in payload["note"]
+
+
+def test_a_well_formed_call_is_not_vetoed_by_r99():
+    g = _guard(param_names={"place_info": frozenset({"name"})})
+    assert g.evaluate("place_info", {"name": "Yoho Mall"}) is None
+
+
+def test_conversation_id_is_exempted_here_too():
+    """The same DEC-24 tolerance `ReplyGuard`'s own R-3 established, proven
+    here because it lives in the SHARED function rather than in either guard
+    — a Dreamer pass holds no per-conversation scope to invent one about, but
+    the exemption must still hold rather than silently narrowing under a
+    stricter rule of the same name."""
+    g = _guard(param_names={"place_info": frozenset({"name"})})
+    assert g.evaluate(
+        "place_info", {"name": "Yoho Mall", "conversation_id": "g2"},
+    ) is None
+
+
+def test_a_tool_with_no_signature_data_is_left_alone():
+    """`param_names` present but missing THIS tool's entry — a plugin tool, or
+    an adaptor's own tool source that cannot introspect one — means "cannot
+    verify", never "reject everything"."""
+    g = _guard(param_names={"now": frozenset()})
+    assert g.evaluate("place_info", {"bogus": "x"}) is None
+
+
+def test_r99_is_off_when_no_param_names_are_given():
+    """`param_names=None`, `_guard()`'s own default, is the shape every other
+    test in this file already exercises without ever meaning to try R-99 —
+    pinned explicitly so the default cannot quietly start vetoing."""
+    assert _guard().evaluate("place_info", {"bogus": "x"}) is None
+
+
+def test_a_vetoed_unknown_argument_call_never_ran_and_consumes_no_budget():
+    """THE WIRING PROOF, through the hooks the SDK actually calls — the same
+    shape `test_a_vetoed_call_consumes_no_budget` above takes for the R-7
+    ceiling. `place_info`'s budget is 3; if the vetoed call spent it, the
+    model's retry with the correct argument would eventually be refused with
+    «you already called it», the correction being blocked rather than the
+    mistake.
+    """
+    g = _guard(param_names={"place_info": frozenset({"name"})})
+
+    event = _BeforeToolCall("place_info", {"bogus": "x"})
+    g._before_tool(event)
+    assert event.cancel_tool is not None
+    payload = json.loads(event.cancel_tool)
+    assert payload["status"] == "bad_arguments"
+
+    g._after_tool(_AfterToolCall("place_info", cancel_message=event.cancel_tool))
+
+    assert g.evaluate("place_info", {"name": "Yoho Mall"}) is None, (
+        "a call R-99 vetoed must leave the budget intact"
+    )
+
+
+def test_r99_vetoes_are_counted_under_their_own_rule():
+    m = Metrics()
+    _guard(m, param_names={"place_info": frozenset({"name"})}).evaluate(
+        "place_info", {"bogus": "x"},
+    )
+    assert m.get("nora_dream_guard_vetoes_total", adaptor="room_language", rule="R-99") == 1
 

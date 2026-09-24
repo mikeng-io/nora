@@ -32,7 +32,7 @@ log = logging.getLogger(__name__)
 R27_CORE_STATES: frozenset[str] = frozenset({"ok", "nothing_found", "unavailable"})
 
 #: The DECLARED EXTENSIONS (ADR 0009 §1). The core is a core, not a ceiling: the
-#: live tool surface carries these nine beside it, each one a distinction the
+#: live tool surface carries these ten beside it, each one a distinction the
 #: guards and the recall ladder already depend on, and each named here with its
 #: meaning so an extension cannot be added silently. ADR 0008 §3's fixed
 #: three-value enum is SUPERSEDED by this table — collapsing `refused` into
@@ -62,6 +62,21 @@ DECLARED_STATUS_EXTENSIONS: Mapping[str, str] = {
                        "because the hold is not about the text. Added "
                        "2026-09-09 after a live participation turn read a hold "
                        "as a failure and rewrote the same reply four times.",
+    "bad_arguments": "the call named an argument the tool does not take; "
+                     "nothing ran; calling again with the listed arguments "
+                     "will work. Not `unavailable` (R-99, design/"
+                     "social-per-network/30-link-owner-registry.md, "
+                     "2026-09-25): `unavailable` means «I could not check» "
+                     "and stays true of the whole turn (conduct.md — «what "
+                     "you could not check stays unchecked afterwards too»), "
+                     "and `ReplyGuard`'s veto text reaches the debrief/"
+                     "Standing fold unfiltered (`nora.engagement."
+                     "debrief_render._block`'s `toolResult` branch) — a "
+                     "malformed CALL read as a broken TOOL would fold a "
+                     "false «I can't» into her self-knowledge. `refused` is "
+                     "also wrong: nothing vetoed disclosure. This one names "
+                     "a mistake in the call itself, correctable on the very "
+                     "next turn.",
 }
 
 #: The whole vocabulary, DERIVED from the two above rather than hand-listed —

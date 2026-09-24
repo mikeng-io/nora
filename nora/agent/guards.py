@@ -610,11 +610,20 @@ def _unknown_argument_result(
     admonishment sentence: a JSON object carrying `status`/`note`, the same
     two keys every dict-returning tool's own bad-input answer carries (see
     `instagram_read`'s "Give exactly one of person, handle or link" in
-    `nora.agent.tools`). `unavailable` is the R-27 status for exactly this —
-    a call this turn could not check, never `nothing_found` ("there is
-    nothing"). Serialised here, once, so a model reading this veto and a
-    model reading a real tool's own `unavailable` see identical shapes and
-    can retry the same way either time.
+    `nora.agent.tools`). Serialised here, once, so a model reading this veto
+    and a model reading a real tool's own status-shaped answer see identical
+    shapes and can retry the same way either time.
+
+    `status` is `bad_arguments` (`nora.agent.ports.DECLARED_STATUS_EXTENSIONS`),
+    NOT `unavailable` — that was this rule's first shape, corrected on review
+    (2026-09-25). `unavailable` means «I could not check» and, per
+    `conduct.md`'s own instruction, stays true of the whole turn afterwards;
+    this veto's text also reaches the debrief/Standing fold UNFILTERED
+    (`nora.engagement.debrief_render._block`'s `toolResult` branch renders a
+    cancelled call's raw text same as a real one), so a malformed CALL
+    misreported as a broken TOOL could fold a false «I can't check that» into
+    her self-knowledge. `bad_arguments` says the narrower, correctable truth:
+    this call, as written, could not run — a different call right now would.
 
     `note` NAMES both axes the model needs to correct the call: what it sent
     that does not exist, and what the tool actually takes — never one alone,
@@ -628,7 +637,51 @@ def _unknown_argument_result(
         f"{tool_name} does not declare {_list_tool_names(unknown)}. "
         f"{what_it_takes} Call it again with only the arguments it accepts."
     )
-    return json.dumps({"status": "unavailable", "note": note})
+    return json.dumps({"status": "bad_arguments", "note": note})
+
+
+def unknown_arguments_veto(
+    tool_name: str, tool_input: dict, param_names: Mapping[str, frozenset[str]] | None,
+) -> str | None:
+    """R-99's WHOLE check (design/social-per-network/30-link-owner-registry.md),
+    factored out so `ReplyGuard.evaluate` (the tag/participation path) and
+    `DreamGuard.evaluate` (`nora.agent.dream_guard`, a Dreamer pass) share ONE
+    implementation of the exemption and the message shape, rather than two
+    copies that can only drift apart — the Dreamer runs native tools built by
+    the same `build_tool_specs` and was silently exempt from this rule until
+    review caught it (2026-09-25): the identical `file=`-shaped defect is
+    exactly as reachable from a background pass as from a tag.
+
+    `param_names` absent (`None`, the rule off) or missing this tool's own
+    entry (a plugin tool like `skills`, or an MCP tool folded in only through
+    `allowed_mcp` — neither is built by `build_tool_specs`, so `ToolRegistry.
+    tool_param_names()` has no signature to read for them) both mean "cannot
+    verify", never "reject everything": a guard with no schema data must not
+    invent a veto it cannot ground (R-27's own fail-closed direction applied
+    to the CHECK itself, not just the tool's answer).
+
+    `conversation_id` is EXEMPTED, not overlooked: `ReplyGuard`'s own R-3 is
+    the deliberate DEC-24 decision that an invented one is counted and never
+    vetoed, and the Dreamer holds no per-conversation scope to invent one
+    about at all — excluding it here keeps both callers' behaviour identical
+    to what R-3 already established for the tag path, rather than a second,
+    slightly different rule wearing the same name.
+
+    Pure and SDK-free, like both callers' own `evaluate`: no budget is
+    touched here, no metric is incremented — that stays with each guard's own
+    `_veto`, which is also what makes each guard's rule label and counter
+    correctly its own (`nora_guard_vetoes_total{rule="R-99"}` on the tag path,
+    `nora_dream_guard_vetoes_total{adaptor, rule="R-99"}` on a Dreamer pass).
+    """
+    if param_names is None:
+        return None
+    accepted = param_names.get(tool_name)
+    if accepted is None:
+        return None
+    unknown = frozenset(tool_input or {}) - accepted - {"conversation_id"}
+    if not unknown:
+        return None
+    return _unknown_argument_result(tool_name, unknown=unknown, accepted=accepted)
 
 
 def _unwrap_tool_status(result: Any) -> str | None:
@@ -920,33 +973,19 @@ class ReplyGuard(HookProvider):
         # BEFORE that validation ever runs, on the same raw `tool_use` the R-3
         # comment below already establishes reaches this hook first.
         #
-        # `conversation_id` is EXEMPTED, not overlooked: R-3, directly below,
-        # is the deliberate decision that an invented one is counted and never
-        # vetoed (DEC-24 deleted the parameter from every tool on purpose, and
-        # a weak model that cannot help echoing one must still be able to
-        # reply). Excluding it here is what keeps that decision intact rather
-        # than quietly overruling it with a stricter rule of the same shape.
-        #
-        # `self._param_names` absent (`None`, the rule off) or missing this
-        # tool's own entry (a plugin tool like `skills`, or an MCP tool folded
-        # in through `allowed_mcp` — neither is built by `build_tool_specs`,
-        # so `ToolRegistry.tool_param_names()` has no signature to read for
-        # them) both mean "cannot verify", never "reject everything": a guard
-        # with no schema data must not invent a veto it cannot ground (R-27's
-        # own fail-closed direction applied to the CHECK itself, not just the
-        # tool's answer).
+        # The whole check — the `conversation_id` exemption, the "cannot
+        # verify" fallback, the message shape — lives in `unknown_arguments_
+        # veto` (module level, above), shared with `DreamGuard.evaluate` so a
+        # Dreamer pass gets the identical rule rather than a second copy that
+        # can drift from it.
         #
         # Costs no budget whichever way it fires: this is a veto in
         # `evaluate`, so `_before_tool` never reaches `self.reserve` for it
         # (DEC-33's own mechanism — see `_after_tool`'s "a cancelled call did
         # not run" branch).
-        accepted = None if self._param_names is None else self._param_names.get(tool_name)
-        if accepted is not None:
-            unknown = frozenset(tool_input or {}) - accepted - {"conversation_id"}
-            if unknown:
-                return self._veto("R-99", _unknown_argument_result(
-                    tool_name, unknown=unknown, accepted=accepted,
-                ))
+        bad_arguments = unknown_arguments_veto(tool_name, tool_input, self._param_names)
+        if bad_arguments is not None:
+            return self._veto("R-99", bad_arguments)
 
         # R-3 — scope, held BY CONSTRUCTION rather than by veto (DEC-21) and,
         # since DEC-24, not even expressible: no tool declares a conversation
