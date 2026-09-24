@@ -4,7 +4,7 @@
     "file": "nora/domain/media.py",
     "old": "    if ref.on_demand and label == \"image\":\n        return \"cover image\"\n",
     "new": "",
-    "target": "tests/unit/test_media_cover_label.py::test_a_preview_image_is_labelled_a_cover_and_nothing_else_is tests/unit/test_instagram_shared_on_demand.py::test_a_shared_thumbnail_is_held_but_never_sent_to_the_interpreter tests/unit/test_instagram_shared_on_demand.py::test_an_unread_thumbnail_renders_a_bare_handle_that_claims_nothing tests/unit/test_instagram_parser.py::test_the_link_sits_before_the_caption_and_the_placeholder_stays_trailing tests/unit/test_instagram_parser.py::test_a_caption_cannot_forge_a_media_handle"
+    "target": "tests/unit/test_media_cover_label.py::test_a_preview_image_is_labelled_a_cover_and_nothing_else_is tests/unit/test_instagram_shared_on_demand.py::test_a_shared_thumbnail_is_held_but_never_sent_to_the_interpreter tests/unit/test_instagram_shared_on_demand.py::test_an_unread_thumbnail_renders_a_bare_handle_that_claims_nothing tests/unit/test_instagram_parser.py::test_a_cover_with_no_link_stays_trailing_and_takes_its_handle tests/unit/test_instagram_parser.py::test_a_caption_cannot_forge_a_media_handle"
   },
   {
     "name": "cover image is not in LABELS, so no reader finds the placeholder",
@@ -51,7 +51,7 @@
   {
     "name": "the cover note is dropped from the ok result",
     "file": "nora/agent/tools.py",
-    "old": "        if cover:\n            served[\"note\"] = _COVER_NOTE\n",
+    "old": "        if cover:\n            served[\"note\"] = f\"{served['note']} {_COVER_NOTE}\"\n",
     "new": "",
     "target": "tests/test_media_fetch.py::test_a_cover_served_from_a_fresh_look_says_it_is_only_the_cover tests/test_media_fetch.py::test_a_shared_items_thumbnail_is_looked_at_only_when_asked"
   },
@@ -93,9 +93,9 @@
   {
     "name": "the instagram_read when-clause is reverted to a pasted link only",
     "file": "nora/agent/tools.py",
-    "old": "        \"\"\"Read an Instagram profile, story, post or reel by name, handle or\n        link. Call this when somebody asks about someone's Instagram or a\n        shared or linked post or reel.\n",
+    "old": "        \"\"\"Show what an Instagram post or reel contains, every item, videos\n        included, or read a profile or story. Call this when somebody shares,\n        links or asks about one.\n",
     "new": "        \"\"\"Read an Instagram profile, story, post or reel, by name, handle or\n        link. Call this when somebody asks about someone's Instagram or pastes\n        an Instagram link.\n",
-    "target": "tests/unit/test_instagram_read_tool.py -k shared_post_or_reel"
+    "target": "tests/unit/test_instagram_read_tool.py -k catalogue_line_names_every_item"
   },
   {
     "name": "custody records the role on on_demand alone, not on the label's predicate",

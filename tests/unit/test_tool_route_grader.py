@@ -332,3 +332,33 @@ def test_tool_inputs_and_the_clock_line_are_read_off_the_spans():
         ("send_reply", '[{"text": "hi"}]'),
     )
     assert _shown_now(_Exporter()) == _CLOCK
+
+
+def test_the_self_case_fails_the_prompt_that_sent_her_reference_back():
+    """Live 2026-09-24 on WhatsApp: the prompt restated her reference's own
+    composition, ending in «plain neutral background», and the provider
+    returned the reference itself. The corpus's self case, graded as the
+    corpus states it, fails that prompt and passes one that gives her a
+    setting. Read from the YAML, so dropping the backdrop check turns this red."""
+    from evals.scenarios import load_corpus
+
+    case = next(c for c in load_corpus("tool_selection")
+                if c.name == "route_generate_image_self_carries_her_reference")
+    sha = "535e4da56b933c9c30ea28182ba651246ce9bc65608ebdf92363e6342ab8567c"
+
+    def graded(prompt):
+        from evals.backbone import NORA_TOOL_INPUTS
+
+        return ToolRouteGrader().evaluate(EvaluationData(
+            input="x", metadata=case.metadata,
+            actual_environment_state=[
+                EnvironmentState(name=NORA_ERROR, state=None),
+                EnvironmentState(name=NORA_TOOLS, state=("generate_image",)),
+                EnvironmentState(name=NORA_TOOL_INPUTS, state=(
+                    ("generate_image", f'{{"prompt": "{prompt}", "reference": "{sha}"}}'),)),
+            ],
+        ))[0].label
+
+    assert graded("Standing calm and slightly deadpan, facing the viewer, one hand in "
+                  "hoodie pocket, plain neutral background. No text") == FAIL
+    assert graded("sitting on the floor of a dim living room at night, phone in hand") == PASS

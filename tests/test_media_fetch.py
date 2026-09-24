@@ -24,7 +24,13 @@ import pytest
 from nora.agent.egress import scan_identifiers
 from nora.agent.guards import Deliverer
 from nora.agent.room import Room
-from nora.agent.tools import _COVER_NOTE, NATIVE_TOOL_BUDGETS, build_tools
+from nora.agent.tools import (
+    _COVER_NOTE,
+    _INSTAGRAM_MOBILE_PAGE_LINK,
+    _INSTAGRAM_PAGE_LINK,
+    NATIVE_TOOL_BUDGETS,
+    build_tools,
+)
 from nora.doctrine.loader import DoctrineStore
 from nora.domain.media import MediaBlob, MediaObject
 from nora.domain.media_join import MediaJoin
@@ -257,6 +263,121 @@ async def test_a_non_http_url_is_refused(wiring, monkeypatch):
     out = await _call(wiring["build"](), url="file:///etc/passwd")
     assert out["status"] == "nothing_found"
     assert calls == []
+
+
+# ---- an Instagram PAGE link is routed, never downloaded (2026-09-24) -------
+#
+# A reel, post, story or profile link is an HTML page. `media_fetch` answers
+# it at once, naming `instagram_read`, whose result hands each item's file
+# url back to `media_fetch`. The downloader must never run for one.
+
+_INSTAGRAM_PAGES = (
+    "https://www.instagram.com/reel/SynthReel01/",
+    "https://www.instagram.com/reels/SynthReel01/?igsh=c3ludGhldGlj",
+    "https://www.instagram.com/p/SynthPost_2/",
+    "https://instagram.com/stories/some.account/3000000000000000001",
+    "https://www.instagram.com/stories/some.account/",
+    "https://www.instagram.com/some.account/",
+)
+
+
+@pytest.mark.parametrize("url", _INSTAGRAM_PAGES)
+async def test_an_instagram_page_link_is_sent_to_instagram_read_without_a_download(
+    wiring, monkeypatch, url,
+):
+    calls: list[str] = []
+
+    async def fake_download(got: str) -> tuple[bytes, str]:
+        calls.append(got)
+        return RED_PNG, "image/jpeg"
+    monkeypatch.setattr("nora.agent.tools._download_media", fake_download)
+
+    out = await _call(wiring["build"](), url=url)
+
+    assert out == {"status": "nothing_found", "note": _INSTAGRAM_PAGE_LINK}
+    assert calls == [], "an Instagram page was downloaded"
+    assert wiring["vision"].calls == 0
+    assert "instagram_read" in out["note"]
+    assert not re.search("[\u2013\u2014]", out["note"]), "ADR 0015: no dash in a note"
+
+
+async def test_an_instagram_page_link_is_routed_even_with_media_unconfigured(wiring):
+    """The answer is a route, not a reading, so it does not wait on custody
+    or a vision client: «I can't look at media» would send her nowhere."""
+    out = await _call(
+        wiring["build"](blob_store=None), url="https://www.instagram.com/reel/SynthReel01/",
+    )
+    assert out == {"status": "nothing_found", "note": _INSTAGRAM_PAGE_LINK}
+
+
+@pytest.mark.parametrize("url", [
+    # Pasted without a scheme, the way `instagram_read` accepts a link.
+    "instagram.com/reel/SynthReel01/",
+    "www.instagram.com/p/SynthPost_2/",
+])
+async def test_a_page_link_without_a_scheme_gets_the_page_link_note(wiring, monkeypatch, url):
+    """It used to fall to «that doesn't look like a link I can open», which
+    sent her nowhere. Read the way `instagram_read` reads a pasted link."""
+    calls: list[str] = []
+
+    async def fake_download(got: str) -> tuple[bytes, str]:
+        calls.append(got)
+        return RED_PNG, "image/jpeg"
+    monkeypatch.setattr("nora.agent.tools._download_media", fake_download)
+
+    out = await _call(wiring["build"](), url=url)
+
+    assert out == {"status": "nothing_found", "note": _INSTAGRAM_PAGE_LINK}
+    assert calls == []
+
+
+@pytest.mark.parametrize("url", [
+    "https://m.instagram.com/reel/SynthReel01/",
+    "https://m.instagram.com/p/SynthPost_2/?igsh=c3ludGhldGlj",
+    "m.instagram.com/stories/some.account/3000000000000000001",
+    "https://m.instagram.com/some.account/",
+])
+async def test_a_mobile_page_link_is_refused_and_asks_for_the_www_link(wiring, monkeypatch, url):
+    """`m.instagram.com` is not a host `parse_link` accepts, and it stays
+    that way. A page path on it is still a page, not media: nothing is
+    downloaded, and the note asks for the www link, since `instagram_read`
+    would refuse this one too."""
+    calls: list[str] = []
+
+    async def fake_download(got: str) -> tuple[bytes, str]:
+        calls.append(got)
+        return RED_PNG, "image/jpeg"
+    monkeypatch.setattr("nora.agent.tools._download_media", fake_download)
+
+    out = await _call(wiring["build"](), url=url)
+
+    assert out == {"status": "nothing_found", "note": _INSTAGRAM_MOBILE_PAGE_LINK}
+    assert calls == []
+    assert "www.instagram.com" in out["note"]
+    assert not re.search("[\u2013\u2014]", out["note"]), "ADR 0015: no dash in a note"
+
+
+@pytest.mark.parametrize("url", [
+    # An item's own file, the shape `instagram_read` returns: a CDN host.
+    "https://scontent.cdninstagram.com/v/t51.2885-15/synthetic.jpg",
+    "https://x.com/pic.jpg",
+    # An Instagram host that is not a page: nothing `parse_link` or the
+    # mobile check reads.
+    "https://www.instagram.com/explore/",
+])
+async def test_a_url_that_is_not_an_instagram_page_still_downloads(wiring, monkeypatch, url):
+    calls: list[str] = []
+
+    async def fake_download(got: str) -> tuple[bytes, str]:
+        calls.append(got)
+        return RED_PNG, "image/jpeg"
+    monkeypatch.setattr("nora.agent.tools._download_media", fake_download)
+
+    out = await _call(wiring["build"](), url=url)
+
+    assert calls == [url]
+    assert out["status"] == "ok"
+    assert out["description"] == "A red one-pixel square."
 
 
 async def test_code_and_url_together_or_neither_is_nothing_found(wiring):
@@ -869,7 +990,8 @@ async def test_an_uncomprehended_medium_still_falls_through_to_a_live_read(wirin
 
 async def test_a_shared_items_thumbnail_is_looked_at_only_when_asked(wiring):
     """The on-demand half of the 2026-09-24 operator rule, end to end: an
-    Instagram share is parsed, its thumbnail goes through REAL custody with the
+    Instagram share with no link (a post or reel with a link keeps none) is
+    parsed, its thumbnail goes through REAL custody with the
     REAL comprehension job wired, and no model reads it at ingest. Then
     `media_fetch` on the handle the transcript shows finds no stored reading
     and does a fresh look — the one real cost, paid when somebody asked."""
@@ -887,9 +1009,11 @@ async def test_a_shared_items_thumbnail_is_looked_at_only_when_asked(wiring):
         "message_id": "mid.$synthetic", "from_me": False,
         "sender": {"fbid": "2000000000000002", "username": "a_member"},
         "timestamp_ms": 200, "text": "", "mentions": [], "reply_to": None,
+        # A story url naming somebody other than the author: the link is
+        # left out, so the cover is all the line has.
         "shared": {
             "author": "someaccount",
-            "target_url": "https://www.instagram.com/reel/SynthReel01/?is_clips_ad=0",
+            "target_url": "https://www.instagram.com/stories/other.account/3000000000000000001",
             "typename": "SlideMessagePortraitXMA",
         },
         "media": {"kind": "image", "url": thumb_url},
@@ -944,16 +1068,98 @@ async def test_a_shared_items_thumbnail_is_looked_at_only_when_asked(wiring):
 
 async def _append_shared_cover(store, *, sha256: str, ts: int = 100) -> None:
     """A share as custody records it: the line, the cover placeholder, and a
-    blob whose role says it is the cover."""
+    blob whose role says it is the cover. The line has no link, the only
+    shape that still keeps a cover; a row stored before that (a link AND a
+    cover) is served by the same role, which is all `media_fetch` reads."""
     blob = MediaBlob(
         sha256=sha256, media_type="image/png", size=len(RED_PNG), role="cover",
     )
     await store.append(message=NormalizedMessage(
         "signal", "g1", "group", "+852111", "Miles", ts,
-        "[shared reel by @synth.example https://www.instagram.com/reel/SynthReel02/]"
-        f" [cover image {sha256[:6]}]",
+        f"[shared story by @synth.example] [cover image {sha256[:6]}]",
         {}, media_blobs=(blob,),
     ))
+
+
+async def _append_linked_cover(store, *, sha256: str, line: str, ts: int = 100) -> None:
+    """A row whose line carries the item's link AND its cover: the LEGACY
+    shape of a post or reel share (stored before the parser stopped keeping
+    that thumbnail), and the CURRENT shape of a story share, which keeps its
+    cover by design."""
+    blob = MediaBlob(
+        sha256=sha256, media_type="image/png", size=len(RED_PNG), role="cover",
+    )
+    await store.append(message=NormalizedMessage(
+        "signal", "g1", "group", "+852111", "Miles", ts,
+        f"what is in this {line} [cover image {sha256[:6]}]",
+        {}, media_blobs=(blob,),
+    ))
+
+
+_LEGACY_LINES = {
+    "https://www.instagram.com/reel/SynthReel02/":
+        "[shared reel by @synth.example https://www.instagram.com/reel/SynthReel02/]",
+    "https://www.instagram.com/p/SynthPost02/":
+        "[shared post by @synth.example https://www.instagram.com/p/SynthPost02/ — a caption]",
+}
+
+
+@pytest.mark.parametrize("link", sorted(_LEGACY_LINES))
+async def test_a_stale_cover_beside_its_post_or_reel_link_is_refused_before_any_look(
+    wiring, link,
+):
+    """The legacy shape: a stored row with the item's link AND its cover.
+    Serving the cover is the live failure (one frame answered as the reel),
+    so the code is refused before any reading, stored or fresh, and the note
+    names the link to open instead."""
+    await _append_linked_cover(wiring["store"], sha256=PNG_SHA, line=_LEGACY_LINES[link])
+    # A stored reading exists too, so a refusal here is not the layers
+    # having nothing to serve.
+    index = FakeMediaObjectStore([_comprehended(PNG_SHA)])
+
+    out = await _call(wiring["build"](media_store=index), code=PNG_SHA[:6])
+
+    assert out == {
+        "status": "nothing_found", "code": PNG_SHA[:6],
+        "note": f"That code is only the cover picture of the item at {link}. "
+                "If that is the item being asked about, open it with instagram_read.",
+    }
+    assert wiring["vision"].calls == 0
+    assert not re.search("[\u2013\u2014]", out["note"]), "ADR 0015: no dash in a note"
+
+
+async def test_a_story_cover_beside_its_link_is_still_served(wiring):
+    """A story share renders its link AND its cover by design (a story link
+    reads the author's current story, not the frame that was shared), so the
+    guard must not refuse it: it is served with the cover note."""
+    await _append_linked_cover(
+        wiring["store"], sha256=PNG_SHA,
+        line="[shared story by @synth.example "
+             "https://www.instagram.com/stories/synth.example/3000000000000000001/]",
+    )
+
+    out = await _call(wiring["build"](), code=PNG_SHA[:6])
+
+    assert out["status"] == "ok"
+    assert wiring["vision"].calls == 1
+    assert out["note"].endswith(_COVER_NOTE)
+
+
+async def test_a_photo_beside_a_shared_link_is_not_a_stale_cover(wiring):
+    """The guard reads the ROLE, not the line: a member's own photo sent in
+    the same message as a shared post line is served as a photo."""
+    blob = MediaBlob(sha256=PNG_SHA, media_type="image/png", size=len(RED_PNG))
+    await wiring["store"].append(message=NormalizedMessage(
+        "signal", "g1", "group", "+852111", "Miles", 100,
+        "[shared reel by @synth.example https://www.instagram.com/reel/SynthReel02/]"
+        f" [image {PNG_SHA[:6]}]",
+        {}, media_blobs=(blob,),
+    ))
+
+    out = await _call(wiring["build"](), code=PNG_SHA[:6])
+
+    assert out["status"] == "ok"
+    assert _COVER_NOTE not in out["note"]
 
 
 async def test_a_cover_served_from_a_fresh_look_says_it_is_only_the_cover(wiring):
