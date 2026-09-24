@@ -41,6 +41,13 @@ it only partly saw.
 
 ## 2. The curator: merge is keyed on the ANCHOR
 
+> **Superseded 2026-09-24 (DEC-202, design 41 §7).** Merge returns as a separate
+> `note-merge` adaptor that asks the model whether two notes are the same open
+> question — the topical judgement this section forbids — because the entity
+> anchor it relies on no longer exists (R-75) and a merge there deletes nothing:
+> the duplicate keeps its revision chain and can be un-retired. The text below is
+> the original design, kept as a record.
+
 The one rule that carries the design: **merge is keyed on the anchor, never on
 topical similarity, so two weddings stay two notes.**
 
