@@ -23,11 +23,7 @@ from strands.models.openai import OpenAIModel
 
 from nora.agent.factory import create_model_provider
 from nora.agent.punctuation import DashFreeOpenAIModel
-from nora.agent.reasoning_carry import (
-    CARRIED_REASONING_FIELD,
-    ReasoningCarryingOpenAIModel,
-    uncarried_reasoning_blocks,
-)
+from nora.agent.reasoning_carry import ReasoningCarryingOpenAIModel
 from nora.agent.reasoning_strip import (
     REASONING_BLOCK_KEY,
     dropped_reasoning_blocks,
@@ -36,6 +32,11 @@ from nora.agent.reasoning_strip import (
 from tests.unit.test_reasoning_strip_probe import _drive
 
 REASONING_TEXT = "the order ships from Busan, so ask for the ETA next"
+
+#: A literal, not the module's constant: the expected value is the MEASURED
+#: field (the one the upstream reads, 2026-09-25), independent of the code
+#: under test, so a change to the constant cannot move the test with it.
+CARRIED_REASONING_FIELD = "reasoning"
 
 MULTI_TURN: list[dict] = [
     {"role": "user", "content": [{"text": "when will A-1177 reach Osaka"}]},
@@ -115,23 +116,62 @@ def test_reasoning_with_nothing_to_emit_beside_it_is_still_counted_as_dropped() 
     ]
     assert "orphan" not in json.dumps(
         _provider().format_request(only_reasoning))  # type: ignore[arg-type]
-    assert uncarried_reasoning_blocks(only_reasoning) == 1
+    assert dropped_reasoning_blocks(_provider(), only_reasoning) == 1
 
 
 def test_a_redacted_block_cannot_be_carried_and_is_counted() -> None:
     redacted = copy.deepcopy(MULTI_TURN)
     redacted[1]["content"].insert(0, {REASONING_BLOCK_KEY: {"redactedContent": b"x"}})
-    assert uncarried_reasoning_blocks(redacted) == 1
+    assert dropped_reasoning_blocks(_provider(), redacted) == 1
     assert _assistant(_provider().format_request(redacted)).get(  # type: ignore[arg-type]
         CARRIED_REASONING_FIELD) == REASONING_TEXT
 
 
-def test_a_model_whose_count_raises_is_recorded_as_dropping_everything() -> None:
+def test_one_carried_message_does_not_vouch_for_another() -> None:
+    """A reasoning-only message beside a carried one: the request has a
+    `reasoning` field, and still only one of the two blocks reached it."""
+    mixed = [*copy.deepcopy(MULTI_TURN), {"role": "assistant", "content": [
+        {REASONING_BLOCK_KEY: {"reasoningText": {"text": "orphan"}}}]}]
+    assert dropped_reasoning_blocks(_provider(), mixed) == 1
+
+
+def test_a_model_whose_formatting_raises_is_recorded_as_dropping_everything() -> None:
     class _Broken:
-        def uncarried_reasoning_blocks(self, messages: Any) -> int:
+        def format_request(self, messages: Any) -> dict:
             raise RuntimeError("boom")
 
     assert dropped_reasoning_blocks(_Broken(), MULTI_TURN) == 1
+
+
+def test_the_counter_judges_the_formatted_request_not_a_prediction() -> None:
+    """ADR 0013 decision 1: the detector is judged against the formatter's own
+    output. Simulate a Strands release whose formatter no longer routes
+    through the override (the SDK's `_format_regular_messages` reached
+    directly): nothing is carried, and the counter must SAY so, even though
+    the model is still a `ReasoningCarryingOpenAIModel` by class."""
+
+    class _Bypassed(ReasoningCarryingOpenAIModel):
+        _format_regular_messages = classmethod(  # type: ignore[assignment]
+            OpenAIModel._format_regular_messages.__func__  # type: ignore[attr-defined]
+        )
+
+    bypassed = _Bypassed(
+        model_id="nora-dreamer", client=None,  # type: ignore[arg-type]
+        params={"max_tokens": 64, "reasoning_effort": "low"},
+    )
+    assert REASONING_TEXT not in json.dumps(
+        bypassed.format_request(MULTI_TURN)), "the bypass did not bypass"  # type: ignore[arg-type]
+    assert dropped_reasoning_blocks(bypassed, MULTI_TURN) == 1, (
+        "the override was skipped and nothing was carried, yet the counter "
+        "reported no strip: it is predicting, not reading the request"
+    )
+
+
+def test_the_detector_reads_the_carried_text_after_the_dash_free_rewrite() -> None:
+    dashed = copy.deepcopy(MULTI_TURN)
+    dashed[1]["content"][0][REASONING_BLOCK_KEY]["reasoningText"]["text"] = (
+        "Busan \u2014 then the ETA")
+    assert dropped_reasoning_blocks(_provider(), dashed) == 0
 
 
 # ---- the loop ---------------------------------------------------------------

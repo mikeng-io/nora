@@ -1,7 +1,7 @@
 [
   {
     "name": "carry: the field the upstream discards (reasoning_content)",
-    "file": "nora/agent/reasoning_carry.py",
+    "file": "nora/agent/reasoning_strip.py",
     "old": "CARRIED_REASONING_FIELD = \"reasoning\"",
     "new": "CARRIED_REASONING_FIELD = \"reasoning_content\"",
     "target": "tests/unit/test_reasoning_carry.py::test_the_production_provider_carries_the_reasoning_as_reasoning"
@@ -28,10 +28,24 @@
     "target": "tests/unit/test_reasoning_carry.py::test_a_reasoning_tool_loop_sends_its_reasoning_and_records_no_strip"
   },
   {
-    "name": "watch: a model whose count raises is recorded as dropping nothing",
+    "name": "watch: a model whose formatting raises is recorded as dropping nothing",
     "file": "nora/agent/reasoning_strip.py",
-    "old": "            log.warning(\"reasoning_strip: the model could not count its drops\")",
-    "new": "            return 0",
-    "target": "tests/unit/test_reasoning_carry.py::test_a_model_whose_count_raises_is_recorded_as_dropping_everything"
+    "old": "        log.warning(\"reasoning_strip: could not format the pending request\")\n        return blocks",
+    "new": "        log.warning(\"reasoning_strip: could not format the pending request\")\n        return 0",
+    "target": "tests/unit/test_reasoning_carry.py::test_a_model_whose_formatting_raises_is_recorded_as_dropping_everything"
+  },
+  {
+    "name": "watch: counts a block as carried without finding it in the request",
+    "file": "nora/agent/reasoning_strip.py",
+    "old": "            if text and any(text in f or undash(text) in f for f in carried):",
+    "new": "            if text:",
+    "target": "tests/unit/test_reasoning_carry.py::test_one_carried_message_does_not_vouch_for_another"
+  },
+  {
+    "name": "watch: no carried field in the request trusted as nothing dropped",
+    "file": "nora/agent/reasoning_strip.py",
+    "old": "    if not carried:\n        return blocks",
+    "new": "    if not carried:\n        return 0",
+    "target": "tests/unit/test_reasoning_carry.py::test_the_counter_judges_the_formatted_request_not_a_prediction"
   }
 ]

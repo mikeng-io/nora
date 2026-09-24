@@ -9,7 +9,8 @@ not flakiness — and a retry would turn it into an apparently intermittent one.
 
 The FIX lives beside it, not in it: `nora.agent.reasoning_carry` puts the
 reasoning back on the wire, and the watch asks the model which blocks it still
-drops (`dropped_reasoning_blocks`) rather than assuming all of them are.
+drops, judged against the request it actually formats
+(`dropped_reasoning_blocks`), rather than assuming all of them are.
 
 WHY THE DETECTOR IS NOT A LOG SCRAPER
 -------------------------------------
@@ -60,6 +61,7 @@ from strands.hooks import (
 
 from ..domain.reasoning_strip import ReasoningStripObservation
 from ..obs.metrics import Metrics
+from .punctuation import undash
 
 log = logging.getLogger("nora.reasoning_strip")
 
@@ -98,6 +100,12 @@ DEFAULT_WRITE_TIMEOUT_SECONDS = 2.0
 #: SDK's behaviour against it, so the two cannot drift apart.
 REASONING_BLOCK_KEY = "reasoningContent"
 
+#: The request field `nora.agent.reasoning_carry` puts a prior assistant
+#: message's reasoning in: the one the upstream READS (`reasoning_content` is
+#: accepted and discarded, measured 2026-09-25, #325). One spelling, read by
+#: the carry and by the detector that judges it.
+CARRIED_REASONING_FIELD = "reasoning"
+
 
 def reasoning_blocks(messages: Iterable[Any] | None) -> int:
     """How many content blocks in this message list the transport will DROP.
@@ -121,25 +129,63 @@ def reasoning_blocks(messages: Iterable[Any] | None) -> int:
     return total
 
 
+def reasoning_text(block: Any) -> str:
+    """The readable text of one `reasoningContent` block; `""` for a redacted
+    or unreadable one, which cannot be carried as text."""
+    content = block.get(REASONING_BLOCK_KEY) if isinstance(block, dict) else None
+    inner = content.get("reasoningText") if isinstance(content, dict) else None
+    text = inner.get("text") if isinstance(inner, dict) else None
+    return text if isinstance(text, str) else ""
+
+
 def dropped_reasoning_blocks(model: Any, messages: Iterable[Any] | None) -> int:
-    """How many reasoning blocks THIS model's request will drop.
+    """How many reasoning blocks the request THIS model builds will drop,
+    judged against that request rather than predicted from the messages.
 
-    A model that carries reasoning (`nora.agent.reasoning_carry`, #325's fix)
-    answers for itself through `uncarried_reasoning_blocks`, because only its
-    own formatter knows which blocks reach the wire. Any other model is the
-    SDK's `OpenAIModel`, which drops every one (`reasoning_blocks`).
+    ADR 0013 decision 1 applied to the fix: the model is asked to FORMAT the
+    pending message list (`format_request`, the method its `stream` calls),
+    and a `reasoningContent` block counts as carried only when its text is
+    found in a `reasoning` field of the formatted request. A Strands release
+    that stops routing through `nora.agent.reasoning_carry`'s override, or a
+    model that never had it, therefore reads as a strip, not as a fix.
 
-    Fails toward COUNTING: a carrying model whose answer cannot be read is
-    recorded as having dropped everything, never as having dropped nothing. An
-    over-count is visible in the table; an under-count reads as the fix.
+    No block, no formatting: a turn at `reasoning_effort = "none"` pays one
+    walk of the list and nothing else. A model with no `format_request`, or
+    one that raises, counts every block as dropped. The failure is toward
+    COUNTING: an over-count is visible in the table; an under-count reads as
+    the fix.
     """
-    count = getattr(model, "uncarried_reasoning_blocks", None)
-    if callable(count):
-        try:
-            return int(count(messages))
-        except Exception:  # noqa: BLE001 — on the reply path, inside a hook
-            log.warning("reasoning_strip: the model could not count its drops")
-    return reasoning_blocks(messages)
+    messages = list(messages or ())
+    blocks = reasoning_blocks(messages)
+    if not blocks:
+        return 0
+    format_request = getattr(model, "format_request", None)
+    if not callable(format_request):
+        return blocks
+    try:
+        request = format_request(messages)
+        carried = [
+            field for message in request.get("messages") or ()
+            if isinstance(message, dict)
+            and isinstance(field := message.get(CARRIED_REASONING_FIELD), str)
+        ]
+    except Exception:  # noqa: BLE001 — on the reply path, inside a hook
+        log.warning("reasoning_strip: could not format the pending request")
+        return blocks
+    if not carried:
+        return blocks
+    reached = 0
+    for message in messages:
+        content = message.get("content") if isinstance(message, dict) else None
+        if not isinstance(content, list):
+            continue
+        for block in content:
+            text = reasoning_text(block)
+            # `undash`, because the dash-free model rewrites the request after
+            # formatting it and the carried text is what she READS.
+            if text and any(text in f or undash(text) in f for f in carried):
+                reached += 1
+    return max(blocks - reached, 0)
 
 
 def _model_identity(agent: Any) -> tuple[str, str]:

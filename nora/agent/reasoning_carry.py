@@ -27,6 +27,13 @@ model's reasoning as `reasoning`, not `reasoning_content`, and no variant was
 refused (every arm 200), including the one Strands sends today: the upstream
 neither REQUIRES the reasoning back nor rejects it. It simply never saw it.
 
+The combos' FALLBACK members, probed the same way: `nora-dreamer`'s
+`opencode-go/deepseek-v4-flash` answers with `reasoning_content` and reads
+padding in either `reasoning` or `reasoning_content` (+1,176 tokens each), so
+the carry does not break a fallback; `nora`'s `opencode-go/deepseek-v4.1-flash`
+returned no reasoning to carry; `ollama-cloud/deepseek-v4-flash` is out of the
+catalogue (400 on every request, which the combo already falls past).
+
 So the field is `reasoning`, the spelling the upstream both writes and reads.
 `reasoning_content` (DeepSeek's native API) would have been accepted and
 silently thrown away, which is exactly the defect a fix must not recreate: a
@@ -35,9 +42,9 @@ request that looks carried and is not.
 **Scope.** Only assistant messages, and only the ones the formatter will emit
 (a text or tool-call block beside the reasoning): an assistant message whose
 only content is reasoning is dropped whole by `format_request_messages`, and
-its reasoning with it. `uncarried_reasoning_blocks` counts exactly what is
-still lost, and `nora.agent.reasoning_strip` asks it instead of assuming every
-block is. Every reasoning block in `agent.messages` comes from THIS loop
+its reasoning with it. `nora.agent.reasoning_strip.dropped_reasoning_blocks`
+judges what is still lost against the request this class formats, never
+against a prediction of it. Every reasoning block in `agent.messages` comes from THIS loop
 (`nora.agent.prefill` renders plain text, ADR 0013 §3), so carrying all of them
 is carrying the current turn's reasoning, never a past turn's.
 
@@ -51,25 +58,16 @@ from __future__ import annotations
 from typing import Any
 
 from .punctuation import DashFreeOpenAIModel
-from .reasoning_strip import REASONING_BLOCK_KEY
-
-#: The request field the upstream reads a prior assistant message's reasoning
-#: from. Measured, see the module docstring: `reasoning_content` is discarded.
-CARRIED_REASONING_FIELD = "reasoning"
+from .reasoning_strip import (
+    CARRIED_REASONING_FIELD,
+    REASONING_BLOCK_KEY,
+    reasoning_text,
+)
 
 #: Content blocks that make the formatter EMIT an assistant message: text
 #: becomes `content`, a tool use becomes `tool_calls`. A message with neither
 #: is filtered out of the request, so reasoning attached to it goes nowhere.
 _EMITTED_BLOCK_KEYS = ("text", "toolUse")
-
-
-def _reasoning_text(block: Any) -> str:
-    """The readable text of one `reasoningContent` block; `""` for a redacted
-    or unreadable one, which cannot be carried as text."""
-    content = block.get(REASONING_BLOCK_KEY) if isinstance(block, dict) else None
-    reasoning_text = content.get("reasoningText") if isinstance(content, dict) else None
-    text = reasoning_text.get("text") if isinstance(reasoning_text, dict) else None
-    return text if isinstance(text, str) else ""
 
 
 def _carries(message: Any) -> bool:
@@ -90,30 +88,8 @@ def carried_reasoning(message: Any) -> str:
     if not _carries(message):
         return ""
     return "\n\n".join(
-        text for text in (_reasoning_text(block) for block in message["content"]) if text
+        text for text in (reasoning_text(block) for block in message["content"]) if text
     )
-
-
-def uncarried_reasoning_blocks(messages: Any) -> int:
-    """How many `reasoningContent` blocks in this message list the request
-    built by `ReasoningCarryingOpenAIModel` will still DROP.
-
-    The same walk as `reasoning_strip.reasoning_blocks`, minus the blocks
-    `carried_reasoning` puts on the wire. Defensive at every level for that
-    function's reason: it runs inside a hook on a third-party structure.
-    """
-    total = 0
-    for message in messages or ():
-        content = message.get("content") if isinstance(message, dict) else None
-        if not isinstance(content, list):
-            continue
-        carried = _carries(message)
-        total += sum(
-            1 for block in content
-            if isinstance(block, dict) and REASONING_BLOCK_KEY in block
-            and not (carried and _reasoning_text(block))
-        )
-    return total
 
 
 class ReasoningCarryingOpenAIModel(DashFreeOpenAIModel):
@@ -147,8 +123,3 @@ class ReasoningCarryingOpenAIModel(DashFreeOpenAIModel):
                 part[0][CARRIED_REASONING_FIELD] = reasoning
             formatted.extend(part)
         return formatted
-
-    def uncarried_reasoning_blocks(self, messages: Any) -> int:
-        """What `nora.agent.reasoning_strip.ReasoningStripWatch` counts as a
-        strip for a call made through this model."""
-        return uncarried_reasoning_blocks(messages)
