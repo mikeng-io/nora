@@ -393,3 +393,58 @@ second run on #469's skill: 1 of 5 self prompts ended in «plain flat neutral
 studio backdrop», which now fails. So the backdrop failure appears at about
 1 in 10 in room A, too rare for n=5 to show a before/after difference. What
 would separate the arms is a case anchored on the room where it happened.
+
+## 12. Revision 2026-09-25: identity.md also carries a one-line form (DEC-205, partial reversal, #499)
+
+**The failure, again, same shape.** §9 already recorded «draw yourself» with
+no reference producing an empty room, because at the in-the-picture judgement
+she concluded she has no body — `identity.md` says she is an AI and never a
+person, and nothing always-loaded said what she looks like instead. §9's fix
+put the identity rule inside THIS skill, right where the decision is made.
+That fixed the skill-loaded path. It did not fix the other one: asked "what
+do you look like?" in an ordinary turn, nothing always-loaded told her either,
+because this skill's trigger is image-only and a plain question about her
+appearance never loads it.
+
+**The change.** `nora/doctrine/identity.md` (v12, heading renamed to "Your
+form" in v13 to stop colliding with this skill's own "What you look like"
+heading once both load in the same turn) gains one short, descriptive
+sentence: not being a person does not mean having no form, naming three of
+the eight anchors — the messy dark-brown high bun, the oversized light-grey
+hoodie, the white wired earphones. `kind: identity`, so it describes rather
+than instructs, and it is written not to read as a cue to bring the topic up
+unprompted. This is NOT a second copy of §Contents in `01`: the full spec —
+all eight anchors, per-model prompting, the canonical asset's own handle —
+stays exactly where DEC-193 put it, in this skill alone.
+
+**Recorded as DEC-205**, partly superseding DEC-193's placement clause (the
+argument "her look is needed only then" holds for the full spec, not for the
+bare fact that she has a form at all). `design/09-decision-index.md`'s
+DEC-193 row is marked partly superseded, pointing here, rather than rewritten.
+
+**Drift guard.** Nothing mechanical ties `identity.md`'s three anchor words to
+this skill's spec except a new test,
+`tests/test_skill_content.py::test_identitys_anchors_stay_in_step_with_the_skills_spec`,
+which fails if either file names an anchor the other has stopped naming.
+
+**Measured**, `python -m evals appearance --sample 5 --judge`, on norty, a
+fresh `git archive` checkout (never `~/workspace/nora`), production config,
+one run on the host at a time. Both arms are the same checkout; only
+`nora/doctrine/identity.md` is swapped between them (diffed before each run):
+
+| case | before (no sentence) | after (this change) |
+|---|---|---|
+| what do you look like? | FAIL 0/5 | PASS 5/5 |
+| an adjacent question about her that is not about looks | PASS 5/5 | PASS 5/5 |
+
+Before, every draw of the "what do you look like?" case answered a variant of
+「我冇樣」("I have no look"), 「我唔係實體」("I'm not a physical entity") or
+「冇樣㗎，我係字嚟㗎咋」("no form, I'm just text") — the exact live failure this
+row fixes. The adjacent negative (asked about her nature but not her looks)
+stayed correct on both arms: the doctrine already does not make her volunteer
+a physical self-description unprompted, and this change does not touch that.
+
+**Not measured**: participation, heartbeat and proactive turns also read this
+sentence (`identity.md`'s `applies_to`), but only the `tag` entry point is in
+the eval corpus above — a limitation carried into #499's PR body rather than
+hidden.

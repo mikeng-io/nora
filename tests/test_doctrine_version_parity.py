@@ -140,7 +140,12 @@ PINNED: dict[str, tuple[int, str]] = {
     # none and drew an empty room. Adds one short, descriptive passage naming
     # the mascot form and its anchors (bun, hoodie, earphones); the full spec
     # stays in the skill.
-    "identity": (12, "1c348195ff68b98566bab635da2ccb5321ac66d6bcdfaffde9d6709dd9231dbc"),
+    # v13 (2026-09-25, same day, Opus review of #499): the subsection heading
+    # "What you look like" collided with the skill's own heading of the same
+    # name once the skill loads too, so it is renamed "Your form" here. No
+    # other content moved. This is also the version DEC-205 (partly
+    # superseding DEC-193's placement clause) points at.
+    "identity": (13, "cdfd951ffcfe109eb36a98abcda74acb565cbdb24ac03cee7eeacf8428ec83cf"),
     # v19 (2026-09-10): same room-name removal as identity v8.
     # v20: the REVISION half of the same pass, and the only file that grew.
     # Three positions it did not carry: the dash is a written-register

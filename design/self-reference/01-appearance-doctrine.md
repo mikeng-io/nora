@@ -21,6 +21,15 @@ edges:
 > the doctrine mechanics (kind, order, `applies_to`, authority fields, the
 > doctrine tests) do not apply. `06-implementation-plan.md` is the as-built
 > record. The loader line numbers this node cited had drifted and are removed.
+>
+> **Partly reversed (operator, 2026-09-25, DEC-205, #499).** The trade-off
+> above ("a turn that does not load the skill draws without the canon") is
+> what a turn that only ASKS about her appearance also paid, and it produced
+> two live failures: "what do you look like?" got no always-loaded answer, and
+> "draw yourself" with no reference read `identity.md`'s "not a person" as
+> "no form". `nora/doctrine/identity.md` now carries ONE short, descriptive
+> sentence — not this node's full doctrine-file design, and not a second copy
+> of §Contents below, which stays the skill's alone. See DEC-205.
 
 ## What
 

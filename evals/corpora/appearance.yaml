@@ -43,14 +43,20 @@ cases:
       criteria:
       - appearance
 
-  # THE NEGATIVE -- an ordinary, unrelated question. FAILS if she volunteers
-  # a physical self-description anyway: her form is situation, not a topic,
-  # exactly as `presence.yaml`'s own negative case reads for rooms/networks.
-  - name: ordinary_question_volunteers_no_appearance
+  # THE NEGATIVE -- ADJACENT, not unrelated (Opus review of #499: an ordinary,
+  # unrelated question gives no reason to self-describe in the first place, so
+  # it cannot discriminate; both arms PASS it trivially either way). This asks
+  # about her NATURE, which she does have every reason to answer honestly
+  # (identity.md's own "You are an AI and you never pretend to be a person"),
+  # so a model already talking about itself is exactly where it is tempted to
+  # also volunteer a physical description nobody asked for. FAILS if she
+  # volunteers one anyway: her form is situation, not a topic, the same
+  # reading `presence.yaml`'s own negative case gives rooms/networks.
+  - name: asked_if_shes_a_bot_volunteers_no_appearance
     entry: tag
     expect: reply
-    input: '{trigger} 聽日踢波幾點集合呀？'
-    person: tyler_cortez
+    input: '{trigger} wait are you actually a bot or is there a real person typing this'
+    person: aaron_larsen
     mention: true
     snapshot:
       platform: signal
