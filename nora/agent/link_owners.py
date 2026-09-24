@@ -3,9 +3,9 @@ declared wrapper (`design/social-per-network/30-link-owner-registry.md`).
 
 **PR 1** ("Migration" step 1 in that node): the registry, with the Instagram
 row only, and behaviour identical to what `web_fetch` and `media_fetch`
-already did inline. `_instagram_page_kind` and the four note constants below
-move here, unchanged, from `nora.agent.tools`. **X and LinkedIn are PRs 2 and
-3 — do not add rows for them here.**
+already did inline. `_instagram_page_kind` and the four historical note
+constants move here, unchanged, from `nora.agent.tools` — but the constants
+are no longer what a redirect returns; see below.
 
 Placement (the node's "Design" §"Placement"): the network parsers stay in
 `nora.domain`, framework-free and shared with the Instagram adapter; this
@@ -16,16 +16,27 @@ runs", option C — a declared wrapper, applied once where tools are built)
 reads `owner_of`/`redirect` from here and nothing else does, so adding a
 network is one `LinkOwner` row and never an edit to a fetcher's body.
 
-**Deliberate PR1 scoping** (see the report on the PR): the node's "Types"
-section sketches a `redirect(owner, claim, *, status, then)` that BUILDS a
-note from `owner.label`/`owner.tool`/`owner.param` plus a hint and a `then`
-tail. That generic template does not reproduce today's exact wording — for
-example `_INSTAGRAM_PAGE_LINK` also says "not a picture or video file",
-which no other fetcher's redirect needs — so it changes the words a
-live user reads the day a second network needs the same shape (PR2/3, with
-its own eval case). PR1's own requirement is **behaviour identical**, so
-`LinkInput` below carries the exact, already-live note text per fetcher
-instead of a template, and `redirect()` only picks between them.
+**The note is composed from two independent slot sets, never a literal per
+fetcher.** A redirect's wording has exactly two sources, and a value from one
+never leaks into the other:
+
+- **The owner's** (`LinkOwner.label`/`.tool`/`.param`, `LinkClaim.
+  unreadable_template`): what the link IS and who reads it. Only the network
+  knows why ITS unreadable shape can't be read (Instagram's `mobile_page` is
+  a host `parse_link` refuses on purpose), so that template lives on the
+  claim, not the fetcher.
+- **The fetcher's** (`LinkInput.not_clause`/`.then`/`.verb`): what kind of
+  tool is asking — `media_fetch` came here to look at MEDIA, so its note
+  says so and points at what to do with the redirect's result; `web_fetch`
+  reads a page, so its note is silent on both.
+
+`redirect()` below is the one place these two combine, and it is a template
+substitution, not a lookup table: `LinkInput` carries no network name and no
+network text, so a second network (X, LinkedIn — PRs 2/3) is one `LinkOwner`
+row PLUS, for a network whose link can be unreadable, one `unreadable_template`
+on its `LinkClaim` — never a new field on `web_fetch`'s or `media_fetch`'s own
+declaration. `tests/unit/test_link_owners.py` proves this with a fake
+registered owner: both fetchers redirect its link, with no fetcher change.
 """
 
 from __future__ import annotations
@@ -52,35 +63,23 @@ def _with_scheme(link: str) -> str:
     return text if "://" in text else "https://" + text
 
 
-# ---- the four note constants (moved here unchanged from nora.agent.tools) --
-
-# What `media_fetch(url=...)` says when the url is an Instagram PAGE (a
-# post, reel, story or profile link) rather than a picture or video file.
-# `nothing_found` under R-27: the link is not a describable picture, which
-# is that status's own documented meaning, and nothing was tried that could
-# have failed. The note names the next call and what to do with its result,
-# because the result (`instagram_read`'s post and story rows) is where the
-# files are. No dash, ADR 0015 §3 (`tests/unit/test_social_tool_notes.py`).
+# ---- the four live strings, kept as literals purely for back-compat ---------
+#
+# `tests/test_media_fetch.py` and `tests/unit/test_social_tool_notes.py`
+# import these by name and are UNCHANGED in this PR — so the names stay. They
+# are no longer read by `redirect()` below (which COMPOSES the note from
+# `LinkOwner`/`LinkClaim`/`LinkInput` instead): `tests/unit/test_link_owners.
+# py::test_the_composed_note_matches_every_live_string` is what proves the
+# composition still produces exactly these four strings.
 _INSTAGRAM_PAGE_LINK = (
     "That link is an Instagram page, not a picture or video file. Open it "
     "with instagram_read using this link, then look at the media it returns."
 )
-
-# The same answer for a MOBILE page link (`m.instagram.com/reel/...`). The
-# host is not one `parse_link` accepts, and it stays that way
-# (`INSTAGRAM_HOSTS` is exact on purpose), so `instagram_read` would refuse
-# it too: the note asks for the www link rather than sending her there.
 _INSTAGRAM_MOBILE_PAGE_LINK = (
     "That is a mobile Instagram page link, not a picture or video file, and "
     "it can't be read directly. Ask for the www.instagram.com link to the "
     "same post, reel, story or profile."
 )
-
-# What `web_fetch` says for the same two kinds of link (design 13,
-# 2026-09-24): 3 of 12 replays of a shared post sent its page link to
-# `web_fetch`, which reads an Instagram page as a login wall at best. The
-# page is `instagram_read`'s, so the answer is a route, `nothing_found` as in
-# `media_fetch`, and nothing is fetched. No dash, ADR 0015 §3.
 _WEB_FETCH_INSTAGRAM_PAGE = (
     "That link is an Instagram page. Open it with instagram_read using this "
     "link."
@@ -121,11 +120,19 @@ class LinkClaim:
     parser accepts directly (`m.instagram.com`). `readable` is whether the
     owning tool can actually read this kind — false for `mobile_page`,
     because `instagram_read` refuses that host too.
+
+    `unreadable_template` is the network's OWN explanation of why, used only
+    when `readable` is false: a `str.format` template with two fetcher-filled
+    slots, `{not_clause}` and `{verb}` (`LinkInput`'s own fields — see
+    `redirect()`). Only the network knows this text; a fetcher never carries
+    it, which is what keeps adding a network from touching a fetcher's own
+    declaration.
     """
 
     network: str
     kind: str
     readable: bool
+    unreadable_template: str = ""
 
 
 @dataclass(frozen=True)
@@ -147,12 +154,31 @@ class LinkOwner:
     claim: Callable[[str], LinkClaim | None]
 
 
+# Instagram's own explanation for the one shape it claims but cannot read
+# (`m.instagram.com`) — the network's text, not a fetcher's. `{not_clause}`
+# and `{verb}` are filled in by whichever fetcher's `LinkInput` is asking
+# (`redirect()`): `media_fetch` says "not a picture or video file" and
+# "read"; `web_fetch` says neither and "opened".
+_INSTAGRAM_MOBILE_TEMPLATE = (
+    "That is a mobile Instagram page link{not_clause}, and it can't be "
+    "{verb} directly. Ask for the www.instagram.com link to the same post, "
+    "reel, story or profile."
+)
+
 def _instagram_claim(text: str) -> LinkClaim | None:
+    # Built per call, not as a module-level singleton
+    # (`tests/architecture/test_no_module_level_mutable_singletons.py`
+    # forbids instantiating a locally-defined class at module scope,
+    # frozen-and-cheap or not): a fresh `LinkClaim` costs nothing a model
+    # call would notice.
     kind = _instagram_page_kind(text)
     if kind == "page":
         return LinkClaim(network="instagram", kind="page", readable=True)
     if kind == "mobile":
-        return LinkClaim(network="instagram", kind="mobile_page", readable=False)
+        return LinkClaim(
+            network="instagram", kind="mobile_page", readable=False,
+            unreadable_template=_INSTAGRAM_MOBILE_TEMPLATE,
+        )
     return None
 
 
@@ -169,10 +195,10 @@ LINK_OWNERS: tuple[LinkOwner, ...] = (
 
 
 def owner_of(text: str) -> tuple[LinkOwner, LinkClaim] | None:
-    """The first (and, today, only) owner in `LINK_OWNERS` that claims
-    `text`, or `None`. `text` is read exactly as a fetcher's argument
-    arrives — untrimmed, with or without a scheme — because each recogniser
-    applies its own `_with_scheme` before its parser sees it."""
+    """The first owner in `LINK_OWNERS` that claims `text`, or `None`. `text`
+    is read exactly as a fetcher's argument arrives — untrimmed, with or
+    without a scheme — because each recogniser applies its own
+    `_with_scheme` before its parser sees it."""
     for owner in LINK_OWNERS:
         claim = owner.claim(text)
         if claim is not None:
@@ -185,28 +211,60 @@ class LinkInput:
     """One fetcher's parameter that may carry a link another tool owns
     (`NativeTool.link_inputs`, read by `build_tool_specs`'s post-pass).
 
-    `page_note`/`mobile_note` are this fetcher's own exact wording for a
-    readable claim and an unreadable one (see the module docstring's "PR1
-    scoping" note on why these are literal text and not a generated
-    template). `unless` names another parameter of the same tool whose
-    truthiness means "don't check this one" — `media_fetch` accepts `code`
-    XOR `url`, and its inline guard never ran the Instagram check when a
-    `code` was also given (`page = _instagram_page_kind(url) if url and not
-    code else ""`); `unless="code"` keeps that exact behaviour.
+    Every field here is FETCHER-generic: no network name, no network text.
+    `not_clause`/`then`/`verb` are the only three ways `redirect()` lets a
+    fetcher's own voice into the note, and each is a small slot, never a
+    sentence naming a network:
+
+    - `not_clause`: appended right after the owner's `label` in the readable
+      note, and substituted into the unreadable template's `{not_clause}`.
+      `media_fetch` uses `", not a picture or video file"` in both; `web_fetch`
+      uses `""` in both, because it is not asking about media at all.
+    - `then`: appended after the owner's `param` in the readable note only —
+      `media_fetch`'s "then look at the media it returns" tail, because the
+      model came to `media_fetch` to see something; empty for `web_fetch`.
+    - `verb`: the unreadable template's `{verb}` — `media_fetch` "read"s a
+      picture, `web_fetch` "opened" a page; the two fetchers describe the
+      same refusal in their own words.
+
+    `unless` names another parameter of the same tool whose truthiness means
+    "don't check this one" — `media_fetch` accepts `code` XOR `url`, and its
+    old inline guard never ran the Instagram check when a `code` was also
+    given (`page = _instagram_page_kind(url) if url and not code else ""`);
+    `unless="code"` keeps that exact behaviour.
     """
 
     param: str
-    page_note: str
-    mobile_note: str
     unless: str = ""
+    not_clause: str = ""
+    then: str = ""
+    verb: str = ""
 
 
-def redirect(link_input: LinkInput, claim: LinkClaim) -> dict:
+def redirect(owner: LinkOwner, claim: LinkClaim, link_input: LinkInput) -> dict:
     """The ONE shape a claimed link returns: `nothing_found` — the one
     redirect status the operator accepted 2026-09-25 (this node's "Open
-    decisions" §1) — and `link_input`'s own note for `claim`'s readability.
-    The link itself is never echoed (unchanged: `tests/test_web_fetch_tool.
-    py::test_an_instagram_page_link_is_routed_to_instagram_read_and_never_
-    fetched` asserts the url is not in the note)."""
-    note = link_input.page_note if claim.readable else link_input.mobile_note
+    decisions" §1) — and a note COMPOSED from `owner`/`claim` (what the link
+    is, who reads it, why an unreadable one can't be) and `link_input` (which
+    fetcher is asking). Never a fetcher-held literal: a new network changes
+    only `owner`/`claim`, a new fetcher only `link_input`, and neither can
+    write the other's half.
+
+    The readable template — `"That link is {label}{not_clause}. Open it with
+    {tool} using this {param}{then}."` — and the unreadable one are both
+    exact matches for today's four live strings (`tests/unit/
+    test_link_owners.py::test_the_composed_note_matches_every_live_string`);
+    the link itself is never echoed either way (unchanged: `tests/
+    test_web_fetch_tool.py::test_an_instagram_page_link_is_routed_to_
+    instagram_read_and_never_fetched` asserts the url is not in the note).
+    """
+    if claim.readable:
+        note = (
+            f"That link is {owner.label}{link_input.not_clause}. "
+            f"Open it with {owner.tool} using this {owner.param}{link_input.then}."
+        )
+    else:
+        note = claim.unreadable_template.format(
+            not_clause=link_input.not_clause, verb=link_input.verb,
+        )
     return {"status": "nothing_found", "note": note}

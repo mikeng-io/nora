@@ -65,8 +65,8 @@
   {
     "name": "the m.instagram.com page claim is dropped: the mobile page is downloaded",
     "file": "nora/agent/link_owners.py",
-    "old": "    if kind == \"mobile\":\n        return LinkClaim(network=\"instagram\", kind=\"mobile_page\", readable=False)\n",
-    "new": "    if False:\n        return LinkClaim(network=\"instagram\", kind=\"mobile_page\", readable=False)\n",
+    "old": "    if kind == \"mobile\":\n        return LinkClaim(\n            network=\"instagram\", kind=\"mobile_page\", readable=False,\n            unreadable_template=_INSTAGRAM_MOBILE_TEMPLATE,\n        )\n",
+    "new": "    if False:\n        return LinkClaim(\n            network=\"instagram\", kind=\"mobile_page\", readable=False,\n            unreadable_template=_INSTAGRAM_MOBILE_TEMPLATE,\n        )\n",
     "target": "tests/test_media_fetch.py -k mobile_page_link"
   },
   {
@@ -91,10 +91,10 @@
     "target": "tests/test_media_fetch.py -k stale_cover_beside"
   },
   {
-    "name": "the page-link note stops naming instagram_read",
+    "name": "the page-link note stops naming instagram_read (design 30's coordinator revision: the note is composed, not fetcher-held, so this now mutates redirect()'s own template rather than a literal)",
     "file": "nora/agent/link_owners.py",
-    "old": "    \"with instagram_read using this link, then look at the media it returns.\"",
-    "new": "    \"with the right tool, then look at the media it returns.\"",
+    "old": "            f\"Open it with {owner.tool} using this {owner.param}{link_input.then}.\"\n",
+    "new": "            f\"Open it with the right tool using this {owner.param}{link_input.then}.\"\n",
     "target": "tests/test_media_fetch.py -k instagram_page_link_is_sent_to_instagram_read"
   },
   {

@@ -162,13 +162,18 @@ from ..obs.tracing import annotate, span
 from .arithmetic import evaluate as evaluate_expression
 from .dream_screen import screen as _dream_screen
 from .egress import scan_reply
-from .link_owners import (
-    _INSTAGRAM_MOBILE_PAGE_LINK,
-    _INSTAGRAM_PAGE_LINK,
-    _WEB_FETCH_INSTAGRAM_MOBILE_PAGE,
-    _WEB_FETCH_INSTAGRAM_PAGE,
-    LinkInput,
-)
+
+# Re-exported, explicitly (`as`-aliased to themselves so ruff's F401 reads
+# them as intentional, not dead): `tests/test_media_fetch.py` and
+# `tests/unit/test_social_tool_notes.py` import these four by name off
+# `nora.agent.tools`, unchanged from before design 30's move, and neither
+# is touched by this PR. `redirect()` no longer reads them — see
+# `nora.agent.link_owners`'s module docstring.
+from .link_owners import _INSTAGRAM_MOBILE_PAGE_LINK as _INSTAGRAM_MOBILE_PAGE_LINK
+from .link_owners import _INSTAGRAM_PAGE_LINK as _INSTAGRAM_PAGE_LINK
+from .link_owners import _WEB_FETCH_INSTAGRAM_MOBILE_PAGE as _WEB_FETCH_INSTAGRAM_MOBILE_PAGE
+from .link_owners import _WEB_FETCH_INSTAGRAM_PAGE as _WEB_FETCH_INSTAGRAM_PAGE
+from .link_owners import LinkInput
 from .link_owners import owner_of as _owner_of
 from .link_owners import redirect as _link_redirect
 from .links import LinkCarry
@@ -887,7 +892,11 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # `link_inputs`: `url` may be an Instagram page (design 30, PR 1) — the
     # same guard `_instagram_page_kind` ran inline before it moved to the
     # registry. `unless="code"` keeps the old guard's own condition (`url and
-    # not code`): a `code` marker read is never re-judged as a link.
+    # not code`): a `code` marker read is never re-judged as a link. The three
+    # slots are fetcher-generic, never a network's text (nora.agent.
+    # link_owners' module docstring): `media_fetch` came here to look at
+    # media, so its note says so (`not_clause`) and points at what to do with
+    # the redirect's result (`then`), and it "read"s a picture (`verb`).
     "media_fetch": NativeTool(4,
                              read_only=True,
                               side_effect_state="none", idempotency="idempotent", retry="safe",
@@ -895,8 +904,9 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
                               link_inputs=(
                                   LinkInput(
                                       "url", unless="code",
-                                      page_note=_INSTAGRAM_PAGE_LINK,
-                                      mobile_note=_INSTAGRAM_MOBILE_PAGE_LINK,
+                                      not_clause=", not a picture or video file",
+                                      then=", then look at the media it returns",
+                                      verb="read",
                                   ),
                               )),
     # generate_image (DEC-137): the one EXPENSIVE, EXTERNAL tool in the set —
@@ -963,17 +973,15 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # page (a stranger's words; say which page) is in `_FETCH_NOTES`.
     # `link_inputs`: `url` may be an Instagram page (design 30, PR 1) — the
     # same guard `_instagram_page_kind` ran inline before it moved to the
-    # registry.
+    # registry. `web_fetch` is not asking about media, so its slots are empty
+    # except the unreadable case's own verb: it "opened" a page, it did not
+    # "read" one.
     "web_fetch": NativeTool(2,
                              source_tier="web", cacheable=True, read_only=True,
                             side_effect_state="none", idempotency="idempotent", retry="safe",
                             output_contract="three_state", level=1,
                             link_inputs=(
-                                LinkInput(
-                                    "url",
-                                    page_note=_WEB_FETCH_INSTAGRAM_PAGE,
-                                    mobile_note=_WEB_FETCH_INSTAGRAM_MOBILE_PAGE,
-                                ),
+                                LinkInput("url", verb="opened"),
                             )),
     # `x_read` and `x_search` (design/social-per-network, DEC-201): READ-ONLY X
     # via the host-side OpenCLI bridge, replacing `social_fetch` (DEC-151).
@@ -10830,7 +10838,7 @@ def _link_owner_wrapped(
             else:
                 _record(metrics, tool_name, "nothing_found",
                         reason="link_owner", owner=owner.network)
-            return _link_redirect(link_input, claim)
+            return _link_redirect(owner, claim, link_input)
         return await call(*args, **kwargs)
 
     return routed
