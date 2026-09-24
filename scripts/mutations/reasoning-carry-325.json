@@ -32,7 +32,7 @@
     "file": "nora/agent/reasoning_strip.py",
     "old": "                if text and (text in field or undash(text) in field):",
     "new": "                if text:",
-    "target": "tests/unit/test_reasoning_carry.py::test_one_carried_message_does_not_vouch_for_another"
+    "target": "tests/unit/test_reasoning_carry.py::test_a_carried_field_counts_only_the_text_that_reached_it"
   },
   {
     "name": "watch: a message whose own entry carries nothing trusted as carried",

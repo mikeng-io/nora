@@ -147,6 +147,30 @@ def test_a_dropped_block_is_not_vouched_for_by_a_longer_carried_one() -> None:
     assert dropped_reasoning_blocks(_provider(), messages) == 1
 
 
+def test_a_carried_field_counts_only_the_text_that_reached_it() -> None:
+    """A field being present is not the claim; its CONTENT is. A formatter
+    that carries only the first of two reasoning blocks dropped the second,
+    and the counter must see that."""
+
+    class _FirstOnly(ReasoningCarryingOpenAIModel):
+        @classmethod
+        def _format_regular_messages(cls, messages: Any, **kwargs: Any) -> list[dict[str, Any]]:
+            formatted = super()._format_regular_messages(messages, **kwargs)
+            for entry in formatted:
+                if CARRIED_REASONING_FIELD in entry:
+                    entry[CARRIED_REASONING_FIELD] = "first thought"
+            return formatted
+
+    two = copy.deepcopy(MULTI_TURN)
+    two[1]["content"][0][REASONING_BLOCK_KEY]["reasoningText"]["text"] = "first thought"
+    second = {REASONING_BLOCK_KEY: {"reasoningText": {"text": "second thought"}}}
+    two[1]["content"].insert(1, second)
+    model = _FirstOnly(model_id="nora-dreamer", client=None,  # type: ignore[arg-type]
+                       params={"max_tokens": 64, "reasoning_effort": "low"})
+    assert dropped_reasoning_blocks(model, two) == 1
+    assert dropped_reasoning_blocks(_provider(), two) == 0, "control: both carried"
+
+
 def test_a_model_whose_formatting_raises_is_recorded_as_dropping_everything() -> None:
     class _Broken:
         def format_request(self, messages: Any) -> dict:
