@@ -152,9 +152,10 @@ _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     # the drift `_ROW` already cost us once.
     #
     # The ROW is unconditional and the BLOCK is not: it renders only where
-    # `TagContext.culture` is filled, which is the participation occasion
-    # alone (`FirePath._read_culture`). A row that varied per turn would
-    # end the cached prefix's hit rate for everything after it.
+    # `TagContext.culture` is filled — every tag and fire turn in a folded
+    # room since DEC-207, and none while `[culture] enabled = false`. A row
+    # that varied per turn would end the cached prefix's hit rate for
+    # everything after it.
     ("culture", 55, "room"),
     ("standing", 60, "room"),
     ("group_transcript", 70, "room"),
@@ -824,13 +825,10 @@ def _culture_block(ctx: TagContext, *, now: datetime) -> ContextBlock | None:
     the memory system already produces the other shape and a chronicle of
     dynasties and their dates is not a culture.
 
-    `None` on every turn but the participation occasion's, and that restriction
-    is a DECISION rather than an unfinished wiring: `01-the-adaptor §6`
-    authorises exactly one consumer and `02-measurement §5` step 5 says the
-    block ships with its measurement arm, so a second consumer is a second
-    measurement nobody has taken. `FirePath._read_culture` is where the gate
-    actually is; this renderer is blind to it and renders whatever the context
-    carries.
+    Filled on the tag path (`TranscriptInjection._culture`) and on every
+    fire occasion (`FirePath._read_culture`) since DEC-207, which widened the
+    tier from the participation turn alone to every runtime. This renderer is
+    blind to who filled it and renders whatever the context carries.
 
     `None` also until the room has been folded at least once, which is the
     ordinary state for a while after the tier is enabled — a fold needs new

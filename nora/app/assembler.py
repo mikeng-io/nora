@@ -20,6 +20,7 @@ from __future__ import annotations
 from nora.config import Config
 from nora.domain.media_join import MediaJoin
 from nora.domain.ports import (
+    CultureReader,
     MemoryStore,
     RecordStore,
     StandingStore,
@@ -48,6 +49,7 @@ def build_assembler(
     media_join: MediaJoin | None = None,
     quote_window: QuoteWindow | None = None,
     presence: PresenceReader | None = None,
+    culture: CultureReader | None = None,
 ) -> TranscriptInjection:
     return TranscriptInjection(
         audit=audit, memory=memory, persons=persons,
@@ -76,4 +78,9 @@ def build_assembler(
         # over `policy.toml` and the live adapter map. `None` renders the
         # network alone — what `_where_line` said before it was replaced.
         presence=presence,
+        # `<culture>` (design/culture-tier, DEC-207). The SAME reader the fire
+        # path and every Dreamer adaptor that reads an account hold. `None`
+        # while `[culture] enabled = false`, and in every harness that wires
+        # no store, which renders no block.
+        culture=culture,
     )
