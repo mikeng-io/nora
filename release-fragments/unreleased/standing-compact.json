@@ -6,7 +6,7 @@
     "The fold is shown tool results up to 4000 characters instead of 600, and is told they survive only through what it writes.",
     "The previous position is shown with how long ago it was written, every message the fold reads carries its date, and the fold is told to write dates instead of words like today or tomorrow, so a stale clause can be recognised and dropped.",
     "The turn's steps are shown as they are: private reasoning appears, marked, only when the model produced any.",
-    "What the fold stores is screened more strictly before it is kept: emails, long platform ids and labelled coordinates are refused as well as phone numbers and coordinate pairs, and the notes it proposes are screened too."
+    "What the fold stores is screened more strictly before it is kept: emails, long platform ids and labelled coordinates are refused as well as phone numbers and coordinate pairs."
   ],
   "limitations": [
     "The [standing] rebuild_after_folds key is removed; a config that still sets it refuses to start.",
