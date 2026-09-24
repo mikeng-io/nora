@@ -458,6 +458,71 @@ That is why it must not be the place a wedding venue lives
 wrong home for something that has to survive. Standing points at the tiers that
 keep things; it does not keep them.
 
+## 9. 2026-09-25 — the fold is not constrained on failure, and two things recorded rather than fixed
+
+**Operator decision.** Standing records failures as part of Nora's own
+self-cognition. The fold is **not** constrained on how it records a failed or
+partial attempt — there is no clean line between a normal failure ("the
+search came back empty") and a harmful one ("I told the room a promise I
+never kept"), and a rule drawing that line would be guessing at a boundary
+rather than measuring one. `self_card`'s semantic recall — the distilled-
+episode injection DEC-96 accepted onto `<self_card>` — stays exactly as it
+is; nothing here narrows what it may recall.
+
+**Evidence.** PR #480 proposed constraining the fold's failure-recording and
+was closed after measurement showed the fix was not where the defect was.
+
+- The synthetic `self_claim` corpus cases already passed on master — the
+  failure this PR set out to fix was not visible to the eval suite that
+  exists.
+- Replays of the recorded LIVE fold calls: the shipped instruction (v8)
+  scored 3/24 on the general corpus and 20/24 scoped; v8 plus an
+  own-statement rule scored 24/24 scoped; a rule telling the fold "do not
+  carry failed-call outcomes" carried it anyway, 23/24 — the instruction was
+  not the lever.
+- A read-only study found the root cause was the **tool surface** (since
+  fixed by #471/#484/#486), amplified by a **self-attestation loop**: an
+  untested sentence the model wrote reaches the fold, the fold writes it into
+  `standing`, `standing` reaches Honcho, and `self_card`'s semantic recall
+  then hands the same untested claim back on the next similar question —
+  three tiers each doing their own job correctly, compounding one unverified
+  sentence into something that reads as remembered fact.
+
+**This holds unless** a future measurement finds the fold itself — not the
+tool surface, not the self-attestation loop — producing the failure; a
+better-argued case for constraining it without that measurement is not
+grounds to reopen this.
+
+### The render's one age covers the whole block, not each clause
+
+Known limitation, recorded rather than fixed. `<standing>`'s single `written`
+attribute (§4.2) times the fold as a whole; a room whose position has sat
+unchanged for hours but which just picked up one fresh clause renders that
+clause with the same age as the days-old ones beside it — read live, a
+six-hour-old clause rendered as "just now" because the FOLD that touched it
+was recent, even though the clause itself was not. Standing-compact's dated
+age (`design/standing-compact/10-changes.md` §2) fixed "the whole position
+carries no time"; it did not give each CLAUSE its own. Splitting the age per
+clause is a real property, not yet built — the reading that would take this
+up is a measurement showing a stale clause riding in on a fresh fold's age
+often enough to matter.
+
+### The manual-edit marker
+
+`standing_revision` gained a `source` column (`'fold' | 'operator'`, CHECK-
+constrained, default `'fold'`) — every row before this column existed was a
+fold, so the default is also the correct backfill. `SqlStandingStore.write`
+keeps writing `'fold'` for its two callers (`debrief.py`,
+`standing_event.py`) unchanged; the new `SqlStandingStore.write_if_unchanged`
+is the one path that writes `'operator'`, and it refuses — writes nothing —
+unless the row is exactly what was read. `scripts/standing_edit.py` is the
+operator entry point: it carries `fold_count` and the row-id watermark
+through unchanged, because correcting a position's TEXT is not a claim that
+a fold ran or that the conversation was read any further than it already
+was. This closes the gap an operator-approved manual purge hit on
+2026-09-24, where two rows edited through the ordinary `write` path recorded
+as folds with no way to tell them apart from the model's own work afterward.
+
 ## Status / Checkpoint
 
 2026-08-23 — written after the operator asked how Standing runs, rolls and is

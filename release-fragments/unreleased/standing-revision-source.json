@@ -1,0 +1,14 @@
+{
+  "type": "feature",
+  "summary": "Standing's history can now tell a fold apart from an operator's manual edit, and an operator has a real entry point for making one.",
+  "details": [
+    "`standing_revision` gains a `source` column, `'fold'` or `'operator'`, CHECK-constrained and defaulting to `'fold'`. Every row before this column existed was written by the fold path, so `'fold'` is also the correct backfill for the whole table, not a guess standing in for provenance nobody recorded.",
+    "`SqlStandingStore.write` — the fold's own upsert — is unchanged in shape and keeps writing `'fold'` for both its callers, the tag-path debrief and the event-path rollup. A new method, `write_if_unchanged`, is the only path that writes `'operator'`: it refuses (writes nothing) unless the row is exactly what was last read, so a fold landing between an operator's read and their write is never silently overwritten by a stale edit.",
+    "`scripts/standing_edit.py` is the operator entry point: it reads the current position, writes a new body through the compare-and-set path, and carries the fold count and the row-id watermark through unchanged — correcting a position's text is not a claim that a fold ran or that the conversation was read any further than it already was.",
+    "This closes a real gap: an operator-approved manual purge on 2026-09-24 edited two rows through the ordinary fold write, and the history recorded both as folds with no way to tell them apart from the model's own work afterward."
+  ],
+  "limitations": [
+    "The two rows edited on 2026-09-24, before this column existed, still read back as `'fold'` — the backfill is correct for what the database can know, not a correction of that specific history.",
+    "No CLI subcommand under `nora`; the read-only control plane (`nora.app.cli`) is architecturally read-only by design, and this write does not belong there. `scripts/standing_edit.py` is a documented, argument-driven script, not an interactive tool."
+  ]
+}
