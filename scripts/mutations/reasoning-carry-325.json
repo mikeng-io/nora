@@ -14,13 +14,6 @@
     "target": "tests/unit/test_reasoning_carry.py::test_a_reasoning_tool_loop_sends_its_reasoning_and_records_no_strip"
   },
   {
-    "name": "carry: a reasoning-only message counted as carried",
-    "file": "nora/agent/reasoning_carry.py",
-    "old": "        isinstance(block, dict) and any(key in block for key in _EMITTED_BLOCK_KEYS)",
-    "new": "        isinstance(block, dict)",
-    "target": "tests/unit/test_reasoning_carry.py::test_reasoning_with_nothing_to_emit_beside_it_is_still_counted_as_dropped"
-  },
-  {
     "name": "watch: assumes every block is dropped, ignoring the model",
     "file": "nora/agent/reasoning_strip.py",
     "old": "                dropped_reasoning_blocks(getattr(agent, \"model\", None), messages),",

@@ -39,14 +39,14 @@ So the field is `reasoning`, the spelling the upstream both writes and reads.
 silently thrown away, which is exactly the defect a fix must not recreate: a
 request that looks carried and is not.
 
-**Scope.** Only assistant messages, and only the ones the formatter will emit
-(a text or tool-call block beside the reasoning): an assistant message whose
-only content is reasoning is dropped whole by `format_request_messages`, and
-its reasoning with it. `nora.agent.reasoning_strip.dropped_reasoning_blocks`
-judges what is still lost against the request this class formats, never
-against a prediction of it. Every reasoning block in `agent.messages` comes from THIS loop
-(`nora.agent.prefill` renders plain text, ADR 0013 §3), so carrying all of them
-is carrying the current turn's reasoning, never a past turn's.
+**Scope.** Assistant messages only. One whose only content is reasoning is
+still dropped whole by the SDK's `format_request_messages` (it keeps only
+messages with `content` or `tool_calls`), and its reasoning with it.
+`nora.agent.reasoning_strip.dropped_reasoning_blocks` judges what is still
+lost against the request this class formats, never against a prediction of
+it. Every reasoning block in `agent.messages` comes from THIS loop
+(`nora.agent.prefill` renders plain text, ADR 0013 §3), so carrying all of
+them is carrying the current turn's reasoning, never a past turn's.
 
 Dash-free is kept and applies to the carried text too: the reasoning is
 something she READS on the next call, which is the line `nora.agent.
@@ -64,28 +64,15 @@ from .reasoning_strip import (
     reasoning_text,
 )
 
-#: Content blocks that make the formatter EMIT an assistant message: text
-#: becomes `content`, a tool use becomes `tool_calls`. A message with neither
-#: is filtered out of the request, so reasoning attached to it goes nowhere.
-_EMITTED_BLOCK_KEYS = ("text", "toolUse")
-
-
-def _carries(message: Any) -> bool:
-    """Whether this message's reasoning is carried into the request."""
-    if not isinstance(message, dict) or message.get("role") != "assistant":
-        return False
-    content = message.get("content")
-    if not isinstance(content, list):
-        return False
-    return any(
-        isinstance(block, dict) and any(key in block for key in _EMITTED_BLOCK_KEYS)
-        for block in content
-    )
-
 
 def carried_reasoning(message: Any) -> str:
-    """The reasoning text this message carries into the request, or `""`."""
-    if not _carries(message):
+    """The reasoning text an ASSISTANT message carries into the request, or
+    `""`. Every assistant message gets it; one with nothing else to emit is
+    filtered out of the request whole by the SDK, reasoning included, and the
+    detector reads that off the formatted request rather than assuming it."""
+    if not isinstance(message, dict) or message.get("role") != "assistant":
+        return ""
+    if not isinstance(message.get("content"), list):
         return ""
     return "\n\n".join(
         text for text in (reasoning_text(block) for block in message["content"]) if text
