@@ -53,12 +53,13 @@ def test_config_example_exists_and_parses():
 #
 # --- Relationship to evals/subject_config.py (issue #321) --------------------
 #
-# `evals/subject_config.materialise()`/`divergences()` also compare a
-# deployment's config against `config.example.toml`, and REFUSE to start an
-# eval run on disagreement — a stronger mechanism in the sense that a skip
-# cannot happen, because the run does not start. It does NOT make the three
-# checks below redundant, because it answers a different question with a
-# different allowlist:
+# `evals/subject_config.materialise()`/`divergences()` compare the GENERATED
+# eval-subject config (`build()`'s output, `config.example.toml` rewritten
+# with the deployment's own values) against the deployment, and REFUSE to
+# start an eval run on disagreement — a stronger mechanism in the sense that a
+# skip cannot happen, because the run does not start. It does NOT make the
+# three checks below redundant, because it answers a different question with
+# a different allowlist:
 #
 #   - `materialise()` protects the COMPUTED eval subject config, not the
 #     checked-in `config.example.toml` text. `build()` self-heals around a
@@ -75,14 +76,16 @@ def test_config_example_exists_and_parses():
 #     direction from either check below.
 #   - The allowlists do not mean the same thing. `_MAY_DIFFER` below encodes
 #     the operator's ON/OFF posture decisions (DEC-43: a fresh template ships
-#     inert, the live deployment has opted features on) — `adopted()`'s
-#     `SKIP_PREFIX`/`ALLOWED_TO_DIFFER` encode the opposite: which settings
-#     must NOT follow the deployment into an eval sandbox (credentials,
-#     internal endpoints, telemetry sinks). A key like `standing.enabled` is
-#     *in* `_MAY_DIFFER` (template off, deployment on, by design) and *taken
-#     straight from the deployment* by `adopted()` — the eval subject runs
-#     with it on, which is correct for measuring the real Nora and has nothing
-#     to say about whether the template's own text is accurate.
+#     inert, the live deployment has opted features on) — `subject_config.py`'s
+#     `SKIP_PREFIX` (read by both `adopted()` and `divergences()`'s `exempt()`)
+#     and `ALLOWED_TO_DIFFER` (read only by `divergences()`'s `exempt()`)
+#     encode the opposite: which settings must NOT follow the deployment into
+#     an eval sandbox (credentials, internal endpoints, telemetry sinks). A key
+#     like `standing.enabled` is *in* `_MAY_DIFFER` (template off, deployment
+#     on, by design) and *taken straight from the deployment* by `adopted()` —
+#     the eval subject runs with it on, which is correct for measuring the
+#     real Nora and has nothing to say about whether the template's own text
+#     is accurate.
 #
 # So `test_config_example_declares_every_key_the_deployment_sets`,
 # `test_config_example_agrees_with_the_deployment_except_where_argued` and
@@ -131,17 +134,21 @@ def _load_live_or_skip() -> dict[str, object]:
 
     A SKIP rather than a silent pass: pytest prints it, so «this ran and
     agreed» and «there was nothing here to compare against» stay different
-    readings. And the run that matters still exercises it — the operator's own
-    `make gate` before a deploy is executed on the machine that HAS the file,
-    which is exactly where a drifted example would do its damage.
+    readings. It does NOT run somewhere else instead: `config.toml` is
+    gitignored in every dev worktree and in CI, and the deploy checkout is
+    off-limits for verification (never bind-mounted for a test run), so this
+    check is not proven to run anywhere under the current workflow — issue
+    #321 tracks that gap. It is here, SKIP not silently green, for the
+    operator to run by hand against a real `config.toml` when they need it.
     """
     path = ROOT / "config.toml"
     if not path.is_file():
         pytest.skip(
             "no config.toml in this checkout — untracked since 2026-09-07, so "
             "the live-vs-example cross-check has nothing to compare against "
-            "here. It runs on the deployment machine, which is the one whose "
-            "example drifting would break a boot."
+            "here. It does not run anywhere in the current workflow either "
+            "(#321): config.toml is gitignored in every worktree and CI, and "
+            "the deploy checkout is off-limits for verification."
         )
     return _flatten(tomllib.loads(path.read_text()))
 

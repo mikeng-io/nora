@@ -246,8 +246,9 @@ stash-merge-restore-diff by hand to keep from losing an edit. `config.example.
 toml` is now the only committed record of the config's shape, and
 `tests/test_env_template.py`'s three drift checks compare the two — but
 `config.toml` is gitignored in every dev worktree and in CI, so they SKIP
-there by design (`:72-96`); nothing in the established workflow (worktrees
-only, never the deploy checkout — see Cleanup below) runs them for real. What
+there by design (`tests/test_env_template.py::_load_live_or_skip`); nothing
+in the established workflow (worktrees only, never the deploy checkout —
+"Reaching the deployment" below) runs them for real. What
 DOES run automatically, once per eval, is a different and narrower property:
 `evals/subject_config.materialise()` rebuilds the eval subject's config from
 the live `config.toml` and REFUSES to start the run if the two still disagree
