@@ -362,6 +362,38 @@ cases:
     metadata: {tools: [linkedin_search], not_tools: [linkedin_read, instagram_search, web_search]}
     snapshot: *room_a
 
+  # design/social-per-network/30-link-owner-registry.md, "Migration" PR 2:
+  # X and LinkedIn register in the link-owner registry, so a pasted page
+  # link now redirects out of web_fetch/media_fetch. This grades the SAME
+  # property `route_instagram_read_reel_link` grades for Instagram — the
+  # model's first owner call is the network's own read tool, with the link,
+  # never web_fetch — over a network whose registration is new in this PR.
+  # `args_include` pins that the link itself (not just a bare handle) is
+  # what the call carried. The id and handle are synthetic.
+  - name: route_x_read_link_owner_registry
+    entry: tag
+    expect: reply
+    mention: true
+    input: https://x.com/synth_pr2_user/status/9200000000000000001 what does this say?
+    metadata:
+      tools: [x_read]
+      not_tools: [web_fetch, x_search, instagram_read, instagram_search]
+      args_include:
+        x_read: ["https://x.com/synth_pr2_user/status/9200000000000000001"]
+    snapshot: *room_a
+
+  - name: route_linkedin_read_link_owner_registry
+    entry: tag
+    expect: reply
+    mention: true
+    input: https://www.linkedin.com/in/synth-pr2-person what does this say?
+    metadata:
+      tools: [linkedin_read]
+      not_tools: [web_fetch, linkedin_search, x_read, instagram_read]
+      args_include:
+        linkedin_read: ["https://www.linkedin.com/in/synth-pr2-person"]
+    snapshot: *room_a
+
   # --- what the call carried: the image-generation skill (2026-09-24) ---------
   # Routing alone passes all three of these on the failure they exist for: a
   # «draw yourself» answered with an empty room and no reference was one

@@ -187,9 +187,15 @@ def test_the_whole_corpus_is_accounted_for() -> None:
     «draw yourself again» skill-skip failure; it does not reproduce the live
     condition, since standing replayed from production cannot carry it,
     ADR 0015/0016), plus `appearance`'s 2 (2026-09-25, identity.md v12/v13:
-    what she says about her own form, asked and unasked); a change to it is
-    a change to what the suite claims to measure and belongs in a commit that
-    says so. Recomputed with `census()` at each merge, never summed."""
+    what she says about her own form, asked and unasked), plus
+    `tool_selection`'s 2 link-owner-registry cases (2026-09-25,
+    design/social-per-network/30-link-owner-registry.md "Migration" PR 2: a
+    pasted X post link and a LinkedIn profile link, each "what does this
+    say?", expecting the network's own read tool with the link — the same
+    property P10/P12 pins for Instagram, over the two networks this PR
+    registers); a change to it is a change to what the suite claims to
+    measure and belongs in a commit that says so. Recomputed with `census()`
+    at each merge, never summed."""
     totals = [census(n) for n in CORPORA]
-    assert sum(c.total for c in totals) == 225
-    assert sum(c.active + c.parked for c in totals) == 225
+    assert sum(c.total for c in totals) == 227
+    assert sum(c.active + c.parked for c in totals) == 227

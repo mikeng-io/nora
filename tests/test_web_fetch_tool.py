@@ -216,6 +216,101 @@ async def test_a_mobile_instagram_page_link_asks_for_the_www_link():
     assert fake.fetch_calls == []
 
 
+# ---- an X post/profile or LinkedIn person/company link is x_read's/
+# linkedin_read's (design 30, PR 2). Every link below is synthetic.
+
+_X_PAGES = {
+    "post": "https://x.com/synth_user01/status/9000000000000000001",
+    "profile": "https://twitter.com/synth_user02",
+    "mobile_post": "https://mobile.x.com/synth_user03/status/9000000000000000003",
+    "mobile_profile": "https://mobile.twitter.com/synth_user04",
+    "www": "https://www.x.com/synth_user05",
+    "no_scheme": "x.com/synth_user01/status/9000000000000000001",
+}
+
+
+async def test_an_x_link_is_routed_to_x_read_and_never_fetched():
+    """Each X shape the parser accepts — a post, a profile, and every
+    mobile/alternate host `x_links.X_HOSTS` already reads: `nothing_found`, a
+    note naming `x_read`, and no call to the provider. Positive control on
+    the SAME fake: X's shortener, X's own CDN, a reserved X page and a
+    lookalike host still reach it (design 30's non-goals and "Types")."""
+    fake = _FakeSearchProvider()
+    tools = _tools(search=fake)
+    for kind, url in _X_PAGES.items():
+        out = await tools["web_fetch"](url=url)
+        assert out["status"] == "nothing_found", kind
+        assert "x_read" in out["note"], kind
+        assert url not in out["note"], kind
+    assert fake.fetch_calls == []
+
+    still_fetched = (
+        "https://t.co/synthShort1",  # a shortener, not X's own page
+        "https://pbs.twimg.com/media/synthetic.jpg",  # X's own CDN file
+        "https://x.com.evil.example/synth_user01",  # a lookalike host
+        "https://x.com/explore",  # a reserved X page, not an account
+        "https://example.com/a",
+    )
+    for url in still_fetched:
+        assert (await tools["web_fetch"](url=url))["status"] == "ok", url
+    assert fake.fetch_calls == list(still_fetched)
+
+
+_LINKEDIN_PAGES = {
+    "person": "https://www.linkedin.com/in/synth-person-01",
+    "company": "https://linkedin.com/company/synth-company-01",
+    "country_subdomain": "https://hk.linkedin.com/in/synth-person-02",
+    "no_scheme": "linkedin.com/in/synth-person-01",
+}
+
+
+async def test_a_linkedin_person_or_company_link_is_routed_to_linkedin_read():
+    fake = _FakeSearchProvider()
+    tools = _tools(search=fake)
+    for kind, url in _LINKEDIN_PAGES.items():
+        out = await tools["web_fetch"](url=url)
+        assert out["status"] == "nothing_found", kind
+        assert "linkedin_read" in out["note"], kind
+        assert url not in out["note"], kind
+    assert fake.fetch_calls == []
+
+
+async def test_a_mobile_linkedin_link_asks_for_the_www_link():
+    """`m.linkedin.com` is a host the parser's own charset refuses (a country
+    subdomain is exactly two letters, and `m` is one) — the same shape as
+    Instagram's mobile host, so the note asks for the www link instead of
+    naming `linkedin_read`. Nothing is fetched."""
+    fake = _FakeSearchProvider()
+    tools = _tools(search=fake)
+    for url in (
+        "https://m.linkedin.com/in/synth-person-03",
+        "m.linkedin.com/company/synth-company-04",
+    ):
+        out = await tools["web_fetch"](url=url)
+        assert out["status"] == "nothing_found", url
+        assert "www.linkedin.com" in out["note"], url
+    assert fake.fetch_calls == []
+
+
+async def test_a_linkedin_post_and_other_unclaimed_linkedin_urls_still_fetch():
+    """A LinkedIn post is never claimed: `linkedin_read` cannot read one from
+    its link, and a public post page is something `web_fetch` may still be
+    able to read (design 30, "Design" §"Types"). Same treatment as `lnkd.in`
+    and LinkedIn's own CDN host."""
+    fake = _FakeSearchProvider()
+    tools = _tools(search=fake)
+    still_fetched = (
+        "https://www.linkedin.com/posts/synth-person-01_synthetic-activity-9000000000000000001/",
+        "https://m.linkedin.com/posts/synth-person-01_synthetic-activity-9000000000000000002/",
+        "https://lnkd.in/synthShort2",  # a shortener, not LinkedIn's own page
+        "https://media.licdn.com/dms/image/synthetic.jpg",  # LinkedIn's own CDN file
+        "https://example.com/a",
+    )
+    for url in still_fetched:
+        assert (await tools["web_fetch"](url=url))["status"] == "ok", url
+    assert fake.fetch_calls == list(still_fetched)
+
+
 # ---- ADR 0015 §3: how to report a status rides in the result ----------------
 # `web_search` shares this closure's harness (one `search_source`, both verbs),
 # so its notes are pinned here beside `web_fetch`'s.
@@ -253,6 +348,9 @@ async def test_every_non_ok_web_status_carries_a_note():
         "nothing_found/not_a_url": (empty, "example.com/a"),
         "nothing_found/instagram_page": (empty, "https://www.instagram.com/p/SynthPost01/"),
         "nothing_found/instagram_mobile_page": (empty, "https://m.instagram.com/p/SynthPost01/"),
+        "nothing_found/x_page": (empty, "https://x.com/synth_user01/status/9000000000000000001"),
+        "nothing_found/linkedin_page": (empty, "https://www.linkedin.com/in/synth-person-01"),
+        "nothing_found/linkedin_mobile_page": (empty, "https://m.linkedin.com/in/synth-person-03"),
         "nothing_found/identifier": (empty, "https://example.com/?n=%2B85212345678"),
         "nothing_found/coordinate": (empty, "https://example.com/?at=22.31,114.16"),
         "nothing_found/dead": (empty, "https://example.com/a"),

@@ -7,6 +7,20 @@ already did inline. `_instagram_page_kind` and the four historical note
 constants move here, unchanged, from `nora.agent.tools` — but the constants
 are no longer what a redirect returns; see below.
 
+**PR 2** ("Migration" step 2): X and LinkedIn register — two more
+`LinkOwner` rows, `_x_claim` and `_linkedin_claim`, each wrapping its
+network's own `parse_link` (`nora/domain/x_links.py`,
+`nora/domain/linkedin_links.py`) exactly as `_instagram_claim` does. Neither
+`web_fetch` nor `media_fetch` changes: this is the property PR 1's own test
+(`test_a_registered_network_needs_no_fetcher_change`) already proved with a
+fake owner. This is the behaviour change the design node names for this PR:
+a pasted X post or profile link, or a LinkedIn person or company link, is
+now redirected by both fetchers instead of reaching the provider or the
+downloader. `x_read` and `linkedin_read` keep their own hand-written
+cross-network branches (`nora/agent/tools.py`'s `x_read`/`linkedin_read`) —
+replacing those with `owner_of` is step 3 ("The owners use the registry"),
+not built here.
+
 Placement (the node's "Design" §"Placement"): the network parsers stay in
 `nora.domain`, framework-free and shared with the Instagram adapter; this
 module is `nora.agent` because it names TOOLS (`instagram_read`, its `link`
@@ -46,6 +60,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from ..domain.instagram_links import parse_link as _parse_instagram_link
+from ..domain.linkedin_links import parse_link as _parse_linkedin_link
+from ..domain.x_links import parse_link as _parse_x_link
 
 
 def _with_scheme(link: str) -> str:
@@ -215,14 +231,105 @@ def _instagram_claim(text: str) -> LinkClaim | None:
     return None
 
 
-#: Instagram only (PR 1, `design/social-per-network/30-link-owner-registry.md`
-#: "Migration" step 1). X and LinkedIn are steps 2 and 3 of that same
-#: "Migration" section — each is one more row here, never an edit to a
-#: fetcher's body. **Do not add a row for either in this PR.**
+def _x_claim(text: str) -> LinkClaim | None:
+    """X's own recogniser: wraps `nora.domain.x_links.parse_link`
+    (`x_links.py:109`) after `_with_scheme`, exactly as `_instagram_claim`
+    wraps Instagram's. Unlike Instagram, X's OWN host allowlist
+    (`x_links.X_HOSTS`, `x_links.py:34-37`) already accepts
+    `mobile.x.com`/`mobile.twitter.com` and the bare `x.com`/`twitter.com`
+    spellings as fully readable — `x_read` reads every one of them
+    (`tools.py:7480`, same `parse_link` call) — so there is no separate
+    "readable=False" mobile shape here: every claim `parse_link` returns is
+    `readable=True`.
+
+    `t.co` (a distinct host, never in `X_HOSTS`) and `pbs.twimg.com`/
+    `*.twimg.com` (X's own CDN, likewise never in `X_HOSTS`) are excluded
+    the same way Instagram's CDN is: they are not `X_HOSTS` members, so
+    `parse_link` never returns a value for them, not because this function
+    lists them (`tests/unit/test_link_owners.py`'s negative rows pin this;
+    `scripts/mutations/link-owner-registry-pr2.json` mutates this function to
+    special-case them and shows those rows go red).
+    """
+    # Built per call, not as a module-level singleton — same rule as
+    # `_instagram_claim` above.
+    parsed = _parse_x_link(_with_scheme(text))
+    if parsed is None:
+        return None
+    return LinkClaim(network="x", kind=parsed.kind, readable=True)
+
+
+# LinkedIn's own explanation for the one shape it claims but cannot read
+# (`m.linkedin.com`) — the same pattern as `_INSTAGRAM_MOBILE_TEMPLATE`.
+_LINKEDIN_MOBILE_TEMPLATE = (
+    "That is a mobile LinkedIn page link{not_clause}, and it can't be "
+    "{verb} directly. Ask for the www.linkedin.com link to the same "
+    "profile or company."
+)
+
+
+def _linkedin_claim(text: str) -> LinkClaim | None:
+    """LinkedIn's own recogniser: wraps `nora.domain.linkedin_links.
+    parse_link` (`linkedin_links.py:109`) after `_with_scheme`. Two
+    differences from a plain wrap, both required by the design node's own
+    rules (`design/social-per-network/30-link-owner-registry.md`, "Design"
+    §"Types"):
+
+    - **A `post` is never claimed.** `linkedin_read` refuses to open one
+      from its link (`tools.py:7714-7724`: "No backend reads one LinkedIn
+      post by its URL"), and a public LinkedIn post page is something
+      `web_fetch` may still be able to read — claiming it would route a
+      readable page to a tool that says "I can't". Returning `None` here is
+      what lets the fetcher try it as an ordinary page, the same as `lnkd.in`
+      and LinkedIn's own CDN host.
+    - **`m.linkedin.com` is claimed but unreadable**, the same shape as
+      Instagram's `m.instagram.com`: a real subdomain of `linkedin.com` that
+      the parser's own host charset refuses on purpose (`linkedin_links.py`'s
+      `_host_ok`, lines 52-60: a country subdomain is exactly two letters,
+      and `m` is one — the design table's own reading, "m. is one letter, so
+      refused"). Judged on the www spelling of the same path, exactly as
+      `_instagram_page_kind` judges `m.instagram.com` on the www spelling —
+      nothing is read from the rebuilt url beyond whether it parses. A path
+      that would be a `post` even on `www.` stays unclaimed, for the same
+      reason a canonical LinkedIn post is unclaimed.
+    """
+    candidate = _with_scheme(text)
+    parsed = _parse_linkedin_link(candidate)
+    if parsed is not None:
+        if parsed.kind == "post":
+            return None
+        return LinkClaim(network="linkedin", kind=parsed.kind, readable=True)
+    try:
+        parts = urllib.parse.urlsplit(candidate)
+    except ValueError:
+        return None
+    if (parts.hostname or "") != "m.linkedin.com":
+        return None
+    www = urllib.parse.urlunsplit(("https", "www.linkedin.com", parts.path, "", ""))
+    mobile = _parse_linkedin_link(www)
+    if mobile is None or mobile.kind == "post":
+        return None
+    return LinkClaim(
+        network="linkedin", kind="mobile_page", readable=False,
+        unreadable_template=_LINKEDIN_MOBILE_TEMPLATE,
+    )
+
+
+#: Instagram (PR 1), X and LinkedIn (PR 2, `design/social-per-network/
+#: 30-link-owner-registry.md` "Migration" step 2). Step 3 — the owners
+#: consulting the registry for EACH OTHER's links, replacing their own
+#: hand-written cross-network branches — is not built here.
 LINK_OWNERS: tuple[LinkOwner, ...] = (
     LinkOwner(
         network="instagram", tool="instagram_read", param="link",
         label="an Instagram page", claim=_instagram_claim,
+    ),
+    LinkOwner(
+        network="x", tool="x_read", param="link",
+        label="an X link", claim=_x_claim,
+    ),
+    LinkOwner(
+        network="linkedin", tool="linkedin_read", param="link",
+        label="a LinkedIn link", claim=_linkedin_claim,
     ),
 )
 
