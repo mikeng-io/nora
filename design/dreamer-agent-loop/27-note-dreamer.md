@@ -702,6 +702,19 @@ it sits.
 permanent, where holding forever is the wrong answer and `strikes` is the right
 one.
 
+*Reopened 2026-09-25, the other way round (DEC-203).* The reading arrived from a
+BUSY room, not a quiet one: 8 of 13 open notes in the live `friends` unit, anchors
+2 to 17 days past, 183 to 925 messages since each was written (50 to 345 before
+the anchor itself), refused `anchor_not_covered` on every pass. A 40-row window
+cannot predate a note in a room that talks that much, so the reach-back half was
+unsatisfiable, not cautious. Past `ANCHOR_LAPSE_MS` (two days after the anchor)
+only the reach-past half binds. The cost is this section's own second danger,
+readmitted past the lapse: something said before the window is not shown, so an
+answer older than it reads as `expired` rather than `closed`, and a change of plan
+older than it can let `expired` retire a live note. The model is told when its
+window is cut short; each verdict accepted this way is counted
+`nora_note_curator_total{action="lapsed"}`.
+
 **The first version of this check was still wrong, and at the shipped default
 cap.** It measured truncation against the ANCHOR's first instant, on the
 reasoning that unseen traffic mattered only where it lay across the moment.
