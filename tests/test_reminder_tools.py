@@ -333,6 +333,67 @@ async def test_remind_is_unavailable_rather_than_broken_without_a_store():
     assert result["note"]
 
 
+class _WriteFailingStore(FakeReminderStore):
+    async def create(self, reminder: Reminder) -> None:
+        raise ConnectionError("reminder store unreachable")
+
+
+async def test_every_non_ok_status_carries_a_note():
+    """ADR 0015 §3/§6: the description only NAMES `refused`/`unavailable`;
+    what to fix or say is the result's `note`. Every non-ok code path this
+    file's fakes can reach is driven here, so a path that loses its note goes
+    red. (`ok` carries no reporting note: its `note` key is the linked note's
+    title, pinned by `test_a_dreamer_provenance_stamps_the_row_in_code`.)"""
+    later = (T0 + timedelta(days=60)).isoformat()
+    full = FakeReminderStore()
+    await full.create(_row())
+    cases = {
+        "refused/fire_turn": (_tools(reminders=FakeReminderStore(), fire_turn=True), {}),
+        "unavailable/no_store": (_tools(reminders=None), {}),
+        "refused/unmapped": (_tools(reminders=FakeReminderStore(), tagger=None), {}),
+        "refused/proactive_repeat": (
+            _tools(reminders=FakeReminderStore(), tagger=None, dream_adaptor="proactive"),
+            {"repeat": "daily", "times": 3},
+        ),
+        "refused/unparseable": (_tools(reminders=FakeReminderStore()), {"when": "等陣"}),
+        "refused/past": (
+            _tools(reminders=FakeReminderStore()),
+            {"when": (T0 - timedelta(minutes=5)).isoformat()},
+        ),
+        "refused/too_soon": (
+            _tools(reminders=FakeReminderStore()),
+            {"when": (T0 + timedelta(seconds=30)).isoformat()},
+        ),
+        "refused/too_far": (
+            _tools(reminders=FakeReminderStore(), caps=ReminderCaps(max_horizon_days=30)),
+            {"when": later},
+        ),
+        "refused/bad_repeat": (
+            _tools(reminders=FakeReminderStore()), {"repeat": "fortnightly"},
+        ),
+        "refused/bad_bound": (_tools(reminders=FakeReminderStore()), {"times": 3}),
+        "refused/too_often": (
+            _tools(reminders=FakeReminderStore()), {"repeat": "minutely", "every_n": 1},
+        ),
+        "refused/too_many": (
+            _tools(reminders=full, caps=ReminderCaps(max_pending_per_requester=1)), {},
+        ),
+        "unavailable/write": (_tools(reminders=_WriteFailingStore()), {}),
+        "unavailable/notes_off": (
+            _tools(reminders=FakeReminderStore()), {"note": "AI Hackathon dinner plan"},
+        ),
+    }
+    # `notes_off` is shared with the note tools; both are rewritten now, so
+    # nothing is exempt.
+    shared: set[str] = set()
+    for case, (tools, kwargs) in cases.items():
+        result = await tools["remind"](**{"when": SOON, "text": "洗衫", **kwargs})
+        assert result["status"] == case.split("/")[0], (case, result)
+        assert isinstance(result.get("note"), str) and result["note"].strip(), case
+        if case not in shared:
+            assert "—" not in result["note"] and "–" not in result["note"], case
+
+
 # ---- what a written row actually holds ---------------------------------------
 
 async def test_a_created_row_carries_the_requesters_own_sentence_and_this_room():
@@ -507,6 +568,81 @@ async def test_cancel_says_so_when_the_row_already_fired():
     assert (await store.get(done.id)).state is ReminderState.DONE
 
 
+class _ReadAndCancelFailingStore(FakeReminderStore):
+    async def pending_for(self, conversation_id: str):
+        raise ConnectionError("reminder store unreachable")
+
+    async def cancel(self, reminder_id, *, conversation_id: str) -> bool:
+        raise ConnectionError("reminder store unreachable")
+
+
+async def test_every_non_ok_list_and_cancel_status_carries_a_note():
+    """ADR 0015 §3/§6: `list_reminders` and `cancel_reminder` only NAME their
+    statuses; how to report each is the result's `note`. Every non-ok code
+    path is driven, so one that loses its note goes red."""
+    done = FakeReminderStore()
+    fired = _row(state=ReminderState.DONE)
+    await done.create(fired)
+    cases = {
+        "list/unavailable/no_store": _tools(reminders=None)["list_reminders"](),
+        "list/unavailable/read": _tools(
+            reminders=_ReadAndCancelFailingStore())["list_reminders"](),
+        "cancel/unavailable/no_store": _tools(reminders=None)["cancel_reminder"](
+            reminder_id=str(uuid.uuid4())),
+        "cancel/refused/not_an_id": _tools(
+            reminders=FakeReminderStore())["cancel_reminder"](reminder_id="洗衫"),
+        "cancel/refused/no_pending_row": _tools(reminders=done)["cancel_reminder"](
+            reminder_id=str(fired.id)),
+        "cancel/unavailable/write": _tools(
+            reminders=_ReadAndCancelFailingStore())["cancel_reminder"](
+            reminder_id=str(uuid.uuid4())),
+    }
+    for case, call in cases.items():
+        result = await call
+        assert result["status"] == case.split("/")[1], (case, result)
+        assert isinstance(result.get("note"), str) and result["note"].strip(), case
+        assert "\u2014" not in result["note"] and "\u2013" not in result["note"], case
+
+
+async def test_a_list_reminders_ok_note_carries_only_the_rules_its_rows_need():
+    """The reporting rules that left list_reminders' description arrive with
+    the rows they are about: empty is an answer; the rows are the room's; a
+    repeat is a series; an unnamed setter is still real. Each clause appears
+    only when its field does."""
+    empty = await _tools(reminders=FakeReminderStore())["list_reminders"]()
+    assert "real answer" in empty["note"]
+
+    plain_store = FakeReminderStore()
+    await plain_store.create(_row(requester_person_id="tyler"))
+    plain = await _tools(reminders=plain_store)["list_reminders"]()
+    assert "everyone's" in plain["note"]
+    for clause in ("real answer", "series", tools_module._UNKNOWN_OWNER):
+        assert clause not in plain["note"], clause
+
+    series_store = FakeReminderStore()
+    tools = _tools(reminders=series_store)
+    await tools["remind"](when=SOON, text="食藥", repeat="daily", times=3)
+    series = await tools["list_reminders"]()
+    assert "series" in series["note"]
+    assert tools_module._UNKNOWN_OWNER not in series["note"]
+
+    orphan_store = FakeReminderStore()
+    await orphan_store.create(_row(requester_person_id="someone_who_left"))
+    orphan = await _tools(reminders=orphan_store)["list_reminders"]()
+    assert tools_module._UNKNOWN_OWNER in orphan["note"]
+    assert "series" not in orphan["note"]
+    assert "\u2014" not in tools_module._SELF_OWNER
+
+
+async def test_a_cancel_ok_says_how_to_report_it():
+    store = FakeReminderStore()
+    mine = _row()
+    await store.create(mine)
+    result = await _tools(reminders=store)["cancel_reminder"](reminder_id=str(mine.id))
+    assert result["status"] == "ok"
+    assert "whole series" in result["note"] and "whose" in result["note"]
+
+
 # ---- the tool table (DEC-10, DEC-32) -----------------------------------------
 
 def test_none_of_the_three_is_a_terminal_verb():
@@ -668,7 +804,10 @@ async def test_the_week_before_ask_stays_a_one_off():
     )
 
     assert result["status"] == "ok"
-    assert set(result) == {"status", "id", "due_at"}
+    # No series keys: one row, not a recurrence. The reporting `note` (ADR 0015
+    # §3) is the one key every ok carries now.
+    assert set(result) == {"status", "id", "due_at", "note"}
+    assert "limit" not in result["note"]
     row = (await store.pending_for(CONVERSATION))[0]
     assert row.series is None
 
@@ -944,7 +1083,16 @@ async def test_make_artifact_unavailable_when_compute_backend_not_configured():
 
     result = await tools["make_artifact"](task="write a haiku")
 
-    assert result == {"status": "unavailable"}
+    assert result == {"status": "unavailable", "note": tools_module._ARTIFACT_OFF["note"]}
+
+
+async def test_make_artifacts_unavailable_note_is_a_plain_instruction():
+    """ADR 0015 §3: both `unavailable` paths (no backend, nobody to deliver to)
+    carry the same non-empty, dash-free `note`; the exact-dict tests around
+    this one pin that it is present."""
+    note = tools_module._ARTIFACT_OFF["note"]
+    assert isinstance(note, str) and note.strip()
+    assert "—" not in note and "–" not in note
 
 
 async def test_make_artifact_returns_the_result_inline_when_fast():
@@ -986,7 +1134,11 @@ async def test_make_artifact_falls_back_to_still_working_when_slow(monkeypatch):
 
     result = await tools["make_artifact"](task="a long research task")
 
-    assert result == {"status": "ok", "still_working": True}
+    assert result == {
+        "status": "ok", "still_working": True,
+        "note": "It is still being built. Tell them you are working on it "
+                "and that it will follow as a separate message once ready.",
+    }
     assert len(jobs._jobs) == 1  # a durable row was written
     [job] = jobs._jobs.values()
     assert job.task == "a long research task"
@@ -1021,7 +1173,7 @@ async def test_make_artifact_unavailable_when_slow_and_no_tagger(monkeypatch):
 
     result = await tools["make_artifact"](task="a long research task")
 
-    assert result == {"status": "unavailable"}
+    assert result == {"status": "unavailable", "note": tools_module._ARTIFACT_OFF["note"]}
     assert jobs._jobs == {}
     assert backend.launched == []
 
@@ -1384,7 +1536,7 @@ async def test_a_dreamer_provenance_stamps_the_row_in_code():
     )
 
     assert result["status"] == "ok", result
-    assert result["note"] == "AI Hackathon dinner plan"
+    assert result["note_title"] == "AI Hackathon dinner plan"
     (row,) = await store.pending_for(CONVERSATION)
     assert row.kind == "proactive"
     assert row.requester_person_id == "nora"
@@ -1500,3 +1652,17 @@ async def test_list_reminders_names_a_row_nora_set_herself():
 
     assert listing["status"] == "ok"
     assert listing["reminders"][0]["set_by"] == tools_module._SELF_OWNER
+
+
+async def test_a_remind_ok_says_to_confirm_the_moment_and_only_a_real_limit():
+    """ADR 0015 §3: `remind`'s ok reporting rule moved from a SHOULD in the
+    description into the result. The limit clause rides only on a series."""
+    tools = _tools(reminders=FakeReminderStore(), caps=YEAR)
+    once = await tools["remind"](when="2026-10-04T09:00:00+08:00", text="交租")
+    series = await tools["remind"](
+        when="2026-10-04T09:00:00+08:00", text="食藥", repeat="daily", times=3,
+    )
+    assert "Say back the moment" in once["note"] and "limit" not in once["note"]
+    assert "Say back the moment" in series["note"] and "limit" in series["note"]
+    for result in (once, series):
+        assert "\u2014" not in result["note"] and "\u2013" not in result["note"]

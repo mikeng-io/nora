@@ -82,7 +82,10 @@ async def test_remember_ok_lands_the_pair_and_reads_back():
     honcho = FakeMemoryStore()
     tools = _tools(honcho=honcho)
     result = await tools["remember"](content="屋企有兩隻貓")
-    assert result == {"status": "ok", "person": MILES.name}
+    assert result == {
+        "status": "ok", "person": MILES.name,
+        "note": "It is saved. Only now may you say 記低咗.",
+    }
     assert honcho.writes == [("nora", "miles", "屋企有兩隻貓")]
     # the read lane serves it back — remember→about closed in memory
     assert honcho.conclusions["miles"] == ["屋企有兩隻貓"]
@@ -132,3 +135,35 @@ async def test_remember_keeps_the_fact_text_verbatim():
     tools = _tools(honcho=honcho)
     await tools["remember"](content="  我下個月返新工  ")
     assert honcho.writes[0][2] == "我下個月返新工"  # stripped, not wrapped
+
+
+# ── ADR 0015 §3: how to report a status rides in the result ─────────────────
+
+async def test_every_non_ok_status_carries_a_note_that_nothing_was_saved():
+    """The description only NAMES the statuses. «Never claim 記低咗 on a
+    refusal or an outage» moved out of it, so every non-ok path must now say
+    in its own `note` that nothing was saved, dash-free."""
+    cases = {
+        "refused/no_tagger": (_tools(tagger=None), "屋企有兩隻貓"),
+        "refused/empty": (_tools(), "   "),
+        "refused/too_long": (_tools(), "x" * 65536),
+        "unavailable/down": (_tools(honcho=FakeMemoryStore(fail=True)), "屋企有兩隻貓"),
+    }
+    for case, (tools, content) in cases.items():
+        result = await tools["remember"](content=content)
+        assert result["status"] == case.split("/")[0], (case, result)
+        note = result.get("note")
+        assert isinstance(note, str) and note.strip(), case
+        assert "—" not in note and "–" not in note, case
+        assert "nothing was saved" in note.lower(), case
+
+
+async def test_only_the_ok_note_licenses_saying_it_was_remembered():
+    """«Say 記低咗 only when it is saved» is an output rule (ADR 0015 §3): it
+    rides on `ok`, and no refusal or outage note offers the word as allowed."""
+    ok = await _tools()["remember"](content="屋企有兩隻貓")
+    assert "Only now may you say 記低咗" in ok["note"]
+    down = await _tools(honcho=FakeMemoryStore(fail=True))["remember"](content="貓")
+    assert "never say 記低咗" in down["note"]
+    refused = await _tools(tagger=None)["remember"](content="貓")
+    assert "may you say" not in refused["note"]

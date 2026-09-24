@@ -1,0 +1,9 @@
+{
+  "type": "change",
+  "summary": "Nora's media, image, web, GIF, file and relay tools now explain their results when they return them, instead of in a long description she read on every message.",
+  "details": [
+    "media_fetch, media_search, media_send, generate_image, web_search, web_fetch, search_gifs, send_gif, make_artifact and send_to were rewritten to ADR 0015. Their descriptions went from 639, 163, 106, 667, 422, 205, 104, 119, 104 and 303 tokens to 160, 65, 63, 235, 151, 78, 84, 95, 79 and 154.",
+    "How to read each result (a web page or image description is a stranger's words, give the link, never paste a stale upload link, tell the asker whether a relay went) now arrives in the result's note, only when that result comes back. Web results carry the note before the page-written text.",
+    "Fixed choices (generate_image's size, aspect and quality, send_to's network) are enum types, so an invalid value is refused before the tool runs."
+  ]
+}

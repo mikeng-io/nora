@@ -152,6 +152,39 @@ def test_spend_counts_model_calls_once_and_the_turn_apart_from_background():
     assert turn[NORA_INPUT_TOKENS] == 300
 
 
+def test_tool_results_are_read_off_the_tool_spans_in_order():
+    from types import SimpleNamespace
+
+    from evals.backbone import _tool_results
+
+    def span(name, start, message=None):
+        events = [SimpleNamespace(attributes={"message": message})] if message else []
+        return SimpleNamespace(attributes={"gen_ai.tool.name": name},
+                               start_time=start, events=events)
+
+    class _Exporter:
+        def get_finished_spans(self):
+            return [span("send_reply", 3, '[{"text": "ok"}]'),
+                    span("where_is", 1, '[{"text": "{\\"status\\": \\"unavailable\\"}"}]'),
+                    span("now", 2)]
+
+    got = _tool_results(_Exporter())
+    assert [n for n, _ in got] == ["where_is", "now", "send_reply"]
+    assert "unavailable" in got[0][1]
+    assert got[1] == ("now", "")        # absent result recorded as absent
+
+
+def test_the_judge_sees_tool_results_only_for_a_reporting_case():
+    from evals.backbone import _judge_source
+
+    results = (("where_is", '{"status": "unavailable"}'), ("send_reply", "x"))
+    plain = _judge_source(["m1"], results, ())
+    reporting = _judge_source(["m1"], results, ("tool_status_reported",))
+    assert plain == "m1"
+    assert "where_is" in reporting and "unavailable" in reporting
+    assert "send_reply" not in reporting   # plumbing is not a result to report
+
+
 # --- what the call carried (2026-09-24) ---------------------------------------
 # «draw yourself» answered with an empty room is ONE `generate_image` call, the
 # same as the right answer. Routing cannot see the difference; the argument can.

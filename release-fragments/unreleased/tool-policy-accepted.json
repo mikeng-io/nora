@@ -1,0 +1,4 @@
+{
+  "type": "none",
+  "reason": "ADR 0015 is accepted (DEC-200), and ADR 0007's status records which parts it supersedes. Docs only, so nothing a member of a room sees changes."
+}

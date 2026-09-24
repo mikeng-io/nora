@@ -45,12 +45,12 @@ def clamp_chars(text: str, max_chars: int) -> tuple[str, bool]:
 
 UNAVAILABLE_SEARCH: dict[str, Any] = {
     "status": "unavailable",
-    "note": "I couldn't run that search just now. Say so — don't answer as if "
-            "you'd looked it up.",
+    "note": "I couldn't run that search just now. Say so, and don't answer as "
+            "if you'd looked it up.",
 }
 
 UNAVAILABLE_FETCH: dict[str, Any] = {
     "status": "unavailable",
-    "note": "I couldn't open that link just now. Say so — don't answer as if "
-            "you'd read it.",
+    "note": "I couldn't open that link just now. Say so, and don't answer as "
+            "if you'd read it.",
 }

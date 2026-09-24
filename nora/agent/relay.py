@@ -180,7 +180,7 @@ class Relay:
             return self._refuse(
                 "unmapped",
                 "I don't know who you are well enough to pass something on in your "
-                "name. Say you can't — do not send it unattributed.",
+                "name. Say you can't, and do not send it unattributed.",
             )
 
         source = self._policy.conversation(from_platform, from_conversation_id)
@@ -199,7 +199,7 @@ class Relay:
         if _key(platform) == _key(source.platform):
             return self._refuse(
                 "same_room",
-                "That's where we already are — just say it here instead of "
+                "That's where we already are: just say it here instead of "
                 "passing it on.",
             )
 
@@ -315,8 +315,13 @@ class Relay:
             self._count("failed")
             return {
                 "status": "unavailable",
-                "note": "I couldn't get that through. Say it didn't send — do not "
+                "note": "I couldn't get that through. Say it didn't send, and do not "
                         "claim it did.",
             }
         self._count("ok")
-        return {"status": "ok", "room": destination.label}
+        # ADR 0015 §3: `send_to`'s «tell the asker whether it went» rides with
+        # the answer it is about; every refusal above already says what to say.
+        return {
+            "status": "ok", "room": destination.label,
+            "note": "It went. Tell the person here, with send_reply.",
+        }

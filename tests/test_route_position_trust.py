@@ -130,6 +130,10 @@ async def test_a_disclosed_live_position_is_refused_as_a_route_argument_in_an_un
     out = await _call(route, origin=address, destination="Yoho Mall")
     assert out["status"] == "refused"
     assert client.calls == []                       # never reached Google
+    # ADR 0015 §3: what to do instead rides in the refusal (it left the
+    # description): do not retry, report the position without a travel time.
+    assert "Do not retry" in out["note"]
+    assert "—" not in out["note"] and "–" not in out["note"]
 
 
 async def test_a_disclosed_live_position_may_route_in_a_trusted_room():

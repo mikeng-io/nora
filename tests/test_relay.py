@@ -448,3 +448,57 @@ async def test_every_outcome_is_counted_by_name(kwargs, outcome):
     await _send(relay, **kwargs)
 
     assert metrics.get("nora_relay_total", outcome=outcome) == 1.0
+
+
+# ---------------------------------------------------------------------------
+# ADR 0015 §3: what to tell the asker rides in the result
+# ---------------------------------------------------------------------------
+
+_DASHES = ("—", "–")
+
+
+async def test_every_non_ok_relay_outcome_carries_a_note():
+    """`send_to`'s description names its statuses; what to tell the person
+    here is each result's `note`. Every refusal and every unavailable path is
+    driven, so one that loses its note goes red."""
+    dupe = Conversation(
+        platform="signal", ids=frozenset({OTHER_ROOM}), persons=frozenset({"miles_novak"}),
+        label="Friends Overflow", primary_id=OTHER_ROOM, unit="friends",
+    )
+    rooms = (*_policy().conversations, dupe)
+    doubled = Policy(conversations=rooms,
+                     _by_id={(c.platform, cid): c for c in rooms for cid in c.ids})
+    plain = _relay(_policy())[0]
+    cases = {
+        "refused/empty": (plain, {"text": "   "}),
+        "refused/unmapped": (plain, {"requester": None}),
+        "refused/unknown_source": (plain, {"from_conversation_id": "not-a-room"}),
+        "refused/same_room": (plain, {"platform": "discord"}),
+        "refused/unknown_room": (plain, {"platform": "telegram"}),
+        "refused/ambiguous_room": (_relay(doubled)[0], {}),
+        "refused/not_allowed_there": (_relay(_policy(ada_in_discord=True))[0],
+                                      {"requester": ADA}),
+        "refused/egress": (plain, {"text": "call him on +85290000101"}),
+        "unavailable/no_adapter": (
+            Relay(policy=_policy(), speak=None, slots=None, occasion_for=None,
+                  transport=_reader(_policy()).state), {}),
+        "unavailable/transport_down": (
+            _relay(_policy(), reader=_reader(
+                _policy(), signal=_Health("signal", "degraded")))[0], {}),
+        "unavailable/busy": (_relay(_policy(), slots=_FakeSlots(free=False))[0], {}),
+        "unavailable/failed": (_relay(_policy(), fire=_FakeFire(outcome="failed_error"))[0],
+                               {}),
+    }
+    for case, (relay, kw) in cases.items():
+        out = await _send(relay, **kw)
+        assert out["status"] == case.split("/")[0], (case, out)
+        assert isinstance(out.get("note"), str) and out["note"].strip(), case
+        assert not any(d in out["note"] for d in _DASHES), case
+
+
+async def test_a_relay_that_went_tells_her_to_say_so_here():
+    """The description's old «afterwards, tell the person here whether it went»
+    rides with the `ok` it is about."""
+    out = await _send(_relay(_policy())[0])
+    assert out["status"] == "ok" and out["room"] == "Friends"
+    assert "send_reply" in out["note"]

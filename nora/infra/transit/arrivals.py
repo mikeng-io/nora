@@ -353,27 +353,27 @@ def _pick_remark(remarks: Iterable[str]) -> str:
 # said about a route that has never existed is confident, wrong, and reads
 # identically to a true answer — and with a place in play the same collapse has
 # a second axis, which the `_NEAR_*` suffixes keep apart (R-27b).
-_NOTE_OK_BASE = (
-    "These are departures from the START of each direction — a bus reaching a stop "
-    "further along takes longer. `scheduled` true means this came off the "
-    "timetable, not off a bus anybody can see; say so if you quote it."
+_NOTE_OK_LIVE = "These are live times for right now, not for a later bus."
+_NOTE_OK_FROM_START = (
+    " They leave from the START of each direction, so a bus reaches a stop "
+    "further along later than that."
 )
-_NOTE_OK = (
-    _NOTE_OK_BASE +
-    " I do not know which stop anyone is at, so do not name one — but if they "
-    "NAMED a place, call this tool again with it as `near` to get times at that "
-    "stop."
+_NOTE_OK_NO_STOP = (
+    " I do not know which stop anyone is at, so do not name one. If they NAMED a "
+    "place, call again with it as `near` for times at that stop."
 )
 _NOTE_AT_STOP = (
-    "These are the next buses AT the stop named in `near`, one entry per "
-    "direction that calls there. `scheduled` true means this came off the "
-    "timetable, not off a bus anybody can see; say so if you quote it."
+    "These are the next buses AT the stop in `near`, one entry per direction that "
+    "calls there, live for right now."
+)
+_NOTE_SCHEDULED = (
+    " A departure with `scheduled` true came off the timetable, not off a bus "
+    "anybody can see: say so if you quote it."
 )
 _NOTE_STOP_NO_SERVICE = (
-    "That route is real and it does stop at the place named in `near`, but "
-    "nothing is showing there right now — the last buses have most likely gone. "
-    "Say that. Do not say the route does not stop there, and do not invent a "
-    "time."
+    "That route is real and does stop at the place in `near`, but nothing is "
+    "showing there right now; the last buses have most likely gone. Say that, "
+    "and do not say the route skips that stop or invent a time."
 )
 # The place-axis outcomes, appended to whichever base note the route answer
 # earned. Each is a DIFFERENT claim, and «no stop by that name» said about a
@@ -382,40 +382,53 @@ _NOTE_STOP_NO_SERVICE = (
 _NEAR_SUFFIX = {
     "not_on_route": (
         " About the place they named: it is a real stop, but this route does "
-        "not go there — say exactly that, it is a useful answer. Do not say "
-        "the place does not exist."
+        "not go there. Say exactly that; do not say the place does not exist."
     ),
     "not_found": (
         " About the place they named: no bus stop in either operator's data "
         "goes by that name. Say you do not know that stop and ask them to "
-        "check the name — do not guess one."
+        "check the name, without guessing one."
     ),
     "ambiguous": (
         " About the place they named: it matches stops in more than one "
-        "different place — `near.could_be` lists them. Ask which one they "
-        "mean rather than picking."
+        "place, listed in `near.could_be`. Ask which one they mean."
     ),
     "unavailable": (
         " About the place they named: I could not read the stop data just "
-        "now, so I cannot say anything about that stop either way — not even "
-        "whether this route goes there. Say so if it matters."
+        "now, so I cannot say whether this route goes there. Say so if it "
+        "matters."
     ),
 }
 _NOTE_NO_SUCH_ROUTE = (
     "Neither KMB nor MTR lists a route with that number. Say you cannot find that "
-    "route and ask them to check it — do NOT say there are no buses, which is a "
-    "different thing and would be a lie about a route that does not exist."
+    "route and ask them to check it. Do NOT say there are no buses: that is a "
+    "different claim, and false about a route that does not exist."
 )
 _NOTE_NO_SERVICE = (
-    "That route is real, and right now nothing is showing on it — the last buses "
-    "have most likely gone for the night. Say that. Do not say the route does not "
-    "exist, and do not invent a time."
+    "That route is real, and nothing is showing on it right now; the last buses "
+    "have most likely gone for the night. Say that, and do not say the route "
+    "does not exist or invent a time."
 )
 _NOTE_UNAVAILABLE = (
     "I could not reach the bus data just now, so I know nothing about this route "
-    "either way. Say you cannot check — never that there are no buses, and never "
-    "that the route does not exist."
+    "either way. Say you cannot check, never that there are no buses or that "
+    "the route does not exist."
 )
+
+
+def _ok_note(near: PlaceResolution | None, directions: Sequence[dict[str, Any]]) -> str:
+    """How to report an `ok` (ADR 0015 §3), built per field present: the
+    `scheduled` clause only when a quoted departure came off a timetable, the
+    from-the-start clauses only when the times are not at a named stop."""
+    if near is not None and near.status == "ok":
+        note = _NOTE_AT_STOP
+    elif near is None:
+        note = _NOTE_OK_LIVE + _NOTE_OK_FROM_START + _NOTE_OK_NO_STOP
+    else:
+        note = _with_near(_NOTE_OK_LIVE + _NOTE_OK_FROM_START, near)
+    if any(dep.get("scheduled") for d in directions for dep in d.get("departures", ())):
+        note += _NOTE_SCHEDULED
+    return note
 
 
 def describe(
@@ -506,12 +519,7 @@ def describe(
                 rendered["operator"] = answer.operator
             directions.append(rendered)
 
-    if near is None:
-        note = _NOTE_OK
-    elif at_stop:
-        note = _NOTE_AT_STOP
-    else:
-        note = _with_near(_NOTE_OK_BASE, near)
+    note = _ok_note(near, directions[:MAX_DIRECTIONS])
     result: dict[str, Any] = {
         "status": "ok", **echo, "known_route": True,
         "operator": "/".join(a.operator for a in with_service),

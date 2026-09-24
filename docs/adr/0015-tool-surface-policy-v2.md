@@ -1,8 +1,8 @@
 # 0015 — Tool names, descriptions and content: the policy, and which rule is checked how
 
-- **Status:** proposed
+- **Status:** accepted (operator, 2026-09-24)
 - **Date:** 2026-09-24
-- **Supersedes, in part (on acceptance):** [0007](0007-tool-surface-policy.md)
+- **Supersedes, in part:** [0007](0007-tool-surface-policy.md)
   §3.5 (English only, replaced by §3 below), §5 (the length ladder, now a
   declared field with numeric ceilings), and the clause of §3 that forbids a
   name sharing a sibling's token (narrowed in §1 below). 0007 §1, §2 and §4
@@ -12,7 +12,7 @@
 - **Un-parks:** `design/tool-catalogue/03-result-handling.md` (parked
   2026-09-22). The operator reopened it on 2026-09-23 ("research first, then
   design", then "go write the ADR") after the descriptions were measured.
-- **Index:** DEC number taken at merge.
+- **Index:** DEC-200.
 
 ## Context
 
@@ -211,8 +211,8 @@ docstring.) Counts in this ADR are over that extracted text.
   interpretation prose. Its routing and reporting measurements decide two
   things before the rest follow: whether interpretation reads better from the
   result, and whether removing examples costs anything.
-- **Status edit.** 0007's status line is changed to "superseded in part by
-  0015" in the commit that accepts this ADR, not before.
+- **Status edit.** 0007's status line was changed to "superseded in part by
+  0015" in the commit that accepted this ADR.
 
 ### 6. Which rule is checked how
 

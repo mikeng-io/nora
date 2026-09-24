@@ -1,0 +1,9 @@
+{
+  "type": "change",
+  "summary": "Nora's travel, place, parking, weather, clock and arithmetic tools now explain their results when they return them, instead of in a long description she read on every message.",
+  "details": [
+    "transit, route, place_info, saved_places, reverse_geocode, find_parking, parking_status, weather, now and calculate were rewritten to ADR 0015. Their descriptions went from 536, 642, 312, 443, 305, 476, 404, 313, 85 and 346 tokens to 91, 121, 65, 93, 81, 80, 73, 74, 64 and 92.",
+    "How to read each status (say a vacancy's update time, lead with a weather warning, say a split's leftover, never read a coordinate aloud) now arrives in the result's note, only when that status or field comes back.",
+    "route's mode, by and prefer arguments are enum types, so an invalid value is refused before the tool runs."
+  ]
+}
