@@ -195,6 +195,15 @@ class Trajectory:
     #: doctrine calibration, the second is a broken output contract. Empty
     #: string when she genuinely produced nothing.
     unrouted_prose: str = ""
+    #: The run's OWN `Metrics()` instance (R-99, design/social-per-network/
+    #: 30-link-owner-registry.md), for a case whose evidence is a fine-grained
+    #: counter no other `Trajectory` field carries — `nora_guard_vetoes_total
+    #: {rule="R-99"}` fired, or `nora_tool_calls_total{tool=...}` did NOT (the
+    #: tool body never ran). `None` is not a real state this harness produces
+    #: — `run_case` always sets it — but the type stays optional so a case
+    #: assembled by hand elsewhere (`test_the_deterministic_evaluators.py`)
+    #: is not forced to invent one it does not have.
+    metrics: Metrics | None = None
 
 
 @dataclass
@@ -699,4 +708,5 @@ async def run_case(
             silent_failures=silent_failures,
             participation_silence=participation_silence,
             unrouted_prose=(prose_capture.prose[-1] if prose_capture.prose else ""),
+            metrics=metrics,
         )

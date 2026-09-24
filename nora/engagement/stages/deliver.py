@@ -86,6 +86,7 @@ def build(
     reasoning_strip_store: Any = None,
     send_permitted: bool = True,
     lookups: Collection[str] | None = None,
+    param_names: Mapping[str, frozenset[str]] | None = None,
 ) -> DeliveryHandle:
     """Build the pair `invoke` needs.
 
@@ -125,6 +126,13 @@ def build(
     reporting that a lookup found nothing is noise rather than an answer owed.
     The tag path leaves it off deliberately: there she was called, and «I looked
     and there is nothing» is exactly what she owes the person who asked.
+
+    `param_names` arms R-99 (design/social-per-network/30-link-owner-registry.md):
+    each tool's own accepted argument names, from `ToolRegistry.tool_param_
+    names()`. `None`, the default, is the rule OFF — the shape `lookups` takes
+    above, for the same reason: a caller with no `ToolRegistry` in scope (a
+    bench test) gets a guard that cannot check this axis, not one that rejects
+    every call it sees.
     """
     # DEC-89: one carrier per turn, built HERE because this is the only place
     # both users of it are in scope — the `Deliverer` below, and (via the
@@ -160,7 +168,7 @@ def build(
     guard = ReplyGuard(
         conversation_id=conversation_id, budgets=budgets, terminal=terminal,
         deliverer=deliverer, metrics=metrics, forced_first_tool=forced_first_tool,
-        lookups=lookups,
+        lookups=lookups, param_names=param_names,
     )
     tool_call_log = ToolCallLog(
         conversation_id=conversation_id, conversation_type=target.conversation_type,

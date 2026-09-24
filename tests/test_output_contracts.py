@@ -1,7 +1,7 @@
 """ADR 0009 enforcement: the R-27 three-state result is a VALIDATED contract.
 
 ADR 0008 §3 declared the output contract and ADR 0009 amended its vocabulary —
-the three states are the CORE, the eight extensions the live tool surface
+the three states are the CORE, the ten extensions the live tool surface
 already uses are DECLARED, and `load_transcript` keeps its deliberately
 status-free shape. This file is that decision's reader, in three layers:
 
@@ -64,7 +64,7 @@ def test_the_core_is_r27s_three_states() -> None:
 def test_every_declared_extension_is_named_and_documented() -> None:
     """ADR 0009 §1: each extension is a NAMED, documented value — not a hole.
 
-    The eight are pinned by value so one cannot be added in passing, and each
+    The ten are pinned by value so one cannot be added in passing, and each
     one's meaning is asserted non-empty because a mapping whose values drift to
     `""` is a `frozenset` wearing a costume: the documentation is the whole
     reason this is a mapping rather than a set.
@@ -77,6 +77,14 @@ def test_every_declared_extension_is_named_and_documented() -> None:
         # cannot help, because the hold is not about the text — which is the
         # whole reason it needed a word of its own (2026-09-09).
         "held_for_review",
+        # R-99 (design/social-per-network/30-link-owner-registry.md,
+        # 2026-09-25): a call naming an argument the tool does not take.
+        # Deliberately NOT `unavailable` — that stays true of the whole turn
+        # afterwards (conduct.md) and this veto text reaches the debrief/
+        # Standing fold unfiltered — and NOT `refused`, since nothing vetoed
+        # disclosure. This one names a mistake in the CALL, correctable on
+        # the very next turn.
+        "bad_arguments",
     }
     undocumented = sorted(k for k, v in DECLARED_STATUS_EXTENSIONS.items() if not v.strip())
     assert undocumented == [], f"declared with no meaning: {undocumented}"

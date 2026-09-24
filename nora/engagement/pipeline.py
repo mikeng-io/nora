@@ -659,6 +659,7 @@ class EngagementPipeline:
                 conversation_id=msg.conversation_id,
                 budgets=self._tool_registry.budgets(allowed_mcp=allowed_mcp),
                 terminal=self._tool_registry.terminal_tools(), metrics=self._metrics,
+                param_names=self._tool_registry.tool_param_names(),
                 audience=audience_names.TAG,
                 cacheable_tools=self._tool_registry.cacheable_tools(),
                 tool_call_log_store=self._tool_call_log_store,
