@@ -2361,6 +2361,21 @@ STANDING_REVISION = sa.Table(
     # say which stretch a past fold had actually read.
     sa.Column("consumed_verdict_tag", sa.Text, nullable=True),
     sa.Column("last_folded_row_id", sa.BigInteger, nullable=True),
+    # 2026-09-25 (design/dreamer-agent-loop/26-standing.md, dated section):
+    # which writer produced this row. Every revision before this column
+    # existed was a fold — `SqlStandingStore.write` had exactly one caller
+    # shape — so `'fold'` is both the default for new rows AND the correct
+    # backfill for every row that predates the column, not a guess standing
+    # in for missing provenance. `'operator'` is written by the one other
+    # path this store now offers: a manual edit outside the fold (an
+    # operator-approved purge, 2026-09-24, went through `write` with no way
+    # to tell a manual edit from a fold afterward). A CHECK rather than a
+    # Postgres ENUM — the least invasive of the two for a two-value column
+    # with no other consumer, and consistent with every other closed-set
+    # column on this schema (`conversation_type`, `kind`, `state`, ...).
+    sa.Column(
+        "source", sa.Text, nullable=False, server_default=sa.text("'fold'")
+    ),
     # The SAME ceiling the head carries, not a looser one: a revision holds a
     # value the head held, so a body this table would accept and `standing`
     # would refuse is a history recording a position that could never have been
@@ -2372,6 +2387,10 @@ STANDING_REVISION = sa.Table(
     sa.CheckConstraint(
         "fold_count >= 0",
         name="standing_revision_fold_count_is_not_negative_check",
+    ),
+    sa.CheckConstraint(
+        "source IN ('fold', 'operator')",
+        name="standing_revision_source_is_fold_or_operator_check",
     ),
 )
 

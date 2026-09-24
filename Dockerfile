@@ -24,7 +24,7 @@ WORKDIR /app
 COPY pyproject.toml uv.lock ./
 COPY nora/ ./nora/
 COPY evals/ ./evals/
-COPY scripts/check_version_stamp.py ./scripts/
+COPY scripts/check_version_stamp.py scripts/standing_edit.py ./scripts/
 COPY config.example.toml identity.example.toml alembic.ini ./
 
 # The version Nora reports is baked HERE and nowhere else. `nora/version.json`

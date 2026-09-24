@@ -1,0 +1,16 @@
+{
+  "type": "feature",
+  "summary": "Standing's history can now tell a fold apart from an operator's manual edit, and an operator has a real entry point for making one.",
+  "details": [
+    "`standing_revision` gains a `source` column, `'fold'` or `'operator'`, CHECK-constrained and defaulting to `'fold'`. Every row before this column existed was written by the fold path, so `'fold'` is also the correct backfill for the whole table, not a guess standing in for provenance nobody recorded.",
+    "`SqlStandingStore.write` — the fold's own upsert — is unchanged in shape and keeps writing `'fold'` for all three of its callers (the tag-path debrief, the event-path rollup, and the eval sandbox's seeded prior). A new method, `write_if_unchanged`, is the only path that writes `'operator'`: it refuses (writes nothing) unless the row is exactly what was last read, so a fold landing between an operator's read and their write is never silently overwritten by a stale edit; it also now raises if the caller tries to move the room's key, fold count or watermark, which the compare-and-set alone did not prevent.",
+    "`scripts/standing_edit.py` is the operator entry point, baked into the deploy image. It previews by default — a unified diff, nothing written — and only writes under `--apply`; it refuses a body over `[standing] max_chars` (the same cap the fold itself is held to), not just the database's much larger hard ceiling; and it reads the new body from stdin with `--body-file -`, so the operator never has to get a body file onto the container's filesystem.",
+    "After a successful `--apply` write, the script re-reads the head a few seconds later and warns if it has moved again — the one case this cannot prevent (a fold's write has no compare-and-set at all), only narrow the window on.",
+    "This closes a real gap: an operator-approved manual purge on 2026-09-24 edited two rows through the ordinary fold write, and the history recorded both as folds with no way to tell them apart from the model's own work afterward."
+  ],
+  "limitations": [
+    "The two rows edited on 2026-09-24, before this column existed, still read back as `'fold'` — the backfill is correct for what the database can know, not a correction of that specific history.",
+    "A fold can still silently overwrite an operator's edit: a fold reads the prior, calls the model, then writes with no compare-and-set, so an edit landing between a fold's read and its write is lost with nothing reporting it beyond the script's own best-effort recheck a few seconds later. Closing this would mean giving the fold a retry path it does not have and was never designed to need.",
+    "No CLI subcommand under `nora`; the read-only control plane (`nora.app.cli`) is architecturally read-only by design, and this write does not belong there. `scripts/standing_edit.py` is a documented, argument-driven script, not an interactive tool."
+  ]
+}
