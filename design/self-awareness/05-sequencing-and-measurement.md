@@ -164,7 +164,9 @@ overturn:
 - *`<presence>` unnecessary:* the before arm does not pass the rows the
   block exists for. Without it she denies networks and handles she has.
   But this falsifier is stated against `room_list` in the catalogue, which
-  is step 4 and not built, so it stays open.
+  is step 4 and not built, so it stays open. *(Corrected 2026-09-24:
+  `room_list` was built and live, #432. See the re-judged section below and
+  `07-room-tools-plan.md`.)*
 
 **What would move this.** Re-judge the 28 saved replies with a judge bound
 the prompt size can meet (the replies and facts are in the run dumps on the
@@ -218,18 +220,26 @@ predate the draw. Read these rows as correlated draws, not as n = 3
 independent ones. The presence-axis separation above does not depend on
 them.
 
-**Row 3 does not separate the arms.** Both pass 3/3, graded on the outcome.
-These replies predate the relay's mechanical refusal: `send_to` was
-attempted in every draw of both arms, and it failed because the sandbox
-wires no Discord adapter. The before arm had no transport state at all and
-still said «send 唔到» (couldn't send). After named the cause. Re-drawing
-row 3 on a build with the refusal is what would test it.
+**Row 3 does not separate the arms, and it needs a re-draw.** Both pass
+3/3, graded on the outcome. These replies predate #450, the relay's
+mechanical refusal. `send_to` was attempted in every draw of both arms, and
+it failed because the sandbox wires no Discord adapter. The before arm had
+no transport state at all and still said «send 唔到» (couldn't send). After
+named the cause. Testing the refusal itself needs row 3 re-drawn (her turn,
+not only the judge) on a build that has #450, where the refusal, not the
+missing adapter, is what stops the send.
 
 **Falsifiers.**
 
 - *She recites the room list unprompted:* **did not fire.** The presence
   axis passed on all 6 negative-case draws.
-- *`<presence>` is unnecessary:* **did not fire on this evidence.** Without
-  the block she fails «which groups» and every handle and network row. The
-  falsifier is stated against `room_list`, so it closes only when that tool
-  can be tried without the block.
+- *`<presence>` is unnecessary:* **did not fire.** `room_list` is built and
+  live (#432, with activity and speaker counts since #463), and its routing
+  run is in `07-room-tools-plan.md` §«Routing, measured 2026-09-24».
+  - With the tool available, «which groups» was answered from `<presence>`
+    without a call on 2 of 5 draws.
+  - The operator ruled that the intended behaviour: `<presence>` carries
+    which rooms exist, and `room_list` carries what only it has.
+  - So the tool does not make the block redundant for this question.
+  - And here, without the block, she fails «which groups» and every handle
+    and network row.
