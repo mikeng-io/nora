@@ -197,6 +197,9 @@ class FakeHoncho:
                     workspace, created_at=datetime.now(UTC).isoformat(),
                     metadata=(body or {}).get("metadata") or {},
                 )
+                self.workspaces[workspace]["configuration"] = dict(
+                    (body or {}).get("configuration") or {}
+                )
             return web.json_response(self.workspaces[workspace])
         if parts[2:] == ["list"] and method == "POST":
             self.requests.append((method, path, None))

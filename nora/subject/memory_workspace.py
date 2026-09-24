@@ -73,6 +73,26 @@ DRAW_MARKER = "nora_eval_draw"
 #: LIVE draw is never swept.
 STALE_AFTER = timedelta(hours=6)
 
+#: Honcho's background work turned OFF for a draw workspace, at create time
+#: (`WorkspaceCreate.configuration`, Honcho 3.1.2's OpenAPI).
+#:
+#: A draw can never read what the deriver would derive from it: derivation
+#: lags minutes to tens of minutes behind a feed, and a draw lives for one
+#: turn. So every derivation task a draw enqueued was pure load on the one
+#: Honcho that also derives production's memory, and it queued the draw's
+#: own delete behind it (measured 2026-09-24: deletes accepted at once, carried
+#: out ~40 minutes later, behind a 43-task backlog).
+#:
+#: `reasoning.enabled = false` stops the representation tasks, and with them
+#: peer cards and dreams (the schema says both are ignored when reasoning is
+#: off). `summary.enabled = false` stops the session summaries, which are a
+#: separate queue task. What a case SEEDS is unaffected: `conclude` writes a
+#: conclusion directly, and nothing derives it.
+DRAW_CONFIGURATION: dict[str, Any] = {
+    "reasoning": {"enabled": False},
+    "summary": {"enabled": False},
+}
+
 #: Honcho's own id rule (`WorkspaceCreate.id`), so a name is refused here
 #: rather than by a 422 at the start of every draw.
 _ID_OK = re.compile(r"^[a-zA-Z0-9_-]+$")
@@ -184,7 +204,11 @@ class HonchoWorkspaces:
         refuse_unless_draw_workspace(workspace, self.deployment)
         try:
             status, body = await self._call(
-                "POST", "/v3/workspaces", body={"id": workspace, "metadata": metadata},
+                "POST", "/v3/workspaces",
+                body={
+                    "id": workspace, "metadata": metadata,
+                    "configuration": DRAW_CONFIGURATION,
+                },
             )
         except (aiohttp.ClientError, TimeoutError) as exc:
             raise DrawWorkspaceError(f"honcho unreachable creating {workspace!r}: {exc}") from exc

@@ -426,6 +426,14 @@ draw of the very case being probed.
 - it is deleted when the draw ends, raising or not, after the subject is
   closed and its background work cancelled. Sessions first, because Honcho
   answers 409 to a workspace delete while a session is active;
+- it is created with Honcho's derivation OFF (`configuration.reasoning.enabled
+  = false`, which also stops peer cards and dreams, and `summary.enabled =
+  false`). A draw can never read what the deriver would derive from it, since
+  derivation lags minutes to tens of minutes behind a feed, so those tasks were
+  pure load on the Honcho production's memory runs on. Read back live
+  2026-09-24: 13 feeds into such a workspace enqueued zero work units, and a
+  seeded conclusion (`conclude`, written directly) still came back through
+  `representation`;
 - `python -m evals` sweeps, at start, any marked draw workspace older than six
   hours: what a killed run left behind;
 - nothing creates, deletes or composes against a workspace outside
@@ -443,8 +451,10 @@ a composed subject against a fake shaped after Honcho's OpenAPI.
 rendered `self_card`, `peer_card` and `peer_history` EMPTY, draw 3 included.
 Create cost 9–12 ms per draw and the delete call 20–46 ms: noise beside a
 turn. The delete is ACCEPTED at once and carried out by Honcho's own queue,
-behind the deriver's backlog, so a workspace can stay listed for minutes after
-its draw; nothing reads it in that time.
+behind the deriver's backlog, so a workspace can stay listed for TENS of
+minutes after its draw: measured ~40 minutes on 2026-09-24 (accepted
+13:53–13:54Z, gone 14:30–14:34Z, behind a 43-task production backlog, on a
+build that still let draws derive). Nothing reads it in that time.
 
 **Numbers from before and after this change are NOT comparable** for any
 corpus whose entry point reads memory: every `tag` corpus (trigger,
@@ -454,12 +464,15 @@ and `proactive_act` through the fire path's cards, and `dreamer` corpora
 wherever a pass calls a memory verb. Re-baseline on a build that has this
 before setting an arm against it.
 
-**Consequence for §3/§4, not decided here.** §4 wants one rebuilt workspace per
-anchor, shared by every case at it. A draw WRITES into its workspace, so a
-shared replayed workspace would bring the correlation back. When replay is
-built it has to land in each draw's own workspace (a replay per draw, or a
-copy, which Honcho's API does not offer), and §4's cost argument has to be
-re-made on that basis.
+**OPEN, not decided here: §4's replay workspace per anchor.** §4 wants one
+rebuilt workspace per anchor, shared by every case at it. A draw WRITES into
+its workspace, so a shared replayed workspace would bring #462's correlation
+back. When replay is built it has to land in each draw's own workspace (a
+replay per draw, or a copy, which Honcho's API does not offer), and §4's cost
+argument has to be re-made on that basis. Replaying into a draw workspace
+also needs derivation ON for the replay's own feed, so the derivation-off
+setting above is right for today's empty workspaces and has to be revisited
+with it.
 
 ### Where the suite runs — DECIDED 2026-09-21: on the deploy host
 

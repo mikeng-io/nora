@@ -149,6 +149,16 @@ async def test_each_draw_gets_its_own_workspace_created_empty_and_deleted(
         assert state[NORA_MEMORY_WORKSPACE] == workspace
 
 
+async def test_a_draw_workspace_is_created_with_derivation_off(honcho) -> None:
+    """A draw can never read what the deriver derives from it (derivation
+    lags tens of minutes), so the create asks Honcho for no reasoning and no
+    summaries: no queue load on the Honcho production's memory runs on."""
+    admin = HonchoWorkspaces(honcho.url, deployment=_DEPLOYMENT)
+    async with draw_workspace("derive-probe#1", run_id="run-d", admin=admin) as draw:
+        configuration = honcho.workspaces[draw.id]["configuration"]
+    assert configuration == {"reasoning": {"enabled": False}, "summary": {"enabled": False}}
+
+
 async def test_a_draw_that_raises_still_deletes_its_workspace(honcho, monkeypatch) -> None:
     """The draw fed a message (so its workspace holds an ACTIVE session,
     which Honcho answers 409 to on a workspace delete) and then raised. The
