@@ -78,6 +78,9 @@ from ..domain.gatherings import (
 )
 from ..domain.instagram_links import is_handle as _is_instagram_handle
 from ..domain.instagram_links import parse_link as _parse_instagram_link
+from ..domain.linkedin_links import is_handle as _is_linkedin_handle
+from ..domain.linkedin_links import is_linkedin_host as _is_linkedin_host
+from ..domain.linkedin_links import parse_link as _parse_linkedin_link
 from ..domain.media import (
     COVER_ROLE,
     HANDLE_CHARS,
@@ -89,9 +92,6 @@ from ..domain.media import (
     sniff_media_type,
 )
 from ..domain.media import LABELS as MEDIA_LABELS
-from ..domain.linkedin_links import is_handle as _is_linkedin_handle
-from ..domain.linkedin_links import is_linkedin_host as _is_linkedin_host
-from ..domain.linkedin_links import parse_link as _parse_linkedin_link
 from ..domain.media_join import MediaJoin
 from ..domain.models import PersonRef, TranscriptRow, WeatherObservation
 from ..domain.notes import (
