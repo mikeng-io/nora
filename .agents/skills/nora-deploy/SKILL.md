@@ -77,18 +77,16 @@ echo "UP_RC=$UP_RC"; [ "$UP_RC" = 0 ] || exit 7
 python3 scripts/verify-deploy.py; VD_RC=$?
 echo "VD_RC=$VD_RC"; [ "$VD_RC" = 0 ] || exit "$VD_RC"
 H=$(git rev-parse --short HEAD); docker tag nora:latest "nora:sha-$H" || { echo TAG_FAILED; exit 8; }
-mkdir -p ~/nora-backups && echo "$(date -Is) $H $(docker image inspect -f '{{.Id}}' nora:latest)" >> ~/nora-backups/deploys.log
+mkdir -p ~/nora-backups && echo "$(date -Is) $H $(docker image inspect -f '{{.Id}}' nora:latest)" \
+  >> ~/nora-backups/deploys.log || { echo LOG_FAILED; exit 13; }
 tail -n 2 ~/nora-backups/deploys.log
 EOF
 DEPLOY_RC=$?; echo "DEPLOY_RC=$DEPLOY_RC"; cat deploy.log
 ```
 
-Check: `DEPLOY_RC=0`, the log shows `BUILD_RC=0`, `UP_RC=0`, `VD_RC=0`,
-`verify-deploy.py` lists every `nora:latest` container as `ok`, and the last
-line of `~/nora-backups/deploys.log` names this commit. Only a VERIFIED deploy
-is tagged `nora:sha-<sha>` and logged, so a rerun after a failure never records
-a bad image as a rollback target (step 6). Keep the last few tags; prune older
-ones with `docker rmi nora:sha-<old>`. On failure:
+Check: `DEPLOY_RC=0`; `BUILD_RC=0 UP_RC=0 VD_RC=0`; every `nora:latest`
+container `ok`; the log's last line names this commit. Only a VERIFIED deploy
+is tagged and logged, so a failed one is never a rollback target (step 6). On failure:
 
 - `LOCK_TIMEOUT` / `UNLOCKED_DEPLOY_RUNNING`: another deploy is live. Wait,
   then rerun; never kill it.
@@ -148,14 +146,15 @@ python3 scripts/verify-deploy.py; VD_RC=$?
 echo "UP_RC=$UP_RC VD_RC=$VD_RC"
 if [ "$UP_RC" != 0 ] || [ "$VD_RC" != 0 ]; then
   cp "$B" config.toml && docker compose up -d --force-recreate nora presence analytics
-  echo "RESTORED $B"; exit 10
+  echo "RESTORED $B UP_RC=$?"; python3 scripts/verify-deploy.py; echo "RESTORE_VD_RC=$?"; exit 10
 fi
 docker compose exec -T nora /app/.venv/bin/python -c 'from pathlib import Path; from nora.config import load; print(load(Path("config.toml"), require_secrets=False).<section>.<key>)'
 EOF
 ```
 
 Check: the diff is one line, `VAL_RC=0`, `UP_RC=0 VD_RC=0`, no `RESTORED`,
-and the printed value is the new one. Add `stt voice-wake` to both recreates
+and the printed value is the new one. After a `RESTORED`, production is healthy
+only if `RESTORE_VD_RC=0`. Add `stt voice-wake` to both recreates
 for a `[speech.*]` key. Backups go to `~/nora-backups/`, never into the repo.
 
 - Never `sed -i` the live file: it writes a new inode, a running container
@@ -169,7 +168,9 @@ for a `[speech.*]` key. Backups go to `~/nora-backups/`, never into the repo.
 ## 6. Rollback
 
 Step 3 logs every verified deploy to `~/nora-backups/deploys.log` and tags its
-image `nora:sha-<sha>`; roll back to the line before the current one. The image
+image `nora:sha-<sha>`. The target is the newest logged image that is not
+running and was never rolled back FROM (by image id, in two passes, not by
+line: after one deploy, the line before is the running image). The image
 runs `alembic upgrade head` at start, so an older image cannot run against a
 schema a newer deploy migrated: the script refuses and you roll FORWARD with a
 revert PR (nora-land, then step 3).
@@ -179,12 +180,14 @@ ssh norty bash -s > rollback.log 2>&1 <<'EOF'
 set -u
 exec 9>/tmp/nora-deploy.lock; flock -w 900 9 || { echo LOCK_TIMEOUT; exit 75; }
 cd ~/workspace/nora || exit 1
-PREV=$(tail -n 2 ~/nora-backups/deploys.log | head -n 1 | cut -d' ' -f2)
+CUR=$(docker inspect -f '{{.Image}}' nora) || exit 1
+L=~/nora-backups/deploys.log; PREV=$(awk -v c="$CUR" 'NR==FNR {if ($2=="ROLLBACK") bad[$3]=1; next} $2!="ROLLBACK" && $3!=c && !($3 in bad) {p=$2} END {print p}' "$L" "$L" 2>/dev/null)
 [ -n "$PREV" ] && docker image inspect "nora:sha-$PREV" >/dev/null || { echo "NO_PREVIOUS"; exit 11; }
 MIG=$(git diff --name-only "$PREV" HEAD -- nora/infra/sql/migrations/versions)
 [ -z "$MIG" ] || { echo "MIGRATION_SINCE $PREV: roll forward"; echo "$MIG"; exit 12; }
 docker tag "nora:sha-$PREV" nora:latest && docker compose up -d --force-recreate nora presence analytics; echo "UP_RC=$?"
 python3 scripts/verify-deploy.py; echo "VD_RC=$?"
+echo "$(date -Is) ROLLBACK $CUR -> $PREV" >> ~/nora-backups/deploys.log
 EOF
 ```
 

@@ -11,17 +11,12 @@ the log or the read-back, never an exit code alone. Go end to end; stop only
 for a blocker or a fact only the operator holds (a decision is not input).
 
 ```bash
-SLUG=<kebab-slug>            # names the change, not a ticket
-WT=<path-for-new-worktree>   # outside every existing checkout
+SLUG=<kebab-slug>; WT=<new-worktree-path>        # WT outside every checkout
 LOG=${TMPDIR:-/tmp}/land-$SLUG; mkdir -p "$LOG"   # fixed, OUTSIDE the worktree
 ```
 
-Each shell call starts fresh in some tools (Claude Code's Bash among them):
-re-set `SLUG` and `LOG` at the top of every call, and carry results between
-calls in files (`$LOG/gate.rc`), never in variables.
-
-```bash
-```
+Shell state may not survive between calls (Claude Code's Bash): re-set `SLUG`
+and `LOG` in every call; carry results in files (`$LOG/gate.rc`), not variables.
 
 ## 1. Start: a new worktree on a new branch
 
@@ -89,6 +84,7 @@ once before the merge anyway (2026-09-22: a docs-only merge reddened master).
 ```bash
 python3 scripts/check_commit_subject.py "$LOG/msg.txt"; echo "SUBJECT_RC=$?"
 . "$LOG/gate.rc"; if [ "${GATE_RC:-1}" = 0 ]; then git add <paths> && git commit -F "$LOG/msg.txt"; fi
+rm -f "$LOG/gate.rc"      # a gate result measures one tree; the next commit needs a new one
 git log -1 --format='%h %s'
 ```
 
@@ -164,7 +160,7 @@ gh pr merge <N> --merge --match-head-commit "$(git rev-parse HEAD)" \
 ```
 
 - Without `--subject`, `gh pr merge --merge` writes GitHub's default `Merge pull
-  request #N from ...` (98 of the 136 PRs merged #321 to #478). No hook sees a server-side
+  request #N from ...` (99 of the 137 PRs merged #321 to #478). No hook sees a server-side
   merge: the subject is `merge: ` plus the arc, the body says what the branch
   set out to fix, what was measured, what shipped.
 - `--merge` only, never `--squash` or `--rebase`.

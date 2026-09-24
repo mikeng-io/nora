@@ -90,6 +90,7 @@ _CHECKED_PREFIXES = (
     "release-fragments/",
     "scripts/",
     ".github/",
+    ".agents/",
 )
 #
 # `config.example.toml` is deliberately NOT in this set even though it is a

@@ -31,9 +31,9 @@ What they found, with the numbers that decided this:
   tool-writing, fragment and numbering procedures that each also lived in a
   second document. `docs/eval-sop.md` taught about 100 lines of commands for
   a harness its own header says no longer exists.
-- **A rule with no mechanism at the moment of action drifts.** Of the 136
-  PRs merged from #321 to #478 (2026-09-17 to 09-24), 98 landed with GitHub's
-  default merge message (the audit read each PR's `mergeCommit`) against CONTRIBUTING.md's
+- **A rule with no mechanism at the moment of action drifts.** Of the 137
+  PRs merged from #321 to #478 (2026-09-17 to 09-24, read again that evening),
+  99 landed with GitHub's default merge message (the audit read each PR's `mergeCommit`) against CONTRIBUTING.md's
   rule, because `gh pr merge --merge` writes the default unless `--subject`
   is given. The retired `Summary` and `Test plan` headings still appeared in
   11 PRs each. The commit-subject rule, which a hook enforces, held on 598 of

@@ -114,7 +114,7 @@ squash, never rebase-merge.
 
 **`gh pr merge --merge` alone writes GitHub's default message**, and the
 commit-msg hook never sees a merge made on GitHub, so nothing stops it. That is
-how 98 of the 136 PRs merged from #321 to #478 (2026-09-17 to 09-24) landed
+how 99 of the 137 PRs merged from #321 to #478 (2026-09-17 to 09-24) landed
 with the default
 against the rule below. Give the subject and body on the command line:
 
