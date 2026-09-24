@@ -109,6 +109,20 @@ _NOT_A_LINE = {
         "issue #239 — it is that every body reaching HERE was joined by a row "
         "renderer in this same module."
     ),
+    (
+        "nora/language/note_merge.py", "_note_block", "escape(body)",
+    ): (
+        "`<open_note>`: one note's body, whole, inside its own element — a "
+        "body is prose that runs to paragraphs, and `merged_body` depends on "
+        "its blank lines. Nothing line-oriented sits beside it for a newline "
+        "to forge a row of."
+    ),
+    (
+        "nora/language/note_merge.py", "_note_block", "escape(body[:excerpt])",
+    ): (
+        "The same body cut to its first `excerpt` characters, for the same "
+        "reason as the whole one above."
+    ),
 }
 
 

@@ -377,7 +377,8 @@ def main() -> int:
     )
     ap.add_argument(
         "--deployment-config",
-        default=os.environ.get("NORA_CONFIG", "/home/norty/workspace/nora/config.toml"),
+        default=os.environ.get("NORA_CONFIG")
+        or str(Path.home() / "workspace" / "nora" / "config.toml"),
         help="the DEPLOYMENT's config.toml. Every subject is composed from it "
              "(rebuilt into config.evaluation.toml per run), because the "
              "example ships with almost everything off and running against it "

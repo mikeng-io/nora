@@ -50,6 +50,7 @@ from nora.domain.notes import (
     Note,
     NoteCreateCandidate,
     NoteCreationProposal,
+    NoteMergeDecision,
     NoteRevision,
     NoteRevisionProposal,
     NoteSupersedeReason,
@@ -63,6 +64,7 @@ from nora.infra.sql.notes import SqlNoteStore
 from nora.infra.sql.schema import (
     NOTE,
     NOTE_CANDIDATE,
+    NOTE_MERGE_DECISION,
     NOTE_REVISION,
 )
 from nora.testing import InMemoryNoteStore
@@ -135,6 +137,10 @@ class _Harness:
     #: decision) is invisible through that int, the same reason
     #: `read_candidate` exists for the miss cache above.
     read_create_candidate: Callable[[str], Awaitable[NoteCreateCandidate | None]]
+    #: Every `note_merge_decision` row of a unit, oldest first. The store has
+    #: an append and no read — the operator reads the table — so, like the
+    #: two above, the suite reaches each implementation its own way.
+    read_merge_decisions: Callable[[str], Awaitable[list[NoteMergeDecision]]]
 
 
 @pytest.fixture(scope="module")
@@ -207,8 +213,12 @@ async def notes(request: Any) -> AsyncIterator[_Harness]:
         ) -> NoteCreateCandidate | None:
             return memory.create_candidates.get(candidate_id)
 
+        async def _read_merge_decisions_mem(unit: str) -> list[NoteMergeDecision]:
+            return [d for d in memory.merge_decisions if d.unit == unit]
+
         yield _Harness(
             memory, _retire_mem, _candidate_mem, _read_create_candidate_mem,
+            _read_merge_decisions_mem,
         )
         return
 
@@ -264,10 +274,28 @@ async def notes(request: Any) -> AsyncIterator[_Harness]:
             last_seen_at=row.last_seen_at,
         )
 
+    async def _read_merge_decisions_sql(unit: str) -> list[NoteMergeDecision]:
+        async with engine.connect() as conn:
+            rows = (await conn.execute(
+                sa.select(NOTE_MERGE_DECISION)
+                .where(NOTE_MERGE_DECISION.c.unit == unit)
+                .order_by(NOTE_MERGE_DECISION.c.ts, NOTE_MERGE_DECISION.c.id)
+            )).all()
+        return [
+            NoteMergeDecision(
+                id=r.id, unit=r.unit, mode=r.mode, outcome=r.outcome,
+                survivor_id=r.survivor_id, duplicate_id=r.duplicate_id,
+                survivor_title=r.survivor_title,
+                duplicate_title=r.duplicate_title, reason=r.reason,
+                established_by=r.established_by, ts=r.ts,
+            )
+            for r in rows
+        ]
+
     try:
         yield _Harness(
             SqlNoteStore(engine), _retire_sql, _candidate_sql,
-            _read_create_candidate_sql,
+            _read_create_candidate_sql, _read_merge_decisions_sql,
         )
     finally:
         # Truncate rather than rebuild: same isolation guarantee this suite
@@ -277,7 +305,7 @@ async def notes(request: Any) -> AsyncIterator[_Harness]:
         async with engine.begin() as conn:
             await conn.execute(sa.text(
                 "truncate note, note_revision, note_entity, note_candidate, "
-                "fact_entity cascade"
+                "note_merge_decision, fact_entity cascade"
             ))
         await engine.dispose()
 
@@ -2158,3 +2186,209 @@ async def test_a_merged_title_forwards_and_an_ambiguous_one_does_not(
     assert await notes.store.merged_successor_by_title(
         unit=WS, title="星期六 26 號飯局細節未定") is None
 
+
+
+# --- merge_into and the head-checked retire (design 41 §7.6, guards 2 and 3) --
+
+
+async def _fold(
+    notes: _Harness, *, survivor: Note, duplicate: Note,
+    survivor_head: str | None = None, duplicate_head: str | None = None,
+    body: str = "folded body", anchor_date: int | None = 20260927,
+    reset_strikes: bool = True, now_ms: int = NOW + 100,
+) -> NoteRevision:
+    return await notes.store.merge_into(
+        unit=WS, survivor_id=survivor.id,
+        survivor_head=survivor_head or survivor.head_revision_id,
+        duplicate_id=duplicate.id,
+        duplicate_head=duplicate_head or duplicate.head_revision_id,
+        body=body, anchor_date=anchor_date, revisit_at=NOW + 5_000,
+        reset_strikes=reset_strikes,
+        established_by="dream:note-merge:unit-alpha:1", now_ms=now_ms,
+    )
+
+
+async def test_merge_into_folds_the_duplicate_into_the_survivor(
+    notes: _Harness,
+) -> None:
+    """Guard 2's happy path: the survivor gains one appended revision and the
+    fold's anchor and wake; the duplicate is retired `retired-merged` naming
+    the survivor, keeps its own chain, and forwards to it."""
+    survivor = await _make(notes.store, title="Saturday dinner",
+                           anchor_date=20260923)
+    duplicate = await _make(notes.store, title="Neway booking",
+                            anchor_date=20260927)
+
+    rev = await _fold(notes, survivor=survivor, duplicate=duplicate)
+
+    got = await notes.store.read(unit=WS, note_id=survivor.id)
+    assert got is not None
+    note, head = got
+    assert head.id == rev.id and head.body == "folded body"
+    assert head.parent_revision_id == survivor.head_revision_id
+    assert note.anchor_date == 20260927
+    assert note.revisit_at == NOW + 5_000
+    assert note.retired_at is None
+    gone = await notes.store.read(unit=WS, note_id=duplicate.id)
+    assert gone is not None
+    assert gone[0].retire_reason == NoteSupersedeReason.RETIRED_MERGED
+    assert gone[0].replaced_by == survivor.id
+    assert gone[1].id == duplicate.head_revision_id, "the chain is kept"
+    assert (await notes.store.successor(
+        unit=WS, note_id=duplicate.id)).id == survivor.id
+    assert [n.id for n in await notes.store.standing(unit=WS)] == [survivor.id]
+
+
+async def test_merge_into_rolls_back_when_either_head_moved(
+    notes: _Harness,
+) -> None:
+    """Guard 2: ONE transaction with a compare-and-swap on BOTH heads. A moved
+    survivor refuses before anything is written; a moved duplicate refuses
+    AFTER the survivor's swap would have landed, and that half must roll
+    back — no appended revision, no moved head, the duplicate still open."""
+    survivor = await _make(notes.store, title="Saturday dinner")
+    duplicate = await _make(notes.store, title="Neway booking")
+
+    # (1) the survivor moved under the pass.
+    moved = await notes.store.append_revision(
+        unit=WS, note_id=survivor.id, body="Ada booked it",
+        parent_revision_id=survivor.head_revision_id,
+        established_by="tag:ada", now_ms=NOW + 10,
+    )
+    with pytest.raises(StaleNoteHeadError):
+        await _fold(notes, survivor=survivor, duplicate=duplicate)
+
+    # (2) the survivor is current, the DUPLICATE moved.
+    dup_moved = await notes.store.append_revision(
+        unit=WS, note_id=duplicate.id, body="Neway at 8",
+        parent_revision_id=duplicate.head_revision_id,
+        established_by="tag:ben", now_ms=NOW + 20,
+    )
+    with pytest.raises(StaleNoteHeadError):
+        await _fold(notes, survivor=survivor, duplicate=duplicate,
+                    survivor_head=moved.id)
+
+    s_note, s_head = await notes.store.read(unit=WS, note_id=survivor.id)
+    assert s_head.id == moved.id, "the survivor's half rolled back"
+    assert len(await notes.store.revision_chain(
+        unit=WS, note_id=survivor.id)) == 2, "no orphan revision"
+    assert s_note.anchor_date == survivor.anchor_date
+    d_note, d_head = await notes.store.read(unit=WS, note_id=duplicate.id)
+    assert d_note.retired_at is None and d_head.id == dup_moved.id
+
+    # Positive control: with both heads current the same call lands.
+    await _fold(notes, survivor=survivor, duplicate=duplicate,
+                survivor_head=moved.id, duplicate_head=dup_moved.id)
+    assert (await notes.store.read(unit=WS, note_id=duplicate.id))[0].retired_at
+
+
+async def test_merge_into_refuses_a_retired_survivor(notes: _Harness) -> None:
+    """The survivor's swap carries `retired_at IS NULL` too: a head that did
+    not move is not enough when the note was retired under the pass."""
+    survivor = await _make(notes.store, title="Saturday dinner")
+    duplicate = await _make(notes.store, title="Neway booking")
+    await notes.retire(survivor.id, NOW + 5)
+
+    with pytest.raises(StaleNoteHeadError):
+        await _fold(notes, survivor=survivor, duplicate=duplicate)
+    assert (await notes.store.read(
+        unit=WS, note_id=duplicate.id))[0].retired_at is None
+
+
+async def test_merge_into_leaves_strikes_when_told_to(notes: _Harness) -> None:
+    """`reset_strikes` is the caller's reading (§7.7); the store applies it
+    and nothing else."""
+    survivor = await _make(notes.store, title="Saturday dinner",
+                           anchor_date=None, anchor_entity_ids=("ada",))
+    duplicate = await _make(notes.store, title="Neway booking")
+    # The first wake sees the creating tag revision as progress (strikes 0);
+    # the next two find nothing new and strike.
+    for when in (NOW + 1, NOW + 2, NOW + 3):
+        await notes.store.record_wake(
+            unit=WS, note_id=survivor.id, next_revisit_at=NOW, now_ms=when,
+        )
+    before = (await notes.store.read(unit=WS, note_id=survivor.id))[0].strikes
+    assert before == 2
+
+    await _fold(notes, survivor=survivor, duplicate=duplicate,
+                reset_strikes=False)
+    assert (await notes.store.read(
+        unit=WS, note_id=survivor.id))[0].strikes == 2
+
+    other = await _make(notes.store, title="Sunday brunch")
+    head = (await notes.store.read(unit=WS, note_id=survivor.id))[1].id
+    await _fold(notes, survivor=survivor, duplicate=other, survivor_head=head,
+                reset_strikes=True, now_ms=NOW + 200)
+    assert (await notes.store.read(
+        unit=WS, note_id=survivor.id))[0].strikes == 0
+
+
+async def test_a_retire_naming_a_head_is_a_noop_when_the_head_moved(
+    notes: _Harness,
+) -> None:
+    """Guard 3 at the store: `supersede(expected_head=...)` is a
+    compare-and-swap. A head that moved answers 0 and the note stays open;
+    the head it names answers 1."""
+    note = await _make(notes.store)
+    moved = await notes.store.append_revision(
+        unit=WS, note_id=note.id, body="the fold's appended question",
+        parent_revision_id=note.head_revision_id,
+        established_by="dream:note-merge:unit-alpha:1", now_ms=NOW + 10,
+    )
+
+    stale = await notes.store.supersede(
+        key=WS, target=note.id, replaced_by=None,
+        because=NoteSupersedeReason.RETIRED_EXPIRED, source=None,
+        now_ms=NOW + 20, expected_head=note.head_revision_id,
+    )
+    assert stale == 0
+    assert (await notes.store.read(unit=WS, note_id=note.id))[0].retired_at is None
+
+    current = await notes.store.supersede(
+        key=WS, target=note.id, replaced_by=None,
+        because=NoteSupersedeReason.RETIRED_EXPIRED, source=None,
+        now_ms=NOW + 30, expected_head=moved.id,
+    )
+    assert current == 1
+
+
+async def test_record_merge_decision_appends_a_row(notes: _Harness) -> None:
+    """The shadow pass's whole output (§7.8): one row per considered fold,
+    both titles and the model's reason, readable back as written."""
+    survivor = await _make(notes.store, title="Saturday dinner")
+    duplicate = await _make(notes.store, title="Neway booking")
+    decision = NoteMergeDecision(
+        id=str(uuid4()), unit=WS, mode="shadow", outcome="would_merge",
+        survivor_id=survivor.id, duplicate_id=duplicate.id,
+        survivor_title=survivor.title, duplicate_title=duplicate.title,
+        reason="both ask where Saturday's dinner is",
+        established_by="dream:note-merge:unit-alpha:1", ts=NOW + 1,
+    )
+
+    await notes.store.record_merge_decision(decision=decision)
+
+    assert await notes.read_merge_decisions(WS) == [decision]
+    assert await notes.read_merge_decisions(OTHER_WS) == []
+
+
+async def test_merge_into_refuses_a_duplicate_retired_under_an_unmoved_head(
+    notes: _Harness,
+) -> None:
+    """The duplicate's swap carries `retired_at IS NULL`, not just its head:
+    `supersede` retires without touching the head, so a duplicate the curator
+    closed while the pass was thinking still names the head the pass read.
+    Folding it would append a CLOSED question to the survivor and re-retire a
+    note as `retired-merged`, overwriting why it was retired."""
+    survivor = await _make(notes.store, title="Saturday dinner")
+    duplicate = await _make(notes.store, title="Neway booking")
+    await notes.retire(duplicate.id, NOW + 5)
+
+    with pytest.raises(StaleNoteHeadError):
+        await _fold(notes, survivor=survivor, duplicate=duplicate)
+
+    _, s_head = await notes.store.read(unit=WS, note_id=survivor.id)
+    assert s_head.id == survivor.head_revision_id, "the survivor rolled back"
+    assert len(await notes.store.revision_chain(
+        unit=WS, note_id=survivor.id)) == 1
+    d_note, _ = await notes.store.read(unit=WS, note_id=duplicate.id)
+    assert d_note.retired_at == NOW + 5 and d_note.replaced_by is None

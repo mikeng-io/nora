@@ -151,7 +151,24 @@ class SqlStandingStore:
             return None
         return _standing(row)
 
-    async def write(self, *, standing: Standing) -> None:
+    async def write(self, *, standing: Standing, source: str = "fold") -> None:
+        """The fold's write — an unconditional upsert, exactly as before this
+        argument existed. `source` is recorded on the `standing_revision`
+        append ONLY (design/dreamer-agent-loop/26-standing.md, dated section
+        2026-09-25): the head carries no writer-provenance column, because the
+        property worth recording is who wrote each POSITION the room held,
+        which is what the chain behind the head is for. All three callers —
+        `debrief.py`, `standing_event.py`, and the eval sandbox's
+        `standing_fold.py` (which stamps its seeded prior `'fold'` too, since
+        it is reproducing a fold that already happened) — stay on the
+        default; nothing about this method's shape or its transaction
+        changed for any of them.
+
+        `'operator'` is written by `write_if_unchanged` below, never by this
+        method directly — a manual edit also needs the compare-and-set this
+        method does not do, so giving `write` itself an `'operator'` caller
+        would be a second, weaker path to the same effect.
+        """
         stmt = pg_insert(STANDING).values(
             platform=standing.platform,
             conversation_id=standing.conversation_id,
@@ -202,7 +219,106 @@ class SqlStandingStore:
             fold_count=standing.fold_count,
             updated_at=standing.updated_at,
             last_folded_row_id=standing.last_folded_row_id,
+            source=source,
         )
         async with self._engine.begin() as conn:
             await conn.execute(stmt)
             await conn.execute(revision)
+
+    async def write_if_unchanged(
+        self, *, expected: Standing, standing: Standing
+    ) -> bool:
+        """The operator's write: a manual edit of `body`, refused unless the
+        row is EXACTLY what was read (design/dreamer-agent-loop/26-standing.md,
+        dated section 2026-09-25).
+
+        **Why this is a second method rather than a flag on `write`.** The
+        fold's write is a blind upsert — it must never refuse on a stale read,
+        because the fold has no "someone else changed it, please retry"
+        recovery and was never designed to need one. An operator's edit is the
+        opposite: it is the ONE write against this table with a human reading
+        the before-value first, so the same guarantee `standing_revision`
+        gives the room (a position that moved and nothing recorded it cannot
+        happen) has to hold in the other direction too — a position that moved
+        BETWEEN the operator's read and their write must not be silently
+        overwritten by what they read.
+
+        Refuses (returns `False`, writes nothing) unless `body`, `fold_count`,
+        `updated_at` and `last_folded_row_id` all still match `expected` —
+        i.e. nothing folded, and nobody else edited, since `expected` was
+        read.
+
+        `standing.platform`, `standing.conversation_id`, `standing.fold_count`
+        and `standing.last_folded_row_id` are NOT part of what an operator
+        edit changes — only `body` and `updated_at` are — and this method
+        RAISES `ValueError` if any of the four differ from `expected` rather
+        than silently accepting them. **An earlier version of this docstring
+        claimed the WHERE clause already made that impossible; it did not.**
+        The WHERE clause matches the row's CURRENT (pre-write) values against
+        `expected`, which pins the row being updated, but it says nothing
+        about what the caller's `standing` argument then WRITES into
+        `fold_count` or `last_folded_row_id` — those come from `.values()`,
+        entirely uncontrolled by the WHERE — so a caller that (by a bug)
+        passed a `standing` with a different `fold_count` would have
+        silently written it, exactly the claim the operator edit exists to
+        rule out. `platform`/`conversation_id` mismatches were worse: the
+        WHERE still finds the right row (keyed on `expected`'s), but the
+        revision insert below takes ITS values from `standing`, so a caller
+        passing the wrong key would have appended a revision under a
+        different room's identity while updating this one's head. Both are
+        now closed by the checks that follow, not by an argument about the
+        SQL.
+
+        Always writes `source='operator'` on the revision it appends — that is
+        the entire reason this method exists rather than a caller doing its
+        own read-compare-write around `write(source="operator")`, which would
+        still race the fold between the compare and the write.
+        """
+        if (
+            standing.platform != expected.platform
+            or standing.conversation_id != expected.conversation_id
+            or standing.fold_count != expected.fold_count
+            or standing.last_folded_row_id != expected.last_folded_row_id
+        ):
+            raise ValueError(
+                "write_if_unchanged only changes body and updated_at — "
+                "platform, conversation_id, fold_count and last_folded_row_id "
+                "must match `expected` exactly"
+            )
+        last_folded_row_id_matches = (
+            STANDING.c.last_folded_row_id == expected.last_folded_row_id
+            if expected.last_folded_row_id is not None
+            else STANDING.c.last_folded_row_id.is_(None)
+        )
+        update_stmt = (
+            sa.update(STANDING)
+            .where(
+                STANDING.c.platform == expected.platform,
+                STANDING.c.conversation_id == expected.conversation_id,
+                STANDING.c.body == expected.body,
+                STANDING.c.fold_count == expected.fold_count,
+                STANDING.c.updated_at == expected.updated_at,
+                last_folded_row_id_matches,
+            )
+            .values(
+                body=standing.body,
+                fold_count=standing.fold_count,
+                updated_at=standing.updated_at,
+                last_folded_row_id=standing.last_folded_row_id,
+            )
+        )
+        revision = sa.insert(STANDING_REVISION).values(
+            platform=standing.platform,
+            conversation_id=standing.conversation_id,
+            body=standing.body,
+            fold_count=standing.fold_count,
+            updated_at=standing.updated_at,
+            last_folded_row_id=standing.last_folded_row_id,
+            source="operator",
+        )
+        async with self._engine.begin() as conn:
+            result = await conn.execute(update_stmt)
+            if result.rowcount == 0:
+                return False
+            await conn.execute(revision)
+            return True

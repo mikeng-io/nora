@@ -32,7 +32,7 @@ a session rediscovers every few weeks at the cost of a twenty-agent sweep, and
 so that the NEXT method to arrive unwired has to be classified deliberately
 rather than by default.
 
-THE THREE SHAPES, because lumping them together is what made the list look
+THE FOUR SHAPES, because lumping them together is what made the list look
 like a pile of bugs:
 
   `read_back_affordance` — a by-id read shipped on the store's own surface for
@@ -42,11 +42,17 @@ like a pile of bugs:
       in a spec but deliberately not built yet. A decision with a date on it.
   `defect`               — a live write path creates state that no production
       code can act on or leave. These are the ones that want fixing.
+  `operator_script`      — a real caller exists and runs it deliberately, but
+      it lives under `scripts/`, which this file does not scan (`_call_sites`
+      walks `nora/` only, by design — a script is not the daemon). Wiring
+      THIS one up would mean moving the caller into `nora/`, which is the
+      wrong direction: the whole point is that a manual, human-invoked path
+      stays outside the code the tag/participation loop runs.
 
-THE COUNTS, so they reconcile with something: FOUR methods are pinned below.
+THE COUNTS, so they reconcile with something: FIVE methods are pinned below.
 ONE more is known to have no production caller and cannot be proven so here —
 `SqlTagTraceStore.recent` — because its name is shared with other stores (see
-the ambiguity rule). Five in total; the four are what this file can check.
+the ambiguity rule). Six in total; the five are what this file can check.
 (`SqlTurnVerdictStore.read` was a second such method until its store was
 deleted with the verdict on 2026-09-24.)
 
@@ -166,7 +172,9 @@ from typing import Literal, NamedTuple, get_args
 ROOT = Path(__file__).resolve().parents[2]
 SQL = ROOT / "nora" / "infra" / "sql"
 
-Shape = Literal["read_back_affordance", "deferred_consumer", "defect"]
+Shape = Literal[
+    "read_back_affordance", "deferred_consumer", "defect", "operator_script"
+]
 SHAPES: frozenset[str] = frozenset(get_args(Shape))
 
 
@@ -212,6 +220,14 @@ _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
     ("notes.py", "revision_by_id"): _Pin(
         "read_back_affordance",
         "Revision-by-id read-back; no consumer designed.",
+    ),
+    ("standing.py", "write_if_unchanged"): _Pin(
+        "operator_script",
+        "The compare-and-set write for a manual Standing edit (design/"
+        "dreamer-agent-loop/26-standing.md §9, 2026-09-25). Its one caller is "
+        "`scripts/standing_edit.py`, deliberately outside `nora/` — this is "
+        "the operator's own entry point, not a verb the tag/participation "
+        "loop should ever reach, and `_call_sites` scans `nora/` only.",
     ),
 }
 
@@ -474,7 +490,7 @@ def test_every_uncalled_store_method_is_pinned() -> None:
         "_NO_PRODUCTION_CALLER:\n  " + "\n  ".join(unpinned) + "\n\n"
         "This is not necessarily a bug — most such methods are deliberate "
         "read-back affordances. It IS a decision, and it has to be made rather "
-        "than defaulted into: add a row saying which of the three shapes it is "
+        "than defaulted into: add a row saying which of the four shapes it is "
         "and why. A green contract suite proves the verb WORKS and says nothing "
         "about whether it is USED, which is how every row already here arrived."
     )
@@ -540,6 +556,44 @@ def test_every_pin_declares_a_known_shape() -> None:
     assert not thin, (
         "pins whose reason is too short to be a reason. A row here is the only "
         "record of why a method nothing calls is allowed to exist: " + str(thin)
+    )
+
+
+def _scripts_call_sites() -> dict[str, list[_Site]]:
+    """Call sites under `scripts/`, in the same shape as `_call_sites`'s
+    `calls` half. `_call_sites` deliberately never looks here (`scripts/` is
+    not the daemon), which is exactly why an `operator_script` pin's claim —
+    "a real caller exists, just not where this file scans" — was unchecked:
+    nothing verified the claim was true rather than merely unfalsifiable by
+    the other tests in this file."""
+    calls: dict[str, list[_Site]] = defaultdict(list)
+    for path in sorted((ROOT / "scripts").glob("*.py")):
+        for node in ast.walk(_parse(path)):
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and isinstance(node.func.value, ast.Name | ast.Attribute)
+            ):
+                calls[node.func.attr].append(_Site(path, node.lineno))
+    return calls
+
+
+def test_every_operator_script_pin_has_a_caller_under_scripts() -> None:
+    """`operator_script` is not a rebadged `read_back_affordance` — it claims
+    a REAL caller exists, just outside `_call_sites`' `nora/`-only scan. A pin
+    with no `scripts/` caller at all would be a plain defect wearing this
+    shape's label instead of being fixed or reclassified, and nothing before
+    this test could tell the two apart."""
+    calls = _scripts_call_sites()
+    missing = [
+        f"{mod}::{name}"
+        for (mod, name), pin in sorted(_NO_PRODUCTION_CALLER.items())
+        if pin.shape == "operator_script" and name not in calls
+    ]
+    assert not missing, (
+        "operator_script pins with no call site anywhere under scripts/: "
+        f"{missing} — either the caller moved, was renamed, or this pin is "
+        "not actually this shape"
     )
 
 

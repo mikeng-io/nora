@@ -70,6 +70,7 @@ from nora.domain.notes import (
     Note,
     NoteCreateCandidate,
     NoteCreationProposal,
+    NoteMergeDecision,
     NoteRevision,
     NoteRevisionProposal,
     NoteSupersedeReason,
@@ -151,6 +152,9 @@ class InMemoryNoteStore:
     #: index, which is fine at this store's scale and keeps one dict from
     #: drifting out of step with the other.
     create_candidates: dict[str, NoteCreateCandidate] = field(default_factory=dict)
+    #: `note_merge_decision` rows, in insertion order — append-only, like the
+    #: table (design 41 §7.8).
+    merge_decisions: list[NoteMergeDecision] = field(default_factory=list)
     _ids: itertools.count[int] = field(default_factory=lambda: itertools.count(1))
 
     #: **UUID-SHAPED, like the real store's.** This double minted `note-1` and
@@ -572,8 +576,10 @@ class InMemoryNoteStore:
         because: str,
         source: str | None,
         now_ms: int,
+        expected_head: str | None = None,
     ) -> int:
-        """`SqlNoteStore.supersede`'s behaviour.
+        """`SqlNoteStore.supersede`'s behaviour, including guard 3's
+        `expected_head` (design 41 §7.6): a head that moved answers 0.
 
         **`source` is REFUSED, not accepted and dropped** — the same as
         `SqlNoteStore`. `note` has no column for a supersession's citation: a
@@ -623,11 +629,76 @@ class InMemoryNoteStore:
         note = self.notes.get(target)
         if note is None or note.unit != key or note.retired_at is not None:
             return 0
+        if expected_head is not None and note.head_revision_id != expected_head:
+            return 0
         self.notes[target] = replace(
             note, retired_at=now_ms, replaced_by=replaced_by,
             retire_reason=because,
         )
         return 1
+
+    async def merge_into(
+        self,
+        *,
+        unit: str,
+        survivor_id: str,
+        survivor_head: str,
+        duplicate_id: str,
+        duplicate_head: str,
+        body: str,
+        anchor_date: int | None,
+        revisit_at: int,
+        reset_strikes: bool,
+        established_by: str,
+        now_ms: int,
+        instruction_sha256: str | None = None,
+        model: str | None = None,
+    ) -> NoteRevision:
+        """`SqlNoteStore.merge_into`: both compare-and-swaps are decided
+        BEFORE either mutation, which is where the SQL transaction's
+        all-or-nothing is observable from outside."""
+        if survivor_id == duplicate_id:
+            raise ValueError("a note cannot be folded into itself")
+        revision = NoteRevision(
+            id=self._shaped_id(next(self._ids), "rev"), note_id=survivor_id,
+            body=body, parent_revision_id=survivor_head, written_at=now_ms,
+            established_by=established_by,
+            instruction_sha256=instruction_sha256, model=model,
+        )
+        for note_id, head in (
+            (survivor_id, survivor_head), (duplicate_id, duplicate_head),
+        ):
+            note = self.notes.get(note_id)
+            if (
+                note is None or note.unit != unit
+                or note.retired_at is not None
+                or note.head_revision_id != head
+            ):
+                raise StaleNoteHeadError(
+                    f"note {note_id} moved or retired before the fold — read "
+                    f"it again",
+                    observed_head=None,
+                )
+        survivor = self.notes[survivor_id]
+        self.revisions[revision.id] = revision
+        self.notes[survivor_id] = replace(
+            survivor, head_revision_id=revision.id, anchor_date=anchor_date,
+            revisit_at=revisit_at,
+            strikes=0 if reset_strikes else survivor.strikes,
+        )
+        self.notes[duplicate_id] = replace(
+            self.notes[duplicate_id], retired_at=now_ms,
+            replaced_by=survivor_id,
+            retire_reason=NoteSupersedeReason.RETIRED_MERGED,
+        )
+        return revision
+
+    async def record_merge_decision(self, *, decision: NoteMergeDecision) -> None:
+        """`SqlNoteStore.record_merge_decision`: append, and refuse a reused id
+        as the primary key does."""
+        if any(d.id == decision.id for d in self.merge_decisions):
+            raise ValueError(f"merge decision {decision.id} already recorded")
+        self.merge_decisions.append(decision)
 
     async def record_miss(
         self, *, unit: str, probe: str, conversation_id: str, now_ms: int,
