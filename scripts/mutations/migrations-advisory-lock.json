@@ -1,0 +1,9 @@
+[
+  {
+    "name": "run_migrations is serialized by the advisory lock",
+    "file": "nora/infra/sql/migrations_runner.py",
+    "old": "    with _migration_lock(url):\n        command.upgrade(alembic_config(url), \"head\")",
+    "new": "    command.upgrade(alembic_config(url), \"head\")",
+    "target": "tests/infra/test_migration_lock.py -k test_run_migrations_blocks_while_the_lock_is_held"
+  }
+]
