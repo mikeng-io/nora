@@ -7,11 +7,11 @@
     "target": "tests/unit/test_social_subject_index.py::test_a_star_room_does_not_make_anyone_tier_zero"
   },
   {
-    "name": "igid_for picks one of several accounts instead of answering ambiguous",
+    "name": "igids_for picks one of several accounts instead of returning the set",
     "file": "nora/infra/social/subjects.py",
-    "old": "        if len(igids) != 1:\n            return None\n        (igid,) = igids\n        return igid",
-    "new": "        return min(igids) if igids else None",
-    "target": "tests/unit/test_social_subject_index.py::test_two_accounts_are_ambiguous_never_a_pick"
+    "old": "            return frozenset(self._persons.instagram_igids(person_id))",
+    "new": "            return frozenset(sorted(self._persons.instagram_igids(person_id))[:1])",
+    "target": "tests/unit/test_social_subject_index.py::test_two_accounts_are_returned_as_two_never_a_pick"
   },
   {
     "name": "person_for_igid trusts the kind-blind index (an fbid resolves)",
@@ -37,7 +37,7 @@
   {
     "name": "the fake's reverse lookup answers nobody for a held igid",
     "file": "nora/testing/fakes.py",
-    "old": "return next((pid for pid, held in self.igids.items() if held == igid), None)",
+    "old": "return next((pid for pid, held in self.igids.items() if igid in held), None)",
     "new": "return None",
     "target": "tests/contract/test_social_subject_index_contract.py::test_the_reverse_lookup_names_the_owner_or_nobody"
   }

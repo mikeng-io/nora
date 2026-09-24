@@ -23,6 +23,7 @@ way measures the test's idea of the schema.
 
 from __future__ import annotations
 
+import re
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from typing import Any
@@ -268,9 +269,28 @@ async def test_the_returned_map_translates_a_source_row_id_into_the_copy(
     assert by_id[seeded.rows[ids["are we still on for friday"]]] == "are we still on for friday"
     assert ids["moved it to saturday"] not in seeded.rows
     assert seeded.now_ms == BEFORE_MS
-    assert seeded.transcript == (
+    assert [re.sub(r"<[^>]*>", "", line) for line in seeded.transcript] == [
         "are we still on for friday", "i can't make it", "want me to move it?",
+    ]
+
+
+async def test_the_judges_source_names_every_speaker_and_marks_hers(sandbox, source) -> None:
+    """#458. The judge grades «X said Y» against `Sandboxed.transcript`, so
+    each line carries the speaker SHE was shown — the identity's name for a
+    member, the profile name for a sender it does not know, her display name
+    on her own row — and no account id, the source's or the sandbox's minted
+    one, because the judge is a third-party call."""
+    seeded = await _seed(sandbox, source)
+    assert seeded.transcript == (
+        '<m n="1" age="10m ago" from="Miles">are we still on for friday</m>',
+        '<m n="2" age="4m ago" from="Miles">i can\'t make it</m>',
+        '<m n="3" age="just now" from="Nora">want me to move it?</m>',
     )
+    joined = "\n".join(seeded.transcript)
+    sender_ids = {r.sender_id for r in await _rows(sandbox)}
+    assert sender_ids  # the minted ids exist, and none of them is rendered
+    for raw in (*sender_ids, "+85214535926", "+852"):
+        assert raw not in joined
 
 
 async def test_the_sandbox_holds_the_position_she_held_then(sandbox, source) -> None:

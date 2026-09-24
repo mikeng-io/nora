@@ -30,8 +30,8 @@
   {
     "name": "K5 a wait_for with timeout=None is not bounded",
     "file": "nora/ingest/stages/standing_event.py",
-    "old": "                        timeout=wiring.store_timeout_seconds,",
-    "new": "                        timeout=None,",
+    "old": "                            wiring.media_join.enrich(rows, path=\"standing_event\"),\n                            timeout=wiring.store_timeout_seconds,",
+    "new": "                            wiring.media_join.enrich(rows, path=\"standing_event\"),\n                            timeout=None,",
     "target": "tests/architecture/test_slot_held_awaits_are_bounded.py"
   },
   {

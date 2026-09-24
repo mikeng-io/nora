@@ -227,10 +227,14 @@ PATHS = {
     # built per case), so the distinct label costs nothing and says something
     # true about where the read came from.
     "nora/subject/dreaming.py": "dreamer_eval",
+    # The eval seam's JUDGE source (#458): the seeded window, rendered as she
+    # was shown it, for a model that grades her reply against it.
+    "nora/subject/sandbox.py": "judge_source",
 }
 
 BUILDERS = {
     "nora/subject/dreaming.py": "since",
+    "nora/subject/sandbox.py": "recent",
     "nora/engagement/context.py": "recent",
     "nora/app/fire.py": "recent",
     "nora/engagement/stages/debrief.py": "since_including_nora",

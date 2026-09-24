@@ -607,6 +607,48 @@ def test_the_prefill_states_the_current_time():
     assert "Thursday 6 August 2026, 01:26" in text
 
 
+def test_the_clock_line_names_its_zone_and_the_place_it_is_named_for():
+    """2026-09-24: a picture that needs a date or a place (a poster, a card)
+    is only as right as what she copies into the prompt, because the image
+    model has no clock and no location. The line said «(HKT)» and nothing
+    else, so «Hong Kong» was in none of her input. It is now stated, from the
+    zone itself, and it reaches the prompt."""
+    from zoneinfo import ZoneInfo
+
+    from nora.agent.prefill import build_prefill
+    now = datetime(2026, 9, 23, 23, 7, tzinfo=ZoneInfo("Asia/Hong_Kong"))
+    msgs = build_prefill(_ctx(), display_name="Nora", context_window=40, now=now)
+    text = "".join(part["text"] for m in msgs for part in m["content"])
+    assert ("Right now it is Wednesday 23 September 2026, 23:07, "
+            "Hong Kong time (HKT, Asia/Hong_Kong).") in text
+
+
+def test_the_production_clock_is_named_from_the_process_zone(monkeypatch):
+    """Both callers pass `datetime.now().astimezone()`, which carries an offset
+    and «HKT» but no zone name. The name comes from the process's own zone
+    (`TZ`, which the container sets), and only when that zone's offset IS the
+    clock's: a clock stated in another zone gets no place, never a wrong one."""
+    from datetime import timedelta, timezone
+
+    from nora.agent.prefill import _now_line
+    monkeypatch.setenv("TZ", "Asia/Hong_Kong")
+    local = datetime(2026, 9, 23, 23, 7, tzinfo=timezone(timedelta(hours=8), "HKT"))
+    assert _now_line(local) == (
+        "Right now it is Wednesday 23 September 2026, 23:07, "
+        "Hong Kong time (HKT, Asia/Hong_Kong).\n")
+    elsewhere = datetime(2026, 9, 23, 15, 7, tzinfo=UTC)
+    assert _now_line(elsewhere) == "Right now it is Wednesday 23 September 2026, 15:07 (UTC).\n"
+
+
+def test_a_zone_that_names_an_offset_renders_no_place():
+    from zoneinfo import ZoneInfo
+
+    from nora.agent.prefill import _now_line
+    line = _now_line(datetime(2026, 9, 23, 15, 7, tzinfo=ZoneInfo("Etc/GMT-8")))
+    assert " time (" not in line
+    assert line.endswith("(+08, Etc/GMT-8).\n")
+
+
 def test_the_header_is_byte_identical_between_tags():
     """The header is the head of the prompt, and DeepSeek's context cache
     matches on an exact prefix — the first differing byte ends the hit for
@@ -1047,7 +1089,9 @@ def test_the_prefill_reads_the_clock_once():
     import nora.agent.prefill as prefill_module
 
     source = inspect.getsource(prefill_module.build_prefill)
-    assert source.count("datetime.now()") == 1
+    # `local_now()` (`nora.agent.clock`, 2026-09-24) is the read the `now`
+    # tool shares; a bare `datetime.now()` beside it would be a second read.
+    assert source.count("datetime.now()") + source.count("local_now()") == 1
 
 
 

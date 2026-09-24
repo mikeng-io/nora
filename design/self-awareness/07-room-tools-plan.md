@@ -117,8 +117,10 @@ nobody has made. The pair go in the room-scoped list in
 **No `ToolScope` rule.** No occasion must be kept from them: the scope is
 enforced inside the tool, by the unit, on every call.
 
-**Routing rows** in `evals/corpora/tool_selection.yaml`: «which groups are you
-in» → `room_list`; «what are they saying in the WhatsApp group» → `room_read`;
+**Routing rows** in `evals/corpora/tool_selection.yaml`: «which of our groups
+has been busiest today» → `room_list` (first written as «which groups are you
+in», retired 2026-09-24, see below); «what are they saying in the WhatsApp
+group» → `room_read`;
 and «who is in this group» → `group_members` with both room tools as
 `not_tools` (the negative: neither should be called).
 
@@ -150,21 +152,25 @@ executed and does not depend on it.
 
 | row | n | pass / fail / error | reading |
 |---|---|---|---|
-| `route_room_list_which_groups` | 5 | 3 / 2 / 0 | **misses 2 of 5**: both failing draws called no tool and answered straight from `<presence>` |
+| `route_room_list_which_groups` (retired, see below) | 5 | 3 / 2 / 0 | both «failing» draws called no tool and answered from `<presence>`, which is correct |
 | `route_room_read_other_network` | 5 | 5 / 0 / 0 | calls `room_list` first, then `room_read`; never `load_transcript` |
 | `route_group_members_not_the_room_tools` | 5 | 5 / 0 / 0 | the negative: `group_members` only, neither room tool |
 
-**What the room_list miss says.** It is not a misroute: no wrong tool ran.
-«Which groups are you in» is already answered by `<presence>` (this group's
-rooms, and that other groups exist), and on 2 of 5 draws she answered from
-it. That is `05`'s first falsification line, read from the other side: the
-block does answer the question without the tool. The grade holds `room_list`
-as the only pass, so this row now measures «does she look it up» rather than
-«does she route it right». Deciding whether that is a defect (make the row
-accept a no-tool answer that carries the rooms, which needs the judge) or
-the intended division (`<presence>` for the every-turn fact, `room_list`
-for member counts and activity) is left open. It is not fixed by
-rewording the description.
+**The room_list «misses» were the intended behaviour (operator decision,
+2026-09-24).** No wrong tool ran. «Which groups are you in» is already
+answered by `<presence>` (this group's rooms, and that other groups exist),
+and on 2 of 5 draws she answered from it without a call. That answer is
+correct: the call is redundant for that question. The division is
+`<presence>` for which rooms exist, the fact every turn needs, and
+`room_list` for what only it carries: member counts and activity. This is
+not `05`'s falsifier. That line concerns the reverse direction, whether
+`<presence>` is still needed once `room_list` exists, and this run shows the
+block doing its job.
+
+So the row was measuring the wrong question. It is now
+`route_room_list_busiest_today` («which of our groups has had the most
+talk today»), which no prompt block answers. It has not been run yet. The
+3 / 2 / 0 above belongs to the retired wording.
 
 ## What would change this plan
 
