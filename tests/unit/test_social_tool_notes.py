@@ -106,6 +106,10 @@ def _shared_payloads() -> dict[str, object]:
         "instagram_client._POST_FRAMING": {"note": instagram_client._POST_FRAMING},
         "instagram_client.POST_NOTHING_FOUND": instagram_client.POST_NOTHING_FOUND,
         "instagram_client.POST_UNSUPPORTED": instagram_client.POST_UNSUPPORTED,
+        # `media_fetch`'s answer to an Instagram page link: it routes the
+        # model to `instagram_read`, so it is a social note in all but tool.
+        "tools._INSTAGRAM_PAGE_LINK": {"note": tools_module._INSTAGRAM_PAGE_LINK},
+        "tools._INSTAGRAM_MOBILE_PAGE_LINK": {"note": tools_module._INSTAGRAM_MOBILE_PAGE_LINK},
     }
 
 

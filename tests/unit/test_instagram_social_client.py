@@ -576,6 +576,20 @@ async def test_a_post_is_a_get_on_the_post_resource_and_keeps_every_item_in_orde
     assert fake.calls == [("GET", "/posts/SynthReel01")]
 
 
+async def test_a_post_result_says_its_item_urls_are_what_media_fetch_looks_at(post_bridge):
+    """The other half of a shared reel's route (design 13, 2026-09-24): the
+    transcript line carries only the link, `media_fetch` sends an Instagram
+    page link here, and this result is where the files are. Its note has to
+    say that each item's url goes to `media_fetch(url=...)`, and every item
+    has to carry one."""
+    _fake, provider = post_bridge
+    out = await provider.read(**_POST_READ)
+
+    assert "media_fetch(url=...)" in out["note"]
+    assert "each item" in out["note"]
+    assert out["items"] and all(i["url"].startswith("https://") for i in out["items"])
+
+
 async def test_a_post_item_carries_kind_url_and_duration_only(post_bridge):
     _fake, provider = post_bridge
     out = await provider.read(**_POST_READ)

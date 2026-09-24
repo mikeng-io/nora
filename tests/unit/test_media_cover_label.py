@@ -15,6 +15,11 @@ that was not the thing being asked about. These pin the vocabulary half:
 * `MediaBlob.role`, the one field that carries "this is a cover" past the
   parser into `media_json`, where `media_fetch` reads it, and its backward
   compatibility with every row written before it existed.
+
+Later the same day the label was measured not to be enough (design 13
+§«a linked share carries no picture»): a share whose link validated now
+carries no picture at all, so `[cover image …]` is the fallback for a share
+with no link, and the lines here are that shape.
 """
 
 from __future__ import annotations
@@ -38,7 +43,10 @@ from nora.domain.media import (
 )
 
 SHA = "c0de01" + "0" * 58
-LINE = "[shared reel by @synth.example https://www.instagram.com/reel/SynthReel02/]"
+# A share with no link: a line that still carries a cover (so does a story
+# share with its link; a post or reel share
+# whose link validated carries no picture since 2026-09-24, after #454).
+LINE = "[shared story by @synth.example]"
 
 
 def test_a_preview_image_is_labelled_a_cover_and_nothing_else_is():
@@ -63,16 +71,16 @@ def test_a_preview_that_is_not_an_image_keeps_its_plain_label():
 def test_the_cover_placeholder_is_rendered_found_and_rewritten_like_any_other():
     """The full life of the placeholder: the parser's bare form, custody's
     handle rewrite, the join's reader, and the render-time enrichment."""
-    bare = f"what is in this reel {LINE} {render_placeholder('cover image')}"
+    bare = f"what is in this story {LINE} {render_placeholder('cover image')}"
     assert bare.endswith("[cover image]")
 
     staged = body_with_handles(bare, ("cover image",), (SHA[:6],))
-    assert staged == f"what is in this reel {LINE} [cover image c0de01]"
+    assert staged == f"what is in this story {LINE} [cover image c0de01]"
     assert placeholder_suffix(("cover image",), (SHA[:6],)) == "[cover image c0de01]"
 
     assert placeholders_in(staged) == (("cover image", "c0de01"),)
     assert enrich_placeholders(staged, {"c0de01": "a beach at dusk"}) == (
-        f"what is in this reel {LINE} [cover image c0de01: a beach at dusk]"
+        f"what is in this story {LINE} [cover image c0de01: a beach at dusk]"
     )
 
 

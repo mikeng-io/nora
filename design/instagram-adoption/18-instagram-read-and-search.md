@@ -527,6 +527,24 @@ Each item is an existing test that goes red, applied to both tools:
   from its confusable siblings (`social_fetch`, `web_fetch`, `media_fetch`,
   and each other). It is what she would call from if deferral were on
   (measured, porgy-58), and it opens the resident description either way.
+
+  > **Amended 2026-09-24, for `instagram_read`: the L1 names what the tool
+  > RETURNS and when to call it (ADR 0007's what + when); the inputs
+  > (person, handle, link) are named in the description BODY.** The reason is
+  > a measurement. A replay of the live prompt (the recorded prompt of trace
+  > ce094b70, a shared reel asked about, n=12 per variant) counted
+  > `instagram_read` called first: **V3** (the handle gone from the line,
+  > the old L1 below) **0/12**; **V4** (V3 plus the L1 and body sentence
+  > that shipped) **7/12**; **V5** (V4 plus the purged belief, already done
+  > in production) **10/12**. An L1 that listed the inputs told her how to
+  > address the tool and not that it returns a reel's video, which is the
+  > one thing the question needed. The body now carries «Give exactly one of
+  > `person`, `handle` or `link`», pinned by
+  > `test_the_description_body_names_person_handle_and_link`; the L1 is
+  > pinned by `test_the_catalogue_line_names_every_item_and_a_share`
+  > (`tests/unit/test_instagram_read_tool.py`). `instagram_search` is
+  > unchanged. This holds unless a replay or a live turn shows the new L1
+  > losing the name or handle routes it did not measure.
   - `instagram_read`, as shipped in P5 (34 tokens as the L1 gate counts it): *"Read someone's
     Instagram profile or current story, by their name. Call this when
     somebody asks about a person's Instagram or what is on their story."*
@@ -546,7 +564,24 @@ Each item is an existing test that goes red, applied to both tools:
     reel."* A reel SHARED into a room, not pasted, was answered from its
     cover picture with this tool in the turn; see `13` §«the cover says it
     is one». Keeping "an Instagram link" beside "a shared post or reel"
-    measured 43 and did not fit.
+    measured 43 and did not fit. The when-clause did not fix it: live, a
+    cover handle beside the link was still read instead of the link, so a
+    post or reel share whose link validated now renders the link and NO
+    handle, and
+    `media_fetch` answers an Instagram page link by naming this tool (`13`
+    §«a linked share carries no picture»). A share renders
+    `[cover image …]` only for a story or when its line has no link.
+  - `instagram_read`, from 2026-09-24 after #454 (38 tokens): *"Show what an
+    Instagram post or reel contains, every item, videos included, or read
+    a profile or story. Call this when somebody shares, links or asks about
+    one."* With it, the body sentence «A story or a post returns its media
+    with a link each; to see what one shows, call `media_fetch(url=...)` on
+    it.» became «A post or a reel returns every item in it, videos
+    included, each with a link that `media_fetch(url=...)` describes; a
+    story returns its media the same way.» Measured on the replay recorded
+    in the amendment above (trace ce094b70, n=12): 0/12 → 7/12 →
+    10/12 across V3, V4, V5. The inputs are no longer in the line; see that
+    amendment.
   - `instagram_search`, as shipped in P11 (35 tokens as the L1 gate counts
     it): *"Search Instagram for accounts by name or handle, returning up to 5
     matches. Call this when somebody wants to find a person's Instagram

@@ -27,7 +27,6 @@ SKILLS_DIR = Path(__file__).resolve().parents[1] / "nora" / "skills"
 # because naming one is the failure mode (design/17, operator-insisted).
 _SCENARIOS: dict[str, tuple[str, ...]] = {
     "navigation": ("dinner", "airport", "shopping", "晚飯", "機場", "食飯", "買嘢"),
-    "personalization": ("game", "restaurant", "film", "game night", "食飯", "睇戲"),
     # The skill is about making ANY image and judging whether she is in it; a
     # named occasion or subject is the closed set that fails its neighbour.
     "image-generation": ("birthday", "a logo", "meme", "watercolour", "watercolor",
@@ -89,38 +88,64 @@ def test_every_skill_names_no_scenario(skills):
                 f"{skill.name} names a scenario: {scenario!r}")
 
 
-#: A skill whose ceiling is not the default 30, each with its reason. The list
-#: is short on purpose: a raised ceiling is a claim that no lower layer owns
-#: the content, and it has to be argued here, where the number is.
-_LINE_CEILINGS: dict[str, int] = {
+#: ADR 0016 §4: a skill body's ceiling in cl100k tokens, not lines (the old
+#: 30 line ceiling measured neither cost nor reach, and lines are not tokens).
+#: The default is 1,500; a skill above it is listed here with its reason,
+#: where the number is. The published hard limit is 5,000 (agentskills.io).
+_TOKEN_CEILING = 1_500
+_TOKEN_CEILINGS: dict[str, int] = {
     # DEC-193 (operator, 2026-09-23). Her whole visual spec lives here and
-    # nowhere else: it is not doctrine (needed only when she makes an image,
-    # design/12's placement rule) and not the tool schema (it is about HER,
-    # not the tool). The operator ruled completeness over brevity for a skill
-    # that loads only on an image turn, and no rule of the spec may be dropped.
-    # Measured at 52 once the operator's own wording was restored verbatim
-    # where a compression had softened it (review of #410). Raised to 70 on
-    # 2026-09-24 (operator): the dates-and-places section is new, and the
-    # photo-to-prompt recipe moved here from `generate_image`'s docstring,
-    # which now describes the tool only. Measured at 65. Raised to 80 the
-    # same day after the live «a cat sleeping on a laptop» turn: she wrote
-    # her own mascot rendering into a picture she was not in and invented a
-    # scene that could not exist, and the prompt-writing judgement that
-    # covers both is new (74 lines); 78 once «a picture of you is a new
-    # picture» joined the in-the-picture judgement. The rest is room for one
-    # more model section, which is how this skill is meant to grow.
-    "image-generation": 80,
+    # nowhere else: it is not doctrine (needed only when she makes an image)
+    # and not the tool schema (it is about HER, not the tool). The operator
+    # ruled completeness over brevity, and no rule of the spec may be
+    # dropped. It was allowed 80 lines (measured 74) when the ceiling was
+    # lines; on 2026-09-24 it measured 1,449 tokens, and 1,534 once «a picture
+    # of you is a new picture» joined the in-the-picture judgement (the live
+    # WhatsApp turn that sent her reference back). It is meant to grow by one
+    # section per configured model, so it keeps room for that.
+    "image-generation": 2_000,
 }
+_HARD_LIMIT = 5_000
+_DESCRIPTION_CEILING = 80
+
+
+def _tokens(text: str) -> int:
+    import tiktoken
+
+    return len(tiktoken.get_encoding("cl100k_base").encode(text))
 
 
 def test_every_skill_stays_small(skills):
     """Most of what looks like skill content belongs a layer up or down; what is
-    left is genuinely small. A large skill is stealing a lower layer's job."""
+    left is judgement, and it is sized in tokens (ADR 0016 §4)."""
     for skill in skills:
-        lines = [ln for ln in skill.instructions.splitlines() if ln.strip()]
-        ceiling = _LINE_CEILINGS.get(skill.name, 30)
-        assert len(lines) <= ceiling, (
-            f"{skill.name} skill body has {len(lines)} non-blank lines (ceiling {ceiling})")
+        ceiling = _TOKEN_CEILINGS.get(skill.name, _TOKEN_CEILING)
+        assert ceiling <= _HARD_LIMIT, skill.name
+        n = _tokens(skill.instructions)
+        assert n <= ceiling, f"{skill.name} skill body is {n} tokens (ceiling {ceiling})"
+
+
+def test_every_description_fits(skills):
+    """The description is the only part of a skill in every prompt (ADR 0016
+    §3): what it covers, when to load it, what it is not for, in 80 tokens of
+    the raw `description` string."""
+    for skill in skills:
+        n = _tokens(skill.description)
+        assert n <= _DESCRIPTION_CEILING, f"{skill.name} description is {n} tokens"
+
+
+def test_no_dash_in_any_skill(skills):
+    """ADR 0016 §5 carries 0015's writing rule to skills: no em or en dash."""
+    for skill in skills:
+        for text in (skill.description, skill.instructions):
+            assert "\u2014" not in text and "\u2013" not in text, skill.name
+
+
+def test_a_skill_ceiling_is_argued_not_bumped():
+    """A raised ceiling is a claim that no lower layer owns the content; it is
+    argued in `_TOKEN_CEILINGS`, and it never passes the published limit."""
+    assert all(v <= _HARD_LIMIT for v in _TOKEN_CEILINGS.values())
+    assert _TOKEN_CEILING < _HARD_LIMIT
 
 
 # --- image-generation (DEC-193): her canonical self, her look, the models -------
