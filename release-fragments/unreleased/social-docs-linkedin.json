@@ -1,0 +1,6 @@
+{
+  "type": "none",
+  "reason": "Documentation only: ARCHITECTURE.md and the nora.infra.social package docstring now name the LinkedIn tools beside the X tools (DEC-201). Nothing a member of a room can observe.",
+  "details": [],
+  "limitations": []
+}
