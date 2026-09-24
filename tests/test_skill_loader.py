@@ -173,6 +173,27 @@ def test_lenient_mode_skips_a_broken_skill_rather_than_raising(skills_dir):
     assert [s.name for s in store.available()] == ["navigation"]
 
 
+def test_lenient_mode_silently_drops_a_skill_carrying_an_authority_key(skills_dir):
+    """The refusal is a GATE check, not a runtime one (issue #187 finding 3,
+    sharpened on review). `nora/web/skills.py` — the portal's only reader of
+    this module — builds its `SkillStore` `strict=False`, so a skill carrying
+    `authority_above`/`authority_below`/`change_policy` is dropped from its
+    listing the same way any other malformed skill already is: silently, no
+    exception reaching the caller. It is `strict=True` (the default, what the
+    tests and `nora-land`'s gate build) where a carried key actually stops
+    something."""
+    keyed = skills_dir / "keyed"
+    keyed.mkdir()
+    (keyed / "SKILL.md").write_text(
+        "---\nname: keyed\ndescription: d\nauthority_above: [situation]\n---\nbody"
+    )
+    store = _store(skills_dir, strict=False)
+    assert [s.name for s in store.available()] == ["navigation"]
+
+    with pytest.raises(SkillError, match="authority key"):
+        _store(skills_dir, strict=True)
+
+
 # --- progressive disclosure --------------------------------------------------
 
 def test_render_available_lists_name_and_when_but_no_body(skills_dir):

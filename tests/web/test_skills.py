@@ -72,3 +72,27 @@ async def test_skips_a_malformed_skill_rather_than_failing_the_whole_list(tmp_pa
         "description": "Real one.",
         "instructions": "Body text — surfaced to the private portal since 2026-09-03 (operator).",
     }]
+
+
+async def test_a_skill_carrying_an_authority_key_is_dropped_silently(tmp_path: Path):
+    """This endpoint's `SkillStore` runs `strict=False`, so `parse_skill`
+    refusing a skill for carrying `authority_above`/`authority_below`/
+    `change_policy` (issue #187 finding 3) is just another malformed-skill
+    case here: the skill is absent from the payload and nothing raises — the
+    same outcome `test_skips_a_malformed_skill_rather_than_failing_the_whole_
+    list` above proves for a skill with no frontmatter at all. The refusal
+    only stops something under `strict=True` (the test suite, `nora-land`'s
+    gate) — see `nora/skills/loader.py`'s module docstring."""
+    good = tmp_path / "navigation"
+    good.mkdir()
+    (good / "SKILL.md").write_text(
+        _SKILL_MD.format(name="navigation", description="Real one."),
+    )
+    keyed = tmp_path / "keyed"
+    keyed.mkdir()
+    (keyed / "SKILL.md").write_text(
+        "---\nname: keyed\ndescription: d\nauthority_above: [situation]\n---\nbody\n",
+    )
+
+    payload = await build_skills_payload(skills_dir=tmp_path)
+    assert [entry["name"] for entry in payload] == ["navigation"]
