@@ -474,6 +474,23 @@ also needs derivation ON for the replay's own feed, so the derivation-off
 setting above is right for today's empty workspaces and has to be revisited
 with it.
 
+**First baselines after the fix (2026-09-25, master `3c93cfc7`).** Run on the
+deploy host from a fresh `git archive` of master, sequentially, with
+`--sample 3 --judge --judge-samples 1 --reasons` and no `--deployment-config`,
+so production's `[llm] defer_tools = true` is what they measure. These replace
+the pre-fix numbers in #444 (`tool_reporting`) and #452
+(`being_contradicted`) as the reference; the two are not comparable.
+
+| Corpus | Draws | Pass / fail / ERROR | Pre-fix, for direction only |
+|---|---|---|---|
+| `tool_reporting` | 8 cases × 3 | 24 / 0 / 0 | 22/0/2 and 22/2/0 (#444) |
+| `being_contradicted` | 5 graded × 3 (+1 unanchored) | 6 / 4 / 5 | 5/7/3 and 4/7/4 (#452) |
+
+The "you've typed this N times" replies that #452 graded as invented history
+did not appear in any draw: the log holds no such line. All 42 draws created
+their own workspace and none was left listed afterwards. The 5 ERRORs are
+judge timeouts at 300 s, not verdicts on her; n=3 is a direction, not a rate.
+
 ### Where the suite runs — DECIDED 2026-09-21: on the deploy host
 
 Not a preference. Measured: with the deployment's features on, composition
