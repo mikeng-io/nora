@@ -1382,6 +1382,12 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # `nora/doctrine/identity.md`, where a self-account does not have to be
     # fetched by a model mid-question to be in front of her (operator, #227).
     #
+    # `personalization` was retired the same way on 2026-09-24 (ADR 0016): its
+    # ladder moved into `nora/doctrine/conduct.md`, so it reaches a plan or a
+    # picture without a second activation. The directory is two again
+    # (`image-generation`, `navigation`), and the budget stays 2 for the same
+    # reason as before: one message can span both.
+    #
     # The directory is back to two, so `budget == directory size` again — but
     # **that does NOT restore R-7's generic veto, and an earlier draft of this
     # comment claimed it did.** A repeat `skills` call is not vetoed

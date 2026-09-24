@@ -27,7 +27,6 @@ SKILLS_DIR = Path(__file__).resolve().parents[1] / "nora" / "skills"
 # because naming one is the failure mode (design/17, operator-insisted).
 _SCENARIOS: dict[str, tuple[str, ...]] = {
     "navigation": ("dinner", "airport", "shopping", "晚飯", "機場", "食飯", "買嘢"),
-    "personalization": ("game", "restaurant", "film", "game night", "食飯", "睇戲"),
     # The skill is about making ANY image and judging whether she is in it; a
     # named occasion or subject is the closed set that fails its neighbour.
     "image-generation": ("birthday", "a logo", "meme", "watercolour", "watercolor",

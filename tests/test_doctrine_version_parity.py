@@ -222,7 +222,12 @@ PINNED: dict[str, tuple[int, str]] = {
     # where, asking the person here who holds the fact (a tag reaches only this
     # conversation), a lookup's link pasted exactly, and a closing offer as
     # where an impossible promise slips in.
-    "conduct": (31, "4f0c85730a863036d9baca658a9b72f85a23b125e7743d1bd8aa4bbf83640fcb"),
+    # v32 (2026-09-24, operator: personalization into the doctrine, ADR 0016):
+    # the `personalization` skill's five-step ladder joins the recommendation
+    # paragraph it only pointed at, so it applies wherever taste does (a plan,
+    # a picture) without a skill load. The skill is retired, like
+    # `self-description` into identity.md on 2026-09-17.
+    "conduct": (32, "962bd2b300742f4c2ade48a99ddb88262807739f74a05dbd4ea7fa0edf195443"),
     # NOT Nora's: the Relevance Gate's instruction, pinned here like any other
     # authored file so a silent edit to what the gate is told is impossible.
     # v5 (2026-09-10, issue #144): the digest v4 pointed at is not shipped —
