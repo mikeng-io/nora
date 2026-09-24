@@ -68,7 +68,7 @@ def _tools(social=None) -> dict:
 
 @pytest.fixture
 def social() -> FakeSocialProvider:
-    return FakeSocialProvider({row: _OK for row in _X_ROWS})
+    return FakeSocialProvider(dict.fromkeys(_X_ROWS, _OK))
 
 
 # ---- x_read: which read, from which input ---------------------------------
