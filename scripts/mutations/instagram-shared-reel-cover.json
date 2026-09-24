@@ -4,7 +4,7 @@
     "file": "nora/domain/media.py",
     "old": "    if ref.on_demand and label == \"image\":\n        return \"cover image\"\n",
     "new": "",
-    "target": "tests/unit/test_media_cover_label.py::test_a_preview_image_is_labelled_a_cover_and_nothing_else_is tests/unit/test_instagram_shared_on_demand.py::test_a_shared_thumbnail_is_held_but_never_sent_to_the_interpreter tests/unit/test_instagram_shared_on_demand.py::test_an_unread_thumbnail_renders_a_bare_handle_that_claims_nothing tests/unit/test_instagram_parser.py::test_the_link_sits_before_the_caption_and_the_placeholder_stays_trailing tests/unit/test_instagram_parser.py::test_a_caption_cannot_forge_a_media_handle"
+    "target": "tests/unit/test_media_cover_label.py::test_a_preview_image_is_labelled_a_cover_and_nothing_else_is tests/unit/test_instagram_shared_on_demand.py::test_a_shared_thumbnail_is_held_but_never_sent_to_the_interpreter tests/unit/test_instagram_shared_on_demand.py::test_an_unread_thumbnail_renders_a_bare_handle_that_claims_nothing tests/unit/test_instagram_parser.py::test_a_cover_with_no_link_stays_trailing_and_takes_its_handle tests/unit/test_instagram_parser.py::test_a_caption_cannot_forge_a_media_handle"
   },
   {
     "name": "cover image is not in LABELS, so no reader finds the placeholder",

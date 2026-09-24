@@ -546,7 +546,12 @@ Each item is an existing test that goes red, applied to both tools:
     reel."* A reel SHARED into a room, not pasted, was answered from its
     cover picture with this tool in the turn; see `13` §«the cover says it
     is one». Keeping "an Instagram link" beside "a shared post or reel"
-    measured 43 and did not fit.
+    measured 43 and did not fit. The when-clause did not fix it: live, a
+    cover handle beside the link was still read instead of the link, so a
+    share whose link validated now renders the link and NO handle, and
+    `media_fetch` answers an Instagram page link by naming this tool (`13`
+    §«a linked share carries no picture»). A share renders
+    `[cover image …]` only when its line has no link.
   - `instagram_search`, as shipped in P11 (35 tokens as the L1 gate counts
     it): *"Search Instagram for accounts by name or handle, returning up to 5
     matches. Call this when somebody wants to find a person's Instagram

@@ -1,0 +1,65 @@
+[
+  {
+    "name": "the cover handle is re-added for a linked share (#454's shape)",
+    "file": "nora/platform/instagram/parser.py",
+    "old": "            ref = None if link else replace(ref, on_demand=True)",
+    "new": "            ref = replace(ref, on_demand=True)",
+    "target": "tests/unit/test_instagram_parser.py::test_a_linked_share_renders_no_handle_for_a_reel_a_post_or_a_story tests/unit/test_instagram_parser.py::test_the_link_sits_before_the_caption_and_no_placeholder_follows_it tests/unit/test_instagram_shared_on_demand.py::test_a_share_with_a_link_takes_nothing_into_custody"
+  },
+  {
+    "name": "a linked share's thumbnail is kept as an ordinary [image] (pre-#454's shape)",
+    "file": "nora/platform/instagram/parser.py",
+    "old": "            ref = None if link else replace(ref, on_demand=True)",
+    "new": "            ref = ref if link else replace(ref, on_demand=True)",
+    "target": "tests/unit/test_instagram_parser.py::test_a_linked_share_renders_no_handle_for_a_reel_a_post_or_a_story tests/unit/test_instagram_parser.py::test_the_link_sits_before_the_caption_and_no_placeholder_follows_it tests/unit/test_instagram_shared_on_demand.py::test_a_share_with_a_link_takes_nothing_into_custody"
+  },
+  {
+    "name": "the line's link is not handed back, so every share keeps its cover",
+    "file": "nora/platform/instagram/parser.py",
+    "old": "    return f\"[{line}]\", link\n",
+    "new": "    return f\"[{line}]\", \"\"\n",
+    "target": "tests/unit/test_instagram_parser.py::test_a_linked_share_renders_no_handle_for_a_reel_a_post_or_a_story tests/unit/test_instagram_parser.py::test_the_link_sits_before_the_caption_and_no_placeholder_follows_it tests/unit/test_instagram_shared_on_demand.py::test_a_share_with_a_link_takes_nothing_into_custody"
+  },
+  {
+    "name": "the no-link fallback is removed: a share with no link loses its cover too",
+    "file": "nora/platform/instagram/parser.py",
+    "old": "            ref = None if link else replace(ref, on_demand=True)",
+    "new": "            ref = None",
+    "target": "tests/unit/test_instagram_parser.py::test_a_share_with_no_valid_link_keeps_its_cover tests/unit/test_instagram_parser.py::test_a_cover_with_no_link_stays_trailing_and_takes_its_handle tests/unit/test_instagram_shared_on_demand.py::test_a_shared_thumbnail_is_held_but_never_sent_to_the_interpreter"
+  },
+  {
+    "name": "the Instagram page-link refusal is removed: media_fetch downloads the page",
+    "file": "nora/agent/tools.py",
+    "old": "        if url and not code and _parse_instagram_link(url) is not None:\n",
+    "new": "        if False:\n",
+    "target": "tests/test_media_fetch.py -k instagram_page_link"
+  },
+  {
+    "name": "the page-link refusal waits on media being configured",
+    "file": "nora/agent/tools.py",
+    "old": "        if url and not code and _parse_instagram_link(url) is not None:\n",
+    "new": "        if url and not code and _parse_instagram_link(url) is not None and blob_store is not None and vision_source is not None:\n",
+    "target": "tests/test_media_fetch.py::test_an_instagram_page_link_is_routed_even_with_media_unconfigured"
+  },
+  {
+    "name": "every url is refused as a page, a CDN file included",
+    "file": "nora/agent/tools.py",
+    "old": "        if url and not code and _parse_instagram_link(url) is not None:\n",
+    "new": "        if url and not code:\n",
+    "target": "tests/test_media_fetch.py -k not_an_instagram_page_still_downloads"
+  },
+  {
+    "name": "the page-link note stops naming instagram_read",
+    "file": "nora/agent/tools.py",
+    "old": "    \"with instagram_read using this link, then look at the media it returns.\"",
+    "new": "    \"with the right tool, then look at the media it returns.\"",
+    "target": "tests/test_media_fetch.py -k instagram_page_link_is_sent_to_instagram_read"
+  },
+  {
+    "name": "instagram_read's post note stops pointing each item's url at media_fetch",
+    "file": "nora/infra/social/instagram_client.py",
+    "old": "    \"nothing about what the media shows: call media_fetch(url=...) on each \"\n    \"item you need to see. The caption is the author's own words.\"",
+    "new": "    \"nothing about what the media shows. The caption is the author's own words.\"",
+    "target": "tests/unit/test_instagram_social_client.py -k media_fetch_looks_at"
+  }
+]

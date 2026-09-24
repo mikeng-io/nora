@@ -1,7 +1,7 @@
 ---
 type: design
 title: "Shared Reels and Posts — Three Depths, and Why Most Of Them Cost Nothing"
-description: "A reel, post or story shared into a group is an XMA. Measured live (2026-09-24), it carries its author, its link and a thumbnail, and usually no caption. The volume problem the operator raised answers itself: render the kind, author and clean link always, hold the thumbnail cheaply, and comprehend it only when Nora is asked."
+description: "A reel, post or story shared into a group is an XMA. Measured live (2026-09-24), it carries its author, its link and a thumbnail, and usually no caption. The volume problem the operator raised answers itself: render the kind, author and clean link always, and read the item through its link only when Nora is asked. The thumbnail is dropped when the link validated (a cover handle beside a link was read instead of the link, live) and kept, on demand, only when there is no link."
 tags: [nora, instagram, xma, reels, media, cost]
 timestamp: '2026-09-24'
 edges:
@@ -67,6 +67,13 @@ zero fetches and zero model calls.
 (As designed. As first BUILT, the thumbnail was comprehended at ingest like
 any photo; on-demand is what it is since 2026-09-24 — see the dated section
 below.)
+
+> **Superseded for a share with a link, 2026-09-24 (see [a linked share
+> carries no picture](#2026-09-24-after-454-a-linked-share-carries-no-picture)).**
+> This depth exists now only for a share whose line has NO validated link.
+> When the link validated, the thumbnail is not fetched, not held and not
+> rendered: live, a handle beside the link was read instead of the link.
+> The item's own frames come from depth 3, through the link.
 The preview image goes through the existing custody path: bytes fetched at
 ingest, sha256'd, a handle minted, rendered as `[reel a3f2c1]`. Comprehension
 — the vision call — happens **only** when `media_fetch` is called, which is
@@ -110,14 +117,17 @@ Two existing mechanisms do the rest:
    transcript reads `[reel a3f2c1]` beside the caption. *Not built this way —
    see 2026-09-24: the kind is a word in the shared line, read off the url,
    and the thumbnail is labelled `[cover image a3f2c1]` (it kept the
-   ordinary `[image a3f2c1]` until «the cover says it is one» below).*
+   ordinary `[image a3f2c1]` until «the cover says it is one» below), and
+   only when the line has no link: a linked share renders no thumbnail at
+   all (the section after that one).*
 3. **Nothing else.** Depth 2 rides the custody path that now exists for images;
    depth 3 is `media_fetch` with a url, which already works.
 
 ## The retention question, answered in advance
 
 A shared reel is **room speech** (`06`): somebody sent it into the group, so
-its caption and its thumbnail persist like any other message content. That is
+its caption (and, for a share with no link, its thumbnail) persist like any
+other message content. That is
 not in tension with the story rule — a story is something Nora *went and
 looked at*, a shared reel is something a member *said to the room*.
 
@@ -202,7 +212,9 @@ The line is now `[shared <kind> by @<author> <link> — <caption>]`, each part
 present only when it is. The link sits inside the bracket, before the
 caption: inside, because it belongs to the shared item and not to the
 sharer's words; before the caption, because the caption is a stranger's free
-text. The placeholder run stays trailing, which `body_with_handles` needs.
+text. The placeholder run, when there is one (a share with no link, since
+the section «a linked share carries no picture»), stays trailing, which
+`body_with_handles` needs.
 
 ### The thumbnail depth is on-demand only, by operator rule
 
@@ -215,7 +227,9 @@ because the CDN url expires, and the handle is rendered — so:
 
 - the transcript shows `[cover image <handle>]` (it said `[image <handle>]`
   until the later 2026-09-24 section below) with no description, claiming
-  nothing (the render join adds a reading only for a row that has one);
+  nothing (the render join adds a reading only for a row that has one).
+  Since «a linked share carries no picture» below, this holds only for a
+  share whose line has no link; a linked share has no thumbnail to hold;
 - `media_fetch` on that handle finds no stored reading and does a fresh look,
   at a real cost, when somebody asks;
 - the sha256 dedupe keys on whether the ROW has been read, so the same bytes
@@ -226,6 +240,11 @@ because the CDN url expires, and the handle is rendered — so:
 Photos and videos people send directly are read at ingest exactly as before.
 
 ### 2026-09-24, later: the cover says it is one
+
+> **Superseded for a share with a link** by the next section: measured live
+> after this shipped, the label and the note did not change what she did.
+> What stands from here is the fallback, a share with no link, which still
+> renders `[cover image <handle>]` with the role and the note.
 
 **Measured live**, once, the same day: a reel shared into a group rendered as
 `[shared reel by @x <link>] [image <handle>]`, and a member asked Nora what
@@ -286,6 +305,78 @@ live on the next checkout pull, and unmeasured. It lands only with a run of
 the reaction replay set (the 104 replayed replies its version history is
 measured on) before and after, and a version bump with the served-section sha
 repinned in `tests/test_doctrine_version_parity.py`.
+
+### 2026-09-24, after #454: a linked share carries no picture
+
+**Measured live**, twice, with #454 deployed. The line read
+`[shared reel by @x <link>] [cover image <handle>]`. Asked «what is in this
+reel» in one turn and «what do u see» in another, Nora called `media_fetch`
+on the cover handle and nothing else. It returned a real reading of one
+frame WITH the cover note (only the cover, the item is behind its link), and
+she answered «I only read this frame». `instagram_read(link=...)` was never
+called. The read path itself was fine: `instagram_read`'s client on the same
+live post returned its six items (one video, five images), and on the reel
+its video.
+
+**Why wording failed.** #454 changed two words the model reads (the label,
+and the note on the result) and one it could act on (the L1 when-clause).
+None of them removed the call that ended the turn. A handle in the line is
+an affordance that a cheap call SUCCEEDS on, and a successful call with a
+readable answer is a reason to stop; a note attached to that success is
+read as a caveat on an answer she already has, not as an instruction to
+make a second call. The eval had said about eight in ten would route to
+the link first. It was wrong for a structural reason: its handle was typed
+and named no blob, so `media_fetch` on it FAILED, and the failure is what
+pushed her to the link. Live the handle is held, the call succeeds, and she
+stops. The eval measured a different input from production (AGENTS.md: read
+the input before rewriting the instruction; here the input was the eval's,
+and it disagreed with production's).
+
+**The structural rule: a line offers only the call that answers it.** When
+the shared item's link validated, the parser emits NO media for its
+thumbnail (`nora/platform/instagram/parser.py`, `parse_event`):
+
+- no placeholder in the body: the line is `[shared <kind> by @<author>
+  <link>]`, plus the caption as before, and nothing after it;
+- no `MediaRef`, so custody downloads nothing, holds nothing and writes no
+  `media_json`, and no reader (`body_with_handles`, the render join,
+  `media_fetch`) can reference a handle the body does not carry. Keeping the
+  thumbnail in custody without a placeholder was considered and refused: a
+  held blob no line names is unreachable by construction, and the link reads
+  the item's own frames.
+
+`media_fetch` also closes the other door. Given an instagram.com page link
+(a post, reel, story or profile, judged by `nora.domain.instagram_links.
+parse_link`, the parser the transcript and `instagram_read` share), it
+answers `nothing_found` at once, before any download and before the
+media-configured gate, with the note «That link is an Instagram page, not a
+picture or video file. Open it with instagram_read using this link, then
+look at the media it returns.» `nothing_found` because R-27 gives that
+status to «the URL is not a describable picture/video», and nothing was
+tried that could have failed. A CDN url, an item's own file, is not an
+instagram.com page and still downloads. `instagram_read`'s post result
+already says each item's url is what `media_fetch(url=...)` looks at
+(`_POST_FRAMING`), now pinned by a test.
+
+**The fallback is #454's, unchanged.** A share with NO validated link (none
+sent, a foreign host, a story whose user segment is not the author) keeps
+`[cover image <handle>]`, `on_demand`, `MediaBlob.role = "cover"` and the
+cover note: the cover is all there is.
+
+**Measured by** `route_instagram_read_shared_*` in
+`evals/corpora/tool_selection.yaml`, whose inputs are now exactly this
+rendering: the link and no handle. That removes the typed-handle
+distortion, because the eval's input is production's. The order criterion
+(`media_fetch` before `instagram_read` is a FAIL) stays. The live test is
+the real check; this reading reopens if a live turn on a linked share still
+answers from anything but `instagram_read`'s result.
+
+**Known edge, widened.** A share stored before this change carries a
+`[cover image <handle>]` (or, before #454, `[image <handle>]`) beside its
+link, and those rows stay as they are: `media_fetch` on one still serves the
+cover with the note. A re-parse of such a delta now yields no placeholder at
+all. As recorded above, nothing on Instagram compares a re-parse against the
+stored body today (an Instagram edit carries no media and no `shared`).
 
 ### Known gaps, recorded and not fixed here
 

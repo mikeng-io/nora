@@ -1,0 +1,14 @@
+{
+  "type": "fix",
+  "summary": "Asked about a reel or post someone shared into an Instagram group, Nora no longer has a cover picture to settle for: the shared item shows up as its link only, so she reads the item itself.",
+  "details": [
+    "A shared reel, post or story that comes with a valid link now appears in her conversation as who posted it and the link, with no picture attached. Before, the cover picture sat beside the link, and asked what was in a reel she looked at that one still and answered from it, even after being told it was only the cover.",
+    "The cover picture of such a share is no longer downloaded or stored.",
+    "If she tries to look at an Instagram post, reel, story or profile link as if it were a picture, she is told straight away that it is an Instagram page and to open it with her Instagram reading tool, instead of the page being downloaded."
+  ],
+  "limitations": [
+    "A share whose link is missing or not a valid Instagram link still shows its cover picture, since that is all there is to look at.",
+    "Shares from before this change keep their cover picture in her history.",
+    "Whether she now opens the link is measured by routing cases that still have to be run against the deployed model."
+  ]
+}

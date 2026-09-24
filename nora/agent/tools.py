@@ -3041,6 +3041,18 @@ _COVER_NOTE = (
     "item's link, if that line carries one."
 )
 
+# What `media_fetch(url=...)` says when the url is an Instagram PAGE (a
+# post, reel, story or profile link) rather than a picture or video file.
+# `nothing_found` under R-27: the link is not a describable picture, which
+# is that status's own documented meaning, and nothing was tried that could
+# have failed. The note names the next call and what to do with its result,
+# because the result (`instagram_read`'s post and story rows) is where the
+# files are. No dash, ADR 0015 §3 (`tests/unit/test_social_tool_notes.py`).
+_INSTAGRAM_PAGE_LINK = (
+    "That link is an Instagram page, not a picture or video file. Open it "
+    "with instagram_read using this link, then look at the media it returns."
+)
+
 
 def _strip_media_markers(text: str) -> str:
     """Remove `[image a3f2c1]`-style markers from outbound reply text."""
@@ -5964,6 +5976,20 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                             "number or ID into a question about a picture. Ask "
                             "it in plain words and I'll look.",
                 }
+
+        # AN INSTAGRAM PAGE IS NOT MEDIA, and it is answered before anything
+        # else, downloads and configuration included, because the answer is
+        # a route and not a reading. A reel, post, story or profile link is
+        # an HTML page: downloading it spends a fetch to learn that, and
+        # «I couldn't fetch that» would read as the item being gone. The
+        # link is judged by `parse_link`, the one Instagram link parser the
+        # transcript and `instagram_read` both use, so the three cannot
+        # disagree about what an Instagram page is. A CDN url (an item's own
+        # file, which `instagram_read` returns) is not an instagram.com page
+        # and still downloads.
+        if url and not code and _parse_instagram_link(url) is not None:
+            _record_media(metrics, "nothing_found", reason="instagram_page")
+            return {"status": "nothing_found", "note": _INSTAGRAM_PAGE_LINK}
 
         # Gate FIRST — the inert-by-config shape (§5). Custody off (`[media]
         # enabled=false` or no key → no blob store) or no vision client wired

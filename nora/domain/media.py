@@ -127,7 +127,10 @@ _DOCUMENT_SUBTYPES = frozenset({
 # "what is in this reel" off one frame and never opened the link it was
 # looking at (2026-09-24). The transcript has to say what the model is
 # reading; a tool description telling it what it can do was already there
-# and was not enough.
+# and was not enough. Since later that day it renders only for a share whose
+# line has NO link: live, a `[cover image …]` beside a link was still read
+# instead of the link, so a linked share carries no picture at all
+# (`nora.platform.instagram.parser.parse_event`).
 LABELS = frozenset({
     "image", "cover image", "video", "audio", "voice note", "document", "file",
     "sticker",
