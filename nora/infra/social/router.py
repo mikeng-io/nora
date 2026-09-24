@@ -9,8 +9,8 @@ between — a choice it would make badly and inconsistently, and which would
 leak the topology into the prompt. If a doctrine line or a tool docstring ever
 says "instameow" or "opencli", this boundary has already failed.
 
-It is the single choke point for EVERY social tool, old and new: `social_fetch`
-(X only, since P11), `instagram_read` and `instagram_search` (18) all hand
+It is the single choke point for EVERY social tool, old and new: `x_read`
+and `x_search` (DEC-201), `instagram_read` and `instagram_search` (18) all hand
 their reads to this one object, so no tool carries its own copy of a routing
 or an authorization rule.
 

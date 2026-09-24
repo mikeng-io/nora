@@ -627,7 +627,7 @@ def test_no_input_of_hers_carries_a_baked_address_or_an_inventory(self_account):
       moves. It deliberately does NOT include the tool-schema layer (the
       docstrings handed to the model as the tool surface, also baked into every
       turn): `social_fetch`'s `https://x.com/<user>/status/<id>` example
-      (`nora/agent/tools.py:5672`) is a real URL literal there today, but it
+      (retired with the tool, DEC-201) was a real URL literal there, but it
       names a foreign site's URL SHAPE for a human reading the tool's own docs,
       not the portal's address — it does not bear on this sentence's claim, and
       folding the tool-schema layer in would need a narrower measurement (only

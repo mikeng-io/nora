@@ -277,7 +277,7 @@ class ToolRegistry:
         # Nora's, whether it is handed a query or a url.
         self._search = search
         # `social` (OpenCLI bridge, DEC-151) is NOT default-constructed either:
-        # `social_fetch` ships INERT behind `[social] enabled` (keyless — the
+        # `x_read`/`x_search` ship INERT behind `[social] enabled` (keyless — the
         # bridge is loopback-only and holds the read-only allowlist host-side),
         # so every composition that has not wired one leaves this None and the
         # tool answers `unavailable` (the honest «not configured» state, R-5).

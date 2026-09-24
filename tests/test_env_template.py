@@ -238,7 +238,7 @@ _MAY_DIFFER = {
     # template until someone decides to.
     "media.rustfs.enabled", "music.enabled",
     # `social.enabled` joins them 2026-08-31: the template ships `social_fetch`
-    # INERT (DEC-151 "explicitly on" rule — the tool reads third-party social
+    # (now `x_read` and `x_search`, DEC-201) INERT (DEC-151 "explicitly on" rule — the tool reads third-party social
     # content through an authenticated browser session), and this deployment
     # has opted in after the live bridge wiring (PR #86/#87). NOT
     # `timeout_seconds`/`content_max_chars` — those are the same known-good

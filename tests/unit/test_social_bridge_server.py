@@ -88,7 +88,7 @@ async def test_every_write_ish_command_is_refused_and_never_spawns(bridge, what)
 
 async def test_instagram_post_is_refused_and_never_spawns(bridge):
     """Host-side: OpenCLI 1.8.7 has no caption-by-URL command, and since P11
-    OpenCLI serves no Instagram read at all (`social_fetch` is X only). A
+    OpenCLI serves no Instagram read at all (`x_read` and `x_search` are X only). A
     request for one could only have been constructed around the tool, so it
     is refused here."""
     runner, session, base = bridge

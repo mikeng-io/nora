@@ -5,7 +5,7 @@ A `note` is text the model reads at the moment it is choosing how to phrase
 its answer, so every dash in one is a demonstration of the style her doctrine
 asks her not to use. ADR 0015 already bans dashes from descriptions
 (`test_the_description_meets_adr_0015`); this extends the ban to the result
-text of `social_fetch`, `instagram_read` and `instagram_search`, including
+text of `x_read`, `x_search`, `instagram_read` and `instagram_search`, including
 the notes P10 and P12 added (a handle, a link, a post).
 
 Two halves, because a note reaches the model from two kinds of place:
@@ -39,7 +39,7 @@ from nora.testing import FakeMemoryStore
 from tests.fakes import SinkSender
 
 _DASH = re.compile("[–—]")
-_TOOLS = ("social_fetch", "instagram_read", "instagram_search")
+_TOOLS = ("x_read", "x_search", "instagram_read", "instagram_search")
 
 
 class _NoStore:
@@ -80,7 +80,8 @@ def test_no_string_in_the_closure_carries_a_dash(tool):
 
 def _shared_payloads() -> dict[str, object]:
     return {
-        "tools._SOCIAL_OFF": tools_module._SOCIAL_OFF,
+        "tools._X_OFF": tools_module._X_OFF,
+        "tools._X_NOTES[ok]": {"note": tools_module._X_NOTES["ok"]},
         "tools._INSTAGRAM_OFF": tools_module._INSTAGRAM_OFF,
         "tools._INSTAGRAM_FAILED": tools_module._INSTAGRAM_FAILED,
         "results.UNAVAILABLE": results.UNAVAILABLE,
@@ -97,7 +98,6 @@ def _shared_payloads() -> dict[str, object]:
         "instagram_client._POST_FRAMING": {"note": instagram_client._POST_FRAMING},
         "instagram_client.POST_NOTHING_FOUND": instagram_client.POST_NOTHING_FOUND,
         "instagram_client.POST_UNSUPPORTED": instagram_client.POST_UNSUPPORTED,
-        "tools._SOCIAL_INSTAGRAM_MOVED": {"note": tools_module._SOCIAL_INSTAGRAM_MOVED},
     }
 
 
@@ -112,12 +112,18 @@ async def test_the_notes_actually_returned_on_the_refusal_paths_carry_no_dash():
     source scan above says what COULD be returned, this reads what IS."""
     calls = _calls()
     outs = [
-        await calls["social_fetch"](platform="instagram", what="search", target="q"),
-        await calls["social_fetch"](platform="x", what="story", target="q"),
-        await calls["social_fetch"](platform="tiktok", what="post", target="q"),
-        await calls["social_fetch"](platform="x", what="like", target="q"),
-        await calls["social_fetch"](platform="x", what="profile", target="not a name!"),
-        await calls["social_fetch"](platform="x", what="profile", target="nasa"),
+        await calls["x_read"](),
+        await calls["x_read"](handle="nasa", link="https://x.com/nasa"),
+        await calls["x_read"](handle="nasa"),
+        await calls["x_read"](handle="not a name!", what="profile"),
+        await calls["x_read"](link="https://www.instagram.com/p/SynthPost01/"),
+        await calls["x_read"](link="https://evil.example/nasa"),
+        await calls["x_read"](link="https://x.com/nasa/status/1", what="posts"),
+        await calls["x_read"](handle="+85212345678", what="profile"),
+        await calls["x_read"](handle="nasa", what="profile"),
+        await calls["x_search"](query=""),
+        await calls["x_search"](query="+85212345678"),
+        await calls["x_search"](query="nasa launch"),
         await calls["instagram_read"](what="posts", person="Quinn"),
         # P10 and P12: the paths a handle or a link takes before any backend.
         await calls["instagram_read"](),

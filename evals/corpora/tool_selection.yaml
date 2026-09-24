@@ -214,7 +214,7 @@ cases:
 
   # --- per-network social reads (design/instagram-adoption/18, P5, P11) -------
   # `instagram_read` takes a PERSON by name; `instagram_search` finds ACCOUNTS
-  # from free text (P11); `social_fetch` is X only. The names are synthetic and
+  # from free text (P11); X is `x_read` and `x_search` (DEC-201). The names are synthetic and
   # need not be in the room: an honest `nothing_found` is still a correctly
   # routed call.
   - name: route_instagram_read_story
@@ -222,7 +222,7 @@ cases:
     expect: reply
     mention: true
     input: Quinn個IG story而家有咩？
-    metadata: {tools: [instagram_read], not_tools: [social_fetch, web_search]}
+    metadata: {tools: [instagram_read], not_tools: [x_read, web_search]}
     snapshot: *room_a
 
   - name: route_instagram_read_posted
@@ -230,7 +230,7 @@ cases:
     expect: reply
     mention: true
     input: Quinn最近喺IG post咗啲咩？
-    metadata: {tools: [instagram_read], not_tools: [social_fetch, web_search]}
+    metadata: {tools: [instagram_read], not_tools: [x_read, web_search]}
     snapshot: *room_a
 
   # Was `route_social_fetch_instagram_search` (P5): the same message, which
@@ -240,7 +240,7 @@ cases:
     expect: reply
     mention: true
     input: 幫我喺IG search下有冇香港行山嘅account
-    metadata: {tools: [instagram_search], not_tools: [social_fetch, instagram_read]}
+    metadata: {tools: [instagram_search], not_tools: [x_read, instagram_read]}
     snapshot: *room_a
 
   - name: route_instagram_search_find_person
@@ -248,7 +248,7 @@ cases:
     expect: reply
     mention: true
     input: 幫我搵下Robin個Instagram
-    metadata: {tools: [instagram_search], not_tools: [social_fetch, web_search]}
+    metadata: {tools: [instagram_search], not_tools: [x_read, web_search]}
     snapshot: *room_a
 
   # The boundary with the row above, pinned as a pair: the same request about
@@ -261,7 +261,7 @@ cases:
     expect: reply
     mention: true
     input: 幫我搵下Miles個Instagram
-    metadata: {tools: [instagram_read], not_tools: [instagram_search, social_fetch]}
+    metadata: {tools: [instagram_read], not_tools: [instagram_search, x_read]}
     snapshot: *room_a
 
   - name: route_instagram_search_handle
@@ -269,7 +269,7 @@ cases:
     expect: reply
     mention: true
     input: Sky個IG handle係咩？
-    metadata: {tools: [instagram_search], not_tools: [social_fetch, web_search]}
+    metadata: {tools: [instagram_search], not_tools: [x_read, web_search]}
     snapshot: *room_a
 
   # P10 and P12: a pasted link and a typed handle are read by `instagram_read`
@@ -280,7 +280,7 @@ cases:
     expect: reply
     mention: true
     input: https://www.instagram.com/reel/SynthReel01/ 呢條reel入面有咩？
-    metadata: {tools: [instagram_read], not_tools: [web_fetch, social_fetch, instagram_search]}
+    metadata: {tools: [instagram_read], not_tools: [web_fetch, x_read, instagram_search]}
     snapshot: *room_a
 
   - name: route_instagram_read_profile_link
@@ -288,7 +288,7 @@ cases:
     expect: reply
     mention: true
     input: https://www.instagram.com/synth.example/ 呢個係邊個？
-    metadata: {tools: [instagram_read], not_tools: [web_fetch, social_fetch]}
+    metadata: {tools: [instagram_read], not_tools: [web_fetch, x_read]}
     snapshot: *room_a
 
   - name: route_instagram_read_handle
@@ -296,7 +296,7 @@ cases:
     expect: reply
     mention: true
     input: who is @synth.example on IG?
-    metadata: {tools: [instagram_read], not_tools: [social_fetch, web_search]}
+    metadata: {tools: [instagram_read], not_tools: [x_read, web_search]}
     snapshot: *room_a
 
   - name: route_instagram_search_find_name_en
@@ -304,23 +304,34 @@ cases:
     expect: reply
     mention: true
     input: find Taylor Example on Instagram
-    metadata: {tools: [instagram_search], not_tools: [instagram_read, social_fetch]}
+    metadata: {tools: [instagram_search], not_tools: [instagram_read, x_read]}
     snapshot: *room_a
 
-  - name: route_social_fetch_x_search
+  # DEC-201: `social_fetch` is retired into `x_read` (a link or a handle) and
+  # `x_search` (free text). The two rows below were `route_social_fetch_x_search`
+  # and `route_social_fetch_x_link`, same messages; the handle row is new.
+  - name: route_x_search
     entry: tag
     expect: reply
     mention: true
     input: 幫我喺X search下大家點講個颱風
-    metadata: {tools: [social_fetch], not_tools: [instagram_search, instagram_read]}
+    metadata: {tools: [x_search], not_tools: [x_read, instagram_search, instagram_read, web_search]}
     snapshot: *room_a
 
-  - name: route_social_fetch_x_link
+  - name: route_x_read_link
     entry: tag
     expect: reply
     mention: true
     input: https://x.com/example/status/1234567890 呢個post講咩？
-    metadata: {tools: [social_fetch], not_tools: [instagram_read, instagram_search, web_fetch]}
+    metadata: {tools: [x_read], not_tools: [x_search, instagram_read, instagram_search, web_fetch]}
+    snapshot: *room_a
+
+  - name: route_x_read_handle
+    entry: tag
+    expect: reply
+    mention: true
+    input: what has @synth_example been posting on X lately?
+    metadata: {tools: [x_read], not_tools: [x_search, instagram_read, web_search]}
     snapshot: *room_a
 
   # --- what the call carried: the image-generation skill (2026-09-24) ---------

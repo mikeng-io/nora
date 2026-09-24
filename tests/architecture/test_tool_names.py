@@ -58,7 +58,11 @@ _SNAPSHOT_SHA256 = (
 
 #: Snapshot names renamed to the pattern or removed since. Grows; the exempt
 #: set below shrinks with it.
-_RENAMED_SINCE: frozenset[str] = frozenset()
+_RENAMED_SINCE: frozenset[str] = frozenset({
+    # DEC-201 (design/social-per-network): retired into `x_read` and
+    # `x_search`, which meet the pattern.
+    "social_fetch",
+})
 
 _PREDATES_THE_RULE = _SNAPSHOT_2026_09_24 - _RENAMED_SINCE
 

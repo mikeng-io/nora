@@ -102,8 +102,9 @@ def test_the_registry_exposes_every_declared_tool():
         "generate_image",
         "media_search", "media_send",
         "web_search", "web_fetch",
-        # social_fetch (DEC-151): READ-ONLY X via the host bridge.
-        "social_fetch",
+        # x_read and x_search (DEC-201, replacing DEC-151's social_fetch):
+        # READ-ONLY X via the host bridge.
+        "x_read", "x_search",
         # instagram_read (design/instagram-adoption/18): a person's Instagram
         # profile or story, over the instagram-bridge.
         "instagram_read",
@@ -277,9 +278,10 @@ def test_budgets_match_todays_table():
         # round trip and there is rarely a reason to open more than one or two
         # links in a turn.
         "web_fetch": 2,
-        # social_fetch (DEC-151): the search/refine/fetch shape — a turn may
-        # read a post, then a profile or a search around it.
-        "social_fetch": 3,
+        # x_read (DEC-201): a post, then its author's profile or posts, and a
+        # second try. x_search: a search and one refinement.
+        "x_read": 3,
+        "x_search": 2,
         # instagram_read (design/instagram-adoption/18): one read, a second
         # for the other `what` or «no, the other one».
         "instagram_read": 2,
@@ -495,7 +497,8 @@ def test_the_confusable_retrieval_tools_all_declare_a_source_tier():
         "place_info": "confirmed", "where_is": "confirmed",
         "reverse_geocode": "confirmed",
         "saved_places": "remembered", "web_search": "web", "web_fetch": "web",
-        "social_fetch": "web", "instagram_read": "web", "instagram_search": "web",
+        "x_read": "web", "x_search": "web",
+        "instagram_read": "web", "instagram_search": "web",
     }
     for name, tier in expected.items():
         assert NATIVE_TOOLS[name].source_tier == tier, name
@@ -644,7 +647,7 @@ def test_cacheable_tools_matches_the_declared_set():
     from nora.agent.registry import ToolRegistry
     assert ToolRegistry().cacheable_tools() == frozenset(
         {"place_info", "route", "web_search", "web_fetch", "weather", "transit",
-         "music_status", "social_fetch", "instagram_search"}
+         "music_status", "x_read", "x_search", "instagram_search"}
         # where_been is deliberately NOT cacheable (Kimi audit B1): the recall
         # log replays a persisted result verbatim with no guard re-check, so a
         # cached `ok` would outlive the roster it was authorized under.
@@ -729,9 +732,10 @@ READ_ONLY = frozenset({
     # `UNIT_SAFE_TOOLS`.
     "search_memory_workspace",
     "music_status",
-    # DEC-151: social_fetch is a pure read at all three layers — the tool's
-    # closed vocabulary, the bridge's host-side allowlist, this declaration.
-    "social_fetch",
+    # DEC-151, DEC-201: the X tools are pure reads at all three layers, the
+    # tools' closed vocabulary, the bridge's host-side allowlist, this
+    # declaration.
+    "x_read", "x_search",
     # R-86 extended (design/instagram-adoption/18): the same three layers,
     # with a client that only ever issues GET.
     "instagram_read",

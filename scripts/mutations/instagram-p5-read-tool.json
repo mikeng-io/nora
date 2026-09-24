@@ -81,7 +81,7 @@
     "file": "nora/infra/social/bridge_server.py",
     "old": "        (\"x\", \"search\"): (\"twitter\", \"search\"),\n    })",
     "new": "        (\"x\", \"search\"): (\"twitter\", \"search\"),\n        (\"instagram\", \"profile\"): (\"instagram\", \"profile\"),\n    })",
-    "target": "tests/test_acceptance_rules.py::test_r86_social_fetch_is_read_only_at_three_layers"
+    "target": "tests/test_acceptance_rules.py::test_r86_social_reads_are_read_only_at_three_layers"
   },
   {
     "name": "composition wires the Instagram backend without the person index",

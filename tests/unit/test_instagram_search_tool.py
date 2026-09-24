@@ -350,7 +350,7 @@ async def test_the_limit_is_the_bridges_and_the_query_leaves_trimmed(world):
 
 @pytest.mark.parametrize("query", ["+85212345678", "22.31,114.16"])
 async def test_an_identifier_or_coordinate_never_leaves_in_a_search(world, query):
-    """The egress screen `social_fetch` applies to its target (design/14
+    """The egress screen the X tools apply to what they send (design/14
     §2.2): a phone number or a raw coordinate is not a search Instagram gets
     to see."""
     fake, search = world()
@@ -446,8 +446,8 @@ def test_the_schema_takes_a_query_and_nothing_else():
 def test_the_description_meets_adr_0015():
     """ADR 0015 §3 for a NEW tool, from its first commit: a declared level,
     the text Strands sends within its ceiling, no em or en dash, and no
-    non-Latin character anywhere in the spec it sends. The same for
-    `social_fetch`, whose docstring this branch edits."""
+    non-Latin character anywhere in the spec it sends. The X tools' own
+    check is `tests/unit/test_x_tools.py`."""
     import tiktoken
 
     from nora.agent.ports import adapt
@@ -455,7 +455,7 @@ def test_the_description_meets_adr_0015():
     enc = tiktoken.get_encoding("cl100k_base")
     ceilings = {1: 80, 2: 160, 3: 320}
     specs = {s.name: s for s in _specs(None)}
-    for name in ("instagram_search", "social_fetch"):
+    for name in ("instagram_search",):
         level = NATIVE_TOOLS[name].level
         assert level in ceilings, name
         sent = adapt(specs[name]).tool_spec
@@ -468,10 +468,13 @@ def test_the_description_meets_adr_0015():
 def test_the_catalogue_lines_separate_the_two_instagram_tools_and_x():
     lines = {
         ln.split(" ")[1]: ln for ln in ToolRegistry().tool_catalogue().splitlines()
-        if ln.startswith(("- instagram_search ", "- instagram_read ", "- social_fetch "))
+        if ln.startswith((
+            "- instagram_search ", "- instagram_read ", "- x_read ", "- x_search ",
+        ))
     }
     assert "account" in lines["instagram_search"]
-    assert "Instagram" not in lines["social_fetch"]
+    assert "Instagram" not in lines["x_read"]
+    assert "Instagram" not in lines["x_search"]
     assert "story" not in lines["instagram_search"]
 
 

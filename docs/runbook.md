@@ -1035,7 +1035,7 @@ back to 0.14.4.1.
 
 ## 10. "The social desktop: VNC, Chrome, OpenCLI"
 
-The browser runtime behind `social_fetch` (DEC-151) is four pieces on the
+The browser runtime behind `x_read` and `x_search` (DEC-201) is four pieces on the
 host, all systemd **user** services or user installs — none of them is the
 Nora container, and Nora runs fine with all of them down (the tool answers
 `unavailable`). See `ARCHITECTURE.md` §1's browser-boundary note.
@@ -1078,7 +1078,7 @@ systemctl --user restart nora-social-bridge        # the /read seam; cheap and s
 curl -s http://127.0.0.1:19826/health              # {"ok": true} when the bridge is up
 ```
 
-`social_fetch` answering `unavailable` → check the bridge first (the status
+`x_read` or `x_search` answering `unavailable` → check the bridge first (the status
 and health curl above), then `opencli doctor` (below).
 
 After any Chrome restart, confirm the Browser Bridge extension reconnected with

@@ -4,7 +4,7 @@
 Nora runs in a Docker container with host networking; `opencli` exists only on
 the host (daemon on localhost:19825, driving an authenticated Chrome via the
 Browser Bridge extension). This process is the narrow seam between them: the
-`social_fetch` tool POSTs `{platform, what, target, limit}` to `/read`, and
+X tools (`x_read`, `x_search`) POST `{platform, what, target, limit}` to `/read`, and
 this bridge turns that into `opencli <site> <command> <target> -f json` — or
 refuses to.
 

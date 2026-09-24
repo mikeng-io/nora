@@ -1,5 +1,5 @@
 """The `SocialProvider` payloads that are NOT a read — one copy, read by every
-implementation behind `social_fetch`.
+implementation behind the social tools.
 
 They live here rather than in whichever module first needed them because the
 `note` field is text the MODEL reads and acts on. Two backends each carrying
@@ -25,7 +25,7 @@ a state is ours. The bridge's wording is DROPPED, not clamped and not escaped
 instructions" that is made safe by being shorter.
 
 `clamp_chars` lives here for the same "one copy" reason the notes do: every
-implementation behind `social_fetch` bounds the text it hands back, because a
+implementation behind the social tools bounds the text it hands back, because a
 tool result is re-sent on every subsequent model call.
 """
 
@@ -133,7 +133,7 @@ def clamp_chars(text: str, max_chars: int) -> tuple[str, bool]:
     point.
 
     Here rather than private to one client because BOTH implementations behind
-    `social_fetch` owe the same bound, for the same reason the notes are
+    the social tools owe the same bound, for the same reason the notes are
     shared: a tool result is re-sent on every subsequent model call, and a
     clamp that exists on one backend and not the other is a token budget that
     depends on which verb was asked.

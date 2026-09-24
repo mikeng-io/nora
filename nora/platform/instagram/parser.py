@@ -255,7 +255,7 @@ def _shared_line(shared: object) -> str:
 
     The caption is written by whoever posted the reel, who is very often
     outside the room and outside `identity.toml` entirely. It is wrapped the
-    way `social_fetch`'s results are wrapped, for the same reason: it is text
+    way the social tools' results are wrapped, for the same reason: it is text
     from a stranger arriving inside Nora's context, and it must not read as
     something a member said or as an instruction.
 

@@ -358,7 +358,7 @@ async def test_a_person_on_a_named_row_is_not_served():
 
 
 async def test_the_default_input_kind_is_named():
-    """`social_fetch` calls the port's four-argument `read`; the router's
+    """The X tools call the port's four-argument `read`; the router's
     extra argument defaults to the port's own meaning, so that call is
     unchanged — and an Instagram bridge row reached that way is refused
     rather than resolved."""
