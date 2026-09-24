@@ -22,10 +22,14 @@ from pathlib import Path
 
 import tiktoken
 
+from nora.skills.loader import SkillStore
+
 TOOLS = Path(__file__).resolve().parents[2] / "nora" / "agent" / "tools.py"
+SKILLS_DIR = Path(__file__).resolve().parents[2] / "nora" / "skills"
 
 #: ADR 0015 §3's Level 3 ceiling: Level 1 plus a contract of statuses she
-#: acts on differently. Measured at 275 on 2026-09-24 (667 before).
+#: acts on differently. Measured at 307 on 2026-09-25 (275 before the skill
+#: pointer, 667 before ADR 0015).
 LEVEL_3_CEILING = 320
 
 
@@ -162,10 +166,12 @@ def test_description_points_to_the_image_generation_skill():
 
 
 def test_the_named_skill_exists():
-    """The name the docstring points at must resolve to a real skill on disk,
-    read the same way the description names it, so a skill rename or removal
-    cannot leave this pointer dangling without turning a test red."""
+    """The name the docstring points at must resolve through `SkillStore`, the
+    same lookup Nora's own `skills` tool uses (`nora.skills.loader`), so a
+    skill rename or removal cannot leave this pointer dangling without
+    turning a test red."""
     match = _SKILL_NAME_RE.search(_description())
     assert match is not None
-    skill_path = TOOLS.resolve().parents[2] / "nora" / "skills" / match.group(1) / "SKILL.md"
-    assert skill_path.is_file(), skill_path
+    skill = SkillStore(SKILLS_DIR).resolve(match.group(1))
+    assert skill is not None, match.group(1)
+    assert skill.name == "image-generation", skill.name

@@ -182,9 +182,11 @@ def test_the_whole_corpus_is_accounted_for() -> None:
     poster), plus DEC-201's X handle case (`route_x_read_handle`; the X link
     and search cases were renamed, not added) and its 3 LinkedIn cases (a
     profile link, a company link, a name to find), plus `tool_selection`'s
-    `route_generate_image_self_again_loads_the_skill_first` (2026-09-25: the
-    live «draw yourself again» failure that skipped the image-generation
-    skill load, ADR 0015/0016); a change to it is
+    `route_generate_image_self_again_loads_the_skill_first` (2026-09-25:
+    guards the post-fix behaviour on the closest faithful anchor for the
+    «draw yourself again» skill-skip failure; it does not reproduce the live
+    condition, since standing replayed from production cannot carry it,
+    ADR 0015/0016); a change to it is
     a change to what the suite claims to measure and belongs in a commit that
     says so. Recomputed with `census()` at each merge, never summed."""
     totals = [census(n) for n in CORPORA]
