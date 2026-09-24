@@ -179,8 +179,9 @@ operator-only to edit, and MUST NOT load because a message names it (R-29).
 
 **Updated 2026-09-25 (issue #187 finding 3).** The frontmatter keys that
 used to declare the first three claims — `authority_above`, `authority_below`,
-`change_policy` — are now REFUSED at load
-(`nora/skills/loader.py::parse_skill`) rather than honoured: nothing reads
+`change_policy` — now FAIL THE GATE
+(`nora/skills/loader.py::parse_skill` raises `SkillError`) rather than being
+honoured: nothing reads
 `authority_above`/`authority_below` for a skill (only
 `nora/doctrine/loader.py` reads them, and only for doctrine sections), and
 nothing reads a skill's `change_policy` anywhere — checked directly:
@@ -224,8 +225,8 @@ listing silently rather than raising.
    measured on whitespace-collapsed text — see §4's update.
 4. **To do:** `skills` rows in `tool_selection` for the reach test.
    ~~a check that a skill's authority keys agree~~ **Done 2026-09-25 (issue
-   #187 finding 3):** not a check that they agree — refused at load instead.
-   See §6's update.
+   #187 finding 3):** not a check that they agree — they fail the gate
+   instead. See §6's update.
 5. **image-generation is left unchanged;** its next change applies this ADR.
    It passes both tests on the numbers above and keeps a 2,000 token ceiling
    (measured 1,449 at this rollout, 2026-09-24), which leaves room for the
@@ -266,7 +267,7 @@ listing silently rather than raising.
   cannot be gamed by rewrapping the same words (§4's update), and a skill's
   frontmatter can no longer carry an authority claim nothing enforces (§6's
   update) — a file that used to read as arbitrated against doctrine, and was
-  not, now fails to load instead.
+  not, now fails the gate instead.
 - **Worse (added 2026-09-25):** a skill's operator-only editing convention
   is no longer a checked frontmatter field, only review — the same as it
   always was for every OTHER rule §6 lists (design/12 §2's authority item 5

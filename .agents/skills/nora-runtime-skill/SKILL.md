@@ -66,13 +66,13 @@ numbers in 0016's own table are dated and are never an input:
 
 Copy the frontmatter of an existing skill (`nora/skills/navigation/SKILL.md`):
 `name` and `description` only. `authority_above`, `authority_below` and
-`change_policy` are REFUSED at load (`nora/skills/loader.py::parse_skill`
-raises `SkillError`, issue #187 finding 3) — nothing reads any of the three
-for a skill the way `nora/doctrine/loader.py` reads the first two for a
-doctrine section, and nothing reads a skill's `change_policy` anywhere
-either. A skill still ranks below doctrine and above message content, may
-add procedure, and never relaxes a rule above it (0016 §6) — by convention
-and review now, not by a frontmatter key.
+`change_policy` FAIL THE GATE (`nora/skills/loader.py::parse_skill` raises
+`SkillError`, issue #187 finding 3) — nothing reads any of the three for a
+skill the way `nora/doctrine/loader.py` reads the first two for a doctrine
+section, and nothing reads a skill's `change_policy` anywhere either. A
+skill still ranks below doctrine and above message content, may add
+procedure, and never relaxes a rule above it (0016 §6) — by convention and
+review now, not by a frontmatter key.
 
 1. **Name**: a noun phrase for the domain, lowercase words and single hyphens,
    at most 64 characters, equal to its directory (the loader refuses a mismatch).

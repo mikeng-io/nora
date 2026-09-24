@@ -140,31 +140,67 @@ def _tokens(text: str) -> int:
 
 
 def _body_tokens(text: str) -> int:
-    """The ONE function `test_every_skill_stays_small` measures a body with —
-    collapse every run of whitespace to a single space, THEN cl100k-encode.
+    """Collapse every run of whitespace to a single space, THEN cl100k-encode.
 
-    Kept as the single source of truth on purpose (issue #187 finding 3
-    review): a reflow-invariance test that only exercises a helper in
-    isolation cannot prove the size TEST itself has the property if the test
-    could silently stop calling that helper. `test_every_skill_stays_small`
-    calls only this function to measure `n` — never `_tokens` directly — and
-    `test_a_reflowed_skill_is_measured_identically_by_the_real_ceiling_check`
-    below loads two real, on-disk skills through the production `SkillStore`
-    and drives THIS function on their `.instructions`, so the invariance is
-    proved on the actual load-to-ceiling path, not a copy of it."""
+    The reflow-invariant measure ADR 0016 §4 now uses. Not called directly by
+    `test_every_skill_stays_small` any more — `_skill_fits` below is (issue
+    #187 finding 4, sharpened again on re-review): a reflow test that only
+    proves THIS function has the property does not prove the SIZE TEST does,
+    because nothing stops the size test from being edited to call `_tokens`
+    directly and skip this collapse entirely, and a helper-only reflow test
+    cannot see that edit — it never reads `_TOKEN_CEILINGS` or decides a
+    pass/fail verdict, only compares two numbers this function produces
+    either way. Measured (the reviewer ran it): that exact edit passed all
+    three tests the first version of this file shipped."""
     return _tokens(" ".join(text.split()))
+
+
+def _skill_fits(
+    skill_name: str, text: str, *, ceilings: dict[str, int] | None = None,
+) -> tuple[int, int, bool]:
+    """`(measured, ceiling, ok)` — the ONE decision `test_every_skill_stays_small`
+    makes for every skill, and the ONE function
+    `test_a_reflowed_skill_is_measured_identically_by_the_real_ceiling_check`
+    below calls too. That sharing is the whole point: a mutation to EITHER
+    `_body_tokens`'s own collapse or to this function's own choice of what to
+    measure moves `measured`, and the reflow test's ceiling is chosen to make
+    that movement flip `ok` — so both mutation shapes are caught by the same
+    assertion, not by two tests that happen to agree on the numbers they were
+    each independently given.
+
+    `ceilings` defaults to the real `_TOKEN_CEILINGS`; the reflow test passes
+    a synthetic one instead, which is why this takes a mapping rather than
+    reading the module-level dict directly."""
+    lookup = _TOKEN_CEILINGS if ceilings is None else ceilings
+    ceiling = lookup.get(skill_name, _TOKEN_CEILING)
+    measured = _body_tokens(text)
+    return measured, ceiling, measured <= ceiling
 
 
 def test_every_skill_stays_small(skills):
     """Most of what looks like skill content belongs a layer up or down; what is
     left is judgement, and it is sized in tokens (ADR 0016 §4), measured on the
     whitespace-collapsed body so a rewrap cannot move it (issue #187 finding
-    4; see `_body_tokens`)."""
+    4; see `_skill_fits`)."""
     for skill in skills:
         ceiling = _TOKEN_CEILINGS.get(skill.name, _TOKEN_CEILING)
         assert ceiling <= _HARD_LIMIT, skill.name
-        n = _body_tokens(skill.instructions)
-        assert n <= ceiling, f"{skill.name} skill body is {n} tokens (ceiling {ceiling})"
+        n, _, ok = _skill_fits(skill.name, skill.instructions)
+        assert ok, f"{skill.name} skill body is {n} tokens (ceiling {ceiling})"
+
+
+#: The 63-word fixture every reflow test below shares. Verified 2026-09-25 by
+#: running the code in this file, not carried over from a different one: raw
+#: cl100k-encoded at width 20 it is 88 tokens, at width 100 it is 69; collapsed
+#: (`_body_tokens`) it is 64 either way.
+_REFLOW_PROSE = (
+    "Judgement that other domains also need is doctrine not a skill "
+    "a skill cannot rely on another skill being loaded in the same "
+    "turn this is longer sample prose meant to simulate a real skill "
+    "body paragraph that wraps across several lines of markdown text "
+    "testing whether wrapping the same words differently changes what "
+    "is measured under two different units of account here"
+)
 
 
 def test_the_body_ceiling_is_reflow_invariant():
@@ -173,25 +209,19 @@ def test_the_body_ceiling_is_reflow_invariant():
     word added, changed or removed is a purely cosmetic edit. It must not
     change what the ceiling measures.
 
-    Falsifies the raw-token alternative in the same breath, with the EXACT
-    numbers this fixture reproduces (verified 2026-09-25, not carried over
-    from an earlier, different fixture): the same 63 words, wrapped at width
-    20 versus width 100, raw cl100k-encode to 88 and 69 tokens — an over 27%
-    swing from rewrapping alone. `_body_tokens` gives 64 for both."""
+    Falsifies the raw-token alternative in the same breath, with numbers this
+    fixture reproduces: the same 63 words, wrapped at width 20 versus width
+    100, raw cl100k-encode to 88 and 69 tokens — an over 27% swing from
+    rewrapping alone. `_body_tokens` gives 64 for both. This is the helper in
+    isolation; `test_a_reflowed_skill_is_measured_identically_by_the_real_
+    ceiling_check` below proves the same property of the actual pass/fail
+    decision, which this test cannot (see `_skill_fits`'s docstring)."""
     import textwrap
 
-    prose = (
-        "Judgement that other domains also need is doctrine not a skill "
-        "a skill cannot rely on another skill being loaded in the same "
-        "turn this is longer sample prose meant to simulate a real skill "
-        "body paragraph that wraps across several lines of markdown text "
-        "testing whether wrapping the same words differently changes what "
-        "is measured under two different units of account here"
-    )
-    words = prose.split()
+    words = _REFLOW_PROSE.split()
     assert len(words) == 63
-    narrow = textwrap.fill(prose, width=20)
-    wide = textwrap.fill(prose, width=100)
+    narrow = textwrap.fill(_REFLOW_PROSE, width=20)
+    wide = textwrap.fill(_REFLOW_PROSE, width=100)
     assert narrow != wide, "the two reflows must actually differ byte-for-byte"
 
     # The raw count DOES move — the residual gap a collapsed count closes.
@@ -204,55 +234,65 @@ def test_the_body_ceiling_is_reflow_invariant():
 
 
 def test_a_reflowed_skill_is_measured_identically_by_the_real_ceiling_check(tmp_path):
-    """Closes the gap a helper-only reflow test leaves (independent review of
-    #187, finding 4): proving `_body_tokens` is reflow-invariant in isolation
-    does not prove `test_every_skill_stays_small` IS, because nothing stops
-    that test from being edited to call `_tokens` directly and skip the
-    collapse — a mutation the helper-only test cannot see, since it never
-    loads a skill or reads `_TOKEN_CEILINGS`.
+    """Closes the gap review found in the first version of this test
+    (issue #187 finding 4, twice re-reviewed): that version called
+    `_body_tokens` directly and compared its pass/fail verdict against the
+    REAL 1,500 default — 64 tokens either way, nowhere near 1,500, so the
+    verdict comparison was vacuous, and because it never went through the
+    same function `test_every_skill_stays_small` calls, editing that test to
+    measure raw tokens instead passed this one anyway (the reviewer ran it).
 
-    This drives the actual production path: two real `SKILL.md` files, same
-    words, reflowed at two different widths, loaded through the real
-    `SkillStore` (`parse_skill`, not a shortcut), then measured the same way
-    `test_every_skill_stays_small` measures every shipped skill — same
-    helper, same ceiling lookup. Mutating `_body_tokens` to skip the collapse
-    (falsified by hand, see the PR) turns this red alongside the helper test,
-    because both read `_TOKEN_CEILINGS` and call `_body_tokens` on a REAL
-    loaded skill's `.instructions`."""
+    Both are fixed together: this calls `_skill_fits` — the exact function
+    `test_every_skill_stays_small` calls — and passes a SYNTHETIC ceiling
+    that sits strictly between the fixture's two RAW token counts (69 and
+    88). If `_skill_fits` ever fell back to an uncollapsed measurement — by
+    `_body_tokens` losing its collapse, or by `_skill_fits` itself calling
+    `_tokens` directly and skipping `_body_tokens` — the verdict would FLIP
+    between the two reflows: the narrow one (88) would fail a straddling
+    ceiling the wide one (69) passes. `n_narrow == n_wide` alone could not
+    have caught that class of mutation, since two unequal numbers can still
+    land on the same side of a ceiling far above both — which is exactly
+    what made the 1,500 comparison vacuous. Loads two real `SKILL.md` files
+    through the real `SkillStore` (`parse_skill`, not a shortcut) rather than
+    calling `_skill_fits` on bare strings, so the invariance is proved on the
+    actual load-to-ceiling path."""
     import textwrap
 
-    prose = (
-        "Judgement that other domains also need is doctrine not a skill "
-        "a skill cannot rely on another skill being loaded in the same "
-        "turn this is longer sample prose meant to simulate a real skill "
-        "body paragraph that wraps across several lines of markdown text "
-        "testing whether wrapping the same words differently changes what "
-        "is measured under two different units of account here"
-    )
     skills_dir = tmp_path / "skills"
     narrow_dir, wide_dir = skills_dir / "narrow-fixture", skills_dir / "wide-fixture"
     narrow_dir.mkdir(parents=True)
     wide_dir.mkdir(parents=True)
     (narrow_dir / "SKILL.md").write_text(
         "---\nname: narrow-fixture\ndescription: A reflow fixture for the ceiling test.\n---\n\n"
-        + textwrap.fill(prose, width=20)
+        + textwrap.fill(_REFLOW_PROSE, width=20)
     )
     (wide_dir / "SKILL.md").write_text(
         "---\nname: wide-fixture\ndescription: A reflow fixture for the ceiling test.\n---\n\n"
-        + textwrap.fill(prose, width=100)
+        + textwrap.fill(_REFLOW_PROSE, width=100)
     )
     loaded = {s.name: s for s in SkillStore(skills_dir).available()}
     assert set(loaded) == {"narrow-fixture", "wide-fixture"}
     assert loaded["narrow-fixture"].instructions != loaded["wide-fixture"].instructions
 
-    ceiling = _TOKEN_CEILINGS.get("narrow-fixture", _TOKEN_CEILING)
-    n_narrow = _body_tokens(loaded["narrow-fixture"].instructions)
-    n_wide = _body_tokens(loaded["wide-fixture"].instructions)
-    assert n_narrow == n_wide, (
-        f"the real ceiling check measures the two reflows differently: "
-        f"{n_narrow} vs {n_wide}"
+    # 69 < 75 < 88: strictly between the two RAW counts, so an uncollapsed
+    # measurement would pass "wide" and fail "narrow" — the flip this proves
+    # does not happen. Both are well clear of it collapsed (64 each).
+    straddle = {"narrow-fixture": 75, "wide-fixture": 75}
+    n_narrow, ceiling_narrow, ok_narrow = _skill_fits(
+        "narrow-fixture", loaded["narrow-fixture"].instructions, ceilings=straddle,
     )
-    assert (n_narrow <= ceiling) == (n_wide <= ceiling)
+    n_wide, ceiling_wide, ok_wide = _skill_fits(
+        "wide-fixture", loaded["wide-fixture"].instructions, ceilings=straddle,
+    )
+    assert ceiling_narrow == ceiling_wide == 75
+    assert n_narrow == n_wide == 64, (
+        f"the real ceiling check measures the two reflows differently: "
+        f"{n_narrow} vs {n_wide} (expected 64 both, straddling ceiling 75)"
+    )
+    assert ok_narrow and ok_wide, (
+        f"a straddling ceiling should pass both reflows once collapsed; got "
+        f"ok_narrow={ok_narrow}, ok_wide={ok_wide}"
+    )
 
 
 def test_a_skill_ceiling_is_argued_not_bumped():
