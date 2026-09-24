@@ -1585,7 +1585,12 @@ async def test_the_reply_does_not_wait_for_the_reaction():
     and NOT DONE, are CLOCK-FREE proof that `pipeline.run` returned without
     waiting for the reaction to finish. That catches any UNBOUNDED await:
     `_place(indicator)` awaited directly with no timeout would never resolve,
-    so `run` itself would never return.
+    so `run` itself would never return — and since this repo runs no
+    `pytest-timeout`, an unbounded hang here would otherwise hang `make gate`
+    forever rather than fail it (fail-open). `pipeline.run` is therefore
+    called through `asyncio.wait_for(..., timeout=5.0)`, so that regression
+    surfaces as a clean `TimeoutError`, `pytest.fail`ed with a message naming
+    #430, in about 5s — not a hang.
 
     It does NOT catch a BOUNDED wait — production could `wait_for(indicator
     .placed.wait(), timeout=1.5)` before replying, time out, and continue:
@@ -1597,18 +1602,23 @@ async def test_the_reply_does_not_wait_for_the_reaction():
 
     PROBE 1 (unbounded): make `indicate.begin`/`EngagementPipeline
     ._begin_indicator` `await _place(indicator)` directly instead of
-    spawning it, and `pipeline.run` never returns — the clock-free checks
-    below are never even reached.
+    spawning it, and `pipeline.run` never returns — the `wait_for` below
+    times out after 5s and this fails on `pytest.fail("pipeline.run awaited
+    the reaction (#430)")`, not on any assertion further down.
     PROBE 2 (bounded, 1.5s): add `await asyncio.wait_for(indicator.placed
     .wait(), timeout=1.5)` right after `_begin_indicator` in `pipeline.run`
-    (suppressing the timeout). `run` returns, `emojis == []` and the task
-    check both still pass — only `elapsed < 1.0` fails."""
+    (suppressing the timeout). `run` returns well inside the 5s ceiling,
+    `emojis == []` and the task check both still pass — only `elapsed < 1.0`
+    fails."""
     gate = asyncio.Event()   # never set until after the check below
     adapter = _ReactingAdapter(react_gate=gate)
     pipeline, _metrics, _audit, _memory, background = _build_pipeline(adapter=adapter)
 
     started = time.perf_counter()
-    await pipeline.run(_request())
+    try:
+        await asyncio.wait_for(pipeline.run(_request()), timeout=5.0)
+    except TimeoutError:
+        pytest.fail("pipeline.run awaited the reaction (#430)")
     elapsed = time.perf_counter() - started
 
     assert adapter.texts == ["今晚七點半得"]   # replied already
