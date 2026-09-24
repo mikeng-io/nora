@@ -177,6 +177,7 @@ from typing import Protocol
 from opentelemetry.util.types import AttributeValue
 
 from nora.agent.dream_screen import screen
+from nora.domain.culture import CultureRevision
 from nora.domain.media_join import MediaJoin
 from nora.domain.models import TranscriptRow
 from nora.domain.ports import RecordStore, StandingStore
@@ -480,6 +481,7 @@ async def run(
     now_ms: int,
     media_join: MediaJoin | None = None,
     tz: tzinfo | None = None,
+    culture: CultureRevision | None = None,
 ) -> None:
     """Fold this finished turn into the conversation's position. **Never
     raises, and never returns anything** — a stage that runs after delivery has
@@ -583,6 +585,9 @@ async def run(
         rendered = render_debrief_input(
             trace=trace, prior=prior,
             display_name=display_name, metrics=metrics, since_rows=batch, tz=tz,
+            # The room's account (DEC-204) — the one the turn itself read at
+            # its start, handed through rather than read a second time.
+            culture=culture,
         )
         # ONE `wait_for` around the whole fold, the consolidate retry
         # included: the budget the slot can afford is a total, and a retry

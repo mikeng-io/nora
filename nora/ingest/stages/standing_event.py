@@ -64,7 +64,7 @@ from typing import Any
 from nora.agent.dream_screen import screen
 from nora.domain.media_join import MediaJoin
 from nora.domain.models import NormalizedMessage, TranscriptRow
-from nora.domain.ports import RecordStore, StandingStore
+from nora.domain.ports import CultureReader, RecordStore, StandingStore
 from nora.domain.standing import Standing
 from nora.engagement.debrief_render import render_rollup_input
 from nora.engagement.slots import ConversationSlots
@@ -82,6 +82,7 @@ from nora.engagement.stages.debrief import (
 from nora.engagement.stages.debrief import (
     _prompt as _debrief_prompt,
 )
+from nora.language.culture_render import read_culture
 from nora.obs.metrics import Metrics
 from nora.obs.tracing import TRACE_KIND, attached, span
 
@@ -124,6 +125,13 @@ class Wiring:
     # in `messages.body` and every consumer had it. `None` is the inert state
     # and renders the bare handles the row actually carries.
     media_join: MediaJoin | None = None
+    # THE ROOM'S ACCOUNT (design/culture-tier, DEC-204), rendered above the
+    # prior exactly as the tag-turn debrief renders it. `culture_key` maps
+    # this fold's `(platform, conversation_id)` to the room's `primary_id` —
+    # the key the culture fold writes under (DEC-181) — and is `None` for a
+    # room outside the policy. Both `None` while `[culture] enabled = false`.
+    culture: CultureReader | None = None
+    culture_key: Callable[[str, str], str | None] | None = None
 
 
 async def run(
@@ -337,6 +345,13 @@ async def _fold_batch(
     rendered = render_rollup_input(
         prior=prior, rows=rows, display_name=wiring.display_name, tz=wiring.tz,
         now_ms=now_ms,
+        culture=await read_culture(
+            wiring.culture,
+            key=(wiring.culture_key(platform, conversation_id)
+                 if wiring.culture_key is not None else None),
+            stage="standing_event_culture", platform=platform, metrics=metrics,
+            timeout_seconds=wiring.store_timeout_seconds,
+        ),
     )
 
     async def _standing() -> tuple[str | None, str]:

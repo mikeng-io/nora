@@ -52,6 +52,11 @@ port (`ComputeJobStore`, Nora Compute spec §4) rather than one of
 is the body ceiling, and it inherits it structurally by holding `Standing`
 objects rather than dicts.
 
+`InMemoryCultureStore` is the same rule for the culture tier (DEC-204), bound
+to `nora.infra.sql.culture.SqlCultureStore` by
+`tests/contract/test_culture_store_contract.py`. Its chain is parent links,
+never insertion order, and it records every key `head` was asked for.
+
 `InMemoryNoteStore` is the same rule for the note tier, bound to
 `nora.infra.sql.notes.SqlNoteStore` by
 `tests/contract/test_note_store_contract.py`. It lives in its own module
@@ -90,6 +95,7 @@ AgentRunner`, a stage-level `Protocol`, not one of `nora/domain/ports.py`'s
 ports — also exempt; see their docstrings.
 """
 
+from nora.testing.culture_store import InMemoryCultureStore
 from nora.testing.decision_log import (
     DuplicateDecisionError,
     InMemoryDecisionLogStore,
@@ -183,6 +189,7 @@ __all__ = [
     "FakeTranscriber",
     "FakeVideoReadingStore",
     "FakeVoicePresenceSource",
+    "InMemoryCultureStore",
     "InMemoryDecisionLogStore",
     "InMemoryDreamScheduleClock",
     "InMemoryNoteStore",

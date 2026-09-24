@@ -169,7 +169,7 @@ def test_the_registered_blocks_are_exactly_what_this_pass_carries():
     """
     names = {name for name, _order, _key in _BLOCKS}
     assert names == {
-        "now", "presence", "people", "notes", "rooms",
+        "now", "presence", "people", "notes", "rooms", "culture",
         "decisions", "loop_decisions", "self_card",
     }
 

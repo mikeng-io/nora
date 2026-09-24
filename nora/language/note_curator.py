@@ -147,6 +147,7 @@ from nora.domain.blocks import (
     BlockKey,
     ContextBlock,
     render_elements,
+    restamp,
     speaker_name,
 )
 from nora.domain.bounds import over_fetch
@@ -160,8 +161,9 @@ from nora.domain.notes import (
     anchor_bounds_ms,
     default_revisit_at,
 )
-from nora.domain.ports import Proposal
+from nora.domain.ports import CultureReader, Proposal
 from nora.domain.prompt import age, escape
+from nora.language.culture_render import read_culture, render_culture
 from nora.obs.metrics import Metrics
 
 log = logging.getLogger("nora.notes.curator")
@@ -570,12 +572,22 @@ class _Shown:
 #: established cache boundary, so a key borrowed from `prefill._BLOCKS`
 #: would not describe the same thing here, and nothing routes on `key` yet
 #: either way (`design/context-assembly/00-overview.md` §3).
+#:
+#: `culture` (DEC-204) is one block per ROOM the shown notes were raised in,
+#: each naming its room, above the notes that name the same room: whether an
+#: arrangement has closed turns on how that room settles things — an
+#: attrition room never says «cancelled».
 _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     ("today", 10, "turn"),
+    ("culture", 15, "turn"),
     ("note", 20, "turn"),
     ("evidence", 30, "turn"),
     ("own_sends", 40, "turn"),
 )
+
+#: What a room the operator left unlabelled is called in `<culture room=…>`
+#: and `<note room=…>` — the same words `note_candidates.UNNAMED_ROOM` uses.
+_UNNAMED_ROOM = "unnamed room"
 
 #: `name -> (order, key)`, derived so no call site restates a row `_BLOCKS`
 #: already gives it.
@@ -646,8 +658,18 @@ class NoteCuratorAdaptor:
         events: _EventSink | None = None,
         conclusions: _ConclusionSink | None = None,
         ai_peer: str = "nora",
+        # THE ROOMS' ACCOUNTS (design/culture-tier, DEC-204). `room_for` maps
+        # a note's `established_in` (a thread id) to its room's `primary_id` —
+        # the key the culture fold writes under (DEC-181) — and the room's
+        # label, which both the `<culture>` and the `<note>` carry so the
+        # model can tell which account a note is read against. Both `None`
+        # while `[culture] enabled = false`, and then neither renders.
+        culture: CultureReader | None = None,
+        room_for: Callable[[str], tuple[str, str | None] | None] | None = None,
     ) -> None:
         self._notes = notes
+        self._culture = culture
+        self._room_for = room_for
         self._record = record
         # The shared media join (issue #116). The curator renders these rows as
         # EVIDENCE for a model deciding whether a note still stands, so a photo
@@ -907,7 +929,8 @@ class NoteCuratorAdaptor:
             anchor_date_by_note[note.id] = note.anchor_date
             due_or_anchored.add(note.id)
             parts.append(
-                _note_block(handle, note, body, ev_text, today=self._today())
+                _note_block(handle, note, body, ev_text, today=self._today(),
+                            room=self._room_label(note))
             )
 
         for note, body in due:
@@ -919,7 +942,8 @@ class NoteCuratorAdaptor:
             anchor_date_by_note[note.id] = note.anchor_date
             due_or_anchored.add(note.id)
             parts.append(
-                _note_block(handle, note, body, ev_text, today=self._today())
+                _note_block(handle, note, body, ev_text, today=self._today(),
+                            room=self._room_label(note))
             )
 
         self._shown[key] = _Shown(
@@ -943,7 +967,48 @@ class NoteCuratorAdaptor:
         # against the real clock) and nothing catches the other: an `open` on
         # a note whose anchor passed weeks ago is silent, and costs a
         # permanent index line injected on every tag.
-        return "\n".join([_now_block(self._today()), *parts])
+        cultures = await self._cultures(
+            [n for n, _ in expired] + [n for n, _ in due])
+        return "\n".join([_now_block(self._today()), *cultures, *parts])
+
+    def _room_label(self, note: Note) -> str | None:
+        """The label of the room `note` was raised in, or `None` — only when
+        culture is wired, so a curator without it renders exactly as before."""
+        if self._culture is None or self._room_for is None:
+            return None
+        room = self._room_for(note.established_in)
+        return None if room is None else (room[1] or _UNNAMED_ROOM)
+
+    async def _cultures(self, notes: Sequence[Note]) -> list[str]:
+        """One `<culture room=…>` per distinct room these notes were raised in
+        (DEC-204), in first-shown order.
+
+        Per ROOM and not per note: two notes from one room read against one
+        account, and repeating it would be the same paragraph twice in one
+        prompt. A room outside the policy, or never folded, renders nothing.
+        """
+        if self._culture is None or self._room_for is None:
+            return []
+        rooms: dict[str, str | None] = {}
+        for note in notes:
+            room = self._room_for(note.established_in)
+            if room is not None and room[0] not in rooms:
+                rooms[room[0]] = room[1]
+        out: list[str] = []
+        for primary_id, label in rooms.items():
+            block = render_culture(
+                await read_culture(
+                    self._culture, key=primary_id,
+                    stage="note_curator_culture", platform="dreamer",
+                    metrics=self._metrics,
+                ),
+                # The label, NEVER the id — `note_candidates.UNNAMED_ROOM`'s
+                # rule: an identifier is not a name and must not reach a prompt.
+                room=label or _UNNAMED_ROOM,
+            )
+            if block is not None:
+                out.append(restamp(block, _ROW).render())
+        return out
 
     # -- accept -------------------------------------------------------------
 
@@ -1821,7 +1886,7 @@ def _days_from(today: int, anchor: int) -> str:
 
 def _note_block(
     handle: str, note: Note, body: str, evidence_text: str | None,
-    *, today: int,
+    *, today: int, room: str | None = None,
 ) -> str:
     """One note, rendered whole: title, uncertainty, closing condition, body,
     anchor (if any) and evidence. Bodies are rendered whole — the body IS the
@@ -1849,6 +1914,9 @@ def _note_block(
     # nothing wrote. `_ground` catches a forged citation id, and catches
     # nothing about a forged block boundary.
     attrs: tuple[tuple[str, str], ...] = (("id", handle), ("title", note.title))
+    if room:
+        # Which room it was raised in — the join to that room's `<culture>`.
+        attrs += (("room", room),)
     if note.anchor_date is not None:
         attrs += (
             ("anchor", str(note.anchor_date)),

@@ -1,28 +1,31 @@
-"""`render_culture`, the `<culture>` block, and the ONE path that fills it
-(design/culture-tier `02-measurement §5` step 5).
+"""`render_culture`, the `<culture>` block, `read_culture`, and the two turn
+paths that fill it (design/culture-tier, DEC-204).
 
 The block's value is that it says what the room IS. Every test here is about a
-way it could instead say something else, say nothing when it has something, or
-reach a prompt no decision in the bundle admits it to.
+way it could instead say something else, say nothing when it has something,
+read the wrong room's account, or hold a turn open.
 
-**The single-consumer half is not tidiness, it is the revert.** PR #284 shipped
-this block to the tag path as well — the highest-traffic prompt in the system —
-and `01-the-adaptor §6` authorises exactly one consumer: "the participation turn
-is a straightforward consumer". `02-measurement §6` is why that matters rather
-than being a formality: #144/#147 measured a decider getting WORSE with more
-context, so every prompt this block enters is a prompt somebody has to measure.
+**Every runtime reads it since DEC-204** (2026-09-25). Until then
+`01-the-adaptor §6` authorised one consumer, the participation turn, and this
+file pinned the tag path and the other fire occasions OUT. The operator widened
+the tier to the tag path and every Dreamer pass; the relevance gate stays out on
+#144/#147's evidence (`design/context-assembly/02`), which is pinned where the
+gate's own rows are.
 """
 
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
+import pytest
+
 from nora.app.fire import FirePath
 from nora.domain.block_types import BLOCK_TYPES
 from nora.domain.culture import CultureRevision
 from nora.domain.events import Event
-from nora.language.culture_render import render_culture
+from nora.language.culture_render import read_culture, render_culture
 from nora.obs.metrics import Metrics
+from nora.testing import InMemoryCultureStore
 
 NOW = datetime(2026, 9, 17, 12, 0, tzinfo=UTC)
 
@@ -116,14 +119,16 @@ def _participation(conversation_id: str = "the-arriving-thread") -> Event:
     )
 
 
-class _Culture:
-    def __init__(self, head=None):
-        self.seen: list[str] = []
-        self._head = head
-
-    async def head(self, *, key: str):
-        self.seen.append(key)
-        return self._head
+def _culture(head: CultureRevision | None = None) -> InMemoryCultureStore:
+    """The contract-bound fake, seeded with `head` under every key a test
+    here reads, so what is asserted is the key the caller USED
+    (`store.reads`), never whether a key happened to match."""
+    store = InMemoryCultureStore()
+    if head is not None:
+        for key in ("the-conversation", "g1"):
+            store._revisions[f"{head.id}-{key}"] = head
+            store._heads[key] = f"{head.id}-{key}"
+    return store
 
 
 class _Policy:
@@ -148,21 +153,21 @@ async def test_the_turn_reads_culture_by_PRIMARY_ID_not_the_arriving_thread():
     pass every other test and every production read until the day someone adds
     a second (#229). This asserts the key actually used.
     """
-    culture = _Culture()
+    culture = _culture()
     path = _fire_path(culture=culture, policy=_Policy("the-conversation"))
 
     assert await path._read_culture(_participation()) is None
-    assert culture.seen == ["the-conversation"], (
+    assert culture.reads == ["the-conversation"], (
         "read with the arriving thread's id instead of the conversation's"
     )
 
 
 async def test_a_room_outside_the_policy_reads_no_culture_and_does_not_raise():
-    culture = _Culture()
+    culture = _culture()
     path = _fire_path(culture=culture, policy=_Policy(None))
 
     assert await path._read_culture(_participation()) is None
-    assert culture.seen == []
+    assert culture.reads == []
 
 
 async def test_a_store_that_raises_costs_the_block_and_is_COUNTED():
@@ -195,6 +200,7 @@ async def test_a_store_that_never_answers_is_BOUNDED_by_the_tier_timeout():
     class _Hangs:
         async def head(self, *, key: str):
             await asyncio.sleep(3600)
+            raise AssertionError("the bound should have fired an hour ago")
 
     path = _fire_path(culture=_Hangs(), policy=_Policy("g1"))
     path._standing_store_timeout_seconds = 0.01
@@ -215,63 +221,100 @@ async def test_a_store_that_never_answers_is_BOUNDED_by_the_tier_timeout():
         "nora_errors_total", stage="fire_culture", platform="discord") == 1
 
 
-# --- exactly ONE consumer ---------------------------------------------------
+# --- every occasion (DEC-204) ----------------------------------------------
 
 
-async def test_a_reminder_firing_reads_NO_culture():
-    """`01-the-adaptor §6` authorises the participation turn and nothing else,
-    and `02-measurement §5` step 5 says the block ships WITH its arm. A
-    reminder firing was decided when its row was written, and no arm has ever
-    been run against that prompt — so the store is not even touched.
-
-    The gate is here rather than at the composition root for
-    `_read_memory`'s reason: one `build_context` shape, and a second gate in
-    the wiring would be a place for the two to disagree.
-    """
-    culture = _Culture(head=_rev("they decide by attrition"))
-    path = _fire_path(culture=culture, policy=_Policy("g1"))
-
-    reminder = Event(
-        kind="reminder", platform="discord", conversation_id="g1",
-        conversation_type="group", person_id="miles", body="",
-        header=lambda ref, now: "",
-    )
-    assert await path._read_culture(reminder) is None
-    assert culture.seen == [], "a reminder turn reached the culture store"
-
-
-async def test_a_proactive_act_turn_reads_NO_culture():
-    """The second half of the same rule, named separately because it is the
-    one a reader is most likely to think is already covered: a proactive act
-    turn runs through this very class. It is keyed on a WORKSPACE while culture
-    is keyed on a room, so fitting it means either N accounts in one prompt or
-    silently picking the home room's — a design question, not wiring."""
-    culture = _Culture(head=_rev("they decide by attrition"))
-    path = _fire_path(culture=culture, policy=_Policy("g1"))
-
-    proactive = Event(
-        kind="proactive", platform="discord", conversation_id="g1",
+def _event(kind: str) -> Event:
+    return Event(
+        kind=kind, platform="discord", conversation_id="g1",
         conversation_type="group", person_id=None, body="",
         header=lambda ref, now: "",
     )
-    assert await path._read_culture(proactive) is None
-    assert culture.seen == []
 
 
-def test_the_TAG_path_assembler_cannot_read_culture_at_all():
-    """The reason PR #284 was reverted, pinned as a fact about the source.
+@pytest.mark.parametrize("kind", ["participation", "reminder", "proactive"])
+async def test_every_fire_occasion_reads_the_rooms_account(kind: str):
+    """DEC-204 widened the tier from the participation turn to every runtime.
+    A reminder, a gathering and a proactive act turn all speak INTO one room,
+    and `occasion.conversation_id` is that room — so each reads its account.
 
-    The tag path is the highest-traffic prompt in the system and no decision in
-    `design/culture-tier` admits a block to it. This asserts the ABSENCE rather
-    than a rendered prompt, because the failure it guards is someone adding the
-    read back — and a prompt assertion would pass for a while on a deployment
-    where `[culture] enabled = false` anyway.
+    This replaced three tests that pinned the opposite (`a reminder firing
+    reads NO culture`, `a proactive act turn reads NO culture`, `the TAG path
+    assembler cannot read culture at all`); the decision they encoded is
+    superseded, not the property that the read is keyed right, which the
+    tests above still hold.
     """
-    from pathlib import Path
+    culture = _culture(head=_rev("they decide by attrition"))
+    path = _fire_path(culture=culture, policy=_Policy("g1"))
 
-    context = Path(__file__).resolve().parents[2] / "nora" / "engagement" / "context.py"
-    assert "culture" not in context.read_text().lower(), (
-        "nora/engagement/context.py (the TAG path's assembler) references "
-        "culture — `01-the-adaptor §6` authorises the participation turn and "
-        "nothing else, and wiring the tag path is what got PR #284 reverted"
+    got = await path._read_culture(_event(kind))
+    assert got is not None and got.body == "they decide by attrition"
+    assert culture.reads == ["g1"]
+
+
+async def test_the_TAG_path_reads_the_rooms_account_by_PRIMARY_ID():
+    """The tag path (`TranscriptInjection`) — the highest-traffic prompt, and
+    the one #284 was reverted for wiring. DEC-204 authorises it; what must
+    still hold is DEC-181's keying: the room's `primary_id`, never the
+    arriving thread's id."""
+    from nora.engagement.context import TranscriptInjection
+
+    culture = _culture(head=_rev("they decide by attrition"))
+    assembler = object.__new__(TranscriptInjection)
+    assembler._culture_reader = culture
+    assembler._policy = _Policy("the-conversation")
+    assembler._metrics = Metrics()
+    msg = type("_Msg", (), {
+        "platform": "discord", "conversation_id": "the-arriving-thread"})()
+
+    got = await assembler._culture(msg)  # type: ignore[arg-type]
+    assert got is not None
+    assert culture.reads == ["the-conversation"]
+
+
+async def test_the_TAG_path_reads_nothing_when_the_tier_is_off():
+    from nora.engagement.context import TranscriptInjection
+
+    assembler = object.__new__(TranscriptInjection)
+    assembler._culture_reader = None
+    assembler._policy = _Policy("g1")
+    assembler._metrics = Metrics()
+    msg = type("_Msg", (), {"platform": "discord", "conversation_id": "g1"})()
+    assert await assembler._culture(msg) is None  # type: ignore[arg-type]
+
+
+async def test_read_culture_counts_a_failure_under_the_callers_stage():
+    """Each occasion names its own stage, so an operator can tell WHICH prompt
+    lost its account (`nora_errors_total` help text lists them)."""
+
+    class _Broken:
+        async def head(self, *, key: str):
+            raise RuntimeError("postgres is away")
+
+    metrics = Metrics()
+    got = await read_culture(
+        _Broken(), key="g1", stage="note_candidates_culture",
+        platform="dreamer", metrics=metrics,
     )
+    assert got is None
+    assert metrics.get(
+        "nora_errors_total", stage="note_candidates_culture",
+        platform="dreamer") == 1
+
+
+async def test_read_culture_without_a_key_does_not_touch_the_store():
+    culture = _culture()
+    assert await read_culture(
+        culture, key=None, stage="tag_culture", platform="discord",
+        metrics=None) is None
+    assert culture.reads == []
+
+
+def test_a_room_label_rides_on_the_block_only_when_given():
+    """Occasions reading several rooms in one prompt (proactive, the curator)
+    name each account's room; a one-room occasion's block stays unchanged."""
+    plain = render_culture(_rev("x"), now=NOW)
+    named = render_culture(_rev("x"), now=NOW, room="Zone 42")
+    assert plain is not None and named is not None
+    assert "room" not in dict(plain.attrs)
+    assert dict(named.attrs)["room"] == "Zone 42"

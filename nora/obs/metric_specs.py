@@ -135,7 +135,15 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "sit beside the pre-existing fire_peer_card / fire_standing / "
         "fire_notes / fire_unit for that set's own stated reason — an "
         "operator asking WHICH half of the context went blind must not have "
-        "to guess.",
+        "to guess. The <culture> read (DEC-204) is counted per occasion, one "
+        "stage each, for the same reason: stage=\"tag_culture\", "
+        "stage=\"fire_culture\", stage=\"proactive_culture\", "
+        "stage=\"note_candidates_culture\", stage=\"note_curator_culture\" "
+        "and stage=\"standing_event_culture\" — a room's account that exists "
+        "and could not be read (a raise, or the bounded read timing out). A "
+        "room never folded is not an error and moves nothing. The two note "
+        "passes carry platform=\"dreamer\": they are keyed on a room or a "
+        "unit, not on a message's network.",
         ("stage", "platform"),
     ),
     _CounterSpec(

@@ -1464,12 +1464,12 @@ discharge_enabled = false
 # model with no reasoning budget because the reasoning already happened
 # offline.
 #
-# NOTHING READS IT YET, and that is the design's own sequence (02-measurement
-# §5 step 4) rather than an unfinished state: a single account is a snapshot,
-# because the model that wrote it had no memory of the one before, so the tier's
-# one real contribution is the CHAIN — and a tier judged on its first snapshot
-# is judged on the one thing it does not contribute. The prompt-facing step is
-# separate and is gated on a measured improvement.
+# ON ALSO MEANS EVERY RUNTIME READS IT. The room's current account rides as a
+# <culture> block in the tag turn, every fire occasion, the proactive pass, both
+# note passes and both standing folds (DEC-204, 2026-09-25) — never in the
+# Relevance Gate. There is no separate read switch: turning the fold on changes
+# live prompts on the next deploy. A room never folded renders no block, so the
+# change arrives room by room over the first day.
 #
 # NOTHING IN IT RETIRES. No TTL, no closing condition, no supersede: a quiet
 # room's culture is not stale, it is accurate, and an old name does not become

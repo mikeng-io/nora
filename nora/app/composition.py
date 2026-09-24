@@ -69,6 +69,7 @@ from nora.domain.ports import (
     BlobStore,
     ComputeBackend,
     ContextAssembler,
+    CultureReader,
     DiscordPresenceSource,
     DreamAdaptor,
     EngagePolicy,
@@ -1695,6 +1696,15 @@ async def build_dependencies(
     # Over the SAME allowlist ingest admits against and the SAME adapter map
     # the tag path sends through.
     presence_reader = _presence_reader(cfg, allowlist, registry, rosters)
+    # THE CULTURE TIER'S READ HALF (design/culture-tier, DEC-204): ONE
+    # read-only reader, handed to the tag path's assembler, the fire path and
+    # every Dreamer adaptor whose prompt carries `<culture>`. `None` while
+    # `[culture] enabled = false`, the shipped default, so no occasion renders
+    # the block — the flag gates the fold and every read together
+    # (`CultureConfig`).
+    culture_reader: CultureReader | None = (
+        SqlCultureStore(engine) if cfg.culture.enabled else None
+    )
     assembler = build_assembler(
         cfg, audit=audit, memory=memory, persons=persons, metrics=metrics,
         # `None` while `[notes] enabled = false`. `policy=allowlist` is the
@@ -1727,6 +1737,7 @@ async def build_dependencies(
         # `FirePath` below is given — the point of building it once.
         quote_window=quote_window,
         presence=presence_reader,
+        culture=culture_reader,
     )
 
     def _spawn(coro: Coroutine[Any, Any, None]) -> None:
@@ -2058,6 +2069,15 @@ async def build_dependencies(
             timeout_seconds=cfg.standing.timeout_seconds,
             store_timeout_seconds=cfg.standing.store_timeout_seconds,
             max_chars=cfg.standing.max_chars,
+            # The room's account above the prior (DEC-204), keyed through the
+            # policy to the room's `primary_id` — `culture_key` is `None` for a
+            # room outside it.
+            culture=culture_reader,
+            culture_key=lambda platform, conversation_id: (
+                c.primary_id
+                if (c := allowlist.conversation(platform, conversation_id))
+                else None
+            ),
         )
     ingest = IngestPipeline(
         audit=audit, memory=memory, persons=persons,
@@ -2895,23 +2915,11 @@ async def build_dependencies(
             # the fire path writes no position, because S1 is blocked on it
             # retaining a `TagTrace` at all (see `FirePath.__init__`).
             standing=standing_store if cfg.standing.enabled else None,
-            # THE CULTURE HEAD'S READ HALF (design/culture-tier, step 5 of
-            # `02-measurement §5`). `None` while `[culture] enabled = false`,
-            # the shipped default, so `<culture>` renders nothing at all.
-            #
-            # UNLIKE `standing` directly above, this one keys on `primary_id`
-            # and therefore DOES need the policy this path already holds: a
-            # Dreamer adaptor is handed `scopes()`, so that is what it wrote
-            # under, and reading it with the arriving thread's id would match
-            # zero rows and render as «this room has no account» — a real
-            # state, so nothing would report the miss.
-            #
-            # Wired ONLY here and not on the tag assembler: `01-the-adaptor §6`
-            # authorises one consumer, and the read itself is gated on
-            # `occasion.kind == "participation"` in `FirePath._read_culture`
-            # for the reason `self_card_conclusions` below is — a second gate
-            # here would be a place for the two to disagree.
-            culture=SqlCultureStore(engine) if cfg.culture.enabled else None,
+            # THE CULTURE HEAD (design/culture-tier, DEC-204) — the SAME reader
+            # the tag assembler holds. Keyed on `primary_id`, which is why this
+            # path resolves the occasion through the policy it already holds
+            # before reading (`FirePath._read_culture`).
+            culture=culture_reader,
             standing_store_timeout_seconds=cfg.standing.store_timeout_seconds,
             # The participation turn's memory reads (issue #210). ONE knob set,
             # read at the composition root exactly as the tag assembler reads
@@ -3362,6 +3370,17 @@ async def build_dependencies(
                     max_revisits_per_tick=cfg.notes.max_revisits_per_tick,
                     evidence_messages_per_note=cfg.notes.revisit_evidence_messages,
                     metrics=metrics,
+                    # The accounts of the rooms its notes were raised in
+                    # (DEC-204). `room_for` maps EVERY id a room is known by —
+                    # `Note.established_in` holds whichever one the note was
+                    # born under — to `(primary_id, label)`.
+                    culture=culture_reader,
+                    room_for={
+                        cid: (conv.primary_id, conv.label or None)
+                        for conv in allowlist.conversations
+                        if conv.primary_id
+                        for cid in conv.ids
+                    }.get,
                     # The discharge pipeline (design/dreamer-agent-loop/33 §7,
                     # issue #101), on its OWN gate — see `NotesConfig.
                     # discharge_enabled`'s docstring for why it does not ride
@@ -3440,6 +3459,9 @@ async def build_dependencies(
                 NoteCandidateAdaptor(
                     notes=note_store,
                     candidates=note_store,
+                    # The room's account (DEC-204). This adaptor's key is the
+                    # room's `primary_id` already, the fold's own key.
+                    culture=culture_reader,
                     unit_for={
                         conv.primary_id: conv.unit
                         for conv in allowlist.conversations
@@ -3640,6 +3662,10 @@ async def build_dependencies(
                     standing=standing_store if cfg.standing.enabled else None,
                     reminders=reminders,
                     memory=memory,
+                    # Each of the unit's rooms' accounts (DEC-204), keyed on
+                    # `UnitRoom.conversation_id` — a `primary_id` by
+                    # construction (`_unit_rooms`).
+                    culture=culture_reader,
                     rooms_of=lambda ws: rooms_by_unit.get(ws, ()),
                     # WHO IS IN THE HOME ROOM (issue #145). Built HERE because
                     # `nora.language` may not import `nora.agent.room`, and

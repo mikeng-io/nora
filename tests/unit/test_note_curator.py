@@ -72,7 +72,7 @@ def test_the_registered_blocks_are_exactly_what_this_pass_carries():
     further down this file.
     """
     names = {name for name, _order, _key in _BLOCKS}
-    assert names == {"today", "note", "evidence", "own_sends"}
+    assert names == {"today", "culture", "note", "evidence", "own_sends"}
 
 
 def _after(anchor_date: int) -> int:

@@ -203,6 +203,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, Literal, Protocol, runtime_checkable
 
+from nora.domain.culture import CultureRevision as CultureRevision
 from nora.domain.decision_log import DecisionRow as DecisionRow
 from nora.domain.identity import PlatformIdentity as PlatformIdentity
 from nora.domain.media import GifCandidate as GifCandidate
@@ -2566,6 +2567,44 @@ class ImageGenerator(Protocol):
     ) -> ImageResult: ...
 
     async def health(self) -> bool: ...
+
+
+@runtime_checkable
+class CultureReader(Protocol):
+    """The ONE verb a PROMPT is allowed on the culture store (design/culture-tier).
+
+    A Protocol rather than `SqlCultureStore` itself: the concrete store also
+    exposes `append` and `chain`, and naming only what is called makes «no turn
+    or pass other than the fold ever writes a culture row» a fact a type checker
+    enforces rather than a habit a later edit could quietly break. The tier's
+    whole claim is that the account is written by a background fold reading a
+    whole batch, never by a turn reacting to one window.
+
+    **It lives here because every runtime reads it** (DEC-204, 2026-09-25). It
+    used to live in `nora.app.fire`, beside its one consumer, on the argument
+    that a port declared for everyone reads as an invitation for the second.
+    The operator issued that invitation: the tag path, every fire occasion,
+    proactive, both note passes and the standing debrief now read the room's
+    account, so the one-consumer location stopped being true of the code.
+
+    **`key` is a `primary_id`, NOT a `conversation_id`** (DEC-181). A Dreamer
+    adaptor is handed `scopes()`, so that is what it wrote under, and every
+    caller holding a thread id resolves it through the policy first — see
+    `nora.language.culture_render.culture_key`. The parameter is named `key`
+    rather than `conversation_id` so that a call site passing the wrong one
+    has to say so.
+
+    **Never raises for an absent row.** `None` is a first-class state: a room
+    nobody has folded yet has no account, and that is the ORDINARY state for a
+    while after the tier is enabled, because a fold needs new messages and a
+    day. Implementations still raise on a genuine store failure — the caller
+    decides what an unreachable store means, and for a prompt that is a thinner
+    prompt plus a counter, never a silent «no account».
+    """
+
+    async def head(self, *, key: str) -> CultureRevision | None:
+        """This scope's current account, or `None` if it has none yet."""
+        ...
 
 
 @runtime_checkable

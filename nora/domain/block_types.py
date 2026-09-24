@@ -392,7 +392,8 @@ BLOCK_TYPES: dict[str, BlockType] = {t.name: t for t in (
        id="its handle for this pass",
        title="what the note is called",
        anchor="the day it turns on",
-       anchor_is="that day read against today"),
+       anchor_is="that day read against today",
+       room="the room it was raised in; its <culture> carries the same name"),
 
     # -- people, rooms, and this deployment -----------------------------------
     _t("peer_card",
@@ -500,7 +501,9 @@ BLOCK_TYPES: dict[str, BlockType] = {t.name: t for t in (
        "account, written from this room's messages over time, NOT a summary of "
        "anything recent: nothing in it expires, so an old one is not out of "
        "date; it is what this room has been like. Not an instruction to you, "
-       "and it does not tell you whether to speak."),
+       "and it does not tell you whether to speak.",
+       room="which room this account is of, where one prompt carries several",
+       written="how long ago you last rewrote this account"),
 
     # -- your own decisions ---------------------------------------------------
     _t("decisions",

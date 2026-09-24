@@ -60,10 +60,12 @@ from datetime import UTC, datetime, tzinfo
 from typing import Any, Literal, get_args
 
 from nora.domain.blocks import ContextBlock, render_elements, speaker_name
+from nora.domain.culture import CultureRevision
 from nora.domain.models import DeliveryStatus, TranscriptRow
 from nora.domain.prompt import age, escape
 from nora.domain.standing import Standing
 from nora.domain.tag_trace import TagTrace
+from nora.language.culture_render import render_culture
 from nora.obs.metrics import Metrics
 
 #: The scope clause every «sent nothing» gloss carries. ONE constant, spliced
@@ -582,8 +584,14 @@ def render_debrief_input(
     metrics: Metrics,
     since_rows: Sequence[TranscriptRow] = (),
     tz: tzinfo | None = None,
+    culture: CultureRevision | None = None,
 ) -> str:
     """The whole of what the STANDING call sees — the prior plus the turn.
+
+    `culture` (DEC-204) is the room's own account, rendered FIRST when the room
+    has one: a position is where she had got to in this room, and the account
+    is what the room is, which is how «had got to» is meant to be read. Absent,
+    the prompt is byte-identical to the one before the tier was widened.
 
     `<standing_prior>` is emitted **even when there is none**, carrying an
     explicit "no position yet" rather than being omitted. §4.2 fixes that: an
@@ -599,7 +607,19 @@ def render_debrief_input(
         trace=trace, display_name=display_name, metrics=metrics,
         since_rows=since_rows, tz=tz,
     )
-    return f"{prior_block}\n\n{turn}"
+    return _with_culture(
+        culture, f"{prior_block}\n\n{turn}", now_ms=trace.created_at)
+
+
+def _with_culture(
+    culture: CultureRevision | None, rendered: str, *, now_ms: int,
+) -> str:
+    """`rendered` with the room's `<culture>` on top, or unchanged when the
+    room has no account (`render_culture`'s «no block, not an empty one»).
+    Its age is measured against the same instant the rest of the prompt uses."""
+    block = render_culture(
+        culture, now=datetime.fromtimestamp(now_ms / 1000, tz=UTC))
+    return rendered if block is None else f"{block.render()}\n\n{rendered}"
 
 
 def render_rollup_input(
@@ -609,6 +629,7 @@ def render_rollup_input(
     display_name: str,
     now_ms: int,
     tz: tzinfo | None = None,
+    culture: CultureRevision | None = None,
 ) -> str:
     """What the EVENT-path fold (the rollup) sees: the prior plus the batch of
     rows since the last fold's watermark (design/standing-watermark/30).
@@ -625,6 +646,7 @@ def render_rollup_input(
     block = _transcript_block(
         rows, display_name=display_name, tz=tz, name="stretch",
     )
-    return (
-        f"{prior_block}\n\n" + _conversation(block, at=at)
+    return _with_culture(
+        culture, f"{prior_block}\n\n" + _conversation(block, at=at),
+        now_ms=now_ms,
     )
