@@ -76,12 +76,12 @@ def _room() -> Room:
     )
 
 
-def _tools(*, search=None, metrics: Metrics | None = None) -> dict:
+def _tools(*, search=None, metrics: Metrics | None = None, **turn) -> dict:
     registry = ToolRegistry(search=search)
     specs = registry.specs(
         store=_FakeStore(), conversation_id="g1", conversation_type="group",
         persons=_FakePersons(MILES), honcho=FakeMemoryStore(), deliverer=SinkSender(),
-        metrics=metrics or Metrics(), room=_room(),
+        metrics=metrics or Metrics(), room=_room(), **turn,
     )
     return {spec.name: spec.call for spec in specs}
 
@@ -187,6 +187,21 @@ async def test_an_instagram_page_link_is_routed_to_instagram_read_and_never_fetc
     for url in ("https://example.com/a", cdn):
         assert (await tools["web_fetch"](url=url))["status"] == "ok", url
     assert fake.fetch_calls == ["https://example.com/a", cdn]
+
+
+async def test_the_guard_holds_with_instagram_off_and_in_a_fire_turn():
+    """This harness wires no social backend, so Instagram is OFF here, and
+    the guard still answers: it does not depend on `instagram_read` being
+    usable. In a fire turn (a reminder, a proactive turn) `instagram_read`
+    refuses to open a post nobody asked about; without this guard,
+    `web_fetch` would have been the way round that rule."""
+    fake = _FakeSearchProvider()
+    tools = _tools(search=fake, fire_turn=True)
+    out = await tools["web_fetch"](url=_INSTAGRAM_PAGES["post"])
+
+    assert out["status"] == "nothing_found"
+    assert fake.fetch_calls == []
+    assert (await tools["web_fetch"](url="https://example.com/a"))["status"] == "ok"
 
 
 async def test_a_mobile_instagram_page_link_asks_for_the_www_link():

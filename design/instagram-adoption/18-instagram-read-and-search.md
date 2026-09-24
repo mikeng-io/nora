@@ -155,7 +155,9 @@ instagram_read(what: str | None = None, person: str | None = None,
 > catalogue passed `url=`, which Strands dropped because the signature did
 > not declare it, so each failed «exactly one». `url` is now a declared
 > optional parameter, «same as link.» (22 tokens on the spec); `url` and
-> `link` that differ are `unavailable`, and `url` counts as the link for
+> `link` naming different links (compared as the link parser reads them,
+> so two spellings of one post agree) are `unavailable`, and `url` counts
+> as the link for
 > «exactly one». `web_fetch` routes an Instagram page link here, as
 > `media_fetch` does.
 

@@ -2985,6 +2985,18 @@ def _with_scheme(link: str) -> str:
     return text if "://" in text else "https://" + text
 
 
+def _same_instagram_link(a: str, b: str) -> bool:
+    """Whether two pasted links name the same thing, judged by the one link
+    parser: `instagram.com/p/A/` and `https://www.instagram.com/p/A/?igsh=x`
+    agree. A link the parser refuses is compared as typed, trimmed, so two
+    identical refusals still agree and `instagram_read` refuses them once."""
+    parsed_a = _parse_instagram_link(_with_scheme(a))
+    parsed_b = _parse_instagram_link(_with_scheme(b))
+    if parsed_a is None or parsed_b is None:
+        return a.strip() == b.strip()
+    return parsed_a == parsed_b
+
+
 def social_read_vocabulary() -> Mapping[str, frozenset[tuple[str, str]]]:
     """Every `(platform, what)` each social tool can SEND to the router — the
     ONE read-only vocabulary table R-86 derives its three layers from
@@ -7884,7 +7896,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         # validates through a model built from this signature, which ignores
         # any key it does not declare. So it is declared, in five words.
         if isinstance(url, str) and url.strip():
-            if isinstance(link, str) and link.strip() and link.strip() != url.strip():
+            if isinstance(link, str) and link.strip() and not _same_instagram_link(link, url):
                 # Two different links: nothing says which was meant, so
                 # neither is read, and neither is echoed back.
                 _record(metrics, "instagram_read", "unavailable", reason="url_and_link")

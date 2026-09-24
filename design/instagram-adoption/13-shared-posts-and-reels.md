@@ -443,38 +443,60 @@ pointer to something not yet seen, and the link beside it is the way in.
 
 **What changed.**
 
-- **The line carries the caption's first sentence** (`_caption_excerpt` in
-  `nora/platform/instagram/parser.py`), then `…` when anything was left
+- **A LINKED share's line carries the caption's opening** (`_caption_excerpt`
+  in `nora/platform/instagram/parser.py`), then `…` when anything was left
   out. A sentence ends at the first `.`, `!` or `?` followed by whitespace
   or the end (so `3.5` and `example.com` do not end one), at the first
   `。`, `！` or `？` wherever it stands, or at a newline; emoji and hashtags
-  never end one. A sentence longer than 160 characters is cut at the last
-  space inside the limit, or at the limit when there is none (Chinese), and
-  gets `…` too. One short sentence is unchanged, with no `…`. #435's bracket
-  defang runs first and the placement rules are unchanged; linked and
-  unlinked shares get the same excerpt. Nothing is lost: `instagram_read`
-  on the link returns the full caption from Instagram itself (inside the
+  never end one. The excerpt takes sentences until it holds at least 40
+  letters and digits, not counting emoji, `#tags` or `@mentions`, so a stop
+  in `Mr.`, `U.S.`, `e.g.`, `1.` or `Step 1.`, or a first line of emoji,
+  hashtags or one brand word, does not end it there (#484 review). It never
+  runs past 160 characters: a longer one is cut at the last space when
+  that space is in the second half of the limit, and at the limit itself
+  otherwise (an early space, `新店開張 ` or `Hi ` before a run of Chinese or
+  flags, would keep almost nothing); a cut at the limit never splits a flag
+  or a joined emoji. A trailing `...` or `…` is dropped before the one `…`.
+  One short caption is unchanged, with no `…`. #435's bracket defang runs
+  first and the placement rules are unchanged.
+- **A share with NO link keeps its whole caption** (#484 review). Nothing
+  can fetch the rest for it, so cutting would lose the words for good.
+- **What memory keeps** (#484 review). The transcript row is what the
+  Dreamer reads and what Honcho is fed, so for a linked share it now holds
+  only the excerpt, not the caption. The full caption is still stored: it
+  is in the row's `raw_json` (the bridge event, `shared.caption`), and
+  `instagram_read` on the link returns it from Instagram itself (inside the
   wrap, last, under `[social] content_max_chars`), pinned by
-  `test_a_long_caption_comes_back_whole_where_the_transcript_cuts_it`.
+  `test_a_long_caption_comes_back_whole_where_the_transcript_cuts_it`. A
+  fact that lives only past a caption's first sentence reaches a note or a
+  peer card only if somebody asks about the post.
 - **`instagram_read` accepts `url` as `link`.** An undeclared argument
   cannot be accepted quietly: Strands validates through a pydantic model
   built from the signature, which ignores any key it does not declare, so
   `url` is a declared optional parameter, «same as link.», costing 22
-  tokens on the tool's spec (395 to 417, cl100k). `url` and `link` that
-  differ answer `unavailable` and read nothing; «exactly one of person,
+  tokens on the tool's spec (395 to 417, cl100k). `url` and `link` are
+  compared as the link parser reads them, so `instagram.com/p/A/` and
+  `https://www.instagram.com/p/A/?igsh=x` agree; two that name different
+  things answer `unavailable` and read nothing. «Exactly one of person,
   handle or link» still holds, with `url` counted as the link.
 - **`web_fetch` routes an Instagram page link** exactly as `media_fetch`
   has since #471, through the same `_instagram_page_kind` helper and before
   its own scheme check, so a pasted link with no scheme is routed too:
   `nothing_found`, nothing fetched, and the note «That link is an Instagram
   page. Open it with instagram_read using this link.» A mobile page link
-  asks for the www.instagram.com link.
+  asks for the www.instagram.com link. **The guard holds with Instagram
+  off**, and on purpose: it does not depend on `instagram_read` being
+  usable. It also closes a way round the «only when asked» rule: in a fire
+  turn `instagram_read` refuses to open a shared post, and without this
+  guard `web_fetch` would have fetched the same page unasked
+  (`test_the_guard_holds_with_instagram_off_and_in_a_fire_turn`).
 
 **Reopens if** a live turn on a shared post with a long caption still
 answers from the line without calling `instagram_read`, or an excerpt is
-seen to cut a caption somewhere that misleads (a first «sentence» that is
-only an emoji line is the likeliest). 9 of 12 is a replay, not a live
-rate.
+seen to cut a caption somewhere that misleads, or a fact from a caption's
+tail is seen missing from memory where it mattered. 9 of 12 is a replay of
+the first-sentence variant, not a live rate, and the 40-letter minimum
+added in review was not replayed.
 
 ### Known gaps, recorded and not fixed here
 

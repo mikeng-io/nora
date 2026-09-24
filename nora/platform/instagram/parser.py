@@ -66,6 +66,7 @@ from __future__ import annotations
 import logging
 import re
 import time
+import unicodedata
 from dataclasses import replace
 
 from ...domain.instagram_links import is_handle, link_shape, parse_link
@@ -213,15 +214,14 @@ def _shared_target(target_url: object, author: str = "") -> tuple[str, str]:
     return kind, link.url
 
 
-#: Where a caption's FIRST SENTENCE ends. A Latin `.`, `!` or `?` (a run of
-#: them, so `?!` and `...` end one sentence) ends it only when whitespace or
-#: the end of the text follows, so the dot in `3.5`, `example.com` or a
+#: Where a caption's sentence ends. A Latin `.`, `!` or `?` (a run of them,
+#: so `?!` and `...` end one sentence) ends it only when whitespace or the
+#: end of the text follows, so the dot in `3.5`, `example.com` or a
 #: shortcode never cuts a sentence in half. A Chinese full stop, `!` or `?`
 #: (U+3002, U+FF01, U+FF1F) ends it where it stands, because Chinese puts
-#: no space after one. A newline
-#: ends it too: a caption's first line is its first thought whatever
-#: punctuation it has, and emoji and hashtags never end one. Closing quotes
-#: and brackets right after the mark stay with the sentence they close.
+#: no space after one. A newline ends it too, and emoji and hashtags never
+#: do. Closing quotes and brackets right after the mark stay with the
+#: sentence they close.
 _SENTENCE_END = re.compile(
     r"[.!?]+[\"'\u201d\u2019\u300d\u300f\uff09)]*(?=\s|$)"
     r"|[\u3002\uff01\uff1f]+[\"'\u201d\u2019\u300d\u300f\uff09)]*"
@@ -231,20 +231,77 @@ _SENTENCE_END = re.compile(
 #: The longest caption excerpt the transcript carries, in characters, before
 #: its `…`. One sentence can run to hundreds of characters (a Cantonese
 #: caption often has no stop in it at all), and the excerpt exists to be
-#: SHORT, so a sentence longer than this is cut at the last space inside it,
-#: or at the limit itself when there is no space (Chinese has none).
+#: SHORT, so a longer one is cut: at the last space inside the limit when
+#: that space is in its second half, at the limit itself otherwise.
 _CAPTION_EXCERPT_MAX = 160
 
+#: How much REAL text an excerpt must hold before it stops at a sentence
+#: end: letters and digits, not counting emoji, `#tags` or `@mentions`. A
+#: «sentence» ended by the dot in `Mr.`, `U.S.`, `e.g.` or `Step 1.`, or a
+#: first line that is only emoji, hashtags or a brand word, says nothing
+#: about the post, so the excerpt runs on to the next sentence end.
+_CAPTION_EXCERPT_MIN_TEXT = 40
+
+#: A `#tag` or an `@mention`, which the minimum does not count.
+_TAG_OR_MENTION = re.compile(r"[#@][^\s#@]+")
+
 #: What marks an excerpt as cut: the one character that says «there is more
-#: of this caption than the line shows».
-_ELLIPSIS = "…"
+#: of this caption than the line shows». A trailing `...` or `…` the
+#: caption already had is dropped first, so there is only ever one.
+_ELLIPSIS = "\u2026"
+_TRAILING_ELLIPSIS = re.compile(r"(?:\.{3,}|\u2026)+$")
+
+#: Code points that continue the character before them: a zero width
+#: joiner, a variation selector, a skin tone, a keycap, a tag character.
+#: A cut before one of these, or just after a joiner, would split an emoji.
+_ZWJ = "\u200d"
+
+
+def _continues_previous(ch: str) -> bool:
+    cp = ord(ch)
+    return (
+        ch == _ZWJ
+        or 0xFE00 <= cp <= 0xFE0F          # variation selectors
+        or 0x1F3FB <= cp <= 0x1F3FF        # skin tone modifiers
+        or 0xE0020 <= cp <= 0xE007F        # tag characters (subdivision flags)
+        or cp == 0x20E3                    # combining keycap
+        or unicodedata.category(ch).startswith("M")
+    )
+
+
+def _is_regional_indicator(ch: str) -> bool:
+    return 0x1F1E6 <= ord(ch) <= 0x1F1FF
+
+
+def _hard_cut(text: str, limit: int) -> str:
+    """`text[:limit]`, moved back so it never splits an emoji: not before
+    a code point that continues the one before it, not just after a joiner,
+    and not between the two halves of a flag."""
+    i = limit
+    while 0 < i < len(text) and (_continues_previous(text[i]) or text[i - 1] == _ZWJ):
+        i -= 1
+    if 0 < i < len(text) and _is_regional_indicator(text[i]):
+        run = 0
+        while run < i and _is_regional_indicator(text[i - 1 - run]):
+            run += 1
+        if run % 2:
+            i -= 1
+    return text[:i]
+
+
+def _real_text_length(text: str) -> int:
+    """Letters and digits in `text`, once `#tags` and `@mentions` are out.
+    Emoji and punctuation are neither, so they never count."""
+    return sum(1 for ch in _TAG_OR_MENTION.sub(" ", text) if ch.isalnum())
 
 
 def _caption_excerpt(caption: str) -> str:
-    """A shared item's caption as the transcript carries it: its FIRST
-    SENTENCE, then `…` when anything was left out, and never more than
-    `_CAPTION_EXCERPT_MAX` characters before that `…`. A caption that is one
-    short sentence comes back unchanged, with no `…`.
+    """A LINKED shared item's caption as the transcript carries it: its
+    first sentence, or as many as it takes to hold
+    `_CAPTION_EXCERPT_MIN_TEXT` characters of real text, then `…` when
+    anything was left out, and never more than `_CAPTION_EXCERPT_MAX`
+    characters before that `…`. A caption that is all one short sentence
+    comes back unchanged, with no `…`.
 
     **Why the transcript does not carry the whole caption** (design 13,
     2026-09-24). A shared post whose line carried its full ~1,000 character
@@ -255,25 +312,34 @@ def _caption_excerpt(caption: str) -> str:
     did. A whole caption reads as the whole post. An excerpt that visibly
     stops reads as a pointer to something she has not seen, and the link
     beside it is how she sees it: `instagram_read` returns the full caption
-    from Instagram itself, so nothing is lost by cutting it here.
+    from Instagram itself. That is also why only a linked share is cut
+    (`_shared_line`): without a link nothing can read the rest.
     """
     text = caption.strip()
     cut = False
-    # The first mark with words before it: a caption that OPENS on `!` or
-    # `。` has not finished a sentence there.
-    end = next((m for m in _SENTENCE_END.finditer(text) if text[:m.start()].strip()), None)
-    if end is not None and text[end.end():].strip():
-        text = text[:end.end()].rstrip()
-        cut = True
+    for end in _SENTENCE_END.finditer(text):
+        head = text[:end.end()].rstrip()
+        if len(head) >= _CAPTION_EXCERPT_MAX or (
+            _real_text_length(head) >= _CAPTION_EXCERPT_MIN_TEXT
+        ):
+            if text[end.end():].strip():
+                text, cut = head, True
+            break
     if len(text) > _CAPTION_EXCERPT_MAX:
         window = text[:_CAPTION_EXCERPT_MAX]
         space = window.rfind(" ")
-        # At a word boundary when the window has one; a run with no space in
-        # it (Chinese, or one very long token) is cut at the limit itself.
-        # A dangling zero width joiner would leave half an emoji behind.
-        text = (window[:space] if space > 0 else window).rstrip().rstrip("‍")
+        # At a word boundary when the last space is in the window's second
+        # half. An early one («新店開張 » before two hundred Chinese
+        # characters, `Hi ` before a row of flags) would throw away almost
+        # everything, so the cut is then at the limit, never inside an emoji.
+        if space >= _CAPTION_EXCERPT_MAX // 2:
+            text = window[:space]
+        else:
+            text = _hard_cut(text, _CAPTION_EXCERPT_MAX)
         cut = True
-    return text + _ELLIPSIS if cut else text
+    if not cut:
+        return text
+    return _TRAILING_ELLIPSIS.sub("", text.rstrip()).rstrip() + _ELLIPSIS
 
 
 def _shared_line(shared: object) -> tuple[str, str, str]:
@@ -297,10 +363,12 @@ def _shared_line(shared: object) -> tuple[str, str, str]:
     the line that is actually free is «somebody shared a reel by @x, here is
     the link», and the caption is rendered when a delta carries one.
 
-    **When there is one, the line carries its first sentence, not all of
-    it** (`_caption_excerpt`, 2026-09-24): a line holding a whole long
-    caption was answered as if it were the whole post. The `…` says there is
-    more, and the link reads it.
+    **When there is one and the line has a link, it carries the caption's
+    opening, not all of it** (`_caption_excerpt`, 2026-09-24): a line
+    holding a whole long caption was answered as if it were the whole post.
+    The `…` says there is more, and the link reads it. A line with NO link
+    keeps the whole caption: nothing can fetch the rest for it, so cutting
+    it would lose words for good.
 
     Until this existed, a shared reel arrived with no text and no media and was
     dropped for having neither, so Nora never learned anything had been posted
@@ -368,10 +436,11 @@ def _shared_line(shared: object) -> tuple[str, str, str]:
     # `enrich_placeholders` would then hang whatever reading `0a1b2c` resolves
     # to off it. Round brackets read the same to a model and parse as nothing.
     caption = caption.replace("[", "(").replace("]", ")")
-    # Its FIRST SENTENCE, and `…` when there was more (`_caption_excerpt`):
-    # a whole caption read as the whole post, and the link is what reads the
-    # rest. Linked or not, the same excerpt.
-    caption = _caption_excerpt(caption)
+    # Its opening, and `…` when there was more (`_caption_excerpt`): a whole
+    # caption read as the whole post, and the link is what reads the rest.
+    # Only WITH a link: without one nothing can read the rest, so the line
+    # keeps every word.
+    caption = _caption_excerpt(caption) if link else caption
     # The bridge answers `null` rather than an empty object for an XMA it
     # could not read, so a dict with nothing readable in it is a shape it read
     # that carried neither name nor words nor link. It still renders

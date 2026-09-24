@@ -677,6 +677,23 @@ async def test_url_and_link_that_differ_read_nothing(world):
 
 
 @pytest.mark.parametrize(
+    ("link", "url", "path"),
+    [("instagram.com/p/SynthPost01/", _POST, "/posts/SynthPost01"),
+     (_POST + "?igsh=c3ludGhldGlj", "www.instagram.com/p/SynthPost01", "/posts/SynthPost01"),
+     ("https://www.instagram.com/reels/SynthReel01/", _REEL, "/posts/SynthReel01")],
+    ids=["no_scheme", "query_and_no_slash", "reels_and_reel"],
+)
+async def test_url_and_link_spelling_the_same_link_agree(world, link, url, path):
+    """Compared as the link parser reads them, not as typed: two spellings
+    of one post are one link, and it is read."""
+    fake, read = world()
+    out = await read(link=link, url=url)
+
+    assert out["status"] == "ok"
+    assert fake.calls == [("GET", path)]
+
+
+@pytest.mark.parametrize(
     "arg",
     [{"handle": "example_friend"}, {"handle": "example_friend", "what": "posts"}],
     ids=["no_what", "posts"],
