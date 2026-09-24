@@ -214,6 +214,13 @@ async function main() {
       log: (event, fields = {}) => log(event, { guild_id: guildId, ...fields }),
     });
 
+    // Forward reference (same pattern createCore itself uses for `lifecycle`,
+    // controller.mjs): `onJoinFailed` is wired into lifecycle BEFORE `core`
+    // exists, but it is only ever CALLED after a join attempt, by which time
+    // `thisCore` is assigned — so the registry always discards the exact
+    // core object it minted here, never a guess reconstructed from `guildId`
+    // alone (which a concurrent re-mint could already have replaced).
+    let thisCore;
     const core = createCore({
       guildId,
       joinVoice,
@@ -238,8 +245,13 @@ async function main() {
         port: PUMP_PORT,
         ...(currentPump() ? { drops: currentPump().stats() } : {}),
       }),
+      // THE FIX (#345): the moment this guild's join fails, drop it from the
+      // registry so /health stops naming it — not just on the next mint
+      // attempt, which never comes for a guild nobody retries.
+      onJoinFailed: () => registry.discardIfFailed(guildId, thisCore),
       log: (event, fields = {}) => log(event, { guild_id: guildId, ...fields }),
     });
+    thisCore = core;
     return core;
   }
 
@@ -321,8 +333,10 @@ async function main() {
         continue;
       }
       registry.mint(guildId).lifecycle.join(channel).catch(() => {
-        // Join failed: state is `error`, /health stays live, compose's
-        // restart policy gives the retry. Already logged by the lifecycle.
+        // Join failed: already logged by the lifecycle, and its own
+        // `onJoinFailed` hook (wired in `makeCore`, above) has already
+        // dropped this core from the registry — /health does not carry it.
+        // Nothing left to do here; compose's restart policy gives the retry.
       });
     }
     if (!guilds.length) log('boot_idle', { reason: 'no_persisted_guilds' });

@@ -1,13 +1,24 @@
-// The mint/reuse/prune decision `controllerFor` makes on every request (#345):
-// a failed join leaves its core in `voice: error` with no session, and
-// service.mjs imports discord.js so nothing about it was reachable from a
-// test — createCoreRegistry (controller.mjs) has no such seam, so these run
-// against fakes with no discord.js in sight.
+// The mint/reuse/discard decisions createCoreRegistry makes (#345): a failed
+// join leaves its core in `voice: error` with no session, and service.mjs
+// imports discord.js so nothing about it was reachable from a test —
+// controller.mjs (createCoreRegistry, and createCore itself) has no such
+// seam, so everything here runs against fakes or the real wiring, with no
+// discord.js in sight.
+//
+// THE ACTUAL FIX for #345's reported symptom is `discardIfFailed`, called the
+// moment a join fails (wired from lifecycle.mjs's join() catch, through
+// createCore, into service.mjs's makeCore). The mint-time prune in
+// `controllerFor` is a backstop only: it never runs for a guild that fails
+// once and is never joined again, which is exactly the case #345 reports
+// live — a review of the first version of this fix caught that the mint-time
+// prune alone does not touch that case, since re-joining a `voice: error`
+// core was already harmless (lifecycle.join treats it like idle and retries
+// on the SAME core) and nothing ever forced a re-mint.
 
 import { test } from 'node:test';
 import { strict as assert } from 'node:assert';
 
-import { createCoreRegistry } from '../src/controller.mjs';
+import { createCoreRegistry, createCore } from '../src/controller.mjs';
 
 function fakeCore(guildId, { voice = 'connected', session = {} } = {}) {
   return {
@@ -62,10 +73,67 @@ test('a connected core is reused across repeated joins and other verbs, never re
   assert.equal(made.length, 1);
 });
 
-// THE FIX: without pruning, this errored core would be handed back forever —
-// exactly the bug reported live: /health's `guilds` naming a guild that was
-// never actually connected.
-test('a core whose join failed (voice:error, no session) is pruned and re-minted on the next join', () => {
+// --- discardIfFailed: THE FIX -----------------------------------------------
+
+test('THE FIX: discardIfFailed removes the guild from guildIds immediately — no later join needed', () => {
+  const { registry } = makeRegistry({
+    cores: [() => fakeCore('g1', { voice: 'error', session: null })],
+  });
+  const core = registry.mint('g1'); // stands in for lifecycle's join catch having just fired
+  assert.deepEqual(registry.guildIds(), ['g1']);
+
+  const removed = registry.discardIfFailed('g1', core);
+
+  assert.equal(removed, true);
+  assert.deepEqual(registry.guildIds(), []); // gone from /health with NO retry — the actual #345 symptom
+  assert.equal(registry.controllerFor('g1', { create: false }), null);
+});
+
+test('discardIfFailed never deletes a DIFFERENT core minted for the same guild in the meantime (identity guard)', () => {
+  const { registry, made } = makeRegistry({
+    cores: [
+      () => fakeCore('g1', { voice: 'error', session: null }),
+      () => fakeCore('g1', { voice: 'connected', session: {} }),
+    ],
+  });
+  const failedCore = registry.mint('g1');
+  // A concurrent path re-minted for the same guild before the stale join's
+  // rejection was handled — `cores.get('g1')` now points at a DIFFERENT core.
+  const freshCore = registry.mint('g1');
+  assert.notEqual(freshCore, failedCore);
+
+  const removed = registry.discardIfFailed('g1', failedCore); // the STALE core's own callback, arriving late
+
+  assert.equal(removed, false); // refused: not the core the map currently holds
+  assert.equal(made.length, 2);
+  assert.deepEqual(registry.guildIds(), ['g1']);
+  assert.equal(registry.controllerFor('g1', { create: false }), freshCore.controller); // the live one survives untouched
+});
+
+test('discardIfFailed refuses a core that is not in voice:error at all', () => {
+  const { registry } = makeRegistry({ cores: [() => fakeCore('g1', { voice: 'connected', session: {} })] });
+  const core = registry.mint('g1');
+  assert.equal(registry.discardIfFailed('g1', core), false);
+  assert.deepEqual(registry.guildIds(), ['g1']);
+});
+
+// Defensive branch, not a reachable production state today: lifecycle.join's
+// catch is the ONLY place `voice` is ever set to 'error', and it does so
+// before `session` is ever assigned (lifecycle.mjs) — so a real core can
+// never be `voice:error` WITH a session. Kept because discardIfFailed checks
+// it anyway rather than trusting the caller, mirroring lifecycle.teardown's
+// own `voice === 'error' && !session` guard; this pins that the check is
+// really `&&`, not just `voice === 'error'`.
+test('discardIfFailed refuses a voice:error core that still holds a session (defensive guard; not reachable via join() today)', () => {
+  const { registry } = makeRegistry({ cores: [() => fakeCore('g1', { voice: 'error', session: { fake: true } })] });
+  const core = registry.mint('g1');
+  assert.equal(registry.discardIfFailed('g1', core), false);
+  assert.deepEqual(registry.guildIds(), ['g1']);
+});
+
+// --- controllerFor's on-mint prune: the BACKSTOP, not the fix ---------------
+
+test('backstop: a stale voice:error/no-session core is also pruned if someone DOES mint again for that guild', () => {
   const { registry, made } = makeRegistry({
     cores: [
       () => fakeCore('g1', { voice: 'error', session: null }),
@@ -92,7 +160,8 @@ test('a stale error core is NOT pruned by a status read (create:false) — it st
   assert.equal(made.length, 1);
 });
 
-test('an error-state core that still holds a session is not pruned (mirrors teardown\'s own guard)', () => {
+// Same defensive note as discardIfFailed's version above.
+test('backstop: an error-state core that still holds a session is not pruned (defensive guard; not reachable via join() today)', () => {
   const { registry, made } = makeRegistry({
     cores: [
       () => fakeCore('g1', { voice: 'error', session: { fake: true } }),
@@ -104,6 +173,8 @@ test('an error-state core that still holds a session is not pruned (mirrors tear
   assert.equal(second, first); // reused, not re-minted
   assert.equal(made.length, 1);
 });
+
+// --- other controllerFor behaviour ------------------------------------------
 
 test('canCreate:false (no token) blocks minting but a reusable core is unaffected', () => {
   const { registry: noToken, made: madeNoToken } = makeRegistry({ canCreate: () => false });
@@ -133,4 +204,62 @@ test('mint() registers directly (the boot-restore seam), independent of controll
   assert.equal(core, made[0]);
   assert.deepEqual(registry.guildIds(), ['g1']);
   assert.deepEqual(registry.values(), [core]);
+});
+
+// --- end-to-end: the REAL wiring, no fakeCore stand-in ----------------------
+//
+// Everything above drives createCoreRegistry against a scripted fake core.
+// This one wires the actual createCore/createLifecycle (controller.mjs +
+// lifecycle.mjs) through a real createCoreRegistry, with only the
+// Discord/network/process seams faked — the same seam pattern
+// test/helpers.mjs uses — so it proves the hook is actually connected, not
+// just that the registry method works in isolation.
+test('end-to-end: a real join failure removes the guild from /health with no retry, and canonical minting still works', async () => {
+  let thisCore;
+  const makeCore = (guildId) =>
+    (thisCore = createCore({
+      guildId,
+      joinVoice: async () => {
+        throw new Error('discord unreachable');
+      },
+      entersStateFn: async () => {},
+      stateStore: {
+        read: async () => ({ status: 'absent', state: null }),
+        write: async () => {},
+        path: '/dev/null',
+      },
+      spawn: () => {
+        throw new Error('never called: no successful join in this test');
+      },
+      createMusicResource: () => {
+        throw new Error('never called: no successful join in this test');
+      },
+      createSpeechResource: () => {
+        throw new Error('never called: no successful join in this test');
+      },
+      fetchImpl: async () => ({ status: 200 }),
+      eventUrl: 'http://nora.test/app/v1/voice/event',
+      getWakeStats: () => ({}),
+      pumpInfo: () => ({}),
+      log: () => {},
+      // The exact wiring service.mjs's makeCore uses.
+      onJoinFailed: () => registry.discardIfFailed(guildId, thisCore),
+    }));
+  const registry = createCoreRegistry({ makeCore, log: () => {} });
+
+  const controller = registry.controllerFor('g-e2e', { create: true });
+  assert.notEqual(controller, null);
+  assert.deepEqual(registry.guildIds(), ['g-e2e']);
+
+  const [, core] = registry.entries()[0];
+  await assert.rejects(core.lifecycle.join('c1'), /discord unreachable/);
+
+  // THE SYMPTOM #345 REPORTS, fixed: gone with no second join attempt.
+  assert.deepEqual(registry.guildIds(), []);
+  assert.equal(registry.controllerFor('g-e2e', { create: false }), null);
+
+  // And minting still works normally afterward.
+  const controller2 = registry.controllerFor('g-e2e', { create: true });
+  assert.notEqual(controller2, null);
+  assert.deepEqual(registry.guildIds(), ['g-e2e']);
 });

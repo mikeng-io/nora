@@ -328,22 +328,24 @@ export function createController({
 // A join that fails leaves its core in `voice: error` with no `session`
 // (lifecycle.join's catch sets `voice = 'error'` before `session` is ever
 // assigned — see lifecycle.mjs). Left in the map, that core answers every
-// later `/health` as a guild Nora holds a connection for and never did.
+// later `/health` as a guild Nora holds a connection for and never did — and
+// re-joining that guild was ALREADY harmless without any of this: lifecycle's
+// own `join()` treats `voice === 'error'` like idle and retries on the SAME
+// core (it falls through the `for(;;)` guard because 'error' matches none of
+// 'connected'/joinPromise/destroyPromise). So the actual fix for #345's
+// symptom is `discardIfFailed`, called the moment a join fails — not this
+// module's mint-time prune alone, which only ever runs when someone mints
+// AGAIN for the same guild, and does nothing for the guild that fails once
+// and is never retried (the exact case #345 reports live).
 //
-// Shape chosen over "drop the core the instant its join fails": that drop
-// happens from inside the join's OWN async continuation, by which time a
-// concurrent second request may already have looked the guild up and be
-// mid-join on the very core about to be deleted out from under it — the
-// issue's own warning. Pruning here instead, at the single synchronous
-// lookup every mint goes through, has no such window: `controllerFor` never
-// awaits between reading `cores` and deciding, so no other request's code can
-// run in between. It is lazy (a guild nobody re-joins keeps its stale error
-// core until someone tries again) rather than instant, which is the
-// trade the issue itself calls out as the safe one.
-//
-// The test (`voice === 'error' && !session`) mirrors lifecycle.teardown's own
-// guard for "nothing here worth tearing down" — the same fact, read the other
-// way round, for "nothing here worth reusing".
+// `discardIfFailed(guildId, core)` takes an IDENTITY check first: only
+// deletes `cores.get(guildId)` when it is STILL exactly `core`. The call
+// arrives from inside the join's own async continuation (lifecycle.mjs),
+// which resumes on its own schedule — by the time it runs, a concurrent
+// second request may already have pruned-and-reminted (via `controllerFor`
+// below) or otherwise replaced this guild's entry, and the identity check is
+// what stops this call from deleting THAT (possibly live) core out from
+// under it.
 export function createCoreRegistry({ makeCore, canCreate = () => true, log = () => {} }) {
   const cores = new Map();
 
@@ -352,6 +354,20 @@ export function createCoreRegistry({ makeCore, canCreate = () => true, log = () 
     cores.set(guildId, core);
     log('core_created', { guild_id: guildId });
     return core;
+  }
+
+  // The condition (`voice === 'error' && !session`) is what a core in this
+  // state always looks like today — lifecycle.join's catch is the only place
+  // that ever sets `voice = 'error'`, and it does so before `session` is ever
+  // assigned. Checked anyway, alongside identity, rather than trusting the
+  // caller: it mirrors lifecycle.teardown's own guard for "nothing here worth
+  // tearing down", read the other way round for "nothing here worth keeping".
+  function discardIfFailed(guildId, core) {
+    if (cores.get(guildId) !== core) return false; // superseded already
+    if (core.lifecycle.voice() !== 'error' || core.lifecycle.session()) return false;
+    cores.delete(guildId);
+    log('core_pruned', { guild_id: guildId, reason: 'join_failed' });
+    return true;
   }
 
   function controllerFor(guildId, { create = false, any = false } = {}) {
@@ -364,10 +380,15 @@ export function createCoreRegistry({ makeCore, canCreate = () => true, log = () 
       const first = cores.values().next();
       return first.done ? null : first.value.controller;
     }
+    // Backstop, not the fix: `discardIfFailed` (above) is what actually
+    // clears a stale error core, the moment its join fails. This only
+    // matters if some future core ever reaches `voice: error` without going
+    // through that hook — keeps a caller from being handed a core no join
+    // could ever succeed on.
     let existing = cores.get(guildId);
     if (existing && create && existing.lifecycle.voice() === 'error' && !existing.lifecycle.session()) {
       cores.delete(guildId);
-      log('core_pruned', { guild_id: guildId, reason: 'stale_error_core' });
+      log('core_pruned', { guild_id: guildId, reason: 'stale_error_core_on_mint' });
       existing = undefined;
     }
     if (existing) return existing.controller;
@@ -382,6 +403,7 @@ export function createCoreRegistry({ makeCore, canCreate = () => true, log = () 
   return {
     mint,
     controllerFor,
+    discardIfFailed,
     guildIds: () => [...cores.keys()],
     entries: () => [...cores.entries()],
     values: () => [...cores.values()],
@@ -524,6 +546,9 @@ export function createCore({
   getWakeStats,
   pumpInfo,
   log = () => {},
+  // (guildId) => void, fired the moment a join fails (#345) — passed straight
+  // through to lifecycle, which is the one place that decides it.
+  onJoinFailed = () => {},
   arbiterOptions = {},
   outboxOptions = {},
 }) {
@@ -549,6 +574,7 @@ export function createCore({
     emitEvent,
     onJoined: (session) => arbiter.attach(session.player),
     onTeardown: () => arbiter.detach(),
+    onJoinFailed: () => onJoinFailed(guildId),
     log,
   });
   const controller = createController({
