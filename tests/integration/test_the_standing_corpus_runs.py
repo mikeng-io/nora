@@ -67,6 +67,9 @@ from nora.subject import (
 from nora.subject.standing_fold import FoldCall, Folded, fold, read_fold_turn
 from tests.sandbox_fixtures import BEFORE_MS, ROOM, STEP_MS, seed_source
 
+#: Every draw creates a Honcho workspace of its own (issue #462).
+pytestmark = pytest.mark.usefixtures("draw_honcho")
+
 _NO_PROVIDER = {"llm.base_url": "http://127.0.0.1:9/v1"}
 _TAG = "t-fold-probe"
 _PRIOR = "I owe the room an answer about the venue; nobody has confirmed the date."

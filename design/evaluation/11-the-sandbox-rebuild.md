@@ -175,6 +175,13 @@ dropped when the case ends. So:
 per case, so §3's replay can one day fill it. Until then every sandbox's peer
 card is EMPTY. That is a stated tier gap, not a hidden one.
 
+**SUPERSEDED 2026-09-24 (#462), see §1.9.** The paragraph above was the
+design, and the shared sibling did not hold it: every draw's ingest fed it and
+every later draw read it back, so peer cards were not empty, they were every
+earlier eval's. Each draw now gets a Honcho workspace of its own, created
+empty; the sibling remains only as the default for a subject composed outside
+a draw.
+
 **What a case may still say about its input.** `input` is the line that
 arrives at `before_ms`; `person` is who says it (a `person_id` the roster
 knows — the room's `persons` gate would otherwise refuse the line silently);
@@ -391,6 +398,81 @@ never set a pre-#458 judged number beside a post-#458 one.
 **Residual, not closed here:** the source is still EVERY row up to the
 instant (`snapshot` is unbounded), while her turn is shown the newest
 `context_window`. So the judge can credit a line she was never shown (#459).
+
+### 1.9 Honcho is isolated per DRAW (2026-09-24, #462)
+
+**What was wrong.** §1.3 said every sandbox's peer card was EMPTY. The shared
+`<deployment>-eval` workspace made that false. Ingest feeds every arriving
+line and her reply into Honcho (`memory_feed`), the deriver turns them into
+conclusions, and the tag path reads them back as `<peer_history>` and
+`<self_card>`. So draw 3 of a case read what draws 1 and 2 had said, ranked by
+similarity to the question being asked again, and answered «你問咗第三次喇».
+The judge, grading against a window with no earlier ask, called that a
+fabrication. Draws were correlated, two arms running at once read each
+other's notes, and `miles_novak` (the default `person`) had a card built from
+every corpus any session had run. Read back on the probe below: Nora's
+representation of `miles_novak` in the shared workspace opened with «miles_novak asked
+about splitting 3480蚊 among 4 people», three copies, each from an earlier
+draw of the very case being probed.
+
+**What it is now.** `evals.backbone._drive` opens
+`nora.subject.memory_workspace.draw_workspace` around each draw:
+
+- a workspace named `<deployment>-eval-<run>-<case>-<draw>-<nonce>` is
+  created, marked `nora_eval_draw` in its metadata, BEFORE the subject is
+  composed, and the subject composes against it (`memory.workspace_id`,
+  applied last so no `Spec` override can redirect it). A create that fails
+  is an ERROR: a draw with no workspace of its own is not isolated;
+- it is deleted when the draw ends, raising or not, after the subject is
+  closed and its background work cancelled. Sessions first, because Honcho
+  answers 409 to a workspace delete while a session is active;
+- it is created with Honcho's derivation OFF (`configuration.reasoning.enabled
+  = false`, which also stops peer cards and dreams, and `summary.enabled =
+  false`). A draw can never read what the deriver would derive from it, since
+  derivation lags minutes to tens of minutes behind a feed, so those tasks were
+  pure load on the Honcho production's memory runs on. Read back live
+  2026-09-24: 13 feeds into such a workspace enqueued zero work units, and a
+  seeded conclusion (`conclude`, written directly) still came back through
+  `representation`;
+- `python -m evals` sweeps, at start, any marked draw workspace older than six
+  hours: what a killed run left behind;
+- nothing creates, deletes or composes against a workspace outside
+  `<deployment>-eval[-…]`. `build_config` refuses it on the composed config and
+  the admin refuses it before any request, so production's `nora` cannot be
+  reached from this path.
+
+The composition root builds ONE `HonchoClient`, from `memory.workspace_id`,
+and no caller passes a `workspace_id=` to a verb, so the config IS every read
+and write. `tests/integration/test_eval_draws_isolate_honcho.py` holds that on
+a composed subject against a fake shaped after Honcho's OpenAPI.
+
+**Measured on the deploy host, `tool_selection` `route_calculate` at
+`--sample 3`:** three workspaces appeared, one per draw; each draw's prefill
+rendered `self_card`, `peer_card` and `peer_history` EMPTY, draw 3 included.
+Create cost 9–12 ms per draw and the delete call 20–46 ms: noise beside a
+turn. The delete is ACCEPTED at once and carried out by Honcho's own queue,
+behind the deriver's backlog, so a workspace can stay listed for TENS of
+minutes after its draw: measured ~40 minutes on 2026-09-24 (accepted
+13:53–13:54Z, gone 14:30–14:34Z, behind a 43-task production backlog, on a
+build that still let draws derive). Nothing reads it in that time.
+
+**Numbers from before and after this change are NOT comparable** for any
+corpus whose entry point reads memory: every `tag` corpus (trigger,
+no_trigger, near_miss, injections, transcript_injection, being_contradicted,
+identity_grounding, source_scope, tool_selection, presence), `participation`
+and `proactive_act` through the fire path's cards, and `dreamer` corpora
+wherever a pass calls a memory verb. Re-baseline on a build that has this
+before setting an arm against it.
+
+**OPEN, not decided here: §4's replay workspace per anchor.** §4 wants one
+rebuilt workspace per anchor, shared by every case at it. A draw WRITES into
+its workspace, so a shared replayed workspace would bring #462's correlation
+back. When replay is built it has to land in each draw's own workspace (a
+replay per draw, or a copy, which Honcho's API does not offer), and §4's cost
+argument has to be re-made on that basis. Replaying into a draw workspace
+also needs derivation ON for the replay's own feed, so the derivation-off
+setting above is right for today's empty workspaces and has to be revisited
+with it.
 
 ### Where the suite runs — DECIDED 2026-09-21: on the deploy host
 

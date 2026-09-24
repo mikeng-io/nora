@@ -37,6 +37,9 @@ from evals.backbone import (
 from nora.subject import Knowledge, NoteSeed
 from tests.sandbox_fixtures import ROOM, seed_source
 
+#: Every draw creates a Honcho workspace of its own (issue #462).
+pytestmark = pytest.mark.usefixtures("draw_honcho")
+
 _NO_PROVIDER = {"llm.base_url": "http://127.0.0.1:9/v1"}
 
 _HISTORY = Knowledge(

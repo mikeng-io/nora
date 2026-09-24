@@ -29,6 +29,12 @@ from nora.config import Config
 from nora.config import load as _load_config
 from nora.policy import Conversation, load_policy
 
+from .memory_workspace import (
+    NotADrawWorkspaceError,
+    refuse_unless_draw_workspace,
+    shared_eval_workspace,
+)
+
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
 #: The room a subject uses when its caller names none.
@@ -366,11 +372,16 @@ def _baseline(cfg: Config, workdir: Path) -> Config:
     # deployment's workspace is where every real peer card lives. An eval
     # turn's ingest FEEDS Honcho (`nora/ingest/stages/memory_feed.py`), so a
     # subject composed with the deployment's workspace writes eval speech
-    # into production's peer representations. One fixed sibling workspace,
-    # suffixed rather than hashed per case: the design's rebuild replays
-    # Honcho INTO it (`11-the-sandbox-rebuild.md` §3), and a replay can only
-    # be shared if its name is stable.
-    cfg = _with(cfg, "memory.workspace_id", f"{cfg.memory.workspace_id}-eval")
+    # into production's peer representations.
+    #
+    # The fixed `-eval` sibling is the DEFAULT only. An eval draw overrides it
+    # with a workspace of its own (`memory.workspace_id`, from
+    # `memory_workspace.draw_workspace`), because the shared sibling made
+    # draws correlated: the tag path read earlier draws' conclusions back
+    # (issue #462). Configuration, not a new seam: which workspace is a value
+    # one deployment differs from another by, which is what `overrides` is
+    # for, and `build_config` refuses any value outside the eval namespace.
+    cfg = _with(cfg, "memory.workspace_id", shared_eval_workspace(cfg.memory.workspace_id))
     # THE HOST, FROM THE HOST. The deployment's config reaches OmniRoute and
     # Honcho at `host.docker.internal`, the name docker gives a container for
     # the machine it runs on. The suite runs on that machine, outside a
@@ -392,6 +403,41 @@ def _baseline(cfg: Config, workdir: Path) -> Config:
     cfg = _with(cfg, "doctrine.dir", _REPO_ROOT / "nora" / "doctrine")
     cfg = _with(cfg, "dreamer.dir", _REPO_ROOT / "nora" / "dreamer")
     return cfg
+
+
+def _refuse_a_workspace_outside_the_eval_namespace(workspace: str, deployment: str) -> None:
+    """A subject's Honcho workspace is the shared `<deployment>-eval` sibling
+    or a draw's `<deployment>-eval-...`, and nothing else.
+
+    Held on the COMPOSED config, after every override, because an eval draw
+    names its workspace through `spec.overrides`, and an override of `nora`
+    would feed eval speech into production's peer cards with nothing raising.
+    """
+    if workspace == shared_eval_workspace(deployment):
+        return
+    try:
+        refuse_unless_draw_workspace(workspace, deployment)
+    except NotADrawWorkspaceError as exc:
+        raise ValueError(
+            f"a subject's Honcho workspace must be {shared_eval_workspace(deployment)!r} "
+            f"or a draw's ({exc})"
+        ) from exc
+
+
+def memory_endpoint() -> tuple[str, str]:
+    """`(base_url, deployment_workspace)` for Honcho, as a subject reaches it.
+
+    Read from the same template `build_config` copies, with the same
+    host-from-the-host rewrite `_baseline` applies, so the workspace a draw
+    creates is on the server its subject will talk to. The second value is
+    the DEPLOYMENT's workspace, before `_baseline` suffixes it: the prefix
+    every draw workspace is derived from and guarded by.
+    """
+    cfg = _load_config(_TEMPLATE, require_secrets=False)
+    base_url = cfg.memory.base_url
+    if not _resolves(_DOCKER_HOST):
+        base_url = _from_host(base_url)
+    return base_url, cfg.memory.workspace_id
 
 
 def build_config(spec: SubjectSpec) -> Config:
@@ -423,9 +469,12 @@ def build_config(spec: SubjectSpec) -> Config:
     # layer further down than the override case pass 3/4 already tested.
     cfg_path = spec.workdir / "config.toml"
     shutil.copy(_TEMPLATE, cfg_path)
-    cfg = _baseline(_load_config(cfg_path), spec.workdir)
+    loaded = _load_config(cfg_path)
+    deployment = loaded.memory.workspace_id
+    cfg = _baseline(loaded, spec.workdir)
     for path, value in (spec.overrides or {}).items():
         cfg = _with(cfg, path, value)
+    _refuse_a_workspace_outside_the_eval_namespace(cfg.memory.workspace_id, deployment)
     policy = spec.policy or default_policy(spec.room)
     (spec.workdir / "policy.toml").write_text(policy, encoding="utf-8")
     _conversation_for(spec)

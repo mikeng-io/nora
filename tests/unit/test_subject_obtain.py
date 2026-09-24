@@ -100,10 +100,25 @@ def test_the_honcho_workspace_is_a_fixed_sibling_of_the_deployments(tmp_path, mo
     assert cfg.memory.workspace_id != "-eval"
 
 
-def test_a_caller_may_still_override_the_workspace(tmp_path, monkeypatch) -> None:
+def test_a_draw_names_its_own_workspace(tmp_path, monkeypatch) -> None:
+    """Issue #462: an eval draw composes against a workspace of its own."""
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
-    cfg = build_config(_spec(tmp_path, overrides={"memory.workspace_id": "probe"}))
-    assert cfg.memory.workspace_id == "probe"
+    cfg = build_config(_spec(
+        tmp_path, overrides={"memory.workspace_id": "nora-eval-run-case-1-abc123"},
+    ))
+    assert cfg.memory.workspace_id == "nora-eval-run-case-1-abc123"
+
+
+@pytest.mark.parametrize("workspace", ["nora", "probe", "nora-eval-", "nora-48b00d52c0ff"])
+def test_no_spelling_of_the_workspace_reaches_outside_the_eval_namespace(
+    tmp_path, monkeypatch, workspace,
+) -> None:
+    """No override can point a subject at production's workspace (or
+    anything else outside `nora-eval[-...]`): an eval turn FEEDS Honcho, so
+    that would write eval speech into real peer cards with nothing raising."""
+    monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
+    with pytest.raises(ValueError, match="draw workspace"):
+        build_config(_spec(tmp_path, overrides={"memory.workspace_id": workspace}))
 
 
 def test_a_policy_naming_the_rooms_id_on_a_different_entry_is_refused(

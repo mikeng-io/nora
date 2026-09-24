@@ -62,7 +62,21 @@ from evals.backbone import (
 )
 from evals.rebuilt.domain import Outcome
 from evals.rebuilt.entry import ENTRY_POINTS, EntryPoint
-from nora.subject import Sandboxed
+from nora.subject import DrawWorkspace, Sandboxed
+
+
+@contextlib.asynccontextmanager
+async def _fake_draw_workspace(case: str, *, run_id: str):
+    """The draw's Honcho workspace, with no Honcho: this file drives `_drive()`
+    with no network. The real lifecycle is
+    `tests/integration/test_eval_draws_isolate_honcho.py`'s."""
+    yield DrawWorkspace(id=f"nora-eval-{run_id}-{case.replace('#', '-')}-fake", create_ms=0.0)
+
+
+@pytest.fixture(autouse=True)
+def _no_honcho(monkeypatch):
+    monkeypatch.setattr(backbone, "draw_workspace", _fake_draw_workspace)
+
 
 grader = AbsenceGrader()
 context_grader = ContextGrader()
@@ -573,8 +587,30 @@ async def test_drive_composes_the_real_room_at_its_own_instant(monkeypatch, one_
     assert spec.policy == 'default = "deny"\n'
     assert spec.overrides["llm.base_url"] == "http://127.0.0.1:9/v1"
     assert spec.database_url.endswith("_sb"), "composed against the SANDBOX, not the source"
-    assert "memory.workspace_id" not in spec.overrides, (
-        "no per-case workspace: Honcho isolation is `_baseline()`'s fixed sibling"
+    assert spec.overrides["memory.workspace_id"].startswith(
+        f"nora-eval-{backbone.RUN_ID}-compose-probe-"
+    ), "every draw composes against a Honcho workspace of its own (#462)"
+
+
+async def test_a_spec_override_cannot_redirect_the_draws_workspace(monkeypatch, one_path):
+    """The draw's workspace is applied LAST: a `Spec.overrides` naming
+    `memory.workspace_id` (the shared sibling, say) does not win over it."""
+    captured: dict[str, Any] = {}
+
+    async def capturing_obtain(spec: Any) -> _FakeSubject:
+        captured["spec"] = spec
+        return _FakeSubject()
+
+    async def fake_drive(_subject: object, _case: object, *, now_ms: int) -> Outcome:
+        return Outcome(admitted=None)
+
+    monkeypatch.setitem(ENTRY_POINTS, "dreamer", EntryPoint(drive=fake_drive))
+    monkeypatch.setattr(backbone, "obtain", capturing_obtain)
+    await backbone._drive(
+        _case("redirect-probe"), _spec("dreamer", overrides={"memory.workspace_id": "nora-eval"}),
+    )
+    assert captured["spec"].overrides["memory.workspace_id"].startswith(
+        f"nora-eval-{backbone.RUN_ID}-redirect-probe-"
     )
 
 

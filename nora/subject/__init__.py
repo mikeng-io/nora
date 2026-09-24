@@ -48,6 +48,12 @@ from .knowledge import (
     settle,
     silent_failures,
 )
+from .memory_workspace import (
+    DrawWorkspace,
+    draw_workspace,
+    new_run_id,
+    sweep_stale_draw_workspaces,
+)
 from .obtain import (
     DEFAULT_ROOM,
     Subject,
@@ -61,6 +67,7 @@ from .sandbox import Sandboxed, as_knowledge, sandbox_database, sandbox_from_sna
 __all__ = [
     "DEFAULT_ROOM",
     "ActPass",
+    "DrawWorkspace",
     "Knowledge",
     "Message",
     "NoteSeed",
@@ -77,10 +84,12 @@ __all__ = [
     "as_knowledge",
     "config_default",
     "deliver",
+    "draw_workspace",
     "dream",
     "heard",
     "know",
     "last_row_id",
+    "new_run_id",
     "obtain",
     "owe",
     "pending",
@@ -88,4 +97,5 @@ __all__ = [
     "sandbox_from_snapshot",
     "settle",
     "silent_failures",
+    "sweep_stale_draw_workspaces",
 ]
