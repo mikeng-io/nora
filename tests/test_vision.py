@@ -655,12 +655,27 @@ async def test_a_wildcard_subtype_is_refused_before_the_request(mimo):
 async def test_each_modalitys_prompt_reaches_the_gateway(mimo):
     """`DESCRIBE_PROMPTS` had no test at all: `media_fetch` never passes a
     prompt, so selection happens inside this client — and every test that saw a
-    non-image replaced this client with a stub, making the assertion vacuous."""
-    await _client(mimo).describe(data=RED_PNG, media_type="image/png")
+    non-image replaced this client with a stub, making the assertion vacuous.
+
+    Each leg asserts ITS OWN outcome and that the request count grew by
+    exactly one BEFORE looking at the prompt text (#392): under `make gate`'s
+    parallel load the video leg's preprocessing can fail or time out, so
+    `describe` returns without calling the gateway and `requests[-1]` is still
+    the PRIOR leg's request. Checked this way, that reads as a video
+    preprocessing failure, not as a wrong prompt."""
+    result = await _client(mimo).describe(data=RED_PNG, media_type="image/png")
+    assert result.available, result.reason
+    assert len(mimo.requests) == 1
     assert mimo.requests[-1]["messages"][-1]["content"][0]["text"] == DESCRIBE_PROMPTS["image"]
-    await _client(mimo).describe(data=RED_PNG, media_type="audio/mpeg")
+
+    result = await _client(mimo).describe(data=RED_PNG, media_type="audio/mpeg")
+    assert result.available, result.reason
+    assert len(mimo.requests) == 2
     assert mimo.requests[-1]["messages"][-1]["content"][0]["text"] == DESCRIBE_PROMPTS["audio"]
-    await _client(mimo).describe(data=RED_PNG, media_type="video/mp4")
+
+    result = await _client(mimo).describe(data=RED_PNG, media_type="video/mp4")
+    assert result.available, result.reason
+    assert len(mimo.requests) == 3
     assert mimo.requests[-1]["messages"][-1]["content"][0]["text"] == DESCRIBE_PROMPTS["video"]
 
 

@@ -1349,15 +1349,25 @@ async def test_a_self_tag_is_refused_and_admission_never_runs_the_pipeline():
 
 
 class _ReactingAdapter(_FakeAdapter):
-    def __init__(self, *, react_ok: bool = True, react_delay: float = 0.0, **kw) -> None:
+    def __init__(
+        self, *, react_ok: bool = True, react_delay: float = 0.0,
+        react_gate: asyncio.Event | None = None, **kw,
+    ) -> None:
         super().__init__(**kw)
         self.reactions: list[tuple[str, str, int, bool]] = []
         self._react_ok = react_ok
         self._react_delay = react_delay
+        # `react_gate`, when given, BLOCKS `react()` until the test sets it —
+        # a condition, not a duration, for the one test (#430) that needs the
+        # reaction to still be unresolved no matter how long `pipeline.run`
+        # itself takes under load.
+        self._react_gate = react_gate
 
     async def react(
         self, *, target, emoji, to_author, to_timestamp, to_message_id="", remove=False,
     ):
+        if self._react_gate is not None:
+            await self._react_gate.wait()
         if self._react_delay:
             await asyncio.sleep(self._react_delay)
         self.reactions.append((emoji, to_author, to_timestamp, remove))
@@ -1564,26 +1574,64 @@ async def test_a_crashed_turn_still_resolves_the_indicator():
 
 
 async def test_the_reply_does_not_wait_for_the_reaction():
-    """Constraint: reactions must not delay the reply measurably. With a
-    reaction that takes far longer than the whole turn, the reply is already
-    delivered by the time `run` returns while the reactions are still in
-    flight — which is only true because they are spawned, not awaited.
+    """Constraint: reactions must not delay the reply measurably — not even by
+    a bounded amount (#430).
 
-    PROBE: `await` the coroutines in `indicate.begin`/`resolve` instead of
-    spawning them, and the reply becomes hostage to the reaction's latency;
-    the `background` assertion below fails."""
-    adapter = _ReactingAdapter(react_delay=0.2)
+    `gate` is an `asyncio.Event` the fake reaction BLOCKS on inside `react()`,
+    and this test never sets it until after the check below. There is no
+    delay for a loaded scheduler to race, and the reaction genuinely cannot
+    resolve while `gate` is clear — so `adapter.emojis == []`, and the
+    indicator's own placement task (`_place`) still tracked in `background`
+    and NOT DONE, are CLOCK-FREE proof that `pipeline.run` returned without
+    waiting for the reaction to finish. That catches any UNBOUNDED await:
+    `_place(indicator)` awaited directly with no timeout would never resolve,
+    so `run` itself would never return — and since this repo runs no
+    `pytest-timeout`, an unbounded hang here would otherwise hang `make gate`
+    forever rather than fail it (fail-open). `pipeline.run` is therefore
+    called through `asyncio.wait_for(..., timeout=5.0)`, so that regression
+    surfaces as a clean `TimeoutError`, `pytest.fail`ed with a message naming
+    #430, in about 5s — not a hang.
+
+    It does NOT catch a BOUNDED wait — production could `wait_for(indicator
+    .placed.wait(), timeout=1.5)` before replying, time out, and continue:
+    `emojis` and the task-tracking check both still pass, because the
+    reaction is still exactly as unresolved as before, yet the reply was 1.5s
+    late. `elapsed < 1.0` is kept for exactly that: 4x the 0.23s wall-clock
+    flake #430 was originally filed against, so it catches a bounded wait of
+    >= 1.0s. It does NOT catch one under 1.0s — nothing in this test does.
+
+    PROBE 1 (unbounded): make `indicate.begin`/`EngagementPipeline
+    ._begin_indicator` `await _place(indicator)` directly instead of
+    spawning it, and `pipeline.run` never returns — the `wait_for` below
+    times out after 5s and this fails on `pytest.fail("pipeline.run awaited
+    the reaction (#430)")`, not on any assertion further down.
+    PROBE 2 (bounded, 1.5s): add `await asyncio.wait_for(indicator.placed
+    .wait(), timeout=1.5)` right after `_begin_indicator` in `pipeline.run`
+    (suppressing the timeout). `run` returns well inside the 5s ceiling,
+    `emojis == []` and the task check both still pass — only `elapsed < 1.0`
+    fails."""
+    gate = asyncio.Event()   # never set until after the check below
+    adapter = _ReactingAdapter(react_gate=gate)
     pipeline, _metrics, _audit, _memory, background = _build_pipeline(adapter=adapter)
 
     started = time.perf_counter()
-    await pipeline.run(_request())
+    try:
+        await asyncio.wait_for(pipeline.run(_request()), timeout=5.0)
+    except TimeoutError:
+        pytest.fail("pipeline.run awaited the reaction (#430)")
     elapsed = time.perf_counter() - started
 
     assert adapter.texts == ["今晚七點半得"]   # replied already
-    assert adapter.emojis == []                # reaction still in flight
-    assert len(background) > 0
-    assert elapsed < 0.2
+    assert adapter.emojis == []                # reaction cannot have resolved
+    assert elapsed < 1.0                       # catches a BOUNDED wait of >= 1.0s
 
+    reaction_tasks = [
+        task for task in background._tasks
+        if not task.done() and task.get_coro().__qualname__ == "_place"
+    ]
+    assert len(reaction_tasks) == 1            # the 👀 placement is tracked, still in flight
+
+    gate.set()
     await _drain(background)
     assert adapter.emojis == [indicate.ACK, indicate.DONE]
 
