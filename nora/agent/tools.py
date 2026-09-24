@@ -9161,18 +9161,19 @@ Args:
 
         Returns one of three words. Read the middle one carefully.
           - `sent`: it reached the room.
-          - `held_for_review`: your part is done. The message was complete, and
-            something outside this turn held it (a review mode, or a cooldown on
-            how often this room hears from you). It is recorded. The hold is not
-            about the text, so a shorter rewrite will not get through. Do not
-            call this tool again.
+          - `held_for_review`: your part is done. The message was complete and
+            correct, and something outside this turn held it (a review mode, or
+            a cooldown on how often this room hears from you). It is recorded.
+            The hold is not about the text, so a shorter rewrite will not get
+            through. Do not call this tool again.
           - `refused`: a guard stopped it and it will not go. The same text will
             be refused again.
 
         Args:
             text: One message, in your own voice. An @ right before the name the
                 room uses for somebody in this conversation tags them, as in
-                "@Jordan are you coming?"; a name that is not here reaches nobody.
+                "@Jordan somebody here wants to know how tall you are"; a name
+                that is not here reaches nobody.
             reply_to: Optional. The `n` of the `m` element you are answering, as
                 it appears in `group_transcript`. Use it when the room has more
                 than one thread open and it would otherwise be unclear which one

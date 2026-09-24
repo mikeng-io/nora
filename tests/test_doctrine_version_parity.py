@@ -163,7 +163,7 @@ PINNED: dict[str, tuple[int, str]] = {
     # give-it-back draft with no 撚/屌/柒 read as soft, laughing it off as the
     # other answer, 撚 inside the stressed word, and a soft verdict with a 屌
     # still soft. The tail offers were already here and were not copied.
-    "voice": (23, "f9f8fd63212e64a68d2934cf5389db3ee84d868a344f43f098661fb73db765ba"),
+    "voice": (23, "ad3d816363b61113844b24d1d42e7e360d9cb79e0149578178641e9647d6b46d"),
     # conduct v25 / silence v3 (2026-09-10, `14a55ab8`): that commit edited both
     # bodies and bumped both versions in their front matter, and never came back
     # here. So the contract held in the direction that matters -- the version a
@@ -222,7 +222,7 @@ PINNED: dict[str, tuple[int, str]] = {
     # where, asking the person here who holds the fact (a tag reaches only this
     # conversation), a lookup's link pasted exactly, and a closing offer as
     # where an impossible promise slips in.
-    "conduct": (31, "a62d7d55c810c891d41b9422d38b89a43b9acc9b707cee20f075c9aa6e357dfa"),
+    "conduct": (31, "4f0c85730a863036d9baca658a9b72f85a23b125e7743d1bd8aa4bbf83640fcb"),
     # NOT Nora's: the Relevance Gate's instruction, pinned here like any other
     # authored file so a silent edit to what the gate is told is impossible.
     # v5 (2026-09-10, issue #144): the digest v4 pointed at is not shipped —

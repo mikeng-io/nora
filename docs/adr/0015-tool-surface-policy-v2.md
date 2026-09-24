@@ -166,6 +166,10 @@ docstring.) Counts in this ADR are over that extracted text.
   `conduct.md`. `send_reply` is now Level 3 like any other tool: delivery (0007
   §5a's MUST) plus its `sent` / `held_for_review` / `refused` contract, which
   stays in the description because the tool returns a string, not a dict.
+  One example argument value stays, as the named exception to "example
+  values are removed": the `@Jordan` line on `send_reply`'s `text` argument,
+  because DEC-147 keeps example names out of the doctrine and a composer test
+  resolves that exact line (DEC-88's ask-the-one-who-knows message).
 - **Allowed values are types.** An argument that takes one of a fixed set
   (`what="online"`) is a `Literal` or enum in the signature, not a list in
   prose.
