@@ -46,6 +46,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import inspect
 import json
 import logging
 import re
@@ -53,8 +54,9 @@ import urllib.parse
 import uuid
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from contextvars import ContextVar
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, time, timedelta, timezone
+from functools import wraps
 from types import MappingProxyType
 from typing import Any, Literal, Protocol, cast, get_args, get_type_hints
 from uuid import UUID
@@ -160,6 +162,20 @@ from ..obs.tracing import annotate, span
 from .arithmetic import evaluate as evaluate_expression
 from .dream_screen import screen as _dream_screen
 from .egress import scan_reply
+
+# Re-exported, explicitly (`as`-aliased to themselves so ruff's F401 reads
+# them as intentional, not dead): `tests/test_media_fetch.py` and
+# `tests/unit/test_social_tool_notes.py` import these four by name off
+# `nora.agent.tools`, unchanged from before design 30's move, and neither
+# is touched by this PR. `redirect()` no longer reads them — see
+# `nora.agent.link_owners`'s module docstring.
+from .link_owners import _INSTAGRAM_MOBILE_PAGE_LINK as _INSTAGRAM_MOBILE_PAGE_LINK
+from .link_owners import _INSTAGRAM_PAGE_LINK as _INSTAGRAM_PAGE_LINK
+from .link_owners import _WEB_FETCH_INSTAGRAM_MOBILE_PAGE as _WEB_FETCH_INSTAGRAM_MOBILE_PAGE
+from .link_owners import _WEB_FETCH_INSTAGRAM_PAGE as _WEB_FETCH_INSTAGRAM_PAGE
+from .link_owners import LinkInput
+from .link_owners import owner_of as _owner_of
+from .link_owners import redirect as _link_redirect
 from .links import LinkCarry
 from .ports import ToolSpec, adapt
 from .relay import Relay
@@ -417,6 +433,18 @@ class NativeTool:
     # docstring minus `Args:`). `None` is "not yet declared": the tools not yet
     # rewritten, on a shrink-only list in `tests/test_tool_surface_policy.py`.
     level: int | None = None
+    # `link_inputs` is the twelfth (design/social-per-network/
+    # 30-link-owner-registry.md, "Where the lookup runs" §C). Each entry names
+    # a parameter of THIS tool that may carry a link another tool owns
+    # (`nora.agent.link_owners.LINK_OWNERS`); `build_tool_specs`'s post-pass
+    # wraps `call` for every spec whose row declares one, so a claimed link
+    # returns the owner's redirect without the tool running at all, and an
+    # unclaimed one reaches the tool exactly as before. Empty tuple (the
+    # default) means "nothing here is ever another tool's link" — a fetcher
+    # that takes a URL and forgets to declare it is un-redirected, the same
+    # conservative direction `read_only` takes, because the failure mode of
+    # forgetting is a page fetched instead of routed, not the reverse.
+    link_inputs: tuple[LinkInput, ...] = ()
 
 
 #: The closed declared vocabularies (ADR 0008 §1/§2). The enforcement test reads
@@ -861,10 +889,26 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # `level=2` (ADR 0015 §3): L1 plus how to call it (exactly one of `code` or
     # `url`) and one SHOULD (a `question` costs a fresh look). How to report
     # each status, the untrusted-description rule included, is in the result.
+    # `link_inputs`: `url` may be an Instagram page (design 30, PR 1) — the
+    # same guard `_instagram_page_kind` ran inline before it moved to the
+    # registry. `unless="code"` keeps the old guard's own condition (`url and
+    # not code`): a `code` marker read is never re-judged as a link. The three
+    # slots are fetcher-generic, never a network's text (nora.agent.
+    # link_owners' module docstring): `media_fetch` came here to look at
+    # media, so its note says so (`not_clause`) and points at what to do with
+    # the redirect's result (`then`), and it "read"s a picture (`verb`).
     "media_fetch": NativeTool(4,
                              read_only=True,
                               side_effect_state="none", idempotency="idempotent", retry="safe",
-                              output_contract="three_state", level=2),
+                              output_contract="three_state", level=2,
+                              link_inputs=(
+                                  LinkInput(
+                                      "url", unless="code",
+                                      not_clause=", not a picture or video file",
+                                      then=", then look at the media it returns",
+                                      verb="read",
+                                  ),
+                              )),
     # generate_image (DEC-137): the one EXPENSIVE, EXTERNAL tool in the set —
     # a real provider call per generate, potentially with a reference image,
     # on a subscription lane that is quota-bounded, not metered. Budget 2:
@@ -927,10 +971,18 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     #
     # `level=1` (ADR 0015 §3): what + when + what it returns. How to read the
     # page (a stranger's words; say which page) is in `_FETCH_NOTES`.
+    # `link_inputs`: `url` may be an Instagram page (design 30, PR 1) — the
+    # same guard `_instagram_page_kind` ran inline before it moved to the
+    # registry. `web_fetch` is not asking about media, so its slots are empty
+    # except the unreadable case's own verb: it "opened" a page, it did not
+    # "read" one.
     "web_fetch": NativeTool(2,
                              source_tier="web", cacheable=True, read_only=True,
                             side_effect_state="none", idempotency="idempotent", retry="safe",
-                            output_contract="three_state", level=1),
+                            output_contract="three_state", level=1,
+                            link_inputs=(
+                                LinkInput("url", verb="opened"),
+                            )),
     # `x_read` and `x_search` (design/social-per-network, DEC-201): READ-ONLY X
     # via the host-side OpenCLI bridge, replacing `social_fetch` (DEC-151).
     # `x_read` budget 3: a post, then its author's profile or posts, and a
@@ -3083,42 +3135,13 @@ _COVER_NOTE = (
     "item's link, if that line carries one."
 )
 
-# What `media_fetch(url=...)` says when the url is an Instagram PAGE (a
-# post, reel, story or profile link) rather than a picture or video file.
-# `nothing_found` under R-27: the link is not a describable picture, which
-# is that status's own documented meaning, and nothing was tried that could
-# have failed. The note names the next call and what to do with its result,
-# because the result (`instagram_read`'s post and story rows) is where the
-# files are. No dash, ADR 0015 §3 (`tests/unit/test_social_tool_notes.py`).
-_INSTAGRAM_PAGE_LINK = (
-    "That link is an Instagram page, not a picture or video file. Open it "
-    "with instagram_read using this link, then look at the media it returns."
-)
-
-# The same answer for a MOBILE page link (`m.instagram.com/reel/...`). The
-# host is not one `parse_link` accepts, and it stays that way
-# (`INSTAGRAM_HOSTS` is exact on purpose), so `instagram_read` would refuse
-# it too: the note asks for the www link rather than sending her there.
-_INSTAGRAM_MOBILE_PAGE_LINK = (
-    "That is a mobile Instagram page link, not a picture or video file, and "
-    "it can't be read directly. Ask for the www.instagram.com link to the "
-    "same post, reel, story or profile."
-)
-
-# What `web_fetch` says for the same two kinds of link (design 13,
-# 2026-09-24): 3 of 12 replays of a shared post sent its page link to
-# `web_fetch`, which reads an Instagram page as a login wall at best. The
-# page is `instagram_read`'s, so the answer is a route, `nothing_found` as in
-# `media_fetch`, and nothing is fetched. No dash, ADR 0015 §3.
-_WEB_FETCH_INSTAGRAM_PAGE = (
-    "That link is an Instagram page. Open it with instagram_read using this "
-    "link."
-)
-_WEB_FETCH_INSTAGRAM_MOBILE_PAGE = (
-    "That is a mobile Instagram page link, and it can't be opened directly. "
-    "Ask for the www.instagram.com link to the same post, reel, story or "
-    "profile."
-)
+# `_INSTAGRAM_PAGE_LINK`, `_INSTAGRAM_MOBILE_PAGE_LINK`,
+# `_WEB_FETCH_INSTAGRAM_PAGE`, `_WEB_FETCH_INSTAGRAM_MOBILE_PAGE` and
+# `_instagram_page_kind` moved to `nora.agent.link_owners`
+# (design/social-per-network/30-link-owner-registry.md, PR 1) and are
+# imported above, unchanged, so every existing reference to them by name
+# (`tests/test_media_fetch.py`, `tests/unit/test_social_tool_notes.py`)
+# still resolves off this module.
 
 # A shared POST or REEL line with its link, as the parser renders one: the
 # kind, an optional `by @author`, then the rebuilt link. The link is still
@@ -3142,26 +3165,6 @@ def _shared_page_link(body: str) -> str:
         if parsed is not None and parsed.kind == kind:
             return parsed.url
     return ""
-
-
-def _instagram_page_kind(url: str) -> str:
-    """`"page"` for an Instagram page link `parse_link` accepts, `"mobile"`
-    for the same shape on `m.instagram.com`, `""` for anything else. A link
-    given without a scheme is read as the parser reads a pasted one
-    (`_with_scheme`)."""
-    candidate = _with_scheme(url)
-    if _parse_instagram_link(candidate) is not None:
-        return "page"
-    try:
-        parts = urllib.parse.urlsplit(candidate)
-    except ValueError:
-        return ""
-    if (parts.hostname or "") != "m.instagram.com":
-        return ""
-    # Judged on the www spelling of the same path, so the shape and every
-    # charset are still the parser's. Nothing is read from the rebuilt url.
-    www = urllib.parse.urlunsplit(("https", "www.instagram.com", parts.path, "", ""))
-    return "mobile" if _parse_instagram_link(www) is not None else ""
 
 
 def _strip_media_markers(text: str) -> str:
@@ -6088,23 +6091,14 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                             "it in plain words and I'll look.",
                 }
 
-        # AN INSTAGRAM PAGE IS NOT MEDIA, and it is answered before anything
-        # else, downloads and configuration included, because the answer is
-        # a route and not a reading. A reel, post, story or profile link is
-        # an HTML page: downloading it spends a fetch to learn that, and
-        # «I couldn't fetch that» would read as the item being gone. The
-        # link is judged by `parse_link`, the one Instagram link parser the
-        # transcript and `instagram_read` both use, so the three cannot
-        # disagree about what an Instagram page is. A CDN url (an item's own
-        # file, which `instagram_read` returns) is not an instagram.com page
-        # and still downloads.
-        page = _instagram_page_kind(url) if url and not code else ""
-        if page == "page":
-            _record_media(metrics, "nothing_found", reason="instagram_page")
-            return {"status": "nothing_found", "note": _INSTAGRAM_PAGE_LINK}
-        if page == "mobile":
-            _record_media(metrics, "nothing_found", reason="instagram_mobile_page")
-            return {"status": "nothing_found", "note": _INSTAGRAM_MOBILE_PAGE_LINK}
+        # AN INSTAGRAM PAGE IS NOT MEDIA, and it used to be answered here,
+        # before anything else, downloads and configuration included, because
+        # the answer is a route and not a reading. It is now
+        # `NATIVE_TOOLS["media_fetch"].link_inputs`, applied by
+        # `build_tool_specs`'s post-pass BEFORE this closure ever runs
+        # (design/social-per-network/30-link-owner-registry.md, PR 1) — so a
+        # claimed `url` never reaches this line, downloads, the question
+        # screen above, or the configuration gate below.
 
         # Gate FIRST — the inert-by-config shape (§5). Custody off (`[media]
         # enabled=false` or no key → no blob store) or no vision client wired
@@ -7366,19 +7360,14 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         Args:
             url: The link to open, exactly as given (must start with http:// or https://).
         """
-        # AN INSTAGRAM PAGE IS `instagram_read`'s, and it is answered before
-        # the scheme check, so a pasted `instagram.com/p/...` with no scheme
-        # is routed too rather than refused as «not a link». Judged by the
-        # same helper `media_fetch` uses (`parse_link` underneath), so the
-        # transcript, `instagram_read` and both fetch tools agree on what an
-        # Instagram page is. Nothing leaves: not to Tavily, not to Instagram.
-        page = _instagram_page_kind(url)
-        if page == "page":
-            _record(metrics, "web_fetch", "nothing_found", reason="instagram_page")
-            return {"status": "nothing_found", "note": _WEB_FETCH_INSTAGRAM_PAGE}
-        if page == "mobile":
-            _record(metrics, "web_fetch", "nothing_found", reason="instagram_mobile_page")
-            return {"status": "nothing_found", "note": _WEB_FETCH_INSTAGRAM_MOBILE_PAGE}
+        # AN INSTAGRAM PAGE IS `instagram_read`'s, and it used to be answered
+        # here, before the scheme check, so a pasted `instagram.com/p/...`
+        # with no scheme was routed too rather than refused as «not a link».
+        # It is now `NATIVE_TOOLS["web_fetch"].link_inputs`, applied by
+        # `build_tool_specs`'s post-pass BEFORE this closure ever runs
+        # (design/social-per-network/30-link-owner-registry.md, PR 1) — still
+        # before any scheme check, since the wrapper runs before the whole
+        # closure. Nothing leaves: not to Tavily, not to Instagram.
         if not url.startswith(("http://", "https://")):
             _record(metrics, "web_fetch", "nothing_found", reason="not_a_url")
             return {
@@ -10714,7 +10703,7 @@ Args:
                     "unknown": [], "refused": [], "note": LOAD_TOOLS_UNAVAILABLE_NOTE}
         return load_onto(getattr(tool_context, "agent", None), shelf, names)
 
-    return (
+    return _apply_link_owners((
         _spec("now", now),
         _spec("calculate", calculate),
         _spec("transit", transit),
@@ -10778,8 +10767,88 @@ Args:
         _spec("search_gifs", search_gifs),
         _spec("send_gif", send_gif),
         _spec("load_tools", load_tools),
-    )
+    ), metrics=metrics)
 
+
+def _apply_link_owners(specs: tuple[ToolSpec, ...], *, metrics) -> tuple[ToolSpec, ...]:
+    """`build_tool_specs`'s one post-pass (design/social-per-network/
+    30-link-owner-registry.md, "Where the lookup runs" §C, the option chosen
+    over a per-fetcher helper and a Strands `BeforeToolCallEvent` hook).
+
+    Every spec whose `NATIVE_TOOLS` row declares `link_inputs` gets its `call`
+    wrapped by `_link_owner_wrapped` below; every other spec passes through
+    unchanged. Applied ONCE, here, rather than inside each fetcher, so a new
+    fetcher is routed by declaring `link_inputs` on its own `NativeTool` row
+    rather than by writing this check into its body.
+    """
+    out = []
+    for spec in specs:
+        link_inputs = NATIVE_TOOLS[spec.name].link_inputs
+        if not link_inputs:
+            out.append(spec)
+            continue
+        out.append(replace(
+            spec, call=_link_owner_wrapped(spec.name, spec.call, link_inputs, metrics),
+        ))
+    return tuple(out)
+
+
+def _link_owner_wrapped(
+    tool_name: str, call: Callable[..., Awaitable[Any]],
+    link_inputs: tuple[LinkInput, ...], metrics,
+) -> Callable[..., Awaitable[Any]]:
+    """`call`, with each of `link_inputs` checked against the link-owner
+    registry before `call` ever runs.
+
+    The first named argument that both (a) is not held back by its own
+    `unless` parameter and (b) `owner_of` claims returns that claim's
+    `redirect(...)` at once — counted through `_record_media` for
+    `media_fetch` (its own series, `nora_media_fetch_total`) or `_record` for
+    every other tool, `reason="link_owner"`, naming the owner's network AND
+    `claim.kind` (so a page and a mobile-page redirect can still be told
+    apart in the log, the way the old `reason="instagram_page"`/
+    `"instagram_mobile_page"` pair could). Nothing here changes an UNCLAIMED
+    argument's path: `call` still runs with every argument exactly as given.
+
+    `functools.wraps` is load-bearing, not cosmetic (the same note `ports.
+    _validated` carries): Strands derives the model-facing schema from the
+    wrapped callable's own signature, so an unwrapped closure would ship an
+    empty one. `inspect.signature(call)` — not `_signature(routed)` — is
+    bound against `call` for the same reason: `wraps` copies `__wrapped__`,
+    so a caller inspecting `routed` already sees `call`'s own signature, and
+    binding against `call` directly keeps this function's own logic in step
+    with what the model schema promises.
+    """
+    signature = inspect.signature(call)
+
+    @wraps(call)
+    async def routed(*args: object, **kwargs: object) -> Any:
+        bound = signature.bind_partial(*args, **kwargs)
+        bound.apply_defaults()
+        for link_input in link_inputs:
+            if link_input.unless and bound.arguments.get(link_input.unless):
+                continue
+            value = bound.arguments.get(link_input.param)
+            if not value:
+                continue
+            found = _owner_of(str(value))
+            if found is None:
+                continue
+            owner, claim = found
+            if tool_name == "media_fetch":
+                _record_media(
+                    metrics, "nothing_found", reason="link_owner",
+                    owner=owner.network, kind=claim.kind,
+                )
+            else:
+                _record(
+                    metrics, tool_name, "nothing_found",
+                    reason="link_owner", owner=owner.network, kind=claim.kind,
+                )
+            return _link_redirect(owner, claim, link_input)
+        return await call(*args, **kwargs)
+
+    return routed
 
 
 def platform_message_id_of(raw: object) -> str | None:

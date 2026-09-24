@@ -389,6 +389,26 @@ async def test_code_and_url_together_or_neither_is_nothing_found(wiring):
     assert wiring["vision"].calls == 0
 
 
+async def test_a_code_beside_an_instagram_page_url_is_never_redirected(wiring):
+    """`NativeTool.link_inputs`'s `unless="code"` (design 30, PR 1) must hold:
+    a `code` given alongside an Instagram page `url` is judged by
+    `media_fetch`'s OWN "exactly one target" refusal, never by the link-owner
+    registry's redirect — the old inline guard's own condition (`url and not
+    code`) before it moved. Reverting `unless="code"` sends this to the
+    Instagram redirect note instead, which 132 other tests never exercise
+    (none pairs a real `code` with an Instagram page `url`)."""
+    out = await _call(
+        wiring["build"](), code=PNG_SHA[:6], url="https://www.instagram.com/p/SynthPost01/",
+    )
+    assert out["status"] == "nothing_found"
+    assert "instagram_read" not in out["note"], out["note"]
+    assert out["note"] == (
+        "Give me either the short media code from this "
+        "conversation or the link to a picture or a video."
+    )
+    assert wiring["vision"].calls == 0
+
+
 async def test_a_url_describes_a_video_with_the_video_model(wiring, monkeypatch):
     """The URL path resolves the media type from the response and routes to
     the per-modality describer exactly like a stored blob — a linked video
