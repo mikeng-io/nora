@@ -112,17 +112,18 @@ func (s *Service) ready() (domain.Session, error) {
 	return snap, nil
 }
 
-// thread parses the room key and resolves both thread ids.
+// thread resolves both thread ids for a room key the HTTP edge has ALREADY
+// parsed.
 //
-// The parse comes AFTER the session gate: a checkpointed session answers
-// "a human must act" ahead of "your id is malformed", as these routes always
-// have. A malformed key never becomes a route lookup against Instagram.
-func (s *Service) thread(ctx context.Context, room string) (domain.ThreadRef, error) {
-	short, err := domain.ParseThreadFBID(room)
-	if err != nil {
-		return domain.ThreadRef{}, err
-	}
-	thread, err := s.messaging.ResolveThread(ctx, short)
+// The parse moved out of here in P14 (design/instagram-adoption/17 §P14):
+// every route now parses its path ids before any use case runs, so a
+// malformed id is 400 whatever the session's state (16 §Resources: "a
+// malformed id is 400 before any use case runs"). Before P14 the parse sat
+// after the session gate and a checkpointed session answered 409 ahead of a
+// malformed id's 400. A malformed key still never becomes a route lookup
+// against Instagram: it cannot reach this function as a value at all.
+func (s *Service) thread(ctx context.Context, room domain.ThreadFBID) (domain.ThreadRef, error) {
+	thread, err := s.messaging.ResolveThread(ctx, room)
 	if err != nil {
 		return domain.ThreadRef{}, &ThreadLookupError{Err: err}
 	}
@@ -131,7 +132,7 @@ func (s *Service) thread(ctx context.Context, room string) (domain.ThreadRef, er
 
 // SendText posts a text message. No length cap: 20,000 characters were
 // measured accepted on this wire, and mautrix-meta's 1000 is its own policy.
-func (s *Service) SendText(ctx context.Context, room, text string, mentions []domain.Mention, replyTo string) (domain.Sent, error) {
+func (s *Service) SendText(ctx context.Context, room domain.ThreadFBID, text string, mentions []domain.Mention, replyTo string) (domain.Sent, error) {
 	if _, err := s.ready(); err != nil {
 		return domain.Sent{}, err
 	}
@@ -144,7 +145,7 @@ func (s *Service) SendText(ctx context.Context, room, text string, mentions []do
 
 // SendMedia sends one attachment. It carries NO text: the wire has no
 // caption field, so the caller sends the text first, then the media.
-func (s *Service) SendMedia(ctx context.Context, room string, media domain.Upload, replyTo string) (domain.Sent, error) {
+func (s *Service) SendMedia(ctx context.Context, room domain.ThreadFBID, media domain.Upload, replyTo string) (domain.Sent, error) {
 	if _, err := s.ready(); err != nil {
 		return domain.Sent{}, err
 	}
@@ -157,7 +158,7 @@ func (s *Service) SendMedia(ctx context.Context, room string, media domain.Uploa
 
 // React posts or retracts a reaction. `confirmed` false is a degraded
 // success: the mutation was accepted and only its post-state stayed silent.
-func (s *Service) React(ctx context.Context, room, messageID, emoji string, remove bool) (bool, error) {
+func (s *Service) React(ctx context.Context, room domain.ThreadFBID, messageID domain.MessageID, emoji string, remove bool) (bool, error) {
 	if _, err := s.ready(); err != nil {
 		return false, err
 	}
@@ -165,12 +166,12 @@ func (s *Service) React(ctx context.Context, room, messageID, emoji string, remo
 	if err != nil {
 		return false, err
 	}
-	return s.messaging.React(ctx, thread, messageID, emoji, remove)
+	return s.messaging.React(ctx, thread, messageID.String(), emoji, remove)
 }
 
 // Typing is the one use case that needs the realtime socket: SetTyping
 // publishes over the MQTT-bypass stream.
-func (s *Service) Typing(ctx context.Context, room string, typing bool) error {
+func (s *Service) Typing(ctx context.Context, room domain.ThreadFBID, typing bool) error {
 	snap, err := s.ready()
 	if err != nil {
 		return err
@@ -189,7 +190,7 @@ func (s *Service) Typing(ctx context.Context, room string, typing bool) error {
 // mutation said: `direct_unsend_message` has never been observed against an
 // unsend known to have failed, and a false failure strands probe messages in
 // a real group.
-func (s *Service) Unsend(ctx context.Context, room, messageID string) (bool, error) {
+func (s *Service) Unsend(ctx context.Context, room domain.ThreadFBID, messageID domain.MessageID) (bool, error) {
 	if _, err := s.ready(); err != nil {
 		return false, err
 	}
@@ -197,26 +198,26 @@ func (s *Service) Unsend(ctx context.Context, room, messageID string) (bool, err
 	if err != nil {
 		return false, err
 	}
-	confirmed, err := s.messaging.Unsend(ctx, thread, messageID)
+	confirmed, err := s.messaging.Unsend(ctx, thread, messageID.String())
 	if err == nil && !confirmed {
 		slog.WarnContext(ctx, "unsend returned direct_unsend_message=false; "+
-			"the message may still be in the thread", "room", room)
+			"the message may still be in the thread", "room", room.String())
 	}
 	return confirmed, err
 }
 
-// Members reads who is in one thread, never short and never empty. It
-// returns the canonical room key the answer is about.
-func (s *Service) Members(ctx context.Context, room string) (domain.ThreadFBID, domain.Thread, error) {
+// Members reads who is in one thread, never short and never empty. The room
+// key arrives parsed, and so already canonical: it is the key the answer is
+// about.
+func (s *Service) Members(ctx context.Context, room domain.ThreadFBID) (domain.Thread, error) {
 	if _, err := s.ready(); err != nil {
-		return domain.ThreadFBID{}, domain.Thread{}, err
+		return domain.Thread{}, err
 	}
 	thread, err := s.thread(ctx, room)
 	if err != nil {
-		return domain.ThreadFBID{}, domain.Thread{}, err
+		return domain.Thread{}, err
 	}
-	members, err := s.messaging.Members(ctx, thread)
-	return thread.Short, members, err
+	return s.messaging.Members(ctx, thread)
 }
 
 // AccountRead is one account and the outcome of its second, independent read.
@@ -228,12 +229,11 @@ type AccountRead struct {
 // ReadAccount reads one account by igid, then its social half keyed on the
 // SAME parsed igid. The social half fails on its own: GetProfile has already
 // answered, so a social failure degrades the read rather than losing it.
-func (s *Service) ReadAccount(ctx context.Context, igid string) (AccountRead, error) {
+//
+// It takes the PARSED igid (P14): the HTTP edge parses it, so a malformed one
+// is 400 before the session gate.
+func (s *Service) ReadAccount(ctx context.Context, id domain.IGID) (AccountRead, error) {
 	if _, err := s.ready(); err != nil {
-		return AccountRead{}, err
-	}
-	id, err := domain.ParseIGID(igid)
-	if err != nil {
 		return AccountRead{}, err
 	}
 	acct, err := s.social.Account(ctx, id)
@@ -246,12 +246,10 @@ func (s *Service) ReadAccount(ctx context.Context, igid string) (AccountRead, er
 // ReadStory reads one account's current story — ONE igid, because a batch
 // would open stories nobody asked about (a privacy choice; whether the author
 // sees the view is unmeasured, design 04, 05 §Reading a story).
-func (s *Service) ReadStory(ctx context.Context, igid string) (domain.Story, error) {
+//
+// Like ReadAccount, it takes the igid already parsed at the edge.
+func (s *Service) ReadStory(ctx context.Context, id domain.IGID) (domain.Story, error) {
 	if _, err := s.ready(); err != nil {
-		return domain.Story{}, err
-	}
-	id, err := domain.ParseIGID(igid)
-	if err != nil {
 		return domain.Story{}, err
 	}
 	return s.social.Story(ctx, id)

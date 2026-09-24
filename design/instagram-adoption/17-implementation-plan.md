@@ -34,6 +34,14 @@ P1 observability ──┬── P2 → P3 → P4 → P5      Nora's read path, 
                                                      P14 writes onto resources      (both; needs P8)
 ```
 
+**Status, 2026-09-24: P1 to P12 and P14 are merged and live on norty.**
+PRs: P1 #396, P2 #400, P3 #402, P4 #407, P5 #421, P6 #404, P7 #411, P8 #413,
+P9 #419 (measured), P10 #442 + #446, P11 #415 + #443, P12 #439 + #446, P14
+#447. Shared posts #435. P13 remains an investigation with no mechanism: the
+library has no list call, so a person's posts or reels list stays
+`unsupported`. Rollback images `nora:pre-p14` and `instagram-bridge:pre-p14`
+were kept on norty at the P14 deploy.
+
 **P1 first, alone**: every later PR is verified by its trace, so tracing has to
 exist before the first behaviour change it will verify. After P1, the Python
 track (P2–P5) and the bridge track (P6–P8) touch disjoint files and can run in
@@ -208,6 +216,31 @@ than one means the upstream data disagreed with itself). The Nora half
 (`instagram_links.py`, the router, and the negative and multi-account tests
 above) is not started.
 
+**2026-09-24: the Nora half is built** (PR `mikeng-io/instagram-read-links`,
+with P12; not merged, not deployed). The link parser is
+`nora/domain/instagram_links.py`, not `nora/infra/social` (18 §"Where each
+concern lives" says why), and #435's parser reads it unchanged.
+`instagram_read` takes exactly one of `person`, `handle`, `link`. A handle
+or a profile/story link's username resolves through the bridge's exact
+lookup (`InstagramAccountLookup`, implemented by `InstagramSocialClient`,
+which never takes `items[0]`); a story then passes
+`person_for_igid → is_tier_zero` on the igid the input named, or it is
+`refused` and no story request is sent. Both named tests exist:
+`test_a_story_of_someone_in_none_of_her_rooms_is_refused_and_never_requested`
+and `test_a_story_link_to_one_of_two_accounts_reads_that_account`
+(`tests/unit/test_instagram_read_links.py`, on a recording fake bridge).
+18 has the as-built detail. Still open for "done": the deploy, the routing
+eval run, and the live Jaeger read-back.
+
+**#446 review, 2026-09-24:** a story by handle or link must also name
+someone on the ASKING room's roster, or it is `refused` with the one story
+refusal sentence (operator's conservative default; widening to «any group
+room» is an OPEN decision, 15 §Links and 18 say why: it would make a story
+link a cross-room membership oracle). A profile link with `what="story"`
+reads that account's story, a story-ring link `/stories/<user>/` reads the
+current story, and a highlight link is refused. The egress screen now runs
+on a link's username as well as a typed handle.
+
 ## P11: Search onto the bridge
 
 `GET /accounts?query=`. The `instagram/search` row leaves OpenCLI. After this
@@ -256,6 +289,27 @@ wired to post and reel links.
 decoded from the shortcode in `domain`, on synthetic unmeasured fixtures; the
 Nora half (wiring post and reel links) is not started.
 
+**2026-09-24: the Nora half is built**, in the same PR as P10. A `/p/`,
+`/reel/` or `/reels/` link becomes `GET /posts/{shortcode}` through the new
+`(instagram, post)` row, with the shortcode as a `named` target (never
+resolved). The result is the whole post: every item in order with kind, url
+and a video's duration, the author, the caption wrapped and clamped, no ids,
+and a note to `media_fetch` each item Nora needs to see. It is read only in
+a turn a person asked for; a fire or Dreamer turn is `refused` before any
+call, as a story is. The bridge's 404 is `nothing_found`, 501 is
+`unavailable` («can't read that kind of post link yet»). The bridge half's
+live probe on a real post is still outstanding, so the Nora half is tested
+on the generated fixtures only.
+
+**Measured at deploy, 2026-09-24: the CDN item urls did not carry the
+author's igid.** On one carousel (2 images) and one reel (1 video), the
+author's igid (resolved through `GET /accounts?username=`) appeared nowhere in
+the 3 urls, raw or with `efg` / `ig_cache_key` base64-decoded. n is 2 posts;
+it is a finding, not a guarantee, and the client still checks the host only.
+The bridge half's live probe also passed on the same two: both shortcodes
+decoded to ids Instagram accepted, the carousel returned both items, the reel
+its video with a duration.
+
 ## P13: Posts and reels lists (investigation, not a build)
 
 The routes return `501` (`ErrUnsupported`), which Nora says as `unavailable`
@@ -271,3 +325,21 @@ on every route. That includes `GET /accounts/{igid}` and
 (`profileBody`, `storyBody`) lose the `ok` field. The Python adapter
 (`nora/platform/instagram/`) and `nora/infra/social/instagram_client.py` move
 in the **same PR**, and the old verb-shaped paths are deleted in it.
+
+**2026-09-24: built** (branch `mikeng-io/instagram-bridge-rest-writes`, not
+merged, not deployed). The four write routes and the envelope are on every
+route, the legacy status table is deleted, every path id parses before the
+session gate, and a failed send's error text is fixed before it reaches a span
+(`sendTextError`), classified first so too long stays 413. What Nora reads
+from a write response, listed from the callers before the move: from a send's
+200 only `timestamp_ms` (`send.py` `_sent_timestamp`); from a reaction, a
+roster failure and every send failure only the status; from the members 200
+only `members[].fbid`; from the profile 404 the envelope's `code`
+(`not_found`, formerly `ok: false`). The sent message's `id` is not read by
+Nora; the bridge keeps it and its tests pin it. Nora has no unsend or typing
+caller. Shared fixtures `members_*`, `messages_*`, `reaction_*`, `unsend_*`
+and `typing_*` carry the request each write was generated from, and the
+adapter's tests assert it sends exactly that body. 16 §Migration step 5 lists
+what did not fit 16 as written. **Deploy: both images together, bridge first,
+then nora immediately**; between the two every Instagram send and reaction
+fails on a 404. The PR body carries the runbook and the no-send read-back.

@@ -17,6 +17,7 @@ from aiohttp.test_utils import TestServer
 from opentelemetry.sdk.trace import TracerProvider
 
 from nora.domain.models import ConversationTarget
+from nora.domain.ports import OutboundAttachment
 from nora.infra.social.instagram_client import InstagramSocialClient
 from nora.infra.trace_propagation import propagation_headers
 from nora.platform.instagram.react import InstagramReactor
@@ -39,16 +40,19 @@ async def bridge():
     async def record(request: web.Request) -> web.Response:
         seen.append((request.path, request.headers.get("traceparent")))
         if request.path.endswith("/members"):
-            return web.json_response({"ok": True, "room_id": ROOM, "title": "g",
+            return web.json_response({"room_id": ROOM, "title": "g",
                                       "is_group": True, "members": []})
         if request.path.startswith("/accounts/"):
-            return web.json_response({"ok": True, "igid": "10000001", "found": False,
-                                      "items": []})
-        return web.json_response({"ok": True, "id": "mid.$x", "timestamp_ms": 1})
+            return web.json_response({"igid": "10000001", "found": False, "items": []})
+        if request.path.endswith("/reaction"):
+            return web.json_response({"confirmed": True})
+        return web.json_response({"id": "mid.$x", "timestamp_ms": 1})
 
+    # Only the bridge's current routes: a client still on a deleted verb path
+    # gets aiohttp's 404 and records nothing, so its test fails.
     app = web.Application()
-    app.router.add_post("/send", record)
-    app.router.add_post("/react", record)
+    app.router.add_post("/threads/{thread_fbid}/messages", record)
+    app.router.add_put("/threads/{thread_fbid}/messages/{message_id}/reaction", record)
     app.router.add_get("/threads/{thread_fbid}/members", record)
     app.router.add_get("/accounts/{igid}", record)
     app.router.add_get("/accounts/{igid}/story", record)
@@ -83,7 +87,16 @@ async def test_a_send_carries_the_turns_trace(bridge):
     base_url, seen = bridge
     with _tracer.start_as_current_span("turn") as span:
         await InstagramSender(base_url).send(GROUP, "hello")
-    assert seen and seen[0][0] == "/send"
+    assert seen and seen[0][0] == f"/threads/{ROOM}/messages"
+    assert seen[0][1] is not None and _trace_id(span) in seen[0][1]
+
+
+async def test_a_media_send_carries_the_turns_trace(bridge):
+    base_url, seen = bridge
+    png = OutboundAttachment(content=b"x", media_type="image/png", filename="a.png")
+    with _tracer.start_as_current_span("turn") as span:
+        await InstagramSender(base_url).send(GROUP, "", attachments=(png,))
+    assert seen and seen[0][0] == f"/threads/{ROOM}/messages"
     assert seen[0][1] is not None and _trace_id(span) in seen[0][1]
 
 
@@ -91,7 +104,7 @@ async def test_a_reaction_carries_the_turns_trace(bridge):
     base_url, seen = bridge
     with _tracer.start_as_current_span("turn") as span:
         await InstagramReactor(base_url).react(target=GROUP, emoji="❤️", to_message_id="mid.$m")
-    assert seen and seen[0][0] == "/react"
+    assert seen and seen[0][0] == f"/threads/{ROOM}/messages/mid.$m/reaction"
     assert seen[0][1] is not None and _trace_id(span) in seen[0][1]
 
 

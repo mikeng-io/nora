@@ -92,8 +92,38 @@ the story of the igid it already holds. Re-deriving through `igid_for` would
 turn a multi-account friend's story link into `ambiguous`. An igid that maps to
 no person is not in any room: `refused`.
 
+> **Current rule, 2026-09-24 (operator's conservative default, #446
+> review): a story by handle or link is scoped to the ASKING room.** Its
+> person must be Tier 0 AND on the roster of the conversation the question
+> was asked in, the same scope a spoken name resolves in. Anything else is
+> `refused`, with no story request, and with the one `refused` sentence every
+> story refusal uses («I only open the stories of people in this conversation
+> whom the operator has listed»), so a stranger, a friend listed nowhere and
+> a friend listed only in another room get byte-identical answers. An
+> unreadable roster is `unavailable` and nothing is looked up. A profile, a
+> post and a reel are unaffected.
+>
+> **OPEN operator decision: widen it to «Tier 0 in any group room»?** That is
+> what this section first said, and it has a cost the first draft did not
+> see: it makes a pasted story link a **cross-room membership oracle**.
+> Anyone in any room could paste `instagram.com/stories/<username>/` for a
+> candidate and learn, from «read» versus «refused», whether that account
+> belongs to someone listed in one of Nora's OTHER rooms, which the
+> person-name path deliberately refuses to disclose (design/12 §3: «not in
+> this room» and «does not exist» answer identically). Scoping to the asking
+> room's roster closes it, because the answer then depends only on who is in
+> the room the asker is already in. Widening is a one-line change in the
+> router (`room_people`); whether the convenience is worth the disclosure is
+> the operator's call.
+
 Until the lookup route exists, a link answers `unavailable` (R-27), never a
 guess and never OpenCLI.
+
+> **2026-09-24: built on the Nora side (P10, P12).** The rows above are what
+> `instagram_read` does with a `link` (and a typed `handle`), through one link
+> parser, `nora/domain/instagram_links.py`, that the transcript render shares.
+> A post or reel link is read only in a turn a person asked for, the same rule
+> as a story (18). See 17 §P10, §P12.
 
 ## Resolution is not authorization
 

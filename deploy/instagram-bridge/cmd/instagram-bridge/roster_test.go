@@ -75,7 +75,7 @@ func TestRosterCarriesBothIDSpacesPerMember(t *testing.T) {
 	if body.RoomID != threadShort {
 		t.Errorf("room_id = %q, want the short id %q", body.RoomID, threadShort)
 	}
-	if !body.OK || !body.IsGroup || body.Title != "the group" {
+	if !body.IsGroup || body.Title != "the group" {
 		t.Errorf("roster envelope = %+v", body)
 	}
 }
@@ -175,12 +175,14 @@ func TestRosterRefusesAnEmptyMemberList(t *testing.T) {
 
 	rec := getRoster(t, b, threadShort)
 
-	if rec.Code != http.StatusInternalServerError {
-		t.Fatalf("an empty roster answered %d, want 500: %s", rec.Code, rec.Body.String())
+	// 502 since P14: Instagram answered, and the answer was not a room. It
+	// was 500 under the legacy status table, which had no 502.
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("an empty roster answered %d, want 502: %s", rec.Code, rec.Body.String())
 	}
 }
 
-// A thread the read does not return is 500, not an empty 200. It is also not
+// A thread the read does not return is 502, not an empty 200. It is also not
 // an error from the library: GraphQL answers with the thread simply absent, so
 // nothing raises and only an explicit check catches it.
 func TestRosterRefusesAThreadThatReadsBackAbsent(t *testing.T) {
@@ -188,11 +190,11 @@ func TestRosterRefusesAThreadThatReadsBackAbsent(t *testing.T) {
 
 	rec := getRoster(t, b, threadShort)
 
-	if rec.Code != http.StatusInternalServerError {
-		t.Fatalf("an absent thread answered %d, want 500: %s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("an absent thread answered %d, want 502: %s", rec.Code, rec.Body.String())
 	}
-	if body := decodeRoster(t, rec); body.OK || len(body.Members) != 0 {
-		t.Fatalf("a refused roster still read as an answer: %+v", body)
+	if env := decodeEnvelope(t, rec); env.Error.Code != "upstream_rejected" {
+		t.Fatalf("a refused roster answered envelope %+v, want code upstream_rejected", env)
 	}
 }
 
@@ -212,12 +214,13 @@ func TestRosterRefusesRatherThanUnderReportTheRoom(t *testing.T) {
 
 	rec := getRoster(t, b, threadShort)
 
-	if rec.Code != http.StatusInternalServerError {
-		t.Fatalf("an unaccountable member answered %d, want 500: %s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("an unaccountable member answered %d, want 502: %s", rec.Code, rec.Body.String())
 	}
 	if body := decodeRoster(t, rec); len(body.Members) != 0 {
 		t.Fatalf("a refused roster still carried members: %+v", body.Members)
 	}
+	decodeEnvelope(t, rec)
 }
 
 // The status mapping, which is what the Python side's retry and degradation

@@ -132,13 +132,10 @@ func graphql(
 //
 // What it cannot name it leaves UNCLASSIFIED, and the HTTP layer answers that
 // as 500: an unknown failure is not claimed to be retryable (503) or the
-// caller's fault (400). Everything it does classify maps onto the same status
-// the bridge answered before the kinds existed — INCLUDING the new
-// isGraphQLFailure case below: `statusForError` (transport/http/reads.go) has
-// no explicit case for ErrUpstreamRejected either, so it still falls to the
-// same 500 default the old routes answered before this case existed. Only a
-// route on the NEW conventions (transport/http/accounts_search.go) has an
-// explicit 502 for it.
+// caller's fault (400). What it does name, the HTTP layer maps through its one
+// status table (transport/http/errors.go, statusForDomainError, the only one
+// since P14): ErrNeedsHuman is 409, ErrTooLarge 413, and ErrUpstreamRejected,
+// which the isGraphQLFailure case below produces, 502.
 func classify(err error) error {
 	switch {
 	case err == nil:

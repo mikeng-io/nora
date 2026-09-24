@@ -16,8 +16,20 @@ on the private compose `nora` network:
   200 with no items → `nothing_found`; anything
   else (409, 502, 503, …) → `unavailable`. See `_search` and `_accounts`.
 
-`instagram/posts` is deliberately NOT served: no bridge route exists, and the
-row answers `unavailable` without a call (P13 is the investigation).
+* `instagram/post` → `GET /posts/{shortcode}` (P12: a post or reel a person
+  pasted a link to). 200 → `ok`, every item in the bridge's order; the
+  handler's own 404 → `nothing_found`; anything else → `unavailable`. See
+  `_post`.
+
+And one lookup that is not a read at all, `igid_for_username`
+(`InstagramAccountLookup`, P10): `GET /accounts?username=` → the igid of the
+account whose username is EXACTLY the one asked for. Only `SocialRouter` calls
+it, to resolve a typed handle or a link's username before it authorizes; the
+igid never reaches the model.
+
+`instagram/posts` (a person's post LIST) is deliberately NOT served: no bridge
+route exists, and the row answers `unavailable` without a call (P13 is the
+investigation).
 
 The mapping is PER ROUTE because the two routes differ, read off the Go
 handlers (`deploy/instagram-bridge/social.go`): the account route has a "no
@@ -173,7 +185,8 @@ from typing import Any
 import aiohttp
 
 from ...domain.blocks import wrap_outside_text
-from ...domain.ports import SocialProvider
+from ...domain.instagram_links import SHORTCODE_RE, is_handle
+from ...domain.ports import SocialProvider, UsernameLookup
 from ..trace_propagation import propagation_headers
 from .results import NOTHING_FOUND, UNAVAILABLE, clamp_chars
 
@@ -211,7 +224,42 @@ _SERVES: frozenset[tuple[str, str]] = frozenset({
     ("instagram", "story"),
     ("instagram", "profile"),
     ("instagram", "search"),
+    # P12: one post or reel, by the shortcode of a link a person pasted.
+    ("instagram", "post"),
 })
+
+#: What a post result is (P12). A reel is a post to the bridge: one route.
+POST_SOURCE_KIND = "instagram_post"
+
+#: The framing for an `ok` post, carried by the result (ADR 0015 §3). It says
+#: the one thing the model must do next to answer «what's in this reel»: the
+#: result carries the text layer and the media links, never what the media
+#: shows, so seeing it is `media_fetch` on each item that matters (18
+#: §"Listing and reading one item"). Short, because it is re-sent on every
+#: later model call of the turn.
+_POST_FRAMING = (
+    "One Instagram post: its author, caption and media, in order. This says "
+    "nothing about what the media shows: call media_fetch(url=...) on each "
+    "item you need to see. The caption is the author's own words."
+)
+
+#: The post route's own 404: Instagram answered that there is no such post.
+#: Nora's sentence, never the bridge's message (`results.py`). It does not
+#: say why (deleted, private, never existed): nothing measured which.
+POST_NOTHING_FOUND: dict[str, Any] = {
+    "status": "nothing_found",
+    "note": "Instagram found no post at that link. Say you couldn't find it; "
+            "don't describe it.",
+}
+
+#: The post route's 501: a shortcode the bridge has no mechanism to read yet
+#: (longer than 11 characters, `16` §Resources). A stable fact about the
+#: link, not a passing failure, so the note says a retry will not help.
+POST_UNSUPPORTED: dict[str, Any] = {
+    "status": "unavailable",
+    "note": "I can't read that kind of post link yet. Say so plainly; trying "
+            "again won't help.",
+}
 
 #: At most this many accounts reach the model from one search, whatever the
 #: bridge returned and whatever `limit` said. Stated in `instagram_search`'s
@@ -341,6 +389,15 @@ class InstagramSocialClient(SocialProvider):
             # never resolved), not an igid, so it takes the query path and
             # never the igid shape check below.
             return await self._search(query=target, limit=limit)
+        if what == "post":
+            # A post's target is the SHORTCODE of a link a person pasted,
+            # validated by the tool against the one link parser; checked
+            # again here, because it goes into a URL path.
+            code = target.strip()
+            if not SHORTCODE_RE.fullmatch(code):
+                log.warning("instagram social client given a target that is not a shortcode")
+                return dict(UNAVAILABLE)
+            return await self._post(shortcode=code)
         # `target` is the igid the router resolved out of the person index —
         # never a `person_id` and never a handle. One that is not a decimal
         # id is a routing bug in the same family as the row check above, so
@@ -432,11 +489,12 @@ class InstagramSocialClient(SocialProvider):
         status, payload = await self._get(f"/accounts/{igid}")
         if status == 404:
             # `errNoProfile`: the igid names no account — a fact about the
-            # subject. But only when it is the HANDLER's 404, which is a JSON
-            # `{"ok": false, …}`; Go's mux answers an unmatched path with a
-            # plain-text 404, and reading THAT as «no such account» would turn
-            # a wrong base URL into a confident claim about a person.
-            if isinstance(payload, dict) and payload.get("ok") is False:
+            # subject. But only when it is the HANDLER's 404, which is the
+            # error envelope with code `not_found` (P14; it was `{"ok": false}`
+            # before); Go's mux answers an unmatched path with a plain-text
+            # 404, and reading THAT as «no such account» would turn a wrong
+            # base URL into a confident claim about a person.
+            if isinstance(payload, dict) and _error_code(payload) == "not_found":
                 return dict(NOTHING_FOUND)
             log.warning("instagram bridge 404 was not the account route's own")
             return dict(UNAVAILABLE)
@@ -511,6 +569,122 @@ class InstagramSocialClient(SocialProvider):
             "text": wrap_outside_text("social_post", "instagram account search", text),
             "truncated": len(accounts) > cap,
         }
+
+    async def igid_for_username(self, *, username: str) -> UsernameLookup:
+        """`GET /accounts?username=` → the igid of the ONE account whose
+        username is exactly `username` (`InstagramAccountLookup`, P10). NEVER
+        raises; everything it cannot answer is `unavailable`."""
+        try:
+            return await self._lookup(username)
+        except Exception:
+            log.exception("instagram username lookup failed")
+            return UsernameLookup("unavailable")
+
+    async def _lookup(self, username: str) -> UsernameLookup:
+        """The bridge filters to an exact, ASCII case-insensitive match and
+        answers 0 or 1 accounts (17 P9, P10). This client does NOT trust that
+        and does not re-pick either: it keeps only rows whose username IS the
+        one asked for, and answers `found` only when exactly one is left.
+        `items[0]` is never taken: P9 measured an exact match that was not
+        the search's first result, which is why the bridge filters, and a
+        client that took the first row would undo that the day the bridge
+        regressed.
+
+        * 200 with no items → `none` (no such account);
+        * 200 with items but no exact match, or several, or a match with no
+          usable igid → `unavailable`: the bridge broke its own contract, and
+          «no such account» would be a claim made from a body nobody can
+          trust (P9 wrote «ambiguous» for two matches; that word's sentence
+          is about the operator's file, so it is not reused here);
+        * any other status → `unavailable` (400 is our bug, the handle was
+          checked before the call; 409, 502 and 503 are the bridge's).
+        """
+        wanted = username.strip().lstrip("@")
+        if not is_handle(wanted):
+            # The tool checks the handle first; one that is not a handle here
+            # is a wiring gap, and it is not sent.
+            log.warning("instagram username lookup given a string that is not a handle")
+            return UsernameLookup("unavailable")
+        path = "/accounts?" + urllib.parse.urlencode({"username": wanted})
+        status, payload = await self._get(path)
+        if status != 200 or not isinstance(payload, dict):
+            return UsernameLookup("unavailable")
+        raw = payload.get("items")
+        if not isinstance(raw, list):
+            log.warning("instagram bridge username lookup carried no `items` list")
+            return UsernameLookup("unavailable")
+        if not raw:
+            return UsernameLookup("none")
+        exact = [
+            row for row in raw
+            if isinstance(row, dict)
+            and (name := _username(row.get("username"))) is not None
+            and name.lower() == wanted.lower()
+        ]
+        if len(exact) != 1:
+            log.warning("instagram bridge username lookup did not answer one exact match")
+            return UsernameLookup("unavailable")
+        igid = exact[0].get("igid")
+        if not isinstance(igid, str) or not _IGID_RE.fullmatch(igid):
+            log.warning("instagram bridge username lookup answered no usable igid")
+            return UsernameLookup("unavailable")
+        return UsernameLookup("found", igid)
+
+    async def _post(self, *, shortcode: str) -> dict[str, Any]:
+        """`GET /posts/{shortcode}` → the whole post: every item in the
+        bridge's order (a carousel keeps its order), the author and the
+        caption (P12).
+
+        The same value discipline as a story: every item is `{kind, url}`
+        plus `duration_seconds` for a video, the url must be on a MEASURED
+        Instagram CDN host, and nothing else from the item is read. The
+        caption is stranger prose, so it goes only into the wrapped, clamped
+        `text`, and LAST there, so the clamp cuts it before any item. The
+        shortcode the bridge echoes is not read back: the model already has
+        the link it pasted, and nothing here carries an id.
+
+        * 200 → `ok`; with no usable item it is `unavailable`, never a miss;
+        * the handler's own 404 (`{"error": {"code": "not_found"}}`) →
+          `nothing_found`; a 404 that is not the handler's is `unavailable`;
+        * 501 (a shortcode no mechanism reads yet) → `unavailable`, saying a
+          retry will not help;
+        * 400, 409, 502, 503 and anything unmapped → `unavailable`.
+        """
+        status, payload = await self._get(f"/posts/{shortcode}")
+        if status == 404:
+            if isinstance(payload, dict) and _error_code(payload) == "not_found":
+                return dict(POST_NOTHING_FOUND)
+            log.warning("instagram bridge 404 was not the post route's own")
+            return dict(UNAVAILABLE)
+        if status == 501 and isinstance(payload, dict) and _error_code(payload) == "unsupported":
+            return dict(POST_UNSUPPORTED)
+        if status != 200 or not isinstance(payload, dict):
+            return dict(UNAVAILABLE)
+        items, more = _post_items(payload.get("items"))
+        if not items:
+            log.warning("instagram bridge post carried no usable item")
+            return dict(UNAVAILABLE)
+        author = _username(payload.get("author"))
+        taken_at = _as_int(payload.get("taken_at"))
+        caption = _one_line(payload.get("caption"))
+        text, clamped = clamp_chars(
+            _render_post(items, author, taken_at, caption), self._content_max_chars,
+        )
+        out: dict[str, Any] = {
+            "status": "ok",
+            "source_kind": POST_SOURCE_KIND,
+            "note": _POST_FRAMING,
+            # References only: the machine-usable handoff to `media_fetch`.
+            "items": items,
+            "text": wrap_outside_text("social_post", "instagram post", text),
+            "truncated": clamped or more,
+        }
+        if author is not None:
+            # Shape-checked as a handle, so it cannot carry prose.
+            out["author"] = author
+        if taken_at is not None:
+            out["taken_at"] = taken_at
+        return out
 
     async def _get(self, path: str) -> tuple[int, Any]:
         """One GET on the bridge → `(status, parsed JSON or None)`. The body
@@ -664,6 +838,93 @@ def _render_accounts(accounts: list[tuple[dict[str, Any], str | None]]) -> str:
             line += f", name: {name}"
         lines.append(line)
     return "\n".join(lines)
+
+
+def _error_code(payload: dict[str, Any]) -> str | None:
+    """The new-convention error envelope's `code` (`16` §Resources), or
+    `None`. Read only to tell the handler's own answer from the mux's; the
+    `message` beside it never reaches the model."""
+    error = payload.get("error")
+    code = error.get("code") if isinstance(error, dict) else None
+    return code if isinstance(code, str) else None
+
+
+def _post_items(raw: Any) -> tuple[list[dict[str, Any]], bool]:
+    """The post body's `items` → `(reference rows, more than fit)`, in the
+    bridge's order.
+
+    Each row is `{kind, url}`, plus `duration_seconds` when the bridge sends
+    a non-negative number for it. Width and height are not read: nothing
+    downstream uses them. A row whose url is not on a measured Instagram CDN
+    host is DROPPED, for the reason `_items` drops one: the url is handed to
+    the model with an instruction to fetch it. At most `_MAX_ITEMS` rows,
+    which is Instagram's own carousel ceiling, so a whole post fits."""
+    if not isinstance(raw, list):
+        return [], False
+    out: list[dict[str, Any]] = []
+    more = False
+    for row in raw:
+        if not isinstance(row, dict) or not _is_cdn_url(row.get("url")):
+            continue
+        if len(out) >= _MAX_ITEMS:
+            more = True
+            break
+        kind = row.get("kind")
+        item: dict[str, Any] = {
+            "kind": kind if kind in _KINDS else "media",
+            "url": row["url"],
+        }
+        duration = row.get("duration_seconds")
+        if (
+            not isinstance(duration, bool) and isinstance(duration, (int, float))
+            and duration >= 0
+        ):
+            item["duration_seconds"] = duration
+        out.append(item)
+    return out, more
+
+
+def _render_post(
+    items: list[dict[str, Any]], author: str | None, taken_at: int | None,
+    caption: str | None,
+) -> str:
+    """A post → the lines the model reads: who and when, then one
+    `[kind url]` marker per item in order (a video with its length), then
+    the caption, LABELLED and LAST.
+
+    Last for the reason a display name is last in a search result: it is
+    stranger prose, and nothing Nora states may follow it. `[` and `]` in it
+    become `(` and `)`, as the transcript does for a shared item's caption,
+    so a caption cannot forge a media marker. The caller wraps and clamps."""
+    head = f"Post by @{author}" if author is not None else "Post"
+    if taken_at is not None:
+        head += _post_age(taken_at, int(time.time()))
+    lines = [head]
+    for number, item in enumerate(items, start=1):
+        line = f"{number}. [{item['kind']} {item['url']}]"
+        duration = item.get("duration_seconds")
+        if duration is not None:
+            line += f" {round(duration)}s"
+        lines.append(line)
+    if caption is not None:
+        lines.append("caption: " + caption.replace("[", "(").replace("]", ")"))
+    return "\n".join(lines)
+
+
+def _post_age(taken_at: int, now: int) -> str:
+    """A post's time as an age, for the reason `_age` renders one for a
+    story (a model has no now-anchor to read an epoch against). A post does
+    not expire, so there is no 24h clause; past two months it is a date."""
+    delta = now - taken_at
+    if delta < 0:
+        return ""
+    if delta < 3600:
+        return f" · {max(1, delta // 60)}m ago"
+    if delta < 86400:
+        return f" · {delta // 3600}h ago"
+    if delta < 60 * 86400:
+        return f" · {delta // 86400}d ago"
+    return " · posted " + time.strftime("%Y-%m-%d", time.gmtime(taken_at))
 
 
 def _yes_no(value: Any) -> str | None:

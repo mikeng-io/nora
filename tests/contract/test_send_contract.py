@@ -112,14 +112,18 @@ async def _whatsapp_adapter(aiohttp_server, *, status: int = 200):
 
 
 async def _instagram_adapter(aiohttp_server, *, status: int = 200):
-    """An `InstagramAdapter` pointed at a stand-in for the bridge's `/send`."""
+    """An `InstagramAdapter` pointed at a stand-in for the bridge's
+    `POST /threads/{thread_fbid}/messages` (17 §P14), answering its shapes:
+    `{id, timestamp_ms}` with no `ok`, and the error envelope on failure."""
     async def handler(request: web.Request) -> web.Response:
         if status != 200:
-            return web.json_response({"error": "boom"}, status=status)
-        return web.json_response({"ok": True, "id": "mid.$x", "timestamp_ms": 1754300000000})
+            return web.json_response(
+                {"error": {"code": "internal", "message": "boom"}}, status=status,
+            )
+        return web.json_response({"id": "mid.$x", "timestamp_ms": 1754300000000})
 
     app = web.Application()
-    app.router.add_post("/send", handler)
+    app.router.add_post("/threads/{thread_fbid}/messages", handler)
     server = await aiohttp_server(app)
     return InstagramAdapter(str(server.make_url("")).rstrip("/"))
 

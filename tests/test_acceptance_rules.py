@@ -975,8 +975,9 @@ def test_r86_social_fetch_is_read_only_at_three_layers():
        for OpenCLI (its command slot is only ever filled from the mapping's
        values; the behavioural half is `tests/unit/test_social_bridge_server.
        py`), and the router's `EXCEPTION_ROUTES` for the instagram-bridge,
-       whose client issues only `GET /accounts…` (pinned on a recording fake
-       bridge in `tests/unit/test_instagram_read_tool.py` and
+       whose client issues only `GET /accounts…` and `GET /posts/…` (pinned
+       on a recording fake bridge in `tests/unit/test_instagram_read_tool.py`,
+       `tests/unit/test_instagram_read_links.py` and
        `tests/unit/test_instagram_search_tool.py`);
     3. each tool's `NativeTool` declaration `read_only=True`, the Dreamer's
        ceiling.

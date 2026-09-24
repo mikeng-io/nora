@@ -3,7 +3,9 @@
   "path": "/accounts/10000001",
   "status": 409,
   "body": {
-    "error": "checkpoint required",
-    "ok": false
+    "error": {
+      "code": "needs_human",
+      "message": "checkpoint required"
+    }
   }
 }

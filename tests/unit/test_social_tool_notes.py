@@ -5,7 +5,8 @@ A `note` is text the model reads at the moment it is choosing how to phrase
 its answer, so every dash in one is a demonstration of the style her doctrine
 asks her not to use. ADR 0015 already bans dashes from descriptions
 (`test_the_description_meets_adr_0015`); this extends the ban to the result
-text of `social_fetch`, `instagram_read` and `instagram_search`.
+text of `social_fetch`, `instagram_read` and `instagram_search`, including
+the notes P10 and P12 added (a handle, a link, a post).
 
 Two halves, because a note reaches the model from two kinds of place:
 
@@ -87,11 +88,16 @@ def _shared_payloads() -> dict[str, object]:
         "results.AMBIGUOUS": results.AMBIGUOUS,
         "results.NO_ACCOUNT": results.NO_ACCOUNT,
         "results.REFUSED": results.REFUSED,
+        "results.NO_SUCH_HANDLE": results.NO_SUCH_HANDLE,
         "results.not_set_up(instagram)": results.not_set_up("instagram"),
         "results.not_set_up(x)": results.not_set_up("x"),
         "instagram_client._STORY_FRAMING": {"note": instagram_client._STORY_FRAMING},
         "instagram_client._SEARCH_FRAMING": {"note": instagram_client._SEARCH_FRAMING},
         "instagram_client.SEARCH_NOTHING_FOUND": instagram_client.SEARCH_NOTHING_FOUND,
+        "instagram_client._POST_FRAMING": {"note": instagram_client._POST_FRAMING},
+        "instagram_client.POST_NOTHING_FOUND": instagram_client.POST_NOTHING_FOUND,
+        "instagram_client.POST_UNSUPPORTED": instagram_client.POST_UNSUPPORTED,
+        "tools._SOCIAL_INSTAGRAM_MOVED": {"note": tools_module._SOCIAL_INSTAGRAM_MOVED},
     }
 
 
@@ -113,10 +119,40 @@ async def test_the_notes_actually_returned_on_the_refusal_paths_carry_no_dash():
         await calls["social_fetch"](platform="x", what="profile", target="not a name!"),
         await calls["social_fetch"](platform="x", what="profile", target="nasa"),
         await calls["instagram_read"](what="posts", person="Quinn"),
+        # P10 and P12: the paths a handle or a link takes before any backend.
+        await calls["instagram_read"](),
+        await calls["instagram_read"](person="Quinn", handle="example_friend"),
+        await calls["instagram_read"](handle="example_friend"),
+        await calls["instagram_read"](handle="bad-handle", what="profile"),
+        await calls["instagram_read"](handle="sk_live_abcdefghijklmnopqrstu", what="profile"),
+        await calls["instagram_read"](handle="example_friend", what="profile"),
+        await calls["instagram_read"](link="https://evil.example/p/SynthPost01/"),
+        await calls["instagram_read"](
+            link="https://www.instagram.com/p/SynthPost01/", what="profile",
+        ),
+        await calls["instagram_read"](link="https://www.instagram.com/p/SynthPost01/"),
         await calls["instagram_search"](query=""),
         await calls["instagram_search"](query="+85212345678"),
         await calls["instagram_search"](query="example"),
     ]
     for out in outs:
         assert "note" in out, out
+        assert not _DASH.search(out["note"]), out["note"]
+
+
+async def test_a_refusal_in_a_turn_nobody_asked_for_carries_no_dash():
+    """The asked-turn refusal for a story, a post and a reel (18, P12)."""
+    room = Room(platform="signal", conversation_id="g1", roster_source=None, persons=_NoPersons())
+    specs = ToolRegistry().specs(
+        store=_NoStore(), conversation_id="g1", conversation_type="group",
+        persons=_NoPersons(), honcho=FakeMemoryStore(), deliverer=SinkSender(),
+        metrics=Metrics(), room=room, fire_turn=True,
+    )
+    read = next(s.call for s in specs if s.name == "instagram_read")
+    for arg in (
+        {"link": "https://www.instagram.com/reel/SynthReel01/"},
+        {"handle": "example_friend", "what": "story"},
+    ):
+        out = await read(**arg)
+        assert out["status"] == "refused"
         assert not _DASH.search(out["note"]), out["note"]

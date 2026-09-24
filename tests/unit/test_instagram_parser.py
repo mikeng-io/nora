@@ -547,6 +547,11 @@ def test_a_url_that_fails_validation_leaves_no_link_at_all():
         "javascript://www.instagram.com/reel/SynthReel01/": reel,
         "https://www.instagram.com/stories/some.account/notdigits": story,
         "https://www.instagram.com/stories/bad/user/name/1": post,
+        # A story-ring path and a highlight (P10 taught the shared link
+        # module both for `instagram_read`; the transcript's labels for them
+        # are unchanged, and neither renders a link).
+        "https://www.instagram.com/stories/some.account/": post,
+        "https://www.instagram.com/stories/highlights/17800000000000001/": story,
         "https://www.instagram.com/explore/": post,
         "https://www.instagram.com/reel/SynthReel01/extra/": post,
         "/reel/SynthReel01/": reel,
