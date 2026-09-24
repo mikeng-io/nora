@@ -1,0 +1,44 @@
+[
+  {
+    "name": "factory: production provider back to the SDK's dropping formatter",
+    "file": "nora/agent/factory.py",
+    "old": "    return ReasoningCarryingOpenAIModel(",
+    "new": "    return DashFreeOpenAIModel(",
+    "target": "tests/unit/test_reasoning_carry.py::test_the_production_provider_carries_the_reasoning_as_reasoning"
+  },
+  {
+    "name": "carry: the field the upstream discards (reasoning_content)",
+    "file": "nora/agent/reasoning_carry.py",
+    "old": "CARRIED_REASONING_FIELD = \"reasoning\"",
+    "new": "CARRIED_REASONING_FIELD = \"reasoning_content\"",
+    "target": "tests/unit/test_reasoning_carry.py::test_the_production_provider_carries_the_reasoning_as_reasoning"
+  },
+  {
+    "name": "carry: the reasoning is never put on the formatted message",
+    "file": "nora/agent/reasoning_carry.py",
+    "old": "                part[0][CARRIED_REASONING_FIELD] = reasoning",
+    "new": "                pass",
+    "target": "tests/unit/test_reasoning_carry.py::test_a_reasoning_tool_loop_sends_its_reasoning_and_records_no_strip"
+  },
+  {
+    "name": "carry: a reasoning-only message counted as carried",
+    "file": "nora/agent/reasoning_carry.py",
+    "old": "        isinstance(block, dict) and any(key in block for key in _EMITTED_BLOCK_KEYS)",
+    "new": "        isinstance(block, dict)",
+    "target": "tests/unit/test_reasoning_carry.py::test_reasoning_with_nothing_to_emit_beside_it_is_still_counted_as_dropped"
+  },
+  {
+    "name": "watch: assumes every block is dropped, ignoring the model",
+    "file": "nora/agent/reasoning_strip.py",
+    "old": "                dropped_reasoning_blocks(getattr(agent, \"model\", None), messages),",
+    "new": "                reasoning_blocks(messages),",
+    "target": "tests/unit/test_reasoning_carry.py::test_a_reasoning_tool_loop_sends_its_reasoning_and_records_no_strip"
+  },
+  {
+    "name": "watch: a model whose count raises is recorded as dropping nothing",
+    "file": "nora/agent/reasoning_strip.py",
+    "old": "            log.warning(\"reasoning_strip: the model could not count its drops\")",
+    "new": "            return 0",
+    "target": "tests/unit/test_reasoning_carry.py::test_a_model_whose_count_raises_is_recorded_as_dropping_everything"
+  }
+]
