@@ -7,6 +7,6 @@
     "A room that went quiet before the date still cannot expire the note."
   ],
   "limitations": [
-    "Past the two days, a question answered before the window's oldest message is recorded as expired rather than closed."
+    "Past the two days, the curator reads only the room's newest 40 messages. An answer given before them is recorded as expired rather than closed, and a change of plan given before them can let a still-live note be retired. The curator is told when older messages exist."
   ]
 }

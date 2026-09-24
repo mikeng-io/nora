@@ -1644,11 +1644,13 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "retirement: a dateless note's strikes crossed the ceiling after a "
         "wake with no tag-path progress, which makes it ELIGIBLE for dateless "
         "retirement without this merge acting on it (issue #101's job). lapsed "
-        "is counted at grounding, beside the expired/moot it precedes: an "
+        "is counted at grounding, before commit, so it can exceed the "
+        "retirements it led to (a stale head, a conflicting verdict): an "
         "expired/moot verdict accepted only because the anchor ended more "
         "than ANCHOR_LAPSE_MS ago and a human spoke after it, while the "
         "evidence window did not reach back to the note (a busy room), so an "
-        "answer older than the window reads as expired rather than closed. "
+        "answer older than the window reads as expired rather than closed, "
+        "and a change of plan older than the window can retire a live note. "
         "The "
         "vocabulary is derived from nora.language.note_curator.CURATOR_ACTIONS "
         "and a test asserts this text names exactly that set.",
@@ -1679,7 +1681,8 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "has not gone by, or has none at all — the clock decides that, not "
         "the model), anchor_not_covered (the anchor HAS passed but the "
         "evidence window does not span it — the room fell silent before the "
-        "anchor, or is busier than the window), or discharge_malformed (a "
+        "anchor, or is busier than the window, until ANCHOR_LAPSE_MS after the "
+        "anchor, when a human speaking after it is enough), or discharge_malformed (a "
         "closed verdict's discharge field, or one entry in it, did not fit "
         "the three warrant shapes issue #101's discharge step accepts).",
         ("reason",),

@@ -301,7 +301,16 @@ DEFAULT_EVIDENCE_MESSAGES_PER_NOTE = 40
 #: anchors 2 to 17 days past, 183 to 925 messages since they were written
 #: (50 to 345 before the anchor itself), and 8 `anchor_not_covered` refusals of
 #: an `expired` verdict in one pass. Two days, not one: an evening's «did we
-#: end up going?» arrives the next day, and HKT runs 8h ahead of the UTC anchor.
+#: end up going?» arrives the next day. (The anchor's end is read in UTC, 8h
+#: after the HKT day ends, so the real margin is two days and eight hours.)
+#:
+#: **What it costs is a possible wrong RETIREMENT, not only a wrong label.**
+#: Past the lapse the model judges a window that may not reach back to the
+#: note, so a change of plan said before the window («moved it to the 16th»)
+#: is not in front of it, and an `expired` verdict then retires a note whose
+#: question is still live. The model is told when its window is cut short
+#: (`_render_evidence`'s `cut_short`), which is the mitigation; the residue is
+#: counted as `nora_note_curator_total{action="lapsed"}`.
 ANCHOR_LAPSE_MS = 2 * 86_400_000
 
 #: How many discharge items ONE closed note's classification may carry — a
@@ -838,6 +847,7 @@ class NoteCuratorAdaptor:
             evidence, state,
             now=datetime.fromtimestamp(self._clock() / 1000, tz=UTC),
             own_sends=own_sends,
+            cut_short=truncated and not (rows and rows[0].ts <= note.created_at),
         # THE THIRD ELEMENT CARRIES HER ROWS TOO, and it has to: it is
         # `commit`'s discharge lookup, and ONE tuple serves both slots. Her
         # row is in `message_ids`, so `_ground` accepts it as a closing
@@ -1072,7 +1082,9 @@ class NoteCuratorAdaptor:
           (`anchor_not_passed` — also the refusal for a dateless note, which
           has no anchor to have passed) and the evidence window to actually
           SPAN that moment (`anchor_not_covered`, `_covers`'s own rule: the
-          room fell silent before the anchor, or is busier than the window).
+          room fell silent before the anchor, or is busier than the window) —
+          until `ANCHOR_LAPSE_MS` after the anchor, when a human speaking after
+          the moment is enough (`anchor_lapsed`, counted `lapsed`).
         """
         if verdict == "open":
             return _Verdict(note_id=note_id, verdict=verdict, why=why, grounded=True)
@@ -1750,6 +1762,7 @@ def _render_own_sends(
 def _render_evidence(
     evidence: Sequence[TranscriptRow], state: EvidenceState, *, now: datetime,
     own_sends: Sequence[TranscriptRow] = (),
+    cut_short: bool = False,
 ) -> str:
     """The evidence portion of one note's block — `nora.language.
     note_revisitor`'s `_render_note`, split out because every note gets one
@@ -1799,7 +1812,18 @@ def _render_evidence(
         body=lambda r: r.body,
     )
     order, key = _ROW["evidence"]
-    return ContextBlock(
+    # CUT SHORT: the window is the newest rows and does not reach back to the
+    # note, so what was said between the note and the first row shown — an
+    # answer, a change of plan — is not here. Said, because the objective
+    # describes evidence as everything «since the note was written», and past
+    # `ANCHOR_LAPSE_MS` an `expired` verdict on this window is accepted.
+    head = (
+        "window: cut short — the evidence below is the newest messages only; "
+        "more was said between this note and the first message in it, and "
+        "that is not shown.\n"
+        if cut_short else ""
+    )
+    return head + ContextBlock(
         name="evidence", order=order, key=key,
         body=rendered,
     ).render() + tail
@@ -1941,11 +1965,13 @@ def _covers(
     LAPSED (`ANCHOR_LAPSE_MS`, `_Evidence.anchor_lapsed`), after which only the
     first condition is required. The second is unsatisfiable in a room busier
     than the window between a note and its moment, and «standing» then meant
-    «forever» (2026-09-25: 8 notes in one unit, 2 to 17 days past). The cost
-    is the label, not the retirement: past the lapse, an answer older than the
-    window reads as `expired` rather than `closed` (counted
-    `nora_note_curator_total{action="lapsed"}`), and nothing but the count and
-    the discharge step (#101, off in production) reads that difference.
+    «forever» (2026-09-25: 8 notes in one unit, 2 to 17 days past). Past the
+    lapse this function's second danger is reachable again: something said
+    before the window — an answer, or a change of plan — is not shown, so an
+    answered note can be labelled `expired` and a rescheduled one retired
+    while still live. `_render_evidence` tells the model its window is cut
+    short, and `nora_note_curator_total{action="lapsed"}` counts every
+    verdict accepted this way.
     """
     if bounds is None or not evidence:
         return False

@@ -1320,6 +1320,66 @@ async def test_a_room_that_died_before_the_anchor_stays_refused_after_the_lapse(
         "nora_note_curator_dropped_total", reason="anchor_not_covered") == 1
 
 
+async def test_her_own_row_after_the_anchor_cannot_expire_a_note_past_the_lapse():
+    """The lapse's reach-past half reads the HUMAN evidence (R-74, #199): a
+    room whose only word after the moment is hers has not testified about it,
+    however long ago the moment was. 60 human rows before the anchor, one
+    delivered row of hers after it, the clock a day past the lapse."""
+    store = InMemoryNoteStore()
+    anchor_start, anchor_end = anchor_bounds_ms(PASSED_ANCHOR)
+    note = await _seed(store, title="Dinner", anchor=PASSED_ANCHOR,
+                       entities=("ada",), revisit_at=NOW - 1)
+    from dataclasses import replace
+    store.notes[note.id] = replace(note, created_at=anchor_start - 30 * DAY_MS)
+    record = FakeRecordStore()
+    for i in range(1, 61):
+        record.rows.append(_row(i, f"chat {i}", ts=anchor_start - 5 * DAY_MS + i * 60_000))
+    record.rows.append(_row(61, "route sent", ts=anchor_end + 1, is_nora=True))
+    metrics = Metrics()
+    curator = _curator(store, metrics, record=record,
+                       now_ms=anchor_end + ANCHOR_LAPSE_MS + DAY_MS)
+    await curator.inputs(key=WS, batch=())
+    kept = await curator.accept(key=WS, items=(
+        {"note_id": _h(curator, note), "verdict": "expired", "why": "x"},
+    ))
+    written = await curator.commit(
+        key=WS, proposals=tuple(
+            Proposal(payload=k, instruction_sha256="a" * 64, model="m",
+                     established_by="run-1") for k in kept
+        ), now_ms=NOW + 5,
+    )
+    assert written == 0
+    assert store.notes[note.id].retired_at is None
+    assert metrics.get("nora_note_curator_total", action="lapsed") == 0
+
+
+async def test_a_window_that_does_not_reach_the_note_says_so():
+    """Past the lapse an `expired` verdict is accepted on a window that may not
+    reach back to the note, and the objective describes evidence as everything
+    said since the note was written. So a cut-short window says it is cut
+    short — a change of plan older than the window is exactly what the model
+    must not read as silence — and a window that reaches the note does not."""
+    _, anchor_end = anchor_bounds_ms(PASSED_ANCHOR)
+    marker = "window: cut short"
+
+    async def _rendered(rows: int) -> str:
+        store = InMemoryNoteStore()
+        anchor_start = anchor_bounds_ms(PASSED_ANCHOR)[0]
+        note = await _seed(store, title="Dinner", anchor=PASSED_ANCHOR,
+                           entities=("ada",), revisit_at=NOW - 1)
+        from dataclasses import replace
+        store.notes[note.id] = replace(note, created_at=anchor_start - 30 * DAY_MS)
+        record = FakeRecordStore()
+        for i in range(1, rows + 1):
+            record.rows.append(_row(i, f"chat {i}", ts=anchor_end + 1 + i * 60_000))
+        curator = _curator(store, Metrics(), record=record,
+                           now_ms=anchor_end + ANCHOR_LAPSE_MS + 1)
+        return await curator.inputs(key=WS, batch=())
+
+    assert marker in await _rendered(60)
+    assert marker not in await _rendered(10)
+
+
 async def test_an_untruncated_window_reaching_past_the_anchor_can_expire():
     """The positive case: a coverage check that never passes is a mute
     button."""
