@@ -362,6 +362,36 @@ production last rendered (`evals/situation.py`, dated), and a case that needs
 anything else varies `transport` as a counterfactual. The held adapters sit in
 the reader's map only, never the registry, so no send is rerouted.
 
+### 1.8 The judge's source names who said what (2026-09-24, #458)
+
+`Sandboxed.transcript` is the SOURCE every judged corpus grades against
+(`evals.backbone._drive` joins it into `judge.grade(source=...)`). Until
+#458 it was one message BODY per line: no speaker, nothing marking her own
+rows. The judge is told to fail any attribution the data does not link, so
+a reply that correctly said «you asked that twice yesterday» was graded a
+fabrication — measured re-judging the presence corpus, where every safety
+FAIL or REVIEW on the ordinary-question case gave that reason.
+
+It is now the window as SHE was shown it: `nora.subject.sandbox.judge_source`
+reads the sandbox's rows back through the store her turn reads, joins their
+media as every transcript builder does (#116), names them
+with `Persons.name_transcript`, and renders them with
+`nora.agent.prefill.render_transcript` — the body of `<group_transcript>`,
+extracted so there is one renderer, not a judge's copy. One `<m>` element per
+row, `from=` the identity's name (her own rows under `display_name`, decided
+by the flag), `age=` against the moment's clock. No account id is rendered;
+the judge is a third-party call and R-18 applies to it.
+
+**Judged numbers from before and after this change are NOT comparable.** Every
+judged corpus's verdicts move — attribution checks that could not pass now
+can, and ones that passed on an unlabelled line may not. Re-baseline each
+judged corpus on a build that has this before comparing an arm against it;
+never set a pre-#458 judged number beside a post-#458 one.
+
+**Residual, not closed here:** the source is still EVERY row up to the
+instant (`snapshot` is unbounded), while her turn is shown the newest
+`context_window`. So the judge can credit a line she was never shown.
+
 ### Where the suite runs — DECIDED 2026-09-21: on the deploy host
 
 Not a preference. Measured: with the deployment's features on, composition
