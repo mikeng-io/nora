@@ -78,7 +78,11 @@ from nora.language.note_curator import NoteCuratorAdaptor
 from nora.language.proactive import ProactiveAdaptor, UnitRoom
 from nora.obs.metrics import Metrics
 from nora.skills.loader import SkillStore
-from nora.testing import InMemoryNoteStore, InMemoryStandingStore
+from nora.testing import (
+    InMemoryCultureStore,
+    InMemoryNoteStore,
+    InMemoryStandingStore,
+)
 from nora.testing.fakes import FakeRecordStore
 from nora.testing.reminders import FakeReminderStore
 
@@ -212,11 +216,6 @@ def standing() -> Standing:
     )
 
 
-class _CultureStore:
-    async def head(self, *, key: str):
-        return None
-
-
 async def proactive(body: str = "去邊食", *, name: str = "Grant") -> str:
     """The decide pass, with a description open and a room position written.
 
@@ -324,7 +323,7 @@ async def culture(body: str = "去邊食", *, name: str = "Ada") -> str:
     # is reading, which is #161's defect one tier over. `None` for the two store
     # keys keeps this builder to the blocks this file is about.
     return await CultureAdaptor(
-        culture=_CultureStore(),
+        culture=InMemoryCultureStore(),
         unit_for=lambda _k: None,
         standing_key_for=lambda _k: None,
         label_for=lambda _k: "Dinner",

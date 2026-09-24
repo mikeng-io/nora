@@ -668,7 +668,7 @@ is approximate and is a lower bound.
 
 ## 6d. "Did the transport throw away her reasoning?" — `reasoning_strip_log`
 
-**The defect** (as it stood until DEC-206). Strands' Chat Completions formatter
+**The defect** (as it stood until DEC-208). Strands' Chat Completions formatter
 does not carry `reasoningContent` in a multi-turn position. When a loop goes multi-turn — on
 the agent path that means it reached for a tool — Strands drops the reasoning
 out of the request, logs one WARNING, and **continues**. In production it does
@@ -676,7 +676,7 @@ not raise: the turn runs on and she speaks with her reasoning gone (#325, read
 back 2026-09-17). ADR 0011 measured the same transport limitation on the
 relevance gate as a **safety breach**, not merely as degradation.
 
-**Carried since #325's fix (2026-09-25, DEC-206).** Every provider `nora.agent.factory`
+**Carried since #325's fix (2026-09-25, DEC-208).** Every provider `nora.agent.factory`
 builds now puts each assistant message's reasoning back on the wire as the
 `reasoning` field (`nora.agent.reasoning_carry`); the upstream reads that field
 and discards `reasoning_content`, measured by `prompt_tokens` on direct

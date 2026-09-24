@@ -26,7 +26,7 @@ So this is NOT a drop-in replacement for a raw completion on a path whose
 verdict is security-relevant. It is here to be measured against, and to be
 the one home for the SDK call.
 
-**The limitation is lifted for the agent loop, not here** (DEC-206, #325,
+**The limitation is lifted for the agent loop, not here** (DEC-208, #325,
 2026-09-25). The drop was the SDK's formatter, not the transport: the upstream
 reads a prior assistant message's reasoning from a `reasoning` field, and
 `nora.agent.reasoning_carry` now puts it there for every provider
