@@ -2461,6 +2461,10 @@ async def build_dependencies(
     relay = Relay(
         policy=allowlist, speak=_relay_speak, slots=slots,
         occasion_for=relay_occasion, metrics=metrics,
+        # The SAME reader `<presence>` renders from (design/self-awareness/02),
+        # so «Discord is down» in the block and `send_to` refusing into Discord
+        # are one read of one mapping, never two opinions.
+        transport=presence_reader.state,
     )
     # `DiscordMusicToolBridge` (design/discord-music/07-agent-tool.md) — the
     # four music agent tools' own collaborator. Built ONLY when BOTH a
