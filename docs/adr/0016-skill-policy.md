@@ -145,10 +145,17 @@ Nora's descriptions gave the when and the not-for, but not the what.
 - Judgement only. It does not describe how a tool works (that is the tool's
   description) and does not restate the doctrine; it may point to it.
 - One rule per section, and the heading states the rule.
-- **Token ceilings replace line ceilings.** A body SHOULD stay under 1,500
-  cl100k tokens. A skill above that carries its own ceiling and reason in
-  `tests/test_skill_content.py`, where the number is. 5,000, the published
-  limit, is the hard limit.
+- **Token ceilings replace line ceilings, measured on the body with
+  whitespace collapsed to single spaces before cl100k-encoding.** A body
+  SHOULD stay under 1,500 tokens by that measure. A skill above that carries
+  its own ceiling and reason in `tests/test_skill_content.py`, where the
+  number is. 5,000, the published limit, is the hard limit.
+  **Updated 2026-09-25 (issue #187 finding 4):** a raw cl100k count turns
+  out to share the flaw a line count had — the same words, wrapped onto
+  different line widths in `skill.instructions` (cosmetic markdown
+  formatting), tokenize to different counts. Collapsing whitespace before
+  encoding removes that sensitivity while keeping the same unit and the same
+  published limit.
 - It is tested on the deployed alias. Anthropic's advice to test on every
   model applies to a skill shipped to several; this deployment runs one.
 
@@ -167,9 +174,25 @@ Nora's descriptions gave the when and the not-for, but not the what.
 ### 6. Authority
 
 Unchanged from design/12 §2: a skill ranks below the doctrine and above
-message content, may add procedure and MUST NOT relax a rule above it, keeps
-`change_policy: operator-only`, and MUST NOT load because a message names it
-(R-29).
+message content, may add procedure and MUST NOT relax a rule above it, is
+operator-only to edit, and MUST NOT load because a message names it (R-29).
+
+**Updated 2026-09-25 (issue #187 finding 3).** The frontmatter keys that
+used to declare the first three claims — `authority_above`, `authority_below`,
+`change_policy` — are now REFUSED at load
+(`nora/skills/loader.py::parse_skill`) rather than honoured: nothing reads
+`authority_above`/`authority_below` for a skill (only
+`nora/doctrine/loader.py` reads them, and only for doctrine sections), and
+nothing reads a skill's `change_policy` anywhere — checked directly:
+`nora/web/skills.py`'s payload does not carry it, its portal route is
+GET-only with no skill-editing surface, and no script or hook reads it
+either. Operator-only editing is now convention and review, not a checked
+key. This is a GATE refusal — it fires wherever `SkillStore` runs strict (the
+test suite, `nora-land`'s gate) — not a runtime one: the live agent's own
+skill loader (Strands' `AgentSkills(strict=False)`, `nora/agent/factory.py`)
+never calls this parser at all, and the portal's read
+(`nora/web/skills.py`, also `strict=False`) drops a keyed skill from its
+listing silently rather than raising.
 
 ### 7. How a skill is changed
 
@@ -197,12 +220,21 @@ message content, may add procedure and MUST NOT relax a rule above it, keeps
    saved names. It points to conduct's rule for whose memory to read deeply.
    Every earlier rule is kept.
 3. **Checks added:** token ceilings, the 80 token description, no dashes.
-4. **To do:** `skills` rows in `tool_selection` for the reach test, and a
-   check that a skill's authority keys agree.
+   **Updated 2026-09-25 (issue #187 finding 4):** the token ceiling is now
+   measured on whitespace-collapsed text — see §4's update.
+4. **To do:** `skills` rows in `tool_selection` for the reach test.
+   ~~a check that a skill's authority keys agree~~ **Done 2026-09-25 (issue
+   #187 finding 3):** not a check that they agree — refused at load instead.
+   See §6's update.
 5. **image-generation is left unchanged;** its next change applies this ADR.
    It passes both tests on the numbers above and keeps a 2,000 token ceiling
-   (measured 1,449), which leaves room for the one section per configured
-   model it is meant to grow by.
+   (measured 1,449 at this rollout, 2026-09-24), which leaves room for the
+   one section per configured model it is meant to grow by. **Re-measured
+   2026-09-25 (issue #187 finding 4):** 1,471 tokens on the whitespace-
+   collapsed body — content added since this rollout (the reference-image
+   fix) more than offsets what collapsing removes; see the dated comment
+   beside `_TOKEN_CEILINGS` in `tests/test_skill_content.py` for the number
+   that stays current, not this historical one.
 
 ### 9. Which rule is checked how
 
@@ -214,7 +246,7 @@ message content, may add procedure and MUST NOT relax a rule above it, keeps
 | description within 80 tokens | `test_every_description_fits` | exists |
 | second person description | review | process |
 | no named scenario | `test_every_skill_names_no_scenario` | exists |
-| body within its token ceiling | `test_every_skill_stays_small` | exists |
+| body within its token ceiling (whitespace-collapsed, #187 finding 4) | `test_every_skill_stays_small` | exists |
 | judgement only, one rule per section | review | process |
 | RFC 2119 register, English | review | process |
 | no dashes | `test_no_dash_in_any_skill` | exists |
@@ -223,13 +255,23 @@ message content, may add procedure and MUST NOT relax a rule above it, keeps
 | cost test | Langfuse numbers in the PR | process |
 | tested on the deployed alias | eval output in the PR | process |
 | a message cannot load a skill (R-29) | `tests/test_skill_loader.py::test_a_message_can_name_a_skill_but_never_load_one` | exists |
-| authority keys agree | none; the skill loader does not read them | to add |
+| authority keys refused, not honoured (#187 finding 3) | `nora/skills/loader.py::parse_skill` (gate-time; strict `SkillStore` only) | exists |
 
 ## Consequences
 
 - **Better.** Placement is decided by whether a skill reaches the turns it is
   for, then by what it costs, not by its length. A principle that several
   domains need lives where all of them read it.
+- **Better (added 2026-09-25, issue #187 findings 3-4).** The token ceiling
+  cannot be gamed by rewrapping the same words (§4's update), and a skill's
+  frontmatter can no longer carry an authority claim nothing enforces (§6's
+  update) — a file that used to read as arbitrated against doctrine, and was
+  not, now fails to load instead.
+- **Worse (added 2026-09-25):** a skill's operator-only editing convention
+  is no longer a checked frontmatter field, only review — the same as it
+  always was for every OTHER rule §6 lists (design/12 §2's authority item 5
+  was never machine-checked; only the two keys borrowed from doctrine's
+  vocabulary looked like they were).
 - **Worse:**
   - **More measurement per change.** Every skill change needs a Langfuse read
     and, once the rows exist, a `tool_selection` run.
