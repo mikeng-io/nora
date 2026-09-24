@@ -102,7 +102,7 @@ FALSE_SPEAK_TWINS = [
         "other-service-command",
         "/weather tomorrow",
         ["聽日會唔會落雨"],
-        ("weather", {"where": "Sham Shui Po"}),
+        ("weather", {"place": "Sham Shui Po"}),
         "而家個 forecast 唔太可靠，我讀唔到聽日嘅數",
         id="other-service-command",
     ),

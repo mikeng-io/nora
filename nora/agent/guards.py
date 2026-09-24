@@ -603,6 +603,34 @@ def _list_tool_names(names: Any) -> str:
     return ", ".join(ordered[:-1]) + " or " + ordered[-1]
 
 
+def _unknown_argument_result(
+    tool_name: str, *, unknown: frozenset[str], accepted: frozenset[str],
+) -> str:
+    """R-99's veto text — Nora's OWN status-result shape (R-27), not a fresh
+    admonishment sentence: a JSON object carrying `status`/`note`, the same
+    two keys every dict-returning tool's own bad-input answer carries (see
+    `instagram_read`'s "Give exactly one of person, handle or link" in
+    `nora.agent.tools`). `unavailable` is the R-27 status for exactly this —
+    a call this turn could not check, never `nothing_found` ("there is
+    nothing"). Serialised here, once, so a model reading this veto and a
+    model reading a real tool's own `unavailable` see identical shapes and
+    can retry the same way either time.
+
+    `note` NAMES both axes the model needs to correct the call: what it sent
+    that does not exist, and what the tool actually takes — never one alone,
+    since a model told only "that argument is wrong" has nothing to try next.
+    """
+    what_it_takes = (
+        f"It accepts {_list_tool_names(accepted)}." if accepted
+        else "It takes no arguments."
+    )
+    note = (
+        f"{tool_name} does not declare {_list_tool_names(unknown)}. "
+        f"{what_it_takes} Call it again with only the arguments it accepts."
+    )
+    return json.dumps({"status": "unavailable", "note": note})
+
+
 def _unwrap_tool_status(result: Any) -> str | None:
     """The tool's OWN status (`ok`/`refused`/`unavailable`/...), unwrapped
     from Strands' own success/error envelope.
@@ -735,6 +763,7 @@ class ReplyGuard(HookProvider):
         terminal: Collection[str], deliverer=None, metrics: Metrics,
         forced_first_tool: str | None = None,
         lookups: Collection[str] | None = None,
+        param_names: Mapping[str, frozenset[str]] | None = None,
     ) -> None:
         self._conversation_id = conversation_id
         self._budgets = dict(budgets)
@@ -834,6 +863,19 @@ class ReplyGuard(HookProvider):
         # WRITE is bound to, and they disagree exactly when a title changed
         # hands mid-turn — which is the case that must fail.
         self._notes_read: set[str] = set()
+        # R-99 (design/social-per-network/30-link-owner-registry.md): each
+        # tool's accepted parameter names, keyed by tool name, DERIVED from the
+        # callable's own signature (`ToolRegistry.tool_param_names()`) rather
+        # than hand-copied — the same "read it off the code" discipline
+        # `terminal`/`budgets` already take. `None` — every test that
+        # constructs a guard without this axis — means the same as it does for
+        # `lookups`: the rule is OFF, not "everything is unknown", so a
+        # pre-existing scenario that never wires this keeps its old veto-free
+        # behaviour. A production caller always passes the real table
+        # (`nora.engagement.stages.deliver.build`), so live coverage is
+        # complete; only a bench test that does not care about this rule may
+        # omit it.
+        self._param_names: Mapping[str, frozenset[str]] | None = param_names
 
     def _veto(self, rule: str, message: str) -> str:
         self._metrics.inc("nora_guard_vetoes_total", rule=rule)
@@ -865,6 +907,46 @@ class ReplyGuard(HookProvider):
                 "R-7", f"The tool {tool_name!r} does not exist. "
                        f"Use {_list_tool_names(self._budgets)}.",
             )
+
+        # R-99 (design/social-per-network/30-link-owner-registry.md): an
+        # argument the tool's OWN signature does not declare must not run
+        # silently. Without this, Strands' generated pydantic model ignores
+        # any key it does not declare (`FunctionToolMetadata.validate_input`,
+        # `.venv/lib/python3.12/site-packages/strands/tools/decorator.py:
+        # 369-393`, built by `_create_input_model` at line 190-231 with no
+        # `model_config` — pydantic v2's own default is `extra="ignore"`) —
+        # confirmed live: `media_fetch` was called twice with `file=`, a key
+        # it has never declared, and both calls arrived empty. This fires
+        # BEFORE that validation ever runs, on the same raw `tool_use` the R-3
+        # comment below already establishes reaches this hook first.
+        #
+        # `conversation_id` is EXEMPTED, not overlooked: R-3, directly below,
+        # is the deliberate decision that an invented one is counted and never
+        # vetoed (DEC-24 deleted the parameter from every tool on purpose, and
+        # a weak model that cannot help echoing one must still be able to
+        # reply). Excluding it here is what keeps that decision intact rather
+        # than quietly overruling it with a stricter rule of the same shape.
+        #
+        # `self._param_names` absent (`None`, the rule off) or missing this
+        # tool's own entry (a plugin tool like `skills`, or an MCP tool folded
+        # in through `allowed_mcp` — neither is built by `build_tool_specs`,
+        # so `ToolRegistry.tool_param_names()` has no signature to read for
+        # them) both mean "cannot verify", never "reject everything": a guard
+        # with no schema data must not invent a veto it cannot ground (R-27's
+        # own fail-closed direction applied to the CHECK itself, not just the
+        # tool's answer).
+        #
+        # Costs no budget whichever way it fires: this is a veto in
+        # `evaluate`, so `_before_tool` never reaches `self.reserve` for it
+        # (DEC-33's own mechanism — see `_after_tool`'s "a cancelled call did
+        # not run" branch).
+        accepted = None if self._param_names is None else self._param_names.get(tool_name)
+        if accepted is not None:
+            unknown = frozenset(tool_input or {}) - accepted - {"conversation_id"}
+            if unknown:
+                return self._veto("R-99", _unknown_argument_result(
+                    tool_name, unknown=unknown, accepted=accepted,
+                ))
 
         # R-3 — scope, held BY CONSTRUCTION rather than by veto (DEC-21) and,
         # since DEC-24, not even expressible: no tool declares a conversation

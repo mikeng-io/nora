@@ -561,6 +561,15 @@ RULE_TESTS = {
     # no story request was sent for a person in no room, beside a positive
     # control showing the same person's profile does reach the bridge.
     "R-98": "test_a_story_for_someone_in_no_room_is_refused_and_never_requested",
+    # R-99 (design/social-per-network/30-link-owner-registry.md): a tool call
+    # carrying an argument its own signature does not declare is refused
+    # before Strands' generated pydantic model can silently drop it — live
+    # traffic showed `media_fetch` called twice with `file=`, arriving empty
+    # both times. The named test drives the REAL guard hooks through
+    # `FakeAgentRunner` and asserts both halves: the tool body never runs, and
+    # the refusal names the unknown argument and what the tool actually
+    # accepts.
+    "R-99": "test_the_veto_fires_before_the_tool_body_ever_runs",
 }
 
 

@@ -1,0 +1,37 @@
+[
+  {
+    "name": "R-99's veto never fires: an unknown argument runs the tool anyway",
+    "file": "nora/agent/guards.py",
+    "old": "            if unknown:\n                return self._veto(\"R-99\", _unknown_argument_result(",
+    "new": "            if False and unknown:\n                return self._veto(\"R-99\", _unknown_argument_result(",
+    "target": "tests/unit/test_tool_unknown_arguments.py::test_media_fetch_called_with_file_is_named_by_the_veto tests/unit/test_tool_unknown_arguments.py::test_the_veto_fires_before_the_tool_body_ever_runs"
+  },
+  {
+    "name": "the conversation_id exemption is dropped, breaking R-3's DEC-24 tolerance",
+    "file": "nora/agent/guards.py",
+    "old": "            unknown = frozenset(tool_input or {}) - accepted - {\"conversation_id\"}",
+    "new": "            unknown = frozenset(tool_input or {}) - accepted",
+    "target": "tests/unit/test_tool_unknown_arguments.py::test_conversation_id_alone_is_still_tolerated_by_r99"
+  },
+  {
+    "name": "a tool with no signature data (a plugin, or the rule off) is vetoed on every call instead of left alone",
+    "file": "nora/agent/guards.py",
+    "old": "        accepted = None if self._param_names is None else self._param_names.get(tool_name)",
+    "new": "        accepted = frozenset() if self._param_names is None else self._param_names.get(tool_name, frozenset())",
+    "target": "tests/unit/test_tool_unknown_arguments.py::test_a_tool_this_registry_cannot_introspect_is_left_alone tests/unit/test_tool_unknown_arguments.py::test_a_guard_built_with_no_param_names_never_fires_r99"
+  },
+  {
+    "name": "the veto's status is ok instead of unavailable",
+    "file": "nora/agent/guards.py",
+    "old": "    return json.dumps({\"status\": \"unavailable\", \"note\": note})",
+    "new": "    return json.dumps({\"status\": \"ok\", \"note\": note})",
+    "target": "tests/unit/test_tool_unknown_arguments.py::test_media_fetch_called_with_file_is_named_by_the_veto"
+  },
+  {
+    "name": "the note stops naming what the tool actually accepts",
+    "file": "nora/agent/guards.py",
+    "old": "        f\"{tool_name} does not declare {_list_tool_names(unknown)}. \"\n        f\"{what_it_takes} Call it again with only the arguments it accepts.\"",
+    "new": "        f\"{tool_name} does not declare {_list_tool_names(unknown)}. \"\n        \"Call it again with only the arguments it accepts.\"",
+    "target": "tests/unit/test_tool_unknown_arguments.py::test_media_fetch_called_with_file_is_named_by_the_veto tests/unit/test_tool_unknown_arguments.py::test_the_veto_fires_before_the_tool_body_ever_runs"
+  }
+]

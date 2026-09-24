@@ -1913,6 +1913,7 @@ class FirePath:
                 # fire turn.
                 budgets=self._registry.budgets(),
                 terminal=self._registry.terminal_tools(), metrics=self._metrics,
+                param_names=self._registry.tool_param_names(),
                 audience=audience,
                 cacheable_tools=self._registry.cacheable_tools(),
                 tool_call_log_store=self._tool_call_log_store,
@@ -2508,6 +2509,7 @@ class FirePath:
                 conversation_id=self._shadow_channel,
                 budgets=self._registry.budgets(),
                 terminal=self._registry.terminal_tools(), metrics=self._metrics,
+                param_names=self._registry.tool_param_names(),
                 audience=SHADOW_AUDIENCE,
                 # Plain operator-facing text: no roster, no mention composer —
                 # `None` is `deliver.build`'s documented inert value, and the
@@ -2614,6 +2616,7 @@ class FirePath:
                 conversation_id=self._gate_shadow_channel,
                 budgets=self._registry.budgets(),
                 terminal=self._registry.terminal_tools(), metrics=self._metrics,
+                param_names=self._registry.tool_param_names(),
                 audience=GATE_SHADOW_AUDIENCE,
                 composer=None,
                 cacheable_tools=self._registry.cacheable_tools(),
