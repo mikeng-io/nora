@@ -114,7 +114,7 @@
  {
   "name": "D11 a retired note cancels the row",
   "file": "nora/app/proactive_screen.py",
-  "old": "        if current[0].retired_at is not None:\n            return ReminderState.CANCELLED, CANCELLED_NOTE_RETIRED",
+  "old": "        if current[0].retired_at is not None and not merged:\n            return ReminderState.CANCELLED, CANCELLED_NOTE_RETIRED",
   "new": "        if False:\n            return ReminderState.CANCELLED, CANCELLED_NOTE_RETIRED",
   "target": "tests/unit/test_heartbeat_loop.py -k a_retired_note_cancels_the_row"
  },
@@ -303,8 +303,8 @@
  {
   "name": "#136 the slot is hourly and the clock is wired",
   "file": "nora/app/composition.py",
-  "old": "                    clock_store=dream_schedule_clock,",
-  "new": "                    clock_store=None,",
+  "old": "                    clock_store=dream_schedule_clock,\n                    records=audit,",
+  "new": "                    clock_store=None,\n                    records=audit,",
   "target": "tests/test_composition.py -k a_home_room_wires_the_proactive_adaptor_its_schedule_and_its_grant"
  }
 ]
