@@ -252,9 +252,14 @@ LEVEL_CEILINGS = {1: 80, 2: 160, 3: 320}
 #: subset of the digest-pinned 2026-09-24 name snapshot, so a tool added after
 #: the ADR can never be exempted here. A rewrite batch removes its tools in the
 #: same commit that rewrites them.
-_NOT_YET_REWRITTEN = frozenset({
-    "send_reply",
-})
+#:
+#: EMPTY since 2026-09-24: `send_reply`, the last entry, left when its
+#: SHOULD/MAY block on how to write a reply moved to `voice.md` and
+#: `conduct.md` (operator: «keep the voice in voice.md») and it declared
+#: `level=3`. Every rule below now covers every tool. The name is kept so the
+#: shrink-only test still has something to hold: adding a tool back here is
+#: an exemption, and that test refuses any name newer than the snapshot.
+_NOT_YET_REWRITTEN: frozenset[str] = frozenset()
 
 
 #: A run of CJK, kana or hangul. ADR 0015 §3's unit: a distinct maximal run,
@@ -322,6 +327,24 @@ def test_the_allowlist_only_shrinks() -> None:
         f"{extra} added to _NOT_YET_REWRITTEN: a tool added after ADR 0015 "
         "meets it from its first commit and is never exempted"
     )
+
+
+def test_send_reply_is_held_to_the_policy_like_every_other_tool() -> None:
+    """POSITIVE CONTROL for the empty allowlist. With nothing exempt, a bug in
+    `_rewritten()` that dropped tools would make every rule below pass on less
+    than it claims; `send_reply` is the tool that was exempt longest, so it is
+    the one asserted present. Its description is Level 3: delivery (ADR 0007
+    §5a's MUST) plus its `sent`/`held_for_review`/`refused` contract, which
+    stays in the description because the tool returns a bare string and has
+    no `note` to carry it."""
+    from nora.agent.tools import NATIVE_TOOLS
+
+    assert "send_reply" in _rewritten()
+    assert NATIVE_TOOLS["send_reply"].level == 3
+    sent = " ".join(_sent_descriptions()["send_reply"].split())
+    for status in ("`sent`", "`held_for_review`", "`refused`"):
+        assert status in sent, status
+    assert "You MUST call" in sent
 
 
 def test_every_rewritten_tool_declares_a_level() -> None:

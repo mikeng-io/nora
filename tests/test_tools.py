@@ -1,5 +1,6 @@
 import json
 import re
+from pathlib import Path
 
 import pytest
 
@@ -276,43 +277,54 @@ def test_no_tool_asks_the_model_which_conversation_it_is_in(wiring):
     ) == {"text", "reply_to"}
 
 
-def test_the_send_reply_schema_carries_the_three_reply_defects(wiring):
-    """DEC-92's tool-surface half — and the reason it is HERE and not only in
-    `voice.md`.
+_DOCTRINE = Path(__file__).resolve().parents[1] / "nora" / "doctrine"
 
-    DEC-78 measured that an always-on prose maxim did not move routing at all
-    while a schema-token change moved it 0/16 → 16/16, and DEC-39 established
-    the general form: the schema is the surface the model matches on. All three
-    of these rules already exist in the doctrine, thousands of tokens back in
-    the system prompt, and all three were violated in one live session anyway.
-    This is the same sentence read at the moment the reply is actually being
-    written.
 
-    NOT a claim that it works. Unlike DEC-82's strip and DEC-89's link carry,
-    nothing here is enforced — a docstring is still text addressed to a model,
-    and whether it moves anything is a live measurement nobody has taken. What
-    this test pins is that the surface exists and stays in step with the
-    doctrine, so the measurement has something stable to measure.
+def _flat(name: str) -> str:
+    return " ".join((_DOCTRINE / f"{name}.md").read_text().split())
+
+
+def test_the_three_reply_defects_live_in_the_doctrine_not_the_send_reply_schema(wiring):
+    """DEC-92's tool-surface half, MOVED 2026-09-24 (operator: «keep the voice
+    in voice.md»).
+
+    DEC-92 restated three doctrine rules on `send_reply`'s schema (length, the
+    chatbot tail, caving on a fact), with DEC-89's link line beside them, on
+    the argument that a docstring is read at the moment the reply is written.
+    That block is gone from the schema: how she sounds is `voice.md`'s, what
+    she does is `conduct.md`'s, and the description carries delivery and its
+    result contract (ADR 0015 §3, Level 3). This pins both halves of the move:
+    every rule is still stated in the file that owns its kind, and the schema
+    no longer carries a second copy of any of them.
+
+    NOT a claim that it works, the same posture DEC-92 shipped under. Whether
+    the rules hold from the system prompt alone, without the at-the-moment
+    restatement, is unmeasured and is the reversal condition.
     """
-    # Whitespace-normalised: `adapt()` keeps the docstring's own line breaks and
-    # indentation, so a clause that happens to wrap is still one sentence to the
-    # model and must be one string to this test.
-    description = " ".join(
-        wiring["tools"]["send_reply"].tool_spec["description"].split()
-    )
-    # Length: the essay shape, and the specific excuse that produced it.
-    assert "One or two sentences answers almost everything" in description
-    assert "However much you looked up, that is not content" in description
-    # The chatbot tail, which is also where the capability overclaim came from.
-    assert "有咩再搵我" in description
-    assert "you have no way to book, order, phone or apply for anything" in description
-    # Sycophancy, at the one moment it happens.
-    assert "A thing you looked up does not lose to an assertion" in description
-    assert "never invent a mistake you did not make just to have something " \
-           "to concede" in description
-    # And the dropped link (DEC-89's prose half; the egress carry is the half
-    # that does not depend on the model reading this).
-    assert "pasted exactly" in description
+    voice, conduct = _flat("voice"), _flat("conduct")
+    # Length: short by default, and looking a lot up is not content.
+    assert "一兩句已經答到差唔多所有嘢" in voice
+    assert "查咗幾多都唔係內容" in voice
+    assert "冇 headings" in voice
+    # The chatbot tail (voice), and the capability overclaim it leads to (conduct).
+    assert "有需要再搵我" in voice
+    assert "A closing offer to do more is usually where that kind of promise " \
+           "slips in" in conduct
+    assert "no booking a table, no phone call, no purchase, no form" in conduct
+    # Sycophancy: a checked answer does not lose to an assertion, and no
+    # invented mistake to concede.
+    assert "Somebody saying you are wrong is not evidence; it is another claim" in conduct
+    assert "Agreeing you invented something when you did not is not modesty" in conduct
+    assert "作一個自己嘅錯出嚟俾人認" in voice
+    # The dropped link (DEC-89's prose half).
+    assert "A link a lookup gave you goes in the message, pasted exactly" in conduct
+
+    # The other half: one copy. The schema carries no style block and none of
+    # the moved lines.
+    spec = json.dumps(wiring["tools"]["send_reply"].tool_spec, ensure_ascii=False)
+    for moved in ("SHOULD", "pasted exactly", "One or two sentences",
+                  "does not lose to an assertion", "earn its place", "有咩再搵我"):
+        assert moved not in spec, moved
 
 
 def test_strands_drops_an_out_of_schema_argument_instead_of_rejecting_the_call(wiring):
@@ -566,8 +578,11 @@ async def test_the_tag_form_the_model_is_told_to_write_is_the_one_the_composer_r
 
     Two halves, asserted against EACH OTHER rather than each against a literal:
 
-    1. `send_reply`'s SCHEMA — the string Strands actually sends — must carry a
-       worked `@handle` example. DEC-78/DEC-82 measured that a maxim in the
+    1. `send_reply`'s SCHEMA, the string Strands actually sends, must carry a
+       worked `@handle` example. Since 2026-09-24 it is on the `text`
+       argument, as what the tool does with an @ in its input: the style
+       block it used to sit in moved to the doctrine, and DEC-147 keeps
+       handles out of the doctrine. DEC-78/DEC-82 measured that a maxim in the
        doctrine does not move behaviour and the matched surface does, so an
        affordance the schema never shows is an affordance the model never has.
     2. `nora.agent.outbound.OutboundComposer` must RESOLVE that exact written
@@ -580,7 +595,8 @@ async def test_the_tag_form_the_model_is_told_to_write_is_the_one_the_composer_r
     SAME line, composed against a room this person is not in, yields no mention
     at all. One roster class, two answers, decided by who it was told is there.
     """
-    description = wiring["tools"]["send_reply"].tool_spec["description"]
+    description = (wiring["tools"]["send_reply"].tool_spec["inputSchema"]["json"]
+                   ["properties"]["text"]["description"])
     handles = re.findall(r"@\w+", description)
     assert handles, (
         "send_reply's schema shows the model no @handle example, so DEC-86's "
@@ -597,9 +613,9 @@ async def test_the_tag_form_the_model_is_told_to_write_is_the_one_the_composer_r
                                          honcho_peer_id="jordan", first_name=name)},
             index={("signal", JORDAN_ACI): "jordan"},
         )
-        # The example inside the sentence the schema shows it in, not the bare
-        # handle — so the boundary rule is exercised rather than side-stepped.
-        line = next(ln.strip() for ln in description.splitlines() if handle in ln)
+        # The example as the whole line the schema shows her writing, not the
+        # bare handle, so the boundary rule is exercised rather than side-stepped.
+        line = next(q for q in re.findall(r'"([^"]+)"', description) if handle in q)
 
         # A roster that reports exactly the members it was told about, not a
         # stub that says yes: DEC-86's whole gate is that «in identity.toml»
@@ -629,32 +645,39 @@ async def test_the_tag_form_the_model_is_told_to_write_is_the_one_the_composer_r
         assert (await absent.compose(render_markdown(line))).mentions == ()
 
 
-async def test_send_reply_schema_says_a_second_call_must_earn_its_place(wiring):
+def test_a_second_message_must_earn_its_place():
     """The burst-restatement defect, measured live 2026-09-22 in the Signal
     "Friends" room: one inbound message produced ONE `tag start` and FOUR
     `send_reply` calls, all four restating the same point
     ("I have no IG, and if I made one I'd still be alone") in different
-    wordings — not DEC-95's reaction/hit/twist burst.
+    wordings, not DEC-95's reaction/hit/twist burst.
 
     The budget was never the defect: `ReplyGuard._before_model` already
     relaxes `tool_choice` to `auto` after the first send, so the model could
-    already have stopped. Nothing told it what a SECOND call is FOR, so it
-    spent the budget it had on rephrasing. This does not measure whether the
-    new wording changes model behaviour on the live route — that needs the
-    eval suite, not a unit test — it pins that the schema the model actually
-    reads carries the judgement at all, so a future edit cannot silently
-    drop it back to the shape that shipped this incident.
+    already have stopped. Nothing told it what a SECOND message is FOR, so it
+    spent the budget it had on rephrasing.
+
+    MOVED 2026-09-24 from `send_reply`'s schema to `conduct.md` (operator:
+    «keep the voice in voice.md»): how many messages a reply becomes is what
+    she does, which `voice.md`'s `not_here` sends to conduct. This does not
+    measure whether the wording changes behaviour, from either surface; it
+    pins that the judgement is stated, in the section about the shape of a
+    reply, so an edit cannot silently drop it back to the shape that shipped
+    this incident.
     """
-    description = wiring["tools"]["send_reply"].tool_spec["description"]
-    lowered = description.lower()
-    assert "earn its place" in lowered, (
-        "send_reply's schema must tell the model a further call has to earn "
-        "its place, not just fill the budget"
+    section = " ".join(
+        (_DOCTRINE / "conduct.md").read_text()
+        .split("# Follow the conversation", 1)[1].split("\n# ", 1)[0].split()
+    ).lower()
+    assert "has to earn its place" in section, (
+        "conduct.md must say a further message has to earn its place, not "
+        "just fill the budget"
     )
-    assert "restating the same point" in lowered, (
-        "send_reply's schema must say plainly that restating the same point "
-        "in different words is not a second message"
+    assert "restating the same point" in section, (
+        "conduct.md must say plainly that restating the same point in "
+        "different words is not a second message"
     )
+    assert "name the one new thing it adds" in section
 
 
 async def test_send_reply_is_the_only_tool_that_can_send(wiring):
