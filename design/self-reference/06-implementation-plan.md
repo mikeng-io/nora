@@ -348,3 +348,48 @@ read this as a direction, not a rate.
   argument verdict now quotes the call's input (`_seen`, pinned in
   `tests/unit/test_tool_route_grader.py`).
 
+
+## 11. Revision 2026-09-24 (after #469 deployed): a picture of her is a new picture
+
+**Measured live, production, `defer_tools = true`.** On WhatsApp, «draw
+yourself» went right up to the prompt: `skills(image-generation)`, then
+`load_tools`, then `generate_image` with her canonical reference. But the
+prompt restated the reference's own composition («standing calm and slightly
+deadpan, facing the viewer, one hand in hoodie pocket … plain neutral
+background. No text», aspect 2:3), and the provider's edit returned
+essentially the reference itself. The operator saw «it just sent out the
+canonical image». On Signal the same turn put her sitting in a room and was
+good.
+
+**The change.** One judgement in «Are you in the picture?», with its reason:
+someone who asks for a picture of her wants a new one, so it gets a setting,
+pose or expression that fits the room or the moment. The reference keeps her
+recognisable and is not a composition to copy, because a prompt that restates
+its pose and blank background gets the reference back. A plain front view is
+right only when someone asks for her standard look or her reference sheet.
+No reference image was switched or added.
+
+**Evals.** `route_generate_image_self_carries_her_reference` now also fails on
+a prompt whose background is only a blank backdrop («neutral background»,
+«plain background», «studio backdrop» and the like), using the same
+`args_exclude` check as the cat case's style words.
+
+**Measured, 2026-09-24, on norty**: n=5 per arm, production config (deferred
+tools), two arms identical except `SKILL.md`, run one after the other. Draws
+share Honcho (#462).
+
+| arm | self case (reference passed, not a blank backdrop) |
+|---|---|
+| before (master skill) | 5/5 |
+| after (this change) | 5/5 |
+
+**This case does not separate the arms.** Every prompt on both arms set her
+in a room (a Hong Kong living room at night, sitting on the floor or at a
+desk, with a phone, a tablet or a spinning top). The failure was on WhatsApp.
+This case anchors on room A, a Signal room, because a tag case has to anchor
+where the sandbox has an adapter, and the Signal turn was already good in
+production too. The one data point the new check does catch is from §10's
+second run on #469's skill: 1 of 5 self prompts ended in «plain flat neutral
+studio backdrop», which now fails. So the backdrop failure appears at about
+1 in 10 in room A, too rare for n=5 to show a before/after difference. What
+would separate the arms is a case anchored on the room where it happened.

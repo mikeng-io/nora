@@ -372,7 +372,15 @@ cases:
   # `args_date` is resolved against the clock line the turn was SHOWN, so the
   # expected Saturday moves with the day the case runs. If the deployment's
   # `[image_gen]` is enabled, each draw spends one provider call, as
-  # `route_generate_image` already does. UNRUN as of 2026-09-24.
+  # `route_generate_image` already does. Run on norty 2026-09-24 at n=5 per
+  # arm; the numbers are in design/self-reference/06 §10 and §11.
+  #
+  # The self case also fails on a prompt that gives her only a blank
+  # backdrop (2026-09-24, live on WhatsApp): a prompt restating the
+  # reference's own composition (standing, facing the viewer, «plain neutral
+  # background») made the provider's edit return the reference itself. A new
+  # picture of her has a setting. Each phrase below is a way of writing
+  # «no setting» as the background.
   - name: route_generate_image_self_carries_her_reference
     entry: tag
     expect: reply
@@ -382,6 +390,10 @@ cases:
       tools: [generate_image]
       args_include:
         generate_image: ["535e4da56b933c9c30ea28182ba651246ce9bc65608ebdf92363e6342ab8567c"]
+      args_exclude:
+        generate_image: ["neutral background", "plain background", "blank background",
+                         "white background", "neutral backdrop", "plain backdrop",
+                         "studio backdrop", "neutral studio"]
     snapshot: *room_a
 
   # The live request after #456 deployed (2026-09-24). She left her reference
