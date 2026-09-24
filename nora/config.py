@@ -2482,6 +2482,14 @@ class NotesConfig(BaseModel):
     # Lowering this raises how often the check WITHHOLDS a decision, never how
     # often it gets one wrong.
     #
+    # **And the one direction it failed in was «forever» in a busy room**
+    # (2026-09-25, DEC-203): a room posting more than this between a note and
+    # its moment never shows a window that predates the note, so no expiry was
+    # ever reachable — 8 live notes, 2 to 17 days past. Past `ANCHOR_LAPSE_MS`
+    # (`nora.language.note_curator`) the reach-back half no longer binds, and an
+    # answer older than the window can now be labelled `expired` instead of
+    # `closed` — a wrong LABEL on a correct retirement, counted as `lapsed`.
+    #
     # Twice-wrong is worth leaving on the page: a config docstring asserting a
     # safety property is a claim about code somebody else has to verify, and
     # this one was believed twice before it was true.
