@@ -185,7 +185,7 @@ def test_the_registered_blocks_are_exactly_what_this_pass_carries():
     index` just below.
     """
     names = {name for name, _order, _key in _BLOCKS}
-    assert names == {"room", "batch", "notes"}
+    assert names == {"room", "culture", "batch", "notes"}
 
 
 async def test_inputs_is_blank_for_an_empty_batch():

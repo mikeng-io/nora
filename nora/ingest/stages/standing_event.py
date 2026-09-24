@@ -56,15 +56,16 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from collections.abc import Callable, Coroutine, Sequence
+from collections.abc import Awaitable, Callable, Coroutine, Sequence
 from dataclasses import dataclass
 from datetime import tzinfo
 from typing import Any
 
 from nora.agent.dream_screen import screen
+from nora.domain.culture import CultureRevision
 from nora.domain.media_join import MediaJoin
 from nora.domain.models import NormalizedMessage, TranscriptRow
-from nora.domain.ports import RecordStore, StandingStore
+from nora.domain.ports import CultureReader, RecordStore, StandingStore
 from nora.domain.standing import Standing
 from nora.engagement.debrief_render import render_rollup_input
 from nora.engagement.slots import ConversationSlots
@@ -82,6 +83,7 @@ from nora.engagement.stages.debrief import (
 from nora.engagement.stages.debrief import (
     _prompt as _debrief_prompt,
 )
+from nora.language.culture_render import read_culture
 from nora.obs.metrics import Metrics
 from nora.obs.tracing import TRACE_KIND, attached, span
 
@@ -124,6 +126,13 @@ class Wiring:
     # in `messages.body` and every consumer had it. `None` is the inert state
     # and renders the bare handles the row actually carries.
     media_join: MediaJoin | None = None
+    # THE ROOM'S ACCOUNT (design/culture-tier, DEC-207), rendered above the
+    # prior exactly as the tag-turn debrief renders it. `culture_key` maps
+    # this fold's `(platform, conversation_id)` to the room's `primary_id` —
+    # the key the culture fold writes under (DEC-181) — and is `None` for a
+    # room outside the policy. Both `None` while `[culture] enabled = false`.
+    culture: CultureReader | None = None
+    culture_key: Callable[[str, str], str | None] | None = None
 
 
 async def run(
@@ -315,6 +324,18 @@ async def _event_fold(*, key: Key, wiring: Wiring, metrics: Metrics) -> None:
         wiring.slots.release_and_dispatch(key)
 
 
+def _culture_head(
+    wiring: Wiring, platform: str, conversation_id: str,
+) -> Awaitable[CultureRevision | None] | None:
+    """The room's `head` read (DEC-207), or `None` with no reader wired or a
+    room outside the policy. Bounded by `read_culture`, under this fold's own
+    `store_timeout_seconds`."""
+    if wiring.culture is None or wiring.culture_key is None:
+        return None
+    key = wiring.culture_key(platform, conversation_id)
+    return None if not key else wiring.culture.head(key=key)
+
+
 async def _fold_batch(
     *,
     prior: Standing | None,
@@ -337,6 +358,11 @@ async def _fold_batch(
     rendered = render_rollup_input(
         prior=prior, rows=rows, display_name=wiring.display_name, tz=wiring.tz,
         now_ms=now_ms,
+        culture=await read_culture(
+            _culture_head(wiring, platform, conversation_id),
+            stage="standing_event_culture", platform=platform, metrics=metrics,
+            timeout_seconds=wiring.store_timeout_seconds,
+        ),
     )
 
     async def _standing() -> tuple[str | None, str]:

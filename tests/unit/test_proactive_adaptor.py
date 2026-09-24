@@ -79,8 +79,10 @@ def _adaptor(
     metrics=None, clock_store=None, records=None, now=None, quiet_seconds=1800.0,
     decisions=None, people=None, roster_index_conclusions=0,
     roster_index_members=12, read_timeout_seconds=5.0, presence_of=None,
+    culture=None,
 ):
     return ProactiveAdaptor(
+        culture=culture,
         presence_of=presence_of,
         decisions=decisions,
         notes=notes if notes is not None else InMemoryNoteStore(),
@@ -169,7 +171,7 @@ def test_the_registered_blocks_are_exactly_what_this_pass_carries():
     """
     names = {name for name, _order, _key in _BLOCKS}
     assert names == {
-        "now", "presence", "people", "notes", "rooms",
+        "now", "presence", "people", "notes", "rooms", "culture",
         "decisions", "loop_decisions", "self_card",
     }
 
@@ -1499,3 +1501,23 @@ async def test_an_unlabelled_room_never_puts_its_id_in_the_proactive_prompt(tmp_
     rooms_block = text.split("<rooms")[1].split("</rooms>")[0]
     assert "- a room with no name (signal), as of 1 h ago" in rooms_block
     assert "- Zone 42 (discord)" in rooms_block
+
+
+async def test_inputs_carries_each_folded_rooms_account_under_rooms():
+    """DEC-207 through `inputs`, not `_cultures`: the account reaches the
+    RENDERED prompt, named by the room's label, after `<rooms>` — and only
+    for the room that has one."""
+    from nora.testing import InMemoryCultureStore
+
+    notes = InMemoryNoteStore()
+    await _note(notes)
+    culture = InMemoryCultureStore()
+    await culture.append(
+        key="sig-1", body="they decide by attrition", written_at=NOW_MS - 1,
+        established_by="dream:culture:test")
+    text = await _adaptor(notes=notes, culture=culture).inputs(key=WS, batch=())
+
+    assert '<culture room="Friends"' in text
+    assert "they decide by attrition" in text
+    assert text.index("</rooms>") < text.index("<culture")
+    assert text.count("<culture") == 1, "Zone 42 was never folded"

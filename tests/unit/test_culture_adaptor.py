@@ -43,6 +43,7 @@ from nora.language.culture import (
     CultureAdaptor,
 )
 from nora.obs.metrics import Metrics
+from nora.testing import InMemoryCultureStore
 
 T0 = 1_757_000_000_000
 KEY = "discord/g1"
@@ -66,21 +67,21 @@ def test_the_registered_blocks_are_exactly_what_this_pass_carries():
     }
 
 
-class _Store:
+class _Store(InMemoryCultureStore):
+    """The contract-bound fake (`tests/contract/test_culture_store_contract.py`)
+    with a seeded head and a record of every `append` call's arguments — the
+    local twist `test_port_fakes_live_in_nora_testing` exempts as a subclass."""
+
     def __init__(self, head: CultureRevision | None = None) -> None:
-        self._head = head
+        super().__init__()
+        if head is not None:
+            self._revisions[head.id] = head
+            self._heads[head.culture_key] = head.id
         self.appended: list[dict] = []
 
-    async def head(self, *, key: str) -> CultureRevision | None:
-        return self._head
-
-    async def append(self, **kw: object) -> CultureRevision:
+    async def append(self, **kw: object) -> CultureRevision:  # type: ignore[override]
         self.appended.append(kw)
-        return CultureRevision(
-            id="new", culture_key=str(kw["key"]), body=str(kw["body"]),
-            written_at=int(kw["written_at"]),  # type: ignore[arg-type]
-            established_by=str(kw["established_by"]),
-        )
+        return await super().append(**kw)  # type: ignore[arg-type]
 
 
 class _StandingStore:

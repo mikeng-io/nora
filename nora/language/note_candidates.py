@@ -274,8 +274,9 @@ from nora.domain.notes import (
     default_revisit_at,
     note_handle,
 )
-from nora.domain.ports import DreamSink, Proposal
+from nora.domain.ports import CultureReader, DreamSink, Proposal
 from nora.domain.prompt import escape
+from nora.language.culture_render import read_culture, render_culture
 from nora.language.note_render import render_notes
 from nora.obs.metrics import Metrics
 
@@ -337,7 +338,10 @@ _MIN_ANCHOR_DATE = 10_000_000
 #: 10 -> 12 on 2026-09-24 (design 41 §7.5-7.6): `merged_successor_by_title`
 #: when a named title resolves to no open note, and `successor` when the
 #: update's append is refused because the note retired.
-STORE_CALLS_PER_TICK = 12
+#:
+#: 12 -> 13 on 2026-09-25 (DEC-207): the room's `<culture>` head, one
+#: `self._culture.head` per tick, bounded by `read_culture`.
+STORE_CALLS_PER_TICK = 13
 
 #: Every value `nora_note_candidate_gate_total{action}` may carry, DERIVED
 #: rather than hand-copied into the metric's help text (`nora.obs.
@@ -668,8 +672,13 @@ UNNAMED_ROOM = "unnamed room"
 #: this pass concatenates by hand, like `proactive` and the note curator.
 #: `key="turn"` throughout, for the same reason as those two: no established
 #: cache boundary, nothing routes on `key` yet either way.
+#:
+#: `culture` (DEC-207) sits right under `<room>`: the operator's sentence says
+#: what the room IS by fiat, and the account says what it has become — both
+#: are how the batch is meant to be read, so both come before it.
 _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     ("room", 10, "turn"),
+    ("culture", 15, "turn"),
     ("batch", 20, "turn"),
     ("notes", 30, "turn"),
 )
@@ -696,11 +705,23 @@ def _room_block(*, room: str, description: str | None) -> str:
     reading of the input it was given. The instruction was not the broken
     half; the input was.
 
-    **Why the description is the operator's and not a model's.** What a room
-    IS cannot be derived from the room's own messages without the judgement
-    the pass is trying to make. The operator is the only party who can state
-    it, so it is stated in `policy.toml` (`Conversation.description`) and
-    rendered verbatim.
+    **Why the description is the operator's and not a model's.** THIS pass
+    cannot derive what a room is from the batch it is judging without making
+    the very judgement it is there to make — so the one sentence it takes as
+    given is the operator's, stated in `policy.toml`
+    (`Conversation.description`) and rendered verbatim.
+
+    **That is not a claim that no model can say what a room is** (DEC-207,
+    resolving the contradiction issue #312 named against DEC-182). The culture
+    fold does exactly that — but OFFLINE, over the room's whole history, once a
+    day, not over this batch — and its account now rides beside this block as
+    `<culture>`. The two say different things and neither overrides the other:
+    `<room>` is what the operator says the room is FOR, by fiat; `<culture>` is
+    what she has watched it BECOME. The circularity #312 raised (a model's
+    earlier inference shaping its later one over one corpus) is bounded by the
+    windows differing and by `<culture>`'s own type description, which says it
+    is her account and not an instruction; it is not zero, and the eval arm on
+    this pass is what measures whether it matters.
 
     Absent description renders the block anyway, self-closing: the room's
     name is the half that always exists, and a room with no prose about it
@@ -956,8 +977,15 @@ class NoteCandidateAdaptor:
         # renders a true moment; the composition root passes `[reminders]
         # timezone`, the zone the curator already reads «today» from.
         timezone: _dt.tzinfo = _dt.UTC,
+        # THE ROOM'S ACCOUNT (design/culture-tier, DEC-207). `key` is already
+        # the room's `primary_id` — the same key the culture fold writes
+        # under, since both are scope-keyed adaptors handed `scopes()` — so
+        # no policy lookup stands between the two. `None` while
+        # `[culture] enabled = false`.
+        culture: CultureReader | None = None,
     ) -> None:
         self._notes = notes
+        self._culture = culture
         self._candidates = candidates
         self._unit_for = unit_for
         self._label_for = label_for
@@ -1031,6 +1059,26 @@ class NoteCandidateAdaptor:
             # it is. Before the batch, because it is how the batch is meant
             # to be read.
             _room_block(room=room, description=self._description_for(key)),
+        ]
+        # What this room has become (DEC-207), under what the operator says it
+        # IS. A games room's 「2200」 is when people log on, and the account is
+        # where that reading lives once the operator's one sentence runs out.
+        # No block for a room never folded: `render_culture`'s reason.
+        culture = render_culture(
+            await read_culture(
+                self._culture.head(key=key) if self._culture is not None
+                else None,
+                stage="note_candidates_culture", platform="dreamer",
+                metrics=self._metrics,
+            ),
+            # Aged against the batch's NEWEST row, the same «now» `<notes>`
+            # reads its today from, not the wall clock: a backlog batch is
+            # read as of when it was said.
+            now=_dt.datetime.fromtimestamp(batch[-1].ts / 1000, tz=_dt.UTC),
+        )
+        if culture is not None:
+            parts.append(restamp(culture, _ROW).render())
+        parts += [
             # WRAPPED, and the wrapper is a safety property rather than tidiness
             # (#292 audit). A bare `"Messages in this batch:" + lines` put these
             # elements at prompt TOP LEVEL, so a body's newline — which the
