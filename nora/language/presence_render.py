@@ -38,6 +38,15 @@ _STATE_PHRASE: dict[TransportState, str] = {
 }
 
 
+def state_phrase(network: str, state: TransportState) -> str:
+    """What a non-`up` `state` says about `network`, in `<presence>`'s words.
+
+    Public so `send_to`'s refusal (`nora.agent.relay`) names a down network in
+    the same sentence the block showed her, rather than a second wording of it.
+    """
+    return _STATE_PHRASE[state].format(net=platform_name(network))
+
+
 def _listing(items: list[str]) -> str:
     """`a`, `a and b`, `a, b and c`."""
     if len(items) <= 1:
