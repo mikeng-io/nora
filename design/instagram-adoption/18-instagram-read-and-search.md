@@ -97,6 +97,10 @@ search as its own tool (`web_search` / `web_fetch`, `note_search` /
 Instagram gets `instagram_read` and `instagram_search` first. `x_read` /
 `x_search`, `threads_read`, `linkedin_read` follow the same shape later.
 
+> **2026-09-24:** X and LinkedIn are designed in `../social-per-network/`
+> (DEC-201): `x_read`, `x_search`, `linkedin_read`, `linkedin_search`, and
+> `social_fetch` retired. Threads waits for a backend.
+
 ## `instagram_read`
 
 ```
@@ -579,7 +583,8 @@ tools and none goes dark in between:
 
 Until P11 `social_fetch` keeps exactly one Instagram verb, search. Then its
 `platform` enum becomes `{"x"}`, until `x_read` / `x_search` replace it and it
-is deleted.
+is deleted. That replacement is `../social-per-network/10-changes.md` §"The order",
+PR 1.
 
 > **Done in P11 (2026-09-24).** The `instagram/search` row left
 > `social_fetch`'s vocabulary and OpenCLI's `READ_ONLY_ALLOWLIST` in the PR
