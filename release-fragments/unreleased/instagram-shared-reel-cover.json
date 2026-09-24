@@ -1,0 +1,13 @@
+{
+  "type": "fix",
+  "summary": "Asked about a reel or post someone shared into an Instagram group, Nora is told the picture she can see is only its cover, so she reads the item itself from its link instead of answering from one frame.",
+  "details": [
+    "A shared reel, post or story now shows up in her conversation with its picture marked as the cover, next to the link to the item. Before, the picture read as the item, and asked what was in a reel she looked at the still, then said she could only see one frame, with the link right there.",
+    "When she does look at that cover picture, what she gets back says it is only the cover and that the item is behind the link.",
+    "Her Instagram reading tool now says it is for a shared post or reel, not only for a link somebody pastes."
+  ],
+  "limitations": [
+    "Covers shared before this change keep the old plain marker in her history; only new shares are marked.",
+    "Whether she now opens the link is measured by new routing cases that still have to be run against the deployed model."
+  ]
+}

@@ -88,7 +88,7 @@ async def test_every_write_ish_command_is_refused_and_never_spawns(bridge, what)
 
 async def test_instagram_post_is_refused_and_never_spawns(bridge):
     """Host-side: OpenCLI 1.8.7 has no caption-by-URL command, and since P11
-    OpenCLI serves no Instagram read at all (`social_fetch` is X only). A
+    OpenCLI serves no Instagram read at all (`x_read` and `x_search` are X only). A
     request for one could only have been constructed around the tool, so it
     is refused here."""
     runner, session, base = bridge
@@ -234,6 +234,21 @@ async def test_exit_0_with_malformed_json_is_unavailable(bridge):
     )
     assert status == 200
     assert body["status"] == "unavailable"
+
+
+@pytest.mark.parametrize("stdout", ["[]", "{}", "null", " [ ] "])
+async def test_exit_0_with_an_empty_result_is_nothing_found(bridge, stdout):
+    """Measured 2026-09-24: `opencli twitter thread <an id that names no
+    post>` exits 0 and prints `[]`. That is «the read ran and found nothing»,
+    not an `ok`: an `ok` with no data reached the model as an empty post it
+    was asked to describe."""
+    runner, session, base = bridge
+    runner.stdout = stdout
+    _status, body = await _read(
+        session, base,
+        {"platform": "x", "what": "post", "target": "1841173340357800397", "limit": 5},
+    )
+    assert body == {"status": "nothing_found"}
 
 
 async def test_exit_66_is_nothing_found(bridge):

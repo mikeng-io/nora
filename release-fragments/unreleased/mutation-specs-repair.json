@@ -1,0 +1,6 @@
+{
+  "type": "none",
+  "reason": "Three mutation tables (media-comprehension, instagram-p3-subject-index, proactive-adaptor) had rotted: anchors that moved or became ambiguous and selectors naming tests that were renamed or deleted. They are re-pointed at current source and tests, and two entries whose eval-layer grading rule was deleted with the old driver are removed. Tooling only; nothing a user sees changes.",
+  "details": [],
+  "limitations": []
+}

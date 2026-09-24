@@ -149,6 +149,10 @@ class _Bridge:
                     },
                 ],
             })
+        if self.mode == "empty-list":
+            return web.json_response({"status": "ok", "data": []})
+        if self.mode == "empty-items":
+            return web.json_response({"status": "ok", "data": [{}, {"unknown": 1}]})
         if self.mode == "slow":
             await asyncio.sleep(5)
             return web.json_response({"status": "nothing_found"})
@@ -375,6 +379,20 @@ async def test_nothing_found_passes_through(bridge):
     fake, client = bridge
     fake.mode = "nothing"
     assert (await _read(client))["status"] == "nothing_found"
+
+
+@pytest.mark.parametrize("mode", ["empty-list", "empty-items"])
+async def test_an_ok_with_nothing_to_show_is_nothing_found(bridge, mode):
+    """An `ok` whose data renders to no text is a read that found nothing
+    (2026-09-24: a post id that names no post came back `ok` and empty, and
+    the model was handed an empty post). Said with the shared sentence, so
+    it is told it looked and found nothing, not that it read something."""
+    fake, client = bridge
+    fake.mode = mode
+    out = await _read(client)
+    assert out["status"] == "nothing_found"
+    assert out["note"]
+    assert "text" not in out
 
 
 async def test_a_bridge_note_never_reaches_the_model(bridge):

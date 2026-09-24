@@ -825,12 +825,30 @@ class NoteSupersedeReason:
 
     RETIRED_EXPIRED = "retired-expired"
     RETIRED_CLOSED = "retired-closed"
+    #: Folded into another open note, which `replaced_by` names (design 41
+    #: §7.6, DEC-202). A lookup that lands here FORWARDS to that note rather
+    #: than reporting nothing — see `NoteStore.successor`.
+    RETIRED_MERGED = "retired-merged"
+    #: Never an open question of the group — an entry about Nora's own turn,
+    #: or one nobody raised. For operator triage only; no pass writes it
+    #: (design 41 §7.6).
+    RETIRED_WITHDRAWN = "retired-withdrawn"
 
     #: `"merged"` was the third value until 2026-09-08, written only by the
     #: curator's merge verb, which is gone. A live row carrying it would
     #: still read back (`retire_reason` is free text at the column); nothing
-    #: writes it now, so the vocabulary no longer names it.
-    ALL: tuple[str, ...] = (RETIRED_EXPIRED, RETIRED_CLOSED)
+    #: writes it now, so the vocabulary no longer names it, and nothing
+    #: forwards from it: its `replaced_by` was never an open-note guarantee.
+    ALL: tuple[str, ...] = (
+        RETIRED_EXPIRED, RETIRED_CLOSED, RETIRED_MERGED, RETIRED_WITHDRAWN,
+    )
+
+
+#: How many `retired-merged` hops a forward follows before giving up. A merge
+#: always folds into an OPEN note, so a chain only grows when a survivor is
+#: itself merged later; a loop is impossible through `merge_into` and bounded
+#: here anyway, because a hand-edited row must not hang a lookup.
+MERGE_FORWARD_HOPS = 8
 
 
 class StaleNoteHeadError(Exception):
@@ -865,3 +883,29 @@ class StaleNoteHeadError(Exception):
     def __init__(self, message: str, *, observed_head: str | None) -> None:
         super().__init__(message)
         self.observed_head = observed_head
+
+
+class RetiredNoteError(StaleNoteHeadError):
+    """The compare-and-swap refused because the note is RETIRED, not because
+    its head moved (design 41 §7.6, guard 1).
+
+    Until 2026-09-24 an append compared the head alone, and `supersede` never
+    touches the head, so a writer that read a note and then lost a race to a
+    retirement appended successfully into a note nothing reads again. The
+    append now requires the note to be open, and this is what the refusal
+    says.
+
+    A SUBCLASS so every existing `except StaleNoteHeadError` still holds —
+    «read it again» is still the remedy — but its own type, so a lost race to
+    a retirement is not counted as an ordinary stale head, and so a caller
+    that can forward knows where to: `replaced_by` is the note it was folded
+    into when `retire_reason` is `retired-merged`, and `None` otherwise.
+    """
+
+    def __init__(
+        self, message: str, *, observed_head: str | None,
+        retire_reason: str | None, replaced_by: str | None,
+    ) -> None:
+        super().__init__(message, observed_head=observed_head)
+        self.retire_reason = retire_reason
+        self.replaced_by = replaced_by

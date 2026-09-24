@@ -12,7 +12,7 @@ What is here is what only this client can get wrong:
   everything else is what the bridge actually sends;
 * **the status mapping, per route** — the account route has a «no such
   account» 404, the story route has none;
-* **a story result carries REFERENCES, never content** — `social_fetch`
+* **a story result carries REFERENCES, never content** — `instagram_read`
   finds out *that* something exists and where; `media_fetch` finds out *what
   it is*;
 * **a profile is rendered, wrapped and clamped**, and says which half is

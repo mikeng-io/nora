@@ -1629,7 +1629,7 @@ class InstagramSocialConfig(BaseModel):
 
 
 class SocialConfig(BaseModel):
-    """READ-ONLY social reads: X for the `social_fetch` tool (DEC-151) via
+    """READ-ONLY social reads: X for the `x_read` and `x_search` tools (DEC-201) via
     the host-side OpenCLI bridge (`python -m nora.infra.social`, deployed as
     `deploy/social-bridge/`), and Instagram profiles, stories and account
     search for `instagram_read` and `instagram_search` via the
@@ -1639,8 +1639,8 @@ class SocialConfig(BaseModel):
     defaults **False** and ships that way: the tool reads third-party social
     content through an authenticated browser session, so it is off until an
     operator turns this on AND the bridge service runs on the host. Off (or
-    the bridge down) leaves the registry without a provider and `social_fetch`
-    answers `unavailable` (R-5), never a silent empty.
+    the bridge down) leaves the registry without a provider and the X tools
+    answer `unavailable` (R-5), never a silent empty.
 
     KEYLESS — there is no credential, so `enabled` is the whole gate (the
     `[preview]` shape). The read-only boundary does not live here at all: the

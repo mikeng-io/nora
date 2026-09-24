@@ -605,6 +605,28 @@ class Roster:
 
 
 @dataclass(frozen=True)
+class RoomActivity:
+    """How busy one conversation is, read from the stored messages
+    (`RecordStore.room_activity`, design/self-awareness/07).
+
+    `count` is people's messages at or after a cutoff; `last_ts` is when a
+    person last spoke there at all, in ms epoch, or `None` when nobody ever
+    has. Nora's own rows count for neither: her talking is not the room being
+    busy. `None` rather than 0 for «never», so no reader can render a room
+    nobody spoke in as a message from 1970.
+    """
+
+    count: int
+    last_ts: int | None = None
+    # Distinct PEOPLE who spoke at or after the same cutoff as `count`
+    # (design/self-awareness/07). A resolved `person_id` is the person; the
+    # raw sender id stands in only for a row nobody resolved. Asked which
+    # group has the most people talking, a message count lets one person
+    # account for twenty lines, and she read every room to count heads.
+    speakers: int = 0
+
+
+@dataclass(frozen=True)
 class Recollection:
     """What durable memory returned about ONE person, for ONE question.
 
@@ -834,6 +856,14 @@ class RecordStore(Protocol):
     async def unattributed(self, *, limit: int) -> list[UnattributedRow]: ...
 
     async def set_person_id(self, *, row_id: int, person_id: str) -> None: ...
+
+    async def room_activity(self, *, conversation_id: str, since_ts: int) -> RoomActivity:
+        """People's messages in this conversation at or after `since_ts`, how
+        many distinct people sent them, and the newest person's `ts` at any
+        time (`RoomActivity`). One indexed
+        read, for `room_list`: a count over `recent()` would cap at the fetch
+        size and report a busy room as exactly as busy as the limit."""
+        ...
 
     async def stats(self) -> dict[str, Any]: ...
 
@@ -1626,7 +1656,7 @@ class SteamPresenceProvider(Protocol):
 @runtime_checkable
 class SocialProvider(Protocol):
     """`{platform, what, target, limit} -> {status, ...}` social reads, behind
-    the `social_fetch` (DEC-151), `instagram_read` and `instagram_search`
+    the `x_read`, `x_search` (DEC-201), `instagram_read` and `instagram_search`
     (design/instagram-adoption/18) tools. NEVER raises — a transport failure of
     the bridge call is `{"status": "unavailable"}`, never an exception into
     the loop (R-5), and the R-27 three states apply end to end: an error is

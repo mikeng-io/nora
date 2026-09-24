@@ -1,6 +1,6 @@
 # 0007 — A tool's name and description are its routing surface: policy
 
-- **Status:** accepted
+- **Status:** accepted; §3.5, §5 and the sibling-token clause of §3 superseded by [0015](0015-tool-surface-policy-v2.md)
 - **Date:** 2026-08-31
 - **Index:** DEC-39 / ADR 0004 (naming is measured), DEC-41 (docstring
   selection regression, measured not argued), DEC-92 (the schema is the
@@ -143,6 +143,9 @@ the rule is being stretched, and the tool goes back to the operator.
   (`test_the_send_reply_schema_carries_the_three_reply_defects`) is REWRITTEN
   to pin the structure, not the prose: the three reply defects must remain in
   the schema, but AFTER the MUST opening and labelled SHOULD.
+  **Superseded 2026-09-24:** the three defects moved out of the schema into
+  `voice.md` and `conduct.md` (DEC-92 (5), ADR 0015 §3); the test that pinned
+  them here now pins them in the doctrine and their absence from the schema.
 - Renames and opening rewrites go through the ISO-probe gate (§3), recorded
   as a comment beside the docstring, exactly as ADR 0004 records selection
   numbers.

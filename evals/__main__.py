@@ -53,6 +53,10 @@ CORPUS_CLASS: dict[str, str] = {
     "being_contradicted": "S3",
     "identity_grounding": "S3",
     "source_scope": "S3",
+    # ADR 0015 §4: what she SAYS after a tool returns (judged).
+    "tool_reporting": "S3",
+    # S2, tool routing: which tool EXECUTED (design/tool-catalogue §2c).
+    "tool_selection": "S2",
     "note_candidates": "S6",
     "no_trigger": "S7",
     "near_miss": "S7",

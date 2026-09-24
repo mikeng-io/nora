@@ -1065,7 +1065,7 @@ api_key_env = "STEAM_WEB_API_KEY"
 # timeout_seconds = 8.0
 
 [social]
-# social_fetch (DEC-151) — READ-ONLY X reads, via the host-side OpenCLI bridge
+# x_read and x_search (DEC-201) — READ-ONLY X reads, via the host-side OpenCLI bridge
 # (`python -m nora.infra.social`, run as the systemd user service in
 # deploy/social-bridge/). Nothing Instagram is here: profiles and stories are
 # instagram_read's, and account search is instagram_search's, both over

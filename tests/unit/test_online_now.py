@@ -524,3 +524,75 @@ async def test_online_scope_still_filters_names(persons):
     out = await tool("online", names=["Sam"])
     assert out["status"] == "ok"
     assert set(_by_person(out)) == {"Sam Outsider"}
+
+
+# ---- ADR 0015 §3: how to report a status rides in the result ----
+
+
+async def test_every_non_ok_status_carries_a_note(persons):
+    """ADR 0015 §3/§6: the description only NAMES the statuses; what to say
+    for each is the result's `note`. Every non-ok code path is driven here, so
+    a path that loses its note (the reporting rule for that status) goes red."""
+    steam = FakeSteamPresenceProvider(players={"111": MILES_ONLINE})
+    tagger = persons.resolve("signal", "+85290000101")
+
+    async def broken_scope():
+        raise RuntimeError("note store wedged")
+
+    cases = {
+        "unavailable/what": (_online_now(persons, online_source=steam), ("gaming",), {}),
+        "unavailable/unwired": (_online_now(persons), ("playing",), {}),
+        "unavailable/scope": (
+            _online_now(persons, online_source=steam, online_scope=broken_scope),
+            ("online",), {},
+        ),
+        "unavailable/room": (
+            _online_now(persons, online_source=steam, fail=True, tagger=tagger),
+            ("online",), {},
+        ),
+        "unavailable/steam": (
+            _online_now(persons, online_source=FakeSteamPresenceProvider(fail=True)),
+            ("playing",), {},
+        ),
+        "unavailable/voice": (
+            _online_now(persons, voice_source=FakeVoicePresenceSource(fail=True)),
+            ("voice",), {},
+        ),
+        "nothing_found/names": (
+            _online_now(persons, online_source=steam), ("online",), {"names": ["Sam"]},
+        ),
+        "nothing_found/unreadable": (
+            _online_now(persons, members=(MILES, ANN), online_source=steam),
+            ("playing",), {"names": ["Ann"]},
+        ),
+    }
+    for case, (tool, args, kwargs) in cases.items():
+        out = await tool(*args, **kwargs)
+        assert out["status"] == case.split("/")[0], (case, out)
+        assert isinstance(out.get("note"), str) and out["note"].strip(), case
+        assert "—" not in out["note"] and "–" not in out["note"], case
+
+
+async def test_an_ok_note_carries_the_rules_its_answer_needs(persons):
+    """The honesty rules that left the description (away/snooze are answers,
+    profile_hidden is not "not playing", an unwired half is not the whole
+    picture) arrive in the `ok` they are about, and only when their field is."""
+    plain = await _online_now(
+        persons, online_source=FakeSteamPresenceProvider(players={"111": MILES_ONLINE}),
+    )("playing", names=["Miles"])
+    assert plain["status"] == "ok"
+    assert "right now" in plain["note"]
+    for clause in ("away", "profile_hidden", "unknown"):
+        assert clause not in plain["note"], clause
+
+    mixed = await _online_now(
+        persons, online_source=FakeSteamPresenceProvider(players={"222": BLAKE_AWAY}),
+    )("online")
+    assert "away and snooze" in mixed["note"]
+    assert "state unknown" in mixed["note"]      # Miles: Steam answered nothing
+    assert "_wired" in mixed["note"]             # no Discord, no voice wired
+
+    hidden = await _online_now(
+        persons, online_source=FakeSteamPresenceProvider(players={"222": BLAKE_HIDDEN}),
+    )("playing", names=["Blake"])
+    assert "profile_hidden" in hidden["note"]

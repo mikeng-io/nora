@@ -884,3 +884,120 @@ async def test_a_memory_tool_that_found_nothing_is_not_marked_untrusted(persons)
     assert "untrusted" not in empty and "framing" not in empty
     assert unknown["status"] == "nothing_known"
     assert "untrusted" not in unknown and "framing" not in unknown
+
+
+# ---- ADR 0015 §3: how to report a status rides in the result ----------------
+
+
+def _twins(tmp_path):
+    path = tmp_path / "twins.toml"
+    path.write_text(
+        '[persons.a]\nname = "Ah Ming"\naliases = ["阿星"]\n'
+        '[[persons.a.signal]]\nphone = "+85211111111"\n'
+        '[persons.b]\nname = "Ming Chai"\naliases = ["阿星"]\n'
+        '[[persons.b.signal]]\nphone = "+85222222222"\n'
+    )
+    return _build(
+        persons=load_persons(path),
+        members=(frozenset({"+85211111111"}), frozenset({"+85222222222"})),
+    )
+
+
+async def test_every_non_ok_room_tool_status_carries_a_note(persons, tmp_path):
+    """The descriptions only NAME the statuses; how to report each one is the
+    result's `note` (ADR 0015 §3/§6). Every non-ok path of the six room and
+    memory tools is driven here, so one that loses its note, or grows a dash
+    back, goes red."""
+    twins = _twins(tmp_path)
+    down = _build(persons=persons, roster_fails=True)
+    miles = persons.by_person["miles_novak"]
+    withheld = FakeMemoryStore()
+    withheld.messages = [("miles_novak", "個 script 我 send 咗俾 +85290000101 呀")]
+    only_nora = FakeMemoryStore()
+    only_nora.messages = [("nora", "只有我講嘢")]
+    cases = {
+        "unavailable/group_members": (down["group_members"], {}),
+        "unavailable/lookup_person": (down["lookup_person"], {"name": "阿豹"}),
+        "not_found/lookup_person": (_build(persons=persons)["lookup_person"], {"name": "外人"}),
+        "ambiguous/lookup_person": (twins["lookup_person"], {"name": "阿星"}),
+        "unavailable/about_scope": (down["about"], {"person": "阿豹"}),
+        "not_found/about": (_build(persons=persons)["about"], {"person": "外人"}),
+        "ambiguous/about": (twins["about"], {"person": "阿星"}),
+        "already_present/about": (
+            _build(persons=persons, tagger=miles, tagger_card_injected=True)["about"],
+            {"person": "Miles"},
+        ),
+        "unavailable/about_memory": (
+            _build(persons=persons, honcho=FakeMemoryStore(fail=True))["about"],
+            {"person": "Miles"},
+        ),
+        "nothing_known/about": (_build(persons=persons)["about"], {"person": "Miles"}),
+        "unavailable/ask_memory_scope": (down["ask_memory"], {"person": "阿豹"}),
+        "not_found/ask_memory": (_build(persons=persons)["ask_memory"], {"person": "外人"}),
+        "ambiguous/ask_memory": (twins["ask_memory"], {"person": "阿星"}),
+        "unavailable/ask_memory": (
+            _build(persons=persons, honcho=FakeMemoryStore(conclusions={}))["ask_memory"],
+            {"person": "Miles"},
+        ),
+        "nothing_known/ask_memory": (
+            _build(persons=persons, honcho=FakeMemoryStore(
+                conclusions={"miles_novak": ["reach him on +85298765432"]},
+            ))["ask_memory"],
+            {"person": "Miles"},
+        ),
+        "unavailable/search_memory": (
+            _build(persons=persons, honcho=FakeMemoryStore(fail=True))["search_memory"],
+            {"query": "枱"},
+        ),
+        "nothing_found/search_memory": (
+            _build(persons=persons, honcho=only_nora)["search_memory"], {"query": "x"},
+        ),
+        "withheld/search_memory": (
+            _build(persons=persons, honcho=withheld)["search_memory"], {"query": "script"},
+        ),
+    }
+    for case, (tool, kwargs) in cases.items():
+        out = await _call(tool, **kwargs)
+        assert out["status"] == case.split("/")[0], (case, out)
+        assert isinstance(out.get("note"), str) and out["note"].strip(), case
+        assert "—" not in out["note"] and "–" not in out["note"], case
+
+
+async def test_an_about_note_carries_only_the_clauses_for_the_parts_returned(persons):
+    """`identity` versus `profile` left the description (ADR 0015 §3). Each
+    clause arrives with the part it is about: the «it can be wrong» warning on
+    a profile, never on an answer that holds only identity facts."""
+    both = await _call(_build(persons=persons, honcho=FakeMemoryStore(
+        cards={"tyler_cortez": ["IDENTITY: Name: Tyler Cortez"]},
+        conclusions={"tyler_cortez": ["tyler_cortez likes hotpot"]},
+    ))["about"], person="Tyler")
+    card_only = await _call(_build(persons=persons, honcho=FakeMemoryStore(
+        cards={"tyler_cortez": ["IDENTITY: Name: Tyler Cortez"]},
+    ))["about"], person="Tyler")
+    profile_only = await _call(_build(persons=persons, honcho=FakeMemoryStore(
+        conclusions={"tyler_cortez": ["tyler_cortez likes hotpot"]},
+    ))["about"], person="Tyler")
+
+    assert "`identity`" in both["note"] and "can be wrong" in both["note"]
+    assert "`identity`" in card_only["note"] and "`profile`" not in card_only["note"]
+    assert "can be wrong" in profile_only["note"] and "`identity`" not in profile_only["note"]
+    for out in (both, card_only, profile_only):
+        assert "—" not in out["note"] and "–" not in out["note"]
+
+
+async def test_a_search_note_says_the_view_was_partial_only_when_it_was(persons):
+    """«The room being only partly known just means that account's own words
+    don't come back» left search_memory's description. It rides on an `ok`
+    whose `partial_view` is true, and on no other `ok`."""
+    honcho = FakeMemoryStore()
+    honcho.messages = [("miles_novak", "book 咗七點枱")]
+    partial = await _call(_build(
+        persons=persons, honcho=honcho, roster_fails=True,
+        tagger=persons.by_person["miles_novak"],
+    )["search_memory"], query="枱")
+    full = await _call(_build(persons=persons, honcho=honcho)["search_memory"], query="枱")
+
+    assert partial["status"] == "ok" and partial["partial_view"] is True
+    assert "part of this room" in partial["note"]
+    assert full["status"] == "ok" and full["partial_view"] is False
+    assert "note" not in full

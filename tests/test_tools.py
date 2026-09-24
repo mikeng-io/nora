@@ -1,5 +1,6 @@
 import json
 import re
+from pathlib import Path
 
 import pytest
 
@@ -136,6 +137,8 @@ def test_every_declared_tool_is_built(wiring):
         "who_said",
         "now", "load_transcript", "send_reply", "search_gifs", "send_gif",
         "send_to",
+        # design/self-awareness/07: the room tools.
+        "room_list", "room_read",
         "group_members", "lookup_person", "about", "ask_memory", "search_memory",
         "recall_lookups",
         # `search_memory_workspace` IS built here — `build_tools` builds every
@@ -158,8 +161,9 @@ def test_every_declared_tool_is_built(wiring):
         "generate_image",
         "media_search", "media_send",
         "web_search", "web_fetch",
-        # social_fetch (DEC-151): READ-ONLY X via the host bridge.
-        "social_fetch",
+        # x_read and x_search (DEC-201, replacing DEC-151's social_fetch):
+        # READ-ONLY X via the host bridge.
+        "x_read", "x_search",
         # instagram_read (design/instagram-adoption/18): a person's Instagram
         # profile or story, over the instagram-bridge.
         "instagram_read",
@@ -210,15 +214,15 @@ def test_read_peer_card_is_gone_from_the_table():
     assert "read_peer_card" not in NATIVE_TOOL_BUDGETS
 
 
-def test_exactly_nine_tools_are_cacheable():
+def test_exactly_these_tools_are_cacheable():
     from nora.agent.tools import NATIVE_TOOLS
     cacheable = {name for name, spec in NATIVE_TOOLS.items() if spec.cacheable}
     assert cacheable == {
         "place_info", "route", "web_search", "web_fetch", "weather", "transit",
-        # social_fetch (DEC-151): a public social read carries no room/person
-        # disclosure decision baked into the moment it ran — same exemption
-        # shape as `web_search`/`web_fetch`.
-        "music_status", "social_fetch",
+        # x_read and x_search (DEC-201): a public social read carries no
+        # room/person disclosure decision baked into the moment it ran, the
+        # same exemption shape as `web_search`/`web_fetch`.
+        "music_status", "x_read", "x_search",
         # instagram_search (design/instagram-adoption/18, P11): free text in,
         # public accounts out, no roster or Tier 0 decision in the answer.
         "instagram_search",
@@ -274,43 +278,54 @@ def test_no_tool_asks_the_model_which_conversation_it_is_in(wiring):
     ) == {"text", "reply_to"}
 
 
-def test_the_send_reply_schema_carries_the_three_reply_defects(wiring):
-    """DEC-92's tool-surface half — and the reason it is HERE and not only in
-    `voice.md`.
+_DOCTRINE = Path(__file__).resolve().parents[1] / "nora" / "doctrine"
 
-    DEC-78 measured that an always-on prose maxim did not move routing at all
-    while a schema-token change moved it 0/16 → 16/16, and DEC-39 established
-    the general form: the schema is the surface the model matches on. All three
-    of these rules already exist in the doctrine, thousands of tokens back in
-    the system prompt, and all three were violated in one live session anyway.
-    This is the same sentence read at the moment the reply is actually being
-    written.
 
-    NOT a claim that it works. Unlike DEC-82's strip and DEC-89's link carry,
-    nothing here is enforced — a docstring is still text addressed to a model,
-    and whether it moves anything is a live measurement nobody has taken. What
-    this test pins is that the surface exists and stays in step with the
-    doctrine, so the measurement has something stable to measure.
+def _flat(name: str) -> str:
+    return " ".join((_DOCTRINE / f"{name}.md").read_text().split())
+
+
+def test_the_three_reply_defects_live_in_the_doctrine_not_the_send_reply_schema(wiring):
+    """DEC-92's tool-surface half, MOVED 2026-09-24 (operator: «keep the voice
+    in voice.md»).
+
+    DEC-92 restated three doctrine rules on `send_reply`'s schema (length, the
+    chatbot tail, caving on a fact), with DEC-89's link line beside them, on
+    the argument that a docstring is read at the moment the reply is written.
+    That block is gone from the schema: how she sounds is `voice.md`'s, what
+    she does is `conduct.md`'s, and the description carries delivery and its
+    result contract (ADR 0015 §3, Level 3). This pins both halves of the move:
+    every rule is still stated in the file that owns its kind, and the schema
+    no longer carries a second copy of any of them.
+
+    NOT a claim that it works, the same posture DEC-92 shipped under. Whether
+    the rules hold from the system prompt alone, without the at-the-moment
+    restatement, is unmeasured and is the reversal condition.
     """
-    # Whitespace-normalised: `adapt()` keeps the docstring's own line breaks and
-    # indentation, so a clause that happens to wrap is still one sentence to the
-    # model and must be one string to this test.
-    description = " ".join(
-        wiring["tools"]["send_reply"].tool_spec["description"].split()
-    )
-    # Length: the essay shape, and the specific excuse that produced it.
-    assert "One or two sentences answers almost everything" in description
-    assert "However much you looked up, that is not content" in description
-    # The chatbot tail, which is also where the capability overclaim came from.
-    assert "有咩再搵我" in description
-    assert "you have no way to book, order, phone or apply for anything" in description
-    # Sycophancy, at the one moment it happens.
-    assert "A thing you looked up does not lose to an assertion" in description
-    assert "never invent a mistake you did not make just to have something " \
-           "to concede" in description
-    # And the dropped link (DEC-89's prose half; the egress carry is the half
-    # that does not depend on the model reading this).
-    assert "pasted exactly" in description
+    voice, conduct = _flat("voice"), _flat("conduct")
+    # Length: short by default, and looking a lot up is not content.
+    assert "一兩句已經答到差唔多所有嘢" in voice
+    assert "查咗幾多都唔係內容" in voice
+    assert "冇 headings" in voice
+    # The chatbot tail (voice), and the capability overclaim it leads to (conduct).
+    assert "有需要再搵我" in voice
+    assert "A closing offer to do more is usually where that kind of promise " \
+           "slips in" in conduct
+    assert "no booking a table, no phone call, no purchase, no form" in conduct
+    # Sycophancy: a checked answer does not lose to an assertion, and no
+    # invented mistake to concede.
+    assert "Somebody saying you are wrong is not evidence; it is another claim" in conduct
+    assert "Agreeing you invented something when you did not is not modesty" in conduct
+    assert "作一個自己嘅錯出嚟俾人認" in voice
+    # The dropped link (DEC-89's prose half).
+    assert "A link a lookup gave you goes in the message, pasted exactly" in conduct
+
+    # The other half: one copy. The schema carries no style block and none of
+    # the moved lines.
+    spec = json.dumps(wiring["tools"]["send_reply"].tool_spec, ensure_ascii=False)
+    for moved in ("SHOULD", "pasted exactly", "One or two sentences",
+                  "does not lose to an assertion", "earn its place", "有咩再搵我"):
+        assert moved not in spec, moved
 
 
 def test_strands_drops_an_out_of_schema_argument_instead_of_rejecting_the_call(wiring):
@@ -532,6 +547,11 @@ def test_strip_media_markers_covers_all_marker_shapes():
         ("[audio] [voice note] [document abc123] [file] 其他種類", "    其他種類"),
         ("正常文字", "正常文字"),
         ("[image a3f2c1][image bbccdd] 連續", " 連續"),
+        # A shared item's still picture (2026-09-24). The alternation is built
+        # from `LABELS`, so a label the transcript can carry is one a reply
+        # cannot leak.
+        ("[cover image c0de01] 封面", " 封面"),
+        ("[Cover Image c0de01: a beach at dusk] 封面", " 封面"),
     )
     for raw, expected in cases:
         assert strip(raw) == expected, f"{raw!r} -> {strip(raw)!r}"
@@ -559,8 +579,11 @@ async def test_the_tag_form_the_model_is_told_to_write_is_the_one_the_composer_r
 
     Two halves, asserted against EACH OTHER rather than each against a literal:
 
-    1. `send_reply`'s SCHEMA — the string Strands actually sends — must carry a
-       worked `@handle` example. DEC-78/DEC-82 measured that a maxim in the
+    1. `send_reply`'s SCHEMA, the string Strands actually sends, must carry a
+       worked `@handle` example. Since 2026-09-24 it is on the `text`
+       argument, as what the tool does with an @ in its input: the style
+       block it used to sit in moved to the doctrine, and DEC-147 keeps
+       handles out of the doctrine. DEC-78/DEC-82 measured that a maxim in the
        doctrine does not move behaviour and the matched surface does, so an
        affordance the schema never shows is an affordance the model never has.
     2. `nora.agent.outbound.OutboundComposer` must RESOLVE that exact written
@@ -573,7 +596,8 @@ async def test_the_tag_form_the_model_is_told_to_write_is_the_one_the_composer_r
     SAME line, composed against a room this person is not in, yields no mention
     at all. One roster class, two answers, decided by who it was told is there.
     """
-    description = wiring["tools"]["send_reply"].tool_spec["description"]
+    description = (wiring["tools"]["send_reply"].tool_spec["inputSchema"]["json"]
+                   ["properties"]["text"]["description"])
     handles = re.findall(r"@\w+", description)
     assert handles, (
         "send_reply's schema shows the model no @handle example, so DEC-86's "
@@ -590,9 +614,9 @@ async def test_the_tag_form_the_model_is_told_to_write_is_the_one_the_composer_r
                                          honcho_peer_id="jordan", first_name=name)},
             index={("signal", JORDAN_ACI): "jordan"},
         )
-        # The example inside the sentence the schema shows it in, not the bare
-        # handle — so the boundary rule is exercised rather than side-stepped.
-        line = next(ln.strip() for ln in description.splitlines() if handle in ln)
+        # The example as the whole line the schema shows her writing, not the
+        # bare handle, so the boundary rule is exercised rather than side-stepped.
+        line = next(q for q in re.findall(r'"([^"]+)"', description) if handle in q)
 
         # A roster that reports exactly the members it was told about, not a
         # stub that says yes: DEC-86's whole gate is that «in identity.toml»
@@ -622,32 +646,39 @@ async def test_the_tag_form_the_model_is_told_to_write_is_the_one_the_composer_r
         assert (await absent.compose(render_markdown(line))).mentions == ()
 
 
-async def test_send_reply_schema_says_a_second_call_must_earn_its_place(wiring):
+def test_a_second_message_must_earn_its_place():
     """The burst-restatement defect, measured live 2026-09-22 in the Signal
     "Friends" room: one inbound message produced ONE `tag start` and FOUR
     `send_reply` calls, all four restating the same point
     ("I have no IG, and if I made one I'd still be alone") in different
-    wordings — not DEC-95's reaction/hit/twist burst.
+    wordings, not DEC-95's reaction/hit/twist burst.
 
     The budget was never the defect: `ReplyGuard._before_model` already
     relaxes `tool_choice` to `auto` after the first send, so the model could
-    already have stopped. Nothing told it what a SECOND call is FOR, so it
-    spent the budget it had on rephrasing. This does not measure whether the
-    new wording changes model behaviour on the live route — that needs the
-    eval suite, not a unit test — it pins that the schema the model actually
-    reads carries the judgement at all, so a future edit cannot silently
-    drop it back to the shape that shipped this incident.
+    already have stopped. Nothing told it what a SECOND message is FOR, so it
+    spent the budget it had on rephrasing.
+
+    MOVED 2026-09-24 from `send_reply`'s schema to `conduct.md` (operator:
+    «keep the voice in voice.md»): how many messages a reply becomes is what
+    she does, which `voice.md`'s `not_here` sends to conduct. This does not
+    measure whether the wording changes behaviour, from either surface; it
+    pins that the judgement is stated, in the section about the shape of a
+    reply, so an edit cannot silently drop it back to the shape that shipped
+    this incident.
     """
-    description = wiring["tools"]["send_reply"].tool_spec["description"]
-    lowered = description.lower()
-    assert "earn its place" in lowered, (
-        "send_reply's schema must tell the model a further call has to earn "
-        "its place, not just fill the budget"
+    section = " ".join(
+        (_DOCTRINE / "conduct.md").read_text()
+        .split("# Follow the conversation", 1)[1].split("\n# ", 1)[0].split()
+    ).lower()
+    assert "has to earn its place" in section, (
+        "conduct.md must say a further message has to earn its place, not "
+        "just fill the budget"
     )
-    assert "restating the same point" in lowered, (
-        "send_reply's schema must say plainly that restating the same point "
-        "in different words is not a second message"
+    assert "restating the same point" in section, (
+        "conduct.md must say plainly that restating the same point in "
+        "different words is not a second message"
     )
+    assert "name the one new thing it adds" in section
 
 
 async def test_send_reply_is_the_only_tool_that_can_send(wiring):
@@ -813,6 +844,29 @@ async def test_calculate_needs_none_of_the_tags_collaborators(wiring):
     assert out["split"]["leftover"] == "0.02"
 
 
+async def test_every_calculate_refusal_carries_a_dash_free_note_with_the_retry_rule(wiring):
+    """ADR 0015 §3/§6: the description only NAMES `refused`; what to do with
+    one is the result's `note`. Every refusal path in `arithmetic` is driven
+    here, so a path that loses its sentence, or the tool's retry rule, reds."""
+    for expression in ("2**9999999999", "(1).__class__", "1 +", "", "1/0",
+                       "x", "lambda: 1", "(" * 5000 + "1" + ")" * 5000, "9" * 400,
+                       "abs(1)", "10 ** 30 * 10 ** 30"):
+        out = await _call(wiring["tools"]["calculate"], expression=expression)
+        assert out["status"] == "refused", expression
+        assert "—" not in out["note"] and "–" not in out["note"], expression
+        assert "call calculate again" in out["note"], expression
+
+
+async def test_a_calculate_ok_note_appears_only_with_a_split(wiring):
+    """The leftover rule that left the description arrives with the `split` it
+    is about, and an even answer carries no note at all."""
+    split = await _call(wiring["tools"]["calculate"], expression="1485/7")
+    assert "leftover" in split["note"]
+    even = await _call(wiring["tools"]["calculate"], expression="1485/5")
+    assert even["status"] == "ok" and "split" not in even
+    assert "note" not in even
+
+
 async def test_weather_is_unavailable_without_a_provider(wiring):
     """The wiring path the review flagged: this fixture wires no `weather_source`
     (the offline/`[weather]` off shape), so the closure must answer `unavailable`
@@ -865,6 +919,31 @@ async def test_gif_tools_bind_turn_candidate_and_audit_a_gif_only_reply(wiring):
         "provider": "giphy", "id": "happy-1", "type": "gif",
     }
     assert wiring["deliverer"].sent_texts == ()
+
+
+async def test_a_gif_caption_is_stripped_of_media_markers_like_a_reply(wiring):
+    """A caption is text the room sees, so a quoted marker is stripped from it
+    exactly as `send_reply` strips one: from what is SENT and from what is
+    RECORDED as hers."""
+    source = _GifSource()
+    tools = {tool.tool_name: tool for tool in build_tools(
+        store=wiring["store"], conversation_id="g1", conversation_type="group",
+        persons=wiring["persons"], honcho=wiring["honcho"], deliverer=wiring["deliverer"],
+        metrics=wiring["metrics"], room=wiring["room"], transit_source=UNREACHABLE_TRANSIT,
+        giphy_source=source,
+    )}
+
+    await _call(tools["search_gifs"], query="happy dance")
+    out = await _call(
+        tools["send_gif"], candidate_id="happy-1",
+        caption="睇下呢個 [cover image c0de01] [image a3f2c1]",
+    )
+
+    assert out == {"status": "ok"}
+    assert wiring["sink"].texts == ["睇下呢個  "]
+    row = (await wiring["store"].recent(conversation_id="g1", limit=1))[0]
+    assert "c0de01" not in row.body and "a3f2c1" not in row.body
+    assert row.body == "睇下呢個 [GIF: happy dance]"
 
 
 async def test_gif_send_failure_raises_so_the_agent_can_send_a_text_reply(wiring):
@@ -1227,6 +1306,196 @@ async def test_generate_image_auth_maps_to_a_plain_note(wiring):
     assert "re-authorise" in result["note"].lower()
 
 
+# ---- ADR 0015 §3: how to report a status rides in the result ---------------
+# generate_image, media_search, media_send, search_gifs and send_gif name their
+# statuses in the description; what to say for each is the result's `note`.
+
+_DASHES = ("—", "–")
+
+
+def _assert_noted(case: str, out: dict, status: str) -> None:
+    assert out["status"] == status, (case, out)
+    assert isinstance(out.get("note"), str) and out["note"].strip(), case
+    assert not any(d in out["note"] for d in _DASHES), case
+
+
+def _deliverer(wiring, *, adapter=None, send_permitted: bool = True) -> Deliverer:
+    """A deliverer that holds every send (`send_permitted=False`, the review
+    mode) or one over an adapter that refuses attachments."""
+    return Deliverer(
+        store=wiring["store"], adapter=adapter or SinkSender(), target=TARGET,
+        doctrine=wiring["doctrine"], canary="C", tag_id="t-noted",
+        nora_sender_id="nora", message_cap=NATIVE_TOOL_BUDGETS["send_reply"],
+        audience="tag", metrics=Metrics(), send_permitted=send_permitted,
+    )
+
+
+def _tools_over(wiring, deliverer, **extra) -> dict:
+    return {t.tool_name: t for t in build_tools(
+        store=wiring["store"], conversation_id="g1", conversation_type="group",
+        persons=wiring["persons"], honcho=wiring["honcho"], deliverer=deliverer,
+        metrics=Metrics(), room=wiring["room"], transit_source=UNREACHABLE_TRANSIT,
+        **extra,
+    )}
+
+
+class _RaisingGenerator:
+    async def generate(self, **kwargs) -> ImageResult:
+        raise RuntimeError("provider on fire")
+
+
+async def test_every_non_ok_generate_image_status_carries_a_note(wiring):
+    """Every non-ok path of `generate_image`, so a path that loses its note
+    (the reporting rule for that status) goes red."""
+    held = _deliverer(wiring, send_permitted=False)
+    refusing = _deliverer(wiring, adapter=_NoAttachmentsSink())
+    cases = {
+        "unavailable/unwired": (_with_image_tools(wiring, generator=None), {}),
+        "unavailable/refs_off": (
+            _with_image_tools(wiring, generator=_ImageGenerator()),
+            {"reference": "a3f2c1"},
+        ),
+        "nothing_found/link": (
+            _with_image_tools(wiring, generator=_ImageGenerator(), refs_allowed=True),
+            {"reference": "https://example.com/a3f2c1.png"},
+        ),
+        "nothing_found/marker": (
+            _with_image_tools(wiring, generator=_ImageGenerator(), refs_allowed=True),
+            {"reference": "??"},
+        ),
+        "unavailable/raised": (_with_image_tools(wiring, generator=_RaisingGenerator()), {}),
+        "nothing_found/refused": (_with_image_tools(wiring, generator=_ImageGenerator(
+            result=ImageResult(status="nothing_found", provider="xai"))), {}),
+        "unavailable/unhosted": (_with_image_tools(wiring, generator=_ImageGenerator(
+            result=ImageResult(status="ok", artifact="data:image/png;base64,AA==",
+                               provider="xai"))), {}),
+        "held_for_review": (_tools_over(wiring, held, image_generator=_ImageGenerator()), {}),
+        "unavailable/not_sent": (
+            _tools_over(wiring, refusing, image_generator=_ImageGenerator()), {},
+        ),
+    }
+    for reason in ("quota", "auth", "rate_limited", "down", "other"):
+        cases[f"unavailable/{reason}"] = (_with_image_tools(wiring, generator=_ImageGenerator(
+            result=ImageResult(status="unavailable", reason=reason, provider="xai"))), {})
+    for case, (tools, kwargs) in cases.items():
+        out = await _call(tools["generate_image"], prompt="a cat", **kwargs)
+        _assert_noted(case, out, case.split("/")[0])
+
+
+async def test_a_sent_image_note_names_the_photos_only_when_they_were_used(wiring):
+    """The `ok` rules that left the description (no handle, no earlier link)
+    arrive with the sent image, and a hosted-url `ok` says the link is the
+    picture. The «made from photos sent here» clause is pinned by
+    tests/unit/test_canonical_self_reference.py, which resolves a real room
+    photo."""
+    plain = await _call(_with_image_tools(wiring, generator=_ImageGenerator())
+                        ["generate_image"], prompt="a cat")
+    assert plain["status"] == "ok" and plain["sent"] is True
+    assert "never quote it" in plain["note"] and "earlier message" in plain["note"]
+    assert "photos sent here" not in plain["note"]
+    assert not any(d in plain["note"] for d in _DASHES)
+
+    hosted = await _call(_with_image_tools(wiring, generator=_ImageGenerator(
+        result=ImageResult(status="ok", artifact="https://drop.example/i.png",
+                           provider="xai"))
+    )["generate_image"], prompt="a cat")
+    assert hosted["status"] == "ok" and hosted["url"] == "https://drop.example/i.png"
+    assert "this link is the picture" in hosted["note"]
+
+
+class _BrokenMediaStore(FakeMediaObjectStore):
+    async def search(self, **kwargs):
+        raise RuntimeError("index down")
+
+    async def by_prefix(self, **kwargs):
+        raise RuntimeError("index down")
+
+
+async def test_every_non_ok_media_library_status_carries_a_note(wiring):
+    """`media_search` and `media_send`: every non-ok path returns a note."""
+    one = FakeMediaObjectStore([_make_image()])
+    two = FakeMediaObjectStore([
+        _make_image(sha256="aabbcc14924244741244445555667788" * 2, prompt="cat one"),
+        _make_image(sha256="aabbcc99998888777766665555444433" * 2, prompt="cat two"),
+    ])
+    full = FakeBlobStore()
+    full.blobs[_make_image().sha256] = b"PNGDATA"
+    held = _deliverer(wiring, send_permitted=False)
+    refusing = _deliverer(wiring, adapter=_NoAttachmentsSink())
+    search_cases = {
+        "unavailable/unwired": _with_image_tools(wiring, media_store=None),
+        "unavailable/raised": _with_image_tools(wiring, media_store=_BrokenMediaStore([])),
+    }
+    for case, tools in search_cases.items():
+        _assert_noted(case, await _call(tools["media_search"], query="cat"),
+                      case.split("/")[0])
+    send_cases = {
+        "unavailable/unwired": (_with_image_tools(wiring, media_store=one), "aabbcc"),
+        "nothing_found/not_a_handle": (
+            _with_image_tools(wiring, media_store=one, blob_store=full), "zz"),
+        "nothing_found/absent": (
+            _with_image_tools(wiring, media_store=one, blob_store=full), "ffffff"),
+        "ambiguous": (_with_image_tools(wiring, media_store=two, blob_store=full), "aabbcc"),
+        "unavailable/raised": (_with_image_tools(
+            wiring, media_store=_BrokenMediaStore([]), blob_store=full), "aabbcc"),
+        "unavailable/no_bytes": (
+            _with_image_tools(wiring, media_store=one, blob_store=FakeBlobStore()), "aabbcc"),
+        "held_for_review": (
+            _tools_over(wiring, held, media_store=one, blob_store=full), "aabbcc"),
+        "unavailable/not_sent": (
+            _tools_over(wiring, refusing, media_store=one, blob_store=full), "aabbcc"),
+    }
+    for case, (tools, handle) in send_cases.items():
+        _assert_noted(case, await _call(tools["media_send"], handle=handle),
+                      case.split("/")[0])
+
+
+async def test_a_media_search_note_follows_whether_anything_matched(wiring):
+    """«Never claim an image the search did not return» rides with the `ok`,
+    and an empty list says plainly that nothing matched."""
+    found = await _call(_with_image_tools(
+        wiring, media_store=FakeMediaObjectStore([_make_image()]))["media_search"],
+        query="cat")
+    assert found["results"] and "each result" in found["note"]
+    empty = await _call(_with_image_tools(
+        wiring, media_store=FakeMediaObjectStore([]))["media_search"], query="cat")
+    assert empty["results"] == [] and "Nothing in the library matched" in empty["note"]
+
+
+async def test_every_non_ok_gif_status_carries_a_note(wiring):
+    """`search_gifs` and `send_gif`. A failed GIF fetch or send RAISES, so the
+    agent falls back to words; that path has no dict and is pinned by
+    `test_gif_send_failure_raises_so_the_agent_can_send_a_text_reply`."""
+    class _Empty(_GifSource):
+        async def search(self, *, query: str):
+            return ()
+
+    unwired = _tools_over(wiring, wiring["deliverer"])
+    _assert_noted("search/unwired",
+                  await _call(unwired["search_gifs"], query="slow clap"), "unavailable")
+    _assert_noted("search/identifier", await _call(
+        _tools_over(wiring, wiring["deliverer"], giphy_source=_GifSource())["search_gifs"],
+        query="+85290000101"), "unavailable")
+    _assert_noted("search/empty", await _call(
+        _tools_over(wiring, wiring["deliverer"], giphy_source=_Empty())["search_gifs"],
+        query="slow clap"), "nothing_found")
+    _assert_noted("send/unknown_id", await _call(
+        _tools_over(wiring, wiring["deliverer"], giphy_source=_GifSource())["send_gif"],
+        candidate_id="nope"), "unavailable")
+    held = _tools_over(wiring, _deliverer(wiring, send_permitted=False),
+                       giphy_source=_GifSource())
+    await _call(held["search_gifs"], query="happy dance")
+    _assert_noted("send/held", await _call(held["send_gif"], candidate_id="happy-1"),
+                  "held_for_review")
+
+
+async def test_the_gif_candidates_carry_the_untrusted_metadata_note(wiring):
+    tools = _tools_over(wiring, wiring["deliverer"], giphy_source=_GifSource())
+    found = await _call(tools["search_gifs"], query="happy dance")
+    assert found["status"] == "ok"
+    assert "untrusted" in found["note"] and "only from these" in found["note"]
+
+
 class _RecordingHoncho:
     """`FakeMemoryStore` records the query but not the SCOPE, and the scope is the
     whole point of this verb: `conversation_id=None` is what makes the search
@@ -1518,3 +1787,11 @@ def test_a_quote_id_is_never_guessed_from_an_unusable_row():
     assert platform_message_id_of({"id": True, "message_id": "mid.$real"}) == "mid.$real"
     assert platform_message_id_of("not a dict") is None
     assert platform_message_id_of(None) is None
+
+
+async def test_send_to_with_no_relay_wired_carries_a_note(wiring):
+    """`send_to`'s own unwired path; every relay outcome is pinned in
+    `tests/test_relay.py`."""
+    out = await _call(_tools_over(wiring, wiring["deliverer"])["send_to"],
+                      platform="signal", text="we're starting")
+    _assert_noted("send_to/unwired", out, "unavailable")

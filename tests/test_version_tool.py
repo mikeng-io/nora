@@ -134,3 +134,37 @@ async def test_a_version_with_no_note_recorded_says_the_version_and_no_more(
     assert answer["version"] == "V1"
     assert "notes" not in answer
     assert "changes" not in answer
+
+
+# ---- ADR 0015 §3: how to report a status rides in the result ----------------
+
+
+async def test_every_non_ok_status_carries_a_note(tmp_path: Path, no_build_stamp):
+    """The description only NAMES `nothing_found` and `unavailable`; what to
+    say for each is the result's `note`, on every path that returns one."""
+    unstamped = ToolRegistry(versions=VersionManifest(tmp_path / "unstamped.json"))
+    cases = {
+        "nothing_found/no_such": await _version_tool(_stamped(tmp_path), Metrics())(
+            which="V9"),
+        "unavailable/unstamped": await _version_tool(unstamped, Metrics())(),
+        "unavailable/not_wired": await _version_tool(ToolRegistry(), Metrics())(),
+    }
+    for case, answer in cases.items():
+        assert answer["status"] == case.split("/")[0], (case, answer)
+        assert isinstance(answer.get("note"), str) and answer["note"].strip(), case
+        assert "—" not in answer["note"] and "–" not in answer["note"], case
+
+
+async def test_an_ok_note_follows_whether_notes_were_recorded(tmp_path: Path):
+    """The ok-reporting rules that left the description: paraphrase `notes`
+    when there are some, and say none were recorded when there are not. Each
+    clause arrives only with the case it is about."""
+    noted = await _version_tool(_stamped(tmp_path), Metrics())()
+    assert "own words" in noted["note"]
+    assert "No notes" not in noted["note"]
+
+    bare = await _version_tool(_stamped(tmp_path, {
+        "version": "V1", "versions": [{"version": "V1"}],
+    }), Metrics())()
+    assert "No notes" in bare["note"]
+    assert "own words" not in bare["note"]

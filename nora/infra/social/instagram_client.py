@@ -71,7 +71,7 @@ Every frame carries its text layer — the author's `caption`, Instagram's own
 it was posted, its kind — and its media URL (design/instagram-adoption/18
 §"Listing and reading one item"). That text is what lets Nora answer «is she
 at the beach?» without a vision call. What the media SHOWS is not here:
-`social_fetch` finds out *that* something exists, where, and what its author
+`instagram_read` finds out *that* something exists, where, and what its author
 and Instagram said about it; `media_fetch` finds out *what it is*.
 
 **Where the text goes is the whole safety argument.** The caption and alt text
@@ -79,7 +79,7 @@ are stranger-written prose, so they go down exactly ONE path, the one the
 profile bio already uses: type-checked as `str`, whitespace-collapsed onto one
 line (so a caption cannot forge a frame line of its own), rendered into
 `text`, then `wrap_outside_text` (R-13) and `clamp_chars`. They are NOT copied
-into `items`: `social_fetch` hands the whole result dict to the model, so a
+into `items`: `instagram_read` hands the whole result dict to the model, so a
 caption in `items` would be stranger prose OUTSIDE the untrusted wrap and
 outside the clamp. `items` stays `{kind, taken_at, url}` — the
 machine-usable handoff to `media_fetch(url=…)`, which needs nothing else.

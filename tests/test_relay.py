@@ -14,12 +14,15 @@ occasion names and what it carries.
 
 from __future__ import annotations
 
+import asyncio
 from types import SimpleNamespace
 
 import pytest
 
 from nora.agent.relay import Relay
 from nora.domain.models import PersonRef
+from nora.domain.ports import AdapterHealth
+from nora.engagement.self_presence import PresenceReader
 from nora.policy import Conversation, Policy
 
 MILES = PersonRef(person_id="miles_novak", name="Miles", honcho_peer_id="miles_novak")
@@ -63,6 +66,51 @@ class _FakeSlots:
         self.released.append(key)
 
 
+#: The `detail` a degraded adapter reports. It is the operator's diagnostic
+#: and here it names an account, so it must never reach her.
+_DETAIL = "instagram session for nora_burner_account is 'checkpointed'"
+
+
+class _Health:
+    """One adapter's `health()`, scripted per call and counted.
+
+    `script` is consumed one entry per call (the last entry repeats), so a test
+    can make a network go down or come back between two relays. An entry is a
+    state name: `up`, `disconnected`, `degraded`, `raises` or `hangs`.
+    """
+
+    def __init__(self, platform: str, *script: str) -> None:
+        self.platform = platform
+        self.script = list(script or ("up",))
+        self.calls = 0
+
+    async def health(self) -> AdapterHealth:
+        entry = self.script[min(self.calls, len(self.script) - 1)]
+        self.calls += 1
+        if entry == "raises":
+            raise RuntimeError(f"bridge unreachable: {_DETAIL}")
+        if entry == "hangs":
+            await asyncio.sleep(3600)
+        return AdapterHealth(
+            platform=self.platform,
+            connected=entry == "up",
+            degraded=entry == "degraded",
+            detail=_DETAIL if entry == "degraded" else "",
+        )
+
+
+def _reader(policy: Policy, **adapters) -> PresenceReader:
+    """The SAME reader `<presence>` renders from, over scripted adapters. Every
+    network is up unless a test says otherwise; `None` removes one."""
+    base = {"signal": _Health("signal"), "discord": _Health("discord")}
+    base.update(adapters)
+    return PresenceReader(
+        policy=policy,
+        adapters={k: v for k, v in base.items() if v is not None},
+        timeout_seconds=0.05,
+    )
+
+
 def _occasion_for(*, destination, requester, text, from_platform):
     """Stands in for `nora.app.fire.relay_occasion`, carrying only what these
     tests assert on."""
@@ -94,12 +142,13 @@ def _policy(*, other_unit: bool = False, ada_in_discord: bool = False) -> Policy
     )
 
 
-def _relay(policy: Policy, fire=None, slots=None, metrics=None):
+def _relay(policy: Policy, fire=None, slots=None, metrics=None, reader=None):
     fire = fire if fire is not None else _FakeFire()
     slots = slots if slots is not None else _FakeSlots()
+    reader = reader if reader is not None else _reader(policy)
     relay = Relay(
         policy=policy, speak=fire.speak, slots=slots,
-        occasion_for=_occasion_for, metrics=metrics,
+        occasion_for=_occasion_for, metrics=metrics, transport=reader.state,
     )
     return relay, fire, slots
 
@@ -248,7 +297,10 @@ async def test_a_platform_with_no_adapter_is_unavailable_not_refused():
     policy decision, and reporting it as a refusal would tell the group they
     were not allowed when the truth is that Nora could not."""
     relay, _f, _ = _relay(_policy(), fire=None)
-    relay = Relay(policy=_policy(), speak=None, slots=None, occasion_for=None)
+    relay = Relay(
+        policy=_policy(), speak=None, slots=None, occasion_for=None,
+        transport=_reader(_policy()).state,
+    )
 
     out = await _send(relay)
 
@@ -269,6 +321,108 @@ async def test_empty_text_sends_nothing():
     out = await _send(relay, text="   ")
 
     assert out["status"] == "refused"
+    assert fire.spoken == []
+
+
+# ---------------------------------------------------------------------------
+# a network that is not up is not tried (operator, 2026-09-24)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("script", "says", "heals"),
+    [
+        (("degraded",), "Signal is down and needs a person to fix it", False),
+        (("disconnected",), "Signal is reconnecting right now", True),
+        (("raises",), "Signal's connection could not be checked", False),
+        (("hangs",), "Signal's connection could not be checked", False),
+        (None, "Signal is not running in this deployment", False),
+    ],
+    ids=["degraded", "disconnected", "health_raises", "health_hangs", "no_adapter"],
+)
+async def test_a_destination_that_is_not_up_is_never_tried(script, says, heals):
+    """The presence eval (design/self-awareness/05) watched her call `send_to`
+    into a network `<presence>` said was down, 3 of 3 draws in both arms. The
+    fix is mechanical: the destination's transport is read through the SAME
+    reader and mapping the block renders from, and anything but `up` answers
+    `unavailable` in the block's own words without the fire path or the
+    destination's slot ever being touched.
+
+    A health read that raises or hangs is «could not be checked», and that
+    refuses too: fail-closed, never read as `up`."""
+    from nora.obs.metrics import Metrics
+
+    metrics = Metrics()
+    policy = _policy()
+    signal = None if script is None else _Health("signal", *script)
+    relay, fire, slots = _relay(
+        policy, metrics=metrics, reader=_reader(policy, signal=signal),
+    )
+
+    out = await _send(relay)
+
+    assert out["status"] == "unavailable"
+    assert says in out["note"]
+    assert "nothing was sent" in out["note"]
+    # Only a transient state invites a retry. Offering «later» for a network
+    # that needs a person, or that could not be checked, is a promise nothing
+    # stands behind.
+    assert ("comes back by itself" in out["note"]) is heals, out["note"]
+    assert fire.spoken == [], "a network that is not up must never be spoken into"
+    assert slots.acquired == [], "nor its room's slot taken"
+    assert metrics.get("nora_relay_total", outcome="transport_down") == 1.0
+
+
+async def test_the_refusal_leaks_no_id_and_no_adapter_detail():
+    """`detail` is the operator's diagnostic and may name an account; room ids
+    are identifiers (R-18). The note carries the network's display name and its
+    state, and nothing the adapter or policy holds besides."""
+    policy = _policy()
+    for script in ("degraded", "raises"):
+        relay, _f, _ = _relay(
+            policy, reader=_reader(policy, signal=_Health("signal", script)),
+        )
+
+        out = await _send(relay)
+
+        assert out["status"] == "unavailable"
+        assert "nora_burner_account" not in str(out)
+        assert "checkpointed" not in str(out)
+        assert SIGNAL_ROOM not in str(out) and DISCORD_ROOM not in str(out)
+
+
+async def test_health_is_read_on_every_relay_never_cached():
+    """A network that was down on the last relay may be up on this one, and the
+    reverse. One read per call, of that moment: a cached `up` is how she
+    promises a send that then fails, and a cached `down` refuses a working
+    one."""
+    policy = _policy()
+    signal = _Health("signal", "degraded", "up", "disconnected")
+    relay, fire, _ = _relay(policy, reader=_reader(policy, signal=signal))
+
+    first = await _send(relay)
+    second = await _send(relay)
+    third = await _send(relay)
+
+    assert [first["status"], second["status"], third["status"]] == [
+        "unavailable", "ok", "unavailable",
+    ]
+    assert signal.calls == 3
+    assert len(fire.spoken) == 1
+
+
+async def test_the_policy_gates_are_decided_before_the_network_is_read():
+    """A person not allowed in the destination is told THAT, not how its
+    network is doing: the gates are policy, and free, and the health read is
+    I/O spent only on a relay that would otherwise go."""
+    policy = _policy(ada_in_discord=True)
+    signal = _Health("signal", "degraded")
+    relay, fire, _ = _relay(policy, reader=_reader(policy, signal=signal))
+
+    out = await _send(relay, requester=ADA)
+
+    assert out["status"] == "refused"
+    assert signal.calls == 0
     assert fire.spoken == []
 
 
@@ -294,3 +448,57 @@ async def test_every_outcome_is_counted_by_name(kwargs, outcome):
     await _send(relay, **kwargs)
 
     assert metrics.get("nora_relay_total", outcome=outcome) == 1.0
+
+
+# ---------------------------------------------------------------------------
+# ADR 0015 §3: what to tell the asker rides in the result
+# ---------------------------------------------------------------------------
+
+_DASHES = ("—", "–")
+
+
+async def test_every_non_ok_relay_outcome_carries_a_note():
+    """`send_to`'s description names its statuses; what to tell the person
+    here is each result's `note`. Every refusal and every unavailable path is
+    driven, so one that loses its note goes red."""
+    dupe = Conversation(
+        platform="signal", ids=frozenset({OTHER_ROOM}), persons=frozenset({"miles_novak"}),
+        label="Friends Overflow", primary_id=OTHER_ROOM, unit="friends",
+    )
+    rooms = (*_policy().conversations, dupe)
+    doubled = Policy(conversations=rooms,
+                     _by_id={(c.platform, cid): c for c in rooms for cid in c.ids})
+    plain = _relay(_policy())[0]
+    cases = {
+        "refused/empty": (plain, {"text": "   "}),
+        "refused/unmapped": (plain, {"requester": None}),
+        "refused/unknown_source": (plain, {"from_conversation_id": "not-a-room"}),
+        "refused/same_room": (plain, {"platform": "discord"}),
+        "refused/unknown_room": (plain, {"platform": "telegram"}),
+        "refused/ambiguous_room": (_relay(doubled)[0], {}),
+        "refused/not_allowed_there": (_relay(_policy(ada_in_discord=True))[0],
+                                      {"requester": ADA}),
+        "refused/egress": (plain, {"text": "call him on +85290000101"}),
+        "unavailable/no_adapter": (
+            Relay(policy=_policy(), speak=None, slots=None, occasion_for=None,
+                  transport=_reader(_policy()).state), {}),
+        "unavailable/transport_down": (
+            _relay(_policy(), reader=_reader(
+                _policy(), signal=_Health("signal", "degraded")))[0], {}),
+        "unavailable/busy": (_relay(_policy(), slots=_FakeSlots(free=False))[0], {}),
+        "unavailable/failed": (_relay(_policy(), fire=_FakeFire(outcome="failed_error"))[0],
+                               {}),
+    }
+    for case, (relay, kw) in cases.items():
+        out = await _send(relay, **kw)
+        assert out["status"] == case.split("/")[0], (case, out)
+        assert isinstance(out.get("note"), str) and out["note"].strip(), case
+        assert not any(d in out["note"] for d in _DASHES), case
+
+
+async def test_a_relay_that_went_tells_her_to_say_so_here():
+    """The description's old «afterwards, tell the person here whether it went»
+    rides with the `ok` it is about."""
+    out = await _send(_relay(_policy())[0])
+    assert out["status"] == "ok" and out["room"] == "Friends"
+    assert "send_reply" in out["note"]

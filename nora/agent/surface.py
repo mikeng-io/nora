@@ -182,6 +182,34 @@ class ToolSurface:
 LOAD_TOOLS_MAX_NAMES = 4
 
 
+#: How to report each `load_tools` outcome (ADR 0015 §3). A non-ok status always
+#: carries its note; an `ok` carries one clause per list that is non-empty, so a
+#: clean load stays the bare result.
+LOAD_TOOLS_UNAVAILABLE_NOTE = (
+    "Loading isn't possible right now. Say so rather than guessing what the tool "
+    "would have said."
+)
+_LOAD_NOTHING_FOUND_NOTE = (
+    "None of those names is in your catalogue. Read it again rather than "
+    "retrying the same names."
+)
+
+
+def _load_ok_note(unknown: list[str], refused: list[str]) -> str:
+    parts = []
+    if unknown:
+        parts.append(
+            "The unknown names are not in your catalogue: read it again rather "
+            "than retrying them."
+        )
+    if refused:
+        parts.append(
+            f"The refused names were over the limit of {LOAD_TOOLS_MAX_NAMES}: "
+            "ask for those in your next call."
+        )
+    return " ".join(parts)
+
+
 def load_onto(agent: Any, shelf: ToolShelf, names: Iterable[str]) -> dict:
     """Register the named shelf tools on `agent`'s own tool registry.
 
@@ -202,7 +230,7 @@ def load_onto(agent: Any, shelf: ToolShelf, names: Iterable[str]) -> dict:
     registry = getattr(agent, "tool_registry", None)
     if registry is None:
         return {"status": "unavailable", "loaded": [], "already_loaded": [],
-                "unknown": [], "refused": []}
+                "unknown": [], "refused": [], "note": LOAD_TOOLS_UNAVAILABLE_NOTE}
     wanted = list(dict.fromkeys(names))
     asked, refused = wanted[:LOAD_TOOLS_MAX_NAMES], wanted[LOAD_TOOLS_MAX_NAMES:]
     loaded: list[str] = []
@@ -222,5 +250,10 @@ def load_onto(agent: Any, shelf: ToolShelf, names: Iterable[str]) -> dict:
         registry.register_dynamic_tool(tool)
         loaded.append(name)
     status = "ok" if loaded or already else "nothing_found"
-    return {"status": status, "loaded": loaded, "already_loaded": already,
-            "unknown": unknown, "refused": refused}
+    result: dict = {"status": status, "loaded": loaded, "already_loaded": already,
+                    "unknown": unknown, "refused": refused}
+    note = (_load_ok_note(unknown, refused) if status == "ok"
+            else _LOAD_NOTHING_FOUND_NOTE)
+    if note:
+        result["note"] = note
+    return result

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import re
 from pathlib import Path
 
 import pytest
@@ -23,7 +24,7 @@ import pytest
 from nora.agent.egress import scan_identifiers
 from nora.agent.guards import Deliverer
 from nora.agent.room import Room
-from nora.agent.tools import NATIVE_TOOL_BUDGETS, build_tools
+from nora.agent.tools import _COVER_NOTE, NATIVE_TOOL_BUDGETS, build_tools
 from nora.doctrine.loader import DoctrineStore
 from nora.domain.media import MediaBlob, MediaObject
 from nora.domain.media_join import MediaJoin
@@ -188,7 +189,7 @@ async def test_an_image_in_the_conversation_is_described(wiring):
 
 # ---- the generic URL path (DEC-56 extension, 2026-08-31) --------------------
 # A `media_fetch(url=…)` ingestion is the cross-tool read path: ANY tool that
-# surfaces an image/video URL — social_fetch media rows, web_fetch page images,
+# surfaces an image/video URL — x_read media rows, web_fetch page images,
 # a future tool — funnels into the same describe pipeline. The downloader is a
 # real byte/time-bounded GET; these tests stub `_download_media` (the module's
 # own seam) so the URL-path LOGIC is pinned without a network dependency.
@@ -921,12 +922,134 @@ async def test_a_shared_items_thumbnail_is_looked_at_only_when_asked(wiring):
     assert spawned == []
     row = await index.get(sha256=staged.media_blobs[0].sha256)
     assert row is not None and not row.comprehended
-    assert staged.body.endswith(f"[image {handle}]")
+    assert staged.body.endswith(f"[cover image {handle}]")
 
     out = await _call(wiring["build"](media_store=index), code=handle)
 
     assert out["status"] == "ok"
     assert wiring["vision"].calls == 1, "asked, so it was looked at — once"
+    # And the result says WHAT was looked at: the cover, not the reel. The
+    # role came through the REAL `SqlRecordStore` write and read, which is the
+    # only path `media_fetch` has to it.
+    assert out["note"].endswith(_COVER_NOTE)
+
+
+# ---- a shared item's cover says it is one (2026-09-24) -----------------------
+#
+# The live failure: a reel shared into a room arrived as a `[shared reel …]`
+# line and its still picture. Asked "what is in this reel", she fetched the
+# picture, read one frame, and told the room she could not see the clip,
+# with the link to it in the same line. The transcript now says `[cover
+# image …]`, and these pin the other half: the RESULT says what it served.
+
+async def _append_shared_cover(store, *, sha256: str, ts: int = 100) -> None:
+    """A share as custody records it: the line, the cover placeholder, and a
+    blob whose role says it is the cover."""
+    blob = MediaBlob(
+        sha256=sha256, media_type="image/png", size=len(RED_PNG), role="cover",
+    )
+    await store.append(message=NormalizedMessage(
+        "signal", "g1", "group", "+852111", "Miles", ts,
+        "[shared reel by @synth.example https://www.instagram.com/reel/SynthReel02/]"
+        f" [cover image {sha256[:6]}]",
+        {}, media_blobs=(blob,),
+    ))
+
+
+async def test_a_cover_served_from_a_fresh_look_says_it_is_only_the_cover(wiring):
+    await _append_shared_cover(wiring["store"], sha256=PNG_SHA)
+
+    out = await _call(wiring["build"](), code=PNG_SHA[:6])
+
+    assert out["status"] == "ok"
+    assert out["description"] == "A red one-pixel square."
+    assert out["note"].endswith(_COVER_NOTE)
+    assert "cover" in out["note"] and "if that line carries one" in out["note"]
+    assert not re.search("[–—]", out["note"]), "ADR 0015: no dash in a note"
+
+
+async def test_a_cover_served_from_the_stored_reading_says_so_too(wiring):
+    """Layer 1: the same bytes were read once already (sent as a photo
+    elsewhere, then shared). The stored reading is served without a look, and
+    it is still only the cover of the thing this handle names here."""
+    await _append_shared_cover(wiring["store"], sha256=PNG_SHA)
+    index = FakeMediaObjectStore([_comprehended(PNG_SHA)])
+
+    out = await _call(wiring["build"](media_store=index), code=PNG_SHA[:6])
+
+    assert out["status"] == "ok"
+    assert wiring["vision"].calls == 0
+    assert out["note"].endswith(_COVER_NOTE)
+
+
+async def test_a_cover_served_from_a_vision_cache_hit_says_so_too(wiring):
+    """The content-hash cache, with no media index wired at all: the bytes
+    were described once before (in any room), so no look is paid for, and it
+    is still only the cover of what this handle names here."""
+    await _append_shared_cover(wiring["store"], sha256=PNG_SHA)
+    wiring["cache"].put(PNG_SHA, "A beach at dusk.")
+
+    out = await _call(wiring["build"](media_store=None), code=PNG_SHA[:6])
+
+    assert out["status"] == "ok"
+    assert wiring["vision"].calls == 0
+    assert out["description"] == "A beach at dusk."
+    assert out["note"].endswith(_COVER_NOTE)
+
+
+async def test_a_cover_asked_a_question_says_so_too(wiring):
+    """Layer 2: a question looks again and writes nothing back, and the
+    answer is still about the cover, not the reel."""
+    await _append_shared_cover(wiring["store"], sha256=PNG_SHA)
+
+    out = await _call(
+        wiring["build"](), code=PNG_SHA[:6], question="what colour is the sky",
+    )
+
+    assert out["status"] == "ok"
+    assert wiring["vision"].calls == 1
+    assert out["note"].endswith(_COVER_NOTE)
+
+
+async def test_a_withheld_cover_keeps_both_sentences(wiring):
+    """An identifier in the cover's reading withholds the words; the cover
+    sentence rides along, so the next step is still the link."""
+    wiring["vision"].description = "A poster reading +85291234567"
+    await _append_shared_cover(wiring["store"], sha256=PNG_SHA)
+
+    out = await _call(wiring["build"](), code=PNG_SHA[:6])
+
+    assert out["withheld"] is True
+    assert out["note"].endswith(_COVER_NOTE)
+    assert out["note"] != _COVER_NOTE
+
+
+async def test_an_ordinary_photo_carries_no_cover_note(wiring):
+    """The negative, on a row with no `role` at all, which is every row
+    written before the role existed."""
+    await _append_image(wiring["store"], conversation_id="g1", sha256=PNG_SHA)
+
+    out = await _call(wiring["build"](), code=PNG_SHA[:6])
+
+    assert out["status"] == "ok"
+    # ADR 0015 §3: every description carries the how-to-report note; only
+    # the cover clause is absent.
+    assert _COVER_NOTE not in out["note"]
+
+
+async def test_bytes_that_were_also_sent_as_a_photo_are_not_called_a_cover(wiring):
+    """Every sighting must be a cover, not any: once the same bytes are
+    somebody's own photo in view, the handle names that too, and «this is
+    only the cover of a shared reel» would be a claim about the wrong one."""
+    await _append_shared_cover(wiring["store"], sha256=PNG_SHA, ts=100)
+    await _append_image(wiring["store"], conversation_id="g1", sha256=PNG_SHA, ts=200)
+
+    out = await _call(wiring["build"](), code=PNG_SHA[:6])
+
+    assert out["status"] == "ok"
+    # ADR 0015 §3: every description carries the how-to-report note; only
+    # the cover clause is absent.
+    assert _COVER_NOTE not in out["note"]
 
 
 async def test_layer_2_reads_again_with_the_question_and_bypasses_the_cache(wiring):
@@ -1434,6 +1557,69 @@ async def test_a_screened_question_is_refused_rather_than_stripped(wiring):
     assert "description" not in out, "a stripped question was answered anyway"
 
 
+# ---- ADR 0015 §3: how to report a status rides in the result ----------------
+
+_DASHES = ("—", "–")
+
+
+async def test_every_non_ok_status_carries_a_note(wiring, monkeypatch):
+    """ADR 0015 §3/§6: the description only NAMES the statuses; what to say for
+    each is the result's `note`. Every non-ok path is driven here, so a path
+    that loses its note (the reporting rule for that status) goes red."""
+    async def dead_download(url: str) -> tuple[bytes, str]:
+        return b"", ""
+
+    monkeypatch.setattr("nora.agent.tools._download_media", dead_download)
+    a, b = "abcdef" + "0" * 58, "abcdef" + "1" * 58
+    await _append_image(wiring["store"], conversation_id="g1", sha256=a, ts=100)
+    await _append_image(wiring["store"], conversation_id="g1", sha256=b, ts=101)
+    await _append_image(wiring["store"], conversation_id="g1", sha256=PNG_SHA, ts=102)
+    await _append_image(wiring["store"], conversation_id="g1", sha256="c" * 64,
+                        media_type="application/pdf", ts=103)
+    await _append_image(wiring["store"], conversation_id="g1", sha256="d" * 64, ts=104)
+    build = wiring["build"]
+    cases = {
+        "unavailable/unwired": (build(blob_store=None), {"code": PNG_SHA[:6]}),
+        "unavailable/download": (build(), {"url": "https://x.com/dead.jpg"}),
+        "unavailable/blob": (build(), {"code": "d" * 6}),
+        "unavailable/no_describer": (build(describe_models={}), {"code": PNG_SHA[:6]}),
+        "nothing_found/no_target": (build(), {}),
+        "nothing_found/identifier": (build(), {"code": PNG_SHA[:6],
+                                               "question": "is +85290000101 on it"}),
+        "nothing_found/url_identifier": (build(), {"url": "https://x.com/?n=%2B85212345678"}),
+        "nothing_found/not_a_url": (build(), {"url": "file:///etc/passwd"}),
+        "nothing_found/no_handle": (build(), {"code": "[image]"}),
+        "nothing_found/no_match": (build(), {"code": "eeeeee"}),
+        "ambiguous": (build(), {"code": "abcdef"}),
+        "not_an_image": (build(), {"code": "c" * 6}),
+    }
+    for case, (tool, kwargs) in cases.items():
+        out = await _call(tool, **kwargs)
+        assert out["status"] == case.split("/")[0], (case, out)
+        assert isinstance(out.get("note"), str) and out["note"].strip(), case
+        assert not any(d in out["note"] for d in _DASHES), case
+
+    wiring["vision"].available = False
+    out = await _call(build(), code=PNG_SHA[:6])
+    assert out["status"] == "unavailable" and out["note"].strip()
+    assert not any(d in out["note"] for d in _DASHES)
+
+
+async def test_an_ok_note_rides_only_with_a_description(wiring):
+    """The rule that left the description (a vision model wrote this about
+    somebody else's media, so report it as how it looks) arrives with the
+    `description` it is about. A withheld serve has no description, so it
+    carries its own note and not this one."""
+    await _append_image(wiring["store"], conversation_id="g1", sha256=PNG_SHA)
+    out = await _call(wiring["build"](), code=PNG_SHA[:6])
+    assert out["status"] == "ok" and "description" in out
+    assert "not as fact" in out["note"]
+    assert not any(d in out["note"] for d in _DASHES)
+
+    wiring["vision"].description = "A contact card for +85290000101."
+    withheld = await _call(wiring["build"](vision_cache=VisionCache()), code=PNG_SHA[:6])
+    assert withheld.get("withheld") is True and "description" not in withheld
+    assert "not as fact" not in withheld["note"]
 
 # ---- the video reading cache (migration 0061) --------------------------------
 #

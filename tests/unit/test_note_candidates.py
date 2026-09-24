@@ -16,7 +16,7 @@ import pytest
 
 from nora.agent.dreamer import AdaptorToolError, verify_tool_subsets
 from nora.domain.models import DeliveryStatus, TranscriptRow
-from nora.domain.notes import BODY_MAX_CHARS
+from nora.domain.notes import BODY_MAX_CHARS, NoteSupersedeReason
 from nora.domain.ports import Proposal
 from nora.language.note_candidates import (
     _BLOCKS,
@@ -890,19 +890,17 @@ async def test_two_same_day_candidates_with_no_entities_are_kept_apart_by_title(
     ) == 0, "and nothing was re-observed either — the branch is not reached"
 
 
-async def test_an_ambiguous_title_creates_rather_than_guessing():
+async def test_an_ambiguous_title_is_left_pending_neither_guessed_nor_created():
     """Two standing notes answer to one title. Appending to the wrong one
-    conflates two arrangements — the failure this whole change removes —
-    while a duplicate overwrites nothing and a reader can see both. NOTHING
-    merges the duplicate afterwards (#236); the gate creates because that is
-    the side that loses no text, not because something downstream tidies up,
-    and counts it `ambiguous` rather than folding it into `created` so the
-    rate of it is readable."""
+    conflates two arrangements — the failure #228 removed. Creating a THIRD
+    note was the answer until 2026-09-24, and it made an exact-title
+    duplicate an amplifier: every later sighting naming that title added
+    another (design 41 §7.0, §7.2). The staging row now stays pending — its
+    text kept, nothing written — and the rate is counted `ambiguous`."""
     metrics = Metrics()
     adaptor, store = _adaptor(metrics=metrics)
-    # Two DIFFERENT stored titles that `note_handle` normalises to one. The
-    # store's own uniqueness is `lower(title)` and does not stop this, and the
-    # index would render both lines as the same word.
+    # Two DIFFERENT stored titles that `note_handle` normalises to one.
+    # Nothing in the schema stops this (design 41 §7.0).
     for i, (stored, anchor) in enumerate(
         (("Dinner", 20260919), ("dinner ", 20261225))
     ):
@@ -926,23 +924,20 @@ async def test_an_ambiguous_title_creates_rather_than_guessing():
         now_ms=NOW + 9,
     )
 
-    assert written == 1
+    assert written == 0
     standing = await store.standing(unit=WS)
-    assert len(standing) == 3, (
-        "a third note, never a guess at which of the two was meant"
-    )
+    assert len(standing) == 2, "no third note"
     for note in standing:
-        if note.title == "Dinner somewhere new":
-            continue
         head = await store.read(unit=WS, note_id=note.id)
         assert head is not None
         assert "a third thing entirely" not in head[1].body, (
             "nothing standing may be appended to on an ambiguous name"
         )
+    [row] = store.create_candidates.values()
+    assert row.status == "pending", "the sighting is kept, not refused"
+    assert row.body == "a third thing entirely"
     assert metrics.get("nora_note_candidate_gate_total", action="ambiguous") == 1
-    assert metrics.get("nora_note_candidate_gate_total", action="created") == 0, (
-        "counted apart from created, or the rate is invisible"
-    )
+    assert metrics.get("nora_note_candidate_gate_total", action="created") == 0
 
 
 async def test_a_title_that_answers_to_nothing_is_counted_apart_from_a_create():
@@ -1447,3 +1442,114 @@ def test_an_unmapped_sender_is_named_unknown_and_never_by_their_phone_number():
         room="ridgeline", tz=ZoneInfo("UTC"),
     )
     assert "Grant Carver" in named and "Chi Ming" not in named
+
+
+# --- design 41 §7.5-7.6: a merged note forwards to its survivor --------------
+
+
+async def _merged_pair(store: InMemoryNoteStore):
+    """A survivor and a duplicate merged into it — the state a pass that
+    rendered its notebook BEFORE the merge now writes against."""
+    survivor = await store.create(
+        unit=WS, title="Saturday dinner", description="d",
+        uncertainty="u", closing_condition="c", established_in="conv-1",
+        body="time, place and company are open", established_by="tag:miles",
+        now_ms=NOW, anchor_date=20260926,
+    )
+    duplicate = await store.create(
+        unit=WS, title="星期六飯局細節未定", description="d",
+        uncertainty="u", closing_condition="c", established_in="conv-1",
+        body="asked twice, no answer", established_by="tag:miles",
+        now_ms=NOW + 1, anchor_date=20260926,
+    )
+    await store.supersede(
+        key=WS, target=duplicate.id, replaced_by=survivor.id,
+        because=NoteSupersedeReason.RETIRED_MERGED, source=None, now_ms=NOW + 2,
+    )
+    return survivor, duplicate
+
+
+def _updating(title: str) -> Proposal:
+    return _proposal(_CreateCandidate(
+        title="Saturday dinner at 8", description="d2",
+        body="8pm at the usual place", closing_condition="c",
+        anchor_date=20260926, anchor_entity_ids=(), message_ids=(9,),
+        updates=title,
+    ))
+
+
+async def test_an_update_aimed_at_a_merged_note_lands_on_its_survivor():
+    """The audit's B2. This pass's notebook still showed the duplicate, so the
+    model named its title; after the merge that title resolves to no open
+    note, and without the forward the question is CREATED again — undoing the
+    merge (`unresolved` -> create)."""
+    metrics = Metrics()
+    adaptor, store = _adaptor(metrics=metrics)
+    survivor, _ = await _merged_pair(store)
+
+    written = await adaptor.commit(
+        key=SCOPE, proposals=(_updating("星期六飯局細節未定"),), now_ms=NOW + 3,
+    )
+
+    assert written == 1
+    assert [n.id for n in await store.standing(unit=WS)] == [survivor.id], (
+        "no note was created again"
+    )
+    head = await store.read(unit=WS, note_id=survivor.id)
+    assert head is not None and head[1].body.endswith("8pm at the usual place")
+    assert metrics.get("nora_note_candidate_gate_total", action="updated") == 1
+    assert metrics.get("nora_note_candidate_gate_total", action="unresolved") == 0
+
+
+class _MergesBeforeTheWrite(InMemoryNoteStore):
+    """Merges the named note away between the gate's resolution and its
+    write — the race guard 1 exists for."""
+
+    survivor_id: str = ""
+    duplicate_id: str = ""
+
+    async def propose(self, *, key, proposals, now_ms):
+        if self.duplicate_id and self.notes[self.duplicate_id].retired_at is None:
+            await self.supersede(
+                key=key, target=self.duplicate_id, replaced_by=self.survivor_id,
+                because=NoteSupersedeReason.RETIRED_MERGED, source=None,
+                now_ms=now_ms,
+            )
+        return await super().propose(key=key, proposals=proposals, now_ms=now_ms)
+
+
+async def test_an_update_that_loses_a_race_to_a_merge_follows_the_survivor():
+    """Guard 1, from the caller's side. The duplicate was open when the gate
+    resolved the title and retired by the time the revision was written; the
+    append refuses (`RetiredNoteError`) and the update forwards once to the
+    survivor rather than landing in a note nothing reads again."""
+    store = _MergesBeforeTheWrite()
+    metrics = Metrics()
+    adaptor, _ = _adaptor(notes=store, metrics=metrics)
+    survivor = await store.create(
+        unit=WS, title="Saturday dinner", description="d",
+        uncertainty="u", closing_condition="c", established_in="conv-1",
+        body="time, place and company are open", established_by="tag:miles",
+        now_ms=NOW, anchor_date=20260926,
+    )
+    duplicate = await store.create(
+        unit=WS, title="星期六飯局細節未定", description="d",
+        uncertainty="u", closing_condition="c", established_in="conv-1",
+        body="asked twice, no answer", established_by="tag:miles",
+        now_ms=NOW + 1, anchor_date=20260926,
+    )
+    store.survivor_id, store.duplicate_id = survivor.id, duplicate.id
+
+    written = await adaptor.commit(
+        key=SCOPE, proposals=(_updating("星期六飯局細節未定"),), now_ms=NOW + 3,
+    )
+
+    assert written == 1
+    dup = await store.read(unit=WS, note_id=duplicate.id)
+    assert dup is not None and dup[1].body == "asked twice, no answer", (
+        "nothing landed on the retired note"
+    )
+    head = await store.read(unit=WS, note_id=survivor.id)
+    assert head is not None and head[1].body.endswith("8pm at the usual place")
+    assert metrics.get("nora_note_candidate_gate_total", action="updated") == 1
+

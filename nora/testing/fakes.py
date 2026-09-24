@@ -51,6 +51,7 @@ from nora.domain.ports import (
     PlatformIdentity,
     ReactionResult,
     Recollection,
+    RoomActivity,
     Roster,
     SendResult,
     SttResult,
@@ -368,6 +369,31 @@ class FakeRecordStore:
             if row["id"] == row_id:
                 row["person_id"] = person_id
                 return
+
+    async def room_activity(self, *, conversation_id: str, since_ts: int) -> RoomActivity:
+        """Mirrors `SqlRecordStore.room_activity`: human rows only, the count from
+        `since_ts` on, the newest `ts` at any time, `None` when there is none.
+        `fail_on_recent` covers this read too: it is the switch for «the
+        message store is down», and a store that is down for one read is down
+        for both."""
+        if self.fail_on_recent:
+            raise RuntimeError("db down")
+        human = [
+            r for r in self.rows
+            if r["conversation_id"] == conversation_id and not r["is_nora"]
+        ]
+        window = [r for r in human if r["ts"] >= since_ts]
+        return RoomActivity(
+            count=len(window),
+            last_ts=max((r["ts"] for r in human), default=None),
+            # Mirrors the SQL's coalesce(person_id, sender_id) exactly: only a
+            # NULL falls through, so an empty-string person_id counts as itself
+            # here as it does there.
+            speakers=len({
+                r["sender_id"] if r["person_id"] is None else r["person_id"]
+                for r in window
+            }),
+        )
 
     async def stats(self) -> dict[str, Any]:
         return {

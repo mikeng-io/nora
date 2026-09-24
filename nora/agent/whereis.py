@@ -325,6 +325,29 @@ def check_disclosure_invariant(
     return ok
 
 
+def _ok_note(*, place: bool, moving: bool) -> str:
+    """The reporting rules for a `where_is` `ok` (ADR 0015 §3: result
+    interpretation lives in the result). They used to be the description's
+    `ok` paragraph, paid on every call; here they arrive with the answer they
+    are about, and the place and movement clauses only when those fields do."""
+    parts = [
+        "Say how old this reading is (age_seconds), since without the age a "
+        "position sounds like right now."
+    ]
+    if place:
+        parts.append("Call the spot by `place`, the household's own name for it.")
+    parts.append(
+        "Never read lat/lng aloud: pass them to reverse_geocode for a street "
+        "address, and route from that address to a saved place for a travel time."
+    )
+    if moving:
+        parts.append(
+            "driving, moving, towards and speed_kmh are measured movement: say "
+            "what they show, and never promise where or when they will arrive."
+        )
+    return " ".join(parts)
+
+
 class Whereis:
     """Read one person's latest recorded position, in scope, with its age.
 
@@ -450,8 +473,8 @@ class Whereis:
             )
             return self._unavailable(
                 "I can't confirm who is in this group right now, so I can't say "
-                "where anyone is. Say you couldn't check — do not guess, and do "
-                "not blame anyone's sharing settings."
+                "where anyone is. Say you couldn't check, without guessing or "
+                "blaming anyone's sharing settings."
             )
         if unnamed_blocks or not subset_ok:
             # WHICH condition fired — so a refusal is diagnosable from the
@@ -469,9 +492,10 @@ class Whereis:
             )
             return {
                 "status": "refused",
-                "note": "I can't share where people are in this conversation — "
+                "note": "I can't share where people are in this conversation: "
                         "someone here is outside the location-sharing circle, or I "
-                        "can't confirm who is here. Say so; do not guess.",
+                        "can't confirm who is here. Say so in one clause and do not "
+                        "hint at the location.",
             }
         # A WAIVED guard is counted, not silent (both 2026-08-10 reviews). DEC-79's
         # entire diagnosis was `…refusals_total{reason="unnamed"} 12`; relaxing the
@@ -506,7 +530,7 @@ class Whereis:
             return {
                 "status": "not_found",
                 "note": "Nobody in this conversation goes by that. Say you're not "
-                        "sure who they mean — do not guess.",
+                        "sure who they mean, and do not guess.",
             }
         if len(matches) > 1:
             return {
@@ -536,7 +560,7 @@ class Whereis:
         if fix is None:
             return self._unavailable(
                 f"I have no recorded location for {ref.name}. Say you can't see "
-                "where they are right now — do not guess a place.",
+                "where they are right now, and do not guess or make up a place.",
                 person=ref.name,
             )
         age_seconds = max(0, (now - fix.ts) // 1000)
@@ -580,7 +604,7 @@ class Whereis:
                 "note": (
                     f"This is the LAST RECORDED position, from {recorded_iso(fix.ts)}: "
                     f"location tracking has recorded nothing for {ref.name} since"
-                    f"{tried}. Where they went after that is unknown — it is not "
+                    f"{tried}. Where they went after that is unknown; it is not "
                     "where they are now. Say when it is from; do not say they are "
                     "still there."
                 ),
@@ -625,6 +649,13 @@ class Whereis:
             "lng": fix.lng,
             **movement,
             **stale,
+            # ADR 0015 §3: how to REPORT an `ok`, carried only when one comes
+            # back, and only the clauses this answer needs. A stale fix's edge
+            # warning (`STALE_AFTER_MS`) leads: it changes what the rest means.
+            "note": " ".join(filter(None, (
+                stale.get("note"),
+                _ok_note(place=place_name is not None, moving=bool(movement)),
+            ))),
         }
 
     def _unavailable(self, note: str, **extra: Any) -> dict[str, Any]:

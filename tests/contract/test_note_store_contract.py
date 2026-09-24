@@ -53,6 +53,7 @@ from nora.domain.notes import (
     NoteRevision,
     NoteRevisionProposal,
     NoteSupersedeReason,
+    RetiredNoteError,
     StaleNoteHeadError,
 )
 from nora.domain.ports import Proposal
@@ -109,6 +110,10 @@ class _NoteStore(Protocol):
     async def set_create_candidate_status(
         self, *, unit: str, candidate_id: str, status: str, now_ms: int,
     ) -> int: ...
+    async def successor(self, *, unit: str, note_id: str) -> Note | None: ...
+    async def merged_successor_by_title(
+        self, *, unit: str, title: str,
+    ) -> Note | None: ...
 
 
 @dataclass(frozen=True)
@@ -2026,3 +2031,130 @@ async def test_a_minted_id_is_shaped_the_way_the_egress_screen_reads(
         f"branch of the one condition that decides whether an adaptor works."
     )
     assert scan_identifiers(note.head_revision_id) is not None
+
+
+# --- design 41 §7.5-7.6: an append requires an open note; a merged note forwards
+
+
+async def _merge_away(
+    notes: _Harness, *, duplicate: Note, survivor: Note, now_ms: int = NOW + 50,
+) -> None:
+    """A merge's retirement half, through the one verb that writes it today.
+    `merge_into` (§7.6, guard 2) lands with note-merge; until then an
+    operator retirement is exactly this row."""
+    affected = await notes.store.supersede(
+        key=WS, target=duplicate.id, replaced_by=survivor.id,
+        because=NoteSupersedeReason.RETIRED_MERGED, source=None, now_ms=now_ms,
+    )
+    assert affected == 1
+
+
+async def test_an_append_to_a_retired_note_raises_retired_note_error(
+    notes: _Harness,
+) -> None:
+    """Guard 1. `supersede` never touches the head, so the head a writer read
+    before a retirement still matches after it; until 2026-09-24 the append
+    succeeded into a note nothing reads again. It must refuse, write nothing,
+    and say where a merged note went."""
+    survivor = await _make(notes.store, title="Saturday dinner")
+    duplicate = await _make(notes.store, title="Miles 星期六飯局細節未定")
+    await _merge_away(notes, duplicate=duplicate, survivor=survivor)
+
+    with pytest.raises(RetiredNoteError) as excinfo:
+        await notes.store.append_revision(
+            unit=WS, note_id=duplicate.id, body="the late update",
+            parent_revision_id=duplicate.head_revision_id,
+            established_by="tag:turn-9", now_ms=NOW + 60,
+        )
+
+    assert isinstance(excinfo.value, StaleNoteHeadError), (
+        "every existing `except StaleNoteHeadError` must still hold"
+    )
+    assert excinfo.value.retire_reason == NoteSupersedeReason.RETIRED_MERGED
+    assert excinfo.value.replaced_by == survivor.id
+    got = await notes.store.read(unit=WS, note_id=duplicate.id)
+    assert got is not None and got[1].id == duplicate.head_revision_id, (
+        "nothing was written"
+    )
+
+
+async def test_a_proposed_revision_to_a_retired_note_raises_retired_note_error(
+    notes: _Harness,
+) -> None:
+    """The same guard through `propose`, the path note-candidates writes by."""
+    note = await _make(notes.store)
+    await notes.store.supersede(
+        key=WS, target=note.id, replaced_by=None,
+        because=NoteSupersedeReason.RETIRED_EXPIRED, source=None, now_ms=NOW + 9,
+    )
+
+    with pytest.raises(RetiredNoteError) as excinfo:
+        await notes.store.propose(
+            key=WS, proposals=[Proposal(
+                payload=NoteRevisionProposal(
+                    note_id=note.id, body="appended after it retired",
+                    parent_revision_id=note.head_revision_id,
+                ),
+                instruction_sha256=None, model=None,
+                established_by="dream:note-candidates:conv-1:1",
+            )],
+            now_ms=NOW + 10,
+        )
+
+    assert excinfo.value.retire_reason == NoteSupersedeReason.RETIRED_EXPIRED
+    assert excinfo.value.replaced_by is None
+
+
+async def test_successor_follows_a_merged_chain_to_the_open_note(
+    notes: _Harness,
+) -> None:
+    """§7.5: a merged note forwards; a chain (C merged into B, B later into A)
+    ends on the open note; an open note has no successor."""
+    a = await _make(notes.store, title="A")
+    b = await _make(notes.store, title="B")
+    c = await _make(notes.store, title="C")
+    await _merge_away(notes, duplicate=c, survivor=b, now_ms=NOW + 50)
+    await _merge_away(notes, duplicate=b, survivor=a, now_ms=NOW + 60)
+
+    assert (await notes.store.successor(unit=WS, note_id=c.id)).id == a.id
+    assert (await notes.store.successor(unit=WS, note_id=b.id)).id == a.id
+    assert await notes.store.successor(unit=WS, note_id=a.id) is None
+    assert await notes.store.successor(unit="elsewhere", note_id=c.id) is None
+
+
+async def test_only_a_merged_note_forwards(notes: _Harness) -> None:
+    """A `replaced_by` on a closed note is provenance (the 2026-09-24 triage
+    wrote some), not a promise the successor carries the same question."""
+    kept = await _make(notes.store, title="kept")
+    closed = await _make(notes.store, title="closed")
+    await notes.store.supersede(
+        key=WS, target=closed.id, replaced_by=kept.id,
+        because=NoteSupersedeReason.RETIRED_CLOSED, source=None, now_ms=NOW + 9,
+    )
+
+    assert await notes.store.successor(unit=WS, note_id=closed.id) is None
+    assert await notes.store.merged_successor_by_title(
+        unit=WS, title="closed") is None
+
+
+async def test_a_merged_title_forwards_and_an_ambiguous_one_does_not(
+    notes: _Harness,
+) -> None:
+    """§7.5: the title a turn still sees forwards to its survivor, normalised
+    the way every resolver compares titles. Two merged notes of one title
+    forwarding to DIFFERENT open notes answer nothing: picking one is the
+    guess every resolver in this tier refuses."""
+    survivor = await _make(notes.store, title="Saturday dinner")
+    dup = await _make(notes.store, title="星期六 26 號飯局細節未定")
+    await _merge_away(notes, duplicate=dup, survivor=survivor)
+
+    got = await notes.store.merged_successor_by_title(
+        unit=WS, title="  星期六 26 號飯局細節未定 ")
+    assert got is not None and got.id == survivor.id
+
+    other = await _make(notes.store, title="Sunday brunch")
+    twin = await _make(notes.store, title="星期六 26 號飯局細節未定")
+    await _merge_away(notes, duplicate=twin, survivor=other, now_ms=NOW + 70)
+    assert await notes.store.merged_successor_by_title(
+        unit=WS, title="星期六 26 號飯局細節未定") is None
+

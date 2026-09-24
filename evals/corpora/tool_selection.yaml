@@ -165,6 +165,42 @@ cases:
     metadata: {tools: [generate_image]}
     snapshot: *room_a
 
+  # --- the room tools (design/self-awareness/07) ----------------------------------
+  # A same-domain pair (ADR 0015 §1), and each has a neighbour it could steal
+  # from: `room_list` from `group_members` (who is HERE vs which rooms exist),
+  # `room_read` from `load_transcript` (another room vs this one). The third
+  # case is the negative: a membership question neither room tool answers.
+  #
+  # The room_list row asks what ONLY room_list carries: activity. It used to
+  # ask «which groups are you in», and on 2 of 5 draws (2026-09-24) she
+  # answered from `<presence>` with no call. That answer is correct, not a
+  # miss (operator, 2026-09-24): `<presence>` already names this group's
+  # rooms, so the call is redundant for that question. Busiest-today is in no
+  # prompt block, so a turn that answers it without the tool is guessing.
+  - name: route_room_list_busiest_today
+    entry: tag
+    expect: reply
+    mention: true
+    input: 我哋幾個group今日邊個最多人講嘢？
+    metadata: {tools: [room_list], not_tools: [group_members]}
+    snapshot: *room_a
+
+  - name: route_room_read_other_network
+    entry: tag
+    expect: reply
+    mention: true
+    input: WhatsApp個group而家講緊咩？
+    metadata: {tools: [room_read], not_tools: [load_transcript]}
+    snapshot: *room_a
+
+  - name: route_group_members_not_the_room_tools
+    entry: tag
+    expect: reply
+    mention: true
+    input: 呢個group有邊啲人？
+    metadata: {tools: [group_members], not_tools: [room_list, room_read]}
+    snapshot: *room_a
+
   # --- hot-set control -----------------------------------------------------------
   # Resident on both sides, so it should NOT move. If it does, the change moved
   # something other than cold-tool reach.
@@ -178,7 +214,7 @@ cases:
 
   # --- per-network social reads (design/instagram-adoption/18, P5, P11) -------
   # `instagram_read` takes a PERSON by name; `instagram_search` finds ACCOUNTS
-  # from free text (P11); `social_fetch` is X only. The names are synthetic and
+  # from free text (P11); X is `x_read` and `x_search` (DEC-201). The names are synthetic and
   # need not be in the room: an honest `nothing_found` is still a correctly
   # routed call.
   - name: route_instagram_read_story
@@ -186,7 +222,7 @@ cases:
     expect: reply
     mention: true
     input: Quinn個IG story而家有咩？
-    metadata: {tools: [instagram_read], not_tools: [social_fetch, web_search]}
+    metadata: {tools: [instagram_read], not_tools: [x_read, web_search]}
     snapshot: *room_a
 
   - name: route_instagram_read_posted
@@ -194,7 +230,7 @@ cases:
     expect: reply
     mention: true
     input: Quinn最近喺IG post咗啲咩？
-    metadata: {tools: [instagram_read], not_tools: [social_fetch, web_search]}
+    metadata: {tools: [instagram_read], not_tools: [x_read, web_search]}
     snapshot: *room_a
 
   # Was `route_social_fetch_instagram_search` (P5): the same message, which
@@ -204,7 +240,7 @@ cases:
     expect: reply
     mention: true
     input: 幫我喺IG search下有冇香港行山嘅account
-    metadata: {tools: [instagram_search], not_tools: [social_fetch, instagram_read]}
+    metadata: {tools: [instagram_search], not_tools: [x_read, instagram_read]}
     snapshot: *room_a
 
   - name: route_instagram_search_find_person
@@ -212,7 +248,7 @@ cases:
     expect: reply
     mention: true
     input: 幫我搵下Robin個Instagram
-    metadata: {tools: [instagram_search], not_tools: [social_fetch, web_search]}
+    metadata: {tools: [instagram_search], not_tools: [x_read, web_search]}
     snapshot: *room_a
 
   # The boundary with the row above, pinned as a pair: the same request about
@@ -225,7 +261,7 @@ cases:
     expect: reply
     mention: true
     input: 幫我搵下Miles個Instagram
-    metadata: {tools: [instagram_read], not_tools: [instagram_search, social_fetch]}
+    metadata: {tools: [instagram_read], not_tools: [instagram_search, x_read]}
     snapshot: *room_a
 
   - name: route_instagram_search_handle
@@ -233,7 +269,7 @@ cases:
     expect: reply
     mention: true
     input: Sky個IG handle係咩？
-    metadata: {tools: [instagram_search], not_tools: [social_fetch, web_search]}
+    metadata: {tools: [instagram_search], not_tools: [x_read, web_search]}
     snapshot: *room_a
 
   # P10 and P12: a pasted link and a typed handle are read by `instagram_read`
@@ -244,7 +280,7 @@ cases:
     expect: reply
     mention: true
     input: https://www.instagram.com/reel/SynthReel01/ 呢條reel入面有咩？
-    metadata: {tools: [instagram_read], not_tools: [web_fetch, social_fetch, instagram_search]}
+    metadata: {tools: [instagram_read], not_tools: [web_fetch, x_read, instagram_search]}
     snapshot: *room_a
 
   - name: route_instagram_read_profile_link
@@ -252,7 +288,7 @@ cases:
     expect: reply
     mention: true
     input: https://www.instagram.com/synth.example/ 呢個係邊個？
-    metadata: {tools: [instagram_read], not_tools: [web_fetch, social_fetch]}
+    metadata: {tools: [instagram_read], not_tools: [web_fetch, x_read]}
     snapshot: *room_a
 
   - name: route_instagram_read_handle
@@ -260,7 +296,7 @@ cases:
     expect: reply
     mention: true
     input: who is @synth.example on IG?
-    metadata: {tools: [instagram_read], not_tools: [social_fetch, web_search]}
+    metadata: {tools: [instagram_read], not_tools: [x_read, web_search]}
     snapshot: *room_a
 
   - name: route_instagram_search_find_name_en
@@ -268,21 +304,163 @@ cases:
     expect: reply
     mention: true
     input: find Taylor Example on Instagram
-    metadata: {tools: [instagram_search], not_tools: [instagram_read, social_fetch]}
+    metadata: {tools: [instagram_search], not_tools: [instagram_read, x_read]}
     snapshot: *room_a
 
-  - name: route_social_fetch_x_search
+  # DEC-201: `social_fetch` is retired into `x_read` (a link or a handle) and
+  # `x_search` (free text). The two rows below were `route_social_fetch_x_search`
+  # and `route_social_fetch_x_link`, same messages; the handle row is new.
+  - name: route_x_search
     entry: tag
     expect: reply
     mention: true
     input: 幫我喺X search下大家點講個颱風
-    metadata: {tools: [social_fetch], not_tools: [instagram_search, instagram_read]}
+    metadata: {tools: [x_search], not_tools: [x_read, instagram_search, instagram_read, web_search]}
     snapshot: *room_a
 
-  - name: route_social_fetch_x_link
+  - name: route_x_read_link
     entry: tag
     expect: reply
     mention: true
     input: https://x.com/example/status/1234567890 呢個post講咩？
-    metadata: {tools: [social_fetch], not_tools: [instagram_read, instagram_search, web_fetch]}
+    metadata: {tools: [x_read], not_tools: [x_search, instagram_read, instagram_search, web_fetch]}
+    snapshot: *room_a
+
+  - name: route_x_read_handle
+    entry: tag
+    expect: reply
+    mention: true
+    input: what has @synth_example been posting on X lately?
+    metadata: {tools: [x_read], not_tools: [x_search, instagram_read, web_search]}
+    snapshot: *room_a
+
+  # --- what the call carried: the image-generation skill (2026-09-24) ---------
+  # Routing alone passes all three of these on the failure they exist for: a
+  # «draw yourself» answered with an empty room and no reference was one
+  # `generate_image` call, like the right answer. So each also grades the
+  # ARGUMENTS (`ToolRouteGrader`'s `args_*`, read off the executed span). The
+  # sha is her canonical picture's, exactly as the skill names it; the
+  # resolver takes only the full sha, so a prefix would not be her either.
+  # `args_date` is resolved against the clock line the turn was SHOWN, so the
+  # expected Saturday moves with the day the case runs. If the deployment's
+  # `[image_gen]` is enabled, each draw spends one provider call, as
+  # `route_generate_image` already does. UNRUN as of 2026-09-24.
+  - name: route_generate_image_self_carries_her_reference
+    entry: tag
+    expect: reply
+    mention: true
+    input: draw yourself
+    metadata:
+      tools: [generate_image]
+      args_include:
+        generate_image: ["535e4da56b933c9c30ea28182ba651246ce9bc65608ebdf92363e6342ab8567c"]
+    snapshot: *room_a
+
+  # The live request after #456 deployed (2026-09-24). She left her reference
+  # off, as she should, and then wrote her OWN rendering into the prompt
+  # («stylized 3D mascot», «collectible-character quality»): her look is not a
+  # house style. «mascot» and «collectible» are words only her appearance
+  # section supplies; a request for a plain picture of a pet never does.
+  - name: route_generate_image_not_her_leaves_the_reference_off
+    entry: tag
+    expect: reply
+    mention: true
+    input: draw a cat sleeping on a laptop
+    metadata:
+      tools: [generate_image]
+      args_exclude: {generate_image: ["535e4da5", "mascot", "collectible"]}
+    snapshot: *room_a
+
+  # Was «make a poster for this Saturday's dinner» until 2026-09-24. Run on
+  # norty at n=5 per arm, it collided with the room's REAL calendar: room A
+  # has a dinner planned on another day that week, and 8 of 10 draws on #469
+  # wrote that event's date instead of «this Saturday», absolutely and
+  # correctly per the event, and were graded FAIL. The case measured which
+  # dinner she believed, not whether she writes a date out. A picnic is
+  # nothing the room has planned, so «this Saturday» has one reading.
+  - name: route_generate_image_poster_writes_the_date_out
+    entry: tag
+    expect: reply
+    mention: true
+    input: make a poster for a picnic this Saturday
+    metadata:
+      tools: [generate_image]
+      args_date: {generate_image: saturday}
+      args_exclude: {generate_image: ["this saturday", "tomorrow", "today"]}
+    snapshot: *room_a
+
+  # A reel or post SHARED into a room (2026-09-24). Live, a shared reel arrived
+  # as `[shared reel by @x <link>] [image <handle>]`; asked "what is in this
+  # reel", she called only `media_fetch` on the handle, which is the reel's
+  # still cover, and told the room she could see one frame and not the clip,
+  # with `instagram_read` in the turn and the link in the line. The fix renders
+  # the handle as `[cover image …]`, makes `media_fetch` say it served only the
+  # cover, and widens `instagram_read`'s when-clause to a shared post or reel.
+  #
+  # THE SHAPE, and what it cannot carry. The live share was one message and the
+  # question the next; this corpus has no path for an authored prior line (R1,
+  # `evals/scenarios.py`: a case's history is a real room's, never written by
+  # hand). So the share rides IN the tag message, rendered exactly as the
+  # Instagram parser renders a share that came with text: the sharer's words,
+  # then the shared line, then the cover placeholder. That is a real production
+  # shape (a `shared` object with `text` beside it), anchored in room A like
+  # every case here. It differs from the live failure in three stated ways:
+  # the line is in the tag message rather than the one before it; the room is
+  # room A, a Signal room (no Instagram room is anchored in any corpus yet);
+  # and the handle was typed, not held, so it names no blob and a
+  # `media_fetch` on it answers `nothing_found` or `unavailable`, not the
+  # one-frame `ok` that ended the live turn. That difference is why these
+  # cases carry an ORDER criterion (`before`): with no blob behind the handle,
+  # a `media_fetch` finds nothing and she may then open the link, so
+  # "instagram_read ran" would pass the defect. `media_fetch` BEFORE
+  # `instagram_read` is a FAIL; after it (watching the video the read
+  # returned) is the intended chain. See `ToolRouteGrader`.
+  #
+  # `route_instagram_read_shared_reel_bare_image` keeps the PRE-FIX rendering
+  # (`[image …]`) on purpose. The input is authored, so the label half of the
+  # fix cannot move between two arms of the other three; this one isolates the
+  # when-clause (run it on master and on the branch). Every handle, code and
+  # shortcode here is synthetic.
+  - name: route_instagram_read_shared_reel
+    entry: tag
+    expect: reply
+    mention: true
+    input: what is in this reel [shared reel by @synth.example https://www.instagram.com/reel/SynthReel02/] [cover image c0de01]
+    metadata:
+      tools: [instagram_read]
+      not_tools: [web_fetch, x_read, instagram_search]
+      before: {instagram_read: [media_fetch]}
+    snapshot: *room_a
+
+  - name: route_instagram_read_shared_reel_yue
+    entry: tag
+    expect: reply
+    mention: true
+    input: 呢條 reel 講咩 [shared reel by @synth.example https://www.instagram.com/reel/SynthReel02/] [cover image c0de01]
+    metadata:
+      tools: [instagram_read]
+      not_tools: [web_fetch, x_read, instagram_search]
+      before: {instagram_read: [media_fetch]}
+    snapshot: *room_a
+
+  - name: route_instagram_read_shared_post
+    entry: tag
+    expect: reply
+    mention: true
+    input: 呢個 post 啲相影咗咩 [shared post by @synth.example https://www.instagram.com/p/SynthPost02/] [cover image c0de02]
+    metadata:
+      tools: [instagram_read]
+      not_tools: [web_fetch, x_read, instagram_search]
+      before: {instagram_read: [media_fetch]}
+    snapshot: *room_a
+
+  - name: route_instagram_read_shared_reel_bare_image
+    entry: tag
+    expect: reply
+    mention: true
+    input: what is in this reel [shared reel by @synth.example https://www.instagram.com/reel/SynthReel02/] [image c0de01]
+    metadata:
+      tools: [instagram_read]
+      not_tools: [web_fetch, x_read, instagram_search]
+      before: {instagram_read: [media_fetch]}
     snapshot: *room_a

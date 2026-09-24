@@ -1,0 +1,4 @@
+{
+  "type": "none",
+  "reason": "ADR 0015 batch 1 infrastructure. NativeTool gains a `level` field, and the policy tests check level, ceiling, dashes, non-English strings and prose silently dropped after Args. Every existing tool sits on a shrink-only allowlist, so no tool text changes yet."
+}

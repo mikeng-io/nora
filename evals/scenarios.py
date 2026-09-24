@@ -311,6 +311,7 @@ CORPUS_ENTRY: dict[str, str] = {
     # right networks, or recited them unasked.
     "presence": "tag",
     "standing": "standing",
+    "tool_reporting": "tag",
 }
 
 #: S2 — graded on WHICH TOOL ran, not on whether she replied
@@ -326,6 +327,9 @@ ROUTED_CORPORA = frozenset({"tool_selection"})
 JUDGED_CORPORA = frozenset({
     "being_contradicted", "identity_grounding", "source_scope",
     "injections", "transcript_injection", "standing", "presence",
+    # ADR 0015 §4: what she SAYS after a tool returns a status. Its opted-in
+    # `tool_status_reported` binds with safety (`Judge.grade`, #449).
+    "tool_reporting",
 })
 
 #: Corpora with NO structural reading at all: every case's verdict IS the

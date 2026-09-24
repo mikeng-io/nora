@@ -160,6 +160,48 @@ async def test_note_read_matches_a_title_case_insensitively():
     assert (await tools["note_read"](title="  dinner, 9 sept "))["status"] == "ok"
 
 
+async def test_note_read_on_a_merged_title_reaches_its_survivor():
+    """design 41 §7.5. The turn's `<notes>` was rendered before a merge, so the
+    model names the duplicate's title after it retired. «No note by that
+    title» would be false of the question, which lives on in the survivor —
+    the read forwards, and says which note it actually read."""
+    from nora.domain.notes import NoteSupersedeReason
+
+    store = InMemoryNoteStore()
+    survivor = await _seed(store, title="Saturday dinner", body="time and place open")
+    duplicate = await _seed(store, title="星期六飯局細節未定", body="asked twice")
+    await store.supersede(
+        key=UNIT, target=duplicate.id, replaced_by=survivor.id,
+        because=NoteSupersedeReason.RETIRED_MERGED, source=None, now_ms=NOW + 1,
+    )
+    tools = _tools(notes=store)
+
+    out = await tools["note_read"](title="星期六飯局細節未定")
+
+    assert out["status"] == "ok"
+    assert out["title"] == "Saturday dinner"
+    assert out["body"] == "time and place open"
+
+
+async def test_note_create_refuses_an_open_title():
+    """design 41 §7.2. Nothing in the schema stops two open notes sharing a
+    title, and one is an amplifier on both write paths — so the tag path
+    refuses to start one, under any spelling `note_handle` treats as the
+    same, and points the model at the note that already carries it."""
+    store = InMemoryNoteStore()
+    await _seed(store, title="Saturday dinner", body="time and place open")
+    tools = _tools(notes=store)
+
+    out = await tools["note_create"](
+        title="  saturday DINNER ", description="d", uncertainty="u",
+        closing_condition="c", body="b", anchor_date=20261011,
+    )
+
+    assert out["status"] == "refused"
+    assert "note_read" in out["note"]
+    assert len(await store.standing(unit=UNIT)) == 1
+
+
 async def test_note_read_answers_nothing_found_for_a_title_that_is_not_there():
     store = InMemoryNoteStore()
     await _seed(store, title="Dinner, 9 Sept", body="b")
@@ -691,3 +733,76 @@ async def test_a_room_policy_cannot_name_gets_unavailable_never_a_guess():
     store = InMemoryNoteStore()
     out = await _tools(notes=store, unit=None)["note_read"](title="anything")
     assert out["status"] == "unavailable"
+
+
+# ── ADR 0015 §3: how to report a status rides in the result ─────────────────
+
+async def test_every_non_ok_note_status_carries_a_note():
+    """The four descriptions only NAME their statuses; what to say or fix is
+    the result's `note`. Every non-ok path the fakes reach is driven here, so
+    one that loses its note goes red.
+
+    One note is exempt from the dash check: a domain refusal is
+    `nora.domain.notes`' own sentence, which the curator reads too.
+    (`notes_off` was exempt while `remind` still shared an unrewritten copy;
+    both are rewritten now and it is checked like the rest.)"""
+    store = InMemoryNoteStore()
+    await _seed(store, title="Dinner, 9 Sept", body="Nobody has booked.")
+    await _seed(store, title="Wedding", body="Grant's")
+    await _seed(store, title="wedding", body="Blake's")
+    tools = _tools(notes=store)
+    stale_store = InMemoryNoteStore()
+    stale = await _seed(stale_store, title="Dinner, 9 Sept", body="Nobody has booked.")
+    stale_tools = _tools(notes=stale_store)
+    await stale_tools["note_read"](title="Dinner, 9 Sept")
+    await stale_store.append_revision(
+        unit=UNIT, note_id=stale.id, body="Ada booked it.",
+        parent_revision_id=stale.head_revision_id, established_by="curator",
+        now_ms=NOW + 1,
+    )
+    create = {
+        "title": "T", "description": "d", "uncertainty": "u",
+        "closing_condition": "c", "body": "b", "anchor_date": 20261011,
+    }
+    cases = {
+        "unavailable/read_no_store": (_tools(notes=None)["note_read"], {"title": "x"}),
+        "nothing_found/read": (tools["note_read"], {"title": "Grant's wedding"}),
+        "refused/read_ambiguous": (tools["note_read"], {"title": "Wedding"}),
+        "refused/search_empty": (tools["note_search"], {"query": "  "}),
+        "nothing_found/search": (tools["note_search"], {"query": "hotel"}),
+        "refused/create_no_tagger": (
+            _tools(notes=InMemoryNoteStore(), tagger=None)["note_create"], create,
+        ),
+        "refused/create_domain": (
+            tools["note_create"], {**create, "anchor_date": None},
+        ),
+        "refused/update_no_tagger": (
+            _tools(notes=store, tagger=None)["note_update"],
+            {"title": "Dinner, 9 Sept", "body": "b"},
+        ),
+        "refused/update_not_read": (
+            tools["note_update"], {"title": "Dinner, 9 Sept", "body": "b"},
+        ),
+        "refused/update_ambiguous": (tools["note_update"], {"title": "Wedding", "body": "b"}),
+        "nothing_found/update": (tools["note_update"], {"title": "Nope", "body": "b"}),
+        "unavailable/update_stale": (
+            stale_tools["note_update"], {"title": "Dinner, 9 Sept", "body": "b"},
+        ),
+    }
+    exempt = {"refused/create_domain"}
+    for case, (call, kwargs) in cases.items():
+        out = await call(**kwargs)
+        assert out["status"] == case.split("/")[0], (case, out)
+        assert isinstance(out.get("note"), str) and out["note"].strip(), case
+        if case not in exempt:
+            assert "—" not in out["note"] and "–" not in out["note"], case
+
+
+async def test_a_missing_title_note_says_to_check_the_index_not_to_guess_variants():
+    """The rule that left note_read's description («the titles in <notes> are
+    the only ones there are, so check it rather than trying variations») now
+    rides on the `nothing_found` it is about."""
+    store = InMemoryNoteStore()
+    out = await _tools(notes=store)["note_read"](title="Grant's wedding")
+    assert out["status"] == "nothing_found"
+    assert "<notes>" in out["note"] and "variations" in out["note"]

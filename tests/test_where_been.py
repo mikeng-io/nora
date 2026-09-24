@@ -380,6 +380,93 @@ async def test_where_been_the_what_vocabulary_is_closed(persons):
     assert mobility.calls == []
 
 
+# ---- ADR 0015 §3: how to report a status rides in the result -----------------
+
+
+class _BrokenMobility(_FakeMobility):
+    async def places_with_aggregates(self, *, subject_id):
+        raise ConnectionError("mobility store unreachable")
+
+
+async def test_every_non_ok_status_carries_a_note(persons):
+    """ADR 0015 §3/§6: the description only NAMES the statuses; what to say
+    for each is the result's `note`. Every non-ok code path is driven here, so
+    a path that loses its note (the reporting rule for that status) goes red."""
+    pat = frozenset({"+85268886688"})
+    tagger = persons.resolve("signal", "+85290000101")
+    empty = _FakeMobility()
+    cases = {
+        "unavailable/what": (_where_been(persons, empty, members=(MILES,)), ("anomaly",), {}),
+        "unavailable/unwired": (_where_been(persons, None, members=(MILES,)), ("places",), {}),
+        "unavailable/window": (
+            _where_been(persons, empty, members=(MILES,)), ("rhythm",), {"days": "a week"},
+        ),
+        "unavailable/date": (
+            _where_been(persons, empty, members=(MILES,)), ("day",), {"date": "yesterday"},
+        ),
+        "unavailable/room": (
+            _where_been(persons, empty, members=(MILES,), fail=True), ("places",), {},
+        ),
+        "unavailable/degraded": (
+            _where_been(persons, empty, members=(MILES,), fail=True, tagger=tagger),
+            ("places",), {},
+        ),
+        "unavailable/read": (
+            _where_been(persons, _BrokenMobility(), members=(MILES,)),
+            ("places",), {"name": "Miles"},
+        ),
+        "refused": (
+            _where_been(persons, empty, members=(MILES, STRANGER)), ("places",), {},
+        ),
+        "not_found": (
+            _where_been(persons, empty, members=(MILES,)), ("places",), {"name": "Nobody"},
+        ),
+        "ambiguous": (
+            _where_been(persons, empty, members=(MILES, pat), with_pat=True),
+            ("places",), {"name": "Miles"},
+        ),
+        "nothing_found": (
+            _where_been(persons, empty, members=(MILES,)), ("places",), {"name": "Miles"},
+        ),
+    }
+    for case, (tool, args, kwargs) in cases.items():
+        out = await tool(*args, **kwargs)
+        assert out["status"] == case.split("/")[0], (case, out)
+        assert isinstance(out.get("note"), str) and out["note"].strip(), case
+        assert "—" not in out["note"] and "–" not in out["note"], case
+
+
+async def test_an_ok_note_carries_the_rules_its_answer_needs(persons):
+    """The reporting rules that left the description (the numbers carry their
+    window; `unlabeled` is no pattern, never a place; an unmatched stay's
+    lat/lng is never read as a neighbourhood, 2026-09-06) arrive in the `ok`
+    they are about, and a clause arrives only when its field is there."""
+    mobility = _FakeMobility(
+        places=[dict(UNLABELED_PLACE), dict(MILES_PLACE)], rhythm=list(RHYTHM_BINS),
+        stays=[dict(s) for s in DAY_STAYS], trips=DAY_TRIPS,
+    )
+    tool = _where_been(persons, mobility, members=(MILES,))
+
+    places = await tool("places", name="Miles")
+    assert "unlabeled" in places["note"]
+    labelled_only = await _where_been(
+        persons, _FakeMobility(places=[dict(MILES_PLACE)]), members=(MILES,),
+    )("places", name="Miles")
+    assert "unlabeled" not in labelled_only["note"]
+
+    rhythm = await tool("rhythm", name="Miles", days=14)
+    assert "past 14 days" in rhythm["note"]
+
+    day = await tool("day", name="Miles", date="2026-09-04")
+    assert "2026-09-04" in day["note"]
+    assert "neighbourhood" not in day["note"]   # the in-day stay is labelled home
+    unmatched = dict(DAY_STAYS[1], place_kind=None, place_label=None)
+    day = await _where_been(
+        persons, _FakeMobility(stays=[unmatched]), members=(MILES,),
+    )("day", name="Miles", date="2026-09-04")
+    assert "neighbourhood" in day["note"]
+
+
 # ---- unlabeled survives end-to-end ------------------------------------------
 
 

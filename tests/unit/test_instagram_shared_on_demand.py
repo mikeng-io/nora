@@ -136,7 +136,11 @@ async def test_a_shared_thumbnail_is_held_but_never_sent_to_the_interpreter():
     assert len(staged.media_blobs) == 1
     blob = staged.media_blobs[0]
     assert wiring.blobs.blobs[blob.sha256] == PIXELS
-    assert staged.body.endswith(f"[image {blob.handle}]")
+    assert staged.body.endswith(f"[cover image {blob.handle}]")
+    # Recorded as the cover, because `media_json` is all `media_fetch` has
+    # when it serves this handle; `on_demand` does not survive into it.
+    assert blob.role == "cover"
+    assert '"role": "cover"' in (_row(staged).media_json or "")
     row = await wiring.store.get(sha256=blob.sha256)
     assert row is not None
     # And NO model looked at it.
@@ -145,9 +149,28 @@ async def test_a_shared_thumbnail_is_held_but_never_sent_to_the_interpreter():
     assert wiring.store.comprehended == []
 
 
+async def test_a_shared_items_video_or_sticker_is_never_recorded_as_a_cover():
+    """The role rides on the LABEL's predicate, not on `on_demand` alone. A
+    preview that is a video or a sticker keeps its plain label, so it must
+    not carry a role the transcript never claimed, or `media_fetch` would
+    call it a cover. (Only images have been observed as previews; these are
+    the shapes the predicate has to refuse, not ones seen live.)"""
+    for kind, label in (("video", "video"), ("animated", "sticker")):
+        wiring = _Wiring()
+        event = _shared_reel_event()
+        event["media"] = {"kind": kind, "url": THUMB_URL}
+
+        staged = await wiring.ingest(event)
+
+        (blob,) = staged.media_blobs
+        assert staged.body.endswith(f"[{label} {blob.handle}]"), staged.body
+        assert blob.role == "", f"a {kind} preview was recorded as a cover"
+        assert '"role"' not in (_row(staged).media_json or "")
+
+
 async def test_an_unread_thumbnail_renders_a_bare_handle_that_claims_nothing():
     """What the model sees for the thumbnail until somebody asks: the kind, the
-    author, the link, and `[image <handle>]` with nothing after the handle. The
+    author, the link, and `[cover image <handle>]` with nothing after the handle. The
     render join adds a description only for a row that has been read, so an
     on-demand thumbnail cannot be rendered as if it had been looked at.
 
@@ -166,7 +189,7 @@ async def test_an_unread_thumbnail_renders_a_bare_handle_that_claims_nothing():
     handle = shared.media_blobs[0].handle
     assert rendered.body == (
         "[shared reel by @someaccount https://www.instagram.com/reel/SynthReel01/]"
-        f" [image {handle}]"
+        f" [cover image {handle}]"
     )
 
     direct = await wiring.ingest(_direct_photo_event())
@@ -184,6 +207,9 @@ async def test_a_photo_sent_directly_is_still_read_at_ingest():
     assert len(wiring.interpreter.calls) == 1
     row = await wiring.store.get(sha256=staged.media_blobs[0].sha256)
     assert row is not None and row.comprehended
+    # And it is somebody's photo, not a cover: plain label, no role.
+    assert staged.body == f"[image {staged.media_blobs[0].handle}]"
+    assert staged.media_blobs[0].role == ""
 
 
 async def test_the_same_bytes_sent_directly_after_a_share_are_read_then():

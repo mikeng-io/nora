@@ -2,18 +2,22 @@
 type: design
 title: "Time Is a Property of a Note, Not Its Axis — the Note Tier's Dated and Dateless Lanes"
 description: "The note tier was built around a date: the create path demands an anchor_date, the curator selects on passed anchors, the index renders a countdown. The operator's reframe is that the architecture had it backwards — a note is a thing the room must not drop, and whether it has a moment attached is a PROPERTY of that thing, not the axis the tier is organised on. The living thread («what game next») has no date and must still be a note. This node records the reframe and maps the cascade the operator asked for: schema, the Dreamer's per-note timer, index render, curator selection, proactive, and the three issues it absorbs. Time becomes optional; it does not become ignorable — silence is still the one signal a conversation cannot carry."
-tags: [nora, note-tier, dreamer, curator, candidates, dateless, anchor, revisit, strikes, timer, schema, proactive]
+tags: [nora, note-tier, dreamer, curator, candidates, dateless, anchor, revisit, strikes, timer, schema, proactive, duplicates, note-merge]
 timestamp: '2026-09-16'
+updated: '2026-09-24'
 edges:
   - {dst: 37-note-candidates-v2, rel: extends, provenance: asserted}
   - {dst: 34-note-dreamer-consolidation, rel: revises, provenance: asserted}
   - {dst: 33-note-dreamer-schedule, rel: extends, provenance: asserted}
   - {dst: 27-note-dreamer, rel: revises, provenance: asserted}
   - {dst: 40-proactive-origin-delivery, rel: relates_to, provenance: asserted}
-version: 1
+  - {dst: 26-standing, rel: revises, provenance: asserted}
+version: 2
 ---
 
 # Time Is a Property of a Note, Not Its Axis
+
+*§7 (2026-09-24, DEC-202) adds the duplicate bound this node declined in its first version: the Standing debrief stops creating notes, creation refuses exact duplicates, and a new `note-merge` adaptor folds what gets through. It reverses §3.4's «no merge verb», §6's «nothing here revives it», R-75's merge clauses and 27 §2's «never on topical similarity»; each is marked where it stands.*
 
 *DEC-194 — renumbered 2026-09-22. Drafted as DEC-190 at PR opening 2026-09-16; DEC-190 was taken by the presence place-identity decision (#336, merged 2026-09-17) while this PR sat open, and master now runs to DEC-193. Below its decision-index row.*
 
@@ -288,7 +292,10 @@ gap and is fixed by fixing it.
   evidence window rather than retiring on the counter alone. **Silence still
   retires nothing; silence plus a model reading the room's later traffic may.**
 - What stays: the union-and-deduplicate of the two reads, the per-tick caps,
-  the retire-only posture, no merge verb.
+  the retire-only posture. ~~No merge verb.~~ **Superseded 2026-09-24 (§7):
+  the curator stays retire-only, and merging moves to a separate adaptor,
+  `note-merge`, because the curator judges each note alone and never puts two
+  side by side.**
 
 ### 3.5 Proactive and the close verb
 
@@ -334,6 +341,12 @@ See §6.
 | retirement ACTION at the strike ceiling | **MUST BUILD** — §3.2 / 37 §4 |
 | close verb in `note-candidates` | **MUST BUILD** — §3.5 |
 | dateless index line carries a time | **MUST BUILD** — §3.3 |
+| the debrief creates no notes | **DONE** 2026-09-24 (#451) — §7.1 |
+| a revision cannot land on a retired note; a merged note forwards | **MUST BUILD** — §7.5/§7.6, step 1 |
+| `ambiguous` stops creating; `note_create` refuses an open title | **MUST BUILD** — §7.2, step 2 |
+| `merge_into`, the curator's head-checked retire, `note-merge` in shadow | **MUST BUILD** — §7.3–7.7, step 3 |
+| duplicate eval set, gating `on` | **MUST BUILD** — §7.8, step 4 |
+| unique open-title index | **MUST BUILD** — §7.2 (3), step 5 |
 
 Build order, measurement and the scenario cases are a follow-on issue's, not
 this node's. The one ordering claim this node does make: **the seed and the
@@ -369,13 +382,356 @@ close and §2's table loses a column.**
   reasoning: a second time on a note is a different change from the absence of
   the first, and it becomes clean to express only once time is a property.
   Filed as a follow-on, sequenced after the dateless lane ships.
-- **#236 — partly absorbed.** The duplicate bound it tracks is, for the
-  dateless lane, exactly two things this node specifies: the judgement gate
-  (37 §3) at the front, and the strikes retirement at the back. What it is
-  **not** is a merge verb — merge was deleted 2026-09-08 and nothing here
-  revives it. The dated lane's duplicate bound is unchanged and stays #236's.
+- **#236 — absorbed (2026-09-24).** The duplicate bound it tracks is, for the
+  dateless lane, the judgement gate (37 §3) at the front and the strikes
+  retirement at the back. ~~What it is **not** is a merge verb — merge was
+  deleted 2026-09-08 and nothing here revives it.~~ **Superseded by §7: both
+  lanes' duplicates are folded by `note-merge`, a model-judged merge that
+  needs no entity key.**
   The one thing this node *adds* to #236's surface is §3.1's NULL-key defect,
   which would create dateless duplicates faster than any gate retires them.
+
+## 7. The duplicate bound: the debrief stops creating notes, creation refuses what it can, and `note-merge` folds what gets through (2026-09-24, DEC-202)
+
+*Revised the same day after two independent reviews (a fact-check against the
+tree and the live DB, and an adversarial design audit). Every claim below was
+re-read at `origin/master` `6f83d504` and on norty's live DB.*
+
+### 7.0 What was true on 2026-09-24 (read back)
+
+- **The Standing debrief was the main note creator.** 52 of the 64 live notes in
+  `friends`/`ridgeline`/`wedding` carried its stamp (a bare tag id as the first
+  revision's `established_by`), 12 came from `note-candidates` and 0 from the tag
+  path. A read of all 52: **5** genuine group questions, **25** about Nora's own
+  turns (tool failures, her own unanswered replies), **21** duplicates, **1** a
+  question nobody raised. It never saw the open notes and could only create: 47
+  of the 52 have exactly one revision, and one 09-18 supper thread got 12 notes.
+- **Its notes suppressed `note-candidates`.** The candidates objective tells the
+  model not to re-propose, as if new, something already in the notebook it was
+  shown (`note-candidates.md:42`; it may note that an entry needs an update). In
+  3 of the genuine cases it judged the triggering message a committed plan with
+  open details and held back only because a debrief note existed (Langfuse
+  `918f8b96` msg 6543, `f3375235` msg 6778, `d326a1ec` msg 6784); in a fourth
+  (msg 6542, the 龍哥 headcount) it judged the message not committed at all. The
+  control is clean: in `d326a1ec` it skipped Saturday dinner («already in
+  notebook») and created Friday lunch (msg 6791), which had no debrief note.
+- **Nothing merges.** The curator's merge half went on 2026-09-08 (R-75: it keyed
+  on `note_entity`, which nothing populates once the knowledge tier was
+  deleted), and `note-candidates`' date-matching fallback went on 2026-09-13
+  (#228). The curator's docstring: *"nothing merges a duplicate anywhere in this
+  tier any more"* (`note_curator.py:27-28`). What stood in for merging was
+  «duplicates are not created», and the debrief broke it.
+- **The curator never compares notes with each other.** `NoteCuratorAdaptor.inputs`
+  (`note_curator.py:822`) reads `anchored_before` and `due_for_revisit` and
+  judges each selected note against its own room's evidence. A gate-created note
+  is seeded with `revisit_at` = its anchor day minus the lead days
+  (`domain/notes.py:215-218`), so the curator does see it before the day; a
+  tag-created or debrief-created note has `revisit_at` NULL and is first
+  selected after the day. Either way, nothing in its input puts two notes side
+  by side.
+- **A note's title is NOT unique, whatever the comments say.** `schema.py:2082`
+  and DEC-189's text state that `note`'s uniqueness is the title per unit. No
+  such index exists in `schema.py`, in any migration (0026 creates only the two
+  partial btrees), or live. Two open notes titled 「今晚宵夜地點時間未定」
+  (`c0151d45`, `9496d5e7`) co-existed from 09-18 16:34 to 09-24 11:07. An
+  exact-title duplicate is an amplifier on both write paths: a candidate naming
+  that title matches two notes and the gate CREATES a third (`ambiguous`,
+  `note_candidates.py:1194`, `:1207-1210`), and the tag path's `note_read` /
+  `note_update` refuse it as ambiguous (`tools.py:8621-8643`).
+- **A revision can land on a retired note.** `_append_on_conn`'s compare-and-swap
+  (`nora/infra/sql/notes.py:420-428`) checks `id`, `unit` and `head_revision_id`
+  only; `supersede` sets `retired_at` without touching the head
+  (`notes.py:1035-1043`); `propose` funnels through the same append (`:933`);
+  the in-memory double has the same hole (`nora/testing/note_store.py:239-252`).
+  And `read` returns retired notes (`notes.py:340`), so `note_candidates._update`'s
+  `current is None` guard (`note_candidates.py:1312-1321`) cannot catch a
+  retirement, though its comment says it does.
+- **A lost update is not retried.** `note_candidates._update` catches
+  `StaleNoteHeadError` and leaves the staging row pending
+  (`note_candidates.py:1366-1376`); nothing re-selects pending rows, and the
+  adaptor is watermarked (`:894`), so its next pass reads only newer messages.
+- **The curator's retirement is check-then-act.** It re-reads the head
+  (`note_curator.py:1186`), then `supersede` runs in a separate transaction with
+  no head check.
+- **A pending proactive reminder dies with its note.** The fire-time screen
+  cancels a row whose note is retired (`nora/app/proactive_screen.py:147`,
+  `cancelled_note_retired`), and the once-a-day wake limit is per note
+  (`proactive.py:1429`).
+- **Adaptors run concurrently, and `note-candidates` runs per room.** The lock is
+  `f"{adaptor.name}:{key}"` (`nora/app/runtime.py:1087`), and `note-candidates`'
+  key is a room (`key_kind="scope"`), so two rooms of one unit can run it at
+  once alongside the curator and any unit-keyed adaptor.
+
+### 7.1 The debrief creates no notes (done, #451)
+
+Design 26 §1 put the note tier's proposals on the debrief only because it was
+the one after-the-reply path; 26 §7 is marked reversed. The debrief writes the
+room's position and nothing else. The 49 notes it left open were triaged the
+same day: 42 retired (21 `retired-closed` with `replaced_by` the note they
+duplicate, 21 `retired-expired`, every anchor 0914–0923), 5 genuine kept, 2
+held (`2358d164`, `ec18f8d1`) for `retired-withdrawn` (§7.6). Backup:
+`~/backups/note-open-before-retire-20260924.csv` on norty. The 21 duplicates
+are relabelled `retired-merged` once that value exists, so «how many closed»
+stops counting them.
+
+### 7.2 Prevent first: three cheap refusals at creation
+
+The design audit's point, and the order it implies: most remaining duplicates
+can be refused where they are made, and a merge pass is the back-stop for what
+cannot. Built first, and measured before `note-merge` is enabled (§7.8):
+
+1. **`ambiguous` stops creating.** A candidate whose `updates` title matches
+   more than one open note is left pending and counted `ambiguous`, not written
+   as a new note. Creating a third note is the amplifier in §7.0; a pending row
+   loses no text.
+2. **`note_create` refuses an open title.** The tag path's create refuses a
+   normalised title (`note_handle`) that an open note in the unit already has,
+   and tells the model to update that note instead.
+3. **The unique partial index follows.** `(unit, lower(btrim(title))) WHERE
+   retired_at IS NULL`, once (1) and (2) are live and the open notebook holds no
+   exact-title duplicate. `note-candidates`' create path must then treat the
+   violation as `ambiguous` (pending), never let it abort `propose`'s batch.
+   This makes `schema.py:2082` and DEC-189's text true instead of rewriting them.
+
+### 7.3 `note-merge`: one job, and why it is not the curator
+
+A new Dreamer adaptor, `note-merge`, keyed on the unit. **Its one job: two open
+notes asking the same open question become one.**
+
+| | `note-curation` | `note-merge` |
+|---|---|---|
+| judges | each note, alone, against its room | notes against each other |
+| selection | past its day, or due for revisit | notes created or revised since the last pass, against every other open note |
+| when | the per-note clock | when the notebook changed (§7.4) |
+| evidence | the room's messages since the note | the notes themselves |
+| action | retire (`closed`/`expired`) | fold one note into another, then retire it (`merged`) |
+
+Folding merge into the curator would put a second, unrelated question into its
+prompt and widen its input to every open note. 34 folded the revisitor into the
+curator because they did «substantially the same work» on the same selection
+(34:25); merge does neither.
+
+**Tools-less.** What it judges is known before the call — «knowable before the
+call is an input» (`08-state.md:4`) — so the notes are rendered in and the model
+gets no tools. **One sample**: the runtime UNIONS samples
+(`nora/agent/dreamer.py:1555-1560`), so with `samples > 1` a group any one
+sample proposed would be applied, which fails toward merging. `note-merge` pins
+`samples = 1`.
+
+### 7.4 When it runs, and what it is shown
+
+- **State**: a `DreamScheduleClock` row `note-merge:pass` per unit, which survives
+  restarts. It is stamped with the **render instant** (the time `inputs` read the
+  notebook), as the last write in `commit`, and never on an `unavailable` pass.
+  Stamping with the commit time instead — as the proactive pass does
+  (`proactive.py:1305`, the runtime takes it after the model call,
+  `dreamer.py:1615`) — would never see a note created during the model call.
+- **Change predicate**: an open note created after the stamp, or any revision
+  written after it whose `established_by` is not `dream:note-merge:*`. It reads
+  revisions, not only each note's head, because a later revision would otherwise
+  hide an earlier one — the gap in proactive's `_changed_since`, which also
+  counts only tag-path revisions (`proactive.py:904-909`) and so would miss
+  `note-candidates`' writes.
+- **Input**: the changed notes, each compared against every other open note in
+  the unit. Every note is shown by a per-pass ordinal (never an id, R-75's
+  envelope rule) with its title, description, uncertainty, closing condition,
+  anchor and the room it was born in; bodies are excerpts under a stated cap.
+  Prompt tokens are recorded per pass. Nothing changed renders nothing, so the
+  runtime makes no call.
+
+### 7.5 Division of work across the tier
+
+The three adaptors never call each other; the notes store is the only shared
+state.
+
+| writer | may create | may append a revision | may retire |
+|---|---|---|---|
+| tag path (`note_create`/`note_update`) | yes, not over an open title (§7.2) | yes (read-before-write, R-55) | no |
+| `note-candidates` | yes, not on `ambiguous` (§7.2) | yes (the title the model names) | no |
+| `note-merge` | **no** | yes, to the survivor only, inside a merge | yes, `retired-merged`, with `replaced_by` |
+| `note-curation` | no | no | yes, `retired-closed`/`retired-expired` |
+
+`note-candidates` and the tag path are the **front gate**; `note-merge` is the
+**back-stop** for what gets through. **Only `note-merge` merges.**
+
+**A merged note forwards to its survivor.** Every lookup that resolves a note by
+title or id and lands on a note retired `retired-merged` follows `replaced_by` to
+the open survivor: `note-candidates`' `updates` resolution (an update aimed at
+the duplicate is counted `updated` on the survivor, not `unresolved` → create),
+the tag path's `_resolve` (so `note_read`/`note_update` on a title still in the
+turn's `<notes>` reach the survivor), `remind`, the fire-time proactive screen
+(a pending row on the duplicate is re-pointed, not cancelled), and the per-note
+wake limit. This is what makes a merge safe against a pass that rendered its
+list before the merge — without it, `note-candidates` resolves the duplicate's
+title to nothing and creates the note again (`note_candidates.py:1182`,
+`:1211`).
+
+### 7.6 The store: one new verb, three guards
+
+- **Guard 1 — an append requires the note to be open.** `_append_on_conn` adds
+  `retired_at IS NULL` to its compare-and-swap, the double mirrors it, and the
+  contract suite covers both. A lost race raises `RetiredNoteError`, a subclass
+  of `StaleNoteHeadError` with its own `reason`, so it is not counted as an
+  ordinary stale head. `note_candidates._update` catches it and re-resolves the
+  update through the survivor forwarding (§7.5) once, instead of leaving the row
+  pending. Ships first; it closes §7.0's hole for every writer.
+- **Guard 2 — `merge_into`, a store verb that is not on `DreamSink`.** `DreamSink`
+  is two verbs by design (`ports.py:2127`), and its `propose`/`supersede` each
+  own a transaction, so a merge cannot go through it. The precedent for a store
+  verb outside the sink is `record_wake` (`notes.py:541`). In ONE transaction:
+  append the merge revision to the survivor (CAS on its head and `retired_at IS
+  NULL`) and retire the duplicate `retired-merged` with `replaced_by` (CAS on
+  its head and `retired_at IS NULL`). Either failing rolls back both; counted
+  `stale`, retried on the next change. Implemented in `SqlNoteStore` and the
+  double, with a shared contract case.
+- **Guard 3 — the curator's retirement takes the head it read.** `supersede`
+  gains an optional expected head; the curator passes the head it re-read, so a
+  merge landing between that read and the retire makes the retire a no-op
+  instead of retiring a survivor that just absorbed a duplicate.
+- **Vocabulary**: `retired-merged` and `retired-withdrawn` join
+  `NoteSupersedeReason.ALL`. `retire_reason` is unconstrained text in the schema,
+  so no migration is needed. `retired-withdrawn` («never an open question of the
+  group») is for operator triage only; no pass writes it.
+
+### 7.7 What a merge writes
+
+- **Pairwise, one duplicate at a time.** A group the model names is folded one
+  duplicate at a time into the survivor, each in its own `merge_into`
+  transaction, stopping at the first failure. Overlapping groups in one pass
+  ({1,2} and {2,3}) are all refused (`overlap`); the transitive closure is never
+  taken.
+- **Same room only, in v1.** A group whose notes were born in different rooms
+  (`established_in`) is refused (`cross_room`): the survivor's room decides
+  where proactive rows go (design 40) and which room the curator reads for
+  evidence (`note_curator.py:753`), and merging across rooms would silently
+  change both. Revisited once the `cross_room` rate is read.
+- **Survivor**: the OLDEST note in the group (the title people and passes have
+  already used). It keeps its id, title and `established_in`, so everything
+  that points at it keeps working; what pointed at the duplicate forwards
+  (§7.5).
+- **Anchor**: the survivor takes the LATEST anchor in the group, and its
+  `revisit_at` is recomputed with `default_revisit_at`. Otherwise a merged
+  0923 booking-deadline note carrying the 0927 dinner question would be
+  selected by `anchored_before` on 0924 and could be expired with the later
+  question inside it.
+- **The appended revision**: the survivor's body, then — under a marked line —
+  the duplicate's title, uncertainty and closing condition, and only the part of
+  its body the survivor does not already contain. A result over the revision
+  ceiling is refused (`too_long`), never truncated.
+- **Strikes**: a merged-in duplicate newer than the survivor is evidence the
+  room is still talking, so the survivor's strikes reset; an older one leaves
+  them.
+- **What "reversible" means here**: the duplicate row and its whole revision
+  chain are kept, so un-retiring it (clearing `retired_at`/`replaced_by`)
+  restores it exactly. The survivor keeps the appended revision; undoing that is
+  a new revision, not a rollback, and there is no automatic undo verb. This is
+  the answer to 27 §2's objection that a wrong merge «has already lost which
+  revision belonged to which occasion»: here nothing is lost, only duplicated
+  onto the survivor.
+
+### 7.8 The judgement, which way it fails, and the instrument
+
+The model is asked which of the shown notes are **the same open question** —
+the same thing the group has not settled, not merely the same people, day or
+place — and answers groups of ordinals with a reason. **No deterministic key**:
+#228 deleted date-matching because it merged two unrelated occasions both times
+it fired, and the converse rule (refuse when anchors differ) would have kept 4
+of the 5 Neway-booking duplicates (anchors 0923) apart from their survivor
+(0927). Code refuses what it can decide: a note not open, a group of one, an
+unknown ordinal, `overlap`, `cross_room`.
+
+**It fails toward keeping notes apart**, by code and not only by prompt: one
+sample (§7.3), overlap refused, cross-room refused, no transitive closure. A
+missed merge costs a duplicate line, which is visible; a wrong merge folds two
+questions into one note.
+
+**Modes**: `[notes] merge_mode = "off" | "shadow" | "on"`, default `"off"`.
+`shadow` runs the pass and records the groups it would fold (a decision-log row
+each: survivor title, duplicate title, reason) without writing, for the
+operator to label. `on` writes.
+
+**The eval, before `shadow` becomes `on`**:
+- cases are **full-unit snapshots**, not pairs, because production renders the
+  whole unit;
+- positives from this deployment's own duplicates (the triaged pairs, the open
+  「Bath gathering」 pair) and from `shadow` rows the operator confirms — not
+  only from the debrief, a producer that no longer exists;
+- **at least 20 near-miss negatives**: the same title on different days, a
+  dated and a dateless note on one topic, sub-questions of one evening (the
+  27th's car vs its venue vs its headcount), the same people in different
+  rooms, Friday lunch vs Saturday dinner;
+- the grading rule for «same evening, related question» written down before
+  labelling (the Neway booking folded into 「坐低食定掃街」 is a positive; the
+  龍哥 headcount against the venue is a negative, and the rule must say why);
+- labels signed off by the operator, not by the author;
+- **k ≥ 5 draws per case**; the gate is **0 false merges across all negatives ×
+  k** and a recall floor stated before the run. One run decides nothing.
+
+**Production instrument**: `nora_note_merge_total{outcome=merged|stale|too_long|overlap|cross_room|unknown_ordinal|not_open}`,
+`nora_note_merge_pass_total{reason=changed|unchanged|nothing_open}`, prompt
+tokens per pass, the decision-log rows above, and a DB query over
+`retire_reason = 'retired-merged'` as the durable count (a rare counter does not
+survive Prometheus restarts). Old rows carrying the pre-2026-09-08 `merged`
+value are included in that query.
+
+**Named tests** (each with a mutation that turns it red):
+`test_an_append_to_a_retired_note_raises_retired_note_error`,
+`test_merge_into_rolls_back_when_either_head_moved`,
+`test_the_curators_retire_is_a_noop_when_the_head_moved`,
+`test_overlapping_groups_are_refused_whole`,
+`test_a_cross_room_group_is_refused`,
+`test_the_survivor_takes_the_latest_anchor`,
+`test_an_update_aimed_at_a_merged_note_lands_on_its_survivor`,
+`test_a_pending_proactive_row_on_a_merged_note_follows_its_survivor`,
+`test_the_pass_clock_is_stamped_with_the_render_instant`,
+`test_its_own_merge_revision_does_not_trigger_the_next_pass`,
+`test_an_ambiguous_candidate_stays_pending`,
+`test_note_create_refuses_an_open_title`.
+
+### 7.9 What this does not change
+
+- The curator stays retire-only, on its own selection and evidence. Its
+  dropped retirements (`anchor_not_covered`: the evidence is the newest
+  `_evidence_limit` messages, `note_curator.py:753`, and `_covers` needs the
+  window to predate the note) are a separate defect. If the curator retires one
+  note of a would-be group before `note-merge` folds it, that note's body is not
+  folded in — 27 §12.3's content-loss shape, accepted here because the retired
+  note keeps its chain.
+- `note-candidates`' hourly batches splitting a live exchange (a reply whose
+  target is in an earlier batch renders as a timestamp,
+  `note_candidates.py:770`) is a separate recall defect.
+- 33 §6's M6 (no ordering between adaptors on one schedule) now has a
+  cross-adaptor dependency to account for; it is carried by §7.5's forwarding
+  and §7.6's guards, not by the schedule.
+
+### 7.10 Build order
+
+1. Guard 1 (the append) and the survivor forwarding in the three resolvers —
+   they close holes that exist today, with or without `note-merge`.
+2. §7.2's refusals (1) and (2), then count the duplicate rate after #451 from
+   `nora_note_candidate_gate_total{action="ambiguous"|"unresolved"}` and the DB.
+3. `merge_into`, guard 3, the vocabulary, and `note-merge` in `shadow`.
+4. The eval (§7.8); `on` only when it passes.
+5. §7.2 (3), the unique index, once the open notebook holds no exact-title
+   duplicate.
+
+Docs that change with the build: AGENTS.md (the 2026-09-08 deprecation
+paragraph), GLOSSARY.md (the live adaptors and the note entry), ARCHITECTURE.md
+(the note tier's writers), `config.example.toml` (the `[notes]` block, and the
+`candidate_samples` comment that says duplicates «collapse in the staging key»,
+false since DEC-189), the `note_curator.py` docstring, `note_candidates.py`
+(«Nothing MERGES it afterwards»), `domain/notes.py`'s `NoteSupersedeReason`
+comments, the `schema.py:2080-2083` comment, and R-75's and DEC-189's text.
+
+### 7.11 Open positions
+
+| position | what would decide it |
+|---|---|
+| `note-merge` is built at all, after §7.2 | the duplicate rate counted in build step 2. If the refusals leave almost nothing, `shadow` runs longer before `on`, or the adaptor waits |
+| a separate adaptor, not a curator verb | a measured conflict between a merge and a retirement that §7.6's guards do not settle |
+| no deterministic key; the model judges | the eval's and `shadow`'s false-merge count. A near-miss shape that merges gets a code refusal for that shape, never a general date rule (#228) |
+| same room only | the `cross_room` refusal rate in `shadow`; a real cross-room duplicate the operator wants folded |
+| survivor = the oldest | a merge whose survivor's title is clearly worse; then the model may nominate the survivor, and forwarding still covers every pointer |
 
 ## Status / Checkpoint
 
@@ -387,6 +743,27 @@ index declaration and the documented default rather than from a probe) and
 §3.3 (that a dateless index line reads worse without a time, argued from
 AGENTS.md's measured relevance-gate case, not measured here). Both are cheap
 to settle and both should be settled in the build step rather than assumed.
+
+**2026-09-24 — §7 added, design only for everything after #451.** The debrief's
+note creation is removed (#451) and the leftover notes triaged (§7.1). §7 was
+revised the same day after a fact-check (3 claims wrong, 8 partly) and an
+adversarial design audit (2 blockers: R-75/27 §2 not named as reversed, and a
+merge undone by a pass that rendered before it). No code, schema or test for
+§7.2–7.8 exists yet; §7.0 was read at `6f83d504` and on norty's live DB.
+
+
+**2026-09-24 — build steps 1 and 2 shipped; step 3 HELD until a re-count on
+2026-10-01.** Step 1 (#467): appends refuse a retired note, and a
+`retired-merged` note forwards to its survivor; the 21 triaged duplicates were
+relabelled `retired-merged` and forward live. Step 2 (#472): an ambiguous
+`updates` stays pending, and `note_create` refuses an open title. The
+step-2 measurement over the first ~8 hours after #451 (10:47–18:30 HKT): 2
+notes created, both by `note-candidates`, 0 duplicates — too short a window to
+size anything. Per §7.11, `note-merge` waits for the count over a week of
+ordinary traffic: notes created since 2026-09-24 10:47 HKT by producer, open
+pairs asking the same question, exact-title pairs, and staging rows left
+pending as `ambiguous`. Duplicates getting through → step 3 in `shadow`;
+almost none → the adaptor keeps waiting.
 
 Related: #118 (the build), #159 (follow-on), #236 (duplicate bound), #101
 (discharge, shipped, off), #103 (proactive adapter). The design lineage is

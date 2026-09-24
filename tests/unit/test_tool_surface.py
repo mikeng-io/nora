@@ -188,6 +188,33 @@ def test_the_per_call_cap_refuses_the_overflow_and_loads_the_rest():
     assert set(agent.tool_registry.dynamic_tools) == set(names[:LOAD_TOOLS_MAX_NAMES])
 
 
+def test_a_non_ok_load_carries_a_note():
+    """ADR 0015 §3: the description only NAMES `nothing_found` and
+    `unavailable`; how to report them is the result's `note`."""
+    cases = {
+        "nothing_found": load_onto(_agent(set()), _shelf("route"), ["teleport"]),
+        "unavailable": load_onto(object(), _shelf("route"), ["route"]),
+    }
+    for status, out in cases.items():
+        assert out["status"] == status
+        assert isinstance(out.get("note"), str) and out["note"].strip(), status
+        assert "\u2014" not in out["note"] and "\u2013" not in out["note"], status
+
+
+def test_an_ok_load_notes_only_the_lists_that_are_not_empty():
+    """`unknown` and `refused` each carry their rule only when that list has a
+    name in it; a clean load is the bare result."""
+    clean = load_onto(_agent(set()), _shelf("route"), ["route"])
+    assert "note" not in clean
+
+    partial = load_onto(_agent(set()), _shelf("route"), ["route", "teleport"])
+    assert "unknown" in partial["note"] and "refused" not in partial["note"]
+
+    names = [f"t{i}" for i in range(LOAD_TOOLS_MAX_NAMES + 1)]
+    over = load_onto(_agent(set()), _shelf(*names), names)
+    assert "refused" in over["note"] and "unknown" not in over["note"]
+
+
 def test_loading_the_same_tool_twice_is_not_an_error():
     """`register_dynamic_tool` raises on a duplicate; asking twice is a
     wasted round trip, not a crash."""

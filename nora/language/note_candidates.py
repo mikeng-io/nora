@@ -259,6 +259,7 @@ from nora.domain.notes import (
     NoteCreationProposal,
     NoteRevision,
     NoteRevisionProposal,
+    RetiredNoteError,
     StaleNoteHeadError,
     default_revisit_at,
     note_handle,
@@ -322,7 +323,11 @@ _MIN_ANCHOR_DATE = 10_000_000
 #: `tests/architecture/test_dream_store_calls_are_declared.py` counts them off
 #: this module's AST and reddens when a call is added without this number
 #: moving.
-STORE_CALLS_PER_TICK = 10
+#:
+#: 10 -> 12 on 2026-09-24 (design 41 §7.5-7.6): `merged_successor_by_title`
+#: when a named title resolves to no open note, and `successor` when the
+#: update's append is refused because the note retired.
+STORE_CALLS_PER_TICK = 12
 
 #: Every value `nora_note_candidate_gate_total{action}` may carry, DERIVED
 #: rather than hand-copied into the metric's help text (`nora.obs.
@@ -434,6 +439,12 @@ class _NoteStore(DreamSink, Protocol):
     async def read(
         self, *, unit: str, note_id: str,
     ) -> tuple[Note, NoteRevision] | None: ...
+
+    async def successor(self, *, unit: str, note_id: str) -> Note | None: ...
+
+    async def merged_successor_by_title(
+        self, *, unit: str, title: str,
+    ) -> Note | None: ...
 
 
 class _CandidateStore(Protocol):
@@ -1186,28 +1197,42 @@ class NoteCandidateAdaptor:
         matches = _resolve_updates(
             updates=candidate.updates, standing=standing,
         )
+        if not matches and candidate.updates is not None:
+            # A MERGED NOTE FORWARDS (design 41 §7.5). This pass rendered its
+            # notebook before a merge retired the note it names; without the
+            # forward the title resolves to nothing and the question is
+            # created AGAIN, undoing the merge.
+            survivor = await self._notes.merged_successor_by_title(
+                unit=unit, title=candidate.updates,
+            )
+            if survivor is not None:
+                log.info(
+                    "note-candidates: %r was merged; updating its survivor "
+                    "%r (unit=%s)", candidate.updates, survivor.title, unit,
+                )
+                matches = (survivor,)
         if len(matches) == 1:
             return await self._update(
                 unit=unit, row=row, match=matches[0],
                 proposal=proposal, now_ms=now_ms,
             )
         if len(matches) > 1:
-            # FAIL TOWARD THE SIDE THAT LOSES NO TEXT. Appending to the wrong
-            # one of two same-titled notes conflates two arrangements, which
-            # is the failure #228 exists to remove; a duplicate overwrites
-            # nothing and a reader can see both. Nothing MERGES it afterwards
-            # (#236) — stated in the module docstring rather than assumed
-            # here. Counted as its own action rather than folded into
-            # `created`, so the rate is readable.
+            # NEITHER GUESSED NOR CREATED (design 41 §7.2, 2026-09-24).
+            # Appending to the wrong one of two same-titled notes conflates
+            # two arrangements, which is the failure #228 exists to remove.
+            # Creating a THIRD note was the old answer, and it made an
+            # exact-title duplicate an amplifier: every later sighting that
+            # named the title added another. The staging row stays PENDING
+            # instead — its text is kept, nothing is written — and the pair
+            # is left for `note-merge` to fold. Counted as its own action so
+            # the rate is readable.
             log.info(
-                "note-candidates: %r answers to %d standing notes; created "
-                "rather than guessed (unit=%s)",
+                "note-candidates: %r answers to %d standing notes; left "
+                "pending rather than guessed or duplicated (unit=%s)",
                 candidate.updates, len(matches), unit,
             )
-            return await self._create(
-                unit=unit, established_in=established_in, row=row,
-                proposal=proposal, now_ms=now_ms, action="ambiguous",
-            )
+            self._inc("nora_note_candidate_gate_total", action="ambiguous")
+            return 0
         if candidate.updates is not None:
             # The model NAMED a standing note and nothing answers to it — it
             # mistyped a title, or invented one. Writing it as new is right
@@ -1306,13 +1331,15 @@ class NoteCandidateAdaptor:
 
     async def _update(
         self, *, unit: str, row: NoteCreateCandidate, match: Note,
-        proposal: Proposal, now_ms: int,
+        proposal: Proposal, now_ms: int, forwarded: bool = False,
     ) -> int:
         current = await self._notes.read(unit=unit, note_id=match.id)
         if current is None:
-            # The matched note retired or moved out of reach between the
-            # gate's read and this one. Left pending: the next tick's
-            # `standing()` read reflects whatever is true then.
+            # The matched note moved out of reach between the gate's read and
+            # this one. Left pending: the next tick's `standing()` read
+            # reflects whatever is true then. (`read` returns RETIRED notes,
+            # so a retirement does not land here — the append's own guard
+            # refuses it below, `RetiredNoteError`.)
             log.info(
                 "note-candidates: matched note %s vanished before the "
                 "update landed (unit=%s)", match.id, unit,
@@ -1364,6 +1391,26 @@ class NoteCandidateAdaptor:
                 ),
                 now_ms=now_ms,
             )
+        except RetiredNoteError:
+            # The note was retired between the gate's read and this write
+            # (design 41 §7.6, guard 1). A MERGED note forwards once to its
+            # survivor; anything else — closed, expired, or a forward that
+            # already happened — is left pending, as a stale head is.
+            survivor = (
+                None if forwarded
+                else await self._notes.successor(unit=unit, note_id=match.id)
+            )
+            if survivor is not None:
+                return await self._update(
+                    unit=unit, row=row, match=survivor,
+                    proposal=proposal, now_ms=now_ms, forwarded=True,
+                )
+            log.info(
+                "note-candidates: note %s was retired before the update "
+                "landed (unit=%s)", match.id, unit,
+            )
+            self._inc("nora_note_candidate_gate_total", action="deferred")
+            return 0
         except StaleNoteHeadError:
             # The tag path (or another candidate this same tick) revised the
             # note between the gate's read and this write. NOT an error —

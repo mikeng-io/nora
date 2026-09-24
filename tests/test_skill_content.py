@@ -99,9 +99,16 @@ _LINE_CEILINGS: dict[str, int] = {
     # not the tool). The operator ruled completeness over brevity for a skill
     # that loads only on an image turn, and no rule of the spec may be dropped.
     # Measured at 52 once the operator's own wording was restored verbatim
-    # where a compression had softened it (review of #410); the ceiling leaves
-    # room for one more model section, which is how this skill is meant to grow.
-    "image-generation": 60,
+    # where a compression had softened it (review of #410). Raised to 70 on
+    # 2026-09-24 (operator): the dates-and-places section is new, and the
+    # photo-to-prompt recipe moved here from `generate_image`'s docstring,
+    # which now describes the tool only. Measured at 65. Raised to 80 the
+    # same day after the live «a cat sleeping on a laptop» turn: she wrote
+    # her own mascot rendering into a picture she was not in and invented a
+    # scene that could not exist, and the prompt-writing judgement that
+    # covers both is new (74 lines). The rest is room for one more model
+    # section, which is how this skill is meant to grow.
+    "image-generation": 80,
 }
 
 
@@ -163,6 +170,93 @@ def test_the_image_skill_puts_the_in_the_picture_judgement_first(store):
         assert phrase not in first.lower()
 
 
+def test_the_in_the_picture_judgement_knows_the_mascot_is_her(store):
+    """Measured live 2026-09-24: asked to draw herself, she drew an empty
+    room with nobody in the chair and no reference, because doctrine says she
+    is not a person and nothing at the point of judgement said what she looks
+    like instead. The spec's identity rule («the mascot form is Nora») sat
+    three sections later. The judgement has to carry it, with its reason."""
+    first = _flat(_image_skill(store).instructions).split("## ", 2)[1]
+    assert "does not mean you have no form" in first
+    assert "the mascot described under «What you look like» is how you appear" in first
+    assert "A picture of you is a picture of that mascot" in first
+    assert "not an empty room or an object standing in for you" in first
+    # The section it points at exists, under that exact name.
+    assert "\n## What you look like\n" in _image_skill(store).instructions
+
+
+def test_the_image_skill_copies_dates_times_and_places_from_the_clock_line(store):
+    """The image model has no clock and no location, and the operator saw
+    dated pictures come out wrong. Whatever date, time, zone or place the
+    picture states comes from the turn's clock line, written absolutely,
+    with a relative date resolved against it first."""
+    body = _flat(_image_skill(store).instructions)
+    section = body.split("## What the picture states", 1)[1].split("## ", 1)[0]
+    for needle in (
+        "no clock and does not know where anyone is",
+        "date, weekday, time, timezone or place",
+        "copied from this turn",
+        "from the clock line at the top",
+        "the place from the city it names",
+        "Never write «today» or «tomorrow» into the prompt",
+        "never work a date out from memory",
+        "resolve it against the clock line first",
+    ):
+        assert needle in section, needle
+
+
+def test_her_look_is_not_the_house_style_and_the_prompt_writes_what_was_asked(store):
+    """Live 2026-09-24, after #456: asked for a cat asleep on a laptop, she
+    wrote her own rendering («stylized 3D mascot», «collectible-character
+    quality») into a picture she was not in, and added a desk, a lamp, a
+    night room and an open laptop with light under the cat. That cannot
+    exist, and the model drew a closed laptop. The skill has to say, with
+    the reason, that her look is hers only, that the style comes from the
+    request or the room, that detail is added only when it serves the
+    request, that the arrangement must be physically possible, and that an
+    unwanted caption is ruled out in the prompt.
+
+    Pinned as a judgement: each rule carries its reason, and the section
+    names none of the props that went wrong, because a list of forbidden
+    props is the menu shape the operator ruled out."""
+    body = _flat(_image_skill(store).instructions)
+    section = body.split("## Writing what was asked", 1)[1].split("## ", 1)[0]
+    for needle in (
+        "Write the picture that was asked for",
+        "add a setting, props or light only when they serve what was asked",
+        "Describe the arrangement so it could physically exist, because the model "
+        "resolves a contradiction on its own",
+        "The style comes from the request, or from the room's context when the "
+        "request names none",
+        "your own rendering below is how you look, not a house style for pictures "
+        "you are not in",
+        "say there is no text unless the picture needs words",
+    ):
+        assert needle in section, needle
+    for prop in ("laptop", "lamp", "desk", "night", "orange"):
+        assert prop not in section.lower(), prop
+    look = body.split("## What you look like", 1)[1]
+    assert look.lstrip().startswith(
+        "This is how you look when you are in the picture, and it applies only then.")
+    # The writing judgement comes before the look it limits.
+    assert body.index("## Writing what was asked") < body.index("## What you look like")
+
+
+def test_the_skill_quotes_the_clock_line_as_the_prefill_renders_it(store):
+    """The skill tells her to copy from a line it quotes, so the quote has to
+    be the line she is actually given. Rendered by `_now_line` itself: a
+    change to the clock line's shape turns this red instead of leaving the
+    skill pointing at a line that no longer looks like that."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    from nora.agent.prefill import _now_line
+
+    line = _now_line(datetime(2026, 9, 23, 23, 7, tzinfo=ZoneInfo("Asia/Hong_Kong"))).strip()
+    body = _flat(_image_skill(store).instructions)
+    assert f"«{line.removesuffix('.')}»" in body
+
+
 def test_the_image_skill_keeps_the_user_photo_and_no_guess_rules(store):
     body = _flat(_image_skill(store).instructions)
     assert "A photo of a person in the room is not you" in body
@@ -216,10 +310,14 @@ def test_the_image_skill_has_one_section_per_configured_model(store, example_con
 
 
 def test_the_image_skill_does_not_restate_the_tool_description(store):
-    """DEC-150: the schema is the one place a tool is described. The prompt
-    recipe and the three-slot limit live in `generate_image`'s docstring."""
+    """DEC-150: the schema is the one place a tool is described: its slots,
+    their limit, the shape rule, the privacy MUST and its statuses. The skill
+    carries judgement only (operator, 2026-09-24); the other direction is
+    `tests/unit/test_generate_image_description.py`."""
     body = _image_skill(store).instructions
-    for restated in ("[what the photos show]", "reference_2", "up to 3", "UP TO 3"):
+    for restated in ("reference_2", "reference_3", "up to 3", "UP TO 3",
+                     "`aspect`", "outside service", "phone number",
+                     "held_for_review", "nothing_found", "unavailable"):
         assert restated not in body, restated
 
 
@@ -570,7 +668,7 @@ def test_no_input_of_hers_carries_a_baked_address_or_an_inventory(self_account):
       moves. It deliberately does NOT include the tool-schema layer (the
       docstrings handed to the model as the tool surface, also baked into every
       turn): `social_fetch`'s `https://x.com/<user>/status/<id>` example
-      (`nora/agent/tools.py:5672`) is a real URL literal there today, but it
+      (retired with the tool, DEC-201) was a real URL literal there, but it
       names a foreign site's URL SHAPE for a human reading the tool's own docs,
       not the portal's address — it does not bear on this sentence's claim, and
       folding the tool-schema layer in would need a narrower measurement (only

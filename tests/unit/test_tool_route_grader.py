@@ -50,6 +50,55 @@ def test_a_turn_that_did_not_run_is_an_error_not_a_fail():
     assert _label(_data(None)) == ERROR
 
 
+def _ordered(called, before):
+    return EvaluationData(
+        input="x",
+        metadata={
+            "tools": ["instagram_read"], "not_tools": ["web_fetch"], "before": before,
+        },
+        actual_environment_state=[
+            EnvironmentState(name=NORA_ERROR, state=None),
+            EnvironmentState(name=NORA_TOOLS, state=called),
+        ],
+    )
+
+
+_COVER_FIRST = {"instagram_read": ["media_fetch"]}
+
+
+def test_the_forbidden_tool_before_the_right_one_is_a_fail():
+    """The shared-reel defect: the cover looked at first. In a sandbox where
+    the cover names no blob she then reaches for the link, so the right tool
+    DID run; the order is the only thing that tells this from the fix."""
+    assert _label(_ordered(("media_fetch", "instagram_read", "send_reply"), _COVER_FIRST)) == FAIL
+
+
+def test_the_forbidden_tool_after_the_right_one_is_still_a_pass():
+    """Watching the video `instagram_read` returned is the intended chain."""
+    assert _label(_ordered(("instagram_read", "media_fetch", "send_reply"), _COVER_FIRST)) == PASS
+
+
+def test_the_order_is_read_against_the_first_call_of_the_right_tool():
+    assert _label(_ordered(
+        ("instagram_read", "media_fetch", "instagram_read"), _COVER_FIRST,
+    )) == PASS
+
+
+def test_the_forbidden_tool_alone_is_a_fail_on_the_expected_tool_not_on_order():
+    out = ToolRouteGrader().evaluate(_ordered(("media_fetch", "send_reply"), _COVER_FIRST))[0]
+    assert out.label == FAIL
+    assert "expected one of" in out.reason
+
+
+def test_a_before_the_grader_cannot_read_is_an_error():
+    assert _label(_ordered(("instagram_read",), ["media_fetch"])) == ERROR
+    assert _label(_ordered(("instagram_read",), {"instagram_read": "media_fetch"})) == ERROR
+
+
+def test_no_before_leaves_the_grade_unordered():
+    assert _label(_ordered(("media_fetch", "instagram_read"), {})) == PASS
+
+
 def test_tools_are_read_in_execution_order_from_tool_spans():
     class _Span:
         def __init__(self, name, start, attrs=True):
@@ -101,3 +150,185 @@ def test_spend_counts_model_calls_once_and_the_turn_apart_from_background():
     turn = _model_calls(_Exporter(), agent="nora")
     assert turn[NORA_CALLS] == 2
     assert turn[NORA_INPUT_TOKENS] == 300
+
+
+def test_tool_results_are_read_off_the_tool_spans_in_order():
+    from types import SimpleNamespace
+
+    from evals.backbone import _tool_results
+
+    def span(name, start, message=None):
+        events = [SimpleNamespace(attributes={"message": message})] if message else []
+        return SimpleNamespace(attributes={"gen_ai.tool.name": name},
+                               start_time=start, events=events)
+
+    class _Exporter:
+        def get_finished_spans(self):
+            return [span("send_reply", 3, '[{"text": "ok"}]'),
+                    span("where_is", 1, '[{"text": "{\\"status\\": \\"unavailable\\"}"}]'),
+                    span("now", 2)]
+
+    got = _tool_results(_Exporter())
+    assert [n for n, _ in got] == ["where_is", "now", "send_reply"]
+    assert "unavailable" in got[0][1]
+    assert got[1] == ("now", "")        # absent result recorded as absent
+
+
+def test_the_judge_sees_tool_results_only_for_a_reporting_case():
+    from evals.backbone import _judge_source
+
+    results = (("where_is", '{"status": "unavailable"}'), ("send_reply", "x"))
+    plain = _judge_source(["m1"], results, ())
+    reporting = _judge_source(["m1"], results, ("tool_status_reported",))
+    assert plain == "m1"
+    assert "where_is" in reporting and "unavailable" in reporting
+    assert "send_reply" not in reporting   # plumbing is not a result to report
+
+
+# --- what the call carried (2026-09-24) ---------------------------------------
+# «draw yourself» answered with an empty room is ONE `generate_image` call, the
+# same as the right answer. Routing cannot see the difference; the argument can.
+
+_SELF = "535e4da5" + "0" * 56
+
+
+def _carried(inputs, *, clock=None, **md):
+    from evals.backbone import NORA_SHOWN_NOW, NORA_TOOL_INPUTS
+
+    called = tuple(name for name, _ in inputs) if inputs is not None else ("generate_image",)
+    return EvaluationData(
+        input="x",
+        metadata={"tools": ["generate_image"], **md},
+        actual_environment_state=[
+            EnvironmentState(name=NORA_ERROR, state=None),
+            EnvironmentState(name=NORA_TOOLS, state=called),
+            EnvironmentState(name=NORA_TOOL_INPUTS, state=inputs),
+            EnvironmentState(name=NORA_SHOWN_NOW, state=clock),
+        ],
+    )
+
+
+def test_a_required_argument_that_was_passed_is_a_pass():
+    data = _carried((("generate_image", f'{{"prompt": "me", "reference": "{_SELF}"}}'),),
+                    args_include={"generate_image": [_SELF]})
+    assert _label(data) == PASS
+
+
+def test_the_right_tool_without_the_required_argument_is_a_fail():
+    """The live failure: the right tool, and no reference."""
+    data = _carried((("generate_image", '{"prompt": "an empty room at night"}'),),
+                    args_include={"generate_image": [_SELF]})
+    assert _label(data) == FAIL
+
+
+def test_a_forbidden_argument_is_a_fail():
+    data = _carried((("generate_image", f'{{"prompt": "a cat", "reference": "{_SELF}"}}'),),
+                    args_exclude={"generate_image": ["535e4da5"]})
+    assert _label(data) == FAIL
+    clean = _carried((("generate_image", '{"prompt": "a cat"}'),),
+                     args_exclude={"generate_image": ["535e4da5"]})
+    assert _label(clean) == PASS
+
+
+def test_an_input_that_was_not_captured_is_an_error_not_a_pass_or_fail():
+    assert _label(_carried(None, args_exclude={"generate_image": ["x"]})) == ERROR
+    assert _label(_carried((("generate_image", ""),),
+                           args_exclude={"generate_image": ["x"]})) == ERROR
+
+
+_CLOCK = ("Right now it is Wednesday 23 September 2026, 23:07, "
+          "Hong Kong time (HKT, Asia/Hong_Kong).")
+
+
+def test_this_saturday_is_graded_against_the_clock_she_was_shown():
+    ok = _carried((("generate_image", '{"prompt": "Dinner, Saturday 26 September"}'),),
+                  clock=_CLOCK, args_date={"generate_image": "saturday"})
+    assert _label(ok) == PASS
+    relative = _carried((("generate_image", '{"prompt": "Dinner this Saturday"}'),),
+                        clock=_CLOCK, args_date={"generate_image": "saturday"})
+    assert _label(relative) == FAIL
+    wrong_week = _carried((("generate_image", '{"prompt": "Dinner, 3 October"}'),),
+                          clock=_CLOCK, args_date={"generate_image": "saturday"})
+    assert _label(wrong_week) == FAIL
+
+
+def test_a_failure_quotes_what_the_call_carried():
+    """A FAIL that names only what was expected cannot be read: the first live
+    run of the poster case reported four misses and showed none of the
+    prompts. Every argument FAIL quotes the input it judged."""
+    wrong_week = _carried((("generate_image", '{"prompt": "Dinner, 3 October"}'),),
+                          clock=_CLOCK, args_date={"generate_image": "saturday"})
+    missing = _carried((("generate_image", '{"prompt": "an empty room"}'),),
+                       args_include={"generate_image": [_SELF]})
+    styled = _carried((("generate_image", '{"prompt": "a stylized 3D mascot pet"}'),),
+                      args_exclude={"generate_image": ["mascot"]})
+    for data, quoted in ((wrong_week, "dinner, 3 october"), (missing, "an empty room"),
+                         (styled, "a stylized 3d mascot pet")):
+        reason = ToolRouteGrader().evaluate(data)[0].reason
+        assert quoted in reason, reason
+
+
+def test_a_pass_on_an_argument_case_quotes_it_too():
+    """A pass on an exclusion says nothing about whether the case separates two
+    arms until the prompt is read: the before arm of #469 passed the cat case
+    5/5, and only the prompts can say whether that is a fix or a blind case."""
+    plain = _carried((("generate_image", '{"prompt": "a sleeping pet, watercolour"}'),),
+                     args_exclude={"generate_image": ["mascot"]})
+    out = ToolRouteGrader().evaluate(plain)[0]
+    assert out.label == PASS
+    assert "a sleeping pet, watercolour" in out.reason
+
+
+def test_a_date_case_with_no_clock_line_is_an_error():
+    data = _carried((("generate_image", '{"prompt": "26 September"}'),),
+                    args_date={"generate_image": "saturday"})
+    assert _label(data) == ERROR
+
+
+def test_the_usual_ways_of_writing_a_date_all_count():
+    from datetime import datetime
+
+    from evals.backbone import states_the_date, this_weekday
+
+    day = this_weekday(datetime(2026, 9, 23), "saturday")
+    assert day == datetime(2026, 9, 26)
+    assert this_weekday(datetime(2026, 9, 26), "Saturday") == day
+    for text in ("26 September", "Sept 26", "September 26th", "2026-09-26",
+                 "9月26日", "26/9", "26th of Sep"):
+        assert states_the_date(text, day), text
+    for text in ("126 September", "September 2", "16/9", "this Saturday"):
+        assert not states_the_date(text, day), text
+
+
+def test_tool_inputs_and_the_clock_line_are_read_off_the_spans():
+    """The input is the `gen_ai.tool.message` event's `content` (legacy) or
+    `gen_ai.input.messages` (latest); the result event is never read as input.
+    The clock line comes off the first chat span, as the model received it."""
+    from types import SimpleNamespace
+
+    from evals.backbone import _shown_now, _tool_inputs
+
+    def event(name, **attrs):
+        return SimpleNamespace(name=name, attributes=attrs)
+
+    spans = [
+        SimpleNamespace(start_time=2, attributes={"gen_ai.tool.name": "generate_image"},
+                        events=[event("gen_ai.tool.message", content='{"prompt": "p"}'),
+                                event("gen_ai.choice", message='{"note": "535e4da5"}')]),
+        SimpleNamespace(start_time=3, attributes={"gen_ai.tool.name": "send_reply",
+                                                  "gen_ai.input.messages": '[{"text": "hi"}]'},
+                        events=[]),
+        SimpleNamespace(start_time=1, attributes={"gen_ai.operation.name": "chat"},
+                        events=[event("gen_ai.user.message",
+                                      content='[{"text": "' + _CLOCK + '\\n<presence>"}]')]),
+    ]
+
+    class _Exporter:
+        def get_finished_spans(self):
+            return spans
+
+    assert _tool_inputs(_Exporter()) == (
+        ("generate_image", '{"prompt": "p"}'),
+        ("send_reply", '[{"text": "hi"}]'),
+    )
+    assert _shown_now(_Exporter()) == _CLOCK

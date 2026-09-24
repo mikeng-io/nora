@@ -4,7 +4,7 @@
 Nora runs in a Docker container with host networking; `opencli` exists only on
 the host (daemon on localhost:19825, driving an authenticated Chrome via the
 Browser Bridge extension). This process is the narrow seam between them: the
-`social_fetch` tool POSTs `{platform, what, target, limit}` to `/read`, and
+X tools (`x_read`, `x_search`) POST `{platform, what, target, limit}` to `/read`, and
 this bridge turns that into `opencli <site> <command> <target> -f json` — or
 refuses to.
 
@@ -253,6 +253,12 @@ class SocialBridge:
         except ValueError:
             log.warning("opencli %s %s returned non-JSON on exit 0", site, command)
             return web.json_response({"status": "unavailable"})
+        if not data:
+            # Exit 0 with `[]` (or `{}`, `null`) is «the read ran and found
+            # nothing». Measured 2026-09-24: `twitter thread` prints `[]` for
+            # an id that names no post. Passed on as `ok` it reached the model
+            # as an empty post to describe.
+            return web.json_response({"status": "nothing_found"})
         payload: dict[str, Any] = {"status": "ok", "data": data}
         url = _source_url(site, command, target_arg)
         if url is not None:

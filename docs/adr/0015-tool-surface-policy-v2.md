@@ -1,8 +1,8 @@
 # 0015 — Tool names, descriptions and content: the policy, and which rule is checked how
 
-- **Status:** proposed
+- **Status:** accepted (operator, 2026-09-24)
 - **Date:** 2026-09-24
-- **Supersedes, in part (on acceptance):** [0007](0007-tool-surface-policy.md)
+- **Supersedes, in part:** [0007](0007-tool-surface-policy.md)
   §3.5 (English only, replaced by §3 below), §5 (the length ladder, now a
   declared field with numeric ceilings), and the clause of §3 that forbids a
   name sharing a sibling's token (narrowed in §1 below). 0007 §1, §2 and §4
@@ -12,7 +12,7 @@
 - **Un-parks:** `design/tool-catalogue/03-result-handling.md` (parked
   2026-09-22). The operator reopened it on 2026-09-23 ("research first, then
   design", then "go write the ADR") after the descriptions were measured.
-- **Index:** DEC number taken at merge.
+- **Index:** DEC-200.
 
 ## Context
 
@@ -161,6 +161,15 @@ docstring.) Counts in this ADR are over that extracted text.
   something that can move into a result. It is exempt from the ceiling, counted
   separately, and its destination (stays, or moves to operator-owned doctrine)
   is an operator decision. `send_reply` is not in the first batch.
+  **Decided 2026-09-24 (operator, «keep the voice in voice.md»):** the block
+  moved to the doctrine, how she sounds to `voice.md` and what she does to
+  `conduct.md`. `send_reply` is now Level 3 like any other tool: delivery (0007
+  §5a's MUST) plus its `sent` / `held_for_review` / `refused` contract, which
+  stays in the description because the tool returns a string, not a dict.
+  One example argument value stays, as the named exception to "example
+  values are removed": the `@Jordan` line on `send_reply`'s `text` argument,
+  because DEC-147 keeps example names out of the doctrine and a composer test
+  resolves that exact line (DEC-88's ask-the-one-who-knows message).
 - **Allowed values are types.** An argument that takes one of a fixed set
   (`what="online"`) is a `Literal` or enum in the signature, not a list in
   prose.
@@ -211,8 +220,8 @@ docstring.) Counts in this ADR are over that extracted text.
   interpretation prose. Its routing and reporting measurements decide two
   things before the rest follow: whether interpretation reads better from the
   result, and whether removing examples costs anything.
-- **Status edit.** 0007's status line is changed to "superseded in part by
-  0015" in the commit that accepts this ADR, not before.
+- **Status edit.** 0007's status line was changed to "superseded in part by
+  0015" in the commit that accepted this ADR.
 
 ### 6. Which rule is checked how
 

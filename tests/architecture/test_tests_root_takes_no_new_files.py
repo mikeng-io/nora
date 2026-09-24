@@ -144,7 +144,6 @@ _ALLOWED: frozenset[str] = frozenset(
         "test_skill_loader.py",
         "test_smoke_omniroute.py",
         "test_social_bridge_client.py",
-        "test_social_fetch_tool.py",
         "test_span_skeleton.py",
         "test_strands_api_contract.py",
         "test_street_parking.py",

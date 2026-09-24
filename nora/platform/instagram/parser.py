@@ -241,7 +241,7 @@ def _shared_line(shared: object) -> str:
     because it belongs to the shared item and not to the sharer's own words;
     before the caption, because the caption is a stranger's free text and a
     link after it would read as part of it. And never after the placeholder
-    run: `body_with_handles` rewrites the TRAILING `[image]` once custody has
+    run: `body_with_handles` rewrites the TRAILING `[cover image]` once custody has
     the bytes, and a link after it would leave the thumbnail with no handle.
 
     ## The author is NOT the sender, and the wording has to keep them apart
@@ -255,7 +255,7 @@ def _shared_line(shared: object) -> str:
 
     The caption is written by whoever posted the reel, who is very often
     outside the room and outside `identity.toml` entirely. It is wrapped the
-    way `social_fetch`'s results are wrapped, for the same reason: it is text
+    way the social tools' results are wrapped, for the same reason: it is text
     from a stranger arriving inside Nora's context, and it must not read as
     something a member said or as an instruction.
 
@@ -415,7 +415,11 @@ def parse_event(event: dict) -> NormalizedMessage | None:
             # `media_fetch` asks: the operator's rule is that Nora reads shared
             # content when tagged, never on every share (see
             # `MediaRef.on_demand`). Keyed on the SAME predicate that wrote the
-            # shared line, so the flag and the line cannot disagree.
+            # shared line, so the flag and the line cannot disagree. The flag
+            # is also what makes it render `[cover image]` (`label_for`), so
+            # the transcript says the picture is the item's cover and not the
+            # item: rendered as `[image]`, a model asked what was in a reel
+            # read that one frame and never opened the link (2026-09-24).
             ref = replace(ref, on_demand=True)
         refs = (ref,) if ref is not None else ()
 

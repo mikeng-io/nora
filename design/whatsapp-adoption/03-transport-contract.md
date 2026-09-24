@@ -26,7 +26,7 @@ defined; `tests/test_whatsapp_parser.py` and friends are its executable half.
 | `GET /events` | SSE push stream (replaces Hermes' long-poll `/messages`). Replays the bounded offline buffer on connect, then streams live. |
 | `GET /self` | The bot's own id forms (below). 503 `{"error": "not_connected"}` until the socket is open. |
 | `POST /send` | `{jid, text}` → `200 {ok: true, id, timestamp_ms}`. 400 invalid input; 503 socket down; 500 send failure. |
-| `POST /send-media` | `{jid, media_type, data_base64, filename?, caption?}` → same result shape as `/send`. Kind derived from the MIME top-level type. |
+| `POST /send-media` | `{jid, media_type, data_base64, filename?, caption?, mimetype?}` → same result shape as `/send`. `media_type` is the KIND, one of `image\|video\|audio\|sticker\|document` — NOT a MIME type; 400 `{"error": "media_type must be image\|video\|audio\|sticker\|document"}` otherwise. `mimetype` (optional) carries the attachment's real MIME for Baileys; absent, it falls back to a guess off `filename`'s extension. `caption` rides on `image`/`video`/`document` only — `audio` and `sticker` ignore it. |
 | `POST /edit` | `{jid, id, text}` — edit one of the bot's own messages. `200 {ok: true}`. |
 | `POST /react` | `{jid, message_id, emoji, remove?}` → `200 {ok: true}`; 404 `{"error": "unknown_message"}` when the id is not in the recent-message cache. |
 

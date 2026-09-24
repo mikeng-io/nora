@@ -32,6 +32,7 @@ import asyncio
 import contextlib
 import dataclasses
 import os
+import re
 import shutil
 import tempfile
 import tomllib
@@ -126,6 +127,23 @@ NORA_STOPS = "nora.stop_reasons"
 #: this. A tuple, never `None` on a turn that ran: an empty tuple is a turn
 #: that called nothing, which is a routing answer too.
 NORA_TOOLS = "nora.tools_called"
+#: What each executed tool RETURNED, in order, as `(name, text)`: read off the
+#: `gen_ai.choice` event Strands puts on every `execute_tool` span. The
+#: reporting criterion (`tool_status_reported`) grades the reply against these,
+#: so the judge sees the result she saw, not a description of it.
+NORA_TOOL_RESULTS = "nora.tool_results"
+#: What each executed tool was CALLED WITH: `(name, input)` per call, in the
+#: order they ran, the input as Strands serialised it onto the same
+#: `execute_tool` span. `ToolRouteGrader` reads it for a case that grades an
+#: argument (`metadata.args_include` / `args_exclude` / `args_date`), because
+#: routing alone cannot tell «drew herself with her reference» from «drew an
+#: empty room» (2026-09-24): both are one `generate_image` call.
+NORA_TOOL_INPUTS = "nora.tool_inputs"
+#: The clock line the turn was shown (`nora.agent.prefill._now_line`), read
+#: back off the first model call. A case that grades a date she had to work
+#: out («this Saturday») is graded against the date SHE was given, not the
+#: grader's own clock, which may be a different day by the time it runs.
+NORA_SHOWN_NOW = "nora.shown_now"
 #: What the model was TOLD about where she is on this draw, read back off the
 #: first model call's own messages (`evals.situation.shown_where`):
 #: `<presence>…</presence>`, `_where_line`'s sentence on a build without it,
@@ -391,6 +409,138 @@ def _tools_called(exporter: InMemorySpanExporter) -> tuple[str, ...]:
     ]
     spans.sort(key=lambda span: span.start_time or 0)
     return tuple(str(span.attributes["gen_ai.tool.name"]) for span in spans)
+
+
+def _tool_results(exporter: InMemorySpanExporter) -> tuple[tuple[str, str], ...]:
+    """`(tool name, result text)` for each executed tool, in start order (see
+    `NORA_TOOL_RESULTS`). A span whose result event is missing contributes
+    `(name, "")`: an absent result is recorded as absent, never skipped."""
+    spans = [
+        span for span in exporter.get_finished_spans()
+        if "gen_ai.tool.name" in (span.attributes or {})
+    ]
+    spans.sort(key=lambda span: span.start_time or 0)
+    out = []
+    for span in spans:
+        text = ""
+        for event in getattr(span, "events", ()) or ():
+            attrs = event.attributes or {}
+            if "message" in attrs:
+                text = str(attrs["message"])
+            elif "gen_ai.output.messages" in attrs:
+                text = str(attrs["gen_ai.output.messages"])
+        out.append((str(span.attributes["gen_ai.tool.name"]), text))
+    return tuple(out)
+
+
+def _judge_source(transcript: list[str], results: tuple[tuple[str, str], ...],
+                  criteria: tuple[str, ...]) -> str | None:
+    """The source data a judge grades against. The transcript always; the tool
+    results too when the case grades REPORTING (`tool_status_reported`), since
+    that criterion is about what the results were worth."""
+    parts = ["\n".join(transcript)] if transcript else []
+    if "tool_status_reported" in criteria and results:
+        lines = [f"- {name}: {text}" for name, text in results
+                 if name not in ("send_reply", "load_tools")]
+        if lines:
+            parts.append("Tool results this turn:\n" + "\n".join(lines))
+    return "\n\n".join(parts) or None
+
+
+#: Where Strands puts a tool call's INPUT (strands 1.50.2,
+#: `Tracer.start_tool_call_span`): the legacy convention emits a
+#: `gen_ai.tool.message` event whose `content` is the serialised input; the
+#: latest one records `gen_ai.input.messages` as an event or a span attribute.
+#: The call's OUTPUT goes under other names, so a result's `note` is never
+#: read as something she passed.
+_TOOL_INPUT_EVENT = "gen_ai.tool.message"
+_INPUT_MESSAGES = "gen_ai.input.messages"
+
+
+def _tool_inputs(exporter: InMemorySpanExporter) -> tuple[tuple[str, str], ...]:
+    """`(tool, input)` per executed tool, in start order (see `NORA_TOOL_INPUTS`).
+    An input Strands did not record is an empty string, which a grader must
+    read as «not captured», never as «passed nothing»."""
+    spans = [
+        span for span in exporter.get_finished_spans()
+        if "gen_ai.tool.name" in (span.attributes or {})
+    ]
+    spans.sort(key=lambda span: span.start_time or 0)
+    out: list[tuple[str, str]] = []
+    for span in spans:
+        parts: list[str] = []
+        raw = (span.attributes or {}).get(_INPUT_MESSAGES)
+        if isinstance(raw, str):
+            parts.append(raw)
+        for event in span.events or ():
+            attrs = event.attributes or {}
+            if event.name == _TOOL_INPUT_EVENT and isinstance(attrs.get("content"), str):
+                parts.append(str(attrs["content"]))
+            if isinstance(attrs.get(_INPUT_MESSAGES), str):
+                parts.append(str(attrs[_INPUT_MESSAGES]))
+        out.append((str(span.attributes["gen_ai.tool.name"]), "\n".join(parts)))
+    return tuple(out)
+
+
+_CLOCK_LINE = re.compile(
+    r"Right now it is (?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday) "
+    r"\d{1,2} [A-Z][a-z]+ \d{4}, \d{2}:\d{2}[^\n]*?\.(?=\s|\\n|$)"
+)
+
+
+def _shown_now(exporter: InMemorySpanExporter) -> str | None:
+    """The clock line the turn's first model call carried, or None when no
+    call was captured or none carried one (see `NORA_SHOWN_NOW`)."""
+    chats = [
+        span for span in exporter.get_finished_spans()
+        if (span.attributes or {}).get("gen_ai.operation.name") == "chat"
+    ]
+    for span in sorted(chats, key=lambda s: s.start_time or 0):
+        values = [*(span.attributes or {}).values()]
+        for event in span.events or ():
+            values.extend((event.attributes or {}).values())
+        for raw in values:
+            if isinstance(raw, str):
+                found = _CLOCK_LINE.search(raw)
+                if found:
+                    return found.group(0)
+    return None
+
+
+_WEEKDAYS = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
+
+
+def date_shown(clock_line: str) -> datetime | None:
+    """The date a clock line states, or None if it states none."""
+    found = re.search(r"(\d{1,2} [A-Z][a-z]+ \d{4})", clock_line)
+    if found is None:
+        return None
+    try:
+        return datetime.strptime(found.group(1), "%d %B %Y")
+    except ValueError:
+        return None
+
+
+def this_weekday(today: datetime, weekday: str) -> datetime:
+    """«This Saturday» from `today`: the next one, or today if today is it."""
+    ahead = (_WEEKDAYS.index(weekday.lower()) - today.weekday()) % 7
+    return today + timedelta(days=ahead)
+
+
+def states_the_date(text: str, day: datetime) -> bool:
+    """Whether `text` writes `day` out absolutely, in any of the usual forms:
+    «26 September», «September 26», «Sep 26», 2026-09-26, 9月26日, 26/9."""
+    month, mon, d, m = day.strftime("%B"), day.strftime("%b"), day.day, day.month
+    # «Sept» as well as «Sep»: the abbreviation, then any letters.
+    name = rf"(?:{month}|{mon}[a-z]*)"
+    forms = (
+        rf"(?<!\d){d}(?:st|nd|rd|th)?\s+(?:of\s+)?{name}\b",
+        rf"\b{name}\.?\s+{d}(?!\d)",
+        re.escape(day.strftime("%Y-%m-%d")),
+        rf"(?<!\d){m}\s*月\s*{d}\s*日",
+        rf"(?<!\d){d}/{m}(?!\d)",
+    )
+    return any(re.search(form, text, re.IGNORECASE) for form in forms)
 
 
 @dataclass(frozen=True)
@@ -762,6 +912,9 @@ async def _drive(case: Case, spec: Spec) -> dict[str, Any]:
                 turn = _model_calls(exporter, agent=agent_name)
                 spend.update({f"turn.{k}": v for k, v in turn.items()})
             tools_called = _tools_called(exporter)
+            tool_results = _tool_results(exporter)
+            tool_inputs = _tool_inputs(exporter)
+            shown_now = _shown_now(exporter)
             shown = shown_where(exporter.get_finished_spans())
             _SPEND.append(spend)
             outcome = _check_the_corpus_assertions(nora_case, outcome, seeded.rows)
@@ -790,15 +943,16 @@ async def _drive(case: Case, spec: Spec) -> dict[str, Any]:
             elif spec.judge is not None and outcome.said and outcome.error is None:
                 from evals.rebuilt.grading import criteria_for
 
+                criteria = tuple(md.get("criteria") or ())
                 judgement = await spec.judge.grade(
                     said="\n".join(outcome.said),
                     asked=nora_case.input,
                     doctrine=subject.deps.doctrine.doctrine_text,
                     # The SOURCE the reply had to ground against — the window
-                    # she was seeded with. Without it the judge grades
-                    # grounding BLIND (DEC-75).
-                    source="\n".join(seeded.transcript) or None,
-                    extra=criteria_for(tuple(md.get("criteria") or ())),
+                    # she was seeded with, and for a reporting case the tool
+                    # results too. Without it the judge grades BLIND (DEC-75).
+                    source=_judge_source(seeded.transcript, tool_results, criteria),
+                    extra=criteria_for(criteria),
                     facts=_presence_facts(
                         spec, md, room=room, shown=shown, tools=tools_called,
                     ),
@@ -842,6 +996,9 @@ async def _drive(case: Case, spec: Spec) -> dict[str, Any]:
                     EnvironmentState(name=NORA_JUDGED, state=outcome.judged),
                     EnvironmentState(name=NORA_CHECKS_FAILED, state=outcome.checks_failed),
                     EnvironmentState(name=NORA_TOOLS, state=tools_called),
+                    EnvironmentState(name=NORA_TOOL_RESULTS, state=tool_results),
+                    EnvironmentState(name=NORA_TOOL_INPUTS, state=tool_inputs),
+                    EnvironmentState(name=NORA_SHOWN_NOW, state=shown_now),
                     EnvironmentState(name=NORA_POSITION, state=outcome.position),
                     EnvironmentState(name=NORA_SHOWN, state=outcome.shown),
                     EnvironmentState(name=NORA_JUDGED_WHY, state=judged_why),
@@ -929,6 +1086,9 @@ def nora_task(spec: Spec):
                     EnvironmentState(name=NORA_JUDGED, state=""),
                     EnvironmentState(name=NORA_CHECKS_FAILED, state=()),
                     EnvironmentState(name=NORA_TOOLS, state=None),
+                    EnvironmentState(name=NORA_TOOL_RESULTS, state=None),
+                    EnvironmentState(name=NORA_TOOL_INPUTS, state=None),
+                    EnvironmentState(name=NORA_SHOWN_NOW, state=None),
                     EnvironmentState(name=NORA_POSITION, state=None),
                     EnvironmentState(name=NORA_SHOWN, state=""),
                     EnvironmentState(name=NORA_JUDGED_WHY, state=""),
@@ -1262,6 +1422,23 @@ class MeetsGrader(Evaluator):
         )
 
 
+#: How much of a call's input an argument verdict quotes, PASS or FAIL. A
+#: failure that names what was expected and not what was PASSED cannot be
+#: read: the first run of the poster case (2026-09-24) said «no call wrote out
+#: Saturday 26 September» four times and showed none of the prompts. A PASS
+#: is quoted too, because a pass on an exclusion («no «mascot»») says nothing
+#: about whether the case can separate two arms until the prompt is read. 900
+#: characters, because a poster prompt states its date near the end.
+_SEEN_CHARS = 900
+
+
+def _seen(texts: list[str]) -> str:
+    """What the call actually carried, quoted for a FAIL reason."""
+    if not texts:
+        return "(no call)"
+    return " | ".join(f"«{t[:_SEEN_CHARS]}»" for t in texts)
+
+
 class ToolRouteGrader(Evaluator):
     """S2 — did the turn reach for the RIGHT tool? (`design/tool-catalogue/
     05-measurement.md` §2c.)
@@ -1278,11 +1455,80 @@ class ToolRouteGrader(Evaluator):
     dropped before either check, so a deferred turn and a resident one are
     graded on the same question.
 
+    `metadata.before` is an ORDER criterion: `{instagram_read: [media_fetch]}`
+    says `media_fetch` must not run before the first `instagram_read`, and
+    may run after it. Some errors are an order, not a choice: the shared-reel
+    failure (2026-09-24) called `media_fetch` on the cover, read one frame and
+    stopped, and a case whose `media_fetch` finds nothing then points her at
+    the link, so without the order the defect grades PASS. `NORA_TOOLS` is in
+    start order (`_tools_called`), which is what makes this readable at all. A
+    `before` that is not a mapping of tool to a list of tools is an ERROR: a
+    criterion the grader cannot read is not one it applied.
+
     ERROR, never FAIL, when the case did not run or recorded no tools state:
     a broken instrument is not a wrong answer.
+
+    **What the call carried** (2026-09-24), read from `NORA_TOOL_INPUTS` and
+    checked only once routing has passed, each keyed by tool name:
+
+    - `args_include: {tool: [text, ...]}`: some call of `tool` carries every
+      text (case-insensitive), e.g. her canonical picture's sha on «draw
+      yourself».
+    - `args_exclude: {tool: [text, ...]}`: no call of `tool` carries any.
+    - `args_date: {tool: <weekday>}`: some call of `tool` writes out the
+      date of «this <weekday>», resolved against the clock line she was
+      SHOWN (`NORA_SHOWN_NOW`).
+
+    Inputs not captured, or no clock line for `args_date`, is ERROR: the
+    instrument could not see, which is not the same as she did not pass it.
     """
 
     _PLUMBING = frozenset({"load_tools"})
+
+    def _args(self, data: EvaluationData, md: Mapping[str, Any]) -> EvaluationOutput | None:
+        """The argument checks, or None when the case states none."""
+        include = md.get("args_include") or {}
+        exclude = md.get("args_exclude") or {}
+        dated = md.get("args_date") or {}
+        if not (include or exclude or dated):
+            return None
+        inputs = state_of(data, NORA_TOOL_INPUTS)
+        if inputs is None:
+            return self._out(ERROR, 0.0, "no tool inputs recorded")
+        calls: dict[str, list[str]] = {}
+        for name, text in inputs:
+            calls.setdefault(str(name), []).append(str(text).lower())
+        for tool in {*include, *exclude, *dated}:
+            if tool in calls and not any(calls[tool]):
+                return self._out(ERROR, 0.0, f"{tool} ran but its input was not captured")
+        for tool, needles in exclude.items():
+            for text in calls.get(tool, ()):
+                hit = [n for n in needles if str(n).lower() in text]
+                if hit:
+                    return self._out(
+                        FAIL, 0.0, f"{tool} was called with {hit}: {_seen([text])}")
+        for tool, needles in include.items():
+            if not any(all(str(n).lower() in text for n in needles)
+                       for text in calls.get(tool, ())):
+                return self._out(
+                    FAIL, 0.0,
+                    f"no {tool} call carried all of {list(needles)}: {_seen(calls.get(tool, []))}",
+                )
+        if dated:
+            clock = state_of(data, NORA_SHOWN_NOW)
+            today = date_shown(clock) if clock else None
+            if today is None:
+                return self._out(ERROR, 0.0, "no clock line was shown, so no date to expect")
+            for tool, weekday in dated.items():
+                day = this_weekday(today, str(weekday))
+                if not any(states_the_date(text, day) for text in calls.get(tool, ())):
+                    return self._out(
+                        FAIL, 0.0,
+                        f"no {tool} call wrote out {day:%A %-d %B %Y} (from {clock!r}): "
+                        f"{_seen(calls.get(tool, []))}",
+                    )
+        carried = [t for tool in {*include, *exclude, *dated} for t in calls.get(tool, [])]
+        return self._out(PASS, 1.0, f"the call carried what the case asks: {_seen(carried)}")
 
     def evaluate(self, data: EvaluationData) -> list[EvaluationOutput]:
         error = state_of(data, NORA_ERROR)
@@ -1290,18 +1536,39 @@ class ToolRouteGrader(Evaluator):
         md = data.metadata or {}
         want = frozenset(md.get("tools") or ())
         avoid = frozenset(md.get("not_tools") or ())
+        before = md.get("before") or {}
         if error:
             return [self._out(ERROR, 0.0, f"the case did not run: {error}")]
         if called is None:
             return [self._out(ERROR, 0.0, "no tools state recorded")]
         if not want:
             return [self._out(ERROR, 0.0, "case names no metadata.tools to expect")]
+        if not isinstance(before, dict) or not all(
+            isinstance(v, (list, tuple)) for v in before.values()
+        ):
+            return [self._out(
+                ERROR, 0.0, f"metadata.before must map a tool to a list, got {before!r}",
+            )]
         ran = [name for name in called if name not in self._PLUMBING]
         wrong = sorted(avoid & set(ran))
         if wrong:
             return [self._out(FAIL, 0.0, f"called the sibling {wrong}; ran {ran}")]
+        for first, not_before in before.items():
+            if first not in ran:
+                continue
+            early = sorted(set(ran[:ran.index(first)]) & set(not_before))
+            if early:
+                return [self._out(
+                    FAIL, 0.0, f"called {early} before {first}; ran {ran}",
+                )]
         if want & set(ran):
-            return [self._out(PASS, 1.0, f"called {sorted(want & set(ran))}; ran {ran}")]
+            carried = self._args(data, md)
+            if carried is not None and carried.label != PASS:
+                return [carried]
+            routed = f"called {sorted(want & set(ran))}; ran {ran}"
+            if carried is not None:
+                routed = f"{routed}; {carried.reason}"
+            return [self._out(PASS, 1.0, routed)]
         return [self._out(FAIL, 0.0, f"expected one of {sorted(want)}; ran {ran}")]
 
     async def evaluate_async(self, data: EvaluationData) -> list[EvaluationOutput]:

@@ -23,8 +23,17 @@ promises: decoration degrades to the plain message, never to a refusal.
 Attachments go through `POST /send-media`, one call per attachment, with
 `caption` carrying the message text on the FIRST attachment only — and when
 any attachment exists, `/send` is NOT also called for the text, or the group
-would hear the reply twice. The bridge derives the media kind from the MIME
-top-level type; `data_base64` carries the verified bytes.
+would hear the reply twice. `data_base64` carries the verified bytes.
+
+**`media_type` is the bridge's KIND, not a MIME type** (measured live
+2026-09-24: posting a MIME string like `"image/png"` in `media_type` gets a
+bridge 400 `{"error": "media_type must be image|video|audio|sticker|document"}`
+— `handleSendMedia`/`buildMediaPayload` in `bridge.js` switch on one of those
+five literal kinds and reject anything else). `_bridge_media_kind` derives the
+kind from `OutboundAttachment.media_type`'s RFC 6838 top-level type
+(`nora.domain.media.parse_media_type`, the same parser the inbound label path
+uses); the MIME itself still travels, under the bridge's separate `mimetype`
+field, which Baileys needs to pick a codec/extension.
 """
 
 from __future__ import annotations
@@ -34,10 +43,35 @@ import logging
 
 import aiohttp
 
+from ...domain.media import parse_media_type
 from ...domain.models import ConversationTarget
 from ...domain.ports import LinkPreview, Mention, OutboundAttachment, SendResult, TextStyle
 
 log = logging.getLogger("nora.whatsapp.send")
+
+# The bridge's `/send-media` closed kind vocabulary (`buildMediaPayload` in
+# `deploy/whatsapp-bridge/bridge_helpers.js`) — anything else is a 400.
+# `sticker` is a real bridge kind but is never PRODUCED here: nothing in this
+# codebase builds an outbound sticker send (see module docstring), and
+# `OutboundAttachment` carries no sticker flag to decide it from — the same
+# reason `nora.domain.media` keeps `sticker` as a separate boolean axis from
+# `image/*` rather than something derivable from a MIME type ("a sticker IS
+# an image, so `image/webp` cannot tell pack art from somebody's
+# photograph" — `MediaRef.sticker`'s docstring). So `image/webp` maps to
+# `image` here, same as any other image subtype.
+_BRIDGE_MEDIA_KINDS = frozenset({"image", "video", "audio"})
+
+
+def _bridge_media_kind(media_type: str) -> str:
+    """The bridge's `media_type` KIND for one attachment's MIME type.
+
+    `image/*`, `video/*` and `audio/*` map to themselves; everything else —
+    `application/pdf`, `text/plain`, an unparseable or empty string — maps to
+    `document`, the bridge's catch-all kind. Never returns anything outside
+    the bridge's five literal kinds, so `/send-media` can never see the 400
+    this function exists to prevent."""
+    top, _ = parse_media_type(media_type)
+    return top if top in _BRIDGE_MEDIA_KINDS else "document"
 
 
 def _retry_after_seconds(value: str | None) -> float | None:
@@ -122,7 +156,8 @@ class WhatsAppSender:
             for i, a in enumerate(attachments):
                 payload: dict[str, object] = {
                     "jid": target.conversation_id,
-                    "media_type": a.media_type,
+                    "media_type": _bridge_media_kind(a.media_type),
+                    "mimetype": a.media_type,
                     "data_base64": base64.b64encode(a.content).decode("ascii"),
                     "filename": a.filename,
                 }
