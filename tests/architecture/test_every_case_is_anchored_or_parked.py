@@ -161,7 +161,7 @@ def test_a_case_that_speaks_anchors_where_an_adapter_is_wired(name: str) -> None
 
 
 def test_the_whole_corpus_is_accounted_for() -> None:
-    """223 cases, every one in exactly one state. The number is the corpus
+    """225 cases, every one in exactly one state. The number is the corpus
     as ported on 2026-09-20 (150), plus `tool_selection`'s 16 S2 routing cases
     (2026-09-23, design/tool-catalogue §2c), plus its 4 per-network social
     routing cases (2026-09-24, design/instagram-adoption/18, P5) and P11's 4
@@ -186,9 +186,10 @@ def test_the_whole_corpus_is_accounted_for() -> None:
     guards the post-fix behaviour on the closest faithful anchor for the
     «draw yourself again» skill-skip failure; it does not reproduce the live
     condition, since standing replayed from production cannot carry it,
-    ADR 0015/0016); a change to it is
+    ADR 0015/0016), plus `appearance`'s 2 (2026-09-25, identity.md v12/v13:
+    what she says about her own form, asked and unasked); a change to it is
     a change to what the suite claims to measure and belongs in a commit that
     says so. Recomputed with `census()` at each merge, never summed."""
     totals = [census(n) for n in CORPORA]
-    assert sum(c.total for c in totals) == 223
-    assert sum(c.active + c.parked for c in totals) == 223
+    assert sum(c.total for c in totals) == 225
+    assert sum(c.active + c.parked for c in totals) == 225
