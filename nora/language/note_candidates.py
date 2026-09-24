@@ -80,7 +80,8 @@ the thing the paragraph above removes. What actually bounds a duplicate
 today is ordinary retirement and nothing else: the curator selects on a
 passed anchor or a due `revisit_at`, and retires only on a grounded `closed`
 citation or on `expired`/`moot`, which `_covers` refuses unless the evidence
-window reaches PAST the anchor and BACK before the note was written. So a
+window reaches PAST the anchor and BACK before the note was written — or,
+`ANCHOR_LAPSE_MS` after the anchor, reaches past it alone (DEC-203). So a
 duplicate retires on its own anchor, on the same terms as the note it
 duplicates, and never because it is a duplicate — and in a room that goes
 quiet after the anchor, `_covers` refuses both copies and both stand. The

@@ -199,6 +199,12 @@ CURATOR_ACTIONS: frozenset[str] = frozenset({
     "expired",         # retired: the occasion passed with nothing answering it
                        # — the revisitor's word, merged in with its own
                        # grounding requirement (see `_ground`)
+    "lapsed",          # an expired/moot verdict ACCEPTED on the lapse rule
+                       # alone (`ANCHOR_LAPSE_MS`): the room spoke after the
+                       # moment, but the window did not reach back to the
+                       # note, so an answer older than the window would be
+                       # labelled `expired` rather than `closed`. Counted at
+                       # grounding, so it can exceed the retirements it led to
     "dateless_stale",  # OBSERVED, not acted on: a dateless note's strikes
                        # crossed MAX_DATELESS_STRIKES after a wake with no
                        # tag-path progress. Eligibility, not a retirement —
@@ -287,6 +293,27 @@ DEFAULT_MAX_REVISITS_PER_TICK = 10
 #: This cap is ALSO what `_covers` measures the anchor window against — see
 #: that function.
 DEFAULT_EVIDENCE_MESSAGES_PER_NOTE = 40
+
+#: How long after an anchor's last instant `_covers`' reach-back half stops
+#: being required for `expired`/`moot` (`_Evidence.anchor_lapsed`). The
+#: reach-back half is unsatisfiable in a busy room: a group that posts more than
+#: `DEFAULT_EVIDENCE_MESSAGES_PER_NOTE` messages between a note and its moment
+#: can never show a window that predates the note, so the note stood forever.
+#: Measured 2026-09-25 on the live `friends` unit: 8 of 13 open notes had
+#: anchors 2 to 17 days past, 183 to 925 messages since they were written
+#: (50 to 345 before the anchor itself), and 8 `anchor_not_covered` refusals of
+#: an `expired` verdict in one pass. Two days, not one: an evening's «did we
+#: end up going?» arrives the next day. (The anchor's end is read in UTC, 8h
+#: after the HKT day ends, so the real margin is two days and eight hours.)
+#:
+#: **What it costs is a possible wrong RETIREMENT, not only a wrong label.**
+#: Past the lapse the model judges a window that may not reach back to the
+#: note, so a change of plan said before the window («moved it to the 16th»)
+#: is not in front of it, and an `expired` verdict then retires a note whose
+#: question is still live. The model is told when its window is cut short
+#: (`_render_evidence`'s `cut_short`), which is the mitigation; the residue is
+#: counted as `nora_note_curator_total{action="lapsed"}`.
+ANCHOR_LAPSE_MS = 2 * 86_400_000
 
 #: How many discharge items ONE closed note's classification may carry — a
 #: settled note yields a handful of claims (a commitment, a venue, who likes
@@ -503,6 +530,10 @@ class _Evidence:
     has_anchor: bool
     anchor_passed: bool
     anchor_covered: bool
+    #: The anchor ended more than `ANCHOR_LAPSE_MS` ago AND a human spoke
+    #: after it (`_reaches_past`). Replaces only `_covers`' reach-back half:
+    #: a room that died before the moment still cannot expire the note.
+    anchor_lapsed: bool = False
 
 
 def _no_evidence() -> _Evidence:
@@ -829,11 +860,16 @@ class NoteCuratorAdaptor:
                 evidence, rows=rows, created_at=note.created_at,
                 bounds=bounds, truncated=truncated,
             ),
+            anchor_lapsed=(
+                bounds is not None and now_ms > bounds[1] + ANCHOR_LAPSE_MS
+                and _reaches_past(evidence, bounds)
+            ),
         )
         return ev, _render_evidence(
             evidence, state,
             now=datetime.fromtimestamp(self._clock() / 1000, tz=UTC),
             own_sends=own_sends,
+            cut_short=truncated and not (rows and rows[0].ts <= note.created_at),
         # THE THIRD ELEMENT CARRIES HER ROWS TOO, and it has to: it is
         # `commit`'s discharge lookup, and ONE tuple serves both slots. Her
         # row is in `message_ids`, so `_ground` accepts it as a closing
@@ -1111,7 +1147,9 @@ class NoteCuratorAdaptor:
           (`anchor_not_passed` — also the refusal for a dateless note, which
           has no anchor to have passed) and the evidence window to actually
           SPAN that moment (`anchor_not_covered`, `_covers`'s own rule: the
-          room fell silent before the anchor, or is busier than the window).
+          room fell silent before the anchor, or is busier than the window) —
+          until `ANCHOR_LAPSE_MS` after the anchor, when a human speaking after
+          the moment is enough (`anchor_lapsed`, counted `lapsed`).
         """
         if verdict == "open":
             return _Verdict(note_id=note_id, verdict=verdict, why=why, grounded=True)
@@ -1157,9 +1195,12 @@ class NoteCuratorAdaptor:
                 "nora_note_curator_dropped_total", reason="anchor_not_passed")
             return _Verdict(note_id=note_id, verdict=verdict, why=why, grounded=False)
         if not evidence.anchor_covered:
-            self._inc(
-                "nora_note_curator_dropped_total", reason="anchor_not_covered")
-            return _Verdict(note_id=note_id, verdict=verdict, why=why, grounded=False)
+            if not evidence.anchor_lapsed:
+                self._inc(
+                    "nora_note_curator_dropped_total", reason="anchor_not_covered")
+                return _Verdict(
+                    note_id=note_id, verdict=verdict, why=why, grounded=False)
+            self._inc("nora_note_curator_total", action="lapsed")
         return _Verdict(note_id=note_id, verdict=verdict, why=why, grounded=True)
 
     # -- discharge classification (issue #101) -------------------------------
@@ -1786,6 +1827,7 @@ def _render_own_sends(
 def _render_evidence(
     evidence: Sequence[TranscriptRow], state: EvidenceState, *, now: datetime,
     own_sends: Sequence[TranscriptRow] = (),
+    cut_short: bool = False,
 ) -> str:
     """The evidence portion of one note's block — `nora.language.
     note_revisitor`'s `_render_note`, split out because every note gets one
@@ -1835,7 +1877,18 @@ def _render_evidence(
         body=lambda r: r.body,
     )
     order, key = _ROW["evidence"]
-    return ContextBlock(
+    # CUT SHORT: the window is the newest rows and does not reach back to the
+    # note, so what was said between the note and the first row shown — an
+    # answer, a change of plan — is not here. Said, because the objective
+    # describes evidence as everything «since the note was written», and past
+    # `ANCHOR_LAPSE_MS` an `expired` verdict on this window is accepted.
+    head = (
+        "window: cut short — the evidence below is the newest messages only; "
+        "more was said between this note and the first message in it, and "
+        "that is not shown.\n"
+        if cut_short else ""
+    )
+    return head + ContextBlock(
         name="evidence", order=order, key=key,
         body=rendered,
     ).render() + tail
@@ -1976,15 +2029,34 @@ def _covers(
     note was WRITTEN, not to when its anchor starts.
 
     Fails CLOSED: no bounds, no evidence, or either condition unmet returns
-    `False`, and the caller leaves the note standing.
+    `False`, and the caller leaves the note standing — until the anchor has
+    LAPSED (`ANCHOR_LAPSE_MS`, `_Evidence.anchor_lapsed`), after which only the
+    first condition is required. The second is unsatisfiable in a room busier
+    than the window between a note and its moment, and «standing» then meant
+    «forever» (2026-09-25: 8 notes in one unit, 2 to 17 days past). Past the
+    lapse this function's second danger is reachable again: something said
+    before the window — an answer, or a change of plan — is not shown, so an
+    answered note can be labelled `expired` and a rescheduled one retired
+    while still live. `_render_evidence` tells the model its window is cut
+    short, and `nora_note_curator_total{action="lapsed"}` counts every
+    verdict accepted this way.
     """
     if bounds is None or not evidence:
         return False
-    end = bounds[1]
-    reaches_past = evidence[-1].ts >= end
+    reaches_past = _reaches_past(evidence, bounds)
     # `rows`, not `evidence`: the raw PRE-FILTER window. `evidence` has
     # already dropped everything at or before `created_at`, so its oldest row
     # cannot answer «did the window reach back far enough» — asking it that
     # is circular.
     reaches_back = (not truncated) or (bool(rows) and rows[0].ts <= created_at)
     return reaches_past and reaches_back
+
+
+def _reaches_past(
+    evidence: Sequence[TranscriptRow], bounds: tuple[int, int] | None,
+) -> bool:
+    """`_covers`' first half on its own: a human spoke at or after the
+    anchor's last instant. The half the lapse rule keeps (`ANCHOR_LAPSE_MS`) —
+    a room that fell silent before the moment still cannot testify about it.
+    Fails closed on no bounds or no evidence."""
+    return bounds is not None and bool(evidence) and evidence[-1].ts >= bounds[1]

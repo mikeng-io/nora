@@ -2480,13 +2480,23 @@ class NotesConfig(BaseModel):
     # what a closing condition allows — sat outside it. Lowering this number
     # still turned an answered note into a retired one.
     #
-    # It is safe now because `_covers` measures the window against the NOTE: a
-    # truncated window whose oldest row does not predate `created_at` refuses
-    # the expiry rather than judging on what it happens to hold. So the cap
-    # fails in ONE direction — too few messages means a note stays open longer —
-    # and that is a property of the COVERAGE CHECK rather than of the number.
-    # Lowering this raises how often the check WITHHOLDS a decision, never how
-    # often it gets one wrong.
+    # It WAS safe from 2026-09-08 because `_covers` measures the window against
+    # the NOTE: a truncated window whose oldest row does not predate
+    # `created_at` refuses the expiry rather than judging on what it happens to
+    # hold. So the cap failed in ONE direction — too few messages meant a note
+    # stayed open longer.
+    #
+    # **In a busy room «longer» was «forever», and that safety was given up for
+    # past-anchor notes on 2026-09-25 (DEC-203).** A room posting more than
+    # this between a note and its moment never shows a window that predates the
+    # note — 8 live notes, 2 to 17 days past, none retirable. Past
+    # `ANCHOR_LAPSE_MS` (`nora.language.note_curator`) the reach-back half no
+    # longer binds, so **this number again changes which notes get retired**:
+    # an answer or a change of plan said before the window is not shown, and an
+    # `expired` verdict can then mislabel an answered note or retire a live
+    # one. The model is told when its window is cut short; each verdict
+    # accepted this way is counted `nora_note_curator_total{action="lapsed"}`.
+    # Inside the lapse the one-direction property above still holds.
     #
     # Twice-wrong is worth leaving on the page: a config docstring asserting a
     # safety property is a claim about code somebody else has to verify, and
