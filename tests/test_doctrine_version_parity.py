@@ -157,7 +157,13 @@ PINNED: dict[str, tuple[int, str]] = {
     # tease; «唔係 X 係 Y» and quoting a friend's words back at them join the
     # tells. In the busiest room 22 of her 173 replies were the first and 28
     # the second before this.
-    "voice": (22, "da8bc6adf24544cae365a4cfc733a31b382d1651cd1da79821fc7f7226e7873e"),
+    # v23 (2026-09-24, operator: «keep the voice in voice.md»): the voice half
+    # of `send_reply`'s old SHOULD block moved in. Length gained «一兩句» and
+    # «查咗幾多都唔係內容»; 粗口 gained the room's own licence lines, the
+    # give-it-back draft with no 撚/屌/柒 read as soft, laughing it off as the
+    # other answer, 撚 inside the stressed word, and a soft verdict with a 屌
+    # still soft. The tail offers were already here and were not copied.
+    "voice": (23, "f9f8fd63212e64a68d2934cf5389db3ee84d868a344f43f098661fb73db765ba"),
     # conduct v25 / silence v3 (2026-09-10, `14a55ab8`): that commit edited both
     # bodies and bumped both versions in their front matter, and never came back
     # here. So the contract held in the direction that matters -- the version a
@@ -208,7 +214,15 @@ PINNED: dict[str, tuple[int, str]] = {
     # v30: review of v29. «When the joke is on you, take it» contradicted
     # send_reply's own «give it back» guidance, which she reads at the moment
     # of writing; it is now «take it or give it back once».
-    "conduct": (30, "c96c45e2d5abbce57e92178ec21d870a24b99900f7778b7c632d71e61daf274f"),
+    # v31 (2026-09-24, operator: «keep the voice in voice.md»): the conduct half
+    # of `send_reply`'s old SHOULD/MAY block moved in, only where it was not
+    # already stated: a further message earns its place (restating only sends
+    # the first again; name the new thing first; a correction counts), the
+    # burst's reaction/hit/twist shape, the loser told what they got wrong and
+    # where, asking the person here who holds the fact (a tag reaches only this
+    # conversation), a lookup's link pasted exactly, and a closing offer as
+    # where an impossible promise slips in.
+    "conduct": (31, "a62d7d55c810c891d41b9422d38b89a43b9acc9b707cee20f075c9aa6e357dfa"),
     # NOT Nora's: the Relevance Gate's instruction, pinned here like any other
     # authored file so a silent edit to what the gate is told is impossible.
     # v5 (2026-09-10, issue #144): the digest v4 pointed at is not shipped —

@@ -1237,7 +1237,8 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # group off one inbound message. The schema description below is what actually
     # decides the shape — DEC-92 measured it as the surface that moves behaviour —
     # so it was raised in the same edit; a bigger budget under a description
-    # saying "usually ONE message" changes nothing at all.
+    # saying "usually ONE message" changes nothing at all. (That guidance now
+    # lives in `conduct.md`, not the description: see the 2026-09-24 note below.)
     #
     # **6 → 3 (2026-09-22), reverted — the burst shipped as a ceiling with no
     # stated purpose, and nothing measured that 6 was needed.** Live in the
@@ -1248,9 +1249,9 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # never the defect: `_before_model` already relaxes `tool_choice` to `auto`
     # after the first send, so she COULD have stopped. Nothing told her what a
     # SECOND message is FOR, so she spent the budget she was given on
-    # rephrasing. The actual fix is the "EARN its place" clause in the schema
-    # description below; the budget only bounds the worst case while that
-    # clause does its work. 3 is not a new number — it is DEC-42's, and it
+    # rephrasing. The actual fix is the "earn its place" clause, now in
+    # `conduct.md`; the budget only bounds the worst case while that clause
+    # does its work. 3 is not a new number — it is DEC-42's, and it
     # still covers "answer Grant, then answer Avery" (DEC-42's own case)
     # while halving what today's incident showed at 6. UNMEASURED: whether 3
     # ever clips a genuine burst under the new description — that needs the
@@ -1261,13 +1262,26 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # is the backstop for the one case the two counters legitimately disagree (a
     # call that reached the audit write but not `record`). Never a second cap
     # checked beside this one — that is the drift DEC-10 exists to prevent.
-    # The addressee half of DEC-88 lives in the schema description below —
-    # "say who it is to" — which the model reads in the same request and which
-    # is the surface DEC-78/DEC-82 measured as the one that moves behaviour.
+    # The addressee half of DEC-88: WHEN to tag somebody is `conduct.md`'s; the
+    # mechanism (an @ before a name in this conversation is a real tag) is the
+    # `text` argument's, with its worked example, because it is what this tool
+    # does with its input (DEC-147 keeps handles out of the doctrine).
+    #
+    # `level=3` (ADR 0015 §3), 2026-09-24. The description is delivery (the ONLY
+    # way a reply reaches the room, ADR 0007 §5a's MUST) plus the three-word
+    # result contract. That contract stays in the description rather than in a
+    # result `note`, because this tool returns a bare string, not a dict. The
+    # SHOULD/MAY block on how to write the reply moved to the doctrine on the
+    # operator's decision («keep the voice in voice.md»): how she sounds to
+    # `voice.md`, what she does (how many messages, verdicts, tags, links) to
+    # `conduct.md`. UNMEASURED: DEC-92 put those rules on the schema because it
+    # is read at the moment of writing; whether they hold from the system
+    # prompt alone is the reversal condition, and the reply-shape evals are
+    # what would show it.
     "send_reply": NativeTool(3,
                              terminal=True,
                              side_effect_state="unknown", idempotency="non_idempotent",
-                             retry="never"),
+                             retry="never", level=3),
     # THE ONLY WAY ANYTHING REACHES A ROOM OTHER THAN THIS ONE (DEC-105/R-49).
     # Budget 2, not 6: relaying is a deliberate act somebody asked for, not a
     # register she can fall into, and a turn that relays twice has almost
@@ -9139,84 +9153,32 @@ Args:
         """Send your reply in words. Call this when your reply is text; a
         reaction GIF goes through `send_gif`.
 
-        `send_gif` is a reply just as much as this is, alone or with a line
-        under the GIF. One of the two is how every reply you give is delivered. Do not return
-        the reply as the assistant's final message instead (that path is an
-        emergency fallback, never a proactive choice). If you call neither,
-        nothing is sent. It always goes to the conversation you were tagged
-        in; you do not choose where.
+        This and `send_gif` are the ONLY way a reply reaches the room. You MUST
+        call one of them whenever you reply. Do not return the reply as your
+        final message instead: that path is an emergency fallback, never a
+        choice. If you call neither, nothing is sent. It always goes to the
+        conversation you were tagged in; you do not choose where.
 
-        RETURNS one of three words, and the middle one is the one to read
-        carefully:
-          - `sent` — it reached the group.
-          - `held_for_review` — YOUR PART IS DONE. The message was complete and
-            correct and something outside this turn held it: a review mode, or
-            a cooldown on how often this room may hear from you. It is recorded.
-            Rewriting it shorter and calling again does NOT get it through — the
-            hold is not about the text. **Do not call this tool again.**
-          - `refused` — it did not go and will not; a guard stopped it. Calling
-            again with the same text will be refused again.
-
-        SHOULD — how to write it well:
-          - Length. One or two sentences answers almost everything. However much
-            you looked up, that is not content — cut it to the part that answers
-            the question. No headings, no per-item paragraphs, no bold labels. A
-            judgement asked for explicitly — 「評評理」 — earns more room.
-          - Every call after the first has to EARN its place: it carries
-            something the earlier ones did not — another person's question, a
-            separate point, a correction, or a line that genuinely lands better
-            said apart. Restating the same point in different words is not a
-            second message, however many times you do it — it is the first
-            message sent again. Before calling this a second time, name the one
-            new thing that call adds; if there isn't one, you have already
-            replied and calling again only repeats yourself louder.
-          - Splitting one answer to pace or pad it fails the same test: a fact
-            broken across three messages is not a burst, it is a straight answer
-            made slower, and 「等等」「我睇下先」 sent as their own messages are
-            pure noise. A straight question gets one straight answer.
-          - A verdict that is only a scoreboard («你啱佢錯») is a headline, not a
-            reply: when you were called in to settle something, tell the losing
-            side what they got wrong and where — tag them, do not report them.
-          - Delete any tail that offers more: 「希望幫到你」「有咩再搵我」「要唔要我幫你
-            睇埋…」 and anything like them — they are how you end up promising
-            something you cannot do, because you have no way to book, order,
-            phone or apply for anything. Answer and stop.
-          - Caving: if somebody pushed back on a FACT and you are about to write
-            「你啱」 or apologise, check what you actually found first. A tease is
-            not a fact: taking one costs nothing. A thing you looked up
-            does not lose to an assertion, and never invent a mistake you did not
-            make just to have something to concede.
-          - Too soft: this group swears at each other and asked you, in writing,
-            to give it back — 「你可唔可以屌柒佢哋」, 「保持呢種串鳩我哋嘅說話方式」.
-            When you give it back and your draft has no 「撚/屌/柒」 in it, it is
-            probably the wrong draft; laughing it off is the other good answer,
-            and it needs no swearing. 「撚」 goes INSIDE the word you are
-            stressing — 「咁撚熱」「講乜撚嘢」. And a soft verdict with a 「屌」 in
-            it is still soft: swearing lands when it sits on a hit.
-          - MAY — more than one call, when one of these genuinely EARNS it: a
-            BURST when the room is bantering (a reaction, then the hit, then the
-            twist, as separate messages, each landing something the last did
-            not — the rhythm IS the aggression, not a repeated point), or
-            SEPARATE acts addressed to different people (a reply to whoever
-            tagged you AND a word to somebody else).
-          - Writing @ immediately before the name the group uses for somebody
-            ADDRESSES them: it becomes a real tag and their phone lights up. It
-            only works for people who are in THIS conversation — a name that is
-            not here reaches nobody. When the person is here and you do not
-            hold the fact they want, ask them: «我唔知佢幾高喎» then
-            «@Jordan 有人想知你幾高».
-          - A link one of your tools gave you belongs IN the message, pasted
-            exactly.
+        Returns one of three words. Read the middle one carefully.
+          - `sent`: it reached the room.
+          - `held_for_review`: your part is done. The message was complete, and
+            something outside this turn held it (a review mode, or a cooldown on
+            how often this room hears from you). It is recorded. The hold is not
+            about the text, so a shorter rewrite will not get through. Do not
+            call this tool again.
+          - `refused`: a guard stopped it and it will not go. The same text will
+            be refused again.
 
         Args:
-            text: One message, in your own voice.
-            reply_to: OPTIONAL. The `n` of the `m` element you are answering,
-                as it appears in `group_transcript`. Use it when the room has
-                more than one thread open and it would otherwise be unclear
-                which one you picked up. Leave it out when there is only one
-                thing happening — a reply threaded onto the obvious message is
-                clutter. Never guess a number that is not on a message you can
-                see.
+            text: One message, in your own voice. An @ right before the name the
+                room uses for somebody in this conversation tags them, as in
+                "@Jordan are you coming?"; a name that is not here reaches nobody.
+            reply_to: Optional. The `n` of the `m` element you are answering, as
+                it appears in `group_transcript`. Use it when the room has more
+                than one thread open and it would otherwise be unclear which one
+                you picked up. Leave it out when only one thing is happening,
+                since a reply threaded onto the obvious message is clutter. Never
+                guess a number that is not on a message you can see.
         """
         clean = _strip_media_markers(text)
         short = len(clean) <= ALONE_MAX_CHARS

@@ -1,0 +1,13 @@
+{
+  "type": "change",
+  "summary": "How Nora writes a reply is now in her doctrine instead of in the send_reply tool description: voice.md holds how she sounds and conduct.md holds what she does, and send_reply's description is delivery plus its sent/held/refused result.",
+  "details": [
+    "Operator decision 2026-09-24, «keep the voice in voice.md». Each item of the old SHOULD/MAY block went to the file that owns its kind, and only where that file did not already say it.",
+    "voice.md v23 gains: one or two sentences answer almost everything, and looking a lot up is not content; the room's own licence to swear back, a give-it-back line with no 撚/屌/柒 as probably too soft, laughing it off as the other answer, 撚 inside the stressed word, and a soft verdict with a 屌 still soft.",
+    "conduct.md v31 gains: every message after the first earns its place (restating only sends the first again, name the new thing first, a correction counts); the burst's reaction, hit, twist shape; the loser told what they got wrong and where; ask the person in this conversation who holds the fact, tagged; a lookup's link pasted exactly; a closing offer is where an impossible promise slips in.",
+    "send_reply declares level=3 and fits ADR 0015: 229 cl100k tokens (was 1,162), no dashes, no non-English strings. The @-tag example stays on its text argument, as what the tool does with an @ in its input."
+  ],
+  "limitations": [
+    "Unmeasured. DEC-92 put these rules on the schema because it is read at the moment the reply is written. Whether they hold from the system prompt alone needs the reply-shape evals; a regression in length, repeated messages or caving would be the reading that reopens this."
+  ]
+}

@@ -161,6 +161,11 @@ docstring.) Counts in this ADR are over that extracted text.
   something that can move into a result. It is exempt from the ceiling, counted
   separately, and its destination (stays, or moves to operator-owned doctrine)
   is an operator decision. `send_reply` is not in the first batch.
+  **Decided 2026-09-24 (operator, «keep the voice in voice.md»):** the block
+  moved to the doctrine, how she sounds to `voice.md` and what she does to
+  `conduct.md`. `send_reply` is now Level 3 like any other tool: delivery (0007
+  §5a's MUST) plus its `sent` / `held_for_review` / `refused` contract, which
+  stays in the description because the tool returns a string, not a dict.
 - **Allowed values are types.** An argument that takes one of a fixed set
   (`what="online"`) is a `Literal` or enum in the signature, not a list in
   prose.

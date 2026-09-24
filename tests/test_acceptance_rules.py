@@ -848,10 +848,11 @@ def test_r83_the_anti_cave_position_is_scoped_to_a_checked_claim():
     stance would satisfy any presence check on the three moves above while
     quietly undoing DEC-112 and DEC-123, so the clauses that hold her on a
     CHECKED claim are asserted still present, on both sides of the DEC-92
-    split. The tool-surface third of that armour is pinned by
-    `tests/test_tools.py::test_the_send_reply_schema_carries_the_three_reply_defects`
-    and is deliberately not re-asserted here — two copies of one literal is the
-    unguarded-copy failure this repo keeps paying for.
+    split. The third of that armour that used to sit on the tool surface moved
+    into the doctrine on 2026-09-24, and is pinned by
+    `tests/test_tools.py::test_the_three_reply_defects_live_in_the_doctrine_not_the_send_reply_schema`;
+    it is deliberately not re-asserted here, because two copies of one literal
+    is the unguarded-copy failure this repo keeps paying for.
 
     HONEST SCOPE: a content test, the same posture as
     `test_recall_lookups_is_offered_as_evidence_not_only_as_a_cache` above. It
