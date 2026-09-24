@@ -875,10 +875,12 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # extend here).
     #
     # `level=3` (ADR 0015 §3): more than L2's one constraint. Calling it well
-    # carries several: references only from this conversation (the canonical
-    # self the one exception), `media_fetch` before an edit that depends on a
-    # photo, no identifiers in the prompt, and what decides the shape. The
-    # `ok` reporting rules (no handle, no stale link) ride in the result.
+    # carries several: load the `image-generation` skill first (2026-09-25,
+    # the live «draw yourself again» failure that skipped it), references
+    # only from this conversation (the canonical self the one exception),
+    # `media_fetch` before an edit that depends on a photo, no identifiers in
+    # the prompt, and what decides the shape. The `ok` reporting rules (no
+    # handle, no stale link) ride in the result.
     "generate_image": NativeTool(2, read_only=False,
                                  side_effect_state="unknown", idempotency="non_idempotent",
                                  retry="never",
@@ -6726,6 +6728,10 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         """Make an image from a prompt, optionally from photos in this
         conversation, and post it to this chat. Call this when somebody asks
         you to make, draw or edit a picture.
+
+        MUST: load the image-generation skill before calling this tool. It
+        holds the canonical reference and the appearance rules, which this
+        tool does not repeat.
 
         `reference`, `reference_2` and `reference_3` each take the marker code
         of one photo (`a3f2c1` from `[image a3f2c1]`), up to 3 in one call.
