@@ -75,6 +75,14 @@ export function createLifecycle({
   emitEvent = () => {},
   onJoined = () => {}, // (session, generation) — wire the arbiter's player
   onTeardown = () => {}, // stop music + speech before the socket dies
+  // Fired synchronously, right after `voice` flips to 'error', from the ONE
+  // place that ever sets it (#345) — both the boot-restore path and the HTTP
+  // /voice/join handler call this same `join()`, so a single hook here covers
+  // both without either caller needing its own copy. The registry (the only
+  // thing that knows whether THIS core is still the one it holds for the
+  // guild — a concurrent second join may already have replaced it) is what
+  // actually acts on it; lifecycle only reports the fact.
+  onJoinFailed = () => {},
   log = () => {},
   deathRecoveryMs = 15_000,
   emptyChannelGraceMs = 60_000, // §12.6: grace before an empty channel auto-leaves
@@ -158,6 +166,9 @@ export function createLifecycle({
       } catch (err) {
         voice = 'error';
         log('error', { event: 'join_failed', error: String(err?.message ?? err) });
+        // `session` was never assigned on this path — the registry's own
+        // check confirms that before it acts, but the fact is decided HERE.
+        onJoinFailed();
         throw httpError(503, 'join_failed', String(err?.message ?? err));
       } finally {
         joinPromise = null;

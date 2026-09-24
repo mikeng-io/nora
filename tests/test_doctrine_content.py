@@ -292,6 +292,75 @@ def test_identity_makes_no_claim_about_what_she_can_find_out():
     )
 
 
+def test_identity_carries_the_form_sentence():
+    """v13 (2026-09-25, operator, option A; DEC-205, partly superseding
+    DEC-193's placement clause). Her appearance used to live ONLY in the
+    on-demand `image-generation` skill, which loads only when a turn is
+    already drawing something — so asked "what do you look like?" nothing
+    always-loaded told her, and asked to draw herself she inferred she had no
+    form and drew an empty room.
+
+    Pins the MEANING (she HAS a mascot form, and names at least one anchor
+    that makes it recognisable), not the exact wording — a future rewrite of
+    the sentence should still pass this. Proved by revert: reverting the
+    sentence below is what turns this red; nothing else in the suite notices
+    an identity file that is silent about her form.
+
+    **Hardened against a negated rewrite (Opus review of #499).** The first
+    cut of this test only grepped for the bare substrings "no form", "mascot"
+    and an anchor — all three of which also appear in the INVERTED sentence
+    "You have no form; never describe a mascot, no bun, no hoodie, no
+    earphones", which would have passed it. So this now requires (1) the "no
+    form"/"no appearance" substring, if present, to sit inside a construction
+    that cancels it back to a positive claim (a "does not mean ... no form"
+    shape — read alone, a bare "no form" asserts the opposite of what this
+    file must say), and (2) neither "mascot" nor the matched anchor may be
+    negated (no "no"/"not"/"never"/"n't"/"without" within a few words before
+    it). A green here means the doctrine asserts she HAS this form, not
+    merely that the words appear somewhere in the file.
+
+    The full spec (all eight anchors, per-model prompting) stays in
+    `nora/skills/image-generation/SKILL.md`; this is deliberately one
+    sentence, not a second copy of it.
+    """
+    body = (DOCTRINE_DIR / "identity.md").read_text().split("---", 2)[2]
+    lower = body.lower()
+
+    # A bare "no form"/"no appearance" IS the inverted claim unless a
+    # cancelling construction sits right before it, the shape this file's own
+    # sentence uses ("does not mean having no form").
+    for phrase in ("no form", "no appearance"):
+        idx = lower.find(phrase)
+        if idx == -1:
+            continue
+        window = lower[max(0, idx - 40):idx]
+        assert re.search(r"(does not|doesn't|is not|isn't)\s+mean\s+(having\s+)?$", window), (
+            f"identity.md contains {phrase!r} with no cancelling 'does not "
+            "mean' immediately before it — read alone this asserts she has "
+            "NO form, the exact claim this file must contradict"
+        )
+
+    def _negated(word: str) -> bool:
+        return bool(re.search(
+            rf"\b(no|not|never|n't|without)\b(?:\s+\S+){{0,4}}\s+{word}\b", lower,
+        ))
+
+    assert "mascot" in lower, "identity.md should name the mascot form she appears as"
+    assert not _negated("mascot"), (
+        "identity.md's mention of 'mascot' is negated — the sentence must "
+        "assert she IS one, not deny it"
+    )
+
+    # At least one of the anchors that makes the mascot recognisable, and it
+    # must not be negated either ('no bun' does not answer the question).
+    anchors = ("bun", "hoodie", "earphone")
+    found = [a for a in anchors if a in lower and not _negated(a)]
+    assert found, (
+        "identity.md names a mascot form but no un-negated recognisable "
+        "anchor (bun, hoodie, earphones) — 'you have a form' with nothing "
+        "to picture, or a negated anchor, is not enough to answer 'what do "
+        "you look like?'"
+    )
 
 
 def test_guardrails_covers_every_r14_clause():

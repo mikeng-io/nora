@@ -113,6 +113,7 @@ from nora.domain.notes import (
     Note,
     NoteCreateCandidate,
     NoteCreationProposal,
+    NoteMergeDecision,
     NoteRevision,
     NoteRevisionProposal,
     NoteSupersedeReason,
@@ -126,6 +127,7 @@ from nora.domain.ports import Proposal
 from nora.infra.sql.schema import (
     NOTE,
     NOTE_CANDIDATE,
+    NOTE_MERGE_DECISION,
     NOTE_REVISION,
 )
 
@@ -1046,9 +1048,21 @@ class SqlNoteStore:
         because: str,
         source: str | None,
         now_ms: int,
+        expected_head: str | None = None,
     ) -> int:
         """`DreamSink.supersede` — retirement, which is a status change and
         never a delete. Returns rows affected.
+
+        **`expected_head` is guard 3 of design 41 §7.6**, and it is not on the
+        port. A caller that judged a note on one head passes it, and the
+        retirement is then a compare-and-swap like an append: a note whose
+        head moved since — a `note-merge` fold that just appended a
+        duplicate's question to it, or a tag-path revision — answers 0 and
+        stays open. Without it the curator's re-read-then-retire was
+        check-then-act across two transactions, and a merge landing between
+        the two retired the survivor with the question it had just absorbed.
+        `None` keeps the old, head-blind behaviour for a caller that judged
+        nothing about the body.
 
         **A null `replaced_by` is LEGAL here, and that is the whole reason the
         port is permissive.** The port was written against a sibling that
@@ -1114,13 +1128,18 @@ class SqlNoteStore:
             )
         if not _is_uuid(target):
             return 0
+        if expected_head is not None and not _is_uuid(expected_head):
+            return 0
+        conditions = [
+            NOTE.c.id == target,
+            NOTE.c.unit == key,
+            NOTE.c.retired_at.is_(None),
+        ]
+        if expected_head is not None:
+            conditions.append(NOTE.c.head_revision_id == expected_head)
         stmt = (
             sa.update(NOTE)
-            .where(
-                NOTE.c.id == target,
-                NOTE.c.unit == key,
-                NOTE.c.retired_at.is_(None),
-            )
+            .where(*conditions)
             .values(
                 retired_at=now_ms, replaced_by=replaced_by, retire_reason=because,
             )
@@ -1128,6 +1147,131 @@ class SqlNoteStore:
         async with self._engine.begin() as conn:
             result = await conn.execute(stmt)
         return int(result.rowcount)
+
+    async def merge_into(
+        self,
+        *,
+        unit: str,
+        survivor_id: str,
+        survivor_head: str,
+        duplicate_id: str,
+        duplicate_head: str,
+        body: str,
+        anchor_date: int | None,
+        revisit_at: int,
+        reset_strikes: bool,
+        established_by: str,
+        now_ms: int,
+        instruction_sha256: str | None = None,
+        model: str | None = None,
+    ) -> NoteRevision:
+        """Fold one duplicate into its survivor, in ONE transaction (design 41
+        §7.6 guard 2, §7.7). Not on `DreamSink`: that port's two verbs each own
+        a transaction, and a fold is two writes that must land together —
+        `record_wake`'s precedent for a tier's own verb on its own store.
+
+        1. The survivor gets `body` as a new head revision (parent
+           `survivor_head`), takes `anchor_date` and `revisit_at`, and has its
+           strikes reset when `reset_strikes`. Compare-and-swap on its head
+           AND `retired_at IS NULL`.
+        2. The duplicate is retired `retired-merged` with `replaced_by` the
+           survivor. Compare-and-swap on ITS head and `retired_at IS NULL`.
+
+        Either swap matching no row raises `StaleNoteHeadError` and the
+        transaction rolls back, so nothing is half-folded: no appended
+        revision on a survivor whose duplicate is still open, no retired
+        duplicate whose question reached nothing. The duplicate's row and its
+        whole chain are kept, so clearing `retired_at`/`replaced_by` restores
+        it exactly (§7.7, «what reversible means here»).
+
+        `body` is built by the caller (`nora.domain.notes.merged_body`) and
+        constructed as a `NoteRevision` BEFORE the transaction opens, so an
+        over-long or blank body refuses identically on both implementations.
+        """
+        if survivor_id == duplicate_id:
+            raise ValueError("a note cannot be folded into itself")
+        revision = NoteRevision(
+            id=str(uuid4()), note_id=survivor_id, body=body,
+            parent_revision_id=survivor_head, written_at=now_ms,
+            established_by=established_by,
+            instruction_sha256=instruction_sha256, model=model,
+        )
+        if not all(_is_uuid(v) for v in (
+            survivor_id, survivor_head, duplicate_id, duplicate_head,
+        )):
+            raise StaleNoteHeadError(
+                "a note id this store could not look up — read it again",
+                observed_head=None,
+            )
+        survivor_values: dict[str, Any] = {
+            "head_revision_id": revision.id,
+            "anchor_date": anchor_date,
+            "revisit_at": revisit_at,
+        }
+        if reset_strikes:
+            survivor_values["strikes"] = 0
+        async with self._engine.begin() as conn:
+            swapped = await conn.execute(
+                sa.update(NOTE)
+                .where(
+                    NOTE.c.id == survivor_id,
+                    NOTE.c.unit == unit,
+                    NOTE.c.head_revision_id == survivor_head,
+                    NOTE.c.retired_at.is_(None),
+                )
+                .values(**survivor_values)
+            )
+            if swapped.rowcount == 0:
+                raise StaleNoteHeadError(
+                    f"note {survivor_id} moved or retired before the fold — "
+                    f"read it again",
+                    observed_head=None,
+                )
+            await conn.execute(sa.insert(NOTE_REVISION).values(
+                id=revision.id, note_id=revision.note_id, body=revision.body,
+                parent_revision_id=revision.parent_revision_id,
+                written_at=revision.written_at,
+                established_by=revision.established_by,
+                instruction_sha256=revision.instruction_sha256,
+                model=revision.model,
+            ))
+            retired = await conn.execute(
+                sa.update(NOTE)
+                .where(
+                    NOTE.c.id == duplicate_id,
+                    NOTE.c.unit == unit,
+                    NOTE.c.head_revision_id == duplicate_head,
+                    NOTE.c.retired_at.is_(None),
+                )
+                .values(
+                    retired_at=now_ms, replaced_by=survivor_id,
+                    retire_reason=NoteSupersedeReason.RETIRED_MERGED,
+                )
+            )
+            if retired.rowcount == 0:
+                # Raising inside `begin()` rolls back the survivor's swap and
+                # the revision above: the fold is all or nothing.
+                raise StaleNoteHeadError(
+                    f"note {duplicate_id} moved or retired before the fold — "
+                    f"read it again",
+                    observed_head=None,
+                )
+        return revision
+
+    async def record_merge_decision(self, *, decision: NoteMergeDecision) -> None:
+        """Append one `note_merge_decision` row (design 41 §7.8). Nothing
+        updates a row; a reused id is a primary-key error, never a silent
+        overwrite."""
+        async with self._engine.begin() as conn:
+            await conn.execute(sa.insert(NOTE_MERGE_DECISION).values(
+                id=decision.id, unit=decision.unit, mode=decision.mode,
+                outcome=decision.outcome, survivor_id=decision.survivor_id,
+                duplicate_id=decision.duplicate_id,
+                survivor_title=decision.survivor_title,
+                duplicate_title=decision.duplicate_title,
+                reason=decision.reason,
+                established_by=decision.established_by, ts=decision.ts,
+            ))
 
     async def record_miss(
         self, *, unit: str, probe: str, conversation_id: str, now_ms: int,

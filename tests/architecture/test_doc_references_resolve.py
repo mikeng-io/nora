@@ -258,33 +258,32 @@ def _tracked_markdown_files() -> list[str]:
 # the operator; do not mass-rewrite the docs to clear it, and do not add to it
 # for a NEW reference (fix the doc, or the code, instead).
 _KNOWN_DANGLING: dict[tuple[str, str], str] = {
-    # --- hidden by a NEIGHBOURING table row until 2026-09-24 ---
+    # --- hidden by a NEIGHBOURING table row until 2026-09-24, TRIAGED (#422) ---
     #
     # A table was one «paragraph» to this gate, so one row carrying a
     # historical marker exempted every row in its table. Splitting rows out
-    # (`_paragraphs`) surfaced these; none was introduced by that change.
-    # Pinned, not rewritten, per this gate's own rule — each needs checking
-    # whether the code moved, was renamed or was deleted (#422).
-    **dict.fromkeys(
-        (
-            ("design/09-decision-index.md", "deploy/compose/nora-db.compose.yml"),
-            ("design/09-decision-index.md", "deploy/compose/presence.compose.yml"),
-            ("design/09-decision-index.md", "deploy/egress.sh"),
-            ("design/09-decision-index.md", "deploy/watchdog.sh"),
-            ("design/09-decision-index.md", "evals/adversarial/identity_grounding.yaml"),
-            ("design/09-decision-index.md", "evals/adversarial/source_scope.yaml"),
-            ("design/09-decision-index.md", "evals/evaluators.py"),
-            ("design/09-decision-index.md", "evals/journeys.py"),
-            ("design/09-decision-index.md", "evals/judge.py"),
-            ("design/09-decision-index.md", "evals/run.py"),
-            ("design/09-decision-index.md", "nora/agent/disclosure.py"),
-            ("design/09-decision-index.md", "tests/test_evals_intent.py"),
-            ("design/09-decision-index.md", "tests/test_evals_journeys.py"),
-            ("design/09-decision-index.md", "tests/test_evals_live_runner.py"),
-            ("design/evaluation/02-the-rebuild.md", "nora/app/eval_support.py"),
-        ),
-        "surfaced 2026-09-24 when table rows became their own paragraphs; "
-        "not yet triaged (#422)",
+    # (`_paragraphs`) surfaced these 15; each was checked with `git log
+    # --follow` / `git log -S` for whether the code moved, was renamed, or
+    # was deleted. Fourteen resolved (a `deleted 2026-...` reference note
+    # added to the ROW that cited them, never a neighbour — the
+    # decision-index header says a row is MARKED, not rewritten — so those
+    # rows now carry their own `_HISTORICAL_MARKERS` hit and are dropped from
+    # this dict); the last five of those fourteen sat in DEC-76 and DEC-84,
+    # left pinned by #494 while `mikeng-io/governance-claims-482` was editing
+    # those same rows concurrently, and triaged the same way once that branch
+    # merged (#497, 2026-09-25). `nora/agent/disclosure.py` (DEC-124) stays
+    # pinned: it was never built — DEC-124's own row names it as a
+    # prospective housekeeping move, not a path that ever existed, so no
+    # "deleted" marker fits it.
+    ("design/09-decision-index.md", "nora/agent/disclosure.py"): (
+        "never built; DEC-124's row names `nora/agent/disclosure.py` "
+        "prospectively — 'a housekeeping step for whoever builds the first "
+        "tool that imports it from outside whereis' — as a place "
+        "`DisclosureGuard` could move to, not a file it ever created; "
+        "`DisclosureGuard` still lives in `nora/agent/whereis.py` today. "
+        "checked 2026-09-25 (`git log -S disclosure.py` finds it only in "
+        "this decision-index prose, never as a real file); drop this entry "
+        "the day that move ships"
     ),
     (
         "design/instagram-adoption/17-implementation-plan.md",

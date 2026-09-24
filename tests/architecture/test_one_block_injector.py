@@ -223,6 +223,7 @@ CONVERTED = (
     "nora/language/culture.py",
     "nora/language/note_candidates.py",
     "nora/language/note_curator.py",
+    "nora/language/note_merge.py",
     "nora/language/proactive.py",
     "nora/skills/loader.py",
 )

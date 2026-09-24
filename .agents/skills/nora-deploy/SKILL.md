@@ -137,8 +137,8 @@ cp config.toml "$B" && cp config.toml /tmp/config.candidate.toml || exit 1
 grep -n '^<key> *=' /tmp/config.candidate.toml    # several hits: address the line by number
 sed -i '<line>s/^<key> = .*/<key> = <value>/' /tmp/config.candidate.toml
 diff "$B" /tmp/config.candidate.toml               # exactly the intended line
-docker compose cp /tmp/config.candidate.toml nora:/tmp/config.candidate.toml || exit 1
-docker compose exec -T nora /app/.venv/bin/nora config validate --config /tmp/config.candidate.toml; VAL_RC=$?
+docker compose cp /tmp/config.candidate.toml nora:/tmp/config.candidate.toml </dev/null || exit 1
+docker compose exec -T nora /app/.venv/bin/nora config validate --config /tmp/config.candidate.toml </dev/null; VAL_RC=$?
 echo "VAL_RC=$VAL_RC"; [ "$VAL_RC" = 0 ] || { echo "INVALID, live file untouched"; exit 9; }
 cp /tmp/config.candidate.toml config.toml          # cp writes in place: same inode as the mount
 docker compose up -d --force-recreate nora presence analytics; UP_RC=$?
@@ -148,15 +148,15 @@ if [ "$UP_RC" != 0 ] || [ "$VD_RC" != 0 ]; then
   cp "$B" config.toml && docker compose up -d --force-recreate nora presence analytics
   echo "RESTORED $B UP_RC=$?"; python3 scripts/verify-deploy.py; echo "RESTORE_VD_RC=$?"; exit 10
 fi
-docker compose exec -T nora /app/.venv/bin/python -c 'from pathlib import Path; from nora.config import load; print(load(Path("config.toml"), require_secrets=False).<section>.<key>)'
+docker compose exec -T nora /app/.venv/bin/python -c 'from pathlib import Path; from nora.config import load; print(load(Path("config.toml"), require_secrets=False).<section>.<key>)' </dev/null
 EOF
 ```
 
-Check: the diff is one line, `VAL_RC=0`, `UP_RC=0 VD_RC=0`, no `RESTORED`,
-and the printed value is the new one. After a `RESTORED`, production is healthy
-only if `RESTORE_VD_RC=0`. Add `stt voice-wake` to both recreates
-for a `[speech.*]` key. Backups go to `~/nora-backups/`, never into the repo.
+Check: one-line diff, `VAL_RC=0`, `UP_RC=0 VD_RC=0`, no `RESTORED`, new value.
+After a `RESTORED`, production is healthy only if `RESTORE_VD_RC=0`. Add `stt
+voice-wake` to both recreates for a `[speech.*]` key. Backups go to `~/nora-backups/`, never into the repo.
 
+- `</dev/null` on each `docker compose exec` in a heredoc (reference.md).
 - Never `sed -i` the live file: it writes a new inode, a running container
   keeps reading the old one, and `/health`'s `stale` flag cannot see it.
 - `policy.toml` / `identity.toml`: same steps, recreate the services in the

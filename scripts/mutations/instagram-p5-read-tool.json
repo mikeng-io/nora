@@ -44,15 +44,15 @@
   {
     "name": "ids leaked: the profile text renders the igid and fbid",
     "file": "nora/infra/social/instagram_client.py",
-    "old": "    lines = [head]\n\n    social = body.get(\"social\")",
-    "new": "    lines = [head, f\"ids {body.get('igid')} / {body.get('fbid')}\"]\n\n    social = body.get(\"social\")",
+    "old": "    return ProfileView(\n        username=username,",
+    "new": "    return ProfileView(\n        username=username + f\" ids {body.get('igid')} / {body.get('fbid')}\",",
     "target": "tests/unit/test_instagram_read_tool.py::test_no_igid_fbid_or_person_id_is_in_the_model_facing_result"
   },
   {
     "name": "ids leaked: the story result carries the igid",
     "file": "nora/infra/social/instagram_client.py",
-    "old": "            \"source_kind\": SOURCE_KIND,",
-    "new": "            \"source_kind\": SOURCE_KIND, \"igid\": igid,",
+    "old": "            log.warning(\"instagram bridge found a story with no usable items\")\n            return dict(UNAVAILABLE)\n        return await self._answer(view, look)",
+    "new": "            log.warning(\"instagram bridge found a story with no usable items\")\n            return dict(UNAVAILABLE)\n        return {**await self._answer(view, look), \"igid\": igid}",
     "target": "tests/unit/test_instagram_read_tool.py::test_no_igid_fbid_or_person_id_is_in_the_model_facing_result"
   },
   {
@@ -121,8 +121,8 @@
   {
     "name": "ids leaked: the story items carry the frame id again (owner igid via the pk fallback)",
     "file": "nora/infra/social/instagram_client.py",
-    "old": "        item: dict[str, Any] = {\n            \"kind\": kind if kind in _KINDS else \"media\",\n            \"url\": url,\n        }",
-    "new": "        item: dict[str, Any] = {\n            \"id\": row.get(\"id\"), \"kind\": kind if kind in _KINDS else \"media\",\n            \"url\": url,\n        }",
+    "old": "            alt_text=_one_line(row.get(\"alt_text\")),",
+    "new": "            alt_text=_one_line(str(row.get(\"id\"))),",
     "target": "tests/unit/test_instagram_read_tool.py::test_no_igid_fbid_or_person_id_is_in_the_model_facing_result"
   },
   {

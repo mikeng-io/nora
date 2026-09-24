@@ -1,0 +1,9 @@
+{
+  "type": "change",
+  "summary": "Nora's always-loaded identity now says she has a form: a small stylized 3D mascot.",
+  "details": [
+    "Her appearance used to live only in the on-demand image-generation skill, so asked what she looks like, nothing always-loaded told her, and asked to draw herself she inferred she had none and drew an empty room.",
+    "identity.md now carries one short, descriptive sentence naming the mascot form and a few of its anchors (the messy dark-brown high bun, the oversized light-grey hoodie, the white wired earphones); the full visual spec stays in the image-generation skill and is not duplicated."
+  ],
+  "limitations": []
+}

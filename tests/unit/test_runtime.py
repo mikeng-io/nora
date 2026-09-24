@@ -1459,6 +1459,253 @@ async def test_an_adaptor_still_in_flight_is_skipped_not_re_entered():
     assert metrics.get("nora_dream_skipped_total", reason="in_flight") == 0
 
 
+# ---- the unit wall clock (issue #191): #60 bounded the adaptor's own
+# inputs/commit; the cursor reads AROUND them were still bare awaits, and any
+# one of them hanging reproduced #60 exactly — this unit never ticks again.
+
+
+class _HangingRecord:
+    """`_SinceReadable`'s own hang. `record.since` is one of the cursor reads
+    `#60` left bare around the adaptor's own bounded `inputs`/`commit` (issue
+    #191) — before `[dreamer] max_unit_hold_seconds` existed, nothing bounded
+    this call at all.
+
+    `blocked` is set the MOMENT `since` is entered, so a test can tell "it
+    hung" from "it was never called" — the exit-code-5-shaped failure one
+    layer up from a probe that measures nothing. `calls` counts every entry:
+    the whole proof this file exists for is that the SECOND call happens at
+    all.
+    """
+
+    def __init__(self) -> None:
+        self.blocked = asyncio.Event()
+        self.calls = 0
+        self._forever = asyncio.Event()
+
+    async def since(
+        self, *, conversation_id: str, after_id: int, limit: int
+    ) -> list[TranscriptRow]:
+        self.calls += 1
+        self.blocked.set()
+        await self._forever.wait()
+        raise AssertionError("unreachable")  # pragma: no cover
+
+
+async def test_a_hung_cursor_read_is_released_by_the_unit_wall_clock():
+    """**Issue #191, end to end.** `record.since` hangs forever — the same
+    shape a wedged connection to the audit store would produce, and one of
+    the exact calls the issue names as still bare `await`s around the
+    adaptor's own bounded `inputs`/`commit`.
+
+    Before `[dreamer] max_unit_hold_seconds`, this reproduced #60 exactly:
+    `_run_adaptor` never returns, `finally: running.discard(unit)` never
+    runs, and `g1`'s `note-candidates` unit never ticks again — indistinguishable,
+    on `nora_dream_skipped_total{reason="in_flight_adaptor"}` alone, from an
+    ordinary long run.
+
+    THREE properties proven at once, because a fix that only has one of them
+    is not this fix: the unit is released WITHIN the wall clock (`since` is
+    entered a SECOND time — the loop is not stuck), the dedicated metric
+    counts the wedge on its own series, and the model is never reached (the
+    hang is upstream of it, so a silent "success" is not possible here).
+    """
+    record = _HangingRecord()
+    language = _KeyedLanguage(lag=99)
+    runner = _RecordingRunner()
+    adaptor = _StubAdaptor("note-candidates")
+    metrics = Metrics()
+
+    async def _run() -> None:
+        task = asyncio.create_task(dream_loop(
+            record, language, metrics,
+            scopes=lambda: ["g1"], tick_seconds=0.02, safety_lag=0,
+            quiet_seconds=0.0, max_age_seconds=1e9, batch_limit=10,
+            adaptors=[adaptor], runtime=runner,
+            # Small and deliberate: this IS the value under test, not an
+            # incidental speed-up. Several wall-clock cycles must fit inside
+            # the window below for "ticks again" to be provable at all.
+            max_unit_hold_seconds=0.05,
+        ))
+        await record.blocked.wait()      # the first attempt is wedged
+        await asyncio.sleep(0.3)         # several wall-clock cycles elapse
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+
+    # A bounded TEST timeout (nora-prove-fix): reverting the fix must make
+    # this fail or time out here, never hang the suite.
+    await asyncio.wait_for(_run(), timeout=5)
+
+    assert record.calls >= 2, (
+        "record.since was entered only once — the unit never ticked again "
+        "after the hang, issue #191's exact defect"
+    )
+    assert metrics.get(
+        "nora_dream_unit_timeout_total", adaptor="note-candidates",
+    ) >= 1
+    assert not runner.calls, (
+        "the model was reached even though the hang sits upstream of it"
+    )
+
+
+class _RaisingRecord:
+    """`_SinceReadable`'s own RAISE, as opposed to `_HangingRecord`'s hang.
+
+    `record.since` raising `TimeoutError` directly — an asyncpg
+    `command_timeout`, a raw socket timeout, exactly the class
+    `_bounded_store_call`'s own docstring names — is NOT `[dreamer]
+    max_unit_hold_seconds` firing, and must not be treated as though it
+    were (issue #191 independent review, HIGH). It is an ORDINARY failure
+    and must feed the exponential backoff the same way any other exception
+    does.
+    """
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def since(
+        self, *, conversation_id: str, after_id: int, limit: int
+    ) -> list[TranscriptRow]:
+        self.calls += 1
+        raise TimeoutError("simulated asyncpg command_timeout")
+
+
+async def test_a_collaborators_own_timeout_error_is_an_ordinary_failure(caplog):
+    """**The regression the independent review caught.** A prior shape split
+    the timeout handling into `except TimeoutError: ... if not
+    unit_deadline.expired(): raise` followed by a sibling `except
+    Exception:`. Python does not chain except clauses on one try: the
+    `raise` propagated PAST the sibling entirely, out of `_run_adaptor`
+    itself — no `log.exception`, no `nora_errors_total`, no
+    `_count_failure`, and the exponential backoff never engaged. Measured
+    live on the review's own probe: 14 calls in 0.3s with 0 errors counted,
+    against 1 call / 1 error / backoff on the pre-#191 tree.
+
+    PROOF: exactly ONE call despite many ticks (backoff DID engage), the
+    ordinary-failure series moved, and the wedge series — which this was
+    never an instance of — did not.
+    """
+    record = _RaisingRecord()
+    language = _KeyedLanguage(lag=99)
+    runner = _RecordingRunner()
+    adaptor = _StubAdaptor("note-candidates")
+    metrics = Metrics()
+
+    with caplog.at_level(logging.ERROR, logger="nora.app.runtime"):
+        await _tick(dream_loop(
+            record, language, metrics,
+            scopes=lambda: ["g1"], tick_seconds=0.01, safety_lag=0,
+            quiet_seconds=0.0, max_age_seconds=1e9, batch_limit=10,
+            adaptors=[adaptor], runtime=runner,
+            # Large and deliberate: this proves the failure is ORDINARY —
+            # counted and backed off — not a case of the wall clock itself
+            # being too tight to observe the wedge path by accident.
+            max_unit_hold_seconds=5.0,
+        ), ticks=0.3)
+
+    assert record.calls == 1, (
+        f"record.since was entered {record.calls} times in 0.3s with no "
+        "backoff engaged — a collaborator's own TimeoutError was treated "
+        "as a wedge instead of an ordinary failure"
+    )
+    assert metrics.get("nora_errors_total", stage="dream") == 1
+    assert metrics.get(
+        "nora_dream_unit_timeout_total", adaptor="note-candidates",
+    ) == 0, "this was never [dreamer] max_unit_hold_seconds firing"
+    assert any(
+        "dream cycle failed for" in r.getMessage() for r in caplog.records
+    )
+
+
+class _RecordThatSwallowsCancellationAndRaises:
+    """`record.since` hangs until `[dreamer] max_unit_hold_seconds` cancels
+    it, then raises `RuntimeError` from a `finally` instead of letting
+    `CancelledError` propagate — cleanup that fails AFTER the wall clock
+    genuinely fired (independent review, LOW #3).
+
+    `unit_deadline.expired()` is True here (the clock DID fire, and
+    `asyncio.timeout` records that regardless of what the body goes on to
+    raise). The exception reaching `_run_adaptor`, though, is a
+    `RuntimeError`, not a `TimeoutError` — the case the guard's `isinstance`
+    half exists to separate from an actual wedge, and the case neither
+    `test_a_hung_cursor_read_is_released_by_the_unit_wall_clock` (whose
+    exception IS a `TimeoutError`) nor
+    `test_a_collaborators_own_timeout_error_is_an_ordinary_failure` (whose
+    deadline never expires — the raise is immediate) exercises.
+    """
+
+    def __init__(self) -> None:
+        self.blocked = asyncio.Event()
+        self.calls = 0
+
+    async def since(
+        self, *, conversation_id: str, after_id: int, limit: int
+    ) -> list[TranscriptRow]:
+        self.calls += 1
+        self.blocked.set()
+        try:
+            await asyncio.Event().wait()   # never set; only cancellation ends this
+        finally:
+            # Cleanup that itself fails, AFTER the CancelledError our own
+            # wall clock delivered — the exact shape LOW #3 named. This
+            # REPLACES the propagating exception: what `_run_adaptor` sees
+            # is this RuntimeError, not the CancelledError underneath it.
+            raise RuntimeError("cleanup failed after the wall clock cancelled it")
+
+
+async def test_an_expired_deadline_whose_exception_is_not_a_timeout_is_ordinary(
+    caplog,
+):
+    """**The untested half of the guard** (independent review, LOW #3):
+    `isinstance(exc, TimeoutError) and unit_deadline.expired()` reddens on a
+    mutant that drops the `isinstance` half (`if unit_deadline.expired():`)
+    ONLY if some test exercises an expired deadline whose exception is NOT a
+    `TimeoutError`. Neither existing test does. This is that case.
+
+    PROOF: an ordinary failure — logged, counted, backed off — even though
+    the wall clock genuinely fired. The clock firing is not, by itself,
+    what makes an outcome a wedge; the exception it produced is.
+    """
+    record = _RecordThatSwallowsCancellationAndRaises()
+    language = _KeyedLanguage(lag=99)
+    runner = _RecordingRunner()
+    adaptor = _StubAdaptor("note-candidates")
+    metrics = Metrics()
+
+    async def _run() -> None:
+        task = asyncio.create_task(dream_loop(
+            record, language, metrics,
+            scopes=lambda: ["g1"], tick_seconds=0.02, safety_lag=0,
+            quiet_seconds=0.0, max_age_seconds=1e9, batch_limit=10,
+            adaptors=[adaptor], runtime=runner,
+            max_unit_hold_seconds=0.05,
+        ))
+        await record.blocked.wait()
+        await asyncio.sleep(0.2)     # the deadline fires; backoff then holds
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+
+    with caplog.at_level(logging.ERROR, logger="nora.app.runtime"):
+        await asyncio.wait_for(_run(), timeout=5)
+
+    assert record.calls == 1, (
+        f"record.since was entered {record.calls} times — a RuntimeError "
+        "from cleanup must be an ordinary (backed-off) failure, not a "
+        "wedge that retries on the very next tick"
+    )
+    assert metrics.get("nora_errors_total", stage="dream") == 1
+    assert metrics.get(
+        "nora_dream_unit_timeout_total", adaptor="note-candidates",
+    ) == 0, (
+        "the deadline expiring is not what makes an outcome a unit timeout "
+        "— a RuntimeError from cleanup must not be filed there"
+    )
+    assert any(
+        "dream cycle failed for" in r.getMessage() for r in caplog.records
+    )
+
+
 # ---- the additive guarantee, and the wiring mistake that is otherwise silent
 
 

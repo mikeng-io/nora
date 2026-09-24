@@ -221,7 +221,9 @@ be populated and merge was inert by construction; the registry store, the
 resolution pass and the merge verb are deleted (their tables stay). The
 curator only retires. R-75 in the decision index says which clauses survive. A
 model-judged merge returns in a separate `note-merge` adaptor (DEC-202, design
-41 §7, designed 2026-09-24, not yet built); the curator stays retire-only.
+41 §7, designed 2026-09-24, built 2026-09-25 behind `[notes] merge_mode`,
+default `off`, first run in `shadow`, which writes no note); the curator
+stays retire-only.
 The create gate in `note_candidates` matched on anchor date alone from that
 day until **2026-09-13**, when two firings in production merged two unrelated
 occasions twice (#228); it now resolves the note title the MODEL names, and
@@ -244,10 +246,22 @@ the live file is a bind-mount source the operator edits in place, so every
 merge touching it fought an uncommitted working change and each session had to
 stash-merge-restore-diff by hand to keep from losing an edit. `config.example.
 toml` is now the only committed record of the config's shape, and
-`tests/test_env_template.py` is what holds the two in step — that gate SKIPS
-where there is no local `config.toml` (a fresh clone) and runs for real on the
-deployment machine, which is the one whose drift would stop a container
-booting under `extra = "forbid"`.
+`tests/test_env_template.py`'s three drift checks compare the two — but
+`config.toml` is gitignored in every dev worktree and in CI, so they SKIP
+there by design (`tests/test_env_template.py::_load_live_or_skip`); nothing
+in the established workflow (worktrees only, never the deploy checkout —
+"Reaching the deployment" below) runs them for real. What
+DOES run automatically, once per eval, is a different and narrower property:
+`evals/subject_config.materialise()` rebuilds the eval subject's config from
+the live `config.toml` and REFUSES to start the run if the two still disagree
+outside `ALLOWED_TO_DIFFER` (issue #321). It does not subsume the drift
+checks — it self-heals around a template that is stale or incomplete rather
+than requiring the checked-in text to be right, so it protects the *computed
+eval config*, not `config.example.toml` itself as the thing a human reads to
+reason about the deployment. That is still only `test_env_template.py`'s job,
+and it stays SKIP-based (a fixture would compare the template to itself,
+green forever, measuring nothing — the exact anti-pattern the file's
+docstring warns against).
 
 **No config change reaches a process unvalidated** (deploy convention §4.5,
 implemented 2026-09-08): `nora config set/get/unset/validate/path --config

@@ -2,15 +2,15 @@
   {
     "name": "the client hands the model each hit's igid",
     "file": "nora/infra/social/instagram_client.py",
-    "old": "{\"username\": username, \"is_verified\": row.get(\"is_verified\") is True},",
-    "new": "{\"username\": username, \"is_verified\": row.get(\"is_verified\") is True, \"igid\": row.get(\"igid\")},",
+    "old": "            username=username, is_verified=row.get(\"is_verified\") is True, full_name=name,",
+    "new": "            username=username, is_verified=row.get(\"is_verified\") is True, full_name=str(row.get(\"igid\")),",
     "target": "tests/unit/test_instagram_search_tool.py::test_no_igid_or_fbid_reaches_the_model"
   },
   {
     "name": "the display name rides the reference row, outside the wrap",
-    "file": "nora/infra/social/instagram_client.py",
-    "old": "{\"username\": username, \"is_verified\": row.get(\"is_verified\") is True},",
-    "new": "{\"username\": username, \"is_verified\": row.get(\"is_verified\") is True, \"full_name\": name},",
+    "file": "nora/infra/social/render.py",
+    "old": "            {\"username\": account.username, \"is_verified\": account.is_verified}",
+    "new": "            {\"username\": account.username, \"is_verified\": account.is_verified, \"full_name\": account.full_name}",
     "target": "tests/unit/test_instagram_search_tool.py::test_a_display_name_is_wrapped_as_untrusted_and_escaped"
   },
   {
@@ -58,8 +58,8 @@
   {
     "name": "a malformed verified flag is read as truthy",
     "file": "nora/infra/social/instagram_client.py",
-    "old": "{\"username\": username, \"is_verified\": row.get(\"is_verified\") is True},",
-    "new": "{\"username\": username, \"is_verified\": bool(row.get(\"is_verified\"))},",
+    "old": "is_verified=row.get(\"is_verified\") is True",
+    "new": "is_verified=bool(row.get(\"is_verified\"))",
     "target": "tests/unit/test_instagram_search_tool.py::test_a_malformed_verified_flag_never_reads_as_verified"
   },
   {
@@ -106,9 +106,9 @@
   },
   {
     "name": "the badge goes back after the display name (the forgeable order)",
-    "file": "nora/infra/social/instagram_client.py",
-    "old": "        line = f\"{number}. @{row['username']}, {badge}\"\n        if name is not None:\n            line += f\", name: {name}\"\n",
-    "new": "        line = f\"{number}. @{row['username']}\"\n        if name is not None:\n            line += f\" ({name})\"\n        if row[\"is_verified\"]:\n            line += \", verified\"\n",
+    "file": "nora/infra/social/render.py",
+    "old": "        line = f\"{number}. @{account.username}, {badge}\"\n        if account.full_name is not None:\n            line += f\", name: {account.full_name}\"\n",
+    "new": "        line = f\"{number}. @{account.username}\"\n        if account.full_name is not None:\n            line += f\" ({account.full_name})\"\n        if account.is_verified:\n            line += \", verified\"\n",
     "target": "tests/unit/test_instagram_search_tool.py::test_a_display_name_cannot_forge_the_verified_badge"
   },
   {

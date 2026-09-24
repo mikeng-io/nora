@@ -784,6 +784,109 @@ async def test_a_retired_note_cancels_the_row():
     assert resolved.outcome == "cancelled_note_retired"
 
 
+async def test_a_pending_proactive_row_on_a_merged_note_follows_its_survivor():
+    """Design 41 §7.5: a note retired `retired-merged` is not a question that
+    closed — it was folded into another open note — so a pending row about
+    it follows the survivor instead of being cancelled. It fires while the
+    survivor stands untouched, and is cancelled `moved` once a person revises
+    the survivor after the row was written.
+
+    Falsification: treat every retirement as `cancelled_note_retired` (drop
+    the `merged` branch) and the first tick cancels a row whose question is
+    still open."""
+    store = FakeReminderStore()
+    notes, duplicate = await _note_store()
+    survivor = await notes.create(
+        unit="friends", title="Saturday dinner", description="venue open",
+        uncertainty="where", closing_condition="a place is picked",
+        established_in="conv-1", body="Saturday; venue open.",
+        established_by="tag:miles", now_ms=500, anchor_date=20260912,
+    )
+    row = _proactive_row(duplicate)
+    await store.create(row)
+    await notes.merge_into(
+        unit="friends", survivor_id=survivor.id,
+        survivor_head=survivor.head_revision_id, duplicate_id=duplicate.id,
+        duplicate_head=duplicate.head_revision_id,
+        body="Saturday; venue open.\n\n--- folded in from another note ---",
+        anchor_date=20260912, revisit_at=2_000, reset_strikes=True,
+        established_by="dream:note-merge:friends:2", now_ms=2_000,
+    )
+    policy = _RoomPolicy(allow=True, proactive=True)
+    fired: list[list[Reminder]] = []
+
+    async def _fire(rows):
+        fired.append(list(rows))
+        return "sent"
+
+    def _loop():
+        return HeartbeatLoop(
+            store=store, slots=ConversationSlots(maxlen=16, spawn=lambda c: None),
+            policy=policy, clock=lambda: T0, metrics=Metrics(), tick_seconds=60.0,
+            fire=_fire, proactive=ProactiveScreen(policy=policy, notes=notes),
+        )
+
+    await _loop().tick()
+    assert len(fired) == 1, "the fold is not a closing: the row fires"
+    assert (await store.get(row.id)).state is ReminderState.DONE
+
+    # A person revises the SURVIVOR after the next row was written.
+    again = _proactive_row(duplicate)
+    await store.create(again)
+    head = (await notes.read(unit="friends", note_id=survivor.id))[1]
+    await notes.append_revision(
+        unit="friends", note_id=survivor.id, body="Ada booked Sai Kung.",
+        parent_revision_id=head.id, established_by="tag:ada",
+        now_ms=int(T0.timestamp() * 1000),
+    )
+    await _loop().tick()
+
+    assert len(fired) == 1
+    resolved = await store.get(again.id)
+    assert resolved.state is ReminderState.CANCELLED
+    assert resolved.outcome == "cancelled_note_moved"
+
+
+async def test_a_row_on_a_merged_note_whose_survivor_closed_is_cancelled():
+    """Following `replaced_by` must END somewhere open. A duplicate folded into
+    a survivor the curator has since closed forwards to nothing, and the row
+    is cancelled `retired` — not fired on a question that is over.
+
+    Falsification: answer «fire» when `successor` is None and the row fires."""
+    store = FakeReminderStore()
+    notes, duplicate = await _note_store()
+    survivor = await notes.create(
+        unit="friends", title="Saturday dinner", description="venue open",
+        uncertainty="where", closing_condition="a place is picked",
+        established_in="conv-1", body="Saturday; venue open.",
+        established_by="tag:miles", now_ms=500, anchor_date=20260912,
+    )
+    row = _proactive_row(duplicate)
+    await store.create(row)
+    await notes.merge_into(
+        unit="friends", survivor_id=survivor.id,
+        survivor_head=survivor.head_revision_id, duplicate_id=duplicate.id,
+        duplicate_head=duplicate.head_revision_id,
+        body="Saturday; venue open.\n\n--- folded in from another note ---",
+        anchor_date=20260912, revisit_at=2_000, reset_strikes=True,
+        established_by="dream:note-merge:friends:2", now_ms=2_000,
+    )
+    await notes.supersede(
+        key="friends", target=survivor.id, replaced_by=None,
+        because=NoteSupersedeReason.RETIRED_CLOSED, source=None, now_ms=3_000,
+    )
+    policy = _RoomPolicy(allow=True, proactive=True)
+    loop, fired = _build(store=store, policy=policy)
+    loop._proactive = ProactiveScreen(policy=policy, notes=notes)
+
+    await loop.tick()
+
+    assert fired == []
+    resolved = await store.get(row.id)
+    assert resolved.state is ReminderState.CANCELLED
+    assert resolved.outcome == "cancelled_note_retired"
+
+
 async def test_a_linked_row_with_no_note_store_does_not_fire_unverified():
     """R-27 at the screen: a note store that is not wired is «I could not
     check», and a row whose premise cannot be checked does not fire —

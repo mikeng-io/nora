@@ -163,6 +163,9 @@ _UNRESOLVABLE: frozenset[tuple[str, str, str, str]] = frozenset(
         ("nora/language/note_candidates.py", "_inc", "inc", "name"),
         ("nora/language/note_curator.py", "_gauge", "gauge", "name"),
         ("nora/language/note_curator.py", "_inc", "inc", "name"),
+        # The note-merge adaptor's forwarding wrapper (design 41 §7.8); its
+        # callers pass literal names, checked against its `_VOCABULARIES`.
+        ("nora/language/note_merge.py", "_inc", "inc", "name"),
         # The proactive adaptor's forwarding wrapper (design/dreamer-agent-
         # loop/39): every caller passes a literal, the same shape as the two
         # note adaptors' `_inc` above.

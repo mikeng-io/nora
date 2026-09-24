@@ -1,0 +1,6 @@
+{
+  "type": "none",
+  "reason": "Governance only (issue #482, 2026-09-24 governance audit, PR #481): three places claimed an enforcement or a default the tree did not match, and nothing a member of a room can observe changed. ADR 0015 §6 named a test, test_every_listed_status_returns_a_note, that did not exist; the ADR's header now carries a dated correction mapping every §6 test name to the real test, and the test itself was added to tests/test_tool_surface_policy.py. design/09-decision-index.md's DEC-76 row said routing was NOT ENFORCED with no corpus; it now cites the tool_selection corpus and ToolRouteGrader (commit 21e5405d) as a partial re-enforcement, with the row's history kept rather than deleted. evals/__main__.py's --deployment-config and evals/backbone.py's NORA_DEPLOYMENT_DIR no longer default to a literal deploy-host home path; both derive it from Path.home() instead. A normal, set override still behaves the same. The one edge case that changes: NORA_CONFIG or NORA_DEPLOYMENT_DIR set to an EMPTY string now falls back to the home-derived path; before, dict.get only substitutes its default when the variable is absent, so an empty override was used as-is and resolved against the current directory instead.",
+  "details": [],
+  "limitations": []
+}

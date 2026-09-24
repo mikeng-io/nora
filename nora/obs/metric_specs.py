@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from typing import NamedTuple
 
+from nora.domain.media import MEDIA_FETCH_CALLERS
 from nora.domain.media_join import JOIN_PATHS
 from nora.domain.reasoning_strip import (
     PATHS_HELP,
@@ -723,9 +724,10 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     _CounterSpec(
         "nora_media_fetch_total",
         "media_fetch calls, by outcome (ok / nothing_found / ambiguous / "
-        "not_an_image / unavailable) and whether the description was served "
-        "from the content-hash cache (cached=true/false).",
-        ("status", "cached"),
+        "not_an_image / unavailable), whether the description was served "
+        "from the content-hash cache (cached=true/false), and who asked "
+        f"(caller={' / '.join(MEDIA_FETCH_CALLERS)}).",
+        ("status", "cached", "caller"),
     ),
     # DEC-73 (was DEC-57/R-34, retired). A person's alias appearing in a
     # `web_search` query — COUNTED, not blocked (design/14 §2.2: unlike a routing
@@ -1477,8 +1479,10 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "named title answers to MORE than one standing note, so a NEW note "
         "was written rather than a guess at which one was meant — a "
         "duplicate overwrites nothing and a reader can see both, appending "
-        "to the wrong note is neither; nothing MERGES the duplicate "
-        "afterwards, and issue #236 carries that bound), refused (a "
+        "to the wrong note is neither; since 2026-09-25 the note-merge "
+        "pass is the back-stop that folds such a duplicate, DEC-202 — it "
+        "read «nothing MERGES the duplicate afterwards» before that, and "
+        "issue #236 carries the bound), refused (a "
         "duplicate with nothing new, or a malformed proposal the domain type "
         "itself rejected), full (the appended body would pass the note body "
         "ceiling, so the revision was refused rather than truncated — a rate "
@@ -2015,6 +2019,58 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "blip also produces.",
         ("outcome",),
     ),
+    # `[dreamer] max_unit_hold_seconds` fired (issue #191): `_run_adaptor`'s
+    # own wall clock around the WHOLE call to `_dream_adaptor_once`, covering
+    # the model budget, `#60`'s two bounded store phases AND the cursor reads
+    # around them that `#60` left bare (`clock.last_fired`/`record_fire`,
+    # every `language.*` watermark call, `record.since`, `media_join.enrich`).
+    # A DISTINCT series from `nora_dream_skipped_total
+    # {reason="in_flight_adaptor"}` on purpose: that one counts a tick that
+    # found the unit still running and cannot say whether the run in progress
+    # is long or wedged; this one fires only when the wall clock itself cuts a
+    # unit off, so a wedge is now separable from an ordinary long run. Also
+    # distinct from `nora_dream_store_timeout_total`, which is `#60`'s OWN
+    # timeout on one store phase — this fires only when the OUTER clock
+    # expires, which for a store-phase hang means the inner one somehow did
+    # not (a collaborator swallowing `CancelledError`, or a synchronous
+    # blocking call).
+    _CounterSpec(
+        "nora_dream_unit_timeout_total",
+        "Dreamer (adaptor, key) units released by [dreamer] "
+        "max_unit_hold_seconds rather than by the run finishing — the unit "
+        "is a WEDGE, distinct from an ordinary long run that "
+        "nora_dream_skipped_total{reason=\"in_flight_adaptor\"} alone cannot "
+        "tell apart from one wedged since Tuesday.",
+        ("adaptor",),
+    ),
+    # The `note-merge` adaptor (design/dreamer-agent-loop/41 §7.8, DEC-202).
+    # A rare counter on a process that restarts several times a day, so the
+    # DURABLE count is the table, not this series: `note_merge_decision` rows
+    # (shadow) and `note.retire_reason = 'retired-merged'` (on).
+    _CounterSpec(
+        "nora_note_merge_total",
+        "Folds the note-merge pass considered, by outcome — one sample per "
+        "(survivor, duplicate) pair, or per group when the group names no pair. "
+        "would_merge: shadow mode, every check passed, nothing written. "
+        "merged: on mode, folded. stale: a head moved between the render and "
+        "the fold. too_long: the folded body would pass the body cap. "
+        "not_open: one of the two was retired first. overlap: the note was in "
+        "two groups, every such group refused whole. cross_room: the group's "
+        "notes were born in different rooms. not_changed: no note in the group "
+        "changed since the last pass, so it was already judged. "
+        "unknown_ordinal: a handle the pass did not show. singleton: fewer than "
+        "two distinct notes. malformed: an item that did not parse. Every value "
+        "but the last three is also a note_merge_decision row.",
+        ("outcome",),
+    ),
+    _CounterSpec(
+        "nora_note_merge_pass_total",
+        "note-merge ticks by whether they rendered: changed (a note was "
+        "created, or revised by anything but this pass, since the last "
+        "rendered pass — a model call follows), unchanged (nothing moved, no "
+        "call), nothing_open (fewer than two open notes, no call).",
+        ("reason",),
+    ),
 )
 
 _GAUGES: tuple[_GaugeSpec, ...] = (
@@ -2399,6 +2455,16 @@ _HISTOGRAMS: tuple[_HistogramSpec, ...] = (
         "RIGHT-CENSORED at [relevance_gate] timeout_seconds — a timed-out call "
         "is recorded at the ceiling, so read the top bucket against "
         "nora_relevance_gate_errors_total{kind=\"timeout\"}.",
+    ),
+    # 41 §7.4 asks for prompt TOKENS per pass. The adaptor never sees the
+    # model call's usage — that is on the pass's Langfuse trace — so this
+    # records the rendered prompt's size in characters, which it does see.
+    _HistogramSpec(
+        "nora_note_merge_prompt_chars",
+        "Characters in one rendered note-merge prompt (every open note of the "
+        "unit, side by side). Tokens per pass are the model call's usage on "
+        "the dream:note-merge Langfuse trace.",
+        (1000, 2500, 5000, 10000, 20000, 40000, 80000),
     ),
 )
 
