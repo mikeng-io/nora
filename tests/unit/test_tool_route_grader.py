@@ -415,7 +415,6 @@ def test_shown_transcript_is_scoped_to_the_turns_own_agent():
             events=[SimpleNamespace(name="gen_ai.user.message", attributes={"content": text})],
         )
 
-    turn_root = SimpleNamespace(span_id="turn-root")
     gate_block = (
         '<group_transcript window="40" description="d">\n'
         '<m n="1" age="just now" from="Miles">the gate\'s own window</m>\n'
@@ -442,7 +441,9 @@ def test_shown_transcript_is_scoped_to_the_turns_own_agent():
         SimpleNamespace(
             start_time=3, parent=SimpleNamespace(span_id="turn-root"),
             attributes={"gen_ai.operation.name": "chat"},
-            events=[SimpleNamespace(name="gen_ai.user.message", attributes={"content": turn_block})],
+            events=[SimpleNamespace(
+                name="gen_ai.user.message", attributes={"content": turn_block},
+            )],
         ),
     ]
     for s in spans:

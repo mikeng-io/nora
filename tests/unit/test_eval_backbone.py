@@ -888,7 +888,9 @@ async def test_drive_never_judges_blind_when_no_window_was_captured(monkeypatch,
     error = state_of(data, NORA_ERROR)
     assert error and "#459" in error
     from evals.rebuilt.domain import Outcome as _Outcome
-    assert _Outcome(admitted=None, said=("here is my reply",), error=error).meets("reply") is None, (
+
+    rebuilt = _Outcome(admitted=None, said=("here is my reply",), error=error)
+    assert rebuilt.meets("reply") is None, (
         "an Outcome with this error must read as the third answer, never a pass or a fail"
     )
 
