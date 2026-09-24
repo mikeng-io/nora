@@ -40,10 +40,19 @@ ItemKind = Literal["image", "video", "media"]
 #: * `timed_out` — the look ran past its own ceiling or the whole call's;
 #: * `too_long` — a video longer than one reading window: not read here, by
 #:   design, because one open must not spend a long clip's minutes;
-#: * `over_video_cap` — a video past the per-open video cap: not read here.
+#: * `over_video_cap` — a video past the per-open video cap: not read here;
+#: * `unknown_length` — a post video with no stated length: not read here,
+#:   because nothing bounds it;
+#: * `not_started` — it waited for a slot and the deadline came first.
 ReadingState = Literal[
-    "seen", "withheld", "failed", "timed_out", "too_long", "over_video_cap",
+    "seen", "withheld", "failed", "timed_out", "not_started",
+    "too_long", "over_video_cap", "unknown_length",
 ]
+
+#: The states that mean «not read HERE, by design; `media_fetch(url=...)` on
+#: its link reads it». Distinct from a look that failed: nothing about the
+#: item is unknown, and she must not say she could not see it.
+NOT_READ_HERE: frozenset[str] = frozenset({"too_long", "over_video_cap", "unknown_length"})
 
 #: A result's status. `ambiguous` is the router's alone and never reaches a
 #: view; `refused` is here because the envelope names every non-`ok` answer a

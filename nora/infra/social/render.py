@@ -35,9 +35,18 @@ from dataclasses import dataclass
 from typing import Any
 
 from ...domain.blocks import wrap_outside_text
-from .readings import MAX_READ_VIDEO_SECONDS, MAX_READ_VIDEOS
+from .readings import MAX_READ_ITEMS, MAX_READ_VIDEOS
 from .results import clamp_chars
-from .views import ItemView, PostView, ProfileView, Reading, Result, SearchView, StoryView
+from .views import (
+    NOT_READ_HERE,
+    ItemView,
+    PostView,
+    ProfileView,
+    Reading,
+    Result,
+    SearchView,
+    StoryView,
+)
 
 #: What a story result IS, in a field nothing can mistake for a URL. A model
 #: cannot attribute what it was not told, and "there is a `taken_at` in here"
@@ -73,7 +82,16 @@ STORY_READ_FRAMING = (
     "shows line was not seen."
 )
 
-#: Added to the story framing when no frame could be seen.
+#: Added to the story framing when no frame was seen because they were not
+#: read HERE (a long video, the video cap, the item cap): each can be read on
+#: request, so she is sent to `media_fetch`, never told she could not see it.
+STORY_NOT_READ_FRAMING = (
+    "Its frames were not read here (each says why): call media_fetch(url=...) "
+    "on a frame's link in items to see it, and don't describe a frame from "
+    "its caption alone."
+)
+
+#: Added to the story framing when every look at a frame failed.
 STORY_UNSEEN_FRAMING = (
     "None of the frames was seen (each says why): say so, and don't describe "
     "them from their captions."
@@ -101,6 +119,18 @@ POST_READ_FRAMING = (
     "media_fetch(url=...)."
 )
 
+#: No item was seen because none was read HERE: a reel longer than one
+#: window, a video of unknown length, videos past the cap, items past the
+#: first 8. Each can be read on request, so the note sends her to
+#: `media_fetch` and never tells her to say she could not see the post
+#: (#486 re-review: a single 140 s reel got the unseen framing).
+POST_NOT_READ_FRAMING = (
+    "One Instagram post. Its items were not read here (each says why), so "
+    "what they show is not in front of you yet: call media_fetch(url=...) on "
+    "an item's link in items to see it. The caption is only what the poster "
+    "wrote; don't describe the post from it alone."
+)
+
 #: Every look failed. The post WAS read, so the status stays `ok`; what
 #: could be wrong is a claim about what it shows, and that is what this
 #: withholds.
@@ -126,7 +156,8 @@ SEARCH_FRAMING = (
 _READING_MAX_CHARS = 1500
 
 #: The shortest a prose run is ever cut to, so a run the layout squeezes
-#: still says something rather than « …».
+#: still says something rather than « …». A floored run is this plus the
+#: two characters of « …», which is what the layout reserves for it.
 _PROSE_FLOOR = 24
 
 #: A story frame's caption's and Instagram's description's own ceiling.
@@ -145,15 +176,26 @@ _NOT_SEEN: dict[str, str] = {
     "withheld": "not shown: what it shows has what looks like a phone number or ID in it",
     "failed": "not seen: it could not be looked at just now",
     "timed_out": "not seen: looking at it took too long",
+    "not_started": "not seen: there was no time left to look at it",
     "too_long": (
-        f"not read: longer than {round(MAX_READ_VIDEO_SECONDS)}s, so not read here; "
+        "not read here: longer than one reading window; "
         "media_fetch(url=...) on its link reads it"
     ),
     "over_video_cap": (
-        f"not read: only {MAX_READ_VIDEOS} videos are read per post or story; "
+        f"not read here: only {MAX_READ_VIDEOS} videos are read per post or story; "
+        "media_fetch(url=...) on its link reads it"
+    ),
+    "unknown_length": (
+        "not read here: a video of unknown length; "
         "media_fetch(url=...) on its link reads it"
     ),
 }
+
+#: The line an item past the item cap says, when the others were read.
+_PAST_THE_CAP = (
+    f"not read here: only the first {MAX_READ_ITEMS} items are read; "
+    "media_fetch(url=...) on its link reads it"
+)
 
 
 def render(result: Result, *, max_chars: int) -> dict[str, Any]:
@@ -318,22 +360,44 @@ def _post_blocks(view: PostView, now: int) -> list[_Block]:
     count = len(view.items)
     head += f" · {count} item" + ("" if count == 1 else "s")
     blocks: list[_Block] = [[head]]
-    blocks += [_item_block(number, item, now=None) for number, item in enumerate(view.items, 1)]
-    tail = _unlooked_tail(view.items)
-    if tail:
-        blocks.append([tail])
+    looked = _looked(view.items)
+    blocks += [
+        _item_block(number, item, now=None, looked=looked)
+        for number, item in enumerate(view.items, 1)
+    ]
     if view.caption is not None:
         blocks.append([_Prose("caption: ", view.caption, _POST_CAPTION_MAX_CHARS, first=True)])
     return blocks
 
 
 def _post_note(view: PostView) -> str:
-    looked = [item.reading for item in view.items if item.reading is not None]
-    if not looked:
-        return POST_FRAMING
-    if any(reading.state in ("seen", "withheld") for reading in looked):
-        return POST_READ_FRAMING
-    return POST_UNSEEN_FRAMING
+    return {
+        "none": POST_FRAMING, "read": POST_READ_FRAMING,
+        "not_read": POST_NOT_READ_FRAMING, "unseen": POST_UNSEEN_FRAMING,
+    }[_outcome(view.items)]
+
+
+def _looked(items: tuple[ItemView, ...]) -> bool:
+    return any(item.reading is not None for item in items)
+
+
+def _outcome(items: tuple[ItemView, ...]) -> str:
+    """What the readings add up to, for the note:
+
+    * `none` — nothing was looked at (no media reading was asked for);
+    * `read` — at least one item was seen (or looked at and withheld);
+    * `not_read` — none was seen, and at least one was not read HERE by
+      design (`NOT_READ_HERE`, or past the item cap): it can be read on
+      request, so she is never told she could not see it;
+    * `unseen` — every look that was made failed."""
+    if not _looked(items):
+        return "none"
+    readings = [item.reading for item in items]
+    if any(r is not None and r.state in ("seen", "withheld") for r in readings):
+        return "read"
+    if any(r is None or r.state in NOT_READ_HERE for r in readings):
+        return "not_read"
+    return "unseen"
 
 
 # ---- story --------------------------------------------------------------------
@@ -369,20 +433,20 @@ def _story_blocks(view: StoryView, now: int) -> list[_Block]:
     protocol's own): its number, kind and AGE, what it shows, then its
     caption and Instagram's description."""
     blocks: list[_Block] = [[f"Story by @{view.author}"]] if view.author is not None else []
-    blocks += [_item_block(number, item, now=now) for number, item in enumerate(view.items, 1)]
-    tail = _unlooked_tail(view.items)
-    if tail:
-        blocks.append([tail])
+    looked = _looked(view.items)
+    blocks += [
+        _item_block(number, item, now=now, looked=looked)
+        for number, item in enumerate(view.items, 1)
+    ]
     return blocks
 
 
 def _story_note(view: StoryView) -> str:
-    looked = [item.reading for item in view.items if item.reading is not None]
-    if not looked:
-        return STORY_FRAMING
-    if any(reading.state in ("seen", "withheld") for reading in looked):
-        return f"{STORY_FRAMING} {STORY_READ_FRAMING}"
-    return f"{STORY_FRAMING} {STORY_UNSEEN_FRAMING}"
+    added = {
+        "none": "", "read": STORY_READ_FRAMING,
+        "not_read": STORY_NOT_READ_FRAMING, "unseen": STORY_UNSEEN_FRAMING,
+    }[_outcome(view.items)]
+    return f"{STORY_FRAMING} {added}" if added else STORY_FRAMING
 
 
 # ---- items --------------------------------------------------------------------
@@ -399,10 +463,12 @@ def _item_ref(item: ItemView) -> dict[str, Any]:
     return ref
 
 
-def _item_block(number: int, item: ItemView, *, now: int | None) -> _Block:
+def _item_block(number: int, item: ItemView, *, now: int | None, looked: bool) -> _Block:
     """One item: `N. kind` (a video's length; a story frame's age), then what
     it shows or why that is not known, then a story frame's own caption and
-    Instagram's description, stranger prose LAST."""
+    Instagram's description, stranger prose LAST. When the others were
+    looked at and this one was not (past the item cap), its own line says
+    so and where it can be read."""
     line = f"{number}. {item.kind}"
     if item.duration_seconds is not None:
         line += f", {round(item.duration_seconds)}s"
@@ -411,6 +477,8 @@ def _item_block(number: int, item: ItemView, *, now: int | None) -> _Block:
     block: _Block = [line]
     if item.reading is not None:
         block.append(_reading_line(item.reading))
+    elif looked:
+        block.append(_PAST_THE_CAP)
     if item.caption is not None:
         block.append(_Prose("caption: ", item.caption, _CAPTION_MAX_CHARS))
     if item.alt_text is not None:
@@ -426,18 +494,6 @@ def _reading_line(reading: Reading) -> _Line:
         suffix = f" {_clean(reading.coverage)}" if reading.coverage else ""
         return _Prose("shows: ", reading.text, _READING_MAX_CHARS, suffix)
     return _NOT_SEEN.get(reading.state, _NOT_SEEN["failed"])
-
-
-def _unlooked_tail(items: tuple[ItemView, ...]) -> str:
-    """When the items were looked at but not all of them (the cap), one line
-    says how many were, rather than a line per item that was not."""
-    looked = sum(1 for item in items if item.reading is not None)
-    if not looked or looked == len(items):
-        return ""
-    return (
-        f"Only the first {looked} were looked at; every item's link is in "
-        f"items for media_fetch(url=...)."
-    )
 
 
 # ---- the layout: everything fits, and nothing is dropped ----------------------
@@ -478,54 +534,90 @@ def _lay_out(blocks: list[_Block], max_chars: int) -> tuple[str, bool]:
     end, which is what `clamp_chars` does, is what used to lose the caption
     and the last frames.
 
-    `clamp_chars` stays as the backstop for a budget smaller than the lines
-    that are Nora's own, which no real configuration is."""
+    A share is exact: a run given `n` characters renders in `n` (its cut
+    plus « …»), and every run is first given its floor PLUS those two
+    characters, so the parts add up to the budget. When even the floors do
+    not fit (a budget smaller than Nora's own lines plus a floor per run,
+    which no real configuration is), the BACKSTOP shortens the `first` run,
+    the post caption, rather than cutting blocks: the caption is shortened,
+    never dropped. Past even that (Nora's own lines alone over budget), the
+    last resort cuts the blocks BEFORE the caption and keeps its block."""
     runs = [line for block in blocks for line in block if isinstance(line, _Prose)]
     wants = [len(_cut(_clean(run.text), run.cap)) for run in runs]
     fixed = sum(
         len(line) if isinstance(line, str) else len(line.prefix) + len(line.suffix)
         for block in blocks for line in block
     ) + sum(len(block) - 1 for block in blocks) + 2 * max(0, len(blocks) - 1)
-    shares = iter(_allot(runs, wants, max_chars - fixed))
+    shares = _allot(runs, wants, max_chars - fixed)
+    rendered, shortened = _render_runs(blocks, shares, wants)
+    overflow = len("\n\n".join(rendered)) - max_chars
+    if overflow > 0:
+        # The backstop: take the overflow out of the caption, down to one
+        # character and « …», before anything is cut whole.
+        for i, run in enumerate(runs):
+            if run.first and overflow > 0:
+                cut = min(overflow, shares[i] - 3)
+                if cut > 0:
+                    shares[i] -= cut
+                    overflow -= cut
+        rendered, shortened = _render_runs(blocks, shares, wants)
+    text = "\n\n".join(rendered)
+    if len(text) > max_chars:
+        shortened = True
+        keep_last = any(isinstance(line, _Prose) and line.first for line in blocks[-1])
+        if keep_last and len(blocks) > 1:
+            room = max(0, max_chars - len(rendered[-1]) - 4)
+            head, _ = clamp_chars("\n\n".join(rendered[:-1]), room)
+            text = f"{head}\n\n{rendered[-1]}"
+        else:
+            text, _ = clamp_chars(text, max_chars)
+    return text, shortened
+
+
+def _render_runs(
+    blocks: list[_Block], shares: list[int], wants: list[int],
+) -> tuple[list[str], bool]:
+    """Each block, rendered, with each prose run in exactly its share."""
     shortened = False
     rendered: list[str] = []
+    k = 0
     for block in blocks:
         lines = []
         for line in block:
             if isinstance(line, str):
                 lines.append(line)
                 continue
-            share = next(shares)
+            share, want = shares[k], wants[k]
+            k += 1
             body = _clean(line.text)
-            want = len(_cut(body, line.cap))
             if share >= want:
                 piece = _cut(body, line.cap)
                 shortened |= len(body) > line.cap
             else:
-                piece = _cut(body, max(_PROSE_FLOOR, share - 2))
+                piece = _cut(body, max(1, share - 2))
                 shortened = True
             lines.append(f"{line.prefix}{piece}{line.suffix}")
         rendered.append("\n".join(lines))
-    text = "\n\n".join(rendered)
-    if len(text) > max_chars:
-        text, _ = clamp_chars(text, max_chars)
-        shortened = True
-    return text, shortened
+    return rendered, shortened
 
 
 def _allot(runs: list[_Prose], wants: list[int], room: int) -> list[int]:
-    """The `first` runs are served up to what they want, leaving every other
-    run its floor; the rest is water-filled among the others."""
-    others = sum(1 for run in runs if not run.first)
-    shares = [0] * len(runs)
-    left = max(0, room)
+    """Every run first gets its floor (the floor plus « …», or all it wants
+    if that is less); the `first` runs are then served up to what they want;
+    the rest is water-filled among the others. Every share is exact."""
+    shares = [min(want, _PROSE_FLOOR + 2) for want in wants]
+    left = room - sum(shares)
+    if left <= 0:
+        return shares
     for i, run in enumerate(runs):
         if run.first:
-            shares[i] = max(0, min(wants[i], left - _PROSE_FLOOR * others))
-            left -= shares[i]
+            extra = min(wants[i] - shares[i], left)
+            shares[i] += extra
+            left -= extra
     rest = [i for i, run in enumerate(runs) if not run.first]
-    for i, share in zip(rest, _water_fill([wants[i] for i in rest], left), strict=True):
-        shares[i] = share
+    extras = _water_fill([wants[i] - shares[i] for i in rest], left)
+    for i, extra in zip(rest, extras, strict=True):
+        shares[i] += extra
     return shares
 
 

@@ -94,3 +94,87 @@ async def test_a_timed_out_video_run_still_cleans_up(spawned):
     assert (out, proc.returncode is not None) == (b"", True)
     assert code is not None   # the killed process's own exit status
     assert not _exists(args[-1])
+
+
+# ---- #486 re-review: the two remaining leak paths, and the shield ------------
+
+
+async def test_a_cancel_while_ffmpeg_is_being_spawned_still_removes_the_scratch_file(
+    monkeypatch,
+):
+    """The scratch file exists before the spawn; a cancel landing during
+    `create_subprocess_exec` left it on disk (5 of 5 probes)."""
+    spawned_with: list[tuple] = []
+
+    async def never_returns(*args, **kwargs):
+        spawned_with.append(args)
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(preprocess.asyncio, "create_subprocess_exec", never_returns)
+    await _cancel_after(preprocess._run_video(["ffmpeg", "-i", "pipe:0"], 30.0, b"clip"), 0.2)
+
+    (args,) = spawned_with
+    assert args[2].endswith(".input")
+    assert not _exists(args[2])
+
+
+class _StuckProcess:
+    """A child whose read never ends and whose reap waits for `release`.
+    Records whether it was killed, and whether its `wait` was CANCELLED,
+    which is what the shield in `_reap` exists to prevent: a cancelled wait
+    leaves the killed child unreaped."""
+
+    def __init__(self) -> None:
+        self.returncode: int | None = None
+        self.killed = False
+        self.wait_cancelled = False
+        self.release = asyncio.Event()
+
+    async def communicate(self, input=None):
+        await asyncio.Event().wait()
+
+    def kill(self) -> None:
+        self.killed = True
+
+    async def wait(self) -> int:
+        try:
+            await self.release.wait()
+        except asyncio.CancelledError:
+            self.wait_cancelled = True
+            raise
+        self.returncode = -9
+        return -9
+
+
+async def test_a_second_cancel_during_the_reap_removes_the_file_and_the_reap_goes_on(
+    monkeypatch,
+):
+    """First cancel: ffmpeg is killed and reaped under a shield. A second
+    cancel arriving during that reap used to raise out of it before the
+    unlink (5 of 8 probes). Now the file goes anyway, and the shielded wait
+    is NOT cancelled, so the killed child is still reaped."""
+    proc = _StuckProcess()
+    spawned_with: list[tuple] = []
+
+    async def stuck(*args, **kwargs):
+        spawned_with.append(args)
+        return proc
+
+    monkeypatch.setattr(preprocess.asyncio, "create_subprocess_exec", stuck)
+    task = asyncio.ensure_future(
+        preprocess._run_video(["ffmpeg", "-i", "pipe:0"], 30.0, b"clip"),
+    )
+    await asyncio.sleep(0.1)
+    task.cancel()   # the first: into the finally, and the reap
+    await asyncio.sleep(0.1)
+    assert proc.killed and not task.done()   # positive control: waiting on the reap
+    task.cancel()   # the second, during the shielded reap
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    (args,) = spawned_with
+    assert not _exists(args[2])
+    assert proc.wait_cancelled is False
+    proc.release.set()
+    await asyncio.sleep(0.05)
+    assert proc.returncode == -9   # reaped after all

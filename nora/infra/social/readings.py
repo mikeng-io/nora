@@ -45,6 +45,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from collections.abc import Awaitable, Mapping
 from dataclasses import dataclass, field, replace
 from typing import Any, Protocol, TypeVar
@@ -77,8 +78,13 @@ MAX_READ_VIDEOS = 3
 
 #: A video longer than one reading window is not read here: it would be
 #: several windows read in sequence inside one open. Its link reads it
-#: through `media_fetch`. A video with no stated length is read (a story
-#: frame carries none, and Instagram caps a story video at 60 s).
+#: through `media_fetch`. The window is the CONFIGURED one
+#: (`[media.describe.video] chunk_seconds`), which the caller hands in on
+#: `TurnLook.max_video_seconds`; this is only its default.
+#:
+#: A POST video with no stated length is not read here either: nothing
+#: bounds it. A STORY frame carries no length at all, and Instagram caps a
+#: story video at 60 s, so a story frame is read.
 MAX_READ_VIDEO_SECONDS = float(VIDEO_CHUNK_SECONDS)
 
 #: Looks in flight at once, across the whole turn: `media_fetch`'s own
@@ -115,19 +121,39 @@ class TurnLook:
     slots: asyncio.Semaphore = field(
         default_factory=lambda: asyncio.Semaphore(READ_CONCURRENCY),
     )
+    max_video_seconds: float = MAX_READ_VIDEO_SECONDS
+
+
+#: The coverage sentences a video reading can END with, and nothing else:
+#: `VideoCut.note()` (three forms), `describe_coverage` (two more) and
+#: `media_fetch`'s own fallback when ffmpeg could not cut the clip. Matched
+#: by their fixed openings, so an ordinary last line in parentheses («(No
+#: speech is audible.)») stays part of the description and is shortened with
+#: it. `tests/unit/test_instagram_read_readings.py` builds every one of them
+#: from the real code, so a reworded sentence fails there rather than
+#: silently losing its protection.
+_COVERAGE = re.compile(
+    r"\((?:I could not tell how long this clip is"
+    r"|About \d+ minutes of this \d+-minute clip"
+    r"|This clip runs about \d+ minutes and I only watched)"
+)
+
+#: A coverage sentence is never shortened, so it is bounded here instead:
+#: the longest real one is under 150 characters.
+_COVERAGE_MAX_CHARS = 240
 
 
 def split_coverage(text: str) -> tuple[str, str | None]:
     """A video reading → `(description, coverage sentence or None)`.
 
-    The coverage sentence is the reading's LAST line, parenthesized, as
-    `describe_coverage`, `VideoCut.note()` and `media_fetch`'s ffmpeg
-    fallback all write it (after the timecoded segments, which never start
-    with a parenthesis). Called for videos only: an image description has no
-    such sentence and may well end in a parenthesis of its own."""
+    The coverage sentence is the reading's LAST line, one of the known forms
+    (`_COVERAGE`), after the timecoded segments. Called for videos only."""
     body, sep, last = text.rstrip().rpartition("\n")
     last = last.strip()
-    if sep and body.strip() and last.startswith("(") and last.endswith(")"):
+    if (
+        sep and body.strip() and _COVERAGE.match(last) and last.endswith(")")
+        and len(last) <= _COVERAGE_MAX_CHARS
+    ):
         return body.rstrip(), last
     return text, None
 
@@ -150,15 +176,21 @@ def reading_of(served: Mapping[str, Any], *, video: bool = False) -> Reading:
     return Reading("failed")
 
 
-def _not_read(chosen: tuple[ItemView, ...]) -> dict[int, Reading]:
+def _not_read(
+    chosen: tuple[ItemView, ...], *, max_seconds: float, story: bool,
+) -> dict[int, Reading]:
     """The chosen items that are NOT looked at, by position: a video longer
-    than one window, and every video past the per-open cap."""
+    than one window, a post video of unknown length, and every video past
+    the per-open cap."""
     skipped: dict[int, Reading] = {}
     videos = 0
     for n, item in enumerate(chosen):
         if item.kind != "video":
             continue
-        if item.duration_seconds is not None and item.duration_seconds > MAX_READ_VIDEO_SECONDS:
+        if item.duration_seconds is None and not story:
+            skipped[n] = Reading("unknown_length")
+            continue
+        if item.duration_seconds is not None and item.duration_seconds > max_seconds:
             skipped[n] = Reading("too_long")
             continue
         videos += 1
@@ -187,10 +219,16 @@ async def read_view(
     left = seconds_left()
     if left is not None:
         budget = min(budget, left * VISION_LOOP_SHARE)
-    skipped = _not_read(chosen)
+    skipped = _not_read(
+        chosen, max_seconds=look.max_video_seconds, story=isinstance(view, StoryView),
+    )
+    #: The looks that got a slot and began. One still waiting for a slot at
+    #: the deadline never started, and says so rather than «took too long».
+    started: set[int] = set()
 
-    async def one(item: ItemView) -> Reading:
+    async def one(n: int, item: ItemView) -> Reading:
         async with look.slots:
+            started.add(n)
             try:
                 # The url and NOTHING else: no `question`, so no text a
                 # poster wrote can reach the vision prompt.
@@ -203,7 +241,7 @@ async def read_view(
             return reading_of(served, video=item.kind == "video")
 
     tasks = {
-        n: asyncio.ensure_future(one(item))
+        n: asyncio.ensure_future(one(n, item))
         for n, item in enumerate(chosen) if n not in skipped
     }
     try:
@@ -221,11 +259,13 @@ async def read_view(
         await asyncio.gather(*tasks.values(), return_exceptions=True)
     # `one` answers every look it finished, failed or not, so a finished
     # task holds a `Reading`; one still running at the deadline is
-    # `timed_out`, and it was cancelled above.
+    # `timed_out`, one still waiting for a slot `not_started`, and both were
+    # cancelled above.
     readings = [
         skipped[n] if n in skipped
         else tasks[n].result() if tasks[n] in done
-        else Reading("timed_out")
+        else Reading("timed_out") if n in started
+        else Reading("not_started")
         for n in range(len(chosen))
     ]
     items = tuple(

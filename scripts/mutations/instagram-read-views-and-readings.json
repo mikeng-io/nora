@@ -100,22 +100,22 @@
   {
     "name": "readings are not shortened to their share: the layout keeps them whole",
     "file": "nora/infra/social/render.py",
-    "old": "                piece = _cut(body, max(_PROSE_FLOOR, share - 2))",
+    "old": "                piece = _cut(body, max(1, share - 2))",
     "new": "                piece = _cut(body, line.cap)",
     "target": "tests/unit/test_instagram_views.py::test_one_reel_keeps_a_long_reading_and_eight_readings_share_the_budget tests/unit/test_instagram_views.py::test_a_tiny_budget_shortens_every_run_and_drops_none"
   },
   {
     "name": "the layout stops fitting and clamps whole blocks off the end (the first build's layout)",
     "file": "nora/infra/social/render.py",
-    "old": "    shares = iter(_allot(runs, wants, max_chars - fixed))",
-    "new": "    shares = iter(wants)",
+    "old": "    shares = _allot(runs, wants, max_chars - fixed)",
+    "new": "    shares = list(wants)",
     "target": "tests/unit/test_instagram_views.py -k caption_always_survives"
   },
   {
     "name": "every look failing is framed as if the items were seen",
     "file": "nora/infra/social/render.py",
-    "old": "    if any(reading.state in (\"seen\", \"withheld\") for reading in looked):\n        return POST_READ_FRAMING\n    return POST_UNSEEN_FRAMING",
-    "new": "    return POST_READ_FRAMING",
+    "old": "    if any(r is not None and r.state in (\"seen\", \"withheld\") for r in readings):\n        return \"read\"",
+    "new": "    if True:\n        return \"read\"",
     "target": "tests/unit/test_instagram_read_readings.py -k nothing_was_seen"
   },
   {
@@ -156,8 +156,8 @@
   {
     "name": "a cancelled video run leaves ffmpeg running and the scratch file on disk",
     "file": "nora/infra/vision/preprocess.py",
-    "old": "        await _reap(proc)\n        if scratch is not None:\n            with contextlib.suppress(OSError):\n                os.unlink(scratch)\n    return proc.returncode, out, err",
-    "new": "        pass\n    return proc.returncode, out, err",
+    "old": "            # Every path out, cancellation included: ffmpeg killed and reaped.\n            await _reap(proc)",
+    "new": "            # Every path out, cancellation included: ffmpeg killed and reaped.\n            pass",
     "target": "tests/unit/test_ffmpeg_cancellation.py -k cancelled_video_run"
   },
   {
@@ -177,7 +177,7 @@
   {
     "name": "a video longer than one window is read anyway",
     "file": "nora/infra/social/readings.py",
-    "old": "        if item.duration_seconds is not None and item.duration_seconds > MAX_READ_VIDEO_SECONDS:",
+    "old": "        if item.duration_seconds is not None and item.duration_seconds > max_seconds:",
     "new": "        if False:",
     "target": "tests/unit/test_instagram_read_readings.py -k three_videos"
   },
@@ -226,8 +226,8 @@
   {
     "name": "the turn gets a fresh set of slots per call instead of one shared",
     "file": "nora/agent/tools.py",
-    "old": "        return TurnLook(fetch=fetch, slots=_instagram_slots)",
-    "new": "        return TurnLook(fetch=fetch)",
+    "old": "            fetch=fetch, slots=_instagram_slots,",
+    "new": "            fetch=fetch,",
     "target": "tests/unit/test_instagram_read_readings.py -k batched_calls_share"
   },
   {
@@ -243,5 +243,131 @@
     "old": "_POST_CAPTION_MAX_CHARS = 2200",
     "new": "_POST_CAPTION_MAX_CHARS = 800",
     "target": "tests/unit/test_instagram_social_client.py::test_a_long_caption_comes_back_whole_where_the_transcript_cuts_it"
+  },
+  {
+    "name": "a reel not read HERE by design gets the «say you couldn't see it» note (round 1's regression)",
+    "file": "nora/infra/social/render.py",
+    "old": "    if any(r is None or r.state in NOT_READ_HERE for r in readings):\n        return \"not_read\"",
+    "new": "    if False:\n        return \"not_read\"",
+    "target": "tests/unit/test_instagram_views.py -k not_read_here"
+  },
+  {
+    "name": "a single long reel is sent to the unseen note",
+    "file": "nora/infra/social/render.py",
+    "old": "        \"not_read\": POST_NOT_READ_FRAMING, \"unseen\": POST_UNSEEN_FRAMING,",
+    "new": "        \"not_read\": POST_UNSEEN_FRAMING, \"unseen\": POST_UNSEEN_FRAMING,",
+    "target": "tests/unit/test_instagram_views.py -k single_long_reel"
+  },
+  {
+    "name": "a story not read here by design gets the unseen framing",
+    "file": "nora/infra/social/render.py",
+    "old": "        \"not_read\": STORY_NOT_READ_FRAMING, \"unseen\": STORY_UNSEEN_FRAMING,",
+    "new": "        \"not_read\": STORY_UNSEEN_FRAMING, \"unseen\": STORY_UNSEEN_FRAMING,",
+    "target": "tests/unit/test_instagram_views.py -k story_whose_frames_were_not_read_here"
+  },
+  {
+    "name": "a floored run renders past its share (the re-review's overrun: 24 reserved, 26 rendered)",
+    "file": "nora/infra/social/render.py",
+    "old": "                piece = _cut(body, max(1, share - 2))",
+    "new": "                piece = _cut(body, max(_PROSE_FLOOR, share - 2))",
+    "target": "tests/unit/test_instagram_views.py -k backstop_shortens"
+  },
+  {
+    "name": "the backstop does not shorten the caption",
+    "file": "nora/infra/social/render.py",
+    "old": "                cut = min(overflow, shares[i] - 3)",
+    "new": "                cut = 0",
+    "target": "tests/unit/test_instagram_views.py -k backstop_shortens"
+  },
+  {
+    "name": "the last resort clamps the caption block off with the rest",
+    "file": "nora/infra/social/render.py",
+    "old": "        if keep_last and len(blocks) > 1:",
+    "new": "        if False:",
+    "target": "tests/unit/test_instagram_views.py -k last_resort"
+  },
+  {
+    "name": "items past the cap get no line of their own",
+    "file": "nora/infra/social/render.py",
+    "old": "    elif looked:\n        block.append(_PAST_THE_CAP)",
+    "new": "    elif False:\n        block.append(_PAST_THE_CAP)",
+    "target": "tests/unit/test_instagram_views.py -k own_line"
+  },
+  {
+    "name": "the scratch file is not owned by an outer finally (a cancel during the spawn leaks it)",
+    "file": "nora/infra/vision/preprocess.py",
+    "old": "        # The scratch copy of the clip (up to the download ceiling, 64 MiB).\n        if scratch is not None:",
+    "new": "        # The scratch copy of the clip (up to the download ceiling, 64 MiB).\n        if False:",
+    "target": "tests/unit/test_ffmpeg_cancellation.py::test_a_cancel_while_ffmpeg_is_being_spawned_still_removes_the_scratch_file tests/unit/test_ffmpeg_cancellation.py::test_a_second_cancel_during_the_reap_removes_the_file_and_the_reap_goes_on"
+  },
+  {
+    "name": "the reap is not shielded: a second cancel cancels the killed child's wait",
+    "file": "nora/infra/vision/preprocess.py",
+    "old": "        await asyncio.shield(proc.wait())",
+    "new": "        await proc.wait()",
+    "target": "tests/unit/test_ffmpeg_cancellation.py -k second_cancel"
+  },
+  {
+    "name": "a cancelled read does not await its cancelled looks",
+    "file": "nora/infra/social/readings.py",
+    "old": "        await asyncio.gather(*tasks.values(), return_exceptions=True)",
+    "new": "        pass",
+    "target": "tests/unit/test_instagram_read_readings.py -k every_look_has_stopped"
+  },
+  {
+    "name": "any trailing parenthesized line is taken as the coverage sentence",
+    "file": "nora/infra/social/readings.py",
+    "old": "        sep and body.strip() and _COVERAGE.match(last) and last.endswith(\")\")",
+    "new": "        sep and body.strip() and last.startswith(\"(\") and last.endswith(\")\")",
+    "target": "tests/unit/test_instagram_read_readings.py -k ordinary_last_line"
+  },
+  {
+    "name": "a coverage sentence is not bounded",
+    "file": "nora/infra/social/readings.py",
+    "old": "        and len(last) <= _COVERAGE_MAX_CHARS",
+    "new": "        and True",
+    "target": "tests/unit/test_instagram_read_readings.py -k runs_on"
+  },
+  {
+    "name": "the cutoff is the default window, not the configured one",
+    "file": "nora/infra/social/readings.py",
+    "old": "        chosen, max_seconds=look.max_video_seconds, story=isinstance(view, StoryView),",
+    "new": "        chosen, max_seconds=MAX_READ_VIDEO_SECONDS, story=isinstance(view, StoryView),",
+    "target": "tests/unit/test_instagram_read_readings.py -k configured"
+  },
+  {
+    "name": "the tool does not hand the configured window to the read",
+    "file": "nora/agent/tools.py",
+    "old": "            max_video_seconds=float(video_chunk_seconds),",
+    "new": "",
+    "target": "tests/unit/test_instagram_read_readings.py -k configured_reading_window"
+  },
+  {
+    "name": "a post video of unknown length is read anyway",
+    "file": "nora/infra/social/readings.py",
+    "old": "        if item.duration_seconds is None and not story:",
+    "new": "        if False:",
+    "target": "tests/unit/test_instagram_read_readings.py -k unknown_length"
+  },
+  {
+    "name": "a look that never got a slot says it took too long",
+    "file": "nora/infra/social/readings.py",
+    "old": "        else Reading(\"timed_out\") if n in started",
+    "new": "        else Reading(\"timed_out\") if True",
+    "target": "tests/unit/test_instagram_read_readings.py -k never_got_a_slot"
+  },
+  {
+    "name": "the model's own media_fetch of a story frame is persisted",
+    "file": "nora/agent/tools.py",
+    "old": "        persist = persist and not (url and url in _instagram_story_urls)",
+    "new": "        persist = persist",
+    "target": "tests/unit/test_instagram_read_readings.py -k opens_itself"
+  },
+  {
+    "name": "the turn forgets its story frame links",
+    "file": "nora/agent/tools.py",
+    "old": "        if read == \"story\" and out.get(\"status\") == \"ok\":\n            _instagram_story_urls.update(",
+    "new": "        if False:\n            _instagram_story_urls.update(",
+    "target": "tests/unit/test_instagram_read_readings.py -k opens_itself"
   }
 ]

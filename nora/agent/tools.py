@@ -6609,7 +6609,11 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         # cache: a story expires in 24h, and a durable reading of it would
         # outlive it (design/instagram-adoption/18, operator's default until
         # decided). A cache HIT is still served: the bytes were read before.
+        # The same holds when the MODEL itself opens a story frame's link,
+        # which the story result invites: a url this turn's story read
+        # returned is never persisted either, whoever asks.
         _caller, persist = _MEDIA_READ.get()
+        persist = persist and not (url and url in _instagram_story_urls)
         if video_key is not None and video_read_whole and persist:
             # The reading WITH its coverage sentence, so the two cannot come
             # apart — the half of #117 a sha256-keyed cache got wrong. The
@@ -7887,6 +7891,10 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
     # at once. Each look is `media_fetch` itself, labelled `instagram_read`
     # on its counter, and for a STORY frame it writes neither content cache.
     _instagram_slots = asyncio.Semaphore(_INSTAGRAM_READ_CONCURRENCY)
+    # The story-frame links this turn's story reads returned. `media_fetch`
+    # on one of them, by the model itself, writes no cache either: a story
+    # expires in 24h (design 18, operator's default until decided).
+    _instagram_story_urls: set[str] = set()
 
     def _instagram_look(*, story: bool) -> TurnLook:
         async def fetch(*, url: str) -> dict:
@@ -7896,7 +7904,12 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             finally:
                 _MEDIA_READ.reset(token)
 
-        return TurnLook(fetch=fetch, slots=_instagram_slots)
+        # The longest video read here is one reading window, as CONFIGURED
+        # (`[media.describe.video] chunk_seconds`), not the default.
+        return TurnLook(
+            fetch=fetch, slots=_instagram_slots,
+            max_video_seconds=float(video_chunk_seconds),
+        )
 
     async def instagram_read(
         what: Literal["profile", "story"] | None = None,
@@ -8134,6 +8147,11 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             # those braces, landing on `unavailable`.
             log.exception("instagram_read failed")
             out = dict(_INSTAGRAM_FAILED)
+        if read == "story" and out.get("status") == "ok":
+            _instagram_story_urls.update(
+                item["url"] for item in out.get("items") or ()
+                if isinstance(item, dict) and isinstance(item.get("url"), str)
+            )
         # `read` and `source` are safe on the log line: both come from closed
         # vocabularies. The person, handle and link are not logged.
         _record(metrics, "instagram_read", out["status"], what=read, input=source)

@@ -28,9 +28,11 @@ from nora.infra.social import instagram_client
 from nora.infra.social.instagram_client import post_view, profile_view, search_view, story_view
 from nora.infra.social.render import (
     POST_FRAMING,
+    POST_NOT_READ_FRAMING,
     POST_READ_FRAMING,
     POST_UNSEEN_FRAMING,
     STORY_FRAMING,
+    STORY_NOT_READ_FRAMING,
     STORY_READ_FRAMING,
     STORY_UNSEEN_FRAMING,
     render,
@@ -313,7 +315,7 @@ def test_the_caption_always_survives_a_large_carousel(n):
 
     assert len(body) <= 4000
     assert body.splitlines()[-1].startswith("caption: the poster wrote this")
-    assert "Only the first 8 were looked at" in body
+    assert body.count("not read here: only the first 8 items are read") == n - 8
     assert all(f"\n{k}. image" in "\n" + body for k in range(1, n + 1))
     assert body.count("shows: ") == 8
 
@@ -393,11 +395,11 @@ def test_a_video_past_the_cap_or_too_long_says_why_it_was_not_read():
     )
     body = _inside(render(Result("ok", view=dataclasses.replace(base, items=items)),
                           max_chars=4000)["text"])
-    assert "not read: longer than 90s" in body
-    assert "not read: only 3 videos are read per post or story" in body
+    assert "not read here: longer than one reading window" in body
+    assert "not read here: only 3 videos are read per post or story" in body
 
 
-def test_past_the_cap_the_rest_are_listed_and_one_line_says_so():
+def test_past_the_cap_each_item_says_on_its_own_line_that_it_was_not_read():
     view = post_view(_body("posts_carousel_ok.json"))
     ten = dataclasses.replace(view, items=tuple(
         dataclasses.replace(view.items[0], reading=Reading("seen", "a photo") if n < 8 else None)
@@ -406,9 +408,12 @@ def test_past_the_cap_the_rest_are_listed_and_one_line_says_so():
     out = render(Result("ok", view=ten), max_chars=4000)
     body = _inside(out["text"])
 
+    past = (
+        "not read here: only the first 8 items are read; "
+        "media_fetch(url=...) on its link reads it"
+    )
     assert body.count("shows: a photo") == 8
-    assert "\n\n9. image\n\n10. image\n\n" in body
-    assert "Only the first 8 were looked at" in body
+    assert f"\n\n9. image\n{past}\n\n10. image\n{past}\n\n" in body
     assert len(out["items"]) == 10
 
 
@@ -479,3 +484,97 @@ def test_the_client_writes_no_model_facing_dict_of_its_own():
         )
         for node in ast.walk(tree)
     )
+
+
+# ---- #486 re-review ------------------------------------------------------------
+
+
+def test_a_single_long_reel_is_not_read_here_and_is_never_called_unseen():
+    """A 140 s reel is past one reading window, so it is not read HERE; its
+    line says `media_fetch` reads it, and the note must send her there, never
+    tell her to say she could not see it (the first round's regression)."""
+    base = post_view(_body("posts_carousel_ok.json"))
+    reel = dataclasses.replace(
+        base.items[1], duration_seconds=140.0, reading=Reading("too_long"),
+    )
+    out = render(Result("ok", view=dataclasses.replace(base, items=(reel,))), max_chars=4000)
+
+    assert out["note"] == POST_NOT_READ_FRAMING
+    assert out["note"] != POST_UNSEEN_FRAMING
+    assert "couldn't see" not in out["note"]
+    assert "media_fetch(url=...)" in out["note"]
+
+
+@pytest.mark.parametrize(
+    "states", [("unknown_length",), ("over_video_cap", "failed"), ("failed", "too_long")],
+)
+def test_not_read_here_outranks_a_failure_in_the_note(states):
+    view = _read(post_view(_body("posts_carousel_ok.json")), *states)
+    assert render(Result("ok", view=view), max_chars=4000)["note"] == POST_NOT_READ_FRAMING
+
+
+def test_a_story_whose_frames_were_not_read_here_is_sent_to_media_fetch():
+    view = _read(story_view(_body("story_found.json"), limit=20), "too_long", "over_video_cap")
+    note = render(Result("ok", view=view), max_chars=4000)["note"]
+    assert note == f"{STORY_FRAMING} {STORY_NOT_READ_FRAMING}"
+
+
+def test_an_item_that_never_got_a_slot_says_so():
+    view = _read(post_view(_body("posts_carousel_ok.json")), "seen", "not_started")
+    body = _inside(render(Result("ok", view=view), max_chars=4000)["text"])
+    assert "not seen: there was no time left to look at it" in body
+    assert "took too long" not in body
+
+
+def _twenty_with_three_videos(parenthetical: str) -> PostView:
+    base = post_view(_body("posts_carousel_ok.json"))
+    image, video = base.items[0], base.items[1]
+    items = tuple(
+        dataclasses.replace(video, reading=Reading("seen", f"a chef cooks {n}\n{parenthetical}"))
+        if n < 3 else
+        dataclasses.replace(image, reading=Reading("seen", "a plate of food " * 60))
+        if n < 8 else image
+        for n in range(20)
+    )
+    return dataclasses.replace(base, items=items, caption="the poster wrote this " * 40)
+
+
+@pytest.mark.parametrize("budget", [2800, 4000])
+def test_twenty_items_with_long_parenthesized_video_readings_fit_and_keep_the_caption(budget):
+    """The floor reserve counts « …» (a floored run is 26, not 24), so the
+    parts add up and the backstop never cuts the caption off; a last line in
+    parentheses that is not a coverage sentence is ordinary text, shortened
+    with the rest."""
+    long_paren = "(" + "No speech is audible, only music and kitchen noise. " * 12 + ")"
+    out = render(Result("ok", view=_twenty_with_three_videos(long_paren)), max_chars=budget)
+    body = _inside(out["text"]).strip()
+
+    assert len(body) <= budget
+    assert body.splitlines()[-1].startswith("caption: the poster wrote this")
+    assert all(f"\n{k}. " in "\n" + body for k in range(1, 21))
+    assert body.count("shows: ") == 8
+    assert long_paren not in body   # shortened, not kept whole as a suffix
+
+
+def test_the_backstop_shortens_the_caption_rather_than_dropping_it():
+    """A budget smaller than Nora's own lines plus a floor per run: the
+    caption is shortened, down to a character and « …», before any block is
+    cut; every item line is still there."""
+    out = render(Result("ok", view=_twenty_with_three_videos("(music)")), max_chars=1650)
+    body = _inside(out["text"]).strip()
+
+    assert len(body) <= 1650
+    caption = body.splitlines()[-1]
+    assert caption.startswith("caption: the poster") and caption.endswith(" …")
+    assert len(caption) < len("caption: ") + 26   # below its floor: the backstop ran
+    assert all(f"\n{k}. " in "\n" + body for k in range(1, 21))
+
+
+def test_the_last_resort_keeps_the_caption_block():
+    """Nora's own lines alone over budget: the blocks before the caption are
+    cut, and the caption's block is kept."""
+    out = render(Result("ok", view=_twenty_with_three_videos("(music)")), max_chars=1500)
+    body = _inside(out["text"]).strip()
+
+    assert len(body) <= 1500
+    assert body.splitlines()[-1].startswith("caption: ")

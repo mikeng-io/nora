@@ -57,7 +57,7 @@ from nora.infra.social.readings import (
     split_coverage,
 )
 from nora.infra.social.render import POST_READ_FRAMING, POST_UNSEEN_FRAMING
-from nora.infra.social.views import ItemView, PostView, Reading
+from nora.infra.social.views import ItemView, PostView, Reading, StoryView
 from nora.infra.vision import preprocess as _preprocess
 from nora.infra.vision.client import VisionResult
 from nora.obs.metrics import Metrics
@@ -239,6 +239,38 @@ async def test_cancelling_the_read_stops_every_look_before_it_returns():
     assert look.finished == 0
 
 
+class _SlowToStop(ScriptedLook):
+    """A look whose cancellation takes time to finish, as killing and
+    reaping ffmpeg does. `cleaned` counts the looks that finished stopping."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.cleaned = 0
+
+    async def __call__(self, **kwargs) -> dict:
+        self.calls.append(kwargs)
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            await asyncio.sleep(0.2)
+            self.cleaned += 1
+            raise
+        return {}
+
+
+async def test_a_cancelled_read_returns_only_after_every_look_has_stopped():
+    """The cancellation is not passed on until each running look has
+    finished its own cleanup, so no ffmpeg or download outlives the tool."""
+    look = _SlowToStop()
+    task = asyncio.ensure_future(read_view(_post(4), TurnLook(look)))
+    await asyncio.sleep(0.05)
+    assert len(look.calls) == 4   # positive control
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert look.cleaned == 4
+
+
 async def test_two_reads_in_one_turn_share_the_same_four_slots():
     """Two `instagram_read` calls the model batches in one turn run their
     looks through ONE set of slots, never eight at once."""
@@ -261,16 +293,47 @@ async def test_at_most_three_videos_are_read_and_a_long_one_is_not():
     read here; past three, none is. Each says why; the images still are."""
     items = (
         _video(0, 12.0), _video(1, None), _item(2), _video(3, 200.0),
-        _video(4, 30.0), _video(5, 12.0), _item(6),
+        _video(4, 30.0), _video(5, 12.0), _video(6, 20.0), _item(7),
     )
     view = PostView(author=None, caption=None, taken_at=None, items=items)
     look = ScriptedLook()
     out = await read_view(view, TurnLook(look))
 
     assert [i.reading.state for i in out.items] == [
-        "seen", "seen", "seen", "too_long", "seen", "over_video_cap", "seen",
+        "seen", "unknown_length", "seen", "too_long", "seen", "seen", "over_video_cap", "seen",
     ]
-    assert [c["url"] for c in look.calls] == [items[n].url for n in (0, 1, 2, 4, 6)]
+    assert [c["url"] for c in look.calls] == [items[n].url for n in (0, 2, 4, 5, 7)]
+
+
+async def test_the_window_is_the_configured_one_not_the_default():
+    """`[media.describe.video] chunk_seconds` sets what one window is; a 45 s
+    video is past a 30 s window and inside the default 90 s one."""
+    view = PostView(author=None, caption=None, taken_at=None, items=(_video(0, 45.0),))
+    short = await read_view(view, TurnLook(ScriptedLook(), max_video_seconds=30.0))
+    default = await read_view(view, TurnLook(ScriptedLook()))
+    assert (short.items[0].reading.state, default.items[0].reading.state) == ("too_long", "seen")
+
+
+async def test_a_story_frame_of_unknown_length_is_read_and_a_post_video_is_not():
+    """A story frame carries no length and Instagram caps it at 60 s; a post
+    video with no length is unbounded, so it is not read here."""
+    story = StoryView(author=None, expires_at=None, items=(_video(0, None),))
+    post = PostView(author=None, caption=None, taken_at=None, items=(_video(0, None),))
+    read_story = await read_view(story, TurnLook(ScriptedLook()))
+    read_post = await read_view(post, TurnLook(ScriptedLook()))
+    assert read_story.items[0].reading.state == "seen"
+    assert read_post.items[0].reading.state == "unknown_length"
+
+
+async def test_a_look_that_never_got_a_slot_says_it_never_started():
+    """One slot, the first look hangs, the deadline comes: the first ran out
+    of time, the others never began, and they say which."""
+    items = _post(3).items
+    look = ScriptedLook(hang={items[0].url})
+    out = await read_view(
+        _post(3), TurnLook(look, slots=asyncio.Semaphore(1)), item_timeout=60, total_timeout=0.2,
+    )
+    assert [i.reading.state for i in out.items] == ["timed_out", "not_started", "not_started"]
 
 
 @pytest.mark.parametrize(
@@ -299,6 +362,57 @@ def test_a_videos_coverage_sentence_is_split_off_its_description(description, bo
 def test_an_image_description_is_never_split():
     text = "A menu board.\n(Prices in dollars.)"
     assert reading_of({"status": "ok", "description": text}).coverage is None
+
+
+def test_a_coverage_sentence_that_runs_on_is_not_trusted_as_one():
+    """A known opening followed by a paragraph is not a coverage sentence:
+    it would be an unbounded suffix the layout never shortens."""
+    text = "0:00 — a dog\n(About 3 minutes of this 4-minute clip " + "and more " * 40 + ")"
+    assert split_coverage(text) == (text, None)
+
+
+def test_an_ordinary_last_line_in_parentheses_is_not_a_coverage_sentence():
+    """«(No speech is audible.)» is part of what the video shows, and is
+    shortened with it; only the known coverage forms are split off."""
+    text = "0:00 — a chef plates a dish\n(No speech is audible.)"
+    assert split_coverage(text) == (text, None)
+    assert reading_of({"status": "ok", "description": text}, video=True).coverage is None
+
+
+def _real_coverage_sentences() -> list[str]:
+    """Every coverage sentence the real code can write: `VideoCut.note()`'s
+    three, `describe_coverage`'s two, and `media_fetch`'s fallback."""
+    from nora.infra.vision.comprehend import describe_coverage
+    from nora.infra.vision.preprocess import VideoCut, VideoWindow
+
+    window = VideoWindow(start_seconds=0.0, seconds=90.0, data=b"w")
+    cuts = [
+        VideoCut(windows=(window,), duration_seconds=None, covered_seconds=90.0, capped=False),
+        VideoCut(windows=(window,), duration_seconds=1200.0, covered_seconds=90.0, capped=True),
+        VideoCut(windows=(window,), duration_seconds=300.0, covered_seconds=90.0, capped=False),
+    ]
+    sentences = [cut.note() for cut in cuts]
+    sentences += [
+        describe_coverage(cut=VideoCut(windows=(window, window), duration_seconds=d,
+                                       covered_seconds=180.0, capped=False), read=(window,))
+        for d in (None, 180.0)
+    ]
+    # `media_fetch`'s own fallback, written inline in `tools.py` (the same
+    # words as `note()`'s first form today, kept so a divergence is caught).
+    sentences.append(
+        "(I could not tell how long this clip is, so I may not have watched all of it.)"
+    )
+    assert all(sentences) and len(set(sentences)) == 5, sentences
+    return sentences
+
+
+def test_every_real_coverage_sentence_is_split_off_and_bounded():
+    """Built from the real code, so a reworded sentence fails HERE rather
+    than silently losing its protection from the layout."""
+    for sentence in _real_coverage_sentences():
+        body, coverage = split_coverage(f"0:00 — a dog on a beach\n{sentence}")
+        assert (body, coverage) == ("0:00 — a dog on a beach", sentence)
+        assert len(sentence) <= 240
 
 
 @pytest.mark.parametrize(
@@ -458,13 +572,22 @@ def world(bridge, tmp_path, monkeypatch):
         ),))),
         accounts=client,
     )
-    registry = ToolRegistry(
-        social=router, vision=vision, blobs=FakeBlobStore(), video_readings=videos,
-        descriptions=descriptions,
-        describe_models={"image": "test/image-model", "video": "test/video-model"},
-    )
+    def build_registry(**config) -> ToolRegistry:
+        return ToolRegistry(
+            social=router, vision=vision, blobs=FakeBlobStore(), video_readings=videos,
+            descriptions=descriptions,
+            describe_models={"image": "test/image-model", "video": "test/video-model"},
+            **config,
+        )
+
+    registries = [build_registry()]
+
+    def reconfigure(**config) -> None:
+        """The same world with a different media configuration."""
+        registries.append(build_registry(**config))
 
     def tools(**turn) -> dict:
+        registry = registries[-1]
         room = Room(
             platform="signal", conversation_id="g1",
             roster_source=FakeRosterSource(groups={"g1": (frozenset({_U_QUINN}),)}),
@@ -486,6 +609,7 @@ def world(bridge, tmp_path, monkeypatch):
     w = World()
     w.make, w.tools, w.bridge, w.downloads, w.vision = make, tools, fake, downloads, vision
     w.videos, w.descriptions, w.metrics = videos, descriptions, metrics
+    w.reconfigure = reconfigure
     return w
 
 
@@ -683,3 +807,34 @@ async def test_two_batched_calls_share_one_turns_four_slots(world):
     )
     assert len(world.vision.prompts) >= 4
     assert world.vision.peak == 4
+
+
+async def test_a_story_frame_the_model_opens_itself_is_not_persisted_either(world):
+    """The story result points her at `media_fetch(url=...)` on a frame. That
+    call is the MODEL's own (`caller=model`), and it must not persist the
+    frame either: this turn's story links are remembered and read without
+    writing. The positive control is the same turn's `media_fetch` on a link
+    that is not a story frame, which does write."""
+    tools = world.tools()
+    story = await tools["instagram_read"](person="Quinn", what="story")
+    frame = story["items"][0]["url"]
+    assert world.descriptions.remembered == []
+
+    out = await tools["media_fetch"](url=frame)
+    assert out["status"] == "ok"
+    assert world.descriptions.remembered == []
+    assert world.metrics.get("nora_media_fetch_total", caller="model") == 1
+
+    await tools["media_fetch"](url="https://scontent.cdninstagram.com/v/t51/elsewhere.jpg")
+    assert len(world.descriptions.remembered) == 1
+
+
+async def test_the_configured_reading_window_is_the_cutoff_end_to_end(world):
+    """`[media.describe.video] chunk_seconds` reaches the cutoff: with a
+    10 s window the carousel's 12.5 s video is not read here, and says so."""
+    world.reconfigure(video_chunk_seconds=10)
+    out = await world.make()(link=_POST_LINK)
+
+    body = _inside_the_wrap(out["text"])
+    assert "2. video, 12s\nnot read here: longer than one reading window" in body
+    assert body.count("shows: ") == 2
