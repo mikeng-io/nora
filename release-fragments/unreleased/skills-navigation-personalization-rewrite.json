@@ -1,0 +1,13 @@
+{
+  "type": "change",
+  "summary": "Personalization is now part of how Nora always behaves instead of a skill she had to load, and the navigation skill plans from where people are and usually are.",
+  "details": [
+    "The personalization skill's steps (work out what the ask is for, pick the one or two people it turns on, ask memory and notes each their own question, propose before reaching for more) moved into conduct.md next to the rule they served. They now apply to a plan or a picture too, with no extra model call to load them. The skill is retired.",
+    "The navigation skill now says what it covers, and plans from each person's starting point: where they are now when leaving is close, where they usually are at that hour when it is not (said as usual, never as fact), what they say about themselves above both, and personal places by their saved names. Every earlier rule is kept; a review that looked for lost rules found three in the first draft, and they are restored.",
+    "ADR 0016 (proposed) sets the convention for skills: placement by whether a skill reaches the turns it is for and then by cost, a description that says what, when and what not, a token ceiling instead of a line ceiling, and the tool writing rules."
+  ],
+  "limitations": [
+    "Not measured with an eval yet: the rows that test whether a skill loads when it should are still to add. The load numbers behind the move come from 23 days of production traces with small counts (6 and 5 turns in a skill's domain).",
+    "image-generation is unchanged."
+  ]
+}

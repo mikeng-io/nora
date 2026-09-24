@@ -384,6 +384,20 @@ then measure before and after. Routing is
 `python -m evals tool_selection --sample 5 --reasons`; reporting needs the
 judged corpus 0015 §4 describes. Put the numbers in the PR.
 
+## Adding or changing a skill
+
+Read **`docs/adr/0016-skill-policy.md`** (proposed) first. A skill is judgement
+for a domain most turns do not touch; a principle other domains also need is
+doctrine, and a rule about one tool is that tool's description. Placement is
+decided by reach (does it load when it should), then by cost, both read from
+Langfuse and put in the PR.
+
+Enforced today by `tests/test_skill_content.py`: a description of at most 80
+tokens that says what the skill covers, when to load it and what it is not
+for; no named scenario; a body under its token ceiling (1,500 unless argued
+there); no em or en dashes. Run the `humanizer` skill, then have a reviewer
+look for rules a rewrite lost.
+
 ## Never (one line each — the war-story behind each is in `docs/CONVENTIONS.md`)
 
 - **Never `pip install`** — dependencies via `uv add` (operational constraint 5).
