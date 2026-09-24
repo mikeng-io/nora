@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+import re
 import time
 from collections.abc import Sequence
 from datetime import UTC, datetime
@@ -39,6 +40,7 @@ from nora.ingest.relevance_gate import (
 from nora.obs.metrics import Metrics
 from nora.testing.fakes import FakeRecordStore
 from nora.testing.standing_store import InMemoryStandingStore
+from tests.conftest import build_test_doctrine_store
 
 
 class _Client:
@@ -818,6 +820,94 @@ async def test_an_empty_body_is_no_instruction_even_though_the_section_parses():
     )
     assert client.prompts == []
     assert got.error_kind == "no_instruction"
+
+
+# --- the SHIPPED instruction is not degenerate (issue #187 finding 2) -------
+#
+# Every test above drives `_has_body` and the `no_instruction` path against a
+# synthesized `_Doctrine`, which proves the CODE catches an empty body. It
+# proves nothing about the file actually on disk: `participation.md` truncated
+# to its front matter plus a bare `# What you are` heading, with `version:`
+# bumped and repinned in `test_doctrine_version_parity.py`, is green
+# everywhere else in this repo — `_has_body` is a "carries any prose at all"
+# bar and the sha pin only catches an UNANNOUNCED edit. `HER_AUDIENCES` in
+# `tests/test_doctrine_audiences.py` deliberately excludes `relevance_gate`
+# and `dreamer` because they are instruments, not turns she reads (see that
+# file's comment beside `HER_AUDIENCES`) — this is the floor that gap left
+# out, kept beside the gate rather than folded into that table.
+
+# Measured 2026-09-25 against the shipped file, through the same
+# `DoctrineStore.get(applies_to=GATE_AUDIENCE)` call `RelevanceGate._instruction`
+# makes: the assembled `participation` section is 1082 words. 300 is a FLOOR,
+# not a target — it answers "did it arrive carrying prose", not "is the prose
+# any good" (the 40-case eval suite answers that, issue #144). It leaves
+# ~3.6x headroom below the shipped count, so an honest trim of the file does
+# not trip it, and it sits nowhere near the handful of words ("# What you
+# are" is four) a front-matter-plus-heading remnant leaves.
+RELEVANCE_GATE_MIN_WORDS = 300
+
+
+def test_the_shipped_relevance_gate_instruction_is_not_degenerate():
+    """Answers ONE question — did `participation.md` arrive carrying a body —
+    and nothing about whether the instruction is any good. That second
+    question belongs to the 40-case eval suite (issue #144's own cost: a
+    digest that made the gate measurably worse over 40 labelled windows while
+    `nora_doctrine_reload_failures_total` stayed at 0 throughout), not to a
+    unit test that cannot judge meaning.
+
+    Reads the real shipped directory (`build_test_doctrine_store`), unlike
+    `test_an_empty_body_is_no_instruction_even_though_the_section_parses`
+    above.
+
+    Falsified by hand, not in this suite: truncate `nora/doctrine/
+    participation.md` to its front matter plus one heading line, bump
+    `version:`, and this test turns red while `_has_body` and the sha pin
+    both stay green.
+    """
+    store = build_test_doctrine_store()
+    resolved = store.get(applies_to=GATE_AUDIENCE)
+    text = resolved.doctrine_text
+
+    assert text.count("<section ") == 1, (
+        f"the {GATE_AUDIENCE} audience resolved to {text.count('<section ')} "
+        "sections, expected exactly 1 (participation)"
+    )
+    assert 'name="participation"' in text
+
+    stripped = re.sub(r"</?section[^>]*>|</?nora_doctrine>", "", text)
+    words = stripped.split()
+    assert len(words) >= RELEVANCE_GATE_MIN_WORDS, (
+        f"the shipped {GATE_AUDIENCE} instruction is {len(words)} words "
+        f"(floor {RELEVANCE_GATE_MIN_WORDS}) — participation.md arrived "
+        "carrying (near) nothing"
+    )
+
+
+def test_the_dreamer_instrument_has_no_floor_here_because_it_is_not_served_this_way():
+    """Issue #187 finding 2 asks for "the same [floor] for the dreamer
+    audience if it is served the same way". It is not, so there is nothing to
+    add a floor to in THIS store.
+
+    `dreamer` is a name in `nora.doctrine.loader.AUDIENCES` — the closed
+    `applies_to` vocabulary `DoctrineStore.get` filters against — but no file
+    under `nora/doctrine/` declares `applies_to: [dreamer]` (verified: every
+    file's front matter is `tag`/`heartbeat`/`participation`/`proactive`/
+    `relevance_gate`/`reaction`). The audience is real in the vocabulary and
+    empty in the corpus, which this asserts rather than leaves for the next
+    reader to rediscover.
+
+    The Dreamer's actual instruction is `nora/dreamer/doctrine/dreamer.md`,
+    read by a wholly separate class (`nora.instructions.dreamer.
+    DreamerInstructions`) against a different directory, with its own
+    required-field checks and a hard "exactly one doctrine file" rule
+    (`DreamerInstructions._scan`) — not this loader and not this audience
+    string. That module has the same missing-floor shape (nothing there checks
+    for a non-empty body either), but it is a different subsystem this fix
+    does not touch.
+    """
+    store = build_test_doctrine_store()
+    resolved = store.get(applies_to="dreamer")
+    assert resolved.doctrine_text.count("<section ") == 0
 
 
 async def test_the_canary_never_reaches_the_gate_provider():

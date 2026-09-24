@@ -1,11 +1,11 @@
 """`render_culture`, the `<culture>` block, `read_culture`, and the two turn
-paths that fill it (design/culture-tier, DEC-205).
+paths that fill it (design/culture-tier, DEC-207).
 
 The block's value is that it says what the room IS. Every test here is about a
 way it could instead say something else, say nothing when it has something,
 read the wrong room's account, or hold a turn open.
 
-**Every runtime reads it since DEC-205** (2026-09-25). Until then
+**Every runtime reads it since DEC-207** (2026-09-25). Until then
 `01-the-adaptor §6` authorised one consumer, the participation turn, and this
 file pinned the tag path and the other fire occasions OUT. The operator widened
 the tier to the tag path and every Dreamer pass; the relevance gate stays out on
@@ -221,7 +221,7 @@ async def test_a_store_that_never_answers_is_BOUNDED_by_the_tier_timeout():
         "nora_errors_total", stage="fire_culture", platform="discord") == 1
 
 
-# --- every occasion (DEC-205) ----------------------------------------------
+# --- every occasion (DEC-207) ----------------------------------------------
 
 
 def _event(kind: str) -> Event:
@@ -234,7 +234,7 @@ def _event(kind: str) -> Event:
 
 @pytest.mark.parametrize("kind", ["participation", "reminder", "proactive"])
 async def test_every_fire_occasion_reads_the_rooms_account(kind: str):
-    """DEC-205 widened the tier from the participation turn to every runtime.
+    """DEC-207 widened the tier from the participation turn to every runtime.
     A reminder, a gathering and a proactive act turn all speak INTO one room,
     and `occasion.conversation_id` is that room — so each reads its account.
 
@@ -254,7 +254,7 @@ async def test_every_fire_occasion_reads_the_rooms_account(kind: str):
 
 async def test_the_TAG_path_reads_the_rooms_account_by_PRIMARY_ID():
     """The tag path (`TranscriptInjection`) — the highest-traffic prompt, and
-    the one #284 was reverted for wiring. DEC-205 authorises it; what must
+    the one #284 was reverted for wiring. DEC-207 authorises it; what must
     still hold is DEC-181's keying: the room's `primary_id`, never the
     arriving thread's id."""
     from nora.engagement.context import TranscriptInjection

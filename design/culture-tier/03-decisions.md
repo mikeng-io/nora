@@ -148,13 +148,13 @@ these two ever disagree again.
 
 ---
 
-## DEC-205 — every runtime reads the account; the gate still does not (2026-09-25)
+## DEC-207 — every runtime reads the account; the gate still does not (2026-09-25)
 
 **Operator, 2026-09-25:** the culture dreamer runs daily, and the cultural
 context block is injected into each of the runtimes — engagement and the
 different dreamers. That supersedes `01-the-adaptor §6`'s single consumer and
 answers issue #312's three open questions as follows. The row is
-`design/09-decision-index.md` DEC-205.
+`design/09-decision-index.md` DEC-207.
 
 **Who reads it.** The tag turn (`TranscriptInjection`), every fire occasion
 (participation, reminder, gathering, proactive act — `FirePath._read_culture`

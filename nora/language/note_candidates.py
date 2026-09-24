@@ -339,7 +339,7 @@ _MIN_ANCHOR_DATE = 10_000_000
 #: when a named title resolves to no open note, and `successor` when the
 #: update's append is refused because the note retired.
 #:
-#: 12 -> 13 on 2026-09-25 (DEC-205): the room's `<culture>` head, one
+#: 12 -> 13 on 2026-09-25 (DEC-207): the room's `<culture>` head, one
 #: `self._culture.head` per tick, bounded by `read_culture`.
 STORE_CALLS_PER_TICK = 13
 
@@ -673,7 +673,7 @@ UNNAMED_ROOM = "unnamed room"
 #: `key="turn"` throughout, for the same reason as those two: no established
 #: cache boundary, nothing routes on `key` yet either way.
 #:
-#: `culture` (DEC-205) sits right under `<room>`: the operator's sentence says
+#: `culture` (DEC-207) sits right under `<room>`: the operator's sentence says
 #: what the room IS by fiat, and the account says what it has become — both
 #: are how the batch is meant to be read, so both come before it.
 _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
@@ -711,7 +711,7 @@ def _room_block(*, room: str, description: str | None) -> str:
     given is the operator's, stated in `policy.toml`
     (`Conversation.description`) and rendered verbatim.
 
-    **That is not a claim that no model can say what a room is** (DEC-205,
+    **That is not a claim that no model can say what a room is** (DEC-207,
     resolving the contradiction issue #312 named against DEC-182). The culture
     fold does exactly that — but OFFLINE, over the room's whole history, once a
     day, not over this batch — and its account now rides beside this block as
@@ -977,7 +977,7 @@ class NoteCandidateAdaptor:
         # renders a true moment; the composition root passes `[reminders]
         # timezone`, the zone the curator already reads «today» from.
         timezone: _dt.tzinfo = _dt.UTC,
-        # THE ROOM'S ACCOUNT (design/culture-tier, DEC-205). `key` is already
+        # THE ROOM'S ACCOUNT (design/culture-tier, DEC-207). `key` is already
         # the room's `primary_id` — the same key the culture fold writes
         # under, since both are scope-keyed adaptors handed `scopes()` — so
         # no policy lookup stands between the two. `None` while
@@ -1060,7 +1060,7 @@ class NoteCandidateAdaptor:
             # to be read.
             _room_block(room=room, description=self._description_for(key)),
         ]
-        # What this room has become (DEC-205), under what the operator says it
+        # What this room has become (DEC-207), under what the operator says it
         # IS. A games room's 「2200」 is when people log on, and the account is
         # where that reading lives once the operator's one sentence runs out.
         # No block for a room never folded: `render_culture`'s reason.

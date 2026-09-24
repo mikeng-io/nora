@@ -2602,7 +2602,7 @@ class CultureReader(Protocol):
     whole claim is that the account is written by a background fold reading a
     whole batch, never by a turn reacting to one window.
 
-    **It lives here because every runtime reads it** (DEC-205, 2026-09-25). It
+    **It lives here because every runtime reads it** (DEC-207, 2026-09-25). It
     used to live in `nora.app.fire`, beside its one consumer, on the argument
     that a port declared for everyone reads as an invitation for the second.
     The operator issued that invitation: the tag path, every fire occasion,

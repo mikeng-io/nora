@@ -1498,7 +1498,7 @@ merge_mode = "off"
 #
 # ON ALSO MEANS EVERY RUNTIME READS IT. The room's current account rides as a
 # <culture> block in the tag turn, every fire occasion, the proactive pass, both
-# note passes and both standing folds (DEC-205, 2026-09-25) — never in the
+# note passes and both standing folds (DEC-207, 2026-09-25) — never in the
 # Relevance Gate. There is no separate read switch: turning the fold on changes
 # live prompts on the next deploy. A room never folded renders no block, so the
 # change arrives room by room over the first day.

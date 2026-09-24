@@ -2378,7 +2378,7 @@ class CultureConfig(BaseModel):
     #: background pass writes one short account of each room per day into its
     #: own store, AND every runtime reads the room's current account as
     #: `<culture>`: the tag turn, every fire occasion, the proactive pass, both
-    #: note passes and both standing folds (DEC-205, 2026-09-25; the
+    #: note passes and both standing folds (DEC-207, 2026-09-25; the
     #: participation turn alone from #382, 2026-09-22). The relevance gate
     #: never does (design/context-assembly/02).
     #:

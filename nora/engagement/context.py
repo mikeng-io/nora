@@ -150,7 +150,7 @@ class TranscriptInjection:
         # rooms with live transport state, her handles. `None` is a harness
         # with no reader, and the prefill then renders the network alone.
         self._presence_reader = presence
-        # THE ROOM'S OWN ACCOUNT (design/culture-tier, DEC-205). `None` while
+        # THE ROOM'S OWN ACCOUNT (design/culture-tier, DEC-207). `None` while
         # `[culture] enabled = false`. Read-only by TYPE: a `CultureReader` has
         # `head` and nothing else, so no tag turn can write a culture row.
         # Keyed on the room's `primary_id`, resolved through `policy` — see
@@ -196,7 +196,7 @@ class TranscriptInjection:
         # on the front of the turn like the rest because adapter health must
         # be read now, not remembered.
         #
-        # `<culture>` (DEC-205) is the eighth, and joins the OUTER gather for
+        # `<culture>` (DEC-207) is the eighth, and joins the OUTER gather for
         # the same overload reason `<presence>` does.
         (
             (transcript, card, self_card, tagger_card, standing, notes),
@@ -249,7 +249,7 @@ class TranscriptInjection:
         )
 
     async def _culture(self, msg: NormalizedMessage) -> CultureRevision | None:
-        """This room's account, or `None` (design/culture-tier, DEC-205).
+        """This room's account, or `None` (design/culture-tier, DEC-207).
 
         Keyed on the room's `primary_id`, NEVER `msg.conversation_id`: the fold
         is a Dreamer adaptor handed `scopes()`, so that is what it wrote under,

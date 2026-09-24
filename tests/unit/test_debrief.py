@@ -1169,7 +1169,7 @@ def test_the_objective_ranks_a_finding_between_a_commitment_and_the_room():
 
 
 async def test_the_fold_reads_the_rooms_account_the_turn_read():
-    """DEC-205: the tag-turn fold is handed the account the turn read at its
+    """DEC-207: the tag-turn fold is handed the account the turn read at its
     start and renders it above the prior — asserted through the PROMPT, for
     this file's own reason."""
     from nora.domain.culture import CultureRevision

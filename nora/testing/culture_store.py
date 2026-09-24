@@ -3,7 +3,7 @@
 `tests/contract/test_culture_store_contract.py` so the two cannot drift.
 
 It became necessary the day `CultureReader` moved into `nora.domain.ports`
-(DEC-205): a port never gains a second implementation, including a test fake,
+(DEC-207): a port never gains a second implementation, including a test fake,
 without a suite both pass, and five inline stand-ins had grown in `tests/`
 while the reader lived beside its one consumer.
 

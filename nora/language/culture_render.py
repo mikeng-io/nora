@@ -61,7 +61,7 @@ async def read_culture(
     """One room's account for a prompt, or `None` — every occasion's ONE read.
 
     It used to be written once, in `FirePath._read_culture`, when that was the
-    only reader (DEC-205 widened the tier to every runtime). Six copies of a
+    only reader (DEC-207 widened the tier to every runtime). Six copies of a
     bounded, counted, fail-soft read would be six places for the bound or the
     count to go missing, so the read is here and each occasion only names its
     `stage`.

@@ -136,7 +136,7 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "sit beside the pre-existing fire_peer_card / fire_standing / "
         "fire_notes / fire_unit for that set's own stated reason — an "
         "operator asking WHICH half of the context went blind must not have "
-        "to guess. The <culture> read (DEC-205) is counted per occasion, one "
+        "to guess. The <culture> read (DEC-207) is counted per occasion, one "
         "stage each, for the same reason: stage=\"tag_culture\", "
         "stage=\"fire_culture\", stage=\"proactive_culture\", "
         "stage=\"note_candidates_culture\", stage=\"note_curator_culture\" "

@@ -78,7 +78,7 @@ def build_assembler(
         # over `policy.toml` and the live adapter map. `None` renders the
         # network alone — what `_where_line` said before it was replaced.
         presence=presence,
-        # `<culture>` (design/culture-tier, DEC-205). The SAME reader the fire
+        # `<culture>` (design/culture-tier, DEC-207). The SAME reader the fire
         # path and every Dreamer adaptor that reads an account hold. `None`
         # while `[culture] enabled = false`, and in every harness that wires
         # no store, which renders no block.

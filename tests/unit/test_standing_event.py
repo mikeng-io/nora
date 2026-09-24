@@ -432,7 +432,7 @@ async def test_the_rollups_prior_age_is_measured_from_the_last_write(monkeypatch
 
 
 async def test_the_event_fold_reads_the_rooms_account_by_primary_id():
-    """DEC-205 on the event path: the fold resolves `(platform, thread)` to
+    """DEC-207 on the event path: the fold resolves `(platform, thread)` to
     the room's `primary_id` through `culture_key` and renders the account in
     its prompt."""
     import dataclasses

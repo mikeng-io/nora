@@ -126,7 +126,7 @@ class Wiring:
     # in `messages.body` and every consumer had it. `None` is the inert state
     # and renders the bare handles the row actually carries.
     media_join: MediaJoin | None = None
-    # THE ROOM'S ACCOUNT (design/culture-tier, DEC-205), rendered above the
+    # THE ROOM'S ACCOUNT (design/culture-tier, DEC-207), rendered above the
     # prior exactly as the tag-turn debrief renders it. `culture_key` maps
     # this fold's `(platform, conversation_id)` to the room's `primary_id` —
     # the key the culture fold writes under (DEC-181) — and is `None` for a
@@ -327,7 +327,7 @@ async def _event_fold(*, key: Key, wiring: Wiring, metrics: Metrics) -> None:
 def _culture_head(
     wiring: Wiring, platform: str, conversation_id: str,
 ) -> Awaitable[CultureRevision | None] | None:
-    """The room's `head` read (DEC-205), or `None` with no reader wired or a
+    """The room's `head` read (DEC-207), or `None` with no reader wired or a
     room outside the policy. Bounded by `read_culture`, under this fold's own
     `store_timeout_seconds`."""
     if wiring.culture is None or wiring.culture_key is None:

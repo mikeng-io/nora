@@ -1,0 +1,1 @@
+{"type": "none", "reason": "Agent skills only (nora-deploy step 5 closes stdin on docker compose exec inside a heredoc; nora-land step 8 checks the branch is not behind right before merging). No runtime or user-visible change.", "details": [], "limitations": []}

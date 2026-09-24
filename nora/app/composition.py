@@ -1697,7 +1697,7 @@ async def build_dependencies(
     # Over the SAME allowlist ingest admits against and the SAME adapter map
     # the tag path sends through.
     presence_reader = _presence_reader(cfg, allowlist, registry, rosters)
-    # THE CULTURE TIER'S READ HALF (design/culture-tier, DEC-205): ONE
+    # THE CULTURE TIER'S READ HALF (design/culture-tier, DEC-207): ONE
     # read-only reader, handed to the tag path's assembler, the fire path and
     # every Dreamer adaptor whose prompt carries `<culture>`. `None` while
     # `[culture] enabled = false`, the shipped default, so no occasion renders
@@ -1706,7 +1706,7 @@ async def build_dependencies(
     culture_reader: CultureReader | None = (
         SqlCultureStore(engine) if cfg.culture.enabled else None
     )
-    # The note curator's join from a note to its room's account (DEC-205):
+    # The note curator's join from a note to its room's account (DEC-207):
     # EVERY id a room is known by — `Note.established_in` holds whichever one
     # the note was born under — within the note's UNIT, since ids are unique
     # per platform and a note carries no platform.
@@ -2084,7 +2084,7 @@ async def build_dependencies(
             timeout_seconds=cfg.standing.timeout_seconds,
             store_timeout_seconds=cfg.standing.store_timeout_seconds,
             max_chars=cfg.standing.max_chars,
-            # The room's account above the prior (DEC-205), keyed through the
+            # The room's account above the prior (DEC-207), keyed through the
             # policy to the room's `primary_id` — `culture_key` is `None` for a
             # room outside it.
             culture=culture_reader,
@@ -2930,7 +2930,7 @@ async def build_dependencies(
             # the fire path writes no position, because S1 is blocked on it
             # retaining a `TagTrace` at all (see `FirePath.__init__`).
             standing=standing_store if cfg.standing.enabled else None,
-            # THE CULTURE HEAD (design/culture-tier, DEC-205) — the SAME reader
+            # THE CULTURE HEAD (design/culture-tier, DEC-207) — the SAME reader
             # the tag assembler holds. Keyed on `primary_id`, which is why this
             # path resolves the occasion through the policy it already holds
             # before reading (`FirePath._read_culture`).
@@ -3386,7 +3386,7 @@ async def build_dependencies(
                     evidence_messages_per_note=cfg.notes.revisit_evidence_messages,
                     metrics=metrics,
                     # The accounts of the rooms its notes were raised in
-                    # (DEC-205). `room_for` maps EVERY id a room is known by —
+                    # (DEC-207). `room_for` maps EVERY id a room is known by —
                     # `Note.established_in` holds whichever one the note was
                     # born under — to `(primary_id, label)`, within the note's
                     # UNIT: ids are unique per platform, not across platforms.
@@ -3470,7 +3470,7 @@ async def build_dependencies(
                 NoteCandidateAdaptor(
                     notes=note_store,
                     candidates=note_store,
-                    # The room's account (DEC-205). This adaptor's key is the
+                    # The room's account (DEC-207). This adaptor's key is the
                     # room's `primary_id` already, the fold's own key.
                     culture=culture_reader,
                     unit_for={
@@ -3719,7 +3719,7 @@ async def build_dependencies(
                     standing=standing_store if cfg.standing.enabled else None,
                     reminders=reminders,
                     memory=memory,
-                    # Each of the unit's rooms' accounts (DEC-205), keyed on
+                    # Each of the unit's rooms' accounts (DEC-207), keyed on
                     # `UnitRoom.conversation_id` — a `primary_id` by
                     # construction (`_unit_rooms`).
                     culture=culture_reader,

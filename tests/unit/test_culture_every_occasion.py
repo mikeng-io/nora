@@ -1,4 +1,4 @@
-"""`<culture>` reaches every runtime's prompt (design/culture-tier, DEC-205).
+"""`<culture>` reaches every runtime's prompt (design/culture-tier, DEC-207).
 
 The note-candidates pass and the note curator are asserted here through
 `inputs` — the RENDERED prompt — and by the key the store was READ with.

@@ -216,7 +216,7 @@ WAKE_CLOCK_NAME = "proactive:wake"
 #: sites and would have to be counted as N; that is the reading that moves this
 #: number again.
 #:
-#: 17 -> 18 on 2026-09-25 (DEC-205): `self._culture.head` per unit room,
+#: 17 -> 18 on 2026-09-25 (DEC-207): `self._culture.head` per unit room,
 #: the same per-room site shape as `_standing.read` beside it (rooms are at
 #: most one per platform, DEC-105).
 STORE_CALLS_PER_TICK = 18
@@ -473,7 +473,7 @@ _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     ("notes", 40, "turn"),
     ("rooms", 50, "turn"),
     # One `<culture room=…>` per room of the unit that has been folded
-    # (DEC-205), right under the positions: `<rooms>` says where she had got
+    # (DEC-207), right under the positions: `<rooms>` says where she had got
     # to in each, and the account says what each room IS — the half a pass
     # choosing WHERE to raise something was deciding without.
     ("culture", 55, "turn"),
@@ -556,7 +556,7 @@ class ProactiveAdaptor:
         quiet_seconds: float = DEFAULT_QUIET_SECONDS,
         daily_hour: int = DEFAULT_DAILY_HOUR,
         decisions: DecisionLogRecorder | None = None,
-        # THE ROOMS' ACCOUNTS (design/culture-tier, DEC-205). Keyed on
+        # THE ROOMS' ACCOUNTS (design/culture-tier, DEC-207). Keyed on
         # `UnitRoom.conversation_id`, which the composition root fills with
         # the room's `primary_id` — the key the culture fold writes under
         # (DEC-181). `None` while `[culture] enabled = false`.
@@ -994,7 +994,7 @@ class ProactiveAdaptor:
 
     async def _cultures(self, rooms: Sequence[UnitRoom]) -> list[str]:
         """One `<culture room=…>` per room of the unit with an account
-        (DEC-205), in `rooms` order. A room never folded renders nothing; a
+        (DEC-207), in `rooms` order. A room never folded renders nothing; a
         failed read is counted per room (`stage="proactive_culture"`) and
         renders nothing either — `read_culture`'s contract."""
         out: list[str] = []
