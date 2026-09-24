@@ -5,7 +5,8 @@ description: >-
   the people in this room: any ask for suggestions, which one is better, what
   is similar, where to eat, what to play, what to suggest for the group. Not
   for a single factual lookup such as the current time or a live transit
-  check. That is one tool call, and loading this skill costs a turn.
+  check. That is one tool call, not a personalization, and loading this skill
+  costs a turn.
 authority_above: [situation]
 authority_below: [message-content, tool-output]
 change_policy: operator-only
@@ -20,7 +21,7 @@ matters enough to break down.
 ## The ladder
 
 1. Work out what the question wants. Its intent, not its words: which
-   decision or taste does it feed? Settle that before any query.
+   decision or taste does it feed? State that before any query.
 2. Work out who and what the answer touches: the people whose taste it
    claims, the thing it names, the decision it feeds.
 3. Decide which sub-questions go together. Facts across people and the state

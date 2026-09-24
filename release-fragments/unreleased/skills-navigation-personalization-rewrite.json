@@ -2,7 +2,7 @@
   "type": "change",
   "summary": "The navigation and personalization skills are reworded to the same writing rules as the tool descriptions: no dashes, plain sentences, and every rule kept.",
   "details": [
-    "Both skills had the dash-heavy, clause-stacked prose that the tool rewrite (ADR 0015) removed from the tool descriptions: 7 dashes in navigation and 6 in personalization. Both were rewritten sentence by sentence and put through the humanizer pass. The when-to-load and not-for halves of each description, and every judgement in the bodies, are unchanged in meaning.",
+    "Both skills had the dash-heavy, clause-stacked prose that the tool rewrite (ADR 0015) removed from the tool descriptions: 7 dashes in navigation and 6 in personalization. Both were rewritten sentence by sentence and put through the humanizer pass. The when-to-load and not-for halves of each description, and every judgement in the bodies, are unchanged in meaning; a Fable audit checked it rule by rule and its fixes are in (the navigation scope limit, the live wait moving a leave-by time only near departure, and personalization stating the intent before any query).",
     "image-generation is untouched: its content is owned by the work that last changed it (#456, #469)."
   ],
   "limitations": [
