@@ -14,10 +14,11 @@ and `x_search` (DEC-201), `instagram_read` and `instagram_search` (18) all hand
 their reads to this one object, so no tool carries its own copy of a routing
 or an authorization rule.
 
-## The rule: X goes to OpenCLI, Instagram goes to the bridge
+## The rule: X and LinkedIn go to OpenCLI, Instagram goes to the bridge
 
-    X reads go through the OpenCLI bridge. Every Instagram read goes through
-    instagram-bridge's HTTP API (15, operator, 2026-09-23).
+    X and LinkedIn reads go through the OpenCLI bridge (LinkedIn since
+    DEC-201). Every Instagram read goes through instagram-bridge's HTTP API
+    (15, operator, 2026-09-23).
 
 `EXCEPTION_ROUTES` is the list of rows the instagram-bridge serves, and it
 still carries its old name because the dispatch shape did not change: those
@@ -178,6 +179,16 @@ SUBJECT_INPUTS: frozenset[tuple[str, str, str]] = frozenset({
     ("x", "profile", TARGET_NAMED),
     ("x", "posts", TARGET_NAMED),
     ("x", "search", TARGET_NAMED),
+    # LinkedIn (design/social-per-network, DEC-201): a person's public id or a
+    # company's slug from a pasted link, or a handle a person typed, or a
+    # search query. All `named`: sent as given, never resolved, and no
+    # LinkedIn read has a reach check. What holds LinkedIn's privacy line is
+    # the asked-turn rule in the tools, since a read is a profile visit.
+    ("linkedin", "profile", TARGET_NAMED),
+    ("linkedin", "experience", TARGET_NAMED),
+    ("linkedin", "posts", TARGET_NAMED),
+    ("linkedin", "company", TARGET_NAMED),
+    ("linkedin", "search", TARGET_NAMED),
     ("instagram", "search", TARGET_NAMED),
     ("instagram", "post", TARGET_NAMED),
     ("instagram", "profile", TARGET_PERSON),

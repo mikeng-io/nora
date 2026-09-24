@@ -1628,6 +1628,24 @@ class InstagramSocialConfig(BaseModel):
     timeout_seconds: float = Field(default=30.0, gt=0)
 
 
+class LinkedInSocialConfig(BaseModel):
+    """LinkedIn reads for `linkedin_read` and `linkedin_search`
+    (design/social-per-network, DEC-201), over the SAME host-side OpenCLI
+    bridge as X, so it needs `[social] enabled` too (refused at load
+    otherwise: there would be no backend behind it).
+
+    **Its own `enabled`**, off by default, because LinkedIn reads a
+    logged-in account's view: the account must be a dedicated one with its
+    profile viewing set to private (LinkedIn Settings, Visibility, Profile
+    viewing options) before this is turned on. Off, both tools stay
+    registered and answer that LinkedIn is not set up.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    enabled: bool = False
+
+
 class SocialConfig(BaseModel):
     """READ-ONLY social reads: X for the `x_read` and `x_search` tools (DEC-201) via
     the host-side OpenCLI bridge (`python -m nora.infra.social`, deployed as
@@ -1665,6 +1683,16 @@ class SocialConfig(BaseModel):
     timeout_seconds: float = Field(default=90.0, gt=0)
     content_max_chars: int = Field(default=4000, ge=1)
     instagram: InstagramSocialConfig = Field(default_factory=InstagramSocialConfig)
+    linkedin: LinkedInSocialConfig = Field(default_factory=LinkedInSocialConfig)
+
+    @model_validator(mode="after")
+    def _linkedin_needs_the_opencli_bridge(self) -> SocialConfig:
+        if self.linkedin.enabled and not self.enabled:
+            raise ValueError(
+                "[social.linkedin] enabled needs [social] enabled: LinkedIn is "
+                "read through the same host-side OpenCLI bridge as X"
+            )
+        return self
 
 
 class WeatherConfig(BaseModel):

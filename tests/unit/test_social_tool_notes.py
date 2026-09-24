@@ -39,7 +39,10 @@ from nora.testing import FakeMemoryStore
 from tests.fakes import SinkSender
 
 _DASH = re.compile("[–—]")
-_TOOLS = ("x_read", "x_search", "instagram_read", "instagram_search")
+_TOOLS = (
+    "x_read", "x_search", "linkedin_read", "linkedin_search",
+    "instagram_read", "instagram_search",
+)
 
 
 class _NoStore:
@@ -82,6 +85,11 @@ def _shared_payloads() -> dict[str, object]:
     return {
         "tools._X_OFF": tools_module._X_OFF,
         "tools._X_NOTES[ok]": {"note": tools_module._X_NOTES["ok"]},
+        "tools._LINKEDIN_OFF": tools_module._LINKEDIN_OFF,
+        "tools._LINKEDIN_FAILED": tools_module._LINKEDIN_FAILED,
+        "tools._LINKEDIN_UNASKED": tools_module._LINKEDIN_UNASKED,
+        "tools._LINKEDIN_READ_NOTES[ok]": {"note": tools_module._LINKEDIN_READ_NOTES["ok"]},
+        "tools._LINKEDIN_SEARCH_NOTES[ok]": {"note": tools_module._LINKEDIN_SEARCH_NOTES["ok"]},
         "tools._INSTAGRAM_OFF": tools_module._INSTAGRAM_OFF,
         "tools._INSTAGRAM_FAILED": tools_module._INSTAGRAM_FAILED,
         "results.UNAVAILABLE": results.UNAVAILABLE,
@@ -124,6 +132,14 @@ async def test_the_notes_actually_returned_on_the_refusal_paths_carry_no_dash():
         await calls["x_search"](query=""),
         await calls["x_search"](query="+85212345678"),
         await calls["x_search"](query="nasa launch"),
+        await calls["linkedin_read"](),
+        await calls["linkedin_read"](handle="williamhgates"),
+        await calls["linkedin_read"](link="https://www.linkedin.com/posts/x_y-activity-1-a/"),
+        await calls["linkedin_read"](link="https://x.com/nasa"),
+        await calls["linkedin_read"](handle="williamhgates", what="profile"),
+        await calls["linkedin_search"](query=""),
+        await calls["linkedin_search"](query="+85212345678"),
+        await calls["linkedin_search"](query="someone"),
         await calls["instagram_read"](what="posts", person="Quinn"),
         # P10 and P12: the paths a handle or a link takes before any backend.
         await calls["instagram_read"](),

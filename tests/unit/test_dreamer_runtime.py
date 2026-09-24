@@ -796,6 +796,12 @@ def test_every_read_only_tool_is_classified_unit_safe_or_room_scoped():
         # design 18 said "unit-safe" before the name resolution moved into
         # the tool, and a move to UNIT_SAFE_TOOLS is a separate decision.
         "instagram_read",
+        # `linkedin_read` and `linkedin_search` (design/social-per-network,
+        # DEC-201) are refused in every Dreamer pass by the tools themselves
+        # (a LinkedIn read is a profile visit, a search spends a monthly
+        # limit), so they are not unit-safe. Room-scoped is the fail-closed
+        # side.
+        "linkedin_read", "linkedin_search",
     }
     # The unit-safe half is `UNIT_SAFE_TOOLS` itself, read from the
     # module. Since design/dreamer-agent-loop/32 §3.4 that set includes the

@@ -4,7 +4,8 @@
 Nora runs in a Docker container with host networking; `opencli` exists only on
 the host (daemon on localhost:19825, driving an authenticated Chrome via the
 Browser Bridge extension). This process is the narrow seam between them: the
-X tools (`x_read`, `x_search`) POST `{platform, what, target, limit}` to `/read`, and
+X and LinkedIn tools (`x_read`, `x_search`, `linkedin_read`,
+`linkedin_search`) POST `{platform, what, target, limit}` to `/read`, and
 this bridge turns that into `opencli <site> <command> <target> -f json` — or
 refuses to.
 
@@ -66,6 +67,15 @@ READ_ONLY_ALLOWLIST: MappingProxyType[tuple[str, str], tuple[str, str]] = (
         ("x", "profile"): ("twitter", "profile"),
         ("x", "posts"): ("twitter", "tweets"),
         ("x", "search"): ("twitter", "search"),
+        # LinkedIn (design/social-per-network/10, DEC-201): every command
+        # below is `access: "read"` in `opencli list -f json` (1.8.7, read on
+        # norty 2026-09-24). `search` is `people-search`, never OpenCLI's
+        # `linkedin search`, which searches JOBS.
+        ("linkedin", "profile"): ("linkedin", "profile-read"),
+        ("linkedin", "experience"): ("linkedin", "profile-experience"),
+        ("linkedin", "posts"): ("linkedin", "posts"),
+        ("linkedin", "company"): ("linkedin", "company"),
+        ("linkedin", "search"): ("linkedin", "people-search"),
     })
 )
 
@@ -84,6 +94,8 @@ OPENCLI_WRITE_VERBS = frozenset({
     "reply-dm", "retweet", "save", "story", "unblock", "unbookmark",
     "unfollow", "unlike", "unretweet", "unsave", "collection-create",
     "collection-delete",
+    # LinkedIn's (1.8.7, read 2026-09-24).
+    "connect", "safe-send", "salesnav-message",
 })
 
 # The commands that accept a `--limit <n>` flag (verified against
@@ -94,6 +106,24 @@ OPENCLI_WRITE_VERBS = frozenset({
 _LIMIT_COMMANDS = frozenset({
     ("twitter", "tweets"),
     ("twitter", "search"),
+    ("linkedin", "posts"),
+    ("linkedin", "people-search"),
+})
+# A command whose own `--limit` range is narrower than `_LIMIT_MAX`.
+# `people-search` takes 1 to 10, and each call counts against LinkedIn's
+# monthly Commercial Use Limit on people search.
+_LIMIT_CEILINGS: MappingProxyType[tuple[str, str], int] = MappingProxyType({
+    ("linkedin", "people-search"): 10,
+})
+# The LinkedIn commands that take the person as `--profile-url <url>` rather
+# than as a positional argument. **Each one reads the LOGGED-IN account
+# (`/in/me/`) when the flag is absent**, so an argv built without it would
+# answer with Nora's own account and look like a successful read. The argv
+# for these is built from the validated id and nothing else (`_argv`).
+_PROFILE_URL_COMMANDS = frozenset({
+    ("linkedin", "profile-read"),
+    ("linkedin", "profile-experience"),
+    ("linkedin", "posts"),
 })
 
 # Re-validated HERE, host-side, even though the tool validates too — the
@@ -109,6 +139,12 @@ _TWEET_URL_RE = re.compile(
 )
 _QUERY_MAX_CHARS = 200
 _LIMIT_MIN, _LIMIT_MAX = 1, 20
+# A LinkedIn person's public id (the `<id>` in `/in/<id>/`) and a company's
+# universal name (the `<slug>` in `/company/<slug>/`). ASCII only: an id
+# LinkedIn percent-encodes (a non-Latin name) is refused, not decoded.
+_LINKEDIN_PERSON_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9-]{2,99}")
+_LINKEDIN_COMPANY_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9-]{0,99}")
+_CONTROL_RE = re.compile(r"[\x00-\x1f\x7f]")
 
 # The subprocess runner seam: argv in, (returncode, stdout, stderr) out,
 # returncode None on timeout or spawn failure. Injected through `__init__`
@@ -152,16 +188,72 @@ def _extract_tweet_id(target: str) -> str | None:
     return None
 
 
-def _validate_target(site: str, command: str, target: str) -> str | None:
-    """The argument to hand `opencli`, or None to refuse WITHOUT spawning."""
-    if (site, command) == ("twitter", "thread"):
-        return _extract_tweet_id(target)
-    if command in ("profile", "tweets", "user"):
-        stripped = target.strip()
-        return stripped if _USERNAME_RE.fullmatch(stripped) is not None else None
-    # search
+def _username(target: str) -> str | None:
+    stripped = target.strip()
+    return stripped if _USERNAME_RE.fullmatch(stripped) is not None else None
+
+
+def _query(target: str) -> str | None:
     query = target.strip()
-    return query if 0 < len(query) <= _QUERY_MAX_CHARS else None
+    if not 0 < len(query) <= _QUERY_MAX_CHARS or _CONTROL_RE.search(query):
+        return None
+    return query
+
+
+def _linkedin_person(target: str) -> str | None:
+    stripped = target.strip()
+    return stripped if _LINKEDIN_PERSON_RE.fullmatch(stripped) is not None else None
+
+
+def _linkedin_company(target: str) -> str | None:
+    stripped = target.strip()
+    return stripped if _LINKEDIN_COMPANY_RE.fullmatch(stripped) is not None else None
+
+
+#: How each command's target is validated, keyed on `(site, command)`. TOTAL
+#: over `READ_ONLY_ALLOWLIST`'s values by test, and a command it does not
+#: name is refused (`_validate_target`). It replaced a chain whose last branch
+#: accepted any short string for any command it did not name, so a LinkedIn
+#: command would have been validated as free text (design/social-per-network/
+#: 10, «two defects»).
+_VALIDATORS: MappingProxyType[tuple[str, str], Callable[[str], str | None]] = MappingProxyType({
+    ("twitter", "thread"): _extract_tweet_id,
+    ("twitter", "profile"): _username,
+    ("twitter", "tweets"): _username,
+    ("twitter", "search"): _query,
+    ("linkedin", "profile-read"): _linkedin_person,
+    ("linkedin", "profile-experience"): _linkedin_person,
+    ("linkedin", "posts"): _linkedin_person,
+    ("linkedin", "company"): _linkedin_company,
+    ("linkedin", "people-search"): _query,
+})
+
+
+def _validate_target(site: str, command: str, target: str) -> str | None:
+    """The argument to hand `opencli`, or None to refuse WITHOUT spawning. A
+    command with no validator is refused: nothing is validated by default.
+
+    **A target that starts with `-` is refused for every command.** It sits
+    in the argv as a bare word, so OpenCLI would read it as a FLAG: a company
+    link `/company/-f/` produced `linkedin company -f -f json`, and a search
+    for `--limit` collided with the bridge's own `--limit` (Sonnet review,
+    2026-09-24). The X search path had the same exposure before LinkedIn."""
+    validator = _VALIDATORS.get((site, command))
+    value = None if validator is None else validator(target)
+    return None if value is None or value.startswith("-") else value
+
+
+def _linkedin_profile_url(person_id: str) -> str:
+    return f"https://www.linkedin.com/in/{person_id}/"
+
+
+def _target_args(site: str, command: str, target_arg: str) -> list[str]:
+    """The argv words that carry the validated target. A profile command
+    ALWAYS carries `--profile-url`: without it, OpenCLI reads the logged-in
+    account (`_PROFILE_URL_COMMANDS`)."""
+    if (site, command) in _PROFILE_URL_COMMANDS:
+        return ["--profile-url", _linkedin_profile_url(target_arg)]
+    return [target_arg]
 
 
 def _source_url(site: str, command: str, target_arg: str) -> str | None:
@@ -176,6 +268,11 @@ def _source_url(site: str, command: str, target_arg: str) -> str | None:
         if command in ("profile", "tweets"):
             return f"https://x.com/{target_arg}"
         return "https://x.com/search?q=" + urllib.parse.quote(target_arg)
+    if site == "linkedin":
+        if (site, command) in _PROFILE_URL_COMMANDS:
+            return _linkedin_profile_url(target_arg)
+        if command == "company":
+            return f"https://www.linkedin.com/company/{target_arg}/"
     return None
 
 
@@ -233,8 +330,11 @@ class SocialBridge:
         if target_arg is None:
             log.warning("read refused: bad target for %s %s", site, command)
             return self._refuse("bad target")
-        limit = self._clamp_limit(body.get("limit", 5))
-        argv = [self._opencli_bin, site, command, target_arg]
+        limit = min(
+            self._clamp_limit(body.get("limit", 5)),
+            _LIMIT_CEILINGS.get((site, command), _LIMIT_MAX),
+        )
+        argv = [self._opencli_bin, site, command, *_target_args(site, command, target_arg)]
         if (site, command) in _LIMIT_COMMANDS:
             argv += ["--limit", str(limit)]
         argv += ["-f", "json"]

@@ -88,7 +88,7 @@ Signal / Discord / WhatsApp room
        people & places       group_members / lookup_person / where_is / saved_places / route / transit / weather / parking
        what the group holds  note_read / note_search / note_create / note_update / list_events / create_event / rsvp_event
        later                 remind / list_reminders / cancel_reminder / make_artifact
-       the world             web_search / web_fetch / x_read / x_search / instagram_read / media_fetch / generate_image
+       the world             web_search / web_fetch / x_read / x_search / linkedin_read / linkedin_search / instagram_read / media_fetch / generate_image
        speaking              send_reply / send_gif / send_to (relay to a sibling room)
    → reply → audit row (delivery_status=pending → sent/failed) → Honcho feed
 
@@ -322,8 +322,9 @@ reply or delete: that is enforced by the tools' closed vocabulary and
 re-enforced by the bridge's own allowlist host-side, so a write verb is
 unreachable even under prompt injection. They ship inert behind `[social]
 enabled`. Instagram is read through the instagram-bridge instead
-(`instagram_read`, `instagram_search`), LinkedIn is designed but not built
-(`design/social-per-network/`), and Threads waits on a backend (OpenCLI 1.8.7
+(`instagram_read`, `instagram_search`), LinkedIn goes through this same
+bridge (`linkedin_read`, `linkedin_search`, behind `[social.linkedin]
+enabled`, only in a turn a person asked for; `design/social-per-network/`), and Threads waits on a backend (OpenCLI 1.8.7
 has none). See `docs/runbook.md` §10
 for operating the desktop.
 

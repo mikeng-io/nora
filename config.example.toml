@@ -1116,6 +1116,17 @@ enabled = false
 # base_url = "http://instagram-bridge:18082"   # private compose `nora` net; publishes nothing
 # timeout_seconds = 30.0                       # no browser behind it, unlike [social] above
 
+[social.linkedin]
+# linkedin_read and linkedin_search (design/social-per-network, DEC-201):
+# READ-ONLY LinkedIn through the SAME host-side OpenCLI bridge as X, so it
+# needs [social] enabled too (refused at load otherwise). The social Chrome
+# must be logged into a DEDICATED LinkedIn account whose profile viewing is
+# set to private (LinkedIn Settings, Visibility, Profile viewing options):
+# every read opens a profile as that account. Off, both tools stay registered
+# and answer that LinkedIn is not set up. A live header, like
+# [social.instagram] above, so a typo'd key is caught by the config test.
+enabled = false
+
 [preview]
 # Sender-generated link previews on Nora's OUTBOUND messages: when a reply
 # carries a URL she fetches its OpenGraph tags and attaches a title/description

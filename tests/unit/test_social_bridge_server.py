@@ -155,6 +155,22 @@ _ARGV_CASES = [
      [BIN, "twitter", "tweets", "nasa", "--limit", "5", "-f", "json"]),
     ("x", "search", "hk weather",
      [BIN, "twitter", "search", "hk weather", "--limit", "5", "-f", "json"]),
+    # LinkedIn (DEC-201): the three profile commands carry the person as
+    # `--profile-url`, ALWAYS (without it OpenCLI reads the logged-in account).
+    ("linkedin", "profile", "williamhgates",
+     [BIN, "linkedin", "profile-read", "--profile-url",
+      "https://www.linkedin.com/in/williamhgates/", "-f", "json"]),
+    ("linkedin", "experience", "williamhgates",
+     [BIN, "linkedin", "profile-experience", "--profile-url",
+      "https://www.linkedin.com/in/williamhgates/", "-f", "json"]),
+    ("linkedin", "posts", "williamhgates",
+     [BIN, "linkedin", "posts", "--profile-url",
+      "https://www.linkedin.com/in/williamhgates/", "--limit", "5", "-f", "json"]),
+    ("linkedin", "company", "nvidia",
+     [BIN, "linkedin", "company", "nvidia", "-f", "json"]),
+    # `people-search`, never OpenCLI's `linkedin search` (jobs).
+    ("linkedin", "search", "satya nadella",
+     [BIN, "linkedin", "people-search", "satya nadella", "--limit", "5", "-f", "json"]),
 ]
 
 
@@ -172,6 +188,43 @@ async def test_an_allowed_combo_invokes_the_exact_argv(
     assert status == 200
     assert body["status"] == "ok"
     assert runner.calls == [expected_argv]
+
+
+def test_every_allowlisted_command_has_a_validator():
+    """Validation is TOTAL over the allowlist: a command added without a
+    validator would be refused (fail closed), and this names it first. It
+    replaced a chain whose last branch validated any command it did not name
+    as free text (design/social-per-network/10)."""
+    from nora.infra.social.bridge_server import _VALIDATORS, _validate_target
+
+    assert set(READ_ONLY_ALLOWLIST.values()) <= set(_VALIDATORS)
+    assert _validate_target("linkedin", "search", "anything") is None  # jobs
+
+
+async def test_no_linkedin_profile_argv_is_built_without_its_profile_url(bridge):
+    """Each of the three profile commands reads the LOGGED-IN account when
+    `--profile-url` is absent: an argv without it would answer with Nora's
+    own account and look like a successful read."""
+    runner, session, base = bridge
+    for what in ("profile", "experience", "posts"):
+        await _read(
+            session, base,
+            {"platform": "linkedin", "what": what, "target": "williamhgates", "limit": 5},
+        )
+    assert len(runner.calls) == 3
+    for argv in runner.calls:
+        i = argv.index("--profile-url")
+        assert argv[i + 1] == "https://www.linkedin.com/in/williamhgates/"
+
+
+async def test_people_search_limit_is_capped_at_its_own_range(bridge):
+    runner, session, base = bridge
+    await _read(
+        session, base,
+        {"platform": "linkedin", "what": "search", "target": "someone", "limit": 20},
+    )
+    argv = runner.calls[0]
+    assert argv[argv.index("--limit") + 1] == "10"
 
 
 async def test_every_allowlisted_pair_is_covered_by_the_argv_test():
@@ -196,6 +249,23 @@ async def test_every_allowlisted_pair_is_covered_by_the_argv_test():
         ("x", "profile", "../etc/passwd"),                  # path-shaped
         ("x", "search", "   "),                             # empty query
         ("x", "search", "q" * 201),                         # over the cap
+        # LinkedIn (DEC-201): an id or slug is checked whole, ASCII only.
+        ("linkedin", "profile", "ab"),                      # too short
+        ("linkedin", "profile", "william gates"),           # space
+        ("linkedin", "profile", "%E5%BC%A0"),               # percent-encoded
+        ("linkedin", "posts", "https://www.linkedin.com/in/x/"),  # a URL
+        ("linkedin", "experience", "../me"),                # path-shaped
+        ("linkedin", "company", "nvidia corp"),
+        ("linkedin", "search", "a\nb"),                     # control character
+        ("linkedin", "search", "q" * 201),
+        # A target that starts with a dash would reach OpenCLI's argv as a
+        # FLAG (Sonnet review, 2026-09-24): `/company/-f/` collided with the
+        # bridge's own `-f json`.
+        ("linkedin", "company", "-f"),
+        ("linkedin", "company", "--evil"),
+        ("linkedin", "search", "--limit"),
+        ("linkedin", "search", "-f json"),
+        ("x", "search", "--help"),
     ],
 )
 async def test_a_bad_target_is_refused_without_spawning(bridge, platform, what, target):
