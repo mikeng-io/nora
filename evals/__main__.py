@@ -12,11 +12,13 @@ import argparse
 import os
 import sys
 from pathlib import Path
+from typing import Any
 
 from evals.backbone import (
     ERROR,
     FAIL,
     NORA_ERROR,
+    NORA_POSITION,
     NORA_SHOWN,
     PASS,
     UNSTABLE,
@@ -173,9 +175,40 @@ def _print_spend() -> None:
         )
 
 
+def _case_state(case_row: dict[str, Any], name: str) -> Any:
+    """One named value off a report row's `actual_environment_state`. A row
+    IS the `EvaluationData` the grader saw (`model_dump()`), so the state the
+    task recorded rides on it."""
+    for entry in case_row.get("actual_environment_state") or ():
+        if entry.get("name") == name:
+            return entry.get("state")
+    return None
+
+
+def _print_positions(report: Any) -> None:
+    """Every draw's WRITTEN position, with its length (issue #445).
+
+    The judge's reason says a finding was left out and cannot say WHY: a fold
+    that never tried and a fold that was squeezed out by `[standing]
+    max_chars` read the same in a reason line. The length against the cap is
+    the first thing that tells them apart, and the text is the second.
+    Printed on the terminal only — never paste it into a PR or an issue; it
+    is a room's own standing.
+    """
+    for case_row, outputs in zip(report.cases, report.detailed_results, strict=True):
+        position = _case_state(case_row, NORA_POSITION)
+        label = "/".join(str(getattr(out, "label", "?")) for out in outputs)
+        size = "none" if position is None else f"{len(position)} chars"
+        print(f"  [{label}] {case_row['name']}  ({size})")
+        if position:
+            for line in str(position).splitlines():
+                print(f"      | {line}")
+
+
 def _run_one(
     name: str, *, source_url: str, judge: Judge | None, sample: int,
     only: frozenset[str] | None = None, all_reasons: bool = False,
+    positions: bool = False,
 ) -> bool:
     experiment, task = experiment_for(
         name, source_url=source_url, judge=judge, sample=sample, only=only,
@@ -184,6 +217,8 @@ def _run_one(
     scope = f" [{len(experiment.cases)} selected]" if only else ""
     print(f"--- {name}: {census(name)}{scope} ---")
     _print_spend()
+    if positions:
+        _print_positions(report)
     if sample > 1:
         readings = sample_read(report)
         # THE SPLIT, not just the verdict. `UNSTABLE` says the draws
@@ -315,6 +350,12 @@ def main() -> int:
         ),
     )
     ap.add_argument(
+        "--positions", action="store_true",
+        help="print every draw's written standing position and its length "
+             "(the standing corpus; #445). Terminal only: it is a room's own "
+             "position, never paste it anywhere public",
+    )
+    ap.add_argument(
         "--reasons", action="store_true",
         help="print every case's grader reason, PASS included — for a "
              "routing corpus that is the list of tools each draw executed",
@@ -409,7 +450,7 @@ def main() -> int:
     for name in names:
         ok = _run_one(
             name, source_url=source_url, judge=judge, sample=args.sample,
-            only=only, all_reasons=args.reasons,
+            only=only, all_reasons=args.reasons, positions=args.positions,
         ) and ok
     return 0 if ok else 1
 
