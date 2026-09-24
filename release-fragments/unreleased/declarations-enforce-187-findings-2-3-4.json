@@ -1,0 +1,6 @@
+{
+  "type": "none",
+  "reason": "Internal enforcement only, issue #187 findings 2-4: a test proving the Relevance Gate's shipped instruction (participation.md) is not degenerate; nora/skills/loader.py now refuses a skill whose frontmatter carries authority_above, authority_below or change_policy (nothing reads them for a skill), and both shipped skills had those keys removed; and the skill-body size guard now counts words instead of cl100k tokens, because a token count is still gameable by rewrapping the same text (measured and proved by a new test). Nothing a member of a room can observe: no doctrine content, no skill instructions, no runtime behaviour changed.",
+  "details": [],
+  "limitations": []
+}
