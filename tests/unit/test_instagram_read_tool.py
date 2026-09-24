@@ -628,19 +628,20 @@ def test_the_description_body_names_person_handle_and_link():
     assert "handle" not in l1
 
 
-def test_the_body_says_every_item_goes_to_media_fetch():
-    """The measured body sentence (the same replay as the L1): a post or a
-    reel returns every item, videos included, and each item's link is what
-    `media_fetch(url=...)` describes. The sentence it replaced («returns its
-    media with a link each») said neither that a reel's video is among the
-    items nor that the link is the thing to describe."""
+def test_the_body_says_every_item_and_what_it_shows():
+    """The body sentence. Its first half is the measured one (the same replay
+    as the L1): a post or a reel returns every item, videos included. Since
+    2026-09-24 (18 §"Typed views, one renderer, and readings") it also says
+    the result carries what each of the first 8 items SHOWS beside the
+    caption, with a link each for `media_fetch(url=...)`, and that a story's
+    frames come back the same way."""
     body = " ".join(
         ToolRegistry()._descriptions()["instagram_read"].partition("\n\n")[2].split()
     )
     assert (
-        "A post or a reel returns every item in it, videos included, each with "
-        "a link that `media_fetch(url=...)` describes; a story returns its media "
-        "the same way."
+        "A post or a reel returns every item in it, videos included, with what "
+        "each of the first 8 shows beside the caption, and a link each for "
+        "`media_fetch(url=...)`; a story returns its frames the same way."
     ) in body
 
 

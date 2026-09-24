@@ -59,16 +59,21 @@ def _llm(name: str) -> dict:
     a new deployment copies; the live file is what this one actually runs).
 
     A skip rather than a silent pass: pytest prints it, so a run that compared
-    the two and a run that had only one to look at stay distinguishable. On the
-    operator's machine — the one where a budget mistake reaches production —
-    the file is there and every assertion below is real.
+    the two and a run that had only one to look at stay distinguishable. It
+    does not run somewhere else instead: `config.toml` is gitignored in every
+    dev worktree and in CI, and the deploy checkout is off-limits for
+    verification, so this check against the live budget is not proven to run
+    anywhere under the current workflow (issue #321 tracks the same gap for
+    `tests/test_env_template.py`'s drift checks).
     """
     path = ROOT / name
     if not path.is_file():
         pytest.skip(
             f"no {name} in this checkout — untracked since 2026-09-07, so the "
-            "budget cross-check has nothing to read here. It runs on the "
-            "deployment machine, whose budget is the one that matters."
+            "budget cross-check has nothing to read here. It does not run "
+            "anywhere in the current workflow either: config.toml is "
+            "gitignored in every worktree and CI, and the deploy checkout is "
+            "off-limits for verification."
         )
     return tomllib.loads(path.read_text())["llm"]
 
