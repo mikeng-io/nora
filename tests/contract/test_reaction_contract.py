@@ -37,7 +37,7 @@ DISCORD_MESSAGE = "100000000000000208"
 
 WHATSAPP_GROUP = ConversationTarget("whatsapp", "176569000000000000@g.us", "group")
 
-#: The SHORT thread id. On `/react` that is load-bearing rather than merely
+#: The SHORT thread id. On the reaction route that is load-bearing rather than merely
 #: matching upstream: a reaction addressed with the LONG one is accepted with
 #: a 200 and is absent from the thread afterwards (measured 2026-09-22).
 INSTAGRAM_GROUP = ConversationTarget("instagram", "1009543911792316", "group")
@@ -61,14 +61,18 @@ async def _whatsapp_adapter(aiohttp_server, *, status: int = 200):
 
 
 async def _instagram_adapter(aiohttp_server, *, status: int = 200):
-    """An `InstagramAdapter` pointed at a stand-in for the bridge's `/react`."""
+    """An `InstagramAdapter` pointed at a stand-in for the bridge's
+    `PUT /threads/{thread_fbid}/messages/{message_id}/reaction` (17 §P14),
+    answering `{confirmed}` with no `ok`, and the error envelope on failure."""
     async def handler(request: web.Request) -> web.Response:
         if status != 200:
-            return web.json_response({"error": "boom"}, status=status)
-        return web.json_response({"ok": True})
+            return web.json_response(
+                {"error": {"code": "internal", "message": "boom"}}, status=status,
+            )
+        return web.json_response({"confirmed": True})
 
     app = web.Application()
-    app.router.add_post("/react", handler)
+    app.router.add_put("/threads/{thread_fbid}/messages/{message_id}/reaction", handler)
     server = await aiohttp_server(app)
     return InstagramAdapter(str(server.make_url("")).rstrip("/"))
 

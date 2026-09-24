@@ -17,21 +17,20 @@ rows since it, and enqueues an event fold only when the count reaches
 something did.
 
 **The event fold is the SAME fold as the tag path, minus the turn.**
-(`nora.engagement.stages.debrief`) — same objective, same store, same two-call
-split (standing + verdict via `asyncio.gather`, D4: the verdict reads the same
-batch). The differences are deliberate:
+(`nora.engagement.stages.debrief`) — same objective, same store, one call.
+The differences are deliberate:
 
 - **Serialization is the existing `ConversationSlots`** (D2): the check
   ENQUEUES the fold through the per-conversation FIFO (it never
   `try_acquire`-skips like the heartbeat) — a tag that arrives while an event
   fold is in flight queues behind it, and an event fold arriving while a tag
   runs queues behind the tag. One slot, FIFO order, never dropped.
-- **Rollup folds do NOT increment `fold_count`** (D3): that counter stays the
-  tag path's ceiling feed (`rebuild_after_folds`); rollup folds count on their
-  own series (`nora_standing_rollup_folds_total`).
-- **No tag, so no `TurnVerdict` and no notes.** The verdict CALL still runs
-  (D4 — the two calls must not disagree about what happened), but its output
-  has no `tag_id` to key a `TurnVerdict` on, so it is not persisted.
+- **Rollup folds do NOT increment `fold_count`** (D3): that counter counts
+  tag folds; rollup folds count on their own series
+  (`nora_standing_rollup_folds_total`).
+- **No tag, so no notes.** Until 2026-09-24 this path also ran the verdict
+  call beside its fold and persisted nothing from it — a model call per rollup
+  with no reader (design/standing-compact/00). Deleted with the verdict.
 - **The rollup is bounded** (`[standing] rollup_max_folds`): one spawned event
   fold folds at most that many batches (each `fold_batch` rows), then stops and
   lets the NEXT message's check continue. A cold-start backlog folds
@@ -67,15 +66,10 @@ from nora.domain.media_join import MediaJoin
 from nora.domain.models import NormalizedMessage, TranscriptRow
 from nora.domain.ports import RecordStore, StandingStore
 from nora.domain.standing import Standing
-from nora.engagement.debrief_render import (
-    render_rollup_input,
-    render_rollup_verdict_input,
-)
+from nora.engagement.debrief_render import render_rollup_input
 from nora.engagement.slots import ConversationSlots
 from nora.engagement.stages.debrief import (
     OBJECTIVE,
-    VERDICT_OBJECTIVE,
-    Completion,
     ModelClient,
     ObjectiveSource,
 )
@@ -87,9 +81,6 @@ from nora.engagement.stages.debrief import (
 )
 from nora.engagement.stages.debrief import (
     _prompt as _debrief_prompt,
-)
-from nora.engagement.stages.debrief import (
-    _verdict_prompt as _debrief_verdict_prompt,
 )
 from nora.obs.metrics import Metrics
 from nora.obs.tracing import TRACE_KIND, attached, span
@@ -240,10 +231,10 @@ async def _event_fold(*, key: Key, wiring: Wiring, metrics: Metrics) -> None:
     path's own `plumbing` root (`_check`, dropped at the sampler — R-76), and
     `ConversationSlots.release_and_dispatch`'s `finally`, which may run with
     no span in context at all or with some unrelated turn's span current.
-    Either way the fold's two model calls (via `debrief._complete`, labelled
-    `nora.debrief.call=fold`/`=verdict` on the Strands-produced span since
-    2026-09-19 — no longer separately-named `engagement.debrief.fold`/
-    `.verdict` spans, see `_standing`'s own comment below) must reach the
+    Either way the fold's model call (via `debrief._complete`, labelled
+    `nora.debrief.call=fold` on the Strands-produced span since 2026-09-19 —
+    no longer a separately-named `engagement.debrief.fold` span, see
+    `_standing`'s own comment below) must reach the
     collector under a trace that is theirs, not vanish under a dropped root
     or surface as an unnamed child of somebody else's turn.
     """
@@ -332,27 +323,20 @@ async def _fold_batch(
     wiring: Wiring,
     metrics: Metrics,
 ) -> bool:
-    """Fold ONE batch: the same two-call split as the tag path, under ONE
-    `wait_for` budget (the slot can afford a total, and two independent
-    timeouts would each spend the whole total). Returns True iff the position
+    """Fold ONE batch: the same fold as the tag path, under ONE `wait_for`
+    budget. Returns True iff the position
     was WRITTEN (and the watermark advanced); False on any refusal, with the
     failure counted on `nora_debrief_total{outcome=...}` exactly as the tag
     path's fold failure is.
 
-    The standing call reads `render_rollup_input` (prior + conversation);
-    the verdict call reads `render_rollup_verdict_input` (the SAME batch,
-    without the prior — D4). The verdict's output is not persisted: it has no
-    tag_id to key a `TurnVerdict` on, and the call exists to keep the two
-    calls' shared-batch discipline identical.
+    The call reads `render_rollup_input` (prior + conversation).
     """
     platform, conversation_id = key
     instructions = wiring.objective.objective_body(OBJECTIVE)
-    verdict_instructions = wiring.objective.objective_body(VERDICT_OBJECTIVE)
+    now_ms = int(time.time() * 1000)
     rendered = render_rollup_input(
         prior=prior, rows=rows, display_name=wiring.display_name, tz=wiring.tz,
-    )
-    rendered_verdict = render_rollup_verdict_input(
-        rows=rows, display_name=wiring.display_name, tz=wiring.tz,
+        now_ms=now_ms,
     )
 
     async def _standing() -> tuple[str | None, str]:
@@ -373,19 +357,9 @@ async def _fold_batch(
         # rollup fold has no tag, and the parse rules are the tag path's.
         return _debrief_check(reply, conversation_id)
 
-    async def _judge() -> Completion:
-        system, user = _debrief_verdict_prompt(
-            instructions=verdict_instructions, rendered=rendered_verdict,
-        )
-        return await _debrief_complete(
-            wiring.client, call="verdict", tag_id="", conversation_id=conversation_id,
-            prompt=(system, user),
-        )
-
     try:
-        (body, refusal), _verdict = await asyncio.wait_for(
-            asyncio.gather(_standing(), _judge()),
-            timeout=wiring.timeout_seconds,
+        body, refusal = await asyncio.wait_for(
+            _standing(), timeout=wiring.timeout_seconds,
         )
     except TimeoutError:
         metrics.inc("nora_debrief_total", outcome="timeout")
@@ -437,14 +411,10 @@ async def _fold_batch(
         platform=platform,
         conversation_id=conversation_id,
         body=body,
-        # D3: rollup folds do NOT increment fold_count — that counter stays
-        # the tag path's ceiling feed. Carried forward from the prior (0 on a
-        # first fold).
+        # D3: rollup folds do NOT increment fold_count — that counter counts
+        # tag folds. Carried forward from the prior (0 on a first fold).
         fold_count=prior.fold_count if prior is not None else 0,
-        updated_at=int(time.time() * 1000),
-        consumed_verdict_tag=(
-            prior.consumed_verdict_tag if prior is not None else None
-        ),
+        updated_at=now_ms,
         # The watermark advances to the LAST row this batch read (the rows are
         # ascending, so `rows[-1]` is the furthest). Written in the SAME
         # statement as the position (20-watermark-read.md).

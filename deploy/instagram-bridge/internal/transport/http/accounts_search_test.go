@@ -377,10 +377,9 @@ func TestAccountsByUsernameValidationRunsBeforeSessionGate(t *testing.T) {
 	}
 }
 
-// Every domain kind maps to its OWN status under the new table, including the
-// two the old statusForError does not have: 502 for ErrUpstreamRejected
-// (500 on the old routes) and 501 for ErrUnsupported reaching a caller here
-// rather than only via the username-alone case above.
+// Every domain kind maps to its OWN status under the one table every route
+// shares (errors.go), including 502 for ErrUpstreamRejected and 501 for
+// ErrUnsupported, which the legacy table P14 deleted did not have.
 func TestAccountsSearchStatusPerDomainKind(t *testing.T) {
 	cause := errors.New("what the gateway said")
 	for _, tc := range []struct {

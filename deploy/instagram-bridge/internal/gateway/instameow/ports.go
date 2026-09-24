@@ -166,8 +166,9 @@ func (b *Bridge) SocialProfile(ctx context.Context, igid domain.IGID) domain.Soc
 	return readSocial(ctx, issuer, err, igid)
 }
 
-// Story reads one account's current story. ONE igid, never a batch: a story
-// read is visible to its author.
+// Story reads one account's current story. ONE igid, never a batch: a batch
+// would open stories nobody asked about (whether the author sees the view is
+// unmeasured, design 04, 05 §Reading a story).
 func (b *Bridge) Story(ctx context.Context, igid domain.IGID) (domain.Story, error) {
 	cli, err := b.client()
 	if err != nil {

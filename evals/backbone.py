@@ -34,6 +34,7 @@ import dataclasses
 import os
 import shutil
 import tempfile
+import tomllib
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -53,12 +54,21 @@ from strands_evals.types.evaluation import (
     EvaluationOutput,
 )
 
+from evals.situation import (
+    LIVE_HANDLE_STANDINS,
+    deployment_handles,
+    deployment_networks,
+    facts,
+    shown_where,
+    varied_transport,
+)
 from nora.subject import (
     SubjectSpec,
     obtain,
     sandbox_database,
     sandbox_from_snapshot,
 )
+from nora.subject.transport import held_states, hold_transports
 
 #: Names carried on `environment_state`. A reader must key on these, never on
 #: `test_pass`, which is a `bool` and cannot hold the third answer.
@@ -121,6 +131,16 @@ NORA_TOOLS = "nora.tools_called"
 #: reporting criterion (`tool_status_reported`) grades the reply against these,
 #: so the judge sees the result she saw, not a description of it.
 NORA_TOOL_RESULTS = "nora.tool_results"
+#: What the model was TOLD about where she is on this draw, read back off the
+#: first model call's own messages (`evals.situation.shown_where`):
+#: `<presence>…</presence>`, `_where_line`'s sentence on a build without it,
+#: or `None`. Carried on every draw so a before/after measurement proves its
+#: arms differ from the run itself, not from a reading of the code.
+NORA_SHOWN_WHERE = "nora.shown_where"
+#: The transport tier as the sandbox HELD it (`nora.subject.transport`),
+#: `{network: state}`, or `None` on a build with no `<presence>` reader —
+#: where there is nothing to hold and the prompt carries no transport state.
+NORA_TRANSPORT = "nora.transport_held"
 #: `Outcome.written`/`len(.changed)`/`len(.staged)` off the FIRST drive —
 #: never surfaced to a grader before this (S6, `10-the-scenario-map.md` §3).
 #: `dream()`'s own `written`/`changed` are already PER-CALL DELTAS (it
@@ -156,6 +176,15 @@ NORA_ERROR_2 = "nora.error_2"
 NORA_CHANGED = "nora.changed"
 NORA_JUDGED = "nora.judged"
 NORA_CHECKS_FAILED = "nora.checks_failed"
+#: The standing corpus (`design/standing-compact/20-verification.md` §1).
+#: `NORA_POSITION` is the position a fold wrote (`Outcome.position`), what
+#: `MeetsGrader` needs for `expect: fold`. `NORA_SHOWN` is what the subject's
+#: model call was given, verbatim — `--print-input` prints it, so two arms are
+#: diffed before a model is paid for. `NORA_JUDGED_WHY` is the judge's own
+#: rationale, so a FAIL says why without another run.
+NORA_POSITION = "nora.position"
+NORA_SHOWN = "nora.shown"
+NORA_JUDGED_WHY = "nora.judged_why"
 
 #: The three verdicts, carried in `EvaluationOutput.label`.
 #:
@@ -439,6 +468,13 @@ class Spec:
     #: An already-migrated blank database beside the source to clone each
     #: sandbox from (`sandbox_database`'s own). `None` builds one per source.
     template: str | None = None
+    #: The DEPLOYMENT's `config.toml` text — read for the networks it runs and
+    #: the handles it declares, which is what the sandbox's transport tier is
+    #: held to and what a presence judge grades against. `None` reads it from
+    #: `$NORA_DEPLOYMENT_DIR` beside the policy and roster. NOT the subject's
+    #: config: the sandbox turns Discord and WhatsApp off, the deployment
+    #: does not.
+    deployment_config: str | None = None
 
 
 #: Where the deployment's policy and roster live. Copied verbatim into each
@@ -465,6 +501,63 @@ def _deployment_policy() -> str:
 @lru_cache(maxsize=1)
 def _deployment_identity() -> str:
     return _read_deployment("identity.toml")
+
+
+@lru_cache(maxsize=1)
+def _deployment_config() -> str:
+    return _read_deployment("config.toml")
+
+
+def _hold_the_transport_tier(subject: Any, spec: Spec, md: Mapping[str, Any]) -> Any:
+    """Hold `<presence>`'s live inputs at what production renders
+    (`nora.subject.transport`'s docstring has the measurement). Only when the
+    graph HAS a reader: a build from before `<presence>` has nothing to hold,
+    and reading the deployment's config for it would be a failure about
+    nothing."""
+    if getattr(subject.deps, "self_presence", None) is None:
+        return None
+    if spec.deployment_config is not None:
+        networks = deployment_networks(tomllib.loads(spec.deployment_config))
+    elif spec.policy is not None:
+        # A caller that states its OWN room set (a test reconstructing a room
+        # of its own) composed its own world: the networks it runs are the
+        # ones its subject enabled. Reading the deployment's config here is
+        # what broke every integration test off the deploy host.
+        networks = tuple(sorted(
+            name for name in ("signal", "discord", "whatsapp", "instagram")
+            if getattr(getattr(subject.cfg.platforms, name, None), "enabled", False)
+        ))
+    else:
+        networks = deployment_networks(tomllib.loads(_deployment_config()))
+    return hold_transports(
+        subject,
+        networks=networks,
+        varied=varied_transport(md),
+        live_handles=LIVE_HANDLE_STANDINS,
+    )
+
+
+def _presence_facts(
+    spec: Spec, md: Mapping[str, Any], *, room: tuple[str, str],
+    shown: str | None, tools: tuple[str, ...],
+) -> str | None:
+    """The judge's ground truth for a `presence` case, or `None` for every
+    other case. Built from the DEPLOYMENT's files and the case, never from the
+    subject — so it is the same facts whichever arm ran."""
+    if "presence" not in tuple(md.get("criteria") or ()):
+        return None
+    config = tomllib.loads(
+        spec.deployment_config if spec.deployment_config is not None
+        else _deployment_config()
+    )
+    return facts(
+        policy_toml=spec.policy if spec.policy is not None else _deployment_policy(),
+        room=room,
+        handles=deployment_handles(config),
+        states=held_states(deployment_networks(config), varied_transport(md)),
+        shown=shown,
+        tools=tools,
+    )
 
 
 def _read_deployment(name: str) -> str:
@@ -588,6 +681,7 @@ async def _drive(case: Case, spec: Spec) -> dict[str, Any]:
     ERROR here — never a skip, never a case quietly run in an empty room
     (`11-the-sandbox-rebuild.md` §7.1).
     """
+    from evals.rebuilt.domain import Moment
     from evals.rebuilt.entry import ENTRY_POINTS
 
     port = ENTRY_POINTS[spec.entry]
@@ -681,6 +775,7 @@ async def _drive(case: Case, spec: Spec) -> dict[str, Any]:
                         "(design/evaluation/11-the-sandbox-rebuild.md §1.2's "
                         "declared Discord divergence)."
                     )
+            transport = _hold_the_transport_tier(subject, spec, md)
             seeded = await sandbox_from_snapshot(
                 subject,
                 source_url=spec.source_url,
@@ -690,6 +785,12 @@ async def _drive(case: Case, spec: Spec) -> dict[str, Any]:
             exporter = _prefill_capture()
             exporter.clear()
             nora_case = _as_nora_case(case, spec, trigger=subject.cfg.engagement.trigger.text)
+            # The moment, RESOLVED: where it was read from and how the
+            # sandbox renumbered it — for an entry point whose input is a
+            # record of the moment rather than the room it happened in.
+            nora_case = dataclasses.replace(
+                nora_case, moment=Moment(source_url=spec.source_url, rows=seeded.rows),
+            )
             outcome = await port.drive(subject, nora_case, now_ms=seeded.now_ms)
             blocks_empty = _blocks_empty(exporter)
             # BEFORE the judge: these describe what the SUBJECT spent, and a
@@ -703,17 +804,35 @@ async def _drive(case: Case, spec: Spec) -> dict[str, Any]:
                 spend.update({f"turn.{k}": v for k, v in turn.items()})
             tools_called = _tools_called(exporter)
             tool_results = _tool_results(exporter)
+            shown = shown_where(exporter.get_finished_spans())
             _SPEND.append(spend)
             outcome = _check_the_corpus_assertions(nora_case, outcome, seeded.rows)
 
+            judged_why = ""
+            # The standing fold (`design/standing-compact/20-verification.md`
+            # §1): the judged thing is the POSITION a fold wrote, against the
+            # case's one stated property, read over the turn's RECORD — the
+            # same evidence on both arms of a comparison. Selected by the
+            # port's declared `judged_on`, not by its name.
+            if (
+                spec.judge is not None and port.judged_on == "position"
+                and outcome.position is not None and outcome.error is None
+            ):
+                judgement = await spec.judge.grade_position(
+                    position=outcome.position, evidence=outcome.evidence,
+                    kind=str(md.get("kind") or ""), prop=str(case.expected_output or ""),
+                )
+                judged_why = judgement.why
+                outcome = dataclasses.replace(
+                    outcome, judged=judgement.verdict, error=judgement.error,
+                )
             # S3/S9 (`10-the-scenario-map.md` §3) — judged HERE, while the
             # subject is alive, because the judge needs the doctrine she
             # actually ran ON, not a copy read off disk.
-            if spec.judge is not None and outcome.said and outcome.error is None:
+            elif spec.judge is not None and outcome.said and outcome.error is None:
                 from evals.rebuilt.grading import criteria_for
 
                 criteria = tuple(md.get("criteria") or ())
-                binds = md.get("binds")
                 judgement = await spec.judge.grade(
                     said="\n".join(outcome.said),
                     asked=nora_case.input,
@@ -723,14 +842,14 @@ async def _drive(case: Case, spec: Spec) -> dict[str, Any]:
                     # results too. Without it the judge grades BLIND (DEC-75).
                     source=_judge_source(seeded.transcript, tool_results, criteria),
                     extra=criteria_for(criteria),
-                    # A case may BIND its verdict to one of its own criteria
-                    # (the reporting corpus binds `tool_status_reported`);
-                    # every other case keeps the safety criterion.
-                    **({"criterion": criteria_for((binds,))[0].name} if binds else {}),
+                    facts=_presence_facts(
+                        spec, md, room=room, shown=shown, tools=tools_called,
+                    ),
                 )
                 outcome = dataclasses.replace(
                     outcome, judged=judgement.verdict, error=judgement.error,
                 )
+                judged_why = str(getattr(judgement, "why", "") or "")
 
             repeat_state = []
             if spec.repeat > 1:
@@ -767,6 +886,11 @@ async def _drive(case: Case, spec: Spec) -> dict[str, Any]:
                     EnvironmentState(name=NORA_CHECKS_FAILED, state=outcome.checks_failed),
                     EnvironmentState(name=NORA_TOOLS, state=tools_called),
                     EnvironmentState(name=NORA_TOOL_RESULTS, state=tool_results),
+                    EnvironmentState(name=NORA_POSITION, state=outcome.position),
+                    EnvironmentState(name=NORA_SHOWN, state=outcome.shown),
+                    EnvironmentState(name=NORA_JUDGED_WHY, state=judged_why),
+                    EnvironmentState(name=NORA_SHOWN_WHERE, state=shown),
+                    EnvironmentState(name=NORA_TRANSPORT, state=transport),
                     *repeat_state,
                 ],
             }
@@ -850,6 +974,11 @@ def nora_task(spec: Spec):
                     EnvironmentState(name=NORA_CHECKS_FAILED, state=()),
                     EnvironmentState(name=NORA_TOOLS, state=None),
                     EnvironmentState(name=NORA_TOOL_RESULTS, state=None),
+                    EnvironmentState(name=NORA_POSITION, state=None),
+                    EnvironmentState(name=NORA_SHOWN, state=""),
+                    EnvironmentState(name=NORA_JUDGED_WHY, state=""),
+                    EnvironmentState(name=NORA_SHOWN_WHERE, state=None),
+                    EnvironmentState(name=NORA_TRANSPORT, state=None),
                 ],
             }
 
@@ -1150,19 +1279,22 @@ class MeetsGrader(Evaluator):
             written=state_of(data, NORA_WRITTEN) or 0,
             checks_failed=tuple(state_of(data, NORA_CHECKS_FAILED) or ()),
             judged=state_of(data, NORA_JUDGED) or "",
+            position=state_of(data, NORA_POSITION),
             error=error or None,
         )
         verdict = outcome.meets(expect)
+        why = state_of(data, NORA_JUDGED_WHY) or ""
+        why = f" — judge: {why}" if why else ""
         if verdict is None:
             reason = (
                 f"the case did not run: {error}" if error
                 else f"ungradable: judged={outcome.judged!r}, expect={expect!r}"
             )
-            return [self._out(ERROR, 0.0, reason)]
+            return [self._out(ERROR, 0.0, reason + why)]
         return [
-            self._out(PASS, 1.0, f"met expect={expect!r}")
+            self._out(PASS, 1.0, f"met expect={expect!r}{why}")
             if verdict
-            else self._out(FAIL, 0.0, f"did not meet expect={expect!r}")
+            else self._out(FAIL, 0.0, f"did not meet expect={expect!r}{why}")
         ]
 
     async def evaluate_async(self, data: EvaluationData) -> list[EvaluationOutput]:

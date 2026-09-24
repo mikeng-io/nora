@@ -1582,15 +1582,16 @@ class SearchConfig(BaseModel):
 
 class InstagramSocialConfig(BaseModel):
     """The Instagram social backend — `instagram_read`'s profile and story
-    reads via the instagram-bridge container (design/instagram-adoption/15,
-    /18).
+    reads and `instagram_search`'s account search, via the instagram-bridge
+    container (design/instagram-adoption/15, /18).
 
     It serves the rows on `SocialRouter`'s exception list, `(instagram,
-    story)` and `(instagram, profile)`: every Instagram read goes through the
-    bridge, and a verb joins when its bridge route works end to end.
-    Instagram account search is the one verb still on the OpenCLI default,
-    until P11. Enabling it also composes `PersonsSubjectIndex`, because both
-    rows take a PERSON and only the person index may resolve one to an igid.
+    story)`, `(instagram, profile)` and, since P11, `(instagram, search)`:
+    every Instagram read goes through the bridge, and a verb joins when its
+    bridge route works end to end. Enabling it also composes
+    `PersonsSubjectIndex`, because the profile and story rows take a PERSON
+    and only the person index may resolve one to an igid (the search row
+    takes free text and needs none).
 
     **Its own `enabled` rather than riding `[social] enabled`**, because the
     two backends fail and are provisioned independently: the OpenCLI path
@@ -1628,10 +1629,10 @@ class InstagramSocialConfig(BaseModel):
 
 
 class SocialConfig(BaseModel):
-    """READ-ONLY social reads: X (and Instagram account search, until P11)
-    for the `social_fetch` tool (DEC-151) via the host-side OpenCLI bridge
-    (`python -m nora.infra.social`, deployed as `deploy/social-bridge/`), and
-    Instagram profiles and stories for `instagram_read` via the
+    """READ-ONLY social reads: X for the `social_fetch` tool (DEC-151) via
+    the host-side OpenCLI bridge (`python -m nora.infra.social`, deployed as
+    `deploy/social-bridge/`), and Instagram profiles, stories and account
+    search for `instagram_read` and `instagram_search` via the
     instagram-bridge container (`[social.instagram]` below).
 
     **Optional and every field defaults**, the `RouteConfig` shape. `enabled`
@@ -2232,21 +2233,6 @@ class StandingConfig(BaseModel):
     # in front of the next person in the room.
     store_timeout_seconds: float = Field(
         default=DEFAULT_STANDING_STORE_TIMEOUT_SECONDS, gt=0)
-    # S2's ceiling: rebuild the position from the window rather than revising
-    # it once this many folds have accumulated SINCE THE LAST REBUILD.
-    #
-    # It is the WEAKER of the two triggers on purpose. 26 §4: "Time alone
-    # re-derives healthy conversations for nothing" — the forced case catches
-    # the turn that actually went wrong, and this only bounds how far drift can
-    # accumulate when nothing does. If `nora_standing_rederivations_total`
-    # comes back dominated by `ceiling`, the trigger has degraded into a clock
-    # wearing a condition (§6) and the answer is to look at why the ungrounded
-    # case is not firing, not to raise this.
-    #
-    # 20 is a starting point and not a measured value: at one fold per tagged
-    # turn it is roughly a busy evening in one room. Nothing has run long
-    # enough to say what the right number is.
-    rebuild_after_folds: int = Field(default=20, ge=1)
     model: str = ""
     # The fold's reasoning budget, DECLARED rather than inherited.
     #
@@ -3540,15 +3526,10 @@ class Config(BaseModel):
             # wrong on the page, which is the argument this validator exists
             # to enforce.
             self.standing.timeout_seconds
-            # SIX. The stage holds six bounded store awaits:
-            # `store_verdict.latest` (the trigger's read), `store.read` (the
-            # prior), `record_store.since_including_nora` (the watermark batch,
-            # design/standing-watermark/20), `store.write` (the revised
-            # position), `store_verdict.save` and `notes_sink.propose`. It was
-            # written as 2x when only the middle pair existed, then as 4x once
-            # the verdict landed, then 5x when the notes sink arrived, and each
-            # time the prose disagreed with the code. The constant is the one
-            # source and the stage's own test counts the awaits against it.
+            # The stage's bounded store awaits, counted by the constant and
+            # nowhere else: this comment named a number four times and was
+            # wrong each time the stage changed (2, 4, 5, 6 while the code held
+            # 7). The stage's own test counts the awaits against the constant.
             + STANDING_STORE_CALLS_PER_FOLD * self.standing.store_timeout_seconds
         )
         if hold > self.standing.max_slot_hold_seconds:

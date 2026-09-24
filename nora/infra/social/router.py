@@ -10,9 +10,9 @@ leak the topology into the prompt. If a doctrine line or a tool docstring ever
 says "instameow" or "opencli", this boundary has already failed.
 
 It is the single choke point for EVERY social tool, old and new: `social_fetch`
-(X, and Instagram account search until P11) and `instagram_read` (18) both
-hand their reads to this one object, so neither tool carries its own copy of a
-routing or an authorization rule.
+(X only, since P11), `instagram_read` and `instagram_search` (18) all hand
+their reads to this one object, so no tool carries its own copy of a routing
+or an authorization rule.
 
 ## The rule: X goes to OpenCLI, Instagram goes to the bridge
 
@@ -27,9 +27,11 @@ serve it», a proof of impossibility per row; since 15 the rule is that the
 bridge is the only door for Instagram, so a row joins the list when its bridge
 route works END TO END and leaves OpenCLI in the same change (15's per-verb
 cutover). `instagram/story` and `instagram/profile` are on it
-(`instagram_read`, P5). `instagram/search` is the one Instagram verb still on
-OpenCLI, until P11 lands its bridge route; nothing else Instagram is served
-anywhere, and `instagram/posts` has no mechanism at all (P13).
+(`instagram_read`, P5), and `instagram/search` joined with P11
+(`instagram_search`), leaving OpenCLI in the same change: OpenCLI now serves X
+only. `instagram/post` joined with P12 (one post or reel from a pasted link;
+it never had an OpenCLI row). `instagram/posts`, a person's post list, has no
+mechanism at all (P13).
 
 ## No failover, and it is structural rather than a comment
 
@@ -72,12 +74,31 @@ a duplicated authorization rule is one that diverges.
   (only the tool holds the turn's room); the person index returns every igid
   on file for them. Exactly one is read; none is `nothing_found` («no account
   on file»), several is `ambiguous`, and an unreadable index is
-  `unavailable`. A triple that is not in the table is not served.
+  `unavailable`. A `handle` target (P10) is an Instagram username a person
+  typed, or the username in a link they pasted: the bridge's EXACT username
+  lookup (`InstagramAccountLookup`) turns it into the one igid that holds it,
+  or says no account does. Never the person index: `identity.toml`'s username
+  is display metadata, never matched (15 §Links). A triple that is not in the
+  table is not served.
 * **Authorization is keyed on the READ, never the input** — `TIER_ZERO_READS`.
-  Only a story read is visible to the person read (it lands in their viewer
-  list), so only `instagram/story` has a reach check: the person must be
-  Tier 0, listed in a group room Nora is in on any network. A profile needs
-  resolution alone.
+  Only `instagram/story` has a reach check: the person must be Tier 0,
+  listed in a group room Nora is in on any network. That is a privacy
+  choice, not a claim about Instagram: Nora does not read people's stories
+  unprompted or beyond the people the operator listed; whether the
+  author sees the view is unmeasured (design/instagram-adoption/04, 05
+  §Reading a story). A profile, a post, and an account search need
+  resolution alone. For a `handle` the check runs on the igid the handle
+  NAMED, reversed to a person (`person_for_igid`), never re-derived through
+  `igids_for`: a friend with two accounts is `ambiguous` by name, and a link
+  to one of them says which (15 §Links). An igid that maps to nobody is
+  `refused`, and the story is never requested. Since 2026-09-24 that person
+  must also be on the ASKING room's roster (`room_people`), the scope a
+  spoken name resolves in, so a handle cannot reach further than a name
+  can and a story link is not an oracle for who is in her other rooms.
+* **Not here: the asked-turn rule.** A story, post or reel is opened only in
+  a turn a person asked for. `instagram_read` enforces that, because only
+  it holds the turn's provenance; a caller reaching this router directly
+  bypasses the rule unless it enforces its own (see `read`).
 
 Writing both as tables rather than as an `if what == "story"` is the point:
 the absence of a check is spelled, dated and tested, so the next row added has
@@ -91,8 +112,15 @@ from collections.abc import Mapping
 from types import MappingProxyType
 from typing import Any, Literal
 
-from ...domain.ports import SocialProvider, SocialSubjectIndex
-from .results import AMBIGUOUS, NO_ACCOUNT, REFUSED, UNAVAILABLE, not_set_up
+from ...domain.ports import InstagramAccountLookup, SocialProvider, SocialSubjectIndex
+from .results import (
+    AMBIGUOUS,
+    NO_ACCOUNT,
+    NO_SUCH_HANDLE,
+    REFUSED,
+    UNAVAILABLE,
+    not_set_up,
+)
 
 log = logging.getLogger("nora.social.router")
 
@@ -107,18 +135,30 @@ log = logging.getLogger("nora.social.router")
 EXCEPTION_ROUTES: frozenset[tuple[str, str]] = frozenset({
     ("instagram", "story"),
     ("instagram", "profile"),
+    # P11 (`instagram_search`): `GET /accounts?query=`. The OpenCLI row was
+    # deleted in the same change, so no Instagram read has two backends.
+    ("instagram", "search"),
+    # P12 (`instagram_read` with a post or reel link): `GET /posts/{code}`.
+    # It never had an OpenCLI row.
+    ("instagram", "post"),
 })
 
-#: The two input kinds a target can arrive as (18 §"What the router has to
-#: learn"). P10 adds `handle` and `link` for Instagram.
+#: The three input kinds a target can arrive as (18 §"What the router has to
+#: learn").
 #:
-#: * `named` — a string a person in the conversation typed: a handle, a post
-#:   URL or id, a search query. Node 07's Tier 2: allowed, NEVER resolved.
+#: * `named` — a string a person in the conversation typed: an X handle, a
+#:   post URL or id, a search query, the shortcode of a pasted Instagram post
+#:   link. Node 07's Tier 2: allowed, NEVER resolved.
 #: * `person` — a `person_id` the tool resolved from a spoken name within the
 #:   room. Only the person index may turn it into a network id.
-TargetKind = Literal["named", "person"]
+#: * `handle` (P10) — an Instagram username a person typed, or the username
+#:   segment of a profile or story link they pasted (the tool parses the link
+#:   with `nora.domain.instagram_links`, so a link never reaches the router as
+#:   a URL). Only the bridge's exact username lookup may turn it into an igid.
+TargetKind = Literal["named", "person", "handle"]
 TARGET_NAMED: TargetKind = "named"
 TARGET_PERSON: TargetKind = "person"
+TARGET_HANDLE: TargetKind = "handle"
 
 #: RESOLUTION, keyed on `(platform, what, input kind)`: every triple a tool may
 #: send, and so how its target becomes what a backend is handed. TOTAL by
@@ -126,25 +166,34 @@ TARGET_PERSON: TargetKind = "person"
 #: `READ_ONLY_ALLOWLIST | EXCEPTION_ROUTES` and requires each to appear here —
 #: and fail-closed by construction: a triple not listed is `unavailable`.
 #:
-#: The Instagram rows admit `person` only, and that is the whole of P5's
-#: input surface: a `named` string for `instagram/story` or `instagram/profile`
-#: would be a handle nobody resolved, and until P10's username lookup exists
-#: nothing may turn one into an igid.
+#: `instagram/profile` and `instagram/story` admit `person` (P5) and `handle`
+#: (P10), never `named`: a `named` string for either would be a handle nobody
+#: resolved, and for a story it would skip the reach check. `instagram/search`
+#: admits `named` only: its target is free text a person typed, sent as a
+#: query and never resolved (P11). `instagram/post` admits `named` only: its
+#: target is the shortcode of a link a person pasted, and a post names no
+#: person to resolve (P12).
 SUBJECT_INPUTS: frozenset[tuple[str, str, str]] = frozenset({
     ("x", "post", TARGET_NAMED),
     ("x", "profile", TARGET_NAMED),
     ("x", "posts", TARGET_NAMED),
     ("x", "search", TARGET_NAMED),
     ("instagram", "search", TARGET_NAMED),
+    ("instagram", "post", TARGET_NAMED),
     ("instagram", "profile", TARGET_PERSON),
     ("instagram", "story", TARGET_PERSON),
+    ("instagram", "profile", TARGET_HANDLE),
+    ("instagram", "story", TARGET_HANDLE),
 })
 
 #: AUTHORIZATION, keyed on the READ alone: the reads with a Tier 0 reach check.
-#: Only a story — its author sees who viewed it (15 §"Resolution is not
-#: authorization"). Tier 0 is a property of the PERSON (listed in a group room
-#: on any network, never a `*` room, never a DM), answered by
-#: `SocialSubjectIndex.is_tier_zero` and by nothing else.
+#: Only a story (15 §"Resolution is not authorization"), as a privacy choice:
+#: Nora does not open the stories of people the operator has not listed. It
+#: is not a claim that the author sees the view: whether the author sees
+#: the view is unmeasured (design 04, 05 §Reading a story). Tier 0 is a
+#: property of the PERSON (listed in a group room on any network, never a `*`
+#: room, never a DM), answered by `SocialSubjectIndex.is_tier_zero` and by
+#: nothing else.
 TIER_ZERO_READS: frozenset[tuple[str, str]] = frozenset({
     ("instagram", "story"),
 })
@@ -161,6 +210,14 @@ _SERVABLE_ROWS: frozenset[tuple[str, str]] = frozenset(
 _NEEDS_INDEX: frozenset[tuple[str, str]] = frozenset(
     {(platform, what) for platform, what, kind in SUBJECT_INPUTS if kind == TARGET_PERSON}
     | TIER_ZERO_READS
+)
+
+#: The rows a `handle` can reach, which the username lookup resolves. Unlike
+#: the index, a missing lookup is not a boot error: it grants nothing, since
+#: every `handle` read without it answers `unavailable`, and the `person`
+#: path of the same rows keeps working.
+_HANDLE_ROWS: frozenset[tuple[str, str]] = frozenset(
+    (platform, what) for platform, what, kind in SUBJECT_INPUTS if kind == TARGET_HANDLE
 )
 
 
@@ -194,6 +251,7 @@ class SocialRouter(SocialProvider):
         default: SocialProvider | None,
         exceptions: Mapping[tuple[str, str], SocialProvider] | None = None,
         subjects: SocialSubjectIndex | None = None,
+        accounts: InstagramAccountLookup | None = None,
     ) -> None:
         unknown = sorted(set(exceptions or {}) - EXCEPTION_ROUTES)
         if unknown:
@@ -216,6 +274,14 @@ class SocialRouter(SocialProvider):
             MappingProxyType(dict(exceptions or {}))
         )
         self._subjects = subjects
+        self._accounts = accounts
+        if accounts is None and any(self._provider_for(row) for row in _HANDLE_ROWS):
+            # Said once at boot, like an unwired backend: a handle or a link
+            # to a profile or a story will answer `unavailable`.
+            log.info(
+                "social router: no username lookup composed; handles and links "
+                "are unavailable",
+            )
         # Which rows have no backend is a CONFIGURATION fact, fixed here, so it
         # is said once at boot and not as a warning on every call — a flag
         # left off would otherwise fill the log with one line per question.
@@ -257,8 +323,26 @@ class SocialRouter(SocialProvider):
     async def read(
         self, *, platform: str, what: str, target: str, limit: int,
         target_kind: TargetKind = TARGET_NAMED,
+        room_people: frozenset[str] | None = None,
     ) -> dict[str, Any]:
         """Route one read. NEVER raises (R-5), NEVER fails over.
+
+        `room_people` is the person ids on the asking room's roster, the
+        scope a spoken name resolves in, or `None` when that roster could not
+        be read. Only a Tier 0 read by `handle` uses it (a story named by a
+        typed handle or a link): its person must be on this roster too, or it
+        is `refused` (18, 2026-09-24, operator's conservative default). A
+        `person` read is already room-scoped, because the tool resolved the
+        name in the room.
+
+        **What this router does NOT hold: the asked-turn rule.** A story, a
+        post or a reel is opened only in a turn a person asked for, never in
+        a fire turn or a Dreamer pass (18 §"A story is opened only when a
+        person asks"). That rule lives in `instagram_read`, which holds the
+        turn's provenance (`fire_turn`, `dream_adaptor`); this router is
+        handed no provenance and cannot tell a background turn from an asked
+        one. A future caller that reaches this router directly bypasses that
+        rule unless it enforces its own.
 
         Three steps, in this order: **pick, resolve-and-authorize, dispatch.**
 
@@ -291,6 +375,7 @@ class SocialRouter(SocialProvider):
             return not_set_up(platform)
         authorized = await self._authorize(
             platform=platform, what=what, target=target, target_kind=target_kind,
+            room_people=room_people,
         )
         if isinstance(authorized, dict):
             return authorized
@@ -308,6 +393,7 @@ class SocialRouter(SocialProvider):
 
     async def _authorize(
         self, *, platform: str, what: str, target: str, target_kind: str,
+        room_people: frozenset[str] | None = None,
     ) -> str | dict[str, Any]:
         """Resolution, then the reach check, before dispatch. Returns the
         `target` the backend should be given, or the PAYLOAD to answer
@@ -337,6 +423,10 @@ class SocialRouter(SocialProvider):
                 platform, what, target_kind,
             )
             return dict(UNAVAILABLE)
+        if target_kind == TARGET_HANDLE:
+            return await self._resolve_handle(
+                platform=platform, what=what, username=target, room_people=room_people,
+            )
         if target_kind == TARGET_NAMED:
             # Allowed as-is, and the index is deliberately NOT consulted.
             # «Never resolved implicitly» is the clause of node 07 that code
@@ -370,7 +460,8 @@ class SocialRouter(SocialProvider):
                 return dict(AMBIGUOUS)
             (igid,) = igids
             # REACH, keyed on the read and never on the input kind: a story
-            # view lands in its author's viewer list, a profile read does not.
+            # is opened only for a listed person (a privacy choice, 18), a
+            # profile needs no reach check.
             if (platform, what) in TIER_ZERO_READS and not await self._subjects.is_tier_zero(
                 person_id=target,
             ):
@@ -379,6 +470,75 @@ class SocialRouter(SocialProvider):
             # The port documents both methods as never raising and as failing
             # CLOSED; this is the belt for those braces, and it lands on
             # `unavailable` rather than on a read.
+            log.exception("social subject index raised")
+            return dict(UNAVAILABLE)
+        return igid
+
+    async def _resolve_handle(
+        self, *, platform: str, what: str, username: str,
+        room_people: frozenset[str] | None,
+    ) -> str | dict[str, Any]:
+        """A typed handle or a link's username → the igid to read, or the
+        payload to answer instead (15 §Links, 18 §"What the router has to
+        learn", P10).
+
+        RESOLVE, then REACH, then return, and nothing is dispatched on any
+        path that returns a payload:
+
+        * the bridge's exact lookup: `unavailable` is `unavailable`; `none` is
+          `nothing_found` («Instagram has no account with that username»);
+        * a Tier 0 read (a story) then reverses the igid the handle NAMED to a
+          person (`person_for_igid`) and asks `is_tier_zero` of THAT person.
+          It never goes through `igids_for`: a friend with two accounts is
+          `ambiguous` by name, but a handle or a link names one of them, and
+          re-deriving would lose which. An igid that maps to nobody (a
+          stranger, or an account nobody put in `identity.toml`) is
+          `refused`, and so is a person listed in no room;
+        * and that person must ALSO be on the asking room's roster
+          (`room_people`), the scope a spoken name resolves in. Otherwise
+          `refused`, with the SAME payload as every other story refusal, so
+          nothing tells a stranger apart from a friend in another room (18,
+          2026-09-24). Without that check a pasted story link would be a
+          membership oracle: «read» for anyone listed in any of her rooms,
+          «refused» for the rest. A roster that could not be read (`None`)
+          is `unavailable`, and the lookup is not even made.
+
+        The lookup runs BEFORE the reach decision because the reach decision
+        needs the igid; it is a search, invisible to the account it finds
+        (15). The story request itself is made only after.
+        """
+        if self._accounts is None:
+            # Said once at construction. «I couldn't check», never a boundary.
+            return dict(UNAVAILABLE)
+        if (platform, what) in TIER_ZERO_READS and room_people is None:
+            # No roster to scope the reach check to: «I couldn't check», and
+            # nothing is looked up.
+            return dict(UNAVAILABLE)
+        try:
+            found = await self._accounts.igid_for_username(username=username)
+        except Exception:
+            # The port never raises; this is the belt for those braces.
+            log.exception("instagram username lookup raised")
+            return dict(UNAVAILABLE)
+        if found.status == "none":
+            return dict(NO_SUCH_HANDLE)
+        if found.status != "found" or not found.igid:
+            return dict(UNAVAILABLE)
+        igid = found.igid
+        if (platform, what) not in TIER_ZERO_READS:
+            return igid
+        if self._subjects is None:
+            # Unreachable through the constructor (a story row needs the
+            # index); fail-closed if it is ever reached.
+            log.error("social router: a Tier 0 handle read with no subject index")
+            return dict(UNAVAILABLE)
+        try:
+            person = await self._subjects.person_for_igid(igid=igid)
+            if person is None or person not in (room_people or frozenset()):
+                return dict(REFUSED)
+            if not await self._subjects.is_tier_zero(person_id=person):
+                return dict(REFUSED)
+        except Exception:
             log.exception("social subject index raised")
             return dict(UNAVAILABLE)
         return igid

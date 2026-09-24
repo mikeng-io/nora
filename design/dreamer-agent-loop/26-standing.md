@@ -15,6 +15,8 @@ edges:
 > The evidence that decided it is in [20-knowledge-tier.md](20-knowledge-tier.md) §0. See issue #115.
 
 
+> **PARTLY SUPERSEDED 2026-09-24 by [design/standing-compact/](../standing-compact/00-intent.md).** The verdict call (§3's call B and `TurnVerdict`), both re-derivation triggers (§4's ungrounded watermark and the fold-count ceiling), and the §6 readings that counted them are deleted. The fold is one call, the prior is always shown and carries its age, and the turn's steps render as `<steps>`. Everything below about them is retained as the record of the reasoning; none of it describes code that exists.
+
 # Standing
 
 ## 1. It is a stage, not an adaptor — and that is the whole shape

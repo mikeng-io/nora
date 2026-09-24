@@ -12,7 +12,7 @@
 - **Un-parks:** `design/tool-catalogue/03-result-handling.md` (parked
   2026-09-22). The operator reopened it on 2026-09-23 ("research first, then
   design", then "go write the ADR") after the descriptions were measured.
-- **Index:** DEC-199.
+- **Index:** DEC-200.
 
 ## Context
 

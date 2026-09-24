@@ -27,6 +27,7 @@ import pytest
 
 from nora.agent.dream_screen import Rejection, screen
 from nora.agent.egress import scan_identifiers, scan_reply
+from nora.agent.security import looks_like_coordinate
 from nora.obs.metrics import Metrics
 
 # A benign item per adaptor. Rides along in every rejection batch: if a drop
@@ -259,3 +260,56 @@ def test_a_rejection_never_carries_the_offending_text():
     # `description` is where the fixture hides the number — the free-text field
     # a `web_fetch`ed page's contents would land in.
     assert rejected[0].path == "description"
+
+
+# --- design/standing-compact/10 §5: what the sink screen refuses beyond the
+# reply floor (security review, 2026-09-24) ----------------------------------
+#
+# Measured against the real `screen()` before the change: each of these four
+# PASSED. They map onto the two existing reason labels, so the metric's
+# vocabulary does not move. `scan_identifiers` (the reply's R-18 floor) and
+# `looks_like_coordinate` pass every one of them, which the premise assertion
+# pins — a test whose drop the old predicates already made proves nothing
+# about the new patterns.
+
+
+@pytest.mark.parametrize(("text", "reason"), [
+    ("佢話有事就 email miles.novak@example.com", "identifier"),
+    ("Discord user 123456789012345678 joined", "identifier"),
+    ("where_is: lat 22.4106 lng 114.1245", "coordinate"),
+    ("where_is returned {'lat': 22.4106, 'lng': 114.1245}", "coordinate"),
+], ids=["email", "18-digit-id", "labelled-lat-lng", "where_is-dict"])
+def test_the_sink_screen_refuses_what_the_reply_floor_does_not(text, reason):
+    assert scan_identifiers(text) is None and not looks_like_coordinate(text), (
+        "premise: the reply floor alone passes this"
+    )
+    metrics = Metrics()
+    item = {"title": "搵佢", "body": text}
+    kept, rejected = screen(
+        adaptor="debrief_note", items=[item, BENIGN["note-candidates"]],
+        metrics=metrics,
+    )
+    assert kept == (BENIGN["note-candidates"],)
+    assert [(r.index, r.reason, r.path) for r in rejected] == [(0, reason, "body")]
+    assert metrics.get(
+        "nora_dream_screened_total", adaptor="debrief_note", reason=reason) == 1.0
+
+
+@pytest.mark.parametrize("text", [
+    "佢哋而家喺尖沙咀等緊，我答應咗聽日十點前覆 Miles 條路線，仲未覆",
+    "約咗 2026-09-22 10:00 喺中環見",
+    "嗰部機賣 1234567 蚊",
+    "升咗去 version 3.14159 之後就冇事",
+], ids=["cantonese-position", "date", "price", "version"])
+def test_ordinary_position_prose_numbers_and_dates_are_kept(text):
+    """The positive controls for the test above. A screen that refused every
+    long number or every decimal would pass it and delete real positions: a
+    date and time, a seven-digit price, a dotted version. `_LONG_ID` starts
+    at 15 digits and refuses a digit run touching a `.`, and the coordinate
+    pattern needs its `lat`/`lng` labels, for exactly these."""
+    metrics = Metrics()
+    item = {"standing": text}
+    kept, rejected = screen(adaptor="debrief", items=[item], metrics=metrics)
+    assert kept == (item,)
+    assert rejected == ()
+    assert metrics.get("nora_dream_screened_total") == 0.0

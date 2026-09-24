@@ -3,14 +3,14 @@ package main
 // Ids are parsed into their domain value objects at the HTTP edge. Two
 // properties of that, both about WHEN the parse happens:
 //
-//  1. a malformed id never reaches Instagram — not even the route lookup;
-//  2. it is parsed AFTER the session gate, so a checkpointed session answers
-//     409 ("a human must act") ahead of a malformed id's 400. That is the
-//     order these routes had before the ids were types; moving the parse
-//     first is a status change, and it belongs with the resource paths (P14).
+//  1. a malformed id never reaches Instagram, not even the route lookup;
+//  2. it is parsed BEFORE the session gate (P14, 16 §Resources: "a malformed
+//     id is 400 before any use case runs"), so a malformed id is 400 whatever
+//     the session's state. Before P14 the gate ran first and a checkpointed
+//     session answered 409 to a malformed id; that order moved with the
+//     resource paths, as this file said it would.
 
 import (
-	"encoding/base64"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -20,30 +20,38 @@ import (
 )
 
 // badRoomIDs are room keys that must be refused. The last is the LONG thread
-// id: all digits, so a naive "is it numeric" check would wave it through —
-// and a room_id in the wrong id space is precisely the mistake the whole
+// id: all digits, so a naive "is it numeric" check would wave it through, and
+// a room key in the wrong id space is precisely the mistake the whole
 // translation layer exists to make impossible. It overflows int64.
 var badRoomIDs = []string{"abc", "-1", "0", "12a4", threadLong}
 
-// roomRequest sends one room-keyed request to one route. Every body carries
-// everything every route needs, so the room key is the only thing wrong.
+// roomRequest sends one well-formed request to one thread route, so the room
+// key is the only thing wrong.
 func roomRequest(t *testing.T, b *testBridge, route, room string) *httptest.ResponseRecorder {
 	t.Helper()
-	if route == "members" {
-		req := httptest.NewRequest(http.MethodGet, "/threads/"+room+"/members", nil)
+	switch route {
+	case "members":
 		rec := httptest.NewRecorder()
-		b.routes().ServeHTTP(rec, req)
+		b.routes().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/threads/"+room+"/members", nil))
 		return rec
+	case "send text":
+		return sendMessage(t, b, room, map[string]any{"text": "hi"})
+	case "send media":
+		return sendMessage(t, b, room, mediaOf([]byte("x"), "", ""))
+	case "reaction":
+		return putReaction(t, b, room, "mid.$x", map[string]any{"emoji": "👍"})
+	case "typing":
+		return putTyping(t, b, room, map[string]any{"typing": true})
+	case "unsend":
+		return unsendMessage(t, b, room, "mid.$x")
 	}
-	return post(t, b, route, map[string]any{
-		"room_id": room, "text": "hi", "message_id": "mid.$x", "emoji": "👍",
-		"data_base64": base64.StdEncoding.EncodeToString([]byte("x")),
-	})
+	t.Fatalf("unknown route %q", route)
+	return nil
 }
 
-var roomRoutes = []string{"/send", "/send-media", "/react", "/typing", "/unsend", "members"}
+var roomRoutes = []string{"send text", "send media", "reaction", "typing", "unsend", "members"}
 
-// A non-numeric room_id is the CALLER's error, not Instagram's. Letting it
+// A non-numeric room key is the CALLER's error, not Instagram's. Letting it
 // through would produce a route lookup for /direct/t/0/ and a 404 that reads
 // like a deleted thread. Driven through EVERY route that takes a room key.
 func TestNonNumericRoomIDIsRejectedWithoutALookup(t *testing.T) {
@@ -51,48 +59,51 @@ func TestNonNumericRoomIDIsRejectedWithoutALookup(t *testing.T) {
 	b := newTestBridge(t, f)
 	for _, bad := range append([]string{""}, badRoomIDs...) {
 		if _, err := domain.ParseThreadFBID(bad); !errors.Is(err, domain.ErrInvalidID) {
-			t.Errorf("room_id %q parsed as %v, want ErrInvalidID", bad, err)
+			t.Errorf("room key %q parsed as %v, want ErrInvalidID", bad, err)
 		}
 	}
 	for _, bad := range badRoomIDs {
 		for _, route := range roomRoutes {
-			if rec := roomRequest(t, b, route, bad); rec.Code != http.StatusBadRequest {
-				t.Errorf("%s with room_id %q answered %d, want 400", route, bad, rec.Code)
+			rec := roomRequest(t, b, route, bad)
+			if rec.Code != http.StatusBadRequest {
+				t.Errorf("%s with room %q answered %d, want 400", route, bad, rec.Code)
+				continue
+			}
+			if env := decodeEnvelope(t, rec); env.Error.Code != "invalid_id" {
+				t.Errorf("%s with room %q: envelope = %+v", route, bad, env)
 			}
 		}
 	}
-	// An EMPTY room key on the POST routes is the handler's 400 too (the
-	// members route refuses an empty segment in the router instead; see
-	// TestRosterStatusMapping).
-	for _, route := range roomRoutes[:5] {
-		if rec := roomRequest(t, b, route, ""); rec.Code != http.StatusBadRequest {
-			t.Errorf("%s with an empty room_id answered %d, want 400", route, rec.Code)
-		}
-	}
 	if f.Fetches != 0 || len(f.GetThreadIDs) != 0 {
-		t.Fatalf("a malformed room_id reached the network: %d lookup(s), %d read(s)",
+		t.Fatalf("a malformed room key reached the network: %d lookup(s), %d read(s)",
 			f.Fetches, len(f.GetThreadIDs))
 	}
 }
 
-// A checkpointed session with a MALFORMED id answers 409, not 400: the
-// session gate runs first. Retrying a challenged account is how a captcha
-// becomes a ban, so "a human must act" is the answer that must win.
-func TestACheckpointedSessionAnswers409EvenForAMalformedID(t *testing.T) {
+// A checkpointed session with a MALFORMED id answers 400, not 409: the id is
+// parsed at the edge, before any use case runs and so before the session
+// gate. What a caller must fix first is its own request; a well-formed one
+// then learns the session needs a human.
+func TestAMalformedIDIs400EvenWhileCheckpointed(t *testing.T) {
 	for _, state := range []domain.SessionState{domain.StateCheckpointed, domain.StateLoggedOut} {
 		f := &fakeIG{}
 		b := newTestBridge(t, f, withState(state, "challenge required"))
 		for _, route := range roomRoutes {
-			if rec := roomRequest(t, b, route, "not-a-thread"); rec.Code != http.StatusConflict {
-				t.Errorf("session %q: %s with a malformed room_id answered %d, want 409",
+			if rec := roomRequest(t, b, route, "not-a-thread"); rec.Code != http.StatusBadRequest {
+				t.Errorf("session %q: %s with a malformed room answered %d, want 400",
+					state, route, rec.Code)
+			}
+			// ...and the same route with a WELL-FORMED room is the gate's 409.
+			if rec := roomRequest(t, b, route, threadShort); rec.Code != http.StatusConflict {
+				t.Errorf("session %q: %s with a good room answered %d, want 409",
 					state, route, rec.Code)
 			}
 		}
-		for _, path := range []string{"/accounts/nka_bpumvg", "/accounts/nka_bpumvg/story"} {
+		for _, path := range []string{"/accounts/not_a_number", "/accounts/not_a_number/story"} {
 			rec := httptest.NewRecorder()
 			b.routes().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
-			if rec.Code != http.StatusConflict {
-				t.Errorf("session %q: GET %s answered %d, want 409", state, path, rec.Code)
+			if rec.Code != http.StatusBadRequest {
+				t.Errorf("session %q: GET %s answered %d, want 400", state, path, rec.Code)
 			}
 		}
 		if f.Fetches != 0 || len(f.ProfileIGIDs) != 0 || len(f.ReelIDs) != 0 {

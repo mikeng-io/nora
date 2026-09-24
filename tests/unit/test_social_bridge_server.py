@@ -87,10 +87,10 @@ async def test_every_write_ish_command_is_refused_and_never_spawns(bridge, what)
 
 
 async def test_instagram_post_is_refused_and_never_spawns(bridge):
-    """The recorded limitation, host-side: OpenCLI 1.8.7 has no
-    caption-by-URL command, so `("instagram", "post")` is in the tool's
-    vocabulary but NOT in the allowlist — a request for it could only have
-    been constructed around the tool, so it is refused here."""
+    """Host-side: OpenCLI 1.8.7 has no caption-by-URL command, and since P11
+    OpenCLI serves no Instagram read at all (`social_fetch` is X only). A
+    request for one could only have been constructed around the tool, so it
+    is refused here."""
     runner, session, base = bridge
     status, body = await _read(
         session, base,
@@ -102,15 +102,16 @@ async def test_instagram_post_is_refused_and_never_spawns(bridge):
     assert runner.calls == []
 
 
-@pytest.mark.parametrize("what", ["profile", "posts", "story"])
+@pytest.mark.parametrize("what", ["profile", "posts", "story", "search"])
 async def test_instagram_reads_moved_to_the_bridge_are_refused_and_never_spawn(
     bridge, what,
 ):
-    """The per-verb cutover, host-side (design/instagram-adoption/15, /18 P5).
-    Instagram profile and story are `instagram_read`'s, over the
-    instagram-bridge, and `posts` has no mechanism anywhere, so OpenCLI
-    serves none of them. A request for one could only have been built around
-    both tools, and it is refused here without a subprocess."""
+    """The per-verb cutover, host-side (design/instagram-adoption/15, /18 P5,
+    P11). Instagram profile and story are `instagram_read`'s and account
+    search is `instagram_search`'s, all over the instagram-bridge, and
+    `posts` has no mechanism anywhere, so OpenCLI serves none of them. A
+    request for one could only have been built around the tools, and it is
+    refused here without a subprocess."""
     runner, session, base = bridge
     status, body = await _read(
         session, base,
@@ -154,8 +155,6 @@ _ARGV_CASES = [
      [BIN, "twitter", "tweets", "nasa", "--limit", "5", "-f", "json"]),
     ("x", "search", "hk weather",
      [BIN, "twitter", "search", "hk weather", "--limit", "5", "-f", "json"]),
-    ("instagram", "search", "hk hiking",
-     [BIN, "instagram", "search", "hk hiking", "--limit", "5", "-f", "json"]),
 ]
 
 

@@ -159,11 +159,14 @@ def test_every_declared_tool_is_built(wiring):
         "generate_image",
         "media_search", "media_send",
         "web_search", "web_fetch",
-        # social_fetch (DEC-151): READ-ONLY X/Instagram via the host bridge.
+        # social_fetch (DEC-151): READ-ONLY X via the host bridge.
         "social_fetch",
         # instagram_read (design/instagram-adoption/18): a person's Instagram
         # profile or story, over the instagram-bridge.
         "instagram_read",
+        # instagram_search (design/instagram-adoption/18, P11): Instagram
+        # accounts matching free text, over the instagram-bridge.
+        "instagram_search",
         "weather",
         # TD open-data parking vacancy (data.gov.hk hk-td-tis_5, 2026-08-31).
         "parking_status",
@@ -208,7 +211,7 @@ def test_read_peer_card_is_gone_from_the_table():
     assert "read_peer_card" not in NATIVE_TOOL_BUDGETS
 
 
-def test_exactly_eight_tools_are_cacheable():
+def test_exactly_nine_tools_are_cacheable():
     from nora.agent.tools import NATIVE_TOOLS
     cacheable = {name for name, spec in NATIVE_TOOLS.items() if spec.cacheable}
     assert cacheable == {
@@ -217,6 +220,9 @@ def test_exactly_eight_tools_are_cacheable():
         # disclosure decision baked into the moment it ran — same exemption
         # shape as `web_search`/`web_fetch`.
         "music_status", "social_fetch",
+        # instagram_search (design/instagram-adoption/18, P11): free text in,
+        # public accounts out, no roster or Tier 0 decision in the answer.
+        "instagram_search",
         # where_been is deliberately NOT cacheable (Kimi audit B1): its R-31
         # gate runs against the live roster, and the recall log replays
         # verbatim with no guard re-check.

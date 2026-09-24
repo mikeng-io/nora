@@ -500,3 +500,90 @@ func TestAnUnconfirmedReactionIsNotAFailure(t *testing.T) {
 		t.Fatal("an unconfirmed reaction must not read as a failed one")
 	}
 }
+
+// A failed upload never carries its raw error text out (the library's error
+// can name the caller's filename), and keeps its kind: a too-large upload is
+// still 413, a checkpoint still 409.
+func TestAFailedUploadCarriesAFixedTextAndKeepsItsKind(t *testing.T) {
+	const filename = "somebodys-holiday-photo-4c2e.png"
+	for _, tc := range []struct {
+		name string
+		err  error
+		kind error
+	}{
+		{"too large", errors.New("entity too large: " + filename), domain.ErrTooLarge},
+		{"checkpoint", errors.Join(httpclient.ErrCheckpointRequired, errors.New(filename)), domain.ErrNeedsHuman},
+		{"unnamed", errors.New("upload of " + filename + " failed"), nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			up := func(context.Context, int64, *httpclient.MercuryUploadMedia) (*types.MercuryUploadResponse, error) {
+				return nil, tc.err
+			}
+			_, err := sendMedia(t.Context(), &fakeIG{}, up, 1009543911792316,
+				&httpclient.MercuryUploadMedia{Filename: filename, MimeType: "image/png", MediaData: []byte("x")}, "")
+			if err == nil {
+				t.Fatal("a failed upload returned no error")
+			}
+			if strings.Contains(err.Error(), filename) {
+				t.Errorf("the error text carries the caller's filename: %q", err.Error())
+			}
+			if got := domain.KindOf(err); got != domain.KindOf(tc.kind) {
+				t.Errorf("kind = %v, want %v", got, domain.KindOf(tc.kind))
+			}
+			if tc.kind == domain.ErrTooLarge && !errors.Is(err, domain.ErrTooLarge) {
+				t.Error("a too-large upload lost its 413 refinement")
+			}
+		})
+	}
+}
+
+// The media MESSAGE leg (after a good upload) is sanitized the same way.
+func TestAFailedMediaMessageCarriesAFixedText(t *testing.T) {
+	const words = "refusal-quoting-caller-input-91d3"
+	up := func(context.Context, int64, *httpclient.MercuryUploadMedia) (*types.MercuryUploadResponse, error) {
+		return &types.MercuryUploadResponse{
+			Payload: types.MediaPayloads{RealMetadata: &types.FileMetadata{ImageID: 2280432885466163}},
+		}, nil
+	}
+	_, err := sendMedia(t.Context(), &fakeIG{SendErr: errors.New("refused " + words)}, up, 1009543911792316,
+		&httpclient.MercuryUploadMedia{Filename: "a.png", MimeType: "image/png", MediaData: []byte("x")}, "")
+	if err == nil || strings.Contains(err.Error(), words) {
+		t.Fatalf("err = %v, want a fixed text", err)
+	}
+}
+
+// A failed send never carries its message text out, and keeps its kind.
+// An upstream refusal can quote what it refused; the words Nora was sending
+// must not reach the span (RecordError writes err.Error() into it), the log
+// or the envelope, while "too long" must still read as ErrTooLarge (413, never
+// retried) and a checkpoint as ErrNeedsHuman (409). Both are decided off the
+// RAW error, so the fixed text must be applied after classifying, not before.
+func TestAFailedSendCarriesNoTextAndKeepsItsKind(t *testing.T) {
+	const words = "the-words-nora-was-sending-5d1e"
+	for _, tc := range []struct {
+		name string
+		err  error
+		kind error
+	}{
+		{"too long", errors.New("Message Too Long: " + words), domain.ErrTooLarge},
+		{"checkpoint", errors.Join(httpclient.ErrCheckpointRequired, errors.New(words)), domain.ErrNeedsHuman},
+		{"graphql refusal", (&types.ErrorResponse{Errors: []*types.GraphQLError{{Message: words}}}).AsError(), domain.ErrUpstreamRejected},
+		{"unnamed", errors.New("boom " + words), nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := sendText(t.Context(), &fakeIG{SendErr: tc.err}, threadShort, words, nil, "")
+			if err == nil {
+				t.Fatal("a failed send returned no error")
+			}
+			if strings.Contains(err.Error(), words) {
+				t.Errorf("the error text carries the message: %q", err.Error())
+			}
+			if got := domain.KindOf(err); got != domain.KindOf(tc.kind) {
+				t.Errorf("kind = %v, want %v", got, domain.KindOf(tc.kind))
+			}
+			if tc.kind == domain.ErrTooLarge && !errors.Is(err, domain.ErrTooLarge) {
+				t.Error("a too-long refusal lost its 413 refinement")
+			}
+		})
+	}
+}

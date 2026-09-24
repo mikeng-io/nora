@@ -105,21 +105,25 @@ INSTAGRAM_MEMBERS = [
 
 
 async def _instagram(aiohttp_server, *, members: list[dict], status: int = 200):
-    """An `InstagramRoster` pointed at a stand-in for the bridge's `GET /roster`.
+    """An `InstagramRoster` pointed at a stand-in for the bridge's
+    `GET /threads/{thread_fbid}/members`.
 
     Routed on the room id, so asking about a thread the bridge cannot resolve
-    genuinely 500s the way the real one does (`thread_lookup_failed`) — the
-    `wrong_group` case has to be reachable the way it really is, not simulated
-    by handing back an empty list.
+    genuinely fails the way the real one does (the error envelope at the
+    `thread_lookup` stage) — the `wrong_group` case has to be reachable the
+    way it really is, not simulated by handing back an empty list.
     """
     async def handler(request: web.Request) -> web.Response:
         if request.match_info.get("thread_fbid") != INSTAGRAM_ROOM:
             return web.json_response(
-                {"ok": False, "error": "thread_lookup_failed"}, status=500,
+                {"error": {"code": "internal", "message": "route lookup failed",
+                           "stage": "thread_lookup"}}, status=500,
             )
         if status != 200:
-            return web.json_response({"ok": False, "error": "boom"}, status=status)
-        return web.json_response({"ok": True, "room_id": INSTAGRAM_ROOM,
+            return web.json_response(
+                {"error": {"code": "internal", "message": "boom"}}, status=status,
+            )
+        return web.json_response({"room_id": INSTAGRAM_ROOM, "title": "g",
                                   "is_group": True, "members": members})
 
     app = web.Application()

@@ -248,6 +248,12 @@ has no signal that Nora watches. Between the two, everything Instagram
 normally tells a person about who is looking at their content is silent for
 this account. That is worth saying out loud once, here.
 
+> **Withdrawn 2026-09-24.** The corollary above rests on `05`'s claim that
+> story reads are invisible to their authors, which `05` itself withdrew:
+> whether the author sees the view is unmeasured (design 04, 05 §Reading a
+> story). Nora's story rule is justified as a privacy choice, not by either
+> answer (`18` §"A story is opened only when a person asks").
+
 ## Voice notes
 
 **Structurally supported, unmeasured live.** The protocol carries them as a
