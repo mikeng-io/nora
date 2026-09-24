@@ -1,7 +1,6 @@
 # 0017 · Agent skills carry the procedures; AGENTS.md carries the rules
 
-- **Status:** proposed (the operator asked for the audit and the skills on
-  2026-09-24; accepting this ADR is the operator's call)
+- **Status:** accepted (operator, 2026-09-24)
 - **Date:** 2026-09-24
 - **Index:** none. Like [0010](0010-agents-md-is-the-entry-point.md), this is a
   governance decision about how agents work on the repo, not about Nora's
