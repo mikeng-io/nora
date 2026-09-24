@@ -303,7 +303,7 @@ arm in the hole, not two.
 A case states `counterfactual: {varies, why}` beside a real `snapshot:`, and
 `evals/scenarios.py` refuses: a counterfactual with no anchor (that is
 authored content, which this corpus has no path for), a `varies` outside a
-CLOSED set (today: `culture`), a missing `why`, and a case that is both
+CLOSED set (`culture`; `transport` since 2026-09-24 — see §1.7), a missing `why`, and a case that is both
 parked and counterfactual (a parked case does not run, so varying a tier in
 it asserts nothing). Widening the set is an edit to that file, which is the
 point.
@@ -342,6 +342,25 @@ flag with two effects and has a READ side as of that branch. Only
 times and `FirePath` gates the read on `kind == "participation"` — so the
 re-baseline is one corpus of thirteen, not the whole suite. Take it on that
 branch so before and after are one measurement.
+
+### 1.7 The transport tier is HELD, not reconstructed (2026-09-24)
+
+`<presence>` (design/self-awareness/02) renders each network's live
+`health()` and her own live-read handle. Measured on the first presence
+probe: the sandbox rendered Signal and Instagram «reconnecting» (their
+listeners never start), Discord and WhatsApp «not running in this
+deployment» (forced off, §1.2), and no Instagram handle (the bridge does not
+resolve from the host). Production, read back off Langfuse the day before,
+rendered «Every one of them is up right now». That is a prompt the deployment
+does not send (`01-boundaries.md` §5(4)).
+
+Health at an anchor's instant is recorded nowhere — the same class as the
+`presence.` location feed. So `nora.subject.transport` HOLDS it on the one
+reader (`Dependencies.self_presence`): every network the deployment's own
+`config.toml` enables is `up`, Instagram's live handle stands in at the value
+production last rendered (`evals/situation.py`, dated), and a case that needs
+anything else varies `transport` as a counterfactual. The held adapters sit in
+the reader's map only, never the registry, so no send is rerouted.
 
 ### Where the suite runs — DECIDED 2026-09-21: on the deploy host
 

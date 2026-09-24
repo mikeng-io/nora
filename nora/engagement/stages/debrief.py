@@ -42,7 +42,7 @@ prevents is invisible from either side alone: an escape after successful
 delivery would leave `completed` False, and `deliver.truncation_reason` would
 then report a partial reply on a turn that sent a whole one.
 
-**3. It holds the slot, so EVERY await in it is bounded — all six.** This
+**3. It holds the slot, so EVERY await in it is bounded — all of them.** This
 docstring previously said "bounded twice" and named only the model call, and
 that was false in the way that matters: `store.read` and `store.write` sat
 OUTSIDE the `wait_for`, `create_sql_engine` sets no `command_timeout`, and both
@@ -50,7 +50,7 @@ run while the per-conversation lock is held. A Postgres connection hanging
 mid-query during the post-reply fold wedged that conversation indefinitely — on
 a turn that had already delivered its reply successfully (found by independent
 review, 2026-08-27, before the tier had run a single fold). The model call is
-bounded by `[standing] timeout_seconds`; the store calls (five now, see
+bounded by `[standing] timeout_seconds`; the store calls (four now, see
 `STORE_CALLS_PER_FOLD` below) by `[standing] store_timeout_seconds`; and the
 SUM is asserted at startup against
 `[standing] max_slot_hold_seconds` rather than argued in a comment — see
@@ -129,11 +129,20 @@ is the screen that already exists for exactly this class of write, and screening
 at read time would be the mistake F3 already refuted: the gate belongs where the
 content class changes, and that is the write.
 
-## What this stage does NOT do yet, and why
+## What this stage does NOT do, and why
 
-The design's §3 names four outputs. This stage produces **two**: `Standing`
-and note proposals, parsed from ONE completion, each with its own validated
-shape.
+The design's §3 names four outputs. This stage produces **one**: `Standing`.
+
+**It does not create notes, and it did until 2026-09-24.** 26 §1 put the note
+tier's proposals on this stage only because it was the one path that ran after
+the reply, not because a room's position owns them. They became the source of
+52 of the 64 live notes: the fold never saw the unit's open notes, so it could
+not tell a new question from one already tracked, and it could only create, so
+every rewording was a new note that never got revised. It also wrote notes
+about Nora's own turns (#199's class) into the group's notebook. Notes are
+created by people on a tag and by the `note-candidates` pass, which reads the
+index and revises instead of duplicating (#228); this stage compresses the
+room's position and nothing else.
 
 The third, the per-turn grounding verdict, was a second call from 2026-08-29
 until 2026-09-24, and it is deleted along with both re-derivation triggers it
@@ -160,25 +169,17 @@ import asyncio
 import json
 import logging
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import tzinfo
-from typing import Any, Protocol
+from typing import Protocol
 
 from opentelemetry.util.types import AttributeValue
 
 from nora.agent.dream_screen import screen
-from nora.agent.tools import note_handle
 from nora.domain.media_join import MediaJoin
 from nora.domain.models import TranscriptRow
-from nora.domain.notes import NoteCreationProposal
-from nora.domain.ports import (
-    DreamSink,
-    Proposal,
-    RecordStore,
-    StandingStore,
-)
-from nora.domain.provenance import instruction_sha256
+from nora.domain.ports import RecordStore, StandingStore
 from nora.domain.standing import STANDING_STORE_CALLS_PER_FOLD, Standing
 from nora.domain.tag_trace import TagTrace
 from nora.obs.metrics import Metrics
@@ -272,11 +273,12 @@ OBJECTIVE = "standing-debrief"
 #: the call being written — which is the whole point of having it rather than
 #: a number in two places. It went back to 5 on 2026-09-24, when the turn
 #: verdict's save and the re-derivation trigger's verdict read were deleted
-#: with the verdict itself (design/standing-compact/).
+#: with the verdict itself (design/standing-compact/), and to 4 the same day
+#: when note proposals, and `notes_sink.propose` with them, were removed.
 #:
 #: `test_the_slot_hold_counts_every_store_await_the_stage_makes` counts the
 #: `asyncio.wait_for` calls in `run` and asserts this matches, so adding a
-#: sixth store call fails a test instead of silently widening the hold.
+#: fifth store call fails a test instead of silently widening the hold.
 #: Re-exported from `nora.domain.standing`, where it lives so `nora.config`
 #: can read it without importing this package (see its own comment there).
 STORE_CALLS_PER_FOLD = STANDING_STORE_CALLS_PER_FOLD
@@ -441,16 +443,6 @@ class Wiring:
     """
 
     store: StandingStore
-    # The note tier's DreamSink (26 §3's fourth output). `None` on any
-    # deployment that has not wired the note store — the debrief then
-    # parses no proposals and raises none.
-    notes_sink: DreamSink | None
-    # UNIT resolver, not a constant: `propose`'s key is the unit
-    # (§3/DEC-105) and this deployment has two that policy.toml says are
-    # never paired, so a fixed string would file one room's notes in the
-    # other's notebook. `None` for a room policy cannot name — which is a
-    # refusal to propose, never a guessed unit.
-    unit_of: Callable[[str, str], str | None]
     client: ModelClient
     objective: ObjectiveSource
     # The RECORD store, for the fold's watermark read: the tag fold reads
@@ -471,186 +463,11 @@ class Wiring:
     media_join: MediaJoin | None = None
 
 
-#: The two outcomes on which the turn SENT NOTHING BECAUSE IT BROKE — issue
-#: #199's set, and the membership is the decision.
-#:
-#: `llm_error` and `timeout` are the turn that never produced an answer at all:
-#: no reply, and no completed reasoning to have sourced one from. `silent` and
-#: `vetoed` are deliberately NOT here even though they also sent nothing — a
-#: silence is a DECISION the fold is specifically told is worth reviewing (26
-#: §2), and a veto is a guard doing its job on reasoning that did finish. Both
-#: produce a turn there is something to say about; these two produce a turn
-#: there is not.
-#:
-#: The note-proposal refusal reads it: «did this turn actually happen». (A
-#: deterministic room-scope verdict read it too until the verdict was deleted,
-#: 2026-09-24.)
-_BROKEN_TURN_OUTCOMES = frozenset({"llm_error", "timeout"})
-
-#: How many notes one fold may raise. The objective asks for at most two and
-#: says most turns raise none; this is the code half of that, because an
-#: objective is a request and a cap is a guarantee. A fold emitting six notes
-#: has not found six uncertainties — it has started narrating — and the note
-#: index is UNCAPPED by design (a note missing from it is invisible), so the
-#: cost of a chatty fold is paid on every subsequent turn's prompt forever.
-MAX_NOTES_PER_FOLD = 2
-
-
-def _note_proposals(
-    raw: str, *, conversation_id: str, tag_id: str, notes_read: frozenset[str],
-    metrics: Metrics,
-) -> list[Any]:
-    """The note creations out of the model's JSON — its OWN validated shape.
-
-    **Two shapes with a discriminant, never one with optional fields** (§7). A
-    creation needs title/description/uncertainty/closing_condition/anchor; a
-    revision needs body and a parent revision id. One type covering both makes
-    every field optional, so neither is validated and the sink can refuse
-    nothing. The debrief raises CREATIONS only — revising a note it read is the
-    tag path's job in-turn (R-55) and the curator's across notes (§2), and
-    `NoteRevisionProposal`'s own docstring says the curator is its caller.
-
-    **Refused, never truncated.** `NoteCreationProposal.__post_init__` raises on
-    an over-long title rather than trimming, because the tier rests on the index
-    being complete and a silent trim loses content. A 61-character title is the
-    likely model output, so it is caught HERE and the note dropped — one bad
-    note costs that note, not the batch and not the fold.
-
-    **§7's read-set refusal.** A note whose title matches one the turn already
-    READ is refused: the tag path may have opened that note and deliberately
-    decided against touching it, and the debrief reviewing the same transcript
-    would raise it again. Without this the two paths argue once per turn,
-    forever. Matched through `note_handle`, the same normalisation R-55's latch
-    uses — two spellings of one title must not read as two notes.
-
-    Returns a list, never raises. Every failure is a REFUSED PROPOSAL, not a
-    failed fold: the position is what the next turn reads, and a note the model
-    got wrong must not cost it.
-    """
-    try:
-        parsed = json.loads(raw)
-    except (ValueError, TypeError):
-        return []
-    if not isinstance(parsed, dict):
-        return []
-    entries = parsed.get("notes") or []
-    if not isinstance(entries, list):
-        return []
-
-    out: list[Any] = []
-    for entry in entries[:MAX_NOTES_PER_FOLD]:
-        if not isinstance(entry, Mapping):
-            metrics.inc("nora_debrief_note_proposals_total", outcome="malformed")
-            continue
-        fields = _text_fields(entry)
-        if fields is None:
-            # A non-string where a string belongs is MALFORMED, not something
-            # to render. See `_text_fields`.
-            metrics.inc("nora_debrief_note_proposals_total", outcome="malformed")
-            continue
-        # §4.3's screen, on the note too. The position has been screened
-        # before its write since the stage existed; a note proposal from the
-        # SAME completion went to the sink unscreened (review 2026-09-24), and
-        # a note renders into `<notes>` on every later turn just as the
-        # position does. Its own adaptor label, so a dropped note reads apart
-        # from a dropped position on `nora_dream_screened_total`.
-        kept, _rejected = screen(
-            adaptor="debrief_note", items=[fields], metrics=metrics,
-        )
-        if not kept:
-            metrics.inc("nora_debrief_note_proposals_total", outcome="screened")
-            continue
-        title = fields["title"]
-        if title and note_handle(title) in notes_read:
-            # §7: the turn already read this note and chose not to touch it.
-            metrics.inc("nora_debrief_note_proposals_total", outcome="already_read")
-            continue
-        try:
-            out.append(NoteCreationProposal(
-                title=title,
-                description=fields["description"],
-                uncertainty=fields["uncertainty"],
-                closing_condition=fields["closing_condition"],
-                established_in=conversation_id,
-                body=fields["body"],
-                anchor_date=_anchor_date(entry.get("anchor_date")),
-            ))
-        except (ValueError, TypeError) as exc:
-            # The domain type refusing is the boundary working, not a fault:
-            # an over-long title, a blank closing condition, no anchor.
-            log.info(
-                "debrief: a proposed note was refused by the domain type "
-                "(tag=%s): %s", tag_id, exc,
-            )
-            metrics.inc("nora_debrief_note_proposals_total", outcome="refused")
-    if len(entries) > MAX_NOTES_PER_FOLD:
-        metrics.inc(
-            "nora_debrief_note_proposals_total", outcome="over_cap",
-            value=len(entries) - MAX_NOTES_PER_FOLD,
-        )
-    return out
-
-
-#: The note fields that must arrive as TEXT. `anchor_date` is not among them —
-#: it has its own parser, which refuses rather than guesses for the same reason.
-_TEXT_FIELDS = ("title", "description", "uncertainty", "closing_condition", "body")
-
-
-def _text_fields(entry: Mapping[str, Any]) -> dict[str, str] | None:
-    """The five text fields, or `None` if any of them is not text.
-
-    **`str(...)` was the bug this replaces, and it is the same class of error
-    as anchoring an unparseable date to today.** A model emitting
-    `"title": ["dinner", "9th"]` produced a note LITERALLY TITLED
-    `['dinner', '9th']` — stringifying a list is a guess about what the model
-    meant, dressed as parsing. It then went into the notes index, which is
-    uncapped and injected into every later prompt, where nothing downstream
-    could tell it from a title a person would recognise.
-
-    The objective promises "an entry missing any of them is discarded whole
-    rather than guessed at". This is that rule, applied field by field.
-
-    A MISSING field is not the same as a wrong-typed one: absent (or null)
-    becomes `""` and is then refused by `NoteCreationProposal.__post_init__`
-    with the domain's own message, which is where that judgement belongs. Only
-    a value of the wrong SHAPE — a list, a dict, a number — is refused here,
-    because there is no honest string to hand on (cold review, 2026-08-28).
-    """
-    out: dict[str, str] = {}
-    for name in _TEXT_FIELDS:
-        value = entry.get(name)
-        if value is None:
-            out[name] = ""
-        elif isinstance(value, str):
-            out[name] = value.strip()
-        else:
-            return None
-    return out
-
-
-def _anchor_date(value: object) -> int | None:
-    """A YYYYMMDD anchor, or `None` — never a guess.
-
-    `None` reaches `__post_init__`, which refuses a note anchored to nothing, so
-    an unparseable date becomes a refused note rather than one anchored to
-    today. Anchoring to a default would put a note in the index under a day
-    nobody named, and mechanical retirement reads that day.
-    """
-    if isinstance(value, bool) or not isinstance(value, int | str):
-        return None
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return None
-
-
 async def run(
     *,
     trace: TagTrace,
     platform: str,
     store: StandingStore,
-    notes_sink: DreamSink | None,
-    unit_of: Callable[[str, str], str | None],
     client: ModelClient,
     objective: ObjectiveSource,
     metrics: Metrics,
@@ -662,7 +479,6 @@ async def run(
     store_timeout_seconds: float,
     now_ms: int,
     media_join: MediaJoin | None = None,
-    notes_read: frozenset[str] = frozenset(),
     tz: tzinfo | None = None,
 ) -> None:
     """Fold this finished turn into the conversation's position. **Never
@@ -758,22 +574,6 @@ async def run(
                     "handles", trace.tag_id,
                 )
 
-        # R-55's latch, for 26 §7 — counted here and CONSUMED below, where
-        # `_note_proposals` drops any proposal naming a note in this set.
-        #
-        # The counter predates the consumer and is kept now that it has one:
-        # it is the only thing that distinguishes "the turn read nothing" from
-        # "the set never arrived", and `_notes_read_of` degrades a failure to
-        # an empty set rather than raising, so those two look identical
-        # everywhere else.
-        #
-        # §7 places this refusal AT THE SINK and it is not there: `propose`
-        # takes no read set and could not enforce it. Producer-side is the
-        # same behaviour for the one producer that exists and is a convention
-        # rather than a guarantee for the curator or a second one.
-        if notes_read:
-            metrics.inc("nora_debrief_notes_read_total", value=len(notes_read))
-
         instructions = objective.objective_body(OBJECTIVE)
         # **The prior is ALWAYS rendered** (26 §4's non-negotiable). Until
         # 2026-09-24 a re-derivation withheld it here and the prompt then told
@@ -788,17 +588,9 @@ async def run(
         # included: the budget the slot can afford is a total, and a retry
         # bounded on its own would add up to twice it on exactly the turn that
         # was already slow.
-        async def _fold() -> tuple[str | None, str, str]:
+        async def _fold() -> tuple[str | None, str]:
             """The standing call, and its consolidate retry when the first
-            answer does not fit, as `(body, refusal_label, raw)`.
-
-            `raw` rides along so the note proposals parse from the SAME
-            completion the position came from. On the consolidate retry it
-            is the SECOND response, which is correct: that is the answer
-            that was actually accepted, and parsing notes off the refused
-            one would pair a position with notes about a draft nobody
-            kept.
-            """
+            answer does not fit, as `(body, refusal_label)`."""
             reply = await _complete(
                 client, call="fold",
                 tag_id=trace.tag_id, conversation_id=trace.conversation_id,
@@ -809,7 +601,7 @@ async def run(
             )
             first = _check(reply, trace.tag_id)
             if first[0] is None or len(first[0]) <= max_chars:
-                return first[0], first[1], reply.content
+                return first
             metrics.inc("nora_standing_overflow_refusals_total", stage="first")
             # Its OWN span, not a second event on the first one. The retry is a
             # different prompt producing a different answer, and a trace that
@@ -824,10 +616,9 @@ async def run(
                     max_chars=max_chars, over=first[0],
                 ),
             )
-            second = _check(retry, trace.tag_id)
-            return second[0], second[1], retry.content
+            return _check(retry, trace.tag_id)
 
-        body, refusal, raw = await asyncio.wait_for(
+        body, refusal = await asyncio.wait_for(
             _fold(), timeout=timeout_seconds)
         if body is None:
             outcome = refusal
@@ -925,169 +716,6 @@ async def run(
             outcome = "unavailable"
             return
         outcome = "written"
-        # 26 §3's FOURTH output, and the one rider after the position.
-        # Written AFTER
-        # the position, nothing below changes `outcome`, and its disposition
-        # rides on its own counter. The position is what the NEXT TURN reads; a
-        # note the model got wrong must never cost it.
-        #
-        # **ONE refusal path, not a did-they-all-land check.** `propose`
-        # validates the whole batch before any write and is atomic, and every
-        # failure ESCAPES as an exception — TypeError on a foreign payload,
-        # StaleNoteHeadError on a lost compare-and-swap, ValueError from the
-        # domain types. None is swallowed into a short id list, so there is no
-        # partial result to reconcile: either every proposal landed or none did.
-        # **EVERYTHING about the proposals happens HERE, below the position
-        # write, and the placement is the fix for three findings at once.**
-        #
-        # It used to sit up beside the verdict parse, above the overflow gate
-        # and the screen. Three consequences, none of them intended:
-        #
-        # 1. `unit_of` is an INJECTED callable and it ran on the
-        #    position's critical path — before the gates, before `store.write`,
-        #    outside any `try` of its own, and even when `notes_sink is None`
-        #    and no proposal could happen at all. A raise from someone else's
-        #    function became `outcome="error"` and THE POSITION WAS NEVER
-        #    WRITTEN. This stage says twice that a proposal failure must never
-        #    cost the position, and then put a foreign function in front of it
-        #    — on every deployment, including the majority that have notes off.
-        # 2. `_note_proposals` counts its refusals as it goes, so folds that
-        #    were about to be refused for overflow or screened out still
-        #    incremented `already_read` and `over_cap`. Those series then
-        #    describe proposals that could never have been made.
-        # 3. The no-unit refusal was SILENT — no counter, no log. A
-        #    `policy.toml` edit that stops naming a room disables note
-        #    proposals with zero signal, and a flat `proposed` series is
-        #    indistinguishable from a model that simply had nothing to raise.
-        #
-        # Below the write, all three go away: the position is already durable,
-        # so nothing here can cost it; the counters only describe folds that
-        # actually reached this point; and the refusal is named (cold review,
-        # 2026-08-28).
-        unit: str | None = None
-        proposals: list[NoteCreationProposal] = []
-        if notes_sink is not None and trace.outcome in _BROKEN_TURN_OUTCOMES:
-            # **A DEAD TURN DOES NOT RAISE NOTES** (issue #199). The turn that
-            # broke produced no reply and no completed reasoning; the only
-            # thing the fold knows about it is the failure header, and a note
-            # raised from that header is a note about the TURN wearing a
-            # question about the room. The live one read «Miles's route for
-            # tomorrow morning is unanswered / model call failed, Nora sent
-            # nothing», created 7 seconds after she had sent him the route,
-            # and it was still open ninety minutes later when the proactive
-            # pass raised it at him in a different room.
-            #
-            # **Refused HERE rather than at the create gate, and the smaller
-            # blast radius is the whole argument.** Carrying the outcome to
-            # the gate means a new field on `Proposal` — a port shared by the
-            # note candidates adaptor and the curator, with a contract suite
-            # over two implementations and a staging table underneath — for a
-            # fact only this one producer has. The gate would then have to
-            # decide what a missing outcome means, which is a third state
-            # nobody wants. This is one guard in the one stage that already
-            # owns «may this fold propose at all», beside the unit
-            # refusal that answers the same question for a different reason.
-            #
-            # **The position is still revised**, and that asymmetry is
-            # deliberate: a turn that died IS worth folding — «I owe him an
-            # answer, my turn crashed» is exactly the kind of thing a position
-            # should carry. What it is not worth is a permanent index line.
-            #
-            # COUNTED, and counted BEFORE the parse rather than after: parsing
-            # increments `already_read`/`refused`/`over_cap` as it goes, and
-            # on a path where nothing could be proposed those series would
-            # describe proposals that never could have been made — the exact
-            # defect that moved this whole block below the position write.
-            metrics.inc("nora_debrief_note_proposals_total",
-                        outcome="broken_turn")
-            log.info(
-                "debrief: the turn ended %s, so no notes are raised from it "
-                "(tag=%s); the position is revised as usual",
-                trace.outcome, trace.tag_id,
-            )
-        elif notes_sink is not None:
-            # **NEVER RAISES**, for the reason above: the resolver belongs to
-            # the caller and this sits downstream of a write that has already
-            # committed.
-            #
-            # Three outcomes, three labels, and the split is the point. `None`
-            # is a room policy deliberately does not name — a refusal. A raise
-            # is a resolver that needs fixing — a fault. Counting both as
-            # `no_unit` would report a broken resolver as a policy
-            # decision on the one series an operator reads to tell them apart,
-            # which is the R-27 substitution this file argues against
-            # everywhere else.
-            try:
-                unit = unit_of(platform, trace.conversation_id)
-            except Exception:
-                log.exception(
-                    "debrief: the unit resolver failed (tag=%s); no "
-                    "proposals this turn, the position is unaffected",
-                    trace.tag_id,
-                )
-                metrics.inc("nora_debrief_note_proposals_total",
-                            outcome="no_unit_unavailable")
-                unit = None
-            else:
-                if unit:
-                    proposals = _note_proposals(
-                        raw, conversation_id=trace.conversation_id,
-                        tag_id=trace.tag_id, notes_read=notes_read,
-                        metrics=metrics,
-                    )
-                else:
-                    # A refusal to propose, never a guessed notebook: filing
-                    # one social unit's notes into another's is not
-                    # recoverable by looking at the index. COUNTED, because an
-                    # unmapped room is otherwise completely invisible — a
-                    # `policy.toml` edit could disable note proposals with no
-                    # signal at all.
-                    metrics.inc("nora_debrief_note_proposals_total",
-                                outcome="no_unit")
-
-        # DEC-128: the digest of what was ACTUALLY SENT, read per run and never
-        # cached — the objective hot-reloads on mtime, so a digest captured at
-        # construction would stop naming the text the model saw.
-        sent_sha256 = instruction_sha256(instructions)
-
-        if notes_sink is not None and proposals and unit:
-            try:
-                written = await asyncio.wait_for(
-                    notes_sink.propose(
-                        key=unit, proposals=[
-                            Proposal(
-                                payload=payload,
-                                instruction_sha256=sent_sha256,
-                                model=client.model,
-                                established_by=trace.tag_id,
-                            )
-                            for payload in proposals
-                        ],
-                        now_ms=now_ms,
-                    ),
-                    timeout=store_timeout_seconds,
-                )
-                metrics.inc("nora_debrief_note_proposals_total",
-                            outcome="proposed", value=len(written))
-            except Exception:
-                # **Says what it KNOWS.** This used to say the proposals
-                # "did not land", which is a claim about store state made
-                # without reading it back — and on a `wait_for` timeout the
-                # propose is cancelled MID-STATEMENT, so whether the batch
-                # committed is not knowable from here. The position write two
-                # blocks up was corrected for exactly this once already; the
-                # same sentence had been copied down here.
-                #
-                # The LABEL stays `unwritten`, which is honestly «I could not
-                # confirm a write», and the position is genuinely unaffected
-                # either way.
-                log.exception(
-                    "debrief: the note proposals did not complete (tag=%s); "
-                    "whether they committed is unknown from here, and the "
-                    "revised position stands either way", trace.tag_id,
-                )
-                metrics.inc("nora_debrief_note_proposals_total",
-                            outcome="unwritten", value=len(proposals))
     except TimeoutError:
         # Its own label rather than `error`, and its own branch rather than an
         # `isinstance` inside the one below: the debrief holds the slot, so a
@@ -1115,35 +743,19 @@ async def run(
         #
         # A cancellation is not a fault: the process is going away and the
         # position simply is not revised this turn. INFO, and a label that
-        # says so.
-        # **NEVER DOWNGRADES A WRITTEN POSITION.** The note propose runs AFTER
-        # `outcome = "written"` and guards only `except Exception`, so a
-        # `CancelledError` in it escapes to here —
-        # and relabelling that turn `cancelled` would report a position that IS
-        # in the database as one that was not revised. `written` is a claim
-        # about a committed row; the rider below it is explicitly not allowed
-        # to change it, and neither is a cancellation arriving during it (cold
-        # review, 2026-08-28).
-        if outcome == "written":
-            log.info(
-                "debrief cancelled after the position was written (tag=%s); "
-                "the position stands and a rider did not finish", trace.tag_id,
-            )
-        else:
-            log.info(
-                "debrief cancelled (tag=%s); keeping the prior position",
-                trace.tag_id,
-            )
-            outcome = "cancelled"
+        # says so. Nothing awaits after `outcome = "written"`, so a cancel
+        # never lands on a committed position.
+        log.info(
+            "debrief cancelled (tag=%s); keeping the prior position",
+            trace.tag_id,
+        )
+        outcome = "cancelled"
     except BaseException:
         # `BaseException`, and it is not defensive breadth — see the module
         # docstring's (1). `CancelledError` is not an `Exception`, and letting
         # one out of here reports a silent failure on a turn that delivered.
         # It is caught ABOVE rather than here so shutdown does not masquerade
         # as a defect; this branch is now genuinely «something unexpected».
-        #
-        # Same rule as the cancel branch above: `outcome` is not touched here
-        # at all, so a fault in a rider cannot unsay a written position.
         log.exception("debrief failed (tag=%s); keeping the prior position",
                       trace.tag_id)
     finally:

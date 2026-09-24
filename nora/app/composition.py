@@ -962,6 +962,12 @@ class Dependencies:
     #: every proactive occasion runs through. Nothing here changes any of
     #: that; the object was already built and already held.
     fire_path: FirePath | None
+    #: The ONE `<presence>` reader (design/self-awareness/02) the tag path's
+    #: assembler, the fire path and the proactive pass all hold. Named for the
+    #: reason the two entry points above are: it was built and held three
+    #: times over and reachable only through privates. NOT `presence` below,
+    #: which is the Life360 store — where the PEOPLE are; this is where SHE is.
+    self_presence: PresenceReader
     #: The clock this graph runs on. Named for the same reason the two entry
     #: points above are: it was a fact the graph had and could not be asked for.
     clock: Callable[[], datetime]
@@ -2695,15 +2701,6 @@ async def build_dependencies(
         debrief_wiring = DebriefWiring(
             store=standing_store,
             media_join=media_join,
-            # The note tier's sink. `None` while `[notes] enabled = false`,
-            # so the debrief parses no proposals and raises none — the
-            # same inert shape the other optional collaborators use.
-            notes_sink=note_store if cfg.notes.enabled else None,
-            # The SAME unit resolver the note tools and the assembler
-            # hold. `propose`'s key is the unit (DEC-105), and two
-            # tiers keyed on it must not each carry their own idea of
-            # which unit a room belongs to.
-            unit_of=_note_unit_of(allowlist),
             client=_DebriefModelClient(
                 base_url=cfg.llm.base_url,
                 api_key=os.environ.get(cfg.llm.api_key_env, ""),
@@ -3884,6 +3881,7 @@ async def build_dependencies(
         participation_trigger=participation_trigger,
         relevance_gate=gate,
         fire_path=fire_path,
+        self_presence=presence_reader,
         clock=clock,
         proactive_screen=proactive_screen,
         account=account, doctrine=doctrine,

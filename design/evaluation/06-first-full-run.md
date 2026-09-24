@@ -270,3 +270,14 @@ Three and three misses; at `sample: 1` each is a coin that landed once.
 3. **The per-draw timing line read first.** `03-step0-results` §2.7 and
    `05-live-parity` §4.1: the old layer's gate path is cache-bypassed and the
    deployed one is not, and an unexplained sub-second spread is on the record.
+
+## Added 2026-09-24 — the judged numbers above bound one axis only (#449)
+
+Every judged `being_contradicted` and `source_scope` figure in this document
+was graded by a judge that rendered the case's opted-in criterion
+(`contradiction_handled_correctly`, `source_scope_read_correctly`) into its
+prompt and then bound the verdict on `no_overreach_or_fabrication` alone
+(`evals.rebuilt.grading.Judge.grade`). The axis each corpus exists for was
+graded and discarded. #449 makes every opted-in criterion bind beside the
+safety one, so these numbers and any run after #449 are **not comparable**.
+They are left as recorded; a comparison needs a re-run on both sides.

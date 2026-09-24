@@ -58,24 +58,6 @@ class _Client:
         return item
 
 
-class _FakeSink:
-    """Records batches. `propose` is all-or-nothing and every failure ESCAPES —
-    no short id list — so a raising variant is how the refusal path is tested."""
-
-    def __init__(self, *, raises: BaseException | None = None) -> None:
-        self.batches: list[list] = []
-        self._raises = raises
-
-    async def propose(self, *, key: str, proposals, now_ms: int):
-        if self._raises is not None:
-            raise self._raises
-        self.batches.append(list(proposals))
-        return [f"note-{i}" for i, _ in enumerate(proposals)]
-
-    async def supersede(self, **kw) -> int:
-        return 0
-
-
 class _Objective:
     """The fold's one objective, as a marker string, so a test can tell the
     objective reached the prompt. Any other name is refused: the stage reads
@@ -103,14 +85,9 @@ def _trace(outcome: str = "send_reply") -> TagTrace:
     )
 
 
-_UNSET = object()
-
-
 async def _run(*, store=None, client=None, metrics=None,
                max_chars=1200, timeout_seconds=5.0, store_timeout_seconds=5.0,
-               notes_read=frozenset(),
-               now_ms_override=None, notes_sink=_UNSET,
-               unit_of=None, trace=None, record_store=None,
+               now_ms_override=None, trace=None, record_store=None,
                fold_batch=200) -> tuple:
     store = store if store is not None else InMemoryStandingStore()
     metrics = metrics if metrics is not None else Metrics()
@@ -123,12 +100,6 @@ async def _run(*, store=None, client=None, metrics=None,
         max_chars=max_chars, fold_batch=fold_batch,
         timeout_seconds=timeout_seconds,
         store_timeout_seconds=store_timeout_seconds,
-        notes_read=notes_read,
-        # `_UNSET`, not `None`: `None` is a REAL state (notes off), and a
-        # helper that substituted a sink for it would make that branch
-        # untestable.
-        notes_sink=(_FakeSink() if notes_sink is _UNSET else notes_sink),
-        unit_of=unit_of or (lambda p, c: "ws"),
         now_ms=now_ms_override if now_ms_override is not None else 1_756_000_931_000,
     )
     return store, metrics
@@ -788,57 +759,9 @@ async def test_fold_count_increments_by_one_per_tag_fold_and_is_never_reset():
     assert counts == [19, 20, 21, 22, 23]
 
 
-# --- 26 §7's read-set, threaded from R-55's latch ---------------------------
-
-async def test_the_notes_the_turn_read_reach_the_debrief():
-    """§7: a proposal against a note the tag path already read and DECLINED to
-    touch must be refusable. Nothing consumes the set yet — the note-proposal
-    output is blocked on the store's create-shaped payload — so this pins that
-    it ARRIVES, which is the half that rots silently."""
-    _, metrics = await _run(notes_read=frozenset({"dinner-on-the-9th", "big-walk"}))
-    assert _counter(metrics, "nora_debrief_notes_read_total") == 2
-
-
-async def test_a_turn_that_read_no_notes_counts_nothing():
-    """The ordinary case — most turns read no notes — and it must not look like
-    a wiring failure."""
-    store, metrics = await _run()
-    # POSITIVE CONTROL. `== 0` is also true of a fold that never ran, and this
-    # test had none — the same shape as the three the cold review found in the
-    # new work, missed in the same file (cold review, 2026-08-28).
-    assert _counter(metrics, "nora_debrief_total", outcome="written") == 1
-    assert await store.read(platform="signal", conversation_id="g1") is not None
-    assert _counter(metrics, "nora_debrief_notes_read_total") == 0
-
-
-async def test_a_cancel_after_the_write_does_not_unsay_the_position():
-    """The note propose runs AFTER the position is durable, and guards only
-    `except Exception` — so a `CancelledError` in it escapes to the stage's
-    outer cancel branch.
-
-    That branch used to relabel the turn `cancelled`, which reports a position
-    that IS in the database as one that was never revised. `written` is a claim
-    about a committed row; a rider failing after it must not be able to unsay
-    it. (The rider this test first used was the verdict save, deleted
-    2026-09-24; the note propose is the rider that remains.)
-    """
-    sink = _FakeSink(raises=asyncio.CancelledError())
-    store, metrics = await _run(
-        notes_sink=sink,
-        # A note is actually RAISED so the cancelling propose is reached — a
-        # fold with no notes would make the guard vacuous.
-        client=_Client(_with_notes(_NOTE)))
-
-    assert await store.read(platform="signal", conversation_id="g1") is not None
-    assert _counter(metrics, "nora_debrief_total", outcome="written") == 1
-    assert _counter(metrics, "nora_debrief_total", outcome="cancelled") == 0, (
-        "a cancel in a rider relabelled a position that was written"
-    )
-
-
 async def test_a_cancel_before_the_write_is_still_a_cancel():
-    """The other side, so the guard above cannot be satisfied by simply never
-    labelling anything `cancelled` again."""
+    """A cancel before the position is durable is `cancelled`, never
+    `written` and never `error`."""
     _, metrics = await _run(client=_Client(asyncio.CancelledError()))
     assert _counter(metrics, "nora_debrief_total", outcome="cancelled") == 1
 
@@ -941,266 +864,6 @@ def test_the_slot_hold_counts_every_store_await_the_stage_makes():
         f"so a connection hanging mid-query wedges that conversation "
         f"indefinitely — on a turn that has already replied."
     )
-
-# --- 26 §3's fourth output: note proposals ---------------------------------
-
-_NOTE = {
-    "title": "Where dinner is on the 9th",
-    "description": "Three venues named, nobody has picked one",
-    "uncertainty": "which venue",
-    "closing_condition": "someone names the place",
-    "anchor_date": 20260909,
-    "body": "Miles, Grant and Tyler weighed three options and stopped",
-}
-
-
-def _with_notes(*notes, body: str = "a position") -> debrief.Completion:
-    """The fold's answer with notes on it — notes ride with the standing
-    call, parsed from the same completion as the position."""
-    return debrief.Completion(json.dumps({
-        "standing": body, "notes": list(notes),
-    }), "stop")
-
-
-async def test_a_fold_raises_a_note_through_the_sink():
-    sink = _FakeSink()
-    store, metrics = await _run(client=_Client(_with_notes(_NOTE)), notes_sink=sink)
-    assert (await store.read(platform="signal", conversation_id="g1")) is not None
-    assert len(sink.batches) == 1 and len(sink.batches[0]) == 1
-    proposal = sink.batches[0][0]
-    assert proposal.payload.title == _NOTE["title"]
-    assert proposal.payload.established_in == "g1"
-    assert proposal.established_by == "tag-1"
-    assert len(proposal.instruction_sha256) == 64
-    assert _counter(metrics, "nora_debrief_note_proposals_total",
-                    outcome="proposed") == 1
-
-
-async def test_a_note_the_turn_already_read_is_refused():
-    """**§7's second sub-decision.** The tag path may have opened that note and
-    deliberately decided against touching it; the debrief reviewing the same
-    transcript would raise it again, and the two would argue once per turn
-    forever. Matched through `note_handle`, the same normalisation R-55's latch
-    uses, so two spellings of one title are not two notes."""
-    from nora.agent.tools import note_handle
-
-    sink = _FakeSink()
-    _, metrics = await _run(
-        client=_Client(_with_notes(_NOTE)), notes_sink=sink,
-        notes_read=frozenset({note_handle(_NOTE["title"])}))
-    assert sink.batches == []
-    assert _counter(metrics, "nora_debrief_note_proposals_total",
-                    outcome="already_read") == 1
-
-
-async def test_an_over_long_title_is_refused_not_truncated():
-    """The domain type raises rather than trimming, because the note index is
-    uncapped and rests on being complete — a silent trim loses content nobody
-    can see is gone. A 61-character title is the likely model output, so it
-    costs that note and nothing else."""
-    sink = _FakeSink()
-    store, metrics = await _run(
-        client=_Client(_with_notes({**_NOTE, "title": "x" * 61})), notes_sink=sink)
-    assert sink.batches == []
-    assert _counter(metrics, "nora_debrief_note_proposals_total",
-                    outcome="refused") == 1
-    assert (await store.read(platform="signal", conversation_id="g1")) is not None
-
-
-async def test_a_note_with_no_anchor_is_refused_never_defaulted():
-    """`None` reaches `__post_init__`, which refuses. Anchoring to today would
-    file the note under a day nobody named — and mechanical retirement reads
-    that day."""
-    sink = _FakeSink()
-    _, metrics = await _run(
-        client=_Client(_with_notes({k: v for k, v in _NOTE.items()
-                                    if k != "anchor_date"})), notes_sink=sink)
-    assert sink.batches == []
-    assert _counter(metrics, "nora_debrief_note_proposals_total",
-                    outcome="refused") == 1
-
-
-async def test_more_notes_than_the_cap_are_dropped_and_counted():
-    """A fold wanting six notes has started narrating. The index is uncapped by
-    design, so those would cost every later prompt forever."""
-    sink = _FakeSink()
-    _, metrics = await _run(
-        client=_Client(_with_notes(
-            _NOTE, {**_NOTE, "title": "b"}, {**_NOTE, "title": "c"})),
-        notes_sink=sink)
-    assert len(sink.batches[0]) == debrief.MAX_NOTES_PER_FOLD
-    assert _counter(metrics, "nora_debrief_note_proposals_total",
-                    outcome="over_cap") == 1
-
-
-async def test_a_sink_failure_never_costs_the_position():
-    """The rule, a third output over. `propose` is atomic and every failure
-    ESCAPES — no partial batch to reconcile — so there is ONE refusal path and
-    it must not touch `outcome`."""
-    from nora.domain.notes import StaleNoteHeadError
-
-    store, metrics = await _run(
-        client=_Client(_with_notes(_NOTE)),
-        notes_sink=_FakeSink(raises=StaleNoteHeadError(
-            "lost the CAS", observed_head="other-revision")))
-    assert (await store.read(platform="signal", conversation_id="g1")) is not None
-    assert _counter(metrics, "nora_debrief_total", outcome="written") == 1
-    assert _counter(metrics, "nora_debrief_note_proposals_total",
-                    outcome="unwritten") == 1
-
-
-async def test_a_note_field_of_the_wrong_shape_is_refused_not_stringified():
-    """**Stringifying is a guess wearing parsing.** `str(["dinner", "9th"])`
-    is `"['dinner', '9th']"`, and that went into the notes index as a TITLE —
-    uncapped, injected into every later prompt, indistinguishable downstream
-    from a title a person would recognise.
-
-    The objective promises an entry missing any required field is discarded
-    whole rather than guessed at. Same rule, where it was missing.
-
-    Falsification: put `str(...)` back around the title and the batch is
-    proposed with a stringified list.
-    """
-    sink = _FakeSink()
-    bad = dict(_NOTE, title=["dinner", "9th"])
-    _, metrics = await _run(client=_Client(_with_notes(bad)), notes_sink=sink)
-    assert sink.batches == []
-    assert _counter(metrics, "nora_debrief_note_proposals_total",
-                    outcome="malformed") == 1
-    assert _counter(metrics, "nora_debrief_note_proposals_total",
-                    outcome="proposed") == 0
-
-
-async def test_a_missing_note_field_is_still_the_domain_types_refusal():
-    """Absent is NOT the same as wrong-shaped, and only the second is refused
-    at the parse. A missing field becomes `""` and reaches
-    `NoteCreationProposal.__post_init__`, which refuses it with the domain's
-    own message — that judgement belongs to the type, not to the parser, and
-    the two land on different labels so an operator can tell a model that
-    omitted a field from one that emitted a list."""
-    sink = _FakeSink()
-    missing = {k: v for k, v in _NOTE.items() if k != "closing_condition"}
-    _, metrics = await _run(
-        client=_Client(_with_notes(missing)), notes_sink=sink)
-    assert sink.batches == []
-    assert _counter(metrics, "nora_debrief_note_proposals_total",
-                    outcome="refused") == 1
-    assert _counter(metrics, "nora_debrief_note_proposals_total",
-                    outcome="malformed") == 0
-
-
-async def test_no_unit_means_no_proposal_never_a_guessed_one():
-    """`unit_of` answers None when policy.toml cannot name the room's
-    unit. Filing one social unit's notes into another's is not recoverable
-    by looking at the index, so this refuses rather than guessing.
-
-    **`sink.batches == []` is not enough on its own and used to be the whole
-    test.** An empty list is equally what you get if the sink was never reached
-    for some unrelated reason — a fold that refused, a parse that found no
-    notes, a wiring change. So the refusal is NAMED on its own counter and
-    asserted here. That counter is also the operator-facing point: a
-    `policy.toml` edit that stops naming a room otherwise disables note
-    proposals with no signal at all, and a flat `proposed` series looks exactly
-    like a model that had nothing to raise.
-    """
-    sink = _FakeSink()
-    store, metrics = await _run(
-        client=_Client(_with_notes(_NOTE)), notes_sink=sink,
-        unit_of=lambda p, c: None)
-    assert sink.batches == []
-    assert _counter(metrics, "nora_debrief_note_proposals_total",
-                    outcome="no_unit") == 1, (
-        "an unmapped room disabled proposals silently"
-    )
-    # and the position still lands — a room policy cannot name is not a fold
-    # failure, it is a refusal to propose.
-    assert (await store.read(platform="signal", conversation_id="g1")) is not None
-    assert _counter(metrics, "nora_debrief_total", outcome="written") == 1
-
-
-async def test_a_resolver_that_raises_never_costs_the_position():
-    """**`unit_of` is an INJECTED callable and it was on the position's
-    critical path.** It ran before the overflow gate, before the screen, before
-    `store.write`, outside any `try` of its own — and even when `notes_sink is
-    None`, so a broken resolver cost the position on deployments that could not
-    propose at all. This stage states twice that a proposal failure must never
-    cost the position; the resolver was the exception nobody had written down.
-
-    Falsification: move the `unit_of` call back above `store.write` and
-    the position is `None` here.
-    """
-    sink = _FakeSink()
-
-    def _explodes(platform: str, conversation_id: str) -> str | None:
-        raise RuntimeError("policy resolver is broken")
-
-    store, metrics = await _run(
-        client=_Client(_with_notes(_NOTE)), notes_sink=sink,
-        unit_of=_explodes)
-
-    row = await store.read(platform="signal", conversation_id="g1")
-    assert row is not None, "a broken unit resolver cost the position"
-    assert _counter(metrics, "nora_debrief_total", outcome="written") == 1
-    assert sink.batches == []
-    # A FAULT, not a policy decision, and they get different labels: one is a
-    # room deliberately unmapped, the other is a resolver that needs fixing.
-    assert _counter(metrics, "nora_debrief_note_proposals_total",
-                    outcome="no_unit_unavailable") == 1
-    assert _counter(metrics, "nora_debrief_note_proposals_total",
-                    outcome="no_unit") == 0
-
-
-async def test_the_resolver_is_not_called_at_all_when_notes_are_off():
-    """Most deployments today run with `notes_sink is None`. The resolver used
-    to run on every one of them, on the position's critical path, to produce a
-    value nothing could consume."""
-    calls: list[tuple[str, str]] = []
-
-    def _counting(platform: str, conversation_id: str) -> str | None:
-        calls.append((platform, conversation_id))
-        return "ws"
-
-    store, metrics = await _run(
-        client=_Client(_with_notes(_NOTE)), notes_sink=None,
-        unit_of=_counting)
-    # POSITIVE CONTROL: `calls == []` is also what a fold that never ran
-    # produces, so the fold has to be shown to have happened first.
-    assert _counter(metrics, "nora_debrief_total", outcome="written") == 1
-    assert await store.read(platform="signal", conversation_id="g1") is not None
-    assert calls == [], (
-        "the unit resolver ran on a deployment that cannot propose"
-    )
-
-
-async def test_a_refused_fold_does_not_count_proposal_refusals():
-    """The refusal counters used to be incremented ABOVE the overflow gate and
-    the screen, so a fold about to be thrown away still described proposals it
-    could never have made. `already_read` and `over_cap` then measured intent
-    rather than events."""
-    sink = _FakeSink()
-    # A note naming something the turn already read AND a body over the cap:
-    # under the old order this counted `already_read` on the way to refusing
-    # the whole fold.
-    over = "x" * 200
-    from nora.agent.tools import note_handle
-    _, metrics = await _run(
-        client=_Client(_with_notes(_NOTE, body=over),
-                       _with_notes(_NOTE, body=over)), max_chars=100,
-        notes_sink=sink, notes_read=frozenset({note_handle(_NOTE["title"])}))
-    assert _counter(metrics, "nora_debrief_total",
-                    outcome="refused_overflow") == 1
-    assert _counter(metrics, "nora_debrief_note_proposals_total") == 0, (
-        "a fold that wrote nothing was counted as having refused proposals"
-    )
-    assert sink.batches == []
-
-
-async def test_no_notes_sink_is_inert():
-    store, metrics = await _run(
-        client=_Client(_with_notes(_NOTE)), notes_sink=None)
-    assert (await store.read(platform="signal", conversation_id="g1")) is not None
-    assert _counter(metrics, "nora_debrief_note_proposals_total") == 0
-
 
 # ---------------------------------------------------------------------------
 # THE FOLD IS TRACED (issue #64) — now through strands.telemetry, not a
@@ -1327,7 +990,9 @@ def _incident_trace(outcome: str = "llm_error") -> TagTrace:
 
 
 def _ok_with_note(body: str) -> debrief.Completion:
-    """The fold answering with a position AND the note the live fold raised."""
+    """The fold answering with a position AND the note the live fold raised —
+    the shape the objective asked for until 2026-09-24. Kept so the tests can
+    show a stray `notes` field reaches nothing."""
     return debrief.Completion(json.dumps({
         "standing": body,
         "notes": [{
@@ -1350,20 +1015,14 @@ async def test_a_dead_turn_never_becomes_a_claim_that_she_never_answered():
     `grounded: true`, and ninety minutes later the proactive pass raised it at
     the operator in a different room.
 
-    Two fixes, one shape, asserted where each of them actually lands (a third,
-    a deterministic override of the grounding verdict, went with the verdict
-    on 2026-09-24 — design/standing-compact/):
-
-    - what the fold is TOLD -- the header is scoped to the turn and her
-      delivered row is marked as delivered. The stage cannot assert what a
-      model concludes, and the render IS the whole fix, so this is the honest
-      place to measure it;
-    - what reaches the note sink -- nothing.
+    What the fold is TOLD is the fix that remains here: the header is scoped
+    to the turn and her delivered row is marked as delivered. The stage cannot
+    assert what a model concludes, and the render IS the fix, so this is the
+    honest place to measure it. (The note refusal went with note proposals on
+    2026-09-24, and the grounding-verdict override with the verdict.)
     """
     client = _Client(_ok_with_note("he is waiting on a route"))
-    sink = _FakeSink()
-    _, metrics = await _run(
-        trace=_incident_trace(), client=client, notes_sink=sink)
+    await _run(trace=_incident_trace(), client=client)
 
     fold_prompt = next(
         p for p in client.prompts if p.startswith("OBJECTIVE-TEXT"))
@@ -1371,29 +1030,11 @@ async def test_a_dead_turn_never_becomes_a_claim_that_she_never_answered():
     assert "does not describe what any other turn of yours sent" in fold_prompt
     assert 'from="Nora" delivery="delivered">聽朝 10 點到數碼港' in fold_prompt
 
-    assert sink.batches == []
-    assert _counter(
-        metrics, "nora_debrief_note_proposals_total", outcome="broken_turn") == 1
-
-
-async def test_a_completed_turn_still_proposes_the_notes_it_raised():
-    """The POSITIVE CONTROL for the note refusal. `broken_turn` has to be the
-    reason nothing was proposed, not a sink that never worked in this harness
-    -- and an `llm_error` assertion alone is true of both."""
-    sink = _FakeSink()
-    _, metrics = await _run(
-        trace=_incident_trace(outcome="send_reply"),
-        client=_Client(_ok_with_note("a position")),
-        notes_sink=sink)
-    assert len(sink.batches) == 1 and len(sink.batches[0]) == 1
-    assert _counter(
-        metrics, "nora_debrief_note_proposals_total", outcome="proposed") == 1
-
 
 async def test_a_dead_turn_still_revises_the_position():
     """The asymmetry is deliberate. A turn that died IS worth folding -- "I
     owe him an answer, my turn crashed" is exactly what a position should
-    carry. What it is not worth is a permanent index line."""
+    carry."""
     store, metrics = await _run(
         trace=_incident_trace(),
         client=_Client(_ok("my turn died, I owe him an answer")))
@@ -1403,60 +1044,30 @@ async def test_a_dead_turn_still_revises_the_position():
     assert _counter(metrics, "nora_debrief_total", outcome="written") == 1
 
 
-@pytest.mark.parametrize("outcome", ["send_reply", "recovered", "silent", "vetoed"])
-async def test_only_a_turn_that_broke_is_refused_the_note_path(outcome: str):
-    """`_BROKEN_TURN_OUTCOMES`'s MEMBERSHIP is the decision, and until this ran
-    over every outcome it was guarded by nothing — widening the set to include
-    `silent` and `vetoed` left the whole suite green. A silence is a decision
-    26 §2 says is the case most worth reviewing, and a veto is a guard doing
-    its job on reasoning that finished; both produce a turn there is something
-    to say about."""
-    sink = _FakeSink()
-    _, metrics = await _run(
-        trace=_incident_trace(outcome=outcome),
-        client=_Client(_ok_with_note("a position")),
-        notes_sink=sink)
-    assert len(sink.batches) == 1
-    assert _counter(
-        metrics, "nora_debrief_note_proposals_total", outcome="proposed") == 1
-    assert _counter(
-        metrics, "nora_debrief_note_proposals_total", outcome="broken_turn") == 0
+async def test_the_fold_writes_the_position_and_nothing_else():
+    """The debrief compresses the room's position; it does not create notes
+    (removed 2026-09-24). It made 52 of the 64 live notes: it never saw the
+    unit's open notes and could only create, so every rewording was a new
+    note that never got revised.
+
+    Two halves. `run` is handed no note collaborator at all, so there is no
+    path from a fold to the note store to leave switched on. And a model that
+    still answers in the old shape, `notes` beside `standing`, gets its
+    position written and nothing else: the stray field is not an error."""
+    import inspect
+
+    params = set(inspect.signature(debrief.run).parameters)
+    assert not params & {"notes_sink", "unit_of", "notes_read"}, params
+    assert not {"notes_sink", "unit_of"} & {
+        f.name for f in dataclasses.fields(debrief.Wiring)}
+
+    store, metrics = await _run(client=_Client(_ok_with_note("a position")))
+    assert (await store.read(platform="signal", conversation_id="g1")).body == (
+        "a position")
+    assert _counter(metrics, "nora_debrief_total", outcome="written") == 1
 
 
 # --- design/standing-compact/10 §5 and the review's older gaps (2026-09-24) -
-
-
-@pytest.mark.parametrize("dirty", [
-    {"body": "佢個電話係 +85290000101，打去問"},
-    {"description": "email 佢 miles.novak@example.com 攞 menu"},
-], ids=["phone-in-body", "email-in-description"])
-async def test_a_note_carrying_an_identifier_is_screened_and_its_sibling_still_proposed(
-    dirty,
-):
-    """§5 «The screen covers more, on both outputs». The position has been
-    screened before its write since the stage existed; a note proposal from
-    the SAME completion went to the sink unscreened (true on master too), and
-    a note renders into `<notes>` on every later turn just as the position
-    does. Per NOTE, not per answer: the clean sibling in the same answer is
-    proposed, so the drop is the screen's and not a sink that never worked."""
-    sink = _FakeSink()
-    poisoned = {**_NOTE, "title": "Who to call about dinner", **dirty}
-    store, metrics = await _run(
-        client=_Client(_with_notes(poisoned, _NOTE)), notes_sink=sink)
-    assert [p.payload.title for batch in sink.batches for p in batch] == [
-        _NOTE["title"]]
-    assert _counter(metrics, "nora_debrief_note_proposals_total",
-                    outcome="screened") == 1
-    assert _counter(metrics, "nora_debrief_note_proposals_total",
-                    outcome="proposed") == 1
-    # Under its OWN adaptor label, so a dropped note reads apart from a
-    # dropped position on the screen's series.
-    assert _counter(metrics, "nora_dream_screened_total",
-                    adaptor="debrief_note", reason="identifier") == 1
-    assert _counter(metrics, "nora_dream_screened_total", adaptor="debrief") == 0
-    # And the position is unaffected by a note the screen refused.
-    assert (await store.read(platform="signal", conversation_id="g1")).body == (
-        "a position")
 
 
 async def test_the_priors_age_is_measured_from_the_last_write_on_the_tag_path():
@@ -1479,39 +1090,6 @@ async def test_the_priors_age_is_measured_from_the_last_write_on_the_tag_path():
     assert "after the first fold" in client.prompts[0]
     row = await store.read(platform="signal", conversation_id="g1")
     assert row.updated_at == second_turn.created_at + 1_000
-
-
-@pytest.mark.parametrize("outcome", ["llm_error", "timeout"])
-async def test_a_turn_that_broke_either_way_raises_no_notes(outcome: str):
-    """M3 from the review. `_BROKEN_TURN_OUTCOMES` is two outcomes and only
-    `llm_error` was ever driven through it, so narrowing the set to that one
-    left the suite green. A turn that timed out produced no reply and no
-    completed reasoning either."""
-    sink = _FakeSink()
-    store, metrics = await _run(
-        trace=_incident_trace(outcome=outcome),
-        client=_Client(_ok_with_note("a position")), notes_sink=sink)
-    assert sink.batches == []
-    assert _counter(
-        metrics, "nora_debrief_note_proposals_total", outcome="broken_turn") == 1
-    # The position is still revised: the refusal is of the note path only.
-    assert (await store.read(platform="signal", conversation_id="g1")) is not None
-
-
-async def test_a_consolidated_fold_proposes_the_notes_of_the_accepted_answer():
-    """M4 from the review. On a consolidate retry the position comes from the
-    SECOND answer, so the notes must too: parsing them off the refused draft
-    pairs the written position with notes about a draft nobody kept. The
-    two answers carry DIFFERENT notes, so the test can tell them apart."""
-    sink = _FakeSink()
-    draft = {**_NOTE, "title": "A note from the refused draft"}
-    accepted = {**_NOTE, "title": "A note from the accepted answer"}
-    client = _Client(
-        _with_notes(draft, body="x" * 60), _with_notes(accepted, body="short"))
-    store, _ = await _run(client=client, max_chars=50, notes_sink=sink)
-    assert (await store.read(platform="signal", conversation_id="g1")).body == "short"
-    assert [p.payload.title for batch in sink.batches for p in batch] == [
-        "A note from the accepted answer"]
 
 
 async def test_a_fold_with_an_empty_batch_carries_the_watermark_forward():

@@ -122,8 +122,9 @@ platform id, and a labelled latitude/longitude pair in any shape, including a
 `where_is` result's `{'lat': …, 'lng': …}`. These map onto the existing
 `identifier`/`coordinate` labels. Street addresses are still not screened:
 no pattern for them is reliable in two languages. The fold's NOTE proposals
-went to the sink unscreened (true on master too). They are screened now under
-their own adaptor label, `debrief_note`.
+went to the sink unscreened (true on master too), and were screened under their
+own adaptor label, `debrief_note`, until the same day removed note proposals
+from the debrief altogether (design 26 §7).
 
 **Step text is escaped once.** `_block` escaped each step and
 `render_elements` escaped it again, so `<` reached the fold as `&amp;lt;`.
