@@ -480,7 +480,11 @@ async def test_every_non_ok_relay_outcome_carries_a_note():
                                       {"requester": ADA}),
         "refused/egress": (plain, {"text": "call him on +85290000101"}),
         "unavailable/no_adapter": (
-            Relay(policy=_policy(), speak=None, slots=None, occasion_for=None), {}),
+            Relay(policy=_policy(), speak=None, slots=None, occasion_for=None,
+                  transport=_reader(_policy()).state), {}),
+        "unavailable/transport_down": (
+            _relay(_policy(), reader=_reader(
+                _policy(), signal=_Health("signal", "degraded")))[0], {}),
         "unavailable/busy": (_relay(_policy(), slots=_FakeSlots(free=False))[0], {}),
         "unavailable/failed": (_relay(_policy(), fire=_FakeFire(outcome="failed_error"))[0],
                                {}),
