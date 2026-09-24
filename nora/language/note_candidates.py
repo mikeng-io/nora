@@ -323,7 +323,11 @@ _MIN_ANCHOR_DATE = 10_000_000
 #: `tests/architecture/test_dream_store_calls_are_declared.py` counts them off
 #: this module's AST and reddens when a call is added without this number
 #: moving.
-STORE_CALLS_PER_TICK = 10
+#:
+#: 10 -> 12 on 2026-09-24 (design 41 §7.5-7.6): `merged_successor_by_title`
+#: when a named title resolves to no open note, and `successor` when the
+#: update's append is refused because the note retired.
+STORE_CALLS_PER_TICK = 12
 
 #: Every value `nora_note_candidate_gate_total{action}` may carry, DERIVED
 #: rather than hand-copied into the metric's help text (`nora.obs.
