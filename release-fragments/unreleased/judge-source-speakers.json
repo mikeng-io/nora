@@ -1,0 +1,6 @@
+{
+  "type": "none",
+  "reason": "Eval harness only (#458): the judge's source now names each speaker and marks Nora's own lines, rendered by production's own <group_transcript> renderer, so judged numbers before and after are not comparable. The prefill change is a behaviour-preserving extraction of that renderer.",
+  "details": [],
+  "limitations": []
+}

@@ -286,13 +286,13 @@ def test_the_sink_screen_refuses_what_the_reply_floor_does_not(text, reason):
     metrics = Metrics()
     item = {"title": "搵佢", "body": text}
     kept, rejected = screen(
-        adaptor="debrief_note", items=[item, BENIGN["note-candidates"]],
+        adaptor="note-candidates", items=[item, BENIGN["note-candidates"]],
         metrics=metrics,
     )
     assert kept == (BENIGN["note-candidates"],)
     assert [(r.index, r.reason, r.path) for r in rejected] == [(0, reason, "body")]
     assert metrics.get(
-        "nora_dream_screened_total", adaptor="debrief_note", reason=reason) == 1.0
+        "nora_dream_screened_total", adaptor="note-candidates", reason=reason) == 1.0
 
 
 @pytest.mark.parametrize("text", [

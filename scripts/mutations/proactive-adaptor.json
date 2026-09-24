@@ -184,8 +184,8 @@
  {
   "name": "D2 two home rooms refuse to start",
   "file": "nora/policy.py",
-  "old": "        if other is not None:",
-  "new": "        if False:",
+  "old": "        other = homes.get(convo.unit)\n        if other is not None:",
+  "new": "        other = homes.get(convo.unit)\n        if False:",
   "target": "tests/test_policy.py -k two_home_rooms_in_one_unit_refuse_to_start"
  },
  {
@@ -233,8 +233,8 @@
  {
   "name": "D5/D11 the heartbeat holds the screen",
   "file": "nora/app/composition.py",
-  "old": "            proactive=ProactiveScreen(policy=allowlist, notes=note_store),",
-  "new": "            proactive=None,",
+  "old": "            proactive=proactive_screen,\n        )\n        background.spawn(heartbeat.run())",
+  "new": "            proactive=None,\n        )\n        background.spawn(heartbeat.run())",
   "target": "tests/test_composition.py -k the_heartbeat_screens_proactive_rows_and_the_fire_path_can_stay_silent"
  },
  {
@@ -259,24 +259,17 @@
   "target": "tests/test_composition.py -k a_home_room_keeps_the_proactive_runner_even_with_the_dreamer_off"
  },
  {
-  "name": "audit: a refused remind attempt fails a quiet decide case",
-  "file": "evals/proactive.py",
-  "old": "        if result.remind_attempts:",
-  "new": "        if False:",
-  "target": "tests/unit/test_proactive_evals.py -k a_refused_remind_attempt_fails_a_quiet_decide_case"
- },
- {
   "name": "audit: a silent failure behind a silent act turn is ERROR",
-  "file": "evals/proactive.py",
-  "old": "    if result.silent_failures:",
+  "file": "evals/rebuilt/entry.py",
+  "old": "    if result.token not in (SENT, SILENT):",
   "new": "    if False:",
-  "target": "tests/unit/test_proactive_evals.py -k a_silent_failure_behind_a_silent_act_turn_is_an_error"
+  "target": "tests/integration/test_the_rebuilt_suite_runs.py::test_a_proactive_case_never_grades_on_a_wiring_refusal -k proactive_act"
  },
  {
   "name": "#136 an unchanged unit renders nothing",
   "file": "nora/language/proactive.py",
-  "old": "        if reason in (\"unchanged\", \"held_quiet\"):\n            self._shown[key] = _Shown({}, {})\n            return \"\"",
-  "new": "        if False:\n            self._shown[key] = _Shown({}, {})\n            return \"\"",
+  "old": "        if reason in (\"unchanged\", \"held_quiet\"):\n            self._inc(\"nora_proactive_pass_total\", reason=reason)\n            self._shown[key] = _Shown({}, {})\n            return \"\"",
+  "new": "        if False:\n            self._inc(\"nora_proactive_pass_total\", reason=reason)\n            self._shown[key] = _Shown({}, {})\n            return \"\"",
   "target": "tests/unit/test_proactive_adaptor.py -k an_unchanged_unit_renders_nothing_the_same_day"
  },
  {
@@ -291,7 +284,7 @@
   "file": "nora/language/proactive.py",
   "old": "            if rows and now_ms - rows[-1].ts < self._quiet_ms:\n                return False",
   "new": "            if False:\n                return False",
-  "target": "tests/unit/test_proactive_adaptor.py -k a_change_in_a_room_still_talking_is_held_until_it_goes_quiet"
+  "target": "tests/unit/test_proactive_adaptor.py::test_a_change_is_held_while_the_home_room_is_still_talking"
  },
  {
   "name": "#136 the daily floor waits for the hour",
@@ -303,7 +296,7 @@
  {
   "name": "#136 one wake per note per day",
   "file": "nora/language/proactive.py",
-  "old": "            if not await self._may_wake_today(key, decision.note_id, now_ms=now_ms):\n                continue",
+  "old": "        if not await self._may_wake_today(key, note_id, now_ms=now_ms):\n            return False\n",
   "new": "",
   "target": "tests/unit/test_proactive_adaptor.py -k a_note_is_woken_at_most_once_per_day_across_passes"
  },
@@ -313,12 +306,5 @@
   "old": "                    clock_store=dream_schedule_clock,",
   "new": "                    clock_store=None,",
   "target": "tests/test_composition.py -k a_home_room_wires_the_proactive_adaptor_its_schedule_and_its_grant"
- },
- {
-  "name": "objective v2: a reminder without a memory read fails a decide case",
-  "file": "evals/proactive.py",
-  "old": "    if result.rows and not result.memory_calls:",
-  "new": "    if False:",
-  "target": "tests/unit/test_proactive_evals.py -k a_reminder_set_without_a_memory_read_fails_the_case"
  }
 ]

@@ -42,13 +42,6 @@
   "target": "tests/unit/test_debrief_render.py -k the_rollup_render_marks_and_explains_the_same_way"
  },
  {
-  "name": "#199 A3 a dead turn does not reach the note sink",
-  "file": "nora/engagement/stages/debrief.py",
-  "old": "        if notes_sink is not None and trace.outcome in _BROKEN_TURN_OUTCOMES:",
-  "new": "        if notes_sink is not None and False:",
-  "target": "tests/unit/test_debrief.py -k a_dead_turn_never_becomes_a_claim_that_she_never_answered"
- },
- {
   "name": "#199 A4 her delivered rows are citable evidence for a closed verdict",
   "file": "nora/language/note_curator.py",
   "old": "            message_ids=frozenset(\n                row.id for row in (*evidence, *own_sends)\n            ),",
@@ -89,13 +82,6 @@
   "old": "            anchor_covered=_covers(\n                evidence, rows=rows, created_at=note.created_at,",
   "new": "            anchor_covered=_covers(\n                (*evidence, *own_sends), rows=rows, created_at=note.created_at,",
   "target": "tests/unit/test_note_curator.py -k her_own_row_can_never_expire_a_note"
- },
- {
-  "name": "#199 A3 the broken-turn set is the two outcomes that BROKE, not every silent one",
-  "file": "nora/engagement/stages/debrief.py",
-  "old": "_BROKEN_TURN_OUTCOMES = frozenset({\"llm_error\", \"timeout\"})",
-  "new": "_BROKEN_TURN_OUTCOMES = frozenset({\"llm_error\", \"timeout\", \"silent\", \"vetoed\"})",
-  "target": "tests/unit/test_debrief.py -k only_a_turn_that_broke_is_refused_the_note_path"
  },
  {
   "name": "#199 A1 silent and vetoed carry the scope clause too",

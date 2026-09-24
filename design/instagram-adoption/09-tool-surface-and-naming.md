@@ -35,6 +35,9 @@ edges:
 >    however many tools sit on top of it, so "what may Nora read" is still
 >    answered in one place.
 >
+> **2026-09-24:** X and LinkedIn follow it in `../social-per-network/`
+> (DEC-201), and `social_fetch` is retired there.
+>
 > The reasoning below is kept as the record of why the single tool was right
 > while tool count cost prompt tokens and backends were split per verb.
 

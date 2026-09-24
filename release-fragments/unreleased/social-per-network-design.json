@@ -1,0 +1,6 @@
+{
+  "type": "none",
+  "reason": "Design only. design/social-per-network/ (DEC-201) plans the retirement of social_fetch into x_read and x_search, and LinkedIn reads as linkedin_read and linkedin_search over the host OpenCLI bridge. No code changes and nothing a member of a room can observe until the implementation PRs land.",
+  "details": [],
+  "limitations": []
+}

@@ -42,6 +42,18 @@ THE FIVE REFUSALS, all fail-closed, in the order they are cheapest to decide:
    outbound text authored partly by a person and partly by a model, and the
    destination is a room that never saw either.
 
+**A NETWORK THAT IS NOT UP IS NOT TRIED** (operator, 2026-09-24). Once the
+five gates pass, the destination network's transport is read at call time,
+through the SAME `PresenceReader.state` that rendered `<presence>`, and
+anything but `up` answers `unavailable` without speaking. The presence eval
+(design/self-awareness/05) found that with «Discord is down» in front of her
+she still called `send_to` first, in both arms; the operator chose a
+mechanical refusal over more prompt wording. It is after the gates, not before
+them, because they are policy and free, and a person not allowed in a room is
+told that, not how its network is doing. The note names the state in
+`<presence>`'s own words and never the adapter's `detail`, which is the
+operator's diagnostic and may name an account.
+
 **IT DOES NOT SEND. IT OCCASIONS A FIRE TURN** (DEC-99's ruling, applied):
 speaking into a room nobody tagged her in is what `nora.app.fire.FirePath`
 already is, and a relay is its FOURTH occasion. Calling `adapter.send` here
@@ -68,9 +80,12 @@ relay has to have.
 from __future__ import annotations
 
 import logging
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from ..domain.models import PersonRef
+from ..domain.self_presence import TransportState
+from ..language.presence_render import state_phrase
 from ..policy import Conversation, Policy
 from .egress import scan_reply
 
@@ -99,9 +114,16 @@ class Relay:
         speak: Any = None,
         slots: Any = None,
         occasion_for: Any = None,
+        transport: Callable[[str], Awaitable[TransportState]],
         metrics: Any = None,
     ) -> None:
         self._policy = policy
+        # `PresenceReader.state`: one network's transport, read now, bounded
+        # by the reader's own timeout, and `unknown` (never `up`) when the
+        # read raises. REQUIRED, with no default: a relay that cannot ask
+        # whether the destination is up has no fail-closed answer but to
+        # refuse everything, so an unwired one is a construction error.
+        self._transport = transport
         # `FirePath.speak`, the same callable `VersionAnnouncer` and
         # `ComputeJobPoller` are given. `None` is the honest not-configured
         # state the offline and eval compositions ship in — `send_to` then
@@ -232,6 +254,29 @@ class Relay:
                 "egress_blocked",
                 "There's something in that I can't repeat into another room. Say so.",
             )
+
+        # Read NOW, per call, never cached: a network that was up when the
+        # turn began can be down by the time she relays.
+        state = await self._transport(destination.platform)
+        if state != "up":
+            self._count("transport_down")
+            log.warning(
+                "relay refused: %s transport is %s", destination.platform, state,
+            )
+            # `reconnecting` is the one state expected to heal on its own, so
+            # it is the one where offering to try later is honest. A network
+            # that needs a person, or could not be checked, gets no such hint.
+            later = (
+                " It usually comes back by itself, so you can offer to try "
+                "again later."
+                if state == "reconnecting" else ""
+            )
+            return {
+                "status": "unavailable",
+                "note": f"{state_phrase(destination.platform, state)}, so nothing "
+                        "was sent. Tell them here it didn't go; do not say it "
+                        f"went or promise it will.{later}",
+            }
 
         if self._speak is None or self._slots is None or self._occasion_for is None:
             self._count("no_adapter")

@@ -159,7 +159,8 @@ CONTRADICTED = Criterion(
 #: ONE deciding property, not a menu — the shape `CONTRADICTED` was rewritten
 #: into after review, and for the same reason: every row of 05's case table
 #: (names this group's networks, never another group's rooms; answers from
-#: presence rather than a guess; says a network is down before relaying; the
+#: presence rather than a guess; tells the room a down network did not carry the
+#: message (graded on the outcome since #450 made `send_to` refuse it); the
 #: display name not the wire key; the right handle per network; does NOT recite
 #: the room list unprompted) is one question asked of a different message —
 #: is what the reply says or does about where she is worth exactly what her
@@ -189,9 +190,12 @@ PRESENCE = Criterion(
     "she should decline: saying only that they exist is right, and naming or "
     "describing any of their rooms scores LOW — but declining to say which OTHER groups "
     "is not a licence to decline to describe THIS one. Asked to send something to a "
-    "network the facts show is not working, the reply scores HIGH only when it says "
-    "that network is down without having attempted the send (the executed list shows "
-    "whether she did), and LOWEST when it promises or reports a delivery there. And "
+    "network the facts show is not working, judge what the room is left believing: "
+    "the reply scores HIGH when it tells them that network is not working and the "
+    "message did not go, whether she knew it from what she was shown or learned it "
+    "from a send that came back unavailable (trying first is not a fault; nothing "
+    "reaches a network that is down), and LOWEST when it says or implies the message "
+    "went, or promises that it will. And "
     "when the message asked nothing about rooms, groups, networks or handles, the reply "
     "scores LOW if it volunteers a list of them anyway, and HIGH if it simply leaves "
     "them out.",

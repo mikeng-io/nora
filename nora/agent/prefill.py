@@ -39,7 +39,7 @@ _CLOSING_LINE = "Understood. I'll read the conversation and reply as myself."
 # started rendering frontmatter into section attributes and needed the identical
 # rule: the layer contract runs agent -> doctrine, so the loader cannot import
 # them from here. Re-exported under the names this module has always used.
-__all__ = ["TAG_HEADER", "build_prefill", "build_tag_message", "escape"]
+__all__ = ["TAG_HEADER", "build_prefill", "build_tag_message", "escape", "render_transcript"]
 
 # The opening paragraph of `<context_header>` for a TAG — the situation, in the
 # model's own terms. Every clause of it is FALSE on a heartbeat fire turn
@@ -442,6 +442,61 @@ def _parent_of(
     return None if parent is None or parent.id == row.id else parent
 
 
+def render_transcript(
+    transcript: Sequence[TranscriptRow], *, display_name: str, now: datetime,
+) -> str:
+    """The `<m>` elements `<group_transcript>` carries, without the block
+    around them — the room exactly as she is shown it.
+
+    Public for ONE reader outside this module: the eval harness hands a judge
+    the window a case was seeded with (`nora.subject.sandbox`), and a judge
+    asked whether «X said Y» can only check it against a source that names
+    who said what, the way SHE saw it (#458). Rendering it here rather than a
+    second time there keeps the two from drifting: the same `_label` (her rows
+    under `display_name`, a member under the identity-canonical name, never an
+    account id), the same handle, age and reply index.
+
+    `transcript` is expected ALREADY NAMED (`Persons.name_transcript`), which
+    is the assembler's job in production and the caller's here.
+    """
+    by_ts = _by_ts(transcript)
+
+    # ROW ID -> the index this render gave it, so a reply points at `n` rather
+    # than carrying a clipped copy of the parent's words.
+    #
+    # Keyed on `id`, not on `ts`, because `_parent_of` has already CHOSEN a row
+    # and this map only has to say where that row was shown. Keying on `ts`
+    # asked the same ambiguous question a second time, and answered it with the
+    # opposite tie-break, so a duplicated timestamp could hand back the index of
+    # a row `_parent_of` did not pick.
+    index_of = {row.id: i for i, row in enumerate(transcript, 1)}
+
+    def _parent_index(row: TranscriptRow) -> int | None:
+        parent = _parent_of(row, by_ts)
+        if parent is None:
+            return None
+        at, mine = index_of.get(parent.id), index_of.get(row.id)
+        # NEVER FORWARD. `quoted_ts` arrives in the sender's envelope, so it can
+        # name a message that is BELOW this one in the window — by clock skew,
+        # by a shared timestamp, or because somebody wrote it that way. A reply
+        # pointing down the page is not a reply, and the model has no way to
+        # tell it from one that is.
+        if at is None or mine is None or at >= mine:
+            return None
+        return at
+
+    return render_messages(
+        transcript,
+        speaker=lambda row: _label(row, display_name),
+        body=lambda row: row.body,
+        timestamp=lambda row: row.ts,
+        replying_to=_parent_index,
+        now=now,
+        edited=lambda row: row.edit.ts if row.edit else None,
+        was=lambda row: row.edit.was if row.edit else None,
+    )
+
+
 def _transcript_block(
     ctx: TagContext, display_name: str, now: datetime, context_window: int,
 ) -> ContextBlock:
@@ -492,42 +547,7 @@ def _transcript_block(
     speaker name still is — inside an attribute a newline cannot break out, but
     it makes the tag unreadable for nothing.
     """
-    by_ts = _by_ts(ctx.transcript)
-
-    # ROW ID -> the index this render gave it, so a reply points at `n` rather
-    # than carrying a clipped copy of the parent's words.
-    #
-    # Keyed on `id`, not on `ts`, because `_parent_of` has already CHOSEN a row
-    # and this map only has to say where that row was shown. Keying on `ts`
-    # asked the same ambiguous question a second time, and answered it with the
-    # opposite tie-break, so a duplicated timestamp could hand back the index of
-    # a row `_parent_of` did not pick.
-    index_of = {row.id: i for i, row in enumerate(ctx.transcript, 1)}
-
-    def _parent_index(row: TranscriptRow) -> int | None:
-        parent = _parent_of(row, by_ts)
-        if parent is None:
-            return None
-        at, mine = index_of.get(parent.id), index_of.get(row.id)
-        # NEVER FORWARD. `quoted_ts` arrives in the sender's envelope, so it can
-        # name a message that is BELOW this one in the window — by clock skew,
-        # by a shared timestamp, or because somebody wrote it that way. A reply
-        # pointing down the page is not a reply, and the model has no way to
-        # tell it from one that is.
-        if at is None or mine is None or at >= mine:
-            return None
-        return at
-
-    rows = render_messages(
-        ctx.transcript,
-        speaker=lambda row: _label(row, display_name),
-        body=lambda row: row.body,
-        timestamp=lambda row: row.ts,
-        replying_to=_parent_index,
-        now=now,
-        edited=lambda row: row.edit.ts if row.edit else None,
-        was=lambda row: row.edit.was if row.edit else None,
-    )
+    rows = render_transcript(ctx.transcript, display_name=display_name, now=now)
     # `window` is R-15, moved onto the block it is about (#314). The header
     # used to say «the last 40 messages» in its catalogue entry for this block,
     # which is where R-15 lived: a model that does not know how far back it can
