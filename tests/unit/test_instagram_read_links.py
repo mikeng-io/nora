@@ -410,7 +410,10 @@ async def test_a_story_link_to_one_of_two_accounts_reads_that_account(world):
 async def test_a_carousel_of_three_returns_three_items_in_order(world):
     """The whole post: every item, in the bridge's order, with kind and url,
     and a video's duration. The author and the caption ride in the wrapped
-    text; the note says to `media_fetch` what she needs to see."""
+    text, numbered in the same order as `items`. This world wires no media
+    reading, so every item says it was not seen and the note says she
+    could not see the post (the readings themselves are
+    `tests/unit/test_instagram_read_readings.py`)."""
     fake, read = world()
     out = await read(link=_POST)
 
@@ -422,12 +425,12 @@ async def test_a_carousel_of_three_returns_three_items_in_order(world):
     assert out["items"][1]["duration_seconds"] == 12.5
     assert all(set(i) <= {"kind", "url", "duration_seconds"} for i in out["items"])
     assert out["author"] == "example_author"
-    assert "media_fetch" in out["note"]
+    assert "couldn't see the post" in out["note"]
     assert _inside_the_wrap(out["text"], body["caption"])
     rest = {k: v for k, v in out.items() if k != "text"}
     assert body["caption"] not in json.dumps(rest)
-    # The markers render in the same order as the items.
-    positions = [out["text"].index(i["url"].replace("&", "&amp;")) for i in out["items"]]
+    # The items render in the same order as `items`.
+    positions = [out["text"].index(f"{n}. {i['kind']}") for n, i in enumerate(out["items"], 1)]
     assert positions == sorted(positions)
     assert fake.calls == [("GET", "/posts/SynthPost01")]
     _no_ids(out)

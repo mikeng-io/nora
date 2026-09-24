@@ -22,10 +22,14 @@ from pathlib import Path
 
 import tiktoken
 
+from nora.skills.loader import SkillStore
+
 TOOLS = Path(__file__).resolve().parents[2] / "nora" / "agent" / "tools.py"
+SKILLS_DIR = Path(__file__).resolve().parents[2] / "nora" / "skills"
 
 #: ADR 0015 §3's Level 3 ceiling: Level 1 plus a contract of statuses she
-#: acts on differently. Measured at 275 on 2026-09-24 (667 before).
+#: acts on differently. Measured at 307 on 2026-09-25 (275 before the skill
+#: pointer, 667 before ADR 0015).
 LEVEL_3_CEILING = 320
 
 
@@ -139,3 +143,35 @@ def test_fixed_options_are_types_not_prose():
         assert "Literal[" in ast.unparse(args[name].annotation), name
     for listed in ('"small"', '"16:9"', '"standard"'):
         assert listed not in _description(), listed
+
+
+#: The live failure (2026-09-24, WhatsApp): the operator asked "draw yourself
+#: again", the model called `generate_image` straight from memory with no
+#: `reference` and never loaded the skill that holds the canonical handle and
+#: the appearance rules. The fix points the tool AT the skill rather than
+#: copying the skill's content into the tool (single source of truth); these
+#: two tests pin the pointer and that it cannot dangle.
+_SKILL_NAME_RE = re.compile(r"\bthe ([a-z][a-z0-9-]*) skill\b")
+
+
+def test_description_points_to_the_image_generation_skill():
+    """MUST: the docstring sends her to the skill before she calls this tool.
+    The reference handle and the appearance rules stay in the skill only
+    (0015 §3, `test_the_description_carries_no_judgement_the_skill_owns`)."""
+    desc = _description()
+    assert "MUST: load the image-generation skill before calling this tool" in desc, desc
+    match = _SKILL_NAME_RE.search(desc)
+    assert match is not None, desc
+    assert match.group(1) == "image-generation", match.group(1)
+
+
+def test_the_named_skill_exists():
+    """The name the docstring points at must resolve through `SkillStore`, the
+    same lookup Nora's own `skills` tool uses (`nora.skills.loader`), so a
+    skill rename or removal cannot leave this pointer dangling without
+    turning a test red."""
+    match = _SKILL_NAME_RE.search(_description())
+    assert match is not None
+    skill = SkillStore(SKILLS_DIR).resolve(match.group(1))
+    assert skill is not None, match.group(1)
+    assert skill.name == "image-generation", skill.name

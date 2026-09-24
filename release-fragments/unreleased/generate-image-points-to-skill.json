@@ -1,0 +1,9 @@
+{
+  "type": "fix",
+  "summary": "generate_image's description now sends her to the image-generation skill before she calls it, instead of letting her draw from memory.",
+  "details": [
+    "Addresses a live failure (2026-09-24, WhatsApp): asked to draw herself again, she called generate_image with no reference and a mascot description written from memory, drawing a different character.",
+    "The canonical reference handle and the appearance rules stay in the image-generation skill only; the tool text points at it rather than repeating it."
+  ],
+  "limitations": []
+}
