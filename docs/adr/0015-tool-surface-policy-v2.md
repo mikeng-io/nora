@@ -34,12 +34,12 @@
     `result["note"] = ...` credited even when moved into a conditional
     branch the `return` was not in -- both fixed). What it still cannot see
     from `nora/agent/tools.py` alone: whether `SocialBridgeClient._read`
-    and `InstagramSocialClient._search`, in `nora/infra/social/`, actually
+    and `render._search` (the Instagram search result), in `nora/infra/social/`, actually
     RETURN the note-bearing payload it trusts them to at their own call
     sites. `bridge_client.py`'s non-ok path (both `nothing_found` and
     `unavailable`) is now guarded by `tests/test_social_bridge_client.py`
     (assertions added this round, proved by reverting the call site and
-    watching two tests go red); `instagram_client._search`'s `ok` note is
+    watching two tests go red); `render._search`'s `ok` note is
     guarded by `tests/unit/test_instagram_search_tool.py`, unchanged and
     still outside what this test itself checks. See the test's own module
     docstring for the full account.

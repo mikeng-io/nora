@@ -528,7 +528,8 @@ def test_no_text_after_args_is_silently_dropped(tool: str, doc: str) -> None:
 #
 # WHAT THIS STILL DOES NOT CATCH, on the current tree: whether
 # `nora.infra.social.bridge_client.SocialBridgeClient._read` or
-# `nora.infra.social.instagram_client.InstagramSocialClient._search`
+# `nora.infra.social.render._search` (the Instagram search `ok` result, moved
+# there from `InstagramSocialClient._search` by #486)
 # actually RETURN the note-bearing payload this test trusts them to -- that
 # is a claim about a call site in a DIFFERENT module, which this test does
 # not read (it only verifies, in `_backend_notes()`, that the named
@@ -541,7 +542,7 @@ def test_no_text_after_args_is_silently_dropped(tool: str, doc: str) -> None:
 # reverting `SocialBridgeClient._read`'s shared-constant return to a bare
 # `{"status": status}` and watching `test_bridge_unavailable_passes_through`
 # and `test_a_bridge_note_never_reaches_the_model` go red, then restoring).
-# `instagram_client._search` dropping `"note": _SEARCH_FRAMING` from its OWN
+# `render._search` dropping `"note": SEARCH_FRAMING` from its OWN
 # return is guarded by `tests/unit/test_instagram_search_tool.py`; that gap
 # was not touched this round and remains a genuine, stated limit -- fixing
 # it would mean reading a second module's control flow, which this static
@@ -1046,11 +1047,11 @@ def _backend_notes() -> dict[str, set[str]]:
     bridge_client.py` (proved 2026-09-25: reverting its shared-constant
     return to a bare `{"status": status}` turns `test_bridge_unavailable_
     passes_through` and `test_a_bridge_note_never_reaches_the_model` red;
-    restored, green). `instagram_client._search` dropping `_SEARCH_FRAMING`
+    restored, green). `render._search` dropping `SEARCH_FRAMING`
     from its own return is guarded by `tests/unit/
     test_instagram_search_tool.py`, a gap this round did not close.
     """
-    from nora.infra.social import instagram_client, results
+    from nora.infra.social import instagram_client, render, results
 
     assert results.NOTHING_FOUND.get("note")
     assert results.UNAVAILABLE.get("note")
@@ -1059,7 +1060,7 @@ def _backend_notes() -> dict[str, set[str]]:
     assert results.NO_ACCOUNT.get("note")
     assert results.NO_SUCH_HANDLE.get("note")
     assert instagram_client.SEARCH_NOTHING_FOUND.get("note")
-    assert instagram_client._SEARCH_FRAMING
+    assert render.SEARCH_FRAMING
 
     # `x_read`/`x_search`/`linkedin_read`/`linkedin_search` all go through
     # `SocialBridgeClient._read`, which answers `nothing_found`/
@@ -1073,8 +1074,8 @@ def _backend_notes() -> dict[str, set[str]]:
         "linkedin_read": set(bridge),
         "linkedin_search": set(bridge),
         # `instagram_search` hands `social_source.read(...)`'s result
-        # through unwrapped (no `_with_note`): `ok` carries `_SEARCH_
-        # FRAMING` inline in `InstagramSocialClient._search`, `nothing_
+        # through unwrapped (no `_with_note`): `ok` carries `SEARCH_
+        # FRAMING` inline in `render._search`, `nothing_
         # found` is its own `SEARCH_NOTHING_FOUND`, `unavailable` is
         # `results.UNAVAILABLE`.
         "instagram_search": {"ok", "nothing_found", "unavailable"},
