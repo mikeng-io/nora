@@ -693,7 +693,9 @@ value are included in that query.
 - The curator stays retire-only, on its own selection and evidence. Its
   dropped retirements (`anchor_not_covered`: the evidence is the newest
   `_evidence_limit` messages, `note_curator.py:753`, and `_covers` needs the
-  window to predate the note) are a separate defect. If the curator retires one
+  window to predate the note) are a separate defect — fixed 2026-09-25
+  (DEC-203): past `ANCHOR_LAPSE_MS` the reach-back half no longer binds, so a
+  busy room's past-anchor notes expire. If the curator retires one
   note of a would-be group before `note-merge` folds it, that note's body is not
   folded in — 27 §12.3's content-loss shape, accepted here because the retired
   note keeps its chain.
