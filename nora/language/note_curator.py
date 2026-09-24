@@ -34,6 +34,14 @@ merge here:* a tier that mints canonical entities again, at which point a
 resolved anchor is comparable and the two-weddings argument applies as it
 did.
 
+**Superseded in part on 2026-09-25 (DEC-202, design 41 §7).** Merging came
+back — model-judged and code-folded, in its OWN adaptor,
+`nora.language.note_merge`, behind `[notes] merge_mode` — and this pass stays
+retire-only. What that changed here is one argument: the retirement carries
+the head it judged (`supersede(expected_head=...)`, guard 3), so a fold
+landing between this pass's re-read and its retire leaves the survivor open
+with the question it just absorbed.
+
 The retire half is the half that answers «the notebook only grows».
 
 ## What merged in (design 34, issue #99)
@@ -339,7 +347,7 @@ MAX_DISCHARGE_ITEMS_PER_NOTE = 5
 #: this module's AST and reddens when a call is added without this number
 #: moving.
 #:
-#: 10 -> 11 on 2026-09-25 (DEC-204): `self._culture.head` once per distinct
+#: 10 -> 11 on 2026-09-25 (DEC-205): `self._culture.head` once per distinct
 #: room the shown notes were raised in — the site `_standing.read` already is
 #: in proactive, over the unit's rooms (at most one per platform, DEC-105).
 STORE_CALLS_PER_TICK = 11
@@ -401,6 +409,7 @@ class _NoteStore(Protocol):
     async def supersede(
         self, *, key: str, target: str, replaced_by: str | None,
         because: str, source: str | None, now_ms: int,
+        expected_head: str | None = None,
     ) -> int: ...
 
     async def record_wake(
@@ -608,7 +617,7 @@ class _Shown:
 #: would not describe the same thing here, and nothing routes on `key` yet
 #: either way (`design/context-assembly/00-overview.md` §3).
 #:
-#: `culture` (DEC-204) is one block per ROOM the shown notes were raised in,
+#: `culture` (DEC-205) is one block per ROOM the shown notes were raised in,
 #: each naming its room, above the notes that name the same room: whether an
 #: arrangement has closed turns on how that room settles things — an
 #: attrition room never says «cancelled».
@@ -693,7 +702,7 @@ class NoteCuratorAdaptor:
         events: _EventSink | None = None,
         conclusions: _ConclusionSink | None = None,
         ai_peer: str = "nora",
-        # THE ROOMS' ACCOUNTS (design/culture-tier, DEC-204). `room_for` maps
+        # THE ROOMS' ACCOUNTS (design/culture-tier, DEC-205). `room_for` maps
         # a note's `(established_in, unit)` to its room's `primary_id` —
         # the key the culture fold writes under (DEC-181) — and the room's
         # label, which both the `<culture>` and the `<note>` carry so the
@@ -1042,7 +1051,7 @@ class NoteCuratorAdaptor:
         self, notes: Sequence[Note],
     ) -> tuple[list[str], frozenset[str]]:
         """One `<culture room=…>` per distinct room these notes were raised in
-        (DEC-204), in first-shown order, and the rooms that rendered one.
+        (DEC-205), in first-shown order, and the rooms that rendered one.
 
         Per ROOM and not per note: two notes from one room read against one
         account, and repeating it would be the same paragraph twice in one
@@ -1339,9 +1348,15 @@ class NoteCuratorAdaptor:
                 self._inc("nora_note_curator_total", action="retire_stale")
                 continue
             try:
+                # THE HEAD IT JUDGED, not just the note (design 41 §7.6, guard
+                # 3). The re-read above and this write are two transactions,
+                # so a `note-merge` fold landing between them appended a
+                # duplicate's question to this note; the retirement is then a
+                # no-op (count 0) instead of retiring the survivor with it.
                 count = await self._notes.supersede(
                     key=key, target=note_id, replaced_by=None,
                     because=because, source=None, now_ms=now_ms,
+                    expected_head=shown.heads.get(note_id),
                 )
             except Exception:
                 log.exception("note retirement failed; continuing")

@@ -491,6 +491,71 @@ async def test_a_note_that_moved_since_inputs_is_not_retired():
     assert moved.id  # the room's revision stands
 
 
+class _FoldLandsAfterTheReRead(InMemoryNoteStore):
+    """A store where a `note-merge` fold lands on one note AFTER the curator's
+    re-read has returned and BEFORE its retirement: the check-then-act window
+    across two transactions that guard 3 exists for (design 41 §7.6). The
+    re-read sees the head the curator judged; the fold then appends the
+    duplicate's question to it."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.target = ""
+        self.folded = False
+
+    async def read(self, *, unit, note_id):  # type: ignore[override]
+        got = await super().read(unit=unit, note_id=note_id)
+        if note_id == self.target and not self.folded and got is not None:
+            self.folded = True
+            await self.append_revision(
+                unit=unit, note_id=note_id,
+                body="Nobody booked.\n\n--- folded in from another note ---",
+                parent_revision_id=got[0].head_revision_id,
+                established_by="dream:note-merge:friends:9", now_ms=NOW + 2,
+            )
+        return got
+
+
+async def test_the_curators_retire_is_a_noop_when_the_head_moved():
+    """Guard 3 (design 41 §7.6). The curator re-reads the head and then
+    retires in a SEPARATE transaction, so its own head check cannot see a
+    fold that lands between the two. The retirement takes the head it judged
+    and becomes a no-op; the survivor stays open with the question it just
+    absorbed.
+
+    Falsification: drop `expected_head=` from the curator's `supersede` call
+    and the survivor is retired `expired` with the folded question inside."""
+    store = _FoldLandsAfterTheReRead()
+    note = await _seed(store, title="Dinner, 9 Sept", anchor=20260909,
+                       entities=("ada",), body="Nobody booked.")
+    store.target = note.id
+    metrics = Metrics()
+    record = FakeRecordStore()
+    record.rows.append(_row(1, "still nothing", ts=_after(20260909)))
+    curator = _curator(store, metrics, record=record, now_ms=_after(20260909))
+    await curator.inputs(key=WS, batch=())
+    kept = await curator.accept(key=WS, items=(
+        {"note_id": _h(curator, note), "verdict": "moot", "why": "date passed"},
+    ))
+
+    written = await curator.commit(
+        key=WS,
+        proposals=tuple(
+            Proposal(payload=k, instruction_sha256="a" * 64, model="m",
+                     established_by="run-1") for k in kept
+        ),
+        now_ms=NOW + 5,
+    )
+
+    assert store.folded, "the fold landed between the re-read and the retire"
+    assert written == 0
+    assert [n.id for n in await store.standing(unit=WS)] == [note.id]
+    assert metrics.get(
+        "nora_note_retirements_total",
+        because="retired-expired", result="no_rows",
+    ) == 1
+
+
 class _ReadRaises(InMemoryNoteStore):
     """A store whose `read` fails for ONE named note. A connection blip, not
     a bug — subclassed so every other verb behaves exactly as the double

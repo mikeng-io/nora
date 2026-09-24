@@ -2,7 +2,7 @@
 
 Two implementations: `nora.infra.sql.culture.SqlCultureStore` over real
 Postgres in a testcontainer, and `nora.testing.InMemoryCultureStore`. The
-suite exists because `CultureReader` became a declared port (DEC-204) — a port
+suite exists because `CultureReader` became a declared port (DEC-205) — a port
 never gains a second implementation, including a test fake, without a suite
 both pass.
 

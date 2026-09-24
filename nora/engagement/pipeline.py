@@ -584,7 +584,7 @@ class EngagementPipeline:
         # `agent.messages` and no `ctx.transcript` window to attribute a
         # trace to, so nothing is saved for it.
         trace: TagTrace | None = None
-        # The room's account the turn read at its start (DEC-204), handed to
+        # The room's account the turn read at its start (DEC-205), handed to
         # the debrief so the fold reads the SAME account the reply did rather
         # than a second read that could land either side of a fold. Bound
         # here, before the `try`, for `trace`'s reason.

@@ -813,7 +813,7 @@ class FirePath:
         # method — and there is nothing to fold without it.
         self._standing = standing
         # THE CULTURE HEAD (design/culture-tier), read on EVERY fire occasion
-        # since DEC-204 — see `_read_culture`.
+        # since DEC-205 — see `_read_culture`.
         #
         # Read-only by TYPE — a `CultureReader` has `head` and nothing else — so
         # no fire-path turn can write a culture row. That matters more here than
@@ -1505,7 +1505,7 @@ class FirePath:
     async def _read_culture(self, occasion: Event) -> CultureRevision | None:
         """This room's current account, or `None` (design/culture-tier).
 
-        **Every fire occasion, since DEC-204** (2026-09-25). This was
+        **Every fire occasion, since DEC-205** (2026-09-25). This was
         participation-only while `01-the-adaptor §6` named one consumer; the
         operator widened the tier to every runtime, so a reminder, a gathering
         and a proactive act turn all read the account of the room they are

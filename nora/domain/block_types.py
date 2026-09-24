@@ -394,6 +394,26 @@ BLOCK_TYPES: dict[str, BlockType] = {t.name: t for t in (
        anchor="the day it turns on",
        anchor_is="that day read against today",
        room="the room it was raised in; its <culture> carries the same name"),
+    # The `note-merge` pass's one block (design 41 §7.4). NOT `note`: that
+    # type promises «what the room has said since», and this pass reads no
+    # room — it puts the group's open notes side by side and nothing else.
+    _t("open_note",
+       "one entry of this group's notebook that is still open, as it was "
+       "written down: what it is about, what is undecided, what would settle "
+       "it, and its body so far. Your own notes, written from what the group "
+       "said, not anything said in a room, and not a record of what happened.",
+       id="its handle for this pass",
+       title="what the note is called",
+       room="the room the note was born in",
+       written="how long ago the note was first written",
+       revised="how long ago anything was last added to it",
+       anchor="on an entry that has one, the day it turns on",
+       anchor_is="that day read against today",
+       changed=(
+           "`new` if it was written since this notebook was last read this "
+           "way, `revised` if something was added to it since then; absent "
+           "when neither"
+       )),
 
     # -- people, rooms, and this deployment -----------------------------------
     _t("peer_card",

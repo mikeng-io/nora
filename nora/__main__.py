@@ -248,6 +248,16 @@ class App:
                 # force-recreated several times on an ordinary day, which
                 # turned a daily schedule into a per-deploy one.
                 schedule_clock=deps.dream_schedule_clock,
+                # The ONE wall clock around a whole (adaptor, key) unit
+                # (issue #191) — `#60` bounded the two store phases inside it;
+                # this covers everything else the loop awaits per unit too.
+                # The RESOLVER, not the raw field: `[dreamer]
+                # max_unit_hold_seconds` ships unset, and `Config.
+                # dreamer_max_unit_hold_seconds` is what derives a number
+                # from this config's own budgets rather than a literal that
+                # goes stale the moment one of them is raised (issue #191
+                # independent review, BLOCKER).
+                max_unit_hold_seconds=self.cfg.dreamer_max_unit_hold_seconds(),
             ))
         elif self.cfg.dreamer.enabled:
             # The Dreamer is ON and its cursor store could not be built —

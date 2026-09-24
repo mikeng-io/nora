@@ -1504,7 +1504,7 @@ async def test_an_unlabelled_room_never_puts_its_id_in_the_proactive_prompt(tmp_
 
 
 async def test_inputs_carries_each_folded_rooms_account_under_rooms():
-    """DEC-204 through `inputs`, not `_cultures`: the account reaches the
+    """DEC-205 through `inputs`, not `_cultures`: the account reaches the
     RENDERED prompt, named by the room's label, after `<rooms>` — and only
     for the room that has one."""
     from nora.testing import InMemoryCultureStore

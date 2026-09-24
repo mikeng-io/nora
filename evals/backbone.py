@@ -621,7 +621,8 @@ class Spec:
 #: bodies (15%, measured) name a roster member outright, so a faked roster
 #: makes the room talk about people who are not in it.
 _DEPLOYMENT_DIR = Path(
-    os.environ.get("NORA_DEPLOYMENT_DIR", "/home/norty/workspace/nora")
+    os.environ.get("NORA_DEPLOYMENT_DIR")
+    or str(Path.home() / "workspace" / "nora")
 )
 
 

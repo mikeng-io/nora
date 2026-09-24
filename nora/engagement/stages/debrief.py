@@ -585,7 +585,7 @@ async def run(
         rendered = render_debrief_input(
             trace=trace, prior=prior,
             display_name=display_name, metrics=metrics, since_rows=batch, tz=tz,
-            # The room's account (DEC-204) — the one the turn itself read at
+            # The room's account (DEC-205) — the one the turn itself read at
             # its start, handed through rather than read a second time.
             culture=culture,
         )

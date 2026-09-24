@@ -172,13 +172,13 @@ diff shows to be free.
 
 ## S4 — Widen
 
-> **LANDED AS ONE CHANGE 2026-09-25 — DEC-204.** The operator widened culture
+> **LANDED AS ONE CHANGE 2026-09-25 — DEC-205.** The operator widened culture
 > to every runtime at once (the tag turn and every Dreamer pass, not only the
 > three below), so it shipped as one PR with a row per occasion rather than
 > one PR each. Criterion 2 is met (`render_culture` has eight callers); the
 > per-occasion arm (criterion 3) is run against the eval suite's corpora after
 > the fact and recorded in the PR, with the reopen condition in
-> `design/culture-tier/03-decisions.md` «DEC-204». The gate stays out.
+> `design/culture-tier/03-decisions.md` «DEC-205». The gate stays out.
 
 Culture into proactive, note-candidates, note-curator. One row each, one PR
 each, one arm each.

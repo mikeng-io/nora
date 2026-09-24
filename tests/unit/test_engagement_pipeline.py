@@ -2921,7 +2921,7 @@ async def test_a_tag_turn_that_faults_is_written_too():
 
 
 async def test_the_debrief_is_handed_the_account_the_turn_read(monkeypatch):
-    """DEC-204: `ctx.culture` from the turn's own `assemble` reaches the
+    """DEC-205: `ctx.culture` from the turn's own `assemble` reaches the
     debrief, so the fold reads the SAME account the reply did."""
     import dataclasses
 

@@ -588,7 +588,7 @@ def render_debrief_input(
 ) -> str:
     """The whole of what the STANDING call sees — the prior plus the turn.
 
-    `culture` (DEC-204) is the room's own account, rendered FIRST when the room
+    `culture` (DEC-205) is the room's own account, rendered FIRST when the room
     has one: a position is where she had got to in this room, and the account
     is what the room is, which is how «had got to» is meant to be read. Absent,
     the prompt is byte-identical to the one before the tier was widened.

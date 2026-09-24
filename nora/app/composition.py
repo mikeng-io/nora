@@ -145,6 +145,7 @@ from nora.instructions.frontmatter import InstructionError
 from nora.language.culture import CULTURE_ADAPTOR_NAME, CultureAdaptor
 from nora.language.note_candidates import NoteCandidateAdaptor
 from nora.language.note_curator import NoteCuratorAdaptor
+from nora.language.note_merge import NoteMergeAdaptor
 from nora.language.proactive import (
     PROACTIVE_ADAPTOR_NAME,
     ProactiveAdaptor,
@@ -1696,7 +1697,7 @@ async def build_dependencies(
     # Over the SAME allowlist ingest admits against and the SAME adapter map
     # the tag path sends through.
     presence_reader = _presence_reader(cfg, allowlist, registry, rosters)
-    # THE CULTURE TIER'S READ HALF (design/culture-tier, DEC-204): ONE
+    # THE CULTURE TIER'S READ HALF (design/culture-tier, DEC-205): ONE
     # read-only reader, handed to the tag path's assembler, the fire path and
     # every Dreamer adaptor whose prompt carries `<culture>`. `None` while
     # `[culture] enabled = false`, the shipped default, so no occasion renders
@@ -1705,7 +1706,7 @@ async def build_dependencies(
     culture_reader: CultureReader | None = (
         SqlCultureStore(engine) if cfg.culture.enabled else None
     )
-    # The note curator's join from a note to its room's account (DEC-204):
+    # The note curator's join from a note to its room's account (DEC-205):
     # EVERY id a room is known by — `Note.established_in` holds whichever one
     # the note was born under — within the note's UNIT, since ids are unique
     # per platform and a note carries no platform.
@@ -2083,7 +2084,7 @@ async def build_dependencies(
             timeout_seconds=cfg.standing.timeout_seconds,
             store_timeout_seconds=cfg.standing.store_timeout_seconds,
             max_chars=cfg.standing.max_chars,
-            # The room's account above the prior (DEC-204), keyed through the
+            # The room's account above the prior (DEC-205), keyed through the
             # policy to the room's `primary_id` — `culture_key` is `None` for a
             # room outside it.
             culture=culture_reader,
@@ -2929,7 +2930,7 @@ async def build_dependencies(
             # the fire path writes no position, because S1 is blocked on it
             # retaining a `TagTrace` at all (see `FirePath.__init__`).
             standing=standing_store if cfg.standing.enabled else None,
-            # THE CULTURE HEAD (design/culture-tier, DEC-204) — the SAME reader
+            # THE CULTURE HEAD (design/culture-tier, DEC-205) — the SAME reader
             # the tag assembler holds. Keyed on `primary_id`, which is why this
             # path resolves the occasion through the policy it already holds
             # before reading (`FirePath._read_culture`).
@@ -3385,7 +3386,7 @@ async def build_dependencies(
                     evidence_messages_per_note=cfg.notes.revisit_evidence_messages,
                     metrics=metrics,
                     # The accounts of the rooms its notes were raised in
-                    # (DEC-204). `room_for` maps EVERY id a room is known by —
+                    # (DEC-205). `room_for` maps EVERY id a room is known by —
                     # `Note.established_in` holds whichever one the note was
                     # born under — to `(primary_id, label)`, within the note's
                     # UNIT: ids are unique per platform, not across platforms.
@@ -3469,7 +3470,7 @@ async def build_dependencies(
                 NoteCandidateAdaptor(
                     notes=note_store,
                     candidates=note_store,
-                    # The room's account (DEC-204). This adaptor's key is the
+                    # The room's account (DEC-205). This adaptor's key is the
                     # room's `primary_id` already, the fold's own key.
                     culture=culture_reader,
                     unit_for={
@@ -3501,6 +3502,52 @@ async def build_dependencies(
                     # reads, for the same reason: «this Saturday» is a
                     # question about the room's calendar, not the process's.
                     timezone=ZoneInfo(cfg.reminders.timezone),
+                ),
+            )
+        # NOTE-MERGE (design/dreamer-agent-loop/41 §7, DEC-202): the back-stop
+        # for two open notes asking the same question, on its own switch —
+        # `[notes] merge_mode`, "off" by default, which builds nothing.
+        #
+        # Hourly, at :30 — an arbitrary slot, not one sequenced after
+        # `note-candidates`, which is watermark-driven and has no :00 slot to
+        # follow. What a candidates fire writes is simply seen by the next
+        # merge tick. A tick where no note moved is one clock read, one
+        # `standing()` and one `revision_chain` per open note, and no model
+        # call (the adaptor's own change check). `samples=1` is PINNED, not defaulted: the runtime
+        # unions samples, so a second sample could only add folds — the
+        # direction this pass must not fail in (41 §7.3).
+        if (
+            cfg.notes.enabled and cfg.notes.merge_mode != "off"
+            and note_store is not None
+        ):
+            dream_schedules = {
+                **dream_schedules,
+                "note-merge": AdaptorSchedule(
+                    min_interval_seconds=3600,
+                    phase_offset_seconds=1800,
+                    # Inert: the pass is watermark-free and never reads a
+                    # batch. The largest group a unit could name is its open
+                    # notes; nothing here is sized by it.
+                    batch_limit=1,
+                    samples=1,
+                ),
+            }
+            dream_adaptors = (
+                *dream_adaptors,
+                NoteMergeAdaptor(
+                    notes=note_store,
+                    clock_store=dream_schedule_clock,
+                    mode=cfg.notes.merge_mode,
+                    timezone=ZoneInfo(cfg.reminders.timezone),
+                    # A note's birth room by its operator label, off the same
+                    # allowlist read `note-candidates` uses; an unlabelled
+                    # room renders as `room N`, never as its id.
+                    label_for={
+                        conv.primary_id: conv.label
+                        for conv in allowlist.conversations
+                        if conv.primary_id and conv.label
+                    }.get,
+                    metrics=metrics,
                 ),
             )
         # THE CULTURE TIER (design/culture-tier, DEC-182..185). An account of
@@ -3672,7 +3719,7 @@ async def build_dependencies(
                     standing=standing_store if cfg.standing.enabled else None,
                     reminders=reminders,
                     memory=memory,
-                    # Each of the unit's rooms' accounts (DEC-204), keyed on
+                    # Each of the unit's rooms' accounts (DEC-205), keyed on
                     # `UnitRoom.conversation_id` — a `primary_id` by
                     # construction (`_unit_rooms`).
                     culture=culture_reader,

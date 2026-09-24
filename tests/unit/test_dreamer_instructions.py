@@ -435,6 +435,11 @@ NATIVELY_AUTHORED = {
     # the memory system's dialectic endpoint never shipped a prompt at all —
     # it was falsified and closed unmerged (#237) before one existed.
     "culture",
+    # The note tier's duplicate back-stop (design/dreamer-agent-loop/41 §7,
+    # DEC-202). Written for it; there was no prior prompt — the curator's
+    # merge half (removed 2026-09-08) was keyed in code and never asked the
+    # model this question.
+    "note-merge",
 }
 
 # `standing-debrief` is the odd one in that set and it is worth saying why

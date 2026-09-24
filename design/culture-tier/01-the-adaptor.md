@@ -245,12 +245,12 @@ here — prompt injection (R-14), dependency injection, and `TranscriptInjection
 
 ## 6. Who reads it, and the one thing #220 does not settle
 
-> **SUPERSEDED IN PART 2026-09-25 — DEC-204.** The next line named ONE
+> **SUPERSEDED IN PART 2026-09-25 — DEC-205.** The next line named ONE
 > consumer, and #312 held every other one back behind its own question. The
 > operator widened the tier to every runtime: the tag turn, every fire
 > occasion, the proactive pass, both note passes and both standing folds read
 > the room's account. The GATE paragraphs below are unchanged and still hold —
-> the gate does not read it. `03-decisions.md` «DEC-204» records how #312's
+> the gate does not read it. `03-decisions.md` «DEC-205» records how #312's
 > three questions were answered.
 
 The participation turn is a straightforward consumer.

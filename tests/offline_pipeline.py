@@ -169,7 +169,7 @@ def build_offline_pipeline(
         # takes.
         quote_window=quote_window,
         presence=presence_reader,
-        # `<culture>` (DEC-204) — `None` here for the fire path's reason
+        # `<culture>` (DEC-205) — `None` here for the fire path's reason
         # below: the eval subject (`nora.subject`) reconstructs a room's real
         # account at a real instant, and this harness has no store to hold one.
         culture=None,

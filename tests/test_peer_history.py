@@ -302,7 +302,7 @@ async def test_the_block_is_rendered_with_the_persons_name_and_a_hedge():
     assert "dinner" in blob
 
 
-# --- `<culture>` on the tag path (DEC-204) ------------------------------------
+# --- `<culture>` on the tag path (DEC-205) ------------------------------------
 
 
 class _Policy:

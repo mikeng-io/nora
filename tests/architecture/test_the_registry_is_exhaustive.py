@@ -50,7 +50,7 @@ _SHARED_BUILDER_NAMES = {
     # path and the proactive pass render `<presence>` through it, and no
     # occasion builds its own copy.
     "render_presence": "presence",
-    # `nora.language.culture_render` (DEC-204): every occasion that carries a
+    # `nora.language.culture_render` (DEC-205): every occasion that carries a
     # room's account renders it through this one builder.
     "render_culture": "culture",
 }

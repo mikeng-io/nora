@@ -153,7 +153,7 @@ _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     #
     # The ROW is unconditional and the BLOCK is not: it renders only where
     # `TagContext.culture` is filled — every tag and fire turn in a folded
-    # room since DEC-204, and none while `[culture] enabled = false`. A row
+    # room since DEC-205, and none while `[culture] enabled = false`. A row
     # that varied per turn would end the cached prefix's hit rate for
     # everything after it.
     ("culture", 55, "room"),
@@ -826,7 +826,7 @@ def _culture_block(ctx: TagContext, *, now: datetime) -> ContextBlock | None:
     dynasties and their dates is not a culture.
 
     Filled on the tag path (`TranscriptInjection._culture`) and on every
-    fire occasion (`FirePath._read_culture`) since DEC-204, which widened the
+    fire occasion (`FirePath._read_culture`) since DEC-205, which widened the
     tier from the participation turn alone to every runtime. This renderer is
     blind to who filled it and renders whatever the context carries.
 

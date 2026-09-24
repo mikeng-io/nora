@@ -148,13 +148,13 @@ these two ever disagree again.
 
 ---
 
-## DEC-204 — every runtime reads the account; the gate still does not (2026-09-25)
+## DEC-205 — every runtime reads the account; the gate still does not (2026-09-25)
 
 **Operator, 2026-09-25:** the culture dreamer runs daily, and the cultural
 context block is injected into each of the runtimes — engagement and the
 different dreamers. That supersedes `01-the-adaptor §6`'s single consumer and
 answers issue #312's three open questions as follows. The row is
-`design/09-decision-index.md` DEC-204.
+`design/09-decision-index.md` DEC-205.
 
 **Who reads it.** The tag turn (`TranscriptInjection`), every fire occasion
 (participation, reminder, gathering, proactive act — `FirePath._read_culture`
@@ -163,7 +163,10 @@ note curator, and both standing folds (the tag-turn debrief, handed the account
 the turn read rather than a second read; and the event-path rollup). The
 relevance gate does NOT: `design/context-assembly/02` and #144/#147 are
 unchanged, and "each of the runtimes" was read as the turns and the Dreamer
-passes, not the admission check in front of them.
+passes, not the admission check in front of them. The `note-merge` pass (DEC-202,
+#495, landed while this was in review) is not a consumer either: it puts a
+unit's open notes side by side and reads no room (design 41 §7.4), so there is
+no room whose account it could be handed.
 
 **#312 §2, proactive's keys.** Every room of the unit, each account NAMED by
 its room's label (`<culture room="…">`), never only the home room's. The pass
