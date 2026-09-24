@@ -9564,6 +9564,28 @@ Args:
                 "note": "I don't know who you are well enough to write this down "
                         "under anybody's name. Say you can't, and don't guess.",
             }
+        # AN OPEN TITLE IS REFUSED (design 41 §7.2). Nothing in the schema
+        # stops a second open note with the same title, and one is an
+        # amplifier on both write paths: a later `updates` naming it matches
+        # two notes, and note-candidates used to create a third. The room's
+        # question already has a note; the model's job is to update it.
+        try:
+            wanted = note_handle(title)
+            if any(
+                note_handle(n.title) == wanted
+                for n in await book.standing(unit=_unit() or "")
+            ):
+                _record(metrics, "note_create", "refused", reason="duplicate_title")
+                return {
+                    "status": "refused",
+                    "note": "A note with that title is already open. Read it "
+                            "with note_read and update it instead of starting "
+                            "a second one.",
+                }
+        except Exception:
+            log.exception("note_create could not check the open titles")
+            _record(metrics, "note_create", "unavailable")
+            return dict(notes_off)
         try:
             note = await book.create(
                 unit=_unit() or "", title=title, description=description,

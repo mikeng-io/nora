@@ -1217,22 +1217,22 @@ class NoteCandidateAdaptor:
                 proposal=proposal, now_ms=now_ms,
             )
         if len(matches) > 1:
-            # FAIL TOWARD THE SIDE THAT LOSES NO TEXT. Appending to the wrong
-            # one of two same-titled notes conflates two arrangements, which
-            # is the failure #228 exists to remove; a duplicate overwrites
-            # nothing and a reader can see both. Nothing MERGES it afterwards
-            # (#236) — stated in the module docstring rather than assumed
-            # here. Counted as its own action rather than folded into
-            # `created`, so the rate is readable.
+            # NEITHER GUESSED NOR CREATED (design 41 §7.2, 2026-09-24).
+            # Appending to the wrong one of two same-titled notes conflates
+            # two arrangements, which is the failure #228 exists to remove.
+            # Creating a THIRD note was the old answer, and it made an
+            # exact-title duplicate an amplifier: every later sighting that
+            # named the title added another. The staging row stays PENDING
+            # instead — its text is kept, nothing is written — and the pair
+            # is left for `note-merge` to fold. Counted as its own action so
+            # the rate is readable.
             log.info(
-                "note-candidates: %r answers to %d standing notes; created "
-                "rather than guessed (unit=%s)",
+                "note-candidates: %r answers to %d standing notes; left "
+                "pending rather than guessed or duplicated (unit=%s)",
                 candidate.updates, len(matches), unit,
             )
-            return await self._create(
-                unit=unit, established_in=established_in, row=row,
-                proposal=proposal, now_ms=now_ms, action="ambiguous",
-            )
+            self._inc("nora_note_candidate_gate_total", action="ambiguous")
+            return 0
         if candidate.updates is not None:
             # The model NAMED a standing note and nothing answers to it — it
             # mistyped a title, or invented one. Writing it as new is right
