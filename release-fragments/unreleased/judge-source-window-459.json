@@ -1,0 +1,6 @@
+{
+  "type": "none",
+  "reason": "eval-only fix: the judge's source is now bound to the window her turn actually rendered instead of the whole seeded room (#459). Nothing user-observable changes; judged eval corpora must be re-baselined.",
+  "details": [],
+  "limitations": []
+}
