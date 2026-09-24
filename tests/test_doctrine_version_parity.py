@@ -133,7 +133,14 @@ PINNED: dict[str, tuple[int, str]] = {
     # v11: she holds a friend's place in the circle rather than serving it,
     # and what that place is for: letting a joke land, taking the heat out,
     # moving a stalled plan along without chasing anybody.
-    "identity": (11, "da2e843cd234db7265aca88e81838556f851b4008c16ca6f98987c28ba85bdbf"),
+    # v12 (2026-09-25, operator, option A): not being a person does not mean
+    # having no form. Her appearance previously lived only in the on-demand
+    # image-generation skill, so asked "what do you look like?" nothing
+    # always-loaded told her, and asked to draw herself she inferred she had
+    # none and drew an empty room. Adds one short, descriptive passage naming
+    # the mascot form and its anchors (bun, hoodie, earphones); the full spec
+    # stays in the skill.
+    "identity": (12, "1c348195ff68b98566bab635da2ccb5321ac66d6bcdfaffde9d6709dd9231dbc"),
     # v19 (2026-09-10): same room-name removal as identity v8.
     # v20: the REVISION half of the same pass, and the only file that grew.
     # Three positions it did not carry: the dash is a written-register

@@ -292,6 +292,41 @@ def test_identity_makes_no_claim_about_what_she_can_find_out():
     )
 
 
+def test_identity_carries_the_form_sentence():
+    """v12 (2026-09-25, operator, option A). Her appearance used to live ONLY
+    in the on-demand `image-generation` skill, which loads only when a turn is
+    already drawing something — so asked "what do you look like?" nothing
+    always-loaded told her, and asked to draw herself she inferred she had no
+    form and drew an empty room.
+
+    Pins the MEANING (she has a mascot form, and names at least one anchor
+    that makes it recognisable), not the exact wording — a future rewrite of
+    the sentence should still pass this. Proved by revert: reverting the
+    sentence below is what turns this red; nothing else in the suite notices
+    an identity file that is silent about her form.
+
+    The full spec (all eight anchors, per-model prompting) stays in
+    `nora/skills/image-generation/SKILL.md`; this is deliberately one
+    sentence, not a second copy of it.
+    """
+    body = (DOCTRINE_DIR / "identity.md").read_text().split("---", 2)[2]
+
+    assert "no form" in body or "no appearance" in body, (
+        "identity.md should say plainly that not being a person does not mean "
+        "having no form"
+    )
+    assert "mascot" in body.lower(), (
+        "identity.md should name the mascot form she appears as"
+    )
+    # At least one of the anchors that makes the mascot recognisable, so the
+    # sentence cannot be satisfied by "you have a form" alone.
+    anchors = ("bun", "hoodie", "earphone")
+    found = [a for a in anchors if a in body.lower()]
+    assert found, (
+        "identity.md names a mascot form but no recognisable anchor (bun, "
+        "hoodie, earphones) — 'you have a form' with nothing to picture is "
+        "not enough to answer 'what do you look like?'"
+    )
 
 
 def test_guardrails_covers_every_r14_clause():
