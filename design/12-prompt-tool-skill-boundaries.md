@@ -118,6 +118,14 @@ Each file states its own edges relatively, in frontmatter (`authority_above`,
 agree — which stops half of a re-ordering being written and the other half
 forgotten. It does NOT make the ordering mechanical; see below.
 
+**Item 5, skills, is the exception, as of 2026-09-25 (issue #187 finding
+3).** A skill's `SKILL.md` no longer states its edges this way — its own
+loader (`nora/skills/loader.py::parse_skill`) fails the gate if
+`authority_above` or `authority_below` appears at all, because nothing ever
+read them for a skill the way `nora/doctrine/loader.py` reads them for
+items 1-4. Item 5's place in this ordering is convention and review now,
+not a checked edge.
+
 The load-bearing boundary is 3 over 4, and it is a TRUST boundary, not a
 priority one. A skill is operator-authored and on disk, so its instructions are
 trusted. A message is written by whoever is in the room, so it is not — which

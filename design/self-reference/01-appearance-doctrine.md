@@ -84,6 +84,11 @@ was not built; see the banner.
 
 ## Authority, ordering, audiences
 
+**SUPERSEDED 2026-09-25 (issue #187 finding 3) for the three frontmatter
+keys below — `nora/skills/loader.py::parse_skill` now fails the gate on any
+of them, so a skill carries none of the three any more. Historical text
+kept as written; it describes the file as built, before that fix.**
+
 Not applicable as designed. A skill carries `authority_above: [situation]`,
 `authority_below: [message-content, tool-output]` and `change_policy:
 operator-only` like its two siblings, and none of that is enforced by a loader
