@@ -144,7 +144,7 @@ gh pr view <N> --json baseRefName,headRefOid       # master, and == git rev-pars
 ## 7. Review, by someone who is not the author
 
 - A fresh subagent, another tool or another model, never the session that
-  wrote it. Give it the diff (`gh pr diff <N>`) and the PR's claims.
+  wrote it (which model: `reference.md`). Give it the diff (`gh pr diff <N>`) and the PR's claims.
 - Verify each finding before acting on or dismissing it: open the line, run the
   test, revert the fix and watch the named test fail.
 - A clean review is not a pass: one plus a green gate missed an empty-body read
