@@ -36,6 +36,7 @@ from nora.domain.notes import (
 from nora.domain.ports import Proposal
 from nora.language.note_curator import (
     _BLOCKS,
+    ANCHOR_LAPSE_MS,
     CURATOR_DROPS,
     NoteCuratorAdaptor,
     _note_block,
@@ -1243,6 +1244,140 @@ async def test_a_room_that_died_before_the_anchor_cannot_expire_the_note():
     ))
     assert metrics.get(
         "nora_note_curator_dropped_total", reason="anchor_not_covered") == 1
+
+
+async def _busy_room_expiry(*, now_ms: int, rows_after_anchor: bool = True):
+    """A note written 30 days before its anchor, in a room that posted more
+    than the 40-row window since: the window is TRUNCATED and its oldest row
+    postdates the note, so `_covers`' reach-back half can never hold. Returns
+    (written, metrics, store, note) after the model says `expired`."""
+    store = InMemoryNoteStore()
+    anchor_start, anchor_end = anchor_bounds_ms(PASSED_ANCHOR)
+    note = await _seed(store, title="Dinner", anchor=PASSED_ANCHOR,
+                       entities=("ada",), revisit_at=NOW - 1)
+    from dataclasses import replace
+    store.notes[note.id] = replace(note, created_at=anchor_start - 30 * DAY_MS)
+    record = FakeRecordStore()
+    # 60 rows: 20 on the anchor day, then 40 after it (or all 60 before it).
+    base = anchor_start + 3600_000 if rows_after_anchor else anchor_start - 5 * DAY_MS
+    for i in range(1, 61):
+        ts = base + i * 60_000 if i <= 20 or not rows_after_anchor else (
+            anchor_end + 1 + i * 60_000)
+        record.rows.append(_row(i, f"chat {i}", ts=ts))
+    metrics = Metrics()
+    curator = _curator(store, metrics, record=record, now_ms=now_ms)
+    await curator.inputs(key=WS, batch=())
+    kept = await curator.accept(key=WS, items=(
+        {"note_id": _h(curator, note), "verdict": "expired", "why": "x"},
+    ))
+    written = await curator.commit(
+        key=WS, proposals=tuple(
+            Proposal(payload=k, instruction_sha256="a" * 64, model="m",
+                     established_by="run-1") for k in kept
+        ), now_ms=NOW + 5,
+    )
+    return written, metrics, store, note
+
+
+async def test_a_busy_room_can_expire_a_note_once_its_anchor_has_lapsed():
+    """**The wedge `_covers` made in a busy room** (2026-09-25): a group that
+    posts more than the window between a note and its moment can never show a
+    window that predates the note, so an `expired` verdict was refused on
+    every pass, forever — 8 of 13 open notes in one live unit, 2 to 17 days
+    past. Past `ANCHOR_LAPSE_MS`, a human speaking after the moment is enough;
+    the verdict lands and is counted `lapsed`."""
+    _, anchor_end = anchor_bounds_ms(PASSED_ANCHOR)
+    written, metrics, store, note = await _busy_room_expiry(
+        now_ms=anchor_end + ANCHOR_LAPSE_MS + 1)
+    assert written == 1
+    assert store.notes[note.id].retired_at is not None
+    assert metrics.get("nora_note_curator_total", action="lapsed") == 1
+    assert metrics.get(
+        "nora_note_curator_dropped_total", reason="anchor_not_covered") == 0
+
+
+async def test_before_the_lapse_a_busy_room_still_cannot_expire_the_note():
+    """Inside `ANCHOR_LAPSE_MS` the reach-back half still binds: the day
+    after an evening is when «did we end up going?» arrives."""
+    _, anchor_end = anchor_bounds_ms(PASSED_ANCHOR)
+    written, metrics, store, note = await _busy_room_expiry(
+        now_ms=anchor_end + ANCHOR_LAPSE_MS - 1)
+    assert written == 0
+    assert store.notes[note.id].retired_at is None
+    assert metrics.get(
+        "nora_note_curator_dropped_total", reason="anchor_not_covered") == 1
+
+
+async def test_a_room_that_died_before_the_anchor_stays_refused_after_the_lapse():
+    """The lapse replaces only the reach-back half. A room whose last word
+    predates the moment has still said nothing about it, however long ago."""
+    _, anchor_end = anchor_bounds_ms(PASSED_ANCHOR)
+    written, metrics, store, note = await _busy_room_expiry(
+        now_ms=anchor_end + 30 * DAY_MS, rows_after_anchor=False)
+    assert written == 0
+    assert store.notes[note.id].retired_at is None
+    assert metrics.get(
+        "nora_note_curator_dropped_total", reason="anchor_not_covered") == 1
+
+
+async def test_her_own_row_after_the_anchor_cannot_expire_a_note_past_the_lapse():
+    """The lapse's reach-past half reads the HUMAN evidence (R-74, #199): a
+    room whose only word after the moment is hers has not testified about it,
+    however long ago the moment was. 60 human rows before the anchor, one
+    delivered row of hers after it, the clock a day past the lapse."""
+    store = InMemoryNoteStore()
+    anchor_start, anchor_end = anchor_bounds_ms(PASSED_ANCHOR)
+    note = await _seed(store, title="Dinner", anchor=PASSED_ANCHOR,
+                       entities=("ada",), revisit_at=NOW - 1)
+    from dataclasses import replace
+    store.notes[note.id] = replace(note, created_at=anchor_start - 30 * DAY_MS)
+    record = FakeRecordStore()
+    for i in range(1, 61):
+        record.rows.append(_row(i, f"chat {i}", ts=anchor_start - 5 * DAY_MS + i * 60_000))
+    record.rows.append(_row(61, "route sent", ts=anchor_end + 1, is_nora=True))
+    metrics = Metrics()
+    curator = _curator(store, metrics, record=record,
+                       now_ms=anchor_end + ANCHOR_LAPSE_MS + DAY_MS)
+    await curator.inputs(key=WS, batch=())
+    kept = await curator.accept(key=WS, items=(
+        {"note_id": _h(curator, note), "verdict": "expired", "why": "x"},
+    ))
+    written = await curator.commit(
+        key=WS, proposals=tuple(
+            Proposal(payload=k, instruction_sha256="a" * 64, model="m",
+                     established_by="run-1") for k in kept
+        ), now_ms=NOW + 5,
+    )
+    assert written == 0
+    assert store.notes[note.id].retired_at is None
+    assert metrics.get("nora_note_curator_total", action="lapsed") == 0
+
+
+async def test_a_window_that_does_not_reach_the_note_says_so():
+    """Past the lapse an `expired` verdict is accepted on a window that may not
+    reach back to the note, and the objective describes evidence as everything
+    said since the note was written. So a cut-short window says it is cut
+    short — a change of plan older than the window is exactly what the model
+    must not read as silence — and a window that reaches the note does not."""
+    _, anchor_end = anchor_bounds_ms(PASSED_ANCHOR)
+    marker = "window: cut short"
+
+    async def _rendered(rows: int) -> str:
+        store = InMemoryNoteStore()
+        anchor_start = anchor_bounds_ms(PASSED_ANCHOR)[0]
+        note = await _seed(store, title="Dinner", anchor=PASSED_ANCHOR,
+                           entities=("ada",), revisit_at=NOW - 1)
+        from dataclasses import replace
+        store.notes[note.id] = replace(note, created_at=anchor_start - 30 * DAY_MS)
+        record = FakeRecordStore()
+        for i in range(1, rows + 1):
+            record.rows.append(_row(i, f"chat {i}", ts=anchor_end + 1 + i * 60_000))
+        curator = _curator(store, Metrics(), record=record,
+                           now_ms=anchor_end + ANCHOR_LAPSE_MS + 1)
+        return await curator.inputs(key=WS, batch=())
+
+    assert marker in await _rendered(60)
+    assert marker not in await _rendered(10)
 
 
 async def test_an_untruncated_window_reaching_past_the_anchor_can_expire():

@@ -1,0 +1,12 @@
+{
+  "type": "fix",
+  "summary": "Notes about a day that has passed now retire in busy rooms too, two days after the day, instead of staying open forever.",
+  "details": [
+    "The note curator judged each note against the room's newest 40 messages and refused to expire a note unless those reached back to when it was written, which never happens in a busy room.",
+    "Two days after a note's date, a message from the group after that date is enough to let the curator expire it.",
+    "A room that went quiet before the date still cannot expire the note."
+  ],
+  "limitations": [
+    "Past the two days, the curator reads only the room's newest 40 messages. An answer given before them is recorded as expired rather than closed, and a change of plan given before them can let a still-live note be retired. The curator is told when older messages exist."
+  ]
+}
