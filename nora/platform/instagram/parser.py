@@ -64,6 +64,7 @@ parsers — a bad turn must never kill the stream behind it.
 from __future__ import annotations
 
 import logging
+import re
 import time
 from dataclasses import replace
 
@@ -212,6 +213,69 @@ def _shared_target(target_url: object, author: str = "") -> tuple[str, str]:
     return kind, link.url
 
 
+#: Where a caption's FIRST SENTENCE ends. A Latin `.`, `!` or `?` (a run of
+#: them, so `?!` and `...` end one sentence) ends it only when whitespace or
+#: the end of the text follows, so the dot in `3.5`, `example.com` or a
+#: shortcode never cuts a sentence in half. A Chinese full stop, `!` or `?`
+#: (U+3002, U+FF01, U+FF1F) ends it where it stands, because Chinese puts
+#: no space after one. A newline
+#: ends it too: a caption's first line is its first thought whatever
+#: punctuation it has, and emoji and hashtags never end one. Closing quotes
+#: and brackets right after the mark stay with the sentence they close.
+_SENTENCE_END = re.compile(
+    r"[.!?]+[\"'\u201d\u2019\u300d\u300f\uff09)]*(?=\s|$)"
+    r"|[\u3002\uff01\uff1f]+[\"'\u201d\u2019\u300d\u300f\uff09)]*"
+    r"|\n"
+)
+
+#: The longest caption excerpt the transcript carries, in characters, before
+#: its `…`. One sentence can run to hundreds of characters (a Cantonese
+#: caption often has no stop in it at all), and the excerpt exists to be
+#: SHORT, so a sentence longer than this is cut at the last space inside it,
+#: or at the limit itself when there is no space (Chinese has none).
+_CAPTION_EXCERPT_MAX = 160
+
+#: What marks an excerpt as cut: the one character that says «there is more
+#: of this caption than the line shows».
+_ELLIPSIS = "…"
+
+
+def _caption_excerpt(caption: str) -> str:
+    """A shared item's caption as the transcript carries it: its FIRST
+    SENTENCE, then `…` when anything was left out, and never more than
+    `_CAPTION_EXCERPT_MAX` characters before that `…`. A caption that is one
+    short sentence comes back unchanged, with no `…`.
+
+    **Why the transcript does not carry the whole caption** (design 13,
+    2026-09-24). A shared post whose line carried its full ~1,000 character
+    caption was asked about («what do u see») and answered from the line
+    alone, «no pictures, only text», which was false; no tool was called.
+    Replayed 12 times per variant: as recorded, 0 of 12 first calls reached
+    for the post; with the caption cut to its first sentence and `…`, 9 of 12
+    did. A whole caption reads as the whole post. An excerpt that visibly
+    stops reads as a pointer to something she has not seen, and the link
+    beside it is how she sees it: `instagram_read` returns the full caption
+    from Instagram itself, so nothing is lost by cutting it here.
+    """
+    text = caption.strip()
+    cut = False
+    # The first mark with words before it: a caption that OPENS on `!` or
+    # `。` has not finished a sentence there.
+    end = next((m for m in _SENTENCE_END.finditer(text) if text[:m.start()].strip()), None)
+    if end is not None and text[end.end():].strip():
+        text = text[:end.end()].rstrip()
+        cut = True
+    if len(text) > _CAPTION_EXCERPT_MAX:
+        window = text[:_CAPTION_EXCERPT_MAX]
+        space = window.rfind(" ")
+        # At a word boundary when the window has one; a run with no space in
+        # it (Chinese, or one very long token) is cut at the limit itself.
+        # A dangling zero width joiner would leave half an emoji behind.
+        text = (window[:space] if space > 0 else window).rstrip().rstrip("‍")
+        cut = True
+    return text + _ELLIPSIS if cut else text
+
+
 def _shared_line(shared: object) -> tuple[str, str, str]:
     """A SHARED reel, post or story, rendered as text the model can read for
     free, with its kind and the validated link that line carries (`""` when
@@ -232,6 +296,11 @@ def _shared_line(shared: object) -> tuple[str, str, str]:
     shared story each carried only `author`, `target_url` and `typename`. So
     the line that is actually free is «somebody shared a reel by @x, here is
     the link», and the caption is rendered when a delta carries one.
+
+    **When there is one, the line carries its first sentence, not all of
+    it** (`_caption_excerpt`, 2026-09-24): a line holding a whole long
+    caption was answered as if it were the whole post. The `…` says there is
+    more, and the link reads it.
 
     Until this existed, a shared reel arrived with no text and no media and was
     dropped for having neither, so Nora never learned anything had been posted
@@ -299,6 +368,10 @@ def _shared_line(shared: object) -> tuple[str, str, str]:
     # `enrich_placeholders` would then hang whatever reading `0a1b2c` resolves
     # to off it. Round brackets read the same to a model and parse as nothing.
     caption = caption.replace("[", "(").replace("]", ")")
+    # Its FIRST SENTENCE, and `…` when there was more (`_caption_excerpt`):
+    # a whole caption read as the whole post, and the link is what reads the
+    # rest. Linked or not, the same excerpt.
+    caption = _caption_excerpt(caption)
     # The bridge answers `null` rather than an empty object for an XMA it
     # could not read, so a dict with nothing readable in it is a shape it read
     # that carried neither name nor words nor link. It still renders

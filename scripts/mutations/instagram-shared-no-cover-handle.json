@@ -37,8 +37,8 @@
   {
     "name": "the Instagram page-link refusal is removed: media_fetch downloads the page",
     "file": "nora/agent/tools.py",
-    "old": "        if page == \"page\":\n",
-    "new": "        if False:\n",
+    "old": "        if page == \"page\":\n            _record_media(",
+    "new": "        if False:\n            _record_media(",
     "target": "tests/test_media_fetch.py -k instagram_page_link"
   },
   {
@@ -51,8 +51,8 @@
   {
     "name": "every url is refused as a page, a CDN file included",
     "file": "nora/agent/tools.py",
-    "old": "        if page == \"page\":\n",
-    "new": "        if url and not code:\n",
+    "old": "        if page == \"page\":\n            _record_media(",
+    "new": "        if url and not code:\n            _record_media(",
     "target": "tests/test_media_fetch.py -k not_an_instagram_page_still_downloads"
   },
   {
@@ -65,8 +65,8 @@
   {
     "name": "the m.instagram.com page refusal is removed: the mobile page is downloaded",
     "file": "nora/agent/tools.py",
-    "old": "        if page == \"mobile\":\n",
-    "new": "        if False:\n",
+    "old": "        if page == \"mobile\":\n            _record_media(",
+    "new": "        if False:\n            _record_media(",
     "target": "tests/test_media_fetch.py -k mobile_page_link"
   },
   {

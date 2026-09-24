@@ -236,10 +236,12 @@ class _NoStore:
 def world(bridge, persons):
     """`make(**turn) -> (fake_bridge, instagram_read)`: production router,
     person index, username lookup and client over one fake bridge, wired the
-    way the composition root wires them."""
+    way the composition root wires them. `as_spec=True` hands back the whole
+    `ToolSpec` instead of its call, for a test that goes through Strands."""
     fake, root = bridge
 
-    def make(*, room_id: str = "g1", roster: dict | None = None, tagger: str = "p_quinn", **turn):
+    def make(*, room_id: str = "g1", roster: dict | None = None, tagger: str = "p_quinn",
+             as_spec: bool = False, **turn):
         client = InstagramSocialClient(base_url=root, timeout_seconds=5.0)
         router = SocialRouter(
             default=None,
@@ -257,7 +259,8 @@ def world(bridge, persons):
             persons=persons, honcho=FakeMemoryStore(), deliverer=SinkSender(),
             metrics=Metrics(), room=room, **turn,
         )
-        return fake, next(s.call for s in specs if s.name == "instagram_read")
+        spec = next(s for s in specs if s.name == "instagram_read")
+        return fake, (spec if as_spec else spec.call)
 
     return make
 
@@ -597,15 +600,80 @@ async def test_a_key_shaped_username_is_refused_however_it_arrived(world, arg):
 @pytest.mark.parametrize(
     "arg",
     [{}, {"what": "profile"}, {"person": "Quinn", "handle": "example_friend", "what": "profile"},
-     {"handle": "example_friend", "link": _REEL}, {"person": "  ", "what": "profile"}],
-    ids=["nothing", "what_only", "person_and_handle", "handle_and_link", "blank_person"],
+     {"handle": "example_friend", "link": _REEL}, {"person": "  ", "what": "profile"},
+     {"handle": "example_friend", "url": _REEL}, {"person": "Quinn", "url": _POST},
+     {"url": "  "}],
+    ids=["nothing", "what_only", "person_and_handle", "handle_and_link", "blank_person",
+         "handle_and_url", "person_and_url", "blank_url"],
 )
 async def test_exactly_one_input_is_required(world, arg):
+    """`url` is `link` under another name, so it counts as the link: a
+    handle or a person beside it is still two inputs."""
     fake, read = world()
     out = await read(**arg)
 
     assert out["status"] == "unavailable"
+    assert "exactly one" in out["note"]
     assert fake.calls == []
+
+
+# ---- `url` is `link` (design 13, 2026-09-24) -----------------------------------
+#
+# Every `instagram_read` call the replays made from the deferred catalogue,
+# before the schema was loaded, passed `url=`. With no such parameter,
+# Strands dropped it and each call failed «exactly one».
+
+
+@pytest.mark.parametrize(
+    ("url", "calls"),
+    [(_POST, [("GET", "/posts/SynthPost01")]),
+     ("instagram.com/reel/SynthReel01/", [("GET", "/posts/SynthReel01")]),
+     ("https://www.instagram.com/example_friend/",
+      [_lookup("example_friend"), ("GET", "/accounts/10000001")])],
+    ids=["post", "reel_no_scheme", "profile"],
+)
+async def test_url_is_read_exactly_as_link_would_be(world, url, calls):
+    fake, read = world()
+    out = await read(url=url)
+
+    assert out["status"] == "ok"
+    assert fake.calls == calls
+    _no_ids(out)
+
+
+async def test_url_survives_strands_argument_validation(world):
+    """Through the adapter the agent loop runs, not the bare closure: Strands
+    validates the model's input through a model built from the signature,
+    which drops any key it does not declare. This is the path the live
+    `url=` calls took, and the bridge is asked for the post."""
+    from nora.agent.ports import adapt
+
+    fake, spec = world(as_spec=True)
+    tool = adapt(spec)
+    events = [
+        event async for event in tool.stream(
+            {"toolUseId": "t1", "name": "instagram_read", "input": {"url": _POST}}, {},
+        )
+    ]
+
+    assert events[-1].tool_result["status"] == "success"
+    assert fake.calls == [("GET", "/posts/SynthPost01")]
+
+
+async def test_url_and_link_that_differ_read_nothing(world):
+    """Two different links: nothing says which was meant. Positive control:
+    the same link given both ways is simply that link."""
+    fake, read = world()
+    out = await read(link=_POST, url=_REEL)
+
+    assert out["status"] == "unavailable"
+    assert "link" in out["note"] and "url" in out["note"]
+    assert _POST not in out["note"] and _REEL not in out["note"]
+    assert fake.calls == []
+
+    same = await read(link=_POST, url=f"  {_POST} ")
+    assert same["status"] == "ok"
+    assert fake.calls == [("GET", "/posts/SynthPost01")]
 
 
 @pytest.mark.parametrize(
@@ -703,7 +771,9 @@ class _NoPersons:
 def test_the_schema_takes_one_of_person_handle_or_link_and_an_optional_read():
     """18 as built: `what` is an enum of the two reads a name or a handle can
     ask for, and nothing is required, because exactly one of three inputs is
-    given and a link needs no `what`. No `limit` or `cursor` until P13."""
+    given and a link needs no `what`. No `limit` or `cursor` until P13.
+    `url` is `link` under the name a model reaches for first (design 13,
+    2026-09-24), declared because Strands drops an undeclared argument."""
     from nora.agent.ports import adapt
 
     room = Room(platform="signal", conversation_id="g1", roster_source=None, persons=_NoPersons())
@@ -715,7 +785,8 @@ def test_the_schema_takes_one_of_person_handle_or_link_and_an_optional_read():
         ) if s.name == "instagram_read"
     ]
     schema = adapt(spec).tool_spec["inputSchema"]["json"]
-    assert set(schema["properties"]) == {"what", "person", "handle", "link"}
+    assert set(schema["properties"]) == {"what", "person", "handle", "link", "url"}
+    assert schema["properties"]["url"]["description"] == "same as link."
     assert not schema.get("required")
     assert schema["properties"]["what"]["enum"] == ["profile", "story"]
 

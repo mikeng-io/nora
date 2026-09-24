@@ -413,6 +413,69 @@ yields no placeholder at all. As recorded above, nothing on Instagram
 compares a re-parse against the stored body today (an Instagram edit
 carries no media and no `shared`).
 
+### 2026-09-24, after #471: a long caption reads as the whole post
+
+**Measured live.** A post with a caption of about 1,000 characters was
+shared into an Instagram group. With #471 deployed the line was
+`[shared post by @x https://www.instagram.com/p/<code>/ — <full caption>]`,
+no handle, as designed. Asked «what do u see», Nora called NO tool and
+answered «呢篇冇圖，得字» («no pictures, only text»), which was false.
+
+**Replayed**, the recorded request 12 times per variant, first call only:
+
+| variant | first call reaches for the post |
+|---|---|
+| P0, as recorded | 0/12 `instagram_read` |
+| `instagram_read` loaded up front | 0/12 |
+| P6, caption cut to its first sentence and `…` | 9/12 |
+
+Two more readings from the same replays. Every `instagram_read` call made
+from the deferred catalogue, before the schema was loaded, passed `url=`;
+the tool had no such parameter, Strands' input model dropped it without a
+word, and each call arrived empty and failed «Give exactly one of person,
+handle or link». And 3 of 12 went to `web_fetch` on the page link instead.
+
+**Reading.** The input, not the instruction (AGENTS.md): a thousand
+characters of caption is enough text to answer «what do u see» from, so the
+line read as the whole post. Loading the tool changed nothing; shortening
+what the line claims to hold did. An excerpt that visibly stops reads as a
+pointer to something not yet seen, and the link beside it is the way in.
+
+**What changed.**
+
+- **The line carries the caption's first sentence** (`_caption_excerpt` in
+  `nora/platform/instagram/parser.py`), then `…` when anything was left
+  out. A sentence ends at the first `.`, `!` or `?` followed by whitespace
+  or the end (so `3.5` and `example.com` do not end one), at the first
+  `。`, `！` or `？` wherever it stands, or at a newline; emoji and hashtags
+  never end one. A sentence longer than 160 characters is cut at the last
+  space inside the limit, or at the limit when there is none (Chinese), and
+  gets `…` too. One short sentence is unchanged, with no `…`. #435's bracket
+  defang runs first and the placement rules are unchanged; linked and
+  unlinked shares get the same excerpt. Nothing is lost: `instagram_read`
+  on the link returns the full caption from Instagram itself (inside the
+  wrap, last, under `[social] content_max_chars`), pinned by
+  `test_a_long_caption_comes_back_whole_where_the_transcript_cuts_it`.
+- **`instagram_read` accepts `url` as `link`.** An undeclared argument
+  cannot be accepted quietly: Strands validates through a pydantic model
+  built from the signature, which ignores any key it does not declare, so
+  `url` is a declared optional parameter, «same as link.», costing 22
+  tokens on the tool's spec (395 to 417, cl100k). `url` and `link` that
+  differ answer `unavailable` and read nothing; «exactly one of person,
+  handle or link» still holds, with `url` counted as the link.
+- **`web_fetch` routes an Instagram page link** exactly as `media_fetch`
+  has since #471, through the same `_instagram_page_kind` helper and before
+  its own scheme check, so a pasted link with no scheme is routed too:
+  `nothing_found`, nothing fetched, and the note «That link is an Instagram
+  page. Open it with instagram_read using this link.» A mobile page link
+  asks for the www.instagram.com link.
+
+**Reopens if** a live turn on a shared post with a long caption still
+answers from the line without calling `instagram_read`, or an excerpt is
+seen to cut a caption somewhere that misleads (a first «sentence» that is
+only an emoji line is the likeliest). 9 of 12 is a replay, not a live
+rate.
+
 ### Known gaps, recorded and not fixed here
 
 - **A shortcode can look like a key to the egress screen.** The shortcode

@@ -1,0 +1,65 @@
+[
+  {
+    "name": "the caption excerpt is removed: the line carries the whole caption (the live shape)",
+    "file": "nora/platform/instagram/parser.py",
+    "old": "    caption = _caption_excerpt(caption)\n",
+    "new": "",
+    "target": "tests/unit/test_instagram_parser.py::test_a_long_shared_caption_becomes_its_first_sentence_and_an_ellipsis tests/unit/test_instagram_parser.py::test_an_unlinked_share_carries_the_same_excerpt tests/unit/test_instagram_parser.py::test_the_first_sentence_rule_reads_english_cantonese_and_emoji"
+  },
+  {
+    "name": "the hard cap is removed: one very long sentence is carried whole",
+    "file": "nora/platform/instagram/parser.py",
+    "old": "    if len(text) > _CAPTION_EXCERPT_MAX:\n",
+    "new": "    if False:\n",
+    "target": "tests/unit/test_instagram_parser.py::test_one_very_long_sentence_is_capped_at_a_word_boundary tests/unit/test_instagram_parser.py::test_a_long_sentence_with_no_spaces_is_capped_at_the_limit tests/unit/test_instagram_parser.py::test_a_first_sentence_longer_than_the_cap_is_capped_too"
+  },
+  {
+    "name": "the cap cuts inside a word instead of at the last space",
+    "file": "nora/platform/instagram/parser.py",
+    "old": "(window[:space] if space > 0 else window)",
+    "new": "window",
+    "target": "tests/unit/test_instagram_parser.py::test_one_very_long_sentence_is_capped_at_a_word_boundary"
+  },
+  {
+    "name": "a Latin stop ends a sentence with no space after it (3.5, example.com)",
+    "file": "nora/platform/instagram/parser.py",
+    "old": "(?=\\s|$)\"\n",
+    "new": "\"\n",
+    "target": "tests/unit/test_instagram_parser.py::test_the_first_sentence_rule_reads_english_cantonese_and_emoji"
+  },
+  {
+    "name": "a mark at the very start counts as the end of a sentence",
+    "file": "nora/platform/instagram/parser.py",
+    "old": " if text[:m.start()].strip()), None)",
+    "new": "), None)",
+    "target": "tests/unit/test_instagram_parser.py::test_one_short_sentence_is_left_exactly_as_written"
+  },
+  {
+    "name": "the url alias is removed: url is accepted and ignored",
+    "file": "nora/agent/tools.py",
+    "old": "            link = url\n",
+    "new": "            pass\n",
+    "target": "tests/unit/test_instagram_read_links.py -k url"
+  },
+  {
+    "name": "url and link that differ are not refused: url silently wins",
+    "file": "nora/agent/tools.py",
+    "old": "            if isinstance(link, str) and link.strip() and link.strip() != url.strip():\n",
+    "new": "            if False:\n",
+    "target": "tests/unit/test_instagram_read_links.py::test_url_and_link_that_differ_read_nothing"
+  },
+  {
+    "name": "the web_fetch Instagram page guard is removed: the page goes to the provider",
+    "file": "nora/agent/tools.py",
+    "old": "        page = _instagram_page_kind(url)\n",
+    "new": "        page = \"\"\n",
+    "target": "tests/test_web_fetch_tool.py -k instagram"
+  },
+  {
+    "name": "the web_fetch guard judges only links with a scheme: a pasted one is refused as not a link",
+    "file": "nora/agent/tools.py",
+    "old": "        page = _instagram_page_kind(url)\n",
+    "new": "        page = _instagram_page_kind(url) if url.startswith((\"http://\", \"https://\")) else \"\"\n",
+    "target": "tests/test_web_fetch_tool.py::test_an_instagram_page_link_is_routed_to_instagram_read_and_never_fetched tests/test_web_fetch_tool.py::test_a_mobile_instagram_page_link_asks_for_the_www_link"
+  }
+]

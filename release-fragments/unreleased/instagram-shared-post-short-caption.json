@@ -1,0 +1,14 @@
+{
+  "type": "fix",
+  "summary": "Asked about an Instagram post someone shared with a long caption, Nora opens the post instead of answering from the caption alone.",
+  "details": [
+    "She used to see a shared post's whole caption in the chat and treat it as the whole post. With a long caption, she said there were no pictures, only text, and there were pictures. Now she sees only the caption's first sentence, ending in '…', and opens the post when someone asks what is in it.",
+    "The full caption is still there when she opens the post. Nothing is lost; she just has to open the post to see it.",
+    "When she asks for a post by its link under the wrong name, the read works now instead of failing without a word.",
+    "When she tries to read an Instagram post, reel, story or profile page as an ordinary web page, she is told to open it as an Instagram post instead. It no longer goes out as a web page fetch."
+  ],
+  "limitations": [
+    "A caption whose first line is only emoji or hashtags shows just that line in the chat. She has to open the post to read the rest.",
+    "Measured on replays of one recorded conversation: she opened the post 9 times in 12, not every time."
+  ]
+}

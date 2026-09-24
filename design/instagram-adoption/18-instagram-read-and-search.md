@@ -149,6 +149,15 @@ instagram_read(what: str | None = None, person: str | None = None,
 > shapes: it asks the parser with `story_ring=False`, so a shared ring link
 > is labelled as before. The egress screen (`scan_identifiers`) runs on EVERY
 > username about to leave, a link's as well as a typed handle's.
+>
+> **Amended 2026-09-24, after #471: `url` is `link`** (13 §«a long caption
+> reads as the whole post»). Every replayed call from the deferred
+> catalogue passed `url=`, which Strands dropped because the signature did
+> not declare it, so each failed «exactly one». `url` is now a declared
+> optional parameter, «same as link.» (22 tokens on the spec); `url` and
+> `link` that differ are `unavailable`, and `url` counts as the link for
+> «exactly one». `web_fetch` routes an Instagram page link here, as
+> `media_fetch` does.
 
 **Exactly one of `person`, `link`, `handle`.** Three parameters, not one
 overloaded `target`: a person's name and an Instagram handle are the same

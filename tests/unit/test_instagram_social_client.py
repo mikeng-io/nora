@@ -619,6 +619,27 @@ async def test_a_post_caption_is_wrapped_last_and_cannot_forge_a_marker(post_bri
     assert "forged" not in str(out["items"])
 
 
+async def test_a_long_caption_comes_back_whole_where_the_transcript_cuts_it(post_bridge):
+    """The transcript carries a shared item's FIRST SENTENCE (design 13,
+    2026-09-24) on the promise that the post read returns the rest. This is
+    that promise: a caption of about a thousand characters, several
+    sentences and a newline, comes back whole, its newline folded to a
+    space, under the default clamp. Synthetic text."""
+    fake, provider = post_bridge
+    caption = (
+        "Our autumn menu starts this Friday at the harbour kitchen. "
+        + "Every dish is built around one ingredient from the morning market. " * 13
+        + "\nBook ahead, tables go fast! #autumnmenu"
+    )
+    assert len(caption) > 900
+    fake.post = _post_with(caption=caption)
+    out = await provider.read(**_POST_READ)
+
+    assert out["status"] == "ok"
+    assert out["truncated"] is False
+    assert "caption: " + " ".join(caption.split()) in _inside_wrap(out["text"])
+
+
 async def test_a_post_media_url_off_the_instagram_cdn_is_dropped(post_bridge):
     fake, provider = post_bridge
     items = copy.deepcopy(fixture("posts_carousel_ok.json")["body"]["items"])
