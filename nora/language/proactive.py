@@ -113,6 +113,7 @@ from nora.domain.notes import (
 )
 from nora.domain.ports import (
     DEFAULT_MEMORY_READ_TIMEOUT_SECONDS,
+    CultureReader,
     Proposal,
     Recollection,
 )
@@ -120,6 +121,7 @@ from nora.domain.prompt import escape, one_line
 from nora.domain.reminders import Reminder
 from nora.domain.self_presence import Presence
 from nora.domain.standing import Standing
+from nora.language.culture_render import read_culture, render_culture
 from nora.language.note_render import render_note_rows, standing_only
 from nora.language.presence_render import render_presence
 from nora.language.self_card_render import render_self_card
@@ -213,7 +215,11 @@ WAKE_CLOCK_NAME = "proactive:wake"
 #: `_roster_index`, not this number. A per-member `await` in a loop would be N
 #: sites and would have to be counted as N; that is the reading that moves this
 #: number again.
-STORE_CALLS_PER_TICK = 17
+#:
+#: 17 -> 18 on 2026-09-25 (DEC-207): `self._culture.head` per unit room,
+#: the same per-room site shape as `_standing.read` beside it (rooms are at
+#: most one per platform, DEC-105).
+STORE_CALLS_PER_TICK = 18
 
 PassReason = Literal[
     "daily", "changed", "held_quiet", "unchanged", "unclocked",
@@ -466,6 +472,11 @@ _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     ("people", 30, "turn"),
     ("notes", 40, "turn"),
     ("rooms", 50, "turn"),
+    # One `<culture room=…>` per room of the unit that has been folded
+    # (DEC-207), right under the positions: `<rooms>` says where she had got
+    # to in each, and the account says what each room IS — the half a pass
+    # choosing WHERE to raise something was deciding without.
+    ("culture", 55, "turn"),
     ("decisions", 60, "turn"),
     ("loop_decisions", 70, "turn"),
     ("self_card", 80, "turn"),
@@ -545,8 +556,14 @@ class ProactiveAdaptor:
         quiet_seconds: float = DEFAULT_QUIET_SECONDS,
         daily_hour: int = DEFAULT_DAILY_HOUR,
         decisions: DecisionLogRecorder | None = None,
+        # THE ROOMS' ACCOUNTS (design/culture-tier, DEC-207). Keyed on
+        # `UnitRoom.conversation_id`, which the composition root fills with
+        # the room's `primary_id` — the key the culture fold writes under
+        # (DEC-181). `None` while `[culture] enabled = false`.
+        culture: CultureReader | None = None,
     ) -> None:
         self._notes = notes
+        self._culture = culture
         # `None` is `[standing] enabled = false`: no paragraph to read, and
         # the prompt says nothing about rooms rather than «no position».
         self._standing = standing
@@ -682,6 +699,7 @@ class ProactiveAdaptor:
             name="rooms", order=rooms_order, key=rooms_key,
             body="\n".join(standing_lines) if standing_lines else "(no positions)",
         ).render())
+        parts.extend(await self._cultures(rooms))
         parts.append(await self._decision_log(rooms, now=now))
         parts.append(await self._loop_decisions(key, rooms, home, now=now))
         self_card = await self._self_card(key, platform=home.platform)
@@ -973,6 +991,27 @@ class ProactiveAdaptor:
             if rows and now_ms - rows[-1].ts < self._quiet_ms:
                 return False
         return True
+
+    async def _cultures(self, rooms: Sequence[UnitRoom]) -> list[str]:
+        """One `<culture room=…>` per room of the unit with an account
+        (DEC-207), in `rooms` order. A room never folded renders nothing; a
+        failed read is counted per room (`stage="proactive_culture"`) and
+        renders nothing either — `read_culture`'s contract."""
+        out: list[str] = []
+        for room in rooms:
+            block = render_culture(
+                await read_culture(
+                    self._culture.head(key=room.conversation_id)
+                    if self._culture is not None else None,
+                    stage="proactive_culture", platform=room.platform,
+                    metrics=self._metrics,
+                    timeout_seconds=self._read_timeout_seconds,
+                ),
+                now=self._clock(), room=_room_name(room),
+            )
+            if block is not None:
+                out.append(restamp(block, _ROW).render())
+        return out
 
     async def _standing_lines(
         self, rooms: Sequence[UnitRoom], *, now_ms: int,

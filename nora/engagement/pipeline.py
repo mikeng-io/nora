@@ -90,6 +90,7 @@ from nora.agent.prefill import (
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
 from nora.domain import audience as audience_names
+from nora.domain.culture import CultureRevision
 from nora.domain.decision_log import DecisionLogRecorder
 from nora.domain.ports import (
     EngagementRequest,
@@ -463,6 +464,7 @@ class EngagementPipeline:
 
     async def _debrief(
         self, *, trace: TagTrace | None, platform: str,
+        culture: CultureRevision | None = None,
     ) -> None:
         """Hand this finished turn to the debrief stage, or do nothing at all.
 
@@ -521,6 +523,7 @@ class EngagementPipeline:
                 timeout_seconds=wiring.timeout_seconds,
                 store_timeout_seconds=wiring.store_timeout_seconds,
                 now_ms=int(time.time() * 1000),
+                culture=culture,
             )
 
     async def _run_admitted(
@@ -581,6 +584,11 @@ class EngagementPipeline:
         # `agent.messages` and no `ctx.transcript` window to attribute a
         # trace to, so nothing is saved for it.
         trace: TagTrace | None = None
+        # The room's account the turn read at its start (DEC-207), handed to
+        # the debrief so the fold reads the SAME account the reply did rather
+        # than a second read that could land either side of a fold. Bound
+        # here, before the `try`, for `trace`'s reason.
+        culture: CultureRevision | None = None
         # Every log line emitted for the rest of this tag — across every stage
         # this method calls into — carries tag_id without any of them naming
         # it explicitly (nora.obs.logging's contextvar bridge).
@@ -592,6 +600,7 @@ class EngagementPipeline:
         # `indicate.resolve` treats as "nothing to replace".
         try:
             ctx = await self._context.assemble(request=request)
+            culture = ctx.culture
             # An @-mention is a placeholder plus a parallel array, so until
             # DEC-34 every name in the transcript — including Nora's own —
             # reached the model as U+FFFC. Rehydrated HERE rather than at
@@ -1176,7 +1185,8 @@ class EngagementPipeline:
             #    straight out of `run` — an outage far wider than one tag,
             #    caused by a stage reviewing a turn that already finished.
             try:
-                await self._debrief(trace=trace, platform=msg.platform)
+                await self._debrief(
+                    trace=trace, platform=msg.platform, culture=culture)
             except BaseException:
                 # ABSORBED, not re-raised, and `BaseException` rather than
                 # `Exception` for `debrief.run`'s own reason one level down:

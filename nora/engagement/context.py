@@ -23,6 +23,7 @@ import logging
 import time
 from typing import Any, Protocol
 
+from nora.domain.culture import CultureRevision
 from nora.domain.media_join import MediaJoin
 from nora.domain.models import (
     NormalizedMessage,
@@ -32,6 +33,7 @@ from nora.domain.models import (
 )
 from nora.domain.notes import Note
 from nora.domain.ports import (
+    CultureReader,
     EngagementRequest,
     MemoryStore,
     RecordStore,
@@ -41,6 +43,7 @@ from nora.domain.quote_window import QuoteWindow
 from nora.domain.self_presence import Presence
 from nora.domain.standing import Standing
 from nora.engagement.self_presence import PresenceReader
+from nora.language.culture_render import read_culture
 from nora.persons import Persons
 from nora.policy import Policy
 
@@ -94,6 +97,7 @@ class TranscriptInjection:
         standing: StandingStore | None = None,
         media_join: MediaJoin | None = None,
         presence: PresenceReader | None = None,
+        culture: CultureReader | None = None,
     ) -> None:
         self._audit = audit
         self._memory = memory
@@ -146,6 +150,12 @@ class TranscriptInjection:
         # rooms with live transport state, her handles. `None` is a harness
         # with no reader, and the prefill then renders the network alone.
         self._presence_reader = presence
+        # THE ROOM'S OWN ACCOUNT (design/culture-tier, DEC-207). `None` while
+        # `[culture] enabled = false`. Read-only by TYPE: a `CultureReader` has
+        # `head` and nothing else, so no tag turn can write a culture row.
+        # Keyed on the room's `primary_id`, resolved through `policy` — see
+        # `_culture`.
+        self._culture_reader = culture
 
     async def assemble(self, *, request: EngagementRequest) -> TagContext:
         msg = request.message
@@ -185,9 +195,13 @@ class TranscriptInjection:
         # overload limit: an outer gather of two keeps both halves typed. It is
         # on the front of the turn like the rest because adapter health must
         # be read now, not remembered.
+        #
+        # `<culture>` (DEC-207) is the eighth, and joins the OUTER gather for
+        # the same overload reason `<presence>` does.
         (
             (transcript, card, self_card, tagger_card, standing, notes),
             presence,
+            culture,
         ) = await asyncio.gather(
             asyncio.gather(
                 self._recent(msg),
@@ -198,6 +212,7 @@ class TranscriptInjection:
                 self._notes(msg),
             ),
             self._presence(msg),
+            self._culture(msg),
         )
 
         # One name space for the whole prompt (DEC-80) — see `Persons.name_transcript`.
@@ -230,6 +245,30 @@ class TranscriptInjection:
             notes=notes,
             standing=standing,
             presence=presence,
+            culture=culture,
+        )
+
+    async def _culture(self, msg: NormalizedMessage) -> CultureRevision | None:
+        """This room's account, or `None` (design/culture-tier, DEC-207).
+
+        Keyed on the room's `primary_id`, NEVER `msg.conversation_id`: the fold
+        is a Dreamer adaptor handed `scopes()`, so that is what it wrote under,
+        and a read by the arriving thread's id matches zero rows on a room
+        holding two ids — rendering as «no account yet», a real state nothing
+        would report (DEC-181, issue #229). A room outside the policy has no
+        key and reads nothing.
+
+        Bounded, fail-soft and counted (`stage="tag_culture"`) by
+        `read_culture`, so it is safe inside the `gather`.
+        """
+        if self._culture_reader is None or self._policy is None:
+            return None
+        convo = self._policy.conversation(msg.platform, msg.conversation_id)
+        if convo is None or not convo.primary_id:
+            return None
+        return await read_culture(
+            self._culture_reader.head(key=convo.primary_id),
+            stage="tag_culture", platform=msg.platform, metrics=self._metrics,
         )
 
     async def _presence(self, msg: NormalizedMessage) -> Presence | None:

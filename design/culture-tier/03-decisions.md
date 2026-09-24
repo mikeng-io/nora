@@ -148,6 +148,56 @@ these two ever disagree again.
 
 ---
 
+## DEC-207 — every runtime reads the account; the gate still does not (2026-09-25)
+
+**Operator, 2026-09-25:** the culture dreamer runs daily, and the cultural
+context block is injected into each of the runtimes — engagement and the
+different dreamers. That supersedes `01-the-adaptor §6`'s single consumer and
+answers issue #312's three open questions as follows. The row is
+`design/09-decision-index.md` DEC-207.
+
+**Who reads it.** The tag turn (`TranscriptInjection`), every fire occasion
+(participation, reminder, gathering, proactive act — `FirePath._read_culture`
+lost its `participation` gate), the proactive decide pass, note-candidates, the
+note curator, and both standing folds (the tag-turn debrief, handed the account
+the turn read rather than a second read; and the event-path rollup). The
+relevance gate does NOT: `design/context-assembly/02` and #144/#147 are
+unchanged, and "each of the runtimes" was read as the turns and the Dreamer
+passes, not the admission check in front of them. The `note-merge` pass (DEC-202,
+#495, landed while this was in review) is not a consumer either: it puts a
+unit's open notes side by side and reads no room (design 41 §7.4), so there is
+no room whose account it could be handed.
+
+**#312 §2, proactive's keys.** Every room of the unit, each account NAMED by
+its room's label (`<culture room="…">`), never only the home room's. The pass
+exists to choose WHERE to raise something, so privileging one room's account
+would answer the question it is asking. The cost is bounded by DEC-105's one
+room per platform per unit. The note curator, also unit-keyed, reads one account
+per distinct room its shown notes were raised in, and each `<note>` gains the
+same `room` label so the model can join the two.
+
+**#312 §3, the note-candidates contradiction.** Both statements describe
+different things, and neither said so; `_room_block`'s docstring now does.
+`<room>` is the operator's sentence about what the room is FOR, by fiat — the
+one thing this pass takes as given because it cannot derive it from the batch
+it is judging. `<culture>` is her account of what the room has BECOME, written
+offline over its whole history. The circularity is bounded — the fold reads a
+different window, daily — and not zero; the pass's eval arm is what measures
+whether it matters.
+
+**One flag.** `[culture] enabled` gates the fold and every read together, as it
+has since #382. `nora/config.py` and `config.example.toml` said «nothing reads
+it» until this change and now say what the flag does.
+
+**Mechanism.** One read (`nora.language.culture_render.read_culture`): keyed on
+the room's `primary_id` (DEC-181), bounded, fail-soft, and counted under
+`nora_errors_total{stage}` with one stage per occasion. `CultureReader` moved to
+`nora.domain.ports` with a contract-bound fake (`InMemoryCultureStore`).
+
+**Reopen** if an occasion's eval arm reads worse with the block than without it
+on a labelled metric (`02-measurement §6`'s third tier): remove that occasion,
+not the tier.
+
 ## Not decided here
 
 - **The gate metric's `conversation_id` label** — no longer a separate issue

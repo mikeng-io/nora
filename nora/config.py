@@ -2374,13 +2374,19 @@ class CultureConfig(BaseModel):
     #: restart. Turning it on is a deliberate later change — the same rule
     #: `[notes] candidates_enabled` states.
     #:
-    #: **What turning it on buys, and what it does not.** On, a background pass
-    #: writes one short account of each room per day into its own store, and
-    #: NOTHING READS IT (design/culture-tier 02-measurement §5, step 4). That is
-    #: the sequence the design argues for rather than an unfinished state: the
-    #: tier's one genuine contribution is the CHAIN of accounts, so a tier
-    #: judged on its first snapshot is judged on the one thing it does not
-    #: contribute. The prompt-facing step is separate and measured.
+    #: **What turning it on does — TWO things, under this one flag.** A
+    #: background pass writes one short account of each room per day into its
+    #: own store, AND every runtime reads the room's current account as
+    #: `<culture>`: the tag turn, every fire occasion, the proactive pass, both
+    #: note passes and both standing folds (DEC-207, 2026-09-25; the
+    #: participation turn alone from #382, 2026-09-22). The relevance gate
+    #: never does (design/context-assembly/02).
+    #:
+    #: There is no separate read switch. This comment said «NOTHING READS IT»
+    #: for three days after #382 made it false, which meant an operator who
+    #: enabled the fold on that promise got a live prompt change on the next
+    #: deploy; the promise is withdrawn here rather than restored with a
+    #: second flag.
     enabled: bool = False
 
     #: Seconds between folds of one room. **86400** — design/culture-tier

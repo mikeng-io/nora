@@ -31,16 +31,72 @@ carrying no indication of when it was derived is R-27's trap written in prose.
 
 from __future__ import annotations
 
+import asyncio
+import logging
+from collections.abc import Awaitable
 from datetime import datetime
 
 from ..domain.blocks import ContextBlock
 from ..domain.culture import CultureRevision
 from ..domain.prompt import age as _age
 from ..domain.prompt import escape
+from ..obs.metrics import Metrics
+
+log = logging.getLogger(__name__)
+
+#: How long any occasion waits for a culture head before giving the block up.
+#: The same default the fire path's standing read uses: a background tier's
+#: store must never be able to hold a turn or a pass open.
+DEFAULT_CULTURE_READ_TIMEOUT_SECONDS = 5.0
+
+
+async def read_culture(
+    head: Awaitable[CultureRevision | None] | None,
+    *,
+    stage: str,
+    platform: str,
+    metrics: Metrics | None,
+    timeout_seconds: float = DEFAULT_CULTURE_READ_TIMEOUT_SECONDS,
+) -> CultureRevision | None:
+    """One room's account for a prompt, or `None` — every occasion's ONE read.
+
+    It used to be written once, in `FirePath._read_culture`, when that was the
+    only reader (DEC-207 widened the tier to every runtime). Six copies of a
+    bounded, counted, fail-soft read would be six places for the bound or the
+    count to go missing, so the read is here and each occasion only names its
+    `stage`.
+
+    `head` is the caller's own `reader.head(key=…)` call, or `None` when there
+    is no reader or no key — a room outside the policy, which is not an error.
+    The CALLER makes the call rather than handing the reader over, so every
+    Dreamer adaptor's store call stays on `self.<collaborator>` where
+    `tests/architecture/test_dream_store_calls_are_declared.py` can count it.
+    The key is a `primary_id` (DEC-181).
+
+    `None` collapses four states the prompt cannot tell apart: no reader (the
+    `[culture] enabled = false` default), no key, no account yet, and a failed
+    read. Only the last is counted, under `nora_errors_total{stage}`: a head
+    that exists and could not be fetched, reported as «there is none», is
+    `unavailable` substituted for `nothing_found` (R-27).
+
+    BOUNDED, because a hung Postgres connection with no `command_timeout`
+    otherwise holds the caller's slot — the defect fixed in `debrief.run` and
+    then re-created on the fire path in the same change.
+    """
+    if head is None:
+        return None
+    try:
+        return await asyncio.wait_for(head, timeout=timeout_seconds)
+    except Exception:
+        log.exception("%s: culture read failed; continuing without it", stage)
+        if metrics is not None:
+            metrics.inc("nora_errors_total", stage=stage, platform=platform)
+        return None
 
 
 def render_culture(
     culture: CultureRevision | None, *, now: datetime | None = None,
+    room: str | None = None,
 ) -> ContextBlock | None:
     """`None` when this room has no account yet.
 
@@ -51,11 +107,20 @@ def render_culture(
     The absence is also the COMMON case for a while after this ships: a fold
     needs new messages and a day, so a new room simply has no account, and a
     block that appeared blank would be read as «this room has no character».
+
+    `room` names WHICH room the account is of, and is passed only by an
+    occasion that reads more than one room in one prompt (proactive, the note
+    curator): there, an unlabelled account is an account of nowhere. An
+    occasion inside one room omits it, and its block is byte-identical to the
+    participation turn's from before the tier was widened.
     """
     if culture is None or not culture.body.strip():
         return None
     written = _age(culture.written_at, now or datetime.now().astimezone())
+    attrs: tuple[tuple[str, str], ...] = (("written", written),)
+    if room:
+        attrs = (("room", room), *attrs)
     return ContextBlock(
-        name="culture", attrs=(("written", written),),
+        name="culture", attrs=attrs,
         body=escape(culture.body),
     )

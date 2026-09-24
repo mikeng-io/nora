@@ -1,0 +1,14 @@
+{
+  "type": "change",
+  "summary": "Nora now reads each room's own account of itself (its culture) in every turn and background pass, not only when she decides to join in unprompted.",
+  "details": [
+    "The daily culture account of a room now reaches the tagged reply, reminders and other scheduled turns, the proactive pass, both note passes and both standing folds.",
+    "Passes that look across several rooms see one account per room, named by the room's label.",
+    "The relevance gate still does not read it.",
+    "Turning `[culture] enabled` on changes these prompts; there is no separate read switch."
+  ],
+  "limitations": [
+    "A room that has not been folded yet has no account, so the block appears room by room over the first day after enabling.",
+    "Whether the account improves each occasion's decisions is measured per occasion after landing; an occasion that reads worse with it is removed."
+  ]
+}
