@@ -396,6 +396,49 @@ cases:
                          "studio backdrop", "neutral studio"]
     snapshot: *room_a
 
+  # GUARDS the post-fix behaviour on the closest faithful anchor; it does
+  # NOT reproduce the live failure (2026-09-24, WhatsApp, defer_tools=true):
+  # asked "draw yourself again" with her standing already saying she had drawn
+  # herself four times that day, she called `generate_image` straight from
+  # memory (no `reference`, a description written from memory) and never
+  # loaded the `image-generation` skill that holds the canonical handle. The
+  # fix (this branch) points the tool AT the skill instead of copying its
+  # content into the tool (single source of truth, operator decision), so
+  # what this grades is that the skill loads BEFORE the call and the call
+  # still carries her real reference.
+  #
+  # Standing CANNOT be seeded with the live line, so the condition that
+  # produced the failure (her believing she already knew) is not present
+  # here. Standing is REPLAYED from real production folds, never authored
+  # (`design/evaluation/11-the-sandbox-rebuild.md`, "standing | replayed";
+  # `standing_revision` keyed by conversation and time). Querying
+  # `nora_eval`'s `standing_revision` for `draw`/`portrait`/`picture of`
+  # (2026-09-25) found no room whose replayed standing says this, and writing
+  # one in would be a fabricated production row in a fixture (AGENTS.md
+  # "Never paste production rows into a fixture"). So this reuses room_a, the
+  # anchor the two cases above already establish, and states the repetition
+  # IN THE ASK ("again") instead of in standing, measured on norty at 5/5 PASS
+  # on BOTH master and this branch (2026-09-25): the case cannot distinguish
+  # the fix from its absence, so it guards the behaviour going forward rather
+  # than proving the fix moved anything. The order and argument checks below
+  # hold regardless of what standing says, because they are what the tool's
+  # own description now controls on every call: `before` fails if
+  # `generate_image` executes before the first `skills` call, and
+  # `args_include` fails on an empty `skills` call list if the skill is never
+  # loaded at all (0015/0016).
+  - name: route_generate_image_self_again_loads_the_skill_first
+    entry: tag
+    expect: reply
+    mention: true
+    input: draw yourself again
+    metadata:
+      tools: [generate_image]
+      before: {skills: [generate_image]}
+      args_include:
+        skills: ["image-generation"]
+        generate_image: ["535e4da56b933c9c30ea28182ba651246ce9bc65608ebdf92363e6342ab8567c"]
+    snapshot: *room_a
+
   # The live request after #456 deployed (2026-09-24). She left her reference
   # off, as she should, and then wrote her OWN rendering into the prompt
   # («stylized 3D mascot», «collectible-character quality»): her look is not a

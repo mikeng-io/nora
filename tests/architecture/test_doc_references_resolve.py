@@ -258,33 +258,50 @@ def _tracked_markdown_files() -> list[str]:
 # the operator; do not mass-rewrite the docs to clear it, and do not add to it
 # for a NEW reference (fix the doc, or the code, instead).
 _KNOWN_DANGLING: dict[tuple[str, str], str] = {
-    # --- hidden by a NEIGHBOURING table row until 2026-09-24 ---
+    # --- hidden by a NEIGHBOURING table row until 2026-09-24, TRIAGED (#422) ---
     #
     # A table was one «paragraph» to this gate, so one row carrying a
     # historical marker exempted every row in its table. Splitting rows out
-    # (`_paragraphs`) surfaced these; none was introduced by that change.
-    # Pinned, not rewritten, per this gate's own rule — each needs checking
-    # whether the code moved, was renamed or was deleted (#422).
+    # (`_paragraphs`) surfaced these 15; each was checked with `git log
+    # --follow` / `git log -S` for whether the code moved, was renamed, or
+    # was deleted. Nine resolved (a `deleted 2026-...` reference note added to
+    # the ROW that cited them, never a neighbour — the decision-index header
+    # says a row is MARKED, not rewritten — so those rows now carry their own
+    # `_HISTORICAL_MARKERS` hit and are dropped from this dict). The six below
+    # remain pinned: five sit in `design/09-decision-index.md`'s DEC-76 row
+    # (and one also in DEC-84), both being edited concurrently on
+    # `mikeng-io/governance-claims-482` — marking either row here would race
+    # that merge, so they stay pinned until that branch lands and the row is
+    # free to touch. `nora/agent/disclosure.py` (DEC-124) was never built at
+    # all — a prospective path name, not a deleted one — so it is not a
+    # "deleted" reference and gets no marker either.
     **dict.fromkeys(
         (
-            ("design/09-decision-index.md", "deploy/compose/nora-db.compose.yml"),
-            ("design/09-decision-index.md", "deploy/compose/presence.compose.yml"),
-            ("design/09-decision-index.md", "deploy/egress.sh"),
-            ("design/09-decision-index.md", "deploy/watchdog.sh"),
-            ("design/09-decision-index.md", "evals/adversarial/identity_grounding.yaml"),
-            ("design/09-decision-index.md", "evals/adversarial/source_scope.yaml"),
             ("design/09-decision-index.md", "evals/evaluators.py"),
             ("design/09-decision-index.md", "evals/journeys.py"),
-            ("design/09-decision-index.md", "evals/judge.py"),
-            ("design/09-decision-index.md", "evals/run.py"),
-            ("design/09-decision-index.md", "nora/agent/disclosure.py"),
             ("design/09-decision-index.md", "tests/test_evals_intent.py"),
-            ("design/09-decision-index.md", "tests/test_evals_journeys.py"),
             ("design/09-decision-index.md", "tests/test_evals_live_runner.py"),
-            ("design/evaluation/02-the-rebuild.md", "nora/app/eval_support.py"),
         ),
-        "surfaced 2026-09-24 when table rows became their own paragraphs; "
-        "not yet triaged (#422)",
+        "DEC-76's row (`evals/journeys.py` deleted 778a617e 2026-09-18, "
+        "`evals/evaluators.py` deleted 00beda19 2026-09-18/re-homed to "
+        "tests/offline_eval_evaluators.py, `tests/test_evals_intent.py` and "
+        "`tests/test_evals_live_runner.py` deleted 778a617e 2026-09-18) is "
+        "being edited on mikeng-io/governance-claims-482 (acornworm); do not "
+        "touch DEC-76 here — re-triage once that branch merges (#422)",
+    ),
+    ("design/09-decision-index.md", "tests/test_evals_journeys.py"): (
+        "cited by DEC-76 (being edited on mikeng-io/governance-claims-482, "
+        "do not touch here) and by DEC-84 (also off-limits per this PR's "
+        "conflict avoidance); deleted 778a617e 2026-09-18 — re-triage once "
+        "governance-claims-482 merges and DEC-84 is safe to touch (#422)"
+    ),
+    ("design/09-decision-index.md", "nora/agent/disclosure.py"): (
+        "DEC-124's own prose says moving `DisclosureGuard` out of "
+        "`nora/agent/whereis.py` into `nora/agent/disclosure.py` is 'a "
+        "housekeeping step for whoever builds the first tool that imports it "
+        "from outside whereis' — the file was never built, so this is a "
+        "prospective path, not a deleted one; drop this entry the day that "
+        "tool ships (#422)"
     ),
     (
         "design/instagram-adoption/17-implementation-plan.md",

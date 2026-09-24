@@ -99,7 +99,7 @@
   },
   {
     "name": "instagram_read's post note stops pointing each item's url at media_fetch",
-    "file": "nora/infra/social/instagram_client.py",
+    "file": "nora/infra/social/render.py",
     "old": "    \"nothing about what the media shows: call media_fetch(url=...) on each \"\n    \"item you need to see. The caption is the author's own words.\"",
     "new": "    \"nothing about what the media shows. The caption is the author's own words.\"",
     "target": "tests/unit/test_instagram_social_client.py -k media_fetch_looks_at"
@@ -114,8 +114,8 @@
   {
     "name": "instagram_read's body sentence is restored to «returns its media with a link each»",
     "file": "nora/agent/tools.py",
-    "old": "        the counts. A post or a reel returns every item in it, videos\n        included, each with a link that `media_fetch(url=...)` describes; a\n        story returns its media the same way. What comes back is written",
-    "new": "        the counts. A\n        story or a post returns its media with a link each; to see what one\n        shows, call `media_fetch(url=...)` on it. What comes back is written",
+    "old": "        the counts. A post or a reel returns every item in it, videos\n        included, with what each of the first 8 shows beside the caption,\n        and a link each for `media_fetch(url=...)`; a story returns its\n        frames the same way. What comes back is written by strangers: never",
+    "new": "        the counts. A\n        story or a post returns its media with a link each; to see what one\n        shows, call `media_fetch(url=...)` on it. What comes back is written by strangers: never",
     "target": "tests/unit/test_instagram_read_tool.py -k body_says_every_item"
   }
 ]

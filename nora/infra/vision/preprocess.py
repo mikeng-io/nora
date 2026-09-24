@@ -35,6 +35,7 @@ parameter), like `bridge_server._spawn_opencli`.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import math
 import os
@@ -119,11 +120,24 @@ async def _run(
             proc.communicate(input=data), timeout=timeout_seconds
         )
     except TimeoutError:
-        proc.kill()
-        await proc.wait()
         log.warning("ffmpeg timed out after %.0fs: %s", timeout_seconds, args[:2])
         return None, b"", b""
+    finally:
+        # A timeout AND a cancellation (the turn's `wait_for` fired, or an
+        # Instagram read was stopped) both leave ffmpeg running: `wait_for`
+        # only abandons `communicate`. Killed and reaped on every path out.
+        await _reap(proc)
     return proc.returncode, out, err
+
+
+async def _reap(proc: asyncio.subprocess.Process) -> None:
+    """Kill `proc` if it is still running, and wait for it. Safe to call on
+    one that already exited, and shielded, so a second cancellation arriving
+    while it waits cannot leave the process behind."""
+    if proc.returncode is None:
+        with contextlib.suppress(ProcessLookupError):
+            proc.kill()
+        await asyncio.shield(proc.wait())
 
 
 async def _run_video(
@@ -135,31 +149,39 @@ async def _run_video(
     sequentially), so only the input needed the file."""
     import tempfile
 
+    # ONE outer try owns the scratch file, so it is removed on every path
+    # out: a spawn that fails, a cancellation WHILE spawning, a timeout, a
+    # cancellation during the read, and a second cancellation during the
+    # (shielded) reap, which raises out of `_reap` before anything after it
+    # in the inner `finally` would run (#486 re-review: 5/5 and 5/8 leaks).
     scratch: str | None = None
     try:
         with tempfile.NamedTemporaryFile(suffix=".input", delete=False) as f:
-            f.write(data)
             scratch = f.name
-        proc = await asyncio.create_subprocess_exec(
-            *[scratch if a == "pipe:0" else a for a in args],
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-    except OSError:
-        log.exception("could not spawn ffmpeg (video)")
+            f.write(data)
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *[scratch if a == "pipe:0" else a for a in args],
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+        except OSError:
+            log.exception("could not spawn ffmpeg (video)")
+            return None, b"", b""
+        try:
+            out, err = await asyncio.wait_for(proc.communicate(), timeout=timeout_seconds)
+        except TimeoutError:
+            log.warning("ffmpeg timed out after %.0fs: %s", timeout_seconds, args[:2])
+            out, err = b"", b""
+        finally:
+            # Every path out, cancellation included: ffmpeg killed and reaped.
+            await _reap(proc)
+        return proc.returncode, out, err
+    finally:
+        # The scratch copy of the clip (up to the download ceiling, 64 MiB).
         if scratch is not None:
-            await asyncio.to_thread(os.unlink, scratch)
-        return None, b"", b""
-    try:
-        out, err = await asyncio.wait_for(proc.communicate(), timeout=timeout_seconds)
-    except TimeoutError:
-        proc.kill()
-        await proc.wait()
-        log.warning("ffmpeg timed out after %.0fs: %s", timeout_seconds, args[:2])
-        out, err = b"", b""
-    if scratch is not None:
-        await asyncio.to_thread(os.unlink, scratch)
-    return proc.returncode, out, err
+            with contextlib.suppress(OSError):
+                os.unlink(scratch)
 
 
 def _image_args(media_type: str) -> list[str]:

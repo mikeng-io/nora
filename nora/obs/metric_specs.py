@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from typing import NamedTuple
 
+from nora.domain.media import MEDIA_FETCH_CALLERS
 from nora.domain.media_join import JOIN_PATHS
 from nora.domain.reasoning_strip import (
     PATHS_HELP,
@@ -731,9 +732,10 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     _CounterSpec(
         "nora_media_fetch_total",
         "media_fetch calls, by outcome (ok / nothing_found / ambiguous / "
-        "not_an_image / unavailable) and whether the description was served "
-        "from the content-hash cache (cached=true/false).",
-        ("status", "cached"),
+        "not_an_image / unavailable), whether the description was served "
+        "from the content-hash cache (cached=true/false), and who asked "
+        f"(caller={' / '.join(MEDIA_FETCH_CALLERS)}).",
+        ("status", "cached", "caller"),
     ),
     # DEC-73 (was DEC-57/R-34, retired). A person's alias appearing in a
     # `web_search` query — COUNTED, not blocked (design/14 §2.2: unlike a routing
