@@ -497,7 +497,7 @@ def test_wiring_skills_injects_metadata_not_bodies():
     prompt = _inject(_agent(skills_dir=SKILLS_DIR))
     assert "<available_skills>" in prompt
     assert "<name>navigation</name>" in prompt
-    assert "PLAN a journey" in prompt          # the description (when-to-load)
+    assert "plan a journey" in prompt          # the description (when-to-load)
     assert "Wayfinding" not in prompt          # the BODY must not be in the prompt
 
 
