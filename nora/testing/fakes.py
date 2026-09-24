@@ -379,12 +379,20 @@ class FakeRecordStore:
         if self.fail_on_recent:
             raise RuntimeError("db down")
         human = [
-            r["ts"] for r in self.rows
+            r for r in self.rows
             if r["conversation_id"] == conversation_id and not r["is_nora"]
         ]
+        window = [r for r in human if r["ts"] >= since_ts]
         return RoomActivity(
-            count=sum(1 for ts in human if ts >= since_ts),
-            last_ts=max(human, default=None),
+            count=len(window),
+            last_ts=max((r["ts"] for r in human), default=None),
+            # Mirrors the SQL's coalesce(person_id, sender_id) exactly: only a
+            # NULL falls through, so an empty-string person_id counts as itself
+            # here as it does there.
+            speakers=len({
+                r["sender_id"] if r["person_id"] is None else r["person_id"]
+                for r in window
+            }),
         )
 
     async def stats(self) -> dict[str, Any]:
