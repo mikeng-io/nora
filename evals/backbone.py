@@ -31,12 +31,13 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import dataclasses
+import json
 import os
 import re
 import shutil
 import tempfile
 import tomllib
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from functools import lru_cache
@@ -368,6 +369,42 @@ def drain_spend() -> dict[str, Any]:
     }
 
 
+def _under_agent(spans: Sequence[Any], agent: str) -> list[Any]:
+    """Every span in `spans` reachable, through `parent`, from an
+    `invoke_agent` span named `agent` — THIS TURN's own calls, without a
+    background pass the same drive spawns under a DIFFERENT agent (the
+    standing fold's) or under NO agent at all: the relevance gate's own
+    model call (`nora.ingest.relevance_gate.RelevanceGate`, "never
+    constructs an agent" by its own docstring) goes through
+    `nora.agent.telemetry.start_raw_model_span` — the same `chat` span shape
+    a real turn's call has, `gen_ai.operation.name == "chat"` included — but
+    with no `invoke_agent` ancestor to match, so it is never "under" any
+    named agent and this walk excludes it by construction rather than by
+    guessing at a span name.
+
+    Shared by `_model_calls` (spend, per-turn) and `_shown_transcript`
+    (#459: the rendered window, per-turn) — both need "this turn's own
+    calls, not the drive's other passes or its other model users."
+    """
+    by_id = {span.context.span_id: span for span in spans}
+    roots = {
+        span.context.span_id for span in spans
+        if (span.attributes or {}).get("gen_ai.operation.name") == "invoke_agent"
+        and (span.attributes or {}).get("gen_ai.agent.name") == agent
+    }
+
+    def _under(span: Any) -> bool:
+        parent = span.parent
+        while parent is not None:
+            if parent.span_id in roots:
+                return True
+            up = by_id.get(parent.span_id)
+            parent = up.parent if up is not None else None
+        return False
+
+    return [span for span in spans if _under(span)]
+
+
 def _model_calls(exporter: InMemorySpanExporter, *, agent: str | None = None) -> dict[str, Any]:
     """What the model calls captured so far spent, and how they stopped.
 
@@ -381,30 +418,14 @@ def _model_calls(exporter: InMemorySpanExporter, *, agent: str | None = None) ->
     Strands' own convention (`_get_common_attributes`), not a span name.
 
     `agent`, when given, keeps only the calls made UNDER that agent's
-    `invoke_agent` span — the subject's own turn, without the background
-    passes the same drive spawns (the standing fold alone was 10 of those
-    29). A per-TURN comparison (`design/tool-catalogue/05` §3) is meaningless
-    with them mixed in.
+    `invoke_agent` span (`_under_agent`) — the subject's own turn, without the
+    background passes the same drive spawns (the standing fold alone was 10 of
+    those 29). A per-TURN comparison (`design/tool-catalogue/05` §3) is
+    meaningless with them mixed in.
     """
     spans = exporter.get_finished_spans()
     if agent is not None:
-        by_id = {span.context.span_id: span for span in spans}
-        roots = {
-            span.context.span_id for span in spans
-            if (span.attributes or {}).get("gen_ai.operation.name") == "invoke_agent"
-            and (span.attributes or {}).get("gen_ai.agent.name") == agent
-        }
-
-        def _under(span: Any) -> bool:
-            parent = span.parent
-            while parent is not None:
-                if parent.span_id in roots:
-                    return True
-                up = by_id.get(parent.span_id)
-                parent = up.parent if up is not None else None
-            return False
-
-        spans = [span for span in spans if _under(span)]
+        spans = _under_agent(spans, agent)
     calls = inp = out = cached = 0
     stops: list[str] = []
     for span in spans:
@@ -538,12 +559,67 @@ def _shown_now(exporter: InMemorySpanExporter) -> str | None:
 #: A body row is XML-escaped (R-13/R-13b), so a real `</group_transcript>`
 #: cannot appear inside one and end the match early; `re.DOTALL` lets `.`
 #: cross the row boundaries a multi-row window always has.
+#:
+#: Runs on the DECODED text (`_texts_in`), never on the raw span attribute —
+#: Strands writes that as `json.dumps(..., ensure_ascii=False)`
+#: (`strands.telemetry.tracer.serialize`), so a real body's newline is the
+#: two characters `\` `n` there, not the one this pattern's `\n?`/`re.DOTALL`
+#: assume. Matching the raw JSON text found `</group_transcript>` a line
+#: early and left a literal `\n` at each end of the captured group (review,
+#: 2026-09-25) — the exact shape `_shown_now`'s own clock-line pattern
+#: already hedges for with `(?=\s|\\n|$)`, which this module's regexes are
+#: not otherwise immune to just because they look like plain text.
 _GROUP_TRANSCRIPT = re.compile(
     r'<group_transcript\b[^>]*>\n?(.*?)\n?</group_transcript>', re.DOTALL,
 )
 
 
-def _shown_transcript(exporter: InMemorySpanExporter) -> str | None:
+def _strings_in(obj: Any) -> list[str]:
+    """Every string leaf in a JSON-decoded value, depth first — a content
+    block's `text`, a GenAI-latest message's `parts[].content`, or anything
+    else a future Strands convention nests a string under. Not modelled by
+    name on purpose: `_texts_in`'s docstring has the reason."""
+    if isinstance(obj, str):
+        return [obj]
+    if isinstance(obj, dict):
+        return [s for v in obj.values() for s in _strings_in(v)]
+    if isinstance(obj, list):
+        return [s for v in obj for s in _strings_in(v)]
+    return []
+
+
+def _texts_in(raw: str) -> list[str]:
+    """The real, unescaped text a captured span attribute VALUE carries.
+
+    Strands serialises a message's content (or, under the latest GenAI
+    convention, a whole `input_messages` list) through `json.dumps(...,
+    ensure_ascii=False)` before writing it onto the span
+    (`strands.telemetry.tracer.serialize`/`_add_event_messages`) — so the
+    attribute VALUE is a JSON STRING, and a body's newline, quote or CJK
+    character is exactly what `json.loads` turns back into the one the model
+    was actually sent. This decodes it and walks every string leaf
+    (`_strings_in`) rather than modelling the legacy `[{"text": "…"}]` and
+    latest `[{"role", "parts": [{"type": "text", "content": "…"}]}]` shapes
+    by name, because the ONE property both share — the block's true text is
+    a string somewhere in the decoded tree — is all a caller here needs, and
+    modelling the shape is how a convention change breaks this silently.
+
+    `raw` that is not JSON — `gen_ai.operation.name`'s own value, a `finish_
+    reason`, or a plain-string test fixture built before this existed — is
+    returned as itself: the search this feeds already tolerates a value with
+    nothing to find, and a caller that built a fixture with a bare Python
+    string (real newlines, real quotes) still gets searched correctly.
+    """
+    try:
+        decoded = json.loads(raw)
+    except (json.JSONDecodeError, ValueError, RecursionError):
+        return [raw]
+    return _strings_in(decoded)
+
+
+def _shown_transcript(
+    exporter: InMemorySpanExporter, *, agent: str | None = None,
+) -> str | None:
     """The `<group_transcript>` block's body exactly as the turn's own model
     call carried it — the window HER TURN rendered, quote-chase growth
     included, read back off the call rather than re-derived from
@@ -551,21 +627,49 @@ def _shown_transcript(exporter: InMemorySpanExporter) -> str | None:
     is every row up to the instant, unbounded, and the residual it left was
     that a judge could be handed a line she was never shown).
 
-    Same scan `_shown_now` runs for the clock line: every string on every
-    captured `chat`-operation span, attributes then events, earliest span
-    first. The block is assembled once per turn and rides on every model call
-    the turn makes, so the first match is the turn's own render.
+    **`agent` scopes this to the TURN's own calls (`_under_agent`), and that
+    is load-bearing, not a nicety.** The relevance gate renders its OWN
+    `<group_transcript>` too (`nora.ingest.relevance_gate.RelevanceGate`,
+    on a raw model call — see `_under_agent`'s docstring), and `[participation]`
+    and `[relevance_gate]` are one subsystem (`ENTRY_POINTS["participation"]`'s
+    own comment): a `participation` drive can carry the gate's admission call
+    BEFORE the turn's own reply call, both as `chat`-operation spans. Scanning
+    every captured span with no filter, earliest first, would hand the judge
+    the GATE's window — read at a different bound, answering a different
+    question — instead of the turn's. Caller passes the subject's own agent
+    name (`subject.cfg.agent.name`, the same value `_model_calls(exporter,
+    agent=...)` already scopes spend to); `None` scans unfiltered, which is
+    only correct for an entry point with no gate ahead of it or a test fixture
+    with no `invoke_agent` span at all.
 
-    `None` when no call was captured, or the call carried no such block — an
-    entry point that never assembles one (`gate`, `dreamer`), or a room whose
-    window rendered with an empty body and was dropped before it reached the
-    model (`nora.domain.blocks.assemble` drops an empty block entirely). A
-    judge given `source=None` still grades — `Judge.grade`'s own docstring:
-    "meaningful with or without source data" — so `None` here is a fact
-    about the turn, not a reason to fall back to the unbounded seed.
+    Same scan `_shown_now` runs for the clock line otherwise: every string on
+    every captured `chat`-operation span (decoded through `_texts_in`,
+    #459 review), attributes then events, earliest span first. The block is
+    assembled once per turn and rides on every model call the turn makes, so
+    the first match, within the scoped spans, is the turn's own render.
+
+    **Byte-identical to the block `ContextBlock.render()` produced**, proven
+    (not merely claimed) by `tests/unit/test_tool_route_grader.py::
+    test_shown_transcript_decodes_the_real_strands_serialized_span`, which
+    round-trips a realistic multi-row window — multi-line body, a quote,
+    CJK, an attacker row whose body is a literal `</group_transcript>` —
+    through the real renderer, the real `strands.telemetry.tracer.serialize`,
+    and this function, and asserts equality.
+
+    `None` when no call was captured, or the scoped calls carried no such
+    block — a room whose window rendered with an empty body and was dropped
+    before it reached the model (`nora.domain.blocks.assemble` drops an empty
+    block entirely), or the span capture itself breaking. `_drive` treats
+    `None` here as an ERROR draw when the case was going to be judged
+    (`_judge_source`'s call site) rather than a silent blind grade — see that
+    call site's own comment for why `source=None` is not, on its own,
+    fail-closed (DEC-75, review 2026-09-25).
     """
+    spans = exporter.get_finished_spans()
+    if agent is not None:
+        spans = _under_agent(spans, agent)
     chats = [
-        span for span in exporter.get_finished_spans()
+        span for span in spans
         if (span.attributes or {}).get("gen_ai.operation.name") == "chat"
     ]
     for span in sorted(chats, key=lambda s: s.start_time or 0):
@@ -573,8 +677,10 @@ def _shown_transcript(exporter: InMemorySpanExporter) -> str | None:
         for event in span.events or ():
             values.extend((event.attributes or {}).values())
         for raw in values:
-            if isinstance(raw, str):
-                found = _GROUP_TRANSCRIPT.search(raw)
+            if not isinstance(raw, str):
+                continue
+            for text in _texts_in(raw):
+                found = _GROUP_TRANSCRIPT.search(text)
                 if found:
                     return found.group(1)
     return None
@@ -1019,7 +1125,9 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
             tool_results = _tool_results(exporter)
             tool_inputs = _tool_inputs(exporter)
             shown_now = _shown_now(exporter)
-            shown_transcript = _shown_transcript(exporter)
+            # `agent=agent_name`: the turn's own render, never the relevance
+            # gate's (`_shown_transcript`'s own docstring, #459 review).
+            shown_transcript = _shown_transcript(exporter, agent=agent_name or None)
             shown = shown_where(exporter.get_finished_spans())
             _SPEND.append(spend)
             outcome = _check_the_corpus_assertions(nora_case, outcome, seeded.rows)
@@ -1046,29 +1154,52 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
             # subject is alive, because the judge needs the doctrine she
             # actually ran ON, not a copy read off disk.
             elif spec.judge is not None and outcome.said and outcome.error is None:
-                from evals.rebuilt.grading import criteria_for
+                if shown_transcript is None:
+                    # NOT fail-closed to fall through to `source=None`: `Judge.
+                    # grade` still answers with no source ("meaningful with or
+                    # without source data") — it grades BLIND, which its own
+                    # call comment already names (DEC-75) and which the judge
+                    # cannot itself tell apart from a case that carries no
+                    # source BY DESIGN (an injection case, say). A turn that
+                    # SPOKE always ran `build_prefill`, which renders
+                    # `<group_transcript>` unconditionally, so a miss here,
+                    # scoped to this turn's own agent, is the CAPTURE breaking
+                    # — an ERROR about the instrument, never a verdict about
+                    # her, and it must cost a judged draw rather than spend one
+                    # on nothing (review, 2026-09-25).
+                    outcome = dataclasses.replace(
+                        outcome,
+                        error=(
+                            "no <group_transcript> was captured off the turn's "
+                            "own model call; the judge's source cannot be bound "
+                            "to the window she was shown, so this draw is not "
+                            "judged (#459)"
+                        ),
+                    )
+                else:
+                    from evals.rebuilt.grading import criteria_for
 
-                criteria = tuple(md.get("criteria") or ())
-                judgement = await spec.judge.grade(
-                    said="\n".join(outcome.said),
-                    asked=nora_case.input,
-                    doctrine=subject.deps.doctrine.doctrine_text,
-                    # The SOURCE the reply had to ground against — the window
-                    # her turn actually RENDERED (`shown_transcript`, #459),
-                    # not `seeded.transcript` (every row `sandbox_from_snapshot`
-                    # read back, unbounded — the room up to the instant, not
-                    # what she was shown), and for a reporting case the tool
-                    # results too. Without it the judge grades BLIND (DEC-75).
-                    source=_judge_source(shown_transcript, tool_results, criteria),
-                    extra=criteria_for(criteria),
-                    facts=_presence_facts(
-                        spec, md, room=room, shown=shown, tools=tools_called,
-                    ),
-                )
-                outcome = dataclasses.replace(
-                    outcome, judged=judgement.verdict, error=judgement.error,
-                )
-                judged_why = str(getattr(judgement, "why", "") or "")
+                    criteria = tuple(md.get("criteria") or ())
+                    judgement = await spec.judge.grade(
+                        said="\n".join(outcome.said),
+                        asked=nora_case.input,
+                        doctrine=subject.deps.doctrine.doctrine_text,
+                        # The SOURCE the reply had to ground against — the
+                        # window her turn actually RENDERED (`shown_transcript`,
+                        # #459), not `seeded.transcript` (every row
+                        # `sandbox_from_snapshot` read back, unbounded — the
+                        # room up to the instant, not what she was shown), and
+                        # for a reporting case the tool results too.
+                        source=_judge_source(shown_transcript, tool_results, criteria),
+                        extra=criteria_for(criteria),
+                        facts=_presence_facts(
+                            spec, md, room=room, shown=shown, tools=tools_called,
+                        ),
+                    )
+                    outcome = dataclasses.replace(
+                        outcome, judged=judgement.verdict, error=judgement.error,
+                    )
+                    judged_why = str(getattr(judgement, "why", "") or "")
 
             repeat_state = []
             if spec.repeat > 1:

@@ -406,15 +406,58 @@ rendered, READ BACK FROM THE TURN rather than re-derived from
 own captured `chat` spans — the same mechanism `_shown_now` already used for
 the clock line — for the `<group_transcript window="N">…</group_transcript>`
 block `nora.agent.prefill._transcript_block` puts in front of the model, and
-hands its exact body to `_judge_source` in place of `Sandboxed.transcript`.
-It is byte-identical to what she read (the renderer #458 already names),
-quote-chase growth included because the count comes off the real render
-rather than the configured default, and it needed no new seam through
+hands its exact body to `_judge_source` in place of `Sandboxed.transcript` —
+byte-identical to what she read, proven (not merely claimed) by
+`tests/unit/test_tool_route_grader.py::
+test_shown_transcript_decodes_the_real_strands_serialized_span`, which
+round-trips a realistic window through the real renderer, the real
+`strands.telemetry.tracer.serialize`, and this function, and asserts
+equality.
+
+**The span carries JSON, not plain text (review, 2026-09-25).** Strands
+writes a model call's messages onto its span through
+`json.dumps(…, ensure_ascii=False)`, so a real body's newline is the two
+characters `\`/`n`, not one, and its quotes are `\"`. Matching the block
+pattern over that raw attribute value found `</group_transcript>` a line
+early on a multi-row window and left a stray escaped newline at each end of
+the captured body. `_shown_transcript` now `json.loads`s each attribute
+value first and walks every string leaf of the decoded structure
+(`_strings_in`/`_texts_in`) before searching — legacy and latest GenAI
+message conventions both nest the real text somewhere in that tree, and
+walking rather than naming the shape is what keeps this from breaking
+silently on the next convention change. It needed no new seam through
 `nora.subject` or `nora.domain`: the render was already observable off the
 spend-capture exporter `_drive` builds for every other `NORA_SHOWN_*` value.
-Fail-closed: an entry point that renders no `<group_transcript>` (`gate`,
-`dreamer`) or a call `_prefill_capture()` did not capture reads as
-`source=None`, never as a silent fallback to the unbounded seed.
+
+**The gate renders its own `<group_transcript>` too (review, 2026-09-25).**
+`nora.ingest.relevance_gate.RelevanceGate` builds one at its own read bound
+(40, `transcript_limit`) on its own `chat`-operation span — it is a raw model
+call, not an "entry point that renders none". `[participation]` and
+`[relevance_gate]` are one subsystem, so a `participation` drive can carry
+the gate's admission call BEFORE the turn's own reply call, both `chat`
+spans — the earliest-span-first scan would otherwise hand the judge the
+GATE's window, read at a different bound, answering a different question.
+`_shown_transcript` is scoped to spans reachable from the subject's own
+`invoke_agent` span (`_under_agent`, the same mechanism `_model_calls(...,
+agent=...)` already used for per-turn spend): the gate's raw call "never
+constructs an agent" (its own docstring) and so has no such ancestor,
+excluding it by construction. Currently no JUDGED corpus drives
+`participation`, so this was not yet observed live, but the seam is general
+and a future one would have hit it silently.
+
+**Blind is not fail-closed (review, 2026-09-25).** `Judge.grade` still
+answers with `source=None` — "meaningful with or without source data",
+DEC-75 — which is correct for a case that carries no source BY DESIGN (an
+injection case) but is indistinguishable, to the judge, from a source that
+should have existed and did not because the capture broke. `evals.backbone.
+_drive` now checks: a turn that SPOKE always ran `build_prefill`, which
+renders `<group_transcript>` unconditionally, so `shown_transcript is None`
+on a judged, spoken draw is the CAPTURE breaking, not a legitimately
+blockless entry point. That draw's `Outcome.error` is set instead of calling
+the judge at all — `Outcome.meets()` reads any `error` as the third answer,
+never PASS or FAIL, so it ERRORs, counted and visible in the run's report,
+rather than spending a judged draw on a blind verdict nobody can tell apart
+from a grounded one.
 
 `Sandboxed.transcript` itself is UNCHANGED and still unbounded — it is what
 `sandbox_from_snapshot` seeds the sandbox with, read back before the turn
