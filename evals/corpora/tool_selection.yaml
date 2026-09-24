@@ -416,7 +416,7 @@ cases:
     input: what is in this reel [shared reel by @synth.example https://www.instagram.com/reel/SynthReel02/] [cover image c0de01]
     metadata:
       tools: [instagram_read]
-      not_tools: [web_fetch, social_fetch, instagram_search]
+      not_tools: [web_fetch, x_read, instagram_search]
       before: {instagram_read: [media_fetch]}
     snapshot: *room_a
 
@@ -427,7 +427,7 @@ cases:
     input: 呢條 reel 講咩 [shared reel by @synth.example https://www.instagram.com/reel/SynthReel02/] [cover image c0de01]
     metadata:
       tools: [instagram_read]
-      not_tools: [web_fetch, social_fetch, instagram_search]
+      not_tools: [web_fetch, x_read, instagram_search]
       before: {instagram_read: [media_fetch]}
     snapshot: *room_a
 
@@ -438,7 +438,7 @@ cases:
     input: 呢個 post 啲相影咗咩 [shared post by @synth.example https://www.instagram.com/p/SynthPost02/] [cover image c0de02]
     metadata:
       tools: [instagram_read]
-      not_tools: [web_fetch, social_fetch, instagram_search]
+      not_tools: [web_fetch, x_read, instagram_search]
       before: {instagram_read: [media_fetch]}
     snapshot: *room_a
 
@@ -449,6 +449,6 @@ cases:
     input: what is in this reel [shared reel by @synth.example https://www.instagram.com/reel/SynthReel02/] [image c0de01]
     metadata:
       tools: [instagram_read]
-      not_tools: [web_fetch, social_fetch, instagram_search]
+      not_tools: [web_fetch, x_read, instagram_search]
       before: {instagram_read: [media_fetch]}
     snapshot: *room_a
