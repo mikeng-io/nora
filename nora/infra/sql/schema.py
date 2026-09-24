@@ -2084,8 +2084,12 @@ NOTE_CANDIDATE = sa.Table(
 #:
 #: **M10 — "a title is not an identity" — is UPHELD for the note and REVERSED
 #: here, and the two are not in tension.** A note must stay findable by one
-#: name across revisions, so `note`'s own uniqueness is still the title alone
-#: per unit and its gate still matches on what the model names. A staging
+#: name across revisions, and its gate still matches on what the model names.
+#: (This said `note`'s own uniqueness «is still the title alone per unit»; NO
+#: such index exists — corrected 2026-09-24 in DEC-189's row, design 41 §7.0.
+#: Two open notes may share a title until design 41 §7.2 (3) adds the unique
+#: open-title index; `note-merge` is what folds the duplicates meanwhile.) A
+#: staging
 #: row is not an identity: it is a one-shot dedupe slot for one sighting, and
 #: the title is the only field that separates two arrangements the model wrote
 #: about on the same day. The entity list was the discriminator until

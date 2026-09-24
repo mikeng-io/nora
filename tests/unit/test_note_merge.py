@@ -9,6 +9,7 @@ that belong to this adaptor are here; each says what reverting it reddens.
 from __future__ import annotations
 
 import re
+from dataclasses import replace
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -23,8 +24,8 @@ from nora.domain.notes import (
 from nora.domain.ports import Proposal
 from nora.language.note_merge import (
     MERGE_TOTAL_OUTCOMES,
-    PASS_CLOCK_NAME,
     NoteMergeAdaptor,
+    pass_clock_name,
 )
 from nora.obs.metric_specs import _COUNTERS
 from nora.obs.metrics import Metrics
@@ -181,7 +182,7 @@ async def test_the_pass_clock_is_stamped_with_the_render_instant():
     await adaptor.commit(key=WS, proposals=(), now_ms=T0 + 40_000)
 
     assert await pass_clock.last_fired(
-        adaptor_name=PASS_CLOCK_NAME, key=WS) == T0
+        adaptor_name=pass_clock_name("shadow"), key=WS) == T0
     clock.now = T0 + HOUR
     again = await adaptor.inputs(key=WS, batch=())
     assert 'title="Friday lunch"' in again
@@ -469,6 +470,167 @@ async def test_a_fold_over_the_body_cap_is_refused_not_truncated():
                                 now_ms=T0 + 1) == 0
     assert metrics.get("nora_note_merge_total", outcome="too_long") == 1
     assert len(await store.standing(unit=WS)) == 2
+
+
+async def _fold_named(adaptor: NoteMergeAdaptor, *titles: str, now_ms: int) -> int:
+    """One pass whose model names `titles` as one group; rows written."""
+    prompt = await adaptor.inputs(key=WS, batch=())
+    items = await adaptor.accept(key=WS, items=({
+        "notes": [_handle(prompt, t) for t in titles], "why": "one question",
+    },)) if prompt else ()
+    return await adaptor.commit(
+        key=WS, proposals=_proposals(*items, at=now_ms), now_ms=now_ms,
+    )
+
+
+async def test_a_flip_from_shadow_to_on_reconsiders_every_pair():
+    """Review of #495. `shadow` judges without folding and stamps the pass
+    clock; with ONE clock for both modes, a pair shadow recorded `would_merge`
+    was untouched since that stamp and was refused `not_changed` for ever once
+    the operator flipped to `on`. Each mode keeps its own clock, so the first
+    `on` pass sees every note as new and the pair folds.
+
+    Falsification: key the clock on `PASS_CLOCK_NAME` alone and the `on` pass
+    renders nothing (or refuses the pair) and writes 0."""
+    store = InMemoryNoteStore()
+    a = await _note(store, "Saturday dinner", at=T0 - DAY)
+    b = await _note(store, "Neway booking", at=T0 - HOUR)
+    pass_clock = InMemoryDreamScheduleClock()
+    clock = _Clock(T0)
+    shadow = _adaptor(store, mode="shadow", clock=clock, pass_clock=pass_clock)
+    assert await _fold_named(shadow, a.title, b.title, now_ms=T0 + 1) == 0
+    assert [d.outcome for d in store.merge_decisions] == ["would_merge"]
+
+    clock.now = T0 + DAY
+    on = _adaptor(store, mode="on", clock=clock, pass_clock=pass_clock)
+    written = await _fold_named(on, a.title, b.title, now_ms=T0 + DAY + 1)
+
+    assert written == 1
+    assert [d.outcome for d in store.merge_decisions] == ["would_merge", "merged"]
+
+
+async def test_a_group_with_one_changed_note_is_not_refused():
+    """`not_changed` refuses a group NONE of whose notes changed. One changed
+    note is exactly the case the pass exists for: a new note that duplicates
+    an old one."""
+    store = InMemoryNoteStore()
+    a = await _note(store, "Saturday dinner", at=T0 - 2 * DAY)
+    await _note(store, "Friday lunch", at=T0 - DAY)
+    clock = _Clock(T0)
+    adaptor = _adaptor(store, mode="on", clock=clock)
+    await _run(adaptor)
+
+    b = await _note(store, "Neway booking", at=T0 + 1)
+    clock.now = T0 + HOUR
+    written = await _fold_named(adaptor, a.title, b.title, now_ms=T0 + HOUR)
+
+    assert written == 1
+
+
+async def test_a_persons_revision_under_a_later_fold_revision_is_a_change():
+    """41 §7.4 reads REVISIONS, not heads: a person adds to a note and then
+    this pass's own fold lands on top of it. The head is the pass's own, and a
+    head-only check would call the note unchanged and never judge what the
+    person wrote."""
+    store = InMemoryNoteStore()
+    a = await _note(store, "Saturday dinner", at=T0 - 2 * DAY)
+    await _note(store, "Friday lunch", at=T0 - DAY)
+    clock = _Clock(T0)
+    adaptor = _adaptor(store, mode="on", clock=clock)
+    await _run(adaptor)
+
+    person = await store.append_revision(
+        unit=WS, note_id=a.id, body="Ada says Neway.",
+        parent_revision_id=a.head_revision_id, established_by="tag:ada",
+        now_ms=T0 + 10,
+    )
+    await store.append_revision(
+        unit=WS, note_id=a.id, body="Ada says Neway.\n\n--- folded ---",
+        parent_revision_id=person.id,
+        established_by=f"dream:note-merge:{WS}:{T0 + 20}", now_ms=T0 + 20,
+    )
+    clock.now = T0 + HOUR
+
+    prompt = await adaptor.inputs(key=WS, batch=())
+    assert re.search(r'title="Saturday dinner"[^>]*changed="revised"', prompt)
+
+
+async def test_strikes_reset_only_when_the_duplicate_is_the_livelier_note():
+    """§7.7 at the adaptor: the survivor's strikes reset when the duplicate
+    was added to more recently than the survivor's head, and are kept when
+    the survivor is the one the room touched last.
+
+    Falsification: pass `reset_strikes=True` unconditionally and the kept
+    case loses its strikes."""
+    store = InMemoryNoteStore()
+    survivor = await _note(store, "Saturday dinner", at=T0 - 3 * DAY)
+    duplicate = await _note(store, "Neway booking", at=T0 - 2 * DAY)
+    await store.append_revision(
+        unit=WS, note_id=survivor.id, body="Still nothing booked.",
+        parent_revision_id=survivor.head_revision_id,
+        established_by="tag:ada", now_ms=T0 - DAY,
+    )
+    store.notes[survivor.id] = replace(store.notes[survivor.id], strikes=3)
+
+    assert await _fold_named(
+        _adaptor(store, mode="on"), survivor.title, duplicate.title,
+        now_ms=T0 + 1,
+    ) == 1
+    assert (await store.read(unit=WS, note_id=survivor.id))[0].strikes == 3
+
+    fresh = InMemoryNoteStore()
+    old = await _note(fresh, "Saturday dinner", at=T0 - 3 * DAY)
+    await _note(fresh, "Neway booking", at=T0 - DAY)
+    fresh.notes[old.id] = replace(fresh.notes[old.id], strikes=3)
+    assert await _fold_named(
+        _adaptor(fresh, mode="on"), "Saturday dinner", "Neway booking",
+        now_ms=T0 + 1,
+    ) == 1
+    assert (await fresh.read(unit=WS, note_id=old.id))[0].strikes == 0
+
+
+class _RecordRaises(InMemoryNoteStore):
+    async def record_merge_decision(self, *, decision):  # type: ignore[override]
+        raise RuntimeError("the connection went away")
+
+
+async def test_a_commit_that_fails_leaves_the_pass_clock_where_it_was():
+    """The stamp is the LAST write of `commit`: a commit that fails part-way
+    is `unavailable` to the runtime, and the same change must be judged again
+    rather than stamped as seen."""
+    store = _RecordRaises()
+    a = await _note(store, "Saturday dinner", at=T0 - DAY)
+    b = await _note(store, "Neway booking", at=T0 - HOUR)
+    pass_clock = InMemoryDreamScheduleClock()
+    adaptor = _adaptor(store, mode="shadow", pass_clock=pass_clock)
+
+    with pytest.raises(RuntimeError):
+        await _fold_named(adaptor, a.title, b.title, now_ms=T0 + 1)
+
+    assert await pass_clock.last_fired(
+        adaptor_name=pass_clock_name("shadow"), key=WS) is None
+
+
+async def test_a_three_note_group_folds_both_duplicates_into_the_oldest():
+    """Pairwise, one transaction per duplicate, each on the head the last one
+    left (§7.7)."""
+    store = InMemoryNoteStore()
+    oldest = await _note(store, "Saturday dinner", at=T0 - 3 * DAY)
+    second = await _note(store, "Neway booking", at=T0 - 2 * DAY)
+    third = await _note(store, "Saturday headcount", at=T0 - DAY)
+
+    written = await _fold_named(
+        _adaptor(store, mode="on"), third.title, oldest.title, second.title,
+        now_ms=T0 + 1,
+    )
+
+    assert written == 2
+    assert [n.id for n in await store.standing(unit=WS)] == [oldest.id]
+    for dup in (second, third):
+        note, _ = await store.read(unit=WS, note_id=dup.id)
+        assert note.replaced_by == oldest.id
+    head = (await store.read(unit=WS, note_id=oldest.id))[1]
+    assert head.body.count(MERGE_MARKER) == 2
 
 
 # --- the instrument --------------------------------------------------------------

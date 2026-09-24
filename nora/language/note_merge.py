@@ -20,9 +20,11 @@ note created after the stamp, or any revision written after it whose
 not heads, because a later revision would hide an earlier one — the gap in the
 proactive pass's own change check (41 §7.4).
 
-The stamp is a `dream_schedule_state` row, `note-merge:pass` per unit, so it
-survives restarts. It is written with the RENDER instant — the moment `inputs`
-read the notebook — as the last write of `commit`, and never on a pass that
+The stamp is a `dream_schedule_state` row per unit and per mode
+(`note-merge:pass:shadow`, `note-merge:pass:on`), so it survives restarts and a
+flip from `shadow` to `on` starts a fresh clock (`PASS_CLOCK_NAME`). It is
+written with the RENDER instant — the moment `inputs` read the notebook — as
+the last write of `commit`, and never on a pass that
 rendered nothing or that the runtime reported `unavailable` (the runtime does
 not call `commit` then). A stamp taken at commit time would never see a note
 written while the model was thinking.
@@ -97,9 +99,23 @@ log = logging.getLogger("nora.notes.merge")
 
 ADAPTOR_NAME = "note-merge"
 
-#: The `dream_schedule_state` row this adaptor keeps per unit: when a pass
-#: last RENDERED (41 §7.4).
+#: The `dream_schedule_state` rows this adaptor keeps per unit: when a pass
+#: last RENDERED (41 §7.4), ONE ROW PER MODE — `note-merge:pass:shadow` and
+#: `note-merge:pass:on` (`pass_clock_name`).
+#:
+#: Per mode because `not_changed` refuses a group nobody touched since the
+#: last pass, and a pass in `shadow` judges without folding. One shared clock
+#: meant a pair `shadow` recorded as `would_merge` was refused `not_changed`
+#: for ever once the operator flipped to `on` — the fold the shadow run was
+#: there to vouch for could never happen (review of #495). A fresh clock on the
+#: flip makes the first `on` pass see every open note as new, so every pair is
+#: reconsidered once, by the mode that writes.
 PASS_CLOCK_NAME = "note-merge:pass"  # noqa: S105 — a table row name, not a secret
+
+
+def pass_clock_name(mode: str) -> str:
+    """The pass-clock row for one mode — see `PASS_CLOCK_NAME`."""
+    return f"{PASS_CLOCK_NAME}:{mode}"
 
 #: The `established_by` prefix `DreamerRuntime` stamps on this adaptor's own
 #: proposals (`dream:<adaptor>:<key>:<ms>`). A revision carrying it is the
@@ -243,6 +259,7 @@ class NoteMergeAdaptor:
         self._label_for = label_for
         self._metrics = metrics
         self._clock = clock
+        self._pass_clock = pass_clock_name(mode)
         self._excerpt = body_excerpt_chars
         self._shown: dict[str, _Shown] = {}
 
@@ -267,7 +284,7 @@ class NoteMergeAdaptor:
         render_ms = self._clock()
         self._shown.pop(key, None)
         last = await self._clock_store.last_fired(
-            adaptor_name=PASS_CLOCK_NAME, key=key,
+            adaptor_name=self._pass_clock, key=key,
         )
         open_notes = await self._notes.standing(unit=key)
         if len(open_notes) < 2:
@@ -420,7 +437,7 @@ class NoteMergeAdaptor:
         # pass. A commit cancelled before here leaves the stamp where it was,
         # so the same change is judged again rather than lost.
         await self._clock_store.record_fire(
-            adaptor_name=PASS_CLOCK_NAME, key=key, at_ms=shown.render_ms,
+            adaptor_name=self._pass_clock, key=key, at_ms=shown.render_ms,
         )
         return written
 

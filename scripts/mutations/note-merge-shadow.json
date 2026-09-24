@@ -65,8 +65,8 @@
   {
     "name": "41 §7.4: the pass clock is stamped with the render instant",
     "file": "nora/language/note_merge.py",
-    "old": "            adaptor_name=PASS_CLOCK_NAME, key=key, at_ms=shown.render_ms,",
-    "new": "            adaptor_name=PASS_CLOCK_NAME, key=key, at_ms=now_ms,",
+    "old": "            adaptor_name=self._pass_clock, key=key, at_ms=shown.render_ms,",
+    "new": "            adaptor_name=self._pass_clock, key=key, at_ms=now_ms,",
     "target": "tests/unit/test_note_merge.py::test_the_pass_clock_is_stamped_with_the_render_instant"
   },
   {
@@ -89,5 +89,61 @@
     "old": "        if current[0].retired_at is not None and not merged:",
     "new": "        if current[0].retired_at is not None:",
     "target": "tests/unit/test_heartbeat_loop.py::test_a_pending_proactive_row_on_a_merged_note_follows_its_survivor"
+  },
+  {
+    "name": "review #495: the pass clock is keyed by mode, so a flip to on reconsiders every pair",
+    "file": "nora/language/note_merge.py",
+    "old": "        self._pass_clock = pass_clock_name(mode)\n",
+    "new": "        self._pass_clock = PASS_CLOCK_NAME\n",
+    "target": "tests/unit/test_note_merge.py::test_a_flip_from_shadow_to_on_reconsiders_every_pair"
+  },
+  {
+    "name": "review #495 (sql): the duplicate's swap requires it open, not just its head",
+    "file": "nora/infra/sql/notes.py",
+    "old": "                    NOTE.c.head_revision_id == duplicate_head,\n                    NOTE.c.retired_at.is_(None),\n",
+    "new": "                    NOTE.c.head_revision_id == duplicate_head,\n",
+    "target": "tests/contract/test_note_store_contract.py::test_merge_into_refuses_a_duplicate_retired_under_an_unmoved_head"
+  },
+  {
+    "name": "review #495: not_changed needs NO changed note, not one unchanged note",
+    "file": "nora/language/note_merge.py",
+    "old": "            elif not any(i in shown.changed for i in ids):",
+    "new": "            elif not all(i in shown.changed for i in ids):",
+    "target": "tests/unit/test_note_merge.py::test_a_group_with_one_changed_note_is_not_refused"
+  },
+  {
+    "name": "review #495: the change check reads every revision, not the head",
+    "file": "nora/language/note_merge.py",
+    "old": "        for r in chain\n    )",
+    "new": "        for r in chain if r.id == note.head_revision_id\n    )",
+    "target": "tests/unit/test_note_merge.py::test_a_persons_revision_under_a_later_fold_revision_is_a_change"
+  },
+  {
+    "name": "review #495: a forward that ends on no open note cancels the row",
+    "file": "nora/app/proactive_screen.py",
+    "old": "        if survivor is None:\n            return ReminderState.CANCELLED, CANCELLED_NOTE_RETIRED",
+    "new": "        if survivor is None:\n            return None",
+    "target": "tests/unit/test_heartbeat_loop.py::test_a_row_on_a_merged_note_whose_survivor_closed_is_cancelled"
+  },
+  {
+    "name": "review #495: strikes reset only when the duplicate is the livelier note",
+    "file": "nora/language/note_merge.py",
+    "old": "                    reset_strikes=d_head.written_at > shown_written_at,",
+    "new": "                    reset_strikes=True,",
+    "target": "tests/unit/test_note_merge.py::test_strikes_reset_only_when_the_duplicate_is_the_livelier_note"
+  },
+  {
+    "name": "review #495: the stamp is the last write of commit",
+    "file": "nora/language/note_merge.py",
+    "old": "        provenance = proposals[0] if proposals else None\n        resolved:",
+    "new": "        await self._clock_store.record_fire(\n            adaptor_name=self._pass_clock, key=key, at_ms=shown.render_ms,\n        )\n        provenance = proposals[0] if proposals else None\n        resolved:",
+    "target": "tests/unit/test_note_merge.py::test_a_commit_that_fails_leaves_the_pass_clock_where_it_was"
+  },
+  {
+    "name": "review #495: each fold in a group builds on the head the last one left",
+    "file": "nora/language/note_merge.py",
+    "old": "                survivor_head = await self._notes.merge_into(",
+    "new": "                _unused = await self._notes.merge_into(",
+    "target": "tests/unit/test_note_merge.py::test_a_three_note_group_folds_both_duplicates_into_the_oldest"
   }
 ]

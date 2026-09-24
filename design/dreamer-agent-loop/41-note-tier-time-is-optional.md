@@ -782,7 +782,8 @@ fire-time screen that follows a `retired-merged` note's survivor. Where it
 differs from §7.3-7.8, and why:
 
 - **The «decision-log row» is a `note_merge_decision` table** (migration
-  `0062`), not the shared `decision_log`. That table's rows render into the
+  `0063`, renumbered from `0062` when #489 took that number), not the shared
+  `decision_log`. That table's rows render into the
   participation and proactive prompts, its `reason` is an 80-character code
   label, and it refuses note titles and model text by its own rule; adding a
   writer to it would also have changed the `<loop_decisions>` gloss every
@@ -799,6 +800,12 @@ differs from §7.3-7.8, and why:
   survivor** (head revision times). With the survivor fixed as the OLDEST
   note, «a duplicate newer than the survivor» read by creation time would
   always hold.
+- **The pass clock is kept per mode** (`note-merge:pass:shadow`,
+  `note-merge:pass:on`), a review finding on #495. §7.4 names one row, and
+  with one row the `not_changed` refusal made the flip to `on` inert for
+  every pair `shadow` had already judged: none of their notes had changed
+  since the shadow stamp, so each was refused for ever. A fresh clock on the
+  flip makes the first `on` pass reconsider every pair once.
 - **The fire-time screen follows the survivor rather than re-pointing the
   row**: a row on a merged note fires unless the survivor was revised on the
   tag path after the row was written. `remind` and the per-note wake limit do

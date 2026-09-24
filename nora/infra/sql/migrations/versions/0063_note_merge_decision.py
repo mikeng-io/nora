@@ -15,8 +15,8 @@ following `0053_decision_log`: a migration is a frozen historical statement.
 `tests/infra/test_schema_parity.py` catches a change to one that did not reach
 the other.
 
-Revision ID: 0062_note_merge_decision
-Revises: 0061_video_readings
+Revision ID: 0063_note_merge_decision
+Revises: 0062_standing_revision_source
 Create Date: 2026-09-25
 """
 
@@ -26,8 +26,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql as pg
 
-revision = "0062_note_merge_decision"
-down_revision = "0061_video_readings"
+revision = "0063_note_merge_decision"
+down_revision = "0062_standing_revision_source"
 branch_labels = None
 depends_on = None
 

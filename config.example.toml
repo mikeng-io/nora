@@ -1469,6 +1469,16 @@ discharge_enabled = false
 #              the duplicate is retired "retired-merged" and forwards to it.
 #              Nothing is deleted; clearing the duplicate's retired_at restores
 #              it. Set only after the eval in design 41 §7.8 passes.
+#
+# Each mode keeps its OWN "last read" clock (note-merge:pass:shadow and
+# note-merge:pass:on), so the first "on" pass after a shadow run reconsiders
+# every pair once. With one shared clock, a pair shadow had already judged
+# counted as "unchanged" and was never folded after the flip.
+#
+# Whatever the mode, two things are live as soon as this code is deployed:
+# a pending proactive reminder about a note retired "retired-merged" follows
+# the note it was folded into instead of being cancelled, and the curator's
+# retirement is a no-op when the note's head moved under it.
 merge_mode = "off"
 
 [culture]

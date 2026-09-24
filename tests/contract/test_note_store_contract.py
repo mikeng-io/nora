@@ -2369,3 +2369,26 @@ async def test_record_merge_decision_appends_a_row(notes: _Harness) -> None:
 
     assert await notes.read_merge_decisions(WS) == [decision]
     assert await notes.read_merge_decisions(OTHER_WS) == []
+
+
+async def test_merge_into_refuses_a_duplicate_retired_under_an_unmoved_head(
+    notes: _Harness,
+) -> None:
+    """The duplicate's swap carries `retired_at IS NULL`, not just its head:
+    `supersede` retires without touching the head, so a duplicate the curator
+    closed while the pass was thinking still names the head the pass read.
+    Folding it would append a CLOSED question to the survivor and re-retire a
+    note as `retired-merged`, overwriting why it was retired."""
+    survivor = await _make(notes.store, title="Saturday dinner")
+    duplicate = await _make(notes.store, title="Neway booking")
+    await notes.retire(duplicate.id, NOW + 5)
+
+    with pytest.raises(StaleNoteHeadError):
+        await _fold(notes, survivor=survivor, duplicate=duplicate)
+
+    _, s_head = await notes.store.read(unit=WS, note_id=survivor.id)
+    assert s_head.id == survivor.head_revision_id, "the survivor rolled back"
+    assert len(await notes.store.revision_chain(
+        unit=WS, note_id=survivor.id)) == 1
+    d_note, _ = await notes.store.read(unit=WS, note_id=duplicate.id)
+    assert d_note.retired_at == NOW + 5 and d_note.replaced_by is None

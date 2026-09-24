@@ -3476,10 +3476,12 @@ async def build_dependencies(
         # for two open notes asking the same question, on its own switch —
         # `[notes] merge_mode`, "off" by default, which builds nothing.
         #
-        # Hourly, 30 minutes off the hour, so it reads what an hourly
-        # `note-candidates` fire just wrote; a tick where no note moved is one
-        # clock read and one `standing()` and no model call (the adaptor's own
-        # change check). `samples=1` is PINNED, not defaulted: the runtime
+        # Hourly, at :30 — an arbitrary slot, not one sequenced after
+        # `note-candidates`, which is watermark-driven and has no :00 slot to
+        # follow. What a candidates fire writes is simply seen by the next
+        # merge tick. A tick where no note moved is one clock read, one
+        # `standing()` and one `revision_chain` per open note, and no model
+        # call (the adaptor's own change check). `samples=1` is PINNED, not defaulted: the runtime
         # unions samples, so a second sample could only add folds — the
         # direction this pass must not fail in (41 §7.3).
         if (

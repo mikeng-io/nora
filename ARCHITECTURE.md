@@ -428,7 +428,9 @@ the language tier were **deprecated 2026-09-07** and their code deleted (issue
 #115), and the note tier's entity-resolution chain and the curator's merge half
 were **deprecated 2026-09-08** — with the create gate's anchor-date match, which
 had taken duplicate-handling over from merge, deleted in turn on **2026-09-13**
-(#228), so nothing merges a duplicate in that tier at all (#236). Their database
+(#228), so nothing merged a duplicate in that tier at all (#236) — *until
+2026-09-25, when a separate `note-merge` pass was built (DEC-202, design 41 §7;
+`[notes] merge_mode`, off by default, `shadow` first)*. Their database
 tables are deliberately not dropped. Design documents describing them carry
 `DEPRECATED` banners, and their decision-index rows are marked rather than
 renumbered.
