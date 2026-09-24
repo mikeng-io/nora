@@ -57,7 +57,7 @@
   },
   {
     "name": "an unread bio is reported as an empty one",
-    "file": "nora/infra/social/instagram_client.py",
+    "file": "nora/infra/social/render.py",
     "old": "        lines.append(\n            \"Private/public, follower counts, whether they follow Nora, and \"\n            \"the bio could not be read just now.\"\n        )",
     "new": "        lines.append(\"Bio: (none)\")",
     "target": "tests/unit/test_instagram_social_client.py::test_social_unavailable_says_which_half_is_missing"
@@ -65,8 +65,8 @@
   {
     "name": "the profile renders the igid",
     "file": "nora/infra/social/instagram_client.py",
-    "old": "    head = f\"@{username}\"\n",
-    "new": "    head = f\"@{username} [{body.get('igid')}]\"\n",
+    "old": "        full_name=full_name.strip() if isinstance(full_name, str) and full_name.strip() else None,",
+    "new": "        full_name=f\"{full_name} [{body.get('igid')}]\",",
     "target": "tests/unit/test_instagram_social_client.py::test_a_profile_never_renders_an_id_or_the_unstable_extra"
   },
   {
@@ -78,58 +78,58 @@
   },
   {
     "name": "the profile render is not clamped",
-    "file": "nora/infra/social/instagram_client.py",
-    "old": "text, truncated = clamp_chars(rendered, self._content_max_chars)",
-    "new": "text, truncated = rendered, False",
+    "file": "nora/infra/social/render.py",
+    "old": "text, truncated = clamp_chars(_profile_text(view), max_chars)",
+    "new": "text, truncated = _profile_text(view), False",
     "target": "tests/unit/test_instagram_social_client.py::test_the_profile_render_is_clamped"
   },
   {
     "name": "the profile render is not wrapped as untrusted",
-    "file": "nora/infra/social/instagram_client.py",
+    "file": "nora/infra/social/render.py",
     "old": "\"text\": wrap_outside_text(\"social_post\", \"instagram profile\", text),",
     "new": "\"text\": text,",
     "target": "tests/unit/test_instagram_social_client.py::test_a_profile_renders_the_curated_fields"
   },
   {
     "name": "the caption is dropped from the story render",
-    "file": "nora/infra/social/instagram_client.py",
-    "old": "            lines.append(f\"caption: {words['caption']}\")",
-    "new": "            pass",
+    "file": "nora/infra/social/render.py",
+    "old": "        lines.append(\"caption: \" + _prose(item.caption, _CAPTION_MAX_CHARS))",
+    "new": "        pass",
     "target": "tests/unit/test_instagram_social_client.py::test_a_story_carries_caption_alt_text_and_author_inside_the_wrap"
   },
   {
     "name": "Instagram's alt text is dropped from the story render",
-    "file": "nora/infra/social/instagram_client.py",
-    "old": "            lines.append(f\"Instagram's description: {words['alt_text']}\")",
-    "new": "            pass",
+    "file": "nora/infra/social/render.py",
+    "old": "        lines.append(\"Instagram's description: \" + _prose(item.alt_text, _CAPTION_MAX_CHARS))",
+    "new": "        pass",
     "target": "tests/unit/test_instagram_social_client.py::test_a_story_carries_caption_alt_text_and_author_inside_the_wrap"
   },
   {
     "name": "the story's author is not rendered",
-    "file": "nora/infra/social/instagram_client.py",
-    "old": "    blocks = [f\"Story by @{author}\"] if author is not None else []",
+    "file": "nora/infra/social/render.py",
+    "old": "    blocks = [f\"Story by @{view.author}\"] if view.author is not None else []",
     "new": "    blocks = []",
     "target": "tests/unit/test_instagram_social_client.py::test_a_story_carries_caption_alt_text_and_author_inside_the_wrap"
   },
   {
     "name": "the story render is not wrapped as untrusted",
-    "file": "nora/infra/social/instagram_client.py",
+    "file": "nora/infra/social/render.py",
     "old": "\"text\": wrap_outside_text(\"social_post\", \"instagram story\", text),",
     "new": "\"text\": text,",
     "target": "tests/unit/test_instagram_social_client.py::test_a_story_carries_caption_alt_text_and_author_inside_the_wrap"
   },
   {
     "name": "the caption and alt text are copied into items, outside the wrap",
-    "file": "nora/infra/social/instagram_client.py",
-    "old": "        out.append((item, words))",
-    "new": "        out.append(({**item, **words}, words))",
+    "file": "nora/infra/social/render.py",
+    "old": "    ref: dict[str, Any] = {\"kind\": item.kind, \"url\": item.url}",
+    "new": "    ref: dict[str, Any] = {\"kind\": item.kind, \"url\": item.url, \"caption\": item.caption, \"alt_text\": item.alt_text}",
     "target": "tests/unit/test_instagram_social_client.py::test_an_instruction_in_a_caption_stays_inside_the_wrap"
   },
   {
     "name": "a caption reaches note",
-    "file": "nora/infra/social/instagram_client.py",
-    "old": "            \"note\": _STORY_FRAMING,",
-    "new": "            \"note\": _STORY_FRAMING + \" \".join(w.get(\"caption\", \"\") for _, w in frames),",
+    "file": "nora/infra/social/render.py",
+    "old": "        \"note\": _story_note(view),",
+    "new": "        \"note\": _story_note(view) + \" \".join(i.caption or \"\" for i in view.items),",
     "target": "tests/unit/test_instagram_social_client.py::test_an_instruction_in_a_caption_stays_inside_the_wrap"
   },
   {
@@ -144,7 +144,7 @@
     "file": "nora/infra/social/instagram_client.py",
     "old": "    text = \" \".join(value.split())",
     "new": "    text = value.strip()",
-    "target": "tests/unit/test_instagram_social_client.py::test_a_caption_cannot_forge_a_frame_line"
+    "target": "tests/unit/test_instagram_social_client.py::test_a_caption_cannot_forge_a_frame_line tests/unit/test_instagram_profile_search_snapshot.py"
   },
   {
     "name": "a 20-digit igid is sent",

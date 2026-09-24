@@ -114,6 +114,7 @@ from types import MappingProxyType
 from typing import Any, Literal
 
 from ...domain.ports import InstagramAccountLookup, SocialProvider, SocialSubjectIndex
+from .readings import READS_WITH_READINGS, MediaLook
 from .results import (
     AMBIGUOUS,
     NO_ACCOUNT,
@@ -335,8 +336,17 @@ class SocialRouter(SocialProvider):
         self, *, platform: str, what: str, target: str, limit: int,
         target_kind: TargetKind = TARGET_NAMED,
         room_people: frozenset[str] | None = None,
+        look: MediaLook | None = None,
     ) -> dict[str, Any]:
         """Route one read. NEVER raises (R-5), NEVER fails over.
+
+        `look` is the caller's own `media_fetch`, with which a post or a
+        story comes back with what each item shows
+        (design/instagram-adoption/18 §"Typed views, one renderer, and
+        readings"). It is forwarded for `READS_WITH_READINGS` only, the post
+        and story rows, and never to any other backend or row, whatever the
+        caller passes: a profile and a search read no media. It changes
+        nothing about picking, resolution or reach, which all happen first.
 
         `room_people` is the person ids on the asking room's roster, the
         scope a spoken name resolves in, or `None` when that roster could not
@@ -390,9 +400,13 @@ class SocialRouter(SocialProvider):
         )
         if isinstance(authorized, dict):
             return authorized
+        # The one argument the port does not carry, handed on only to the
+        # rows that read media, so no other backend ever sees it.
+        reads_media = look is not None and (platform, what) in READS_WITH_READINGS
+        media = {"look": look} if reads_media else {}
         try:
             return await provider.read(
-                platform=platform, what=what, target=authorized, limit=limit,
+                platform=platform, what=what, target=authorized, limit=limit, **media,
             )
         except Exception:
             # Every implementation is documented never to raise; this is the

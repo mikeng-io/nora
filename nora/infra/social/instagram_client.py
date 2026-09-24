@@ -64,15 +64,31 @@ never sees a `person_id`, has no `SocialSubjectIndex`, and cannot produce
 anything is dispatched. It does check the igid's SHAPE before putting it in a
 URL path: a decimal id or no call, so no target can name a different route.
 
-## A story result carries the TEXT LAYER and references, never what the media shows
+## Views in, one renderer out, and what each item SHOWS (2026-09-24)
+
+Every read is built into a typed VIEW (`views.py`: `PostView`, `StoryView`,
+`ProfileView`, `SearchView`) by the builders at the bottom of this module,
+field by field and with a value check per field, and turned into what the
+model reads by ONE renderer (`render.py`). This module no longer writes a
+model-facing dict for an `ok` answer at all: the wrap, the clamp, the notes
+and the layout live there (design/instagram-adoption/18 §"Typed views, one
+renderer, and readings"). Profile and search render byte for byte what this
+module rendered before, pinned against a snapshot it wrote.
+
+A post, reel or story read that is handed `media_fetch` (`look`, which the
+router forwards for those two rows only) comes back with what each item
+SHOWS: `readings.read_view` reads the first items through `media_fetch(url=…)`
+itself, the url and nothing else, so the caption never reaches a vision
+prompt. Handed nothing, it is the text layer and the links, as before.
+
+## Every frame carries its TEXT LAYER, and where the text goes is the safety argument
 
 Every frame carries its text layer — the author's `caption`, Instagram's own
 `alt_text` (`accessibility_caption`, «a photo of a plate»), the author, when
 it was posted, its kind — and its media URL (design/instagram-adoption/18
 §"Listing and reading one item"). That text is what lets Nora answer «is she
-at the beach?» without a vision call. What the media SHOWS is not here:
-`instagram_read` finds out *that* something exists, where, and what its author
-and Instagram said about it; `media_fetch` finds out *what it is*.
+at the beach?» from what the poster and Instagram said, beside what the
+frame shows.
 
 **Where the text goes is the whole safety argument.** The caption and alt text
 are stranger-written prose, so they go down exactly ONE path, the one the
@@ -81,7 +97,7 @@ line (so a caption cannot forge a frame line of its own), rendered into
 `text`, then `wrap_outside_text` (R-13) and `clamp_chars`. They are NOT copied
 into `items`: `instagram_read` hands the whole result dict to the model, so a
 caption in `items` would be stranger prose OUTSIDE the untrusted wrap and
-outside the clamp. `items` stays `{kind, taken_at, url}` — the
+outside the clamp. `items` stays `{kind, url, taken_at}` — the
 machine-usable handoff to `media_fetch(url=…)`, which needs nothing else.
 
 **No `id`, since 2026-09-24.** A frame's id was carried as a "reference" and
@@ -178,42 +194,30 @@ from __future__ import annotations
 import json
 import logging
 import re
-import time
 import urllib.parse
-from typing import Any
+from typing import Any, TypeGuard
 
 import aiohttp
 
-from ...domain.blocks import wrap_outside_text
 from ...domain.instagram_links import SHORTCODE_RE, is_handle
 from ...domain.ports import SocialProvider, UsernameLookup
 from ..trace_propagation import propagation_headers
+from .readings import MediaLook, read_view
+from .render import render
 from .results import NOTHING_FOUND, UNAVAILABLE, clamp_chars
-
-log = logging.getLogger("nora.social.instagram")
-
-#: What a story result IS, in a field nothing can mistake for a URL. A model
-#: cannot attribute what it was not told, and "there is a `taken_at` in here"
-#: is not being told.
-SOURCE_KIND = "instagram_story"
-
-#: What a profile result is.
-PROFILE_SOURCE_KIND = "instagram_profile"
-
-#: The framing, carried BY the result (module docstring). Short on purpose —
-#: it is re-sent on every later model call in the turn — and it names the
-#: contrast rather than a rule, because the failure is a phrasing that reads
-#: as knowledge rather than a phrasing that breaks a policy.
-_STORY_FRAMING = (
-    "This is their Instagram STORY: it disappears about 24h after it was "
-    "posted (`taken_at`, and `expires_at` is when the links die). If you "
-    "mention any of it, say it was their story and when: «his story from "
-    "this morning», never «he was at the gym». You saw something "
-    "perishable; you don't know where he was."
+from .views import (
+    AccountView,
+    ItemView,
+    PostView,
+    ProfileSocial,
+    ProfileView,
+    Result,
+    SearchView,
+    StoryView,
+    View,
 )
 
-#: What an account search result IS (design/instagram-adoption/18, P11).
-SEARCH_SOURCE_KIND = "instagram_account_search"
+log = logging.getLogger("nora.social.instagram")
 
 #: The rows this backend serves. A request for anything else reaching here is
 #: a ROUTING bug, not a user error, so it is `unavailable` (a wiring gap), is
@@ -227,21 +231,6 @@ _SERVES: frozenset[tuple[str, str]] = frozenset({
     # P12: one post or reel, by the shortcode of a link a person pasted.
     ("instagram", "post"),
 })
-
-#: What a post result is (P12). A reel is a post to the bridge: one route.
-POST_SOURCE_KIND = "instagram_post"
-
-#: The framing for an `ok` post, carried by the result (ADR 0015 §3). It says
-#: the one thing the model must do next to answer «what's in this reel»: the
-#: result carries the text layer and the media links, never what the media
-#: shows, so seeing it is `media_fetch` on each item that matters (18
-#: §"Listing and reading one item"). Short, because it is re-sent on every
-#: later model call of the turn.
-_POST_FRAMING = (
-    "One Instagram post: its author, caption and media, in order. This says "
-    "nothing about what the media shows: call media_fetch(url=...) on each "
-    "item you need to see. The caption is the author's own words."
-)
 
 #: The post route's own 404: Instagram answered that there is no such post.
 #: Nora's sentence, never the bridge's message (`results.py`). It does not
@@ -274,16 +263,6 @@ SEARCH_MAX_ACCOUNTS = 5
 #: at 30 characters today; 64 leaves room without letting one field carry a
 #: paragraph of stranger prose.
 _FULL_NAME_MAX_CHARS = 64
-
-#: The framing for an `ok` search, carried by the result (ADR 0015 §3: the
-#: result explains the status). Short, because it is re-sent on every later
-#: model call of the turn. It says the one thing P9 measured that a model
-#: would otherwise assume: the first result is not always the person.
-_SEARCH_FRAMING = (
-    "Accounts Instagram's search matched, in its own order. The first is not "
-    "always the one they mean: say which looks like a match and why, or list "
-    "them. Display names are written by the account owners."
-)
 
 #: Zero accounts: the search RAN and matched nobody. Nora's sentence, never
 #: the bridge's (`results.py`).
@@ -360,6 +339,7 @@ class InstagramSocialClient(SocialProvider):
 
     async def read(
         self, *, platform: str, what: str, target: str, limit: int,
+        look: MediaLook | None = None,
     ) -> dict[str, Any]:
         """One read. NEVER raises (R-5).
 
@@ -368,9 +348,15 @@ class InstagramSocialClient(SocialProvider):
         look). The other two a subject read can produce — `ambiguous` and
         `refused` — are decided ABOVE this, in the router, and are never
         reached with a call to make.
+
+        `look` is the caller's `media_fetch`. With it, a post or a story
+        comes back with what each item shows (`readings.read_view`); a
+        profile and a search read no media and never use it.
         """
         try:
-            return await self._read(platform=platform, what=what, target=target, limit=limit)
+            return await self._read(
+                platform=platform, what=what, target=target, limit=limit, look=look,
+            )
         except Exception:
             # The never-raises backstop, identical in posture to the OpenCLI
             # client's: a contract violation degrades to `unavailable` and
@@ -380,6 +366,7 @@ class InstagramSocialClient(SocialProvider):
 
     async def _read(
         self, *, platform: str, what: str, target: str, limit: int,
+        look: MediaLook | None,
     ) -> dict[str, Any]:
         if (platform, what) not in _SERVES:
             log.warning("instagram social client asked for a row it does not serve")
@@ -397,7 +384,7 @@ class InstagramSocialClient(SocialProvider):
             if not SHORTCODE_RE.fullmatch(code):
                 log.warning("instagram social client given a target that is not a shortcode")
                 return dict(UNAVAILABLE)
-            return await self._post(shortcode=code)
+            return await self._post(shortcode=code, look=look)
         # `target` is the igid the router resolved out of the person index —
         # never a `person_id` and never a handle. One that is not a decimal
         # id is a routing bug in the same family as the row check above, so
@@ -410,10 +397,10 @@ class InstagramSocialClient(SocialProvider):
             log.warning("instagram social client given a target that is not an igid")
             return dict(UNAVAILABLE)
         if what == "story":
-            return await self._story(igid=igid, limit=limit)
+            return await self._story(igid=igid, limit=limit, look=look)
         return await self._profile(igid=igid)
 
-    async def _story(self, *, igid: str, limit: int) -> dict[str, Any]:
+    async def _story(self, *, igid: str, limit: int, look: MediaLook | None) -> dict[str, Any]:
         status, payload = await self._get(f"/accounts/{igid}/story")
         if status != 200 or not isinstance(payload, dict):
             # The story route has NO "no such account" answer, so no non-200
@@ -438,52 +425,15 @@ class InstagramSocialClient(SocialProvider):
             # documented shape — a wiring gap, never read as a miss.
             log.warning("instagram bridge story body carried no boolean `found`")
             return dict(UNAVAILABLE)
-        frames = _items(payload.get("items"), limit=limit)
-        items = [item for item, _words in frames]
-        if not items:
+        view = story_view(payload, limit=limit)
+        if view is None:
             # `found: true` with nothing usable in it is a wiring gap, NOT «no
             # story» — the route has a dedicated `found: false` for that and
             # this is not it. Answering `nothing_found` here would manufacture
             # a claim about the subject out of our own failure to read a body.
             log.warning("instagram bridge found a story with no usable items")
             return dict(UNAVAILABLE)
-        author = _username(payload.get("username"))
-        text, truncated = clamp_chars(_render(frames, author), self._content_max_chars)
-        out: dict[str, Any] = {
-            "status": "ok",
-            # WHAT this is, explicitly. A story result that says only «here
-            # are some URLs» is a result the model can only describe as a
-            # fact about the world, and a fact about the world does not
-            # expire.
-            "source_kind": SOURCE_KIND,
-            # The framing, beside the timestamps it is about. `note` is Nora's
-            # own instruction slot — nothing from the bridge ever lands in one.
-            "note": _STORY_FRAMING,
-            # References only. The caption and alt text are NOT here: this
-            # dict reaches the model whole, and prose in `items` would sit
-            # outside the untrusted wrap and the clamp (module docstring).
-            "items": items,
-            # The rendered form, because the model reads text natively — and
-            # the ONLY place the frames' text layer (caption, alt text) goes.
-            # The
-            # `[video <url>]` marker is `media_fetch`'s own documented shape,
-            # so the model can hand a row straight to `media_fetch(url=…)`.
-            # WRAPPED and CLAMPED, as `SocialProvider` requires of every
-            # implementation; the `items` list beside it carries each `url`
-            # UNESCAPED, so the machine-usable handoff is unaffected by the
-            # wrapper's escaping.
-            "text": wrap_outside_text("social_post", "instagram story", text),
-            "truncated": truncated,
-        }
-        if author is not None:
-            # Shape-checked as a handle, so it cannot carry prose.
-            out["author"] = author
-        # The reel's `expiring_at` bounds the whole set; it is named
-        # `expires_at` in the result, beside the note that refers to it.
-        expires_at = _as_int(payload.get("expiring_at"))
-        if expires_at is not None:
-            out["expires_at"] = expires_at
-        return out
+        return await self._answer(view, look)
 
     async def _profile(self, *, igid: str) -> dict[str, Any]:
         status, payload = await self._get(f"/accounts/{igid}")
@@ -500,19 +450,14 @@ class InstagramSocialClient(SocialProvider):
             return dict(UNAVAILABLE)
         if status != 200 or not isinstance(payload, dict):
             return dict(UNAVAILABLE)
-        rendered = _render_profile(payload)
-        if rendered is None:
+        view = profile_view(payload)
+        if view is None:
             # A 200 with no usable identity in it is a wiring gap, not an
             # account: the handler always names the account it read.
             log.warning("instagram bridge profile body carried no usable username")
             return dict(UNAVAILABLE)
-        text, truncated = clamp_chars(rendered, self._content_max_chars)
-        return {
-            "status": "ok",
-            "source_kind": PROFILE_SOURCE_KIND,
-            "text": wrap_outside_text("social_post", "instagram profile", text),
-            "truncated": truncated,
-        }
+        # A profile reads no media: it is rendered, never looked at.
+        return await self._answer(view, None)
 
     async def _search(self, *, query: str, limit: int) -> dict[str, Any]:
         """`GET /accounts?query=` → up to `SEARCH_MAX_ACCOUNTS` accounts, in
@@ -545,30 +490,14 @@ class InstagramSocialClient(SocialProvider):
             # The ONLY path to `nothing_found`: the search ran and the bridge
             # said, in its own documented shape, that it matched nobody.
             return dict(SEARCH_NOTHING_FOUND)
-        accounts = _accounts(raw)
-        if not accounts:
+        view = search_view(raw, limit=limit)
+        if view is None:
             # Items came back and none was usable: our failure to read a
             # body, not a fact about who exists on Instagram.
             log.warning("instagram bridge search returned no usable account")
             return dict(UNAVAILABLE)
-        cap = max(1, min(_cap(limit), SEARCH_MAX_ACCOUNTS))
-        # The bridge's order, kept: it is Instagram's ranking, and the note
-        # tells the model the first is not always the one.
-        shown = accounts[:cap]
-        text, _clamped = clamp_chars(_render_accounts(shown), self._content_max_chars)
-        return {
-            "status": "ok",
-            "source_kind": SEARCH_SOURCE_KIND,
-            "note": _SEARCH_FRAMING,
-            # References only, shape-checked, no prose: the handle a
-            # follow-up names and the badge. Display names are NOT here
-            # (`_accounts`).
-            "accounts": [row for row, _name in shown],
-            # Every account with its display name, WRAPPED and CLAMPED as one
-            # block (R-13), the only place a display name goes.
-            "text": wrap_outside_text("social_post", "instagram account search", text),
-            "truncated": len(accounts) > cap,
-        }
+        # A search reads no media: it is rendered, never looked at.
+        return await self._answer(view, None)
 
     async def igid_for_username(self, *, username: str) -> UsernameLookup:
         """`GET /accounts?username=` → the igid of the ONE account whose
@@ -630,10 +559,10 @@ class InstagramSocialClient(SocialProvider):
             return UsernameLookup("unavailable")
         return UsernameLookup("found", igid)
 
-    async def _post(self, *, shortcode: str) -> dict[str, Any]:
+    async def _post(self, *, shortcode: str, look: MediaLook | None) -> dict[str, Any]:
         """`GET /posts/{shortcode}` → the whole post: every item in the
         bridge's order (a carousel keeps its order), the author and the
-        caption (P12).
+        caption (P12), and with `look`, what each of the first items shows.
 
         The same value discipline as a story: every item is `{kind, url}`
         plus `duration_seconds` for a video, the url must be on a MEASURED
@@ -660,31 +589,22 @@ class InstagramSocialClient(SocialProvider):
             return dict(POST_UNSUPPORTED)
         if status != 200 or not isinstance(payload, dict):
             return dict(UNAVAILABLE)
-        items, more = _post_items(payload.get("items"))
-        if not items:
+        view = post_view(payload)
+        if view is None:
             log.warning("instagram bridge post carried no usable item")
             return dict(UNAVAILABLE)
-        author = _username(payload.get("author"))
-        taken_at = _as_int(payload.get("taken_at"))
-        caption = _one_line(payload.get("caption"))
-        text, clamped = clamp_chars(
-            _render_post(items, author, taken_at, caption), self._content_max_chars,
-        )
-        out: dict[str, Any] = {
-            "status": "ok",
-            "source_kind": POST_SOURCE_KIND,
-            "note": _POST_FRAMING,
-            # References only: the machine-usable handoff to `media_fetch`.
-            "items": items,
-            "text": wrap_outside_text("social_post", "instagram post", text),
-            "truncated": clamped or more,
-        }
-        if author is not None:
-            # Shape-checked as a handle, so it cannot carry prose.
-            out["author"] = author
-        if taken_at is not None:
-            out["taken_at"] = taken_at
-        return out
+        return await self._answer(view, look)
+
+    async def _answer(self, view: View, look: MediaLook | None) -> dict[str, Any]:
+        """An `ok` view → what the model reads, through the ONE renderer.
+
+        A post or a story handed `look` is read first: `read_view` fills a
+        `Reading` on each of its first items through `media_fetch(url=…)`,
+        and one item's failure is that item's. A profile or a search is
+        never looked at, whatever it is handed."""
+        if look is not None and isinstance(view, (PostView, StoryView)):
+            view = await read_view(view, look)
+        return render(Result("ok", view=view), max_chars=self._content_max_chars)
 
     async def _get(self, path: str) -> tuple[int, Any]:
         """One GET on the bridge → `(status, parsed JSON or None)`. The body
@@ -709,78 +629,99 @@ class InstagramSocialClient(SocialProvider):
             return status, None
 
 
-def _render_profile(body: dict[str, Any]) -> str | None:
-    """The account route's 200 → the lines the model reads, or `None` when the
-    body names no usable account.
+
+# ---- the view builders: bridge JSON → a view, one checked field at a time ------
+#
+# The ONLY code that reads a bridge body into something the model will see.
+# Each builder reads a listed key, checks its VALUE, and writes it into a
+# view; nothing is copied through, and an unlisted key is never read, so a
+# body that grows an `ocr_text` or an `id` grows nothing here. `None` from a
+# builder means the body held nothing usable: the caller answers
+# `unavailable`, never `nothing_found`.
+
+
+def story_view(payload: dict[str, Any], *, limit: int) -> StoryView | None:
+    """The story route's `found: true` body → a `StoryView` of at most
+    `limit` frames, or `None` when no frame is usable."""
+    frames = _items(payload.get("items"), limit=limit)
+    if not frames:
+        return None
+    # The reel's `expiring_at` bounds the whole set; it is named
+    # `expires_at` in the result, beside the note that refers to it.
+    expires_at = _as_int(payload.get("expiring_at"))
+    return StoryView(
+        author=_username(payload.get("username")),
+        expires_at=expires_at,
+        items=tuple(frames),
+    )
+
+
+def post_view(payload: dict[str, Any]) -> PostView | None:
+    """The post route's 200 body → a `PostView`, every item in the bridge's
+    order, or `None` when no item is usable. The shortcode the bridge echoes
+    is not read."""
+    items, more = _post_items(payload.get("items"))
+    if not items:
+        return None
+    return PostView(
+        author=_username(payload.get("author")),
+        caption=_one_line(payload.get("caption")),
+        taken_at=_as_int(payload.get("taken_at")),
+        items=tuple(items),
+        more=more,
+    )
+
+
+def profile_view(body: dict[str, Any]) -> ProfileView | None:
+    """The account route's 200 → a `ProfileView`, or `None` when the body
+    names no usable account.
 
     Built field by field, every value type-checked: a boolean that is not a
-    `bool` and a count that is not an `int` are simply left out, never
-    guessed. Neither id is rendered. The caller wraps and clamps.
-    """
+    `bool` and a count that is not an `int` are `None`, never guessed.
+    Neither id is read, and neither is `extra` (the bridge's unmodelled wire
+    keys, "NOT a stable contract" by its own comment). `social` is kept only
+    when the bridge says its second call answered AND it holds something:
+    otherwise the render says that half could not be read."""
     username = _username(body.get("username"))
     if username is None:
         return None
     full_name = body.get("full_name")
-    head = f"@{username}"
-    if isinstance(full_name, str) and full_name.strip():
-        head += f" ({full_name.strip()})"
-    lines = [head]
-
     social = body.get("social") if body.get("social_available") is True else None
-    if not isinstance(social, dict):
+    if not isinstance(social, dict) or not social:
         social = None
-
-    follows = _yes_no(body.get("following"))
-    followed_by = _yes_no(social.get("followed_by")) if social else None
-    follow_line = []
-    if follows is not None:
-        follow_line.append(f"Nora follows them: {follows}")
-    if followed_by is not None:
-        follow_line.append(f"they follow Nora: {followed_by}")
-    if follow_line:
-        lines.append(" · ".join(follow_line))
-
-    if social:
-        private = social.get("is_private")
-        if isinstance(private, bool):
-            lines.append("Private account" if private else "Public account")
-        counts = [
-            f"{n} {label}"
-            for key, label in (
-                ("follower_count", "followers"),
-                ("following_count", "following"),
-                ("media_count", "posts"),
-                ("total_clips_count", "reels"),
-            )
-            if (n := _count(social.get(key))) is not None
-        ]
-        if counts:
-            lines.append(" · ".join(counts))
-
-    has_story = _yes_no(body.get("has_story"))
-    if has_story is not None:
-        lines.append(f"Story up now: {has_story}")
-
-    if social:
-        bio = social.get("biography")
-        if isinstance(bio, str) and bio.strip():
-            lines.append(f"Bio: {bio.strip()}")
-        else:
-            # Read, and empty: a fact about the account, said as one.
-            lines.append("Bio: (none)")
-    else:
-        # The second call failed. Said outright, so an unread bio is never
-        # reported as an empty one and «public or private» is never guessed.
-        lines.append(
-            "Private/public, follower counts, whether they follow Nora, and "
-            "the bio could not be read just now."
-        )
-    return "\n".join(lines)
+    return ProfileView(
+        username=username,
+        full_name=full_name.strip() if isinstance(full_name, str) and full_name.strip() else None,
+        following=_bool(body.get("following")),
+        has_story=_bool(body.get("has_story")),
+        social=None if social is None else ProfileSocial(
+            followed_by=_bool(social.get("followed_by")),
+            is_private=_bool(social.get("is_private")),
+            follower_count=_count(social.get("follower_count")),
+            following_count=_count(social.get("following_count")),
+            media_count=_count(social.get("media_count")),
+            clips_count=_count(social.get("total_clips_count")),
+            biography=_bio(social.get("biography")),
+        ),
+    )
 
 
-def _accounts(raw: list[Any]) -> list[tuple[dict[str, Any], str | None]]:
-    """The search body's `items` → `(reference row, display name)` pairs, in
-    the bridge's order.
+def search_view(raw: list[Any], *, limit: int) -> SearchView | None:
+    """The search body's `items` → at most `SEARCH_MAX_ACCOUNTS` accounts in
+    the bridge's order, or `None` when none is usable."""
+    accounts = _accounts(raw)
+    if not accounts:
+        return None
+    cap = max(1, min(_cap(limit), SEARCH_MAX_ACCOUNTS))
+    # The bridge's order, kept: it is Instagram's ranking, and the note
+    # tells the model the first is not always the one.
+    shown = accounts[:cap]
+    return SearchView(accounts=tuple(shown), truncated=len(accounts) > cap)
+
+
+def _accounts(raw: list[Any]) -> list[AccountView]:
+    """The search body's `items` → one `AccountView` per usable row, in the
+    bridge's order.
 
     **No id is read.** The bridge sends `igid` and `fbid` on every hit;
     neither is read, so neither can reach the model (R-18). A follow-up read
@@ -791,17 +732,12 @@ def _accounts(raw: list[Any]) -> list[tuple[dict[str, Any], str | None]]:
       anyone can name).
     * `is_verified`: `True` only when the bridge says `true`. A missing or
       malformed flag must never make an account read as verified.
-    * the display name (`full_name`): stranger-written, so it goes down the
-      path every such field on this client uses: a `str` or nothing,
-      collapsed onto one line, clamped, and rendered only into the wrapped
-      `text` (`_render_accounts`). It is kept OUT of the reference row for
-      the reason a story caption is kept out of `items`: the result dict
-      reaches the model whole, and prose in the row would sit outside the
-      untrusted wrap. One wrap for the list rather than one per name, too:
-      a `social_post` block carries its own description, about 60 tokens,
-      and five of them would cost more than the names they wrap.
+    * the display name (`full_name`): stranger-written, so a `str` or
+      nothing, collapsed onto one line and clamped. The renderer puts it only
+      into the wrapped `text`, never into `accounts`, for the reason a story
+      caption is kept out of `items`: the result dict reaches the model whole.
     """
-    out: list[tuple[dict[str, Any], str | None]] = []
+    out: list[AccountView] = []
     for row in raw:
         if not isinstance(row, dict):
             continue
@@ -811,33 +747,10 @@ def _accounts(raw: list[Any]) -> list[tuple[dict[str, Any], str | None]]:
         name = _one_line(row.get("full_name"))
         if name is not None:
             name, _clamped = clamp_chars(name, _FULL_NAME_MAX_CHARS)
-        out.append((
-            {"username": username, "is_verified": row.get("is_verified") is True},
-            name,
+        out.append(AccountView(
+            username=username, is_verified=row.get("is_verified") is True, full_name=name,
         ))
     return out
-
-
-def _render_accounts(accounts: list[tuple[dict[str, Any], str | None]]) -> str:
-    """One numbered line per account, in order: handle, then the badge
-    stated either way, then the display name, LABELLED and LAST. The caller
-    wraps and clamps.
-
-    The order is the defence, not taste. The name is stranger-written, and
-    anything after it on the line reads as its continuation, so nothing Nora
-    states may follow it: a name of `Nike), verified (official` rendered as
-    `@handle (Nike), verified (official)` forged the badge. With the badge
-    first and stated for every account («verified» or «not verified»), a name
-    claiming the badge lands after the real answer, under `name:`. Each name
-    is already one line, so it cannot forge a line of its own either."""
-    lines = []
-    for number, (row, name) in enumerate(accounts, start=1):
-        badge = "verified" if row["is_verified"] else "not verified"
-        line = f"{number}. @{row['username']}, {badge}"
-        if name is not None:
-            line += f", name: {name}"
-        lines.append(line)
-    return "\n".join(lines)
 
 
 def _error_code(payload: dict[str, Any]) -> str | None:
@@ -849,19 +762,19 @@ def _error_code(payload: dict[str, Any]) -> str | None:
     return code if isinstance(code, str) else None
 
 
-def _post_items(raw: Any) -> tuple[list[dict[str, Any]], bool]:
-    """The post body's `items` → `(reference rows, more than fit)`, in the
-    bridge's order.
+def _post_items(raw: Any) -> tuple[list[ItemView], bool]:
+    """The post body's `items` → `(items, more than fit)`, in the bridge's
+    order.
 
-    Each row is `{kind, url}`, plus `duration_seconds` when the bridge sends
-    a non-negative number for it. Width and height are not read: nothing
-    downstream uses them. A row whose url is not on a measured Instagram CDN
-    host is DROPPED, for the reason `_items` drops one: the url is handed to
-    the model with an instruction to fetch it. At most `_MAX_ITEMS` rows,
+    Each item is its kind and url, plus `duration_seconds` when the bridge
+    sends a non-negative number for it. Width and height are not read:
+    nothing downstream uses them. A row whose url is not on a measured
+    Instagram CDN host is DROPPED, for the reason `_items` drops one: the url
+    is handed to the model, and to `media_fetch`. At most `_MAX_ITEMS` rows,
     which is Instagram's own carousel ceiling, so a whole post fits."""
     if not isinstance(raw, list):
         return [], False
-    out: list[dict[str, Any]] = []
+    out: list[ItemView] = []
     more = False
     for row in raw:
         if not isinstance(row, dict) or not _is_cdn_url(row.get("url")):
@@ -870,67 +783,28 @@ def _post_items(raw: Any) -> tuple[list[dict[str, Any]], bool]:
             more = True
             break
         kind = row.get("kind")
-        item: dict[str, Any] = {
-            "kind": kind if kind in _KINDS else "media",
-            "url": row["url"],
-        }
         duration = row.get("duration_seconds")
-        if (
-            not isinstance(duration, bool) and isinstance(duration, (int, float))
-            and duration >= 0
-        ):
-            item["duration_seconds"] = duration
-        out.append(item)
+        out.append(ItemView(
+            kind=kind if kind in _KINDS else "media",
+            url=row["url"],
+            duration_seconds=duration if (
+                not isinstance(duration, bool) and isinstance(duration, (int, float))
+                and duration >= 0
+            ) else None,
+        ))
     return out, more
 
 
-def _render_post(
-    items: list[dict[str, Any]], author: str | None, taken_at: int | None,
-    caption: str | None,
-) -> str:
-    """A post → the lines the model reads: who and when, then one
-    `[kind url]` marker per item in order (a video with its length), then
-    the caption, LABELLED and LAST.
-
-    Last for the reason a display name is last in a search result: it is
-    stranger prose, and nothing Nora states may follow it. `[` and `]` in it
-    become `(` and `)`, as the transcript does for a shared item's caption,
-    so a caption cannot forge a media marker. The caller wraps and clamps."""
-    head = f"Post by @{author}" if author is not None else "Post"
-    if taken_at is not None:
-        head += _post_age(taken_at, int(time.time()))
-    lines = [head]
-    for number, item in enumerate(items, start=1):
-        line = f"{number}. [{item['kind']} {item['url']}]"
-        duration = item.get("duration_seconds")
-        if duration is not None:
-            line += f" {round(duration)}s"
-        lines.append(line)
-    if caption is not None:
-        lines.append("caption: " + caption.replace("[", "(").replace("]", ")"))
-    return "\n".join(lines)
+def _bool(value: Any) -> bool | None:
+    """A bool, or `None` for anything else (left out, not guessed)."""
+    return value if isinstance(value, bool) else None
 
 
-def _post_age(taken_at: int, now: int) -> str:
-    """A post's time as an age, for the reason `_age` renders one for a
-    story (a model has no now-anchor to read an epoch against). A post does
-    not expire, so there is no 24h clause; past two months it is a date."""
-    delta = now - taken_at
-    if delta < 0:
-        return ""
-    if delta < 3600:
-        return f" · {max(1, delta // 60)}m ago"
-    if delta < 86400:
-        return f" · {delta // 3600}h ago"
-    if delta < 60 * 86400:
-        return f" · {delta // 86400}d ago"
-    return " · posted " + time.strftime("%Y-%m-%d", time.gmtime(taken_at))
-
-
-def _yes_no(value: Any) -> str | None:
-    """A bool → "yes"/"no"; anything else → `None` (left out, not guessed)."""
-    if isinstance(value, bool):
-        return "yes" if value else "no"
+def _bio(value: Any) -> str | None:
+    """A bio as the account wrote it (lines kept, ends trimmed), or `None`
+    when there is none: a read, empty bio renders as `(none)`."""
+    if isinstance(value, str) and value.strip():
+        return value.strip()
     return None
 
 
@@ -943,21 +817,17 @@ def _count(value: Any) -> int | None:
     return value
 
 
-def _items(
-    raw: Any, *, limit: int,
-) -> list[tuple[dict[str, Any], dict[str, str]]]:
-    """The story body's `items` → at most `limit` frames, each a pair:
-    `(reference row, text layer)`.
+def _items(raw: Any, *, limit: int) -> list[ItemView]:
+    """The story body's `items` → at most `limit` frames, each an `ItemView`
+    carrying its kind, url and time and its text layer (caption, alt text).
 
     **Built field by field, never copied, and every value bound to a shape.**
-    The reference row is `{kind, taken_at, url}` and nothing else; the
-    text layer is `{caption, alt_text}`, each present only when the bridge
-    sent a non-empty STRING. The two are kept apart because they go to
-    different places: the row into `items` (unwrapped, machine-usable), the
-    text layer only into the wrapped, clamped `text` (module docstring). A
-    body that grows an `ocr_text` or a `description` still cannot leak it,
-    because nothing reads an unlisted key — and nothing renders an unchecked
-    VALUE either, which is the half a key whitelist does not cover.
+    The text layer is present only when the bridge sent a non-empty STRING;
+    the renderer puts it into the wrapped, clamped `text` and nowhere else,
+    never into `items` (module docstring). A body that grows an `ocr_text`
+    or a `description` still cannot leak it, because nothing reads an
+    unlisted key — and nothing renders an unchecked VALUE either, which is
+    the half a key whitelist does not cover.
 
     A malformed row is DROPPED rather than failing the whole read — one
     unparseable frame in a two-frame reel should still let the model look at
@@ -976,7 +846,7 @@ def _items(
     if not isinstance(raw, list):
         return []
     cap = _cap(limit)
-    out: list[tuple[dict[str, Any], dict[str, str]]] = []
+    out: list[ItemView] = []
     for row in raw:
         if not isinstance(row, dict):
             continue
@@ -995,25 +865,19 @@ def _items(
         # falls back to `item.ID` when a reel item has no `pk`), so carrying it
         # would hand the story owner's igid to the model (R-18). Once it was
         # also a content channel: `str()` of a dict in that slot put a caption
-        # in the result.
+        # in the result. An `ItemView` has no field it could go in.
         kind = row.get("kind")
-        item: dict[str, Any] = {
-            "kind": kind if kind in _KINDS else "media",
-            "url": url,
-        }
-        taken_at = _as_int(row.get("taken_at"))
-        if taken_at is not None:
+        out.append(ItemView(
+            kind=kind if kind in _KINDS else "media",
+            url=url,
             # Carried because the ANSWER often turns on it («is this from
             # today?»), and a model asked a question about time from a block
             # with no time in it answers anyway, wrong, at a rate nothing
             # reports. Absent rather than guessed when the bridge omits it.
-            item["taken_at"] = taken_at
-        words = {
-            key: text
-            for key in ("caption", "alt_text")
-            if (text := _one_line(row.get(key))) is not None
-        }
-        out.append((item, words))
+            taken_at=_as_int(row.get("taken_at")),
+            caption=_one_line(row.get("caption")),
+            alt_text=_one_line(row.get("alt_text")),
+        ))
         if len(out) >= cap:
             break
     return out
@@ -1028,7 +892,7 @@ def _cap(limit: Any) -> int:
         return 1
 
 
-def _is_cdn_url(value: Any) -> bool:
+def _is_cdn_url(value: Any) -> TypeGuard[str]:
     """A story frame's URL, or not. Parsed, never substring-matched: the
     hostname is the only part of a URL that says where a fetch lands, and
     `https://scontent.cdninstagram.com.evil.test/x` contains the allowed text
@@ -1042,41 +906,6 @@ def _is_cdn_url(value: Any) -> bool:
     return any(host == suffix[1:] or host.endswith(suffix) for suffix in _CDN_HOST_SUFFIXES)
 
 
-def _render(
-    frames: list[tuple[dict[str, Any], dict[str, str]]], author: str | None,
-) -> str:
-    """Frames → the text the model reads, newest first (the bridge's own
-    order, preserved rather than re-sorted — it is the protocol's).
-
-    One block per frame: the `[kind url]` marker with its age, then the
-    caption and Instagram's alt text when there are any. Blocks are separated
-    by a blank line so `clamp_chars` cuts between frames, never through one.
-    The caller WRAPS and CLAMPS what comes back (R-13) — this function only
-    builds the lines.
-
-    That wrap used to be argued away here, on the grounds that there is no
-    stranger-written PROSE in a story reference and wrapping four
-    machine-generated fields would be decoration. The argument was wrong in
-    its premise, not in its logic: three of those four fields were not
-    machine-generated at all, they were whatever the bridge put in them, and
-    an audit got a caption and a sentence of injected instruction through two
-    of them. The values are bound now — and the wrap is there anyway, because
-    "this particular envelope carries nothing unsafe today" is a fact about
-    today and a wrapper is what makes it not matter.
-    """
-    now = int(time.time())
-    blocks = [f"Story by @{author}"] if author is not None else []
-    for item, words in frames:
-        when = _age(item.get("taken_at"), now)
-        lines = [f"[{item['kind']} {item['url']}]{when}"]
-        if "caption" in words:
-            lines.append(f"caption: {words['caption']}")
-        if "alt_text" in words:
-            lines.append(f"Instagram's description: {words['alt_text']}")
-        blocks.append("\n".join(lines))
-    return "\n\n".join(blocks)
-
-
 def _one_line(value: Any) -> str | None:
     """A free-text field (caption, alt text) → one line of text, or `None`.
 
@@ -1084,7 +913,7 @@ def _one_line(value: Any) -> str | None:
     the same reason the frame id is not read — `str()` is how a structure
     becomes content nobody checked. Whitespace, newlines included, collapses
     to single spaces, so a caption cannot start a line of its own and pass
-    itself off as a `[video https://…]` marker for another frame."""
+    itself off as another frame's line."""
     if not isinstance(value, str):
         return None
     text = " ".join(value.split())
@@ -1096,38 +925,6 @@ def _username(value: Any) -> str | None:
     if isinstance(value, str) and _USERNAME_RE.fullmatch(value):
         return value
     return None
-
-
-def _age(taken_at: Any, now: int) -> str:
-    """A story item's time, rendered as an AGE rather than an epoch.
-
-    The result's note asks the model to attribute what it saw — "his story
-    from this morning", never "he was at the gym". That is a judgement about
-    WHEN, and `1789935632` cannot ground it: the model has no now-anchor, so
-    it either declines to attribute or invents an interval. Measured elsewhere
-    in this system (the Relevance Gate, 2026-09-09/10): three questions about
-    time against an input carrying none, and rendering an age cut the error
-    rate by two thirds. Rewriting the instruction did not — every rewrite was
-    worse, one of them unsafely so.
-
-    So the age is the fix and the note is not. Both are kept: the note says
-    what to do, this says what with.
-
-    The epoch stays in `items[].taken_at` for anything that computes; this
-    renders only the line the model reads."""
-    epoch = _as_int(taken_at)
-    if epoch is None:
-        return ""
-    delta = now - epoch
-    if delta < 0:  # clock skew between us and Instagram — say nothing rather than "in 3h"
-        return ""
-    if delta < 3600:
-        return f" · {max(1, delta // 60)}m ago"
-    if delta < 86400:
-        return f" · {delta // 3600}h ago"
-    # A story older than 24h should not exist; if one arrives, say so plainly
-    # rather than rendering a day count that implies it is still live.
-    return f" · {delta // 86400}d ago (past its 24h expiry)"
 
 
 def _as_int(value: Any) -> int | None:

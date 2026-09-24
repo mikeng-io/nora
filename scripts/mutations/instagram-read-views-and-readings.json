@@ -1,0 +1,149 @@
+[
+  {
+    "name": "the caption is passed into the vision prompt, as media_fetch's question",
+    "file": "nora/infra/social/readings.py",
+    "old": "                served = await asyncio.wait_for(look(url=item.url), timeout=item_timeout)",
+    "new": "                served = await asyncio.wait_for(look(url=item.url, question=getattr(view, \"caption\", None) or item.caption or \"\"), timeout=item_timeout)",
+    "target": "tests/unit/test_instagram_read_readings.py::test_the_caption_never_reaches_a_vision_prompt tests/unit/test_instagram_read_readings.py::test_a_look_is_handed_the_url_and_nothing_else"
+  },
+  {
+    "name": "the item cap is removed: every item of a carousel is looked at",
+    "file": "nora/infra/social/readings.py",
+    "old": "    chosen = view.items[:max_items]",
+    "new": "    chosen = view.items",
+    "target": "tests/unit/test_instagram_read_readings.py -k first_eight"
+  },
+  {
+    "name": "partial-failure handling is removed: one look that fails fails the call",
+    "file": "nora/infra/social/readings.py",
+    "old": "            except Exception:\n                log.exception(\"instagram item reading failed\")\n                return Reading(\"failed\")",
+    "new": "            except Exception:\n                raise",
+    "target": "tests/unit/test_instagram_read_readings.py -k costs_only_its_own_item"
+  },
+  {
+    "name": "a look that runs out of time fails the call instead of its own item",
+    "file": "nora/infra/social/readings.py",
+    "old": "            except TimeoutError:\n                return Reading(\"timed_out\")",
+    "new": "            except TimeoutError:\n                raise",
+    "target": "tests/unit/test_instagram_read_readings.py -k runs_out_of_time_costs_only"
+  },
+  {
+    "name": "the whole-call deadline is dropped: a hung look holds the call",
+    "file": "nora/infra/social/readings.py",
+    "old": "    done, pending = await asyncio.wait(tasks, timeout=max(0.0, budget))",
+    "new": "    done, pending = await asyncio.wait(tasks, timeout=max(0.0, budget) * 10)",
+    "target": "tests/unit/test_instagram_read_readings.py::test_the_whole_call_deadline_ends_every_look_still_running tests/unit/test_instagram_read_readings.py::test_the_turns_own_deadline_bounds_the_readings"
+  },
+  {
+    "name": "the turn's own deadline is ignored",
+    "file": "nora/infra/social/readings.py",
+    "old": "        budget = min(budget, left * VISION_LOOP_SHARE)",
+    "new": "        budget = budget",
+    "target": "tests/unit/test_instagram_read_readings.py -k turns_own_deadline"
+  },
+  {
+    "name": "more than four looks run at once",
+    "file": "nora/infra/social/readings.py",
+    "old": "    slots = asyncio.Semaphore(max(1, concurrency))",
+    "new": "    slots = asyncio.Semaphore(100)",
+    "target": "tests/unit/test_instagram_read_readings.py -k four_looks"
+  },
+  {
+    "name": "an id leaks through a view: a story frame's id rides its caption",
+    "file": "nora/infra/social/instagram_client.py",
+    "old": "            caption=_one_line(row.get(\"caption\")),",
+    "new": "            caption=_one_line(str(row.get(\"id\"))),",
+    "target": "tests/unit/test_instagram_views.py -k id"
+  },
+  {
+    "name": "an id leaks through a view: a search hit's fbid rides its display name",
+    "file": "nora/infra/social/instagram_client.py",
+    "old": "            username=username, is_verified=row.get(\"is_verified\") is True, full_name=name,",
+    "new": "            username=username, is_verified=row.get(\"is_verified\") is True, full_name=str(row.get(\"fbid\")),",
+    "target": "tests/unit/test_instagram_views.py -k no_fixture_id"
+  },
+  {
+    "name": "the renderer is bypassed: an ok view reaches the model as its repr",
+    "file": "nora/infra/social/instagram_client.py",
+    "old": "        return render(Result(\"ok\", view=view), max_chars=self._content_max_chars)",
+    "new": "        return {\"status\": \"ok\", \"text\": repr(view)}",
+    "target": "tests/unit/test_instagram_social_client.py::test_a_story_carries_caption_alt_text_and_author_inside_the_wrap tests/unit/test_instagram_views.py::test_the_client_writes_no_model_facing_dict_of_its_own"
+  },
+  {
+    "name": "the router hands media_fetch to every row, a search included",
+    "file": "nora/infra/social/router.py",
+    "old": "        reads_media = look is not None and (platform, what) in READS_WITH_READINGS",
+    "new": "        reads_media = look is not None",
+    "target": "tests/unit/test_instagram_read_readings.py -k never_for_a_search"
+  },
+  {
+    "name": "the tool stops handing media_fetch to a post or story read",
+    "file": "nora/agent/tools.py",
+    "old": "                look=media_fetch if read in (\"story\", \"post\") else None,",
+    "new": "                look=None,",
+    "target": "tests/unit/test_instagram_read_readings.py -k what_each"
+  },
+  {
+    "name": "a reading is rendered unwrapped, into the reference items",
+    "file": "nora/infra/social/render.py",
+    "old": "    ref: dict[str, Any] = {\"kind\": item.kind, \"url\": item.url}",
+    "new": "    ref: dict[str, Any] = {\"kind\": item.kind, \"url\": item.url, \"reading\": item.reading and item.reading.text}",
+    "target": "tests/unit/test_instagram_views.py -k beside_the_caption_all_inside_the_wrap"
+  },
+  {
+    "name": "a reading keeps its newlines and brackets and can forge an item",
+    "file": "nora/infra/social/render.py",
+    "old": "    one = \" \".join(text.split()).replace(\"[\", \"(\").replace(\"]\", \")\")",
+    "new": "    one = text",
+    "target": "tests/unit/test_instagram_views.py -k cannot_forge"
+  },
+  {
+    "name": "readings are not clamped to their share",
+    "file": "nora/infra/social/render.py",
+    "old": "    return max(_READING_MIN_CHARS, min(_READING_MAX_CHARS, share))",
+    "new": "    return 10**6",
+    "target": "tests/unit/test_instagram_views.py -k share_the_budget"
+  },
+  {
+    "name": "the caption moves before the readings, so the clamp cuts readings first",
+    "file": "nora/infra/social/render.py",
+    "old": "    blocks = [head]\n    share = _reading_share(view.items, max_chars)",
+    "new": "    blocks = [head] + ([\"caption: \" + _prose(view.caption, _CAPTION_MAX_CHARS)] if view.caption else [])\n    share = _reading_share(view.items, max_chars)",
+    "target": "tests/unit/test_instagram_views.py -k caption"
+  },
+  {
+    "name": "every look failing is framed as if the items were seen",
+    "file": "nora/infra/social/render.py",
+    "old": "    if any(reading.state in (\"seen\", \"withheld\") for reading in looked):\n        return POST_READ_FRAMING\n    return POST_UNSEEN_FRAMING",
+    "new": "    return POST_READ_FRAMING",
+    "target": "tests/unit/test_instagram_read_readings.py -k nothing_was_seen"
+  },
+  {
+    "name": "a withheld reading is served as seen, identifier and all",
+    "file": "nora/infra/social/readings.py",
+    "old": "        if served.get(\"withheld\") is True:\n            return Reading(\"withheld\")",
+    "new": "        if False:\n            return Reading(\"withheld\")",
+    "target": "tests/unit/test_instagram_read_readings.py -k maps_to_a_reading"
+  },
+  {
+    "name": "the profile render moves a byte (the full name loses its parentheses)",
+    "file": "nora/infra/social/render.py",
+    "old": "        head += f\" ({view.full_name})\"",
+    "new": "        head += f\" {view.full_name}\"",
+    "target": "tests/unit/test_instagram_profile_search_snapshot.py"
+  },
+  {
+    "name": "the search render moves a byte (the numbering loses its dot)",
+    "file": "nora/infra/social/render.py",
+    "old": "        line = f\"{number}. @{account.username}, {badge}\"",
+    "new": "        line = f\"{number} @{account.username}, {badge}\"",
+    "target": "tests/unit/test_instagram_profile_search_snapshot.py"
+  },
+  {
+    "name": "the renderer stops collapsing whitespace, so a reading can forge an item line",
+    "file": "nora/infra/social/render.py",
+    "old": "    one = \" \".join(text.split()).replace(\"[\", \"(\").replace(\"]\", \")\")",
+    "new": "    one = text.replace(\"[\", \"(\").replace(\"]\", \")\")",
+    "target": "tests/unit/test_instagram_views.py::test_a_reading_cannot_forge_an_item_or_a_marker"
+  }
+]

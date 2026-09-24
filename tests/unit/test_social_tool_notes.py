@@ -33,7 +33,7 @@ import pytest
 from nora.agent import tools as tools_module
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
-from nora.infra.social import instagram_client, results
+from nora.infra.social import instagram_client, render, results
 from nora.obs.metrics import Metrics
 from nora.testing import FakeMemoryStore
 from tests.fakes import SinkSender
@@ -100,10 +100,17 @@ def _shared_payloads() -> dict[str, object]:
         "results.NO_SUCH_HANDLE": results.NO_SUCH_HANDLE,
         "results.not_set_up(instagram)": results.not_set_up("instagram"),
         "results.not_set_up(x)": results.not_set_up("x"),
-        "instagram_client._STORY_FRAMING": {"note": instagram_client._STORY_FRAMING},
-        "instagram_client._SEARCH_FRAMING": {"note": instagram_client._SEARCH_FRAMING},
+        "render.STORY_FRAMING": {"note": render.STORY_FRAMING},
+        "render.STORY_READ_FRAMING": {"note": render.STORY_READ_FRAMING},
+        "render.STORY_UNSEEN_FRAMING": {"note": render.STORY_UNSEEN_FRAMING},
+        "render.SEARCH_FRAMING": {"note": render.SEARCH_FRAMING},
         "instagram_client.SEARCH_NOTHING_FOUND": instagram_client.SEARCH_NOTHING_FOUND,
-        "instagram_client._POST_FRAMING": {"note": instagram_client._POST_FRAMING},
+        "render.POST_FRAMING": {"note": render.POST_FRAMING},
+        "render.POST_READ_FRAMING": {"note": render.POST_READ_FRAMING},
+        "render.POST_UNSEEN_FRAMING": {"note": render.POST_UNSEEN_FRAMING},
+        # What an item line says when it was not seen: inside the wrap, but
+        # text the model reads all the same.
+        **{f"render._NOT_SEEN[{k}]": {"note": v} for k, v in render._NOT_SEEN.items()},
         "instagram_client.POST_NOTHING_FOUND": instagram_client.POST_NOTHING_FOUND,
         "instagram_client.POST_UNSUPPORTED": instagram_client.POST_UNSUPPORTED,
         # `media_fetch`'s answer to an Instagram page link: it routes the
