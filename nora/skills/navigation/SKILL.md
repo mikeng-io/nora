@@ -6,9 +6,6 @@ description: >-
   asks you to plan a journey or weigh how to get somewhere. Not for a single
   live check such as when the next bus comes. That is one tool call, not a
   plan, and loading this skill costs a turn.
-authority_above: [situation]
-authority_below: [message-content, tool-output]
-change_policy: operator-only
 ---
 
 # Wayfinding
