@@ -682,7 +682,13 @@ class NoteCuratorAdaptor:
         "nora_note_curator_total": ("action", CURATOR_ACTIONS),
         "nora_note_curator_dropped_total": ("reason", CURATOR_DROPS),
         "nora_note_curator_candidates_total": ("evidence", frozenset(EVIDENCE_STATES)),
-        "nora_note_retirements_total": ("because", frozenset(NoteSupersedeReason.ALL)),
+        # The two reasons the CURATOR writes, not the tier's whole vocabulary:
+        # `retired-merged` belongs to note-merge and `retired-withdrawn` to
+        # operator triage (design 41 §7.6), and neither is a curator reading.
+        "nora_note_retirements_total": ("because", frozenset({
+            NoteSupersedeReason.RETIRED_EXPIRED,
+            NoteSupersedeReason.RETIRED_CLOSED,
+        })),
         "nora_note_discharge_notes_total": ("result", DISCHARGE_NOTE_RESULTS),
     }
 

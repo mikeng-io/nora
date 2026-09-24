@@ -109,14 +109,17 @@ from nora.domain.notes import (
     CANDIDATE_CREATED,
     CANDIDATE_PENDING,
     CANDIDATE_REFUSED,
+    MERGE_FORWARD_HOPS,
     Note,
     NoteCreateCandidate,
     NoteCreationProposal,
     NoteRevision,
     NoteRevisionProposal,
     NoteSupersedeReason,
+    RetiredNoteError,
     StaleNoteHeadError,
     WakeOutcome,
+    note_handle,
     tag_path_progressed_since_wake,
 )
 from nora.domain.ports import Proposal
@@ -330,6 +333,67 @@ class SqlNoteStore:
             rows = (await conn.execute(stmt)).all()
         return tuple(_row_to_note(r) for r in rows)
 
+    async def successor(self, *, unit: str, note_id: str) -> Note | None:
+        """The OPEN note a `retired-merged` note was folded into, following
+        `replaced_by` — or `None` when the note is open itself, retired for
+        any other reason, absent, or the chain does not end on an open note
+        within `MERGE_FORWARD_HOPS` (design 41 §7.5).
+
+        Only `retired-merged` forwards. `retired-closed`/`retired-expired`
+        mean the question is over, and a `replaced_by` on one of those (the
+        2026-09-24 operator triage wrote some) is provenance, not a promise
+        that the successor carries the same question.
+        """
+        current = note_id
+        async with self._engine.connect() as conn:
+            for _ in range(MERGE_FORWARD_HOPS):
+                if not _is_uuid(current):
+                    return None
+                row = (await conn.execute(
+                    sa.select(NOTE).where(
+                        NOTE.c.id == current, NOTE.c.unit == unit,
+                    )
+                )).one_or_none()
+                if row is None:
+                    return None
+                if row.retired_at is None:
+                    return _row_to_note(row) if current != note_id else None
+                if (row.retire_reason != NoteSupersedeReason.RETIRED_MERGED
+                        or row.replaced_by is None):
+                    return None
+                current = str(row.replaced_by)
+        return None
+
+    async def merged_successor_by_title(
+        self, *, unit: str, title: str,
+    ) -> Note | None:
+        """The open note a `retired-merged` note with this title forwards to,
+        or `None` — including when two merged notes of that title forward to
+        DIFFERENT open notes, because picking one is the guess every resolver
+        in this tier refuses (design 41 §7.5).
+
+        Matched through `note_handle` in Python rather than in SQL: Postgres
+        `lower` is not `note_handle`'s `casefold`, and the resolvers this
+        serves compare with `note_handle`. The set is the unit's merged notes
+        only, which stays small because merges are rare.
+        """
+        wanted = note_handle(title)
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(
+                sa.select(NOTE.c.id, NOTE.c.title).where(
+                    NOTE.c.unit == unit,
+                    NOTE.c.retire_reason == NoteSupersedeReason.RETIRED_MERGED,
+                )
+            )).all()
+        found: dict[str, Note] = {}
+        for r in rows:
+            if note_handle(r.title) != wanted:
+                continue
+            survivor = await self.successor(unit=unit, note_id=str(r.id))
+            if survivor is not None:
+                found[survivor.id] = survivor
+        return next(iter(found.values())) if len(found) == 1 else None
+
     async def read(
         self, *, unit: str, note_id: str,
     ) -> tuple[Note, NoteRevision] | None:
@@ -423,6 +487,12 @@ class SqlNoteStore:
                 NOTE.c.id == note_id,
                 NOTE.c.unit == unit,
                 NOTE.c.head_revision_id == parent_revision_id,
+                # AN APPEND REQUIRES AN OPEN NOTE (design 41 §7.6, guard 1).
+                # `supersede` sets `retired_at` and never touches the head, so
+                # without this a writer that read a note and then lost a race
+                # to a retirement appended successfully into a note nothing
+                # reads again.
+                NOTE.c.retired_at.is_(None),
             )
             .values(head_revision_id=revision_id)
         )
@@ -431,11 +501,24 @@ class SqlNoteStore:
             # already decided, above, by the UPDATE that matched no row.
             # This SELECT is inside the same transaction, so what it reports
             # is what the failed CAS actually saw.
-            observed = (await conn.execute(
-                sa.select(NOTE.c.head_revision_id).where(
-                    NOTE.c.id == note_id, NOTE.c.unit == unit,
+            seen = (await conn.execute(
+                sa.select(
+                    NOTE.c.head_revision_id, NOTE.c.retired_at,
+                    NOTE.c.retire_reason, NOTE.c.replaced_by,
+                ).where(NOTE.c.id == note_id, NOTE.c.unit == unit)
+            )).one_or_none()
+            observed = seen.head_revision_id if seen is not None else None
+            if seen is not None and seen.retired_at is not None:
+                raise RetiredNoteError(
+                    f"note {note_id} was retired ({seen.retire_reason}) — "
+                    f"read the notebook again",
+                    observed_head=observed,
+                    retire_reason=seen.retire_reason,
+                    replaced_by=(
+                        str(seen.replaced_by)
+                        if seen.replaced_by is not None else None
+                    ),
                 )
-            )).scalar_one_or_none()
             raise StaleNoteHeadError(
                 f"note {note_id} changed under you: this revision was "
                 f"written against {parent_revision_id}, the head is "

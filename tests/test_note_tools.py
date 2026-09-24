@@ -160,6 +160,29 @@ async def test_note_read_matches_a_title_case_insensitively():
     assert (await tools["note_read"](title="  dinner, 9 sept "))["status"] == "ok"
 
 
+async def test_note_read_on_a_merged_title_reaches_its_survivor():
+    """design 41 §7.5. The turn's `<notes>` was rendered before a merge, so the
+    model names the duplicate's title after it retired. «No note by that
+    title» would be false of the question, which lives on in the survivor —
+    the read forwards, and says which note it actually read."""
+    from nora.domain.notes import NoteSupersedeReason
+
+    store = InMemoryNoteStore()
+    survivor = await _seed(store, title="Saturday dinner", body="time and place open")
+    duplicate = await _seed(store, title="星期六飯局細節未定", body="asked twice")
+    await store.supersede(
+        key=UNIT, target=duplicate.id, replaced_by=survivor.id,
+        because=NoteSupersedeReason.RETIRED_MERGED, source=None, now_ms=NOW + 1,
+    )
+    tools = _tools(notes=store)
+
+    out = await tools["note_read"](title="星期六飯局細節未定")
+
+    assert out["status"] == "ok"
+    assert out["title"] == "Saturday dinner"
+    assert out["body"] == "time and place open"
+
+
 async def test_note_read_answers_nothing_found_for_a_title_that_is_not_there():
     store = InMemoryNoteStore()
     await _seed(store, title="Dinner, 9 Sept", body="b")
