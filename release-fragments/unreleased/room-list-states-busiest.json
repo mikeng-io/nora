@@ -1,9 +1,14 @@
 {
   "type": "change",
-  "summary": "Asked which of the group's rooms has been busiest, Nora now reads the answer straight from her room list instead of opening every room's messages to count them.",
+  "summary": "Nora's room list now says how many people have been talking in each of the group's rooms today, not just how many messages there were, and names the busiest room by both counts.",
   "details": [
-    "room_list now puts the group's rooms busiest first, by messages in the last 24 hours, and says in one sentence which room was busiest, that several tied, or that none had any messages.",
+    "room_list lists the group's rooms busiest first, by messages in the last 24 hours, and each room now shows how many different people spoke in that time. It is a number only, never who.",
+    "One sentence names the room with the most messages and the room with the most people talking. When the two differ it says so plainly, since one person sending twenty lines is not a busier room than five people talking. It also says when rooms tied or when no room had any messages.",
+    "Someone with two accounts, both linked to them, counts once.",
     "A room whose messages could not be read is listed last and named as unchecked. It is never counted as quiet.",
     "Other groups are still mentioned only as existing, never named, even when one of them was the busiest."
+  ],
+  "limitations": [
+    "An account nobody has linked to a person counts as its own person, so someone using two unlinked accounts is counted twice."
   ]
 }

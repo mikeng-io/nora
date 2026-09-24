@@ -235,7 +235,7 @@ async def test_room_list_puts_the_busiest_room_first_and_names_it_in_the_note(
 
     assert [r["room"] for r in result["rooms"]] == ["Friends WA", "Friends", "Zone 42"]
     assert result["note"].startswith(
-        '"Friends WA" was the busiest in the last 24 hours, with 2 messages.'
+        '"Friends WA" was the busiest in the last 24 hours: 2 messages from 2 people.'
     )
 
 
@@ -246,6 +246,39 @@ async def test_the_busiest_note_never_names_another_unit(policy, persons, store)
 
     assert "Ridgeline" not in note
     assert "Instagram" not in note
+
+
+async def test_each_room_carries_a_speaker_count_and_no_names(policy, persons, store):
+    """People, not rows: the WhatsApp room has two people in the window (the
+    30-hour-old message and Nora's own do not count), and who they were never
+    appears."""
+    result = await _call(_tools(policy, persons, store)["room_list"])
+    rooms = _by_room(result)
+
+    assert rooms["Friends WA"]["speakers_last_24h"] == 2
+    assert rooms["Friends"]["speakers_last_24h"] == 1
+    assert rooms["Zone 42"]["speakers_last_24h"] == 0
+    text = json.dumps(result, ensure_ascii=False)
+    for name in ("Bobby", "Carmen", "wa-b", "wa-c"):
+        assert name not in text
+
+
+async def test_the_note_names_each_leader_when_messages_and_people_differ(policy, persons):
+    """One person sending five lines is not a busier room than three people
+    talking. When the two measures pick different rooms, the note says both."""
+    split = FakeRecordStore()
+    for i in range(5):
+        await split.append(message=_msg("whatsapp", "WA-FRIENDS-ID", "wa-b", "Bobby",
+                                        _ms(timedelta(minutes=10 + i)), f"line {i}"))
+    for sender in ("sig-a", "sig-d", "sig-e"):
+        await split.append(message=_msg("signal", "SIGNAL-FRIENDS-ID", sender, sender,
+                                        _ms(timedelta(hours=1)), "hi"))
+    result = await _call(_tools(policy, persons, split)["room_list"])
+
+    assert result["note"].startswith(
+        '"Friends WA" had the most messages in the last 24 hours (5), and '
+        '"Friends" had the most people talking (3).'
+    )
 
 
 async def test_a_group_with_no_messages_today_says_so(policy, persons):
@@ -267,8 +300,8 @@ async def test_a_tie_names_every_busiest_room(policy, persons):
     result = await _call(_tools(policy, persons, tied)["room_list"])
 
     assert result["note"].startswith(
-        '"Friends" and "Friends WA" were the busiest in the last 24 hours, '
-        "with 1 message each."
+        '"Friends" and "Friends WA" were the busiest in the last 24 hours: '
+        "1 message from 1 person each."
     )
 
 

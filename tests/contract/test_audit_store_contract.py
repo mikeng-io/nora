@@ -682,6 +682,34 @@ async def test_activity_of_a_room_with_no_human_rows_is_zero_and_no_time(store):
     assert (empty.count, empty.last_ts) == (0, None)
 
 
+async def test_activity_counts_distinct_speakers_in_the_window(store):
+    """People, not rows (design/self-awareness/07): asked which group has the
+    most PEOPLE talking, a message count lets one person account for twenty
+    lines. Distinct speakers at or after the cutoff; Nora is not one of them;
+    a speaker seen only before the cutoff does not count."""
+    for ts, sender in [(20, "+852111"), (21, "+852111"), (22, "+852111"),
+                       (25, "+852222"), (5, "+852333")]:
+        await store.append(message=_msg(ts=ts, sender=sender))
+    await store.append(message=_msg(ts=30, sender="nora"), is_nora=True)
+
+    got = await store.room_activity(conversation_id="g1", since_ts=20)
+
+    assert got.count == 4
+    assert got.speakers == 2
+
+
+async def test_activity_counts_one_person_with_two_accounts_once(store):
+    """A resolved `person_id` is the person; the raw sender id stands in only
+    for a row nobody resolved (DEC-14: one human, several accounts)."""
+    await store.append(message=_msg(ts=10, sender="+852111"), person_id="miles")
+    await store.append(message=_msg(ts=11, sender="+852999"), person_id="miles")
+    await store.append(message=_msg(ts=12, sender="+852222"))
+
+    got = await store.room_activity(conversation_id="g1", since_ts=0)
+
+    assert got.speakers == 2
+
+
 async def test_activity_last_ts_is_not_bounded_by_the_window(store):
     """The newest message can be older than the window: a room quiet for a
     week still says when it last spoke, with a count of zero."""

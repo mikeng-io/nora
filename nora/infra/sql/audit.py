@@ -533,6 +533,11 @@ class SqlRecordStore:
         """
         stmt = sa.select(
             sa.func.count().filter(MESSAGES.c.ts >= since_ts).label("recent"),
+            # People, not accounts: `person_id` when resolved, the raw sender
+            # id only for a row nobody resolved (DEC-14).
+            sa.func.count(sa.distinct(
+                sa.func.coalesce(MESSAGES.c.person_id, MESSAGES.c.sender_id)
+            )).filter(MESSAGES.c.ts >= since_ts).label("speakers"),
             sa.func.max(MESSAGES.c.ts).label("last_ts"),
         ).where(
             MESSAGES.c.conversation_id == conversation_id,
@@ -543,6 +548,7 @@ class SqlRecordStore:
         return RoomActivity(
             count=int(row.recent),
             last_ts=None if row.last_ts is None else int(row.last_ts),
+            speakers=int(row.speakers),
         )
 
     async def stats(self) -> dict[str, Any]:

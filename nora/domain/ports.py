@@ -618,6 +618,12 @@ class RoomActivity:
 
     count: int
     last_ts: int | None = None
+    # Distinct PEOPLE who spoke at or after the same cutoff as `count`
+    # (design/self-awareness/07). A resolved `person_id` is the person; the
+    # raw sender id stands in only for a row nobody resolved. Asked which
+    # group has the most people talking, a message count lets one person
+    # account for twenty lines, and she read every room to count heads.
+    speakers: int = 0
 
 
 @dataclass(frozen=True)
@@ -852,8 +858,9 @@ class RecordStore(Protocol):
     async def set_person_id(self, *, row_id: int, person_id: str) -> None: ...
 
     async def room_activity(self, *, conversation_id: str, since_ts: int) -> RoomActivity:
-        """People's messages in this conversation at or after `since_ts`, and
-        the newest person's `ts` at any time (`RoomActivity`). One indexed
+        """People's messages in this conversation at or after `since_ts`, how
+        many distinct people sent them, and the newest person's `ts` at any
+        time (`RoomActivity`). One indexed
         read, for `room_list`: a count over `recent()` would cap at the fetch
         size and report a busy room as exactly as busy as the limit."""
         ...
