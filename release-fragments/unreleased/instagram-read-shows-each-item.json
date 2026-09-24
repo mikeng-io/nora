@@ -5,11 +5,15 @@
     "Each item comes back with a short description of what is in it, read the same way she reads a picture or a clip sent in the chat, and the caption sits beside those descriptions. She can compare what the poster wrote with what the post actually shows, and answer from both, without a second step per item.",
     "The caption is never used to steer what she looks for. It is the poster's own words, and a post could use it to make her misread the pictures, so the pictures are read on their own and she puts the two side by side herself.",
     "Opening the same post again is quick and free: what she saw the first time is remembered by the picture or clip itself.",
+    "A story is read the same way but never remembered: stories disappear after a day, so what she saw in one is not kept.",
+    "Stories and posts read differently now: each item is a numbered line with what it shows under it, and the long picture links are no longer in the text she reads. A story frame's caption and Instagram's own description of it are shortened to about 800 characters; a post's caption still comes back whole.",
+    "When nothing in a post or story could be seen, she says so rather than describing it from the caption.",
     "Profiles and account searches read no pictures and look exactly as they did."
   ],
   "limitations": [
-    "Only the first 8 items of a post are looked at, four at a time. The rest are still listed, and she can look at any of them on request.",
-    "A slow item does not hold the rest up. If a video takes too long, or cannot be read, that item says so and everything else still comes back. If none of the items can be seen, she says she could not see the post rather than describing it from its caption.",
+    "Only the first 8 items of a post or story are looked at, and at most 3 of those can be videos, each no longer than 90 seconds. The rest are still listed, each saying why it was not read, and she can look at any of them on request.",
+    "A slow item does not hold the rest up. If a video takes too long, or cannot be read, that item says so and everything else still comes back.",
+    "Opening the same story twice reads it twice, because nothing from it is kept.",
     "As before, she only opens a story, post or reel when someone in the conversation asks her to."
   ]
 }

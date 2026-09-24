@@ -2,8 +2,8 @@
   {
     "name": "the caption is passed into the vision prompt, as media_fetch's question",
     "file": "nora/infra/social/readings.py",
-    "old": "                served = await asyncio.wait_for(look(url=item.url), timeout=item_timeout)",
-    "new": "                served = await asyncio.wait_for(look(url=item.url, question=getattr(view, \"caption\", None) or item.caption or \"\"), timeout=item_timeout)",
+    "old": "                served = await asyncio.wait_for(look.fetch(url=item.url), timeout=item_timeout)",
+    "new": "                served = await asyncio.wait_for(look.fetch(url=item.url, question=getattr(view, \"caption\", None) or item.caption or \"\"), timeout=item_timeout)",
     "target": "tests/unit/test_instagram_read_readings.py::test_the_caption_never_reaches_a_vision_prompt tests/unit/test_instagram_read_readings.py::test_a_look_is_handed_the_url_and_nothing_else"
   },
   {
@@ -30,8 +30,8 @@
   {
     "name": "the whole-call deadline is dropped: a hung look holds the call",
     "file": "nora/infra/social/readings.py",
-    "old": "    done, pending = await asyncio.wait(tasks, timeout=max(0.0, budget))",
-    "new": "    done, pending = await asyncio.wait(tasks, timeout=max(0.0, budget) * 10)",
+    "old": "            await asyncio.wait(tasks.values(), timeout=max(0.0, budget))",
+    "new": "            await asyncio.wait(tasks.values(), timeout=max(0.0, budget) * 10)",
     "target": "tests/unit/test_instagram_read_readings.py::test_the_whole_call_deadline_ends_every_look_still_running tests/unit/test_instagram_read_readings.py::test_the_turns_own_deadline_bounds_the_readings"
   },
   {
@@ -42,11 +42,11 @@
     "target": "tests/unit/test_instagram_read_readings.py -k turns_own_deadline"
   },
   {
-    "name": "more than four looks run at once",
+    "name": "the turn's slots are bypassed: every look runs at once",
     "file": "nora/infra/social/readings.py",
-    "old": "    slots = asyncio.Semaphore(max(1, concurrency))",
-    "new": "    slots = asyncio.Semaphore(100)",
-    "target": "tests/unit/test_instagram_read_readings.py -k four_looks"
+    "old": "        async with look.slots:",
+    "new": "        async with asyncio.Semaphore(100):",
+    "target": "tests/unit/test_instagram_read_readings.py::test_no_more_than_four_looks_run_at_once tests/unit/test_instagram_read_readings.py::test_two_reads_in_one_turn_share_the_same_four_slots"
   },
   {
     "name": "an id leaks through a view: a story frame's id rides its caption",
@@ -79,7 +79,7 @@
   {
     "name": "the tool stops handing media_fetch to a post or story read",
     "file": "nora/agent/tools.py",
-    "old": "                look=media_fetch if read in (\"story\", \"post\") else None,",
+    "old": "                look=_instagram_look(story=read == \"story\") if read in (\"story\", \"post\") else None,",
     "new": "                look=None,",
     "target": "tests/unit/test_instagram_read_readings.py -k what_each"
   },
@@ -93,23 +93,23 @@
   {
     "name": "a reading keeps its newlines and brackets and can forge an item",
     "file": "nora/infra/social/render.py",
-    "old": "    one = \" \".join(text.split()).replace(\"[\", \"(\").replace(\"]\", \")\")",
-    "new": "    one = text",
+    "old": "    return \" \".join(text.split()).replace(\"[\", \"(\").replace(\"]\", \")\")",
+    "new": "    return text",
     "target": "tests/unit/test_instagram_views.py -k cannot_forge"
   },
   {
-    "name": "readings are not clamped to their share",
+    "name": "readings are not shortened to their share: the layout keeps them whole",
     "file": "nora/infra/social/render.py",
-    "old": "    return max(_READING_MIN_CHARS, min(_READING_MAX_CHARS, share))",
-    "new": "    return 10**6",
-    "target": "tests/unit/test_instagram_views.py -k share_the_budget"
+    "old": "                piece = _cut(body, max(_PROSE_FLOOR, share - 2))",
+    "new": "                piece = _cut(body, line.cap)",
+    "target": "tests/unit/test_instagram_views.py::test_one_reel_keeps_a_long_reading_and_eight_readings_share_the_budget tests/unit/test_instagram_views.py::test_a_tiny_budget_shortens_every_run_and_drops_none"
   },
   {
-    "name": "the caption moves before the readings, so the clamp cuts readings first",
+    "name": "the layout stops fitting and clamps whole blocks off the end (the first build's layout)",
     "file": "nora/infra/social/render.py",
-    "old": "    blocks = [head]\n    share = _reading_share(view.items, max_chars)",
-    "new": "    blocks = [head] + ([\"caption: \" + _prose(view.caption, _CAPTION_MAX_CHARS)] if view.caption else [])\n    share = _reading_share(view.items, max_chars)",
-    "target": "tests/unit/test_instagram_views.py -k caption"
+    "old": "    shares = iter(_allot(runs, wants, max_chars - fixed))",
+    "new": "    shares = iter(wants)",
+    "target": "tests/unit/test_instagram_views.py -k caption_always_survives"
   },
   {
     "name": "every look failing is framed as if the items were seen",
@@ -142,8 +142,106 @@
   {
     "name": "the renderer stops collapsing whitespace, so a reading can forge an item line",
     "file": "nora/infra/social/render.py",
-    "old": "    one = \" \".join(text.split()).replace(\"[\", \"(\").replace(\"]\", \")\")",
-    "new": "    one = text.replace(\"[\", \"(\").replace(\"]\", \")\")",
+    "old": "    return \" \".join(text.split()).replace(\"[\", \"(\").replace(\"]\", \")\")",
+    "new": "    return text.replace(\"[\", \"(\").replace(\"]\", \")\")",
     "target": "tests/unit/test_instagram_views.py::test_a_reading_cannot_forge_an_item_or_a_marker"
+  },
+  {
+    "name": "a cancelled read leaves its looks running (the first build's asyncio.wait)",
+    "file": "nora/infra/social/readings.py",
+    "old": "        for task in tasks.values():\n            task.cancel()\n        await asyncio.gather(*tasks.values(), return_exceptions=True)",
+    "new": "        pass",
+    "target": "tests/unit/test_instagram_read_readings.py -k cancelling_the_read"
+  },
+  {
+    "name": "a cancelled video run leaves ffmpeg running and the scratch file on disk",
+    "file": "nora/infra/vision/preprocess.py",
+    "old": "        await _reap(proc)\n        if scratch is not None:\n            with contextlib.suppress(OSError):\n                os.unlink(scratch)\n    return proc.returncode, out, err",
+    "new": "        pass\n    return proc.returncode, out, err",
+    "target": "tests/unit/test_ffmpeg_cancellation.py -k cancelled_video_run"
+  },
+  {
+    "name": "a cancelled image run leaves ffmpeg running",
+    "file": "nora/infra/vision/preprocess.py",
+    "old": "        # only abandons `communicate`. Killed and reaped on every path out.\n        await _reap(proc)",
+    "new": "        # only abandons `communicate`. Killed and reaped on every path out.\n        pass",
+    "target": "tests/unit/test_ffmpeg_cancellation.py -k cancelled_image_run"
+  },
+  {
+    "name": "the video cap is dropped: every video is read",
+    "file": "nora/infra/social/readings.py",
+    "old": "        if videos > MAX_READ_VIDEOS:",
+    "new": "        if False:",
+    "target": "tests/unit/test_instagram_read_readings.py -k three_videos"
+  },
+  {
+    "name": "a video longer than one window is read anyway",
+    "file": "nora/infra/social/readings.py",
+    "old": "        if item.duration_seconds is not None and item.duration_seconds > MAX_READ_VIDEO_SECONDS:",
+    "new": "        if False:",
+    "target": "tests/unit/test_instagram_read_readings.py -k three_videos"
+  },
+  {
+    "name": "a video's coverage sentence is left in the description, where the layout cuts it",
+    "file": "nora/infra/social/readings.py",
+    "old": "            if video:\n                body, coverage = split_coverage(text)\n                return Reading(\"seen\", body, coverage)",
+    "new": "            if False:\n                body, coverage = split_coverage(text)\n                return Reading(\"seen\", body, coverage)",
+    "target": "tests/unit/test_instagram_read_readings.py -k coverage_sentence_is_split"
+  },
+  {
+    "name": "the layout drops the coverage sentence",
+    "file": "nora/infra/social/render.py",
+    "old": "        suffix = f\" {_clean(reading.coverage)}\" if reading.coverage else \"\"",
+    "new": "        suffix = \"\"",
+    "target": "tests/unit/test_instagram_views.py -k coverage_sentence_survives"
+  },
+  {
+    "name": "a story frame's reading is persisted like a post's",
+    "file": "nora/agent/tools.py",
+    "old": "            token = _MEDIA_READ.set((MEDIA_FETCH_CALLERS[1], not story))",
+    "new": "            token = _MEDIA_READ.set((MEDIA_FETCH_CALLERS[1], True))",
+    "target": "tests/unit/test_instagram_read_readings.py -k never_written_to_a_cache"
+  },
+  {
+    "name": "media_fetch ignores the no-persist flag on the durable description write",
+    "file": "nora/agent/tools.py",
+    "old": "        if vision_cache is not None and cacheable_modality and persist:",
+    "new": "        if vision_cache is not None and cacheable_modality:",
+    "target": "tests/unit/test_instagram_read_readings.py -k never_written_to_a_cache"
+  },
+  {
+    "name": "media_fetch ignores the no-persist flag on the video reading write",
+    "file": "nora/agent/tools.py",
+    "old": "        if video_key is not None and video_read_whole and persist:",
+    "new": "        if video_key is not None and video_read_whole:",
+    "target": "tests/unit/test_instagram_read_readings.py -k never_written_to_a_cache"
+  },
+  {
+    "name": "the automatic readings are counted as the model's own",
+    "file": "nora/agent/tools.py",
+    "old": "        \"nora_media_fetch_total\", status=status, cached=str(cached).lower(), caller=caller,",
+    "new": "        \"nora_media_fetch_total\", status=status, cached=str(cached).lower(), caller=\"model\",",
+    "target": "tests/unit/test_instagram_read_readings.py -k counted_apart"
+  },
+  {
+    "name": "the turn gets a fresh set of slots per call instead of one shared",
+    "file": "nora/agent/tools.py",
+    "old": "        return TurnLook(fetch=fetch, slots=_instagram_slots)",
+    "new": "        return TurnLook(fetch=fetch)",
+    "target": "tests/unit/test_instagram_read_readings.py -k batched_calls_share"
+  },
+  {
+    "name": "the post caption loses its first claim and is squeezed like a reading",
+    "file": "nora/infra/social/render.py",
+    "old": "        blocks.append([_Prose(\"caption: \", view.caption, _POST_CAPTION_MAX_CHARS, first=True)])",
+    "new": "        blocks.append([_Prose(\"caption: \", view.caption, _POST_CAPTION_MAX_CHARS)])",
+    "target": "tests/unit/test_instagram_views.py -k whole_beside_eight"
+  },
+  {
+    "name": "the post caption is capped at a story caption's 800 (breaks #484's whole-caption promise)",
+    "file": "nora/infra/social/render.py",
+    "old": "_POST_CAPTION_MAX_CHARS = 2200",
+    "new": "_POST_CAPTION_MAX_CHARS = 800",
+    "target": "tests/unit/test_instagram_social_client.py::test_a_long_caption_comes_back_whole_where_the_transcript_cuts_it"
   }
 ]

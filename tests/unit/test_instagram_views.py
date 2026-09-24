@@ -268,6 +268,8 @@ def test_a_reading_cannot_forge_an_item_or_a_marker():
 
 
 def test_one_reel_keeps_a_long_reading_and_eight_readings_share_the_budget():
+    """A reading's ceiling is 1,500 characters; several share what is left
+    of the budget equally, and everything still fits."""
     long = "word " * 1000
     one = post_view(_body("posts_carousel_ok.json"))
     one = dataclasses.replace(one, items=(dataclasses.replace(
@@ -282,20 +284,117 @@ def test_one_reel_keeps_a_long_reading_and_eight_readings_share_the_budget():
     out = render(Result("ok", view=eight), max_chars=4000)
     lines = re.findall(r"shows: (.*)", _inside(out["text"]))
     assert len(lines) == 8
-    assert all(len(line) <= 352 for line in lines)
+    sizes = [len(line) for line in lines]
+    assert max(sizes) - min(sizes) <= 1   # an equal share each, to the character
+    assert len(_inside(out["text"]).strip()) <= 4000
+    assert out["truncated"] is True
 
 
-def test_the_whole_text_is_clamped_and_the_caption_goes_first():
+def _carousel(n: int, *, reading: str, caption: str) -> PostView:
+    """`n` items in the bridge's item shape, the first 8 read."""
+    base = post_view(_body("posts_carousel_ok.json"))
+    items = tuple(
+        dataclasses.replace(base.items[0], reading=Reading("seen", reading) if i < 8 else None)
+        for i in range(n)
+    )
+    return dataclasses.replace(base, items=items, caption=caption)
+
+
+@pytest.mark.parametrize("n", [12, 20])
+def test_the_caption_always_survives_a_large_carousel(n):
+    """The caption is the helper the readings are crossed with. With twelve or
+    twenty items, eight long readings, the not-read lines and the «only the
+    first 8» line, it is still there, LAST, shortened if it must be; and so
+    is every item's line."""
+    caption = "the poster wrote this " * 60
+    out = render(Result("ok", view=_carousel(n, reading="word " * 1000, caption=caption)),
+                 max_chars=4000)
+    body = _inside(out["text"]).strip()
+
+    assert len(body) <= 4000
+    assert body.splitlines()[-1].startswith("caption: the poster wrote this")
+    assert "Only the first 8 were looked at" in body
+    assert all(f"\n{k}. image" in "\n" + body for k in range(1, n + 1))
+    assert body.count("shows: ") == 8
+
+
+def test_a_post_caption_comes_back_whole_beside_eight_long_readings():
+    """#484's promise holds with readings present: the transcript carries a
+    shared item's first sentence because this read returns the whole
+    caption. The caption has first claim; the readings share what is left
+    and are still all there."""
+    caption = "Every dish is built around one ingredient from the morning market. " * 30
+    assert len(caption) > 2000
+    out = render(Result("ok", view=_carousel(8, reading="word " * 1000, caption=caption)),
+                 max_chars=4000)
+    body = _inside(out["text"]).strip()
+
+    assert body.splitlines()[-1] == "caption: " + " ".join(caption.split())
+    assert body.count("shows: word") == 8
+    assert len(body) <= 4000
+
+
+def test_a_tiny_budget_shortens_every_run_and_drops_none():
     view = _read(post_view(_body("posts_carousel_ok.json")), "seen", "seen", "seen")
-    view = dataclasses.replace(view, caption="the poster's words " * 60)
-    out = render(Result("ok", view=view), max_chars=300)
+    view = dataclasses.replace(view, caption="the poster wrote this " * 60)
+    out = render(Result("ok", view=view), max_chars=400)
+    body = _inside(out["text"]).strip()
 
     assert out["truncated"] is True
-    assert len(_inside(out["text"]).strip()) <= 300 + 2
-    assert "caption:" not in out["text"]
-    assert "1. image" in out["text"]
+    assert len(body) <= 400
+    assert body.count("shows: ") == 3
+    assert body.splitlines()[-1].startswith("caption: the poster wrote this")
     assert out["text"].startswith("<social_post ")
     assert out["text"].rstrip().endswith("</social_post>")
+
+
+def test_a_video_s_coverage_sentence_survives_the_clamp():
+    """#117: a partial reel read that loses «I have not seen the rest» reads
+    as whole. The description is shortened; the sentence is kept whole."""
+    coverage = "(This clip runs about 4 minutes and I only watched the first 2 of them.)"
+    base = post_view(_body("posts_carousel_ok.json"))
+    items = tuple(
+        dataclasses.replace(item, reading=Reading("seen", "frame by frame " * 300, coverage))
+        for item in base.items
+    )
+    out = render(Result("ok", view=dataclasses.replace(base, items=items)), max_chars=1500)
+    lines = re.findall(r"shows: (.*)", _inside(out["text"]))
+
+    assert len(lines) == 3
+    assert all(line.endswith(" … " + coverage) for line in lines)
+
+
+def test_every_story_frame_keeps_its_line_its_reading_and_its_own_words():
+    """Frames are budgeted, never cut off the end: with long captions and
+    alt text on every frame, every frame still has its number line, its
+    reading, its caption and Instagram's description, and it all fits."""
+    story = story_view(_body("story_found.json"), limit=20)
+    frame = dataclasses.replace(
+        story.items[0], caption="a long caption " * 80, alt_text="a long description " * 80,
+        reading=Reading("seen", "what the frame shows " * 100),
+    )
+    view = dataclasses.replace(story, items=(frame,) * 8)
+    out = render(Result("ok", view=view), max_chars=4000)
+    body = _inside(out["text"]).strip()
+
+    assert len(body) <= 4000
+    for k in range(1, 9):
+        assert f"\n{k}. image" in "\n" + body
+    assert body.count("shows: what the frame shows") == 8
+    assert body.count("caption: a long caption") == 8
+    assert body.count("Instagram's description: a long description") == 8
+
+
+def test_a_video_past_the_cap_or_too_long_says_why_it_was_not_read():
+    base = post_view(_body("posts_carousel_ok.json"))
+    items = (
+        dataclasses.replace(base.items[1], reading=Reading("too_long")),
+        dataclasses.replace(base.items[1], reading=Reading("over_video_cap")),
+    )
+    body = _inside(render(Result("ok", view=dataclasses.replace(base, items=items)),
+                          max_chars=4000)["text"])
+    assert "not read: longer than 90s" in body
+    assert "not read: only 3 videos are read per post or story" in body
 
 
 def test_past_the_cap_the_rest_are_listed_and_one_line_says_so():

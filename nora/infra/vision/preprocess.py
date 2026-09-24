@@ -35,6 +35,7 @@ parameter), like `bridge_server._spawn_opencli`.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import math
 import os
@@ -119,11 +120,24 @@ async def _run(
             proc.communicate(input=data), timeout=timeout_seconds
         )
     except TimeoutError:
-        proc.kill()
-        await proc.wait()
         log.warning("ffmpeg timed out after %.0fs: %s", timeout_seconds, args[:2])
         return None, b"", b""
+    finally:
+        # A timeout AND a cancellation (the turn's `wait_for` fired, or an
+        # Instagram read was stopped) both leave ffmpeg running: `wait_for`
+        # only abandons `communicate`. Killed and reaped on every path out.
+        await _reap(proc)
     return proc.returncode, out, err
+
+
+async def _reap(proc: asyncio.subprocess.Process) -> None:
+    """Kill `proc` if it is still running, and wait for it. Safe to call on
+    one that already exited, and shielded, so a second cancellation arriving
+    while it waits cannot leave the process behind."""
+    if proc.returncode is None:
+        with contextlib.suppress(ProcessLookupError):
+            proc.kill()
+        await asyncio.shield(proc.wait())
 
 
 async def _run_video(
@@ -153,12 +167,16 @@ async def _run_video(
     try:
         out, err = await asyncio.wait_for(proc.communicate(), timeout=timeout_seconds)
     except TimeoutError:
-        proc.kill()
-        await proc.wait()
         log.warning("ffmpeg timed out after %.0fs: %s", timeout_seconds, args[:2])
         out, err = b"", b""
-    if scratch is not None:
-        await asyncio.to_thread(os.unlink, scratch)
+    finally:
+        # Every path out, cancellation included: ffmpeg killed and reaped,
+        # and the scratch copy of the clip (up to the download ceiling,
+        # 64 MiB) removed. Before this, a cancelled read skipped both.
+        await _reap(proc)
+        if scratch is not None:
+            with contextlib.suppress(OSError):
+                os.unlink(scratch)
     return proc.returncode, out, err
 
 

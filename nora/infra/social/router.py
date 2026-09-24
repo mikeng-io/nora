@@ -114,7 +114,7 @@ from types import MappingProxyType
 from typing import Any, Literal
 
 from ...domain.ports import InstagramAccountLookup, SocialProvider, SocialSubjectIndex
-from .readings import READS_WITH_READINGS, MediaLook
+from .readings import READS_WITH_READINGS, TurnLook
 from .results import (
     AMBIGUOUS,
     NO_ACCOUNT,
@@ -336,12 +336,12 @@ class SocialRouter(SocialProvider):
         self, *, platform: str, what: str, target: str, limit: int,
         target_kind: TargetKind = TARGET_NAMED,
         room_people: frozenset[str] | None = None,
-        look: MediaLook | None = None,
+        look: TurnLook | None = None,
     ) -> dict[str, Any]:
         """Route one read. NEVER raises (R-5), NEVER fails over.
 
-        `look` is the caller's own `media_fetch`, with which a post or a
-        story comes back with what each item shows
+        `look` is the caller's own `media_fetch` and the turn's slots, with
+        which a post or a story comes back with what each item shows
         (design/instagram-adoption/18 §"Typed views, one renderer, and
         readings"). It is forwarded for `READS_WITH_READINGS` only, the post
         and story rows, and never to any other backend or row, whatever the

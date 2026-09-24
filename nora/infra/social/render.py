@@ -31,9 +31,11 @@ budget).
 from __future__ import annotations
 
 import time
+from dataclasses import dataclass
 from typing import Any
 
 from ...domain.blocks import wrap_outside_text
+from .readings import MAX_READ_VIDEO_SECONDS, MAX_READ_VIDEOS
 from .results import clamp_chars
 from .views import ItemView, PostView, ProfileView, Reading, Result, SearchView, StoryView
 
@@ -73,7 +75,7 @@ STORY_READ_FRAMING = (
 
 #: Added to the story framing when no frame could be seen.
 STORY_UNSEEN_FRAMING = (
-    "None of the frames could be seen just now: say so, and don't describe "
+    "None of the frames was seen (each says why): say so, and don't describe "
     "them from their captions."
 )
 
@@ -103,7 +105,7 @@ POST_READ_FRAMING = (
 #: could be wrong is a claim about what it shows, and that is what this
 #: withholds.
 POST_UNSEEN_FRAMING = (
-    "One Instagram post. None of its items could be seen just now, so the "
+    "One Instagram post. None of its items was seen (each says why), so the "
     "caption is all there is, and it is only what the poster wrote. Say you "
     "couldn't see the post; don't describe it from the caption."
 )
@@ -117,25 +119,40 @@ SEARCH_FRAMING = (
     "them. Display names are written by the account owners."
 )
 
-#: The characters the header, the item lines and the caption may spend
-#: before readings are given their shares of a post's or story's text.
-_READING_RESERVE_CHARS = 1200
-
-#: A reading's share of the text, whatever the arithmetic says: never so
-#: small that it says nothing, never so large that one item crowds out the
-#: caption. One reel's reading keeps the ceiling.
-_READING_MIN_CHARS = 300
+#: A reading's own ceiling. One reel's reading keeps it; several readings
+#: share what is left of the text between them (`_lay_out`). The whole
+#: reading is not lost past it: `media_fetch(url=...)` on the same item is
+#: then a cache hit.
 _READING_MAX_CHARS = 1500
 
-#: A caption's own ceiling (Instagram allows 2,200). It is the helper, not
-#: the answer, and it is the block the clamp cuts first.
+#: The shortest a prose run is ever cut to, so a run the layout squeezes
+#: still says something rather than « …».
+_PROSE_FLOOR = 24
+
+#: A story frame's caption's and Instagram's description's own ceiling.
 _CAPTION_MAX_CHARS = 800
+
+#: A POST caption's ceiling: Instagram's own (2,200), so it comes back
+#: whole. The transcript carries only a shared item's first sentence on the
+#: promise that this read returns the rest (design 13, #484), so the post
+#: caption also has FIRST claim on the text budget (`_Prose.first`); the
+#: readings share what it leaves, and a reading cut short is whole again
+#: through `media_fetch(url=...)` on its link.
+_POST_CAPTION_MAX_CHARS = 2200
 
 #: What an item line says when there is no reading to show, by state.
 _NOT_SEEN: dict[str, str] = {
     "withheld": "not shown: what it shows has what looks like a phone number or ID in it",
     "failed": "not seen: it could not be looked at just now",
     "timed_out": "not seen: looking at it took too long",
+    "too_long": (
+        f"not read: longer than {round(MAX_READ_VIDEO_SECONDS)}s, so not read here; "
+        "media_fetch(url=...) on its link reads it"
+    ),
+    "over_video_cap": (
+        f"not read: only {MAX_READ_VIDEOS} videos are read per post or story; "
+        "media_fetch(url=...) on its link reads it"
+    ),
 }
 
 
@@ -272,7 +289,7 @@ def _accounts_text(view: SearchView) -> str:
 
 
 def _post(view: PostView, max_chars: int) -> dict[str, Any]:
-    text, clamped = clamp_chars(_post_text(view, max_chars, int(time.time())), max_chars)
+    text, shortened = _lay_out(_post_blocks(view, int(time.time())), max_chars)
     out: dict[str, Any] = {
         "status": "ok",
         "source_kind": POST_SOURCE_KIND,
@@ -281,7 +298,7 @@ def _post(view: PostView, max_chars: int) -> dict[str, Any]:
         # the same order as the numbers in `text`.
         "items": [_item_ref(item) for item in view.items],
         "text": wrap_outside_text("social_post", "instagram post", text),
-        "truncated": clamped or view.more,
+        "truncated": shortened or view.more,
     }
     if view.author is not None:
         # Shape-checked as a handle, so it cannot carry prose.
@@ -291,26 +308,23 @@ def _post(view: PostView, max_chars: int) -> dict[str, Any]:
     return out
 
 
-def _post_text(view: PostView, max_chars: int, now: int) -> str:
+def _post_blocks(view: PostView, now: int) -> list[_Block]:
     """Who and when, then one block per item in order (its kind, a video's
     length, and what it shows or why that is not known), then the caption,
-    LABELLED and LAST. Blocks are separated by a blank line, so the clamp
-    cuts between whole blocks: the caption first, then the last items."""
+    LABELLED and LAST: nothing Nora states follows stranger prose."""
     head = f"Post by @{view.author}" if view.author is not None else "Post"
     if view.taken_at is not None:
         head += _post_age(view.taken_at, now)
     count = len(view.items)
     head += f" · {count} item" + ("" if count == 1 else "s")
-    blocks = [head]
-    share = _reading_share(view.items, max_chars)
-    for number, item in enumerate(view.items, start=1):
-        blocks.append(_item_block(number, item, share, now=None))
+    blocks: list[_Block] = [[head]]
+    blocks += [_item_block(number, item, now=None) for number, item in enumerate(view.items, 1)]
     tail = _unlooked_tail(view.items)
     if tail:
-        blocks.append(tail)
+        blocks.append([tail])
     if view.caption is not None:
-        blocks.append("caption: " + _prose(view.caption, _CAPTION_MAX_CHARS))
-    return "\n\n".join(blocks)
+        blocks.append([_Prose("caption: ", view.caption, _POST_CAPTION_MAX_CHARS, first=True)])
+    return blocks
 
 
 def _post_note(view: PostView) -> str:
@@ -326,7 +340,7 @@ def _post_note(view: PostView) -> str:
 
 
 def _story(view: StoryView, max_chars: int) -> dict[str, Any]:
-    text, truncated = clamp_chars(_story_text(view, max_chars, int(time.time())), max_chars)
+    text, truncated = _lay_out(_story_blocks(view, int(time.time())), max_chars)
     out: dict[str, Any] = {
         "status": "ok",
         # WHAT this is, explicitly. A story result that says only «here are
@@ -350,18 +364,16 @@ def _story(view: StoryView, max_chars: int) -> dict[str, Any]:
     return out
 
 
-def _story_text(view: StoryView, max_chars: int, now: int) -> str:
+def _story_blocks(view: StoryView, now: int) -> list[_Block]:
     """One block per frame in the bridge's order (newest first, the
     protocol's own): its number, kind and AGE, what it shows, then its
     caption and Instagram's description."""
-    blocks = [f"Story by @{view.author}"] if view.author is not None else []
-    share = _reading_share(view.items, max_chars)
-    for number, item in enumerate(view.items, start=1):
-        blocks.append(_item_block(number, item, share, now=now))
+    blocks: list[_Block] = [[f"Story by @{view.author}"]] if view.author is not None else []
+    blocks += [_item_block(number, item, now=now) for number, item in enumerate(view.items, 1)]
     tail = _unlooked_tail(view.items)
     if tail:
-        blocks.append(tail)
-    return "\n\n".join(blocks)
+        blocks.append([tail])
+    return blocks
 
 
 def _story_note(view: StoryView) -> str:
@@ -387,7 +399,7 @@ def _item_ref(item: ItemView) -> dict[str, Any]:
     return ref
 
 
-def _item_block(number: int, item: ItemView, share: int, *, now: int | None) -> str:
+def _item_block(number: int, item: ItemView, *, now: int | None) -> _Block:
     """One item: `N. kind` (a video's length; a story frame's age), then what
     it shows or why that is not known, then a story frame's own caption and
     Instagram's description, stranger prose LAST."""
@@ -396,19 +408,23 @@ def _item_block(number: int, item: ItemView, share: int, *, now: int | None) -> 
         line += f", {round(item.duration_seconds)}s"
     if now is not None:
         line += _age(item.taken_at, now)
-    lines = [line]
+    block: _Block = [line]
     if item.reading is not None:
-        lines.append(_reading_line(item.reading, share))
+        block.append(_reading_line(item.reading))
     if item.caption is not None:
-        lines.append("caption: " + _prose(item.caption, _CAPTION_MAX_CHARS))
+        block.append(_Prose("caption: ", item.caption, _CAPTION_MAX_CHARS))
     if item.alt_text is not None:
-        lines.append("Instagram's description: " + _prose(item.alt_text, _CAPTION_MAX_CHARS))
-    return "\n".join(lines)
+        block.append(_Prose("Instagram's description: ", item.alt_text, _CAPTION_MAX_CHARS))
+    return block
 
 
-def _reading_line(reading: Reading, share: int) -> str:
+def _reading_line(reading: Reading) -> _Line:
+    """What an item shows, as a prose run the layout shortens, with a
+    video's coverage sentence as a SUFFIX it never shortens: #117's «I have
+    not seen the rest» is the part of a partial read that must survive."""
     if reading.state == "seen" and reading.text:
-        return "shows: " + _prose(reading.text, share)
+        suffix = f" {_clean(reading.coverage)}" if reading.coverage else ""
+        return _Prose("shows: ", reading.text, _READING_MAX_CHARS, suffix)
     return _NOT_SEEN.get(reading.state, _NOT_SEEN["failed"])
 
 
@@ -424,23 +440,119 @@ def _unlooked_tail(items: tuple[ItemView, ...]) -> str:
     )
 
 
-def _reading_share(items: tuple[ItemView, ...], max_chars: int) -> int:
-    """How many characters each reading may keep: the budget less the
-    reserve, split across the readings present, within the floor and the
-    ceiling. The whole reading is not lost past this: `media_fetch(url=...)`
-    on the same item is then a cache hit."""
-    seen = sum(1 for item in items if item.reading is not None and item.reading.state == "seen")
-    share = (max_chars - _READING_RESERVE_CHARS) // max(1, seen)
-    return max(_READING_MIN_CHARS, min(_READING_MAX_CHARS, share))
+# ---- the layout: everything fits, and nothing is dropped ----------------------
 
 
-def _prose(text: str, limit: int) -> str:
-    """Stranger or model prose → one labelled-line's worth: whitespace,
-    newlines included, collapsed (so it cannot start a line of its own),
-    square brackets turned round (so it cannot forge a media marker, the
-    transcript's rule for a shared item's caption), clamped."""
-    one = " ".join(text.split()).replace("[", "(").replace("]", ")")
-    clamped, _ = clamp_chars(one, limit)
+@dataclass(frozen=True)
+class _Prose:
+    """A run of stranger or model prose on one line. `prefix` and `suffix`
+    are Nora's (a label, a coverage sentence) and are always kept whole;
+    `text` is what the layout shortens, never past `cap`."""
+
+    prefix: str
+    text: str
+    cap: int
+    suffix: str = ""
+    #: Served before the others share the rest (a post's caption), leaving
+    #: every other run at least `_PROSE_FLOOR`.
+    first: bool = False
+
+
+_Line = str | _Prose
+_Block = list[_Line]
+
+
+def _lay_out(blocks: list[_Block], max_chars: int) -> tuple[str, bool]:
+    """Blocks of lines → `(text, shortened)`, fitted to `max_chars` WITHOUT
+    dropping a line.
+
+    Everything that is Nora's is kept whole: a header, each item's number
+    line, a not-seen line, the tail, every label, a video's coverage
+    sentence. What is left of the budget goes to the prose runs (readings,
+    captions, Instagram's descriptions) by water-filling: each gets an equal
+    share, capped at its own length, and what a short one does not use goes
+    to the longer ones. So a long reading gives way before a short caption
+    is touched, and no run is ever cut to nothing: the caption survives a
+    twenty-item carousel, and a story frame's caption and alt text are
+    budgeted rather than clamped off the end. Cutting whole blocks off the
+    end, which is what `clamp_chars` does, is what used to lose the caption
+    and the last frames.
+
+    `clamp_chars` stays as the backstop for a budget smaller than the lines
+    that are Nora's own, which no real configuration is."""
+    runs = [line for block in blocks for line in block if isinstance(line, _Prose)]
+    wants = [len(_cut(_clean(run.text), run.cap)) for run in runs]
+    fixed = sum(
+        len(line) if isinstance(line, str) else len(line.prefix) + len(line.suffix)
+        for block in blocks for line in block
+    ) + sum(len(block) - 1 for block in blocks) + 2 * max(0, len(blocks) - 1)
+    shares = iter(_allot(runs, wants, max_chars - fixed))
+    shortened = False
+    rendered: list[str] = []
+    for block in blocks:
+        lines = []
+        for line in block:
+            if isinstance(line, str):
+                lines.append(line)
+                continue
+            share = next(shares)
+            body = _clean(line.text)
+            want = len(_cut(body, line.cap))
+            if share >= want:
+                piece = _cut(body, line.cap)
+                shortened |= len(body) > line.cap
+            else:
+                piece = _cut(body, max(_PROSE_FLOOR, share - 2))
+                shortened = True
+            lines.append(f"{line.prefix}{piece}{line.suffix}")
+        rendered.append("\n".join(lines))
+    text = "\n\n".join(rendered)
+    if len(text) > max_chars:
+        text, _ = clamp_chars(text, max_chars)
+        shortened = True
+    return text, shortened
+
+
+def _allot(runs: list[_Prose], wants: list[int], room: int) -> list[int]:
+    """The `first` runs are served up to what they want, leaving every other
+    run its floor; the rest is water-filled among the others."""
+    others = sum(1 for run in runs if not run.first)
+    shares = [0] * len(runs)
+    left = max(0, room)
+    for i, run in enumerate(runs):
+        if run.first:
+            shares[i] = max(0, min(wants[i], left - _PROSE_FLOOR * others))
+            left -= shares[i]
+    rest = [i for i, run in enumerate(runs) if not run.first]
+    for i, share in zip(rest, _water_fill([wants[i] for i in rest], left), strict=True):
+        shares[i] = share
+    return shares
+
+
+def _water_fill(wants: list[int], room: int) -> list[int]:
+    """`room` characters shared across runs that each want `wants[i]`: the
+    smallest wants are met first, and each run gets at most an equal share
+    of what is left."""
+    shares = [0] * len(wants)
+    left = max(0, room)
+    order = sorted(range(len(wants)), key=wants.__getitem__)
+    for done, i in enumerate(order):
+        shares[i] = min(wants[i], left // (len(wants) - done))
+        left -= shares[i]
+    return shares
+
+
+def _clean(text: str) -> str:
+    """Stranger or model prose → one line: whitespace, newlines included,
+    collapsed (so it cannot start a line of its own), square brackets turned
+    round (so it cannot forge a media marker, the transcript's rule for a
+    shared item's caption)."""
+    return " ".join(text.split()).replace("[", "(").replace("]", ")")
+
+
+def _cut(text: str, limit: int) -> str:
+    """`text` clamped to `limit`, marked with « …» when cut."""
+    clamped, _ = clamp_chars(text, limit)
     return clamped
 
 

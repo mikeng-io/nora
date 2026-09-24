@@ -37,8 +37,13 @@ ItemKind = Literal["image", "video", "media"]
 #:   identifier, so the words are not repeated (`media_fetch`'s own screen);
 #: * `failed` — it could not look (the download, the vision call, media
 #:   reading not configured: `media_fetch` said it could not);
-#: * `timed_out` — the look ran past its own ceiling or the whole call's.
-ReadingState = Literal["seen", "withheld", "failed", "timed_out"]
+#: * `timed_out` — the look ran past its own ceiling or the whole call's;
+#: * `too_long` — a video longer than one reading window: not read here, by
+#:   design, because one open must not spend a long clip's minutes;
+#: * `over_video_cap` — a video past the per-open video cap: not read here.
+ReadingState = Literal[
+    "seen", "withheld", "failed", "timed_out", "too_long", "over_video_cap",
+]
 
 #: A result's status. `ambiguous` is the router's alone and never reaches a
 #: view; `refused` is here because the envelope names every non-`ok` answer a
@@ -50,14 +55,22 @@ ResultStatus = Literal["ok", "nothing_found", "unavailable", "refused"]
 class Reading:
     """What one item showed, or why that is not known. `text` is present
     only when `state` is `seen`: it is a vision model's words about bytes a
-    stranger posted, so it is untrusted, and the renderer wraps it."""
+    stranger posted, so it is untrusted, and the renderer wraps it.
+
+    `coverage` is a video reading's own admission that it did not see all of
+    the clip (issue #117's sentence, «...I have not seen the rest»), split
+    off `text` so the renderer can clamp the description and never the
+    admission: a partial read that loses its caveat reads as whole."""
 
     state: ReadingState
     text: str | None = None
+    coverage: str | None = None
 
     def __post_init__(self) -> None:
         if (self.state == "seen") != bool(self.text):
             raise ValueError("a reading carries text exactly when it was seen")
+        if self.coverage is not None and self.state != "seen":
+            raise ValueError("only a reading that was seen carries a coverage sentence")
 
 
 @dataclass(frozen=True)

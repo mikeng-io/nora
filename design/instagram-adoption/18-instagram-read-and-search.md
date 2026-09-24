@@ -264,7 +264,7 @@ bridge said" to "what the model reads".
 | view | fields |
 |---|---|
 | `ItemView` | `kind` (`image`, `video` or `media`), `url` (the item's CDN url), `duration_seconds?`, and for a story frame its own `taken_at?`, `caption?` and `alt_text?`; `reading?` |
-| `Reading` | `state` (`seen`, `withheld`, `failed`, `timed_out`) and `text?` (only when `seen`) |
+| `Reading` | `state` (`seen`, `withheld`, `failed`, `timed_out`, `too_long`, `over_video_cap`), `text?` and `coverage?` (only when `seen`; `coverage` is a video reading's #117 sentence, split off so the layout never cuts it) |
 | `PostView` | `author?`, `caption?`, `taken_at?`, `items`, `more` (the bridge sent more than the 20 Instagram allows in a carousel) |
 | `StoryView` | `author?`, `expires_at?` (the reel's own expiry, which bounds every frame), `items` |
 | `ProfileView` | `username`, `full_name?`, `following?`, `has_story?`, `social?` (the second call's half: follow back, private, the four counts, the bio; absent when that call failed) |
@@ -336,18 +336,35 @@ at; every item's link is in items for media_fetch(url=...).`
   in the text, twenty of them would spend most of the clamp on noise that is
   re-sent on every later model call. `items` is the machine handoff, and the
   note says so.
-- **The caption is LAST**, as before: it is stranger prose, nothing Nora
-  states follows it, and the clamp cuts it before any reading. A reading is
-  model text about stranger bytes, so it gets the caption's treatment: one
-  line, square brackets turned round, labelled, inside the wrap, clamped.
-  Blocks are separated by a blank line, so the clamp cuts between whole
-  items, never through one.
-- **Each reading is clamped to its share** of the text budget: the budget
-  less 1,200 characters for the header and the caption, divided by the
-  readings present, between 300 and 1,500 characters. A single reel's reading
-  keeps 1,500; eight readings keep 350 each. The full reading is not lost:
-  `media_fetch(url=...)` on the same item is then a cache hit, free and
-  instant. A caption is clamped to 800 characters.
+- **The caption is LAST**, as before: it is stranger prose, and nothing Nora
+  states follows it. A reading is model text about stranger bytes, so it gets
+  the caption's treatment: one line, square brackets turned round, labelled,
+  inside the wrap.
+- **Everything fits, and nothing is dropped** (amended on the #486 review).
+  The first build clamped the finished text at a block boundary, which cut
+  whole blocks off the END: the caption of a large carousel, and the last
+  frames of a story whose captions and alt text were long. Now the layout
+  keeps every line that is Nora's whole (the header, each item's number line,
+  a not-seen line, the «only the first 8» line, every label, a video's
+  coverage sentence) and shares what is left of the budget among the prose
+  runs (readings, captions, Instagram's descriptions) by water-filling: each
+  gets an equal share, capped at its own length, and what a short run does
+  not use goes to the long ones. So a long reading gives way before a short
+  caption is touched, the caption always survives (shortened if it must be),
+  and no frame loses its line. Ceilings: a reading 1,500 characters, a
+  story frame's caption or Instagram's description 800, a POST caption
+  2,200 (Instagram's own limit). The post caption has FIRST claim on the
+  budget, leaving every other run a floor: since #484 the transcript
+  carries only a shared item's first sentence, on the promise that this
+  read returns the rest, so the rest comes back whole and the readings share
+  what it leaves. One reel's reading keeps 1,500; eight long readings beside
+  a short caption share about 460 each in the default 4,000. The full reading is not
+  lost: `media_fetch(url=...)` on the same item is then a cache hit, except
+  for a story frame (below). `clamp_chars` stays only as a backstop for a
+  budget smaller than Nora's own lines, which no configuration is.
+- **A video's coverage sentence is never cut.** #117's «...I have not seen
+  the rest» is split off the reading and appended whole after the shortened
+  description; a partial reel read that loses it reads as whole.
 - **A story** renders the same way, one block per frame: the kind and age,
   then its `shows` line, then its own caption and Instagram's description.
 
@@ -382,7 +399,8 @@ question.
 | budget | value | why |
 |---|---|---|
 | items read per open | the first **8**, in the post's order | Instagram allows 20 in a carousel. Eight at a concurrency of four is two waves at most. The rest are listed, numbered, with their kind, and one line says only the first 8 were looked at; each one's link is in `items` for `media_fetch(url=...)`. |
-| concurrency | **4** | `media_fetch`'s per-turn budget is 4 and the model already emits them in one batch, which the executor runs at once: four media reads in flight is the operating point already running (design/tool-concurrency/01 §4 measured three at once finishing in 8 to 9 s wall), and 4 is the ceiling that bundle proposes for all tools. |
+| videos read per open | at most **3**, each no longer than **90 s** (one reading window) | Added on the #486 review. A video window is the expensive read (2.8k to 6.2k completion tokens measured, DEC-197). A longer video would be several windows in sequence inside one open, so it is not read here and says so (`not read: longer than 90s`); a fourth video says `not read: only 3 videos...`. Both point at `media_fetch(url=...)` on the link. A video with no stated length is read: a story frame carries none, and Instagram caps a story video at 60 s. |
+| concurrency | **4, per TURN** | One semaphore per turn (built with the turn's tools), shared by every `instagram_read` in it, so two calls the model batches cannot run eight looks at once (#486 review). | `media_fetch`'s per-turn budget is 4 and the model already emits them in one batch, which the executor runs at once: four media reads in flight is the operating point already running (design/tool-concurrency/01 §4 measured three at once finishing in 8 to 9 s wall), and 4 is the ceiling that bundle proposes for all tools. |
 | per item | **150 s** | the single-window vision ceiling (120 s, sized on the measured tail of a 90 s window) plus the url download ceiling (25 s) plus 5 s for ffmpeg. A live reel read took 82 s uncached. |
 | whole call | **180 s** | two waves of the one measured uncached reel (2 x 82 s = 164 s). Inside a turn it is also held under `seconds_left() x 0.6`, the share the vision client already leaves the turn, so the call can never outlast the turn's `wait_for` (at the start of a 360 s turn that share is 216 s, so 180 binds). |
 
@@ -392,6 +410,14 @@ question.
   item still returns. A timed-out read is cancelled and caches nothing; the
   same link through `media_fetch` gets the full ceiling. One failure never
   fails the call.
+- **Cancelled means stopped** (#486 review). When the read itself is
+  cancelled (the turn's `wait_for` fired), every look still running is
+  cancelled AND awaited before the cancellation goes on, so nothing
+  downloads, reads or writes a cache after the tool has returned. The two
+  ffmpeg runners (`preprocess._run`, `_run_video`) kill and reap ffmpeg and
+  remove the scratch copy of the clip on every path out, cancellation
+  included; before, only a timeout did, and a cancelled read left the
+  process and up to 64 MiB on disk.
 - **Every reading fails.** The status stays `ok`: the post WAS read, and its
   author, age, item count and caption are true. What could be wrong is a
   claim about what the media shows, so that claim is what is withheld, item
@@ -406,18 +432,38 @@ question.
 budgets. **A profile and a search read no media**: the router forwards
 `media_fetch` for the post and story rows only, whatever the caller passes.
 
+**A story frame's reading is never persisted (current rule, 2026-09-24,
+#486 review; operator decision pending, and this is the privacy-preserving
+default).** A story expires in about 24 hours; a durable reading of it would
+outlive it. So a story frame is read through `media_fetch` with its cache
+WRITES off: nothing goes to the durable `media_descriptions` table, to the
+in-memory vision cache, or to `video_readings`. A cache HIT is still served
+(the same bytes were read before, as a post or in a room). The cost is that
+opening the same story twice reads it twice. Posts and reels cache as
+above. The switch is `media_fetch`'s own per-read context
+(`tools._MEDIA_READ`), set only by `instagram_read`'s story looks, because a
+parameter on `media_fetch` would be in the model's schema. Pinned by
+`test_a_story_frame_is_read_but_never_written_to_a_cache`. **Holds until the
+operator decides otherwise.**
+
 **Cost.** One vision pass per UNCACHED item, at most 8 per open. An image is
 one call to the image describer (`glm-5.3-flash`, 2 to 4 s measured); a reel
 of 90 s or less is one window of the video describer, measured at 2,808 to
 6,159 completion tokens a window (config, DEC-197, n=3). So a typical
-three-image carousel is three cheap calls, and the worst case, eight uncached
-videos, is eight windows, roughly 22k to 50k completion tokens. A second open
-of the same post costs no vision call: the downloads still run (the cache key
-is the bytes' sha256), and every reading is a hit. The readings add at most
-about 2,800 characters to the result, re-sent on every later model call of
-the turn. These reads do not spend `media_fetch`'s per-turn budget of 4 (they
-are not model tool calls); the cap of 8 is their bound. Each one is counted
-in `nora_media_fetch_total`, because it IS a media read.
+three-image carousel is three cheap calls, and the worst case per open is
+three uncached single-window videos and five images: roughly 8k to 19k video
+completion tokens plus five image calls (the first build allowed eight video
+windows, 22k to 50k, which the #486 review capped). A turn's looks share four
+slots, so batching two opens does not double the rate. A second open of the
+same post costs no vision call: the downloads still run (the cache key is the
+bytes' sha256), and every reading is a hit; a story is read again (above).
+The readings fill at most the same text budget the result already had
+(`[social] content_max_chars`, 4,000 by default), re-sent on every later
+model call of the turn. These reads do not spend `media_fetch`'s per-turn budget of 4 (they
+are not model tool calls); the caps of 8 items and 3 videos are their
+bound. Each one is counted in `nora_media_fetch_total`, because it IS a media
+read, with `caller="instagram_read"`, so the automatic readings are never
+read as Nora's own looks (`caller="model"`).
 
 **Background turns.** Readings run only where the read itself is allowed. A
 story, post or reel is already refused in a fire turn or a Dreamer pass
@@ -551,6 +597,12 @@ check (story only) produce them. The body is the curated DTO (`16`
 > author's igid was absent from all 3 urls, raw and with `efg` /
 > `ig_cache_key` decoded (17 §P12). n is 2; the host check remains the only
 > enforced rule.
+>
+> **UNMEASURED: a STORY frame's url.** The read-back above covered post and
+> reel urls only. A story frame's url reaches the model the same way (in
+> `items`) and, since the readings, is also downloaded by `instagram_read`
+> itself. Whether its query encodes the owner's igid has not been read back.
+> To be read back live at the next deploy.
 
 ## A story is opened only when a person asks (operator safety rule, 2026-09-24)
 

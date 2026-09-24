@@ -52,6 +52,7 @@ import re
 import urllib.parse
 import uuid
 from collections.abc import Awaitable, Callable, Mapping, Sequence
+from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta, timezone
 from types import MappingProxyType
@@ -84,6 +85,7 @@ from ..domain.linkedin_links import parse_link as _parse_linkedin_link
 from ..domain.media import (
     COVER_ROLE,
     HANDLE_CHARS,
+    MEDIA_FETCH_CALLERS,
     GifCandidate,
     MediaBlob,
     MediaObject,
@@ -140,6 +142,8 @@ from ..domain.tool_call_log import ToolCallLogStore
 from ..domain.x_links import is_handle as _is_x_handle
 from ..domain.x_links import is_x_host as _is_x_host
 from ..domain.x_links import parse_link as _parse_x_link
+from ..infra.social.readings import READ_CONCURRENCY as _INSTAGRAM_READ_CONCURRENCY
+from ..infra.social.readings import TurnLook
 from ..infra.version import NOTHING_FOUND as VERSION_NOTHING_FOUND
 from ..infra.version import UNAVAILABLE as VERSION_UNAVAILABLE
 from ..infra.vision.client import DESCRIBE_PROMPTS
@@ -1784,17 +1788,34 @@ def _record_room(metrics, tool: str, status: str, **detail: object) -> None:
     _log_call(tool, status, **detail)
 
 
+#: Who is asking `media_fetch` for THIS read, and whether it may write the
+#: content caches. Set only by `instagram_read`'s per-item looks
+#: (design/instagram-adoption/18 §"Typed views, one renderer, and readings"),
+#: around the call, in the task that makes it; every other read is the
+#: model's own, and caches as it always has. A `ContextVar` rather than a
+#: parameter because a parameter on `media_fetch` would be in the model's
+#: schema, and neither fact is the model's to choose.
+_MEDIA_READ: ContextVar[tuple[str, bool]] = ContextVar(
+    "nora_media_read", default=(MEDIA_FETCH_CALLERS[0], True),
+)
+
+
 def _record_media(metrics, status: str, *, cached: bool = False, **detail: object) -> None:
-    """`nora_media_fetch_total{status,cached}`, plus the uniform log line.
+    """`nora_media_fetch_total{status,cached,caller}`, plus the uniform log line.
 
     Its OWN series, not `nora_tool_calls_total` — the `cached` axis is what makes
     "MiMo is never actually called" impossible to read from silence (DEC-31/56):
     a hit and a miss are the same `status=ok`, and only this label tells them
     apart. A second series counting the same calls would double any dashboard
     summing tool volume, the same reason the room tools keep their own counter.
+    `caller` keeps `instagram_read`'s automatic readings apart from the reads
+    the model asked for itself.
     """
-    metrics.inc("nora_media_fetch_total", status=status, cached=str(cached).lower())
-    _log_call("media_fetch", status, cached=cached, **detail)
+    caller, _persist = _MEDIA_READ.get()
+    metrics.inc(
+        "nora_media_fetch_total", status=status, cached=str(cached).lower(), caller=caller,
+    )
+    _log_call("media_fetch", status, cached=cached, caller=caller, **detail)
 
 
 # `media_fetch`'s LAYER 2 frame — the authored half of a query-conditioned
@@ -6584,7 +6605,12 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             return _serve_media(
                 sha256, description, cached=False, code=serve_code, cover=is_cover,
             )
-        if video_key is not None and video_read_whole:
+        # A STORY frame read by `instagram_read` is not written to either
+        # cache: a story expires in 24h, and a durable reading of it would
+        # outlive it (design/instagram-adoption/18, operator's default until
+        # decided). A cache HIT is still served: the bytes were read before.
+        _caller, persist = _MEDIA_READ.get()
+        if video_key is not None and video_read_whole and persist:
             # The reading WITH its coverage sentence, so the two cannot come
             # apart — the half of #117 a sha256-keyed cache got wrong. The
             # identifier screen still runs on every serve, cached or not.
@@ -6592,7 +6618,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 await video_readings.put(key=video_key, reading=description)
             except Exception:
                 log.exception("media_fetch could not write the video reading cache")
-        if vision_cache is not None and cacheable_modality:
+        if vision_cache is not None and cacheable_modality and persist:
             # Store the RAW description, at both tiers; the screen runs on
             # every serve, not here. `model` is the describer THIS modality
             # actually used, threaded in — never hardcoded — so the durable
@@ -7854,6 +7880,24 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
     # words advertising them land together (18 §"Verbs join only when they
     # work end to end"), and a parameter in the schema is a word advertising
     # one.
+    #
+    # The automatic readings of a post's or a story's items (18 §"Typed
+    # views, one renderer, and readings") share ONE set of slots per turn,
+    # so two `instagram_read` calls the model batches cannot run eight looks
+    # at once. Each look is `media_fetch` itself, labelled `instagram_read`
+    # on its counter, and for a STORY frame it writes neither content cache.
+    _instagram_slots = asyncio.Semaphore(_INSTAGRAM_READ_CONCURRENCY)
+
+    def _instagram_look(*, story: bool) -> TurnLook:
+        async def fetch(*, url: str) -> dict:
+            token = _MEDIA_READ.set((MEDIA_FETCH_CALLERS[1], not story))
+            try:
+                return await media_fetch(url=url)
+            finally:
+                _MEDIA_READ.reset(token)
+
+        return TurnLook(fetch=fetch, slots=_instagram_slots)
+
     async def instagram_read(
         what: Literal["profile", "story"] | None = None,
         person: str | None = None,
@@ -8083,7 +8127,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 # else, so the caption never reaches a vision prompt (18
                 # §"Typed views, one renderer, and readings"). Reached only
                 # past the asked-turn rule above.
-                look=media_fetch if read in ("story", "post") else None,
+                look=_instagram_look(story=read == "story") if read in ("story", "post") else None,
             )
         except Exception:
             # The router is documented never to raise; this is the belt for

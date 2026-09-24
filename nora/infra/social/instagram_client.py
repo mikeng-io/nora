@@ -202,7 +202,7 @@ import aiohttp
 from ...domain.instagram_links import SHORTCODE_RE, is_handle
 from ...domain.ports import SocialProvider, UsernameLookup
 from ..trace_propagation import propagation_headers
-from .readings import MediaLook, read_view
+from .readings import TurnLook, read_view
 from .render import render
 from .results import NOTHING_FOUND, UNAVAILABLE, clamp_chars
 from .views import (
@@ -339,7 +339,7 @@ class InstagramSocialClient(SocialProvider):
 
     async def read(
         self, *, platform: str, what: str, target: str, limit: int,
-        look: MediaLook | None = None,
+        look: TurnLook | None = None,
     ) -> dict[str, Any]:
         """One read. NEVER raises (R-5).
 
@@ -349,9 +349,10 @@ class InstagramSocialClient(SocialProvider):
         `refused` — are decided ABOVE this, in the router, and are never
         reached with a call to make.
 
-        `look` is the caller's `media_fetch`. With it, a post or a story
-        comes back with what each item shows (`readings.read_view`); a
-        profile and a search read no media and never use it.
+        `look` is the caller's `media_fetch` and the turn's slots. With it,
+        a post or a story comes back with what each item shows
+        (`readings.read_view`); a profile and a search read no media and
+        never use it.
         """
         try:
             return await self._read(
@@ -366,7 +367,7 @@ class InstagramSocialClient(SocialProvider):
 
     async def _read(
         self, *, platform: str, what: str, target: str, limit: int,
-        look: MediaLook | None,
+        look: TurnLook | None,
     ) -> dict[str, Any]:
         if (platform, what) not in _SERVES:
             log.warning("instagram social client asked for a row it does not serve")
@@ -400,7 +401,7 @@ class InstagramSocialClient(SocialProvider):
             return await self._story(igid=igid, limit=limit, look=look)
         return await self._profile(igid=igid)
 
-    async def _story(self, *, igid: str, limit: int, look: MediaLook | None) -> dict[str, Any]:
+    async def _story(self, *, igid: str, limit: int, look: TurnLook | None) -> dict[str, Any]:
         status, payload = await self._get(f"/accounts/{igid}/story")
         if status != 200 or not isinstance(payload, dict):
             # The story route has NO "no such account" answer, so no non-200
@@ -559,7 +560,7 @@ class InstagramSocialClient(SocialProvider):
             return UsernameLookup("unavailable")
         return UsernameLookup("found", igid)
 
-    async def _post(self, *, shortcode: str, look: MediaLook | None) -> dict[str, Any]:
+    async def _post(self, *, shortcode: str, look: TurnLook | None) -> dict[str, Any]:
         """`GET /posts/{shortcode}` → the whole post: every item in the
         bridge's order (a carousel keeps its order), the author and the
         caption (P12), and with `look`, what each of the first items shows.
@@ -595,7 +596,7 @@ class InstagramSocialClient(SocialProvider):
             return dict(UNAVAILABLE)
         return await self._answer(view, look)
 
-    async def _answer(self, view: View, look: MediaLook | None) -> dict[str, Any]:
+    async def _answer(self, view: View, look: TurnLook | None) -> dict[str, Any]:
         """An `ok` view → what the model reads, through the ONE renderer.
 
         A post or a story handed `look` is read first: `read_view` fills a
