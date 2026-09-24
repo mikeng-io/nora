@@ -2985,6 +2985,18 @@ def _with_scheme(link: str) -> str:
     return text if "://" in text else "https://" + text
 
 
+def _same_instagram_link(a: str, b: str) -> bool:
+    """Whether two pasted links name the same thing, judged by the one link
+    parser: `instagram.com/p/A/` and `https://www.instagram.com/p/A/?igsh=x`
+    agree. A link the parser refuses is compared as typed, trimmed, so two
+    identical refusals still agree and `instagram_read` refuses them once."""
+    parsed_a = _parse_instagram_link(_with_scheme(a))
+    parsed_b = _parse_instagram_link(_with_scheme(b))
+    if parsed_a is None or parsed_b is None:
+        return a.strip() == b.strip()
+    return parsed_a == parsed_b
+
+
 def social_read_vocabulary() -> Mapping[str, frozenset[tuple[str, str]]]:
     """Every `(platform, what)` each social tool can SEND to the router — the
     ONE read-only vocabulary table R-86 derives its three layers from
@@ -3068,6 +3080,21 @@ _INSTAGRAM_MOBILE_PAGE_LINK = (
     "That is a mobile Instagram page link, not a picture or video file, and "
     "it can't be read directly. Ask for the www.instagram.com link to the "
     "same post, reel, story or profile."
+)
+
+# What `web_fetch` says for the same two kinds of link (design 13,
+# 2026-09-24): 3 of 12 replays of a shared post sent its page link to
+# `web_fetch`, which reads an Instagram page as a login wall at best. The
+# page is `instagram_read`'s, so the answer is a route, `nothing_found` as in
+# `media_fetch`, and nothing is fetched. No dash, ADR 0015 §3.
+_WEB_FETCH_INSTAGRAM_PAGE = (
+    "That link is an Instagram page. Open it with instagram_read using this "
+    "link."
+)
+_WEB_FETCH_INSTAGRAM_MOBILE_PAGE = (
+    "That is a mobile Instagram page link, and it can't be opened directly. "
+    "Ask for the www.instagram.com link to the same post, reel, story or "
+    "profile."
 )
 
 # A shared POST or REEL line with its link, as the parser renders one: the
@@ -7303,6 +7330,19 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         Args:
             url: The link to open, exactly as given (must start with http:// or https://).
         """
+        # AN INSTAGRAM PAGE IS `instagram_read`'s, and it is answered before
+        # the scheme check, so a pasted `instagram.com/p/...` with no scheme
+        # is routed too rather than refused as «not a link». Judged by the
+        # same helper `media_fetch` uses (`parse_link` underneath), so the
+        # transcript, `instagram_read` and both fetch tools agree on what an
+        # Instagram page is. Nothing leaves: not to Tavily, not to Instagram.
+        page = _instagram_page_kind(url)
+        if page == "page":
+            _record(metrics, "web_fetch", "nothing_found", reason="instagram_page")
+            return {"status": "nothing_found", "note": _WEB_FETCH_INSTAGRAM_PAGE}
+        if page == "mobile":
+            _record(metrics, "web_fetch", "nothing_found", reason="instagram_mobile_page")
+            return {"status": "nothing_found", "note": _WEB_FETCH_INSTAGRAM_MOBILE_PAGE}
         if not url.startswith(("http://", "https://")):
             _record(metrics, "web_fetch", "nothing_found", reason="not_a_url")
             return {
@@ -7819,6 +7859,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         person: str | None = None,
         handle: str | None = None,
         link: str | None = None,
+        url: str | None = None,
     ) -> dict:
         """Show what an Instagram post or reel contains, every item, videos
         included, or read a profile or story. Call this when somebody shares,
@@ -7844,7 +7885,27 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             person: the person's name or nickname, as the message said it.
             handle: an Instagram username someone typed.
             link: an Instagram profile, post, reel or story link, as pasted.
+            url: same as link.
         """
+        # `url` IS `link` under the name a model reaches for first (design
+        # 13, 2026-09-24): every `instagram_read` call made from the deferred
+        # catalogue, before the schema was loaded, passed `url=`, and with no
+        # such parameter Strands' input model dropped it silently, so each
+        # call arrived with no input and failed «exactly one». A parameter the
+        # signature does not name cannot be accepted quietly: Strands
+        # validates through a model built from this signature, which ignores
+        # any key it does not declare. So it is declared, in five words.
+        if isinstance(url, str) and url.strip():
+            if isinstance(link, str) and link.strip() and not _same_instagram_link(link, url):
+                # Two different links: nothing says which was meant, so
+                # neither is read, and neither is echoed back.
+                _record(metrics, "instagram_read", "unavailable", reason="url_and_link")
+                return {
+                    "status": "unavailable",
+                    "note": "Two different links were given, as link and as url. "
+                            "Call again with the one link you mean, as link.",
+                }
+            link = url
         given = [
             name for name, value in (("person", person), ("handle", handle), ("link", link))
             if isinstance(value, str) and value.strip()

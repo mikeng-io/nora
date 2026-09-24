@@ -110,6 +110,11 @@ def _shared_payloads() -> dict[str, object]:
         # model to `instagram_read`, so it is a social note in all but tool.
         "tools._INSTAGRAM_PAGE_LINK": {"note": tools_module._INSTAGRAM_PAGE_LINK},
         "tools._INSTAGRAM_MOBILE_PAGE_LINK": {"note": tools_module._INSTAGRAM_MOBILE_PAGE_LINK},
+        # `web_fetch`'s answer to the same links (design 13, 2026-09-24).
+        "tools._WEB_FETCH_INSTAGRAM_PAGE": {"note": tools_module._WEB_FETCH_INSTAGRAM_PAGE},
+        "tools._WEB_FETCH_INSTAGRAM_MOBILE_PAGE": {
+            "note": tools_module._WEB_FETCH_INSTAGRAM_MOBILE_PAGE,
+        },
     }
 
 
@@ -157,6 +162,11 @@ async def test_the_notes_actually_returned_on_the_refusal_paths_carry_no_dash():
             link="https://www.instagram.com/p/SynthPost01/", what="profile",
         ),
         await calls["instagram_read"](link="https://www.instagram.com/p/SynthPost01/"),
+        # The `url` alias (design 13, 2026-09-24): two different links.
+        await calls["instagram_read"](
+            link="https://www.instagram.com/p/SynthPost01/",
+            url="https://www.instagram.com/p/SynthPost02/",
+        ),
         await calls["instagram_search"](query=""),
         await calls["instagram_search"](query="+85212345678"),
         await calls["instagram_search"](query="example"),

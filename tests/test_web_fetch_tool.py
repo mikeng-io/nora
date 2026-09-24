@@ -76,12 +76,12 @@ def _room() -> Room:
     )
 
 
-def _tools(*, search=None, metrics: Metrics | None = None) -> dict:
+def _tools(*, search=None, metrics: Metrics | None = None, **turn) -> dict:
     registry = ToolRegistry(search=search)
     specs = registry.specs(
         store=_FakeStore(), conversation_id="g1", conversation_type="group",
         persons=_FakePersons(MILES), honcho=FakeMemoryStore(), deliverer=SinkSender(),
-        metrics=metrics or Metrics(), room=_room(),
+        metrics=metrics or Metrics(), room=_room(), **turn,
     )
     return {spec.name: spec.call for spec in specs}
 
@@ -150,6 +150,72 @@ async def test_a_raising_provider_degrades_to_unavailable():
     assert out["status"] == "unavailable"
 
 
+# ---- an Instagram page is instagram_read's (design 13, 2026-09-24) -----------
+# 3 of 12 replays of a shared post sent its page link here. The guard is the
+# one `media_fetch` has (#471), through the same helper. Every link below is
+# synthetic.
+
+_INSTAGRAM_PAGES = {
+    "post": "https://www.instagram.com/p/SynthPost01/",
+    "reel": "https://www.instagram.com/reel/SynthReel01/?igsh=c3ludGhldGlj",
+    "reels": "https://www.instagram.com/reels/SynthReel01/",
+    "story": "https://www.instagram.com/stories/some.account/3000000000000000001/",
+    "story_ring": "https://www.instagram.com/stories/some.account/",
+    "profile": "https://www.instagram.com/some.account/",
+    "bare_host": "https://instagram.com/p/SynthPost01/",
+    "http": "http://www.instagram.com/p/SynthPost01/",
+    "no_scheme": "instagram.com/p/SynthPost01/",
+    "no_scheme_www": "www.instagram.com/reel/SynthReel01/",
+}
+
+
+async def test_an_instagram_page_link_is_routed_to_instagram_read_and_never_fetched():
+    """Each page kind, with and without a scheme: `nothing_found`, a note
+    naming `instagram_read`, and no call to the provider at all. Positive
+    control on the SAME fake: an ordinary page and an Instagram CDN file
+    (not a page) still reach it."""
+    fake = _FakeSearchProvider()
+    tools = _tools(search=fake)
+    for kind, url in _INSTAGRAM_PAGES.items():
+        out = await tools["web_fetch"](url=url)
+        assert out["status"] == "nothing_found", kind
+        assert "instagram_read" in out["note"], kind
+        assert url not in out["note"], kind
+    assert fake.fetch_calls == []
+
+    cdn = "https://scontent.cdninstagram.com/v/t51/synthetic.jpg"
+    for url in ("https://example.com/a", cdn):
+        assert (await tools["web_fetch"](url=url))["status"] == "ok", url
+    assert fake.fetch_calls == ["https://example.com/a", cdn]
+
+
+async def test_the_guard_holds_with_instagram_off_and_in_a_fire_turn():
+    """This harness wires no social backend, so Instagram is OFF here, and
+    the guard still answers: it does not depend on `instagram_read` being
+    usable. In a fire turn (a reminder, a proactive turn) `instagram_read`
+    refuses to open a post nobody asked about; without this guard,
+    `web_fetch` would have been the way round that rule."""
+    fake = _FakeSearchProvider()
+    tools = _tools(search=fake, fire_turn=True)
+    out = await tools["web_fetch"](url=_INSTAGRAM_PAGES["post"])
+
+    assert out["status"] == "nothing_found"
+    assert fake.fetch_calls == []
+    assert (await tools["web_fetch"](url="https://example.com/a"))["status"] == "ok"
+
+
+async def test_a_mobile_instagram_page_link_asks_for_the_www_link():
+    """`m.instagram.com` is a host `instagram_read` refuses, so the note does
+    not send her there: it asks for the www link. Nothing is fetched."""
+    fake = _FakeSearchProvider()
+    tools = _tools(search=fake)
+    for url in ("https://m.instagram.com/reel/SynthReel01/", "m.instagram.com/p/SynthPost01/"):
+        out = await tools["web_fetch"](url=url)
+        assert out["status"] == "nothing_found", url
+        assert "www.instagram.com" in out["note"], url
+    assert fake.fetch_calls == []
+
+
 # ---- ADR 0015 §3: how to report a status rides in the result ----------------
 # `web_search` shares this closure's harness (one `search_source`, both verbs),
 # so its notes are pinned here beside `web_fetch`'s.
@@ -185,6 +251,8 @@ async def test_every_non_ok_web_status_carries_a_note():
                       case.split("/")[0])
     fetch_cases = {
         "nothing_found/not_a_url": (empty, "example.com/a"),
+        "nothing_found/instagram_page": (empty, "https://www.instagram.com/p/SynthPost01/"),
+        "nothing_found/instagram_mobile_page": (empty, "https://m.instagram.com/p/SynthPost01/"),
         "nothing_found/identifier": (empty, "https://example.com/?n=%2B85212345678"),
         "nothing_found/coordinate": (empty, "https://example.com/?at=22.31,114.16"),
         "nothing_found/dead": (empty, "https://example.com/a"),
