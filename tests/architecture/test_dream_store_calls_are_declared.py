@@ -67,6 +67,7 @@ import textwrap
 import pytest
 
 import nora
+from nora.domain.ports import DREAM_MAX_STORE_CALLS_PER_TICK
 
 #: Not a store. `metrics` is a counter sink (never awaited anyway) and the
 #: clock callables are arithmetic. Named so each exclusion is a decision
@@ -409,6 +410,26 @@ def test_the_adaptor_declares_how_many_store_calls_it_holds(_module, cls):
         f"DreamerRuntime multiplies it to bound inputs and commit (issue #60)"
     )
     assert declared >= 1
+
+
+@pytest.mark.parametrize(("_module", "cls"), ADAPTORS, ids=IDS)
+def test_no_adaptor_declares_more_store_calls_than_the_wall_clock_assumes(
+    _module, cls,
+):
+    """`[dreamer] max_unit_hold_seconds`'s startup gate (`nora.config`,
+    issue #191) proves its default against `DREAM_MAX_STORE_CALLS_PER_TICK`
+    rather than against a live walk of every adaptor — `nora.config` may not
+    import `nora.language`. That proof is only as honest as this test: an
+    adaptor declaring MORE than the ceiling the gate assumes would make its
+    arithmetic wrong while staying green everywhere else."""
+    declared = cls.store_calls_per_tick
+    assert declared <= DREAM_MAX_STORE_CALLS_PER_TICK, (
+        f"{cls.__name__} declares store_calls_per_tick={declared}, above "
+        f"DREAM_MAX_STORE_CALLS_PER_TICK={DREAM_MAX_STORE_CALLS_PER_TICK} "
+        f"(nora/domain/ports.py). Raise the ceiling AND re-check [dreamer] "
+        f"max_unit_hold_seconds's startup gate together — it assumes every "
+        f"adaptor fits under this number."
+    )
 
 
 @pytest.mark.parametrize(("_module", "cls"), ADAPTORS, ids=IDS)
