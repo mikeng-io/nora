@@ -212,11 +212,11 @@ def _shared_target(target_url: object, author: str = "") -> tuple[str, str]:
     return kind, link.url
 
 
-def _shared_line(shared: object) -> tuple[str, str]:
+def _shared_line(shared: object) -> tuple[str, str, str]:
     """A SHARED reel, post or story, rendered as text the model can read for
-    free, and the validated link that line carries (`""` when it carries
-    none). The caller needs the link on its own: whether the thumbnail is
-    kept at all turns on it (`parse_event`).
+    free, with its kind and the validated link that line carries (`""` when
+    it carries none). The caller needs both on their own: whether the
+    thumbnail is kept at all turns on them (`parse_event`).
 
     The bridge's `shared` object (`deploy/instagram-bridge/inbound.go`'s
     `eventShared`) names something posted elsewhere on Instagram and sent into
@@ -243,10 +243,11 @@ def _shared_line(shared: object) -> tuple[str, str]:
     INSIDE the bracket, after the author and before the caption. Inside,
     because it belongs to the shared item and not to the sharer's own words;
     before the caption, because the caption is a stranger's free text and a
-    link after it would read as part of it. A line with a link has no
-    placeholder after it at all (`parse_event` drops the thumbnail); one
-    without keeps its `[cover image]` TRAILING, the run `body_with_handles`
-    rewrites once custody has the bytes.
+    link after it would read as part of it. A post or reel line with a link
+    has no placeholder after it at all (`parse_event` drops the thumbnail);
+    a story line, or a line without a link, keeps its `[cover image]`
+    TRAILING, the run `body_with_handles` rewrites once custody has the
+    bytes.
 
     ## The author is NOT the sender, and the wording has to keep them apart
 
@@ -263,8 +264,9 @@ def _shared_line(shared: object) -> tuple[str, str]:
     from a stranger arriving inside Nora's context, and it must not read as
     something a member said or as an instruction.
 
-    Returns `("", "")` when there is nothing to say, so the caller's `parts`
-    list is unchanged and a non-XMA message keeps exactly the body it had.
+    Returns `("", "", "")` when there is nothing to say, so the caller's
+    `parts` list is unchanged and a non-XMA message keeps exactly the body it
+    had.
     """
     # An EMPTY dict is not the same as a dict whose values are empty, and the
     # difference decides whether a claim is made. `{}` carries no keys at all
@@ -277,7 +279,7 @@ def _shared_line(shared: object) -> tuple[str, str]:
     # that matters most here because it fires on EVERY message rather than on
     # the rare one this function was written for.
     if not isinstance(shared, dict) or not shared:
-        return "", ""
+        return "", "", ""
     raw_author = str(shared.get("author") or "").strip().lstrip("@")
     kind, link = _shared_target(shared.get("target_url"), raw_author)
     # THE AUTHOR RENDERS ONLY AS A HANDLE. It is a stranger's string inside a
@@ -309,7 +311,7 @@ def _shared_line(shared: object) -> tuple[str, str]:
         line += f" {link}"
     if caption:
         line += f" — {caption}"
-    return f"[{line}]", link
+    return f"[{line}]", kind, link
 
 
 
@@ -410,7 +412,7 @@ def parse_event(event: dict) -> NormalizedMessage | None:
         if not room_id:
             return None
 
-        shared, link = _shared_line(event.get("shared"))
+        shared, kind, link = _shared_line(event.get("shared"))
         media = event.get("media")
         ref = _media_ref(media) if isinstance(media, dict) else None
         if ref is not None and shared:
@@ -419,7 +421,7 @@ def parse_event(event: dict) -> NormalizedMessage | None:
             # wrote the shared line, so what happens to it and the line cannot
             # disagree.
             #
-            # WITH A LINK, THE THUMBNAIL IS DROPPED: no placeholder, no
+            # A POST OR REEL WITH A LINK DROPS THE THUMBNAIL: no placeholder, no
             # `MediaRef`, no custody. Measured live twice (2026-09-24, after
             # #454): the line read `[shared reel by @x <link>] [cover image
             # <handle>]`, the question was «what is in this reel», and she
@@ -431,7 +433,14 @@ def parse_event(event: dict) -> NormalizedMessage | None:
             # carries no handle to settle for, and the link is the one thing
             # left to open (`instagram_read`, whose result hands each item's
             # url to `media_fetch`). The cover is not kept for later either:
-            # the link reads the item itself, frames included.
+            # a post or reel link reads that item itself, frames included.
+            #
+            # A STORY KEEPS ITS COVER, link or not. A story link does not read
+            # the frame that was shared: `instagram_read` reads the author's
+            # CURRENT story (the link's `story_pk` is never used), which may
+            # no longer hold that frame. The thumbnail is the only faithful
+            # copy of what was shared, so it is held on demand like the
+            # no-link fallback below.
             #
             # WITHOUT A LINK, the cover is all there is, and #454's fallback
             # stands: held like any photo, read only when `media_fetch` asks
@@ -439,7 +448,7 @@ def parse_event(event: dict) -> NormalizedMessage | None:
             # tagged, never on every share; `MediaRef.on_demand`), and
             # rendered `[cover image]` (`label_for`) so the line says the
             # picture is the item's cover and not the item.
-            ref = None if link else replace(ref, on_demand=True)
+            ref = None if link and kind != "story" else replace(ref, on_demand=True)
         refs = (ref,) if ref is not None else ()
 
         parts = []

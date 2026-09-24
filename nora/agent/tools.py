@@ -3053,6 +3053,59 @@ _INSTAGRAM_PAGE_LINK = (
     "with instagram_read using this link, then look at the media it returns."
 )
 
+# The same answer for a MOBILE page link (`m.instagram.com/reel/...`). The
+# host is not one `parse_link` accepts, and it stays that way
+# (`INSTAGRAM_HOSTS` is exact on purpose), so `instagram_read` would refuse
+# it too: the note asks for the www link rather than sending her there.
+_INSTAGRAM_MOBILE_PAGE_LINK = (
+    "That is a mobile Instagram page link, not a picture or video file, and "
+    "it can't be read directly. Ask for the www.instagram.com link to the "
+    "same post, reel, story or profile."
+)
+
+# A shared POST or REEL line with its link, as the parser renders one: the
+# kind, an optional `by @author`, then the rebuilt link. The link is still
+# validated by `parse_link` before anything names it. A story line is left
+# out on purpose: a story share keeps its cover by design, because its link
+# reads the author's current story and not the frame that was shared.
+_SHARED_PAGE_LINE_RE = re.compile(
+    r"\[shared (post|reel)(?: by @[A-Za-z0-9._]+)? (https://www\.instagram\.com/[^\s\]]+)"
+)
+
+
+def _shared_page_link(body: str) -> str:
+    """The validated post or reel link of the shared line in `body`, or `""`.
+
+    For a cover whose row ALSO carries the item's link: a share stored
+    before the parser stopped keeping a linked post's or reel's thumbnail
+    (design 13, «a linked share carries no picture»). The last shared line
+    wins, since the parser renders the sharer's own words first."""
+    for kind, link in reversed(_SHARED_PAGE_LINE_RE.findall(body or "")):
+        parsed = _parse_instagram_link(link)
+        if parsed is not None and parsed.kind == kind:
+            return parsed.url
+    return ""
+
+
+def _instagram_page_kind(url: str) -> str:
+    """`"page"` for an Instagram page link `parse_link` accepts, `"mobile"`
+    for the same shape on `m.instagram.com`, `""` for anything else. A link
+    given without a scheme is read as the parser reads a pasted one
+    (`_with_scheme`)."""
+    candidate = _with_scheme(url)
+    if _parse_instagram_link(candidate) is not None:
+        return "page"
+    try:
+        parts = urllib.parse.urlsplit(candidate)
+    except ValueError:
+        return ""
+    if (parts.hostname or "") != "m.instagram.com":
+        return ""
+    # Judged on the www spelling of the same path, so the shape and every
+    # charset are still the parser's. Nothing is read from the rebuilt url.
+    www = urllib.parse.urlunsplit(("https", "www.instagram.com", parts.path, "", ""))
+    return "mobile" if _parse_instagram_link(www) is not None else ""
+
 
 def _strip_media_markers(text: str) -> str:
     """Remove `[image a3f2c1]`-style markers from outbound reply text."""
@@ -5987,9 +6040,13 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         # disagree about what an Instagram page is. A CDN url (an item's own
         # file, which `instagram_read` returns) is not an instagram.com page
         # and still downloads.
-        if url and not code and _parse_instagram_link(url) is not None:
+        page = _instagram_page_kind(url) if url and not code else ""
+        if page == "page":
             _record_media(metrics, "nothing_found", reason="instagram_page")
             return {"status": "nothing_found", "note": _INSTAGRAM_PAGE_LINK}
+        if page == "mobile":
+            _record_media(metrics, "nothing_found", reason="instagram_mobile_page")
+            return {"status": "nothing_found", "note": _INSTAGRAM_MOBILE_PAGE_LINK}
 
         # Gate FIRST — the inert-by-config shape (§5). Custody off (`[media]
         # enabled=false` or no key → no blob store) or no vision client wired
@@ -6106,6 +6163,10 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             # absent role (every row written before it existed) is an
             # ordinary attachment.
             covers: dict[str, bool] = {}
+            # The post or reel link on a row that holds that blob AS A
+            # COVER, when the row's line carries one: the legacy shape, a
+            # link and its cover side by side (see `_shared_page_link`).
+            cover_links: dict[str, str] = {}
             for row in rows:
                 if not row.media_json:
                     continue
@@ -6122,6 +6183,10 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                         covers[sha] = covers.get(sha, True) and (
                             blob.get("role") == COVER_ROLE
                         )
+                        if blob.get("role") == COVER_ROLE and sha not in cover_links:
+                            page_link = _shared_page_link(row.body)
+                            if page_link:
+                                cover_links[sha] = page_link
 
             if not matches:
                 _record_media(metrics, "nothing_found", candidates=0)
@@ -6145,6 +6210,23 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             sha256, media_type = next(iter(matches.items()))
             serve_code = sha256[:HANDLE_CHARS]
             is_cover = covers.get(sha256, False)
+
+            # A STALE COVER: the cover of a post or reel whose line also
+            # carries the item's link. Only rows stored before the parser
+            # stopped keeping that thumbnail have this shape. Serving the
+            # cover is the live failure itself (one frame answered as the
+            # reel), so it is refused before any reading, stored or fresh,
+            # and the note names the link. A story's cover, and any cover
+            # whose line has no link, keep the ordinary path and its note.
+            stale_link = cover_links.get(sha256, "") if is_cover else ""
+            if stale_link:
+                _record_media(metrics, "nothing_found", reason="stale_cover")
+                return {
+                    "status": "nothing_found", "code": serve_code,
+                    "note": f"That code is only the cover picture of the item "
+                            f"at {stale_link}. If that is the item being asked "
+                            f"about, open it with instagram_read.",
+                }
 
         # ---- LAYER 1: the stored comprehension (issue #116) --------------
         #

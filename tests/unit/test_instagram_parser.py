@@ -747,15 +747,11 @@ def test_a_shared_items_thumbnail_is_marked_on_demand():
 # nothing for custody; only the link is left to open.
 
 
-def test_a_linked_share_renders_no_handle_for_a_reel_a_post_or_a_story():
+def test_a_linked_share_renders_no_handle_for_a_reel_or_a_post():
     thumb = {"kind": "image", "url": "https://cdn.example/thumb.jpg"}
     cases = {
         REEL_URL: "[shared reel by @some.account https://www.instagram.com/reel/SynthReel01/]",
         POST_URL: "[shared post by @some.account https://www.instagram.com/p/SynthPost_2/]",
-        STORY_URL: (
-            "[shared story by @some.account "
-            f"https://www.instagram.com/stories/some.account/{STORY_PK}/]"
-        ),
     }
     for url, line in cases.items():
         for text, want in (("", line), ("what is this", f"what is this {line}")):
@@ -767,6 +763,33 @@ def test_a_linked_share_renders_no_handle_for_a_reel_a_post_or_a_story():
             assert msg.media == (), f"{url} kept its thumbnail"
             assert placeholders_in(msg.body) == ()
             assert "[cover image" not in msg.body and "[image" not in msg.body
+
+
+def test_a_linked_story_share_keeps_its_cover():
+    """A story is the exception. Its link reads the author's CURRENT story
+    (`instagram_read` never uses the link's `story_pk`), which may no longer
+    hold the frame that was shared, so the thumbnail is the only faithful
+    copy: the link AND the cover render, and the cover is held on demand.
+
+    Positive control in the same shape: a reel with a link drops its cover,
+    so the cover here is the story exception and not the drop failing."""
+    thumb = {"kind": "image", "url": "https://cdn.example/thumb.jpg"}
+    msg = parse_event(_event(text="", shared=_shared(STORY_URL), media=thumb))
+
+    assert msg.body == (
+        "[shared story by @some.account "
+        f"https://www.instagram.com/stories/some.account/{STORY_PK}/] [cover image]"
+    )
+    (ref,) = msg.media
+    assert ref.on_demand is True
+    assert label_for(ref) == "cover image"
+    assert body_with_handles(msg.body, ("cover image",), ("abc123",)).endswith(
+        "[cover image abc123]"
+    )
+
+    reel = parse_event(_event(text="", shared=_shared(REEL_URL), media=thumb))
+    assert reel.media == ()
+    assert "[cover image" not in reel.body
 
 
 def test_a_share_with_no_valid_link_keeps_its_cover():

@@ -566,10 +566,11 @@ Each item is an existing test that goes red, applied to both tools:
     is one». Keeping "an Instagram link" beside "a shared post or reel"
     measured 43 and did not fit. The when-clause did not fix it: live, a
     cover handle beside the link was still read instead of the link, so a
-    share whose link validated now renders the link and NO handle, and
+    post or reel share whose link validated now renders the link and NO
+    handle, and
     `media_fetch` answers an Instagram page link by naming this tool (`13`
     §«a linked share carries no picture»). A share renders
-    `[cover image …]` only when its line has no link.
+    `[cover image …]` only for a story or when its line has no link.
   - `instagram_read`, from 2026-09-24 after #454 (38 tokens): *"Show what an
     Instagram post or reel contains, every item, videos included, or read
     a profile or story. Call this when somebody shares, links or asks about

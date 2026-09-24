@@ -109,6 +109,7 @@ def _shared_payloads() -> dict[str, object]:
         # `media_fetch`'s answer to an Instagram page link: it routes the
         # model to `instagram_read`, so it is a social note in all but tool.
         "tools._INSTAGRAM_PAGE_LINK": {"note": tools_module._INSTAGRAM_PAGE_LINK},
+        "tools._INSTAGRAM_MOBILE_PAGE_LINK": {"note": tools_module._INSTAGRAM_MOBILE_PAGE_LINK},
     }
 
 

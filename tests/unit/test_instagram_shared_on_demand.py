@@ -75,8 +75,8 @@ def _event(**over) -> dict:
 
 
 # The share with NO link: a story url whose user segment is not the author,
-# so the kind renders and the link does not. The only shape that keeps a
-# thumbnail since a linked share stopped carrying one.
+# so the kind renders and the link does not. It keeps its thumbnail, as a
+# linked story does; a linked post or reel carries none.
 UNLINKED_URL = "https://www.instagram.com/stories/other.account/3000000000000000001"
 LINKED_URL = "https://www.instagram.com/reel/SynthReel01/?is_clips_ad=0"
 

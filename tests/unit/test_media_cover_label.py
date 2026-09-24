@@ -43,7 +43,8 @@ from nora.domain.media import (
 )
 
 SHA = "c0de01" + "0" * 58
-# A share with no link: the only line that still carries a cover (a share
+# A share with no link: a line that still carries a cover (so does a story
+# share with its link; a post or reel share
 # whose link validated carries no picture since 2026-09-24, after #454).
 LINE = "[shared story by @synth.example]"
 

@@ -51,8 +51,8 @@
   {
     "name": "the parser never marks a shared thumbnail on-demand",
     "file": "nora/platform/instagram/parser.py",
-    "old": "            ref = None if link else replace(ref, on_demand=True)",
-    "new": "            ref = None if link else replace(ref, on_demand=False)",
+    "old": "            ref = None if link and kind != \"story\" else replace(ref, on_demand=True)",
+    "new": "            ref = None if link and kind != \"story\" else replace(ref, on_demand=False)",
     "target": "tests/unit/test_instagram_shared_on_demand.py -k never_sent_to_the_interpreter"
   },
   {
