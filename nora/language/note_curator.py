@@ -34,6 +34,14 @@ merge here:* a tier that mints canonical entities again, at which point a
 resolved anchor is comparable and the two-weddings argument applies as it
 did.
 
+**Superseded in part on 2026-09-25 (DEC-202, design 41 §7).** Merging came
+back — model-judged and code-folded, in its OWN adaptor,
+`nora.language.note_merge`, behind `[notes] merge_mode` — and this pass stays
+retire-only. What that changed here is one argument: the retirement carries
+the head it judged (`supersede(expected_head=...)`, guard 3), so a fold
+landing between this pass's re-read and its retire leaves the survivor open
+with the question it just absorbed.
+
 The retire half is the half that answers «the notebook only grows».
 
 ## What merged in (design 34, issue #99)
@@ -395,6 +403,7 @@ class _NoteStore(Protocol):
     async def supersede(
         self, *, key: str, target: str, replaced_by: str | None,
         because: str, source: str | None, now_ms: int,
+        expected_head: str | None = None,
     ) -> int: ...
 
     async def record_wake(
@@ -1247,9 +1256,15 @@ class NoteCuratorAdaptor:
                 self._inc("nora_note_curator_total", action="retire_stale")
                 continue
             try:
+                # THE HEAD IT JUDGED, not just the note (design 41 §7.6, guard
+                # 3). The re-read above and this write are two transactions,
+                # so a `note-merge` fold landing between them appended a
+                # duplicate's question to this note; the retirement is then a
+                # no-op (count 0) instead of retiring the survivor with it.
                 count = await self._notes.supersede(
                     key=key, target=note_id, replaced_by=None,
                     because=because, source=None, now_ms=now_ms,
+                    expected_head=shown.heads.get(note_id),
                 )
             except Exception:
                 log.exception("note retirement failed; continuing")

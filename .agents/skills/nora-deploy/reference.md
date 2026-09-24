@@ -24,3 +24,14 @@ started: `docker rm <name>`, then rerun SKILL.md step 3's script (it holds the l
 re-runs the `up` and `verify-deploy.py`). Any other
 state: stop and read it. Remove only the container the error names; other
 `Created` containers on the host are not yours.
+
+## Heredoc stdin
+
+`ssh norty bash -s <<'EOF'` feeds the script on stdin, and the docker client
+drains stdin whenever interactive is on, which `docker compose exec` has by
+default (`-T` only drops the TTY), even when the container never reads it. The
+exec swallows the REST OF THE SCRIPT and ssh exits 0 (2026-09-25: validation
+printed `ok`, nothing after it ran, the live config was untouched). Put
+`</dev/null` on every `docker compose exec`, `docker exec -i` and `docker
+compose run` in a heredoc (`cp`, `logs`, `up -d` and `inspect` measured
+harmless), and read the log for `VAL_RC=` / `UP_RC=`, never the ssh rc alone.

@@ -144,6 +144,7 @@ from nora.instructions.frontmatter import InstructionError
 from nora.language.culture import CULTURE_ADAPTOR_NAME, CultureAdaptor
 from nora.language.note_candidates import NoteCandidateAdaptor
 from nora.language.note_curator import NoteCuratorAdaptor
+from nora.language.note_merge import NoteMergeAdaptor
 from nora.language.proactive import (
     PROACTIVE_ADAPTOR_NAME,
     ProactiveAdaptor,
@@ -3469,6 +3470,52 @@ async def build_dependencies(
                     # reads, for the same reason: «this Saturday» is a
                     # question about the room's calendar, not the process's.
                     timezone=ZoneInfo(cfg.reminders.timezone),
+                ),
+            )
+        # NOTE-MERGE (design/dreamer-agent-loop/41 §7, DEC-202): the back-stop
+        # for two open notes asking the same question, on its own switch —
+        # `[notes] merge_mode`, "off" by default, which builds nothing.
+        #
+        # Hourly, at :30 — an arbitrary slot, not one sequenced after
+        # `note-candidates`, which is watermark-driven and has no :00 slot to
+        # follow. What a candidates fire writes is simply seen by the next
+        # merge tick. A tick where no note moved is one clock read, one
+        # `standing()` and one `revision_chain` per open note, and no model
+        # call (the adaptor's own change check). `samples=1` is PINNED, not defaulted: the runtime
+        # unions samples, so a second sample could only add folds — the
+        # direction this pass must not fail in (41 §7.3).
+        if (
+            cfg.notes.enabled and cfg.notes.merge_mode != "off"
+            and note_store is not None
+        ):
+            dream_schedules = {
+                **dream_schedules,
+                "note-merge": AdaptorSchedule(
+                    min_interval_seconds=3600,
+                    phase_offset_seconds=1800,
+                    # Inert: the pass is watermark-free and never reads a
+                    # batch. The largest group a unit could name is its open
+                    # notes; nothing here is sized by it.
+                    batch_limit=1,
+                    samples=1,
+                ),
+            }
+            dream_adaptors = (
+                *dream_adaptors,
+                NoteMergeAdaptor(
+                    notes=note_store,
+                    clock_store=dream_schedule_clock,
+                    mode=cfg.notes.merge_mode,
+                    timezone=ZoneInfo(cfg.reminders.timezone),
+                    # A note's birth room by its operator label, off the same
+                    # allowlist read `note-candidates` uses; an unlabelled
+                    # room renders as `room N`, never as its id.
+                    label_for={
+                        conv.primary_id: conv.label
+                        for conv in allowlist.conversations
+                        if conv.primary_id and conv.label
+                    }.get,
+                    metrics=metrics,
                 ),
             )
         # THE CULTURE TIER (design/culture-tier, DEC-182..185). An account of

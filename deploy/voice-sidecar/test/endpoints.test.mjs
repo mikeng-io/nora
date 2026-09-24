@@ -16,6 +16,14 @@ const PINNED_SNAPSHOT_KEYS = [
   'channel_id',
   'playback_id',
   'player',
+  // "is sound actually moving" ground truth, alongside `player.position_ms`
+  // (feat(voice): ask whether sound is moving, instead of assuming it is) —
+  // added to `snapshot()` in controller.mjs but missed here, which is how
+  // this pinning went stale without failing until the next full run.
+  'autopaused',
+  'subscribers',
+  'playable',
+  'pending_reaps',
   'speech_queue',
   'crossfade_seconds',
 ];
@@ -33,6 +41,10 @@ test('join returns the pinned state snapshot shape with a minted generation', as
   assert.equal(s.channel_id, CHANNEL);
   assert.equal(s.playback_id, null);
   assert.deepEqual(s.player, { status: 'idle', position_ms: 0, position_policy: null, current: null });
+  assert.equal(s.autopaused, false);
+  assert.equal(s.subscribers, 0);
+  assert.equal(s.playable, 0);
+  assert.equal(s.pending_reaps, 0);
   assert.equal(s.speech_queue, 0);
   assert.equal(s.crossfade_seconds, 0);
   await h.close();

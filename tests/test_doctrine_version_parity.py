@@ -133,7 +133,19 @@ PINNED: dict[str, tuple[int, str]] = {
     # v11: she holds a friend's place in the circle rather than serving it,
     # and what that place is for: letting a joke land, taking the heat out,
     # moving a stalled plan along without chasing anybody.
-    "identity": (11, "da2e843cd234db7265aca88e81838556f851b4008c16ca6f98987c28ba85bdbf"),
+    # v12 (2026-09-25, operator, option A): not being a person does not mean
+    # having no form. Her appearance previously lived only in the on-demand
+    # image-generation skill, so asked "what do you look like?" nothing
+    # always-loaded told her, and asked to draw herself she inferred she had
+    # none and drew an empty room. Adds one short, descriptive passage naming
+    # the mascot form and its anchors (bun, hoodie, earphones); the full spec
+    # stays in the skill.
+    # v13 (2026-09-25, same day, Opus review of #499): the subsection heading
+    # "What you look like" collided with the skill's own heading of the same
+    # name once the skill loads too, so it is renamed "Your form" here. No
+    # other content moved. This is also the version DEC-205 (partly
+    # superseding DEC-193's placement clause) points at.
+    "identity": (13, "cdfd951ffcfe109eb36a98abcda74acb565cbdb24ac03cee7eeacf8428ec83cf"),
     # v19 (2026-09-10): same room-name removal as identity v8.
     # v20: the REVISION half of the same pass, and the only file that grew.
     # Three positions it did not carry: the dash is a written-register

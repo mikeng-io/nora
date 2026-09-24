@@ -22,7 +22,10 @@ from pydantic import (
     model_validator,
 )
 
-from nora.domain.ports import DEFAULT_DREAM_STORE_TIMEOUT_SECONDS
+from nora.domain.ports import (
+    DEFAULT_DREAM_STORE_TIMEOUT_SECONDS,
+    DREAM_MAX_STORE_CALLS_PER_TICK,
+)
 from nora.domain.standing import (
     DEFAULT_STANDING_MAX_CHARS,
     DEFAULT_STANDING_STORE_TIMEOUT_SECONDS,
@@ -2573,6 +2576,21 @@ class NotesConfig(BaseModel):
     #: the create gate; the run is unavailable only when every sample was.
     candidate_samples: int = Field(default=1, ge=1, le=10)
 
+    #: The `note-merge` pass (design/dreamer-agent-loop/41 §7, DEC-202) — the
+    #: back-stop for two open notes asking the same question, and a FIFTH
+    #: switch on the two-risks argument above: this is the one pass that
+    #: folds one note INTO another.
+    #:
+    #: `"off"` builds nothing. `"shadow"` runs the pass and writes no note:
+    #: every fold it would make is a `note_merge_decision` row for the
+    #: operator to label. `"on"` folds through `SqlNoteStore.merge_into`, and
+    #: is for after 41 §7.8's eval passes (a full-unit eval with 20+ near-miss
+    #: negatives, k >= 5, zero false merges, operator-signed labels).
+    #:
+    #: Default **"off"** for `candidates_enabled`'s reason: landing the code
+    #: must not change what any deployed `config.toml` does.
+    merge_mode: Literal["off", "shadow", "on"] = "off"
+
     # NO `max_body_chars`, and its absence is the decision. The field existed
     # here with a twelve-line docstring and a range validator and NOTHING READ
     # IT — the cap was `nora.domain.notes.BODY_MAX_CHARS` in four places the
@@ -2830,6 +2848,16 @@ class DreamBudgetConfig(BaseModel):
         return value
 
 
+#: The flat margin `Config.dreamer_max_unit_hold_seconds` adds on top of
+#: `Config._dream_unit_hold_known_minimum` when `[dreamer]
+#: max_unit_hold_seconds` is unset (issue #191 independent review, BLOCKER).
+#: See that method's own docstring for why flat rather than a multiplier —
+#: it covers a FIXED, small number of local single-row Postgres calls the
+#: known minimum cannot sum, not a quantity that scales with the model
+#: budget.
+_DREAM_UNIT_HOLD_MARGIN_SECONDS = 300.0
+
+
 class DreamerConfig(BaseModel):
     """Where the Dreamer's instruction corpus lives and how it reloads.
 
@@ -3024,6 +3052,89 @@ class DreamerConfig(BaseModel):
         "", "none", "minimal", "low", "medium", "high", "xhigh", "max"
     ] = ""
     budgets: dict[str, DreamBudgetConfig] = Field(default_factory=dict)
+    # The WHOLE hold one (adaptor, key) unit may add to `running`, asserted at
+    # startup rather than reasoned about in prose (issue #191, `[standing]
+    # max_slot_hold_seconds`' own shape, `Config.
+    # _the_dream_unit_hold_exceeds_its_components` below).
+    #
+    # **It exists because `#60` bounded two of the unit's phases and left the
+    # rest bare `await`s.** `_run_adaptor` (`nora/app/runtime.py`) wraps its
+    # WHOLE call to `_dream_adaptor_once` in ONE `asyncio.timeout` at this
+    # number — the model budget, both bounded store phases (`inputs`,
+    # `commit`), AND every cursor read around them that `#60` left unbounded:
+    # `clock.last_fired`/`record_fire`, `language.watermark_for`/
+    # `watermark_is_behind_the_record`/`lag`/`seconds_since_last_message`/
+    # `watermark_age_seconds`/`advance_watermark`, `record.since`,
+    # `media_join.enrich`. Before this, any ONE of those hanging left
+    # `dream_loop` holding `<adaptor>:<key>` in `running` forever — the unit
+    # never ticked again, and the only symptom was
+    # `nora_dream_skipped_total{reason="in_flight_adaptor"}`, which cannot
+    # tell a long run from a wedge (`nora_dream_unit_timeout_total` is the
+    # series that now can).
+    #
+    # **This is the shape `#60`'s issue named as the one that "cannot be
+    # defeated by adding a call"**: a per-call bound (shape 1) would need a
+    # new `wait_for` for every future cursor read; ONE wall clock around the
+    # whole unit covers a call nobody has written yet too. The cost is that it
+    # cannot say WHICH call wedged — `nora_dream_unit_timeout_total{adaptor}`
+    # answers "which adaptor", not "which await", and that is the trade
+    # (issue #191) makes deliberately.
+    #
+    # **The number must provably exceed every bounded piece it wraps, or the
+    # wall clock would fire before a legitimate run finishes** — the same
+    # argument `max_slot_hold_seconds` makes, checked the same way (a startup
+    # `model_validator`, not a comment doing arithmetic by hand). The pieces:
+    #
+    #   samples x timeout_seconds                        the model budget —
+    #                                                      `AdaptorSchedule.
+    #                                                      samples` x this
+    #                                                      adaptor's own
+    #                                                      `DreamBudgetConfig.
+    #                                                      timeout_seconds`.
+    #   store_calls_per_tick x store_timeout_seconds      `inputs`'s bound.
+    #   store_calls_per_tick x store_timeout_seconds      `commit`'s bound,
+    #                                                      the SAME multiplier
+    #                                                      again — `#60`
+    #                                                      bounds the two
+    #                                                      phases separately.
+    #
+    # `samples` is only configurable through `[notes] candidate_samples`
+    # today (every other adaptor's schedule fixes it at 1 in code), so the
+    # startup check reads that field rather than importing `nora.language` to
+    # re-derive it — the same cross-section shape
+    # `_the_reminder_interval_fits_the_heartbeat` already uses across
+    # `[reminders]`/`[heartbeat]`. `store_calls_per_tick` has no config
+    # equivalent at all — it is a class attribute in `nora.language`, four
+    # layers above `nora.config` — so the check uses
+    # `DREAM_MAX_STORE_CALLS_PER_TICK` (`nora.domain.ports`), a documented
+    # ceiling with headroom over the widest shipped adaptor
+    # (`ProactiveAdaptor` at 17) and pinned there against every adaptor by
+    # `tests/architecture/test_dream_store_calls_are_declared.py`.
+    #
+    # **`None` DERIVES the value at load time (#191 independent review,
+    # BLOCKER) — it does NOT default to a fixed literal.** The first shipped
+    # version was `1200.0`, argued against the example file's `[dreamer.
+    # budgets.proactive] timeout_seconds = 240`. The DEPLOYMENT runs `720`,
+    # not `240` — a number this file never carried — and 1 x 720 + 2 x 20 x
+    # 15 = 1320 > 1200: the rebuilt image would have REFUSED TO BOOT the
+    # first time anyone checked it against the real config, not the example.
+    # A fixed literal is a number that goes stale the moment an operator
+    # raises ANY `[dreamer.budgets.*] timeout_seconds` or `[notes]
+    # candidate_samples` — forgetting to raise it alongside either one is
+    # either a refused boot (too low) or a silently under-bounded wedge (an
+    # old literal that happens to still validate but no longer carries real
+    # headroom). `Config.dreamer_max_unit_hold_seconds()` is the resolver:
+    # this field explicit -> that value, checked at startup against
+    # `Config._dream_unit_hold_known_minimum()`; unset -> that minimum plus a
+    # flat margin, ALWAYS above it by construction. See both for the exact
+    # arithmetic — restated here would be the same "two homes for one number"
+    # mistake `DEFAULT_DREAM_STORE_TIMEOUT_SECONDS`'s own docstring records.
+    #
+    # Set this explicitly only to require MORE headroom than the derivation
+    # gives, or to pin one number for a reading. An explicit value AT OR
+    # BELOW the known minimum still refuses to start — derivation removes the
+    # need to update a literal by hand, not the proof itself.
+    max_unit_hold_seconds: float | None = Field(default=None, gt=0)
 
     def budget_for(self, adaptor: str) -> DreamBudgetConfig:
         """The budget one adaptor runs under, ALWAYS bounded.
@@ -3425,6 +3536,158 @@ class Config(BaseModel):
         """
         return self.dreamer.max_tokens or self.llm.max_tokens
 
+    def _dream_unit_hold_known_minimum(self) -> float:
+        """The provably-bounded portion of one Dreamer (adaptor, key) unit's
+        cycle — shared by `dreamer_max_unit_hold_seconds`'s derivation and by
+        `_the_dream_unit_hold_exceeds_its_components`'s startup gate, so the
+        two can never disagree about what "the minimum" means (issue #191
+        independent review, BLOCKER: a fixed literal defended by hand-worked
+        arithmetic in a comment is the shape that already went stale once).
+
+        Four terms, each a CONSERVATIVE MAX rather than a per-adaptor figure
+        — `_the_dream_unit_hold_exceeds_its_components`'s own docstring has
+        the proof that a max-of-maxes bounds any real adaptor's actual sum:
+
+          max_samples x (max_timeout + WATCH_FLUSH)   the model budget, PLUS
+                                                        the reasoning-strip
+                                                        watch's own write
+                                                        bound — `_sample`
+                                                        calls `watch.flush()`
+                                                        on EVERY exit
+                                                        (`nora.agent.dreamer`
+                                                        `_sample`'s own
+                                                        docstring: "on every
+                                                        exit, including the
+                                                        two above"), OUTSIDE
+                                                        `budget.timeout_
+                                                        seconds`'s own
+                                                        `wait_for`. Omitting
+                                                        it was the review's
+                                                        own reading: the first
+                                                        version's sum did not
+                                                        contain this call at
+                                                        all.
+          2 x DREAM_MAX_STORE_CALLS_PER_TICK x
+              store_timeout_seconds                    `#60`'s two store
+                                                        bounds (`inputs`,
+                                                        `commit`).
+          media.join_timeout_seconds                   `media_join.enrich`'s
+                                                        own internal bound
+                                                        (`MediaJoin._lookup`'s
+                                                        `wait_for`) — PER
+                                                        QUERY, not per unit
+                                                        cycle. `enrich`
+                                                        chunks the batch's
+                                                        distinct media shas
+                                                        into groups of
+                                                        `DEFAULT_QUERY_BLOBS`
+                                                        (200) and calls
+                                                        `_lookup` once per
+                                                        chunk
+                                                        (`nora.domain.
+                                                        media_join._enrich`),
+                                                        so a batch whose rows
+                                                        reference more than
+                                                        200 distinct blobs
+                                                        makes MORE than one
+                                                        query. Counted ONCE
+                                                        here on purpose
+                                                        (review, issue #191):
+                                                        there is no declared
+                                                        ceiling on media
+                                                        blobs per row to
+                                                        multiply this by, and
+                                                        inventing one would
+                                                        be a number nobody
+                                                        chose wearing the
+                                                        shape of a bound.
+                                                        `dreamer_max_unit_
+                                                        hold_seconds`'s flat
+                                                        margin absorbs
+                                                        EXTRA queries the same
+                                                        way it absorbs the
+                                                        cursor reads below —
+                                                        each additional chunk
+                                                        costs at most another
+                                                        `join_timeout_seconds`
+                                                        (3s shipped), and the
+                                                        margin is 300s.
+
+        **What this does NOT cover, stated rather than implied.** The cursor
+        reads issue #191 is actually ABOUT — `clock.last_fired`/
+        `record_fire`, every `language.*` watermark call, `record.since`
+        itself — carry no bound of their own; that is the defect this whole
+        mechanism exists to close, so there is no declared number to sum
+        here. Same treatment as the media join's extra queries just above:
+        `dreamer_max_unit_hold_seconds`'s flat margin, not this method, is
+        where their NORMAL (non-hung) running time is given room.
+        """
+        from nora.agent.reasoning_strip import DEFAULT_WRITE_TIMEOUT_SECONDS
+
+        max_timeout = max([
+            # `DreamBudgetConfig()`'s own field default — the ceiling an
+            # adaptor with no `[dreamer.budgets.<name>]` block, or a partial
+            # one that leaves `timeout_seconds` unset, actually runs under
+            # (`DreamerConfig.budget_for`).
+            DreamBudgetConfig().timeout_seconds,
+            *(b.timeout_seconds for b in self.dreamer.budgets.values()),
+        ])
+        max_samples = self.notes.candidate_samples
+        model_budget = max_samples * (max_timeout + DEFAULT_WRITE_TIMEOUT_SECONDS)
+        store_budget = (
+            2 * DREAM_MAX_STORE_CALLS_PER_TICK * self.dreamer.store_timeout_seconds
+        )
+        media_budget = self.media.join_timeout_seconds
+        return model_budget + store_budget + media_budget
+
+    def dreamer_max_unit_hold_seconds(self) -> float:
+        """`[dreamer] max_unit_hold_seconds`, DERIVED when unset.
+
+        `None` (the shipped default) means "the known minimum
+        (`_dream_unit_hold_known_minimum`) plus a flat margin" — computed
+        fresh from THIS config's own numbers rather than a literal that goes
+        stale the moment an operator raises a budget timeout or a sample
+        count (issue #191 independent review, BLOCKER: the deployment's real
+        `[dreamer.budgets.proactive] timeout_seconds = 720`, not the example
+        file's `240`, pushed the naive sum to 1320 — ABOVE the first fixed
+        default of `1200`, which would have refused to boot the rebuilt
+        image).
+
+        **`_DREAM_UNIT_HOLD_MARGIN_SECONDS = 300.0`, flat rather than a
+        multiplier, and that is a choice rather than the obvious one.** A
+        `x1.25` margin would scale with the model budget — `proactive` at
+        720s buys 180s of margin, a hypothetical 2000s budget buys 500s —
+        even though nothing about a SLOWER MODEL CALL makes a single-row
+        Postgres read slower. What the margin actually has to cover is
+        everything `_dream_unit_hold_known_minimum` counts once but that can
+        genuinely run more than once (see its own docstring): `clock.
+        last_fired`/`record_fire` and every `language.*` watermark call —
+        roughly eight single-row primary-key reads or upserts against a
+        LOCAL database with no cross-network hop — PLUS any `media_join.
+        enrich` query beyond the first, at up to `join_timeout_seconds` (3s
+        shipped) each, for a batch whose rows reference more than
+        `DEFAULT_QUERY_BLOBS` (200) distinct media blobs. 300s is several
+        dozen times what any one cursor read takes even badly degraded
+        (`[standing] store_timeout_seconds = 5.0` bounds a comparable single-
+        row call one tier over) and, separately, room for roughly a hundred
+        extra media-join chunks — a batch several times any shipped
+        `batch_limit` would need before that ran out. It does not balloon on
+        a deployment that raises a model budget for reasons that have
+        nothing to do with either.
+
+        Explicit (non-`None`) is passed through UNCHANGED — an operator who
+        set a number made a deliberate judgement, and
+        `_the_dream_unit_hold_exceeds_its_components` is what still refuses a
+        value at or below the known minimum; the margin is a DEFAULT
+        convenience, not a floor this method imposes on every value.
+        """
+        if self.dreamer.max_unit_hold_seconds is not None:
+            return self.dreamer.max_unit_hold_seconds
+        return (
+            self._dream_unit_hold_known_minimum()
+            + _DREAM_UNIT_HOLD_MARGIN_SECONDS
+        )
+
     @model_validator(mode="after")
     def _the_gate_needs_something_behind_it(self) -> Config:
         """`[relevance_gate] enabled` requires `[participation] enabled`.
@@ -3580,6 +3843,45 @@ class Config(BaseModel):
                 f"[standing] max_slot_hold_seconds "
                 f"({self.standing.max_slot_hold_seconds:g}). Lower a timeout or "
                 f"raise the budget deliberately; do not leave them disagreeing."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _the_dream_unit_hold_exceeds_its_components(self) -> Config:
+        """`[dreamer] max_unit_hold_seconds`, EXPLICITLY SET, must PROVABLY
+        exceed the known-bounded pieces the wall clock in `_run_adaptor`
+        (`nora/app/runtime.py`) wraps, or the wall clock could fire before a
+        legitimate run finishes — `_the_standing_slot_hold_fits_its_budget`'s
+        own argument, one tier over (issue #191).
+
+        **Only checked when the operator SET a value.** `None` — the shipped
+        default — is `Config.dreamer_max_unit_hold_seconds`'s job: it derives
+        a number that is ALWAYS above `_dream_unit_hold_known_minimum` by
+        construction (that minimum plus a positive margin), so re-checking a
+        derived value here would be redundant at best and, worse, a second
+        place the two arithmetics could drift apart (issue #191 independent
+        review, BLOCKER — the first version's mistake was exactly one fixed
+        number doing the job two related numbers now split between them).
+
+        See `Config._dream_unit_hold_known_minimum` for what the minimum
+        covers and what it deliberately does not (the unbounded cursor reads
+        issue #191 is about, which is what
+        `dreamer_max_unit_hold_seconds`'s margin — not this check — gives
+        room to run their NORMAL, non-hung length in).
+        """
+        explicit = self.dreamer.max_unit_hold_seconds
+        if explicit is None:
+            return self
+        minimum = self._dream_unit_hold_known_minimum()
+        if explicit <= minimum:
+            raise ValueError(
+                f"[dreamer] max_unit_hold_seconds ({explicit:g}) does not "
+                f"exceed the known-bounded minimum it must wrap: "
+                f"{minimum:g}s (model budget, both of #60's store bounds, "
+                f"and the media join's own bound — see Config."
+                f"_dream_unit_hold_known_minimum). Lower a timeout/sample "
+                f"count, raise max_unit_hold_seconds deliberately, or leave "
+                f"it unset to derive one; do not leave them disagreeing."
             )
         return self
 

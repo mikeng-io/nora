@@ -349,6 +349,46 @@ def test_the_image_skill_carries_every_anchor_and_rule_of_the_spec(store):
     assert len([a for a in anchors.split(";") if a.strip()]) == 8
 
 
+def test_identitys_anchors_stay_in_step_with_the_skills_spec(store):
+    """Drift guard (Opus review of #499, DEC-205): `identity.md`'s always-loaded
+    sentence names three of the skill's eight anchors by word — messy
+    dark-brown high bun, oversized light-grey hoodie, white wired earphones.
+    Nothing mechanical ties the two together: a future edit to
+    `05-visual-identity-spec.md`/the skill (a different hairstyle, a different
+    signature item) could leave `identity.md` quietly describing a form that
+    no longer matches, and the doctrine content tests alone would not notice —
+    they only check identity.md against itself.
+
+    This checks the other direction: each word `identity.md` uses for an
+    anchor must still appear in the skill's own appearance section. It is
+    deliberately loose (a word, not a phrase) so a wording-only tweak to the
+    skill does not fail it; what it catches is an anchor identity.md names
+    that the skill's spec has stopped naming at all.
+    """
+    from nora.doctrine.loader import DoctrineStore
+    from nora.obs.metrics import Metrics
+
+    identity_body = DoctrineStore(
+        ROOT / "nora" / "doctrine", canary="C", metrics=Metrics(),
+    ).get(applies_to="tag").doctrine_text
+    identity_section = identity_body[identity_body.index('name="identity"'):]
+    identity_section = identity_section[:identity_section.index("</section>")].lower()
+
+    skill_look = _flat(_image_skill(store).instructions).lower()
+    skill_look = skill_look.split("## what you look like", 1)[1]
+
+    for anchor in ("bun", "hoodie", "earphone"):
+        assert anchor in identity_section, (
+            f"identity.md no longer names {anchor!r} -- update this test's "
+            "anchor list to match, deliberately"
+        )
+        assert anchor in skill_look, (
+            f"identity.md names {anchor!r} but the skill's own appearance "
+            "section no longer does -- the spec moved and identity.md's "
+            "always-loaded sentence is now stale"
+        )
+
+
 def test_the_image_skill_has_one_section_per_configured_model(store, example_config):
     """A new model or provider adds a section rather than rewriting the skill;
     the ones present are the models the config template configures."""
@@ -372,8 +412,21 @@ def test_the_image_skill_does_not_restate_the_tool_description(store):
 
 
 def test_the_image_skill_is_not_in_the_assembled_doctrine():
-    """It is on demand. If its body reached the always-loaded prompt it would be
-    paid for on every turn, which is the placement the operator ruled out."""
+    """The FULL appearance spec is on demand, not always-loaded. If the skill's
+    whole body reached the always-loaded prompt it would be paid for on every
+    turn, which is the placement DEC-193 ruled out and this still holds.
+
+    **Narrowed 2026-09-25 (DEC-205, partly superseding DEC-193's placement
+    clause).** `identity.md` v12 now carries ONE short, descriptive sentence
+    naming her mascot form and a few anchors — always-loaded, because "what do
+    you look like?" and "draw yourself with no reference" both need an answer
+    before any skill is loaded (the live failures DEC-205 records). That
+    sentence is NOT the eight-anchor spec this test guards: the full rendering
+    detail, the per-model prompting and the canonical asset's own handle stay
+    skill-only, so this test still asserts the strong markers of the FULL spec
+    are absent from every assembled audience, not that NO appearance content
+    reaches doctrine at all.
+    """
     from nora.doctrine.loader import DoctrineStore
     from nora.obs.metrics import Metrics
 
@@ -382,6 +435,9 @@ def test_the_image_skill_is_not_in_the_assembled_doctrine():
         text = store.get(applies_to=audience).doctrine_text
         assert "Eight anchors" not in text
         assert "[image 535e4da5" not in text
+        # DEC-205's one-line form IS expected here — the boundary this test
+        # guards is the FULL spec, not every mention of her having a shape.
+        assert "mascot" in text.lower()
     assert not (ROOT / "nora" / "doctrine" / "appearance.md").exists()
 
 

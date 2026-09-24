@@ -116,7 +116,10 @@ The most-used words in this repo, and none of them was here until 2026-09-08.
   **The three live adaptors** are `note-candidates` (hourly, per room, reads
   the new messages and stages notes), `note-curation` (daily, per unit,
   retires notes that closed or expired — off by default) and `proactive`
-  (below). Two earlier tiers — the knowledge tier (the "fact tier") and the
+  (below). A fourth, `note-merge` (hourly, per unit, `[notes] merge_mode`,
+  off by default), folds two open notes that ask the same question; in
+  `shadow` it only records the folds it would make, in `note_merge_decision`.
+  Two earlier tiers — the knowledge tier (the "fact tier") and the
   language tier — were deprecated 2026-09-07 and their code deleted; a design
   node numbered 20, 21, 23, 24, 25, 28, 31 or 32 in that bundle describes code
   that no longer exists.
@@ -135,7 +138,9 @@ The most-used words in this repo, and none of them was here until 2026-09-08.
   everywhere as the `<notes>` index plus `note_read`. A note has a
   `revisit_at` and **strikes** — how many times it was raised with nobody
   answering — and the curator retires it when the room settles it or its
-  moment passes. **Nothing Nora says can create, revise or close a note**:
+  moment passes. A note that duplicates an older one is folded into it by
+  `note-merge` and retired `retired-merged`; anything that looks it up after
+  that follows `replaced_by` to the note it went into. **Nothing Nora says can create, revise or close a note**:
   her own rows are excluded from what the note tier reads. That is the one
   structural brake on her talking to herself (39 §1).
 

@@ -863,6 +863,12 @@ def test_a_config_written_before_the_dreamer_section_existed_still_loads(toml_pa
     assert cfg.dreamer.quiet_seconds == 1800.0
     assert cfg.dreamer.max_age_seconds == 86_400.0
     assert cfg.dreamer.batch_limit == 400
+    # The wall clock around a whole unit (issue #191): a config predating it
+    # still gets a bounded `_run_adaptor`, not an unbounded one — `None`
+    # (unset, the class default) DERIVES a real number rather than reading as
+    # "no bound" (`Config.dreamer_max_unit_hold_seconds`).
+    assert cfg.dreamer.max_unit_hold_seconds is None
+    assert cfg.dreamer_max_unit_hold_seconds() > cfg._dream_unit_hold_known_minimum()
 
 
 def test_two_configs_do_not_share_one_defaulted_dreamer_section(tmp_path, monkeypatch):
@@ -1394,6 +1400,124 @@ def _real_slot_hold(toml_path) -> float:
         cfg.standing.timeout_seconds
         + STANDING_STORE_CALLS_PER_FOLD * cfg.standing.store_timeout_seconds
     )
+
+
+def _uncomment_and_set(text: str, key: str, value: str) -> str:
+    """Turn a commented-out `# key = ...` template line into an active
+    `key = value` line, and ASSERT the edit landed — `_set_key`'s own reason,
+    one step earlier. `[dreamer] max_unit_hold_seconds` ships COMMENTED OUT
+    (issue #191 independent review, BLOCKER: a fixed literal went stale
+    against the deployment's own numbers), so a test that wants an EXPLICIT
+    override has to uncomment it first — `_set_key`'s `^key = .*$` regex does
+    not match a line starting with `# `."""
+    new, n = re.subn(
+        rf"(?m)^# ?{re.escape(key)} = .*$", f"{key} = {value}", text,
+    )
+    assert n == 1, f"commented {key} not found exactly once ({n} matches)"
+    return new
+
+
+def test_the_dream_unit_hold_ships_unset_and_derives_a_default(toml_path):
+    """`[dreamer] max_unit_hold_seconds` ships COMMENTED OUT (issue #191
+    independent review, BLOCKER). A fixed literal went stale against the
+    deployment's own `[dreamer.budgets.proactive] timeout_seconds = 720` —
+    not this file's `240` — the first time anyone checked it against real
+    numbers rather than the example: `Config.
+    dreamer_max_unit_hold_seconds` exists so the value tracks whatever this
+    config actually says instead."""
+    cfg = load(toml_path)
+    assert cfg.dreamer.max_unit_hold_seconds is None
+    known_minimum = cfg._dream_unit_hold_known_minimum()
+    derived = cfg.dreamer_max_unit_hold_seconds()
+    assert derived > known_minimum, (
+        "the derived default must always clear the known minimum by "
+        "construction — a positive margin added to it"
+    )
+
+
+def test_the_dream_unit_hold_refuses_an_explicit_budget_the_timeouts_do_not_fit(
+    toml_path,
+):
+    """`[dreamer] max_unit_hold_seconds`, EXPLICITLY SET, must PROVABLY
+    exceed the known-bounded minimum — the model budget, both of #60's store
+    bounds, and the media join's own bound — the same shape `[standing]
+    max_slot_hold_seconds` checks one tier over (issue #191).
+
+    Set one second UNDER the real minimum, DERIVED from `Config.
+    _dream_unit_hold_known_minimum` rather than a literal, so this stays a
+    real probe of the formula rather than of whatever number was typed the
+    day it was written."""
+    known_minimum = load(toml_path)._dream_unit_hold_known_minimum()
+    text = _uncomment_and_set(
+        toml_path.read_text(), "max_unit_hold_seconds", f"{known_minimum - 1:g}",
+    )
+    toml_path.write_text(text)
+    with pytest.raises(ConfigError, match="max_unit_hold_seconds"):
+        load(toml_path)
+
+
+def test_the_dream_unit_hold_check_fires_even_while_the_dreamer_is_off(toml_path):
+    """**Not gated on `[dreamer] enabled`** — `[standing]`'s own sibling check
+    settled on this after review (2026-08-27): a number that lies about the
+    deployment is wrong on the page whether or not the loop is running, and
+    the moment `enabled` flips to `true` is the worst one to discover an
+    impossible budget."""
+    toml_path.write_text(
+        _uncomment_and_set(toml_path.read_text(), "max_unit_hold_seconds", "1.0"))
+    with pytest.raises(ConfigError, match="max_unit_hold_seconds"):
+        load(toml_path)
+
+
+def test_an_explicit_dream_unit_hold_above_the_minimum_is_accepted(toml_path):
+    """The POSITIVE control for an explicit override: a value comfortably
+    above the known minimum still loads (the check is `<=`, not a refusal of
+    every explicit value)."""
+    known_minimum = load(toml_path)._dream_unit_hold_known_minimum()
+    text = _uncomment_and_set(
+        toml_path.read_text(), "max_unit_hold_seconds", f"{known_minimum + 1:g}",
+    )
+    toml_path.write_text(text)
+    cfg = load(toml_path)
+    assert cfg.dreamer.max_unit_hold_seconds == known_minimum + 1
+    assert cfg.dreamer_max_unit_hold_seconds() == known_minimum + 1
+
+
+def test_a_deployment_style_proactive_timeout_still_derives_a_loadable_hold(
+    toml_path,
+):
+    """**The exact BLOCKER the independent review found**, reproduced: the
+    deployment's real `[dreamer.budgets.proactive] timeout_seconds` is 720,
+    not this file's 240, with `[dreamer] store_timeout_seconds` at its
+    default. The reviewer's own naive arithmetic — `1 x 720 + 2 x 20 x 15 =
+    1320` — is already above the first fixed default of `1200`, which would
+    have refused to boot the rebuilt image. The DERIVED default must clear
+    that number with room, and the config must LOAD at all, both without a
+    human raising a literal by hand."""
+    # `_set_key`'s `^timeout_seconds = .*$` is ambiguous across the file's
+    # ten-plus sections; scope the edit to `[dreamer.budgets.proactive]` by
+    # hand, the same surgery
+    # `test_the_slot_hold_does_not_count_the_llm_timeout` already uses for
+    # `[llm]`. The section HEADER, anchored at line-start with its own
+    # trailing newline — not a bare substring search — because this file's
+    # own `[dreamer] max_unit_hold_seconds` comment block (issue #191)
+    # mentions "[dreamer.budgets.proactive] timeout_seconds = 240" in PROSE,
+    # earlier in the file, which a substring search finds first.
+    original = toml_path.read_text()
+    start = original.index("\n[dreamer.budgets.proactive]\n") + 1
+    end = original.index("\n[", start + 1)
+    section = _set_key(original[start:end], "timeout_seconds", "720.0")
+    text = original[:start] + section + original[end:]
+    toml_path.write_text(text)
+
+    cfg = load(toml_path)  # must not raise ConfigError
+
+    assert cfg.dreamer.budgets["proactive"].timeout_seconds == 720.0
+    known_minimum = cfg._dream_unit_hold_known_minimum()
+    assert known_minimum > 1320, (
+        f"known_minimum={known_minimum:g} — the probe no longer reproduces "
+        "the reviewer's own arithmetic"
+    )
+    assert cfg.dreamer_max_unit_hold_seconds() > 1320
 
 
 def test_the_standing_slot_hold_refuses_a_budget_the_timeouts_do_not_fit(toml_path):

@@ -71,6 +71,7 @@ CORPUS_CLASS: dict[str, str] = {
     "injections": "S9",
     "transcript_injection": "S9",
     "presence": "S3",
+    "appearance": "S3",
     # What a WRITE keeps: `carry` is #228's shape (an unrelated pass lost a
     # thread it did not touch), the nearest class the map has. Its `stale`
     # cases are S5-shaped (time misread) — approximate, as this map says.
@@ -376,7 +377,8 @@ def main() -> int:
     )
     ap.add_argument(
         "--deployment-config",
-        default=os.environ.get("NORA_CONFIG", "/home/norty/workspace/nora/config.toml"),
+        default=os.environ.get("NORA_CONFIG")
+        or str(Path.home() / "workspace" / "nora" / "config.toml"),
         help="the DEPLOYMENT's config.toml. Every subject is composed from it "
              "(rebuilt into config.evaluation.toml per run), because the "
              "example ships with almost everything off and running against it "

@@ -64,7 +64,12 @@ from nora.domain.facts import (
     FACT_PREDICATE_CEILING_CHARS,
     FACT_TERM_CEILING_CHARS,
 )
-from nora.domain.notes import NOTE_BODY_CEILING_CHARS
+from nora.domain.notes import (
+    MERGE_REASON_MAX_CHARS,
+    NOTE_BODY_CEILING_CHARS,
+    NOTE_MERGE_MODES,
+    NOTE_MERGE_OUTCOMES,
+)
 from nora.domain.standing import STANDING_BODY_CEILING_CHARS
 
 #: bge-m3's width, MEASURED against the live endpoint on 2026-08-28 rather
@@ -2079,8 +2084,12 @@ NOTE_CANDIDATE = sa.Table(
 #:
 #: **M10 — "a title is not an identity" — is UPHELD for the note and REVERSED
 #: here, and the two are not in tension.** A note must stay findable by one
-#: name across revisions, so `note`'s own uniqueness is still the title alone
-#: per unit and its gate still matches on what the model names. A staging
+#: name across revisions, and its gate still matches on what the model names.
+#: (This said `note`'s own uniqueness «is still the title alone per unit»; NO
+#: such index exists — corrected 2026-09-24 in DEC-189's row, design 41 §7.0.
+#: Two open notes may share a title until design 41 §7.2 (3) adds the unique
+#: open-title index; `note-merge` is what folds the duplicates meanwhile.) A
+#: staging
 #: row is not an identity: it is a one-shot dedupe slot for one sighting, and
 #: the title is the only field that separates two arrangements the model wrote
 #: about on the same day. The entity list was the discriminator until
@@ -2356,6 +2365,21 @@ STANDING_REVISION = sa.Table(
     # say which stretch a past fold had actually read.
     sa.Column("consumed_verdict_tag", sa.Text, nullable=True),
     sa.Column("last_folded_row_id", sa.BigInteger, nullable=True),
+    # 2026-09-25 (design/dreamer-agent-loop/26-standing.md, dated section):
+    # which writer produced this row. Every revision before this column
+    # existed was a fold — `SqlStandingStore.write` had exactly one caller
+    # shape — so `'fold'` is both the default for new rows AND the correct
+    # backfill for every row that predates the column, not a guess standing
+    # in for missing provenance. `'operator'` is written by the one other
+    # path this store now offers: a manual edit outside the fold (an
+    # operator-approved purge, 2026-09-24, went through `write` with no way
+    # to tell a manual edit from a fold afterward). A CHECK rather than a
+    # Postgres ENUM — the least invasive of the two for a two-value column
+    # with no other consumer, and consistent with every other closed-set
+    # column on this schema (`conversation_type`, `kind`, `state`, ...).
+    sa.Column(
+        "source", sa.Text, nullable=False, server_default=sa.text("'fold'")
+    ),
     # The SAME ceiling the head carries, not a looser one: a revision holds a
     # value the head held, so a body this table would accept and `standing`
     # would refuse is a history recording a position that could never have been
@@ -2367,6 +2391,10 @@ STANDING_REVISION = sa.Table(
     sa.CheckConstraint(
         "fold_count >= 0",
         name="standing_revision_fold_count_is_not_negative_check",
+    ),
+    sa.CheckConstraint(
+        "source IN ('fold', 'operator')",
+        name="standing_revision_source_is_fold_or_operator_check",
     ),
 )
 
@@ -2530,6 +2558,59 @@ IDX_DECISION_LOG_CONV_TS = sa.Index(
 IDX_DECISION_LOG_UNIT_TS = sa.Index(
     "idx_decision_log_unit_ts",
     DECISION_LOG.c.unit, sa.text("ts DESC"), sa.text("id DESC"),
+)
+
+
+#: What the `note-merge` pass considered folding, one row per (survivor,
+#: duplicate) pair (design 41 §7.8, DEC-202). In `shadow` it is the pass's
+#: whole output — the rows the operator labels before `on`; in `on` it is the
+#: audit of each fold and each refusal.
+#:
+#: **Its own table, not `decision_log`**, which the design's wording pointed
+#: at: that table's rows render into the ambient deciders' prompts, its
+#: `reason` is an 80-character code label, and it refuses note titles and
+#: model text by its own rule. This one holds both titles and the model's
+#: reason and no prompt ever reads it. `nora.domain.notes.NoteMergeDecision`
+#: says the same beside the type.
+#:
+#: Append-only: `SqlNoteStore.record_merge_decision` inserts and nothing
+#: updates. Both note ids are foreign keys because a note is never deleted.
+NOTE_MERGE_DECISION = sa.Table(
+    "note_merge_decision",
+    METADATA,
+    sa.Column("id", pg.UUID(as_uuid=False), primary_key=True),
+    sa.Column("unit", sa.Text, nullable=False),
+    sa.Column("mode", sa.Text, nullable=False),
+    sa.Column("outcome", sa.Text, nullable=False),
+    sa.Column("survivor_id", pg.UUID(as_uuid=False),
+              sa.ForeignKey("note.id", name="note_merge_decision_survivor_fkey"),
+              nullable=False),
+    sa.Column("duplicate_id", pg.UUID(as_uuid=False),
+              sa.ForeignKey("note.id", name="note_merge_decision_duplicate_fkey"),
+              nullable=False),
+    sa.Column("survivor_title", sa.Text, nullable=False),
+    sa.Column("duplicate_title", sa.Text, nullable=False),
+    sa.Column("reason", sa.Text, nullable=False, server_default=""),
+    sa.Column("established_by", sa.Text, nullable=False),
+    sa.Column("ts", sa.BigInteger, nullable=False),
+    sa.CheckConstraint(
+        f"mode in ({_in_list(NOTE_MERGE_MODES)})",
+        name="note_merge_decision_mode_is_known_check",
+    ),
+    sa.CheckConstraint(
+        f"outcome in ({_in_list(NOTE_MERGE_OUTCOMES)})",
+        name="note_merge_decision_outcome_is_known_check",
+    ),
+    sa.CheckConstraint(
+        f"length(reason) <= {MERGE_REASON_MAX_CHARS}",
+        name="note_merge_decision_reason_is_a_sentence_check",
+    ),
+)
+
+#: The operator's read: one unit's rows, newest first.
+IDX_NOTE_MERGE_DECISION_UNIT_TS = sa.Index(
+    "idx_note_merge_decision_unit_ts",
+    NOTE_MERGE_DECISION.c.unit, NOTE_MERGE_DECISION.c.ts,
 )
 
 

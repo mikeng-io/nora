@@ -221,7 +221,9 @@ be populated and merge was inert by construction; the registry store, the
 resolution pass and the merge verb are deleted (their tables stay). The
 curator only retires. R-75 in the decision index says which clauses survive. A
 model-judged merge returns in a separate `note-merge` adaptor (DEC-202, design
-41 §7, designed 2026-09-24, not yet built); the curator stays retire-only.
+41 §7, designed 2026-09-24, built 2026-09-25 behind `[notes] merge_mode`,
+default `off`, first run in `shadow`, which writes no note); the curator
+stays retire-only.
 The create gate in `note_candidates` matched on anchor date alone from that
 day until **2026-09-13**, when two firings in production merged two unrelated
 occasions twice (#228); it now resolves the note title the MODEL names, and
