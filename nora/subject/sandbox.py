@@ -95,8 +95,9 @@ __all__ = [
 _HOUR_MS = 3_600_000
 
 #: Templates this process has already brought to the migration head, by URL.
-#: `run_migrations` on an at-head database is one connection and a version
-#: check, but it is also one more session on a template that
+#: `run_migrations` on an at-head database is a brief advisory-lock round trip
+#: plus a version check — still cheap, but it is also one more session (two,
+#: while the lock connection is open) on a template that
 #: `CREATE DATABASE ... TEMPLATE` needs nobody else connected to.
 _migrated: set[str] = set()
 
