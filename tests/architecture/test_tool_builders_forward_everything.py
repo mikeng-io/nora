@@ -74,7 +74,9 @@ def test_build_tools_forwards_every_parameter_it_accepts() -> None:
 #: as a LITERAL so a twelfth divergence is a decision somebody makes rather
 #: than one that accumulates.
 _SPECS_ONLY = frozenset({
-    "clock", "compute_backend", "compute_jobs", "events", "fire_turn",
+    # `clock` left this set 2026-09-24: `room_list` reports how long ago a
+    # room last spoke, and its tests freeze time through `build_tools`.
+    "compute_backend", "compute_jobs", "events", "fire_turn",
     "music", "relay", "reminder_caps", "reminders", "tool_call_log_store",
     "versions",
     # Proactive destination map (design/dreamer-agent-loop/40, #248): the

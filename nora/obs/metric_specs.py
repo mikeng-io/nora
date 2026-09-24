@@ -475,7 +475,8 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     _CounterSpec(
         "nora_media_attachments_total",
         "Attachments seen on ingested messages, by platform and the label they "
-        "rendered as (image / voice note / video / audio / document / file).",
+        "rendered as (image / cover image / sticker / voice note / video / audio / "
+        "document / file).",
         ("platform", "label"),
     ),
     # And the second says what happened to the bytes. `stored` is the only

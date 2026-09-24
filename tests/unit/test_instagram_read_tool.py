@@ -595,6 +595,22 @@ def test_posts_is_in_neither_the_vocabulary_nor_the_catalogue_line():
     assert ("instagram", "posts") not in social_read_vocabulary()["instagram_read"]
 
 
+def test_the_catalogue_line_names_a_shared_post_or_reel():
+    """The when-clause covers a SHARED item, not only a pasted link
+    (2026-09-24). A reel shared into a room renders as a `[shared reel …]`
+    line with a link and a cover picture; the old clause («pastes an Instagram
+    link») described a member typing a link, and the model reached for
+    `media_fetch` on the cover instead. The eval cases
+    `route_instagram_read_shared_reel*` measure the routing; this pins the
+    words they measure."""
+    line = next(
+        ln for ln in ToolRegistry().tool_catalogue().splitlines()
+        if ln.startswith("- instagram_read —")
+    )
+    assert "a shared or linked post or reel" in line
+    assert "by name, handle or link" in line
+
+
 def test_the_native_tool_row_is_complete_read_only_and_not_hot():
     row = NATIVE_TOOLS["instagram_read"]
     assert row.read_only is True

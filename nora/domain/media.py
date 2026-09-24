@@ -119,7 +119,23 @@ _DOCUMENT_SUBTYPES = frozenset({
 # through them. The optional DESCRIPTION is NOT covered by that guarantee — it
 # is free text from a vision model, made safe by explicit screening in
 # `sanitize_description`, not by a closed set.
-LABELS = frozenset({"image", "video", "audio", "voice note", "document", "file", "sticker"})
+#
+# `cover image` is the one label that names a ROLE rather than a kind of
+# bytes: the still picture a shared reel, post or story arrives with
+# (`MediaRef.on_demand`). It exists because the bare `[image be4be6]` beside
+# a `[shared reel …]` line read as THE REEL to a model, which then answered
+# "what is in this reel" off one frame and never opened the link it was
+# looking at (2026-09-24). The transcript has to say what the model is
+# reading; a tool description telling it what it can do was already there
+# and was not enough.
+LABELS = frozenset({
+    "image", "cover image", "video", "audio", "voice note", "document", "file",
+    "sticker",
+})
+
+#: `MediaBlob.role` for the still picture a shared item arrived with. The only
+#: role there is; an absent role is an ordinary attachment somebody sent.
+COVER_ROLE = "cover"
 
 
 @dataclass(frozen=True)
@@ -185,6 +201,15 @@ class MediaBlob:
     media_type: str
     size: int
     filename: str | None = None
+    # WHAT THESE BYTES WERE TO THE MESSAGE, not what they are. `""` is an
+    # attachment somebody sent; `COVER_ROLE` is the still picture a shared
+    # reel, post or story arrived with (`MediaRef.on_demand`, set by the
+    # adapter). It rides here because `MediaRef` is gone by the time anything
+    # asks: `media_json` holds blobs, and `media_fetch` has only that row to
+    # tell a cover from a photo when it serves the handle. A property of this
+    # SIGHTING, never of the bytes: the same bytes sent later as a photo are
+    # a second blob entry with no role.
+    role: str = ""
 
     @property
     def handle(self) -> str:
@@ -485,9 +510,10 @@ def label_agrees(label: str, media_type: str) -> bool:
     two are indistinguishable at render.
 
     So the body may REFINE but never contradict: `voice note` is accepted over
-    `audio/*` and `sticker` over `image/*`, because those are the two axes the
-    media type genuinely cannot express. Anything else must match what
-    `label_from_media_type` derives, and a mismatch falls back to it.
+    `audio/*`, and `sticker` and `cover image` over `image/*`, because those
+    are the axes the media type genuinely cannot express. Anything else must
+    match what `label_from_media_type` derives, and a mismatch falls back to
+    it.
     """
     if not label or label not in LABELS:
         return False
@@ -496,7 +522,7 @@ def label_agrees(label: str, media_type: str) -> bool:
         return True
     if label == "voice note":
         return derived == "audio"
-    if label == "sticker":
+    if label in ("sticker", "cover image"):
         return derived == "image"
     return False
 
@@ -518,7 +544,14 @@ def label_for(ref: MediaRef) -> str:
         return "voice note" if ref.voice_note else "audio"
     if top == "application":
         return "document" if subtype in _DOCUMENT_SUBTYPES else "file"
-    return _BY_TOP_LEVEL.get(top, "file")
+    label = _BY_TOP_LEVEL.get(top, "file")
+    # A shared item's still picture says so, because it is not the item: see
+    # `LABELS`. Only for an image, since that is the one shape a preview has
+    # ever arrived as; anything else keeps its plain label rather than gaining
+    # a word nobody has measured.
+    if ref.on_demand and label == "image":
+        return "cover image"
+    return label
 
 
 # Characters a description may never contain, and why each one:
@@ -730,9 +763,15 @@ def media_json(blobs: tuple[MediaBlob, ...]) -> str | None:
     database today: `[]` would make "holds nothing" and "had nothing" identical
     in SQL, and a column that reads `[]` on every row is one nobody can filter.
 
-    Flat, fixed-key shape on purpose. This text is the durable half of the
-    record and `MediaBlob` is what a retrieval tool reconstructs from it; an
-    optional or nested key would make that reconstruction guess.
+    Flat shape on purpose. This text is the durable half of the record and
+    `MediaBlob` is what a retrieval tool reconstructs from it; a nested key
+    would make that reconstruction guess.
+
+    **`role` is the one key written only when it is set** (2026-09-24). Every
+    row written before it existed carries none, so a reader has to treat an
+    absent `role` as an ordinary attachment whatever this function writes; an
+    always-written `"role": ""` would add nothing to that and change the text
+    of every row from now on. Absence has one meaning, so nothing guesses.
     """
     if not blobs:
         return None
@@ -742,6 +781,7 @@ def media_json(blobs: tuple[MediaBlob, ...]) -> str | None:
             "media_type": blob.media_type,
             "size": blob.size,
             "filename": blob.filename,
+            **({"role": blob.role} if blob.role else {}),
         }
         for blob in blobs
     ])
@@ -764,6 +804,7 @@ def blobs_from_media_json(text: str | None) -> tuple[MediaBlob, ...]:
         out.append(MediaBlob(
             sha256=item["sha256"], media_type=str(item.get("media_type") or ""),
             size=int(item.get("size") or 0), filename=item.get("filename"),
+            role=str(item.get("role") or ""),
         ))
     return tuple(out)
 

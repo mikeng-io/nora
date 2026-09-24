@@ -81,6 +81,9 @@ def test_the_registry_exposes_every_declared_tool():
         "who_said",
         "now", "load_transcript", "send_reply", "search_gifs", "send_gif",
         "send_to",
+        # design/self-awareness/07: which rooms this group has, and what is
+        # said in one of them.
+        "room_list", "room_read",
         "group_members", "lookup_person", "about", "ask_memory", "search_memory",
         "recall_lookups",
         "calculate", "transit", "route",
@@ -191,6 +194,10 @@ def test_budgets_match_todays_table():
             # DEC-105. Two, not six: relaying is a deliberate act somebody
             # asked for, not a register she can fall into.
             "send_to": 2,
+        # design/self-awareness/07. `room_list` 2: one call answers it, a
+        # second re-checks a transport after a send. `room_read` 3: two rooms
+        # plus a corrected name.
+        "room_list": 2, "room_read": 3,
         # Sized against model round trips, not against work — see
         # `NATIVE_TOOL_BUDGETS` for the per-tool reasoning.
         "group_members": 1, "lookup_person": 4, "about": 4,
@@ -705,6 +712,9 @@ READ_ONLY = frozenset({
     # decide turn holds it — the #248 cross-check) but NOT in
     # `UNIT_SAFE_TOOLS`: it is room-roster-scoped, same as where_been.
     "online_now",
+    # design/self-awareness/07: the room tools read policy, health, rosters
+    # and stored messages, and write nothing.
+    "room_list", "room_read",
     "saved_places", "who_said", "load_transcript", "group_members", "lookup_person",
     "about", "ask_memory", "search_memory", "recall_lookups", "media_fetch",
     "media_search",

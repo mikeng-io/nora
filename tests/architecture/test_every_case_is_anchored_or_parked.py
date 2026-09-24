@@ -161,22 +161,26 @@ def test_a_case_that_speaks_anchors_where_an_adapter_is_wired(name: str) -> None
 
 
 def test_the_whole_corpus_is_accounted_for() -> None:
-    """211 cases, every one in exactly one state. The number is the corpus
+    """218 cases, every one in exactly one state. The number is the corpus
     as ported on 2026-09-20 (150), plus `tool_selection`'s 16 S2 routing cases
     (2026-09-23, design/tool-catalogue §2c), plus its 4 per-network social
     routing cases (2026-09-24, design/instagram-adoption/18, P5) and P11's 4
     (`instagram_search` twice, its `instagram_read` boundary pair, an X
     search) and P10/P12's 4 (a reel link, a profile link and a typed handle
-    to `instagram_read`, a name to find to `instagram_search`), plus
+    to `instagram_read`, a name to find to `instagram_search`) and the 4
+    shared-item cases (a shared reel in English and Cantonese, a shared post,
+    and the reel with its pre-fix `[image …]` rendering; 2026-09-24,
+    design/instagram-adoption/13 «the cover says it is one»), plus
     `standing`'s 15 fold cases (13 anchored, 2 parked before the standing
     chain; 2026-09-24, design/standing-compact/20-verification §1), plus
     `presence`'s 7 (2026-09-24, design/self-awareness/05), plus
-    `tool_reporting`'s 8 (2026-09-24, ADR 0015 §4) and `tool_selection`'s 3
+    `tool_reporting`'s 8 (2026-09-24, ADR 0015 §4), plus `tool_selection`'s 3
+    room-tool rows (2026-09-24, design/self-awareness/07), plus its 3
     image-generation argument cases (2026-09-24: her reference on «draw
     yourself», none on a picture without her, the date written out on a
     poster); a change to it is
     a change to what the suite claims to measure and belongs in a commit that
     says so. Recomputed with `census()` at each merge, never summed."""
     totals = [census(n) for n in CORPORA]
-    assert sum(c.total for c in totals) == 211
-    assert sum(c.active + c.parked for c in totals) == 211
+    assert sum(c.total for c in totals) == 218
+    assert sum(c.active + c.parked for c in totals) == 218

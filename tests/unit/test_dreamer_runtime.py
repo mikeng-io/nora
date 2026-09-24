@@ -780,6 +780,14 @@ def test_every_read_only_tool_is_classified_unit_safe_or_room_scoped():
         # fail-closed, the same "not yet actually reachable" reasoning
         # `note_read`/`note_search` were.
         "music_status",
+        # The room tools (design/self-awareness/07) resolve «this unit»
+        # through the ROOM's (platform, conversation_id); a unit-keyed tick's
+        # synthetic room has neither, so both answer `unavailable`, the
+        # fail-closed side. Admitting them would need a supplied-unit path,
+        # and `room_read` under it would hand a background loop verbatim
+        # words from every room of a unit, which a proactive row could then
+        # carry into another room. Nobody has made that disclosure decision.
+        "room_list", "room_read",
         # `instagram_read` (design/instagram-adoption/18) resolves the name it
         # is given against the ROOM's live roster (`room.scope().find`, the
         # lookup `about` uses) — the input a unit-keyed tick does not have,
