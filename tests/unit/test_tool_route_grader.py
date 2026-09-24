@@ -178,8 +178,8 @@ def test_the_judge_sees_tool_results_only_for_a_reporting_case():
     from evals.backbone import _judge_source
 
     results = (("where_is", '{"status": "unavailable"}'), ("send_reply", "x"))
-    plain = _judge_source(["m1"], results, ())
-    reporting = _judge_source(["m1"], results, ("tool_status_reported",))
+    plain = _judge_source("m1", results, ())
+    reporting = _judge_source("m1", results, ("tool_status_reported",))
     assert plain == "m1"
     assert "where_is" in reporting and "unavailable" in reporting
     assert "send_reply" not in reporting   # plumbing is not a result to report
@@ -332,6 +332,63 @@ def test_tool_inputs_and_the_clock_line_are_read_off_the_spans():
         ("send_reply", '[{"text": "hi"}]'),
     )
     assert _shown_now(_Exporter()) == _CLOCK
+
+
+def test_shown_transcript_reads_the_rendered_window_off_the_chat_span():
+    """#459. `<group_transcript window="N" …>…</group_transcript>` is what
+    `nora.agent.prefill._transcript_block` actually put in front of the
+    model — the same shape `_shown_now` already reads the clock line off.
+    `_shown_transcript` must return the BODY between the tags, not the whole
+    span text, and must not be fooled by an escaped `</group_transcript>`-
+    looking string inside a message body (R-13b: a real closing tag cannot
+    appear there, `escape` rules it out)."""
+    from types import SimpleNamespace
+
+    from evals.backbone import _shown_transcript
+
+    def event(name, **attrs):
+        return SimpleNamespace(name=name, attributes=attrs)
+
+    rendered = (
+        '<group_transcript window="2" description="the room, recent first">\n'
+        '<m n="1" age="4m ago" from="Miles">i can&#x27;t make it</m>\n'
+        '<m n="2" age="just now" from="Nora">want me to move it?</m>\n'
+        '</group_transcript>'
+    )
+    spans = [
+        SimpleNamespace(start_time=1, attributes={"gen_ai.operation.name": "chat"},
+                        events=[event("gen_ai.user.message",
+                                      content='[{"text": "' + _CLOCK + '\\n' + rendered + '"}]')]),
+    ]
+
+    class _Exporter:
+        def get_finished_spans(self):
+            return spans
+
+    body = _shown_transcript(_Exporter())
+    assert body == (
+        '<m n="1" age="4m ago" from="Miles">i can&#x27;t make it</m>\n'
+        '<m n="2" age="just now" from="Nora">want me to move it?</m>'
+    )
+
+
+def test_shown_transcript_is_none_when_no_call_carried_the_block():
+    """`gate`/`dreamer` never render `<group_transcript>`; a case that never
+    reached a model call carries none either. Both read as `None`, never as
+    an empty window — `_judge_source` treats `None` as no source at all."""
+    from types import SimpleNamespace
+
+    from evals.backbone import _shown_transcript
+
+    class _Exporter:
+        def get_finished_spans(self):
+            return [SimpleNamespace(
+                start_time=1, attributes={"gen_ai.operation.name": "chat"},
+                events=[SimpleNamespace(name="gen_ai.user.message",
+                                        attributes={"content": _CLOCK})],
+            )]
+
+    assert _shown_transcript(_Exporter()) is None
 
 
 def test_the_self_case_fails_the_prompt_that_sent_her_reference_back():

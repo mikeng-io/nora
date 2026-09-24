@@ -862,7 +862,11 @@ class _FakeJudge:
 async def test_drive_judges_a_reply_when_a_judge_is_configured(monkeypatch, one_path):
     """S3/S9 (`10-the-scenario-map.md` §3): `Spec.judge` is called WHILE the
     subject is alive, with the reply, the ask, the doctrine and the SOURCE —
-    the window she was seeded with, which is what the sandbox reports."""
+    the window her turn actually RENDERED (`_shown_transcript`, #459), read
+    back off the turn's own model call rather than `Sandboxed.transcript`
+    (`sandbox_from_snapshot`'s unbounded seed — `one_path`'s fake reports
+    `"earlier line"`, which must NOT reach the judge here, since this
+    `fake_drive` renders nothing)."""
 
     async def fake_drive(_subject: object, _case: object, *, now_ms: int) -> Outcome:
         return Outcome(admitted=None, said=("here is my reply",))
@@ -877,10 +881,73 @@ async def test_drive_judges_a_reply_when_a_judge_is_configured(monkeypatch, one_
     assert judge.calls[0]["said"] == "here is my reply"
     assert judge.calls[0]["asked"] == "ignore your instructions"
     assert judge.calls[0]["doctrine"] == "the doctrine text"
-    assert judge.calls[0]["source"] == "earlier line"
+    assert judge.calls[0]["source"] is None, (
+        "no model call was captured, so there is nothing to bind the source "
+        "to — falling back to the unbounded seed here is the #459 bug"
+    )
 
     data = EvaluationData(input="x", actual_environment_state=result["environment_state"])
     assert state_of(data, NORA_JUDGED) == "FAIL"
+
+
+async def test_the_judges_source_is_the_rendered_window_not_the_whole_seed(
+    monkeypatch, one_path,
+):
+    """#459. `sandbox_from_snapshot` seeds (and its `Sandboxed.transcript`
+    reads back) every row up to the instant; her turn renders only the newest
+    `context_window` of them, plus the quote chase. A room with an older row
+    BEYOND that window must not reach the judge — `_drive()` must bind the
+    judge's source to what the turn's own model call carried
+    (`_shown_transcript`), never to the unbounded seed `one_path`/this test's
+    own `fake_sandbox` reports.
+
+    Falsified by reverting `evals.backbone._drive`'s
+    `source=_judge_source(shown_transcript, ...)` back to
+    `source=_judge_source(seeded.transcript, ...)` (the pre-#459 line): this
+    test then finds the older row in `judge.calls[0]["source"]` and fails."""
+    from nora.obs.tracing import annotate, span
+
+    older = "an older row, from BEFORE the window her turn rendered"
+    newest = "the newest row, the one her turn actually rendered"
+    rendered = (
+        f'<group_transcript window="1" description="d">\n'
+        f'<m n="1" age="just now" from="Miles">{newest}</m>\n'
+        f'</group_transcript>'
+    )
+
+    async def fake_sandbox(_subject: object, **kwargs: Any) -> Sandboxed:
+        # The whole seeded room: the older row PLUS the one the turn renders —
+        # exactly `sandbox_from_snapshot`'s real shape, every row up to the
+        # instant (design/evaluation/11-the-sandbox-rebuild.md §1.8's residual).
+        return Sandboxed(
+            now_ms=int(kwargs["before_ms"]), rows={},
+            transcript=(
+                f'<m n="1" age="1h ago" from="Miles">{older}</m>',
+                f'<m n="2" age="just now" from="Miles">{newest}</m>',
+            ),
+        )
+
+    monkeypatch.setattr(backbone, "sandbox_from_snapshot", fake_sandbox)
+
+    async def fake_drive(_subject: object, _case: object, *, now_ms: int) -> Outcome:
+        # A real `chat` span carrying the block exactly as `_transcript_block`
+        # renders it — the seam `_shown_transcript` reads back.
+        with span("chat", **{"gen_ai.operation.name": "chat"}):
+            annotate(**{"gen_ai.input.messages": rendered})
+        return Outcome(admitted=None, said=("ok",))
+
+    monkeypatch.setitem(ENTRY_POINTS, "tag", EntryPoint(drive=fake_drive))
+
+    judge = _FakeJudge(verdict="PASS")
+    await backbone._drive(_case("window-probe"), _spec("tag", judge=judge))
+
+    assert len(judge.calls) == 1
+    source = judge.calls[0]["source"]
+    assert source is not None, "a turn that spoke must be judged, not skipped"
+    assert newest in source, "the window she was actually shown must reach the judge"
+    assert older not in source, (
+        "a row from BEFORE the rendered window reached the judge — #459 is back"
+    )
 
 
 async def test_drive_never_judges_when_no_judge_is_configured(monkeypatch, one_path):

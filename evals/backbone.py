@@ -456,12 +456,14 @@ def _tool_results(exporter: InMemorySpanExporter) -> tuple[tuple[str, str], ...]
     return tuple(out)
 
 
-def _judge_source(transcript: list[str], results: tuple[tuple[str, str], ...],
+def _judge_source(transcript: str | None, results: tuple[tuple[str, str], ...],
                   criteria: tuple[str, ...]) -> str | None:
-    """The source data a judge grades against. The transcript always; the tool
-    results too when the case grades REPORTING (`tool_status_reported`), since
-    that criterion is about what the results were worth."""
-    parts = ["\n".join(transcript)] if transcript else []
+    """The source data a judge grades against — `transcript` is what
+    `_shown_transcript` read back off the turn's own call, i.e. the window
+    her turn actually rendered (#459), never the whole seeded room. The tool
+    results too when the case grades REPORTING (`tool_status_reported`),
+    since that criterion is about what the results were worth."""
+    parts = [transcript] if transcript else []
     if "tool_status_reported" in criteria and results:
         lines = [f"- {name}: {text}" for name, text in results
                  if name not in ("send_reply", "load_tools")]
@@ -527,6 +529,54 @@ def _shown_now(exporter: InMemorySpanExporter) -> str | None:
                 found = _CLOCK_LINE.search(raw)
                 if found:
                     return found.group(0)
+    return None
+
+
+#: `<group_transcript window="N" description="…">…rows…</group_transcript>`
+#: (`nora.domain.blocks.ContextBlock.render`, `nora.agent.prefill.
+#: _transcript_block`) — the body is what `_transcript_block` names group 1.
+#: A body row is XML-escaped (R-13/R-13b), so a real `</group_transcript>`
+#: cannot appear inside one and end the match early; `re.DOTALL` lets `.`
+#: cross the row boundaries a multi-row window always has.
+_GROUP_TRANSCRIPT = re.compile(
+    r'<group_transcript\b[^>]*>\n?(.*?)\n?</group_transcript>', re.DOTALL,
+)
+
+
+def _shown_transcript(exporter: InMemorySpanExporter) -> str | None:
+    """The `<group_transcript>` block's body exactly as the turn's own model
+    call carried it — the window HER TURN rendered, quote-chase growth
+    included, read back off the call rather than re-derived from
+    `context_window` (#459: `sandbox_from_snapshot`'s `Sandboxed.transcript`
+    is every row up to the instant, unbounded, and the residual it left was
+    that a judge could be handed a line she was never shown).
+
+    Same scan `_shown_now` runs for the clock line: every string on every
+    captured `chat`-operation span, attributes then events, earliest span
+    first. The block is assembled once per turn and rides on every model call
+    the turn makes, so the first match is the turn's own render.
+
+    `None` when no call was captured, or the call carried no such block — an
+    entry point that never assembles one (`gate`, `dreamer`), or a room whose
+    window rendered with an empty body and was dropped before it reached the
+    model (`nora.domain.blocks.assemble` drops an empty block entirely). A
+    judge given `source=None` still grades — `Judge.grade`'s own docstring:
+    "meaningful with or without source data" — so `None` here is a fact
+    about the turn, not a reason to fall back to the unbounded seed.
+    """
+    chats = [
+        span for span in exporter.get_finished_spans()
+        if (span.attributes or {}).get("gen_ai.operation.name") == "chat"
+    ]
+    for span in sorted(chats, key=lambda s: s.start_time or 0):
+        values = [*(span.attributes or {}).values()]
+        for event in span.events or ():
+            values.extend((event.attributes or {}).values())
+        for raw in values:
+            if isinstance(raw, str):
+                found = _GROUP_TRANSCRIPT.search(raw)
+                if found:
+                    return found.group(1)
     return None
 
 
@@ -969,6 +1019,7 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
             tool_results = _tool_results(exporter)
             tool_inputs = _tool_inputs(exporter)
             shown_now = _shown_now(exporter)
+            shown_transcript = _shown_transcript(exporter)
             shown = shown_where(exporter.get_finished_spans())
             _SPEND.append(spend)
             outcome = _check_the_corpus_assertions(nora_case, outcome, seeded.rows)
@@ -1003,9 +1054,12 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
                     asked=nora_case.input,
                     doctrine=subject.deps.doctrine.doctrine_text,
                     # The SOURCE the reply had to ground against — the window
-                    # she was seeded with, and for a reporting case the tool
+                    # her turn actually RENDERED (`shown_transcript`, #459),
+                    # not `seeded.transcript` (every row `sandbox_from_snapshot`
+                    # read back, unbounded — the room up to the instant, not
+                    # what she was shown), and for a reporting case the tool
                     # results too. Without it the judge grades BLIND (DEC-75).
-                    source=_judge_source(seeded.transcript, tool_results, criteria),
+                    source=_judge_source(shown_transcript, tool_results, criteria),
                     extra=criteria_for(criteria),
                     facts=_presence_facts(
                         spec, md, room=room, shown=shown, tools=tools_called,
