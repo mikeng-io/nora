@@ -185,13 +185,17 @@ message content, may add procedure and MUST NOT relax a rule above it, keeps
 1. **Personalization moved into `conduct.md` (v32)** and the skill was
    retired: it is a principle that plans and pictures need too, and cost did
    not separate the options (finding 1). The precedent is `self-description`
-   into `identity.md` on 2026-09-17.
+   into `identity.md` on 2026-09-17. Two things changed besides the text's
+   home: its opening now scopes it (an answer that claims something about
+   these people; a single asked fact is one check and none of it), replacing
+   the skill's trigger and not-for; and it now ranks where conduct does,
+   below the room's situation, where the skill ranked above it.
 2. **Navigation redesigned.** Its description now says what it covers. Its
    body adds where each person starts: close to leaving, where they are now;
-   well before, where they usually are at that hour, said as usual; what they
-   say about themselves above both; personal places by their saved names. It
-   points to conduct's personalization rule for whose plan it is. Every
-   earlier rule is kept.
+   well before, their usual places, said as usual; what they say about
+   themselves in the conversation, now, above both; personal places by their
+   saved names. It points to conduct's rule for whose memory to read deeply.
+   Every earlier rule is kept.
 3. **Checks added:** token ceilings, the 80 token description, no dashes.
 4. **To do:** `skills` rows in `tool_selection` for the reach test, and a
    check that a skill's authority keys agree.

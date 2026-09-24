@@ -1369,7 +1369,8 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # second call returns the identical answer"). At 1, R-7's repeat veto ("you
     # already called skills and have that context, answer from what you have")
     # is precisely the right thing to tell a model that tries. Two skills
-    # shipped then (`navigation`, `personalization`), and one message can
+    # shipped then (`navigation`, `personalization`, the latter retired into
+    # conduct.md on 2026-09-24), and one message can
     # legitimately span both domains — a wayfinding question with a
     # personalization angle — so a turn may need two DIFFERENT activations. The
     # repeat-veto still stops a second load of the SAME skill; 2 allows one of
@@ -4498,7 +4499,8 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         coordinate. It looks each one up itself. For a
         PERSONAL place name (home, someone's home, work), call `saved_places`
         first and pass the saved name; never guess one from earlier messages.
-        An `address` that `where_is` gave you MAY be the origin.
+        An `address` that `reverse_geocode` gave you for a `where_is` position
+        MAY be the origin.
 
         Returns `status`: ok, no_route, unavailable or refused, with a `note` on
         how to report it.
