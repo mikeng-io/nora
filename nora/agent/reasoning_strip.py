@@ -7,6 +7,10 @@ OBSERVATION ONLY. Nothing here changes a request, a retry, a `reasoning_effort`
 or a transport. The drop is deterministic — a request-shape incompatibility,
 not flakiness — and a retry would turn it into an apparently intermittent one.
 
+The FIX lives beside it, not in it: `nora.agent.reasoning_carry` puts the
+reasoning back on the wire, and the watch asks the model which blocks it still
+drops (`dropped_reasoning_blocks`) rather than assuming all of them are.
+
 WHY THE DETECTOR IS NOT A LOG SCRAPER
 -------------------------------------
 The only signal the SDK emits is one line from `strands.models.openai` at
@@ -115,6 +119,27 @@ def reasoning_blocks(messages: Iterable[Any] | None) -> int:
             if isinstance(block, dict) and REASONING_BLOCK_KEY in block
         )
     return total
+
+
+def dropped_reasoning_blocks(model: Any, messages: Iterable[Any] | None) -> int:
+    """How many reasoning blocks THIS model's request will drop.
+
+    A model that carries reasoning (`nora.agent.reasoning_carry`, #325's fix)
+    answers for itself through `uncarried_reasoning_blocks`, because only its
+    own formatter knows which blocks reach the wire. Any other model is the
+    SDK's `OpenAIModel`, which drops every one (`reasoning_blocks`).
+
+    Fails toward COUNTING: a carrying model whose answer cannot be read is
+    recorded as having dropped everything, never as having dropped nothing. An
+    over-count is visible in the table; an under-count reads as the fix.
+    """
+    count = getattr(model, "uncarried_reasoning_blocks", None)
+    if callable(count):
+        try:
+            return int(count(messages))
+        except Exception:  # noqa: BLE001 — on the reply path, inside a hook
+            log.warning("reasoning_strip: the model could not count its drops")
+    return reasoning_blocks(messages)
 
 
 def _model_identity(agent: Any) -> tuple[str, str]:
@@ -236,7 +261,10 @@ class ReasoningStripWatch(HookProvider):
                 self._model = model
             if effort:
                 self._reasoning_effort = effort
-            self._pending = (len(messages), reasoning_blocks(messages))
+            self._pending = (
+                len(messages),
+                dropped_reasoning_blocks(getattr(agent, "model", None), messages),
+            )
         except Exception:
             log.exception("ReasoningStripWatch._before_model raised; ignoring")
             self._pending = None

@@ -44,7 +44,7 @@ from strands.vended_plugins.skills import AgentSkills
 
 from ..domain.errors import PartialReplyError
 from .guards import ReplyGuard, ToolCallLog
-from .punctuation import DashFreeOpenAIModel
+from .reasoning_carry import ReasoningCarryingOpenAIModel
 from .tool_choice import FIRST_CALL
 
 log = logging.getLogger("nora.factory")
@@ -136,8 +136,13 @@ def create_model_provider(
 
     **Dash-free** (`nora.agent.punctuation`): the request carries no em dash,
     because she copies the ones she is shown.
+
+    **Reasoning-carrying** (`nora.agent.reasoning_carry`, #325): a
+    continuation call carries the reasoning the previous call produced, as the
+    `reasoning` field the upstream reads, instead of the SDK dropping it. Inert
+    at `reasoning_effort = "none"`, where there is no reasoning to carry.
     """
-    return DashFreeOpenAIModel(
+    return ReasoningCarryingOpenAIModel(
         model_id=model,
         client=client,
         params={

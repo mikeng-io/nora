@@ -676,6 +676,16 @@ not raise: the turn runs on and she speaks with her reasoning gone (#325, read
 back 2026-09-17). ADR 0011 measured the same transport limitation on the
 relevance gate as a **safety breach**, not merely as degradation.
 
+**Carried since #325's fix (2026-09-25).** Every provider `nora.agent.factory`
+builds now puts each assistant message's reasoning back on the wire as the
+`reasoning` field (`nora.agent.reasoning_carry`); the upstream reads that field
+and discards `reasoning_content`, measured by `prompt_tokens` on direct
+requests. The watch asks the model which blocks it still drops, so from the
+deploy of that change a `dreamer:*` row at `low` reads `strips = 0` with
+`chances > 0`: that is the fix, not a blind instrument. A non-zero `strips`
+after it is a block the carry could not place (a reasoning-only or redacted
+block), and is news.
+
 **Read the table, not the counter.** `nora_reasoning_strip_total` exists and is
 useful inside one uptime window, but it resets on every deploy, and an absent
 series there means "nothing since the last restart" — never "never happened".
@@ -711,8 +721,9 @@ room; the second is a background research pass that holds no act verb.
 - **`pct = 0` at `reasoning_effort = 'none'` means IMPOSSIBLE, not healthy.**
   A path emitting no reasoning cannot have any stripped. As of 2026-09-17 the
   tag and participation paths are at `none` and every Dreamer adaptor is at
-  `low`, so a clean tag row is expected and a clean `dreamer:*` row at `low` is
-  the reading that would be news.
+  `low`, so a clean tag row is expected. Before the carry landed a clean
+  `dreamer:*` row at `low` would have been news; after it, it is the expected
+  reading (see above).
 - **No rows for a path is not a zero.** A row is written only for a turn that
   went MULTI-TURN, so a path with no rows had no tool-using turns in the
   window — check `nora_tool_call_log_writes_total` or the tool log before
@@ -757,7 +768,7 @@ longer than one deploy.
 
 Nothing acts on this signal, deliberately: the drop is deterministic, and a
 retry would turn a request-shape incompatibility into an apparently
-intermittent one. See `docs/adr/0013-the-reasoning-strip-is-counted-in-postgres.md`.
+intermittent one. The fix is the request shape itself (the carry above). See `docs/adr/0013-the-reasoning-strip-is-counted-in-postgres.md`.
 
 ## 7. "Where do eval results live?"
 
