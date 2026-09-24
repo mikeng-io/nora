@@ -109,7 +109,8 @@ Two existing mechanisms do the rest:
 2. **Parser**: a `reel`/`post`/`link` media kind and its label, so the
    transcript reads `[reel a3f2c1]` beside the caption. *Not built this way —
    see 2026-09-24: the kind is a word in the shared line, read off the url,
-   and the thumbnail keeps the ordinary `[image a3f2c1]` label.*
+   and the thumbnail is labelled `[cover image a3f2c1]` (it kept the
+   ordinary `[image a3f2c1]` until «the cover says it is one» below).*
 3. **Nothing else.** Depth 2 rides the custody path that now exists for images;
    depth 3 is `media_fetch` with a url, which already works.
 
