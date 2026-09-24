@@ -115,7 +115,7 @@
   "name": "D11 a retired note cancels the row",
   "file": "nora/app/proactive_screen.py",
   "old": "        if current[0].retired_at is not None and not merged:\n            return ReminderState.CANCELLED, CANCELLED_NOTE_RETIRED",
-  "new": "        if False:\n            return ReminderState.CANCELLED, CANCELLED_NOTE_RETIRED",
+  "new": "        if current[0].retired_at is not None and not merged:\n            return None",
   "target": "tests/unit/test_heartbeat_loop.py -k a_retired_note_cancels_the_row"
  },
  {
