@@ -80,12 +80,15 @@ _RESULT = ("r" * 3000) + _FINDING + ("r" * 500)
 #: Her `recovered` reply: written 300 ms AFTER the turn's record closed, and
 #: production's fold ran at 800 ms and read it.
 _REPLY_AT = BEFORE_MS + 300
+#: A revision written long after the turn — where the real chain begins.
+_LATER_CHAIN = "LATER-CHAIN-POSITION"
+_COUNTERFACTUAL = {"counterfactual": {"varies": "prior", "why": "predates the chain"}}
 _FOLDED = BEFORE_MS + 800
 
 
 async def _seed(
     pg_url: str, pg_template: str, tmp_path: Any, *, prior: bool, folded: bool = True,
-    phantom_row: bool = False,
+    phantom_row: bool = False, later_chain: bool = False,
 ) -> Any:
     # ANOTHER ROOM FIRST, so the probe room's rows start at a source id the
     # sandbox will not reuse. Without the offset, source and sandbox ids agree
@@ -131,6 +134,14 @@ async def _seed(
             await standing.write(standing=Standing(
                 platform=ROOM[0], conversation_id=ROOM[1], body=_PRODUCTION_FOLD,
                 fold_count=4, updated_at=_FOLDED, last_folded_row_id=by_body["row-7"].id,
+            ))
+        if later_chain:
+            # The chain BEGINS long after the turn — the shape of every
+            # pre-2026-09-20 moment. Its first revision is today's position,
+            # never the one the turn had.
+            await standing.write(standing=Standing(
+                platform=ROOM[0], conversation_id=ROOM[1], body=_LATER_CHAIN,
+                fold_count=1, updated_at=BEFORE_MS + 16 * 86_400_000,
             ))
         async with engine.begin() as conn:
             await conn.execute(sa.insert(TURN_VERDICT), [
@@ -380,3 +391,106 @@ async def test_a_row_id_the_sandbox_cannot_translate_is_an_error(
     assert out.label == ERROR, out.reason
     assert "was not seeded with" in str(state_of(data, NORA_ERROR)), state_of(data, NORA_ERROR)
     assert not state_of(data, NORA_SHOWN)
+
+
+# --- the counterfactual: a prior declared ABSENT (issue #445) ----------------
+
+
+@pytest.mark.asyncio
+async def test_an_absent_prior_renders_no_position_yet_and_reads_no_revision(
+    pg_url, pg_template, tmp_path, monkeypatch,
+) -> None:
+    """The declared counterfactual: the fold is given no prior, and no revision
+    — not even the chain's first, written long after — reaches it. Every
+    as-of read the path makes comes back empty; the room is cut where her
+    reply landed, so the fold still reads the reply and the search."""
+    monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
+    source = await _seed(
+        pg_url, pg_template, tmp_path, prior=False, folded=False, later_chain=True,
+    )
+    read: list[Any] = []
+    real_read_as_of = SqlStandingStore.read_as_of
+
+    async def spy(self: Any, **kwargs: Any) -> Any:
+        found = await real_read_as_of(self, **kwargs)
+        read.append(found)
+        return found
+
+    monkeypatch.setattr(SqlStandingStore, "read_as_of", spy)
+    out, data = await _run(source, metadata={"print_input": True, **_COUNTERFACTUAL},
+                           before_ms=_REPLY_AT)
+    shown = state_of(data, NORA_SHOWN) or ""
+    assert "no position yet" in shown, shown[:2000]
+    assert _LATER_CHAIN not in shown
+    assert all(found is None for found in read), "a revision was read on the absent-prior path"
+    assert shown.count(">row-7</m>") == 1, "her delivered reply is missing from the room"
+    assert _FINDING in shown
+    assert out.label == ERROR and "no model was called" in str(state_of(data, NORA_ERROR))
+
+
+@pytest.mark.asyncio
+async def test_a_counterfactual_prior_where_the_chain_holds_one_is_refused(
+    pg_url, pg_template, tmp_path, monkeypatch,
+) -> None:
+    """The counterfactual never stands in for a real prior: the chain holds a
+    revision before this turn, so declaring it absent is refused — before the
+    fold renders anything."""
+    monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
+    source = await _seed(pg_url, pg_template, tmp_path, prior=True, folded=False)
+    out, data = await _run(source, metadata={"print_input": True, **_COUNTERFACTUAL},
+                           before_ms=_REPLY_AT)
+    assert out.label == ERROR, out.reason
+    assert "refused where a real one exists" in str(state_of(data, NORA_ERROR))
+    assert not state_of(data, NORA_SHOWN)
+
+
+@pytest.mark.asyncio
+async def test_a_counterfactual_is_anchored_where_her_reply_landed(
+    pg_url, pg_template, tmp_path, monkeypatch,
+) -> None:
+    """No revision dates a pre-chain fold, so the anchor is her reply's
+    instant. Cut at the turn's own `created_at`, the room would lack the reply
+    the property is graded against."""
+    monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
+    source = await _seed(
+        pg_url, pg_template, tmp_path, prior=False, folded=False, later_chain=True,
+    )
+    out, data = await _run(source, metadata={"print_input": True, **_COUNTERFACTUAL},
+                           before_ms=BEFORE_MS)
+    assert out.label == ERROR, out.reason
+    assert "not the instant her reply" in str(state_of(data, NORA_ERROR))
+
+
+@pytest.mark.asyncio
+async def test_the_counterfactuals_judge_sees_the_search_and_the_delivered_reply(
+    pg_url, pg_template, tmp_path, monkeypatch,
+) -> None:
+    """To tell SENT from UNSENT the judge needs both the search result and the
+    reply the room received — which, on a `recovered` turn, lands after the
+    turn's record closes — and it is told the prior was withheld by design."""
+    monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
+    source = await _seed(
+        pg_url, pg_template, tmp_path, prior=False, folded=False, later_chain=True,
+    )
+
+    async def written(subject: Any, turn: Any, *, rows: Any, call_model: bool = True) -> Folded:
+        return Folded(outcome="written", position="P-WRITTEN", calls=())
+
+    monkeypatch.setattr("evals.rebuilt.entry.fold", written)
+    graded: dict[str, Any] = {}
+
+    class Recording:
+        async def grade_position(self, **kwargs: Any) -> Judgement:
+            graded.update(kwargs)
+            raw = json.dumps([{"criterion": POSITION_CRITERION, "score": 1.0,
+                               "confidence": 0.9, "rationale": "kept an unsent one"}])
+            return Judgement(criterion=POSITION_CRITERION, verdict="PASS", samples=(raw,))
+
+    out, _data = await _run(source, metadata=dict(_COUNTERFACTUAL), judge=Recording(),
+                            before_ms=_REPLY_AT)
+    assert out.label == PASS, out.reason
+    evidence = graded["evidence"]
+    assert _FINDING in evidence, "the search result is missing from the judge's evidence"
+    assert "Nora: row-7" in evidence, "the delivered reply is missing from the judge's evidence"
+    assert "COUNTERFACTUAL" in evidence
+    assert _LATER_CHAIN not in evidence

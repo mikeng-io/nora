@@ -53,6 +53,17 @@ without those rows its arm cannot reproduce what production did. The table
 exists in both arms' schema and nothing on this branch reads it, so seeding it
 changes one arm's behaviour only where production's behaviour changed.
 
+**One counterfactual: an ABSENT prior** (`read_fold_turn(prior_absent=True)`).
+A turn from before the chain began (2026-09-20) has a real record and a real
+room but no recoverable position. A case may declare that tier varied — the
+fold is given no prior and renders «no position yet» — and it is refused
+wherever the chain DOES hold a revision at or before the turn, so the
+counterfactual can never stand in for a real prior. No revision is read into
+the fold on this path. Its anchor cannot be a later revision (there is none
+that day), so it is the instant her reply to the turn landed: her first row
+within `_REPLY_GRACE_MS` after `created_at` (a `recovered` reply is written
+after the record closes), or `created_at` when she wrote none there.
+
 **Two ways to call the model, one of them is not calling it.** `call_model=
 False` swaps the client for a recorder that returns an empty completion: the
 fold renders its whole input, records it, and stops at the parse (`malformed`)
@@ -75,7 +86,7 @@ from nora.domain.standing import Standing
 from nora.domain.tag_trace import TagTrace
 from nora.engagement.stages.debrief import Completion
 from nora.infra.sql import create_readonly_sql_engine, create_sql_engine
-from nora.infra.sql.schema import STANDING_REVISION, TAG_TRACE, TURN_VERDICT
+from nora.infra.sql.schema import MESSAGES, STANDING_REVISION, TAG_TRACE, TURN_VERDICT
 from nora.infra.sql.snapshot import snapshot
 from nora.infra.sql.standing import SqlStandingStore
 
@@ -93,6 +104,12 @@ __all__ = ["FoldCall", "FoldTurn", "Folded", "fold", "read_fold_turn"]
 #: (`nora.engagement.stages.debrief.run`'s own docstring). Reading its delta is
 #: how the outcome is known: `_debrief` returns nothing, on purpose.
 _OUTCOMES = "nora_debrief_total"
+
+#: How long after a turn's record closes her own reply to it may land and still
+#: be the turn's. MEASURED on the `recovered` turns in the clone: 14-553 ms.
+#: Five seconds is headroom, not a guess at the tail: a later row of hers is
+#: another turn's.
+_REPLY_GRACE_MS = 5_000
 
 
 @dataclass(frozen=True, slots=True)
@@ -120,6 +137,13 @@ class FoldTurn:
     seen: tuple[TranscriptRow, ...] = ()
     #: `turn_verdict` rows of this conversation as of the turn, verbatim.
     verdicts: tuple[Mapping[str, Any], ...] = ()
+    #: The instant the ROOM is read at: `folded_at` for a real prior; for a
+    #: counterfactual absent prior, the instant her reply landed.
+    room_at: int = 0
+    #: True when the prior is the declared counterfactual: ABSENT, because
+    #: the chain holds nothing that old. `prior` is then `None` by
+    #: construction, never by a read that came back empty.
+    counterfactual_prior: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -149,8 +173,13 @@ class Folded:
     calls: tuple[FoldCall, ...]
 
 
-async def read_fold_turn(subject: Subject, *, source_url: str, tag_id: str) -> FoldTurn:
+async def read_fold_turn(
+    subject: Subject, *, source_url: str, tag_id: str, prior_absent: bool = False,
+) -> FoldTurn:
     """The turn `tag_id` names, in the subject's room, as the source holds it.
+
+    `prior_absent` is the declared counterfactual (module docstring): refused
+    with `ValueError` when the chain holds any revision at or before the turn.
 
     Read-only by construction (`create_readonly_sql_engine`). Refused — never
     substituted — when the id names no turn, or a turn in another room: the
@@ -175,6 +204,30 @@ async def read_fold_turn(subject: Subject, *, source_url: str, tag_id: str) -> F
                     f"tag {tag_id!r} was a turn in another conversation; the "
                     "case's snapshot names the room the fold writes into"
                 )
+            reply_at = None
+            if prior_absent:
+                held = (await conn.execute(
+                    sa.select(sa.func.count()).select_from(STANDING_REVISION).where(
+                        STANDING_REVISION.c.platform == platform,
+                        STANDING_REVISION.c.conversation_id == conversation_id,
+                        STANDING_REVISION.c.updated_at <= row.created_at,
+                    )
+                )).scalar()
+                if held:
+                    raise ValueError(
+                        f"the standing chain holds {held} revision(s) at or "
+                        f"before tag {tag_id!r}; a counterfactual ABSENT prior "
+                        "is refused where a real one exists"
+                    )
+                reply_at = (await conn.execute(
+                    sa.select(sa.func.min(MESSAGES.c.ts)).where(
+                        MESSAGES.c.platform == platform,
+                        MESSAGES.c.conversation_id == conversation_id,
+                        MESSAGES.c.is_nora == 1,
+                        MESSAGES.c.ts > row.created_at,
+                        MESSAGES.c.ts <= row.created_at + _REPLY_GRACE_MS,
+                    )
+                )).scalar()
             folded_at = (await conn.execute(
                 sa.select(sa.func.min(STANDING_REVISION.c.updated_at)).where(
                     STANDING_REVISION.c.platform == platform,
@@ -198,24 +251,37 @@ async def read_fold_turn(subject: Subject, *, source_url: str, tag_id: str) -> F
             outcome=row.outcome,
             created_at=row.created_at,
         )
-        # BEFORE the turn: the chain's newest revision at or before it.
-        standing_store = SqlStandingStore(engine)
-        prior = await standing_store.read_as_of(
-            platform=platform, conversation_id=conversation_id,
-            before_ms=trace.created_at,
-        )
+        prior = None
+        if prior_absent:
+            room_at = int(reply_at) if reply_at is not None else trace.created_at
+        else:
+            # BEFORE the turn: the chain's newest revision at or before it.
+            standing_store = SqlStandingStore(engine)
+            prior = await standing_store.read_as_of(
+                platform=platform, conversation_id=conversation_id,
+                before_ms=trace.created_at,
+            )
+            room_at = int(folded_at) if folded_at is not None else trace.created_at
         # The ROOM as the fold read it: the same reconstruction the sandbox is
-        # seeded from, at the fold's own instant.
+        # seeded from, at the room's instant.
         shot = await snapshot(
             engine,
             platform=platform,
             conversation_id=conversation_id,
             culture_key=subject.culture_key,
             unit=subject.unit,
-            before_ms=int(folded_at) if folded_at is not None else trace.created_at,
+            before_ms=room_at,
         )
     finally:
         await engine.dispose()
+    if prior_absent and shot.standing is not None:
+        # The count above covers the turn's own instant; this covers the few
+        # seconds up to the reply. A revision there would be seeded into the
+        # sandbox and silently become the prior the case says is absent.
+        raise ValueError(
+            f"a standing revision stands at {room_at}, the room's instant for "
+            f"tag {tag_id!r}; a counterfactual ABSENT prior cannot be honoured"
+        )
     watermark = (prior.last_folded_row_id if prior is not None else None) or 0
     batch = sorted(
         (r for r in shot.transcript if r.id > watermark), key=lambda r: r.id,
@@ -230,6 +296,8 @@ async def read_fold_turn(subject: Subject, *, source_url: str, tag_id: str) -> F
         folded_at=int(folded_at) if folded_at is not None else None,
         seen=tuple(sorted(by_id.values(), key=lambda r: r.id)),
         verdicts=verdicts,
+        room_at=room_at,
+        counterfactual_prior=prior_absent,
     )
 
 
@@ -318,7 +386,16 @@ async def fold(
 
     # The prior, with its watermark in the sandbox's id space. `replace`, so
     # every other field the arm's `Standing` carries rides through unchanged.
-    if turn.prior is not None:
+    # With NO prior (the counterfactual), the sandbox must hold none either:
+    # anything there would be folded as the position the case says is absent.
+    if turn.prior is None:
+        held = await wiring.store.read(platform=platform, conversation_id=conversation_id)
+        if held is not None:
+            raise ValueError(
+                "the sandbox holds a position and the case declares the prior "
+                "absent; folding would read one it says does not exist"
+            )
+    else:
         watermark = turn.prior.last_folded_row_id
         await wiring.store.write(standing=dataclasses.replace(
             turn.prior,

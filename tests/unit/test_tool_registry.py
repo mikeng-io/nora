@@ -105,6 +105,9 @@ def test_the_registry_exposes_every_declared_tool():
         # x_read and x_search (DEC-201, replacing DEC-151's social_fetch):
         # READ-ONLY X via the host bridge.
         "x_read", "x_search",
+        # linkedin_read and linkedin_search (DEC-201): READ-ONLY LinkedIn via
+        # the same host bridge, inert unless [social.linkedin] enabled.
+        "linkedin_read", "linkedin_search",
         # instagram_read (design/instagram-adoption/18): a person's Instagram
         # profile or story, over the instagram-bridge.
         "instagram_read",
@@ -282,6 +285,10 @@ def test_budgets_match_todays_table():
         # second try. x_search: a search and one refinement.
         "x_read": 3,
         "x_search": 2,
+        # linkedin_read: a profile, then its experience or posts.
+        # linkedin_search: one search a turn, each spends a monthly limit.
+        "linkedin_read": 2,
+        "linkedin_search": 1,
         # instagram_read (design/instagram-adoption/18): one read, a second
         # for the other `what` or «no, the other one».
         "instagram_read": 2,
@@ -498,6 +505,7 @@ def test_the_confusable_retrieval_tools_all_declare_a_source_tier():
         "reverse_geocode": "confirmed",
         "saved_places": "remembered", "web_search": "web", "web_fetch": "web",
         "x_read": "web", "x_search": "web",
+        "linkedin_read": "web", "linkedin_search": "web",
         "instagram_read": "web", "instagram_search": "web",
     }
     for name, tier in expected.items():
@@ -736,6 +744,8 @@ READ_ONLY = frozenset({
     # tools' closed vocabulary, the bridge's host-side allowlist, this
     # declaration.
     "x_read", "x_search",
+    # DEC-201: the LinkedIn tools, the same three layers.
+    "linkedin_read", "linkedin_search",
     # R-86 extended (design/instagram-adoption/18): the same three layers,
     # with a client that only ever issues GET.
     "instagram_read",

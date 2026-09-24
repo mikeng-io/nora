@@ -149,6 +149,7 @@ class ToolRegistry:
         video_readings: VideoReadingStore | None = None,
         search: SearchProvider | None = None,
         social: SocialProvider | None = None,
+        linkedin: SocialProvider | None = None,
         weather: WeatherProvider | None = None,
         presence: PresenceReader | None = None,
         circles: tuple[Circle, ...] = (),
@@ -282,6 +283,11 @@ class ToolRegistry:
         # so every composition that has not wired one leaves this None and the
         # tool answers `unavailable` (the honest «not configured» state, R-5).
         self._social = social
+        # `linkedin` is the same router, handed over only when `[social.linkedin]
+        # enabled` (design/social-per-network/10 §Config): the router's one
+        # default backend also serves X, so LinkedIn's switch cannot live in
+        # it. `None` leaves both LinkedIn tools answering «not set up».
+        self._linkedin = linkedin
         # `weather` (HKO, DEC-72) is NOT default-constructed either, for symmetry
         # with `route`/`search`: it ships behind `[weather] enabled`, and every
         # composition that has not wired one leaves this None and `weather` answers
@@ -885,6 +891,7 @@ class ToolRegistry:
             parking_source=self._parking,
             street_parking_source=self._street_parking,
             social_source=self._social,
+            linkedin_source=self._linkedin,
             presence_source=self._presence, presence_circles=self._circles,
             location_trusted=location_trusted,
             mobility=self._mobility,

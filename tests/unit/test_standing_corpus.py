@@ -116,13 +116,26 @@ def test_the_corpus_is_registered_as_judge_only() -> None:
 
 
 def test_the_corpus_holds_the_mix_the_design_asks_for() -> None:
-    """≥3 carry, ≥3 stale, ≥3 residue, ≥2 recap — ACTIVE cases, every one a
-    named turn at that turn's own instant."""
+    """≥3 carry, ≥3 stale, ≥2 recap on REAL moments, and the operator's own
+    residue case running — ACTIVE cases, every one a named turn at its own
+    instant.
+
+    Residue is the exception, and stated rather than hidden (issue #445): no
+    post-chain turn has the shape (options the room could act on, some sent),
+    and the three that stood in for it measured something else, so they are
+    parked. The one residue case is the operator's real moment with its prior
+    declared absent — a counterfactual, counted as one."""
     cases = load_all("standing")
     active = [c for c in cases if not c.metadata.get("parked")]
-    kinds = collections.Counter(c.metadata["kind"] for c in active)
-    assert kinds["carry"] >= 3 and kinds["stale"] >= 3 and kinds["residue"] >= 3, kinds
+    real = [c for c in active if not c.metadata.get("counterfactual")]
+    kinds = collections.Counter(c.metadata["kind"] for c in real)
+    assert kinds["carry"] >= 3 and kinds["stale"] >= 3, kinds
     assert kinds["recap"] >= 2, kinds
+    residue = [c for c in active if c.metadata["kind"] == "residue"]
+    assert residue, "the corpus measures no residue at all"
+    assert all(c.metadata["counterfactual"].get("varies") == "prior" for c in residue), (
+        "a residue case became real: move it out of this assertion"
+    )
     for case in active:
         assert case.metadata["snapshot"], case.name
         assert case.metadata["tag_id"], case.name
@@ -253,3 +266,26 @@ def test_a_row_id_the_sandbox_did_not_seed_is_refused_not_guessed() -> None:
     assert _translated(7, {7: 1}, what="w") == 1
     with pytest.raises(LookupError, match="was not seeded with"):
         _translated(8, {7: 1}, what="the turn's transcript")
+
+
+@pytest.mark.parametrize(
+    ("corpus", "varies", "complaint"),
+    [
+        ("standing", "culture", "may vary only its prior"),
+        ("no_trigger", "prior", "which only"),
+    ],
+)
+def test_the_prior_is_varied_in_the_standing_corpus_and_nothing_else_is(
+    corpus, varies, complaint,
+) -> None:
+    """The counterfactual set stays closed per corpus: an absent prior means
+    nothing outside the fold, and the fold varies nothing but its prior."""
+    row = {
+        "name": "probe", "entry": "standing", "expect": "fold",
+        "expected_output": "a thread is still held",
+        "metadata": {"tag_id": "t", "kind": "carry"},
+        "snapshot": {"platform": "signal", "conversation_id": "c", "before_ms": 1},
+        "counterfactual": {"varies": varies, "why": "because"},
+    }
+    with pytest.raises(ValueError, match=complaint):
+        _check(corpus, row)

@@ -183,6 +183,25 @@ async def test_note_read_on_a_merged_title_reaches_its_survivor():
     assert out["body"] == "time and place open"
 
 
+async def test_note_create_refuses_an_open_title():
+    """design 41 §7.2. Nothing in the schema stops two open notes sharing a
+    title, and one is an amplifier on both write paths — so the tag path
+    refuses to start one, under any spelling `note_handle` treats as the
+    same, and points the model at the note that already carries it."""
+    store = InMemoryNoteStore()
+    await _seed(store, title="Saturday dinner", body="time and place open")
+    tools = _tools(notes=store)
+
+    out = await tools["note_create"](
+        title="  saturday DINNER ", description="d", uncertainty="u",
+        closing_condition="c", body="b", anchor_date=20261011,
+    )
+
+    assert out["status"] == "refused"
+    assert "note_read" in out["note"]
+    assert len(await store.standing(unit=UNIT)) == 1
+
+
 async def test_note_read_answers_nothing_found_for_a_title_that_is_not_there():
     store = InMemoryNoteStore()
     await _seed(store, title="Dinner, 9 Sept", body="b")

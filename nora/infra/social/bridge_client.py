@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import Any
 
 import aiohttp
@@ -174,6 +175,12 @@ def _render_text(data: Any) -> str:
     return "\n\n".join(p for p in parts if p)
 
 
+def _text(value: Any) -> str:
+    """A field as one stripped string, or "" for anything that is not a
+    non-empty string (LinkedIn leaves an absent section as "")."""
+    return value.strip() if isinstance(value, str) else ""
+
+
 def _render_item(item: dict[str, Any]) -> str:
     """One opencli item → readable lines, unknown keys ignored gracefully.
 
@@ -195,26 +202,68 @@ def _render_item(item: dict[str, Any]) -> str:
         head = ""
     if item.get("verified"):
         head = f"{head} ✓" if head else "verified"
-    body = item.get("text") or item.get("bio") or ""
+    # LinkedIn (design/social-per-network/10 §"What the result renderer
+    # learns"): a role row is «title at company, dates»; a profile or a
+    # search hit carries a `headline`. Plain strings only: a key LinkedIn
+    # leaves empty renders nothing.
+    role = _text(item.get("title"))
+    if role and _text(item.get("company")):
+        role = f"{role} at {_text(item.get('company'))}"
+    if role and _text(item.get("date_range")):
+        role = f"{role}, {_text(item.get('date_range'))}"
+    headline = _text(item.get("headline"))
+    body = (
+        _text(item.get("text")) or _text(item.get("bio")) or _text(item.get("body"))
+        or _text(item.get("about")) or _text(item.get("description"))
+    )
+    # Labelled one-line facts (a company page's card, a profile's sections).
+    facts = [
+        f"{label}: {_text(item.get(key))}"
+        for label, key in (
+            ("industry", "industry"), ("size", "size"),
+            ("headquarters", "headquarters"), ("founded", "founded"),
+            ("website", "website"), ("specialties", "specialties"),
+            ("experience", "experience"), ("education", "education"),
+            ("featured", "featured"),
+        )
+        if _text(item.get(key))
+    ]
     stats = [
         f"{item[key]} {label}"
         for label, key in (
             ("likes", "likes"), ("retweets", "retweets"), ("replies", "replies"),
             ("views", "views"), ("followers", "followers"),
             ("following", "following"), ("tweets", "tweets"),
+            ("reactions", "reactions"), ("comments", "comments"),
+            ("reposts", "reposts"),
         )
-        if isinstance(item.get(key), int)
+        if isinstance(item.get(key), int) and not isinstance(item.get(key), bool)
     ]
+    # OpenCLI reports 0 impressions on any post that is not the viewer's own,
+    # so a zero says nothing and is dropped.
+    if isinstance(item.get("impressions"), int) and item["impressions"] > 0:
+        stats.append(f"{item['impressions']} impressions")
     if item.get("location"):
         stats.append(f"📍 {item['location']}")
     if item.get("created_at"):
         stats.append(str(item["created_at"]))
-    lines = [line for line in (head, body) if line]
+    if _text(item.get("posted_at")):
+        stats.append(_text(item.get("posted_at")))
+    lines = [line for line in (head, role, headline, body, *facts) if line]
     if stats:
         lines.append(" · ".join(stats))
-    if item.get("url"):
-        lines.append(str(item["url"]))
+    # `profile_url` is a LinkedIn search hit's whole point: which profile to
+    # read next. `raw_text` is never read: it repeats every field unbounded.
+    # A role row (`profile-experience`) repeats its profile's link on every
+    # row, so it is not rendered there.
+    for key in ("url",) if role else ("url", "profile_url"):
+        if _text(item.get(key)):
+            lines.append(_text(item.get(key)))
+            break
     media_urls = item.get("media_urls") or []
+    if isinstance(media_urls, str):
+        # LinkedIn returns one string, not a list (measured 2026-09-24).
+        media_urls = [u for u in re.split(r"[\s,]+", media_urls) if u.startswith("http")]
     posters = item.get("media_posters") or []
     if isinstance(media_urls, list) and media_urls:
         # Rendered as `[image https://…]` / `[video https://…]` — the same

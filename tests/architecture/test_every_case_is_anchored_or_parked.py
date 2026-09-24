@@ -161,7 +161,7 @@ def test_a_case_that_speaks_anchors_where_an_adapter_is_wired(name: str) -> None
 
 
 def test_the_whole_corpus_is_accounted_for() -> None:
-    """219 cases, every one in exactly one state. The number is the corpus
+    """222 cases, every one in exactly one state. The number is the corpus
     as ported on 2026-09-20 (150), plus `tool_selection`'s 16 S2 routing cases
     (2026-09-23, design/tool-catalogue §2c), plus its 4 per-network social
     routing cases (2026-09-24, design/instagram-adoption/18, P5) and P11's 4
@@ -171,17 +171,19 @@ def test_the_whole_corpus_is_accounted_for() -> None:
     shared-item cases (a shared reel in English and Cantonese, a shared post,
     and the reel with its pre-fix `[image …]` rendering; 2026-09-24,
     design/instagram-adoption/13 «the cover says it is one»), plus
-    `standing`'s 15 fold cases (13 anchored, 2 parked before the standing
-    chain; 2026-09-24, design/standing-compact/20-verification §1), plus
+    `standing`'s 15 fold cases (10 anchored, 1 counterfactual with its prior
+    declared absent, 4 parked — issue #445; design/standing-compact/
+    20-verification §1), plus
     `presence`'s 7 (2026-09-24, design/self-awareness/05), plus
     `tool_reporting`'s 8 (2026-09-24, ADR 0015 §4), plus `tool_selection`'s 3
     room-tool rows (2026-09-24, design/self-awareness/07), plus its 3
     image-generation argument cases (2026-09-24: her reference on «draw
     yourself», none on a picture without her, the date written out on a
     poster), plus DEC-201's X handle case (`route_x_read_handle`; the X link
-    and search cases were renamed, not added); a change to it is
+    and search cases were renamed, not added) and its 3 LinkedIn cases (a
+    profile link, a company link, a name to find); a change to it is
     a change to what the suite claims to measure and belongs in a commit that
     says so. Recomputed with `census()` at each merge, never summed."""
     totals = [census(n) for n in CORPORA]
-    assert sum(c.total for c in totals) == 219
-    assert sum(c.active + c.parked for c in totals) == 219
+    assert sum(c.total for c in totals) == 222
+    assert sum(c.active + c.parked for c in totals) == 222

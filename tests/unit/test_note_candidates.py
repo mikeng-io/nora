@@ -890,19 +890,17 @@ async def test_two_same_day_candidates_with_no_entities_are_kept_apart_by_title(
     ) == 0, "and nothing was re-observed either — the branch is not reached"
 
 
-async def test_an_ambiguous_title_creates_rather_than_guessing():
+async def test_an_ambiguous_title_is_left_pending_neither_guessed_nor_created():
     """Two standing notes answer to one title. Appending to the wrong one
-    conflates two arrangements — the failure this whole change removes —
-    while a duplicate overwrites nothing and a reader can see both. NOTHING
-    merges the duplicate afterwards (#236); the gate creates because that is
-    the side that loses no text, not because something downstream tidies up,
-    and counts it `ambiguous` rather than folding it into `created` so the
-    rate of it is readable."""
+    conflates two arrangements — the failure #228 removed. Creating a THIRD
+    note was the answer until 2026-09-24, and it made an exact-title
+    duplicate an amplifier: every later sighting naming that title added
+    another (design 41 §7.0, §7.2). The staging row now stays pending — its
+    text kept, nothing written — and the rate is counted `ambiguous`."""
     metrics = Metrics()
     adaptor, store = _adaptor(metrics=metrics)
-    # Two DIFFERENT stored titles that `note_handle` normalises to one. The
-    # store's own uniqueness is `lower(title)` and does not stop this, and the
-    # index would render both lines as the same word.
+    # Two DIFFERENT stored titles that `note_handle` normalises to one.
+    # Nothing in the schema stops this (design 41 §7.0).
     for i, (stored, anchor) in enumerate(
         (("Dinner", 20260919), ("dinner ", 20261225))
     ):
@@ -926,23 +924,20 @@ async def test_an_ambiguous_title_creates_rather_than_guessing():
         now_ms=NOW + 9,
     )
 
-    assert written == 1
+    assert written == 0
     standing = await store.standing(unit=WS)
-    assert len(standing) == 3, (
-        "a third note, never a guess at which of the two was meant"
-    )
+    assert len(standing) == 2, "no third note"
     for note in standing:
-        if note.title == "Dinner somewhere new":
-            continue
         head = await store.read(unit=WS, note_id=note.id)
         assert head is not None
         assert "a third thing entirely" not in head[1].body, (
             "nothing standing may be appended to on an ambiguous name"
         )
+    [row] = store.create_candidates.values()
+    assert row.status == "pending", "the sighting is kept, not refused"
+    assert row.body == "a third thing entirely"
     assert metrics.get("nora_note_candidate_gate_total", action="ambiguous") == 1
-    assert metrics.get("nora_note_candidate_gate_total", action="created") == 0, (
-        "counted apart from created, or the rate is invisible"
-    )
+    assert metrics.get("nora_note_candidate_gate_total", action="created") == 0
 
 
 async def test_a_title_that_answers_to_nothing_is_counted_apart_from_a_create():

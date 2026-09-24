@@ -164,6 +164,9 @@ def test_every_declared_tool_is_built(wiring):
         # x_read and x_search (DEC-201, replacing DEC-151's social_fetch):
         # READ-ONLY X via the host bridge.
         "x_read", "x_search",
+        # linkedin_read and linkedin_search (DEC-201): READ-ONLY LinkedIn via
+        # the same host bridge, inert unless [social.linkedin] enabled.
+        "linkedin_read", "linkedin_search",
         # instagram_read (design/instagram-adoption/18): a person's Instagram
         # profile or story, over the instagram-bridge.
         "instagram_read",

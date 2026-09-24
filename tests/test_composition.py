@@ -1768,3 +1768,27 @@ async def test_the_instagram_backend_is_composed_with_the_person_index(cfg):
         assert isinstance(router._accounts, InstagramSocialClient)
     finally:
         await deps.background.cancel_all()
+
+
+@pytest.mark.parametrize("linkedin_on", [False, True])
+async def test_the_linkedin_tools_get_the_router_only_when_switched_on(cfg, linkedin_on):
+    """design/social-per-network/10 §Config (DEC-201). The router's one
+    default backend serves X AND LinkedIn, so LinkedIn's switch is at the
+    composition root: `[social.linkedin] enabled` hands the SAME router to the
+    LinkedIn tools, and off hands them `None` while X keeps it. A root that
+    ignored the flag would read LinkedIn on a deployment whose operator never
+    set up a dedicated, private-viewing account."""
+    from nora.infra.social import SocialRouter
+
+    deps = await build_dependencies(override_config(cfg, {
+        "social.enabled": True, "social.linkedin.enabled": linkedin_on,
+    }))
+    try:
+        registry = deps.engagement._tool_registry
+        assert isinstance(registry._social, SocialRouter)
+        if linkedin_on:
+            assert registry._linkedin is registry._social
+        else:
+            assert registry._linkedin is None
+    finally:
+        await deps.background.cancel_all()

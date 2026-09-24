@@ -213,6 +213,16 @@ It gains the LinkedIn keys, and:
 
 ## Config
 
+> **As built (PR 2, 2026-09-24).** `ToolRegistry` takes a second argument,
+> `linkedin`, which the composition root sets to the social router only when
+> `[social.linkedin] enabled`; the two LinkedIn tools read through it and X
+> keeps `social`. `SocialConfig` refuses `[social.linkedin] enabled` without
+> `[social] enabled`. Both LinkedIn tools are `cacheable=False` (the
+> asked-turn rule is a decision about the turn, and a replayed answer would
+> carry it into another) and `time_shiftable=False`. Neither is unit-safe:
+> the Dreamer classification lists them room-scoped, the fail-closed side.
+> The operator set the account's profile viewing to private the same day.
+
 - `[social] enabled` stays the flag for the OpenCLI backend, and so for X.
 - `[social.linkedin] enabled` (default `false`) is new. It follows the
   pattern every backend flag here follows (DEC-151, `[social.instagram]`):

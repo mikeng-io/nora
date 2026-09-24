@@ -997,7 +997,10 @@ def test_r86_social_reads_are_read_only_at_three_layers():
     from nora.infra.social import EXCEPTION_ROUTES, bridge_server
 
     vocabulary = tools_module.social_read_vocabulary()
-    assert set(vocabulary) == {"x_read", "x_search", "instagram_read", "instagram_search"}
+    assert set(vocabulary) == {
+        "x_read", "x_search", "linkedin_read", "linkedin_search",
+        "instagram_read", "instagram_search",
+    }
 
     # Layer 2: every command the bridge can spawn is disjoint from OpenCLI's
     # write verbs (the set in `bridge_server.OPENCLI_WRITE_VERBS`, verified
@@ -1021,6 +1024,7 @@ def test_r86_social_reads_are_read_only_at_three_layers():
                 f"a social read has two tools: {a} and {b}"
             )
     x_reads = vocabulary["x_read"] | vocabulary["x_search"]
+    linkedin_reads = vocabulary["linkedin_read"] | vocabulary["linkedin_search"]
     read, search = vocabulary["instagram_read"], vocabulary["instagram_search"]
     assert read | search == EXCEPTION_ROUTES, (
         "instagram_read and instagram_search read through the instagram-bridge "
@@ -1043,8 +1047,16 @@ def test_r86_social_reads_are_read_only_at_three_layers():
     assert all(platform == "x" for platform, _what in x_reads), (
         "an X tool constructs a read on another network"
     )
-    assert x_reads == set(bridge_server.READ_ONLY_ALLOWLIST), (
-        "x_read and x_search together are exactly what OpenCLI serves"
+    assert all(platform == "linkedin" for platform, _what in linkedin_reads), (
+        "a LinkedIn tool constructs a read on another network"
+    )
+    assert x_reads | linkedin_reads == set(bridge_server.READ_ONLY_ALLOWLIST), (
+        "the X and LinkedIn tools together are exactly what OpenCLI serves"
+    )
+    # DEC-201: `linkedin search` is OpenCLI's JOBS search; LinkedIn's
+    # search row must be `people-search`.
+    assert bridge_server.READ_ONLY_ALLOWLIST[("linkedin", "search")] == (
+        "linkedin", "people-search",
     )
 
     # Layer 3: the declaration the Dreamer's ceiling is derived from.

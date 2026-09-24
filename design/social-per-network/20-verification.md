@@ -68,6 +68,12 @@ Against master at `0014c663`: `social_fetch` was 454 tokens; `x_read` is 336
 moved **12,544 → 12,614 (+70)** for one more tool. Both descriptions are well
 under the Level 3 ceiling of 320.
 
+**PR 2 (2026-09-24), the same method,** against master at `1eaa94b7`:
+`linkedin_read` is 348 tokens (description 155) and `linkedin_search` 196
+(description 98). The resident total moved **12,614 → 13,158 (+544)**. The
+tools are registered whether or not `[social.linkedin]` is on (10 §Config),
+so a deployment with LinkedIn off pays this too.
+
 ## Unmeasured, and what would measure it
 
 | Property | Why it matters | Reading |
