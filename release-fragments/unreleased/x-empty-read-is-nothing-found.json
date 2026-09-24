@@ -1,0 +1,6 @@
+{
+  "type": "fix",
+  "summary": "Asking Nora about an X post that does not exist now gets «couldn't find it» instead of an empty read she tried to describe.",
+  "details": [],
+  "limitations": []
+}

@@ -253,6 +253,12 @@ class SocialBridge:
         except ValueError:
             log.warning("opencli %s %s returned non-JSON on exit 0", site, command)
             return web.json_response({"status": "unavailable"})
+        if not data:
+            # Exit 0 with `[]` (or `{}`, `null`) is «the read ran and found
+            # nothing». Measured 2026-09-24: `twitter thread` prints `[]` for
+            # an id that names no post. Passed on as `ok` it reached the model
+            # as an empty post to describe.
+            return web.json_response({"status": "nothing_found"})
         payload: dict[str, Any] = {"status": "ok", "data": data}
         url = _source_url(site, command, target_arg)
         if url is not None:
