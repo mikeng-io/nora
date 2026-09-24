@@ -235,9 +235,10 @@ reversed for the staging row, which is a one-shot dedupe slot for one
 sighting rather than an identity. What that buys is a silent, subtractive
 failure traded for a visible, additive one: a re-described occasion now
 stages twice and the gate may write a duplicate, which `note-merge` is
-now the back-stop for (#236, DEC-202). `displaced` survives in the vocabulary because a loss counter that
-cannot fire is the right state for a loss that no longer happens — deleting
-it would let a re-widening of the key land silent.
+now the back-stop for (#236, DEC-202). `displaced` survives in the
+vocabulary because a loss counter that cannot fire is the right state for a
+loss that no longer happens — deleting it would let a re-widening of the key
+land silent.
 """
 
 from __future__ import annotations
