@@ -236,6 +236,21 @@ async def test_exit_0_with_malformed_json_is_unavailable(bridge):
     assert body["status"] == "unavailable"
 
 
+@pytest.mark.parametrize("stdout", ["[]", "{}", "null", " [ ] "])
+async def test_exit_0_with_an_empty_result_is_nothing_found(bridge, stdout):
+    """Measured 2026-09-24: `opencli twitter thread <an id that names no
+    post>` exits 0 and prints `[]`. That is «the read ran and found nothing»,
+    not an `ok`: an `ok` with no data reached the model as an empty post it
+    was asked to describe."""
+    runner, session, base = bridge
+    runner.stdout = stdout
+    _status, body = await _read(
+        session, base,
+        {"platform": "x", "what": "post", "target": "1841173340357800397", "limit": 5},
+    )
+    assert body == {"status": "nothing_found"}
+
+
 async def test_exit_66_is_nothing_found(bridge):
     runner, session, base = bridge
     runner.returncode = 66

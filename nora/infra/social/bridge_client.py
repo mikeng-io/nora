@@ -118,6 +118,13 @@ class OpenCliBridgeClient(SocialProvider):
             log.warning("social bridge ok envelope carries no data")
             return dict(_UNAVAILABLE)
         content = _render_text(payload["data"])
+        if not content.strip():
+            # An `ok` whose data renders to nothing: an empty list, or items
+            # carrying none of the keys the renderer reads. «Found nothing»,
+            # not an empty read handed to the model to describe (2026-09-24).
+            # The bridge maps an empty result itself; this covers what it
+            # cannot see, items it passes that hold nothing readable.
+            return dict(_NOTHING_FOUND)
         clamped, truncated = _clamp_chars(content, self._content_max_chars)
         url = payload.get("source_url")
         url = str(url) if url else None
