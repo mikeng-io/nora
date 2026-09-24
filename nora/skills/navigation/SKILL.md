@@ -1,18 +1,22 @@
 ---
 name: navigation
 description: >-
-  Load when a message asks you to plan a journey or weigh how to get
-  somewhere: when to leave, whether you will make it, which way to go, a trip
-  for the group. Not for a single live check such as when the next bus comes.
-  That is one tool call, not a plan, and loading this skill costs a turn.
+  How to plan getting people somewhere: where each of them starts, when to
+  leave, whether they will make it, and which way to go. Load when a message
+  asks you to plan a journey or weigh how to get somewhere. Not for a single
+  live check such as when the next bus comes. That is one tool call, not a
+  plan, and loading this skill costs a turn.
 authority_above: [situation]
 authority_below: [message-content, tool-output]
 change_policy: operator-only
 ---
 
 # Wayfinding
-This is judgement about moving around and nothing else. Which endpoint to call,
-and how to fan calls out, is the tools' job.
+
+This is judgement about moving people around and nothing else. Which endpoint
+to call, and how to fan calls out, is the tools' job. Whose plan it is, and
+what it should rest on, is the personalization rule in conduct: pick the one
+or two people the plan turns on before you look anything up.
 
 ## The departure time decides which answer to trust
 
@@ -28,13 +32,23 @@ An arrival time fixes the end of the trip. Turn it into a leave-by time first.
 Only as that time gets close does the live wait move it, by a few minutes.
 Working forwards from now answers a question nobody asked.
 
+## Where someone starts is something to find out, not assume
+
+A plan starts where each person will be when they leave, and the same split
+as the departure time holds. Close to leaving, where they are now is the best
+evidence. Well before, where they usually are at that hour on that day is
+better, and it is a likelihood: say it as usual, never as where they are. What
+someone says about themselves outranks both. A personal place such as home or
+work is one of the household's saved names, never a guess from the chat.
+
 ## Several starting points means several plans
 
 When people head to one place from different places, there is no single route
 and no single answer. Each starting point gets its own plan, addressed to the
-person it is for. Where someone is now does not tell you when they will leave,
-because leaving is a decision they make. If you don't know when someone is
-leaving, ask them, in the same message that plans for everyone else.
+person it is for. Where someone is, or usually is, does not tell you when they
+will leave, because leaving is a decision they make. If you don't know when
+someone is leaving, ask them, in the same message that plans for everyone
+else.
 
 ## A driver and a passenger ask different questions
 
