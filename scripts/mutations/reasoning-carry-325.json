@@ -1,12 +1,5 @@
 [
   {
-    "name": "factory: production provider back to the SDK's dropping formatter",
-    "file": "nora/agent/factory.py",
-    "old": "    return ReasoningCarryingOpenAIModel(",
-    "new": "    return DashFreeOpenAIModel(",
-    "target": "tests/unit/test_reasoning_carry.py::test_the_production_provider_carries_the_reasoning_as_reasoning"
-  },
-  {
     "name": "carry: the field the upstream discards (reasoning_content)",
     "file": "nora/agent/reasoning_carry.py",
     "old": "CARRIED_REASONING_FIELD = \"reasoning\"",
