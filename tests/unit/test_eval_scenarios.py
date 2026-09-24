@@ -433,7 +433,7 @@ def test_a_counterfactual_varying_an_unlisted_tier_is_refused(tmp_path, monkeypa
     """The set is CLOSED on purpose — a general override is what this state
     exists INSTEAD of, so widening it has to be a decision in this file."""
     body = _COUNTERFACTUAL.replace("varies: culture", "varies: transcript")
-    with pytest.raises(ValueError, match="only \\['culture'\\] may be varied"):
+    with pytest.raises(ValueError, match="only \\['culture', 'transport'\\] may be varied"):
         load_all(_corpus(tmp_path, monkeypatch, body, "participation"))
 
 
@@ -465,4 +465,44 @@ def test_a_parked_case_cannot_also_be_counterfactual(tmp_path, monkeypatch):
     returns_when: a room produces it
 """)
     with pytest.raises(ValueError, match=r"parked AND counterfactual|names no `snapshot:`"):
+        load_all(_corpus(tmp_path, monkeypatch, body, "participation"))
+
+
+# --- the transport tier: held for every case, varied only as a counterfactual
+
+
+_TRANSPORT_VARIED = _COUNTERFACTUAL.replace(
+    "varies: culture", "varies: transport",
+) + """  metadata:
+    transport:
+      discord: needs_a_person
+"""
+
+
+def test_a_transport_counterfactual_states_its_varied_networks(tmp_path, monkeypatch):
+    """design/self-awareness/05's degraded-Discord case: health at an instant
+    is recorded nowhere, so «Discord is down» is a varied state — loaded,
+    active, and counted apart."""
+    name = _corpus(tmp_path, monkeypatch, _TRANSPORT_VARIED, "participation")
+    [case] = load_corpus(name)
+    assert case.metadata["transport"] == {"discord": "needs_a_person"}
+    assert census(name).counterfactual == 1
+
+
+def test_a_varied_transport_outside_a_counterfactual_is_refused(tmp_path, monkeypatch):
+    """Otherwise `metadata.transport` is a general override on an ANCHORED
+    case — a manipulation the census would count as a reconstruction."""
+    body = _ANCHORED.replace(
+        "    prefill_sufficient: true\n",
+        "    prefill_sufficient: true\n    transport:\n      discord: needs_a_person\n",
+    )
+    with pytest.raises(ValueError, match="without being a counterfactual"):
+        load_all(_corpus(tmp_path, monkeypatch, body, "participation"))
+
+
+def test_a_varied_transport_names_a_real_state(tmp_path, monkeypatch):
+    """A typo'd state would render nothing the case meant and read as a clean
+    measurement of it."""
+    body = _TRANSPORT_VARIED.replace("needs_a_person", "broken")
+    with pytest.raises(ValueError, match="must map networks to one of"):
         load_all(_corpus(tmp_path, monkeypatch, body, "participation"))

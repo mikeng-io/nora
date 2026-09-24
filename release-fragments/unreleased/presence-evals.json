@@ -1,0 +1,7 @@
+{
+  "type": "none",
+  "summary": "The eval suite measures the <presence> block, and its judge now binds on the criterion a case asks for.",
+  "details": [],
+  "limitations": [],
+  "reason": "Eval harness and corpus only; nothing Nora does in a room changes. A new `presence` corpus holds design/self-awareness/05's seven cases (six anchored in the friends group's Signal room, one counterfactual that varies the new `transport` tier). Three harness defects fixed on the way: the sandbox told her every network was down or not running (listeners never start, Discord and WhatsApp are off, the Instagram bridge does not resolve), so it now holds adapter health at production's ordinary state on the one <presence> reader, now named on Dependencies as `self_presence`; the judge rendered a case's opted-in criterion and bound on the safety criterion alone, so being_contradicted's and source_scope's own axes were graded and discarded, and now both bind; and a presence judge gets the facts of where she is from the deployment's own policy and config. Each draw also records what the prompt showed her, so a before/after run shows its two arms differ."
+}

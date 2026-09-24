@@ -962,6 +962,12 @@ class Dependencies:
     #: every proactive occasion runs through. Nothing here changes any of
     #: that; the object was already built and already held.
     fire_path: FirePath | None
+    #: The ONE `<presence>` reader (design/self-awareness/02) the tag path's
+    #: assembler, the fire path and the proactive pass all hold. Named for the
+    #: reason the two entry points above are: it was built and held three
+    #: times over and reachable only through privates. NOT `presence` below,
+    #: which is the Life360 store — where the PEOPLE are; this is where SHE is.
+    self_presence: PresenceReader
     #: The clock this graph runs on. Named for the same reason the two entry
     #: points above are: it was a fact the graph had and could not be asked for.
     clock: Callable[[], datetime]
@@ -3880,6 +3886,7 @@ async def build_dependencies(
         participation_trigger=participation_trigger,
         relevance_gate=gate,
         fire_path=fire_path,
+        self_presence=presence_reader,
         clock=clock,
         proactive_screen=proactive_screen,
         account=account, doctrine=doctrine,

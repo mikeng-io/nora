@@ -34,6 +34,7 @@ import dataclasses
 import os
 import shutil
 import tempfile
+import tomllib
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -53,12 +54,21 @@ from strands_evals.types.evaluation import (
     EvaluationOutput,
 )
 
+from evals.situation import (
+    LIVE_HANDLE_STANDINS,
+    deployment_handles,
+    deployment_networks,
+    facts,
+    shown_where,
+    varied_transport,
+)
 from nora.subject import (
     SubjectSpec,
     obtain,
     sandbox_database,
     sandbox_from_snapshot,
 )
+from nora.subject.transport import held_states, hold_transports
 
 #: Names carried on `environment_state`. A reader must key on these, never on
 #: `test_pass`, which is a `bool` and cannot hold the third answer.
@@ -116,6 +126,16 @@ NORA_STOPS = "nora.stop_reasons"
 #: this. A tuple, never `None` on a turn that ran: an empty tuple is a turn
 #: that called nothing, which is a routing answer too.
 NORA_TOOLS = "nora.tools_called"
+#: What the model was TOLD about where she is on this draw, read back off the
+#: first model call's own messages (`evals.situation.shown_where`):
+#: `<presence>…</presence>`, `_where_line`'s sentence on a build without it,
+#: or `None`. Carried on every draw so a before/after measurement proves its
+#: arms differ from the run itself, not from a reading of the code.
+NORA_SHOWN_WHERE = "nora.shown_where"
+#: The transport tier as the sandbox HELD it (`nora.subject.transport`),
+#: `{network: state}`, or `None` on a build with no `<presence>` reader —
+#: where there is nothing to hold and the prompt carries no transport state.
+NORA_TRANSPORT = "nora.transport_held"
 #: `Outcome.written`/`len(.changed)`/`len(.staged)` off the FIRST drive —
 #: never surfaced to a grader before this (S6, `10-the-scenario-map.md` §3).
 #: `dream()`'s own `written`/`changed` are already PER-CALL DELTAS (it
@@ -407,6 +427,13 @@ class Spec:
     #: An already-migrated blank database beside the source to clone each
     #: sandbox from (`sandbox_database`'s own). `None` builds one per source.
     template: str | None = None
+    #: The DEPLOYMENT's `config.toml` text — read for the networks it runs and
+    #: the handles it declares, which is what the sandbox's transport tier is
+    #: held to and what a presence judge grades against. `None` reads it from
+    #: `$NORA_DEPLOYMENT_DIR` beside the policy and roster. NOT the subject's
+    #: config: the sandbox turns Discord and WhatsApp off, the deployment
+    #: does not.
+    deployment_config: str | None = None
 
 
 #: Where the deployment's policy and roster live. Copied verbatim into each
@@ -433,6 +460,63 @@ def _deployment_policy() -> str:
 @lru_cache(maxsize=1)
 def _deployment_identity() -> str:
     return _read_deployment("identity.toml")
+
+
+@lru_cache(maxsize=1)
+def _deployment_config() -> str:
+    return _read_deployment("config.toml")
+
+
+def _hold_the_transport_tier(subject: Any, spec: Spec, md: Mapping[str, Any]) -> Any:
+    """Hold `<presence>`'s live inputs at what production renders
+    (`nora.subject.transport`'s docstring has the measurement). Only when the
+    graph HAS a reader: a build from before `<presence>` has nothing to hold,
+    and reading the deployment's config for it would be a failure about
+    nothing."""
+    if getattr(subject.deps, "self_presence", None) is None:
+        return None
+    if spec.deployment_config is not None:
+        networks = deployment_networks(tomllib.loads(spec.deployment_config))
+    elif spec.policy is not None:
+        # A caller that states its OWN room set (a test reconstructing a room
+        # of its own) composed its own world: the networks it runs are the
+        # ones its subject enabled. Reading the deployment's config here is
+        # what broke every integration test off the deploy host.
+        networks = tuple(sorted(
+            name for name in ("signal", "discord", "whatsapp", "instagram")
+            if getattr(getattr(subject.cfg.platforms, name, None), "enabled", False)
+        ))
+    else:
+        networks = deployment_networks(tomllib.loads(_deployment_config()))
+    return hold_transports(
+        subject,
+        networks=networks,
+        varied=varied_transport(md),
+        live_handles=LIVE_HANDLE_STANDINS,
+    )
+
+
+def _presence_facts(
+    spec: Spec, md: Mapping[str, Any], *, room: tuple[str, str],
+    shown: str | None, tools: tuple[str, ...],
+) -> str | None:
+    """The judge's ground truth for a `presence` case, or `None` for every
+    other case. Built from the DEPLOYMENT's files and the case, never from the
+    subject — so it is the same facts whichever arm ran."""
+    if "presence" not in tuple(md.get("criteria") or ()):
+        return None
+    config = tomllib.loads(
+        spec.deployment_config if spec.deployment_config is not None
+        else _deployment_config()
+    )
+    return facts(
+        policy_toml=spec.policy if spec.policy is not None else _deployment_policy(),
+        room=room,
+        handles=deployment_handles(config),
+        states=held_states(deployment_networks(config), varied_transport(md)),
+        shown=shown,
+        tools=tools,
+    )
 
 
 def _read_deployment(name: str) -> str:
@@ -650,6 +734,7 @@ async def _drive(case: Case, spec: Spec) -> dict[str, Any]:
                         "(design/evaluation/11-the-sandbox-rebuild.md §1.2's "
                         "declared Discord divergence)."
                     )
+            transport = _hold_the_transport_tier(subject, spec, md)
             seeded = await sandbox_from_snapshot(
                 subject,
                 source_url=spec.source_url,
@@ -677,6 +762,7 @@ async def _drive(case: Case, spec: Spec) -> dict[str, Any]:
                 turn = _model_calls(exporter, agent=agent_name)
                 spend.update({f"turn.{k}": v for k, v in turn.items()})
             tools_called = _tools_called(exporter)
+            shown = shown_where(exporter.get_finished_spans())
             _SPEND.append(spend)
             outcome = _check_the_corpus_assertions(nora_case, outcome, seeded.rows)
 
@@ -713,10 +799,14 @@ async def _drive(case: Case, spec: Spec) -> dict[str, Any]:
                     # grounding BLIND (DEC-75).
                     source="\n".join(seeded.transcript) or None,
                     extra=criteria_for(tuple(md.get("criteria") or ())),
+                    facts=_presence_facts(
+                        spec, md, room=room, shown=shown, tools=tools_called,
+                    ),
                 )
                 outcome = dataclasses.replace(
                     outcome, judged=judgement.verdict, error=judgement.error,
                 )
+                judged_why = str(getattr(judgement, "why", "") or "")
 
             repeat_state = []
             if spec.repeat > 1:
@@ -755,6 +845,8 @@ async def _drive(case: Case, spec: Spec) -> dict[str, Any]:
                     EnvironmentState(name=NORA_POSITION, state=outcome.position),
                     EnvironmentState(name=NORA_SHOWN, state=outcome.shown),
                     EnvironmentState(name=NORA_JUDGED_WHY, state=judged_why),
+                    EnvironmentState(name=NORA_SHOWN_WHERE, state=shown),
+                    EnvironmentState(name=NORA_TRANSPORT, state=transport),
                     *repeat_state,
                 ],
             }
@@ -840,6 +932,8 @@ def nora_task(spec: Spec):
                     EnvironmentState(name=NORA_POSITION, state=None),
                     EnvironmentState(name=NORA_SHOWN, state=""),
                     EnvironmentState(name=NORA_JUDGED_WHY, state=""),
+                    EnvironmentState(name=NORA_SHOWN_WHERE, state=None),
+                    EnvironmentState(name=NORA_TRANSPORT, state=None),
                 ],
             }
 
