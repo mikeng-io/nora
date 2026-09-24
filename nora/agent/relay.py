@@ -263,11 +263,19 @@ class Relay:
             log.warning(
                 "relay refused: %s transport is %s", destination.platform, state,
             )
+            # `reconnecting` is the one state expected to heal on its own, so
+            # it is the one where offering to try later is honest. A network
+            # that needs a person, or could not be checked, gets no such hint.
+            later = (
+                " It usually comes back by itself, so you can offer to try "
+                "again later."
+                if state == "reconnecting" else ""
+            )
             return {
                 "status": "unavailable",
                 "note": f"{state_phrase(destination.platform, state)}, so nothing "
                         "was sent. Tell them here it didn't go; do not say it "
-                        "went or promise it will.",
+                        f"went or promise it will.{later}",
             }
 
         if self._speak is None or self._slots is None or self._occasion_for is None:

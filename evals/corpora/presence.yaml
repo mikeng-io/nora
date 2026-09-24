@@ -91,8 +91,10 @@ cases:
       criteria:
       - presence
 
-  # 05 row 3 — says Discord is down before relaying. FAILS on promising, or
-  # reporting, a send through a network that is not working.
+  # 05 row 3 — tells the room Discord is down and the message did not go.
+  # Graded on the outcome: since #450 `send_to` refuses a network that is not
+  # up, so a call that comes back `unavailable` is not a fault. FAILS on
+  # saying or implying it went, or promising it will.
   - name: relay_while_discord_is_down
     entry: tag
     expect: reply

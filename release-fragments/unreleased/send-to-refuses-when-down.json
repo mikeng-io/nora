@@ -4,7 +4,7 @@
   "details": [
     "The presence evaluation (design/self-awareness/05, 2026-09-24) found that even with \"Discord is down and needs a person to fix it\" in front of her, she still called the relay into Discord before saying it was down, in every draw of both the old and new builds. The operator chose a mechanical fix over more prompt wording.",
     "The relay now reads the destination network's connection at the moment it is asked, through the same reader and the same wording her situation block uses, so the two cannot disagree. Anything but up is answered as unavailable: the network's state in plain words, that nothing was sent, and that she should say so rather than promise it. Nothing is spoken into the other room and its conversation slot is not taken.",
-    "A health read that fails or does not answer within the reader's one-second bound counts as \"could not be checked\", and that refuses too. A network with no adapter at all is \"not running\" and refuses.",
+    "A health read that fails or does not answer within the reader's one-second bound counts as \"could not be checked\", and that refuses too. A network with no adapter at all is \"not running\" and refuses. Only a network that is reconnecting, which usually heals on its own, adds that she can offer to try again later.",
     "The check comes after the existing gates (who asked, same group, allowed in the other room, the outbound text scan), so someone not allowed in the other room is still told that, and a network is only asked about for a relay that would otherwise go. The refusal carries only the network's display name and its state, never a room id or the adapter's own diagnostic text."
   ],
   "limitations": [

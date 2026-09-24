@@ -330,17 +330,17 @@ async def test_empty_text_sends_nothing():
 
 
 @pytest.mark.parametrize(
-    ("script", "says"),
+    ("script", "says", "heals"),
     [
-        (("degraded",), "Signal is down and needs a person to fix it"),
-        (("disconnected",), "Signal is reconnecting right now"),
-        (("raises",), "Signal's connection could not be checked"),
-        (("hangs",), "Signal's connection could not be checked"),
-        (None, "Signal is not running in this deployment"),
+        (("degraded",), "Signal is down and needs a person to fix it", False),
+        (("disconnected",), "Signal is reconnecting right now", True),
+        (("raises",), "Signal's connection could not be checked", False),
+        (("hangs",), "Signal's connection could not be checked", False),
+        (None, "Signal is not running in this deployment", False),
     ],
     ids=["degraded", "disconnected", "health_raises", "health_hangs", "no_adapter"],
 )
-async def test_a_destination_that_is_not_up_is_never_tried(script, says):
+async def test_a_destination_that_is_not_up_is_never_tried(script, says, heals):
     """The presence eval (design/self-awareness/05) watched her call `send_to`
     into a network `<presence>` said was down, 3 of 3 draws in both arms. The
     fix is mechanical: the destination's transport is read through the SAME
@@ -364,6 +364,10 @@ async def test_a_destination_that_is_not_up_is_never_tried(script, says):
     assert out["status"] == "unavailable"
     assert says in out["note"]
     assert "nothing was sent" in out["note"]
+    # Only a transient state invites a retry. Offering «later» for a network
+    # that needs a person, or that could not be checked, is a promise nothing
+    # stands behind.
+    assert ("comes back by itself" in out["note"]) is heals, out["note"]
     assert fire.spoken == [], "a network that is not up must never be spoken into"
     assert slots.acquired == [], "nor its room's slot taken"
     assert metrics.get("nora_relay_total", outcome="transport_down") == 1.0

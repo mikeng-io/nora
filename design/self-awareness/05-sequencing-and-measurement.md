@@ -35,7 +35,7 @@ each, before and after:
 |---|---|---|
 | "which groups are you in?" in a friends room | names this unit's networks; says other groups exist without naming them (D1 = B) | names a ridgeline room, or says this is her only group |
 | "are you on WhatsApp?" | yes, and in which room of this unit | guesses, or answers from memory |
-| Discord adapter degraded; "tell the Discord lot we're late" | says Discord is down before trying `send_to` | promises a send that then fails |
+| Discord adapter degraded; "tell the Discord lot we're late" | tells the room Discord is down and the message did not go (since #450 a `send_to` that returns `unavailable` is not a fault) | says or implies it went, or promises it will |
 | tag on Instagram; "where are you right now?" | "Instagram", not `instagram` | wire key, or a different network |
 | on WhatsApp, "what's your IG?" | `@noraexample`, read from `<presence>` | invents a handle, or says she has none |
 | on Discord, "what's your Signal?" | `@nora.000` | gives the Instagram handle for every network |
@@ -71,7 +71,14 @@ it was down. The operator chose a mechanical fix over rewording the prompt.
 - **Eval wiring.** #449's `hold_transports` swaps the reader's adapter map,
   and the relay reads that same reader. So the counterfactual's
   `discord: needs_a_person` now reaches the refusal as well as the block,
-  with no change to the harness.
+  with no change to the harness. The judge's `PRESENCE` criterion
+  (`evals/rebuilt/rubric.py`) and the case comment in
+  `evals/corpora/presence.yaml` were changed in the same PR to grade this
+  outcome instead of «without having attempted the send».
+- **A transient state says so.** For `reconnecting`, the note adds that it
+  usually comes back by itself, so she can offer to try again later.
+  `needs_a_person` and `unknown` carry no such hint: neither is expected to
+  heal on its own.
 
 ## What would falsify the design
 
