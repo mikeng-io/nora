@@ -1,6 +1,11 @@
 {
-  "type": "none",
-  "reason": "Internal refactor only (design/social-per-network/30-link-owner-registry.md, PR 1): web_fetch and media_fetch's Instagram-page guard moves from an inline check in each tool into a new nora.agent.link_owners registry, applied once by build_tool_specs. Behaviour is identical -- same notes, same status, same routing -- so nobody using Nora sees a change. X and LinkedIn are not registered yet (PRs 2/3).",
-  "details": [],
-  "limitations": []
+  "type": "change",
+  "summary": "web_fetch and media_fetch's Instagram-page guard moves into a new link-owner registry (design/social-per-network/30-link-owner-registry.md, PR 1), applied once by build_tool_specs instead of hand-wired in each tool.",
+  "details": [
+    "The redirect now runs before everything else in media_fetch, including the question-identifier screen: pasting an Instagram page link together with a question that carries a phone number or ID now gets routed to instagram_read, where before it hit the identifier refusal first.",
+    "nora_egress_blocks_total no longer counts that one overlap case, since the identifier screen is never reached for it."
+  ],
+  "limitations": [
+    "X and LinkedIn are not registered yet (PRs 2/3)."
+  ]
 }

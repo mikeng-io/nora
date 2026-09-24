@@ -111,6 +111,17 @@ def _instagram_page_kind(url: str) -> str:
     return "mobile" if _parse_instagram_link(www) is not None else ""
 
 
+#: The only slots `redirect()` ever fills an `unreadable_template` with.
+#: Checked at `LinkClaim` construction (below), not at `redirect()`'s own
+#: `.format()` call: a template naming an unknown slot used to raise a bare
+#: `KeyError` only the day a model actually hit that claim, deep inside a
+#: tool call. Constructing every `LinkClaim` a claim function can produce is
+#: cheap enough to do in a test (`tests/unit/test_link_owners.py::
+#: test_an_unreadable_templates_unknown_slot_fails_at_construction`), so the
+#: same defect is now a red test, not a live surprise.
+_UNREADABLE_TEMPLATE_SLOTS = {"not_clause": "", "verb": ""}
+
+
 @dataclass(frozen=True)
 class LinkClaim:
     """What a pasted link IS, to the registry.
@@ -121,10 +132,14 @@ class LinkClaim:
     owning tool can actually read this kind — false for `mobile_page`,
     because `instagram_read` refuses that host too.
 
-    `unreadable_template` is the network's OWN explanation of why, used only
-    when `readable` is false: a `str.format` template with two fetcher-filled
+    `unreadable_template` is the network's OWN explanation of why, REQUIRED
+    when `readable` is false (`__post_init__` below) — ADR 0015 §3 requires a
+    `note` on every non-`ok` status, and an empty string satisfies no
+    reader's idea of "a note" even though it satisfies a check that only
+    looks for the KEY (`tests/architecture/test_every_status_carries_a_note.
+    py`). It is a `str.format` template with exactly two fetcher-filled
     slots, `{not_clause}` and `{verb}` (`LinkInput`'s own fields — see
-    `redirect()`). Only the network knows this text; a fetcher never carries
+    `redirect()`); only the network knows this text, a fetcher never carries
     it, which is what keeps adding a network from touching a fetcher's own
     declaration.
     """
@@ -133,6 +148,24 @@ class LinkClaim:
     kind: str
     readable: bool
     unreadable_template: str = ""
+
+    def __post_init__(self) -> None:
+        if self.readable:
+            return
+        if not self.unreadable_template:
+            raise ValueError(
+                f"{self.network}/{self.kind}: an unreadable LinkClaim needs "
+                "its own unreadable_template (ADR 0015 §3: every non-ok "
+                "status needs a real note, not an empty one)"
+            )
+        try:
+            self.unreadable_template.format(**_UNREADABLE_TEMPLATE_SLOTS)
+        except (KeyError, IndexError) as exc:
+            raise ValueError(
+                f"{self.network}/{self.kind}: unreadable_template names an "
+                f"unknown slot — `redirect()` only ever fills "
+                f"{sorted(_UNREADABLE_TEMPLATE_SLOTS)}: {exc}"
+            ) from exc
 
 
 @dataclass(frozen=True)

@@ -10804,9 +10804,11 @@ def _link_owner_wrapped(
     `unless` parameter and (b) `owner_of` claims returns that claim's
     `redirect(...)` at once — counted through `_record_media` for
     `media_fetch` (its own series, `nora_media_fetch_total`) or `_record` for
-    every other tool, `reason="link_owner"`, naming the owner's network.
-    Nothing here changes an UNCLAIMED argument's path: `call` still runs with
-    every argument exactly as given.
+    every other tool, `reason="link_owner"`, naming the owner's network AND
+    `claim.kind` (so a page and a mobile-page redirect can still be told
+    apart in the log, the way the old `reason="instagram_page"`/
+    `"instagram_mobile_page"` pair could). Nothing here changes an UNCLAIMED
+    argument's path: `call` still runs with every argument exactly as given.
 
     `functools.wraps` is load-bearing, not cosmetic (the same note `ports.
     _validated` carries): Strands derives the model-facing schema from the
@@ -10834,10 +10836,15 @@ def _link_owner_wrapped(
                 continue
             owner, claim = found
             if tool_name == "media_fetch":
-                _record_media(metrics, "nothing_found", reason="link_owner", owner=owner.network)
+                _record_media(
+                    metrics, "nothing_found", reason="link_owner",
+                    owner=owner.network, kind=claim.kind,
+                )
             else:
-                _record(metrics, tool_name, "nothing_found",
-                        reason="link_owner", owner=owner.network)
+                _record(
+                    metrics, tool_name, "nothing_found",
+                    reason="link_owner", owner=owner.network, kind=claim.kind,
+                )
             return _link_redirect(owner, claim, link_input)
         return await call(*args, **kwargs)
 

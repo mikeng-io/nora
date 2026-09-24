@@ -33,5 +33,12 @@
     "old": "        note = claim.unreadable_template.format(\n            not_clause=link_input.not_clause, verb=link_input.verb,\n        )\n",
     "new": "        note = claim.unreadable_template.format(not_clause=\"\", verb=\"\")\n",
     "target": "tests/unit/test_link_owners.py::test_the_composed_note_matches_every_live_string tests/test_media_fetch.py::test_a_mobile_page_link_is_refused_and_asks_for_the_www_link"
+  },
+  {
+    "name": "media_fetch's unless=\"code\" is dropped: a code beside an Instagram page url is redirected instead of hitting media_fetch's own \"exactly one target\" refusal",
+    "file": "nora/agent/tools.py",
+    "old": "                                      \"url\", unless=\"code\",\n",
+    "new": "                                      \"url\",\n",
+    "target": "tests/test_media_fetch.py::test_a_code_beside_an_instagram_page_url_is_never_redirected"
   }
 ]

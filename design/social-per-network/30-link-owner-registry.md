@@ -244,15 +244,28 @@ its own result contract, which is the question the next section answers.
 
 ### Types
 
+**Shipped shape (PR 1), superseding the sketch this section originally
+carried.** The note is composed from TWO independent slot sets rather than a
+`hint`/`status=`/`then=` triple passed into `redirect` at the call site —
+the owner's half (what the link is, who reads it, and, only the network
+knows this, why an unreadable one can't be) and the fetcher's half (what
+kind of tool is asking):
+
 ```python
-# nora.agent.link_owners (proposed)
+# nora.agent.link_owners
 
 @dataclass(frozen=True)
 class LinkClaim:
     network: str               # "instagram" | "x" | "linkedin"
     kind: str                  # the parser's kind, or "mobile_page"
     readable: bool             # can the owner read this kind?
-    hint: str = ""             # what to ask for instead, when not readable
+    # The network's OWN explanation, required when readable=False
+    # (LinkClaim.__post_init__ enforces this — ADR 0015 §3: no non-ok status
+    # ships with an empty note). A str.format template with exactly two
+    # fetcher-filled slots, {not_clause} and {verb}; a template naming any
+    # other slot fails at LinkClaim construction, not at redirect()'s own
+    # call.
+    unreadable_template: str = ""
 
 @dataclass(frozen=True)
 class LinkOwner:
@@ -268,14 +281,26 @@ LINK_OWNERS: tuple[LinkOwner, ...] = (
     LinkOwner("linkedin", "linkedin_read", "link", "a LinkedIn link", _linkedin_claim),
 )
 
+@dataclass(frozen=True)
+class LinkInput:
+    # Fetcher-generic only: no network name, no network text. NativeTool.
+    # link_inputs is a tuple of these.
+    param: str
+    unless: str = ""       # another parameter of the same tool that means
+                            # "don't check this one" (media_fetch's "code")
+    not_clause: str = ""   # e.g. ", not a picture or video file"
+    then: str = ""         # e.g. ", then look at the media it returns"
+    verb: str = ""         # e.g. "read" / "opened"
+
 def owner_of(text: str) -> tuple[LinkOwner, LinkClaim] | None: ...
-def redirect(owner: LinkOwner, claim: LinkClaim, *, status: str, then: str = "") -> dict: ...
+def redirect(owner: LinkOwner, claim: LinkClaim, link_input: LinkInput) -> dict: ...
 ```
 
 - **A recogniser claims a PAGE, never a host.** Each wraps its network's
   `parse_link` after `_with_scheme`. Instagram's also claims the
-  `m.instagram.com` form as `readable=False` with the hint «ask for the
-  www.instagram.com link», which is what `_instagram_page_kind` does today.
+  `m.instagram.com` form as `readable=False`, with its own
+  `unreadable_template` asking for the www.instagram.com link — what
+  `_instagram_page_kind` does today.
   LinkedIn's claims `person` and `company` only: a LinkedIn `post` is
   **not claimed**, because `linkedin_read` cannot read one and a public
   LinkedIn post page is something `web_fetch` may be able to read. Refusing
@@ -287,13 +312,17 @@ def redirect(owner: LinkOwner, claim: LinkClaim, *, status: str, then: str = "")
 - **Order is explicit and the claims are disjoint.** The hosts do not
   overlap, and a test asserts that no URL in the matrix is claimed by two
   owners, so «first match wins» never has to decide anything.
-- **ONE result shape**: `{"status": <status>, "note": <note>}`, built only
-  by `redirect`. The note is two parts: the owner's sentence, generated
-  from `label`, `tool` and `param` («That is an X link. Open it with
-  x_read, passing it as link.»), or the claim's `hint` when it is not
-  readable; then the caller's optional `then` («then look at the media it
-  returns»), declared by the fetcher, never written inline. The link is
-  never echoed, as today (`tests/test_web_fetch_tool.py:183`).
+- **ONE result shape**: `{"status": "nothing_found", "note": <note>}`, built
+  only by `redirect`, status fixed (open decision 1, accepted). The note is
+  composed, never a fetcher-held literal: the owner's sentence from `label`,
+  `tool` and `param` («That link is an X link. Open it with x_read using
+  this link.») plus the fetcher's `not_clause`/`then` when the claim is
+  readable, or the claim's own `unreadable_template` (filled with the
+  fetcher's `not_clause`/`verb`) when it is not. Adding a network is one
+  `LinkOwner` row (plus, if it has an unreadable shape, one
+  `unreadable_template`); adding or changing a fetcher's own wording is one
+  `LinkInput` — neither ever touches the other. The link is never echoed, as
+  today (`tests/test_web_fetch_tool.py:183`).
 
 ### Where the lookup runs
 
@@ -328,13 +357,18 @@ one level smaller.
 
 **C. A declared wrapper, applied once where tools are built. Chosen.**
 `NativeTool` (`tools.py:201`) gains one field, `link_inputs`: the
-parameters of this tool that carry a URL another tool may own, each with
-its `then` tail and its redirect status:
+parameters of this tool that carry a URL another tool may own, each a
+`LinkInput` of fetcher-generic slots only (no redirect status here — it is
+fixed, see above):
 
 ```python
-"web_fetch": NativeTool(2, ..., link_inputs=(LinkInput("url"),)),
+"web_fetch": NativeTool(2, ..., link_inputs=(LinkInput("url", verb="opened"),)),
 "media_fetch": NativeTool(4, ..., link_inputs=(
-    LinkInput("url", then="then look at the media it returns"),)),
+    LinkInput(
+        "url", unless="code", not_clause=", not a picture or video file",
+        then=", then look at the media it returns", verb="read",
+    ),
+)),
 ```
 
 `build_tool_specs` applies ONE post-pass to the tuple it returns
@@ -342,9 +376,10 @@ its `then` tail and its redirect status:
 gets its `call` wrapped. The wrapper reads the named arguments, asks
 `owner_of`, and on a claim returns `redirect(...)` without calling the
 tool, counted through the tool's own recorder (`_record`, or
-`_record_media` for `media_fetch`) with `reason="link_owner"` and the
-owner's name. `functools.wraps` keeps the signature Strands derives the
-schema from, the same way `_validated` does (`ports.py:277`). This is the
+`_record_media` for `media_fetch`) with `reason="link_owner"`, the owner's
+network, and `claim.kind` (so a page and a mobile-page redirect can still
+be told apart in the log). `functools.wraps` keeps the signature Strands
+derives the schema from, the same way `_validated` does (`ports.py:277`). This is the
 precedent this repo already has for «one seam every native tool passes
 through, driven by a declaration»: `output_contract` on the same table,
 applied in `adapt()`.
@@ -465,11 +500,13 @@ cites this node.
    measurable.
 
 **2026-09-25, operator: all three accepted as recommended.** `nothing_found`
-is the one redirect status; `x_read`/`linkedin_read` get no `url` alias yet;
-a claimed link redirects, it is never rewritten to the owner's call. PR 1
-(this commit) builds only the Instagram row under decision 1 — the
-owners' cross-network branches (decision 1's other half) and the alias
-(decision 2) are PRs 2 and 3's work, not built here.
+is the one redirect status; `x_read`/`linkedin_read` get no `url` alias yet,
+and decision 2 does not schedule one — it stays "not yet" until a live
+`x_read`/`linkedin_read` call is seen arriving empty with `url`; a claimed
+link redirects, it is never rewritten to the owner's call. PR 1 (this
+commit) builds only the Instagram row under decision 1 — the owners'
+cross-network branches (decision 1's other half) are PR 3's work, not built
+here.
 
 ## Non-goals
 

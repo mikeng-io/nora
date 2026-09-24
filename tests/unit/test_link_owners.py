@@ -162,6 +162,34 @@ def test_the_composed_note_matches_every_live_string():
         assert composed == expected, (expected, composed)
 
 
+# ---- an unreadable claim must carry a real note (ADR 0015 §3) --------------
+
+def test_an_unreadable_claim_with_no_template_fails_at_construction():
+    """An empty `note` satisfies `test_every_status_carries_a_note.py`'s
+    static check (it only looks for the KEY), so the only place left to
+    catch it is `LinkClaim` itself: `readable=False` with no
+    `unreadable_template` must never build."""
+    with pytest.raises(ValueError, match="unreadable_template"):
+        LinkClaim(network="instagram", kind="mobile_page", readable=False)
+
+
+def test_an_unreadable_templates_unknown_slot_fails_at_construction():
+    """`redirect()` only ever fills `{not_clause}`/`{verb}`; a template
+    naming anything else used to raise a bare `KeyError` at `redirect()`'s
+    own `.format()` call — reachable only the day a model actually hit that
+    claim. Constructing the `LinkClaim` is the earliest point this can be
+    caught, and it is cheap enough to always run."""
+    with pytest.raises(ValueError, match="unknown"):
+        LinkClaim(
+            network="instagram", kind="mobile_page", readable=False,
+            unreadable_template="needs {a_slot_nobody_fills}",
+        )
+
+
+def test_a_readable_claim_needs_no_template():
+    LinkClaim(network="instagram", kind="page", readable=True)
+
+
 # ---- adding a network touches no fetcher (the operator's own requirement) --
 
 def _fake_claim(text: str) -> LinkClaim | None:
