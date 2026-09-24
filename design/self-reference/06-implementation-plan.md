@@ -66,8 +66,13 @@ Sections, in order (as revised 2026-09-24, §9):
    relative date is resolved against the clock line first. Then the
    photo-to-prompt recipe: `media_fetch` first, then what the photo shows,
    what to change, what to keep; never guess a photo's content.
-4. **What you look like.** Every rule of 05 (see §6 for the audit).
-5. **Writing for the model that draws it**, one subsection per configured
+4. **Writing what was asked** (new 2026-09-24, §10). Write the picture that
+   was asked for; add setting, props or light only when they serve it;
+   describe an arrangement that could physically exist; take the style from
+   the request or the room; say there is no text unless words are wanted.
+5. **What you look like.** Every rule of 05 (see §6 for the audit), opening
+   with the boundary: it applies only when she is in the picture.
+6. **Writing for the model that draws it**, one subsection per configured
    model; a new model or provider adds a subsection.
 
 **What it does not restate, and the boundary (revised 2026-09-24).** DEC-150
@@ -271,4 +276,35 @@ only the route: her full canonical sha on «draw yourself», no sha on a
 picture she is not in, and the date of «this Saturday» written out on a
 poster, resolved against the clock line the turn showed her. Unrun at
 merge time: the deploy host's harness was booked.
+
+## 10. Revision 2026-09-24 (after #456 deployed): her look is not a house style
+
+**Measured live.** «draw yourself» worked after #456: the canonical
+reference was used and the image matched 05. «draw a cat sleeping on a
+laptop» did not. Her prompt opened «A stylized 3D mascot illustration» and
+asked for «tactile collectible-character quality», which is 05's rendering
+of HER, applied to a picture she was not in. It also added a desk, a lamp,
+a night room, and an open laptop with the cat on top and the monitor's glow
+under the cat. That arrangement cannot exist, and the model resolved it by
+closing the lid. Separately, the self image put chat text on a monitor
+(«Hello Nora!»), which 05's no-decorative-text rule does not cover, because
+that rule is about her outfit, not the scene.
+
+**The change.** A section before her appearance, «Writing what was asked»:
+write what was asked; add setting, props or light only when they serve the
+request; describe an arrangement that can physically exist, because the
+model resolves a contradiction on its own; take the style from the request,
+or from the room when the request names none, since her rendering is how
+she looks, not a house style; and say there is no text unless words are
+wanted. «What you look like» now opens by saying it applies only when she is
+in the picture. Each rule carries its reason. The section names none of the
+props that went wrong: a list of those would be the menu shape the operator
+ruled out, and the test pins that.
+
+**Size.** 74 non-blank lines; the ceiling goes to 80 with the reason beside
+it in `tests/test_skill_content.py`.
+
+**Evals.** `route_generate_image_not_her_leaves_the_reference_off` now uses
+the live wording and also fails on «mascot» or «collectible» in the prompt,
+words only her appearance section supplies. Unrun.
 
