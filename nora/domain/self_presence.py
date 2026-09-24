@@ -123,3 +123,40 @@ class Presence:
         which network she is on, and claims nothing it did not read.
         """
         return cls(platform=platform, direct=direct)
+
+
+@dataclass(frozen=True)
+class KnownRoom:
+    """One room of the unit a turn is in, as the room tools read it
+    (design/self-awareness/07).
+
+    `conversation_id` is here so a tool can read that room's stored messages.
+    It is an identifier and is NEVER put in a tool result (R-18): the tool
+    names a room by `label`, or by its network when it has none.
+
+    `members` counts the accounts the platform lists, Nora's own excluded, or
+    is `None` when the roster could not be read. `None` is «I could not
+    check», never 0.
+    """
+
+    platform: str
+    label: str
+    conversation_id: str
+    here: bool
+    state: TransportState
+    members: int | None = None
+
+
+@dataclass(frozen=True)
+class UnitRooms:
+    """Every room of this turn's unit, and whether any other unit exists.
+
+    `rooms` is `None` when the turn's room is not in policy (or is a direct
+    chat): there is no unit to list, which is a different state from a unit
+    with one room. `other_groups` says only THAT she is in rooms outside this
+    unit (D1 = B); which ones is never carried, so no tool can leak them.
+    """
+
+    rooms: tuple[KnownRoom, ...] | None
+    direct: bool = False
+    other_groups: bool = False

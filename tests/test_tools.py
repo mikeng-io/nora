@@ -136,6 +136,8 @@ def test_every_declared_tool_is_built(wiring):
         "who_said",
         "now", "load_transcript", "send_reply", "search_gifs", "send_gif",
         "send_to",
+        # design/self-awareness/07: the room tools.
+        "room_list", "room_read",
         "group_members", "lookup_person", "about", "ask_memory", "search_memory",
         "recall_lookups",
         # `search_memory_workspace` IS built here — `build_tools` builds every

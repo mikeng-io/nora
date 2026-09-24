@@ -640,3 +640,53 @@ async def test_quoted_ts_of_points_a_revision_at_its_message(store):
     assert await store.quoted_ts_of(conversation_id="g1", ts=9) == 9
     assert await store.quoted_ts_of(conversation_id="g1", ts=12345) == 12345
     assert await store.quoted_ts_of(conversation_id="g2", ts=7) == 7
+
+
+# ---------------------------------------------------------------------------
+# activity — how busy a room is, for `room_list` (design/self-awareness/07)
+# ---------------------------------------------------------------------------
+
+
+async def test_activity_counts_human_rows_since_the_cutoff_and_the_newest_ts(store):
+    """`room_list`'s busyness read: how many PEOPLE's messages arrived at or
+    after `since_ts`, and when a person last spoke. Nora's own rows are not
+    the room being busy, so they count for neither."""
+    for ts, is_nora in [(10, False), (20, False), (30, True), (40, False)]:
+        await store.append(message=_msg(ts=ts), is_nora=is_nora)
+
+    got = await store.room_activity(conversation_id="g1", since_ts=20)
+
+    assert got.count == 2, "ts 20 and 40; the Nora row at 30 is not counted"
+    assert got.last_ts == 40
+
+
+async def test_activity_is_scoped_to_the_conversation(store):
+    await store.append(message=_msg(conv="g1", ts=5))
+    await store.append(message=_msg(conv="g2", ts=50))
+    await store.append(message=_msg(conv="g2", ts=60))
+
+    got = await store.room_activity(conversation_id="g1", since_ts=0)
+
+    assert (got.count, got.last_ts) == (1, 5)
+
+
+async def test_activity_of_a_room_with_no_human_rows_is_zero_and_no_time(store):
+    """«Nobody has said anything» is `last_ts is None`, never a zero timestamp
+    the tool would render as 1970."""
+    await store.append(message=_msg(ts=7), is_nora=True)
+
+    got = await store.room_activity(conversation_id="g1", since_ts=0)
+
+    assert (got.count, got.last_ts) == (0, None)
+    empty = await store.room_activity(conversation_id="nope", since_ts=0)
+    assert (empty.count, empty.last_ts) == (0, None)
+
+
+async def test_activity_last_ts_is_not_bounded_by_the_window(store):
+    """The newest message can be older than the window: a room quiet for a
+    week still says when it last spoke, with a count of zero."""
+    await store.append(message=_msg(ts=3))
+
+    got = await store.room_activity(conversation_id="g1", since_ts=100)
+
+    assert (got.count, got.last_ts) == (0, 3)

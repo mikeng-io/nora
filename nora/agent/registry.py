@@ -79,6 +79,7 @@ from .tools import (
     ImageGenerator,
     NoteCollaborator,
     OriginRoom,
+    RoomDirectory,
     build_tool_specs,
     utc_now,
 )
@@ -155,6 +156,11 @@ class ToolRegistry:
         # eval composition ships in — `send_to` then answers `unavailable`,
         # never a silent no-op.
         relay: Relay | None = None,
+        # The room tools' collaborator (design/self-awareness/07): the ONE
+        # presence reader, seen through `RoomDirectory`. `None` leaves
+        # `room_list`/`room_read` answering `unavailable` (R-5), the shape
+        # every offline and eval composition ships in.
+        rooms: RoomDirectory | None = None,
         refresher: Any = None,
         geocoder: Any = None,
         # The DERIVED-presence read behind `where_been` (DEC-155,
@@ -293,6 +299,7 @@ class ToolRegistry:
         self._presence = presence
         self._circles = tuple(circles)
         self._relay = relay
+        self._rooms = rooms
         # The LIVE-refresh client (DEC-67) — None leaves `where_is` reading the
         # last stored fix (offline/eval, or [presence] refresh_url unset).
         self._refresher = refresher
@@ -894,6 +901,7 @@ class ToolRegistry:
             supplied_unit=supplied_unit,
             links=links,
             relay=self._relay,
+            rooms=self._rooms,
             versions=self._versions,
             giphy_source=self._giphy,
             reaction_picker=self._reaction,

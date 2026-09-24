@@ -165,6 +165,42 @@ cases:
     metadata: {tools: [generate_image]}
     snapshot: *room_a
 
+  # --- the room tools (design/self-awareness/07) ----------------------------------
+  # A same-domain pair (ADR 0015 §1), and each has a neighbour it could steal
+  # from: `room_list` from `group_members` (who is HERE vs which rooms exist),
+  # `room_read` from `load_transcript` (another room vs this one). The third
+  # case is the negative: a membership question neither room tool answers.
+  #
+  # The room_list row asks what ONLY room_list carries: activity. It used to
+  # ask «which groups are you in», and on 2 of 5 draws (2026-09-24) she
+  # answered from `<presence>` with no call. That answer is correct, not a
+  # miss (operator, 2026-09-24): `<presence>` already names this group's
+  # rooms, so the call is redundant for that question. Busiest-today is in no
+  # prompt block, so a turn that answers it without the tool is guessing.
+  - name: route_room_list_busiest_today
+    entry: tag
+    expect: reply
+    mention: true
+    input: 我哋幾個group今日邊個最多人講嘢？
+    metadata: {tools: [room_list], not_tools: [group_members]}
+    snapshot: *room_a
+
+  - name: route_room_read_other_network
+    entry: tag
+    expect: reply
+    mention: true
+    input: WhatsApp個group而家講緊咩？
+    metadata: {tools: [room_read], not_tools: [load_transcript]}
+    snapshot: *room_a
+
+  - name: route_group_members_not_the_room_tools
+    entry: tag
+    expect: reply
+    mention: true
+    input: 呢個group有邊啲人？
+    metadata: {tools: [group_members], not_tools: [room_list, room_read]}
+    snapshot: *room_a
+
   # --- hot-set control -----------------------------------------------------------
   # Resident on both sides, so it should NOT move. If it does, the change moved
   # something other than cold-tool reach.

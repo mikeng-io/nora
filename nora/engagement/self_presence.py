@@ -6,6 +6,9 @@ ONE implementation, three callers: the tag path's assembler
 serves participation, reminders and the proactive act turn), and the
 proactive decide pass, which reaches it through a callable the composition
 root hands it. None of them builds its own idea of which rooms exist.
+A fourth reads it through `rooms()`: the room tools `room_list` and
+`room_read` (design/self-awareness/07), which need the same rooms plus a
+member count and each room's store key.
 
 Two sources, both already in the process:
 
@@ -32,11 +35,13 @@ import logging
 from collections.abc import Awaitable, Callable, Mapping
 from typing import Protocol
 
-from nora.domain.ports import AdapterHealth
+from nora.domain.ports import AdapterHealth, RosterSource
 from nora.domain.self_presence import (
+    KnownRoom,
     Presence,
     PresenceRoom,
     TransportState,
+    UnitRooms,
     transport_state,
 )
 from nora.policy import Conversation, Policy
@@ -68,9 +73,16 @@ class PresenceReader:
         adapters: Mapping[str, _Reports],
         handles: Mapping[str, str] | None = None,
         live_handles: Mapping[str, Callable[[], Awaitable[str | None]]] | None = None,
+        rosters: Mapping[str, RosterSource] | None = None,
+        self_ids: frozenset[str] = frozenset(),
         timeout_seconds: float = DEFAULT_READ_TIMEOUT_SECONDS,
     ) -> None:
         self._policy = policy
+        # For `rooms()` only (the room tools): the SAME per-platform roster
+        # map `Room` reads, and her own ids so she is not counted as one of a
+        # room's members. `<presence>` never reads either.
+        self._rosters = dict(rosters or {})
+        self._self_ids = frozenset(self_ids)
         # The SAME map the tag path sends through (`registry.adapters`): a
         # network with no adapter here is one she cannot hear or speak on in
         # this process, which is `not_running`, not `reconnecting`.
@@ -83,10 +95,13 @@ class PresenceReader:
         self._live = dict(live_handles or {})
         self._timeout = timeout_seconds
 
-    async def read(
-        self, *, platform: str, conversation_id: str, direct: bool = False,
-    ) -> Presence:
-        """Where she is, standing in `(platform, conversation_id)`, now."""
+    def _resolve(
+        self, platform: str, conversation_id: str, direct: bool,
+    ) -> tuple[Conversation | None, tuple[Conversation, ...] | None, bool]:
+        """This room in policy, its unit's OTHER rooms, and whether any room
+        lies outside the unit. The one resolution `read()` and `rooms()`
+        share, so `<presence>` and `room_list` cannot disagree about which
+        rooms exist."""
         convo = None if direct else self._policy.conversation(platform, conversation_id)
         unit_convos: tuple[Conversation, ...] | None = None
         other_groups = bool(self._policy.conversations) if direct else False
@@ -98,6 +113,15 @@ class PresenceReader:
             # D1 = B: THAT other groups exist, never which. Nothing about them
             # leaves this line — not a label, not a count.
             other_groups = any(c.unit != convo.unit for c in self._policy.conversations)
+        return convo, unit_convos, other_groups
+
+    async def read(
+        self, *, platform: str, conversation_id: str, direct: bool = False,
+    ) -> Presence:
+        """Where she is, standing in `(platform, conversation_id)`, now."""
+        convo, unit_convos, other_groups = self._resolve(
+            platform, conversation_id, direct,
+        )
 
         networks = {platform, *(c.platform for c in unit_convos or ())}
         states, handles = await asyncio.gather(
@@ -117,6 +141,65 @@ class PresenceReader:
             other_groups=other_groups,
             handles=handles,
         )
+
+    async def rooms(
+        self, *, platform: str, conversation_id: str, direct: bool = False,
+    ) -> UnitRooms:
+        """Every room of this turn's unit, this one included, for the room
+        tools (design/self-awareness/07).
+
+        Health and rosters are read on EVERY call, gathered, each under the
+        same bound as `read()`. A roster that cannot be read is `members=None`
+        («could not check»), never 0. Other units are never read at all: only
+        whether one exists, the same D1 = B line `<presence>` renders.
+        """
+        convo, unit_convos, other_groups = self._resolve(
+            platform, conversation_id, direct,
+        )
+        if convo is None or unit_convos is None:
+            return UnitRooms(rooms=None, direct=direct, other_groups=other_groups)
+        # This room first, then the rest in policy order: the order the
+        # operator wrote them in is the only order that is not a guess.
+        convos = (convo, *unit_convos)
+        states, counts = await asyncio.gather(
+            self._states({c.platform for c in convos}),
+            asyncio.gather(*(self._members(c) for c in convos)),
+        )
+        return UnitRooms(
+            rooms=tuple(
+                KnownRoom(
+                    platform=c.platform,
+                    # The operator's label or nothing, never `primary_id`.
+                    label=c.label,
+                    conversation_id=c.primary_id,
+                    here=c is convo,
+                    state=states[c.platform],
+                    members=count,
+                )
+                for c, count in zip(convos, counts, strict=True)
+            ),
+            direct=direct,
+            other_groups=other_groups,
+        )
+
+    async def _members(self, convo: Conversation) -> int | None:
+        """How many accounts the platform lists in `convo`, Nora excluded, or
+        `None` when it could not say. A count and never a list: the room tools
+        do not name anyone."""
+        source = self._rosters.get(convo.platform)
+        if source is None:
+            return None
+        try:
+            roster = await asyncio.wait_for(
+                source.roster(conversation_id=convo.primary_id), self._timeout,
+            )
+        except Exception:
+            log.warning("roster read failed for a %s room; its member count is "
+                        "unchecked", convo.platform, exc_info=True)
+            return None
+        if not roster.available:
+            return None
+        return sum(1 for account in roster.members if not account & self._self_ids)
 
     async def _states(self, networks: set[str]) -> dict[str, TransportState]:
         ordered = sorted(networks)
