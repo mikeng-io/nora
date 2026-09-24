@@ -710,6 +710,18 @@ async def test_activity_counts_one_person_with_two_accounts_once(store):
     assert got.speakers == 2
 
 
+async def test_activity_falls_back_to_the_sender_only_on_a_null_person_id(store):
+    """COALESCE semantics, pinned on both stores so they cannot drift: only a
+    NULL `person_id` falls through to the sender id; any stored value, even an
+    empty one, is the key as it stands."""
+    await store.append(message=_msg(ts=10, sender="+852111"), person_id="")
+    await store.append(message=_msg(ts=11, sender="+852222"), person_id="")
+
+    got = await store.room_activity(conversation_id="g1", since_ts=0)
+
+    assert got.speakers == 1
+
+
 async def test_activity_last_ts_is_not_bounded_by_the_window(store):
     """The newest message can be older than the window: a room quiet for a
     week still says when it last spoke, with a count of zero."""

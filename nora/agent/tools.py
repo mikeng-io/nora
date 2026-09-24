@@ -2141,7 +2141,13 @@ def _busiest_sentence(listed: Sequence[Mapping[str, object]]) -> str:
     by_messages, messages = _leaders(listed, _ACTIVITY_KEY)
     by_people, people = _leaders(listed, _SPEAKERS_KEY)
     if messages == 0:
-        sentence = f"No room of this group had messages in {window}."
+        # R-27: an absence is claimed only over rooms that were READ. With a
+        # room unchecked, «no room had messages» would cover it too.
+        sentence = (
+            f"The rooms that could be checked had no messages in {window}."
+            if unchecked else
+            f"No room of this group had messages in {window}."
+        )
     else:
         each_m = " each" if len(by_messages) > 1 else ""
         each_p = " each" if len(by_people) > 1 else ""

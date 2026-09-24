@@ -305,6 +305,29 @@ async def test_a_tie_names_every_busiest_room(policy, persons):
     )
 
 
+class _OneRoomUnreadable(FakeRecordStore):
+    """The shared fake with one room's activity read failing, so a group is
+    half checked: the case where an absence could wrongly cover a room
+    nobody read."""
+
+    async def room_activity(self, *, conversation_id: str, since_ts: int):
+        if conversation_id == "WA-FRIENDS-ID":
+            raise RuntimeError("db down for this room")
+        return await super().room_activity(conversation_id=conversation_id, since_ts=since_ts)
+
+
+async def test_no_messages_covers_only_the_rooms_that_were_read(policy, persons):
+    """R-27: with the WhatsApp room unreadable and the others silent, the
+    note must not say that no room had messages. It says the checked rooms
+    had none, and names the one that could not be checked."""
+    result = await _call(_tools(policy, persons, _OneRoomUnreadable())["room_list"])
+    note = result["note"]
+
+    assert note.startswith("The rooms that could be checked had no messages")
+    assert "No room of this group" not in note
+    assert 'Activity could not be checked for "Friends WA".' in note
+
+
 async def test_unread_activity_is_never_reported_as_a_quiet_group(policy, persons, store):
     """R-27: a store that could not be read is «could not check», never «no
     messages today»."""

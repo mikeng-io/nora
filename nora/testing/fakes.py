@@ -386,8 +386,13 @@ class FakeRecordStore:
         return RoomActivity(
             count=len(window),
             last_ts=max((r["ts"] for r in human), default=None),
-            # Mirrors the SQL's coalesce(person_id, sender_id).
-            speakers=len({r["person_id"] or r["sender_id"] for r in window}),
+            # Mirrors the SQL's coalesce(person_id, sender_id) exactly: only a
+            # NULL falls through, so an empty-string person_id counts as itself
+            # here as it does there.
+            speakers=len({
+                r["sender_id"] if r["person_id"] is None else r["person_id"]
+                for r in window
+            }),
         )
 
     async def stats(self) -> dict[str, Any]:
