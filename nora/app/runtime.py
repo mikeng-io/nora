@@ -857,6 +857,30 @@ async def dream_loop(
     units: Callable[[], Sequence[str]] = lambda: (),
     schedules: Mapping[str, AdaptorSchedule] | None = None,
     schedule_clock: _ScheduleClock | None = None,
+    # `[dreamer] max_unit_hold_seconds` (issue #191): the ONE wall clock
+    # `_run_adaptor` wraps its whole call to `_dream_adaptor_once` in. `#60`
+    # bounded that call's two store phases; everything else inside it —
+    # `clock.last_fired`/`record_fire`, every `language.*` cursor read,
+    # `record.since`, `media_join.enrich` — was still a bare `await`, and any
+    # one of them hanging left this loop holding `<adaptor>:<key>` in
+    # `running` forever.
+    #
+    # **TEST-ONLY DEFAULT — this number is NOT what production runs.**
+    # `nora.app` may not read `Config` (this module's own docstring, top of
+    # file), so `dream_loop` cannot resolve `[dreamer]
+    # max_unit_hold_seconds` itself; `nora/__main__.py` is the one caller
+    # that matters in production and it ALWAYS passes
+    # `Config.dreamer_max_unit_hold_seconds()` explicitly — the resolver
+    # that derives a real number from this deployment's own budgets (issue
+    # #191 independent review, BLOCKER: an earlier version of this comment
+    # claimed the default here "matches production", which was already
+    # false the day it was written — the deployment derives roughly 1625s
+    # against a default of 1200 here). This default exists ONLY so the
+    # several dozen tests in this suite that construct a `dream_loop` with
+    # no opinion on the wall clock do not become effectively unbounded by
+    # omission; its one requirement is "comfortably larger than any test's
+    # own tick interval or sleep window", nothing more specific than that.
+    max_unit_hold_seconds: float = 1200.0,
 ) -> None:
     """The Dreamer's clock. A sibling of `prune_loop`, with two differences
     that are not stylistic.
@@ -996,21 +1020,37 @@ async def dream_loop(
         `_AdaptorRunner | None`: the dispatch below narrows it once, at the one
         place that knows it is set, instead of this function re-asserting a
         condition its caller already established.
+
+        **The WHOLE call to `_dream_adaptor_once` runs under ONE wall clock**
+        (issue #191, `[dreamer] max_unit_hold_seconds`). `#60` bounded that
+        call's two store phases (`inputs`, `commit`) with their own
+        `wait_for`s; the cursor reads around them — `clock.last_fired`/
+        `record_fire`, every `language.*` watermark call, `record.since`,
+        `media_join.enrich` — stayed bare `await`s, and any one of them
+        hanging reproduced #60 exactly: this coroutine never returns,
+        `finally: running.discard(unit)` below never runs, and this `unit`
+        never ticks again — indistinguishable, on `nora_dream_skipped_total
+        {reason="in_flight_adaptor"}`, from an ordinary long run. This is
+        shape (2) of #191, chosen over a per-call bound (shape (1), a new
+        `wait_for` for each name above) because it also covers a call nobody
+        has written yet — the cost is that it can only say WHICH ADAPTOR
+        wedged, not which await.
         """
         unit = f"{adaptor.name}:{key}"
         try:
-            status = await _dream_adaptor_once(
-                adaptor=adaptor, runtime=runner, record=record,
-                language=language, metrics=metrics, key=key,
-                safety_lag=safety_lag, quiet_seconds=quiet_seconds,
-                max_age_seconds=max_age_seconds, batch_limit=batch_limit,
-                media_join=media_join,
-                schedules=schedules, clock=schedule_clock,
-                # Consecutive failures on THIS unit, so a retry reads less
-                # than the attempt that failed (issue #291). Cleared on any
-                # non-`unavailable` outcome, so this is 0 in steady state.
-                failure_count=failures.get(unit, 0),
-            )
+            async with asyncio.timeout(max_unit_hold_seconds) as unit_deadline:
+                status = await _dream_adaptor_once(
+                    adaptor=adaptor, runtime=runner, record=record,
+                    language=language, metrics=metrics, key=key,
+                    safety_lag=safety_lag, quiet_seconds=quiet_seconds,
+                    max_age_seconds=max_age_seconds, batch_limit=batch_limit,
+                    media_join=media_join,
+                    schedules=schedules, clock=schedule_clock,
+                    # Consecutive failures on THIS unit, so a retry reads less
+                    # than the attempt that failed (issue #291). Cleared on any
+                    # non-`unavailable` outcome, so this is 0 in steady state.
+                    failure_count=failures.get(unit, 0),
+                )
             if status == "unavailable":
                 # **A FAILURE, even though nothing raised.**
                 # `DreamerRuntime.run` catches everything the model call can
@@ -1041,13 +1081,65 @@ async def dream_loop(
             else:
                 failures.pop(unit, None)
                 last_failure_at.pop(unit, None)
-        except Exception:
-            # Something OUTSIDE the model call broke — the cursor store, the
-            # record read, an adaptor raising out of `inputs`. Counted against
-            # this adaptor's own backoff, never its siblings'.
-            log.exception("dream cycle failed for %s", unit)
-            metrics.inc("nora_errors_total", stage="dream")
-            _count_failure(unit)
+        except Exception as exc:
+            # **ONE `except`, not two — issue #191 review, HIGH.** A prior
+            # version split this into `except TimeoutError: ... if not
+            # unit_deadline.expired(): raise` followed by a sibling `except
+            # Exception:`. Python does not chain except clauses on the same
+            # try: a `raise` inside the first one propagates PAST the second
+            # entirely, out of `_run_adaptor` itself. A collaborator's own
+            # `TimeoutError` — `record.since` hitting an asyncpg
+            # `command_timeout` or a raw socket timeout, exactly the class
+            # `_bounded_store_call`'s own docstring names — is not `asyncio.
+            # timeout`'s cancellation, so it is not caught by the `async
+            # with` above and lands here uncaught by our OWN clock. The old
+            # shape re-raised it: no `log.exception`, no `nora_errors_total`,
+            # no `_count_failure` — silently unmetered, and the exponential
+            # backoff never engaged. Measured live on the review's probe:
+            # `record.since` raising `TimeoutError` produced 14 calls in
+            # 0.3s and 0 errors counted, against 1 call / 1 error / backoff
+            # on the pre-#191 tree. A single clause with an `isinstance`
+            # branch cannot skip a sibling, because there is no sibling to
+            # skip.
+            if isinstance(exc, TimeoutError) and unit_deadline.expired():
+                # `[dreamer] max_unit_hold_seconds` fired — OUR wall clock,
+                # declared above. `unit_deadline.expired()` is what tells
+                # this apart from the `else` branch below: a `TimeoutError`
+                # that is not ours is an ORDINARY failure, not a wedge.
+                metrics.inc(
+                    "nora_dream_unit_timeout_total", adaptor=adaptor.name)
+                log.error(
+                    "dream unit timed out after %.0fs (adaptor=%s key=%s) — "
+                    "[dreamer] max_unit_hold_seconds fired and the whole "
+                    "cycle did not return; the unit is released rather than "
+                    "held forever (issue #191)",
+                    max_unit_hold_seconds, adaptor.name, key,
+                )
+                # DELIBERATELY NOT `_count_failure(unit)`. The exponential
+                # backoff exists for a provider outage, where retrying at
+                # full cadence burns quota against something that is
+                # genuinely down (2026-08-21, `_run_adaptor`'s own docstring
+                # above). A wedge is a different claim: THIS unit's clock
+                # fired, which says nothing about whether a retry right now
+                # would wedge again — `record.since` hanging once is not
+                # evidence the store is down, only that one call didn't
+                # return. Backing it off at `_DREAM_BACKOFF_BASE_SECONDS =
+                # 60s` would also fail the property this fix exists for: a
+                # unit released by the wall clock must be tickable on the
+                # VERY NEXT tick, not an hour's climb away from it. Existing
+                # backoff state is left untouched either way — this outcome
+                # is neither a success (clearing it) nor a new failure
+                # (extending it).
+            else:
+                # Everything else: an ordinary exception from the cursor
+                # store, the record read, an adaptor raising out of
+                # `inputs` — OR a collaborator's own `TimeoutError` that is
+                # not `unit_deadline` expiring. Counted against this
+                # adaptor's own backoff, never its siblings', and never
+                # silently dropped (issue #191 review).
+                log.exception("dream cycle failed for %s", unit)
+                metrics.inc("nora_errors_total", stage="dream")
+                _count_failure(unit)
         finally:
             running.discard(unit)
 
