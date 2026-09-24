@@ -751,6 +751,20 @@ adversarial design audit (2 blockers: R-75/27 §2 not named as reversed, and a
 merge undone by a pass that rendered before it). No code, schema or test for
 §7.2–7.8 exists yet; §7.0 was read at `6f83d504` and on norty's live DB.
 
+
+**2026-09-24 — build steps 1 and 2 shipped; step 3 HELD until a re-count on
+2026-10-01.** Step 1 (#467): appends refuse a retired note, and a
+`retired-merged` note forwards to its survivor; the 21 triaged duplicates were
+relabelled `retired-merged` and forward live. Step 2 (#472): an ambiguous
+`updates` stays pending, and `note_create` refuses an open title. The
+step-2 measurement over the first ~8 hours after #451 (10:47–18:30 HKT): 2
+notes created, both by `note-candidates`, 0 duplicates — too short a window to
+size anything. Per §7.11, `note-merge` waits for the count over a week of
+ordinary traffic: notes created since 2026-09-24 10:47 HKT by producer, open
+pairs asking the same question, exact-title pairs, and staging rows left
+pending as `ambiguous`. Duplicates getting through → step 3 in `shadow`;
+almost none → the adaptor keeps waiting.
+
 Related: #118 (the build), #159 (follow-on), #236 (duplicate bound), #101
 (discharge, shipped, off), #103 (proactive adapter). The design lineage is
 27 → 33 → 34 → 37 → this node; 36 is the review draft that first recorded
