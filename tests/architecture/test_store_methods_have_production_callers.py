@@ -490,7 +490,7 @@ def test_every_uncalled_store_method_is_pinned() -> None:
         "_NO_PRODUCTION_CALLER:\n  " + "\n  ".join(unpinned) + "\n\n"
         "This is not necessarily a bug — most such methods are deliberate "
         "read-back affordances. It IS a decision, and it has to be made rather "
-        "than defaulted into: add a row saying which of the three shapes it is "
+        "than defaulted into: add a row saying which of the four shapes it is "
         "and why. A green contract suite proves the verb WORKS and says nothing "
         "about whether it is USED, which is how every row already here arrived."
     )
@@ -556,6 +556,44 @@ def test_every_pin_declares_a_known_shape() -> None:
     assert not thin, (
         "pins whose reason is too short to be a reason. A row here is the only "
         "record of why a method nothing calls is allowed to exist: " + str(thin)
+    )
+
+
+def _scripts_call_sites() -> dict[str, list[_Site]]:
+    """Call sites under `scripts/`, in the same shape as `_call_sites`'s
+    `calls` half. `_call_sites` deliberately never looks here (`scripts/` is
+    not the daemon), which is exactly why an `operator_script` pin's claim —
+    "a real caller exists, just not where this file scans" — was unchecked:
+    nothing verified the claim was true rather than merely unfalsifiable by
+    the other tests in this file."""
+    calls: dict[str, list[_Site]] = defaultdict(list)
+    for path in sorted((ROOT / "scripts").glob("*.py")):
+        for node in ast.walk(_parse(path)):
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and isinstance(node.func.value, ast.Name | ast.Attribute)
+            ):
+                calls[node.func.attr].append(_Site(path, node.lineno))
+    return calls
+
+
+def test_every_operator_script_pin_has_a_caller_under_scripts() -> None:
+    """`operator_script` is not a rebadged `read_back_affordance` — it claims
+    a REAL caller exists, just outside `_call_sites`' `nora/`-only scan. A pin
+    with no `scripts/` caller at all would be a plain defect wearing this
+    shape's label instead of being fixed or reclassified, and nothing before
+    this test could tell the two apart."""
+    calls = _scripts_call_sites()
+    missing = [
+        f"{mod}::{name}"
+        for (mod, name), pin in sorted(_NO_PRODUCTION_CALLER.items())
+        if pin.shape == "operator_script" and name not in calls
+    ]
+    assert not missing, (
+        "operator_script pins with no call site anywhere under scripts/: "
+        f"{missing} — either the caller moved, was renamed, or this pin is "
+        "not actually this shape"
     )
 
 

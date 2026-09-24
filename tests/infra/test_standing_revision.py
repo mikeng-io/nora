@@ -477,6 +477,51 @@ async def test_an_operator_edit_is_recorded_as_operator(
     assert head.last_folded_row_id == before.last_folded_row_id  # unchanged too
 
 
+async def test_write_if_unchanged_refuses_a_standing_that_changes_the_key_or_the_watermark(
+    store: SqlStandingStore, engine: Any
+) -> None:
+    """The property the docstring used to claim the WHERE clause gave it for
+    free, and did not: `standing`'s `platform`, `conversation_id`,
+    `fold_count` and `last_folded_row_id` are not covered by the WHERE at
+    all — they land in `.values()` and in the revision insert, entirely
+    uncontrolled by the compare-and-set. An operator edit changes `body` and
+    `updated_at` only; anything else reaching this method is a caller bug,
+    and it must be refused loudly (`ValueError`) rather than silently
+    accepted, which is what the false docstring claim let happen."""
+    await store.write(standing=_standing("the fold's own position", fold_count=3,
+                                         last_folded_row_id=10))
+    before = await store.read(platform=PLATFORM, conversation_id=CONV)
+    assert before is not None
+
+    mutations = [
+        {"platform": OTHER_PLATFORM},
+        {"conversation_id": OTHER_CONV},
+        {"fold_count": before.fold_count + 1},
+        {"last_folded_row_id": (before.last_folded_row_id or 0) + 1},
+    ]
+    for mutation in mutations:
+        bad = _standing(
+            "an edit that also tries to move something else",
+            platform=mutation.get("platform", before.platform),
+            conversation_id=mutation.get("conversation_id", before.conversation_id),
+            fold_count=mutation.get("fold_count", before.fold_count),
+            updated_at=T0 + 1000,
+            last_folded_row_id=mutation.get(
+                "last_folded_row_id", before.last_folded_row_id),
+        )
+        with pytest.raises(ValueError, match="platform, conversation_id, "
+                                              "fold_count and last_folded_row_id"):
+            await store.write_if_unchanged(expected=before, standing=bad)
+
+    # Nothing landed for any of the four attempts.
+    head = await store.read(platform=PLATFORM, conversation_id=CONV)
+    assert head is not None
+    assert head.body == "the fold's own position"
+    assert head.fold_count == 3
+    assert head.last_folded_row_id == 10
+    assert await _revision_count(engine) == 1
+
+
 async def test_compare_and_set_refuses_a_stale_row(
     store: SqlStandingStore, engine: Any
 ) -> None:

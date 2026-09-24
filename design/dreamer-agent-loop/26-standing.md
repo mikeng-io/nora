@@ -475,11 +475,12 @@ was closed after measurement showed the fix was not where the defect was.
 - The synthetic `self_claim` corpus cases already passed on master — the
   failure this PR set out to fix was not visible to the eval suite that
   exists.
-- Replays of the recorded LIVE fold calls: the shipped instruction (v8)
-  scored 3/24 on the general corpus and 20/24 scoped; v8 plus an
-  own-statement rule scored 24/24 scoped; a rule telling the fold "do not
-  carry failed-call outcomes" carried it anyway, 23/24 — the instruction was
-  not the lever.
+- Replays of the recorded LIVE fold calls, scored on how often the fold WROTE
+  the failed-read line into `standing` — lower is better, since the line is
+  the defect: v7 is live; v8 wrote the failed-read line in 3/24 draws as a
+  general claim and 20/24 scoped; v8 + own-statement wrote it 24/24; F9
+  carried it 23/24. None reduced it; the fold records what she said —
+  the instruction was not the lever.
 - A read-only study found the root cause was the **tool surface** (since
   fixed by #471/#484/#486), amplified by a **self-attestation loop**: an
   untested sentence the model wrote reaches the fold, the fold writes it into
@@ -512,16 +513,45 @@ often enough to matter.
 `standing_revision` gained a `source` column (`'fold' | 'operator'`, CHECK-
 constrained, default `'fold'`) — every row before this column existed was a
 fold, so the default is also the correct backfill. `SqlStandingStore.write`
-keeps writing `'fold'` for its two callers (`debrief.py`,
-`standing_event.py`) unchanged; the new `SqlStandingStore.write_if_unchanged`
-is the one path that writes `'operator'`, and it refuses — writes nothing —
-unless the row is exactly what was read. `scripts/standing_edit.py` is the
-operator entry point: it carries `fold_count` and the row-id watermark
-through unchanged, because correcting a position's TEXT is not a claim that
-a fold ran or that the conversation was read any further than it already
-was. This closes the gap an operator-approved manual purge hit on
-2026-09-24, where two rows edited through the ordinary `write` path recorded
-as folds with no way to tell them apart from the model's own work afterward.
+keeps writing `'fold'` for all three of its callers (`debrief.py`,
+`standing_event.py`, and the eval sandbox's `standing_fold.py`) unchanged;
+the new `SqlStandingStore.write_if_unchanged` is the one path that writes
+`'operator'`, and it refuses — writes nothing — unless the row is exactly
+what was read. `scripts/standing_edit.py` is the operator entry point: it
+carries `fold_count` and the row-id watermark through unchanged, because
+correcting a position's TEXT is not a claim that a fold ran or that the
+conversation was read any further than it already was. This closes the gap
+an operator-approved manual purge hit on 2026-09-24, where two rows edited
+through the ordinary `write` path recorded as folds with no way to tell them
+apart from the model's own work afterward.
+
+### A fold can still overwrite an operator edit — the compare-and-set is one-sided
+
+`write_if_unchanged` protects the OPERATOR'S write: it refuses if a fold
+landed since the operator read the row. It does nothing to protect a fold
+FROM an operator's edit, and it cannot, because the fold's own write is
+`SqlStandingStore.write` — a blind upsert with no compare-and-set at all, on
+purpose (§9 above, "why this is a second method rather than a flag on
+`write`"). A fold's shape is: read the prior, call the model (the slow step,
+seconds to tens of seconds), then upsert whatever the model returned. If an
+operator's edit lands inside that window — after the fold's read, before its
+write — the fold's write still succeeds (nothing about it checks the row it
+is about to overwrite), the operator's correction is gone, and by default
+NOTHING reports it: the fold does not know an edit happened, and (before the
+recheck below) the operator's own script had already printed `ok` and
+exited. This is not hypothetical against the read-then-model-call gap every
+fold has; it is the
+same shape as the fold-vs-fold race `write_if_unchanged` closes, just on the
+side nothing can close without giving the FOLD a retry path it does not have
+and was never designed to need (a stalled or dropped fold is not something a
+production turn can wait on). `scripts/standing_edit.py` narrows the window
+it can be caught in — it re-reads the head a few seconds after its own write
+and warns if the row has moved again — but a fold landing after that
+re-read, or one already past its model call when the edit lands, is not
+caught by anything. Recorded as a known gap, not fixed: closing it would mean
+either giving the fold a compare-and-set retry (a real behaviour change to
+the hot path, for an edit that happens rarely and by hand) or serializing
+every write against a lock the fold does not currently take.
 
 ## Status / Checkpoint
 

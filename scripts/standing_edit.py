@@ -21,24 +21,50 @@ the fold in every way the fold must not:
 3. **The revision this write appends carries `source='operator'`**, never
    `'fold'` — the entire reason `standing_revision` gained that column.
 
-Usage, on the deploy host (`config.toml` and `DATABASE_URL` are the daemon's
-own, so this edits the row the running process reads):
+**The reverse race is NOT closed** (26-standing.md §9, "a fold can still
+overwrite an operator edit"). `write_if_unchanged` protects THIS script's
+write from a fold that landed before it; it does nothing for a fold that
+lands AFTER — a fold reads the prior, calls the model (seconds), then does
+its own blind upsert with no compare-and-set at all, so an edit landing
+inside that window is silently lost. This script narrows the window it can
+be caught in by re-reading the head a few seconds after its own write and
+warning if the row has moved again, but that is a best-effort check, not a
+guarantee: a fold whose model call finishes after the recheck, or one
+already past its own read when this write lands, is not caught by anything
+here.
 
+Default action is a DRY RUN: it reads the row, validates the new body, and
+prints a unified diff — it writes nothing unless `--apply` is given. Refuses
+(exit 1), always before any write, on: no such row, an empty body, a body
+over `[standing] max_chars` (the operating cap the fold itself is held to —
+this script uses the same one, not the database's much larger hard ceiling),
+or a stale read. Never prompts — the operator supplies the finished text.
+
+Usage, on the deploy host (`config.toml` and `DATABASE_URL` are the daemon's
+own, so this edits the row the running process reads; `standing_edit.py` is
+baked into the image at `/app/scripts/`, same as `check_version_stamp.py`):
+
+    # Preview only — no write:
     docker compose exec -T nora uv run --no-sync python \\
         scripts/standing_edit.py --platform signal --conversation-id g1 \\
         --body-file /tmp/new-standing-body.txt
 
-Prints the old and new body and refuses (exit 1) with no write on any of:
-no such row, an empty or over-ceiling body, or a stale read. Never prompts —
-the operator supplies the finished text; there is no partial-edit mode.
+    # Apply, body piped through stdin so the operator never has to get the
+    # body FILE itself onto the container's filesystem (`docker cp` is still
+    # how the SCRIPT reaches the image if it predates a rebuild):
+    cat /tmp/new-standing-body.txt | docker compose exec -T nora \\
+        uv run --no-sync python scripts/standing_edit.py --platform signal \\
+        --conversation-id g1 --body-file - --apply
 """
 
 from __future__ import annotations
 
 import argparse
 import asyncio
+import difflib
 import os
 import sys
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -47,40 +73,77 @@ from nora.infra.sql.standing import SqlStandingStore
 
 CONFIG_PATH = Path("/app/config.toml")
 
+#: How long to wait before re-reading the head after a write, looking for a
+#: fold that landed on top of it. A few seconds, not a science: it is a
+#: best-effort widening of the catch window, never a guarantee (see the
+#: module docstring and 26-standing.md §9).
+DEFAULT_RECHECK_DELAY_SECONDS = 5.0
+
 
 class EditRefusedError(Exception):
     """The edit did not land; nothing is claimed and nothing was written."""
 
 
-async def edit_standing(
-    *,
-    platform: str,
-    conversation_id: str,
-    new_body: str,
-    store: SqlStandingStore,
-    now_ms: int,
-) -> tuple[Standing, Standing]:
-    """Read the current position, then write `new_body` over it as an
-    operator edit. Returns `(before, after)`. Raises `EditRefusedError` when
-    there is no row to edit or the compare-and-set refuses a stale read —
-    both are refusals, never a partial write.
+@dataclass(frozen=True)
+class EditOutcome:
+    """What `apply_operator_edit` did, and what it saw when it looked again."""
 
-    `fold_count` and `last_folded_row_id` are carried from `before` — see the
-    module docstring point 2 — so the only field this function's caller
-    actually changes is `body`, plus `updated_at`, which records when the
-    operator wrote it (the same meaning it carries for a fold: the instant
-    THIS position was taken).
-    """
-    before = await store.read(platform=platform, conversation_id=conversation_id)
-    if before is None:
+    before: Standing
+    after: Standing
+    #: The head as re-read `recheck_delay_seconds` after the write, or `None`
+    #: if the recheck itself found no row at all (the room's `standing` row
+    #: was deleted out from under this — recorded as a state, not swallowed).
+    reread: Standing | None
+    #: `True` when `reread` no longer matches what this script just wrote —
+    #: the fold-overwrote-the-edit race the module docstring names. `False`
+    #: is not a guarantee nothing happened; it means nothing had happened
+    #: BY the time of the recheck.
+    moved_again: bool
+
+
+async def _read_or_refuse(
+    store: SqlStandingStore, *, platform: str, conversation_id: str
+) -> Standing:
+    row = await store.read(platform=platform, conversation_id=conversation_id)
+    if row is None:
         raise EditRefusedError(
             f"no standing row for platform={platform!r} "
             f"conversation_id={conversation_id!r} — nothing to edit"
         )
+    return row
+
+
+def _validate_body(new_body: str, *, max_chars: int) -> None:
+    if not new_body.strip():
+        raise EditRefusedError("the new body is empty")
+    if len(new_body) > max_chars:
+        raise EditRefusedError(
+            f"the new body is {len(new_body)} characters, over "
+            f"[standing] max_chars = {max_chars} — the same operating cap "
+            "the fold itself is held to. This is not the database's hard "
+            "ceiling (4000); an operator edit is not exempt from the cap a "
+            "fold would be refused for exceeding."
+        )
+
+
+def render_diff(*, before_body: str, new_body: str) -> str:
+    """A unified diff, so the operator sees exactly what changes before
+    deciding to `--apply` — never the two full bodies side by side, which
+    hides a one-word change in two paragraphs of unchanged text."""
+    diff = difflib.unified_diff(
+        before_body.splitlines(keepends=True),
+        new_body.splitlines(keepends=True),
+        fromfile="before", tofile="after",
+    )
+    rendered = "".join(diff)
+    return rendered if rendered else "(no change)\n"
+
+
+def _build_after(before: Standing, new_body: str, *, now_ms: int) -> Standing:
     try:
-        after = Standing(
-            platform=platform,
-            conversation_id=conversation_id,
+        return Standing(
+            platform=before.platform,
+            conversation_id=before.conversation_id,
             body=new_body,
             fold_count=before.fold_count,
             updated_at=now_ms,
@@ -88,6 +151,44 @@ async def edit_standing(
         )
     except ValueError as exc:
         raise EditRefusedError(str(exc)) from exc
+
+
+async def preview_operator_edit(
+    *,
+    platform: str,
+    conversation_id: str,
+    new_body: str,
+    store: SqlStandingStore,
+    max_chars: int,
+) -> tuple[Standing, str]:
+    """Read-only: validates the body and returns `(before, diff)`. Writes
+    nothing — this is what runs without `--apply`, and what `--apply` runs
+    FIRST, so the two paths can never disagree about what would change."""
+    before = await _read_or_refuse(store, platform=platform, conversation_id=conversation_id)
+    _validate_body(new_body, max_chars=max_chars)
+    return before, render_diff(before_body=before.body, new_body=new_body)
+
+
+async def apply_operator_edit(
+    *,
+    platform: str,
+    conversation_id: str,
+    new_body: str,
+    store: SqlStandingStore,
+    now_ms: int,
+    max_chars: int,
+    recheck_delay_seconds: float = DEFAULT_RECHECK_DELAY_SECONDS,
+) -> EditOutcome:
+    """Read, validate, write through the compare-and-set path, then look
+    again. Raises `EditRefusedError` for everything `preview_operator_edit`
+    would, plus a stale-row refusal from `write_if_unchanged` itself — all of
+    those leave the database exactly as it was. The recheck AFTER a
+    successful write is not a refusal path: the write already landed, so
+    this only reports whether it is still standing a few seconds later.
+    """
+    before = await _read_or_refuse(store, platform=platform, conversation_id=conversation_id)
+    _validate_body(new_body, max_chars=max_chars)
+    after = _build_after(before, new_body, now_ms=now_ms)
     applied = await store.write_if_unchanged(expected=before, standing=after)
     if not applied:
         raise EditRefusedError(
@@ -95,7 +196,17 @@ async def edit_standing(
             "edit ran, between the read and this write; re-run to read the "
             "current row and try again"
         )
-    return before, after
+    if recheck_delay_seconds > 0:
+        await asyncio.sleep(recheck_delay_seconds)
+    reread = await store.read(platform=platform, conversation_id=conversation_id)
+    moved_again = (
+        reread is None
+        or reread.body != after.body
+        or reread.updated_at != after.updated_at
+        or reread.fold_count != after.fold_count
+        or reread.last_folded_row_id != after.last_folded_row_id
+    )
+    return EditOutcome(before=before, after=after, reread=reread, moved_again=moved_again)
 
 
 async def _main(argv: list[str]) -> int:
@@ -112,15 +223,27 @@ async def _main(argv: list[str]) -> int:
     )
     body_group.add_argument(
         "--body-file", type=Path,
-        help="UTF-8 file holding the new position",
+        help="UTF-8 file holding the new position, or '-' to read stdin",
     )
     parser.add_argument("--config", type=Path, default=CONFIG_PATH)
+    parser.add_argument(
+        "--apply", action="store_true",
+        help="write the edit. Without it, this prints a diff and writes nothing.",
+    )
+    parser.add_argument(
+        "--recheck-after", type=float, default=DEFAULT_RECHECK_DELAY_SECONDS,
+        help=f"seconds to wait before re-reading the head after --apply "
+             f"writes, looking for a fold that landed on top of it "
+             f"(default {DEFAULT_RECHECK_DELAY_SECONDS})",
+    )
     args = parser.parse_args(argv)
 
-    new_body = (
-        args.body if args.body is not None
-        else args.body_file.read_text(encoding="utf-8")
-    ).strip()
+    if args.body is not None:
+        new_body = args.body.strip()
+    elif str(args.body_file) == "-":
+        new_body = sys.stdin.read().strip()
+    else:
+        new_body = args.body_file.read_text(encoding="utf-8").strip()
 
     cfg = load(args.config, require_secrets=False)
     database_url = os.environ.get(cfg.store.database_url_env, "")
@@ -129,13 +252,23 @@ async def _main(argv: list[str]) -> int:
         return 2
 
     engine = create_sql_engine(database_url)
+    store = SqlStandingStore(engine)
     try:
-        before, after = await edit_standing(
-            platform=args.platform,
-            conversation_id=args.conversation_id,
-            new_body=new_body,
-            store=SqlStandingStore(engine),
+        if not args.apply:
+            _before, diff = await preview_operator_edit(
+                platform=args.platform, conversation_id=args.conversation_id,
+                new_body=new_body, store=store, max_chars=cfg.standing.max_chars,
+            )
+            print(f"DRY RUN — {args.platform}/{args.conversation_id}, nothing written")
+            print(diff, end="")
+            print("re-run with --apply to write this")
+            return 0
+
+        outcome = await apply_operator_edit(
+            platform=args.platform, conversation_id=args.conversation_id,
+            new_body=new_body, store=store, max_chars=cfg.standing.max_chars,
             now_ms=int(datetime.now(UTC).timestamp() * 1000),
+            recheck_delay_seconds=args.recheck_after,
         )
     except EditRefusedError as exc:
         print(f"REFUSED: {exc}", file=sys.stderr)
@@ -144,8 +277,20 @@ async def _main(argv: list[str]) -> int:
         await engine.dispose()
 
     print(f"ok — {args.platform}/{args.conversation_id}, source=operator")
-    print(f"before: {before.body}")
-    print(f"after:  {after.body}")
+    print(render_diff(before_body=outcome.before.body, new_body=outcome.after.body), end="")
+    if outcome.moved_again:
+        after_diff = render_diff(
+            before_body=outcome.after.body,
+            new_body=outcome.reread.body if outcome.reread is not None else "(row deleted)",
+        )
+        print(
+            f"WARNING: the row moved again within {args.recheck_after}s of this "
+            "write — a fold likely landed on top of the operator edit "
+            "(26-standing.md §9, \"a fold can still overwrite an operator "
+            "edit\"). What changed since this script's own write:",
+            file=sys.stderr,
+        )
+        print(after_diff, end="", file=sys.stderr)
     return 0
 
 

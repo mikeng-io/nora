@@ -157,9 +157,12 @@ class SqlStandingStore:
         append ONLY (design/dreamer-agent-loop/26-standing.md, dated section
         2026-09-25): the head carries no writer-provenance column, because the
         property worth recording is who wrote each POSITION the room held,
-        which is what the chain behind the head is for. Every fold caller
-        (`debrief.py`, `standing_event.py`) stays on the default; nothing
-        about this method's shape or its transaction changed for them.
+        which is what the chain behind the head is for. All three callers —
+        `debrief.py`, `standing_event.py`, and the eval sandbox's
+        `standing_fold.py` (which stamps its seeded prior `'fold'` too, since
+        it is reproducing a fold that already happened) — stay on the
+        default; nothing about this method's shape or its transaction
+        changed for any of them.
 
         `'operator'` is written by `write_if_unchanged` below, never by this
         method directly — a manual edit also needs the compare-and-set this
@@ -243,19 +246,45 @@ class SqlStandingStore:
         Refuses (returns `False`, writes nothing) unless `body`, `fold_count`,
         `updated_at` and `last_folded_row_id` all still match `expected` —
         i.e. nothing folded, and nobody else edited, since `expected` was
-        read. `standing.fold_count` and `standing.last_folded_row_id` are
-        NOT part of what changes: the caller is expected to pass `expected`'s
-        own values back unchanged (an operator edit corrects the body, it
-        does not claim a fold happened), and this method does not enforce
-        that beyond what the WHERE clause already requires — the row could
-        not have been written this way if they differed, because the `UPDATE`
-        would then match the wrong row's watermark and fail closed.
+        read.
+
+        `standing.platform`, `standing.conversation_id`, `standing.fold_count`
+        and `standing.last_folded_row_id` are NOT part of what an operator
+        edit changes — only `body` and `updated_at` are — and this method
+        RAISES `ValueError` if any of the four differ from `expected` rather
+        than silently accepting them. **An earlier version of this docstring
+        claimed the WHERE clause already made that impossible; it did not.**
+        The WHERE clause matches the row's CURRENT (pre-write) values against
+        `expected`, which pins the row being updated, but it says nothing
+        about what the caller's `standing` argument then WRITES into
+        `fold_count` or `last_folded_row_id` — those come from `.values()`,
+        entirely uncontrolled by the WHERE — so a caller that (by a bug)
+        passed a `standing` with a different `fold_count` would have
+        silently written it, exactly the claim the operator edit exists to
+        rule out. `platform`/`conversation_id` mismatches were worse: the
+        WHERE still finds the right row (keyed on `expected`'s), but the
+        revision insert below takes ITS values from `standing`, so a caller
+        passing the wrong key would have appended a revision under a
+        different room's identity while updating this one's head. Both are
+        now closed by the checks that follow, not by an argument about the
+        SQL.
 
         Always writes `source='operator'` on the revision it appends — that is
         the entire reason this method exists rather than a caller doing its
         own read-compare-write around `write(source="operator")`, which would
         still race the fold between the compare and the write.
         """
+        if (
+            standing.platform != expected.platform
+            or standing.conversation_id != expected.conversation_id
+            or standing.fold_count != expected.fold_count
+            or standing.last_folded_row_id != expected.last_folded_row_id
+        ):
+            raise ValueError(
+                "write_if_unchanged only changes body and updated_at — "
+                "platform, conversation_id, fold_count and last_folded_row_id "
+                "must match `expected` exactly"
+            )
         last_folded_row_id_matches = (
             STANDING.c.last_folded_row_id == expected.last_folded_row_id
             if expected.last_folded_row_id is not None

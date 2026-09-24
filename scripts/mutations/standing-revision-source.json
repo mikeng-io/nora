@@ -5,5 +5,12 @@
   "old": "        revision = sa.insert(STANDING_REVISION).values(\n            platform=standing.platform,\n            conversation_id=standing.conversation_id,\n            body=standing.body,\n            fold_count=standing.fold_count,\n            updated_at=standing.updated_at,\n            last_folded_row_id=standing.last_folded_row_id,\n            source=\"operator\",\n        )\n        async with self._engine.begin() as conn:\n            result = await conn.execute(update_stmt)",
   "new": "        revision = sa.insert(STANDING_REVISION).values(\n            platform=standing.platform,\n            conversation_id=standing.conversation_id,\n            body=standing.body,\n            fold_count=standing.fold_count,\n            updated_at=standing.updated_at,\n            last_folded_row_id=standing.last_folded_row_id,\n        )\n        async with self._engine.begin() as conn:\n            result = await conn.execute(update_stmt)",
   "target": "tests/infra/test_standing_revision.py -k test_an_operator_edit_is_recorded_as_operator"
+ },
+ {
+  "name": "standing-revision-source: a stale compare-and-set is actually refused",
+  "file": "nora/infra/sql/standing.py",
+  "old": "        async with self._engine.begin() as conn:\n            result = await conn.execute(update_stmt)\n            if result.rowcount == 0:\n                return False\n            await conn.execute(revision)\n            return True",
+  "new": "        async with self._engine.begin() as conn:\n            result = await conn.execute(update_stmt)\n            await conn.execute(revision)\n            return True",
+  "target": "tests/infra/test_standing_revision.py -k test_compare_and_set_refuses_a_stale_row"
  }
 ]
