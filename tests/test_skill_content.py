@@ -88,45 +88,48 @@ def test_every_skill_names_no_scenario(skills):
                 f"{skill.name} names a scenario: {scenario!r}")
 
 
-#: ADR 0016 §4 replaced the old 30-non-blank-line ceiling with a cl100k TOKEN
-#: ceiling, reasoned "lines are not tokens" — true, but a token count turns out
-#: to share the flaw it was meant to fix. `skill.instructions` is markdown
-#: whose line-wrapping is cosmetic, and tiktoken's cl100k encoder is NOT
-#: insensitive to where a line breaks: the same 60 words, wrapped at three
-#: widths with nothing added or removed, measured 72 / 81 / 71 tokens
-#: (2026-09-25) — an over 12% swing from rewrapping alone, the same shape PR
-#: #233 measured for the line ceiling it replaced (30 lines pinned at both 402
-#: and 421 words). Issue #187 finding 4 (was #244); filed against ADR 0016 §4
-#: itself rather than the line ceiling it already superseded.
+#: ADR 0016 §4: a skill body's ceiling in cl100k tokens, not lines (the old
+#: 30 line ceiling measured neither cost nor reach, and lines are not tokens).
+#: The default is 1,500; a skill above it is listed here with its reason,
+#: where the number is. The published hard limit is 5,000 (agentskills.io).
 #:
-#: A WORD count does not have that flaw, by construction:
-#: `test_word_count_does_not_move_when_the_same_text_is_reflowed` below proves
-#: it directly. `str.split()` collapses every run of whitespace, wrapped or
-#: not, so nothing about HOW the markdown is laid out can move the count.
-#:
-#: Measured 2026-09-25, the two shipped skills: `navigation` 519 words,
-#: `image-generation` 1,124 words (the largest). 800 is the default —
-#: comfortable room over `navigation`'s current size without trying to cover
-#: `image-generation`, which keeps its own override below for the same reason
-#: ADR 0016 §4 gave it one.
-_WORD_CEILING = 800
-_WORD_CEILINGS: dict[str, int] = {
-    # DEC-193 (operator, 2026-09-23), carried over from the token ceiling this
-    # replaces. Her whole visual spec lives here and nowhere else: it is not
-    # doctrine (needed only when she makes an image) and not the tool schema
-    # (it is about HER, not the tool). The operator ruled completeness over
-    # brevity, and no rule of the spec may be dropped. It is meant to grow by
-    # one section per configured model, so it keeps room for that. Measured
-    # 2026-09-25: 1,124 words. 1,600 leaves about 42% headroom, roughly the
-    # margin the token ceiling it replaces gave (2,000 over a measured 1,449).
-    "image-generation": 1_600,
+#: **Measured on the body with whitespace COLLAPSED before encoding**
+#: (issue #187 finding 4, updating ADR 0016 §4): a raw cl100k count is not
+#: reflow-invariant either — `skill.instructions` is markdown whose line
+#: width is cosmetic, and tiktoken tokenizes a run of spaces and a line break
+#: differently. Reproducible on the fixture
+#: `test_the_body_ceiling_is_reflow_invariant` below builds: the same 63
+#: words, wrapped at width 20 versus width 100, raw-encode to 88 and 69
+#: tokens — neither close to the other, and neither equal to a "canonical"
+#: count, so a raw token ceiling can be gamed by rewrapping exactly the way
+#: the line ceiling it replaced could. `_body_tokens` below collapses every
+#: run of whitespace to one space first (`" ".join(text.split())`), which
+#: gives the SAME count for every rewrap of the same words — verified across
+#: wrap widths 20 to 1000 — while staying the same unit (cl100k tokens) and
+#: the same published limit ADR 0016 chose.
+_TOKEN_CEILING = 1_500
+_TOKEN_CEILINGS: dict[str, int] = {
+    # DEC-193 (operator, 2026-09-23). Her whole visual spec lives here and
+    # nowhere else: it is not doctrine (needed only when she makes an image)
+    # and not the tool schema (it is about HER, not the tool). The operator
+    # ruled completeness over brevity, and no rule of the spec may be
+    # dropped. It was allowed 80 lines (measured 74) when the ceiling was
+    # lines; on 2026-09-24 it measured 1,449 tokens, and 1,534 once «a picture
+    # of you is a new picture» joined the in-the-picture judgement (the live
+    # WhatsApp turn that sent her reference back). It is meant to grow by one
+    # section per configured model, so it keeps room for that.
+    #
+    # Re-derived on the collapsed count (issue #187 finding 4, 2026-09-25):
+    # collapsing whitespace drops the measured size by design — no words are
+    # removed, only the run of newlines and leading spaces markdown wrapping
+    # leaves behind — and measures 1,471 tokens today (was 1,534 raw, ~4%
+    # lower). 2,000 is unchanged and still fits: ~36% headroom over the
+    # collapsed count, close to the margin it gave the raw one.
+    "image-generation": 2_000,
 }
-#: agentskills.io's published hard limit is 5,000 cl100k tokens. The two
-#: shipped skills measure 1.22-1.37 tokens per word (2026-09-25), which puts a
-#: word-equivalent hard limit between about 3,650 and 4,100; 3,650 sits at the
-#: conservative (fewer-words) end of that range rather than the middle, so
-#: this stays inside the published limit under either skill's own ratio.
-_WORD_HARD_LIMIT = 3_650
+#: Re-checked on the collapsed count (2026-09-25): `navigation` measures 599
+#: tokens today (was 633 raw), comfortably inside the unchanged 1,500 default.
+_HARD_LIMIT = 5_000
 _DESCRIPTION_CEILING = 80
 
 
@@ -136,39 +139,45 @@ def _tokens(text: str) -> int:
     return len(tiktoken.get_encoding("cl100k_base").encode(text))
 
 
-def _words(text: str) -> int:
-    return len(text.split())
+def _body_tokens(text: str) -> int:
+    """The ONE function `test_every_skill_stays_small` measures a body with —
+    collapse every run of whitespace to a single space, THEN cl100k-encode.
+
+    Kept as the single source of truth on purpose (issue #187 finding 3
+    review): a reflow-invariance test that only exercises a helper in
+    isolation cannot prove the size TEST itself has the property if the test
+    could silently stop calling that helper. `test_every_skill_stays_small`
+    calls only this function to measure `n` — never `_tokens` directly — and
+    `test_a_reflowed_skill_is_measured_identically_by_the_real_ceiling_check`
+    below loads two real, on-disk skills through the production `SkillStore`
+    and drives THIS function on their `.instructions`, so the invariance is
+    proved on the actual load-to-ceiling path, not a copy of it."""
+    return _tokens(" ".join(text.split()))
 
 
 def test_every_skill_stays_small(skills):
     """Most of what looks like skill content belongs a layer up or down; what is
-    left is judgement, sized in WORDS (issue #187 finding 4, refining ADR
-    0016 §4's token ceiling).
-
-    Answers "how much is here", nothing about whether it reads well — the same
-    scope a line or token count ever had. Words rather than tokens
-    specifically because a word count cannot be moved by wrapping the same
-    prose differently; see `_WORD_CEILING`'s comment and the reflow test
-    below for the measurement."""
+    left is judgement, and it is sized in tokens (ADR 0016 §4), measured on the
+    whitespace-collapsed body so a rewrap cannot move it (issue #187 finding
+    4; see `_body_tokens`)."""
     for skill in skills:
-        ceiling = _WORD_CEILINGS.get(skill.name, _WORD_CEILING)
-        assert ceiling <= _WORD_HARD_LIMIT, skill.name
-        n = _words(skill.instructions)
-        assert n <= ceiling, f"{skill.name} skill body is {n} words (ceiling {ceiling})"
+        ceiling = _TOKEN_CEILINGS.get(skill.name, _TOKEN_CEILING)
+        assert ceiling <= _HARD_LIMIT, skill.name
+        n = _body_tokens(skill.instructions)
+        assert n <= ceiling, f"{skill.name} skill body is {n} tokens (ceiling {ceiling})"
 
 
-def test_word_count_does_not_move_when_the_same_text_is_reflowed():
-    """The property `test_every_skill_stays_small` needs in order to mean
-    anything: a skill body is markdown, and rewrapping it onto a different
-    line width with no word added, changed or removed is a purely cosmetic
-    edit. It must not change what the ceiling measures.
+def test_the_body_ceiling_is_reflow_invariant():
+    """The property `_body_tokens` needs in order to mean anything: a skill
+    body is markdown, and rewrapping it onto a different line width with no
+    word added, changed or removed is a purely cosmetic edit. It must not
+    change what the ceiling measures.
 
-    Falsifies the token-based alternative in the same breath: the identical
-    prose, wrapped at three different widths, does NOT tokenize to the same
-    cl100k count (measured below), which is exactly the gap ADR 0016 §4
-    opened when "lines are not tokens" was taken to mean tokens have no such
-    gap. Word count is immune by construction — `str.split()` sees only the
-    words, never where a line happened to break."""
+    Falsifies the raw-token alternative in the same breath, with the EXACT
+    numbers this fixture reproduces (verified 2026-09-25, not carried over
+    from an earlier, different fixture): the same 63 words, wrapped at width
+    20 versus width 100, raw cl100k-encode to 88 and 69 tokens — an over 27%
+    swing from rewrapping alone. `_body_tokens` gives 64 for both."""
     import textwrap
 
     prose = (
@@ -180,22 +189,77 @@ def test_word_count_does_not_move_when_the_same_text_is_reflowed():
         "is measured under two different units of account here"
     )
     words = prose.split()
+    assert len(words) == 63
     narrow = textwrap.fill(prose, width=20)
     wide = textwrap.fill(prose, width=100)
     assert narrow != wide, "the two reflows must actually differ byte-for-byte"
 
-    assert _words(narrow) == _words(wide) == len(words)
-
-    # The contrast: the token count DOES move, which is the residual gap a
-    # word ceiling closes and a token ceiling does not.
+    # The raw count DOES move — the residual gap a collapsed count closes.
+    assert _tokens(narrow) == 88
+    assert _tokens(wide) == 69
     assert _tokens(narrow) != _tokens(wide)
+
+    # The collapsed count does not.
+    assert _body_tokens(narrow) == _body_tokens(wide) == 64
+
+
+def test_a_reflowed_skill_is_measured_identically_by_the_real_ceiling_check(tmp_path):
+    """Closes the gap a helper-only reflow test leaves (independent review of
+    #187, finding 4): proving `_body_tokens` is reflow-invariant in isolation
+    does not prove `test_every_skill_stays_small` IS, because nothing stops
+    that test from being edited to call `_tokens` directly and skip the
+    collapse — a mutation the helper-only test cannot see, since it never
+    loads a skill or reads `_TOKEN_CEILINGS`.
+
+    This drives the actual production path: two real `SKILL.md` files, same
+    words, reflowed at two different widths, loaded through the real
+    `SkillStore` (`parse_skill`, not a shortcut), then measured the same way
+    `test_every_skill_stays_small` measures every shipped skill — same
+    helper, same ceiling lookup. Mutating `_body_tokens` to skip the collapse
+    (falsified by hand, see the PR) turns this red alongside the helper test,
+    because both read `_TOKEN_CEILINGS` and call `_body_tokens` on a REAL
+    loaded skill's `.instructions`."""
+    import textwrap
+
+    prose = (
+        "Judgement that other domains also need is doctrine not a skill "
+        "a skill cannot rely on another skill being loaded in the same "
+        "turn this is longer sample prose meant to simulate a real skill "
+        "body paragraph that wraps across several lines of markdown text "
+        "testing whether wrapping the same words differently changes what "
+        "is measured under two different units of account here"
+    )
+    skills_dir = tmp_path / "skills"
+    narrow_dir, wide_dir = skills_dir / "narrow-fixture", skills_dir / "wide-fixture"
+    narrow_dir.mkdir(parents=True)
+    wide_dir.mkdir(parents=True)
+    (narrow_dir / "SKILL.md").write_text(
+        "---\nname: narrow-fixture\ndescription: A reflow fixture for the ceiling test.\n---\n\n"
+        + textwrap.fill(prose, width=20)
+    )
+    (wide_dir / "SKILL.md").write_text(
+        "---\nname: wide-fixture\ndescription: A reflow fixture for the ceiling test.\n---\n\n"
+        + textwrap.fill(prose, width=100)
+    )
+    loaded = {s.name: s for s in SkillStore(skills_dir).available()}
+    assert set(loaded) == {"narrow-fixture", "wide-fixture"}
+    assert loaded["narrow-fixture"].instructions != loaded["wide-fixture"].instructions
+
+    ceiling = _TOKEN_CEILINGS.get("narrow-fixture", _TOKEN_CEILING)
+    n_narrow = _body_tokens(loaded["narrow-fixture"].instructions)
+    n_wide = _body_tokens(loaded["wide-fixture"].instructions)
+    assert n_narrow == n_wide, (
+        f"the real ceiling check measures the two reflows differently: "
+        f"{n_narrow} vs {n_wide}"
+    )
+    assert (n_narrow <= ceiling) == (n_wide <= ceiling)
 
 
 def test_a_skill_ceiling_is_argued_not_bumped():
     """A raised ceiling is a claim that no lower layer owns the content; it is
-    argued in `_WORD_CEILINGS`, and it never passes the published limit."""
-    assert all(v <= _WORD_HARD_LIMIT for v in _WORD_CEILINGS.values())
-    assert _WORD_CEILING < _WORD_HARD_LIMIT
+    argued in `_TOKEN_CEILINGS`, and it never passes the published limit."""
+    assert all(v <= _HARD_LIMIT for v in _TOKEN_CEILINGS.values())
+    assert _TOKEN_CEILING < _HARD_LIMIT
 
 
 def test_every_description_fits(skills):
