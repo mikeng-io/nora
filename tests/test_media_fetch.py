@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import re
 from pathlib import Path
 
 import pytest
@@ -23,7 +24,7 @@ import pytest
 from nora.agent.egress import scan_identifiers
 from nora.agent.guards import Deliverer
 from nora.agent.room import Room
-from nora.agent.tools import NATIVE_TOOL_BUDGETS, build_tools
+from nora.agent.tools import _COVER_NOTE, NATIVE_TOOL_BUDGETS, build_tools
 from nora.doctrine.loader import DoctrineStore
 from nora.domain.media import MediaBlob, MediaObject
 from nora.domain.media_join import MediaJoin
@@ -921,12 +922,130 @@ async def test_a_shared_items_thumbnail_is_looked_at_only_when_asked(wiring):
     assert spawned == []
     row = await index.get(sha256=staged.media_blobs[0].sha256)
     assert row is not None and not row.comprehended
-    assert staged.body.endswith(f"[image {handle}]")
+    assert staged.body.endswith(f"[cover image {handle}]")
 
     out = await _call(wiring["build"](media_store=index), code=handle)
 
     assert out["status"] == "ok"
     assert wiring["vision"].calls == 1, "asked, so it was looked at — once"
+    # And the result says WHAT was looked at: the cover, not the reel. The
+    # role came through the REAL `SqlRecordStore` write and read, which is the
+    # only path `media_fetch` has to it.
+    assert out["note"] == _COVER_NOTE
+
+
+# ---- a shared item's cover says it is one (2026-09-24) -----------------------
+#
+# The live failure: a reel shared into a room arrived as a `[shared reel …]`
+# line and its still picture. Asked "what is in this reel", she fetched the
+# picture, read one frame, and told the room she could not see the clip,
+# with the link to it in the same line. The transcript now says `[cover
+# image …]`, and these pin the other half: the RESULT says what it served.
+
+async def _append_shared_cover(store, *, sha256: str, ts: int = 100) -> None:
+    """A share as custody records it: the line, the cover placeholder, and a
+    blob whose role says it is the cover."""
+    blob = MediaBlob(
+        sha256=sha256, media_type="image/png", size=len(RED_PNG), role="cover",
+    )
+    await store.append(message=NormalizedMessage(
+        "signal", "g1", "group", "+852111", "Miles", ts,
+        "[shared reel by @synth.example https://www.instagram.com/reel/SynthReel02/]"
+        f" [cover image {sha256[:6]}]",
+        {}, media_blobs=(blob,),
+    ))
+
+
+async def test_a_cover_served_from_a_fresh_look_says_it_is_only_the_cover(wiring):
+    await _append_shared_cover(wiring["store"], sha256=PNG_SHA)
+
+    out = await _call(wiring["build"](), code=PNG_SHA[:6])
+
+    assert out["status"] == "ok"
+    assert out["description"] == "A red one-pixel square."
+    assert out["note"] == _COVER_NOTE
+    assert "cover" in out["note"] and "if that line carries one" in out["note"]
+    assert not re.search("[–—]", out["note"]), "ADR 0015: no dash in a note"
+
+
+async def test_a_cover_served_from_the_stored_reading_says_so_too(wiring):
+    """Layer 1: the same bytes were read once already (sent as a photo
+    elsewhere, then shared). The stored reading is served without a look, and
+    it is still only the cover of the thing this handle names here."""
+    await _append_shared_cover(wiring["store"], sha256=PNG_SHA)
+    index = FakeMediaObjectStore([_comprehended(PNG_SHA)])
+
+    out = await _call(wiring["build"](media_store=index), code=PNG_SHA[:6])
+
+    assert out["status"] == "ok"
+    assert wiring["vision"].calls == 0
+    assert out["note"] == _COVER_NOTE
+
+
+async def test_a_cover_served_from_a_vision_cache_hit_says_so_too(wiring):
+    """The content-hash cache, with no media index wired at all: the bytes
+    were described once before (in any room), so no look is paid for, and it
+    is still only the cover of what this handle names here."""
+    await _append_shared_cover(wiring["store"], sha256=PNG_SHA)
+    wiring["cache"].put(PNG_SHA, "A beach at dusk.")
+
+    out = await _call(wiring["build"](media_store=None), code=PNG_SHA[:6])
+
+    assert out["status"] == "ok"
+    assert wiring["vision"].calls == 0
+    assert out["description"] == "A beach at dusk."
+    assert out["note"] == _COVER_NOTE
+
+
+async def test_a_cover_asked_a_question_says_so_too(wiring):
+    """Layer 2: a question looks again and writes nothing back, and the
+    answer is still about the cover, not the reel."""
+    await _append_shared_cover(wiring["store"], sha256=PNG_SHA)
+
+    out = await _call(
+        wiring["build"](), code=PNG_SHA[:6], question="what colour is the sky",
+    )
+
+    assert out["status"] == "ok"
+    assert wiring["vision"].calls == 1
+    assert out["note"] == _COVER_NOTE
+
+
+async def test_a_withheld_cover_keeps_both_sentences(wiring):
+    """An identifier in the cover's reading withholds the words; the cover
+    sentence rides along, so the next step is still the link."""
+    wiring["vision"].description = "A poster reading +85291234567"
+    await _append_shared_cover(wiring["store"], sha256=PNG_SHA)
+
+    out = await _call(wiring["build"](), code=PNG_SHA[:6])
+
+    assert out["withheld"] is True
+    assert out["note"].endswith(_COVER_NOTE)
+    assert out["note"] != _COVER_NOTE
+
+
+async def test_an_ordinary_photo_carries_no_cover_note(wiring):
+    """The negative, on a row with no `role` at all, which is every row
+    written before the role existed."""
+    await _append_image(wiring["store"], conversation_id="g1", sha256=PNG_SHA)
+
+    out = await _call(wiring["build"](), code=PNG_SHA[:6])
+
+    assert out["status"] == "ok"
+    assert "note" not in out
+
+
+async def test_bytes_that_were_also_sent_as_a_photo_are_not_called_a_cover(wiring):
+    """Every sighting must be a cover, not any: once the same bytes are
+    somebody's own photo in view, the handle names that too, and «this is
+    only the cover of a shared reel» would be a claim about the wrong one."""
+    await _append_shared_cover(wiring["store"], sha256=PNG_SHA, ts=100)
+    await _append_image(wiring["store"], conversation_id="g1", sha256=PNG_SHA, ts=200)
+
+    out = await _call(wiring["build"](), code=PNG_SHA[:6])
+
+    assert out["status"] == "ok"
+    assert "note" not in out
 
 
 async def test_layer_2_reads_again_with_the_question_and_bypasses_the_cache(wiring):

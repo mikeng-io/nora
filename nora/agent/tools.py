@@ -79,6 +79,7 @@ from ..domain.gatherings import (
 from ..domain.instagram_links import is_handle as _is_instagram_handle
 from ..domain.instagram_links import parse_link as _parse_instagram_link
 from ..domain.media import (
+    COVER_ROLE,
     HANDLE_CHARS,
     GifCandidate,
     MediaBlob,
@@ -87,6 +88,7 @@ from ..domain.media import (
     resolve_media_type,
     sniff_media_type,
 )
+from ..domain.media import LABELS as MEDIA_LABELS
 from ..domain.media_join import MediaJoin
 from ..domain.models import PersonRef, TranscriptRow, WeatherObservation
 from ..domain.notes import (
@@ -2613,10 +2615,34 @@ _SOCIAL_TWEET_ID_RE = re.compile(r"[0-9]{1,25}")
 # identifiers). Strip before ANY outbound text, hard-enforced here rather
 # than left to model compliance (same adapter-enforces posture DEC-137's
 # reference gate takes).
+#
+# The label alternation is BUILT from `LABELS`, the way the transcript join's
+# own regex is (`nora.domain.media._PLACEHOLDER_RE`). It was a hand-written
+# copy, so `[cover image be4be6]` (2026-09-24) would have reached a reply
+# while every other marker was stripped. Longest first, so `cover image` is
+# tried before `image` can fail on its `cover` prefix.
 _MEDIA_MARKER_RE = re.compile(
-    r"\[(?:image|sticker|video|audio|voice note|document|file)"
-    r"(?:[ \t]+[A-Za-z0-9_-]{4,48}(?::[^\]]*)?)?\]",
+    r"\[(?:"
+    + "|".join(re.escape(x) for x in sorted(MEDIA_LABELS, key=len, reverse=True))
+    + r")(?:[ \t]+[A-Za-z0-9_-]{4,48}(?::[^\]]*)?)?\]",
     re.IGNORECASE,
+)
+
+
+# What `media_fetch` says when the handle it served is a shared reel's, post's
+# or story's still picture (`MediaBlob.role == COVER_ROLE`). It frames what
+# was READ rather than listing what she could do next: the live failure
+# (2026-09-24) had `instagram_read` in the turn and a link in the line, and
+# what was missing was knowing that the picture was not the item.
+#
+# «if that line carries one»: the parser leaves the link OUT whenever it fails
+# validation (a foreign host, a story whose user segment is not the author),
+# so a note that promised a link would send her looking for one that is not
+# there.
+_COVER_NOTE = (
+    "This is only the cover image of a shared reel, post or story: one still "
+    "picture, not the item itself. What the item shows or says is behind the "
+    "item's link, if that line carries one."
 )
 
 
@@ -5726,6 +5752,9 @@ Args:
             # content hash, and for a video in `video_readings`); the bytes
             # never are.
             serve_code: str | None = None
+            # A URL is not a sighting in this conversation, so it cannot be
+            # a shared item's cover here.
+            is_cover = False
         else:
             # ---- code path: resolve within this conversation (§1) -------
             hex_handle = _handle_hex(code)
@@ -5765,6 +5794,13 @@ Args:
             # blobs that share the 6-hex prefix apart — 24 bits collide, and
             # `media.py` says so.
             matches: dict[str, str] = {}
+            # Whether EVERY sighting of that blob in view was a shared item's
+            # cover (`MediaBlob.role`). Every, not any: the same bytes sent
+            # as a photo too make the handle somebody's picture as well, and
+            # the note below would then be a claim about the wrong one. An
+            # absent role (every row written before it existed) is an
+            # ordinary attachment.
+            covers: dict[str, bool] = {}
             for row in rows:
                 if not row.media_json:
                     continue
@@ -5778,6 +5814,9 @@ Args:
                     sha = str(blob.get("sha256", ""))
                     if sha.startswith(hex_handle):
                         matches.setdefault(sha, str(blob.get("media_type", "")))
+                        covers[sha] = covers.get(sha, True) and (
+                            blob.get("role") == COVER_ROLE
+                        )
 
             if not matches:
                 _record_media(metrics, "nothing_found", candidates=0)
@@ -5800,6 +5839,7 @@ Args:
 
             sha256, media_type = next(iter(matches.items()))
             serve_code = sha256[:HANDLE_CHARS]
+            is_cover = covers.get(sha256, False)
 
         # ---- LAYER 1: the stored comprehension (issue #116) --------------
         #
@@ -5829,7 +5869,7 @@ Args:
                 return _serve_media(
                     sha256,
                     _stored_reading(stored),
-                    cached=True, code=serve_code,
+                    cached=True, code=serve_code, cover=is_cover,
                 )
 
         # ---- shared describe tail (both paths) ---------------------------
@@ -5911,6 +5951,7 @@ Args:
         if cached_description is not None:
             return _serve_media(
                 sha256, cached_description, cached=True, code=serve_code,
+                cover=is_cover,
             )
 
         # THE VIDEO READING CACHE (migration 0061) — video's own, keyed on
@@ -5948,6 +5989,7 @@ Args:
             if cached_reading:
                 return _serve_media(
                     sha256, cached_reading, cached=True, code=serve_code,
+                    cover=is_cover,
                 )
 
         if url:
@@ -6117,7 +6159,9 @@ Args:
             # function of (bytes, question) and the cache is keyed on bytes
             # alone. Storing it would make the next room asking "what is this"
             # get an answer to a question it never asked.
-            return _serve_media(sha256, description, cached=False, code=serve_code)
+            return _serve_media(
+                sha256, description, cached=False, code=serve_code, cover=is_cover,
+            )
         if video_key is not None and video_read_whole:
             # The reading WITH its coverage sentence, so the two cannot come
             # apart — the half of #117 a sha256-keyed cache got wrong. The
@@ -6134,10 +6178,13 @@ Args:
             # since the split: an audio description and an image description
             # come from different models and must not be recorded as one.
             await vision_cache.aput(sha256, description, model=describe_model)
-        return _serve_media(sha256, description, cached=False, code=serve_code)
+        return _serve_media(
+            sha256, description, cached=False, code=serve_code, cover=is_cover,
+        )
 
     def _serve_media(
         sha256: str, description: str, *, cached: bool, code: str | None = None,
+        cover: bool = False,
     ) -> dict:
         """The `ok` path, with the untrusted-egress screen run on EVERY serve.
 
@@ -6160,23 +6207,37 @@ Args:
         blind spot). So a photo of a business card whose number MiMo transcribes
         as `9000 0101` PASSES this screen. That is a residual risk EQUAL to
         R-18's, not a solved case — stated here rather than papered over.
+
+        `cover` says the handle is a shared item's still picture
+        (`MediaBlob.role`), and the result then SAYS so in its `note`
+        (2026-09-24). What the model read is one frame, and without that
+        sentence a correct description of it read as a description of the
+        reel: she answered "what is in this reel" off the thumbnail and told
+        the room she could not see the clip, with the link to it in the line
+        she was answering about.
         """
         if scan_identifiers(description) is not None:
             # An identifier the model transcribed off the image — dropped with a
             # note, the shape `about` uses for a conclusion that carries one. The
             # status stays `ok` (she DID look), but the words never leave.
             _record_media(metrics, "ok", cached=cached, withheld=True)
+            withheld = (
+                "I looked, and it has what looks like a phone number or an "
+                "ID in it, so I won't repeat what it said. Describe it only "
+                "in general terms, without the contact details."
+            )
             return {
                 "status": "ok", "code": code, "withheld": True,
-                "note": "I looked, and it has what looks like a phone number or an "
-                        "ID in it, so I won't repeat what it said. Describe it only "
-                        "in general terms, without the contact details.",
+                "note": f"{withheld} {_COVER_NOTE}" if cover else withheld,
             }
         _record_media(metrics, "ok", cached=cached, chars=len(description))
-        return {
+        served: dict[str, object] = {
             "status": "ok", "code": code,
             "description": description,
         }
+        if cover:
+            served["note"] = _COVER_NOTE
+        return served
 
     # ---- generate_image (DEC-137, design/proposed/29) --------------------
     #
@@ -7120,9 +7181,9 @@ Args:
         handle: str | None = None,
         link: str | None = None,
     ) -> dict:
-        """Read an Instagram profile, story, post or reel, by name, handle or
-        link. Call this when somebody asks about someone's Instagram or pastes
-        an Instagram link.
+        """Read an Instagram profile, story, post or reel by name, handle or
+        link. Call this when somebody asks about someone's Instagram or a
+        shared or linked post or reel.
 
         Give exactly one of `person`, `handle` or `link`. Only people in this
         conversation can be named by `person`. A post or a reel is read from
@@ -9884,6 +9945,11 @@ Args:
         attachment = await giphy_source.fetch(candidate=candidate)
         if attachment is None:
             raise RuntimeError("GIF unavailable; reply in words instead.")
+        # A caption is visible reply text exactly as `send_reply`'s is, so it
+        # gets the same hard strip: a media marker the model quoted
+        # (`[image a3f2c1]`, `[cover image …]`) never reaches the room. It used
+        # to skip it, so a caption was the one reply surface that could leak one.
+        caption = _strip_media_markers(caption)
         record_text = f"{caption.strip()} [GIF: {gif_query[0] or candidate.title}]".strip()
         held_before = deliverer.held_count
         sent = await deliverer.deliver(

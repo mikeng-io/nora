@@ -365,3 +365,79 @@ cases:
       args_date: {generate_image: saturday}
       args_exclude: {generate_image: ["this saturday", "tomorrow", "today"]}
     snapshot: *room_a
+
+  # A reel or post SHARED into a room (2026-09-24). Live, a shared reel arrived
+  # as `[shared reel by @x <link>] [image <handle>]`; asked "what is in this
+  # reel", she called only `media_fetch` on the handle, which is the reel's
+  # still cover, and told the room she could see one frame and not the clip,
+  # with `instagram_read` in the turn and the link in the line. The fix renders
+  # the handle as `[cover image …]`, makes `media_fetch` say it served only the
+  # cover, and widens `instagram_read`'s when-clause to a shared post or reel.
+  #
+  # THE SHAPE, and what it cannot carry. The live share was one message and the
+  # question the next; this corpus has no path for an authored prior line (R1,
+  # `evals/scenarios.py`: a case's history is a real room's, never written by
+  # hand). So the share rides IN the tag message, rendered exactly as the
+  # Instagram parser renders a share that came with text: the sharer's words,
+  # then the shared line, then the cover placeholder. That is a real production
+  # shape (a `shared` object with `text` beside it), anchored in room A like
+  # every case here. It differs from the live failure in three stated ways:
+  # the line is in the tag message rather than the one before it; the room is
+  # room A, a Signal room (no Instagram room is anchored in any corpus yet);
+  # and the handle was typed, not held, so it names no blob and a
+  # `media_fetch` on it answers `nothing_found` or `unavailable`, not the
+  # one-frame `ok` that ended the live turn. That difference is why these
+  # cases carry an ORDER criterion (`before`): with no blob behind the handle,
+  # a `media_fetch` finds nothing and she may then open the link, so
+  # "instagram_read ran" would pass the defect. `media_fetch` BEFORE
+  # `instagram_read` is a FAIL; after it (watching the video the read
+  # returned) is the intended chain. See `ToolRouteGrader`.
+  #
+  # `route_instagram_read_shared_reel_bare_image` keeps the PRE-FIX rendering
+  # (`[image …]`) on purpose. The input is authored, so the label half of the
+  # fix cannot move between two arms of the other three; this one isolates the
+  # when-clause (run it on master and on the branch). Every handle, code and
+  # shortcode here is synthetic.
+  - name: route_instagram_read_shared_reel
+    entry: tag
+    expect: reply
+    mention: true
+    input: what is in this reel [shared reel by @synth.example https://www.instagram.com/reel/SynthReel02/] [cover image c0de01]
+    metadata:
+      tools: [instagram_read]
+      not_tools: [web_fetch, social_fetch, instagram_search]
+      before: {instagram_read: [media_fetch]}
+    snapshot: *room_a
+
+  - name: route_instagram_read_shared_reel_yue
+    entry: tag
+    expect: reply
+    mention: true
+    input: 呢條 reel 講咩 [shared reel by @synth.example https://www.instagram.com/reel/SynthReel02/] [cover image c0de01]
+    metadata:
+      tools: [instagram_read]
+      not_tools: [web_fetch, social_fetch, instagram_search]
+      before: {instagram_read: [media_fetch]}
+    snapshot: *room_a
+
+  - name: route_instagram_read_shared_post
+    entry: tag
+    expect: reply
+    mention: true
+    input: 呢個 post 啲相影咗咩 [shared post by @synth.example https://www.instagram.com/p/SynthPost02/] [cover image c0de02]
+    metadata:
+      tools: [instagram_read]
+      not_tools: [web_fetch, social_fetch, instagram_search]
+      before: {instagram_read: [media_fetch]}
+    snapshot: *room_a
+
+  - name: route_instagram_read_shared_reel_bare_image
+    entry: tag
+    expect: reply
+    mention: true
+    input: what is in this reel [shared reel by @synth.example https://www.instagram.com/reel/SynthReel02/] [image c0de01]
+    metadata:
+      tools: [instagram_read]
+      not_tools: [web_fetch, social_fetch, instagram_search]
+      before: {instagram_read: [media_fetch]}
+    snapshot: *room_a

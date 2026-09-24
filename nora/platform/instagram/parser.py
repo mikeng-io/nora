@@ -241,7 +241,7 @@ def _shared_line(shared: object) -> str:
     because it belongs to the shared item and not to the sharer's own words;
     before the caption, because the caption is a stranger's free text and a
     link after it would read as part of it. And never after the placeholder
-    run: `body_with_handles` rewrites the TRAILING `[image]` once custody has
+    run: `body_with_handles` rewrites the TRAILING `[cover image]` once custody has
     the bytes, and a link after it would leave the thumbnail with no handle.
 
     ## The author is NOT the sender, and the wording has to keep them apart
@@ -415,7 +415,11 @@ def parse_event(event: dict) -> NormalizedMessage | None:
             # `media_fetch` asks: the operator's rule is that Nora reads shared
             # content when tagged, never on every share (see
             # `MediaRef.on_demand`). Keyed on the SAME predicate that wrote the
-            # shared line, so the flag and the line cannot disagree.
+            # shared line, so the flag and the line cannot disagree. The flag
+            # is also what makes it render `[cover image]` (`label_for`), so
+            # the transcript says the picture is the item's cover and not the
+            # item: rendered as `[image]`, a model asked what was in a reel
+            # read that one frame and never opened the link (2026-09-24).
             ref = replace(ref, on_demand=True)
         refs = (ref,) if ref is not None else ()
 

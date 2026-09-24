@@ -50,6 +50,55 @@ def test_a_turn_that_did_not_run_is_an_error_not_a_fail():
     assert _label(_data(None)) == ERROR
 
 
+def _ordered(called, before):
+    return EvaluationData(
+        input="x",
+        metadata={
+            "tools": ["instagram_read"], "not_tools": ["web_fetch"], "before": before,
+        },
+        actual_environment_state=[
+            EnvironmentState(name=NORA_ERROR, state=None),
+            EnvironmentState(name=NORA_TOOLS, state=called),
+        ],
+    )
+
+
+_COVER_FIRST = {"instagram_read": ["media_fetch"]}
+
+
+def test_the_forbidden_tool_before_the_right_one_is_a_fail():
+    """The shared-reel defect: the cover looked at first. In a sandbox where
+    the cover names no blob she then reaches for the link, so the right tool
+    DID run; the order is the only thing that tells this from the fix."""
+    assert _label(_ordered(("media_fetch", "instagram_read", "send_reply"), _COVER_FIRST)) == FAIL
+
+
+def test_the_forbidden_tool_after_the_right_one_is_still_a_pass():
+    """Watching the video `instagram_read` returned is the intended chain."""
+    assert _label(_ordered(("instagram_read", "media_fetch", "send_reply"), _COVER_FIRST)) == PASS
+
+
+def test_the_order_is_read_against_the_first_call_of_the_right_tool():
+    assert _label(_ordered(
+        ("instagram_read", "media_fetch", "instagram_read"), _COVER_FIRST,
+    )) == PASS
+
+
+def test_the_forbidden_tool_alone_is_a_fail_on_the_expected_tool_not_on_order():
+    out = ToolRouteGrader().evaluate(_ordered(("media_fetch", "send_reply"), _COVER_FIRST))[0]
+    assert out.label == FAIL
+    assert "expected one of" in out.reason
+
+
+def test_a_before_the_grader_cannot_read_is_an_error():
+    assert _label(_ordered(("instagram_read",), ["media_fetch"])) == ERROR
+    assert _label(_ordered(("instagram_read",), {"instagram_read": "media_fetch"})) == ERROR
+
+
+def test_no_before_leaves_the_grade_unordered():
+    assert _label(_ordered(("media_fetch", "instagram_read"), {})) == PASS
+
+
 def test_tools_are_read_in_execution_order_from_tool_spans():
     class _Span:
         def __init__(self, name, start, attrs=True):
