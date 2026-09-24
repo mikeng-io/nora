@@ -442,7 +442,8 @@ implementations agreeing, every test green, two reviews clean. The divergence
 lived only in the plan, and nothing in this repo had ever looked at one. The
 fix is `== sa.false()` (`nora/infra/sql/turn_verdicts.py:100`) and the check is
 `tests/contract/test_turn_verdict_store_contract.py::test_the_trigger_read_
-actually_uses_its_partial_index`.
+actually_uses_its_partial_index`. (Both were deleted on 2026-09-24 with the
+grounding verdict, `design/standing-compact/`; the lesson stands.)
 
 **And the first version of that test compiled its OWN statement** with the
 correct spelling and EXPLAINed that — so reverting the store's predicate to the
@@ -552,9 +553,11 @@ rederivation` asserted `nora_standing_rederivations_total == 0` and
 `nora_debrief_prior_total{prior="absent"} == 1`. Remove `if prior is None:
 return None` from `_should_rebuild` and the stage raises `AttributeError` on
 `NoneType.fold_count`, writes nothing, lands `outcome="error"` — and BOTH
-assertions still hold. R-72 names that test among the ones enforcing it, and it
+assertions still hold. R-72 named that test among the ones enforcing it, and it
 measured nothing. It was found by a reviewer mutating a clause the author had
-not.
+not. (R-72 is retired and the test gone with `_should_rebuild` itself, deleted
+2026-09-24 with the grounding verdict, `design/standing-compact/`; the lesson
+stands.)
 
 At least five tests in that one file had the shape. The fix in each is two
 lines — `outcome="written" == 1` and a read-back of the row that was actually

@@ -38,7 +38,7 @@ from typing import Any
 #: NEVER «I looked and there was nothing».
 UNAVAILABLE: dict[str, Any] = {
     "status": "unavailable",
-    "note": "I couldn't read that just now. Say so — don't answer as if "
+    "note": "I couldn't read that just now. Say so. Don't answer as if "
             "you'd checked.",
 }
 
@@ -66,17 +66,36 @@ NO_ACCOUNT: dict[str, Any] = {
             "look. Say that; don't guess one from their name.",
 }
 
+#: A typed handle or a pasted link named a username Instagram has no account
+#: for: the bridge's exact username lookup ran and matched nobody
+#: (design/instagram-adoption/15 §Links, /17 P9, P10). `nothing_found`, a fact
+#: about Instagram, and different from `NO_ACCOUNT`, which is about the
+#: operator's file. The note says not to guess a near spelling: the lookup is
+#: exact on purpose, and a guessed handle reads a different human.
+NO_SUCH_HANDLE: dict[str, Any] = {
+    "status": "nothing_found",
+    "note": "Instagram has no account with that username. Say so; don't "
+            "guess a similar one.",
+}
+
 #: The subject resolved and is out of reach. A story is Tier 0 only — a
 #: person the operator LISTED in a group room (design/instagram-adoption/07,
 #: /15) — and it is refused in a turn nobody asked for (/18, 2026-09-24).
 #: Distinct from `unavailable` because calling again cannot help and nothing
 #: is broken: «I may not» and «I couldn't» are different claims. The note
 #: names the listing, not "the rooms I'm in": someone can be IN the chat and
-#: not listed, and "outside my rooms" would be false about them.
+#: not listed, and "outside my rooms" would be false about them. Since P10 it
+#: also answers a story named by a typed handle or a pasted link whose account
+#: maps to nobody listed, which covers a stranger, or to someone listed only
+#: through another room and not on this conversation's roster: the same
+#: boundary, so the same sentence, and nothing in it says which case it was
+#: (a different sentence would tell the room who is in Nora's other rooms).
+#: Reworded 2026-09-24 to «people in this conversation whom the operator has
+#: listed», which is true of every case it covers.
 REFUSED: dict[str, Any] = {
     "status": "refused",
-    "note": "I only open stories of people the operator has listed in one of "
-            "my rooms. Say it's a boundary.",
+    "note": "I only open the stories of people in this conversation whom the "
+            "operator has listed. Say it's a boundary.",
 }
 
 
@@ -100,7 +119,7 @@ def not_set_up(platform: str) -> dict[str, Any]:
 NOTHING_FOUND: dict[str, Any] = {
     "status": "nothing_found",
     "note": "I looked and there was nothing there. Say you couldn't find "
-            "anything — not that you couldn't check.",
+            "anything, not that you couldn't check.",
 }
 
 

@@ -105,9 +105,10 @@ The tag path's debrief writes Standing and proposes notes from a render of the
 finished turn. That render carries `<what_happened>` from the turn's outcome.
 For `llm_error` it says *nothing was sent* — true of the turn, unscoped, and
 the fold generalised it to *I have sent nothing today* with her sent row two
-lines above the tag in the same window. The verdict, which exists to catch
+lines above the tag in the same window. The verdict, which existed to catch
 unsupported claims, said `grounded: true`. The same fold proposed a note whose
-closing condition her own row had already met.
+closing condition her own row had already met. (The verdict was deleted
+2026-09-24 — design/standing-compact/.)
 
 Design 39 §1's brake — *nothing Nora says can create, revise or close a note* —
 holds for her **words**. It does not hold for her **turn outcomes**, which the
@@ -141,10 +142,11 @@ duplicated: `record_wake` / `strikes` / `revisit_at` (`schema.py:1805-1809`,
 been a second copy of that.
 
 **Contract.** The outcome header is scoped to the turn; a `Nora:` row after
-the tag is legible to the fold as a delivered reply regardless of outcome; the
-verdict can see the contradiction from the transcript alone; a dead turn does
-not propose notes; her own row may be a note's closing citation and nothing
-else. Fixes A1–A3 on #199 are landing tonight; A4 lands only if the
+the tag is legible to the fold as a delivered reply regardless of outcome; a
+dead turn does not propose notes; her own row may be a note's closing
+citation and nothing else. (The verdict, which could see the contradiction
+from the transcript alone, was deleted 2026-09-24 — design/standing-compact/.)
+Fixes A1–A3 on #199 are landing tonight; A4 lands only if the
 citation/discharge split above can be proved by mutation inside the current
 commit path, and waits otherwise.
 

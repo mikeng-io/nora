@@ -1,4 +1,4 @@
-# S3 reporting (ADR 0015 §4, DEC-199): what she SAYS after a tool returns.
+# S3 reporting (ADR 0015 §4, DEC-200): what she SAYS after a tool returns.
 #
 # THE QUESTION: is what the reply says about the thing asked worth exactly what
 # the tool results were worth? A rewrite that moves how a status is read out of
@@ -6,7 +6,8 @@
 # corpus (`tool_selection`) cannot see it: routing grades which tool ran, not
 # what she then said about its answer.
 #
-# GRADED BY THE JUDGE on `tool_status_reported`, which each case BINDS. The
+# GRADED BY THE JUDGE on `tool_status_reported` AND the safety criterion: a
+# criterion a case opts into binds with safety (`Judge.grade`, #449). The
 # judge's source data holds the room's window AND the tool results this turn
 # (`evals.backbone._judge_source`), so it grades the reply against what the
 # tool actually returned, whatever that was. In the sandbox several of these
@@ -28,7 +29,7 @@ cases:
     expect: reply
     mention: true
     input: 阿Miles而家喺邊？
-    metadata: {criteria: [tool_status_reported], binds: tool_status_reported}
+    metadata: {criteria: [tool_status_reported]}
     snapshot: &room_a
       platform: signal
       conversation_id: "MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08="
@@ -39,7 +40,7 @@ cases:
     expect: reply
     mention: true
     input: where is Miles right now?
-    metadata: {criteria: [tool_status_reported], binds: tool_status_reported}
+    metadata: {criteria: [tool_status_reported]}
     snapshot: *room_a
 
   - name: report_where_been_today
@@ -47,7 +48,7 @@ cases:
     expect: reply
     mention: true
     input: Miles今日去過邊度？
-    metadata: {criteria: [tool_status_reported], binds: tool_status_reported}
+    metadata: {criteria: [tool_status_reported]}
     snapshot: *room_a
 
   - name: report_where_been_usually
@@ -55,7 +56,7 @@ cases:
     expect: reply
     mention: true
     input: Miles平時星期六通常去邊？
-    metadata: {criteria: [tool_status_reported], binds: tool_status_reported}
+    metadata: {criteria: [tool_status_reported]}
     snapshot: *room_a
 
   - name: report_online_now_gaming
@@ -63,7 +64,7 @@ cases:
     expect: reply
     mention: true
     input: 而家有邊個喺度打緊機？
-    metadata: {criteria: [tool_status_reported], binds: tool_status_reported}
+    metadata: {criteria: [tool_status_reported]}
     snapshot: *room_a
 
   - name: report_online_now_voice
@@ -71,7 +72,7 @@ cases:
     expect: reply
     mention: true
     input: 有冇人喺 voice 度？
-    metadata: {criteria: [tool_status_reported], binds: tool_status_reported}
+    metadata: {criteria: [tool_status_reported]}
     snapshot: *room_a
 
   - name: report_remind_in_the_past_is_refused
@@ -79,7 +80,7 @@ cases:
     expect: reply
     mention: true
     input: 提我尋日下晝三點交租
-    metadata: {criteria: [tool_status_reported], binds: tool_status_reported}
+    metadata: {criteria: [tool_status_reported]}
     snapshot: *room_a
 
   - name: report_remind_accepted
@@ -87,5 +88,5 @@ cases:
     expect: reply
     mention: true
     input: 聽朝九點提我交租
-    metadata: {criteria: [tool_status_reported], binds: tool_status_reported}
+    metadata: {criteria: [tool_status_reported]}
     snapshot: *room_a

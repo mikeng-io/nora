@@ -7,11 +7,15 @@ package fakeig
 
 import (
 	"context"
+	"strconv"
 	"sync"
+	"time"
 
 	"go.mau.fi/mautrix-meta/pkg/instameow"
 	"go.mau.fi/mautrix-meta/pkg/instameow/slidetypes"
+	"go.mau.fi/mautrix-meta/pkg/messagix/httpclient"
 	"go.mau.fi/mautrix-meta/pkg/messagix/responses"
+	"go.mau.fi/mautrix-meta/pkg/messagix/types"
 )
 
 // The two ids for the same thread, from 02-identity-and-policy.md, and the own
@@ -21,6 +25,31 @@ const (
 	ThreadLong  = "340282366841710301281152937372201004392"
 	SelfFBID    = int64(14963523149149302)
 )
+
+// A SYNTHETIC thread, for the shared contract fixtures
+// (tests/fixtures/instagram_bridge), which must carry no measured id. The
+// fake treats it exactly like the measured one: the short id is the only
+// one reactions and the members read accept, the long id the only one an
+// unsend confirms on.
+const (
+	SynthThreadShort = "100000000000042"
+	SynthThreadLong  = "300000000000000000000000000000000000042"
+)
+
+// isShort is a thread's SHORT id, measured or synthetic.
+func isShort(id string) bool { return id == ThreadShort || id == SynthThreadShort }
+
+// isLong is a thread's LONG id, measured or synthetic.
+func isLong(id string) bool { return id == ThreadLong || id == SynthThreadLong }
+
+// longFor is the long id the route lookup answers for a short one: the
+// synthetic pair for the synthetic thread, the measured pair for any other.
+func longFor(short string) string {
+	if short == SynthThreadShort {
+		return SynthThreadLong
+	}
+	return ThreadLong
+}
 
 // --- a fake that behaves like the MEASURED wire -------------------------------
 //
@@ -55,7 +84,12 @@ type IG struct {
 	ReactReq *slidetypes.CreateReactionRequest
 	Unsend   *slidetypes.UnsendMessageRequest
 	Typing   []string
-	Fetches  int
+	// TypingValues is the indicator state each SetTyping call carried,
+	// beside Typing's thread ids.
+	TypingValues []bool
+	// Uploads is every media upload the bridge made, in order (Upload).
+	Uploads []*httpclient.MercuryUploadMedia
+	Fetches int
 
 	// reactions is the fake thread's post-state, keyed by message id: what
 	// Instagram would return on the next read-back.
@@ -67,6 +101,10 @@ type IG struct {
 	// emptySend makes a send return a null message with NO error, which is how
 	// the wire produced `{"ok":true}` with no id.
 	EmptySend bool
+	// SentTimestampMS, when set, is the platform timestamp a successful send
+	// reports (`timestamp_ms` on the sent message). Unset, a send reports
+	// none, which is the shape that must be OMITTED from the bridge's body.
+	SentTimestampMS int64
 	// reactPostStateSilent models what production does: the mutation is
 	// accepted and the response's post-state does not list the new reaction,
 	// while the reaction IS on the message when the thread is read back.
@@ -114,9 +152,10 @@ type IG struct {
 	// --- the story read ----------------------------------------------------
 	//
 	// reelIDs records every CALL's id list, not a flattened set, so the "one
-	// igid, never a batch" rule can actually be asserted. A story read is
-	// visible to its author, and a batched one would put Nora in several
-	// people's viewer lists to answer a question about one.
+	// igid, never a batch" rule can actually be asserted. A batched read
+	// would open several people's stories to answer a question about one
+	// (whether the author sees the view is unmeasured, design 04, 05
+	// §Reading a story).
 	ReelIDs [][]string
 	// reelResp overrides the answer. nil means "the measured reel".
 	ReelResp *responses.ReelInfoResponse
@@ -174,7 +213,7 @@ func (f *IG) GetThread(_ context.Context, req *slidetypes.GetThreadInfoRequest) 
 	if f.ThreadErr != nil {
 		return nil, f.ThreadErr
 	}
-	if f.NoThread || req.ThreadFBID != ThreadShort {
+	if f.NoThread || !isShort(req.ThreadFBID) {
 		// The thread is absent from the response and there is no error. This
 		// is what the wire does, and it is why the route has to check.
 		return &slidetypes.ThreadInfoResponse{}, nil
@@ -185,9 +224,9 @@ func (f *IG) GetThread(_ context.Context, req *slidetypes.GetThreadInfoRequest) 
 	}
 	return &slidetypes.ThreadInfoResponse{
 		ThreadInfo: slidetypes.WrappedThreadInfo{
-			ID: ThreadLong,
+			ID: longFor(req.ThreadFBID),
 			AsIGDirectThread: &slidetypes.ThreadInfo{
-				ThreadFBID: ThreadShort, ThreadTitle: "the group", IsGroup: true,
+				ThreadFBID: req.ThreadFBID, ThreadTitle: "the group", IsGroup: true,
 				Users: users,
 			},
 		},
@@ -328,7 +367,7 @@ func (f *IG) SendMessage(_ context.Context, req *slidetypes.SendTextRequest) (*s
 		// Accepted, and nothing arrived. No error: that is the point.
 		return &slidetypes.SendTextResponse{}, nil
 	}
-	return &slidetypes.SendTextResponse{Message: slidetypes.SentMessage{MessageID: "mid.$sent"}}, nil
+	return &slidetypes.SendTextResponse{Message: f.sent("mid.$sent")}, nil
 }
 
 func (f *IG) SendMedia(_ context.Context, req *slidetypes.SendMediaRequest) (*slidetypes.SendMediaResponse, error) {
@@ -341,7 +380,17 @@ func (f *IG) SendMedia(_ context.Context, req *slidetypes.SendMediaRequest) (*sl
 	if f.EmptySend || !knownThread(req.ThreadID) {
 		return &slidetypes.SendMediaResponse{}, nil
 	}
-	return &slidetypes.SendMediaResponse{Message: slidetypes.SentMessage{MessageID: "mid.$media"}}, nil
+	return &slidetypes.SendMediaResponse{Message: f.sent("mid.$media")}, nil
+}
+
+// sent is a message Instagram accepted and named, with the configured
+// platform timestamp if there is one.
+func (f *IG) sent(id string) slidetypes.SentMessage {
+	msg := slidetypes.SentMessage{MessageID: id}
+	if f.SentTimestampMS != 0 {
+		msg.TimestampMS.Time = time.UnixMilli(f.SentTimestampMS)
+	}
+	return msg
 }
 
 func (f *IG) SendReaction(_ context.Context, req *slidetypes.CreateReactionRequest) (*slidetypes.SendReactionResponse, error) {
@@ -358,7 +407,7 @@ func (f *IG) SendReaction(_ context.Context, req *slidetypes.CreateReactionReque
 	// MEASURED 2026-09-22: only the short thread id mutates the thread. The
 	// long one is accepted and changes nothing, so the post-state comes back
 	// unchanged and the caller has no error to go on.
-	if req.Input.ThreadID == ThreadShort {
+	if isShort(req.Input.ThreadID) {
 		kept := f.Reactions[id][:0:0]
 		for _, r := range f.Reactions[id] {
 			if r.SenderFBID != SelfFBID {
@@ -390,15 +439,28 @@ func (f *IG) UnsendMessage(_ context.Context, req *slidetypes.UnsendMessageReque
 	// whether it retracted anything. Addressed with the wrong thread it does
 	// not, and says so — which is exactly the field the bridge used to drop.
 	return &slidetypes.UnsendMessageResponse{
-		DirectUnsendMessage: !f.UnconfirmedUnsend && req.SendData.ThreadID == ThreadLong,
+		DirectUnsendMessage: !f.UnconfirmedUnsend && isLong(req.SendData.ThreadID),
 	}, nil
 }
 
-func (f *IG) SetTyping(_ context.Context, threadID string, _ bool) error {
+func (f *IG) SetTyping(_ context.Context, threadID string, typing bool) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.Typing = append(f.Typing, threadID)
+	f.TypingValues = append(f.TypingValues, typing)
 	return f.TypingErr
+}
+
+// Upload is the media upload leg (gateway Options.Upload), recording what the
+// bridge handed the library. It answers the attachment fbid the measured
+// upload returned.
+func (f *IG) Upload(_ context.Context, _ int64, media *httpclient.MercuryUploadMedia) (*types.MercuryUploadResponse, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.Uploads = append(f.Uploads, media)
+	return &types.MercuryUploadResponse{
+		Payload: types.MediaPayloads{RealMetadata: &types.FileMetadata{ImageID: 2280432885466163}},
+	}, nil
 }
 
 func (f *IG) FetchThreadID(_ context.Context, short int64) (*instameow.ThreadIGIDs, error) {
@@ -408,11 +470,14 @@ func (f *IG) FetchThreadID(_ context.Context, short int64) (*instameow.ThreadIGI
 	if f.FetchErr != nil {
 		return nil, f.FetchErr
 	}
-	_ = short
-	return &instameow.ThreadIGIDs{ShortID: ThreadShort, LongID: ThreadLong}, nil
+	shortID := strconv.FormatInt(short, 10)
+	if shortID != SynthThreadShort {
+		shortID = ThreadShort
+	}
+	return &instameow.ThreadIGIDs{ShortID: shortID, LongID: longFor(shortID)}, nil
 }
 
 // knownThread is the send legs' only discrimination: measured, BOTH id spaces
 // deliver a text message, so the fake can honestly refuse only an id that
 // names no thread at all.
-func knownThread(id string) bool { return id == ThreadShort || id == ThreadLong }
+func knownThread(id string) bool { return isShort(id) || isLong(id) }

@@ -17,9 +17,10 @@ seven months between its build (2026-08-28) and the note-curator merge
 `NoteCuratorAdaptor.commit` — its row here is DELETED accordingly (see "wiring
 one up forces its row OUT", below), the exact graduation this file's own
 mechanism exists to require rather than merely permit.
-`SqlTurnVerdictStore.read` says outright that it is "present for the contract
-suite". `nora/domain/tag_trace_rederive.rebuild_state` has a named test
-asserting that it raises. In each case a green test measured that the verb
+`SqlTurnVerdictStore.read` said outright that it was "present for the contract
+suite" (the store was deleted with the verdict, 2026-09-24).
+`nora/domain/tag_trace_rederive.rebuild_state` has a named test asserting that
+it raises. In each case a green test measured that the verb
 WORKS, and nothing anywhere measured that the verb is USED — which is
 CLAUDE.md's no-self-attestation rule landing on a store method: the doer's own
 gate certified the wrong property.
@@ -43,10 +44,11 @@ like a pile of bugs:
       code can act on or leave. These are the ones that want fixing.
 
 THE COUNTS, so they reconcile with something: FOUR methods are pinned below.
-TWO more are known to have no production caller and cannot be proven so here —
-`SqlTagTraceStore.recent` and `SqlTurnVerdictStore.read` — because their names
-are shared with other stores (see the ambiguity rule). Six in total; the four
-are what this file can check.
+ONE more is known to have no production caller and cannot be proven so here —
+`SqlTagTraceStore.recent` — because its name is shared with other stores (see
+the ambiguity rule). Five in total; the four are what this file can check.
+(`SqlTurnVerdictStore.read` was a second such method until its store was
+deleted with the verdict on 2026-09-24.)
 
 These counts were SIX and EIGHT until 2026-09-07 and were not re-derived when
 the knowledge and language tiers were deleted — `SqlEntityStore.lookup` left
@@ -221,9 +223,9 @@ _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
 #
 # Two kinds, both unresolvable for the same reason — a call to `.read(...)`
 # cannot be attributed: defined on more than one store class, or also defined on
-# a non-Protocol class elsewhere under `nora/`. Two methods KNOWN to have no
-# production caller hide in here and cannot be proven so: `tag_traces.recent`
-# and `turn_verdicts.read`.
+# a non-Protocol class elsewhere under `nora/`. One method KNOWN to have no
+# production caller hides in here and cannot be proven so: `tag_traces.recent`
+# (`turn_verdicts.read` was a second until 2026-09-24, deleted with its store).
 #
 # `lookup` joined on 2026-09-08 with `MediaObjectStore.lookup` (issue #116):
 # `nora/infra/version.py` and `nora/infra/transit/catalogue.py` each define an
@@ -262,7 +264,7 @@ _STORE_MODULES: frozenset[str] = frozenset(
         "participation_state.py", "presence.py",
         "reasoning_strip.py",
         "reminders.py", "tag_debounce.py",
-        "standing.py", "tag_traces.py", "tool_call_log.py", "turn_verdicts.py",
+        "standing.py", "tag_traces.py", "tool_call_log.py",
         "video_readings.py",
     }
 )

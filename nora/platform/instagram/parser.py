@@ -64,11 +64,10 @@ parsers — a bad turn must never kill the stream behind it.
 from __future__ import annotations
 
 import logging
-import re
 import time
 from dataclasses import replace
-from urllib.parse import urlsplit
 
+from ...domain.instagram_links import is_handle, link_shape, parse_link
 from ...domain.media import MediaRef, label_for, render_placeholder
 from ...domain.models import EditTarget, NormalizedMessage, Quote
 from .ids import conversation_id_for, fbid_form, is_person_mention
@@ -161,32 +160,11 @@ def _media_ref(media: dict) -> MediaRef | None:
     )
 
 
-#: The hosts a shared item's link may name. Anything else is not rendered as a
-#: link at all: the transcript carries a link Nora may later open, and a
-#: bridge field that pointed off Instagram would be a stranger's url wearing a
-#: member's share.
-_INSTAGRAM_HOSTS = frozenset({"instagram.com", "www.instagram.com"})
-
-# One charset per path segment, each the whole of what that segment can hold.
-# A shortcode is Instagram's base64url alphabet; a username is letters, digits,
-# `.` and `_`, at most 30; a story pk is digits. `fullmatch`, never `match`: a
-# segment that is a valid shortcode followed by anything else is not one.
-_SHORTCODE = re.compile(r"[A-Za-z0-9_-]{1,64}")
-_USERNAME = re.compile(r"[A-Za-z0-9._]{1,30}")
-_STORY_PK = re.compile(r"[0-9]{1,25}")
-# A username must carry at least one non-digit. The charset above admits an
-# all-digit segment, and an all-digit "username" in a story path is exactly the
-# shape an igid takes — which `scan_identifiers` deliberately lets through,
-# because bare digit runs are ordinary chat content.
-_HAS_NON_DIGIT = re.compile(r"[^0-9]")
-
-
-def _is_handle(value: str) -> bool:
-    """A string that can be rendered as an Instagram handle: the username
-    charset, whole, with at least one non-digit (see `_HAS_NON_DIGIT`). One
-    predicate for the story segment and the rendered author, so an igid
-    cannot ride in through whichever of the two was checked less."""
-    return bool(_USERNAME.fullmatch(value)) and bool(_HAS_NON_DIGIT.search(value))
+# The link rules (#435) live in ONE module, `nora.domain.instagram_links`, which
+# `instagram_read` reads too, so the transcript and the tool cannot disagree
+# about what a valid Instagram link is. `_is_handle` stays this module's name
+# for the shared predicate.
+_is_handle = is_handle
 
 
 def _shared_target(target_url: object, author: str = "") -> tuple[str, str]:
@@ -221,48 +199,17 @@ def _shared_target(target_url: object, author: str = "") -> tuple[str, str]:
     """
     if not isinstance(target_url, str) or not target_url.strip():
         return "post", ""
-    try:
-        parts = urlsplit(target_url.strip())
-    except ValueError:
+    kind = link_shape(target_url, story_ring=False)
+    if kind not in ("reel", "post", "story"):
+        # A profile link, an unknown path, or no path at all: the label this
+        # renders has always been `post` for those, with no link.
         return "post", ""
-    path = parts.path
-    if path.endswith("/"):
-        path = path[:-1]
-    segments = path[1:].split("/") if path.startswith("/") else []
-
-    if len(segments) == 2 and segments[0] in ("reel", "reels"):
-        kind, valid = "reel", bool(_SHORTCODE.fullmatch(segments[1]))
-        clean = f"/reel/{segments[1]}/"
-    elif len(segments) == 2 and segments[0] == "p":
-        kind, valid = "post", bool(_SHORTCODE.fullmatch(segments[1]))
-        clean = f"/p/{segments[1]}/"
-    elif len(segments) == 3 and segments[0] == "stories":
-        kind = "story"
-        user = segments[1]
-        valid = (
-            _is_handle(user)
-            and user.lower() == author.strip().lstrip("@").lower()
-            and bool(_STORY_PK.fullmatch(segments[2]))
-        )
-        clean = f"/stories/{segments[1]}/{segments[2]}/"
-    else:
-        return "post", ""
-
-    try:
-        # `.port` raises on a netloc like `host:abc`, which is a malformed
-        # origin and so no link, never a crash.
-        origin_ok = (
-            parts.scheme in ("https", "http")
-            and parts.hostname in _INSTAGRAM_HOSTS
-            and parts.port is None
-            and parts.username is None
-            and parts.password is None
-        )
-    except ValueError:
-        origin_ok = False
-    if not (valid and origin_ok):
+    link = parse_link(target_url)
+    if link is None or link.kind != kind:
         return kind, ""
-    return kind, f"https://www.instagram.com{clean}"
+    if kind == "story" and link.key.lower() != author.strip().lstrip("@").lower():
+        return kind, ""
+    return kind, link.url
 
 
 def _shared_line(shared: object) -> str:
@@ -521,8 +468,10 @@ def parse_event(event: dict) -> NormalizedMessage | None:
             mentions=_mentioned_ids(event.get("mentions")),
             quote=_quoted(event.get("reply_to")),
             media=refs,
-            # `mid.$…` — what `POST /react` and `POST /unsend` address a
-            # message by. `(author, timestamp)` means nothing to either.
+            # `mid.$…` — what a reaction and an unsend address a message by
+            # (`/threads/{thread_fbid}/messages/{message_id}`, and its
+            # `/reaction`), and what a reply's `reply_to` names.
+            # `(author, timestamp)` means nothing to any of them.
             message_id=str(event.get("message_id") or ""),
         )
     except Exception:

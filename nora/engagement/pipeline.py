@@ -536,7 +536,6 @@ class EngagementPipeline:
                 trace=trace,
                 platform=platform,
                 store=wiring.store,
-            store_verdict=wiring.store_verdict,
             notes_sink=wiring.notes_sink,
             unit_of=wiring.unit_of,
                 client=wiring.client,
@@ -549,7 +548,6 @@ class EngagementPipeline:
                 fold_batch=wiring.fold_batch,
                 timeout_seconds=wiring.timeout_seconds,
                 store_timeout_seconds=wiring.store_timeout_seconds,
-            rebuild_after_folds=wiring.rebuild_after_folds,
                 now_ms=int(time.time() * 1000),
             notes_read=notes_read,
             )

@@ -1762,5 +1762,9 @@ async def test_the_instagram_backend_is_composed_with_the_person_index(cfg):
             isinstance(client, InstagramSocialClient)
             for client in router._exceptions.values()
         )
+        # P10: a handle or a link resolves through the SAME client's exact
+        # username lookup. Without it every handle and link would answer
+        # `unavailable` while the flag read as on.
+        assert isinstance(router._accounts, InstagramSocialClient)
     finally:
         await deps.background.cancel_all()

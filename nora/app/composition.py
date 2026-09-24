@@ -118,7 +118,6 @@ from nora.infra.sql.standing import SqlStandingStore
 from nora.infra.sql.tag_debounce import SqlTagDebounceStore
 from nora.infra.sql.tag_traces import SqlTagTraceStore
 from nora.infra.sql.tool_call_log import SqlToolCallLogStore
-from nora.infra.sql.turn_verdicts import SqlTurnVerdictStore
 from nora.infra.sql.video_readings import SqlVideoReadingStore
 from nora.infra.version import OK as VERSION_OK
 from nora.infra.version import VersionManifest
@@ -963,6 +962,12 @@ class Dependencies:
     #: every proactive occasion runs through. Nothing here changes any of
     #: that; the object was already built and already held.
     fire_path: FirePath | None
+    #: The ONE `<presence>` reader (design/self-awareness/02) the tag path's
+    #: assembler, the fire path and the proactive pass all hold. Named for the
+    #: reason the two entry points above are: it was built and held three
+    #: times over and reachable only through privates. NOT `presence` below,
+    #: which is the Life360 store — where the PEOPLE are; this is where SHE is.
+    self_presence: PresenceReader
     #: The clock this graph runs on. Named for the same reason the two entry
     #: points above are: it was a fact the graph had and could not be asked for.
     clock: Callable[[], datetime]
@@ -1263,13 +1268,8 @@ async def build_dependencies(
         quote_margin=cfg.store.quote_margin,
         quote_window_multiplier=cfg.store.quote_window_multiplier,
     )
-    # The per-turn verdict's store (26 §3). Built unconditionally beside
-    # `standing_store` for the same reason: it costs one attribute with
-    # the tier off, and the debrief's own `store_verdict is None` guard
-    # is what makes it inert rather than a second flag to forget.
-    turn_verdict_store = SqlTurnVerdictStore(engine)
     # The shared decision log (issue #199). Built unconditionally beside
-    # `standing_store` and `turn_verdict_store` for their reason — it costs one
+    # `standing_store` for its reason — it costs one
     # attribute where nothing reads it — and there is a second reason here: the
     # log has FOUR writers on three different paths, so a flag gating it would
     # be four places to forget rather than one, and a half-wired log is worse
@@ -2077,9 +2077,9 @@ async def build_dependencies(
                 cfg.search.provider,
                 cfg.search.api_key_env,
             )
-    # `social_fetch` (DEC-151) and `instagram_read` (design/instagram-
-    # adoption/18) get ONE `SocialProvider` — `SocialRouter` — and the
-    # registry stays unaware that there are two backends under it
+    # `social_fetch` (DEC-151), `instagram_read` and `instagram_search`
+    # (design/instagram-adoption/18) get ONE `SocialProvider` — `SocialRouter`
+    # — and the registry stays unaware that there are two backends under it
     # (design/instagram-adoption/08). Each backend is wired independently and
     # there is NO credential on either, so `enabled` alone is the gate (the
     # `[preview]` shape); an unwired backend answers `unavailable` for ITS OWN
@@ -2099,8 +2099,11 @@ async def build_dependencies(
         )
     # The INSTAGRAM backend serves every Instagram read the bridge has a route
     # for — `instagram/story` and `instagram/profile`, `instagram_read`'s two
-    # (design/instagram-adoption/15, /18, P5). Both rows take a PERSON, so the
-    # router needs a `SocialSubjectIndex`: `PersonsSubjectIndex` resolves
+    # (design/instagram-adoption/15, /18, P5), `instagram/post`, its read of a
+    # pasted post or reel link (P12), and `instagram/search`,
+    # `instagram_search`'s (P11), which takes free text and needs no index.
+    # The two read rows take a PERSON, so the router needs a
+    # `SocialSubjectIndex`: `PersonsSubjectIndex` resolves
     # person -> igid off `identity.toml` (kind-aware; none or several is
     # `ambiguous`) and answers Tier 0 off `policy.toml`'s group rooms (a `*`
     # room and `[dm]` never count). `SocialRouter` refuses to be constructed
@@ -2110,7 +2113,7 @@ async def build_dependencies(
     # Its own `enabled`, because the two backends are provisioned and fail
     # independently: turning Instagram on must not need the host's OpenCLI
     # service, and a checkpointed Instagram session must not take X with it.
-    instagram_social: SocialProvider | None = None
+    instagram_social = None
     social_subjects = None
     if cfg.social.instagram.enabled:
         from nora.infra.social import InstagramSocialClient, PersonsSubjectIndex
@@ -2129,6 +2132,11 @@ async def build_dependencies(
                 if instagram_social is not None else {}
             ),
             subjects=social_subjects,
+            # P10: a typed handle or a pasted link names a USERNAME, and the
+            # bridge's exact lookup is the only thing that turns one into an
+            # igid (design/instagram-adoption/15 §Links). The same client:
+            # the lookup is a GET on the same bridge.
+            accounts=instagram_social,
         )
     # `weather` (DEC-70) is wired on `[weather] enabled` alone — the HK Observatory
     # provider is KEYLESS, so unlike `route`/`search` there is no key to resolve;
@@ -2688,7 +2696,6 @@ async def build_dependencies(
     if cfg.standing.enabled:
         debrief_wiring = DebriefWiring(
             store=standing_store,
-            store_verdict=turn_verdict_store,
             media_join=media_join,
             # The note tier's sink. `None` while `[notes] enabled = false`,
             # so the debrief parses no proposals and raises none — the
@@ -2724,7 +2731,6 @@ async def build_dependencies(
             fold_batch=cfg.standing.fold_batch,
             timeout_seconds=cfg.standing.timeout_seconds,
             store_timeout_seconds=cfg.standing.store_timeout_seconds,
-            rebuild_after_folds=cfg.standing.rebuild_after_folds,
         )
     engagement = EngagementPipeline(
         # EVERY built adapter, not just Signal's: a tag is answered on the
@@ -3880,6 +3886,7 @@ async def build_dependencies(
         participation_trigger=participation_trigger,
         relevance_gate=gate,
         fire_path=fire_path,
+        self_presence=presence_reader,
         clock=clock,
         proactive_screen=proactive_screen,
         account=account, doctrine=doctrine,

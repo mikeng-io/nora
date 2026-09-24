@@ -14,6 +14,8 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
+
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
 from nora.domain.models import PersonRef
@@ -102,18 +104,6 @@ async def test_an_unknown_what_is_nothing_found_and_not_echoed():
     out = await tools["social_fetch"](platform="x", what="like", target="nasa")
     assert out["status"] == "nothing_found"
     assert "like" not in str(out)
-    assert fake.read_calls == []
-
-
-async def test_instagram_post_is_unavailable_not_nothing_found():
-    """The recorded limitation: OpenCLI 1.8.7 has no caption-by-URL command,
-    so «I can't» is the honest answer — never «the post isn't there»."""
-    fake = _FakeSocialProvider()
-    tools = _tools(social=fake)
-    out = await tools["social_fetch"](
-        platform="instagram", what="post", target="https://www.instagram.com/p/abc/",
-    )
-    assert out["status"] == "unavailable"
     assert fake.read_calls == []
 
 
@@ -222,7 +212,7 @@ async def test_an_overlong_search_query_is_nothing_found():
     fake = _FakeSocialProvider()
     tools = _tools(social=fake)
     out = await tools["social_fetch"](
-        platform="instagram", what="search", target="q" * 201,
+        platform="x", what="search", target="q" * 201,
     )
     assert out["status"] == "nothing_found"
     assert fake.read_calls == []
@@ -239,11 +229,11 @@ async def test_the_ok_path_passes_platform_what_target_limit_through():
     fake = _FakeSocialProvider()
     tools = _tools(social=fake)
     out = await tools["social_fetch"](
-        platform="instagram", what="search", target="hk hiking", limit=7,
+        platform="x", what="search", target="hk hiking", limit=7,
     )
     assert out["status"] == "ok"
     assert fake.read_calls == [
-        {"platform": "instagram", "what": "search", "target": "hk hiking", "limit": 7}
+        {"platform": "x", "what": "search", "target": "hk hiking", "limit": 7}
     ]
 
 
@@ -261,14 +251,15 @@ async def test_limit_is_clamped_to_the_floor():
     assert fake.read_calls[0]["limit"] == 1
 
 
-# ------------------------------------- the rows that moved to `instagram_read`
+# ------------------------------------------- every Instagram read moved out
 #
-# 2026-09-24 (design/instagram-adoption/18, P5): Instagram profile and story
-# left this tool for `instagram_read`, and Instagram posts has no mechanism
-# anywhere. Each is answered by THIS tool, `unavailable` («not here»), and
-# never reaches the provider: a request that reached OpenCLI for an Instagram
-# profile would be a second tool reading the same thing over the backend 15
-# took Instagram away from.
+# 2026-09-24 (design/instagram-adoption/18): Instagram profile and story left
+# this tool for `instagram_read` (P5), and Instagram account search left for
+# `instagram_search` (P11). `social_fetch` is X only. Every Instagram request
+# is answered by THIS tool, `unavailable` («not here»), names the two tools
+# that read Instagram now, and never reaches the provider: a request that
+# reached OpenCLI for Instagram would be a second tool reading the same thing
+# over the backend `15` took Instagram away from.
 
 
 async def test_a_story_is_redirected_to_instagram_read_and_never_sent():
@@ -284,41 +275,44 @@ async def test_a_story_is_redirected_to_instagram_read_and_never_sent():
     assert fake.read_calls == []
 
 
-async def test_an_instagram_profile_is_redirected_to_instagram_read_and_never_sent():
+@pytest.mark.parametrize(
+    ("what", "target"),
+    [
+        ("search", "hk hiking"),
+        ("profile", "example_friend"),
+        ("posts", "example_friend"),
+        ("post", "https://www.instagram.com/p/abc/"),
+    ],
+)
+async def test_every_instagram_request_is_redirected_and_never_sent(what, target):
+    """The P11 cutover, tool side. The note names BOTH Instagram tools, so a
+    model that reached for the wrong one is told which is right."""
     fake = _FakeSocialProvider()
     tools = _tools(social=fake)
-    out = await tools["social_fetch"](
-        platform="instagram", what="profile", target="example_friend",
-    )
+    out = await tools["social_fetch"](platform="instagram", what=what, target=target)
     assert out["status"] == "unavailable"
+    assert "instagram_search" in out["note"]
     assert "instagram_read" in out["note"]
     assert fake.read_calls == []
-    # Positive control: an X profile, same shape of target, IS sent.
-    assert (await tools["social_fetch"](
-        platform="x", what="profile", target="example_friend",
-    ))["status"] == "ok"
-    assert len(fake.read_calls) == 1
 
 
-async def test_instagram_posts_is_unavailable_and_never_sent():
+async def test_an_instagram_search_is_redirected_while_an_x_search_is_sent():
+    """The negative and its positive control on the SAME query: `instagram`
+    is not sent, `x` is. Also case-insensitive on the platform name, so
+    «Instagram» cannot slip past the redirect into `nothing_found`."""
     fake = _FakeSocialProvider()
     tools = _tools(social=fake)
-    out = await tools["social_fetch"](
-        platform="instagram", what="posts", target="example_friend",
-    )
-    assert out["status"] == "unavailable"
+    for platform in ("instagram", "Instagram"):
+        out = await tools["social_fetch"](platform=platform, what="search", target="hk hiking")
+        assert out["status"] == "unavailable"
+        assert "instagram_search" in out["note"]
     assert fake.read_calls == []
-
-
-async def test_instagram_search_still_reaches_the_provider():
-    """The one Instagram verb this tool keeps until P11."""
-    fake = _FakeSocialProvider()
-    tools = _tools(social=fake)
-    out = await tools["social_fetch"](
-        platform="instagram", what="search", target="hk hiking",
-    )
-    assert out["status"] == "ok"
-    assert fake.read_calls[0]["platform"] == "instagram"
+    assert (await tools["social_fetch"](
+        platform="x", what="search", target="hk hiking",
+    ))["status"] == "ok"
+    assert fake.read_calls == [
+        {"platform": "x", "what": "search", "target": "hk hiking", "limit": 5}
+    ]
 
 
 async def test_a_moved_row_is_counted_as_unavailable_not_as_a_miss():
@@ -328,9 +322,49 @@ async def test_a_moved_row_is_counted_as_unavailable_not_as_a_miss():
     tools = _tools(social=_FakeSocialProvider(), metrics=metrics)
     await tools["social_fetch"](platform="instagram", what="story", target="miles")
     await tools["social_fetch"](platform="instagram", what="profile", target="miles")
+    await tools["social_fetch"](platform="instagram", what="search", target="miles")
     assert metrics.get(
         "nora_tool_calls_total", tool="social_fetch", status="unavailable",
-    ) == 2
+    ) == 3
     assert metrics.get(
         "nora_tool_calls_total", tool="social_fetch", status="nothing_found",
     ) == 0
+
+
+
+@pytest.mark.parametrize(
+    "platform", ["instagram", "Instagram", " INSTAGRAM ", "ig", "IG", "insta", " Insta"],
+)
+async def test_every_instagram_name_is_redirected_to_both_instagram_tools(platform):
+    """`platform` is normalized once (`.strip().lower()`), and every name a
+    model reaches for when it means Instagram gets the redirect. Before the
+    normalization, `ig` fell through to «I can only read X», which reads as
+    «Instagram can't be read at all»."""
+    fake = _FakeSocialProvider()
+    tools = _tools(social=fake)
+    out = await tools["social_fetch"](platform=platform, what="search", target="hk hiking")
+    assert out["status"] == "unavailable"
+    assert "instagram_read" in out["note"] and "instagram_search" in out["note"]
+    assert fake.read_calls == []
+
+
+@pytest.mark.parametrize("platform", ["x", "X", " x ", "twitter", "Twitter"])
+async def test_every_x_name_is_read_as_x_and_sent_as_x(platform):
+    """The positive half: X under any casing or padding is served, and the
+    backend is handed the canonical `x`, never the model's spelling."""
+    fake = _FakeSocialProvider()
+    tools = _tools(social=fake)
+    out = await tools["social_fetch"](platform=platform, what="profile", target="nasa")
+    assert out["status"] == "ok"
+    assert fake.read_calls == [
+        {"platform": "x", "what": "profile", "target": "nasa", "limit": 5}
+    ]
+
+
+async def test_an_unknown_platform_names_both_instagram_tools():
+    fake = _FakeSocialProvider()
+    tools = _tools(social=fake)
+    out = await tools["social_fetch"](platform="tiktok", what="profile", target="nasa")
+    assert out["status"] == "nothing_found"
+    assert "instagram_read" in out["note"] and "instagram_search" in out["note"]
+    assert fake.read_calls == []

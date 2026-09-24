@@ -76,7 +76,7 @@ func TestProfileCarriesTheGateIncludingUnmodelledKeys(t *testing.T) {
 	}
 	if !body.HasStory {
 		t.Error("has_story was false with latest_reel_media set; a caller uses " +
-			"this to SKIP a story fetch, and a story fetch is visible to its author")
+			"this to SKIP a story fetch, and Nora opens a story only when asked")
 	}
 }
 
@@ -167,12 +167,17 @@ func TestProfileFailureIsNeverAZeroValueGate(t *testing.T) {
 				t.Fatalf("/profile answered %d, want %d: %s",
 					rec.Code, tc.want, rec.Body.String())
 			}
-			var body profileBody
-			// The body may or may not decode into profileBody (an error body
-			// has a different shape); what must NOT happen is a decodable
-			// profile whose gate reads as a measured refusal.
-			if err := json.Unmarshal(rec.Body.Bytes(), &body); err == nil && body.OK {
-				t.Errorf("a failed read produced ok=true: %s", rec.Body.String())
+			if tc.query == "" {
+				// The router's own 404, which no handler wrote.
+				return
+			}
+			// A failed read is the envelope and nothing else: never a
+			// decodable profile whose gate reads as a measured refusal.
+			env := decodeEnvelope(t, rec)
+			var raw map[string]any
+			_ = json.Unmarshal(rec.Body.Bytes(), &raw)
+			if len(raw) != 1 || env.Error.Message == "" {
+				t.Errorf("a failed read carried more than the envelope: %s", rec.Body.String())
 			}
 		})
 	}
@@ -222,8 +227,8 @@ func TestProfileWithNoMessagingIDStillAnswers(t *testing.T) {
 		t.Errorf("fbid = %q, want empty — 0 means no messaging row, and "+
 			"formatting it as \"0\" would be an id that names nobody", body.FBID)
 	}
-	if !body.OK {
-		t.Error("ok was false; a missing join key is not a failed read")
+	if body.IGID != "276321323" || body.Username != "_qnpdwdmqvgho" {
+		t.Errorf("a missing join key lost the account: %+v", body)
 	}
 }
 
@@ -320,7 +325,7 @@ func TestStoryNeverBatchesTheRead(t *testing.T) {
 	}
 	if len(f.ReelIDs[0]) != 1 || f.ReelIDs[0][0] != "221731317" {
 		t.Errorf("FetchReel was addressed with %v, want exactly one igid — a "+
-			"batched read is visible to everybody in the batch", f.ReelIDs[0])
+			"batched read opens stories nobody asked about", f.ReelIDs[0])
 	}
 }
 
@@ -433,8 +438,8 @@ func TestStoryEmptyIsNotAClaimThatNothingWasPosted(t *testing.T) {
 	if len(body.Items) != 0 {
 		t.Errorf("items = %v, want none", body.Items)
 	}
-	if !body.OK {
-		t.Error("ok was false; an account with no visible story is not an error")
+	if body.IGID == "" {
+		t.Error("an account with no visible story answered no account; it is not an error")
 	}
 }
 

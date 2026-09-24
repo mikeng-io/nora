@@ -1,5 +1,17 @@
-"""instagram-bridge reactions: `POST /react`
-(design/instagram-adoption/03-transport-contract.md). Never raises.
+"""instagram-bridge reactions:
+`PUT /threads/{thread_fbid}/messages/{message_id}/reaction` with
+`{emoji, remove}` (design/instagram-adoption/16 §Resources, 17 §P14). Never
+raises.
+
+It replaced `POST /react {room_id, message_id, emoji, remove}` on 2026-09-24
+(P14), and the bridge DELETED that path in the same change. The room and the
+message are now the path: the SHORT thread id, and the message id quoted as one
+segment (it carries `$`, and nothing promises it never carries `/`). A 200 is
+`{"confirmed": bool}`: `false` means the reaction was accepted and the
+mutation's own post-state did not show it, which production showed on every
+reaction while the reaction landed. It is a success either way, so only the
+STATUS is read here. The bodies are pinned by
+`tests/fixtures/instagram_bridge/reaction_*`, which the bridge generates.
 
 Mirrors `nora.platform.whatsapp.react` rather than Signal's, for the same
 reason WhatsApp needed its own: the bridge addresses a message by its platform
@@ -17,19 +29,18 @@ went unnoticed. The contract now exposes only the short id and the bridge owns
 the translation, so this module has nothing to choose; the note exists so a
 reader who finds an older copy of the document knows which way it was settled.
 
-`remove` rides as its own field, **and the emoji goes WITH it**. `03`'s pinned
-request shape is `{room_id, message_id, emoji}` and omits `remove` entirely —
-the bridge reads it (`reactRequest.Remove`) and refuses an empty `emoji` even
-on a removal with `400 emoji is required (also when remove is true)`, because
-Instagram's mutation identifies WHICH reaction is being retracted, not merely
-that one is. Written against the route as implemented, with the document's
-omission reported rather than worked around: dropping the emoji on a removal
-would have been a 400 on every retraction, and dropping `remove` would have
-placed a second reaction where one was meant to be taken away.
+`remove` rides as its own field, **and the emoji goes WITH it**. The bridge
+refuses an empty `emoji` even on a removal (400), because Instagram's mutation
+identifies WHICH reaction is being retracted, not merely that one is. That is
+also why a removal is `remove: true` on the same PUT rather than a DELETE of
+the reaction: a DELETE has no body to name the emoji in. Dropping the emoji on
+a removal would be a 400 on every retraction, and dropping `remove` would place
+a second reaction where one was meant to be taken away.
 
 The bridge has no documented 404 for an unknown message: unlike WhatsApp's
-bounded recent-message cache, `/react` is a pass-through to Instagram, which
-answers 400 for a malformed request and 500 for a refusal it has no name for.
+bounded recent-message cache, the reaction route is a pass-through to
+Instagram. It answers 400 for a malformed request, 502 when Instagram refuses,
+and 500 for a failure it has no name for.
 409 gets its own line for the same reason it does in `send.py` — a checkpoint
 is a human's problem, not a retry's — and it stays `supported=True`, because
 the platform HAS reactions and this one simply could not be placed.
@@ -43,6 +54,7 @@ reaction that raised would reach a pipeline that has no business handling one
 from __future__ import annotations
 
 import logging
+import urllib.parse
 
 import aiohttp
 
@@ -51,6 +63,14 @@ from ...domain.ports import ReactionResult
 from ...infra.trace_propagation import propagation_headers
 
 log = logging.getLogger("nora.instagram.react")
+
+
+def reaction_path(conversation_id: str, message_id: str) -> str:
+    """`/threads/{thread_fbid}/messages/{message_id}/reaction`. Each id is
+    quoted as ONE path segment, so neither can address a different route."""
+    room = urllib.parse.quote(conversation_id, safe="")
+    message = urllib.parse.quote(message_id, safe="")
+    return f"/threads/{room}/messages/{message}/reaction"
 
 
 class InstagramReactor:
@@ -84,8 +104,6 @@ class InstagramReactor:
             log.debug("no instagram message id to react to; skipping")
             return ReactionResult(ok=False, supported=False)
         payload = {
-            "room_id": target.conversation_id,
-            "message_id": to_message_id,
             # The emoji is sent on a REMOVAL too — see the module docstring:
             # the mutation names which reaction is being retracted, and the
             # bridge 400s an empty one.
@@ -95,8 +113,9 @@ class InstagramReactor:
         try:
             async with (
                 aiohttp.ClientSession(timeout=self._timeout) as session,
-                session.post(
-                    f"{self._base_url}/react", json=payload, headers=propagation_headers(),
+                session.put(
+                    f"{self._base_url}{reaction_path(target.conversation_id, to_message_id)}",
+                    json=payload, headers=propagation_headers(),
                 ) as resp,
             ):
                 if resp.status == 200:
