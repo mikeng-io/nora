@@ -55,10 +55,11 @@ from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta, timezone
 from types import MappingProxyType
-from typing import Any, Literal, Protocol, cast
+from typing import Any, Literal, Protocol, cast, get_args, get_type_hints
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
+from nora.agent.clock import local_now, state_time
 from nora.agent.reaction import ReactionPicker, render_recent
 from nora.agent.security import _names_a_person, scan_identifiers
 from nora.agent.security import looks_like_coordinate as _looks_like_coordinate
@@ -1813,14 +1814,15 @@ def _parse_when(raw: str) -> datetime | None:
     (R-5), and `Reminder(due_at="等陣")` would reach the port and raise there.
 
     A value with no offset is read as `_HKT`, not refused. The prefill states
-    the time as prose — «Right now it is Saturday 8 August 2026, 19:00 (HKT)»
-    — so a model asked for ISO-8601 will sometimes hand back `2026-08-08T21:00`,
-    and `_HKT` is the zone that header itself named. Refusing would spend a
-    model round trip on punctuation; GUESSING a different zone would invent an
-    instant, which is why the answer is this one specific zone and not
-    `astimezone()` of whatever the host happens to be set to. What must never
-    happen is a naive value reaching the store — the port raises
-    `NaiveDatetimeError` on one, deliberately.
+    the time as prose — «Right now it is Saturday 8 August 2026, 19:00, Hong
+    Kong time (HKT, Asia/Hong_Kong)» — so a model asked for ISO-8601 will
+    sometimes hand back `2026-08-08T21:00`, and `_HKT` is the zone that
+    header itself named. Refusing would spend a model round trip on
+    punctuation; GUESSING a different zone would invent an instant, which is
+    why the answer is this one specific zone and not `astimezone()` of
+    whatever the host happens to be set to. What must never happen is a naive
+    value reaching the store — the port raises `NaiveDatetimeError` on one,
+    deliberately.
     """
     try:
         parsed = datetime.fromisoformat(str(raw).strip())
@@ -3923,21 +3925,25 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         )
 
     async def now() -> str:
-        """The current date and time, in Hong Kong time. Call this before
-        answering anything that depends on when it is.
+        """The current date and time, in this deployment's time zone. Call this
+        before answering anything that depends on when it is.
 
         That includes how long until something or since a message was sent,
         whether a place is still open,
-        and what "tonight" or "yesterday" means. Returns the weekday, date, time
-        and timezone.
+        and what "tonight" or "yesterday" means. Returns the weekday, date, time,
+        timezone and the zone's city.
         """
-        moment = datetime.now(_HKT)
+        # The SAME clock read and formatter as the turn's clock line
+        # (`nora.agent.clock`), so a mid-turn answer states exactly its facts.
+        # It read a fixed `+08:00` labelled HKT until 2026-09-24, and said
+        # «(HKT)» after the clock line had gained its zone name and place.
+        moment = local_now()
         # The clock reading stays in the line — it is a fact about Nora's own
         # host, not about the group, and it is the one thing that tells an
         # operator the container's timezone is what they think it is. It was
         # this module's only pre-existing log line.
         _record(metrics, "now", "ok", at=moment.isoformat(timespec="seconds"))
-        return moment.strftime("%A %-d %B %Y, %H:%M (%Z)")
+        return state_time(moment)
 
     async def calculate(expression: str) -> dict:
         """Work out a number exactly. Use this for ALL arithmetic, however easy
@@ -6036,35 +6042,36 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         aspect: Literal["1:1", "16:9", "9:16", "3:2", "2:3"] | None = None,
         quality: Literal["standard", "quality"] | None = None,
     ) -> dict:
-        """Make an image from a text prompt, and optionally from photos already
-        in this conversation. Call this when somebody asks you to make, draw, or
-        generate a picture.
+        """Make an image from a prompt, optionally from photos in this
+        conversation, and post it to this chat. Call this when somebody asks
+        you to make, draw or edit a picture.
 
-        To edit or combine photos, pass up to three marker codes in `reference`,
-        `reference_2` and `reference_3`, in any order. Each photo must already
-        be in this conversation; the one exception is your own canonical
-        picture, which works in any room. When the change depends on what a
-        photo shows, call `media_fetch` on it first and never guess, then write
-        the prompt as what the photos show, what to change and what to keep.
+        `reference`, `reference_2` and `reference_3` each take the marker code
+        of one photo (`a3f2c1` from `[image a3f2c1]`), up to 3 in one call.
+        Each must already be in this conversation, except your own canonical
+        picture, which works in any room. With references and no `aspect`, the
+        first one sets the picture's shape. With neither `size` nor `aspect`
+        the shape is the provider's choice; set one and the other defaults to
+        medium or 1:1.
 
-        MUST NOT put names, phone numbers, addresses or other identifiers in the
-        prompt: it goes to an outside service.
+        MUST: the prompt goes to an outside service, so it never carries a
+        name, phone number, address or other identifier.
 
-        Shape: set neither `size` nor `aspect` and the provider chooses (with
-        photos, the first photo's shape). Set one and the other is filled in,
-        `aspect` as 1:1 and `size` as medium.
-
-        Returns `status`: ok, held_for_review, nothing_found or unavailable,
-        with a `note` on how to report it.
+        `status` is one of:
+        - `ok`: made, and posted here unless the result carries a `url`.
+        - `held_for_review`: made, and held by review or this room's cooldown.
+        - `nothing_found`: the prompt was refused, or a reference is not a photo held here.
+        - `unavailable`: it cannot be made or sent right now.
+        Every result carries a `note` saying how to report it.
 
         Args:
-            prompt: The image you are asked to make, with the conventions above.
-            reference: Optional marker code of a photo already in this conversation.
-            reference_2: Optional second marker code, for multi-photo edits.
-            reference_3: Optional third marker code, for multi-photo edits.
-            size: Optional size.
+            prompt: What the picture shows, written for the image model.
+            reference: Optional marker code of a photo, or your canonical picture.
+            reference_2: Optional second marker code.
+            reference_3: Optional third marker code.
+            size: Optional size tier.
             aspect: Optional aspect ratio.
-            quality: Optional; the provider's standard when unset.
+            quality: Optional model tier; "quality" is the costlier one.
         """
         if image_generator is None:
             return {
@@ -6076,7 +6083,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         if wanted_refs and not image_refs_allowed:
             return {
                 "status": "unavailable",
-                "note": "I can't edit a photo you send me right now: that "
+                "note": "I can't use reference photos right now: that "
                         "feature is switched off. I can still make an image "
                         "from text alone.",
             }
@@ -6107,19 +6114,36 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
 
         image_size = None
         if size is not None or aspect is not None:
-            # The schema's `Literal`s refuse a bad value before the call; the
-            # membership checks stay for a direct call that bypasses it.
-            tier: Literal["small", "medium", "large"] = (
-                size if size in ("small", "medium", "large") else "medium"
-            )
-            ratio: Literal["1:1", "16:9", "9:16", "3:2", "2:3"] = (
-                aspect if aspect in ("1:1", "16:9", "9:16", "3:2", "2:3") else "1:1"
-            )
+            # The parameters are `Literal`s (ADR 0015 §3) and Strands validates
+            # a model's call against them, but `ImageSize` is a plain dataclass
+            # and a caller that bypasses the schema reaches here unchecked. So
+            # the tool keeps its own fail-safe: an unset or unknown value is the
+            # documented default, as it was before the types existed.
+            tier: Literal["small", "medium", "large"] = "medium"
+            for option_t in get_args(get_type_hints(ImageSize)["tier"]):
+                if size == option_t:
+                    tier = option_t
+            ratio: Literal["1:1", "16:9", "9:16", "3:2", "2:3"] = "1:1"
+            for option_r in get_args(get_type_hints(ImageSize)["aspect_ratio"]):
+                if aspect == option_r:
+                    ratio = option_r
             image_size = ImageSize(tier=tier, aspect_ratio=ratio)
 
         quality_kind: Literal["standard", "quality"] | None = None
         if quality == "quality":
             quality_kind = "quality"
+
+        # The references that resolved to a photo sent in THIS conversation,
+        # as opposed to her own canonical picture. Only those are somebody's
+        # photo going to an outside service, which is what her reply has to
+        # say; it was a line of the description until 2026-09-24 (ADR 0015 §3:
+        # how to report a result belongs in the result).
+        room_photos: list[str] = []
+
+        def _made_note(what: str) -> str:
+            if room_photos:
+                return f"{what} Say in your reply that it was made from photos sent here."
+            return what
 
         async def _canonical_self(marker: str) -> str | None:
             """DEC-193's narrow custody exemption: the sha of her canonical self
@@ -6179,6 +6203,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 return None
             if matches:
                 sha256 = next(iter(matches))
+                room_photos.append(sha256)
             else:
                 canonical = await _canonical_self(hex_handle)
                 if canonical is None:
@@ -6319,20 +6344,15 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                                 "chat. Say so plainly, and do not pretend it "
                                 "arrived.",
                     }
-                # ADR 0015 §3: how to report a sent image, with the answer it
-                # is about. The reference clause only when photos were used.
-                sent_note = (
-                    "The image is already in this chat as an attachment. Do "
-                    "not quote its handle or paste any link, and never reuse an "
-                    "upload link from an earlier message: those are stale."
-                )
-                if refs:
-                    sent_note += " Say plainly that it was made from their photos."
                 return {
                     "status": "ok",
                     "handle": sha256[:HANDLE_CHARS] if sha256 else "",
                     "sent": True,
-                    "note": sent_note,
+                    "note": _made_note(
+                        "The picture is already in this chat. The handle is "
+                        "your own record of it: never quote it, and paste no "
+                        "link, including one from an earlier message."
+                    ),
                 }
             artifact = result.artifact or ""
             # M2 (audit): a data-URI fallback (provider answered `url`, or
@@ -6348,6 +6368,10 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             return {
                 "status": "ok",
                 "url": artifact,
+                "note": _made_note(
+                    "The picture was not attached here; this link is the "
+                    "picture, so share it."
+                ),
             }
         if result.status == "nothing_found":
             return {

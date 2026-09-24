@@ -120,10 +120,19 @@ class PresenceReader:
 
     async def _states(self, networks: set[str]) -> dict[str, TransportState]:
         ordered = sorted(networks)
-        results = await asyncio.gather(*(self._state(n) for n in ordered))
+        results = await asyncio.gather(*(self.state(n) for n in ordered))
         return dict(zip(ordered, results, strict=True))
 
-    async def _state(self, network: str) -> TransportState:
+    async def state(self, network: str) -> TransportState:
+        """One network's transport, read now, bounded, never raising.
+
+        Public because `send_to` asks the same question at call time
+        (`nora.agent.relay`, operator 2026-09-24): whether a relay may be
+        attempted is decided by the SAME mapping and the same bound that
+        rendered «Discord is down» into `<presence>`, so the block and the
+        tool cannot disagree about a network. Nothing is cached, here or
+        there: a health read is always of this moment.
+        """
         adapter = self._adapters.get(network)
         if adapter is None:
             return "not_running"

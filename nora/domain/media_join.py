@@ -83,7 +83,14 @@ Screen = Callable[[str], str | None]
 #: (issue #61).
 JoinPath = Literal[
     "tag", "fire", "debrief", "standing_event", "dreamer", "note_curator",
-    "adoption", "load_transcript", "relevance_gate", "unknown",
+    "adoption", "load_transcript", "relevance_gate",
+    # The eval seam's two readers (`nora.subject`): its dream pass, and the
+    # window a judge grades a reply against (#458). `dreamer_eval` was passed
+    # from 2026-09-17 without being listed here, so `_count` logged an error on every
+    # call and filed it under «unknown»; `nora.subject` is outside the gate's
+    # mypy, which is how the Literal did not catch it.
+    "dreamer_eval", "judge_source",
+    "unknown",
 ]
 JOIN_PATHS: tuple[str, ...] = get_args(JoinPath)
 

@@ -2461,6 +2461,10 @@ async def build_dependencies(
     relay = Relay(
         policy=allowlist, speak=_relay_speak, slots=slots,
         occasion_for=relay_occasion, metrics=metrics,
+        # The SAME reader `<presence>` renders from (design/self-awareness/02),
+        # so «Discord is down» in the block and `send_to` refusing into Discord
+        # are one read of one mapping, never two opinions.
+        transport=presence_reader.state,
     )
     # `DiscordMusicToolBridge` (design/discord-music/07-agent-tool.md) — the
     # four music agent tools' own collaborator. Built ONLY when BOTH a
@@ -2697,15 +2701,6 @@ async def build_dependencies(
         debrief_wiring = DebriefWiring(
             store=standing_store,
             media_join=media_join,
-            # The note tier's sink. `None` while `[notes] enabled = false`,
-            # so the debrief parses no proposals and raises none — the
-            # same inert shape the other optional collaborators use.
-            notes_sink=note_store if cfg.notes.enabled else None,
-            # The SAME unit resolver the note tools and the assembler
-            # hold. `propose`'s key is the unit (DEC-105), and two
-            # tiers keyed on it must not each carry their own idea of
-            # which unit a room belongs to.
-            unit_of=_note_unit_of(allowlist),
             client=_DebriefModelClient(
                 base_url=cfg.llm.base_url,
                 api_key=os.environ.get(cfg.llm.api_key_env, ""),

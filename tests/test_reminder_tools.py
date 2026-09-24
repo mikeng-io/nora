@@ -423,8 +423,9 @@ async def test_a_created_row_carries_the_requesters_own_sentence_and_this_room()
 
 
 async def test_a_when_without_an_offset_is_read_in_noras_own_zone():
-    """The prefill states the time as «19:00 (HKT)» prose, so a model asked for
-    ISO-8601 will sometimes drop the offset. `_HKT` is the zone that header
+    """The prefill states the time as «19:00, Hong Kong time (HKT,
+    Asia/Hong_Kong)» prose, so a model asked for ISO-8601 will sometimes
+    drop the offset. `_HKT` is the zone that header
     named, and reading it there is not a guess; refusing would spend a round
     trip on punctuation. A NAIVE value must never reach the store — the port
     raises `NaiveDatetimeError` on one, by design."""

@@ -65,8 +65,9 @@ WHAT IS STILL NOT BYTE-IDENTICAL, each a stated limitation of the extraction:
 from __future__ import annotations
 
 import contextlib
+import re
 import uuid
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -74,16 +75,22 @@ import sqlalchemy as sa
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine
 
+from nora.agent.prefill import render_transcript
+from nora.domain.media_join import MediaJoin
+from nora.domain.models import TranscriptRow
 from nora.domain.notes import Note, NoteRevision
 from nora.domain.reminders import Reminder
 from nora.infra.sql import create_readonly_sql_engine
 from nora.infra.sql.migrations_runner import run_migrations
 from nora.infra.sql.snapshot import Snapshot, snapshot
+from nora.persons import Persons
 
 from .knowledge import Knowledge, Message, NoteSeed, ReminderSeed, know
 from .obtain import Subject
 
-__all__ = ["Sandboxed", "as_knowledge", "sandbox_database", "sandbox_from_snapshot"]
+__all__ = [
+    "Sandboxed", "as_knowledge", "judge_source", "sandbox_database", "sandbox_from_snapshot",
+]
 
 _HOUR_MS = 3_600_000
 
@@ -291,9 +298,58 @@ class Sandboxed:
     now_ms: int
     #: Historical row id -> the id the sandbox's store assigned the copy.
     rows: dict[int | str, int]
-    #: The window she was seeded with, oldest first, one body per line — the
-    #: SOURCE a judge grades grounding against (`evals.backbone`).
+    #: The window she was seeded with, oldest first, ONE RENDERED MESSAGE PER
+    #: ITEM — the SOURCE a judge grades grounding against (`evals.backbone`).
+    #: Each item is the `<m>` element she was shown for that row, speaker and
+    #: all (`judge_source`), so `"\n".join(transcript)` is her
+    #: `<group_transcript>` body byte for byte. It was one BODY per line until
+    #: #458, and a judge told to fail any unlinked attribution was handed a
+    #: source that linked nobody to anything.
     transcript: tuple[str, ...]
+
+
+#: Where one `<m>` element ends and the next begins in `render_transcript`'s
+#: output. Only there: a body is `escape`d, so a `<` inside one is `&lt;` and a
+#: body's own newlines can never be followed by `<m `.
+_NEXT_MESSAGE = re.compile(r"\n(?=<m )")
+
+
+def judge_source(
+    rows: Sequence[TranscriptRow],
+    *,
+    persons: Persons,
+    platform: str,
+    display_name: str,
+    now: datetime,
+) -> tuple[str, ...]:
+    """The window as SHE was shown it, one `<m>` element per row — what a
+    judge verifies «X said Y» against (#458).
+
+    PRODUCTION'S OWN NAMING AND RENDERER, not a format of the eval layer's:
+    `Persons.name_transcript` is the projection both context assemblers run
+    (DEC-80), and `render_transcript` is the body of `<group_transcript>`. So
+    a member is called what the prompt calls them, her own rows are under her
+    configured `display_name` — the flag decides, never a name — and a sender
+    the identity does not know falls back to the self-set profile name and
+    then to «unknown». No account id is ever rendered: the judge is a
+    third-party model call and R-18 applies to it as to her.
+
+    `rows` are the SANDBOX's rows, read back after seeding — not the source's.
+    The sandbox mints sender ids (see the module docstring), and a speaker
+    resolved from the real id could name somebody the model was never shown.
+
+    Fails closed on a split that does not come back one element per row,
+    rather than handing the judge a source whose lines have shifted speakers.
+    """
+    named = persons.name_transcript(rows, platform=platform)
+    rendered = render_transcript(named, display_name=display_name, now=now)
+    elements = tuple(_NEXT_MESSAGE.split(rendered)) if rendered else ()
+    if len(elements) != len(rows):
+        raise ValueError(
+            f"the rendered window split into {len(elements)} messages for "
+            f"{len(rows)} rows; a judge's source must be one element per row"
+        )
+    return elements
 
 
 async def sandbox_from_snapshot(
@@ -367,8 +423,27 @@ async def sandbox_from_snapshot(
         subject, as_knowledge(shot), now_ms=before_ms,
         leave_room_for_arrival=leave_room_for_arrival,
     )
+    # READ BACK through the store her turn reads, so the source is the rows
+    # she is shown rather than the rows they were copied from — and JOINED as
+    # every transcript builder joins them (#116): the judge is a model too, and
+    # a bare `[image a3f2c1]` where she read what the photo showed would grade
+    # her against less than she had. Its own `path=` label, for
+    # `nora/subject/dreaming.py`'s reason.
+    join: MediaJoin = subject.deps.media_join
+    shown = await join.enrich(
+        await subject.deps.audit.recent(
+            conversation_id=conversation_id, limit=len(shot.transcript),
+        ),
+        path="judge_source",
+    )
     return Sandboxed(
         now_ms=written.now_ms,
         rows=written.rows,
-        transcript=tuple(row.body or "" for row in shot.transcript),
+        transcript=judge_source(
+            shown,
+            persons=subject.deps.persons,
+            platform=platform,
+            display_name=subject.cfg.doctrine.display_name,
+            now=subject.deps.clock(),
+        ),
     )

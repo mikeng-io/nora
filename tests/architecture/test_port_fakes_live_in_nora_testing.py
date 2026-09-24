@@ -101,7 +101,6 @@ _ALLOWED: dict[str, str] = {
     # implementations (`_FakeAdaptor`, `_FakeDreamSink`); nothing is exported.
     "tests/unit/test_dreamer_runtime.py::_Adaptor": _NO_SHARED_FAKE,
     "tests/unit/test_runtime.py::_StubAdaptor": _NO_SHARED_FAKE,
-    "tests/unit/test_debrief.py::_FakeSink": _NO_SHARED_FAKE,
     # Speaker (voice playout seam, stage-3) — the only real implementation is
     # the Discord adapter; no in-memory Speaker exists in nora/testing yet, and
     # the voice-playout contract suite is not written (voice closure in flight).

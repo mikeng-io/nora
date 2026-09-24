@@ -77,7 +77,7 @@ DEFAULT_STANDING_STORE_TIMEOUT_SECONDS = 5.0
 #:
 #: `test_the_slot_hold_counts_every_store_await_the_stage_makes` counts the
 #: `asyncio.wait_for` calls in the stage and asserts they match, so adding a
-#: sixth fails a test instead of silently widening the hold.
+#: fifth fails a test instead of silently widening the hold.
 #:
 #: 6 -> 7 on 2026-09-08: the media join (issue #116). The fold renders these
 #: rows for a model, so it reads `media_objects` for whatever the
@@ -89,7 +89,10 @@ DEFAULT_STANDING_STORE_TIMEOUT_SECONDS = 5.0
 #:
 #: 7 -> 5 on 2026-09-24: the turn verdict's save and the re-derivation
 #: trigger's verdict read went with the verdict (design/standing-compact/).
-STANDING_STORE_CALLS_PER_FOLD = 5
+#:
+#: 5 -> 4 the same day: the debrief stopped creating notes, and
+#: `notes_sink.propose` went with them.
+STANDING_STORE_CALLS_PER_FOLD = 4
 
 
 @dataclass(frozen=True, slots=True)

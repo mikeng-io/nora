@@ -158,31 +158,6 @@ def _outcome_label(trace: TagTrace | None) -> str:
     return label
 
 
-def _notes_read_of(handle: Any) -> frozenset[str]:
-    """R-55's latch off the turn's guard, or an empty set — NEVER a raise.
-
-    26 §7 needs the notes this turn read so the debrief cannot re-propose one
-    the tag path already considered and declined. But this runs in
-    `_run_admitted`'s `finally`, PAST the outer `except BaseException`, so
-    anything raised here escapes `run()` entirely and takes down a turn that
-    already delivered its reply.
-
-    So every failure degrades to `frozenset()`, and the consequence of that
-    default is deliberately the SAFE direction: an empty read set refuses
-    nothing, so the worst case is a duplicate note proposal — not a lost fold
-    and not a lost position. The rule is the verdict's, one output over: a
-    proposal failure must never cost the position.
-    """
-    try:
-        guard = getattr(handle, "guard", None)
-        return frozenset(getattr(guard, "notes_read", frozenset()))
-    except Exception:  # noqa: BLE001 — see the docstring: this sits past the
-        # outer handler, so a raise here escapes `run()`. Every failure of this
-        # read has the same correct answer.
-        log.warning("could not read the turn's note-read set; refusing nothing")
-        return frozenset()
-
-
 class EngagementPipeline:
     def __init__(
         self,
@@ -488,7 +463,6 @@ class EngagementPipeline:
 
     async def _debrief(
         self, *, trace: TagTrace | None, platform: str,
-        notes_read: frozenset[str] = frozenset(),
     ) -> None:
         """Hand this finished turn to the debrief stage, or do nothing at all.
 
@@ -536,8 +510,6 @@ class EngagementPipeline:
                 trace=trace,
                 platform=platform,
                 store=wiring.store,
-            notes_sink=wiring.notes_sink,
-            unit_of=wiring.unit_of,
                 client=wiring.client,
                 objective=wiring.objective,
                 metrics=self._metrics,
@@ -549,7 +521,6 @@ class EngagementPipeline:
                 timeout_seconds=wiring.timeout_seconds,
                 store_timeout_seconds=wiring.store_timeout_seconds,
                 now_ms=int(time.time() * 1000),
-            notes_read=notes_read,
             )
 
     async def _run_admitted(
@@ -1204,15 +1175,7 @@ class EngagementPipeline:
             #    straight out of `run` — an outage far wider than one tag,
             #    caused by a stage reviewing a turn that already finished.
             try:
-                await self._debrief(
-                    trace=trace, platform=msg.platform,
-                    # R-55's latch, for 26 §7: the notes this turn actually
-                    # READ. `handle` is None only when the fault preceded
-                    # `deliver.build` — no guard existed, so no note was
-                    # read, and an empty set is the true answer rather than
-                    # a degraded one.
-                    notes_read=_notes_read_of(handle),
-                )
+                await self._debrief(trace=trace, platform=msg.platform)
             except BaseException:
                 # ABSORBED, not re-raised, and `BaseException` rather than
                 # `Exception` for `debrief.run`'s own reason one level down:

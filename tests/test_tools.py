@@ -1350,27 +1350,24 @@ async def test_every_non_ok_generate_image_status_carries_a_note(wiring):
 
 
 async def test_a_sent_image_note_names_the_photos_only_when_they_were_used(wiring):
-    """The `ok` rules that left the description (no handle, no stale link)
-    arrive with the sent image, and «say it was made from their photos» only
-    when references were passed. A hosted-url `ok` carries no sent note."""
+    """The `ok` rules that left the description (no handle, no earlier link)
+    arrive with the sent image, and a hosted-url `ok` says the link is the
+    picture. The «made from photos sent here» clause is pinned by
+    tests/unit/test_canonical_self_reference.py, which resolves a real room
+    photo."""
     plain = await _call(_with_image_tools(wiring, generator=_ImageGenerator())
                         ["generate_image"], prompt="a cat")
     assert plain["status"] == "ok" and plain["sent"] is True
-    assert "stale" in plain["note"]
-    assert "their photos" not in plain["note"]
+    assert "never quote it" in plain["note"] and "earlier message" in plain["note"]
+    assert "photos sent here" not in plain["note"]
     assert not any(d in plain["note"] for d in _DASHES)
-
-    edited = await _call(
-        _with_image_tools(wiring, generator=_ImageGenerator(), refs_allowed=True)
-        ["generate_image"], prompt="edit", reference="a3f2c1",
-    )
-    assert edited["status"] == "ok" and "their photos" in edited["note"]
 
     hosted = await _call(_with_image_tools(wiring, generator=_ImageGenerator(
         result=ImageResult(status="ok", artifact="https://drop.example/i.png",
                            provider="xai"))
     )["generate_image"], prompt="a cat")
-    assert hosted == {"status": "ok", "url": "https://drop.example/i.png"}
+    assert hosted["status"] == "ok" and hosted["url"] == "https://drop.example/i.png"
+    assert "this link is the picture" in hosted["note"]
 
 
 class _BrokenMediaStore(FakeMediaObjectStore):

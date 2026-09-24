@@ -134,3 +134,125 @@ def test_the_judge_sees_tool_results_only_for_a_reporting_case():
     assert plain == "m1"
     assert "where_is" in reporting and "unavailable" in reporting
     assert "send_reply" not in reporting   # plumbing is not a result to report
+
+
+# --- what the call carried (2026-09-24) ---------------------------------------
+# «draw yourself» answered with an empty room is ONE `generate_image` call, the
+# same as the right answer. Routing cannot see the difference; the argument can.
+
+_SELF = "535e4da5" + "0" * 56
+
+
+def _carried(inputs, *, clock=None, **md):
+    from evals.backbone import NORA_SHOWN_NOW, NORA_TOOL_INPUTS
+
+    called = tuple(name for name, _ in inputs) if inputs is not None else ("generate_image",)
+    return EvaluationData(
+        input="x",
+        metadata={"tools": ["generate_image"], **md},
+        actual_environment_state=[
+            EnvironmentState(name=NORA_ERROR, state=None),
+            EnvironmentState(name=NORA_TOOLS, state=called),
+            EnvironmentState(name=NORA_TOOL_INPUTS, state=inputs),
+            EnvironmentState(name=NORA_SHOWN_NOW, state=clock),
+        ],
+    )
+
+
+def test_a_required_argument_that_was_passed_is_a_pass():
+    data = _carried((("generate_image", f'{{"prompt": "me", "reference": "{_SELF}"}}'),),
+                    args_include={"generate_image": [_SELF]})
+    assert _label(data) == PASS
+
+
+def test_the_right_tool_without_the_required_argument_is_a_fail():
+    """The live failure: the right tool, and no reference."""
+    data = _carried((("generate_image", '{"prompt": "an empty room at night"}'),),
+                    args_include={"generate_image": [_SELF]})
+    assert _label(data) == FAIL
+
+
+def test_a_forbidden_argument_is_a_fail():
+    data = _carried((("generate_image", f'{{"prompt": "a cat", "reference": "{_SELF}"}}'),),
+                    args_exclude={"generate_image": ["535e4da5"]})
+    assert _label(data) == FAIL
+    clean = _carried((("generate_image", '{"prompt": "a cat"}'),),
+                     args_exclude={"generate_image": ["535e4da5"]})
+    assert _label(clean) == PASS
+
+
+def test_an_input_that_was_not_captured_is_an_error_not_a_pass_or_fail():
+    assert _label(_carried(None, args_exclude={"generate_image": ["x"]})) == ERROR
+    assert _label(_carried((("generate_image", ""),),
+                           args_exclude={"generate_image": ["x"]})) == ERROR
+
+
+_CLOCK = ("Right now it is Wednesday 23 September 2026, 23:07, "
+          "Hong Kong time (HKT, Asia/Hong_Kong).")
+
+
+def test_this_saturday_is_graded_against_the_clock_she_was_shown():
+    ok = _carried((("generate_image", '{"prompt": "Dinner, Saturday 26 September"}'),),
+                  clock=_CLOCK, args_date={"generate_image": "saturday"})
+    assert _label(ok) == PASS
+    relative = _carried((("generate_image", '{"prompt": "Dinner this Saturday"}'),),
+                        clock=_CLOCK, args_date={"generate_image": "saturday"})
+    assert _label(relative) == FAIL
+    wrong_week = _carried((("generate_image", '{"prompt": "Dinner, 3 October"}'),),
+                          clock=_CLOCK, args_date={"generate_image": "saturday"})
+    assert _label(wrong_week) == FAIL
+
+
+def test_a_date_case_with_no_clock_line_is_an_error():
+    data = _carried((("generate_image", '{"prompt": "26 September"}'),),
+                    args_date={"generate_image": "saturday"})
+    assert _label(data) == ERROR
+
+
+def test_the_usual_ways_of_writing_a_date_all_count():
+    from datetime import datetime
+
+    from evals.backbone import states_the_date, this_weekday
+
+    day = this_weekday(datetime(2026, 9, 23), "saturday")
+    assert day == datetime(2026, 9, 26)
+    assert this_weekday(datetime(2026, 9, 26), "Saturday") == day
+    for text in ("26 September", "Sept 26", "September 26th", "2026-09-26",
+                 "9月26日", "26/9", "26th of Sep"):
+        assert states_the_date(text, day), text
+    for text in ("126 September", "September 2", "16/9", "this Saturday"):
+        assert not states_the_date(text, day), text
+
+
+def test_tool_inputs_and_the_clock_line_are_read_off_the_spans():
+    """The input is the `gen_ai.tool.message` event's `content` (legacy) or
+    `gen_ai.input.messages` (latest); the result event is never read as input.
+    The clock line comes off the first chat span, as the model received it."""
+    from types import SimpleNamespace
+
+    from evals.backbone import _shown_now, _tool_inputs
+
+    def event(name, **attrs):
+        return SimpleNamespace(name=name, attributes=attrs)
+
+    spans = [
+        SimpleNamespace(start_time=2, attributes={"gen_ai.tool.name": "generate_image"},
+                        events=[event("gen_ai.tool.message", content='{"prompt": "p"}'),
+                                event("gen_ai.choice", message='{"note": "535e4da5"}')]),
+        SimpleNamespace(start_time=3, attributes={"gen_ai.tool.name": "send_reply",
+                                                  "gen_ai.input.messages": '[{"text": "hi"}]'},
+                        events=[]),
+        SimpleNamespace(start_time=1, attributes={"gen_ai.operation.name": "chat"},
+                        events=[event("gen_ai.user.message",
+                                      content='[{"text": "' + _CLOCK + '\\n<presence>"}]')]),
+    ]
+
+    class _Exporter:
+        def get_finished_spans(self):
+            return spans
+
+    assert _tool_inputs(_Exporter()) == (
+        ("generate_image", '{"prompt": "p"}'),
+        ("send_reply", '[{"text": "hi"}]'),
+    )
+    assert _shown_now(_Exporter()) == _CLOCK

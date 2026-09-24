@@ -32,6 +32,7 @@ import asyncio
 import contextlib
 import dataclasses
 import os
+import re
 import shutil
 import tempfile
 import tomllib
@@ -131,6 +132,18 @@ NORA_TOOLS = "nora.tools_called"
 #: reporting criterion (`tool_status_reported`) grades the reply against these,
 #: so the judge sees the result she saw, not a description of it.
 NORA_TOOL_RESULTS = "nora.tool_results"
+#: What each executed tool was CALLED WITH: `(name, input)` per call, in the
+#: order they ran, the input as Strands serialised it onto the same
+#: `execute_tool` span. `ToolRouteGrader` reads it for a case that grades an
+#: argument (`metadata.args_include` / `args_exclude` / `args_date`), because
+#: routing alone cannot tell «drew herself with her reference» from «drew an
+#: empty room» (2026-09-24): both are one `generate_image` call.
+NORA_TOOL_INPUTS = "nora.tool_inputs"
+#: The clock line the turn was shown (`nora.agent.prefill._now_line`), read
+#: back off the first model call. A case that grades a date she had to work
+#: out («this Saturday») is graded against the date SHE was given, not the
+#: grader's own clock, which may be a different day by the time it runs.
+NORA_SHOWN_NOW = "nora.shown_now"
 #: What the model was TOLD about where she is on this draw, read back off the
 #: first model call's own messages (`evals.situation.shown_where`):
 #: `<presence>…</presence>`, `_where_line`'s sentence on a build without it,
@@ -432,6 +445,102 @@ def _judge_source(transcript: list[str], results: tuple[tuple[str, str], ...],
         if lines:
             parts.append("Tool results this turn:\n" + "\n".join(lines))
     return "\n\n".join(parts) or None
+
+
+#: Where Strands puts a tool call's INPUT (strands 1.50.2,
+#: `Tracer.start_tool_call_span`): the legacy convention emits a
+#: `gen_ai.tool.message` event whose `content` is the serialised input; the
+#: latest one records `gen_ai.input.messages` as an event or a span attribute.
+#: The call's OUTPUT goes under other names, so a result's `note` is never
+#: read as something she passed.
+_TOOL_INPUT_EVENT = "gen_ai.tool.message"
+_INPUT_MESSAGES = "gen_ai.input.messages"
+
+
+def _tool_inputs(exporter: InMemorySpanExporter) -> tuple[tuple[str, str], ...]:
+    """`(tool, input)` per executed tool, in start order (see `NORA_TOOL_INPUTS`).
+    An input Strands did not record is an empty string, which a grader must
+    read as «not captured», never as «passed nothing»."""
+    spans = [
+        span for span in exporter.get_finished_spans()
+        if "gen_ai.tool.name" in (span.attributes or {})
+    ]
+    spans.sort(key=lambda span: span.start_time or 0)
+    out: list[tuple[str, str]] = []
+    for span in spans:
+        parts: list[str] = []
+        raw = (span.attributes or {}).get(_INPUT_MESSAGES)
+        if isinstance(raw, str):
+            parts.append(raw)
+        for event in span.events or ():
+            attrs = event.attributes or {}
+            if event.name == _TOOL_INPUT_EVENT and isinstance(attrs.get("content"), str):
+                parts.append(str(attrs["content"]))
+            if isinstance(attrs.get(_INPUT_MESSAGES), str):
+                parts.append(str(attrs[_INPUT_MESSAGES]))
+        out.append((str(span.attributes["gen_ai.tool.name"]), "\n".join(parts)))
+    return tuple(out)
+
+
+_CLOCK_LINE = re.compile(
+    r"Right now it is (?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday) "
+    r"\d{1,2} [A-Z][a-z]+ \d{4}, \d{2}:\d{2}[^\n]*?\.(?=\s|\\n|$)"
+)
+
+
+def _shown_now(exporter: InMemorySpanExporter) -> str | None:
+    """The clock line the turn's first model call carried, or None when no
+    call was captured or none carried one (see `NORA_SHOWN_NOW`)."""
+    chats = [
+        span for span in exporter.get_finished_spans()
+        if (span.attributes or {}).get("gen_ai.operation.name") == "chat"
+    ]
+    for span in sorted(chats, key=lambda s: s.start_time or 0):
+        values = [*(span.attributes or {}).values()]
+        for event in span.events or ():
+            values.extend((event.attributes or {}).values())
+        for raw in values:
+            if isinstance(raw, str):
+                found = _CLOCK_LINE.search(raw)
+                if found:
+                    return found.group(0)
+    return None
+
+
+_WEEKDAYS = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
+
+
+def date_shown(clock_line: str) -> datetime | None:
+    """The date a clock line states, or None if it states none."""
+    found = re.search(r"(\d{1,2} [A-Z][a-z]+ \d{4})", clock_line)
+    if found is None:
+        return None
+    try:
+        return datetime.strptime(found.group(1), "%d %B %Y")
+    except ValueError:
+        return None
+
+
+def this_weekday(today: datetime, weekday: str) -> datetime:
+    """«This Saturday» from `today`: the next one, or today if today is it."""
+    ahead = (_WEEKDAYS.index(weekday.lower()) - today.weekday()) % 7
+    return today + timedelta(days=ahead)
+
+
+def states_the_date(text: str, day: datetime) -> bool:
+    """Whether `text` writes `day` out absolutely, in any of the usual forms:
+    «26 September», «September 26», «Sep 26», 2026-09-26, 9月26日, 26/9."""
+    month, mon, d, m = day.strftime("%B"), day.strftime("%b"), day.day, day.month
+    # «Sept» as well as «Sep»: the abbreviation, then any letters.
+    name = rf"(?:{month}|{mon}[a-z]*)"
+    forms = (
+        rf"(?<!\d){d}(?:st|nd|rd|th)?\s+(?:of\s+)?{name}\b",
+        rf"\b{name}\.?\s+{d}(?!\d)",
+        re.escape(day.strftime("%Y-%m-%d")),
+        rf"(?<!\d){m}\s*月\s*{d}\s*日",
+        rf"(?<!\d){d}/{m}(?!\d)",
+    )
+    return any(re.search(form, text, re.IGNORECASE) for form in forms)
 
 
 @dataclass(frozen=True)
@@ -804,6 +913,8 @@ async def _drive(case: Case, spec: Spec) -> dict[str, Any]:
                 spend.update({f"turn.{k}": v for k, v in turn.items()})
             tools_called = _tools_called(exporter)
             tool_results = _tool_results(exporter)
+            tool_inputs = _tool_inputs(exporter)
+            shown_now = _shown_now(exporter)
             shown = shown_where(exporter.get_finished_spans())
             _SPEND.append(spend)
             outcome = _check_the_corpus_assertions(nora_case, outcome, seeded.rows)
@@ -886,6 +997,8 @@ async def _drive(case: Case, spec: Spec) -> dict[str, Any]:
                     EnvironmentState(name=NORA_CHECKS_FAILED, state=outcome.checks_failed),
                     EnvironmentState(name=NORA_TOOLS, state=tools_called),
                     EnvironmentState(name=NORA_TOOL_RESULTS, state=tool_results),
+                    EnvironmentState(name=NORA_TOOL_INPUTS, state=tool_inputs),
+                    EnvironmentState(name=NORA_SHOWN_NOW, state=shown_now),
                     EnvironmentState(name=NORA_POSITION, state=outcome.position),
                     EnvironmentState(name=NORA_SHOWN, state=outcome.shown),
                     EnvironmentState(name=NORA_JUDGED_WHY, state=judged_why),
@@ -974,6 +1087,8 @@ def nora_task(spec: Spec):
                     EnvironmentState(name=NORA_CHECKS_FAILED, state=()),
                     EnvironmentState(name=NORA_TOOLS, state=None),
                     EnvironmentState(name=NORA_TOOL_RESULTS, state=None),
+                    EnvironmentState(name=NORA_TOOL_INPUTS, state=None),
+                    EnvironmentState(name=NORA_SHOWN_NOW, state=None),
                     EnvironmentState(name=NORA_POSITION, state=None),
                     EnvironmentState(name=NORA_SHOWN, state=""),
                     EnvironmentState(name=NORA_JUDGED_WHY, state=""),
@@ -1325,9 +1440,62 @@ class ToolRouteGrader(Evaluator):
 
     ERROR, never FAIL, when the case did not run or recorded no tools state:
     a broken instrument is not a wrong answer.
+
+    **What the call carried** (2026-09-24), read from `NORA_TOOL_INPUTS` and
+    checked only once routing has passed, each keyed by tool name:
+
+    - `args_include: {tool: [text, ...]}`: some call of `tool` carries every
+      text (case-insensitive), e.g. her canonical picture's sha on «draw
+      yourself».
+    - `args_exclude: {tool: [text, ...]}`: no call of `tool` carries any.
+    - `args_date: {tool: <weekday>}`: some call of `tool` writes out the
+      date of «this <weekday>», resolved against the clock line she was
+      SHOWN (`NORA_SHOWN_NOW`).
+
+    Inputs not captured, or no clock line for `args_date`, is ERROR: the
+    instrument could not see, which is not the same as she did not pass it.
     """
 
     _PLUMBING = frozenset({"load_tools"})
+
+    def _args(self, data: EvaluationData, md: Mapping[str, Any]) -> EvaluationOutput | None:
+        """The argument checks, or None when the case states none."""
+        include = md.get("args_include") or {}
+        exclude = md.get("args_exclude") or {}
+        dated = md.get("args_date") or {}
+        if not (include or exclude or dated):
+            return None
+        inputs = state_of(data, NORA_TOOL_INPUTS)
+        if inputs is None:
+            return self._out(ERROR, 0.0, "no tool inputs recorded")
+        calls: dict[str, list[str]] = {}
+        for name, text in inputs:
+            calls.setdefault(str(name), []).append(str(text).lower())
+        for tool in {*include, *exclude, *dated}:
+            if tool in calls and not any(calls[tool]):
+                return self._out(ERROR, 0.0, f"{tool} ran but its input was not captured")
+        for tool, needles in exclude.items():
+            for text in calls.get(tool, ()):
+                hit = [n for n in needles if str(n).lower() in text]
+                if hit:
+                    return self._out(FAIL, 0.0, f"{tool} was called with {hit}")
+        for tool, needles in include.items():
+            if not any(all(str(n).lower() in text for n in needles)
+                       for text in calls.get(tool, ())):
+                return self._out(FAIL, 0.0, f"no {tool} call carried all of {list(needles)}")
+        if dated:
+            clock = state_of(data, NORA_SHOWN_NOW)
+            today = date_shown(clock) if clock else None
+            if today is None:
+                return self._out(ERROR, 0.0, "no clock line was shown, so no date to expect")
+            for tool, weekday in dated.items():
+                day = this_weekday(today, str(weekday))
+                if not any(states_the_date(text, day) for text in calls.get(tool, ())):
+                    return self._out(
+                        FAIL, 0.0,
+                        f"no {tool} call wrote out {day:%A %-d %B %Y} (from {clock!r})",
+                    )
+        return self._out(PASS, 1.0, "the call carried what the case asks")
 
     def evaluate(self, data: EvaluationData) -> list[EvaluationOutput]:
         error = state_of(data, NORA_ERROR)
@@ -1346,6 +1514,9 @@ class ToolRouteGrader(Evaluator):
         if wrong:
             return [self._out(FAIL, 0.0, f"called the sibling {wrong}; ran {ran}")]
         if want & set(ran):
+            carried = self._args(data, md)
+            if carried is not None and carried.label != PASS:
+                return [carried]
             return [self._out(PASS, 1.0, f"called {sorted(want & set(ran))}; ran {ran}")]
         return [self._out(FAIL, 0.0, f"expected one of {sorted(want)}; ran {ran}")]
 

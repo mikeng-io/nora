@@ -66,8 +66,8 @@ They share the doctrine substrate, the tool registry, the deliverer chain and
 the conversation slot. They do not share a trigger, an obligation, or a scope.
 
 **And they share held state in both directions.** The tag path's debrief is
-the principal writer of Standing (the fold, `debrief.py`) and proposes notes
-(`_note_proposals`, `debrief.py:550-615`);
+the principal writer of Standing (the fold, `debrief.py`); until 2026-09-24 it
+also proposed notes, which it no longer does (design 26 §7);
 the loop's deciders read both. So the tag path is not a stage of the loop and
 not merely a consumer of it — it is the other backbone, and the loop's Orient
 stage is fed by it. Design 39's "tag is the passive half, entering at Act" was
