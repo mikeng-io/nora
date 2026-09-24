@@ -390,7 +390,7 @@ never set a pre-#458 judged number beside a post-#458 one.
 
 **Residual, not closed here:** the source is still EVERY row up to the
 instant (`snapshot` is unbounded), while her turn is shown the newest
-`context_window`. So the judge can credit a line she was never shown.
+`context_window`. So the judge can credit a line she was never shown (#459).
 
 ### Where the suite runs — DECIDED 2026-09-21: on the deploy host
 
