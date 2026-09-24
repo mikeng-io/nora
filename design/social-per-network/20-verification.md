@@ -49,6 +49,18 @@ Rows are added in the PR that lands the tool they expect, so the corpus never
 names a tool that does not exist. Synthetic handles and ids only: the corpus
 is committed, and no member of a room is named in it.
 
+### Run, 2026-09-24
+
+The six X and LinkedIn rows, resident arm, `--sample 3`, from the eval
+worktree at `504cc27b` (both PRs merged), against the deployed config:
+**18/18 PASS**, every draw calling the expected tool and none of its
+`not_tools`. Spend: 186 model calls, 1,847,262 input tokens (1,290,112
+cached), 32,316 output. Two draws of `route_x_search` also called `weather`
+or `now` beside `x_search`, which the row allows (the message asks about a
+typhoon). n=3 per row says each route is taken, not how often: a rate needs
+more draws. `--reasons` prints each distinct reason once, so fewer reason
+lines than draws is not fewer draws.
+
 ## Live read-back after each deploy
 
 - **PR 1:** one `x_read` of a post link, one of a handle's posts, one
@@ -58,6 +70,16 @@ is committed, and no member of a room is named in it.
 - **PR 2:** the operator confirms private profile viewing on the account
   first. Then one of each LinkedIn read and one search, the same way, and the
   bridge restarted on norty from the pulled checkout.
+
+> **Done, 2026-09-24.** PR 1 (#468): a post link, a handle's posts, an
+> account link and a search each returned `ok` with real content; the
+> read-back also found an id naming no post returning an empty `ok`, fixed
+> in #470 (now `nothing_found`). PR 2 (#475): private viewing confirmed by
+> the operator; a profile, its roles, its posts, a company page and one
+> people search returned `ok` with real content, while a post link, a
+> `/company/-f/` link and a fire turn were each refused before anything was
+> sent. Both read-backs ran the tools in the deployed container against the
+> live bridge, not through a room.
 
 ## Resident cost, measured
 
