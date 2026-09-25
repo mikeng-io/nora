@@ -1,0 +1,12 @@
+{
+  "type": "fix",
+  "summary": "Nora reads a link as it is today, not from a search engine's old copy, and no longer tells someone they are wrong because a page she read left something out.",
+  "details": [
+    "Opening a link now uses a copy no older than 24 hours and fetches the page live otherwise. If the live page cannot be opened, Nora uses the older copy and says it may be out of date.",
+    "Search snippets and opened pages come with a reminder that they can be partial or out of date, so something missing from them is not proof that it does not exist."
+  ],
+  "limitations": [
+    "Search results still come from the search engine's saved copies; only opening a link fetches it fresh.",
+    "Opening a page Nora has not read in the last day takes 2 to 5 seconds longer."
+  ]
+}
