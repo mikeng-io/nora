@@ -97,6 +97,7 @@ ADD CONSTRAINT fact_premise_premise_fact_id_fkey FOREIGN KEY (premise_fact_id) R
 ADD CONSTRAINT fact_superseded_by_fkey FOREIGN KEY (superseded_by) REFERENCES public.fact(id);
 ADD CONSTRAINT geocode_cache_pkey PRIMARY KEY (lat_rounded, lng_rounded);
 ADD CONSTRAINT instagram_summons_comment_id_key UNIQUE (comment_id);
+ADD CONSTRAINT instagram_summons_message_id_key UNIQUE (message_id);
 ADD CONSTRAINT instagram_summons_pkey PRIMARY KEY (id);
 ADD CONSTRAINT language_observation_message_id_canonical_form_sense_key UNIQUE (message_id, canonical_form, sense);
 ADD CONSTRAINT language_observation_pkey PRIMARY KEY (id);
@@ -177,6 +178,7 @@ ALTER TABLE ONLY public.fact_premise
 ALTER TABLE ONLY public.geocode_cache
 ALTER TABLE ONLY public.instagram_summons
 ALTER TABLE ONLY public.instagram_summons
+ALTER TABLE ONLY public.instagram_summons
 ALTER TABLE ONLY public.language_observation
 ALTER TABLE ONLY public.language_observation
 ALTER TABLE ONLY public.media_objects
@@ -252,7 +254,7 @@ CONSTRAINT ck_derived_places_kind CHECK ((kind = ANY (ARRAY['home'::text, 'work'
 CONSTRAINT ck_event_rsvps_response CHECK ((response = ANY (ARRAY['yes'::text, 'no'::text, 'maybe'::text])))
 CONSTRAINT ck_events_status CHECK ((status = ANY (ARRAY['proposed'::text, 'confirmed'::text, 'cancelled'::text])))
 CONSTRAINT ck_instagram_summons_mode CHECK ((mode = ANY (ARRAY['dry_run'::text, 'live'::text]))),
-CONSTRAINT ck_instagram_summons_state CHECK ((state = ANY (ARRAY['claimed'::text, 'ignored_summoner'::text, 'stale'::text, 'unreadable'::text, 'silent'::text, 'staged'::text, 'flushing'::text, 'published'::text, 'refused'::text, 'capped'::text, 'duplicate'::text, 'ambiguous'::text, 'failed'::text])))
+CONSTRAINT ck_instagram_summons_state CHECK ((state = ANY (ARRAY['claimed'::text, 'unresolved'::text, 'ignored_summoner'::text, 'stale'::text, 'unreadable'::text, 'silent'::text, 'staged'::text, 'flushing'::text, 'published'::text, 'refused'::text, 'capped'::text, 'duplicate'::text, 'ambiguous'::text, 'failed'::text])))
 CONSTRAINT ck_music_queue_position_non_negative CHECK (("position" >= 0))
 CONSTRAINT ck_music_session_volume_range CHECK (((volume >= (0.0)::double precision) AND (volume <= (2.0)::double precision)))
 CONSTRAINT ck_occupancy_how CHECK (((hour_of_week >= 0) AND (hour_of_week < 168)))
@@ -537,7 +539,7 @@ circle_id text NOT NULL,
 circle_id text NOT NULL,
 closing_condition text NOT NULL,
 closing_condition text,
-comment_id text NOT NULL,
+comment_id text,
 completed_at timestamp with time zone,
 confidence double precision NOT NULL,
 consolidator_name text NOT NULL,
@@ -745,6 +747,7 @@ mentions_json text,
 message_id integer NOT NULL,
 message_id integer NOT NULL,
 message_id integer NOT NULL,
+message_id text NOT NULL,
 message_ids integer[] DEFAULT '{}'::integer[] NOT NULL,
 message_ids integer[] NOT NULL,
 messages jsonb NOT NULL,

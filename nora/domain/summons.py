@@ -2,8 +2,9 @@
 of one summons, the ledger port that makes it answered at most once, and the
 ONE rendering of what she reads.
 
-Comprehend once. A mention from the bridge becomes a `Mention`; the post and
-its comments become a frozen `SummonsContext`; `render_summons` is the only
+Comprehend once. A summons card from the bridge's SSE stream becomes a
+`SummonsCard` (the platform adapter parses it, once); the post and its
+comments become a frozen `SummonsContext`; `render_summons` is the only
 thing that turns that context into text, and nothing downstream re-reads a
 bridge body. The context carries what every judgement she is asked to make
 turns on: WHEN (an age on the summons, the post and every comment, and which
@@ -39,8 +40,12 @@ from nora.domain.blocks import wrap_outside_text
 #:
 #: A `claimed` row older than the claim timeout is swept to `failed`, never
 #: retried (a double public comment is worse than a missing one).
+#:
+#: `unresolved` is final and costs no read and no model call: the bridge could
+#: not find which post the card points at (`resolved = false`), so there is
+#: nothing she could answer under.
 SummonsState = Literal[
-    "claimed", "ignored_summoner", "stale", "unreadable", "silent", "staged",
+    "claimed", "unresolved", "ignored_summoner", "stale", "unreadable", "silent", "staged",
     "flushing", "published", "refused", "capped", "duplicate", "ambiguous", "failed",
 ]
 #: The states `finish` may move a row OUT of.
@@ -59,12 +64,14 @@ SUMMONS_OUTCOMES: tuple[str, ...] = (
     *(s for s in SUMMONS_STATES if s not in ("claimed", "flushing")), ALREADY_CLAIMED,
 )
 
-#: `nora_summons_polls_total`'s `status` label: what one `GET /mentions` came
-#: back as. `needs_human` (the session is checkpointed) and `unavailable` (503,
-#: the bridge is reconnecting) are the two the poller BACKS OFF on; `error` is
-#: every other failure, including no answer at all.
-PollStatus = Literal["ok", "needs_human", "unavailable", "error"]
-POLL_STATUSES: tuple[str, ...] = get_args(PollStatus)
+#: `nora_summons_intake_total`'s `outcome` label: what became of one `summons`
+#: event from the bridge's SSE stream. `queued` reached the consumer's inbox;
+#: `disabled` arrived while `[social.instagram.summons]` is off and was
+#: dropped; `malformed` failed to parse (fail closed: no row, no answer);
+#: `overflow` is an OLDER queued card pushed out of the full inbox by a newer
+#: one. DERIVED, so the help text and the increments cannot disagree.
+IntakeOutcome = Literal["queued", "disabled", "malformed", "overflow"]
+INTAKE_OUTCOMES: tuple[str, ...] = get_args(IntakeOutcome)
 
 #: The longest reply the bridge accepts (its `MaxCommentRunes`, Instagram's
 #: own comment limit). A Python `str`'s length is its code-point count, which
@@ -80,16 +87,43 @@ NEAREST_COMMENTS = 3
 
 
 @dataclass(frozen=True)
-class Mention:
-    """One comment-mention from `GET /mentions`. `at` is `None` when the
-    bridge omitted it, which is "unknown" and never an epoch."""
+class SummonsCard:
+    """One `summons` event from the bridge's SSE stream: somebody's comment
+    (or caption) tagged her, and Instagram told her so as a DM card from the
+    commenter. Parsed ONCE, by `nora.platform.instagram.summons`.
 
-    comment_id: str
-    media_id: str
+    The card does NOT carry the comment's id (measured 2026-09-26): the
+    occasion finds it by reading the post's comments and matching
+    `sender_igid` and her word-bounded `@handle` (`summons_comment`).
+    `resolved` is False when the bridge could not name the post (its thread
+    refetch failed, or carried no `target_url`); then `shortcode` and
+    `media_id` are empty, and the occasion records it and never answers.
+    `sender_igid` is "" when the wire's was not a decimal id, which matches
+    nobody (the summoner gate fails closed). `text` is the comment text as the
+    card showed it, never shown to her: she reads the comment itself.
+    """
+
+    message_id: str
+    room_id: str
+    sender_igid: str
+    sender_username: str
+    text: str
     shortcode: str
-    author_igid: str
-    author_username: str
-    at: datetime | None
+    media_id: str
+    received_at: datetime
+    resolved: bool
+
+
+class SummonsSink(Protocol):
+    """Where the Instagram adapter hands a parsed summons card: the one seam
+    between the platform layer, which reads the SSE stream, and the summons
+    occasion, which is composed above it. The production answer is
+    `nora.app.summons_inbox.SummonsInbox`. Neither method may block or raise:
+    the SSE loop calls them inline."""
+
+    def offer(self, card: SummonsCard) -> None: ...
+
+    def malformed(self) -> None: ...
 
 
 @dataclass(frozen=True)
@@ -113,14 +147,16 @@ class SummonsPost:
 
 @dataclass(frozen=True)
 class Comment:
-    """One comment. The author's igid is not kept: nothing she reads needs it
-    and a model must never see one (R-18)."""
+    """One comment. `author_igid` is kept for ONE use, finding the summoner's
+    own comment (`summons_comment`); it never reaches a `ThreadRow`, so a
+    model never sees one (R-18). "" when the wire's was not a decimal id."""
 
     id: str
     parent_id: str | None
     author: str | None
     text: str
     at: datetime | None
+    author_igid: str = ""
 
 
 @dataclass(frozen=True)
@@ -160,10 +196,13 @@ class SummonsContext:
 
 @dataclass(frozen=True)
 class SummonsRow:
-    """One ledger row, as the store reads it back."""
+    """One ledger row, as the store reads it back. `comment_id` is `None`
+    until the summoner's comment is found on the post (`bind_comment`); an
+    `unresolved`, `stale` or `ignored_summoner` row never gets one."""
 
     id: UUID
-    comment_id: str
+    message_id: str
+    comment_id: str | None
     media_id: str
     shortcode: str
     author_igid: str
@@ -182,9 +221,12 @@ class SummonsRow:
 class SummonsLedger(Protocol):
     """One reply per summons, claimed BEFORE the model runs.
 
-    `claim` is the idempotency line: `INSERT ... ON CONFLICT (comment_id) DO
-    NOTHING`, so of two concurrent claims on one comment exactly one gets an
-    id and the other gets `None` and stops.
+    `claim` is the idempotency line: `INSERT ... ON CONFLICT (message_id) DO
+    NOTHING`, keyed on the summons CARD's message id, so of two concurrent
+    claims on one card exactly one gets an id and the other gets `None` and
+    stops. `bind_comment` then records which comment the card resolved to,
+    once, and only if no other row holds that comment (`comment_id` stays
+    UNIQUE): two cards that resolve to one comment get one answer.
 
     `finish` moves a row only out of an `OPEN_STATES` state and answers
     whether it did: a final row is final, so a second writer (an old
@@ -197,9 +239,13 @@ class SummonsLedger(Protocol):
     """
 
     async def claim(
-        self, *, comment_id: str, media_id: str, shortcode: str,
+        self, *, message_id: str, media_id: str, shortcode: str,
         author_igid: str, mention_at: datetime | None, mode: str, now: datetime,
     ) -> UUID | None: ...
+
+    async def bind_comment(
+        self, summons_id: UUID, comment_id: str, *, now: datetime,
+    ) -> bool: ...
 
     async def finish(
         self, summons_id: UUID, state: str, *, now: datetime,
@@ -209,8 +255,6 @@ class SummonsLedger(Protocol):
     ) -> bool: ...
 
     async def take_for_flush(self, summons_id: UUID, *, now: datetime) -> bool: ...
-
-    async def seen(self, comment_ids: tuple[str, ...]) -> frozenset[str]: ...
 
     async def awaiting_flush(self) -> SummonsRow | None: ...
 
@@ -224,12 +268,64 @@ class SummonsLedger(Protocol):
 # ---- building the context -------------------------------------------------------
 
 
+def _handle_pattern(handle: str) -> re.Pattern[str]:
+    """Her `@handle` as a WHOLE word, case-insensitive. Not preceded by a
+    username character (`me@noraexample` is not a tag), and not followed by
+    one either: `@noraexample2` and `@noraexample.x` are somebody else. A
+    trailing `.` that ends a sentence is punctuation, since no username ends
+    in one.
+
+    `re.ASCII` is load-bearing: case folding is ASCII-only, as the bridge's is.
+    Without it, Unicode folding matches a dotless i (U+0131) or a dotted
+    capital I (U+0130) against `i`, and a look-alike of her handle spelled
+    with one (somebody else's) would read as hers."""
+    return re.compile(
+        rf"(?<![A-Za-z0-9._])@{re.escape(handle)}(?![A-Za-z0-9_]|\.[A-Za-z0-9_])",
+        re.IGNORECASE | re.ASCII,
+    )
+
+
+def tags_handle(text: str, handle: str) -> bool:
+    """Whether `text` tags `@handle` as a whole word (`_handle_pattern`)."""
+    return bool(handle) and _handle_pattern(handle).search(text) is not None
+
+
 def question_of(text: str, handle: str) -> str:
     """The summons comment with every `@handle` removed, whitespace collapsed.
     Case-insensitive, and only as a whole handle: `@noraexample2` is somebody
     else."""
-    pattern = re.compile(rf"@{re.escape(handle)}(?![A-Za-z0-9._])", re.IGNORECASE)
-    return " ".join(pattern.sub(" ", text).split())
+    return " ".join(_handle_pattern(handle).sub(" ", text).split())
+
+
+def summons_comment(
+    comments: tuple[Comment, ...], *, igid: str, handle: str, text: str = "",
+) -> Comment | None:
+    """The comment a summons card stands for: written by the card's SENDER
+    (`author_igid == igid`, both non-empty) AND tagging her by `@handle`.
+
+    Of several, the one whose text EQUALS the card's `text` (the card shows
+    the comment's own text; whitespace-normalised, otherwise exact) is
+    preferred, so a card is answered under the comment it was sent for. Only
+    when none equals it is the newest taken (a card is sent for the comment
+    just written); one with no time sorts oldest. `None` when none matches:
+    she does not answer a summons whose comment she cannot find, and she
+    never answers one that somebody else wrote."""
+    if not igid:
+        return None
+    matches = [
+        (i, c) for i, c in enumerate(comments)
+        if c.author_igid == igid and tags_handle(c.text, handle)
+    ]
+    wanted = " ".join(text.split())
+    exact = [pair for pair in matches if wanted and " ".join(pair[1].text.split()) == wanted]
+    pool = exact or matches
+    if not pool:
+        return None
+    return max(
+        pool,
+        key=lambda pair: (pair[1].at is not None,
+                          pair[1].at or datetime.min.replace(tzinfo=UTC), pair[0]),
+    )[1]
 
 
 def nearest_thread(
@@ -261,23 +357,24 @@ def nearest_thread(
 
 
 def build_context(
-    *, summons_id: str, now: datetime, mention: Mention, summoned_at: datetime,
-    handle: str, post: SummonsPost, comments: tuple[Comment, ...],
+    *, summons_id: str, now: datetime, comment_id: str, summoner: str | None,
+    summoned_at: datetime, handle: str, post: SummonsPost,
+    comments: tuple[Comment, ...],
 ) -> SummonsContext | None:
     """Comprehend once. `None` when the summons comment is not among the
     comments read (design 19 rule 6: no reply to what she cannot read).
-    `summoned_at` is the mention's own time, passed separately because a
-    mention with none is stale before this is ever called."""
-    found = nearest_thread(comments, mention.comment_id)
+    `comment_id` is the comment `summons_comment` found; `summoned_at` is the
+    card's own time; `summoner` the card sender's username."""
+    found = nearest_thread(comments, comment_id)
     if found is None:
         return None
     thread, elided = found
-    summons = next(c for c in comments if c.id == mention.comment_id)
+    summons = next(c for c in comments if c.id == comment_id)
     shown = post.items[:MAX_ITEMS_SHOWN]
     return SummonsContext(
         summons_id=summons_id, now=now,
         question=question_of(summons.text, handle),
-        summoner=mention.author_username or summons.author,
+        summoner=summoner or summons.author,
         summoned_at=summoned_at,
         post_author=post.author, caption=post.caption, post_taken_at=post.taken_at,
         items=shown,
@@ -370,9 +467,12 @@ def render_summons(ctx: SummonsContext) -> str:
 @dataclass(frozen=True)
 class SummonsOutcome:
     """What one run did: the ledger state it left, the bridge code behind it
-    when there was one, and whether the run reached the bridge beyond the
-    mention (so the poller knows whether this tick's one read is spent)."""
+    when there was one, and whether the run called the bridge at all. The
+    consumer backs off on a `needs_human` or 503 answer and clears its backoff
+    only on a run that reached the bridge and was answered: a card filed
+    without a bridge call (unresolved, stale, a stranger) says nothing about
+    the session."""
 
     state: str
     bridge_code: str | None = None
-    spent_tick: bool = False
+    reached_bridge: bool = False

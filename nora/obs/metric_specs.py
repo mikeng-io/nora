@@ -22,7 +22,7 @@ from nora.domain.reasoning_strip import (
     STRIP_OUTCOMES,
     WRITE_OUTCOMES,
 )
-from nora.domain.summons import POLL_STATUSES, SUMMONS_MODES, SUMMONS_OUTCOMES
+from nora.domain.summons import INTAKE_OUTCOMES, SUMMONS_MODES, SUMMONS_OUTCOMES
 
 _DEFAULT_BUCKETS: tuple[float, ...] = (0.1, 0.25, 0.5, 1, 2, 5, 10, 15, 30)
 
@@ -2164,17 +2164,20 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         + " / ".join(SUMMONS_OUTCOMES)
         + ") and mode (" + " / ".join(SUMMONS_MODES) + "). staged in "
         "dry_run is the whole turn with nothing posted; staged in live is a "
-        "reply waiting out the bridge's too_soon, retried next tick. "
+        "reply waiting out the bridge's too_soon, retried by its flush alone. "
+        "unresolved is a card whose post the bridge could not name. "
         "ambiguous is a write whose result is unknown and is never retried.",
         ("outcome", "mode"),
     ),
     _CounterSpec(
-        "nora_summons_polls_total",
-        "GET /mentions polls by the summons poller, by status ("
-        + " / ".join(POLL_STATUSES)
-        + "). needs_human and unavailable make the poller back off, up to "
-        "30 minutes between polls.",
-        ("status",),
+        "nora_summons_intake_total",
+        "summons events from the instagram-bridge's SSE stream, by outcome ("
+        + " / ".join(INTAKE_OUTCOMES)
+        + "). queued reached the consumer; disabled arrived while "
+        "[social.instagram.summons] is off and was dropped; malformed failed "
+        "to parse (no row, no answer); overflow is an older queued card "
+        "pushed out of the full inbox by a newer one.",
+        ("outcome",),
     ),
 )
 

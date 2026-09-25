@@ -2954,7 +2954,12 @@ INSTAGRAM_SUMMONS = sa.Table(
     "instagram_summons",
     METADATA,
     sa.Column("id", pg.UUID(as_uuid=True), primary_key=True),
-    sa.Column("comment_id", sa.Text, nullable=False, unique=True),
+    # The claim key since 0067: the summons card's DM message id.
+    sa.Column("message_id", sa.Text, nullable=False, unique=True),
+    # Bound once the summoner's comment is found on the post; NULL before
+    # that and forever on an unresolved / stale / ignored row. Still UNIQUE
+    # (NULLs are distinct): one comment, one reply.
+    sa.Column("comment_id", sa.Text, nullable=True, unique=True),
     sa.Column("media_id", sa.Text, nullable=False),
     sa.Column("shortcode", sa.Text, nullable=False),
     sa.Column("author_igid", sa.Text, nullable=False),
@@ -2975,9 +2980,9 @@ INSTAGRAM_SUMMONS = sa.Table(
         server_default=sa.text("now()"),
     ),
     sa.CheckConstraint(
-        "state IN ('claimed', 'ignored_summoner', 'stale', 'unreadable', "
-        "'silent', 'staged', 'flushing', 'published', 'refused', 'capped', "
-        "'duplicate', 'ambiguous', 'failed')",
+        "state IN ('claimed', 'unresolved', 'ignored_summoner', 'stale', "
+        "'unreadable', 'silent', 'staged', 'flushing', 'published', 'refused', "
+        "'capped', 'duplicate', 'ambiguous', 'failed')",
         name="ck_instagram_summons_state",
     ),
     sa.CheckConstraint(

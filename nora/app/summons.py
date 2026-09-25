@@ -2,7 +2,17 @@
 
 Somebody in `identity.toml` tags her (`@noraexample`) in a comment under an
 Instagram post; she reads the post and the thread around the summons and
-answers in the comments, once, or says nothing. It reuses the model loop, the
+answers in the comments, once, or says nothing.
+
+**How a summons arrives (the 2026-09-26 intake).** Instagram tells her about
+the tag as a DM card from the commenter, and the bridge emits a `summons`
+event for it on its SSE stream (`nora.platform.instagram.summons` parses it
+into a `SummonsCard`; `nora.app.summons_consumer` hands it here). The card
+names the post but not the comment, so the occasion reads the post's comments
+and answers under the one the card's SENDER wrote that tags her
+(`summons_comment`: author igid AND word-bounded `@handle`, newest first). The
+ledger row is claimed on the card's message id before anything is read; the
+comment id is bound to it once found, and stays unique across rows. It reuses the model loop, the
 tool surface and the guards of every other occasion, and it constructs NO
 ROOM and writes NO MEMORY: no Honcho, no audit row, no roster, no notes, no
 transcript. What it holds is the bridge, the ledger, the person index (for the
@@ -48,12 +58,13 @@ from nora.domain.models import ConversationTarget, NormalizedMessage, TagContext
 from nora.domain.summons import (
     ALREADY_CLAIMED,
     MAX_COMMENT_CHARS,
-    Mention,
+    SummonsCard,
     SummonsLedger,
     SummonsOutcome,
     SummonsRow,
     build_context,
     render_summons,
+    summons_comment,
 )
 from nora.engagement.stages import deliver, invoke
 from nora.infra.social.summons_client import BridgeResult, InstagramSummonsClient
@@ -91,6 +102,8 @@ CONVERSATION_TYPE = "public"
 _WRITE_STATES: Mapping[str, str] = {
     "writes_disabled": "refused",
     "invalid_text": "refused",
+    # The bridge's guard 3: it re-reads the post's comments itself and finds
+    # no served summons whose sender wrote `reply_to_comment_id` tagging her.
     "not_a_summons": "failed",
     "writes_blocked": "failed",
     "needs_human": "failed",
@@ -165,9 +178,9 @@ def _write_state(result: BridgeResult[Any], *, prior_code: str | None) -> str:
 
 
 class SummonsOccasion:
-    """One summons, from a mention to a ledger row. `run` and `flush_staged`
-    NEVER raise into the poller for a reason a bridge or a model can cause;
-    an exception there is a bug and the poller counts it."""
+    """One summons, from a card to a ledger row. `run` and `flush_staged`
+    NEVER raise into the consumer for a reason a bridge or a model can cause;
+    an exception there is a bug and the consumer counts it."""
 
     def __init__(
         self,
@@ -218,39 +231,46 @@ class SummonsOccasion:
             return
         self._metrics.inc("nora_summons_total", outcome=outcome.state, mode=self._mode)
 
-    async def run(self, mention: Mention) -> SummonsOutcome:
-        outcome = await self._run(mention)
+    async def run(self, card: SummonsCard) -> SummonsOutcome:
+        outcome = await self._run(card)
         self._count(outcome)
         return outcome
 
-    async def _run(self, mention: Mention) -> SummonsOutcome:
+    async def _run(self, card: SummonsCard) -> SummonsOutcome:
         now = self._clock()
         # Resolved BEFORE the claim, so a stranger's igid is never stored: an
-        # ignored row carries `author_igid = ''` (its key is the comment id).
+        # ignored row carries `author_igid = ''` (its key is the message id).
         person_id = (
-            await self._summoners.person_for_igid(igid=mention.author_igid)
-            if mention.author_igid else None
+            await self._summoners.person_for_igid(igid=card.sender_igid)
+            if card.sender_igid else None
         )
+        # Claimed on the CARD's message id, before anything else: of any
+        # number of deliveries of one card (an SSE reconnect, two processes
+        # during a recreate), exactly one is worked.
         summons_id = await self._ledger.claim(
-            comment_id=mention.comment_id, media_id=mention.media_id,
-            shortcode=mention.shortcode,
-            author_igid=mention.author_igid if person_id is not None else "",
-            mention_at=mention.at, mode=self._mode, now=now,
+            message_id=card.message_id, media_id=card.media_id,
+            shortcode=card.shortcode,
+            author_igid=card.sender_igid if person_id is not None else "",
+            mention_at=card.received_at, mode=self._mode, now=now,
         )
         if summons_id is None:
             return SummonsOutcome(ALREADY_CLAIMED)
-        # The cheap gates: no bridge call, no model call. A mention with no
-        # time is stale, never "now": answering a months-old summons because
-        # the feed dropped its timestamp is the failure that fails closed.
-        summoned_at = mention.at
-        if summoned_at is None or now - summoned_at > self._max_age:
-            await self._ledger.finish(summons_id, "stale", now=now)
-            return SummonsOutcome("stale")
+        # The cheap gates: no bridge call, no model call.
+        if not card.resolved:
+            # The bridge could not name the post the card points at: there is
+            # nothing she could answer under. Recorded, never answered.
+            await self._ledger.finish(summons_id, "unresolved", now=now, person_id=person_id)
+            return SummonsOutcome("unresolved")
         if person_id is None:
             # Counted and ignored (design 19 rule 5). Nothing is read and
             # nothing is said: a stranger tagging her costs one row.
             await self._ledger.finish(summons_id, "ignored_summoner", now=now)
             return SummonsOutcome("ignored_summoner")
+        if now - card.received_at > self._max_age:
+            # A card replayed long after it arrived (a bridge buffer, a
+            # backlog behind a checkpoint) is filed, never answered late.
+            await self._ledger.finish(summons_id, "stale", now=now, person_id=person_id)
+            return SummonsOutcome("stale")
         # From here the run reaches the bridge and, usually, the model: ONE
         # root, and it is a generation root even when a read fails first,
         # because a summons that could not read its post must still leave a
@@ -261,17 +281,16 @@ class SummonsOccasion:
                "nora.platform": "instagram", "nora.mode": self._mode,
                "nora.summons_id": str(summons_id)},
         ):
-            outcome = await self._answer(summons_id, mention, summoned_at, person_id, now)
+            outcome = await self._answer(summons_id, card, person_id, now)
             annotate(**{"nora.outcome": outcome.state})
             return outcome
 
     async def _answer(
-        self, summons_id: UUID, mention: Mention, summoned_at: datetime,
-        person_id: str, now: datetime,
+        self, summons_id: UUID, card: SummonsCard, person_id: str, now: datetime,
     ) -> SummonsOutcome:
         trace_id = current_trace_id()
-        post = await self._client.post(mention.shortcode)
-        comments = await self._client.comments(mention.shortcode) if post.ok else None
+        post = await self._client.post(card.shortcode)
+        comments = await self._client.comments(card.shortcode) if post.ok else None
         if post.value is None or comments is None or comments.value is None:
             # Either read failing is silence (design 19 rule 6): she never
             # answers a post, or under a thread, she has not seen.
@@ -280,20 +299,45 @@ class SummonsOccasion:
                 summons_id, "unreadable", now=now, person_id=person_id,
                 bridge_code=code, trace_id=trace_id,
             )
-            return SummonsOutcome("unreadable", bridge_code=code, spent_tick=True)
-        context = build_context(
-            summons_id=str(summons_id), now=now, mention=mention,
-            summoned_at=summoned_at, handle=self._handle,
-            post=post.value, comments=comments.value,
+            return SummonsOutcome("unreadable", bridge_code=code, reached_bridge=True)
+        # The card carries no comment id. The comment is the one the card's
+        # SENDER wrote that tags her: author igid AND @handle; the one whose
+        # text equals the card's first, else the newest.
+        # A comment by anybody else is never the one she answers under.
+        found = summons_comment(
+            comments.value, igid=card.sender_igid, handle=self._handle, text=card.text,
         )
-        if context is None:
-            # The summons is not on the page she read: she does not answer
-            # under a thread she cannot see (design 19 rule 6).
+        if found is None:
             await self._ledger.finish(
                 summons_id, "unreadable", now=now, person_id=person_id,
                 bridge_code="not_on_page", trace_id=trace_id,
             )
-            return SummonsOutcome("unreadable", bridge_code="not_on_page", spent_tick=True)
+            return SummonsOutcome(
+                "unreadable", bridge_code="not_on_page", reached_bridge=True,
+            )
+        if not await self._ledger.bind_comment(summons_id, found.id, now=now):
+            # Another row already answers this comment (a second card for one
+            # comment): one comment, one reply.
+            await self._ledger.finish(
+                summons_id, "duplicate", now=now, person_id=person_id,
+                bridge_code="comment_claimed", trace_id=trace_id,
+            )
+            return SummonsOutcome(
+                "duplicate", bridge_code="comment_claimed", reached_bridge=True,
+            )
+        context = build_context(
+            summons_id=str(summons_id), now=now, comment_id=found.id,
+            summoner=card.sender_username or None, summoned_at=card.received_at,
+            handle=self._handle, post=post.value, comments=comments.value,
+        )
+        if context is None:  # pragma: no cover — `found` is on the page by construction
+            await self._ledger.finish(
+                summons_id, "unreadable", now=now, person_id=person_id,
+                bridge_code="not_on_page", trace_id=trace_id,
+            )
+            return SummonsOutcome(
+                "unreadable", bridge_code="not_on_page", reached_bridge=True,
+            )
 
         held = await self._turn(summons_id, context_text=render_summons(context),
                                 question=context.question, now=now)
@@ -301,9 +345,9 @@ class SummonsOccasion:
             await self._ledger.finish(
                 summons_id, "silent", now=now, person_id=person_id, trace_id=trace_id,
             )
-            return SummonsOutcome("silent", spent_tick=True)
+            return SummonsOutcome("silent", reached_bridge=True)
         return await self._flush(
-            summons_id, shortcode=mention.shortcode, comment_id=mention.comment_id,
+            summons_id, shortcode=card.shortcode, comment_id=found.id,
             text=held[0], person_id=person_id, trace_id=trace_id, now=now,
         )
 
@@ -387,16 +431,16 @@ class SummonsOccasion:
                 summons_id, "refused", now=now, person_id=person_id, reply_text=body,
                 bridge_code=refusal, trace_id=trace_id,
             )
-            return SummonsOutcome("refused", bridge_code=refusal, spent_tick=True)
+            return SummonsOutcome("refused", bridge_code=refusal, reached_bridge=True)
         await self._ledger.finish(
             summons_id, "staged", now=now, person_id=person_id, reply_text=body,
             trace_id=trace_id,
         )
         if self._mode != "live":
-            return SummonsOutcome("staged", spent_tick=True)
+            return SummonsOutcome("staged", reached_bridge=True)
         if not await self._ledger.take_for_flush(summons_id, now=now):
             # Another flush holds it, or it is already final: nothing posts.
-            return SummonsOutcome(ALREADY_CLAIMED, spent_tick=True)
+            return SummonsOutcome(ALREADY_CLAIMED, reached_bridge=True)
         result = await self._client.post_comment(
             shortcode, text=body, reply_to_comment_id=comment_id,
         )
@@ -420,7 +464,7 @@ class SummonsOccasion:
             bridge_code=None if result.ok else result.code,
         )
         return SummonsOutcome(
-            state, bridge_code=None if result.ok else result.code, spent_tick=True,
+            state, bridge_code=None if result.ok else result.code, reached_bridge=True,
         )
 
     async def flush_staged(self, row: SummonsRow) -> SummonsOutcome:
@@ -431,15 +475,16 @@ class SummonsOccasion:
         now = self._clock()
         expired = (
             row.mention_at is None or now - row.mention_at > self._max_age
-            or not row.reply_text
+            or not row.reply_text or not row.comment_id
         )
-        if expired or self._mode != "live":
+        if expired or self._mode != "live" or row.comment_id is None:
             # Past its age, or the operator switched back to dry_run while a
             # live reply waited: given up, never posted late or against the
-            # mode now in force.
+            # mode now in force. (A staged row always has its comment; one
+            # without is refused rather than posted under nothing.)
             code = "expired_staged" if expired else "mode_changed"
             await self._ledger.finish(row.id, "failed", now=now, bridge_code=code)
-            outcome = SummonsOutcome("failed", bridge_code=code, spent_tick=True)
+            outcome = SummonsOutcome("failed", bridge_code=code)
         else:
             outcome = await self._flush(
                 row.id, shortcode=row.shortcode, comment_id=row.comment_id,

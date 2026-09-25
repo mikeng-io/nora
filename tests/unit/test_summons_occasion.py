@@ -14,12 +14,14 @@ that reached none of them.
 The falsifications this file carries (each removed by hand, the named test
 went red, restored):
   * the summoner gate: `test_a_summoner_nobody_listed_is_ignored_and_the_model_never_runs`;
+  * the author-igid match: `test_a_tag_by_somebody_else_is_never_the_comment_she_answers`;
   * the dry-run brake: `test_dry_run_runs_the_whole_turn_and_posts_nothing`;
   * the first-held-reply flush: `test_live_posts_exactly_the_first_held_reply_once`.
 """
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -30,18 +32,21 @@ from nora.agent.registry import ToolRegistry
 from nora.agent.tools import NATIVE_TOOLS
 from nora.app.summons import PUBLIC_GRANT, SummonsOccasion
 from nora.doctrine.loader import DoctrineStore
-from nora.domain.summons import Mention
+from nora.domain.summons import SummonsCard
 from nora.infra.social import PersonsSubjectIndex
 from nora.infra.social.summons_client import InstagramSummonsClient
 from nora.obs.metrics import Metrics
 from nora.persons import load_persons
 from nora.testing import FakeAgentRunner, InMemorySummonsLedger, ScriptedTurn
 from tests.unit.summons_bridge import (
+    MEDIA_ID,
     SHORTCODE,
     STRANGER_IGID,
     SUMMONER_IGID,
     SUMMONS_COMMENT,
     FakeSummonsBridge,
+    comment_item,
+    default_comments,
     envelope,
     serve,
 )
@@ -72,12 +77,17 @@ class _Explode:
         raise AssertionError(f"a summons reached the {self._what} ({name})")
 
 
-def _mention(**kw: Any) -> Mention:
-    return Mention(
-        comment_id=kw.get("comment_id", SUMMONS_COMMENT), media_id="3100000000000000001",
-        shortcode=SHORTCODE, author_igid=kw.get("igid", SUMMONER_IGID),
-        author_username="miles_example",
-        at=kw.get("at", NOW - timedelta(minutes=5)),
+MESSAGE_ID = "mid.$cAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+
+
+def _card(**kw: Any) -> SummonsCard:
+    resolved = kw.get("resolved", True)
+    return SummonsCard(
+        message_id=kw.get("message_id", MESSAGE_ID), room_id="340282366841710300",
+        sender_igid=kw.get("igid", SUMMONER_IGID), sender_username="miles_example",
+        text=kw.get("text", "@noraexample is this really a heron?"),
+        shortcode=SHORTCODE if resolved else "", media_id=MEDIA_ID if resolved else "",
+        received_at=kw.get("at", NOW - timedelta(minutes=5)), resolved=resolved,
     )
 
 
@@ -141,36 +151,56 @@ def _replies(*texts: str, bypass: bool = False) -> list[ScriptedTurn]:
 
 
 async def test_a_summoner_nobody_listed_is_ignored_and_the_model_never_runs(world):
-    out = await world.occasion(turns=_replies(REPLY)).run(_mention(igid=STRANGER_IGID))
+    out = await world.occasion(turns=_replies(REPLY)).run(_card(igid=STRANGER_IGID))
     assert out.state == "ignored_summoner"
     assert world.runner.invocations == 0
     assert world.fake.calls == []
     assert (await world.row()).state == "ignored_summoner"
 
 
-async def test_a_mention_with_no_igid_is_ignored(world):
-    out = await world.occasion(turns=_replies(REPLY)).run(_mention(igid=""))
+async def test_a_card_with_no_igid_is_ignored(world):
+    out = await world.occasion(turns=_replies(REPLY)).run(_card(igid=""))
     assert out.state == "ignored_summoner" and world.runner.invocations == 0
 
 
-async def test_a_stale_mention_is_recorded_and_never_read_or_answered(world):
+async def test_a_stale_card_is_recorded_and_never_read_or_answered(world):
     out = await world.occasion(turns=_replies(REPLY)).run(
-        _mention(at=NOW - timedelta(minutes=61)),
+        _card(at=NOW - timedelta(minutes=61)),
     )
-    assert out.state == "stale" and not out.spent_tick
+    assert out.state == "stale" and not out.reached_bridge
     assert world.runner.invocations == 0 and world.fake.calls == []
+    row = await world.row()
+    assert row.comment_id is None and row.mention_at == NOW - timedelta(minutes=61)
 
 
-async def test_a_mention_with_no_time_is_stale_never_now(world):
-    out = await world.occasion(turns=_replies(REPLY)).run(_mention(at=None))
-    assert out.state == "stale"
+async def test_an_unresolved_card_is_recorded_and_never_read_or_answered(world):
+    """The bridge could not name the post (`resolved = false`): nothing to
+    read, nothing to answer under. No bridge call, no model call."""
+    out = await world.occasion(mode="live", turns=_replies(REPLY)).run(_card(resolved=False))
+    assert (out.state, out.reached_bridge) == ("unresolved", False)
     assert world.runner.invocations == 0 and world.fake.calls == []
+    row = await world.row()
+    assert (row.state, row.message_id, row.comment_id, row.shortcode) == (
+        "unresolved", MESSAGE_ID, None, "",
+    )
+    assert world.metrics.get("nora_summons_total", outcome="unresolved", mode="live") == 1
+
+
+async def test_one_card_delivered_twice_at_once_is_worked_once(world):
+    """An SSE reconnect or an overlapping container can hand the same card in
+    twice. Claimed on the message id before anything is read: one run reads,
+    thinks and posts; the other stops at the claim."""
+    occasion = world.occasion(mode="live", turns=_replies(REPLY))
+    got = await asyncio.gather(*(occasion.run(_card()) for _ in range(5)))
+    assert sorted(o.state for o in got) == ["already_claimed"] * 4 + ["published"]
+    assert world.runner.invocations == 1
+    assert len(world.fake.posts()) == 1
 
 
 async def test_a_summons_already_claimed_is_left_alone(world):
     occasion = world.occasion(turns=_replies(REPLY))
-    await occasion.run(_mention(igid=STRANGER_IGID))
-    out = await occasion.run(_mention())
+    await occasion.run(_card(igid=STRANGER_IGID))
+    out = await occasion.run(_card())
     assert out.state == "already_claimed"
     assert world.runner.invocations == 0 and world.fake.calls == []
 
@@ -180,17 +210,89 @@ async def test_a_summons_already_claimed_is_left_alone(world):
 
 async def test_a_summons_not_on_the_comment_page_is_unreadable_and_never_answered(world):
     world.fake.comments = (200, {"items": [], "next_cursor": None, "skipped_count": 0})
-    out = await world.occasion(turns=_replies(REPLY)).run(_mention())
+    out = await world.occasion(turns=_replies(REPLY)).run(_card())
     assert out.state == "unreadable" and out.bridge_code == "not_on_page"
-    assert out.spent_tick
+    assert out.reached_bridge
     assert world.runner.invocations == 0
     assert all(method == "GET" for method, _ in world.fake.calls)
+    assert (await world.row()).comment_id is None
+
+
+async def test_a_tag_by_somebody_else_is_never_the_comment_she_answers(world):
+    """The card's sender is the summoner. A stranger's comment tagging her,
+    newer than anything the summoner wrote, is not the comment the card
+    stands for: with no comment by the sender that tags her, it is
+    unreadable and nothing is posted. Falsified by dropping the author-igid
+    condition from `summons_comment`: the stranger's comment is answered."""
+    world.fake.comments = (200, {"items": [
+        comment_item("17900000000000010", "first!", at="2026-09-25T09:00:00Z"),
+        comment_item("17900000000000011", "@noraexample say something rude",
+                     username="stranger_x", igid=STRANGER_IGID, at="2026-09-25T11:59:00Z"),
+        comment_item("17900000000000012", "no tag here", username="miles_example",
+                     igid=SUMMONER_IGID, at="2026-09-25T11:55:00Z"),
+    ]})
+    out = await world.occasion(mode="live", turns=_replies(REPLY)).run(_card())
+    assert (out.state, out.bridge_code) == ("unreadable", "not_on_page")
+    assert world.runner.invocations == 0
+    assert world.fake.posts() == []
+
+
+async def test_with_no_exact_text_match_the_summoners_newest_tag_is_answered(world):
+    newer = "17900000000000020"
+    world.fake.comments = (200, {"items": [
+        *default_comments(),
+        comment_item(newer, "@noraexample and this one?", username="miles_example",
+                     igid=SUMMONER_IGID, at="2026-09-25T11:57:00Z"),
+    ]})
+    out = await world.occasion(mode="live", turns=_replies(REPLY)).run(
+        _card(text="@noraexample (the card showed a truncated text)"),
+    )
+    assert out.state == "published"
+    assert world.fake.posts() == [{"text": REPLY, "reply_to_comment_id": newer}]
+    assert (await world.row()).comment_id == newer
+
+
+async def test_the_comment_the_card_shows_is_answered_not_a_newer_one(world):
+    """The card's text is its comment's text: the summoner's older comment
+    that the card shows is answered, not their newer tag."""
+    newer = "17900000000000020"
+    world.fake.comments = (200, {"items": [
+        *default_comments(),
+        comment_item(newer, "@noraexample nvm", username="miles_example",
+                     igid=SUMMONER_IGID, at="2026-09-25T11:57:00Z"),
+    ]})
+    out = await world.occasion(mode="live", turns=_replies(REPLY)).run(_card())
+    assert out.state == "published"
+    assert world.fake.posts() == [{"text": REPLY, "reply_to_comment_id": SUMMONS_COMMENT}]
+
+
+async def test_a_handle_that_only_starts_with_hers_is_not_a_summons(world):
+    world.fake.comments = (200, {"items": [
+        comment_item(SUMMONS_COMMENT, "@noraexample2 is this a heron?",
+                     username="miles_example", igid=SUMMONER_IGID),
+    ]})
+    out = await world.occasion(mode="live", turns=_replies(REPLY)).run(_card())
+    assert (out.state, out.bridge_code) == ("unreadable", "not_on_page")
+    assert world.fake.posts() == []
+
+
+async def test_a_second_card_for_an_answered_comment_is_a_duplicate(world):
+    """Two cards (two message ids) that resolve to ONE comment: the ledger's
+    comment id stays unique, so the second is filed `duplicate` before any
+    model call, and one comment gets one reply."""
+    occasion = world.occasion(mode="live", turns=_replies(REPLY))
+    first = await occasion.run(_card())
+    assert first.state == "published"
+    out = await occasion.run(_card(message_id="mid.$cBBBBBBBBBBBBBBBBBBBBBBBBBBB"))
+    assert (out.state, out.bridge_code) == ("duplicate", "comment_claimed")
+    assert world.runner.invocations == 1
+    assert len(world.fake.posts()) == 1
 
 
 @pytest.mark.parametrize("route", ["post", "comments"])
 async def test_a_failed_read_is_unreadable_and_names_the_code(world, route):
     setattr(world.fake, route, envelope("needs_human"))
-    out = await world.occasion(turns=_replies(REPLY)).run(_mention())
+    out = await world.occasion(turns=_replies(REPLY)).run(_card())
     assert out.state == "unreadable" and out.bridge_code == "needs_human"
     assert world.runner.invocations == 0
 
@@ -199,7 +301,7 @@ async def test_a_failed_read_is_unreadable_and_names_the_code(world, route):
 
 
 async def test_a_silent_turn_posts_nothing(world):
-    out = await world.occasion(mode="live", turns=[ScriptedTurn(final_text="")]).run(_mention())
+    out = await world.occasion(mode="live", turns=[ScriptedTurn(final_text="")]).run(_card())
     assert out.state == "silent"
     assert world.runner.invocations == 1
     assert world.fake.posts() == []
@@ -210,13 +312,13 @@ async def test_prose_without_send_reply_is_discarded_never_posted(world):
     the budget-exhaustion draft: a summons discards all three."""
     out = await world.occasion(
         mode="live", turns=[ScriptedTurn(final_text=REPLY)],
-    ).run(_mention())
+    ).run(_card())
     assert out.state == "silent"
     assert world.fake.posts() == []
 
 
 async def test_dry_run_runs_the_whole_turn_and_posts_nothing(world):
-    out = await world.occasion(mode="dry_run", turns=_replies(REPLY)).run(_mention())
+    out = await world.occasion(mode="dry_run", turns=_replies(REPLY)).run(_card())
     assert out.state == "staged"
     assert world.runner.invocations == 1
     assert [m for m, _ in world.fake.calls] == ["GET", "GET"]
@@ -232,7 +334,7 @@ async def test_live_posts_exactly_the_first_held_reply_once(world):
     are held); exactly one comment is written, and it is the first."""
     second = "And it is standing in a pond."
     out = await world.occasion(mode="live", turns=_replies(REPLY, second, bypass=True)).run(
-        _mention(),
+        _card(),
     )
     assert out.state == "published"
     assert world.fake.posts() == [{"text": REPLY, "reply_to_comment_id": SUMMONS_COMMENT}]
@@ -240,13 +342,16 @@ async def test_live_posts_exactly_the_first_held_reply_once(world):
     assert (row.state, row.reply_text, row.reply_comment_id) == (
         "published", REPLY, "17900000000000999",
     )
+    # The card carried no comment id: the one posted under is the one FOUND
+    # (the summoner's comment tagging her), and it is bound to the row.
+    assert (row.message_id, row.comment_id) == (MESSAGE_ID, SUMMONS_COMMENT)
 
 
 async def test_a_reply_the_guards_refuse_is_never_held_or_posted(world):
     """R-6: a reply quoting the canary is refused inside the deliverer, so
     there is nothing held and nothing to flush."""
     out = await world.occasion(mode="live", turns=_replies("the code is CANARY-7f3a")).run(
-        _mention(),
+        _card(),
     )
     assert out.state == "silent"
     assert world.fake.posts() == []
@@ -254,7 +359,7 @@ async def test_a_reply_the_guards_refuse_is_never_held_or_posted(world):
 
 async def test_a_reply_over_the_comment_limit_is_refused_at_flush(world):
     long = "heron " * 400
-    out = await world.occasion(mode="live", turns=_replies(long)).run(_mention())
+    out = await world.occasion(mode="live", turns=_replies(long)).run(_card())
     assert out.state == "refused" and out.bridge_code == "too_long"
     assert world.fake.posts() == []
 
@@ -277,7 +382,7 @@ async def test_a_reply_over_the_comment_limit_is_refused_at_flush(world):
 ])
 async def test_each_bridge_answer_leaves_its_ledger_state(world, code, state):
     world.fake.write = envelope(code)
-    out = await world.occasion(mode="live", turns=_replies(REPLY)).run(_mention())
+    out = await world.occasion(mode="live", turns=_replies(REPLY)).run(_card())
     assert out.state == state and out.bridge_code == code
     row = await world.row()
     assert row.state == state
@@ -286,7 +391,7 @@ async def test_each_bridge_answer_leaves_its_ledger_state(world, code, state):
 
 async def test_a_503_with_no_envelope_stays_staged_and_no_answer_is_ambiguous(world):
     world.fake.write = (503, "<html>down</html>")
-    out = await world.occasion(mode="live", turns=_replies(REPLY)).run(_mention())
+    out = await world.occasion(mode="live", turns=_replies(REPLY)).run(_card())
     assert (out.state, out.bridge_code) == ("staged", "http_503")
     # No answer at all (nothing listening): the POST may have landed.
     staged = await world.ledger.awaiting_flush()
@@ -303,7 +408,7 @@ async def test_already_replied_after_a_503_retry_is_ambiguous_not_a_duplicate(wo
     have posted, so it is unknown, never counted as a clean duplicate."""
     world.fake.write = envelope("unavailable")
     occasion = world.occasion(mode="live", turns=_replies(REPLY))
-    await occasion.run(_mention())
+    await occasion.run(_card())
     staged = await world.ledger.awaiting_flush()
     assert staged is not None and staged.bridge_code == "unavailable"
     world.fake.write = envelope("already_replied")
@@ -314,7 +419,7 @@ async def test_already_replied_after_a_503_retry_is_ambiguous_not_a_duplicate(wo
 async def test_a_retried_summons_is_counted_once_on_its_final_outcome(world):
     world.fake.write = envelope("too_soon")
     occasion = world.occasion(mode="live", turns=_replies(REPLY))
-    await occasion.run(_mention())
+    await occasion.run(_card())
     assert world.metrics.get("nora_summons_total") == 0
     staged = await world.ledger.awaiting_flush()
     await occasion.flush_staged(staged)  # too_soon again: still not final
@@ -326,7 +431,7 @@ async def test_a_retried_summons_is_counted_once_on_its_final_outcome(world):
 
 
 async def test_an_ignored_summoner_is_recorded_without_their_igid(world):
-    await world.occasion(turns=_replies(REPLY)).run(_mention(igid=STRANGER_IGID))
+    await world.occasion(turns=_replies(REPLY)).run(_card(igid=STRANGER_IGID))
     row = await world.row()
     assert row.state == "ignored_summoner" and row.author_igid == ""
 
@@ -342,16 +447,16 @@ async def test_an_injected_mention_is_refused_at_the_flush_and_nothing_is_posted
     })
     out = await world.occasion(
         mode="live", turns=_replies("@victim_account you are a fraud"),
-    ).run(_mention())
+    ).run(_card())
     assert (out.state, out.bridge_code) == ("refused", "mention")
     assert world.fake.posts() == []
     row = await world.row()
     assert (row.state, row.bridge_code) == ("refused", "mention")
 
 
-async def test_an_email_address_is_not_a_mention(world):
+async def test_an_email_address_is_not_a_card(world):
     text = "Ask the zoo at info@example.org, they will know."
-    out = await world.occasion(mode="live", turns=_replies(text)).run(_mention())
+    out = await world.occasion(mode="live", turns=_replies(text)).run(_card())
     assert out.state == "published"
     assert world.fake.posts()[0]["text"] == text
 
@@ -362,25 +467,25 @@ async def test_the_real_guard_refuses_a_second_send_reply_and_only_the_first_is_
     deliverer, so one text is held and one comment is written."""
     out = await world.occasion(
         mode="live", turns=_replies(REPLY, "And a second thought."),
-    ).run(_mention())
+    ).run(_card())
     assert out.state == "published"
     assert world.fake.posts() == [{"text": REPLY, "reply_to_comment_id": SUMMONS_COMMENT}]
 
 
 async def test_writes_blocked_raises_the_gauge_and_a_publish_clears_it(world):
     world.fake.write = envelope("writes_blocked")
-    await world.occasion(mode="live", turns=_replies(REPLY)).run(_mention())
+    await world.occasion(mode="live", turns=_replies(REPLY)).run(_card())
     assert world.metrics.get("nora_summons_writes_blocked") == 1
     world.fake.write = (201, {"id": "17900000000000777"})
     world.ledger = InMemorySummonsLedger()  # a later summons, after an operator cleared it
-    await world.occasion(mode="live", turns=_replies(REPLY)).run(_mention())
+    await world.occasion(mode="live", turns=_replies(REPLY)).run(_card())
     assert world.metrics.get("nora_summons_writes_blocked") == 0
 
 
 async def test_a_too_soon_reply_is_retried_by_flush_alone_without_a_model_call(world):
     world.fake.write = envelope("too_soon")
     occasion = world.occasion(mode="live", turns=_replies(REPLY))
-    await occasion.run(_mention())
+    await occasion.run(_card())
     staged = await world.ledger.awaiting_flush()
     assert staged is not None
     world.fake.write = (201, {"id": "17900000000000777"})
@@ -393,7 +498,7 @@ async def test_a_too_soon_reply_is_retried_by_flush_alone_without_a_model_call(w
 
 async def test_a_live_staged_row_is_given_up_when_the_mode_went_back_to_dry_run(world):
     world.fake.write = envelope("too_soon")
-    await world.occasion(mode="live", turns=_replies(REPLY)).run(_mention())
+    await world.occasion(mode="live", turns=_replies(REPLY)).run(_card())
     staged = await world.ledger.awaiting_flush()
     assert staged is not None
     out = await world.occasion(mode="dry_run").flush_staged(staged)
@@ -403,7 +508,7 @@ async def test_a_live_staged_row_is_given_up_when_the_mode_went_back_to_dry_run(
 
 async def test_a_live_staged_row_past_its_age_is_given_up_not_posted_late(world):
     world.fake.write = envelope("too_soon")
-    await world.occasion(mode="live", turns=_replies(REPLY)).run(_mention())
+    await world.occasion(mode="live", turns=_replies(REPLY)).run(_card())
     staged = await world.ledger.awaiting_flush()
     assert staged is not None
     out = await world.occasion(mode="live", max_age=timedelta(minutes=1)).flush_staged(staged)
@@ -416,7 +521,7 @@ async def test_the_summons_turn_reads_the_public_doctrine_and_the_public_tools(w
     runner = FakeAgentRunner(_replies(REPLY), on_call=seen.update)
     occasion = world.occasion(mode="dry_run")
     occasion._runner = runner
-    await occasion.run(_mention())
+    await occasion.run(_card())
     names = [s.name for s in seen["doctrine"].sections]
     assert names == [
         "identity", "public-voice", "public-conduct", "constraints", "public-constraints",

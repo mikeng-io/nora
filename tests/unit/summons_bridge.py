@@ -1,9 +1,9 @@
 """A recording fake of the instagram-bridge's SUMMONS routes, for
 `test_summons_client.py`, `test_summons_occasion.py` and
-`test_summons_poller.py`.
+`test_summons_consumer.py`.
 
 It behaves like the Go handlers (`deploy/instagram-bridge/internal/transport/
-http/{mentions,comments,posts,errors}.go`), including their wrong-call shapes:
+http/{comments,posts,errors}.go`), including their wrong-call shapes:
 an unmatched path is the mux's own plain-text 404, a failure is the ONE
 envelope `{"error": {"code", "message"}}` at the status `errors.go` maps that
 code to, and the write answers 201 with `{id, reply_to_comment_id}`. It is a
@@ -12,8 +12,10 @@ it is answered, and a request the client should never make still lands in
 `calls`.
 
 The post body is the Go-generated contract fixture `posts_carousel_ok.json`.
-The mentions and comments bodies are written here from the Go structs,
-because no generated fixture exists for them yet.
+The comments body is written here from the Go struct, because no generated
+fixture exists for it yet. There is NO `/mentions` route: Nora no longer
+reads the notification feed, so a request for it is the mux's 404 and is
+still recorded in `calls`, where a test can see it was never made.
 """
 
 from __future__ import annotations
@@ -51,23 +53,6 @@ def envelope(code: str, message: str = "refused") -> tuple[int, dict[str, Any]]:
     return STATUS_FOR_CODE[code], {"error": {"code": code, "message": message}}
 
 
-def mention_item(
-    *, comment_id: str = SUMMONS_COMMENT, igid: str = SUMMONER_IGID,
-    username: str = "miles_example", at: str | None = "2026-09-25T11:55:00Z",
-    shortcode: str = SHORTCODE,
-) -> dict[str, Any]:
-    item: dict[str, Any] = {
-        "story_type": 60,
-        "author": {"igid": igid, "username": username},
-        "media": {"id": MEDIA_ID, "shortcode": shortcode},
-        "comment": {"id": comment_id},
-        "notification_text": "miles_example mentioned you in a comment",
-    }
-    if at is not None:
-        item["at"] = at
-    return item
-
-
 def comment_item(
     comment_id: str, text: str, *, username: str = "someone_else",
     at: str | None = "2026-09-25T11:00:00Z", igid: str = "19449319",
@@ -99,9 +84,6 @@ class FakeSummonsBridge:
     def __init__(self) -> None:
         self.calls: list[tuple[str, str]] = []
         self.bodies: list[dict[str, Any]] = []
-        self.mentions: tuple[int, Any] = (200, {
-            "items": [mention_item()], "next_cursor": None, "skipped_story_types": {},
-        })
         post = json.loads((FIXTURES / "posts_carousel_ok.json").read_text())
         self.post: tuple[int, Any] = (post["status"], post["body"])
         self.comments: tuple[int, Any] = (200, {
@@ -119,8 +101,6 @@ class FakeSummonsBridge:
         path = request.path_qs
         self.calls.append((request.method, path))
         bare = request.path
-        if request.method == "GET" and bare == "/mentions":
-            return self._answer(self.mentions)
         if self._COMMENTS.fullmatch(bare):
             if request.method == "GET":
                 return self._answer(self.comments)

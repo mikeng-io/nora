@@ -19,7 +19,6 @@ from tests.unit.summons_bridge import (
     FakeSummonsBridge,
     comment_item,
     envelope,
-    mention_item,
     serve,
 )
 
@@ -31,51 +30,10 @@ async def world():
         yield fake, InstagramSummonsClient(base_url=url, timeout_seconds=5)
 
 
-async def test_mentions_are_read_field_by_field(world):
-    fake, client = world
-    got = await client.mentions()
-    assert got.ok and got.value is not None
-    (m,) = got.value
-    assert (m.comment_id, m.shortcode, m.author_igid, m.author_username) == (
-        SUMMONS_COMMENT, SHORTCODE, "10000001", "miles_example",
-    )
-    assert m.at is not None and m.at.isoformat() == "2026-09-25T11:55:00+00:00"
-    assert fake.calls == [("GET", "/mentions")]
-
-
-async def test_a_mention_without_a_time_is_kept_with_no_time_never_an_epoch(world):
-    fake, client = world
-    fake.mentions = (200, {"items": [mention_item(at=None)], "next_cursor": None})
-    got = await client.mentions()
-    assert got.value is not None and got.value[0].at is None
-
-
-async def test_a_malformed_mention_row_is_dropped(world):
-    fake, client = world
-    fake.mentions = (200, {"items": [
-        mention_item(comment_id="not-an-id"),
-        mention_item(shortcode="../accounts"),
-        "not an object",
-        mention_item(comment_id="17900000000000002"),
-    ]})
-    got = await client.mentions()
-    assert got.value is not None
-    assert [m.comment_id for m in got.value] == ["17900000000000002"]
-
-
-async def test_a_non_decimal_igid_matches_nobody(world):
-    fake, client = world
-    fake.mentions = (200, {"items": [mention_item(igid="12_34")]})
-    got = await client.mentions()
-    assert got.value is not None and got.value[0].author_igid == ""
-
-
-@pytest.mark.parametrize("code", ["needs_human", "unavailable", "internal"])
-async def test_a_failed_mentions_read_says_which_failure(world, code):
-    fake, client = world
-    fake.mentions = envelope(code)
-    got = await client.mentions()
-    assert got.value is None and got.code == code
+def test_the_client_has_no_mentions_read():
+    """The notification feed never carried a comment mention of her
+    (measured 2026-09-26): the read is gone, not merely unused."""
+    assert not hasattr(InstagramSummonsClient, "mentions")
 
 
 async def test_the_post_read_keeps_cdn_items_only(world):
@@ -101,7 +59,7 @@ async def test_a_post_with_no_usable_item_is_not_ok(world):
 
 async def test_a_shortcode_that_is_not_one_is_never_sent(world):
     fake, client = world
-    got = await client.post("../mentions")
+    got = await client.post("../accounts")
     assert got.code == "invalid_id"
     assert fake.calls == []
 
@@ -117,6 +75,19 @@ async def test_comments_are_read_and_a_malformed_row_is_dropped(world):
     assert got.value is not None
     assert [c.id for c in got.value] == ["17900000000000010", "17900000000000011"]
     assert got.value[1].at is None
+
+
+async def test_a_comment_keeps_its_author_igid_and_a_non_decimal_one_matches_nobody(world):
+    """The igid is what the occasion matches the card's sender against; one
+    that is not a decimal id is "" and so matches nobody."""
+    fake, client = world
+    fake.comments = (200, {"items": [
+        comment_item("17900000000000010", "hi", igid="10000001"),
+        comment_item("17900000000000011", "hi", igid="12_34"),
+    ]})
+    got = await client.comments(SHORTCODE)
+    assert got.value is not None
+    assert [c.author_igid for c in got.value] == ["10000001", ""]
 
 
 async def test_a_reply_page_is_asked_for_with_reply_to(world):
@@ -170,7 +141,7 @@ async def test_an_unreachable_bridge_is_a_code_never_an_exception():
     client = InstagramSummonsClient(base_url="http://127.0.0.1:9", timeout_seconds=2)
     got = await client.post_comment(SHORTCODE, text="x", reply_to_comment_id=SUMMONS_COMMENT)
     assert got.value is None and got.code in {"unreachable", "timeout"}
-    assert (await client.mentions()).code in {"unreachable", "timeout"}
+    assert (await client.comments(SHORTCODE)).code in {"unreachable", "timeout"}
 
 
 async def test_a_reply_target_that_is_not_a_comment_id_is_never_sent(world):

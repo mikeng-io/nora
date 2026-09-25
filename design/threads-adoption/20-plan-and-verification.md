@@ -102,7 +102,7 @@ because the operator asked for the summons.
 | a summons whose author username matches no `[[persons.<id>.threads]]` block reaches no model call | same |
 | the deliverer refuses text over 500 characters after `strip_markdown` with a note, and never truncates | new: tests/unit/test_threads_deliverer.py |
 | a second `send_reply` in one summons is refused; the flush publishes once | same |
-| the same summons polled twice runs the occasion once | new: tests/unit/test_summons_poller.py |
+| the same summons polled twice runs the occasion once | new: tests/unit/test_summons_poller.py (Instagram: tests/unit/test_summons_consumer.py since 2026-09-26) |
 | every chain post in the rendered context carries an age, and the block states which end is newest | new: tests/unit/test_summons_context.py |
 | the public doctrine set is the pinned list, and `public.md` is in it | new: tests/unit/test_doctrine_public_set.py |
 | `threads_read` joins R-86's vocabulary, disjoint from every other tool | `tests/test_acceptance_rules.py::test_r86_…` (phase 5) |

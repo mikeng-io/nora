@@ -3,9 +3,11 @@
 `tests/contract/test_summons_ledger_contract.py`.
 
 Its `claim` is atomic the way the SQL one is: there is no `await` between the
-membership check and the insert, so two concurrent claims on one comment in
-one event loop cannot both win. A fake that could let both through would pass
-a test the real store fails, and the property under test is exactly that.
+membership check and the insert, so two concurrent claims on one card (one
+message id) in one event loop cannot both win. `bind_comment` is the same
+shape over the comment id, which stays unique across rows. A fake that could
+let both through would pass a test the real store fails, and the property
+under test is exactly that.
 """
 
 from __future__ import annotations
@@ -21,20 +23,22 @@ from nora.domain.summons import OPEN_STATES, SUMMONS_MODES, SUMMONS_STATES, Summ
 class InMemorySummonsLedger:
     def __init__(self) -> None:
         self._rows: dict[UUID, SummonsRow] = {}
+        self._by_message: dict[str, UUID] = {}
         self._by_comment: dict[str, UUID] = {}
 
     async def claim(
-        self, *, comment_id: str, media_id: str, shortcode: str,
+        self, *, message_id: str, media_id: str, shortcode: str,
         author_igid: str, mention_at: datetime | None, mode: str, now: datetime,
     ) -> UUID | None:
         if mode not in SUMMONS_MODES:
             raise ValueError(f"unknown summons mode {mode!r}")
-        if comment_id in self._by_comment:
+        if message_id in self._by_message:
             return None
         row_id = uuid.uuid4()
-        self._by_comment[comment_id] = row_id
+        self._by_message[message_id] = row_id
         self._rows[row_id] = SummonsRow(
-            id=row_id, comment_id=comment_id, media_id=media_id, shortcode=shortcode,
+            id=row_id, message_id=message_id, comment_id=None, media_id=media_id,
+            shortcode=shortcode,
             author_igid=author_igid, person_id=None, mention_at=mention_at,
             seen_at=now, state="claimed", mode=mode, updated_at=now,
         )
@@ -69,8 +73,20 @@ class InMemorySummonsLedger:
         self._rows[summons_id] = dataclasses.replace(row, state="flushing", updated_at=now)
         return True
 
-    async def seen(self, comment_ids: tuple[str, ...]) -> frozenset[str]:
-        return frozenset(c for c in comment_ids if c in self._by_comment)
+    async def bind_comment(
+        self, summons_id: UUID, comment_id: str, *, now: datetime,
+    ) -> bool:
+        row = self._rows.get(summons_id)
+        if (
+            row is None or row.state != "claimed" or row.comment_id is not None
+            or comment_id in self._by_comment
+        ):
+            return False
+        self._by_comment[comment_id] = summons_id
+        self._rows[summons_id] = dataclasses.replace(
+            row, comment_id=comment_id, updated_at=now,
+        )
+        return True
 
     async def awaiting_flush(self) -> SummonsRow | None:
         waiting = sorted(

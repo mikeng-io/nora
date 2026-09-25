@@ -210,16 +210,18 @@ That text is kept, marked, for the record.
 
 ### The intake (bridge)
 
-For a `NewMessageEvent` whose content is an XMA card, sent by somebody other
-than her, whose subtitle, caption or title carries word-bounded
-`@<her username>`, the bridge (`gateway/instameow/summons.go`):
+For a `NewMessageEvent` with `content_type` `MESSAGE_INLINE_SHARE` whose XMA
+typename is `SlideMessageLayeredXMA`, sent by somebody other than her, whose
+**subtitle** carries word-bounded `@<her username>` (ASCII case folding; a
+sentence-final `.` is punctuation), the bridge (`gateway/instameow/summons.go`):
 
 1. emits the ordinary `message` event as always (the adapter keeps dropping
    unknown-policy threads);
 2. refetches the thread **once** through `GetThread` on the short id, off
    the socket goroutine, 30 s timeout, deduplicated by message id (a bounded
-   set of the last 1,024), a checkpoint on it flipping the session like any
-   read;
+   set of the last 1,024), within a budget of 6 refetches per 10 minutes
+   across all senders (past it the card is emitted unresolved and costs no
+   read), a checkpoint on it flipping the session like any read;
 3. finds the message on the returned first page, reads `target_url`,
    parses the shortcode out of `/p/<code>/` or `/reel/<code>/` and decodes
    the media pk;
@@ -236,8 +238,8 @@ than her, whose subtitle, caption or title carries word-bounded
 ```
 
 `resolved` is false, with `shortcode` and `media_id` empty, when the
-refetch failed, the message was not on the first page, or it carried no
-usable `target_url`. Nora records that and does not answer.
+refetch failed or was over budget, the message was not on the first page,
+it carried no usable `target_url`, or recording the served summons failed. Nora records that and does not answer.
 `received_at_ms` is the card's own timestamp (the bridge's clock when it
 carried none). Log lines carry fixed messages, a boolean and a reason word:
 never an id, a username or text.
@@ -262,6 +264,32 @@ authorizes nothing. All other guards and their order are unchanged.
 `GET /mentions` stays as a read and no longer authorizes a write; a
 `comments.json` that still holds its old `served` key loads, and the key is
 dropped on the next write.
+
+### The intake (Nora)
+
+- **Intake.** `nora/platform/instagram/summons.py` parses the event once into
+  a `SummonsCard` (fail closed: no usable message id, time or boolean
+  `resolved` is refused and counted `malformed`). The adapter hands it to
+  `nora/app/summons_inbox.py` (bounded, drops the oldest, counted on
+  `nora_summons_intake_total`) and never to room ingest; with
+  `[social.instagram.summons]` off every card is counted `disabled` and
+  dropped. `nora/app/summons_consumer.py` works one card at a time, retries a
+  live `staged` flush first, backs off on `needs_human`/503, and runs the
+  stale-claim sweep at boot and every step. The poller and Nora's
+  `GET /mentions` read are gone; `poll_seconds` is accepted and read by
+  nothing.
+- **Occasion.** Claimed on the card's `message_id`. `resolved = false` is
+  `unresolved` (no read, no model call). The summoner gate is unchanged
+  (sender igid). Stale is `received_at` against `max_age_minutes`. The
+  comment is FOUND: author igid == sender igid AND the word-bounded
+  `@handle`; of several, the one whose text equals the card's (whitespace
+  normalised), else the newest; none is `unreadable`. Its id is bound to the
+  row once (`comment_id` stays unique, so two cards for one comment get one
+  answer, the second `duplicate`) and is the `reply_to_comment_id` of the
+  one write. Everything from the turn to the flush is unchanged.
+- **Ledger.** `0067_summons_message_key`: `message_id` NOT NULL UNIQUE
+  (pre-existing rows backfilled `legacy:<comment_id>`), `comment_id`
+  nullable and still unique, state `unresolved` added.
 
 ## Two things the review of #545 recorded
 

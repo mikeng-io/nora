@@ -1914,13 +1914,13 @@ async def test_the_linkedin_tools_get_the_router_only_when_switched_on(cfg, link
 
 
 @pytest.mark.parametrize(("instagram", "summons"), [(False, False), (True, False)])
-async def test_the_summons_poller_is_not_spawned_unless_both_flags_are_on(
+async def test_the_summons_consumer_is_not_spawned_unless_both_flags_are_on(
     cfg, instagram, summons,
 ):
-    """design/instagram-adoption/19: the summons poller runs only under
+    """design/instagram-adoption/19: the summons consumer runs only under
     `[social.instagram] enabled` AND `[social.instagram.summons] enabled`
     (the config refuses the second without the first). Off is the shipped
-    state, and the poller spends requests on the session her group chats run
+    state, and a summons spends requests on the session her group chats run
     on, so off must mean not spawned."""
     on = override_config(cfg, {
         "social.instagram.enabled": instagram,
@@ -1928,26 +1928,32 @@ async def test_the_summons_poller_is_not_spawned_unless_both_flags_are_on(
     })
     deps = await build_dependencies(on)
     try:
-        assert not _spawned(deps, "SummonsPoller.run")
+        assert not _spawned(deps, "SummonsConsumer.run")
     finally:
         await deps.background.cancel_all()
 
 
-async def test_the_summons_poller_is_spawned_with_both_flags_on_and_its_own_runner(cfg):
+async def test_the_summons_consumer_is_spawned_with_both_flags_on_and_no_poller_remains(cfg):
     """The positive half, so the test above cannot pass against a feature
-    that never wires at all. The occasion holds an `AFTER_SPEAKING` runner
-    (silence is expressible) and the mode the config names."""
+    that never wires at all. The consumer drains an ENABLED inbox (the same
+    `summons_wired` gate), its occasion holds an `AFTER_SPEAKING` runner
+    (silence is expressible) and the mode the config names. And nothing polls
+    the notification feed any more: no poller task, no poller module."""
+    import importlib.util
+
     on = override_config(cfg, {
         "social.instagram.enabled": True,
         "social.instagram.summons.enabled": True,
     })
     deps = await build_dependencies(on)
     try:
-        (poller,) = _spawned(deps, "SummonsPoller.run")
-        occasion = poller._occasion
+        (consumer,) = _spawned(deps, "SummonsConsumer.run")
+        assert consumer._inbox.enabled is True
+        occasion = consumer._occasion
         assert occasion.mode == "dry_run"
-        assert poller._poll_seconds == 120
         spec = occasion._runner._models._spec
         assert spec.tool_choice == tool_choice.AFTER_SPEAKING
+        assert not _spawned(deps, "SummonsPoller.run")
+        assert importlib.util.find_spec("nora.app.summons_poller") is None
     finally:
         await deps.background.cancel_all()
