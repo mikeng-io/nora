@@ -25,6 +25,22 @@
 # alternatives, one of which the body must contain. Every draw's written body
 # lengths print on its `--reasons` line as `body_chars=[...]`.
 #
+# Design 42's schema (design/dreamer-agent-loop/42-note-format.md §4, §10.1):
+# every written body is also parsed under the schema against what the draw's
+# model was shown, and `--reasons` prints `body_schema=[ok | <rule>, ...]`.
+# That is a READING, never a verdict, until a case opts in with
+# `body_schema: true`: bodies are prose until the objective carries the
+# schema (S2). `body_sections` places facts: a mapping of heading to items,
+# where a row id means that row's sender (the Owed owner, the author named
+# on a Decided/Proposed/Ruled out line, or a cited row under Open) and
+# anything else is a fact that section's lines must carry. Dates are ISO
+# (`2026-09-27`): the schema writes every date that way, so one spelling
+# replaces the nine a free-text body needed.
+#
+# On `update`, `updates_named` grades that the revision landed on the note
+# `updates` names AND on no other, and says which failure it was: a wrong
+# (similarly titled) note, no update, or the named note plus another.
+#
 # `unavailable` (timeout, prose instead of JSON, throttle) is ERROR for every
 # case, never PASS and never a correct `none` — R-27.
 #
@@ -144,7 +160,7 @@ cases:
       body_names:
       - 2483
       body_mentions:
-      - ["27th", "27 sep", "sep 27", "27/9", "9/27", "27號", "27日", "27 september", "september 27"]
+      - "2026-09-27"
 
   - name: p3b_follow_up_owed_body_carries_both_parties
     entry: dreamer
@@ -155,9 +171,11 @@ cases:
     # whether it was wanted), a deadline (before Saturday), and a narrowing
     # the requester made afterwards (the next two days do not work; Friday).
     # A body that keeps only «X wants the item before Saturday» has lost who
-    # holds it and the day it was narrowed to. `body_names` resolves rows to
-    # the names the model was shown; the weekday is accepted in either
-    # language or as its date.
+    # holds it and the day it was narrowed to. Placed per design 42 §10.1:
+    # the requester, who said they would answer the next day (3397), owns
+    # the `## Owed` line; the holder, who agreed (3395), is named on a
+    # `## Decided` line. Rows resolve to the names the model was shown; the
+    # Saturday deadline and the Friday it was narrowed to are ISO dates.
     snapshot:
       platform: signal
       conversation_id: MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08=
@@ -167,12 +185,14 @@ cases:
       - 3393
       - 3397
       anchor_date: 20260919
-      body_names:
-      - 3393
-      - 3391
+      body_sections:
+        Owed:
+        - 3397
+        Decided:
+        - 3395
       body_mentions:
-      - ["saturday", "禮拜六", "星期六", "週六", "周六", "19 sep", "sep 19", "19/9", "9/19", "19號", "19日"]
-      - ["friday", "禮拜五", "星期五", "週五", "周五", "18 sep", "sep 18", "18/9", "9/18", "18號", "18日"]
+      - "2026-09-19"
+      - "2026-09-18"
 
   - name: p4_plan_inside_ordinary_talk
     entry: dreamer
@@ -274,6 +294,10 @@ cases:
     # REAL: one member finally names the venue and rough time for a meet-up
     # the notebook had been tracking as "place and time undecided". The
     # production Dreamer appended a revision to that note within the hour.
+    # THE SIBLING CASE (design 42 §10.1): at this instant the unit held 18
+    # open notes, 10 of them near-restatements of this one's subject, so a
+    # revision landing on a similarly titled sibling is the failure it
+    # catches, and `updates_named` reports it as a wrong note.
     snapshot:
       platform: signal
       conversation_id: MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08=
@@ -297,6 +321,28 @@ cases:
       must_cite:
       - 5716
       anchor_date: 20260927
+
+  - name: p9_update_between_two_notes_of_one_title
+    entry: dreamer
+    category: note-candidates
+    expect: update
+    parked:
+      reason: P-A
+      why: |
+        Design 42 §10.1 asks for update cases where the unit held two open
+        notes with similar titles and the production update landed on one.
+        p6 is one. The only other real moment (the paired Discord room, the
+        evening of 2026-09-12) had two open notes with the IDENTICAL title
+        beside a third similar one, and production's revision predates #228:
+        it was placed by the anchor-date fallback deleted on 2026-09-13.
+        Today's gate resolves the title the model names, and a title two
+        open notes share resolves as ambiguous and lands nowhere, so no
+        `update` expectation holds at that moment. Stating one would grade
+        the model against a gate that no longer exists.
+      returns_when: |
+        A real note-candidates revision after 2026-09-13 lands on one of two
+        open notes whose titles differ but read alike, so a `snapshot:` at
+        its last row reproduces the choice today's gate makes.
 
   - name: n6_stated_then_cancelled
     entry: dreamer

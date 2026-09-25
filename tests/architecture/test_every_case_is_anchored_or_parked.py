@@ -161,7 +161,7 @@ def test_a_case_that_speaks_anchors_where_an_adapter_is_wired(name: str) -> None
 
 
 def test_the_whole_corpus_is_accounted_for() -> None:
-    """233 cases, every one in exactly one state. The number is the corpus
+    """234 cases, every one in exactly one state. The number is the corpus
     as ported on 2026-09-20 (150), plus `tool_selection`'s 16 S2 routing cases
     (2026-09-23, design/tool-catalogue §2c), plus its 4 per-network social
     routing cases (2026-09-24, design/instagram-adoption/18, P5) and P11's 4
@@ -215,9 +215,10 @@ def test_the_whole_corpus_is_accounted_for() -> None:
     `note_candidates`' 2 body-completeness twins of p1 and p3 (2026-09-25,
     design/dreamer-agent-loop/42-note-format.md S0, carried over from closed
     #513: graded on what the written body names, not only on whether a note
-    exists); a change to it is a
-    change to what the suite claims to measure and belongs in a commit that
+    exists), plus its parked sibling-title update case (2026-09-25, design
+    42 §10.1: the one real moment predates #228's title key); a change to it
+    is a change to what the suite claims to measure and belongs in a commit that
     says so. Recomputed with `census()` at each merge, never summed."""
     totals = [census(n) for n in CORPORA]
-    assert sum(c.total for c in totals) == 233
-    assert sum(c.active + c.parked for c in totals) == 233
+    assert sum(c.total for c in totals) == 234
+    assert sum(c.active + c.parked for c in totals) == 234

@@ -783,6 +783,90 @@ def test_a_row_outside_the_batch_is_a_failure_not_a_pass():
     ]
 
 
+#: A body in design 42's schema, over `_schema_out`'s shown set (invented).
+_SCHEMA_BODY = (
+    "## Decided\n- dinner on 2026-10-03 Sat (Ada) [7]\n"
+    "## Open\n- which restaurant [7]\n"
+    "## Owed\n- Ben -> book a table -> 2026-10-01 [8]"
+)
+
+
+def _schema_out(*bodies: tuple[str, str]) -> Outcome:
+    return Outcome(
+        admitted=None, changed=(("create", "Dinner"),), bodies=bodies,
+        speakers=((7, "Ada"), (8, "Cat")), roster=(("Ada", "p_ada"), ("Ben", "p_ben")),
+        nora_names=("Nora",), carried=(),
+    )
+
+
+def test_body_schema_reads_each_written_body_as_ok_or_the_rule_it_broke():
+    """A READING per written body, against the draw's shown set: prose is
+    refused by name, a conformant body is `ok`, a refused candidate is not
+    read at all (it never reached the notebook)."""
+    out = _schema_out(
+        ("created", _SCHEMA_BODY),
+        ("created", "Ada wants dinner on Saturday; Ben books."),
+        ("refused", _SCHEMA_BODY),
+    )
+    rules = [r for r, _b in backbone._parsed_bodies(out, require_open=True)]
+    assert rules == ["ok", "not_a_line"]
+    # Not a verdict unless the case opts in: prose bodies are today's output.
+    assert backbone._check_the_body({"body_mentions": ["dinner"]}, out, {}) == []
+    assert backbone._check_the_body({"body_schema": True}, out, {}) == [
+        "body_schema: not_a_line"
+    ]
+
+
+def test_body_sections_places_owners_authors_and_facts():
+    """`body_sections` is `body_names`/`body_mentions` PLACED: row 101's
+    sender must author a Decided line, row 102's must OWN an Owed line, and
+    a fact must sit in the section named, not merely in the body."""
+    out = _schema_out(("created", _SCHEMA_BODY))
+    rows = {101: 7, 102: 8}
+    assert backbone._check_the_body(
+        {"body_sections": {"Decided": [101, "2026-10-03"], "Open": ["restaurant"]}}, out, rows,
+    ) == []
+    assert backbone._check_the_body(
+        {"body_sections": {"Owed": [102], "Decided": ["restaurant"]}}, out, rows,
+    ) == [
+        "body_sections: ## Owed has no line for the sender of row 102",
+        "body_sections: ## Decided carries none of ['restaurant']",
+    ]
+
+
+def test_body_sections_refuses_a_heading_the_schema_does_not_have():
+    out = _schema_out(("created", _SCHEMA_BODY))
+    assert backbone._check_the_body({"body_sections": {"Owes": [102]}}, out, {102: 8}) == [
+        "body_sections: 'Owes' is not a heading of the schema"
+    ]
+
+
+def test_body_sections_counts_only_a_body_that_holds_to_the_schema():
+    out = _schema_out(("created", "Ada: dinner on 2026-10-03, restaurant open."))
+    assert backbone._check_the_body(
+        {"body_sections": {"Open": ["restaurant"]}}, out, {},
+    ) == ["body_sections: no written body holds to the schema"]
+
+
+def test_updates_named_separates_a_wrong_note_from_no_update():
+    """Design 42 §10.1: #513 could only report in prose that every update
+    failure revised a DIFFERENT, similarly titled note."""
+    named = "Dinner 19 Sept"
+    assert backbone._updates_named(named, [named]) == []
+    assert backbone._updates_named(named, ["Dinner 19 Sep"]) == [
+        "updates_named: wrong note: revised ['Dinner 19 Sep'], not 'Dinner 19 Sept'"
+    ]
+    assert backbone._updates_named(named, []) == [
+        "updates_named: no update: 'Dinner 19 Sept' was not revised"
+    ]
+    assert backbone._updates_named(named, [named, "Lunch"]) == [
+        "updates_named: also revised ['Lunch'] beside 'Dinner 19 Sept'"
+    ]
+    assert backbone._updates_named(named, [named, named]) == [
+        "updates_named: also revised ['Dinner 19 Sept'] beside 'Dinner 19 Sept'"
+    ]
+
+
 async def test_drive_carries_the_written_body_lengths(monkeypatch, one_path):
     """`NORA_BODY_CHARS` is the length of every WRITTEN body, and the body
     checks run inside `_drive()` against the sandbox's row map."""
@@ -805,6 +889,7 @@ async def test_drive_carries_the_written_body_lengths(monkeypatch, one_path):
     )
     data = EvaluationData(input="x", actual_environment_state=result["environment_state"])
     assert tuple(state_of(data, backbone.NORA_BODY_CHARS)) == (len("Ada: Friday."),)
+    assert tuple(state_of(data, backbone.NORA_BODY_SCHEMA)) == ("not_a_line",)
     assert tuple(state_of(data, NORA_CHECKS_FAILED)) == (
         "body_mentions: none of ['saturday']",
     )

@@ -22,6 +22,7 @@ from nora.domain.note_body import (
     NoteBodyError,
     Shown,
     ShownMessage,
+    cited_ids_in,
     parse_note_body,
 )
 
@@ -202,6 +203,12 @@ def test_an_impossible_or_malformed_date_or_a_wrong_weekday_is_refused():
         "## Owed\n- Ben -> book -> 2026-10-01 Thu 18:30 [4815]",
         shown=SHOWN,
     )
+
+
+def test_cited_ids_are_read_off_any_head_even_one_that_does_not_parse():
+    assert cited_ids_in(CONFORMANT) == {4812, 4815, 4816, 4817, 4818, 4820}
+    assert cited_ids_in("Ada wants dim sum. Later [12,13] and [ 14 ].") == {12, 13, 14}
+    assert cited_ids_in("a legacy body with no citations [#4] [x]") == frozenset()
 
 
 def test_every_rule_is_asserted_by_a_test_here():

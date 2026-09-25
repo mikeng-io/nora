@@ -186,6 +186,24 @@ class NoteBody:
         return frozenset(p for s in self.sections for ln in s.lines for p in ln.person_ids)
 
 
+#: `[<ids>]` anywhere in a text, read without the parser (§7).
+_CITATION = re.compile(r"\[\s*(\d+(?:\s*,\s*\d+)*)\s*\]")
+
+
+def cited_ids_in(text: str) -> frozenset[int]:
+    """Every id a text cites as `[<ids>]`, read with a pattern and NOT with
+    `parse_note_body`, so it works on a head that does not parse (§7, §9): a
+    legacy body carries none, a partly structured one carries some.
+
+    What a revision may carry forward (`Shown.carried`) and what §7's
+    carry-forward check will compare. A body with no citations answers the
+    empty set, never an error.
+    """
+    return frozenset(
+        int(i) for m in _CITATION.finditer(text) for i in m.group(1).split(",")
+    )
+
+
 def _canonical_heading(name: str) -> str | None:
     folded = name.casefold()
     return next((h for h in SECTIONS if h.casefold() == folded), None)
