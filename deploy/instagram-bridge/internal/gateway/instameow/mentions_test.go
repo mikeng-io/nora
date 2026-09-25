@@ -505,3 +505,64 @@ func TestMentionsOrdinaryFailureDoesNotFlipTheSessionState(t *testing.T) {
 		t.Errorf("state = %q, want authenticated (unchanged)", snap.State)
 	}
 }
+
+// A checkpoint can arrive as a 200 carrying "status":"fail" and a
+// checkpoint message. It must flip the session like the 4xx form does.
+func TestMentionsCheckpointInA200FailFlipsTheSessionState(t *testing.T) {
+	issuer := &fakeRESTIssuer{body: []byte(`{"status":"fail","message":"challenge_required"}`)}
+	b := mentionsTestBridge(t, issuer)
+	if _, _, err := b.Mentions(t.Context()); !errors.Is(err, domain.ErrNeedsHuman) {
+		t.Fatalf("err = %v, want ErrNeedsHuman", err)
+	}
+	if snap := b.Snapshot(); snap.State != domain.StateCheckpointed {
+		t.Errorf("state = %q, want checkpointed", snap.State)
+	}
+}
+
+// "x@nora" is an email-like token, not a mention: the byte BEFORE the "@"
+// must not continue a username either.
+func TestReadMentionsRequiresAWordBoundaryBeforeTheMention(t *testing.T) {
+	raw := `{"new_stories":[{"story_type":3,"type":3,"args":{
+		"text":"mail x@` + fakeig.SelfUsername + ` about it",
+		"profile_id":"700000000001","profile_name":"someone",
+		"timestamp":1700000600,
+		"media":[{"id":"` + fakeig.ImageMediaID + `_10000001","shortcode":"` + fakeig.ImageShortcode + `"}],
+		"comment_id":"17900000000000200"
+	}}],"old_stories":[],"status":"ok"}`
+	mentions, _, err := readMentions(t.Context(), &fakeRESTIssuer{body: []byte(raw)}, fakeig.SelfUsername)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(mentions) != 0 {
+		t.Fatalf("mentions = %+v, want none", mentions)
+	}
+}
+
+// A non-decimal id or a non-finite timestamp is not carried: the story is
+// counted as undecodable, and the read goes on.
+func TestReadMentionsRefusesAGarbageIDOrTimestamp(t *testing.T) {
+	for name, args := range map[string]string{
+		"exponent id":   `"profile_id":1.5e3,"timestamp":1700000600`,
+		"negative id":   `"profile_id":-4,"timestamp":1700000600`,
+		"text id":       `"profile_id":"abc","timestamp":1700000600`,
+		"NaN time":      `"profile_id":"700000000001","timestamp":"NaN"`,
+		"Inf time":      `"profile_id":"700000000001","timestamp":"Inf"`,
+		"negative time": `"profile_id":"700000000001","timestamp":-1`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			raw := `{"new_stories":[{"story_type":3,"type":3,"args":{
+				"text":"@` + fakeig.SelfUsername + ` is this true",` + args + `,
+				"profile_name":"someone",
+				"media":[{"id":"` + fakeig.ImageMediaID + `_10000001","shortcode":"` + fakeig.ImageShortcode + `"}],
+				"comment_id":"17900000000000200"
+			}}],"old_stories":[],"status":"ok"}`
+			mentions, skipped, err := readMentions(t.Context(), &fakeRESTIssuer{body: []byte(raw)}, fakeig.SelfUsername)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(mentions) != 0 || skipped[undecodableStoryType] != 1 {
+				t.Fatalf("mentions = %+v, skipped = %v; want none and one undecodable", mentions, skipped)
+			}
+		})
+	}
+}

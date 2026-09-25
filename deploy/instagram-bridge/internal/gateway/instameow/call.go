@@ -311,6 +311,14 @@ func rest(ctx context.Context, issuer RESTIssuer, endpoint, label string) (int, 
 			fmt.Errorf("%s did not return JSON (%d bytes): %w", label, len(raw), err))
 	}
 	if envelope.Status == "fail" {
+		// A checkpoint can also arrive as a 200 carrying `"status":"fail"`
+		// and a checkpoint message: read it the same way a 4xx body is read,
+		// so the session supervisor sees it (review of #529).
+		if sentinel := restCheckpointSentinel(raw); sentinel != nil {
+			span.SetAttributes(attribute.String("error.type", "needs_human"))
+			span.SetStatus(codes.Error, "needs_human")
+			return status, nil, domain.Classify(domain.ErrNeedsHuman, fmt.Errorf("%s: %w", label, sentinel))
+		}
 		span.SetAttributes(attribute.String("error.type", "upstream_rejected"))
 		span.SetStatus(codes.Error, "upstream_rejected")
 		return status, nil, domain.Classify(domain.ErrUpstreamRejected,

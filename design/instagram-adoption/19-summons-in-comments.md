@@ -84,11 +84,14 @@ out of Instagram entirely. The rules:
    researched public answer can afford.
 4. **Writes behind a hard cap in the bridge**, not in Nora: at most N comments
    per rolling 24 hours (start at 10), enforced in the process that writes.
-   A checkpoint seen by ANY bridge call, `GET /mentions` included, goes
-   through the same path the socket's auth errors take: the session state
-   becomes `checkpointed`, the session disconnects, and every read and write
-   stops until a human clears it. The first version of the route did not do
-   this; review of #529 caught it.
+   A checkpoint seen by `GET /mentions`, and by every route this design
+   adds, goes through the same path the socket's auth errors take: the
+   session state becomes `checkpointed`, the session disconnects, and every
+   read and write stops until a human clears it. This covers a redirect, a
+   4xx body and a 200 carrying `"status":"fail"`. The first version of the
+   route did not do this; review of #529 caught it. The existing raw-GraphQL
+   profile read does not do it either. That gap is older than this design
+   and is tracked separately.
 5. **Only `identity.toml` people can summon her** (operator rule, carried
    over). A mention from anyone else is counted and ignored. This is also
    the volume control: the number of summoners is the number of friends.

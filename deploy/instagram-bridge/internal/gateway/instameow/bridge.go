@@ -488,8 +488,11 @@ func (b *Bridge) onEvent(ctx context.Context, evt slidetypes.ClientEvent) error 
 // to.
 //
 // It is not only the socket's. The library's own checkpoint detection
-// (`(*instameow.Client).checkResponseError`, client.go) fires ONLY for its
-// own typed and GraphQL calls — never for a raw REST request this bridge
+// (`(*instameow.Client).checkResponseError`, client.go) fires ONLY inside the
+// typed methods that call it (FetchMedia, FetchReel, ...) — never for a raw
+// GraphQL document (social_profile.go goes through
+// `httpclient.MakeGraphQLRequest`, which does not) and never for a raw REST
+// request this bridge
 // issues itself (mentions.go's `rest` helper), because a raw `MakeRequest`
 // failure comes back as a bare `ErrUnexpectedError` with no idea what the
 // body said. `rest` reads that body itself (call.go's `restStatusError`) and

@@ -65,6 +65,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -95,19 +97,37 @@ func (f *flexID) UnmarshalJSON(b []byte) error {
 		return nil
 	}
 	var s string
-	if err := json.Unmarshal(b, &s); err == nil {
-		*f = flexID(s)
-		return nil
+	if err := json.Unmarshal(b, &s); err != nil {
+		var n json.Number
+		if err := json.Unmarshal(b, &n); err != nil {
+			return errors.New("id is neither a string nor a number")
+		}
+		s = n.String()
 	}
-	var n json.Number
-	if err := json.Unmarshal(b, &n); err == nil {
-		*f = flexID(n.String())
-		return nil
+	// An id is digits, or Instagram's `<pk>_<owner>` media form. Anything
+	// else (a float, a sign, an exponent, free text) is not an id, and the
+	// story is counted as undecodable rather than carried with a garbage id.
+	// The error text carries no bytes of the value.
+	if s != "" && !wireIDPattern.MatchString(s) {
+		return errors.New("id is not a decimal id")
 	}
-	return fmt.Errorf("id is neither a string nor a number: %s", string(b))
+	*f = flexID(s)
+	return nil
 }
 
+var wireIDPattern = regexp.MustCompile(`^[0-9]+(_[0-9]+)?$`)
+
 func (f flexID) String() string { return string(f) }
+
+// set accepts only a finite, positive number of seconds: "NaN", "Inf" and
+// negatives are not times.
+func (f *flexTimestamp) set(v float64) error {
+	if math.IsNaN(v) || math.IsInf(v, 0) || v <= 0 {
+		return errors.New("timestamp is not a finite positive number")
+	}
+	*f = flexTimestamp(v)
+	return nil
+}
 
 // flexTimestamp decodes `args.timestamp`, which may arrive as a JSON float
 // (the hypothesis in this file's doc comment) or as a numeric string.
@@ -121,8 +141,7 @@ func (f *flexTimestamp) UnmarshalJSON(b []byte) error {
 		if convErr != nil {
 			return convErr
 		}
-		*f = flexTimestamp(v)
-		return nil
+		return f.set(v)
 	}
 	var s string
 	if err := json.Unmarshal(b, &s); err == nil {
@@ -130,8 +149,7 @@ func (f *flexTimestamp) UnmarshalJSON(b []byte) error {
 		if convErr != nil {
 			return convErr
 		}
-		*f = flexTimestamp(v)
-		return nil
+		return f.set(v)
 	}
 	return fmt.Errorf("timestamp is neither a number nor a string: %s", string(b))
 }
@@ -277,7 +295,9 @@ func containsMentionToken(haystack, marker string) bool {
 		}
 		pos := from + i
 		end := pos + len(marker)
-		if end >= len(haystack) || !isUsernameByte(haystack[end]) {
+		startsWord := pos == 0 || !isUsernameByte(haystack[pos-1])
+		endsWord := end >= len(haystack) || !isUsernameByte(haystack[end])
+		if startsWord && endsWord {
 			return true
 		}
 		from = pos + 1
