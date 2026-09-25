@@ -86,17 +86,21 @@ class Pass:
     #: nothing" on every case expecting none.
     declined: str = ""
 
-    #: The note TITLES this pass's own new reminder rows name — a
+    #: This pass's own NEW reminder rows, as `(note_id, due_at_ms)` — a
     #: before/after diff over `reminders`, the same shape `changed` is over
-    #: the notebook. `written` alone cannot tell "wrote nothing about the note
-    #: under test" from "wrote nothing about a DIFFERENT note also due this
-    #: pass" — a `proactive_decide` case asserting silence on ONE note must
-    #: not fail because the workspace legitimately reminded about another
-    #: (issue #158 rework). Only rows naming a note (`payload.note_title`)
-    #: are ever `remind`'s own output, so an event-model row with no note
-    #: title is invisible here by construction, matching `written`'s own
-    #: scope.
-    written_notes: tuple[str, ...] = ()
+    #: the notebook. `note_id` is `None` for an UNLINKED row: `remind` lets
+    #: `note` be omitted (`nora/agent/tools.py` ~:8898, ~:8959 — an unlinked
+    #: proactive row's payload carries only `intent`, no `note_id`/
+    #: `note_title` at all), so a row that restates the exact matter under
+    #: test WITHOUT naming it is still one of these, not invisible (issue
+    #: #158 review round 2 — a first cut here skipped unlinked rows
+    #: entirely, which let a second, unlinked reminder about the same thing
+    #: pass a note-scoped double-booking guard). `written` alone cannot tell
+    #: "wrote nothing about the note under test" from "wrote nothing about a
+    #: DIFFERENT note also due this pass" — `evals.backbone` reduces this
+    #: (plus each row's own `due_at_ms`) to what a `proactive_decide` case
+    #: actually needs graded (issue #158 rework, both rounds).
+    written_reminders: tuple[tuple[str | None, int], ...] = ()
 
 
 def _declined(subject: Subject) -> str:
@@ -170,9 +174,19 @@ async def _notebook(subject: Subject, workspace: str) -> dict[str, tuple[str, st
         await engine.dispose()
 
 
-async def _reminder_notes(subject: Subject) -> dict[Any, str]:
-    """`reminder id -> note title`, for every one of NORA's OWN reminder rows
-    that names a note, in the sandbox's own database.
+async def _reminder_rows(subject: Subject) -> dict[Any, tuple[str | None, int]]:
+    """`reminder id -> (note id, due_at in epoch ms)`, for every one of
+    NORA's OWN reminder rows in the sandbox's own database.
+
+    `note id` is `None` for an UNLINKED row: `remind` lets `note` be omitted
+    (`nora/agent/tools.py` ~:8898, ~:8959), and an unlinked proactive row's
+    payload carries only `intent` — no `note_id`, no `note_title`. `None` is
+    recorded rather than the row being left out, so a before/after diff
+    (`dream`, below) can tell "this pass wrote an unlinked row" from "this
+    pass wrote nothing" — the gap a first cut here had (issue #158 review
+    round 2): a row without a note dropped out silently, so a SECOND,
+    unlinked reminder about the same matter passed a note-scoped
+    double-booking guard clean.
 
     The sandbox database is isolated PER CASE (`nora.subject.sandbox`), so
     every row here is either seeded or this pass's own — a before/after diff
@@ -182,20 +196,21 @@ async def _reminder_notes(subject: Subject) -> dict[Any, str]:
     engine = create_sql_engine(subject.database_url)
     try:
         stmt = sa.select(
-            REMINDERS.c.id, REMINDERS.c.requester_person_id, REMINDERS.c.payload,
+            REMINDERS.c.id, REMINDERS.c.requester_person_id,
+            REMINDERS.c.payload, REMINDERS.c.due_at,
         )
         async with engine.begin() as conn:
             rows = (await conn.execute(stmt)).all()
-        result: dict[Any, str] = {}
+        result: dict[Any, tuple[str | None, int]] = {}
         for r in rows:
             if r.requester_person_id != "nora":
                 continue
             payload = r.payload or {}
             if isinstance(payload, str):
                 payload = json.loads(payload)
-            title = payload.get("note_title") if isinstance(payload, dict) else None
-            if title:
-                result[r.id] = str(title)
+            note_id = payload.get("note_id") if isinstance(payload, dict) else None
+            due_ms = int(r.due_at.timestamp() * 1000)
+            result[r.id] = (str(note_id) if note_id else None, due_ms)
         return result
     finally:
         await engine.dispose()
@@ -242,7 +257,7 @@ async def dream(
     _, conversation_id = room or subject.room
     key = workspace if chosen.key_kind == "unit" else conversation_id
     before = await _notebook(subject, workspace)
-    reminders_before = await _reminder_notes(subject)
+    reminders_before = await _reminder_rows(subject)
     ok_before = _samples(subject, "ok")
     failed_before = _samples(subject, "unavailable")
 
@@ -301,10 +316,10 @@ async def dream(
         ("update", title) for nid, (title, head) in after.items()
         if nid in before and before[nid][1] != head
     ]
-    reminders_after = await _reminder_notes(subject)
-    written_notes = tuple(sorted({
-        title for rid, title in reminders_after.items() if rid not in reminders_before
-    }))
+    reminders_after = await _reminder_rows(subject)
+    written_reminders = tuple(
+        v for rid, v in reminders_after.items() if rid not in reminders_before
+    )
     return Pass(
         status=outcome.status,
         stop_reason=outcome.stop_reason,
@@ -314,5 +329,5 @@ async def dream(
         samples_failed=_samples(subject, "unavailable") - failed_before,
         declined=_declined(subject),
         staged=staged,
-        written_notes=written_notes,
+        written_reminders=written_reminders,
     )

@@ -1103,8 +1103,8 @@ def test_a_remind_case_already_pending_on_its_own_note_is_refused():
     ("one reminder per thing") read as a FAIL against `expect: remind`.
 
     Compared BY ID (`note-1`), not by the title string — the fixture's
-    `note_ids_by_title` is the resolution step
-    `_resolve_remind_case_note_ids` performs before the clash check."""
+    `note_ids_by_title` is the resolution step `_resolve_note_titles`
+    performs before the clash check."""
     case = _remind_case()
     with pytest.raises(ValueError, match="already has a reminder PENDING"):
         backbone._refuse_a_remind_case_already_pending(
@@ -1159,4 +1159,131 @@ def test_a_remind_case_whose_note_title_is_ambiguous_is_refused():
         backbone._refuse_a_remind_case_already_pending(
             case, note_ids_by_title={"Dinner plan": ("note-1", "note-2")},
             pending_note_ids=frozenset(),
+        )
+
+
+# --- issue #158 review round 2: absent-note clash and remind-window match ---
+
+
+def _absent_case(
+    name: str = "d02_already_booked_open_corner", note: str = "拎抽包畀 Yat Ho",
+) -> Case:
+    return Case(
+        name=name, input="", expected_output="",
+        metadata={"expect": "none", "rows": [{"note": note, "absent": True}]},
+    )
+
+
+def test_absent_note_clash_is_none_with_no_absent_row():
+    case = Case(name="plain-none", input="", expected_output="", metadata={"expect": "none"})
+    outcome = Outcome(admitted=None, written=1, written_reminders=(("note-9", 0),))
+    assert backbone._absent_note_clash(case, outcome, {}) is None
+
+
+def test_absent_note_clash_ignores_a_reminder_about_a_different_note():
+    """THE ORIGINAL FIX (issue #158 review round 1): at 09-18 07:00, another
+    note (a pickup before Saturday) is legitimately due — a correct
+    reminder about IT must not clash with a case asserting silence about a
+    DIFFERENT note."""
+    case = _absent_case()
+    outcome = Outcome(admitted=None, written=1, written_reminders=(("note-pickup", 0),))
+    ids_by_title = {
+        "拎抽包畀 Yat Ho": ("note-1",),
+        "Pick up 陀螺盤 before Saturday": ("note-pickup",),
+    }
+    assert backbone._absent_note_clash(case, outcome, ids_by_title) is False
+
+
+def test_absent_note_clash_fires_on_the_same_note_by_id():
+    case = _absent_case()
+    outcome = Outcome(admitted=None, written=1, written_reminders=(("note-1", 0),))
+    assert backbone._absent_note_clash(
+        case, outcome, {"拎抽包畀 Yat Ho": ("note-1",)},
+    ) is True
+
+
+def test_absent_note_clash_fires_on_an_unlinked_reminder():
+    """THE BUG round 2 found (issue #158): `remind` lets `note` be omitted
+    (`nora/agent/tools.py` ~:8898, ~:8959), so a SECOND reminder about the
+    same matter with no note attached must still clash — it is not
+    invisible just because it names nothing."""
+    case = _absent_case()
+    outcome = Outcome(admitted=None, written=1, written_reminders=((None, 0),))
+    assert backbone._absent_note_clash(
+        case, outcome, {"拎抽包畀 Yat Ho": ("note-1",)},
+    ) is True
+
+
+def test_absent_note_clash_refuses_an_ambiguous_title():
+    """The same resolver the `remind` refusal uses (`_resolve_note_titles`):
+    two notes sharing the declared title must refuse, not silently pick
+    one."""
+    case = _absent_case()
+    outcome = Outcome(admitted=None, written=0)
+    with pytest.raises(ValueError, match="resolves to 2 notes"):
+        backbone._absent_note_clash(
+            case, outcome, {"拎抽包畀 Yat Ho": ("note-1", "note-2")},
+        )
+
+
+def _windowed_remind_case(note: str = "拎抽包畀 Yat Ho") -> Case:
+    return Case(
+        name="d02_anchored_today_open_corner", input="", expected_output="",
+        metadata={
+            "expect": "remind",
+            "rows": [{
+                "note": note,
+                "due_between": ["2026-09-17T17:00:00+08:00", "2026-09-17T22:00:00+08:00"],
+            }],
+        },
+    )
+
+
+def test_remind_match_is_none_with_no_windowed_row():
+    case = _remind_case()
+    outcome = Outcome(admitted=None, written=1, written_reminders=(("note-1", 0),))
+    assert backbone._remind_match(case, outcome, {"Dinner plan": ("note-1",)}) is None
+
+
+def test_remind_match_true_when_a_row_links_the_note_and_lands_in_window():
+    case = _windowed_remind_case()
+    due_ms = 1789646400000  # 2026-09-17T20:00:00+08:00, inside the window
+    outcome = Outcome(admitted=None, written=1, written_reminders=(("note-1", due_ms),))
+    assert backbone._remind_match(
+        case, outcome, {"拎抽包畀 Yat Ho": ("note-1",)},
+    ) is True
+
+
+def test_remind_match_false_on_the_right_note_outside_the_window():
+    case = _windowed_remind_case()
+    due_ms = 1789686000000  # 2026-09-18T07:00:00+08:00, well past the window
+    outcome = Outcome(admitted=None, written=1, written_reminders=(("note-1", due_ms),))
+    assert backbone._remind_match(
+        case, outcome, {"拎抽包畀 Yat Ho": ("note-1",)},
+    ) is False
+
+
+def test_remind_match_false_on_the_right_window_wrong_note():
+    """`written > 0` alone (the old rule) would pass this — a row about a
+    wholly different note, however well-timed, is not what the case names
+    (issue #158 review round 2)."""
+    case = _windowed_remind_case()
+    due_ms = 1789646400000  # inside the window
+    outcome = Outcome(admitted=None, written=1, written_reminders=(("note-other", due_ms),))
+    assert backbone._remind_match(
+        case, outcome, {"拎抽包畀 Yat Ho": ("note-1",)},
+    ) is False
+
+
+def test_remind_match_two_notes_sharing_a_title_resolves_by_id_not_title():
+    """Item 2's own case: two notes share the row's declared title. The
+    refusal already guarantees a `remind` case never reaches here with an
+    ambiguous title (it would have ERRORed pre-drive) — this pins that the
+    match ALSO resolves by id rather than title, should that guarantee ever
+    be bypassed, by refusing exactly like the refusal does."""
+    case = _windowed_remind_case()
+    outcome = Outcome(admitted=None, written=1, written_reminders=(("note-1", 1789646400000),))
+    with pytest.raises(ValueError, match="resolves to 2 notes"):
+        backbone._remind_match(
+            case, outcome, {"拎抽包畀 Yat Ho": ("note-1", "note-2")},
         )

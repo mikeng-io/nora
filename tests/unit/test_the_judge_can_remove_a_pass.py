@@ -291,33 +291,35 @@ def test_none_with_no_absent_rows_keeps_the_old_blanket_rule() -> None:
     assert Outcome(admitted=None, changed=(("create", "x"),)).meets("none") is False
 
 
-def test_none_with_an_absent_row_ignores_a_reminder_about_a_different_note() -> None:
-    """THE FIX (issue #158 review): at 09-18 07:00, another note (a pickup
-    before Saturday) is legitimately due and pending on nothing — a correct
-    reminder about IT must not fail a case asserting silence about a
-    DIFFERENT note."""
-    outcome = Outcome(admitted=None, written=1, written_notes=("Pickup before Saturday",))
-    rows = ({"note": "拎抽包畀 Yat Ho", "absent": True},)
-    assert outcome.meets("none", rows=rows) is True
+def test_none_reads_absent_note_clash_when_the_case_declares_one() -> None:
+    """`absent_note_clash` is resolved by `evals.backbone._absent_note_clash`
+    (title -> id, at the anchor) and handed to `Outcome` already computed —
+    `meets()` itself just reads it (issue #158 review round 2). `None` (no
+    `absent` row declared) falls through to the blanket rule; `True`/`False`
+    is the scoped verdict."""
+    assert Outcome(admitted=None, written=1, absent_note_clash=False).meets("none") is True
+    assert Outcome(admitted=None, written=1, absent_note_clash=True).meets("none") is False
+    assert Outcome(admitted=None, written=0, absent_note_clash=False).meets("none") is True
 
 
-def test_none_with_an_absent_row_still_fails_on_the_same_note() -> None:
-    """The double-booking guard's own positive: a SECOND reminder about the
-    exact note under test is exactly what `absent: true` refuses."""
-    outcome = Outcome(admitted=None, written=1, written_notes=("拎抽包畀 Yat Ho",))
-    rows = ({"note": "拎抽包畀 Yat Ho", "absent": True},)
-    assert outcome.meets("none", rows=rows) is False
+def test_remind_with_no_matched_row_keeps_the_old_blanket_rule() -> None:
+    """No corpus states a per-row `due_between` except `proactive_decide`'s
+    active `remind` cases (both of which DO), so this pins the fallback: a
+    `remind` case with `remind_matched=None` grades exactly as before —
+    `written > 0`, on any row, about any note, at any time."""
+    assert Outcome(admitted=None, written=1).meets("remind") is True
+    assert Outcome(admitted=None, written=0).meets("remind") is False
 
 
-def test_none_with_an_absent_row_and_nothing_written_passes() -> None:
-    outcome = Outcome(admitted=None, written=0)
-    rows = ({"note": "拎抽包畀 Yat Ho", "absent": True},)
-    assert outcome.meets("none", rows=rows) is True
-
-
-def test_none_rows_without_absent_do_not_trigger_the_scoped_rule() -> None:
-    """A `rows` entry with no `absent: true` (the `remind` shape) must not be
-    read as a note-scoped `none` assertion — only `absent: true` opts in."""
-    outcome = Outcome(admitted=None, written=1, written_notes=("Some other note",))
-    rows = ({"note": "拎抽包畀 Yat Ho"},)
-    assert outcome.meets("none", rows=rows) is False
+def test_remind_reads_remind_matched_when_a_row_states_a_window() -> None:
+    """`remind_matched` is resolved by `evals.backbone._remind_match` (note
+    id AND `due_between`, at the anchor) and handed to `Outcome` already
+    computed (issue #158 review round 2): `written > 0` alone used to pass a
+    `remind` case on a row about a wholly different note, at any time, which
+    is not what the corpus header has always claimed to grade."""
+    assert Outcome(admitted=None, written=1, remind_matched=True).meets("remind") is True
+    assert Outcome(admitted=None, written=1, remind_matched=False).meets("remind") is False
+    # written=0 but remind_matched somehow True never happens in practice
+    # (nothing to match), but meets() trusts the precomputed verdict either
+    # way — it is not re-deriving it from written.
+    assert Outcome(admitted=None, written=0, remind_matched=False).meets("remind") is False
