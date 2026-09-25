@@ -26,5 +26,19 @@
     "old": "    if parsed_a is None or parsed_b is None:\n        return a.strip() == b.strip()\n    return parsed_a == parsed_b\n",
     "new": "    return a.strip() == b.strip()\n",
     "target": "tests/unit/test_x_tools.py::test_url_reads_as_link"
+  },
+  {
+    "name": "linkedin_read reads a url that differs from link instead of refusing both",
+    "file": "nora/agent/tools.py",
+    "old": "        link, differ = _resolve_url_alias(\"linkedin_read\", link, url, _parse_linkedin_link, metrics)\n        if differ:\n",
+    "new": "        link, differ = _resolve_url_alias(\"linkedin_read\", link, url, _parse_linkedin_link, metrics)\n        if False:\n",
+    "target": "tests/unit/test_linkedin_tools.py::test_url_and_link_that_differ_read_nothing"
+  },
+  {
+    "name": "linkedin_read judges the url alias before the unasked-turn refusal",
+    "file": "nora/agent/tools.py",
+    "old": "        if fire_turn or dream_adaptor:\n            # Before anything is parsed, looked at or sent.\n            _record(metrics, \"linkedin_read\", \"refused\", reason=\"unasked\")\n            return dict(_LINKEDIN_UNASKED)\n        link, differ = _resolve_url_alias(\"linkedin_read\", link, url, _parse_linkedin_link, metrics)\n        if differ:\n            return dict(_URL_AND_LINK_DIFFER)\n",
+    "new": "        link, differ = _resolve_url_alias(\"linkedin_read\", link, url, _parse_linkedin_link, metrics)\n        if differ:\n            return dict(_URL_AND_LINK_DIFFER)\n        if fire_turn or dream_adaptor:\n            # Before anything is parsed, looked at or sent.\n            _record(metrics, \"linkedin_read\", \"refused\", reason=\"unasked\")\n            return dict(_LINKEDIN_UNASKED)\n",
+    "target": "tests/unit/test_linkedin_tools.py::test_a_turn_nobody_asked_for_is_refused_before_anything_is_sent"
   }
 ]

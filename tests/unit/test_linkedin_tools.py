@@ -175,6 +175,11 @@ async def test_the_query_junk_of_a_link_never_leaves(social):
     [
         ("linkedin_read", {"handle": "williamhgates", "what": "profile"}),
         ("linkedin_read", {"link": "https://www.linkedin.com/company/nvidia/"}),
+        ("linkedin_read", {"url": "https://www.linkedin.com/company/nvidia/"}),
+        # Refused BEFORE the url alias is judged: two different links in an
+        # unasked turn are `refused`, never the alias's `unavailable`.
+        ("linkedin_read", {"link": "https://www.linkedin.com/in/williamhgates/",
+                           "url": "https://www.linkedin.com/company/nvidia/"}),
         ("linkedin_search", {"query": "satya nadella"}),
     ],
 )

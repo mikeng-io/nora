@@ -88,14 +88,16 @@ to register them side by side.
 
 | Tool | Link parameter | `url` alias |
 |---|---|---|
-| `instagram_read` (`tools.py:7920`) | `link` | yes, since design 13 (`tools.py:7925`, `7962`) |
-| `x_read` (`tools.py:7450`) | `link` | yes, since 2026-09-25 (decision 2 triggered, below) |
-| `linkedin_read` (`tools.py:7659`) | `link` | yes, since 2026-09-25 (decision 2 triggered, below) |
+| `instagram_read` | `link` | yes, since design 13 |
+| `x_read` | `link` | yes, since 2026-09-25 (decision 2, below) |
+| `linkedin_read` | `link` | yes, since 2026-09-25 (decision 2, below) |
 
 Strands validates through a model built from the signature and drops any
 key it does not declare, silently (design 13, «`instagram_read` accepts
-`url` as `link`»). A redirect that says «call x_read with url» produces a
-call with no input.
+`url` as `link`»). Until 2026-09-25 a redirect that said «call x_read with
+url» produced a call with no input; since R-99 (#511) such a call is refused
+as `bad_arguments`, and since decision 2 was taken (below) all three owners
+declare `url`, through the one shared `_resolve_url_alias` in `tools.py`.
 
 ### Three hand-written cross-network matrices already exist
 
@@ -533,16 +535,21 @@ commit) builds only the Instagram row under decision 1 — the owners'
 cross-network branches (decision 1's other half) are PR 3's work, not built
 here.
 
-**2026-09-25, decision 2 triggered.** On the deployed build (#512, 91abdf9b),
-`python -m evals tool_selection` over the four X/LinkedIn routing cases at
-n=5 drew 20 turns; 7 of them called the owner with `url=` (5 `x_read`, 2
-`linkedin_read`). R-99 (#511) turned each into `bad_arguments` and a retry
-with `link`, so none arrived empty, but each cost a model round trip. That
-is the trigger this decision named, seen in an eval of the live model rather
-than a live room. `x_read` and `linkedin_read` now declare `url`, through the
-one `_resolve_url_alias` all three read tools share (`instagram_read`'s own
-inline copy is gone): `url` alone reads as `link`, two spellings of one link
-agree by the network's parser, and two different links read nothing.
+**2026-09-25, decision 2 taken, by the operator, on eval evidence.** The
+accepted text above waits for a LIVE call arriving empty with `url`. That
+never happened, and since R-99 (#511) it cannot: an undeclared `url` is
+refused as `bad_arguments` and she retries with `link`. What was seen
+instead: on the deployed build (#512, 91abdf9b), `python -m evals
+tool_selection` over the four X/LinkedIn routing cases at n=5 drew 20
+turns, and 7 of them called the owner with `url=` (5 `x_read`, 2
+`linkedin_read`), each costing a model round trip before the retry. The
+operator, shown those numbers, ruled the question no longer open and the
+alias added. The cost decision 2 weighed stands and is accepted: about 22
+tokens per tool on every turn the schema is loaded. `x_read` and
+`linkedin_read` now declare `url` through the one `_resolve_url_alias` all
+three read tools share (`instagram_read`'s own inline copy is gone): `url`
+alone reads as `link`, two spellings of one link agree by the network's
+parser, and two different links read nothing.
 
 ## Non-goals
 

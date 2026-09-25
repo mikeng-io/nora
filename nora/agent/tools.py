@@ -3112,9 +3112,9 @@ def _resolve_url_alias(
     2026-09-24: every deferred-catalogue `instagram_read` call used `url`).
     R-99 now refuses such a call instead of dropping it, and on 2026-09-25
     the deployed build still reached for `url=` in 7 of 20 `x_read`/
-    `linkedin_read` eval draws, each costing a retry: the trigger design 30's
-    decision 2 named for adding the alias. Two different links name no one
-    thing, so neither is read and neither is echoed back."""
+    `linkedin_read` eval draws, each costing a retry; the operator took
+    design 30's decision 2 on that evidence. Two different links name no
+    one thing, so neither is read and neither is echoed back."""
     if not (isinstance(url, str) and url.strip()):
         return link, False
     if isinstance(link, str) and link.strip() and not _same_link(link, url, parse):
