@@ -411,5 +411,19 @@
   "old": "    return _with_culture(\n        culture,\n        f\"{prior_block}\\n\\n{working_set_prior_block}\\n\\n{turn}\",\n        now_ms=trace.created_at,\n    )\n",
   "new": "    return _with_culture(\n        culture, f\"{prior_block}\\n\\n{turn}\", now_ms=trace.created_at,\n    )\n",
   "target": "tests/unit/test_debrief.py -k test_the_fold_is_shown_its_own_working_set_prior"
+ },
+ {
+  "name": "working-set #541 review fix: a carried item past its own TTL is dropped at the write path, not just at render",
+  "file": "nora/engagement/stages/debrief.py",
+  "old": "        carried = prior_found_at.get((what, source))\n        if carried is None:\n            # A NEW item: its source must be a shown step's tool name,\n            # EXACTLY — equality, never a substring match, so a description\n            # that merely mentions the tool cannot pass as sourced.\n            if not any(name.lower() == source.lower() for name in shown_steps):\n                metrics.inc(\"nora_standing_working_set_unsourced_dropped_total\")\n                continue\n        elif now_ms - carried > ttl_ms:\n            # A CARRY-FORWARD past its own TTL: dropped here, deterministically\n            # — never kept merely because the model re-stated it.\n            metrics.inc(\"nora_standing_working_set_expired_dropped_total\")\n            continue\n",
+  "new": "        carried = prior_found_at.get((what, source))\n        if carried is None:\n            # A NEW item: its source must be a shown step's tool name,\n            # EXACTLY — equality, never a substring match, so a description\n            # that merely mentions the tool cannot pass as sourced.\n            if not any(name.lower() == source.lower() for name in shown_steps):\n                metrics.inc(\"nora_standing_working_set_unsourced_dropped_total\")\n                continue\n",
+  "target": "tests/unit/test_debrief.py -k test_a_carried_item_past_its_ttl_is_not_written"
+ },
+ {
+  "name": "working-set #541 review fix: a new item's source must match a shown step's tool name exactly, not merely contain it",
+  "file": "nora/engagement/stages/debrief.py",
+  "old": "            if not any(name.lower() == source.lower() for name in shown_steps):\n",
+  "new": "            if not any(name.lower() in source.lower() for name in shown_steps):\n",
+  "target": "tests/unit/test_debrief.py -k test_a_source_that_merely_mentions_a_shown_tool_is_dropped"
  }
 ]

@@ -1301,13 +1301,21 @@ async def test_a_carried_forward_item_keeps_its_original_found_at():
     from its prior (same `what` AND `source`) is a CARRY-FORWARD, not a new
     find, and keeps the `found_at` it already had — without this, TTL
     (render-time, §2) would never fire, because every fold would re-stamp
-    every surviving item to the current instant."""
+    every surviving item to the current instant.
+
+    `found_at` is one hour before `now_ms_override`, deliberately WELL
+    inside the TTL: a value near epoch would (correctly, since #541's
+    review) be dropped by the write path's own TTL check, which is a
+    different guard with its own test below.
+    """
+    now_ms = 1_756_000_931_000
+    found_at = now_ms - 3_600_000
     store = InMemoryStandingStore()
     await store.write(standing=Standing(
         platform="signal", conversation_id="g1", body="prior position",
         fold_count=1, updated_at=1, working_set=(
             WorkingSetItem(
-                what="a restaurant", source="web_search", found_at=1_000,
+                what="a restaurant", source="web_search", found_at=found_at,
                 bears_on="dinner",
             ),
         ),
@@ -1317,11 +1325,81 @@ async def test_a_carried_forward_item_keeps_its_original_found_at():
     ]))
     await _run(
         store=store, client=client, trace=_trace(messages=()),
-        now_ms_override=1_756_000_931_000,
+        now_ms_override=now_ms,
     )
     row = await store.read(platform="signal", conversation_id="g1")
     assert len(row.working_set) == 1
-    assert row.working_set[0].found_at == 1_000
+    assert row.working_set[0].found_at == found_at
+
+
+async def test_a_carried_item_past_its_ttl_is_not_written():
+    """Review of #541: the write path used to preserve `found_at` on a
+    carry-forward WITHOUT checking whether that `found_at` was already past
+    the TTL — so a model that kept re-stating a stale item kept it written
+    back forever, occupying a budget slot no live item could use. The write
+    path now drops a carry-forward past `WORKING_SET_TTL_HOURS`
+    deterministically, whatever the model does — this is a SEPARATE guard
+    from `render_standing_working_set`'s own read-time filter
+    (tests/unit/test_standing.py), enforced where the row is written."""
+    from nora.domain.standing import WORKING_SET_TTL_HOURS
+
+    now_ms = 1_756_000_931_000
+    stale_found_at = now_ms - int((WORKING_SET_TTL_HOURS + 1) * 3_600_000)
+    store = InMemoryStandingStore()
+    await store.write(standing=Standing(
+        platform="signal", conversation_id="g1", body="prior position",
+        fold_count=1, updated_at=1, working_set=(
+            WorkingSetItem(
+                what="a stale restaurant", source="web_search",
+                found_at=stale_found_at, bears_on="dinner",
+            ),
+        ),
+    ))
+    client = _Client(_ok_ws("revised", [
+        {"what": "a stale restaurant", "source": "web_search",
+         "bears_on": "dinner"},
+    ]))
+    store, metrics = await _run(
+        store=store, client=client, trace=_trace(messages=()),
+        now_ms_override=now_ms,
+    )
+    row = await store.read(platform="signal", conversation_id="g1")
+    assert row.working_set == ()
+    assert _counter(
+        metrics, "nora_standing_working_set_expired_dropped_total") == 1
+
+
+async def test_a_carried_item_within_its_ttl_is_written():
+    """The positive control the test above needs: a carry-forward just
+    INSIDE the TTL still survives, so the guard is a boundary check, not an
+    accidental drop of every carry-forward."""
+    from nora.domain.standing import WORKING_SET_TTL_HOURS
+
+    now_ms = 1_756_000_931_000
+    fresh_found_at = now_ms - int((WORKING_SET_TTL_HOURS - 1) * 3_600_000)
+    store = InMemoryStandingStore()
+    await store.write(standing=Standing(
+        platform="signal", conversation_id="g1", body="prior position",
+        fold_count=1, updated_at=1, working_set=(
+            WorkingSetItem(
+                what="a fresh-enough restaurant", source="web_search",
+                found_at=fresh_found_at, bears_on="dinner",
+            ),
+        ),
+    ))
+    client = _Client(_ok_ws("revised", [
+        {"what": "a fresh-enough restaurant", "source": "web_search",
+         "bears_on": "dinner"},
+    ]))
+    store, metrics = await _run(
+        store=store, client=client, trace=_trace(messages=()),
+        now_ms_override=now_ms,
+    )
+    row = await store.read(platform="signal", conversation_id="g1")
+    assert len(row.working_set) == 1
+    assert row.working_set[0].found_at == fresh_found_at
+    assert _counter(
+        metrics, "nora_standing_working_set_expired_dropped_total") == 0
 
 
 async def test_an_item_sourced_to_a_tool_the_fold_was_shown_survives():
@@ -1344,6 +1422,24 @@ async def test_an_item_whose_source_does_not_match_a_shown_step_is_dropped():
     `"I reasoned it out"`) is dropped rather than written, and counted."""
     client = _Client(_ok_ws("a position", [
         {"what": "a restaurant", "source": "I reasoned it out",
+         "bears_on": "dinner"},
+    ]))
+    store, metrics = await _run(client=client, trace=_trace(messages=_TOOL_STEP))
+    row = await store.read(platform="signal", conversation_id="g1")
+    assert row.working_set == ()
+    assert _counter(
+        metrics, "nora_standing_working_set_unsourced_dropped_total") == 1
+
+
+async def test_a_source_that_merely_mentions_a_shown_tool_is_dropped():
+    """§3, review of #541: the check is EQUALITY, not a substring match. A
+    description that happens to contain a real tool's name —
+    `"the room's own web_search question, paraphrased"` — must not pass as
+    sourced just because `web_search` appears inside it somewhere; only the
+    bare tool name, exactly, is a valid source."""
+    client = _Client(_ok_ws("a position", [
+        {"what": "a restaurant", "source":
+         "the room's own web_search question, paraphrased",
          "bears_on": "dinner"},
     ]))
     store, metrics = await _run(client=client, trace=_trace(messages=_TOOL_STEP))

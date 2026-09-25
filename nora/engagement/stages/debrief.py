@@ -185,6 +185,7 @@ from nora.domain.standing import (
     DEFAULT_WORKING_SET_MAX_CHARS,
     DEFAULT_WORKING_SET_MAX_ITEMS,
     STANDING_STORE_CALLS_PER_FOLD,
+    WORKING_SET_TTL_HOURS,
     Standing,
     WorkingSetItem,
     working_set_to_json,
@@ -488,18 +489,32 @@ def _working_set(
     re-judge it the same way it re-judges the paragraph, so an item surviving
     that re-judgment did not just get found again; only a `(what, source)`
     pair absent from `prior` is a genuinely NEW item, and only a new item's
-    `found_at` becomes `now_ms`. Without this split, TTL (render-time,
-    design §2) would never fire: every fold would re-stamp every surviving
-    item to the current instant.
+    `found_at` becomes `now_ms`.
 
-    **A NEW item's `source` must reference a step this turn's `<steps>`
-    actually showed** (`shown_step_tool_names`) — never a paraphrase of the
-    room's question. One that does not is DROPPED, counted, and never
-    reaches `screen` at all: it was never a candidate, so its drop is not the
-    budget refusal below. A CARRIED-FORWARD item is not re-checked against
-    THIS turn's steps — it was checked when it was new, and most turns call
-    no tools at all, which would otherwise make every carry-forward
-    unsourced on sight.
+    **A carry-forward past its OWN TTL is dropped here, deterministically,
+    whatever the model does.** The render side (`render_standing_working_set`)
+    already filters an expired item out of what a downstream reader sees, but
+    that is a READ-time filter over what the row still HOLDS — nothing before
+    this stopped the model from re-stating a stale item every turn (its
+    `found_at` preserved, per the paragraph above) and having it written back
+    forever, occupying a budget slot no live item could use. There is no
+    "the model chose to keep it" here: an item whose `now_ms - found_at`
+    exceeds `WORKING_SET_TTL_HOURS` is refused a place in the WRITTEN row,
+    counted, full stop — the same fail-closed posture the render side already
+    has, now also at the one other place this field's state can persist.
+
+    **A NEW item's `source` must name a step this turn's `<steps>` actually
+    showed, EXACTLY** (`shown_step_tool_names`) — the tool's own name and
+    nothing else, never a paraphrase of the room's question or a description
+    that happens to mention the tool. A SUBSTRING match let
+    `"the room's own web_search question, paraphrased"` through, because it
+    merely CONTAINS `web_search`; equality is what the objective's own worked
+    example already shows (`"source": "web_search"`, bare). One that does not
+    match exactly is DROPPED, counted, and never reaches `screen` at all: it
+    was never a candidate, so its drop is not the budget refusal below. A
+    CARRIED-FORWARD item is not re-checked against THIS turn's steps — it was
+    checked when it was new, and most turns call no tools at all, which would
+    otherwise make every carry-forward unsourced on sight.
 
     **Screened like the body** (§3/§4.3), item by item, before the budget
     check: an item dropped here was never a candidate for overflow either.
@@ -515,6 +530,7 @@ def _working_set(
     """
     if raw is None:
         return ()
+    ttl_ms = int(WORKING_SET_TTL_HOURS * 3_600_000)
     prior_found_at = {(item.what, item.source): item.found_at for item in prior}
     candidates: list[WorkingSetItem] = []
     for entry in raw:
@@ -530,10 +546,17 @@ def _working_set(
         what = what.strip()
         source = source.strip()
         carried = prior_found_at.get((what, source))
-        if carried is None and not any(
-            name.lower() in source.lower() for name in shown_steps
-        ):
-            metrics.inc("nora_standing_working_set_unsourced_dropped_total")
+        if carried is None:
+            # A NEW item: its source must be a shown step's tool name,
+            # EXACTLY — equality, never a substring match, so a description
+            # that merely mentions the tool cannot pass as sourced.
+            if not any(name.lower() == source.lower() for name in shown_steps):
+                metrics.inc("nora_standing_working_set_unsourced_dropped_total")
+                continue
+        elif now_ms - carried > ttl_ms:
+            # A CARRY-FORWARD past its own TTL: dropped here, deterministically
+            # — never kept merely because the model re-stated it.
+            metrics.inc("nora_standing_working_set_expired_dropped_total")
             continue
         candidates.append(WorkingSetItem(
             what=what, source=source,
