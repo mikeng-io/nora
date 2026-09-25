@@ -18,6 +18,9 @@ measured.** See §1.1.
 
 ## 1. What this replaces, and why twice was not enough
 
+> **Re-baseline, throughout this document (2026-09-25):** a re-baseline is the before arm of the next confirming run, never a standalone run. See the nora-eval skill, "An eval confirms a fix; it never finds one".
+
+
 Two earlier drafts of this document both failed the same way, and the failure is
 worth recording because it is the suite's own historical disease.
 
@@ -469,10 +472,7 @@ read back from.
 either**, for the same reason #458's were not: a source that no longer
 contains a line she was never shown changes which attribution checks can
 pass. Re-baseline each judged corpus again on a build that has this fix
-before comparing an arm against it. (2026-09-25: that re-baseline is the
-before arm of the next confirming run, not a standalone run; see the
-nora-eval skill, "An eval confirms a fix; it never finds one". The same holds
-for every "re-baseline" in this document.)
+before comparing an arm against it.
 
 ### 1.9 Honcho is isolated per DRAW (2026-09-24, #462)
 
