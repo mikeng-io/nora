@@ -95,8 +95,13 @@ whether she replied.
    Read the model's INPUT for that turn (the Langfuse trace) before touching
    its instruction.
 2. **Measure.** Add the case to the corpus that owns that behaviour (a
-   routing miss to `tool_selection`), run it before the fix and watch it fail.
-3. **Serialize.** Fix, run the same case and its corpus after, and put both
+   routing miss to `tool_selection`), and read it offline (`--print-input`,
+   the case's anchor and expectation) to confirm the input shows the failure
+   and to name its cause. No run yet: its failing number comes from the
+   before arm of step 3's run, per `.agents/skills/nora-eval/SKILL.md` "An
+   eval confirms a fix; it never finds one".
+3. **Serialize.** Fix, then run the same selection on both arms (the case,
+   plus its corpus if the fix can move other cases there), and put both
    numbers, the draw count and the spend in the PR.
 
 A failure you fixed but did not add a case for is a failure you will ship

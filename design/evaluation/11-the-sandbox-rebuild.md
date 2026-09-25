@@ -18,6 +18,9 @@ measured.** See §1.1.
 
 ## 1. What this replaces, and why twice was not enough
 
+> **Re-baseline, throughout this document (2026-09-25):** a re-baseline is the before arm of the next confirming run, never a standalone run. See the nora-eval skill, "An eval confirms a fix; it never finds one".
+
+
 Two earlier drafts of this document both failed the same way, and the failure is
 worth recording because it is the suite's own historical disease.
 

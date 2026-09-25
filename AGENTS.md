@@ -104,7 +104,7 @@ rules were written down and not read at the moment they applied.
 | starting a change, running the gate, committing, opening or merging a PR | `nora-land` |
 | putting merged code or config live on `norty`, or checking it is live | `nora-deploy` |
 | reading a trace, a metric, a row or a log as evidence | `nora-readback` |
-| deciding a prompt, doctrine, tool-text or routing change with the eval suite | `nora-eval` |
+| confirming a built prompt, doctrine, tool-text or routing fix with the eval suite (find the cause offline first) | `nora-eval` |
 | proving a fix is guarded (revert, watch a named test go red, restore) | `nora-prove-fix` |
 | a new DEC or R row, an ADR, an issue, or citing a decision | `nora-decision` |
 | adding or changing one of Nora's tools (ADR 0015) | `nora-tool` |
