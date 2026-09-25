@@ -874,7 +874,7 @@ async def test_drive_carries_the_written_body_lengths(monkeypatch, one_path):
         return Outcome(
             admitted=None, changed=(("create", "Dinner"),), written=1,
             bodies=(("created", "Ada: Friday."), ("refused", "x" * 50)),
-            speakers=((7, "Ada"),),
+            speakers=((7, "Ada"),), body_refused=("uncited",),
         )
 
     async def fake_sandbox(_subject: object, **kwargs: Any) -> Sandboxed:
@@ -890,6 +890,8 @@ async def test_drive_carries_the_written_body_lengths(monkeypatch, one_path):
     data = EvaluationData(input="x", actual_environment_state=result["environment_state"])
     assert tuple(state_of(data, backbone.NORA_BODY_CHARS)) == (len("Ada: Friday."),)
     assert tuple(state_of(data, backbone.NORA_BODY_SCHEMA)) == ("not_a_line",)
+    # A body refused before staging is never written, so only this carries it.
+    assert tuple(state_of(data, backbone.NORA_BODY_REFUSED)) == ("uncited",)
     assert tuple(state_of(data, NORA_CHECKS_FAILED)) == (
         "body_mentions: none of ['saturday']",
     )

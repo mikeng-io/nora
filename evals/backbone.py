@@ -227,6 +227,11 @@ NORA_BODY_CHARS = "nora.body_chars"
 #: schema in the objective, and a verdict here would fail every create case
 #: before then. A case opts into it as a check with `body_schema: true`.
 NORA_BODY_SCHEMA = "nora.body_schema"
+#: The rule of each create the pass REFUSED for its body before staging
+#: (design 42 S2), printed as `body_refused=[...]`. A refused body is never
+#: written, so `body_schema` cannot see it: conformance is `ok` over written
+#: plus refused, and this is the second half.
+NORA_BODY_REFUSED = "nora.body_refused"
 #: The standing corpus (`design/standing-compact/20-verification.md` §1).
 #: `NORA_POSITION` is the position a fold wrote (`Outcome.position`), what
 #: `MeetsGrader` needs for `expect: fold`. `NORA_SHOWN` is what the subject's
@@ -1672,6 +1677,10 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
                             )
                         ),
                     ),
+                    EnvironmentState(
+                        name=NORA_BODY_REFUSED,
+                        state=tuple(getattr(outcome, "body_refused", ())),
+                    ),
                     EnvironmentState(name=NORA_TOOLS, state=tools_called),
                     EnvironmentState(name=NORA_TOOL_RESULTS, state=tool_results),
                     EnvironmentState(name=NORA_TOOL_INPUTS, state=tool_inputs),
@@ -2091,6 +2100,9 @@ class MeetsGrader(Evaluator):
         schema = state_of(data, NORA_BODY_SCHEMA)
         if schema:
             why += f" — body_schema={list(schema)}"
+        refused = state_of(data, NORA_BODY_REFUSED)
+        if refused:
+            why += f" — body_refused={list(refused)}"
         failed = outcome.checks_failed
         if failed:
             why += f" — checks: {list(failed)}"

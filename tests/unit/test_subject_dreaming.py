@@ -78,3 +78,22 @@ def test_the_speakers_the_instrument_grades_are_the_names_the_model_was_shown():
     assert shown_speakers(batch, persons=ROSTER, platform="signal") == (
         (1, "Ada Roster"), (2, "profile2"),
     )
+
+
+def test_body_refusals_are_read_off_production_s_own_counter_by_rule():
+    """Design 42 S2: a refused body is never staged, so the eval reads the
+    refusals off `nora_note_candidate_body_refused_total{rule}`, the counter
+    production scrapes, and a label it does not know is not counted as one."""
+    from types import SimpleNamespace
+
+    from nora.obs.metrics import Metrics
+    from nora.subject.dreaming import _body_refusals
+
+    metrics = Metrics()
+    subject = SimpleNamespace(deps=SimpleNamespace(metrics=metrics))
+    assert _body_refusals(subject) == {}  # type: ignore[arg-type]
+    metrics.inc("nora_note_candidate_body_refused_total", rule="uncited")
+    metrics.inc("nora_note_candidate_body_refused_total", rule="uncited")
+    metrics.inc("nora_note_candidate_body_refused_total", rule="bad_date")
+    metrics.inc("nora_note_candidate_gate_total", action="created")
+    assert _body_refusals(subject) == {"uncited": 2, "bad_date": 1}  # type: ignore[arg-type]

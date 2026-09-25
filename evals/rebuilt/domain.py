@@ -239,6 +239,9 @@ class Outcome:
     roster: tuple[tuple[str, str], ...] = ()
     nora_names: tuple[str, ...] = ()
     carried: tuple[int, ...] = ()
+    #: The rule of each create refused for its body before staging
+    #: (`nora.subject.dreaming.Pass.body_refused`, design 42 S2).
+    body_refused: tuple[str, ...] = ()
 
     #: Structural assertions the corpus made and the outcome did not meet.
     #:

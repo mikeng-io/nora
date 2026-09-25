@@ -107,6 +107,13 @@ class Pass:
     nora_names: tuple[str, ...] = ()
     carried: tuple[int, ...] = ()
 
+    #: The rule of every create this pass REFUSED for its body (design 42 S2),
+    #: one per refusal, from `nora_note_candidate_body_refused_total{rule}`,
+    #: production's own counter. A refused body is never staged, so neither
+    #: `bodies` nor `body_schema` can see it: without this, conformance on
+    #: the written bodies is 100% by construction and the refusals are silence.
+    body_refused: tuple[str, ...] = ()
+
     #: Why the pass declined BEFORE any model call, from
     #: `nora_proactive_pass_total{reason}` — production's own counter.
     #:
@@ -202,6 +209,16 @@ def _declined(subject: Subject) -> str:
         if key and key[0] == "nora_proactive_pass_total" and value:
             return dict(key[1] or ()).get("reason", "")
     return ""
+
+
+def _body_refusals(subject: Subject) -> dict[str, int]:
+    """`nora_note_candidate_body_refused_total` by rule, as it stands."""
+    out: dict[str, int] = {}
+    for key, value in subject.deps.metrics.snapshot().items():
+        if key and key[0] == "nora_note_candidate_body_refused_total" and value:
+            rule = dict(key[1] or ()).get("rule", "")
+            out[rule] = out.get(rule, 0) + int(value)
+    return out
 
 
 def _samples(subject: Subject, status: str) -> int:
@@ -377,6 +394,7 @@ async def dream(
     head_citations = await _head_citations(subject, workspace)
     reminders_before = await _reminder_rows(subject)
     ok_before = _samples(subject, "ok")
+    refused_before = _body_refusals(subject)
     failed_before = _samples(subject, "unavailable")
 
     # The production order, verbatim: read the batch, join media, run.
@@ -446,6 +464,10 @@ async def dream(
         written=outcome.written,
         samples_ok=_samples(subject, "ok") - ok_before,
         samples_failed=_samples(subject, "unavailable") - failed_before,
+        body_refused=tuple(sorted(
+            rule for rule, n in _body_refusals(subject).items()
+            for _ in range(n - refused_before.get(rule, 0))
+        )),
         declined=_declined(subject),
         staged=staged,
         written_reminders=written_reminders,
