@@ -55,9 +55,12 @@ the same group-written text the prefill escapes, one hop further along.
 
 from __future__ import annotations
 
+import json
+import re
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime, tzinfo
 from typing import Any, Literal, get_args
+from urllib.parse import unquote
 
 from nora.domain.blocks import ContextBlock, render_elements, speaker_name
 from nora.domain.culture import CultureRevision
@@ -461,6 +464,93 @@ def _steps(messages: Sequence[Mapping[str, Any]], *, metrics: Metrics) -> str:
     )
 
 
+#: A URL, for `_clean_urls` below. Bounded on whitespace and the quoting a
+#: JSON string or an HTML attribute puts around one, so it stops at the
+#: closing quote rather than swallowing whatever JSON comes after it. The
+#: backslash is excluded too: a re-serialised JSON string escapes an internal
+#: `"` as `\"`, so the SAME url nested inside a `<untrusted source="...">`
+#: attribute is followed by `\"` rather than a bare `"` — without excluding
+#: the backslash, that copy's match ends one character later than the
+#: top-level `"url"` field's, and the two copies compare unequal, so nothing
+#: gets de-duplicated at all.
+_URL_RE = re.compile(r"https?://[^\s\"'<>\\]+")
+
+
+def _compact_json_or_text(text: str) -> str:
+    """One `content[]` entry's `text`, as compactly as it can be shown.
+
+    Issue #445's study: production tool results (`web_search`, `place_info`)
+    return a raw JSON body as this `text`, and rendering the LIST it sits in
+    with `str()` stacked Python's own repr-escaping on top of the JSON's —
+    a nested HTML attribute like `source="URL"` reached the fold as
+    `source=\\\\"URL\\\\"` inside a Python-list repr, spending the 4000-character
+    clip on brackets and doubled backslashes before a single restaurant name.
+    Text that parses as JSON is loaded and re-serialised compactly
+    (`json.dumps(..., separators=(",", ":"))`), which keeps the one escaping
+    layer JSON itself needs and removes that doubling. Text that does not
+    parse — a plain status line, an `ambiguous` message — is used exactly as
+    it was returned; there is nothing to compact.
+    """
+    try:
+        parsed = json.loads(text)
+    except (TypeError, ValueError):
+        return text
+    return json.dumps(parsed, ensure_ascii=False, separators=(",", ":"))
+
+
+def _clean_urls(text: str) -> str:
+    """Percent-decode every URL in `text`, then drop a URL once it has already
+    appeared once.
+
+    Issue #445's study: the same page URL reaches the fold twice per search
+    result — once as the result's own `url` field, once more inside the
+    fetched page's `<untrusted source="...">` wrapper — and each is
+    percent-encoded when the path holds non-ASCII (a Chinese restaurant
+    listing's URL slug), which roughly triples its length. Neither copy is
+    something the fold needs to carry into a position (§ "What does NOT
+    belong" already bars a URL from the position itself); decoding shrinks
+    each one and de-duplication removes the second copy outright, so more of
+    the clip's fixed budget is left for content — a restaurant's name, not
+    the address it was found at.
+    """
+    text = unquote(text)
+    seen: set[str] = set()
+
+    def _replace(match: re.Match[str]) -> str:
+        url = match.group(0)
+        if url in seen:
+            return "(same URL as above)"
+        seen.add(url)
+        return url
+
+    return _URL_RE.sub(_replace, text)
+
+
+def _tool_result_text(content: Any) -> str:
+    """A tool result's `content`, as the fold actually needs it.
+
+    Strands' own shape is a list, `[{"text": "<json or plain text>"}, ...]`;
+    `str()` on that list is the shape issue #445's study found reaching the
+    fold. Each `text` entry is compacted (`_compact_json_or_text`), the
+    entries are joined, and the whole thing is URL-cleaned (`_clean_urls`). A
+    `content` that is not this list shape — a plain string, which some tools
+    return directly and which every fixture predating this shape still
+    exercises — renders exactly as it did before, `str(content)`, URL-cleaned
+    the same way.
+    """
+    if isinstance(content, Sequence) and not isinstance(content, str | bytes):
+        parts = [
+            _compact_json_or_text(item["text"])
+            if isinstance(item, Mapping) and isinstance(item.get("text"), str)
+            else str(item)
+            for item in content
+        ]
+        text = "\n".join(parts)
+    else:
+        text = str(content)
+    return _clean_urls(text)
+
+
 def _block(
     block: Mapping[str, Any], *, metrics: Metrics,
 ) -> tuple[str, str | None]:
@@ -490,8 +580,8 @@ def _block(
     result = block.get("toolResult")
     if isinstance(result, Mapping):
         clipped = _clip(
-            str(result.get("content")), kind="tool_result", metrics=metrics,
-            limit=_CARRIED_CHARS,
+            _tool_result_text(result.get("content")), kind="tool_result",
+            metrics=metrics, limit=_CARRIED_CHARS,
         )
         return f"(tool result: {clipped})", None
     return "", None

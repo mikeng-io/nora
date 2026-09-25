@@ -99,7 +99,7 @@ from ..domain.notes import Note
 # TOOL LAYER's word — 「open note」, which `nora.agent.tools` taught her and no
 # longer does; it was never about the subjects. Left unqualified the clause
 # forbids an honest answer to a direct question about what she is tracking,
-# which `nora/doctrine/conduct.md` already tells her to give («查完 memory、
+# which `nora/doctrine/rooms/conduct.md` already tells her to give («查完 memory、
 # notes 都冇嘢» → say so outright), and it collides head-on with the skill in
 # flight that tells her she holds «what a room has left unsettled and what
 # would settle it»: both merge cleanly and the model is then told to describe

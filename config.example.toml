@@ -458,7 +458,7 @@ shadow = true
 # her words or in place of a reply that was only a reaction, and a second
 # picks one from Giphy's described results. Needs GIPHY_API_KEY in .env too.
 # Every failure sends her words exactly as written. Participation, proactive
-# and reminder turns never get one. Instruction: nora/doctrine/reaction.md.
+# and reminder turns never get one. Instruction: nora/doctrine/instruments/reaction.md.
 enabled = false
 model = ""                 # empty = [llm] model
 reasoning_effort = "none"  # measured at "none"; empty inherits [llm]
@@ -1032,6 +1032,12 @@ api_key_env = "EXA_API_KEY"      # NAMES the env var; the key never lives here (
 # url = "https://api.exa.ai/search"
 # contents_url = "https://api.exa.ai/contents"
 # type = "auto"                   # instant | fast | auto | deep-lite | deep | deep-reasoning
+# fetch_max_age_hours = 24        # web_fetch: cache younger than this, else crawl live
+#
+# Unset, Exa serves web_fetch from its cache however old (2026-09-25: a store
+# list missing two shops). 0 always crawls (2-5 s); -1 always uses the cache.
+# A failed live read falls back to the cache once and tells the model it is an
+# older copy. web_search stays on the cache: five live crawls is too slow.
 #
 # The three deep* types run multi-step research with synthesis and routinely
 # outrun timeout_seconds, which is sized for one round trip on the reply path.

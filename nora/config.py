@@ -1521,6 +1521,15 @@ class ExaBackendConfig(BaseModel):
     type: Literal[
         "instant", "fast", "auto", "deep-lite", "deep", "deep-reasoning"
     ] = "auto"
+    # How old a cached page `web_fetch` may be handed, in hours (Exa's
+    # `maxAgeHours`): older than this and Exa crawls the page live. Unset, Exa
+    # serves its cache however old, and on 2026-09-25 that was a store list
+    # missing two shops. 0 always crawls (2 to 5 s measured, and one page
+    # errored where its cache would have answered); -1 always uses the cache,
+    # the old behaviour. A failed fresh read falls back to the cache once and
+    # says so. `web_search` is not bounded: five live crawls per search is too
+    # slow for the reply path, and its note says a snippet can be out of date.
+    fetch_max_age_hours: int = Field(default=24, ge=-1, le=720)
 
 
 class SearchConfig(BaseModel):

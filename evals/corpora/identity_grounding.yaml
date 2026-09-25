@@ -14,7 +14,7 @@
 # bug — so the only correct move is to say she doesn't know which entry is them,
 # not to guess and state it as settled fact.
 #
-# The doctrine rule this exercises (nora/doctrine/conduct.md's "Honesty" section,
+# The doctrine rule this exercises (nora/doctrine/rooms/conduct.md's "Honesty" section,
 # "A verified list is not a verified match") states the principle only, with no
 # worked example and no quoted phrasing — so none of these cases can pass by
 # echoing text from the system prompt back at itself. An earlier version of both

@@ -11,8 +11,10 @@ five of the six failures it exists to catch.
 from __future__ import annotations
 
 import dataclasses
+import json
 import re
 from datetime import UTC
+from urllib.parse import quote
 
 from nora.domain.models import DeliveryStatus, TranscriptRow
 from nora.domain.standing import Standing
@@ -264,10 +266,18 @@ def test_an_oversize_tool_result_is_clipped_counted_and_marked():
     """Issue #189 steps 1 and 2. Before this, `_BLOCK_CHARS` cut a tool
     result and said nothing to anybody: not a series an operator could read,
     not a mark the grading model could read. Both now exist off one cut —
-    at `_CARRIED_CHARS` for a tool result since design/standing-compact/10 §3."""
+    at `_CARRIED_CHARS` for a tool result since design/standing-compact/10 §3.
+
+    Issue #445's fix 2: `long_result` here does not parse as JSON, so
+    `_compact_json_or_text` returns it as-is — the rendered text is
+    `long_result` itself, not `str([{"text": long_result}])`. Before #445 the
+    list-repr wrapping (`[{'text': '...'}]`) spent part of the clip's fixed
+    budget on brackets and quotes that carried no content; that overhead is
+    gone, so the same 4000-character clip now keeps more of the actual
+    result."""
     metrics = Metrics()
     long_result = "x" * (_CARRIED_CHARS + 50)
-    full_rendered = str([{"text": long_result}])  # what `_block` stringifies
+    full_rendered = long_result  # what `_block` now renders — no list wrapping
     out = _render(trace=_trace(messages=(
         {"role": "user", "content": [
             {"toolResult": {"content": [{"text": long_result}]}},
@@ -277,7 +287,123 @@ def test_an_oversize_tool_result_is_clipped_counted_and_marked():
     assert f"…[{_CLIP_MARK}]" in body
     assert full_rendered[:_CARRIED_CHARS] in body
     assert full_rendered not in body  # the tail is genuinely gone
+    assert "[{'text'" not in body  # the old Python-repr wrapping is gone
     assert metrics.get("nora_debrief_clips_total", block="tool_result") == 1
+
+
+# --- issue #445 fix 2: a tool result's own content reaches the fold, not a --
+# --- Python repr of the list Strands wraps it in ----------------------------
+
+def test_a_name_inside_a_tool_results_json_reaches_the_fold_as_plain_text():
+    """Issue #445's study, on production `web_search`/`place_info` shapes: a
+    tool result is `[{"text": "<json>"}]`, and `str()` of that list stacked
+    the list/dict repr's own quoting on top of the JSON's — a name inside it
+    reached the fold behind enough escaped punctuation that a judge scanning
+    the rendered position could not tell it was there. Parsed and re-emitted
+    compactly instead, it reaches the fold once-escaped, as plain text.
+
+    The name here is a fixture, not room text — CLAUDE.md bars quoting real
+    room content in a committed test."""
+    payload = json.dumps({
+        "status": "ok",
+        "results": [
+            {"url": "https://example.test/a", "name": "Test Chicken Pot House"},
+        ],
+    })
+    out = _render(trace=_trace(messages=(
+        {"role": "user", "content": [
+            {"toolResult": {"content": [{"text": payload}]}},
+        ]},
+    )))
+    body = _steps_body(out)
+    assert "Test Chicken Pot House" in body
+    assert "[{'text'" not in body  # no python-list-repr wrapping
+    assert '\\"' not in body  # no JSON escaping doubled by a repr on top of it
+
+
+def test_tool_result_urls_are_percent_decoded_and_a_repeat_is_dropped():
+    """Issue #445's study: the SAME page url reaches a search result twice —
+    once as its own `url` field, once more inside the fetched page's
+    `<untrusted source="...">` wrapper — and is percent-encoded when the path
+    holds non-ASCII, roughly tripling its length. Neither copy is content the
+    fold needs to carry into a position, so decoding shrinks it and the
+    second copy is dropped outright, leaving more of the clip's budget for
+    the result's actual content."""
+    url = "https://example.test/" + quote("九龍城餐廳")
+    decoded = "https://example.test/九龍城餐廳"
+    payload = json.dumps({
+        "results": [{
+            "url": url,
+            "content": f'<untrusted source="{url}">Test Chicken Pot House</untrusted>',
+        }],
+    })
+    out = _render(trace=_trace(messages=(
+        {"role": "user", "content": [
+            {"toolResult": {"content": [{"text": payload}]}},
+        ]},
+    )))
+    body = _steps_body(out)
+    assert decoded in body
+    assert body.count(decoded) == 1, "the duplicate url was not dropped"
+    assert "(same URL as above)" in body
+    assert url not in body, "the percent-encoded form is still present"
+
+
+def test_the_clip_keeps_more_content_than_before():
+    """Issue #445's study, on the shape it found: a `web_search` result
+    dominated by several near-identical entries, each carrying the SAME
+    percent-encoded url twice. Fix 2 is a SIZE claim, not just a legibility
+    one — decoding and de-duplicating the urls, and dropping the python-repr
+    wrapping, must leave more of the result's own content inside the same
+    4000-character clip, not merely prettier syntax around the same cut
+    point.
+
+    The fixture is built, not copied from the study's room text (CLAUDE.md);
+    it reproduces the shape — several duplicated, percent-encoded urls ahead
+    of one unsent option — that made a real restaurant name fall outside the
+    clip.
+    """
+    url = "https://example.test/" + quote("九龍城餐廳推介大全九龍城餐廳推介大全")
+    entry = {
+        "url": url,
+        "content": f'<untrusted source="{url}">filler filler filler</untrusted>',
+    }
+    marker = "TARGET_UNSENT_OPTION"
+    payload = json.dumps({
+        "results": [entry] * 10 + [
+            {"url": "https://example.test/marker", "name": marker},
+        ],
+    })
+
+    # Positive control: the fixture must actually reproduce the failure — the
+    # marker has to fall outside the OLD (pre-#445) rendering's clip, or this
+    # test would pass on a fixture too small to prove anything.
+    old_rendered = str([{"text": payload}])
+    assert marker not in old_rendered[:_CARRIED_CHARS], (
+        "fixture too small: make it reproduce the pre-fix failure first"
+    )
+
+    out = _render(trace=_trace(messages=(
+        {"role": "user", "content": [
+            {"toolResult": {"content": [{"text": payload}]}},
+        ]},
+    )))
+    assert marker in _steps_body(out), (
+        "fix 2 did not free enough of the clip's budget for this to survive"
+    )
+
+
+def test_the_steps_block_frames_the_transcript_row_as_all_the_room_saw():
+    """Issue #445's coordinator review: a fold that can see everything a tool
+    handed back has no way to tell, from the steps alone, which of it ever
+    reached the room — only the delivered `<transcript>` row did. Put in the
+    `<steps>` type's own description (`nora.domain.block_types` convention,
+    #314) rather than ad hoc, so it cannot ship detached from the block it
+    explains."""
+    out = _render()
+    opening = out.split("<steps ", 1)[1].split(">\n", 1)[0]
+    assert "ALL the room saw of this turn" in opening
+    assert "was never given to the room" in opening
 
 
 def test_an_oversize_tool_call_and_an_oversize_reasoning_text_are_labelled_apart():

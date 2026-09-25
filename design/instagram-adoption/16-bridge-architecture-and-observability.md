@@ -117,6 +117,9 @@ resource and keeps its operational paths.
 | story | `GET /accounts/{igid}/story` | — |
 | posts | `GET /accounts/{igid}/posts?cursor=` | OpenCLI `user`; returns `ErrUnsupported` until a mechanism exists |
 | one post | `GET /posts/{shortcode}` | — |
+| comment mentions of Nora | `GET /mentions` | — (design 19, #529) |
+| a post's comments, or one comment's replies | `GET /posts/{shortcode}/comments[?reply_to=]` | — (design 19) |
+| a reply to a summons comment (the only comment write) | `POST /posts/{shortcode}/comments` | — (design 19; off unless `INSTAGRAM_COMMENT_WRITES=on`) |
 | members | `GET /threads/{thread_fbid}/members` | — |
 | message | `POST /threads/{thread_fbid}/messages` (text or media) | `POST /send`, `POST /send-media` |
 | unsend | `DELETE /threads/{thread_fbid}/messages/{message_id}` | `POST /unsend` |
