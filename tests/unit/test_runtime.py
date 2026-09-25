@@ -32,10 +32,13 @@ from nora.app.runtime import (
     start_adapters,
     supervise_adapter,
 )
-from nora.domain.models import DeliveryStatus, TranscriptRow
+from nora.domain.models import DeliveryStatus, PersonRef, TranscriptRow
+from nora.language.note_candidates import NoteCandidateAdaptor
 from nora.obs.metrics import Metrics
+from nora.persons import Persons
 from nora.tag import Debounce
 from nora.testing import InMemoryDreamScheduleClock
+from nora.testing.note_store import InMemoryNoteStore
 from tests.objectives import shipped_objectives
 
 # The `objective` collaborator, wired the way production wires it: the REAL
@@ -1312,6 +1315,62 @@ async def test_a_retry_reads_fewer_rows_than_the_attempt_that_failed():
     assert runner.calls == [("note-candidates", "g1", 40)]
     assert metrics.get(
         "nora_dream_batch_shrunk_total", adaptor="note-candidates") == 1
+
+
+class _RenderingRunner:
+    """Runs the adaptor's `inputs` on exactly what the clock handed it, and
+    stops there: the model call is not what these tests are about."""
+
+    def __init__(self) -> None:
+        self.batches: list[tuple[TranscriptRow, ...]] = []
+        self.prompts: list[str] = []
+
+    async def run(self, *, adaptor, key, batch):
+        self.batches.append(tuple(batch))
+        self.prompts.append(await adaptor.inputs(key=key, batch=batch))
+        return _StubOutcome(status="ok")
+
+
+async def test_the_dreamer_batch_reaches_note_candidates_with_no_roster_names():
+    """Design 42 §4.3, confirmed rather than read (its S0): the clock reads
+    the batch with `record.since` and nothing projects it through
+    `Persons.name_transcript`, so `person_name` is unset on every row and
+    note-candidates renders each member by the SELF-SET profile name, while
+    every live turn renders the roster name (DEC-80).
+
+    The roster here DOES know the sender, so the name is not missing: nothing
+    asks for it. S1a moves the projection into the adaptor and flips the
+    rendered half of this test; the batch half (culture reads the same batch)
+    stays."""
+    roster = Persons(
+        by_person={"p_ada": PersonRef(person_id="p_ada", name="Ada Roster",
+                                      honcho_peer_id="p_ada")},
+        index={("signal", "+852111"): "p_ada"},
+    )
+    row = TranscriptRow(
+        id=1, sender_id="+852111", sender_name="ada_profile", ts=1_000,
+        body="dinner on the 3rd?", is_nora=False,
+        delivery_status=DeliveryStatus.SENT, raw_json=None,
+    )
+    assert roster.name_transcript([row], platform="signal")[0].person_name == "Ada Roster"
+    store = InMemoryNoteStore()
+    adaptor = NoteCandidateAdaptor(
+        notes=store, candidates=store, unit_for=lambda _: "friends",
+        label_for=lambda _: "Friends", description_for=lambda _: None,
+    )
+    runner = _RenderingRunner()
+
+    await _dream_adaptor_once(
+        adaptor=adaptor, runtime=runner, record=_FakeRecord({"g1": [row]}),
+        language=_KeyedLanguage(lag=99), metrics=Metrics(), key="g1",
+        safety_lag=0, quiet_seconds=0.0, max_age_seconds=1e9, batch_limit=80,
+    )
+
+    [batch] = runner.batches
+    assert [r.person_name for r in batch] == [None]
+    [prompt] = runner.prompts
+    assert 'from="ada_profile"' in prompt
+    assert "Ada Roster" not in prompt
 
 
 async def test_a_first_attempt_reads_the_whole_batch_and_counts_no_shrink():
