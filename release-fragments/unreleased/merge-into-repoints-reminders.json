@@ -1,0 +1,6 @@
+{
+  "type": "none",
+  "reason": "Fixes a gap in note-merge's fold: when both notes being merged held an open proactive reminder, the merge left both rows alone and both went on to fire, because uq_reminders_proactive_open_note (PR #517) keys on the raw note id a row carries, and neither row's own note id ever collided. SqlNoteStore.merge_into now re-points or cancels the loser inside the fold's own transaction. Only reachable under [notes] merge_mode = \"on\", which production does not run (it runs \"shadow\"), so nobody sees a behaviour change from this yet -- it is a prerequisite for ever flipping that setting.",
+  "details": [],
+  "limitations": []
+}

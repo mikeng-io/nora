@@ -44,6 +44,7 @@ from nora.domain.self_presence import Presence
 from nora.domain.standing import Standing
 from nora.engagement.self_presence import PresenceReader
 from nora.language.culture_render import read_culture
+from nora.obs.tracing import traced_read
 from nora.persons import Persons
 from nora.policy import Policy
 
@@ -231,7 +232,9 @@ class TranscriptInjection:
         # nowhere else, so seven of the eight saw a bare handle where master
         # had baked the description into `messages.body`.
         if self._media_join is not None:
-            transcript = await self._media_join.enrich(transcript, path="tag")
+            transcript = await traced_read(
+                "media_join", "enrich", self._media_join.enrich(transcript, path="tag"),
+            )
 
         return TagContext(
             tag_id=request.tag_id,
@@ -266,8 +269,15 @@ class TranscriptInjection:
         convo = self._policy.conversation(msg.platform, msg.conversation_id)
         if convo is None or not convo.primary_id:
             return None
+        # `traced_read` wraps the coroutine `read_culture` itself awaits
+        # (under `asyncio.wait_for`, hence this class rather than
+        # `nora.language.culture_render` — that timeout must stay outside the
+        # span, not inside it): a cancellation from the bound propagates
+        # through `span`'s own `BaseException` handler before `wait_for`
+        # converts it to the `TimeoutError` `read_culture` catches, so the
+        # span still ends ERROR on a read that timed out.
         return await read_culture(
-            self._culture_reader.head(key=convo.primary_id),
+            traced_read("culture", "head", self._culture_reader.head(key=convo.primary_id)),
             stage="tag_culture", platform=msg.platform, metrics=self._metrics,
         )
 
@@ -281,9 +291,11 @@ class TranscriptInjection:
         if self._presence_reader is None:
             return None
         try:
-            return await self._presence_reader.read(
-                platform=msg.platform, conversation_id=msg.conversation_id,
-                direct=msg.conversation_type == "dm",
+            return await traced_read(
+                "presence", "read", self._presence_reader.read(
+                    platform=msg.platform, conversation_id=msg.conversation_id,
+                    direct=msg.conversation_type == "dm",
+                ),
             )
         except Exception:
             log.exception("presence read failed; continuing with the network alone")
@@ -301,17 +313,27 @@ class TranscriptInjection:
         `context_window` fetch exactly as it always was — the failure mode
         this method has kept since `Handler._collect_context`: a thinner
         reply beats no reply (R-5-adjacent).
+
+        Both branches go through `traced_read` (issue #55's last open
+        quarter, `nora.obs.tracing`) as `store.record.recent` — the ONE
+        wrapper this class's six reads share, rather than a span written by
+        hand at each one; see that function's own docstring for why a
+        per-store-class span was ruled out.
         """
         if self._quote_window is not None:
-            return await self._quote_window.recent_for_quote(
-                conversation_id=msg.conversation_id,
-                context_window=self._context_window,
-                quote=msg.quote, platform=msg.platform, stage="context",
+            return await traced_read(
+                "record", "recent", self._quote_window.recent_for_quote(
+                    conversation_id=msg.conversation_id,
+                    context_window=self._context_window,
+                    quote=msg.quote, platform=msg.platform, stage="context",
+                ),
             )
         try:
-            return tuple(await self._audit.recent(
-                conversation_id=msg.conversation_id,
-                limit=self._context_window,
+            return tuple(await traced_read(
+                "record", "recent", self._audit.recent(
+                    conversation_id=msg.conversation_id,
+                    limit=self._context_window,
+                ),
             ))
         except Exception:
             log.exception("context collection failed; continuing with an empty transcript")
@@ -332,7 +354,9 @@ class TranscriptInjection:
         if ref is None:
             return ()
         try:
-            card = tuple(await self._memory.peer_card(peer_id=ref.honcho_peer_id))
+            card = tuple(await traced_read(
+                "memory", "peer_card", self._memory.peer_card(peer_id=ref.honcho_peer_id),
+            ))
             if not card:
                 # THE ONE SIGNAL THIS READ HAS. `peer_card` answers `[]` for a
                 # dead endpoint, a timeout, an unknown peer and a genuinely
@@ -381,11 +405,16 @@ class TranscriptInjection:
         if ref is None or not self._ai_peer or self._tagger_card_conclusions <= 0:
             return ()
         try:
-            recall = await self._memory.representation(
-                peer_id=self._ai_peer,
-                target=ref.honcho_peer_id,
-                search_query=msg.body or "",
-                max_conclusions=self._tagger_card_conclusions,
+            recall = await traced_read(
+                "memory", "representation", self._memory.representation(
+                    peer_id=self._ai_peer,
+                    target=ref.honcho_peer_id,
+                    search_query=msg.body or "",
+                    max_conclusions=self._tagger_card_conclusions,
+                ),
+                # `Recollection` has no `__len__` — `_row_count` would leave
+                # this read unmeasured even though it plainly has a count.
+                count=lambda r: len(r.conclusions),
             )
         except Exception:
             log.exception("tagger-card recall failed; continuing without it")
@@ -425,10 +454,13 @@ class TranscriptInjection:
         if not self._ai_peer or self._self_card_conclusions <= 0:
             return ()
         try:
-            recall = await self._memory.representation(
-                peer_id=self._ai_peer,
-                search_query=msg.body or "",
-                max_conclusions=self._self_card_conclusions,
+            recall = await traced_read(
+                "memory", "representation", self._memory.representation(
+                    peer_id=self._ai_peer,
+                    search_query=msg.body or "",
+                    max_conclusions=self._self_card_conclusions,
+                ),
+                count=lambda r: len(r.conclusions),
             )
         except Exception:
             log.exception("self-card recall failed; continuing without it")
@@ -469,8 +501,10 @@ class TranscriptInjection:
         if self._standing_store is None:
             return None
         try:
-            return await self._standing_store.read(
-                platform=msg.platform, conversation_id=msg.conversation_id,
+            return await traced_read(
+                "standing", "read", self._standing_store.read(
+                    platform=msg.platform, conversation_id=msg.conversation_id,
+                ),
             )
         except Exception:
             log.exception("standing read failed; continuing without it")
@@ -533,7 +567,9 @@ class TranscriptInjection:
                 "nora_errors_total", stage="notes", platform=msg.platform)
             return ()
         try:
-            standing = await self._notes_store.standing(unit=convo.unit)
+            standing = await traced_read(
+                "notes", "standing", self._notes_store.standing(unit=convo.unit),
+            )
         except Exception:
             log.exception("note-index read failed; continuing without it")
             self._metrics.inc(
