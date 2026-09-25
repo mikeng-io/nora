@@ -457,23 +457,26 @@ its own and lives in `DisclosureGuard` (`nora/agent/whereis.py`).
 | **Act** | Speaking unasked is its own per-room grant (`relevance_gate` for participation, `home_room` and `proactive` for the proactive pass), separate from being allowed to answer a tag. Every send into a room goes through one `Deliverer`; the public summons passes its text through a staging `Deliverer` and publishes it only through the instagram-bridge's guarded comment write. A turn that may decline records `silent` as a success. A message crosses rooms only within one unit, at the request of someone allowed in both, under that person's name. | R-1b (amended by DEC-212), R-49 |
 | **Disclose** | Room-scoped tools resolve names only inside the room. The circle is who may be asked about; the room is only who may be told. A live position is disclosed only into a room that is a subset of the person's Life360 circle, unless the operator grants the room `location`. Identifiers never leave in a reply; a person's name or position never leaves in a routing call. A story is read only for a Tier 0 person. A summons loads no room doctrine and no memory. | R-21, R-47, R-31/DEC-79, R-18, R-28, R-98, DEC-212 |
 
-**Not governed yet.** These are gaps, not decisions, and each is the
-operator's to close:
+**Not governed yet.** Each gap has one home, and none is an oversight:
 
 - **Grants are room-shaped.** `policy.toml` has no per-person capability, so
   «this person agrees to be looked up from rooms they are not in» cannot be
-  expressed; Instagram's Tier 1 is blocked on it
-  (`design/instagram-adoption/07-social-boundary-and-scope.md`).
+  expressed. Instagram's Tier 1 is blocked on it, and that is where the work
+  lives (`design/instagram-adoption/07-social-boundary-and-scope.md`).
 - **An observation does not carry its audience, sensitivity or consent basis
   as data.** Those are enforced at each tool's seam, one rule at a time, so a
-  new sensor is ungoverned until its own rule lands.
-- **Retention is per store, not per source.** `[store] prune_enabled` decides
-  the message record (the live deployment keeps it in full);
-  `[presence] retention_days` keeps location fixes for 720 days; media blobs
-  have no retention decision at all (`[media]`, DEC-43's open question).
+  new sensor is ungoverned until its own rule lands. Open as #562, which
+  applies only if Nora is published.
 - **The people in a room who never tagged her** are covered by the rules
   above only where a rule names them (R-31's subset, R-98's Tier 0). There is
-  no general statement of what a non-participant has agreed to.
+  no general statement of what a non-participant has agreed to. Also #562.
+- **Retention is decided for this deployment, not governed per source.**
+  `[store] prune_enabled` decides the message record (the live deployment
+  keeps it in full), `[presence] retention_days` keeps location fixes for
+  720 days, and media blobs have no retention sweep (`[media]`, DEC-43). The
+  operator closed #122 on 2026-09-08: for a private deployment run for one
+  circle, a retention policy is the wrong tool. It reopens with #562 if Nora
+  is published.
 
 ### Ports and their current implementations
 
