@@ -1617,6 +1617,76 @@ async def test_a_collaborators_own_timeout_error_is_an_ordinary_failure(caplog):
     )
 
 
+# ---------------------------------------------------------------------------
+# STORE-READ SPANS (issue #55, the last open quarter: the Dreamer's cursor
+# reads — `record.since`, every `language.*` watermark read, `media_join.
+# enrich` — had no instrumentation at all). `traced_read`
+# (`nora.obs.tracing`) is the SAME wrapper `nora.engagement.context` uses for
+# `build_prefill`'s reads; asserted here on EXPORTED spans (`exported_spans`,
+# `tests/conftest.py`) for the reason `tests/unit/test_engagement_context.py`'s
+# own #55 tests give: a test that only checked `traced_read` was CALLED would
+# stay green if a call site lost its wrapper.
+# ---------------------------------------------------------------------------
+
+
+async def test_dream_adaptor_once_emits_a_span_per_cursor_read(exported_spans):
+    """PROBE: replace any one `traced_read(...)` call in `_dream_adaptor_once`
+    with a bare `await` and its name drops out of this list."""
+    from nora.domain.media_join import MediaJoin
+    from nora.testing import FakeMediaObjectStore
+
+    rows = [_row(i) for i in range(1, 6)]
+    media_join = MediaJoin(
+        store=FakeMediaObjectStore(()), screen=lambda _t: None, metrics=Metrics(),
+    )
+
+    await _dream_adaptor_once(
+        adaptor=_StubAdaptor("note-candidates"), runtime=_RecordingRunner(),
+        record=_FakeRecord({"g1": rows}), language=_KeyedLanguage(lag=99),
+        metrics=Metrics(), key="g1", safety_lag=0, quiet_seconds=0.0,
+        max_age_seconds=1e9, batch_limit=80, media_join=media_join,
+    )
+
+    names = [s.name for s in exported_spans.get_finished_spans()]
+    assert names.count("store.language.watermark_for") == 1
+    assert names.count("store.language.watermark_is_behind_the_record") == 1
+    assert names.count("store.language.lag") == 1
+    assert names.count("store.language.seconds_since_last_message") == 1
+    assert names.count("store.language.watermark_age_seconds") == 1
+    assert names.count("store.record.since") == 1
+    assert names.count("store.media_join.enrich") == 1
+
+    (since_span,) = [s for s in exported_spans.get_finished_spans()
+                      if s.name == "store.record.since"]
+    assert since_span.attributes["nora.store.row_count"] == len(rows)
+    assert since_span.attributes["nora.store.duration_ms"] >= 0
+
+
+async def test_a_failing_cursor_read_ends_its_span_with_error_status(exported_spans):
+    """The same visibility issue #55 asks for on the tag path: a cursor read
+    that raises must not read, in the trace, the same as one that answered
+    fast.
+
+    PROBE: wrap `traced_read`'s body in a `try/except Exception: return
+    default` and the span goes back to reading OK on a store that raised.
+    """
+    record = _RaisingRecord()
+
+    with pytest.raises(TimeoutError):
+        await _dream_adaptor_once(
+            adaptor=_StubAdaptor("note-candidates"), runtime=_RecordingRunner(),
+            record=record, language=_KeyedLanguage(lag=99),
+            metrics=Metrics(), key="g1", safety_lag=0, quiet_seconds=0.0,
+            max_age_seconds=1e9, batch_limit=80,
+        )
+
+    (since_span,) = [s for s in exported_spans.get_finished_spans()
+                      if s.name == "store.record.since"]
+    assert since_span.status.status_code.name == "ERROR"
+    assert since_span.attributes["nora.outcome"] == "TimeoutError"
+    assert "nora.store.row_count" not in since_span.attributes
+
+
 class _RecordThatSwallowsCancellationAndRaises:
     """`record.since` hangs until `[dreamer] max_unit_hold_seconds` cancels
     it, then raises `RuntimeError` from a `finally` instead of letting

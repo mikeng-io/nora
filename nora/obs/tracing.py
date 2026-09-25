@@ -22,9 +22,10 @@ from __future__ import annotations
 
 import logging
 import os
-from collections.abc import Iterator, Sequence
+import time
+from collections.abc import Awaitable, Iterator, Sequence
 from contextlib import contextmanager
-from typing import Literal, get_args
+from typing import Literal, TypeVar, get_args
 
 from opentelemetry import context as otel_context
 from opentelemetry import trace
@@ -279,6 +280,74 @@ def annotate(**attributes: object) -> None:
             sp.set_attribute(key, safe)
     except Exception:  # a broken tracer must not break a turn
         log.debug("span annotation not recorded", exc_info=True)
+
+
+#: `traced_read`'s own generic parameter — whatever the wrapped read returns,
+#: unchanged, is what it hands back.
+T = TypeVar("T")
+
+
+def _row_count(value: object) -> int | None:
+    """`len(value)` when that means something as a row count, else `None` —
+    never a guessed number.
+
+    A store READ answers either a sized collection (`list[TranscriptRow]`,
+    `tuple[Note, ...]`, `[]`) — where "how many rows" is `len` — or a scalar
+    (`Standing | None`, an `int` watermark, a `bool`) — where a row count
+    would be fabricated rather than measured. `None` here means the
+    attribute is left off the span entirely (`traced_read` only sets it when
+    this returns a number), which is the same "cost only itself, never
+    invent a value" rule `_safe_attributes` already holds for an
+    unstringable one.
+    """
+    if value is None:
+        return 0
+    try:
+        return len(value)  # type: ignore[arg-type]
+    except TypeError:
+        return None
+
+
+async def traced_read(store: str, method: str, coro: Awaitable[T]) -> T:
+    """Await `coro` — ONE store read — under `store.<store>.<method>`, with
+    `nora.store.duration_ms` and (where the result is sized)
+    `nora.store.row_count` recorded on success.
+
+    Issue #55's last open quarter: `nora/infra/**` (144 files, ~25k lines) had
+    no instrumentation, and per-function spans across that surface was ruled
+    out as the fix — 144 files of `with span(...)` is both a huge diff and a
+    pattern nobody keeps applying to file #145. This is the ONE wrapper
+    instead, called at each store-port boundary that sits on a turn's
+    critical path (`nora.engagement.context.TranscriptInjection` — the reads
+    `build_prefill` renders from — and `nora.app.runtime`'s Dreamer cursor
+    reads), so an unbounded or slow read is visible without a second copy of
+    this timing-and-naming logic at every call site.
+
+    **The failure path is `span`'s, not this function's.** `coro` raising
+    propagates OUT of the `with span(...)` block before `annotate` runs, so
+    `span`'s own `BaseException` handler — record, `ERROR` status, re-raise —
+    is what a failing read ends up producing; this wrapper adds nothing on
+    that path and must not, because a second `except` here would be a second
+    place that failure-shaped behaviour could drift from `span`'s.
+
+    Attributes go through `annotate`, not `span(..., **attrs)`, because both
+    are known only on the way OUT — the duration is the read's own elapsed
+    time, and the row count is a property of what came back. `span`'s
+    attributes are read by the R-76 sampler at START, which is exactly the
+    reason `nora.trace_kind` must never be one of these: nothing here decides
+    whether the read's trace is kept, only what is inside it once it is.
+    """
+    started = time.perf_counter()
+    with span(f"store.{store}.{method}"):
+        result = await coro
+        attrs: dict[str, object] = {
+            "nora.store.duration_ms": round((time.perf_counter() - started) * 1000, 3),
+        }
+        rows = _row_count(result)
+        if rows is not None:
+            attrs["nora.store.row_count"] = rows
+        annotate(**attrs)
+        return result
 
 
 def capture_context() -> Context:
