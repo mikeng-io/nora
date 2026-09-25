@@ -40,7 +40,15 @@ typecheck:
 imports:
 	uv run lint-imports
 
-gate: lint typecheck imports test
+# `gate` checks what the BRANCH changed: ruff, mypy and lint-imports in full
+# (fast), then only the tests scripts/affected_tests.py maps from the diff
+# against origin/master. It fails closed: an unmapped or broad change runs the
+# whole suite, so it is never weaker than full-gate on a change it cannot
+# scope. `full-gate` is the whole suite, serial, unconditionally.
+gate: lint typecheck imports
+	@$(MAKE) --no-print-directory test-affected BASE=origin/master
+
+full-gate: lint typecheck imports test
 
 # --- proving a fix is guarded (scripts/mutate.py) ---------------------------
 # `gate` green says the suite passes. It does not say the suite would have
@@ -53,17 +61,18 @@ mutate:
 	uv run python scripts/mutate.py $(TABLE)
 
 # --- fast pass (for the edit-run-edit loop) ---
-# For the edit-run-edit loop only. `make gate` above is unchanged and stays
-# serial — these do not shrink or replace it.
+# For the edit-run-edit loop only. `make full-gate` above stays serial.
 
 test-fast:
 	uv run pytest -q -n 8
 
 # Selects pytest targets from what actually changed (scripts/affected_tests.py,
 # spec §3), fails closed to the full parallel suite on anything it can't map
-# with confidence.
+# with confidence. BASE is the diff base: HEAD~1 (the last commit) by
+# default, origin/master when `gate` runs it for the whole branch.
+BASE ?= HEAD~1
 test-affected:
-	@targets="$$(uv run python scripts/affected_tests.py)"; \
+	@targets="$$(uv run python scripts/affected_tests.py --base $(BASE))"; \
 	if [ "$$targets" = "ALL" ]; then \
 		echo "affected_tests: unmapped or broad change, running the full suite"; \
 		uv run pytest -q -n 8; \

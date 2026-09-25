@@ -324,12 +324,14 @@ make test-affected     # targets from the LAST COMMIT (base HEAD~1), not uncommi
 make test-fast         # the whole suite, -n 8
 ```
 
-**Before claiming anything is done, and before every commit**, run the gate. It is
-deliberately SERIAL and `make test-fast` does not replace it (see the Makefile's
-own note):
+**Before claiming a PR is done**, run `make gate` once, on the final head: ruff,
+mypy and lint-imports in full, then the tests the branch's diff against
+`origin/master` can reach (the whole suite when it cannot map the diff). While
+iterating, run the tests you touched or `make test-affected`; never a gate per
+fix round. `make full-gate` runs all four in full, serially:
 
 ```bash
-make gate              # all four, in order — or run them individually:
+make full-gate         # all four, in order — or run them individually:
 
 uv run pytest -q                                         # tests green
 uv run ruff check nora/ evals/ tests/                    # lint clean
