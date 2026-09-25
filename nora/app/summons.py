@@ -36,6 +36,19 @@ anything. `final_text` is DISCARDED: prose she wrote without `send_reply`, a
 `max_tokens` partial and the budget-exhaustion draft all end as `silent`,
 never as a post.
 
+**One follow-up when she wrote an answer and did not send it** (live
+dry-run trace 2026-09-26: `end_turn`, a complete answer as final text, no
+`send_reply`, recorded `silent`). A turn that ends on its own with nothing
+held and non-empty prose is continued ONCE, in the same conversation
+(`LiveAgentRunner.invoke`'s `follow_up`: same agent, tools, guard and
+budgets, what is left of the loop's caps, the same timeout and trace), by
+`UNSENT_REPLY_FOLLOW_UP`. Only a `send_reply` she then makes is held; the
+prose itself is never posted, and a follow-up that ends without one is
+`silent` as before; one the invocation's timeout or an error cut short is
+`silent` with `bridge_code` `follow_up_timed_out` / `follow_up_failed`.
+Every follow-up is counted in `nora_summons_follow_ups_total` and logged at
+INFO with the ledger uuid; the row records only a follow-up that died.
+
 **Telemetry carries the ledger uuid and nothing else that identifies**: never
 the comment id, an igid, a username, a shortcode or any text, in a span
 attribute or a log line.
@@ -132,6 +145,19 @@ MEDIA_ITEM_SECONDS = 150.0
 #: occasion only: a room tag keeps the registry's value, and `x_search` is
 #: unchanged.
 SUMMONS_WEB_SEARCHES = 8
+
+#: The ONE follow-up a summons turn may get (see the module docstring): the
+#: next user turn of the same conversation when she ended it on her own with
+#: prose and nothing held. It asks, it does not tell: silence stays a valid
+#: end, and what she wrote is never posted unless she sends it herself.
+UNSENT_REPLY_FOLLOW_UP = (
+    "You wrote a reply but did not send it. If you mean to post it, call "
+    "send_reply with it. To stay silent, end without sending."
+)
+
+#: `invoke.run`'s blank-trace outcomes for an invocation that died, as the
+#: follow-up outcome word they become (`nora_summons_follow_ups_total`).
+_FOLLOW_UP_FAILURES: Mapping[str, str] = {"timeout": "timed_out", "llm_error": "failed"}
 
 #: The bridge's write refusals, mapped to the ledger state they leave
 #: (design 19's guard table; `errors.go`'s refusal codes). Anything not named
@@ -404,12 +430,28 @@ class SummonsOccasion:
                 "unreadable", bridge_code="not_on_page", reached_bridge=True,
             )
 
-        held = await self._turn(summons_id, context=context, now=now)
+        held, follow_up_end = await self._turn(summons_id, context=context, now=now)
+        # `timed_out` / `failed`: the follow-up began and the invocation died
+        # before it ended, which is not her choosing silence.
+        broke = follow_up_end if follow_up_end in ("timed_out", "failed") else None
+        if follow_up_end is not None:
+            # Fixed words and the ledger uuid only (the telemetry rule above).
+            after = "replied" if held else (broke or "silent")
+            log.info("summons %s: follow_up %s", summons_id, after)
+            annotate(**{"nora.follow_up": after})
+            self._metrics.inc(
+                "nora_summons_follow_ups_total", outcome=after, mode=self._mode,
+            )
         if not held:
+            # The row's state stays `silent` (its CHECK constraint names no
+            # other end for a turn that held nothing); a follow-up that died
+            # says so in `bridge_code`, `follow_up_timed_out` / `_failed`.
+            code = f"follow_up_{broke}" if broke else None
             await self._ledger.finish(
                 summons_id, "silent", now=now, person_id=person_id, trace_id=trace_id,
+                bridge_code=code,
             )
-            return SummonsOutcome("silent", reached_bridge=True)
+            return SummonsOutcome("silent", bridge_code=code, reached_bridge=True)
         return await self._flush(
             summons_id, shortcode=card.shortcode, comment_id=found.id,
             text=held[0], person_id=person_id, trace_id=trace_id, now=now,
@@ -417,10 +459,12 @@ class SummonsOccasion:
 
     async def _turn(
         self, summons_id: UUID, *, context: SummonsContext, now: datetime,
-    ) -> tuple[str, ...]:
+    ) -> tuple[tuple[str, ...], str | None]:
         """Read the post's items, then one model turn against a staging
-        deliverer → what it HELD. Nothing it does reaches a room, and its
-        `final_text` is discarded."""
+        deliverer → `(what it HELD, how its follow-up ended)`: None for no
+        follow-up, else `ended`, `timed_out` or `failed`. Nothing it
+        does reaches a room, and its `final_text` is discarded: it only
+        decides whether the turn gets its one `UNSENT_REPLY_FOLLOW_UP`."""
         question = context.question
         doctrine = self._doctrine_store.get(applies_to=SUMMONS)
         conversation_id = f"summons:{summons_id}"
@@ -477,15 +521,39 @@ class SummonsOccasion:
             tag_id=str(summons_id), message=message, tagger=None,
             transcript=(), peer_card=(), started_at=time.perf_counter(),
         )
-        await invoke.run(
+        followed_up = False
+
+        def follow_up(final_text: str) -> str | None:
+            # ONCE, and only for prose with nothing held. A turn that CALLED
+            # `send_reply` is never continued, whatever the guards made of
+            # the call: its budget (1) is spent, and the text the guard ends
+            # such a turn with is its own, not her prose.
+            nonlocal followed_up
+            if (
+                followed_up or handle.deliverer.held_texts
+                or handle.guard.counts.get("send_reply", 0) > 0
+                or not final_text.strip()
+            ):
+                return None
+            followed_up = True
+            return UNSENT_REPLY_FOLLOW_UP
+
+        _ok, _elapsed, _stop, _text, trace = await invoke.run(
             runner=self._runner, doctrine=doctrine, tools=surface.tools,
             pre_fill=[], guard=handle.guard, tool_call_log=handle.tool_call_log,
             reasoning_watch=handle.reasoning_watch, tool_hooks=surface.hooks,
             tag_message=context_text, limits=surface.limits(self._limits),
             ctx=ctx, timeout_seconds=self._timeout_seconds,
-            metrics=self._metrics, audience=SUMMONS,
+            metrics=self._metrics, audience=SUMMONS, follow_up=follow_up,
         )
-        return handle.deliverer.held_texts
+        # How the follow-up ended, when there was one: the invocation's own
+        # failure outcome (`invoke.run`'s blank trace) if it died after the
+        # follow-up began, so a timeout there is never read as her silence.
+        follow_up_end = (
+            None if not followed_up
+            else _FOLLOW_UP_FAILURES.get(trace.outcome, "ended")
+        )
+        return handle.deliverer.held_texts, follow_up_end
 
     # ---- reading the post: what each item SHOWS, before the turn -----------
 

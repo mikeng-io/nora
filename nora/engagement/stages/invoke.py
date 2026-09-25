@@ -61,6 +61,7 @@ import asyncio
 import dataclasses
 import logging
 import time
+from collections.abc import Callable
 from typing import Any, Protocol
 
 from nora.domain.errors import PartialReplyError
@@ -89,6 +90,7 @@ class AgentRunner(Protocol):
         limits: dict[str, Any],
         ctx: TagContext,
         trace_attributes: dict[str, Any],
+        follow_up: Callable[[str], str | None] | None = None,
     ) -> tuple[str | None, str, TagTrace]: ...
 
 
@@ -119,6 +121,7 @@ async def run(
     timeout_seconds: float,
     metrics: Any,
     audience: str,
+    follow_up: Callable[[str], str | None] | None = None,
 ) -> tuple[bool, float, str | None, str, TagTrace]:
     """Return `(ok, elapsed, stop_reason, final_text, trace)`. `ok` is False on a timeout or any
     other exception, in which case the model was never allowed to reply — the
@@ -147,6 +150,11 @@ async def run(
     tier's, and it needs the failure mapped to one of §8.1's outcome strings so
     the reminder row records what actually happened. It calls `runner.invoke`
     inside its own `asyncio.wait_for` and counts its own two failures there.
+
+    `follow_up` is handed to the runner untouched (`LiveAgentRunner.invoke`
+    says what it does): one continuation of the SAME conversation, inside the
+    SAME `wait_for` below, so it can never outlive this turn's timeout. Only
+    the public summons passes one; every other caller leaves it None.
     """
     started = time.perf_counter()
     ok = True
@@ -168,6 +176,7 @@ async def run(
                     tool_hooks=tool_hooks,
                     tag_message=tag_message, limits=limits, ctx=ctx,
                     trace_attributes=build_trace_attributes(ctx, doctrine),
+                    follow_up=follow_up,
                 ),
                 timeout=timeout_seconds,
             )
