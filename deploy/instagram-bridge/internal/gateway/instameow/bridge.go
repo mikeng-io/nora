@@ -10,10 +10,12 @@ package instameow
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -529,6 +531,7 @@ func (b *Bridge) emitDelta(d *slidetypes.Delta) {
 	own := b.ownFBID()
 	switch data := d.Data.(type) {
 	case *slidetypes.NewMessageEvent:
+		b.logSummonsCard(data.Message)
 		if ev := normalizeMessage(room, data.Message, own); ev != nil {
 			b.sink.Emit(ev)
 		}
@@ -805,4 +808,32 @@ func (b *Bridge) selfSnapshot() domain.Self {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 	return b.self
+}
+
+// logSummonsCard is a TEMPORARY diagnostic (design 19, 2026-09-26). A post or
+// comment mentioning this account reaches it as a DM-thread XMA card with no
+// target_url and no target_id, so nothing known names the post. For a card
+// whose text carries "@<own username>" ONLY, it logs the card and the message
+// in full, once, so the field that does name the post can be found. It is the
+// operator's own test content; remove this function once the field is known.
+func (b *Bridge) logSummonsCard(msg *slidetypes.Message) {
+	if msg == nil {
+		return
+	}
+	content, ok := msg.Content.Content.(*slidetypes.MessageContentXMA)
+	if !ok || content == nil || content.XMA == nil {
+		return
+	}
+	self := strings.ToLower(b.selfSnapshot().Username)
+	if self == "" {
+		return
+	}
+	x := content.XMA
+	text := strings.ToLower(x.SubtitleText + " " + x.CaptionBodyText + " " + x.TitleText)
+	if !strings.Contains(text, "@"+self) {
+		return
+	}
+	card, _ := json.Marshal(x)
+	whole, _ := json.Marshal(msg)
+	slog.Warn("summons card diagnostic (temporary)", "xma", string(card), "message", string(whole))
 }
