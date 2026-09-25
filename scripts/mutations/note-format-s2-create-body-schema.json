@@ -72,8 +72,8 @@
   {
     "name": "the refusal counter's help text names every rule",
     "file": "nora/obs/metric_specs.py",
-    "old": "(a malformed or impossible date, or the wrong weekday)",
-    "new": "(a malformed or impossible date)",
+    "old": "\"## Owed owner the pass did not show as a sender, or Nora), bad_date \"",
+    "new": "\"## Owed owner the pass did not show as a sender, or Nora), \"",
     "target": "tests/unit/test_note_candidates.py::test_body_refusal_rules_match_the_metric_help_text"
   },
   {
