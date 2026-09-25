@@ -471,6 +471,7 @@ SHAPES = {
   <m from n>""",
     "debrief.fold": """
 <standing_prior description fields written>
+<standing_working_set_prior description fields>
 <turn at description fields outcome>
   <what_happened description>
   <transcript description fields>
@@ -480,6 +481,7 @@ SHAPES = {
     <step role>""",
     "debrief.rollup": """
 <standing_prior description fields written>
+<standing_working_set_prior description fields>
 <conversation at description fields>
   <stretch description fields>
     <m at from>""",

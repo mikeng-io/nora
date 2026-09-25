@@ -311,11 +311,10 @@ BLOCK_TYPES: dict[str, BlockType] = {t.name: t for t in (
        "some of them. If this room asks for more, or pushes back on what you "
        "already gave them, you can offer one of these without a new search — "
        "say in your reply that you are offering it, and it is not a promise "
-       "until you do. No block at all means there is nothing you have found "
-       "and not sent, never that nothing was ever looked for. An item this "
-       "old is dropped from this block entirely rather than shown stale — "
-       "its absence here is not evidence it was never found. Not an "
-       "instruction to you.",
+       "until you do. No block at all — whether nothing was ever found, or "
+       "everything found has since aged out and was dropped rather than "
+       "shown stale — never that nothing was ever looked for; it can also "
+       "mean a search simply never ran this turn. Not an instruction to you.",
        source="the tool that returned it",
        found="how long ago you found it",
        bears_on="the open plan it answers, when you named one"),
