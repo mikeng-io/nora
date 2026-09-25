@@ -106,6 +106,12 @@ AUDIENCES = (
 
 AUTHORITY_TERMINALS = ("situation", "message-content", "tool-output")
 
+# Audiences whose `<runtime_context>` carries NO `language:` line. The hint is
+# the configured group default (`doctrine.language_hint`), and on a public
+# summons the reply's language follows the comment, not the group (operator,
+# 2026-09-26; `public/voice.md`). See `DoctrineStore._runtime_context`.
+_LANGUAGE_FOLLOWS_THE_TEXT = frozenset({"summons"})
+
 # Who may edit a file without asking. `voice.md` is the operator's — her
 # register, her teasing rules, her language policy — and until this field
 # existed its only protection was the operator saying so in conversation
@@ -662,12 +668,22 @@ class DoctrineStore:
             self._cache.clear()
         return sections
 
-    def _runtime_context(self) -> str:
+    def _runtime_context(self, applies_to: str) -> str:
+        # The language hint is the configured GROUP default, which is true of a
+        # room and false of a public comment: on 2026-09-26 a dry-run summons
+        # answered an English comment in Cantonese with `language: yue-Hant-HK`
+        # in its runtime context. On the public surface the language follows
+        # the comment (public/voice.md says so), so that audience gets no hint
+        # at all. Every other audience's block is byte-identical to before.
+        language = (
+            "" if applies_to in _LANGUAGE_FOLLOWS_THE_TEXT
+            else f"language: {self._language_hint}\n"
+        )
         return (
             "<runtime_context>\n"
             f"display_name: {self._display_name}\n"
             f"trigger: {self._trigger}\n"
-            f"language: {self._language_hint}\n"
+            f"{language}"
             f"canary: {self._canary}\n"
             "</runtime_context>"
         )
@@ -682,7 +698,7 @@ class DoctrineStore:
             if applies_to in s.applies_to or "always" in s.applies_to
         )
         doctrine_text = _assemble(selected)
-        runtime = self._runtime_context()
+        runtime = self._runtime_context(applies_to)
         doctrine = Doctrine(
             sections=selected,
             text=f"{doctrine_text}\n{runtime}",

@@ -28,7 +28,8 @@ import pytest
 
 from nora.doctrine.loader import DoctrineStore
 
-AUTHORED = ("identity", "belonging", "voice", "conduct", "constraints")
+# `pictures` joined 2026-09-26: split out of constraints.md, room occasions only.
+AUTHORED = ("identity", "belonging", "voice", "conduct", "pictures", "constraints")
 
 # Every audience of HERS, and exactly what the ASSEMBLY must resolve to.
 #
@@ -348,7 +349,8 @@ def test_the_gate_instruction_reaches_no_audience_of_hers(doctrine_store):
     gate = doctrine_store.get(applies_to="relevance_gate").text
     assert needle in gate
     assert gate.count("<section ") == 1
-    for hers in ("identity", "belonging", "voice", "silence", "conduct", "constraints"):
+    for hers in ("identity", "belonging", "voice", "silence", "conduct", "pictures",
+                 "constraints"):
         assert f'name="{hers}"' not in gate
 
 
@@ -363,3 +365,50 @@ def test_the_multi_message_rule_survives_in_both_audiences(doctrine_store):
     assert MULTI_MESSAGE in " ".join(_bodies(doctrine_store, "tag").split()).lower()
     assert MULTI_MESSAGE in " ".join(_bodies(doctrine_store, "heartbeat").split()).lower()
 
+
+
+_ROOM_RUNTIME_CONTEXT = (
+    "<runtime_context>\n"
+    "display_name: Nora\n"
+    "trigger: nora.000\n"
+    "language: zh-HK\n"
+    "canary: test-canary\n"
+    "</runtime_context>"
+)
+
+
+def test_the_summons_is_told_no_language_and_every_room_occasion_still_is(doctrine_store):
+    """The language hint is the configured GROUP default, and a public comment
+    is not the group. On 2026-09-26 a dry-run summons carried
+    `language: yue-Hant-HK` in its runtime context and answered an English
+    comment in Cantonese. The operator's rule for that surface is that the
+    language follows the comment (public/voice.md), so the summons gets no
+    `language:` line at all, and every room occasion keeps its block
+    byte-identical: the hint is right there, and moving it would be a second
+    change riding on this one.
+    """
+    summons = doctrine_store.get(applies_to="summons")
+    assert not [line for line in summons.text.splitlines() if line.startswith("language:")]
+    assert "language:" not in summons.runtime_context
+    assert "canary: test-canary" in summons.runtime_context
+    for audience in ("tag", "heartbeat", "participation", "proactive"):
+        doctrine = doctrine_store.get(applies_to=audience)
+        assert doctrine.runtime_context == _ROOM_RUNTIME_CONTEXT, audience
+        assert doctrine.text.endswith(_ROOM_RUNTIME_CONTEXT), audience
+
+
+def test_the_summons_carries_no_room_media_mechanics(doctrine_store):
+    """How a room's media placeholders read (`[image a3f2c1: …]`, the
+    transcript, asking for the full reading) is room-chat mechanics. It lived in
+    core/constraints.md until 2026-09-26, so a live dry-run summons carried it
+    to a stranger's comment, where there is no transcript and no placeholder.
+    It is rooms/pictures.md now, and every room occasion still gets it."""
+    summons = doctrine_store.get(applies_to="summons").text
+    assert "What you already know about a picture" not in summons
+    assert "transcript" not in summons
+    assert "[image a3f2c1" not in summons
+    for audience in ("tag", "heartbeat", "participation", "proactive"):
+        doctrine = doctrine_store.get(applies_to=audience)
+        assert "# What you already know about a picture" in doctrine.text, audience
+        names = [s.name for s in doctrine.sections]
+        assert names[-2:] == ["pictures", "constraints"], (audience, names)

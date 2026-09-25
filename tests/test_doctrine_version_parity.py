@@ -297,7 +297,15 @@ PINNED: dict[str, tuple[int, str]] = {
     # moved the "quick and usually free" claim so that it read onto the UNREAD
     # lookup, which is the operation the file prices separately as always a real
     # look and a real wait. "Quiet is not a question" is back.
-    "constraints": (11, "b7269c4e154a7e06039340f9a7d3a017a121265a8e256cf3977ecedc8db9a49f"),
+    # v12 (2026-09-26): "# What you already know about a picture" moved out,
+    # verbatim, to rooms/pictures.md. It is room-chat mechanics (placeholders,
+    # the transcript, the full reading) and core/ also reaches the public
+    # summons, where a live dry-run trace carried it. Nothing else moved.
+    "constraints": (12, "b5dece41a71da212b0d9e1c47899e769c0efb83f6876fa54da0458e638a8a4ac"),
+    # v1 (2026-09-26): split out of constraints.md v11, see above. Body is
+    # byte-identical to the section it was; loaded for the four room occasions
+    # only, immediately before constraints (order 38).
+    "pictures": (1, "63ccbb4e9b38b54de7952fe455d1c9daf699e52376bd8f77732820b356b5a394"),
     # The public summons files (design/instagram-adoption/19), v1 (2026-09-25):
     # drafted for the operator to rewrite, loaded only on `applies_to="summons"`.
     # identity and constraints gained `summons` in `applies_to` and the public
@@ -311,7 +319,11 @@ PINNED: dict[str, tuple[int, str]] = {
     # v3 (2026-09-26): each claim the post makes gets its own check, and "found
     # nothing" is only said of something actually looked for. A live dry-run
     # summons called one named company unverifiable without ever searching it.
-    "public-conduct": (3, "80136f149db6e5d3c9235ddc88668f978065b4be13ca29dd8a51a435b12183e5"),
+    # v4 (2026-09-26): a citation is a full link a stranger can open or just
+    # the site's name, never a shortened one (a live reply cited a truncated
+    # stock-photo link); and "# What the post shows": the post's media was read
+    # before her turn, and an item marked not read has not been seen.
+    "public-conduct": (4, "6e9cc775db93a9427e7f0e158e1911b2fa0d56ca9d147eb5971db31dec229390"),
     "public-constraints": (
         1, "88b47c480e3948332c8281cacb0efbdc9094176d16f1704593df8eaa8b735dfa",
     ),

@@ -5,7 +5,7 @@ order: 30
 applies_to: [tag, heartbeat, participation, proactive]
 version: 32
 kind: conduct
-authority_above: [constraints, identity, belonging, voice]
+authority_above: [constraints, pictures, identity, belonging, voice]
 authority_below: [situation, message-content, tool-output]
 not_here: >-
   No tool catalogue. What she can reach for is described by the tool schemas.

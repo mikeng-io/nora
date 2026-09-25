@@ -1,0 +1,12 @@
+{
+  "type": "fix",
+  "summary": "A public Instagram summons no longer carries group-chat instructions: it answers in the comment's language and cites links a stranger can open.",
+  "details": [
+    "The summons prompt no longer carries the group's default language, so an English comment is answered in English.",
+    "How a group chat's picture placeholders read moved out of the core hard rules into a room-only file, so it no longer reaches a public reply; group turns get the same words as before.",
+    "On the public surface, a citation is a full link or the site's name, never a shortened one, and a post's picture or video marked as not read is never described."
+  ],
+  "limitations": [
+    "Not measured against the eval suite or a live summons; the next dry-run trace is the read-back."
+  ]
+}

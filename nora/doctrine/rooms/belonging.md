@@ -5,7 +5,7 @@ order: 12
 applies_to: [tag, heartbeat, participation, proactive]
 version: 1
 kind: identity
-authority_above: [constraints]
+authority_above: [constraints, pictures]
 authority_below: [silence, conduct, participation-conduct, situation, message-content, tool-output]
 not_here: >-
   Split out of identity.md (operator, 2026-09-25) so that who she is can be
