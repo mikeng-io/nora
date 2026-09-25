@@ -115,11 +115,12 @@ async def test_the_input_decides_the_read(social, kwargs, sent):
         # `what` must fit the link.
         {"link": "https://www.linkedin.com/in/williamhgates/", "what": "company"},
         {"link": "https://www.linkedin.com/company/nvidia/", "what": "posts"},
-        # Pages that name nothing, and other networks.
+        # Pages that name nothing. A link to another network is no longer
+        # here: it is a registry redirect (`nothing_found`), not a bad input
+        # (design/social-per-network/30-link-owner-registry.md, "Migration"
+        # step 3) — see test_another_network_s_link_names_the_tool_that_reads_it.
         {"link": "https://www.linkedin.com/jobs/view/1/"},
         {"link": "https://evil.example/in/williamhgates/"},
-        {"link": "https://x.com/nasa"},
-        {"link": "https://www.instagram.com/p/SynthPost01/"},
         # One post cannot be read from its link.
         {"link": "https://www.linkedin.com/posts/williamhgates_ai-activity-1-a/"},
         # A leading dash would reach OpenCLI as a flag.
@@ -141,7 +142,9 @@ async def test_a_bad_input_is_unavailable_and_nothing_is_sent(social, kwargs):
 )
 async def test_another_network_s_link_names_the_tool_that_reads_it(social, link, tool):
     out = await _tools(social)["linkedin_read"](link=link)
+    assert out["status"] == "nothing_found"
     assert tool in out["note"]
+    assert social.calls == []
 
 
 async def test_a_post_link_says_it_cannot_be_read_and_offers_the_author(social):
