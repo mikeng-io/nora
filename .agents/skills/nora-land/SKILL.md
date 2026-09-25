@@ -77,8 +77,9 @@ uv run pytest -q tests/architecture/test_doc_references_resolve.py tests/test_re
 ```
 
 `design/09-decision-index.md` changed: add `tests/architecture/test_decision_index_tests_exist.py`
-and `tests/architecture/test_decision_index_ids_are_unique.py`. Run `make gate`
-once before the merge anyway (2026-09-22: a docs-only merge reddened master).
+and `tests/architecture/test_decision_index_ids_are_unique.py`. This IS the gate
+for a docs-only diff, merge included; no `make gate` (operator, 2026-09-26). The
+2026-09-22 red master was a doc reference this command now checks.
 
 ## 4. Commit
 
