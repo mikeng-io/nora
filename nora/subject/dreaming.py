@@ -14,17 +14,20 @@ everything between the batch and the outcome, which is the part a case is about.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from collections.abc import Sequence
+from dataclasses import dataclass, replace
 from typing import Any
 
 import sqlalchemy as sa
 
 from nora.domain.blocks import speaker_name
 from nora.domain.media_join import MediaJoin
+from nora.domain.models import TranscriptRow
 from nora.domain.note_body import cited_ids_in
 from nora.infra.sql import create_sql_engine
 from nora.infra.sql.notes import SqlNoteStore
 from nora.infra.sql.schema import NOTE_CANDIDATE, REMINDERS
+from nora.persons import Persons
 
 from .obtain import Subject
 
@@ -131,6 +134,66 @@ class Pass:
     #: (plus each row's own `due_at_ms`) to what a `proactive_decide` case
     #: actually needs graded (issue #158 rework, both rounds).
     written_reminders: tuple[tuple[str | None, int], ...] = ()
+
+
+def with_roster_senders(
+    batch: Sequence[TranscriptRow], *, persons: Persons, platform: str,
+) -> list[TranscriptRow]:
+    """The batch with each member's row carrying a sender id the roster
+    resolves, as production's rows do (design 42 S1a).
+
+    The sandbox MINTS sender ids (`nora.subject.sandbox`, «Sender ids are
+    MINTED, never copied») and copies the real `person_id`. Production's
+    rows carry the member's real account id, and note-candidates now names
+    its batch through `Persons.name_transcript`, which keys on
+    `(platform, sender_id)`, never on `person_id`. Against minted ids that
+    projection resolves nobody, so an eval run would render the self-set
+    profile name on BOTH arms and measure the old input. This puts back, per
+    row, one id the roster maps the row's own `person_id` to — the same
+    `platform_ids` pick `nora.subject.knowledge._sender_for` makes for a
+    line a case delivers — so the adaptor's projection sees what it sees
+    live. In memory only: no adaptor renders a sender id (R-18), and nothing
+    is written back to the sandbox.
+
+    Replaced too: a minted id that happens to resolve to SOMEONE ELSE (the
+    sandbox's fixed `+852111` for a sender named like its default), so a row
+    is never named as another person.
+
+    Left alone: Nora's rows, a row with no `person_id` (unresolved at ingest;
+    production resolves at render time against today's roster, so such a row
+    may read differently live), a row whose id already resolves to its own
+    person, and a person with no id on this platform.
+    """
+    named: list[TranscriptRow] = []
+    for row in batch:
+        resolved = persons.resolve(platform, row.sender_id)
+        if (
+            not row.is_nora and row.person_id
+            and (resolved is None or resolved.person_id != row.person_id)
+        ):
+            ids = persons.platform_ids(platform, row.person_id)
+            if ids:
+                row = replace(row, sender_id=sorted(ids)[0])
+        named.append(row)
+    return named
+
+
+def shown_speakers(
+    batch: Sequence[TranscriptRow], *, persons: Persons, platform: str,
+) -> tuple[tuple[int, str], ...]:
+    """Each row's id and the name note-candidates SHOWED for its sender.
+
+    The adaptor names its batch through the roster (design 42 S1a), so the
+    `from=` it rendered is `name_transcript`'s projection of the batch it was
+    handed, which on this path already carries the roster's sender ids
+    (`with_roster_senders`). Without the projection here, `body_names` and
+    `body_schema` would compare the model's roster names against profile
+    names it was never shown.
+    """
+    return tuple(
+        (int(r.id), speaker_name(r.person_name, r.sender_name))
+        for r in persons.name_transcript(batch, platform=platform)
+    )
 
 
 def _declined(subject: Subject) -> str:
@@ -308,7 +371,7 @@ async def dream(
     # `memory.workspace_id`, which is Honcho's per-deployment workspace and in
     # production is not the unit of any room.
     workspace = subject.unit
-    _, conversation_id = room or subject.room
+    platform, conversation_id = room or subject.room
     key = workspace if chosen.key_kind == "unit" else conversation_id
     before = await _notebook(subject, workspace)
     head_citations = await _head_citations(subject, workspace)
@@ -346,6 +409,7 @@ async def dream(
             after_id=(newest[0].id - 1) if newest else 0,
             limit=limit,
         )
+        batch = with_roster_senders(batch, persons=subject.deps.persons, platform=platform)
     # Joined ONCE here rather than inside the adaptor, which is where
     # `_run_adaptor` does it and for the reason issue #116 gives: every
     # scope-keyed adaptor reads this one batch. Without it an image-only message
@@ -386,10 +450,7 @@ async def dream(
         staged=staged,
         written_reminders=written_reminders,
         bodies=bodies,
-        speakers=tuple(
-            (int(r.id), speaker_name(r.person_name, r.sender_name))
-            for r in batch
-        ),
+        speakers=shown_speakers(batch, persons=subject.deps.persons, platform=platform),
         roster=tuple(
             (ref.name, person_id)
             for person_id, ref in sorted(subject.deps.persons.by_person.items())

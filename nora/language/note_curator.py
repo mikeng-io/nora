@@ -710,10 +710,29 @@ class NoteCuratorAdaptor:
         # while `[culture] enabled = false`, and then neither renders.
         culture: CultureReader | None = None,
         room_for: Callable[[str, str], tuple[str, str | None] | None] | None = None,
+        # THE ROOM'S PLATFORM and A NAME RESOLVER (issue #200), keyed the
+        # same way `room_for` is — `(established_in, unit)`, since a note's
+        # evidence read is by `Note.established_in`, whichever id form the
+        # note was born under, never a bare `primary_id`. The same pair
+        # `NoteCandidateAdaptor` and `CultureAdaptor` take: `_gather_evidence`
+        # builds `evidence` from `record.recent`, which never called
+        # `Persons.name_transcript`, so a mapped sender's evidence row was
+        # attributed to their self-set, spoofable `sender_name` instead of
+        # the operator's canonical name for them (`_render_evidence`'s
+        # `who=speaker_name(...)`). `None` (unwired, or a note whose room maps
+        # to no platform) skips resolution: `speaker_name` still never
+        # renders a raw id either way, so an unwired composition only loses
+        # the canonical name, never gains a leak.
+        platform_for: Callable[[str, str], str | None] | None = None,
+        resolve_names: (
+            Callable[[Sequence[TranscriptRow], str], Sequence[TranscriptRow]] | None
+        ) = None,
     ) -> None:
         self._notes = notes
         self._culture = culture
         self._room_for = room_for
+        self._platform_for = platform_for
+        self._resolve_names = resolve_names
         self._record = record
         # The shared media join (issue #116). The curator renders these rows as
         # EVIDENCE for a model deciding whether a note still stands, so a photo
@@ -843,6 +862,39 @@ class NoteCuratorAdaptor:
         truncated = len(rows) >= self._evidence_limit
         since = [row for row in rows if row.ts > note.created_at]
         evidence = tuple(row for row in since if not row.is_nora)
+        # RESOLVE NAMES (issue #200), the same projection `NoteCandidateAdaptor`
+        # and `CultureAdaptor` apply before their own batches render. Nothing
+        # else in `evidence` changes — only `person_name`, which
+        # `_render_evidence`'s `who=speaker_name(...)` reads — so this is
+        # applied AFTER the `is_nora`/`since` filters (their own identity is
+        # unaffected either way) and does not touch `since` or the own-sends
+        # split below, which never reads a sender's name at all
+        # (`_render_own_sends` renders a fixed `who="you"`).
+        # A RAISING RESOLVER DEGRADES, IT NEVER SKIPS THE NOTE (#546 review).
+        # `resolve_names` is `Persons.name_transcript`, dict lookups only, so
+        # this should never fire — but the `state`/`unavailable` branch above
+        # is for the RECORD READ this note's retirement is grounded on; a
+        # name a row is merely attributed BY is not one of `_Evidence`'s
+        # inputs, and folding a resolver fault into `unavailable` would leave
+        # the note standing over a failure that has nothing to do with
+        # whether it should retire. Caught here, at the one call site.
+        if self._resolve_names is not None and self._platform_for is not None:
+            platform = self._platform_for(note.established_in, note.unit)
+            if platform is not None:
+                try:
+                    evidence = tuple(self._resolve_names(evidence, platform))
+                except Exception:
+                    log.exception(
+                        "note curator: resolve_names raised for note %s "
+                        "(conversation %s, platform %s); rendering its "
+                        "evidence on the pre-resolution speaker_name floor "
+                        "instead", note.id, note.established_in, platform,
+                    )
+                    if self._metrics is not None:
+                        self._metrics.inc(
+                            "nora_dream_name_resolution_failed_total",
+                            adaptor=self.name,
+                        )
         # ISSUE #199's NARROW HALF: her own DELIVERED rows, kept apart from
         # `evidence` rather than folded into it. See `_own_sends` for the
         # boundary and `_render_own_sends` for what the model is told they

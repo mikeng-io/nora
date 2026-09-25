@@ -1331,17 +1331,13 @@ class _RenderingRunner:
         return _StubOutcome(status="ok")
 
 
-async def test_the_dreamer_batch_reaches_note_candidates_with_no_roster_names():
-    """Design 42 §4.3, confirmed rather than read (its S0): the clock reads
-    the batch with `record.since` and nothing projects it through
-    `Persons.name_transcript`, so `person_name` is unset on every row and
-    note-candidates renders each member by the SELF-SET profile name, while
-    every live turn renders the roster name (DEC-80).
-
-    The roster here DOES know the sender, so the name is not missing: nothing
-    asks for it. S1a moves the projection into the adaptor and flips the
-    rendered half of this test; the batch half (culture reads the same batch)
-    stays."""
+async def test_the_dreamer_batch_stays_unprojected_and_note_candidates_names_the_roster():
+    """Design 42 §4.3 (S0's confirming test, flipped once #544 landed the
+    projection). The clock reads the batch with `record.since` and projects
+    nothing, so the rows reach every scope-keyed adaptor with `person_name`
+    unset, and the culture fold's input is what it was. The projection is
+    note-candidates' own: its prompt names the member by the roster name
+    every live turn reads (DEC-80), not the self-set profile name."""
     roster = Persons(
         by_person={"p_ada": PersonRef(person_id="p_ada", name="Ada Roster",
                                       honcho_peer_id="p_ada")},
@@ -1357,6 +1353,9 @@ async def test_the_dreamer_batch_reaches_note_candidates_with_no_roster_names():
     adaptor = NoteCandidateAdaptor(
         notes=store, candidates=store, unit_for=lambda _: "friends",
         label_for=lambda _: "Friends", description_for=lambda _: None,
+        # Wired as composition wires it (#544): the roster's own projection.
+        platform_for=lambda _: "signal",
+        resolve_names=lambda rows, platform: roster.name_transcript(rows, platform=platform),
     )
     runner = _RenderingRunner()
 
@@ -1369,8 +1368,8 @@ async def test_the_dreamer_batch_reaches_note_candidates_with_no_roster_names():
     [batch] = runner.batches
     assert [r.person_name for r in batch] == [None]
     [prompt] = runner.prompts
-    assert 'from="ada_profile"' in prompt
-    assert "Ada Roster" not in prompt
+    assert 'from="Ada Roster"' in prompt
+    assert "ada_profile" not in prompt
 
 
 async def test_a_first_attempt_reads_the_whole_batch_and_counts_no_shrink():
