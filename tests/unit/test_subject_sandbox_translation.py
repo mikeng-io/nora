@@ -33,7 +33,7 @@ from nora.domain.notes import Note, NoteRevision
 from nora.domain.reminders import Reminder, ReminderState
 from nora.domain.standing import Standing
 from nora.infra.sql.snapshot import Snapshot
-from nora.subject.sandbox import as_knowledge
+from nora.subject.sandbox import _pending_reminder_titles, as_knowledge
 
 #: The historical instant the snapshot reconstructs — and, under one path,
 #: the instant the case is driven at.
@@ -325,3 +325,24 @@ def test_a_proactive_row_keeps_its_kind_and_payload() -> None:
 
 def test_a_snapshot_with_no_reminders_seeds_none() -> None:
     assert as_knowledge(_shot()).reminders == ()
+
+
+# --- issue #158: which notes NORA already has a reminder pending on ---------
+
+
+def test_pending_reminder_titles_reads_noras_own_rows_that_name_a_note() -> None:
+    """Backs `evals.backbone._refuse_a_remind_case_already_pending`: only
+    NORA's own outstanding reminders that name a note count — a member's own
+    reminder, or a row with no note, is not a pending decision about one."""
+    titles = _pending_reminder_titles((
+        _reminder(requester_person_id="nora", kind="proactive",
+                   payload={"note_title": "Dinner plan"}),
+        _reminder(requester_person_id="tyler_cortez", kind="proactive",
+                   payload={"note_title": "F1 update"}),
+        _reminder(requester_person_id="nora", kind="reminder", payload=None),
+    ))
+    assert titles == frozenset({"Dinner plan"})
+
+
+def test_pending_reminder_titles_is_empty_with_nothing_pending() -> None:
+    assert _pending_reminder_titles(()) == frozenset()

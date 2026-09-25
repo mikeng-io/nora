@@ -38,16 +38,67 @@
 # morning whose notebook shape the corpus describes and from which no
 # reminder was written.
 #
+# --- d01-d03 RE-ANCHORED (2026-09-25, issue #158) ---------------------------
+#
+# `<decisions>` (rendered from `Snapshot.reminders`, every row OUTSTANDING at
+# `before_ms` — `nora/language/proactive.py:_decision_line`) IS reconstructed
+# in the sandbox; that was never in question. What was wrong is that d01, d02
+# and d03 sat on the 07:00-that-morning convention from a day production had
+# ALREADY decided the very reminder each case expects — so the decide turn's
+# own `<decisions>` block showed that reminder as `pending`, and a turn that
+# declines to double-book it ("one reminder per thing") correctly returned
+# `none` against a case expecting `remind`. Offline, no model
+# (`nora.infra.sql.snapshot.snapshot` read against the deployment's clone):
+#
+#   | case | old anchor (07:00) | pending on the expected note there | production decided it at |
+#   |---|---|---|---|
+#   | d01 | 2026-09-11 07:00 | 1 | 2026-09-09 17:18 |
+#   | d02 | 2026-09-18 07:00 | 1 | 2026-09-18 01:03 |
+#   | d03 | 2026-09-13 07:00 | 2 | 2026-09-12 23:01 and 2026-09-13 01:01 |
+#
+# d01 and d02 are RE-ANCHORED to an instant before that decision (verified
+# offline: 0 pending on the expected note, the note itself open, the same
+# `due_between` still fits — the window is when the reminder should fire, not
+# when the deciding pass runs). d03 is PARKED instead: at every instant before
+# its earliest decision the note's own body is still the pre-repair revision
+# (operator `note-repair-228`, written 2026-09-14) — a mismatch this same
+# study surfaced, not something a later anchor can fix, since the repair
+# postdates both of production's own decisions about this note (see d03's
+# `parked:` below).
+#
+# The old 07:00 moments are KEPT as their own `expect: none` cases — the
+# double-booking guard: a reminder is already pending on the exact note, and
+# the correct answer is silence, not a second row.
+#
 # WHAT HAS NO ANCHOR, parked (P-A) rather than faked:
 #
-#   * cases whose evidence lives in the DECISION LOG (d04, d10) — that tier
-#     is not extracted into the sandbox, so the pass could not see it;
+#   * cases whose evidence is a FIRED reminder's resolved outcome (d04, d10)
+#     — `Snapshot.reminders`/`_reminder_seed` carries only what was OUTSTAND-
+#     ING at `before_ms` (`nora/subject/sandbox.py`); a reminder that already
+#     fired and resolved (sent/silent/cancelled) before the anchor is not
+#     seeded, so the pass has no memory of it. (PENDING reminders on a note
+#     ARE carried — that is exactly what d01-d03 above turn on — so this is
+#     narrower than "the decision log is not extracted", which the two cases
+#     said before this correction.)
+#   * a real instant that would carry d03's premise once note-repair-228's
+#     content has aged into a fresh "owed today" morning with nothing already
+#     pending on it (d03) — see above and its own `parked:`;
 #   * cases that need a room STANDING saying something specific (d05, d09) —
 #     `standing_revision` begins 2026-09-20 in one room and every revision it
 #     holds describes an open decision, never a settled one;
 #   * a dateless note (d06) — every real note carries an anchor date;
 #   * a note three weeks out (d07) — the furthest any real note stood ahead
 #     of its date was eight days.
+#
+# `--reasons` AND THIS CORPUS. The grader's own reason is structural
+# ("did not meet expect='remind'"); the decide turn's own rationale for
+# raising or declining is deliberately NOT carried anywhere the harness can
+# read. `ProactiveAdaptor._record` (`nora/language/proactive.py`) writes the
+# verdict and the note id to the decision log and states, in its own
+# docstring, that "the model's own `why` is NOT written" — it stays in the
+# Langfuse trace only. So `--reasons` on `proactive_decide` prints the
+# grader's structural reason and nothing more; there is no adaptor-level
+# reason to surface offline, and this corpus does not pretend otherwise.
 #
 # Timestamps in `due_between` carry +08:00 (Asia/Hong_Kong).
 
@@ -56,15 +107,17 @@ cases:
     entry: dreamer
     category: proactive
     expect: remind
-    # REAL: the `ridgeline` unit on the morning before its one open note's
-    # date — an event the next day with dinner and company still open. The
-    # deployment's own pass reminded on the day itself (its turn fired in
-    # this home room at 17:00 that afternoon); the rater's threshold is the
-    # afternoon or evening BEFORE, which this instant asks about.
+    # REAL: the `ridgeline` unit two mornings before its one open note's date,
+    # and BEFORE production's own decision (09-09 17:18) about this exact
+    # reminder — so nothing is pending on the note yet (verified offline: 0
+    # pending rows on "AI Hackathon dinner plan" at this instant, note open
+    # since 09-08). `due_between` is unchanged: it brackets when the
+    # reminder should fire, which is the same question at this earlier
+    # vantage point.
     snapshot:
       platform: discord
       conversation_id: 100000000000000203/100000000000000204
-      before_ms: 1789081200000
+      before_ms: 1788908400000
     metadata:
       expect_original: remind
       rows:
@@ -74,18 +127,38 @@ cases:
         - '2026-09-11T23:00:00+08:00'
       workspace: ridgeline
 
+  - name: d01_already_booked_dinner_note
+    entry: dreamer
+    category: proactive
+    expect: none
+    # The DOUBLE-BOOKING GUARD: the old anchor for this note. Production had
+    # already decided a reminder about "AI Hackathon dinner plan" (09-09
+    # 17:18, due 09-11 18:00) by this instant, so it is PENDING in
+    # `<decisions>` (verified offline: 1 pending row on this note). The
+    # correct answer is silence — "one reminder per thing" — not a second
+    # row on the same note.
+    snapshot:
+      platform: discord
+      conversation_id: 100000000000000203/100000000000000204
+      before_ms: 1789081200000
+    metadata:
+      workspace: ridgeline
+
   - name: d02_anchored_today_open_corner
     entry: dreamer
     category: proactive
     expect: remind
-    # REAL: the `friends` unit on the morning of a handover the notebook had
-    # anchored to that day with where and when still open. The deployment's
-    # own pass reminded, and its turn fired in this home room at 10:30 and
-    # was answered — so the window opens before eleven.
+    # REAL: the `friends` unit the evening before production's own decision
+    # (09-18 01:03) about this exact reminder, and after the note's OWN
+    # earlier reminder (decided 09-17 15:01, due 09-17 20:00) had already
+    # resolved — so nothing is pending on the note at this instant (verified
+    # offline: 0 pending rows on "拎抽包畀 Yat Ho"), and the handover is
+    # still open (note written 09-17 14:11, no time or place agreed).
+    # `due_between` is unchanged.
     snapshot:
       platform: signal
       conversation_id: MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08=
-      before_ms: 1789686000000
+      before_ms: 1789653600000
     metadata:
       expect_original: remind
       rows:
@@ -95,18 +168,26 @@ cases:
         - '2026-09-18T19:30:00+08:00'
       workspace: friends
 
+  - name: d02_already_booked_open_corner
+    entry: dreamer
+    category: proactive
+    expect: none
+    # The DOUBLE-BOOKING GUARD: the old anchor for this note. Production had
+    # already decided a reminder about "拎抽包畀 Yat Ho" (09-18 01:03, due
+    # 09-18 10:30) by this instant, so it is PENDING in `<decisions>`
+    # (verified offline: 1 pending row on this note). Silence, not a second
+    # row.
+    snapshot:
+      platform: signal
+      conversation_id: MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08=
+      before_ms: 1789686000000
+    metadata:
+      workspace: friends
+
   - name: d03_follow_up_owed_today
     entry: dreamer
     category: proactive
     expect: remind
-    # REAL: the `friends` unit two mornings after one member floated joining
-    # a race together and nobody answered — the notebook's note says exactly
-    # that. The deployment's own pass reminded; its turn fired in this home
-    # room at 10:00 and the member replied within a minute.
-    snapshot:
-      platform: signal
-      conversation_id: MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08=
-      before_ms: 1789254000000
     metadata:
       expect_original: remind
       rows:
@@ -114,6 +195,47 @@ cases:
         due_between:
         - '2026-09-13T09:00:00+08:00'
         - '2026-09-13T14:00:00+08:00'
+      workspace: friends
+    parked:
+      reason: P-A
+      why: |
+        No real instant carries this case's premise. At its original anchor
+        (09-13 07:00) two reminders about this note are already pending
+        (production decided them at 09-12 23:01 and 09-13 01:01) — the
+        double-booking guard below covers that instant instead. Moved
+        earlier, to before either decision, the note's own body is STILL the
+        pre-repair revision (written 09-11 19:33): its TITLE names the
+        marathon signup, but its BODY is about an unrelated board-game
+        exchange. The operator's repair that put the marathon content in the
+        body (`note-repair-228`) was not written until 09-14 00:13 — after
+        both of production's decisions about this note. There is no real
+        moment where the note carries "someone floated joining, nobody has
+        answered, and today is the day to follow up" AND has nothing already
+        pending on it: before the repair the body is wrong, and this case's
+        premise is what the wrong body stood in for when the corpus first
+        named it.
+      returns_when: |
+        The note's post-repair body ages into a fresh "owed today" morning
+        with no reminder already pending on it — or another unit's note
+        holds the same shape from the start.
+
+  - name: d03_already_booked_follow_up
+    entry: dreamer
+    category: proactive
+    expect: none
+    # The DOUBLE-BOOKING GUARD: the old anchor for this note. Production had
+    # already decided TWO reminders about "Blake 拉人跑馬拉松，邊個落水未定"
+    # (09-12 23:01 and 09-13 01:01, both due 09-13 10:00) by this instant, so
+    # both are PENDING in `<decisions>` (verified offline: 2 pending rows on
+    # this note). Silence, not a third row. (The note's body at this instant
+    # is the same pre-repair revision `d03_follow_up_owed_today` is parked
+    # over; that does not affect what this case measures, which is whether an
+    # already-pending reminder blocks a second one.)
+    snapshot:
+      platform: signal
+      conversation_id: MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08=
+      before_ms: 1789254000000
+    metadata:
       workspace: friends
 
   - name: d04_already_raised_four_times
@@ -137,15 +259,20 @@ cases:
     parked:
       reason: P-A
       why: |
-        The case turns on the DECISION LOG — what Nora decided on earlier
-        mornings and how it went. The sandbox reconstructs transcript,
-        standing, culture and notes; the decision log is not extracted, so
-        a pass here would judge a note with no memory of having raised it,
-        which is a different case. (The moment itself is real: on 2026-09-18
-        the deployment's Nora raised one meet-up six times.)
+        The case turns on TWO reminders that already FIRED and resolved
+        (sent, then silent) on earlier mornings. `Snapshot.reminders` /
+        `_reminder_seed` (`nora/subject/sandbox.py`) carries only what was
+        OUTSTANDING at `before_ms` — a resolved reminder drops out, so the
+        pass would have no memory of having raised this four times, which is
+        a different case. (PENDING reminders on a note ARE carried into the
+        sandbox and rendered in `<decisions>` — see d01-d03 above; this case
+        needs FIRED ones, which is narrower and still missing.) The moment
+        itself is real: on 2026-09-18 the deployment's Nora raised one
+        meet-up six times.
       returns_when: |
-        `nora.infra.sql.snapshot` extracts the decision-log tier as of
-        `before_ms`, so the pass sees its own earlier verdicts.
+        `nora.infra.sql.snapshot` extracts resolved (fired) reminder history
+        as of `before_ms`, not only outstanding rows, so the pass sees its
+        own earlier verdicts and outcomes.
 
   - name: d05_standing_says_settled
     entry: dreamer
@@ -252,13 +379,18 @@ cases:
     parked:
       reason: P-A
       why: |
-        As d04: the case turns on the decision log recording yesterday's
-        reminder and its outcome, which the sandbox does not reconstruct.
-        (Real instances exist — the deployment's turn of 2026-09-13 10:00 was
-        answered within a minute.)
+        As d04: the case turns on a reminder that already FIRED and resolved
+        (sent) yesterday. `Snapshot.reminders`/`_reminder_seed`
+        (`nora/subject/sandbox.py`) carries only what was OUTSTANDING at
+        `before_ms`, so a resolved reminder from before the anchor is not
+        seeded and the pass has no memory of it landing. (PENDING reminders
+        ARE carried — d01-d03 above turn on exactly that — so what is
+        missing here is narrower: the resolved outcome of one that already
+        fired.) Real instances exist — the deployment's turn of 2026-09-13
+        10:00 was answered within a minute.
       returns_when: |
-        `nora.infra.sql.snapshot` extracts the decision-log tier as of
-        `before_ms`.
+        `nora.infra.sql.snapshot` extracts resolved (fired) reminder history
+        as of `before_ms`, not only outstanding rows.
 
   - name: d11_note_written_in_the_rooms_own_handles
     entry: dreamer

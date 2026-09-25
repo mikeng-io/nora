@@ -239,6 +239,25 @@ def as_knowledge(shot: Snapshot) -> Knowledge:
     )
 
 
+def _pending_reminder_titles(reminders: Sequence[Reminder]) -> frozenset[str]:
+    """The note titles NORA's own outstanding reminders name, off
+    `Snapshot.reminders` — everything there was pending at the instant
+    (`_reminder_seed`'s own docstring), so no `state`/`due_at` check is
+    needed here, only whose request it was and what note it names.
+
+    Pure and DB-free: `sandbox_from_snapshot` calls it on a `Snapshot`
+    already read, and a fixture can call it directly (`nora/subject/tests`).
+    """
+    titles: set[str] = set()
+    for reminder in reminders:
+        if reminder.requester_person_id != "nora":
+            continue
+        title = (reminder.payload or {}).get("note_title")
+        if title:
+            titles.add(str(title))
+    return frozenset(titles)
+
+
 def _reminder_seed(reminder: Reminder, *, before_ms: int) -> ReminderSeed:
     """One outstanding reminder as the seed that reproduces it.
 
@@ -307,6 +326,16 @@ class Sandboxed:
     #: #458, and a judge told to fail any unlinked attribution was handed a
     #: source that linked nobody to anything.
     transcript: tuple[str, ...]
+    #: The note titles NORA already has a reminder OUTSTANDING for, at this
+    #: instant — read off `Snapshot.reminders` (`_reminder_seed`'s own
+    #: docstring: everything there was pending at `before_ms`), before it is
+    #: seeded into anything. `evals.backbone` refuses a `remind` case whose
+    #: own expected note is in here: the decide turn's `<decisions>` would
+    #: show the row pending, and a correct decline ("one reminder per thing")
+    #: would measure the double-booking guard rather than the case itself
+    #: (issue #158). Defaulted so a fake `Sandboxed` built before this field
+    #: existed still constructs.
+    pending_reminder_titles: frozenset[str] = frozenset()
 
 
 #: Where one `<m>` element ends and the next begins in `render_transcript`'s
@@ -447,4 +476,5 @@ async def sandbox_from_snapshot(
             display_name=subject.cfg.doctrine.display_name,
             now=subject.deps.clock(),
         ),
+        pending_reminder_titles=_pending_reminder_titles(shot.reminders),
     )

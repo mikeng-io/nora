@@ -960,6 +960,44 @@ def _check_the_corpus_assertions(
     return dataclasses.replace(outcome, checks_failed=tuple(failed))
 
 
+def _refuse_a_remind_case_already_pending(case: Case, pending: frozenset[str]) -> None:
+    """A `remind` case must have no reminder already pending on the note it
+    expects a fresh one about, AT ITS OWN ANCHOR INSTANT.
+
+    Whether a reminder is pending is dynamic, DB-held state
+    (`design/evaluation/11-the-sandbox-rebuild.md` §1.3), not anything a
+    corpus declares — so this cannot be a static pytest against the YAML.
+    `pending` is `Sandboxed.pending_reminder_titles`
+    (`nora.subject.sandbox._pending_reminder_titles`), read off the room the
+    same way `sandbox_from_snapshot` reads everything else, at the case's own
+    anchor and before any model call — `_drive_draw` calls this right after
+    seeding and before `port.drive`, and it REFUSES the case (raises) rather
+    than letting it run.
+
+    Measured live, issue #158: a case anchored where its own expected
+    reminder is ALREADY pending does not measure the decision it is named
+    for. The decide turn's own `<decisions>` block shows the pending row, a
+    turn that declines to double-book it ("one reminder per thing") is
+    correct to do so, and a case expecting `remind` there measures the
+    double-booking guard instead of itself.
+    """
+    md = case.metadata or {}
+    if md.get("expect") != "remind":
+        return
+    wanted = {str(row["note"]) for row in md.get("rows") or () if row.get("note")}
+    clash = sorted(wanted & pending)
+    if clash:
+        raise ValueError(
+            f"case {case.name!r} expects a fresh `remind` about {clash}, but "
+            "its own anchor instant already has a reminder PENDING on that "
+            "note — the decide turn will correctly decline ('one reminder "
+            "per thing'), so this case would measure the double-booking "
+            "guard, not itself. Re-anchor it before the pending row was "
+            "created, or change its expectation to `none` "
+            "(design/evaluation/11-the-sandbox-rebuild.md §1.3, issue #158)."
+        )
+
+
 async def _drive(case: Case, spec: Spec) -> dict[str, Any]:
     """One DRAW, in a Honcho workspace of its own. Raises; `nora_task` catches.
 
@@ -1101,6 +1139,14 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
                 before_ms=before_ms,
                 leave_room_for_arrival=port.delivers_input,
             )
+            # Issue #158: a `remind` case must have no reminder already
+            # pending on its own expected note at this instant.
+            # `seeded.pending_reminder_titles` is read off the same snapshot
+            # `sandbox_from_snapshot` just seeded from — no second query —
+            # and this runs BEFORE `port.drive` below, so a clash is refused
+            # rather than spending a model call on measuring the
+            # double-booking guard instead of the case itself.
+            _refuse_a_remind_case_already_pending(case, seeded.pending_reminder_titles)
             exporter = _prefill_capture()
             exporter.clear()
             nora_case = _as_nora_case(case, spec, trigger=subject.cfg.engagement.trigger.text)

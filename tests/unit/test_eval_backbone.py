@@ -1076,3 +1076,35 @@ def test_meets_grader_a_judge_review_is_error_not_a_verdict():
 def test_meets_grader_an_error_is_error_regardless_of_expect():
     out = meets_grader.evaluate(_meets_data(expect="remind", written=1, error="boom"))[0]
     assert out.label == ERROR
+
+
+def test_a_remind_case_with_no_pending_clash_is_not_refused():
+    case = Case(
+        name="d01_dinner_note_the_day_before", input="", expected_output="",
+        metadata={"expect": "remind", "rows": [{"note": "Dinner plan"}]},
+    )
+    backbone._refuse_a_remind_case_already_pending(case, frozenset())
+    backbone._refuse_a_remind_case_already_pending(case, frozenset({"Some other note"}))
+
+
+def test_a_remind_case_already_pending_on_its_own_note_is_refused():
+    """THE BUG (issue #158): d01/d02/d03 sat at an instant where production
+    had already decided the exact reminder each case expects, so the decide
+    turn's own `<decisions>` showed it pending and a correct decline
+    ("one reminder per thing") read as a FAIL against `expect: remind`."""
+    case = Case(
+        name="d01_dinner_note_the_day_before", input="", expected_output="",
+        metadata={"expect": "remind", "rows": [{"note": "Dinner plan"}]},
+    )
+    with pytest.raises(ValueError, match="already has a reminder PENDING"):
+        backbone._refuse_a_remind_case_already_pending(case, frozenset({"Dinner plan"}))
+
+
+def test_a_none_case_is_never_refused_by_the_pending_check():
+    """The guard cases this fix added (`d0N_already_booked_*`) EXPECT the
+    pending row to be there; the check only binds on `expect: remind`."""
+    case = Case(
+        name="d01_already_booked_dinner_note", input="", expected_output="",
+        metadata={"expect": "none"},
+    )
+    backbone._refuse_a_remind_case_already_pending(case, frozenset({"Dinner plan"}))
