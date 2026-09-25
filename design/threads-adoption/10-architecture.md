@@ -110,13 +110,19 @@ need to know about it.
 
 ## Who may summon
 
-The bridge serves every mention. `nora` filters. The occasion checks the
-summoner's handle against `[social.threads] summoners`. A summons from
-anyone else is recorded as `ignored_summoner` and answered by nothing. No
-reply is safer than a refusal posted in public to a stranger. The list takes
-Threads handles, not persons. A `threads` account kind in `identity.toml` is
-optional, not required: a summoner's identity gives the occasion nothing it
-may use, because it holds no private context anyway (decision 1).
+The bridge serves every mention. `nora` filters. The occasion resolves the
+summoner through `Persons` against `[[persons.<id>.threads]]` blocks, by
+the mention author's Threads user id. The field that carries it is
+confirmed on the first real mention in phase 1: the author's `username` is
+always present, but it is not an identity. A summoner who resolves to no
+person is recorded as `ignored_summoner` and gets no answer. Posting a
+refusal in public to a stranger is worse than saying nothing.
+
+Resolving the summoner to a person does **not** open that person's private
+context to the occasion. The summons still runs with no memory and no room
+(decision 1), because the audience is public even when the summoner is a
+friend. Being in `identity.toml` decides who can make her speak, not what
+she may say.
 
 ## Comprehend: the `SummonsContext`
 
@@ -154,7 +160,7 @@ from #435: shared content is read when it is asked about.
 invoke stage, and much smaller:
 
 1. claim the summons in the ledger, or return if already claimed,
-2. check the summoner against `summoners`,
+2. resolve the summoner to a person in `identity.toml`, or stop,
 3. build `SummonsContext`,
 4. build the surface: `ToolScope(platform="threads", grant=PUBLIC_GRANT)`,
 5. build the prompt: doctrine base + `public.md` + the context block,

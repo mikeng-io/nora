@@ -99,7 +99,7 @@ because the operator asked for the summons.
 | the bridge's write allowlist has exactly one route, pinned against its router | same |
 | `PUBLIC_GRANT` holds no tool that is not `read_only` other than `send_reply` and `generate_image`, and no room-scoped, memory or persons tool | new: tests/unit/test_threads_grant.py |
 | a summons occasion constructs no `RoomView`, writes no Honcho message, no audit row and no decision-log row | new: tests/unit/test_summons_occasion.py, with fakes that fail on any call |
-| a summons from a handle outside `summoners` reaches no model call | same |
+| a summons whose author id resolves to no `[[persons.<id>.threads]]` block reaches no model call, and one matched only by handle is not a match | same |
 | the deliverer refuses text over 500 characters after `strip_markdown` with a note, and never truncates | new: tests/unit/test_threads_deliverer.py |
 | a second `send_reply` in one summons is refused; the flush publishes once | same |
 | the same summons polled twice runs the occasion once | new: tests/unit/test_summons_poller.py |
@@ -134,16 +134,17 @@ prompt back and check that the arms differ.
 
 1. **Unblock the token** (phase 0). Only the operator can open the Meta App
    Dashboard.
-2. **Add testers.** Every friend who should be able to summon her is
-   invited as a Threads tester and accepts in the Threads app. Until App
-   Review, nobody else's mention reaches the app.
+2. **Add testers.** Every friend in `identity.toml` who should be able to
+   summon her is invited as a Threads tester and accepts in the Threads app.
+   Until App Review, nobody else's mention reaches the app.
 3. **Meta's image fetcher on `drop`** (phase 4). The operator's rule is that
    `drop` rejects every bot. Serving Threads images needs one exemption: the
    raw media route admits Meta's fetcher, for image types only, until a
    15-minute expiry. The alternative is a separate public bucket outside
    `drop`, which costs one more public surface.
-4. **`summoners = "anyone"`**, after App Review, if ever. That is when
-   strangers can make Nora speak in public under her name.
+4. **One `[[persons.<id>.threads]]` block per friend who may summon her**,
+   each keyed on their Threads user id. The ids are read from their first
+   mention in phase 1, so a friend tags her once before they are admitted.
 
 ## What would reopen it
 

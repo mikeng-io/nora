@@ -96,12 +96,17 @@ side, "read the Threads post a room member pasted", is still a
    nothing in this stack receives inbound traffic from the internet today
    (10 §"Ingress"). Webhooks become worth building only when polling latency
    is the measured complaint.
-6. **Who may summon is a list, at first.** `[social.threads] summoners`
-   holds the Threads handles allowed to summon her, and a summons from anyone
-   else is recorded and ignored. This matches what Meta allows anyway before
-   App Review: only accounts added as Threads testers produce mentions the
-   app can see. `summoners = "anyone"` is the switch for after Advanced
-   Access, and it is the operator's call.
+6. **Only people in `identity.toml` can summon her** (operator,
+   2026-09-25: «in prod, I expect noraexample only exposed to the people in
+   identity.toml»). A summoner is recognised by a `[[persons.<id>.threads]]`
+   account block, matched on the Threads **user id** and never on the
+   handle, because a handle can be changed and an id cannot (design/10 §1.3,
+   the rule every other platform already follows). A summons from anyone
+   else is recorded as `ignored_summoner` and gets no reply at all, not even
+   a refusal. There is no `"anyone"` switch. Opening her to strangers would
+   be a new decision, not a config value. Before App Review Meta only
+   delivers mentions from accounts added as Threads testers anyway, so the
+   testers and the identity.toml accounts are the same set of people.
 7. **A public-surface doctrine.** A new `public.md`, loaded only for this
    occasion. It covers audience (strangers, permanently), register, claims
    with sources, a 500-character limit, and refusing what she cannot ground
