@@ -6,7 +6,7 @@
 # so it does not have to be retyped. Edit the docs first if the underlying
 # command changes; this file follows them, not the other way round.
 
-.PHONY: test test-fast test-affected lint typecheck imports gate mutate \
+.PHONY: test test-fast test-affected lint typecheck imports gate full-gate mutate \
         setup hooks schema-parity heads decision-numbers \
         eval-participation eval-note-candidates eval-adversarial-corpora eval-gate \
         release-check release-notes release \
@@ -26,7 +26,10 @@ hooks:
 	git config core.hooksPath .githooks
 	@echo "core.hooksPath -> $$(git config core.hooksPath) (repo-level: one run per clone covers all worktrees; a hook fires only where the branch carries .githooks/)"
 
-# --- gate (AGENTS.md: run before claiming anything is done, and before every commit) ---
+# --- gate (AGENTS.md: `make gate` once per PR, on the final head, before
+# claiming it done; `make test-affected` or the tests you touched while
+# iterating — never a gate per fix round; `make full-gate` for the whole
+# serial suite unconditionally) ---
 
 test:
 	uv run pytest -q
@@ -42,11 +45,14 @@ imports:
 
 # `gate` checks what the BRANCH changed: ruff, mypy and lint-imports in full
 # (fast), then only the tests scripts/affected_tests.py maps from the diff
-# against origin/master. It fails closed: an unmapped or broad change runs the
-# whole suite, so it is never weaker than full-gate on a change it cannot
-# scope. `full-gate` is the whole suite, serial, unconditionally.
+# against origin/master, INCLUDING uncommitted edits and untracked files (the
+# gate must judge the tree as it stands, not just the tree at HEAD — an
+# uncommitted fix is still untested if the gate skips it). It fails closed: an
+# unmapped or broad change runs the whole suite, so it is never weaker than
+# full-gate on a change it cannot scope. `full-gate` is the whole suite,
+# serial, unconditionally.
 gate: lint typecheck imports
-	@$(MAKE) --no-print-directory test-affected BASE=origin/master
+	@$(MAKE) --no-print-directory test-affected BASE=origin/master INCLUDE_WORKTREE=--include-worktree
 
 full-gate: lint typecheck imports test
 
@@ -70,9 +76,13 @@ test-fast:
 # spec §3), fails closed to the full parallel suite on anything it can't map
 # with confidence. BASE is the diff base: HEAD~1 (the last commit) by
 # default, origin/master when `gate` runs it for the whole branch.
+# INCLUDE_WORKTREE is empty by default (loop: committed history only, at
+# HEAD~1, unchanged); `gate` sets it to `--include-worktree` so uncommitted
+# edits and untracked files are judged too.
 BASE ?= HEAD~1
+INCLUDE_WORKTREE ?=
 test-affected:
-	@targets="$$(uv run python scripts/affected_tests.py --base $(BASE))"; \
+	@targets="$$(uv run python scripts/affected_tests.py --base $(BASE) $(INCLUDE_WORKTREE))"; \
 	if [ "$$targets" = "ALL" ]; then \
 		echo "affected_tests: unmapped or broad change, running the full suite"; \
 		uv run pytest -q -n 8; \
