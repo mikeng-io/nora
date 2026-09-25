@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"instagram-bridge/internal/domain"
 )
@@ -89,11 +90,18 @@ type Service struct {
 	session   Session
 	messaging Messaging
 	social    Social
+
+	// The comment use cases (comments.go), set by WithComments. Nil comments
+	// or ledger: the read is unsupported and every write is refused.
+	comments Comments
+	ledger   Ledger
+	policy   CommentPolicy
+	now      func() time.Time
 }
 
 // New wires the use cases to their ports.
 func New(session Session, messaging Messaging, social Social) *Service {
-	return &Service{session: session, messaging: messaging, social: social}
+	return &Service{session: session, messaging: messaging, social: social, now: time.Now}
 }
 
 // Health is the session as /health reports it. It never fails: a
@@ -378,9 +386,18 @@ func (s *Service) ReadPost(ctx context.Context, code domain.Shortcode) (domain.P
 // ReadMentions reads comment-mentions from Instagram's activity/notification
 // feed (`GET /mentions`). Session gate first, like every other
 // Instagram-facing use case.
+//
+// Every mention it serves is recorded in the summons ledger (comments.go's
+// recordServed): a reply may only ever go under a comment this read served
+// (design 19). Recording never fails the read.
 func (s *Service) ReadMentions(ctx context.Context) ([]domain.CommentMention, map[int]int, error) {
 	if _, err := s.ready(); err != nil {
 		return nil, nil, err
 	}
-	return s.social.Mentions(ctx)
+	mentions, skipped, err := s.social.Mentions(ctx)
+	if err != nil {
+		return mentions, skipped, err
+	}
+	s.recordServed(ctx, mentions)
+	return mentions, skipped, nil
 }
