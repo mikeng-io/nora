@@ -480,6 +480,20 @@ class CultureAdaptor:
         # the room's calendar, not the process's. UTC by default so a bare
         # construction still renders a true day.
         timezone: _dt.tzinfo = _dt.UTC,
+        # THE ROOM'S PLATFORM and A NAME RESOLVER (issue #200), the same
+        # pair `NoteCandidateAdaptor` takes and for the same reason: this
+        # fold builds its own `<room_messages>` block from the raw batch
+        # (`_render_batch`) and never called `Persons.name_transcript`, so a
+        # mapped sender's line was attributed to their self-set, spoofable
+        # `sender_name` instead of the operator's canonical name for them.
+        # `None` (unwired, or the room maps to no platform) skips
+        # resolution: `_render_batch`'s `speaker_name` already never renders
+        # a raw id either way, so an unwired composition only loses the
+        # canonical name, never gains a leak.
+        platform_for: Callable[[str], str | None] | None = None,
+        resolve_names: (
+            Callable[[Sequence[TranscriptRow], str], Sequence[TranscriptRow]] | None
+        ) = None,
     ) -> None:
         self._culture = culture
         self._standing = standing
@@ -490,6 +504,8 @@ class CultureAdaptor:
         self._description_for = description_for
         self._metrics = metrics
         self._tz = timezone
+        self._platform_for = platform_for
+        self._resolve_names = resolve_names
 
     def _inc(self, outcome: str) -> None:
         if outcome not in CULTURE_OUTCOMES:
@@ -550,6 +566,19 @@ class CultureAdaptor:
         """
         if not batch:
             return ""
+        # RESOLVE NAMES (issue #200), the same projection `NoteCandidateAdaptor`
+        # applies before its own batch renders. Every row this fold gets from
+        # `record.since` carries `person_name=None` — nothing on this path
+        # ever called `Persons.name_transcript` — so without this a mapped
+        # sender's line in `<room_messages>` was attributed to their
+        # self-set, spoofable `sender_name` instead of the operator's name
+        # for them. `_render_batch`'s `speaker_name` still never renders a
+        # raw id either way; this is what makes the MAPPED case correct
+        # rather than merely non-leaking.
+        if self._resolve_names is not None:
+            platform = self._platform_for(key) if self._platform_for is not None else None
+            if platform is not None:
+                batch = tuple(self._resolve_names(batch, platform))
         parts: list[str] = [self._room_block(key)]
         previous = await self._culture.head(key=key)
         if previous is not None:

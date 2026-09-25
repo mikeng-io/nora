@@ -163,7 +163,7 @@ def _curator(
     store, metrics=None, today=TODAY, *, record=None, now_ms=NOW,
     max_revisits_per_tick=10, evidence_messages_per_note=40,
     discharge_enabled=False, events=None, conclusions=None,
-    ai_peer="nora",
+    ai_peer="nora", platform_for=None, resolve_names=None,
 ):
     return NoteCuratorAdaptor(
         notes=store, record=record if record is not None else FakeRecordStore(),
@@ -171,6 +171,7 @@ def _curator(
         max_revisits_per_tick=max_revisits_per_tick,
         evidence_messages_per_note=evidence_messages_per_note,
         metrics=metrics or Metrics(), clock=lambda: now_ms,
+        platform_for=platform_for, resolve_names=resolve_names,
         discharge_enabled=discharge_enabled, events=events,
         conclusions=conclusions, ai_peer=ai_peer,
     )
@@ -1875,6 +1876,79 @@ async def test_the_due_notes_evidence_is_rendered_oldest_first():
         < rendered.index('<m n="2"')
         < rendered.index('<m n="3"')
     )
+
+
+async def test_a_mapped_senders_evidence_row_renders_the_canonical_name():
+    """#200 follow-up: `_gather_evidence` built `evidence` straight off
+    `record.recent`, which never called `Persons.name_transcript` — so a
+    mapped sender's row was attributed by `_render_evidence`'s
+    `who=speaker_name(r.person_name, r.sender_name)` to their self-set,
+    spoofable platform profile name (`_row`'s own `sender_name="not-miles"`
+    here) rather than the operator's canonical name for them
+    (`identity.toml`'s own shape). `platform_for`/`resolve_names` wired, as
+    composition now wires them, resolve it to the canonical name before the
+    row ever renders."""
+    from dataclasses import replace
+
+    store = InMemoryNoteStore()
+    await _seed(store, title="Dinner", anchor=None, entities=("ada",),
+                revisit_at=NOW - 1)
+    record = FakeRecordStore()
+    row = _row(1, "booked Yardbird for the 9th", ts=NOW + 1)
+    row["sender_name"] = "not-miles"
+    record.rows.append(row)
+
+    def platform_for(established_in: str, unit: str) -> str | None:
+        return "signal" if (established_in, unit) == ("conv-1", WS) else None
+
+    def resolve_names(rows, platform):
+        assert platform == "signal"
+        return tuple(
+            replace(r, person_name="Miles") if r.sender_id == "+852111" else r
+            for r in rows
+        )
+
+    rendered = await _curator(
+        store, record=record,
+        platform_for=platform_for, resolve_names=resolve_names,
+    ).inputs(key=WS, batch=())
+
+    assert 'from="Miles"' in rendered
+    assert "not-miles" not in rendered
+
+
+async def test_an_unmapped_senders_evidence_row_never_renders_a_raw_id():
+    """The other half of the same seam: a sender the roster does not resolve
+    (`resolve_names` here returns rows unchanged, `Persons.name_transcript`'s
+    own behaviour for an unmapped id) keeps rendering by
+    `speaker_name`'s existing floor — the profile name if it has one, else
+    the `"unknown"` placeholder — and NEVER the raw `sender_id`
+    (R-18, DEC-80). Also proves an unresolved `platform_for` (a note whose
+    room maps to no platform) is the same no-op: resolution is skipped
+    entirely rather than raising."""
+    store = InMemoryNoteStore()
+    await _seed(store, title="Dinner", anchor=None, entities=("ada",),
+                revisit_at=NOW - 1)
+    record = FakeRecordStore()
+    row = _row(1, "anyone free Friday?", ts=NOW + 1)
+    row["sender_id"] = "+852999"
+    row["sender_name"] = None
+    row["person_id"] = None
+    record.rows.append(row)
+
+    def platform_for(established_in: str, unit: str) -> str | None:
+        return None  # this note's room resolves to no platform
+
+    def resolve_names(rows, platform):
+        raise AssertionError("never called when platform_for resolves to None")
+
+    rendered = await _curator(
+        store, record=record,
+        platform_for=platform_for, resolve_names=resolve_names,
+    ).inputs(key=WS, batch=())
+
+    assert "+852999" not in rendered
+    assert 'from="unknown"' in rendered
 
 
 async def test_a_sibling_unit_cannot_wipe_what_this_one_asked():

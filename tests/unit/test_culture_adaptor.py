@@ -136,6 +136,8 @@ def _adaptor(
     description: str | None = "the games channel",
     unit: str | None = "friends",
     standing_key: tuple[str, str] | None = ("discord", "g1"),
+    platform_for=None,
+    resolve_names=None,
 ) -> CultureAdaptor:
     return CultureAdaptor(
         culture=store, standing=standing, notes=notes, metrics=metrics,
@@ -143,6 +145,8 @@ def _adaptor(
         standing_key_for=lambda _k: standing_key,
         label_for=lambda _k: label,
         description_for=lambda _k: description,
+        platform_for=platform_for,
+        resolve_names=resolve_names,
     )
 
 
@@ -175,6 +179,57 @@ async def test_an_empty_batch_renders_NOTHING_so_the_runtime_does_not_fire():
     `inputs` render anything". A silent room not firing is DEC-185, and it is
     correct: nothing here retires, so there is nothing to refresh against."""
     assert await _adaptor(_Store()).inputs(key=KEY, batch=()) == ""
+
+
+async def test_a_mapped_senders_batch_line_renders_the_canonical_name():
+    """#200 follow-up: `_render_batch` reads `r.person_name` and this fold's
+    own batch, straight off `record.since`, never had it filled — nothing on
+    this path ever called `Persons.name_transcript` — so a mapped sender's
+    line was attributed to their self-set, spoofable `sender_name` instead of
+    the operator's canonical name for them. `_row` presets `person_name`
+    already, which is exactly the shape that hid this defect in
+    `note_candidates` before #544 (`tests/offline_eval_support.py`'s own
+    fix); this row leaves it unset, as a live Dreamer row does, and relies on
+    `platform_for`/`resolve_names` — wired the way composition now wires
+    them — to fill it before the batch renders."""
+    row = TranscriptRow(
+        id=1, sender_id="u1", sender_name="not-miles", person_name=None,
+        ts=T0, body="dinner Saturday?", is_nora=False,
+        delivery_status=DeliveryStatus.SENT, raw_json="{}",
+    )
+
+    def resolve_names(rows, platform):
+        assert platform == "discord"
+        return tuple(
+            replace(r, person_name="Miles") if r.sender_id == "u1" else r
+            for r in rows
+        )
+
+    out = await _adaptor(
+        _Store(), platform_for=lambda _k: "discord", resolve_names=resolve_names,
+    ).inputs(key=KEY, batch=[row])
+
+    assert 'from="Miles"' in out
+    assert "not-miles" not in out
+
+
+async def test_an_unwired_resolver_still_never_renders_a_raw_id():
+    """The other half: `platform_for`/`resolve_names` both default `None`
+    (the shape every pre-#200 construction of this adaptor already has), and
+    resolution is skipped entirely rather than raising — `_render_batch`'s
+    existing `speaker_name` floor (the profile name, or `"unknown"`) is
+    unchanged, and the raw `sender_id` never reaches the prompt either way
+    (R-18)."""
+    row = TranscriptRow(
+        id=1, sender_id="u1", sender_name=None, person_name=None,
+        ts=T0, body="anyone free Friday?", is_nora=False,
+        delivery_status=DeliveryStatus.SENT, raw_json="{}",
+    )
+
+    out = await _adaptor(_Store()).inputs(key=KEY, batch=[row])
+
+    assert "u1" not in out
+    assert 'from="unknown"' in out
 
 
 async def test_the_previous_account_comes_FIRST_when_there_is_one():
