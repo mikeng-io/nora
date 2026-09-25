@@ -170,6 +170,15 @@ class Outcome:
     #: Rows the pass WROTE. The proactive decide pass's entire output.
     written: int = 0
 
+    #: The note TITLES the written rows name (`nora.subject.dreaming.Pass.
+    #: written_notes`). `written` alone cannot tell "wrote nothing about the
+    #: note under test" from "wrote nothing about a DIFFERENT note also due
+    #: this pass" — a `proactive_decide` case asserting silence on one note
+    #: must not fail because the workspace correctly reminded about another
+    #: (issue #158 rework). Empty for every entry point but `dreamer`'s
+    #: proactive adaptor.
+    written_notes: tuple[str, ...] = ()
+
     #: What the pass STAGED, as `(title, anchor_date, message_ids, status)`.
     staged: tuple[tuple[str, int, tuple[int, ...], str], ...] = ()
 
@@ -249,13 +258,22 @@ class Outcome:
     outcome_token: str = ""
     delivery: str = ""
 
-    def meets(self, expect: Expectation) -> bool | None:
+    def meets(
+        self, expect: Expectation, *, rows: tuple[Mapping[str, Any], ...] = (),
+    ) -> bool | None:
         """`True`/`False`, or `None` for "not gradable" — never a silent False.
 
         `None` is the ERROR case and it is a third answer on purpose. A suite
         that maps an unreachable provider onto FAIL reports a failing Nora; a
         suite that maps it onto PASS reports a healthy one. Both are the same
         mistake, and this is the type that refuses to make it.
+
+        `rows` is the case's own `metadata.rows` (empty for every corpus but
+        `proactive_decide`) — carried through so `none` can be asked EITHER
+        "nothing happened" (the default, when no row states otherwise) OR
+        "nothing happened about THIS note" (when a row states
+        `absent: true`), without a second `expect` vocabulary token. See the
+        `none` branch below (issue #158 rework).
         """
         if self.error is not None:
             return None
@@ -306,6 +324,18 @@ class Outcome:
                 return True
             return None
         if expect == "none":
+            absent_notes = {
+                str(r["note"]) for r in rows
+                if isinstance(r, Mapping) and r.get("absent") and r.get("note")
+            }
+            if absent_notes:
+                # A SCOPED silence: this note gets no NEW reminder, whatever
+                # else the pass legitimately reminded about. Written rows
+                # about a note not in `absent_notes` (or with no note title
+                # at all) do not fail this — that is the double-booking
+                # guard's whole point (issue #158): a room can owe a
+                # reminder about something else on the same morning.
+                return not (absent_notes & set(self.written_notes))
             # BOTH, because `none` is the negative of two different positives:
             # the note pass writing a note and the proactive pass writing a row.
             return not self.changed and self.written == 0
@@ -328,8 +358,12 @@ class Verdict:
         return tuple(o.error for o in self.outcomes if o.error is not None)
 
     @property
+    def _rows(self) -> tuple[Mapping[str, Any], ...]:
+        return tuple(self.case.metadata.get("rows") or ())
+
+    @property
     def hits(self) -> int:
-        return sum(1 for o in self.gradable if o.meets(self.case.expect))
+        return sum(1 for o in self.gradable if o.meets(self.case.expect, rows=self._rows))
 
     @property
     def deterministic(self) -> bool | None:
@@ -338,4 +372,4 @@ class Verdict:
         calls, and if it stops holding every other number is unreadable."""
         if not self.gradable:
             return None
-        return len({o.meets(self.case.expect) for o in self.gradable}) == 1
+        return len({o.meets(self.case.expect, rows=self._rows) for o in self.gradable}) == 1

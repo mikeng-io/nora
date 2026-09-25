@@ -193,14 +193,18 @@ def test_the_whole_corpus_is_accounted_for() -> None:
     pasted X post link and a LinkedIn profile link, each "what does this
     say?", expecting the network's own read tool with the link — the same
     property P10/P12 pins for Instagram, over the two networks this PR
-    registers), plus `proactive_decide`'s 3 (2026-09-25, issue #158: d01 and
-    d02's re-anchor each keeps its old 07:00 moment as its own
-    `expect: none` double-booking-guard case — a reminder already pending on
-    the exact note, so the correct answer is silence, not a second row; d03
-    gains the same guard case while itself moving from active to parked); a
-    change to it is a change to what the suite claims to measure and belongs
-    in a commit that says so. Recomputed with `census()` at each merge,
-    never summed."""
+    registers), plus `proactive_decide`'s 3 (2026-09-25, issue #158: d01,
+    d02 and d03 each gain a `d0N_already_booked_*` guard case at their old
+    07:00 moment — a reminder already pending on the exact note there, so
+    the correct answer is silence about THAT note, not a second row on it
+    (`expect: none` with `rows: [{note: ..., absent: true}]`, reviewed twice:
+    the first re-anchor of d01 and d02 was itself found wrong and redone —
+    d01 moves from active to parked alongside d03, since no instant is both
+    the objective's "right day" and free of an already-pending reminder on
+    this note; d02 re-anchors to a genuinely clean instant before ANY
+    decision, pending or resolved, about its note); a change to it is a
+    change to what the suite claims to measure and belongs in a commit that
+    says so. Recomputed with `census()` at each merge, never summed."""
     totals = [census(n) for n in CORPORA]
     assert sum(c.total for c in totals) == 230
     assert sum(c.active + c.parked for c in totals) == 230

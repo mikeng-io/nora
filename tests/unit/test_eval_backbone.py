@@ -1078,26 +1078,39 @@ def test_meets_grader_an_error_is_error_regardless_of_expect():
     assert out.label == ERROR
 
 
-def test_a_remind_case_with_no_pending_clash_is_not_refused():
-    case = Case(
-        name="d01_dinner_note_the_day_before", input="", expected_output="",
-        metadata={"expect": "remind", "rows": [{"note": "Dinner plan"}]},
+def _remind_case(name: str = "d01_dinner_note_the_day_before", note: str = "Dinner plan") -> Case:
+    return Case(
+        name=name, input="", expected_output="",
+        metadata={"expect": "remind", "rows": [{"note": note}]},
     )
-    backbone._refuse_a_remind_case_already_pending(case, frozenset())
-    backbone._refuse_a_remind_case_already_pending(case, frozenset({"Some other note"}))
+
+
+def test_a_remind_case_with_no_pending_clash_is_not_refused():
+    case = _remind_case()
+    ids_by_title = {"Dinner plan": ("note-1",)}
+    backbone._refuse_a_remind_case_already_pending(
+        case, note_ids_by_title=ids_by_title, pending_note_ids=frozenset(),
+    )
+    backbone._refuse_a_remind_case_already_pending(
+        case, note_ids_by_title=ids_by_title, pending_note_ids=frozenset({"note-2"}),
+    )
 
 
 def test_a_remind_case_already_pending_on_its_own_note_is_refused():
     """THE BUG (issue #158): d01/d02/d03 sat at an instant where production
     had already decided the exact reminder each case expects, so the decide
     turn's own `<decisions>` showed it pending and a correct decline
-    ("one reminder per thing") read as a FAIL against `expect: remind`."""
-    case = Case(
-        name="d01_dinner_note_the_day_before", input="", expected_output="",
-        metadata={"expect": "remind", "rows": [{"note": "Dinner plan"}]},
-    )
+    ("one reminder per thing") read as a FAIL against `expect: remind`.
+
+    Compared BY ID (`note-1`), not by the title string — the fixture's
+    `note_ids_by_title` is the resolution step
+    `_resolve_remind_case_note_ids` performs before the clash check."""
+    case = _remind_case()
     with pytest.raises(ValueError, match="already has a reminder PENDING"):
-        backbone._refuse_a_remind_case_already_pending(case, frozenset({"Dinner plan"}))
+        backbone._refuse_a_remind_case_already_pending(
+            case, note_ids_by_title={"Dinner plan": ("note-1",)},
+            pending_note_ids=frozenset({"note-1"}),
+        )
 
 
 def test_a_none_case_is_never_refused_by_the_pending_check():
@@ -1107,4 +1120,43 @@ def test_a_none_case_is_never_refused_by_the_pending_check():
         name="d01_already_booked_dinner_note", input="", expected_output="",
         metadata={"expect": "none"},
     )
-    backbone._refuse_a_remind_case_already_pending(case, frozenset({"Dinner plan"}))
+    backbone._refuse_a_remind_case_already_pending(
+        case, note_ids_by_title={"Dinner plan": ("note-1",)},
+        pending_note_ids=frozenset({"note-1"}),
+    )
+
+
+def test_a_remind_case_with_no_note_stated_is_refused():
+    """A title-based clash check on an EMPTY set never refuses — the gap the
+    review found (issue #158): a `remind` case that forgot to state which
+    note it means must ERROR, not silently pass."""
+    case = Case(
+        name="no-note-remind", input="", expected_output="",
+        metadata={"expect": "remind"},
+    )
+    with pytest.raises(ValueError, match="states no note"):
+        backbone._refuse_a_remind_case_already_pending(
+            case, note_ids_by_title={}, pending_note_ids=frozenset(),
+        )
+
+
+def test_a_remind_case_whose_note_does_not_exist_is_refused():
+    """The title resolves to ZERO notes at this anchor — renamed, or never
+    existed here. A silent pass would mean the clash check never ran."""
+    case = _remind_case(note="Ghost note")
+    with pytest.raises(ValueError, match="resolves to 0 notes"):
+        backbone._refuse_a_remind_case_already_pending(
+            case, note_ids_by_title={"Dinner plan": ("note-1",)},
+            pending_note_ids=frozenset(),
+        )
+
+
+def test_a_remind_case_whose_note_title_is_ambiguous_is_refused():
+    """The title resolves to TWO notes — `NOTE` has no unique constraint on
+    `(workspace, title)`, so picking one silently could pick the wrong one."""
+    case = _remind_case()
+    with pytest.raises(ValueError, match="resolves to 2 notes"):
+        backbone._refuse_a_remind_case_already_pending(
+            case, note_ids_by_title={"Dinner plan": ("note-1", "note-2")},
+            pending_note_ids=frozenset(),
+        )

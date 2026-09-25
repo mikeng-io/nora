@@ -193,6 +193,14 @@ NORA_ERROR_2 = "nora.error_2"
 NORA_CHANGED = "nora.changed"
 NORA_JUDGED = "nora.judged"
 NORA_CHECKS_FAILED = "nora.checks_failed"
+#: `Outcome.written_notes` (`nora.subject.dreaming.Pass.written_notes`) — the
+#: note titles a `dreamer` pass's own new reminder rows name. `MeetsGrader`
+#: needs it, beside the case's own `metadata.rows`, to grade `none` as "no
+#: NEW reminder about THIS note" rather than "wrote nothing at all" when a
+#: row states `absent: true` (issue #158 rework: a double-booking guard case
+#: must not fail because the workspace legitimately reminded about a
+#: DIFFERENT note the same morning).
+NORA_WRITTEN_NOTES = "nora.written_notes"
 #: The standing corpus (`design/standing-compact/20-verification.md` §1).
 #: `NORA_POSITION` is the position a fold wrote (`Outcome.position`), what
 #: `MeetsGrader` needs for `expect: fold`. `NORA_SHOWN` is what the subject's
@@ -960,19 +968,72 @@ def _check_the_corpus_assertions(
     return dataclasses.replace(outcome, checks_failed=tuple(failed))
 
 
-def _refuse_a_remind_case_already_pending(case: Case, pending: frozenset[str]) -> None:
+def _resolve_remind_case_note_ids(
+    case: Case, note_ids_by_title: Mapping[str, tuple[str, ...]],
+) -> tuple[str, ...]:
+    """A `remind` case's stated note title(s), resolved to exactly one id
+    each — the id `Note.id` names, not a title match.
+
+    REFUSES (raises) rather than silently passing, on every one of the three
+    ways a title match goes quiet (issue #158 review):
+
+    - a `remind` case that states no note at all (`metadata.rows` empty, or
+      every row missing `note`) — `wanted` would otherwise be the empty set,
+      which intersects nothing and never refuses, so the whole check was a
+      no-op for a case that forgot to state its note;
+    - a title that resolves to ZERO notes at this anchor — the case names a
+      note that either never existed here or has since been renamed;
+    - a title that resolves to MORE THAN ONE note — `NOTE` has no unique
+      constraint on `(workspace, title)` (`_notebook`'s own docstring), so a
+      title match would silently pick one and could pick the wrong one.
+
+    A case with no `snapshot:` (parked or unanchored) never reaches here —
+    `_drive_draw` refuses those earlier.
+    """
+    md = case.metadata or {}
+    titles = [str(row["note"]) for row in md.get("rows") or () if row.get("note")]
+    if not titles:
+        raise ValueError(
+            f"case {case.name!r} expects `remind` but states no note "
+            "(`metadata.rows[].note`) to resolve one against — a `remind` "
+            "case that names no note cannot be checked for a reminder "
+            "already pending on it, and silently passing that check is "
+            "worse than refusing (issue #158 review)."
+        )
+    resolved = []
+    for title in titles:
+        ids = note_ids_by_title.get(title, ())
+        if len(ids) != 1:
+            raise ValueError(
+                f"case {case.name!r} names note {title!r}, which resolves to "
+                f"{len(ids)} notes at this anchor ({list(ids)}), not exactly "
+                "one — a title match cannot tell a renamed or duplicated "
+                "note apart from the one the case means (issue #158 review)."
+            )
+        resolved.append(ids[0])
+    return tuple(resolved)
+
+
+def _refuse_a_remind_case_already_pending(
+    case: Case, *, note_ids_by_title: Mapping[str, tuple[str, ...]],
+    pending_note_ids: frozenset[str],
+) -> None:
     """A `remind` case must have no reminder already pending on the note it
     expects a fresh one about, AT ITS OWN ANCHOR INSTANT.
 
     Whether a reminder is pending is dynamic, DB-held state
     (`design/evaluation/11-the-sandbox-rebuild.md` §1.3), not anything a
     corpus declares — so this cannot be a static pytest against the YAML.
-    `pending` is `Sandboxed.pending_reminder_titles`
-    (`nora.subject.sandbox._pending_reminder_titles`), read off the room the
-    same way `sandbox_from_snapshot` reads everything else, at the case's own
-    anchor and before any model call — `_drive_draw` calls this right after
-    seeding and before `port.drive`, and it REFUSES the case (raises) rather
-    than letting it run.
+    `pending_note_ids` is `Sandboxed.pending_reminder_note_ids`, read off the
+    room the same way `sandbox_from_snapshot` reads everything else, at the
+    case's own anchor and before any model call — `_drive_draw` calls this
+    right after seeding and before `port.drive`, and it REFUSES the case
+    (raises) rather than letting it run.
+
+    Compares BY NOTE ID (`_resolve_remind_case_note_ids`), not by title: a
+    title match is silently wrong twice over — a renamed note is missed, and
+    a duplicate title collapses two different notes into one (issue #158
+    review, `nora.subject.sandbox._note_ids_by_title`'s own docstring).
 
     Measured live, issue #158: a case anchored where its own expected
     reminder is ALREADY pending does not measure the decision it is named
@@ -984,16 +1045,16 @@ def _refuse_a_remind_case_already_pending(case: Case, pending: frozenset[str]) -
     md = case.metadata or {}
     if md.get("expect") != "remind":
         return
-    wanted = {str(row["note"]) for row in md.get("rows") or () if row.get("note")}
-    clash = sorted(wanted & pending)
+    resolved_ids = _resolve_remind_case_note_ids(case, note_ids_by_title)
+    clash = sorted(set(resolved_ids) & pending_note_ids)
     if clash:
         raise ValueError(
-            f"case {case.name!r} expects a fresh `remind` about {clash}, but "
-            "its own anchor instant already has a reminder PENDING on that "
-            "note — the decide turn will correctly decline ('one reminder "
-            "per thing'), so this case would measure the double-booking "
-            "guard, not itself. Re-anchor it before the pending row was "
-            "created, or change its expectation to `none` "
+            f"case {case.name!r} expects a fresh `remind` about note id(s) "
+            f"{clash}, but its own anchor instant already has a reminder "
+            "PENDING on that note — the decide turn will correctly decline "
+            "('one reminder per thing'), so this case would measure the "
+            "double-booking guard, not itself. Re-anchor it before the "
+            "pending row was created, or change its expectation to `none` "
             "(design/evaluation/11-the-sandbox-rebuild.md §1.3, issue #158)."
         )
 
@@ -1140,13 +1201,18 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
                 leave_room_for_arrival=port.delivers_input,
             )
             # Issue #158: a `remind` case must have no reminder already
-            # pending on its own expected note at this instant.
-            # `seeded.pending_reminder_titles` is read off the same snapshot
-            # `sandbox_from_snapshot` just seeded from — no second query —
-            # and this runs BEFORE `port.drive` below, so a clash is refused
-            # rather than spending a model call on measuring the
-            # double-booking guard instead of the case itself.
-            _refuse_a_remind_case_already_pending(case, seeded.pending_reminder_titles)
+            # pending on its own expected note at this instant, compared BY
+            # NOTE ID. `seeded.pending_reminder_note_ids`/`.note_ids_by_title`
+            # are read off the same snapshot `sandbox_from_snapshot` just
+            # seeded from — no second query — and this runs BEFORE
+            # `port.drive` below, so a clash (or an unresolvable note) is
+            # refused rather than spending a model call on measuring the
+            # double-booking guard, or nothing at all, instead of the case
+            # itself.
+            _refuse_a_remind_case_already_pending(
+                case, note_ids_by_title=seeded.note_ids_by_title,
+                pending_note_ids=seeded.pending_reminder_note_ids,
+            )
             exporter = _prefill_capture()
             exporter.clear()
             nora_case = _as_nora_case(case, spec, trigger=subject.cfg.engagement.trigger.text)
@@ -1275,6 +1341,7 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
                     EnvironmentState(name=NORA_BLOCKS_EMPTY, state=blocks_empty),
                     *(EnvironmentState(name=k, state=v) for k, v in spend.items()),
                     EnvironmentState(name=NORA_WRITTEN, state=outcome.written),
+                    EnvironmentState(name=NORA_WRITTEN_NOTES, state=outcome.written_notes),
                     EnvironmentState(name=NORA_CHANGED_COUNT, state=len(outcome.changed)),
                     EnvironmentState(name=NORA_STAGED_COUNT, state=len(outcome.staged)),
                     EnvironmentState(name=NORA_CHANGED, state=outcome.changed),
@@ -1362,6 +1429,7 @@ def nora_task(spec: Spec):
                     EnvironmentState(name=NORA_CACHED_TOKENS, state=None),
                     EnvironmentState(name=NORA_STOPS, state=None),
                     EnvironmentState(name=NORA_WRITTEN, state=None),
+                    EnvironmentState(name=NORA_WRITTEN_NOTES, state=()),
                     EnvironmentState(name=NORA_CHANGED_COUNT, state=None),
                     EnvironmentState(name=NORA_STAGED_COUNT, state=None),
                     EnvironmentState(name=NORA_WRITTEN_2, state=None),
@@ -1677,12 +1745,14 @@ class MeetsGrader(Evaluator):
             said=said,
             changed=tuple(state_of(data, NORA_CHANGED) or ()),
             written=state_of(data, NORA_WRITTEN) or 0,
+            written_notes=tuple(state_of(data, NORA_WRITTEN_NOTES) or ()),
             checks_failed=tuple(state_of(data, NORA_CHECKS_FAILED) or ()),
             judged=state_of(data, NORA_JUDGED) or "",
             position=state_of(data, NORA_POSITION),
             error=error or None,
         )
-        verdict = outcome.meets(expect)
+        rows = tuple((data.metadata or {}).get("rows") or ())
+        verdict = outcome.meets(expect, rows=rows)
         why = state_of(data, NORA_JUDGED_WHY) or ""
         why = f" — judge: {why}" if why else ""
         if verdict is None:

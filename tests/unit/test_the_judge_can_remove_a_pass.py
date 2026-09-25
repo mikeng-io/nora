@@ -277,3 +277,47 @@ def test_must_cite_is_substrings_for_an_act_case(meta, said, should_fail) -> Non
         {},
     )
     assert bool(out.checks_failed) is should_fail, out.checks_failed
+
+
+# --- issue #158 rework: "none" scoped to ONE note ---------------------------
+
+
+def test_none_with_no_absent_rows_keeps_the_old_blanket_rule() -> None:
+    """Every corpus but `proactive_decide`'s double-booking guard cases states
+    no `rows`, or `rows` with no `absent`, and must grade exactly as before:
+    ANY write fails a `none` case."""
+    assert Outcome(admitted=None, written=1).meets("none") is False
+    assert Outcome(admitted=None, written=0).meets("none") is True
+    assert Outcome(admitted=None, changed=(("create", "x"),)).meets("none") is False
+
+
+def test_none_with_an_absent_row_ignores_a_reminder_about_a_different_note() -> None:
+    """THE FIX (issue #158 review): at 09-18 07:00, another note (a pickup
+    before Saturday) is legitimately due and pending on nothing — a correct
+    reminder about IT must not fail a case asserting silence about a
+    DIFFERENT note."""
+    outcome = Outcome(admitted=None, written=1, written_notes=("Pickup before Saturday",))
+    rows = ({"note": "拎抽包畀 Yat Ho", "absent": True},)
+    assert outcome.meets("none", rows=rows) is True
+
+
+def test_none_with_an_absent_row_still_fails_on_the_same_note() -> None:
+    """The double-booking guard's own positive: a SECOND reminder about the
+    exact note under test is exactly what `absent: true` refuses."""
+    outcome = Outcome(admitted=None, written=1, written_notes=("拎抽包畀 Yat Ho",))
+    rows = ({"note": "拎抽包畀 Yat Ho", "absent": True},)
+    assert outcome.meets("none", rows=rows) is False
+
+
+def test_none_with_an_absent_row_and_nothing_written_passes() -> None:
+    outcome = Outcome(admitted=None, written=0)
+    rows = ({"note": "拎抽包畀 Yat Ho", "absent": True},)
+    assert outcome.meets("none", rows=rows) is True
+
+
+def test_none_rows_without_absent_do_not_trigger_the_scoped_rule() -> None:
+    """A `rows` entry with no `absent: true` (the `remind` shape) must not be
+    read as a note-scoped `none` assertion — only `absent: true` opts in."""
+    outcome = Outcome(admitted=None, written=1, written_notes=("Some other note",))
+    rows = ({"note": "拎抽包畀 Yat Ho"},)
+    assert outcome.meets("none", rows=rows) is False

@@ -22,6 +22,7 @@ it is, and it would read as coverage.
 
 from __future__ import annotations
 
+import dataclasses
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -33,7 +34,7 @@ from nora.domain.notes import Note, NoteRevision
 from nora.domain.reminders import Reminder, ReminderState
 from nora.domain.standing import Standing
 from nora.infra.sql.snapshot import Snapshot
-from nora.subject.sandbox import _pending_reminder_titles, as_knowledge
+from nora.subject.sandbox import _note_ids_by_title, _pending_reminder_note_ids, as_knowledge
 
 #: The historical instant the snapshot reconstructs — and, under one path,
 #: the instant the case is driven at.
@@ -330,19 +331,41 @@ def test_a_snapshot_with_no_reminders_seeds_none() -> None:
 # --- issue #158: which notes NORA already has a reminder pending on ---------
 
 
-def test_pending_reminder_titles_reads_noras_own_rows_that_name_a_note() -> None:
+def test_pending_reminder_note_ids_reads_noras_own_rows_that_name_a_note() -> None:
     """Backs `evals.backbone._refuse_a_remind_case_already_pending`: only
     NORA's own outstanding reminders that name a note count — a member's own
-    reminder, or a row with no note, is not a pending decision about one."""
-    titles = _pending_reminder_titles((
+    reminder, or a row with no note, is not a pending decision about one.
+
+    BY ID (issue #158 review), off `payload["note_id"]`
+    (`nora/agent/tools.py:8923`) — not the title, which a rename or a
+    duplicate title would make unreliable."""
+    ids = _pending_reminder_note_ids((
         _reminder(requester_person_id="nora", kind="proactive",
-                   payload={"note_title": "Dinner plan"}),
+                   payload={"note_id": "note-1", "note_title": "Dinner plan"}),
         _reminder(requester_person_id="tyler_cortez", kind="proactive",
-                   payload={"note_title": "F1 update"}),
+                   payload={"note_id": "note-2", "note_title": "F1 update"}),
         _reminder(requester_person_id="nora", kind="reminder", payload=None),
     ))
-    assert titles == frozenset({"Dinner plan"})
+    assert ids == frozenset({"note-1"})
 
 
-def test_pending_reminder_titles_is_empty_with_nothing_pending() -> None:
-    assert _pending_reminder_titles(()) == frozenset()
+def test_pending_reminder_note_ids_is_empty_with_nothing_pending() -> None:
+    assert _pending_reminder_note_ids(()) == frozenset()
+
+
+def test_note_ids_by_title_resolves_a_single_note() -> None:
+    notes = ((_note(), _revision("open")),)
+    assert _note_ids_by_title(notes) == {"Dinner 19 Sept": ("note-1",)}
+
+
+def test_note_ids_by_title_collects_every_id_sharing_a_title() -> None:
+    """`NOTE` has no unique constraint on `(workspace, title)` (`_notebook`'s
+    own docstring): two notes can share a title, and a caller resolving one
+    by title must be able to see that it is ambiguous rather than pick one."""
+    twin = dataclasses.replace(_note(), id="note-2")
+    notes = ((_note(), _revision("open")), (twin, _revision("open")))
+    assert _note_ids_by_title(notes) == {"Dinner 19 Sept": ("note-1", "note-2")}
+
+
+def test_note_ids_by_title_is_empty_with_no_notes() -> None:
+    assert _note_ids_by_title(()) == {}
