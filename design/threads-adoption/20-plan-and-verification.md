@@ -19,7 +19,7 @@ its live read-back.
 
 Mint the token again with `threads_manage_mentions` (required),
 `threads_keyword_search` and `threads_profile_discovery` added to the five
-it has (00 §"What blocks it today"). Then, from norty:
+it has (00 §"What blocked it, and the token now"). Then, from norty:
 
 ```
 GET https://graph.threads.net/v1.0/debug_token?input_token=…
