@@ -775,6 +775,20 @@ class RecordStore(Protocol):
 
     async def recent(self, *, conversation_id: str, limit: int) -> list[TranscriptRow]: ...
 
+    async def recent_before(
+        self, *, conversation_id: str, before_ts: int, limit: int,
+    ) -> list[TranscriptRow]:
+        """`recent`, ending before a moment: the newest `limit` rows with
+        `ts < before_ts`, returned oldest-first, with the same over-fetch, edit
+        fold and `limit <= 0` rule as `recent`.
+
+        One caller family: the transcript tools' `before`
+        (design/self-awareness/08 §2), which reads «yesterday» in a room that
+        has said more than a window's worth since. Same `idx_messages_conv_ts`
+        seek as `recent`, with one more predicate.
+        """
+        ...
+
     async def depth_to(self, *, conversation_id: str, ts: int) -> int | None:
         """How many of this conversation's rows are `ts DESC` at-or-newer than
         `ts` — i.e. the `recent(limit=...)` size that would just reach the row

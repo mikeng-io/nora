@@ -2533,6 +2533,100 @@ def _transcript_messages(
     return out, threaded
 
 
+#: `before`'s accepted shape, once the forms a model may copy back have been
+#: folded away: a date, then optionally a 24-hour minute, a second, and the
+#: milliseconds the paging note's cursor carries.
+_BEFORE_SHAPE = re.compile(
+    r"(\d{4}-\d{2}-\d{2})(?: (\d{1,2}:\d{2})(?::(\d{2})(?:\.(\d{3}))?)?)?"
+)
+
+
+def _before_bound(before: str | None, now: datetime) -> int | None:
+    """`before` as an exclusive epoch-ms bound on `ts`, or `None` to read the
+    newest rows (design/self-awareness/08 §2). Raises `ValueError` on a value
+    it cannot read, which the tools report and never read past.
+
+    A time a PERSON gives names a span, and the span is included: a date alone
+    is the end of that day, «21:14» is up to the end of that minute, a second
+    to the end of that second. The paging note's cursor names a POINT, the
+    oldest row already shown, to the millisecond, and is EXCLUSIVE, so every
+    page is strictly older than the last. An inclusive minute there looped
+    forever once one minute held more rows than `limit` (caught by
+    `test_paging_across_a_crowded_minute_moves_on_and_skips_nothing`, before
+    it shipped). All of it is Hong Kong time, the zone the clock line names.
+
+    Lenient about what a model copies from a row's `when`
+    («2026-09-24 Thu 21:14 (13h ago)»): the age in brackets, a weekday, `HKT`
+    and an ISO `T` are dropped before the shape is checked. A bound at or after
+    `now` is the same read as no bound, so it returns `None`.
+    """
+    if before is None:
+        return None
+    text = re.sub(r"\(.*?\)", " ", str(before))
+    text = re.sub(r"(?<=\d)T(?=\d)", " ", text)
+    text = re.sub(r"\b(?:HKT|[A-Za-z]{3})\b", " ", text)
+    text = " ".join(text.split())
+    if not text:
+        return None
+    shape = _BEFORE_SHAPE.fullmatch(text)
+    if shape is None:
+        raise ValueError(before)
+    day, minute, second, millis = shape.groups()
+    if minute is None:
+        moment = datetime.strptime(day, "%Y-%m-%d").replace(tzinfo=_HKT) + timedelta(days=1)
+    else:
+        start = datetime.strptime(
+            f"{day} {minute}:{second or '00'}", "%Y-%m-%d %H:%M:%S",
+        ).replace(tzinfo=_HKT)
+        if millis is not None:
+            moment = start + timedelta(milliseconds=int(millis))
+        elif second is not None:
+            moment = start + timedelta(seconds=1)
+        else:
+            moment = start + timedelta(minutes=1)
+    if moment >= now:
+        return None
+    return int(moment.timestamp() * 1000)
+
+
+#: What a malformed `before` says. Never a silent read of the newest rows:
+#: that answers a question about yesterday with today and looks like an answer.
+_BEFORE_UNREADABLE = (
+    'I could not read that `before`. Give it as "YYYY-MM-DD HH:MM" Hong Kong '
+    'time, or "YYYY-MM-DD" for the end of that day.'
+)
+
+
+async def _read_window(
+    store: Any, *, conversation_id: str, asked: int, before_ts: int | None,
+) -> tuple[list[TranscriptRow], bool]:
+    """The newest `asked` rows (ending before `before_ts` when given), and
+    whether older rows exist beyond them. Asks the store for ONE more than it
+    returns, so «there is more» is read from the record, never guessed from a
+    full window."""
+    fetch = asked + 1
+    if before_ts is None:
+        rows = await store.recent(conversation_id=conversation_id, limit=fetch)
+    else:
+        rows = await store.recent_before(
+            conversation_id=conversation_id, before_ts=before_ts, limit=fetch,
+        )
+    more = len(rows) > asked
+    return (list(rows[-asked:]) if more else list(rows)), more
+
+
+def _older_note(rows: Sequence[TranscriptRow]) -> str:
+    """The paging hint, paid only when older rows exist (ADR 0015 §3). It
+    names the exact value to pass, the oldest row's own moment to the
+    millisecond (an exclusive cursor, see `_before_bound`), so she never has
+    to trim a `when` herself and a crowded minute cannot hold her in place."""
+    oldest = datetime.fromtimestamp(rows[0].ts / 1000, tz=_HKT)
+    return (
+        "Older messages exist before the first one here. To read further back, "
+        f'call again with before="{oldest:%Y-%m-%d %H:%M:%S}.{rows[0].ts % 1000:03d}".'
+    )
+
+
 def _spec(name: str, call) -> ToolSpec:
     """One `ToolSpec`, with every declared field taken from `NATIVE_TOOLS[name]`.
 
@@ -3897,7 +3991,9 @@ def build_tool_specs(
             return _memory_result(
                 {"status": "ok", "said_by": hits, **_asked_about(words)})
 
-    async def load_transcript(limit: int = LOAD_TRANSCRIPT_DEFAULT) -> dict:
+    async def load_transcript(
+        limit: int = LOAD_TRANSCRIPT_DEFAULT, before: str | None = None,
+    ) -> dict:
         """Read older messages from this conversation. Only call this if you need
         to look further back than what you were shown.
 
@@ -3905,7 +4001,10 @@ def build_tool_specs(
         first, each with `sender`, `body` and `when` it was sent.
 
         Args:
-            limit: How many recent messages to fetch (max 60).
+            limit: How many messages to fetch (max 60).
+            before: Read the messages sent before this Hong Kong time,
+                "YYYY-MM-DD HH:MM", or a date alone for the end of that day.
+                Leave it out for the latest ones.
         """
         # The `60` above is deliberately a LITERAL, not an f-string
         # interpolation of LOAD_TRANSCRIPT_MAX: an f-string here would not be a
@@ -3921,11 +4020,20 @@ def build_tool_specs(
         # backend `LIMIT -1` meant unbounded (the whole conversation into
         # context); Postgres rejects a negative LIMIT outright. Either way the
         # clamp, not the backend, owns the bound.
+        now = now_fn().astimezone(_HKT)
+        try:
+            before_ts = _before_bound(before, now)
+        except ValueError:
+            # Not memory content, so not stamped `untrusted`; still `messages`,
+            # the one key this tool's contract carries on every return.
+            _record(metrics, "load_transcript", "unavailable", reason="before")
+            return {"messages": [], "note": _BEFORE_UNREADABLE}
         asked = LOAD_TRANSCRIPT_DEFAULT
         try:
             asked = max(1, min(int(limit), LOAD_TRANSCRIPT_MAX))
-            rows = await store.recent(
-                conversation_id=bound_conversation_id, limit=asked,
+            rows, older = await _read_window(
+                store, conversation_id=bound_conversation_id, asked=asked,
+                before_ts=before_ts,
             )
         except Exception:
             log.exception("load_transcript failed")
@@ -3966,19 +4074,28 @@ def build_tool_specs(
         # `_speaker` (shared with `who_said`), `reply_to` and the edit keys in
         # ONE renderer, because a second tool handing back transcript lines is
         # exactly how DEC-80's three-disagreeing-renderers bug gets a fourth.
-        out, threaded = _transcript_messages(rows, now=now_fn().astimezone(_HKT))
+        out, threaded = _transcript_messages(rows, now=now)
         # `rows=0` is an ordinary `ok` — a conversation with nothing older in
         # it — so the count is the discriminator, not the status. Bodies are
         # never logged: this is the group's transcript.
-        _record(metrics, "load_transcript", "ok", limit=asked, rows=len(out), threaded=threaded)
+        _record(metrics, "load_transcript", "ok", limit=asked, rows=len(out),
+                threaded=threaded, before=before_ts is not None, older=older)
         result: dict = {"messages": out}
-        # ADR 0015 §3: how to read an edited row left the description and rides
-        # here, only when a row in THIS answer was edited.
+        # ADR 0015 §3: how to read an edited row, how to page and what an empty
+        # `before` read means left the description and ride here, each only
+        # when it applies to THIS answer.
+        notes = []
         if any("was" in m for m in out):
-            result["note"] = (
+            notes.append(
                 "A message with `was` was edited after sending: `body` is what it "
                 "says now, `was` what it first said, and `edited` when it changed."
             )
+        if older:
+            notes.append(_older_note(rows))
+        if not out and before_ts is not None:
+            notes.append("Nothing in this conversation is on record before that time.")
+        if notes:
+            result["note"] = " ".join(notes)
         return _memory_result(result)
 
     # ---- the room tools (design/self-awareness/03, /07) ------------------
@@ -4091,7 +4208,9 @@ def build_tool_specs(
         }
         return result
 
-    async def room_read(room: str, limit: int = LOAD_TRANSCRIPT_DEFAULT) -> dict:
+    async def room_read(
+        room: str, limit: int = LOAD_TRANSCRIPT_DEFAULT, before: str | None = None,
+    ) -> dict:
         """Read recent messages from one room of this group, using the name
         room_list gives. Call this when someone asks what is being said in the
         group on another network.
@@ -4102,7 +4221,10 @@ def build_tool_specs(
 
         Args:
             room: The room's name as room_list returned it, or its network.
-            limit: How many recent messages to fetch (max 60).
+            limit: How many messages to fetch (max 60).
+            before: Read the messages sent before this Hong Kong time,
+                "YYYY-MM-DD HH:MM", or a date alone for the end of that day.
+                Leave it out for the latest ones.
         """
         # Intended ADR 0015 level: 2. `room` is MODEL-SUPPLIED, so it is never
         # echoed back: a word naming another unit's room and a word naming
@@ -4126,10 +4248,22 @@ def build_tool_specs(
                 "note": "No room of this group goes by that. Call room_list "
                         "for the names; do not guess.",
             }
+        now = now_fn().astimezone(_HKT)
+        try:
+            # After the room resolves, so a name nobody has is still told
+            # first; another unit's room and no room at all took the SAME
+            # branch above, so this order discloses nothing (D1 = B).
+            before_ts = _before_bound(before, now)
+        except ValueError:
+            _record(metrics, "room_read", "unavailable", reason="before")
+            return {"status": "unavailable", "note": _BEFORE_UNREADABLE}
         asked = LOAD_TRANSCRIPT_DEFAULT
         try:
             asked = max(1, min(int(limit), LOAD_TRANSCRIPT_MAX))
-            rows = await store.recent(conversation_id=target.conversation_id, limit=asked)
+            rows, older = await _read_window(
+                store, conversation_id=target.conversation_id, asked=asked,
+                before_ts=before_ts,
+            )
         except Exception:
             log.exception("room_read failed")
             _record(metrics, "room_read", "unavailable")
@@ -4140,11 +4274,14 @@ def build_tool_specs(
             }
         name = _room_name(target)
         if not rows:
-            _record(metrics, "room_read", "nothing_found", limit=asked, rows=0)
+            _record(metrics, "room_read", "nothing_found", limit=asked, rows=0,
+                    before=before_ts is not None)
             return {
                 "status": "nothing_found", "room": name,
                 "network": platform_name(target.platform),
-                "note": "Nothing said in that room is on record.",
+                "note": ("Nothing said in that room is on record before that time."
+                         if before_ts is not None
+                         else "Nothing said in that room is on record."),
             }
         # Named with the TARGET room's platform: a sender id is keyed
         # `(platform, sender_id)`, and this room's platform would resolve
@@ -4156,17 +4293,21 @@ def build_tool_specs(
             # `LOAD_TRANSCRIPT_MAX` rows), and this is the same class, read by
             # the same renderer. A second label would split one class in two.
             rows = list(await media_join.enrich(rows, path="load_transcript"))
-        out, threaded = _transcript_messages(rows, now=now_fn().astimezone(_HKT))
+        out, threaded = _transcript_messages(rows, now=now)
         # Bodies are never logged: this is a group's transcript.
-        _record(metrics, "room_read", "ok", limit=asked, rows=len(out), threaded=threaded)
+        _record(metrics, "room_read", "ok", limit=asked, rows=len(out),
+                threaded=threaded, before=before_ts is not None, older=older)
         # R-13: `untrusted` and the framing sentence, the same demotion
         # `load_transcript` carries. Another room's words are text people
         # wrote, never an instruction to her.
-        return _memory_result({
+        result: dict = {
             "status": "ok", "room": name,
             "network": platform_name(target.platform),
             "messages": out,
-        })
+        }
+        if older:
+            result["note"] = _older_note(rows)
+        return _memory_result(result)
 
     # ---- the three room-scoped tools -------------------------------------
     #
