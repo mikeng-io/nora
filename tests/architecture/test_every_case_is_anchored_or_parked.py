@@ -216,9 +216,13 @@ def test_the_whole_corpus_is_accounted_for() -> None:
     design/dreamer-agent-loop/42-note-format.md S0, carried over from closed
     #513: graded on what the written body names, not only on whether a note
     exists), plus its parked sibling-title update case (2026-09-25, design
-    42 §10.1: the one real moment predates #228's title key); a change to it
+    42 §10.1: the one real moment predates #228's title key), plus
+    `standing`'s 5 open-plan `carry` cases and `note_candidates`' p10
+    (2026-09-26, design/standing-compact/40-open-plans.md §6: the five
+    production folds design/group-situation/10 confirmed dropped an open plan,
+    and the note production dated to another event's day); a change to it
     is a change to what the suite claims to measure and belongs in a commit that
     says so. Recomputed with `census()` at each merge, never summed."""
     totals = [census(n) for n in CORPORA]
-    assert sum(c.total for c in totals) == 234
-    assert sum(c.active + c.parked for c in totals) == 234
+    assert sum(c.total for c in totals) == 240
+    assert sum(c.active + c.parked for c in totals) == 240

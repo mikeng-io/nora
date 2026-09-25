@@ -429,3 +429,101 @@ cases:
         plan those items bear on.
       returns_when: |
         Never at this anchor.
+
+  # --- OPEN PLANS DROPPED BY A FOLD (design/group-situation/10, #555) -------
+  # Five real folds that dropped an open plan still ahead of them, with
+  # nothing between the two writes settling it. Each was confirmed by hand
+  # in that study. They measure design/standing-compact/40-open-plans.md:
+  # on master they reproduce the drop, after it the plan is held.
+
+  - name: carry-a-same-evening-hand-over-through-a-correction
+    entry: standing
+    expect: fold
+    # Study drop 1. The fold's batch was empty (the rows were already
+    # folded); its only input was the turn's own steps.
+    snapshot:
+      platform: signal
+      conversation_id: MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08=
+      before_ms: 1790065508799
+    metadata:
+      tag_id: 557cf79593e243ac9a88f61f570996b5
+      kind: carry
+    expected_output: |
+      The earlier position holds a hand-over arranged for that same evening,
+      which it calls the one concrete thing it is tracking, and two members'
+      stated plans to join a session on the following days. This turn only
+      corrects a mistake about a purchase. None of those plans was settled
+      or cancelled; they must still be held.
+
+  - name: carry-tonights-session-through-an-unrelated-dispute
+    entry: standing
+    expect: fold
+    # Study drop 2. Empty batch, as the case above.
+    snapshot:
+      platform: signal
+      conversation_id: MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08=
+      before_ms: 1790066451689
+    metadata:
+      tag_id: 48650261c44746d5ad084cd631ea9875
+      kind: carry
+    expected_output: |
+      The earlier position holds that evening's session: when one member
+      arrives, who goes on voice, and that she will join when she gets
+      there. This turn is about an unrelated dispute. The session was not
+      settled or cancelled; it must still be held.
+
+  - name: carry-a-members-itinerary-for-a-later-day
+    entry: standing
+    expect: fold
+    # Study drop 3: the plan was written into the position ten minutes
+    # earlier and lost here.
+    snapshot:
+      platform: signal
+      conversation_id: MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08=
+      before_ms: 1790069661743
+    metadata:
+      tag_id: 1b074d5adbcf49c3b4b9810ed323f1ef
+      kind: carry
+    expected_output: |
+      The earlier position holds one member's itinerary for a later day: an
+      afternoon event in one place and the evening in another, with the
+      evening place still his own guess. This turn is about relaying a
+      message to another platform. The itinerary was not settled or
+      changed; it must still be held, with its day.
+
+  - name: carry-her-open-question-about-a-relay
+    entry: standing
+    expect: fold
+    # Study drop 4, the weakest of the five: her own open question, dated
+    # only by an implied «tonight». A `recovered` turn.
+    snapshot:
+      platform: signal
+      conversation_id: MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08=
+      before_ms: 1790077089618
+    metadata:
+      tag_id: 978d11aad059416aa7e87fdc3740aaea
+      kind: carry
+    expected_output: |
+      The earlier position holds her own open question: whether a message
+      she relayed that evening meant she should wait for the reply and
+      report back. This turn is about whether she followed someone on a
+      social network. Nobody answered the question; it must still be held.
+
+  - name: carry-an-afternoon-meet-up-and-the-stops-before-dinner
+    entry: standing
+    expect: fold
+    # Study drop 5, the drop behind design/group-situation/00's failing
+    # turn. The meet-up had been carried for two days.
+    snapshot:
+      platform: signal
+      conversation_id: x5hcBMQITtdUfSC0o9AHsqJKU7ywYMrOG5hcBMQITtc=
+      before_ms: 1790333539343
+    metadata:
+      tag_id: 1da436fdb4ca4242a323ae6445c81ddd
+      kind: carry
+    expected_output: |
+      The earlier position holds, for the day of the dinner being planned,
+      an afternoon meet-up point she has not said whether she will go to,
+      and a proposed order of stops before dinner. This turn pushes the
+      dinner forward: time, venue shortlist, an event. It does not settle
+      or cancel the meet-up or the stops; they must still be held.
