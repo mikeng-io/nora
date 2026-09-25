@@ -5,7 +5,7 @@ order: 25
 applies_to: [tag, participation, proactive]
 version: 4
 kind: conduct
-authority_above: [constraints, identity, belonging, voice]
+authority_above: [constraints, pictures, identity, belonging, voice]
 authority_below: [situation, message-content, tool-output]
 not_here: >-
   Not how many messages one answer may become: that is conduct.md, and it is
