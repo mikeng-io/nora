@@ -1,0 +1,1 @@
+{"type": "none", "reason": "The instagram-bridge's mentions read now matches the Instagram web client's real request; nothing calls it in production yet, so no user sees a change.", "details": [], "limitations": []}
