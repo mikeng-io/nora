@@ -9,9 +9,10 @@ language: only the headings and the fixed tokens (`->`, `:`, `(as of …)`,
 `(folded …)`, `no reason given`, `no date given`, `when`, the weekday
 abbreviation) are keys, and code parses keys (§5).
 
-**Nothing calls `parse_note_body` yet.** Design 42's S0 lands it as a pure
-function beside its tests; S2 calls it from note-candidates' `accept()`, S4b
-from the tag path's `note_create`/`note_update`, S6 from note-merge's fold.
+**One writer calls `parse_note_body` so far**: note-candidates' `accept()`,
+on a CREATE's body (design 42 S2, `nora.language.note_candidates`). S4a adds
+that pass's update arm, S4b the tag path's `note_create`/`note_update`, S6
+note-merge's fold.
 It is called by each WRITER and never by `NoteRevision.__post_init__`: rows
 written before the schema must still read back (§9).
 

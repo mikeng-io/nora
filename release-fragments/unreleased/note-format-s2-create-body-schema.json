@@ -1,0 +1,11 @@
+{
+  "type": "change",
+  "summary": "A note Nora writes down from a room's conversation now records it in fixed sections (decided, open, owed, proposed, ruled out), each line citing the messages it came from, and a new note whose record breaks that form is not written.",
+  "details": [
+    "Dates in a new note are written as calendar dates, never as «tomorrow» or «this Saturday».",
+    "People are named as the room's messages name them, and each attribution must be the author of a message the line cites."
+  ],
+  "limitations": [
+    "Only new notes from the background pass are held to the form so far; updates to an existing note, and notes Nora writes during a conversation, keep their current free-text record until later steps of the same design."
+  ]
+}

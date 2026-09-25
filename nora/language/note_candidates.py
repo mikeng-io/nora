@@ -246,7 +246,7 @@ from __future__ import annotations
 import datetime as _dt
 import logging
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import ClassVar, Protocol
 
 from nora.domain.blocks import (
@@ -257,6 +257,14 @@ from nora.domain.blocks import (
     speaker_name,
 )
 from nora.domain.models import TranscriptRow
+from nora.domain.note_body import (
+    CODE_WRITTEN,
+    RULES,
+    NoteBodyError,
+    Shown,
+    ShownMessage,
+    parse_note_body,
+)
 from nora.domain.notes import (
     BODY_MAX_CHARS,
     CANDIDATE_CREATED,
@@ -426,6 +434,14 @@ STAGING_OUTCOMES: frozenset[str] = frozenset({
                         # to fail in, and a re-widening of the key must not
                         # land silent.
 })
+
+#: Every value `nora_note_candidate_body_refused_total{rule}` may carry: the
+#: validator's own closed vocabulary (`nora.domain.note_body.RULES`), taken
+#: from it rather than copied, for `GATE_ACTIONS`' reason. A body a create
+#: carries is held to design 42 §4 in `accept()`, and one that breaks it is
+#: REFUSED, whole, before anything is staged (G1, §4.5): the rule it broke is
+#: the reading, one sample per refused candidate.
+BODY_REFUSAL_RULES: frozenset[str] = RULES
 
 #: **What this series does NOT see, stated because a loss counter that reads
 #: as total is worse than none.** It only fires on a SETTLED row. A different
@@ -818,6 +834,35 @@ def _render_line(row: TranscriptRow, *, room: str, tz: _dt.tzinfo) -> str:
     )
 
 
+def _shown_by(rendered: Sequence[TranscriptRow]) -> Shown:
+    """What `accept` holds a create's body against (design 42 §4.5): each
+    RENDERED row by the `from` its line carried (`_render_line`'s own
+    `speaker_name`, after the roster projection), and the roster.
+
+    **The roster is the batch's own senders** until the `people` block
+    (§8.3a, S1b) puts the room's roster in front of the model: an `## Owed`
+    owner has to be a name the model was shown, and this batch's `from`
+    names are the only ones it is shown today. A member who owes and wrote
+    nothing here is therefore refused as `unknown_owner`, and the objective
+    says to write that under `## Open` instead. Nora's own rows are shown as
+    hers (`cites_nora`) and are never a roster name. `nora_names` stays empty:
+    her name reaches no line of this batch as a `from`, so a line naming her
+    is `unknown_owner` or `misattributed` without it."""
+    shown = tuple(
+        ShownMessage(
+            id=row.id, sender=speaker_name(row.person_name, row.sender_name),
+            person_id=row.person_id, is_nora=row.is_nora,
+        )
+        for row in rendered
+    )
+    return Shown(
+        rendered=shown,
+        # `person_id` is what code attaches for an owner (§4.3); an unmapped
+        # sender has none, and nothing stores it before G5's column exists.
+        roster={m.sender: m.person_id or "" for m in shown if not m.is_nora},
+    )
+
+
 def _resolve_updates(
     *, updates: str | None, standing: Sequence[Note],
 ) -> tuple[Note, ...]:
@@ -948,6 +993,7 @@ class NoteCandidateAdaptor:
     _VOCABULARIES: ClassVar[dict[str, tuple[str, frozenset[str]]]] = {
         "nora_note_candidate_gate_total": ("action", GATE_ACTIONS),
         "nora_note_candidate_staging_total": ("outcome", STAGING_OUTCOMES),
+        "nora_note_candidate_body_refused_total": ("rule", BODY_REFUSAL_RULES),
     }
 
     def __init__(
@@ -1021,6 +1067,10 @@ class NoteCandidateAdaptor:
         # Keyed by `key`, not a bare attribute, because
         # `dream_loop` dispatches each scope as its own task.
         self._message_ids: dict[str, frozenset[int]] = {}
+        # Per key, the same channel: what the model was SHOWN, as the body
+        # validator takes it (design 42 §4.5, «rendered»). Only the rows
+        # `inputs` actually rendered, named as it rendered them.
+        self._shown: dict[str, Shown] = {}
 
     def _inc(self, name: str, value: float = 1.0, **labels: object) -> None:
         vocab = self._VOCABULARIES.get(name)
@@ -1057,6 +1107,7 @@ class NoteCandidateAdaptor:
         blank-prompt fire condition, restated because it is load-bearing here.
         """
         self._message_ids[key] = frozenset(row.id for row in batch)
+        self._shown[key] = Shown()
         if not batch:
             return ""
         # RESOLVE NAMES (issue #200), the same projection the tag path
@@ -1080,10 +1131,9 @@ class NoteCandidateAdaptor:
         # a fallback for a room the operator left unlabelled, and the
         # conversation id NEVER — see `UNNAMED_ROOM`.
         room = self._label_for(key) or unit or UNNAMED_ROOM
-        lines = [
-            _render_line(row, room=room, tz=self._tz)
-            for row in batch[:MAX_RENDERED_MESSAGES]
-        ]
+        rendered = batch[:MAX_RENDERED_MESSAGES]
+        lines = [_render_line(row, room=room, tz=self._tz) for row in rendered]
+        self._shown[key] = _shown_by(rendered)
         if len(batch) > MAX_RENDERED_MESSAGES:
             omitted = batch[MAX_RENDERED_MESSAGES:]
             lines.append(
@@ -1170,8 +1220,25 @@ class NoteCandidateAdaptor:
         silently (`DreamAdaptor.accept`'s own contract) and dropping any item
         naming a `message_ids` entry outside this run's batch —
         because an invented id is fabricated provenance, worse than a missing entry.
+
+        **A CREATE's body is held to the schema here** (design 42 S2, §4.5):
+        a candidate naming no `updates` is refused whole when its body does
+        not parse, counted on `nora_note_candidate_body_refused_total{rule}`,
+        and otherwise carries the NORMALISED body (whitespace, bullets and
+        heading case, the only repairs, G1). Here and not at the gate: a
+        staged row the gate settles is settled for good on its key, so a body
+        refused after staging would make every corrected re-proposal of that
+        title and anchor a no-op.
+
+        What it does not hold, stated rather than discovered: an UPDATE's
+        body (S3/S4 change that arm, one variable at a time), including one
+        whose `updates` title the gate later resolves to no note, or to
+        several, and so writes as a create (`unresolved`, `ambiguous`).
         """
         seen = self._message_ids.get(key)
+        # No `inputs` for this key: nothing was shown, so nothing can be
+        # cited, and a create's body is refused rather than taken on trust.
+        shown = self._shown.get(key, Shown())
         parsed: list[object] = []
         for item in items:
             candidate = _parse_candidate(item)
@@ -1184,8 +1251,37 @@ class NoteCandidateAdaptor:
                     sorted(set(candidate.message_ids) - seen), key,
                 )
                 continue
+            if candidate.updates is None:
+                body = self._held_to_schema(candidate.body, shown=shown, key=key)
+                if body is None:
+                    continue
+                candidate = replace(candidate, body=body)
             parsed.append(candidate)
         return tuple(parsed)
+
+    def _held_to_schema(self, body: str, *, shown: Shown, key: str) -> str | None:
+        """A create's body, normalised, or `None` when it is refused: the rule
+        it broke is counted and logged, never the line, which is the room's
+        own text and does not belong in a log."""
+        try:
+            parsed = parse_note_body(body, shown=shown, require_open=True)
+            written = CODE_WRITTEN & {s.heading for s in parsed.sections}
+            if written:
+                # The validator cannot tell who wrote a section; the writer
+                # can (`nora.domain.note_body`'s docstring). This pass is a
+                # model's, and `## From memory`/`## Folded` are code's alone.
+                raise NoteBodyError(
+                    "unknown_section",
+                    f"## {sorted(written)[0]} is written by code, never by a model",
+                )
+        except NoteBodyError as refused:
+            self._inc("nora_note_candidate_body_refused_total", rule=refused.rule)
+            log.warning(
+                "note-candidates refused a create: its body broke %s (scope=%s)",
+                refused.rule, key,
+            )
+            return None
+        return parsed.text
 
     # -- commit -----------------------------------------------------------
 

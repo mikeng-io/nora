@@ -20,6 +20,7 @@ from nora.domain.notes import BODY_MAX_CHARS, NoteSupersedeReason
 from nora.domain.ports import Proposal
 from nora.language.note_candidates import (
     _BLOCKS,
+    BODY_REFUSAL_RULES,
     GATE_ACTIONS,
     STAGING_OUTCOMES,
     UNNAMED_ROOM,
@@ -66,7 +67,7 @@ def _item(**overrides: object) -> dict[str, object]:
     base: dict[str, object] = {
         "title": "Wedding venue",
         "description": "Where the September wedding is held is still open.",
-        "body": "Two venues on the shortlist. Nobody has called either.",
+        "body": "## Decided\n## Open\n- which of the two venues [1]",
         "closing_condition": "a venue is booked and confirmed",
         "anchor_date": 20260919,
         "message_ids": [1],
@@ -475,6 +476,181 @@ async def test_accept_keeps_a_candidate_whose_ids_are_all_in_the_batch():
 
     assert len(accepted) == 1
     assert isinstance(accepted[0], _CreateCandidate)
+
+
+# ---------------------------------------------------------------------------
+# a create's body is held to the schema in accept() (design 42 S2, §4.5)
+# ---------------------------------------------------------------------------
+
+
+def _spoken(row_id: int, sender: str, body: str, *, is_nora: bool = False) -> TranscriptRow:
+    return TranscriptRow(
+        id=row_id, sender_id=f"id-{sender}", sender_name=sender, ts=1_000 + row_id,
+        body=body, is_nora=is_nora, delivery_status=DeliveryStatus.SENT,
+        raw_json=None, person_id=None if is_nora else f"p_{sender.lower()}",
+    )
+
+
+#: Ada asks, Ben offers to book, Nora answers: three rendered rows, the third
+#: hers. Content is invented and carries nothing from a real room.
+_BODY_BATCH = (
+    _spoken(1, "Ada", "dinner on the 3rd? where though"),
+    _spoken(2, "Ben", "I can book once we pick"),
+    _spoken(3, "Nora", "noted", is_nora=True),
+)
+
+#: A conformant create body over `_BODY_BATCH`, and the control every
+#: refusal below is one edit away from.
+_GOOD_BODY = (
+    "## Decided\n- dinner is on 2026-10-03 Sat (Ada) [1]\n"
+    "## Open\n- where [1]\n"
+    "## Owed\n- Ben -> book a table -> when a place is picked [2]"
+)
+
+
+def _refused(metrics: Metrics, rule: str) -> float:
+    return metrics.get("nora_note_candidate_body_refused_total", rule=rule)
+
+
+async def test_accept_passes_a_conformant_create_body_through_normalised():
+    """The pass-through, and the only repairs there are (G1): `\\r\\n`,
+    trailing whitespace, blank lines, `*`/`+` bullets and heading case. The
+    candidate carries the NORMALISED body, which is what gets staged."""
+    metrics = Metrics()
+    adaptor, _ = _adaptor(metrics=metrics)
+    await adaptor.inputs(key=SCOPE, batch=_BODY_BATCH)
+    messy = (
+        "## decided\r\n* dinner is on 2026-10-03 Sat (Ada) [1]   \r\n\r\n\n"
+        "## Open\n+ where [1]\n"
+        "## Owed\n- Ben -> book a table -> when a place is picked [2]\n"
+    )
+
+    accepted = await adaptor.accept(key=SCOPE, items=[_item(body=messy)])
+
+    assert [c.body for c in accepted] == [_GOOD_BODY]
+    assert sum(_refused(metrics, rule) for rule in BODY_REFUSAL_RULES) == 0
+
+
+@pytest.mark.parametrize(("rule", "body"), [
+    ("unknown_section", "## Decided\n## Notes\n- where [1]"),
+    ("unknown_section", "## Decided\n## Open\n- where [1]\n"
+                        "## Folded\n- old plan: it happened (folded 2026-09-01)"),
+    ("section_order", "## Open\n- where [1]\n## Decided\n- dinner (Ada) [1]"),
+    ("missing_section", "## Decided\n- dinner is on 2026-10-03 (Ada) [1]\n## Open"),
+    ("not_a_line", "## Decided\n## Open\nwhere to eat [1]"),
+    ("uncited", "## Decided\n## Open\n- where to eat"),
+    ("unknown_id", "## Decided\n## Open\n- where to eat [99]"),
+    ("cites_nora", "## Decided\n## Open\n- where to eat [3]"),
+    ("misattributed", "## Decided\n- dinner is on 2026-10-03 (Ben) [1]\n## Open\n- where [1]"),
+    ("unknown_owner", "## Decided\n## Open\n- where [1]\n"
+                      "## Owed\n- Cat -> book -> no date given [2]"),
+    ("unknown_owner", "## Decided\n## Open\n- where [1]\n"
+                      "## Owed\n- Nora -> check -> no date given [2]"),
+    ("bad_date", "## Decided\n- dinner is on 2026-10-03 Fri (Ada) [1]\n## Open\n- where [1]"),
+], ids=[
+    "unknown_section", "unknown_section-code_written", "section_order",
+    "missing_section", "not_a_line", "uncited", "unknown_id", "cites_nora",
+    "misattributed", "unknown_owner", "unknown_owner-nora", "bad_date",
+])
+async def test_accept_refuses_a_create_whose_body_breaks_the_schema(rule, body):
+    """Each refusal path, at `accept()`: the WHOLE candidate is refused, never
+    repaired (G1), counted by the rule it broke, and its sibling survives.
+    `## Folded` is a heading the validator knows and only code writes, so a
+    model writing it is refused here, where the writer is known."""
+    metrics = Metrics()
+    adaptor, _ = _adaptor(metrics=metrics)
+    await adaptor.inputs(key=SCOPE, batch=_BODY_BATCH)
+
+    accepted = await adaptor.accept(key=SCOPE, items=[
+        _item(title="Refused", body=body),
+        _item(title="Sibling", body=_GOOD_BODY),
+    ])
+
+    assert [c.title for c in accepted] == ["Sibling"]
+    assert _refused(metrics, rule) == 1
+    assert sum(_refused(metrics, r) for r in BODY_REFUSAL_RULES) == 1
+
+
+def test_the_objective_states_the_grammar_and_shows_no_filled_body():
+    """G7 (design 42 §6): the objective carries the grammar, never a filled
+    sample body. The model copies what its input shows it, in volume, over
+    what it is told (#513), so a worked body is an anchor on length and
+    subject. Read off the SHIPPED file: its grammar block names every section
+    a model writes, in the schema's order, and no envelope it shows carries a
+    body with a heading or a citation in it."""
+    import json
+    from pathlib import Path
+
+    import nora
+    from nora.domain.note_body import CODE_WRITTEN, SECTIONS
+
+    text = (
+        Path(nora.__file__).parent / "dreamer" / "objectives" / "note-candidates.md"
+    ).read_text(encoding="utf-8")
+    written_by_a_model = [h for h in SECTIONS if h not in CODE_WRITTEN]
+    headings = re.findall(r"^## (.+)$", text, flags=re.MULTILINE)
+    grammar = [h for h in headings if h in SECTIONS]
+    assert grammar == written_by_a_model
+    bodies = [
+        str(c["body"])
+        for blob in re.findall(r'^\{"verdicts".*?^\]\}$', text, flags=re.MULTILINE | re.DOTALL)
+        for c in json.loads(blob)["candidates"]
+    ]
+    assert bodies, "the objective shows no envelope carrying a body"
+    for body in bodies:
+        assert "##" not in body and not re.search(r"\[[0-9]", body), body
+
+
+async def test_accept_names_the_body_by_the_roster_name_it_rendered():
+    """The shown set is the batch AS RENDERED, after the roster projection
+    (S1a): the model reads `from="Ada Roster"`, so that is the name a line
+    must attribute, and the self-set profile name it never saw is refused."""
+    metrics = Metrics()
+
+    def project(rows: Sequence[TranscriptRow], _platform: str) -> list[TranscriptRow]:
+        return [replace(r, person_name=f"{r.sender_name} Roster") for r in rows]
+
+    adaptor, _ = _adaptor(
+        metrics=metrics, platform_for=lambda _: "signal", resolve_names=project,
+    )
+    await adaptor.inputs(key=SCOPE, batch=_BODY_BATCH[:2])
+    roster = "## Decided\n- dinner (Ada Roster) [1]\n## Open\n- where [1]"
+    profile = "## Decided\n- dinner (Ada) [1]\n## Open\n- where [1]"
+
+    accepted = await adaptor.accept(key=SCOPE, items=[
+        _item(title="Roster", body=roster), _item(title="Profile", body=profile),
+    ])
+
+    assert [c.title for c in accepted] == ["Roster"]
+    assert _refused(metrics, "misattributed") == 1
+
+
+async def test_accept_refuses_a_create_body_when_nothing_was_shown():
+    """Fail-closed: `accept` with no `inputs` for this key has shown the
+    model nothing, so a body citing anything cites what it was not shown."""
+    metrics = Metrics()
+    adaptor, _ = _adaptor(metrics=metrics)
+
+    accepted = await adaptor.accept(key=SCOPE, items=[_item(body=_GOOD_BODY)])
+
+    assert accepted == ()
+    assert _refused(metrics, "unknown_id") == 1
+
+
+async def test_accept_leaves_an_update_body_as_it_is_in_s2():
+    """One variable (design 42 §10.3): S2 holds CREATES. A candidate naming
+    `updates` keeps today's behaviour, prose and all, until S3/S4 change the
+    update arm."""
+    metrics = Metrics()
+    adaptor, _ = _adaptor(metrics=metrics)
+    await adaptor.inputs(key=SCOPE, batch=_BODY_BATCH)
+
+    accepted = await adaptor.accept(key=SCOPE, items=[
+        _item(updates="Wedding venue", body="Ben booked it for the 3rd."),
+    ])
+
+    assert [c.body for c in accepted] == ["Ben booked it for the 3rd."]
+    assert sum(_refused(metrics, r) for r in BODY_REFUSAL_RULES) == 0
 
 
 # ---------------------------------------------------------------------------
@@ -1307,12 +1483,33 @@ def test_both_label_vocabularies_are_enforced_at_runtime_not_only_in_a_test():
     for name, label, vocabulary in (
         ("nora_note_candidate_gate_total", "action", GATE_ACTIONS),
         ("nora_note_candidate_staging_total", "outcome", STAGING_OUTCOMES),
+        ("nora_note_candidate_body_refused_total", "rule", BODY_REFUSAL_RULES),
     ):
         for legitimate in vocabulary:
             adaptor._inc(name, **{label: legitimate})
 
         with pytest.raises(ValueError, match="vocabulary"):
             adaptor._inc(name, **{label: "reobsevred"})  # a plausible typo
+
+
+def test_body_refusal_rules_match_the_metric_help_text():
+    """The same guard for the body refusals (design 42 S2): every rule the
+    validator can name is a label value, and a help text that does not say
+    what it means is a dashboard label nobody can look up."""
+    import re
+
+    from nora.domain.note_body import RULES
+    from nora.obs.metric_specs import _COUNTERS
+
+    assert BODY_REFUSAL_RULES == RULES
+    spec = next(
+        c for c in _COUNTERS if c.name == "nora_note_candidate_body_refused_total"
+    )
+    for rule in BODY_REFUSAL_RULES:
+        assert re.search(rf"\b{re.escape(rule)}\b", spec.help_text), (
+            f"nora_note_candidate_body_refused_total{{rule={rule!r}}} is "
+            f"emitted and the help text does not name it"
+        )
 
 
 def test_staging_outcomes_vocabulary_matches_the_metric_help_text():

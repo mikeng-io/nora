@@ -359,7 +359,9 @@ async def _prepare_note_candidates(adaptor: object) -> None:
 
 
 def _note_candidate_items() -> tuple[Mapping[str, object], ...]:
-    """Two candidates on DIFFERENT anchor dates.
+    """Two candidates on DIFFERENT anchor dates, each body in design 42 §4's
+    schema, citing the rows `_prepare_note_candidates` rendered: a create's
+    body that does not hold to it is refused in `accept` (S2).
 
     Same date would be one occasion by the create gate's own rule — the second
     would land as a revision to the first's note rather than a second note —
@@ -370,7 +372,7 @@ def _note_candidate_items() -> tuple[Mapping[str, object], ...]:
         {
             "title": "Where dinner is",
             "description": "Three places named, nobody picked one.",
-            "body": "Ada suggested two, Ben a third. Nobody has booked.",
+            "body": "## Decided\n- dinner is on 2026-09-19 (Ada) [1]\n## Open\n- where [1]",
             "closing_condition": "somebody names the place",
             "anchor_date": 20260919,
             "message_ids": [1],
@@ -378,7 +380,7 @@ def _note_candidate_items() -> tuple[Mapping[str, object], ...]:
         {
             "title": "Wedding venue",
             "description": "The September wedding has no venue yet.",
-            "body": "Two venues shortlisted, neither called.",
+            "body": "## Decided\n## Open\n- which venue [2]",
             "closing_condition": "a venue is booked and confirmed",
             "anchor_date": 20260920,
             "message_ids": [2],

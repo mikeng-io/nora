@@ -1596,6 +1596,31 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "the ordinary steady-state value here.",
         ("outcome",),
     ),
+    # Design 42 S2 (§4.5): a note-candidates CREATE whose body does not hold
+    # to the schema is refused in `accept()`, before anything is staged, so
+    # it reaches neither series above. Without this one a refusal would be
+    # silence: the proposal simply never arrives. Its own series rather than
+    # a gate action because nothing was staged and nothing was decided; the
+    # rule vocabulary is `nora.domain.note_body.RULES`, enforced at runtime by
+    # the adaptor's `_VOCABULARIES` and named in full below.
+    _CounterSpec(
+        "nora_note_candidate_body_refused_total",
+        "A note-candidates create refused before staging because its body "
+        "broke the note-body schema (design 42 §4.5), by the rule it broke: "
+        "unknown_section (a heading that is not one of the schema's, or one "
+        "only code writes), section_order (a heading repeated or out of "
+        "order), missing_section (## Decided or ## Open absent, both empty, "
+        "or ## Open empty on a new note), not_a_line (text outside a list "
+        "item, a nested list, a line not in its section's grammar), uncited "
+        "(a line with no [ids]), unknown_id (an id the pass did not show), "
+        "cites_nora (an id of one of Nora's own messages), misattributed (a "
+        "name that wrote none of the ids its line cites), unknown_owner (an "
+        "## Owed owner the pass did not show as a sender, or Nora), bad_date "
+        "(a malformed or impossible date, or the wrong weekday). One sample "
+        "per refused candidate; the candidate is not written, and an update's "
+        "body is not checked here.",
+        ("rule",),
+    ),
     # A DELIBERATE second series over calls already counted, on
     # `_record_created`'s precedent (`nora.agent.tools`) rather than against
     # `_record_room`'s rule — and the difference is that the REASON is the
