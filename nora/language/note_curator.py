@@ -870,10 +870,31 @@ class NoteCuratorAdaptor:
         # unaffected either way) and does not touch `since` or the own-sends
         # split below, which never reads a sender's name at all
         # (`_render_own_sends` renders a fixed `who="you"`).
+        # A RAISING RESOLVER DEGRADES, IT NEVER SKIPS THE NOTE (#546 review).
+        # `resolve_names` is `Persons.name_transcript`, dict lookups only, so
+        # this should never fire — but the `state`/`unavailable` branch above
+        # is for the RECORD READ this note's retirement is grounded on; a
+        # name a row is merely attributed BY is not one of `_Evidence`'s
+        # inputs, and folding a resolver fault into `unavailable` would leave
+        # the note standing over a failure that has nothing to do with
+        # whether it should retire. Caught here, at the one call site.
         if self._resolve_names is not None and self._platform_for is not None:
             platform = self._platform_for(note.established_in, note.unit)
             if platform is not None:
-                evidence = tuple(self._resolve_names(evidence, platform))
+                try:
+                    evidence = tuple(self._resolve_names(evidence, platform))
+                except Exception:
+                    log.exception(
+                        "note curator: resolve_names raised for note %s "
+                        "(conversation %s, platform %s); rendering its "
+                        "evidence on the pre-resolution speaker_name floor "
+                        "instead", note.id, note.established_in, platform,
+                    )
+                    if self._metrics is not None:
+                        self._metrics.inc(
+                            "nora_dream_name_resolution_failed_total",
+                            adaptor=self.name,
+                        )
         # ISSUE #199's NARROW HALF: her own DELIVERED rows, kept apart from
         # `evidence` rather than folded into it. See `_own_sends` for the
         # boundary and `_render_own_sends` for what the model is told they

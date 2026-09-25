@@ -1164,6 +1164,26 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "config gap, counted every pass; the log says it once.",
         ("adaptor", "unit"),
     ),
+    # Issue #200 follow-up (#546 review): `CultureAdaptor` and
+    # `NoteCuratorAdaptor` both call an injected `resolve_names`
+    # (`Persons.name_transcript`) before rendering a sender's name, and a
+    # raising resolver must not take the whole occasion down with it — the
+    # occasion still renders, on the pre-#200 `speaker_name` floor (the
+    # profile name, or "unknown"), rather than being marked `unavailable`
+    # and skipped. This is how that degraded read is observed: it should be
+    # structurally zero, since `Persons.name_transcript` does dict lookups
+    # only, and a non-zero reading means the injected resolver itself is
+    # failing.
+    _CounterSpec(
+        "nora_dream_name_resolution_failed_total",
+        "Batches or evidence rows a Dreamer adaptor rendered on the "
+        "pre-resolution speaker_name floor because the injected "
+        "resolve_names call raised, by adaptor. Structurally zero; a "
+        "non-zero reading is the resolver itself breaking, not a room with "
+        "no mapped senders (which costs nothing here — resolution is only "
+        "attempted, never required).",
+        ("adaptor",),
+    ),
     # Screening is the second path into the prompt, and it must never be
     # silent: a proposal dropped for carrying a phone number or a coordinate
     # is a real event about a model reading attacker-influenceable pages, and

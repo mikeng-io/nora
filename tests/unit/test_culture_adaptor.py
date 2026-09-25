@@ -213,6 +213,49 @@ async def test_a_mapped_senders_batch_line_renders_the_canonical_name():
     assert "not-miles" not in out
 
 
+async def test_a_raising_resolver_still_renders_on_the_floor_and_the_pass_commits():
+    """#546 review: a resolver fault must DEGRADE, never take the fold down
+    with it. `resolve_names` is `Persons.name_transcript` in production —
+    dict lookups only — but an injected callable can still raise, and
+    letting that propagate out of `inputs()` would mark the whole occasion
+    `unavailable` and hold the watermark, re-reading the same batch every
+    tick over a failure that has nothing to do with what the room said.
+
+    Proved both ways: `inputs()` still renders the line on the
+    pre-resolution `speaker_name` floor (`sender_name`, here) rather than
+    raising, AND the fold still COMMITS — `accept`/`commit` write an account
+    exactly as `test_a_CHANGED_account_is_appended_over_an_existing_head`
+    proves for a working resolver."""
+    row = TranscriptRow(
+        id=1, sender_id="u1", sender_name="spoofable-name", person_name=None,
+        ts=T0, body="dinner Saturday?", is_nora=False,
+        delivery_status=DeliveryStatus.SENT, raw_json="{}",
+    )
+
+    def resolve_names(rows, platform):
+        raise RuntimeError("the roster is unreachable")
+
+    metrics = Metrics()
+    store = _Store()
+    adaptor = _adaptor(
+        store, metrics,
+        platform_for=lambda _k: "discord", resolve_names=resolve_names,
+    )
+    out = await adaptor.inputs(key=KEY, batch=[row])
+
+    assert 'from="spoofable-name"' in out, "the pre-resolution floor"
+    assert metrics.get(
+        "nora_dream_name_resolution_failed_total", adaptor="culture",
+    ) == 1
+
+    written = await adaptor.commit(
+        key=KEY, proposals=[_proposal("they eat Saturdays")], now_ms=T0,
+    )
+
+    assert written == 1, "the fold commits despite the resolver fault"
+    assert store.appended[0]["body"] == "they eat Saturdays"
+
+
 async def test_an_unwired_resolver_still_never_renders_a_raw_id():
     """The other half: `platform_for`/`resolve_names` both default `None`
     (the shape every pre-#200 construction of this adaptor already has), and

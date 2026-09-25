@@ -575,10 +575,33 @@ class CultureAdaptor:
         # for them. `_render_batch`'s `speaker_name` still never renders a
         # raw id either way; this is what makes the MAPPED case correct
         # rather than merely non-leaking.
+        # A RAISING RESOLVER DEGRADES, IT NEVER SKIPS THE FOLD (#546 review).
+        # `resolve_names` is `Persons.name_transcript`, dict lookups only, so
+        # this should never fire — but this adaptor's own fail-closed rule
+        # is for a STORE this pass depends on (`inputs`'s own docstring); a
+        # name a batch line is merely attributed BY is not one, and treating
+        # a resolver fault as unavailable would hold the watermark and
+        # re-read the same batch forever over a failure the fold does not
+        # need to answer. Caught here, at the one call site, rather than
+        # inside `_render_batch`, which has no logger or metrics
+        # collaborator and would have to grow both for this alone.
         if self._resolve_names is not None:
             platform = self._platform_for(key) if self._platform_for is not None else None
             if platform is not None:
-                batch = tuple(self._resolve_names(batch, platform))
+                try:
+                    batch = tuple(self._resolve_names(batch, platform))
+                except Exception:
+                    log.exception(
+                        "culture: resolve_names raised for scope=%s "
+                        "platform=%s; rendering the batch on the "
+                        "pre-resolution speaker_name floor instead",
+                        key, platform,
+                    )
+                    if self._metrics is not None:
+                        self._metrics.inc(
+                            "nora_dream_name_resolution_failed_total",
+                            adaptor=self.name,
+                        )
         parts: list[str] = [self._room_block(key)]
         previous = await self._culture.head(key=key)
         if previous is not None:
