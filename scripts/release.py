@@ -9,13 +9,14 @@ The operator decides when to run this command, on the deploy host, as
 One command does the whole release, in this order, and stops at the first
 failure:
 
-1. take the deploy lock every other deploy on the host takes, so a release
-   never recreates containers under another session's build;
-2. tag ``V<N>`` at HEAD with the group message;
+1. take the deploy lock every other deploy on the host takes, refuse an
+   unlocked docker build/up, and refuse commits not on ``origin/master``;
+2. tag ``V<N>`` at HEAD with the group message (removed again if a later
+   step fails, so a rerun asks for the same version);
 3. build the stamped ``nora:V<N>`` image, and rebuild the images that must
    move with it (``VOICE_IMAGES``);
-4. recreate every service that runs them (``RELEASE_SERVICES``) and run
-   ``scripts/verify-deploy.py``;
+4. recreate every service that runs them (``RELEASE_SERVICES``), run
+   ``scripts/verify-deploy.py`` and read each voice service's image back;
 5. tag the image ``nora:sha-<short>`` and log it to ``DEPLOY_LOG``, so the
    rollback in the deploy procedure can find it;
 6. push the tag. A tag made here and never pushed stays on this host alone,
@@ -105,6 +106,39 @@ def take_deploy_lock() -> object:
             time.sleep(5)
 
 
+def refuse_unlocked_deploys() -> None:
+    """A hand-run `docker build` or `docker compose up` that skipped the lock
+    can still overlap the recreate; two concurrent recreates left orphan
+    containers on 2026-09-24. Same check as the deploy skill's step 3."""
+    found = subprocess.run(
+        ["pgrep", "-af", "docker( compose)? (build|up)"],  # noqa: S607
+        text=True, capture_output=True, check=False,
+    ).stdout.strip()
+    if found:
+        raise RuntimeError(f"an unlocked docker build/up is running; nothing was tagged:\n{found}")
+
+
+def refuse_unpublished_commits() -> None:
+    """The deploy checkout collects unpushed commits. Tagging one and pushing
+    the tag would publish it past master, so HEAD must already be on
+    `origin/master`."""
+    run("git", "fetch", "-q", "origin")
+    ahead = run("git", "rev-list", "--count", "origin/master..HEAD").strip()
+    if ahead != "0":
+        raise ValueError(
+            f"HEAD has {ahead} commit(s) not on origin/master; land them by PR first")
+
+
+def verify_voice_images() -> None:
+    """`verify-deploy.py` checks only `nora:latest`; each voice service is read
+    back against the image just built (docs/runbook.md 3b)."""
+    for name in VOICE_IMAGES:
+        running = run("docker", "inspect", "--format", "{{.Image}}", name).strip()
+        built = run("docker", "image", "inspect", "--format", "{{.Id}}", f"{name}:latest").strip()
+        if running != built:
+            raise RuntimeError(f"{name} is not running the image just built")
+
+
 def step(*args: str) -> None:
     """Run one deploy step with its output shown, raising on a nonzero exit."""
     subprocess.run(args, cwd=ROOT, check=True)  # noqa: S603 - fixed release commands only
@@ -115,6 +149,7 @@ def deploy(version: str) -> None:
     step("docker", "compose", "build", *VOICE_IMAGES)
     step("docker", "compose", "up", "-d", "--no-build", "--force-recreate", *RELEASE_SERVICES)
     step("python3", str(ROOT / "scripts" / "verify-deploy.py"))
+    verify_voice_images()
     short = run("git", "rev-parse", "--short", "HEAD").strip()
     step("docker", "tag", "nora:latest", f"nora:sha-{short}")
     image = subprocess.run(
@@ -138,17 +173,32 @@ def main(argv: list[str] | None = None) -> int:
         # directories it copies (gen_version_manifest.IMAGE_DIRS).
         if run("git", "status", "--porcelain", "--untracked-files=no"):
             raise ValueError("refusing to release a dirty working tree")
-        version = next_version()
-        note = group_message(ROOT / "docs" / "releases" / f"{version}.md", version)
         if not args.skip_deploy:
             lock = take_deploy_lock()
+            refuse_unlocked_deploys()
+            refuse_unpublished_commits()
+        version = next_version()
+        note = group_message(ROOT / "docs" / "releases" / f"{version}.md", version)
         run("git", "tag", "-a", version, "-m", note)
         if not args.skip_deploy:
-            deploy(version)
-            run("git", "push", "origin", version)
+            try:
+                deploy(version)
+            except (RuntimeError, subprocess.CalledProcessError) as exc:
+                # A tag left behind makes the rerun ask for V<n+1>'s note, so
+                # an undeployed version is untagged again before reporting.
+                run("git", "tag", "-d", version)
+                raise RuntimeError(
+                    f"{version} did not deploy ({exc}); its tag was removed, "
+                    "fix the cause and rerun") from exc
+            try:
+                run("git", "push", "origin", version)
+            except RuntimeError as exc:
+                raise RuntimeError(
+                    f"{version} is deployed and verified, but its tag was not pushed "
+                    f"({exc}); run: git push origin {version}") from exc
         print(f"released {version}")
         return 0
-    except (RuntimeError, ValueError, subprocess.CalledProcessError) as exc:
+    except (OSError, RuntimeError, ValueError, subprocess.CalledProcessError) as exc:
         print(str(exc), file=sys.stderr)
         return 2
     finally:

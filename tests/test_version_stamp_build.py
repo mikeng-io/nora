@@ -194,14 +194,26 @@ def test_the_image_dirs_are_every_directory_the_dockerfile_copies():
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
+    import json
+
+    # Join continuation lines first: a COPY split with `\\` is one instruction.
+    text = (ROOT / "Dockerfile").read_text().replace("\\\n", " ")
     copied: set[str] = set()
-    for line in (ROOT / "Dockerfile").read_text().splitlines():
-        parts = line.split()
-        if not parts or parts[0] != "COPY" or any(p.startswith("--from") for p in parts):
+    for line in text.splitlines():
+        parts = line.split(maxsplit=1)
+        if len(parts) < 2 or parts[0].upper() not in ("COPY", "ADD"):
             continue
-        for source in parts[1:-1]:
-            top = source.split("/")[0]
-            if "/" in source and (ROOT / top).is_dir():
+        body = parts[1]
+        if "--from" in body:  # from another stage, not the build context
+            continue
+        words = [w for w in body.split() if not w.startswith("--")]
+        if body.lstrip().startswith("["):
+            words = json.loads(body[body.index("["):])
+        for source in words[:-1]:
+            assert source.strip("./") != "", (
+                f"`{line.strip()}` copies the whole context; IMAGE_DIRS cannot bound it")
+            top = source.strip("./").split("/")[0]
+            if (ROOT / top).is_dir():
                 copied.add(top)
     assert copied, "no directory COPY found: the Dockerfile parse is broken"
     assert copied <= set(module.IMAGE_DIRS), copied - set(module.IMAGE_DIRS)

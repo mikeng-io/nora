@@ -79,46 +79,100 @@ def test_a_release_recreates_every_service_on_the_images_it_builds():
     assert running_them == set(release.RELEASE_SERVICES)
 
 
+class _FakeRelease:
+    """`release.main` with every host action replaced by a recorder, so the
+    ORDER of the real `main` is what is asserted. `git` answers what a clean
+    host on `origin/master` answers unless a test says otherwise."""
+
+    def __init__(self, monkeypatch, *, ahead: str = "0", deploy_fails: bool = False,
+                 push_fails: bool = False, lock_busy: bool = False) -> None:
+        import subprocess
+
+        self.release = _release_module()
+        self.calls: list[str] = []
+        release = self.release
+
+        def fake_run(*args: str) -> str:
+            if args[:2] == ("git", "status"):
+                return ""
+            if args[:2] == ("git", "rev-list"):
+                return ahead
+            if args[:2] == ("git", "fetch"):
+                return ""
+            if args[:3] == ("git", "tag", "-a"):
+                self.calls.append("tag")
+            elif args[:3] == ("git", "tag", "-d"):
+                self.calls.append("untag")
+            elif args[:2] == ("git", "push"):
+                self.calls.append("push")
+                if push_fails:
+                    raise RuntimeError("Permission denied (publickey)")
+            return ""
+
+        def fake_lock() -> io.StringIO:
+            if lock_busy:
+                raise RuntimeError("another deploy holds the lock; nothing was tagged")
+            self.calls.append("lock")
+            return io.StringIO()
+
+        def fake_deploy(version: str) -> None:
+            self.calls.append("deploy")
+            if deploy_fails:
+                raise subprocess.CalledProcessError(1, ["verify-deploy.py"])
+
+        monkeypatch.setattr(release, "run", fake_run)
+        monkeypatch.setattr(release, "next_version", lambda: "V3")
+        monkeypatch.setattr(release, "group_message", lambda path, version: "V3 出咗。")
+        monkeypatch.setattr(release, "take_deploy_lock", fake_lock)
+        monkeypatch.setattr(release, "refuse_unlocked_deploys", lambda: None)
+        monkeypatch.setattr(release, "deploy", fake_deploy)
+
+    def main(self) -> int:
+        return self.release.main([])
+
+
 def test_a_release_locks_then_tags_then_deploys_then_pushes(monkeypatch):
     """The lock comes before the tag, so a busy host tags nothing. The push
     comes after a verified deploy, so a failed one publishes nothing, and a
     successful one never leaves the tag on the host alone (V2)."""
-    release = _release_module()
-    calls: list[str] = []
+    fake = _FakeRelease(monkeypatch)
 
-    def fake_run(*args: str) -> str:
-        if args[:2] == ("git", "status"):
-            return ""
-        calls.append(" ".join(args[:2]) if args[1] != "tag" else "tag")
-        if args[:2] == ("git", "tag") and args[2] == "--list":
-            return "V1\nV2\n"
-        return ""
-
-    monkeypatch.setattr(release, "run", fake_run)
-    monkeypatch.setattr(release, "next_version", lambda: "V3")
-    monkeypatch.setattr(release, "group_message", lambda path, version: "V3 出咗。")
-    monkeypatch.setattr(
-        release, "take_deploy_lock", lambda: calls.append("lock") or io.StringIO())
-    monkeypatch.setattr(release, "deploy", lambda version: calls.append("deploy"))
-
-    assert release.main([]) == 0
-    assert calls == ["lock", "tag", "deploy", "git push"]
+    assert fake.main() == 0
+    assert fake.calls == ["lock", "tag", "deploy", "push"]
 
 
-def test_a_failed_deploy_pushes_no_tag(monkeypatch):
-    import subprocess
+def test_a_busy_host_tags_nothing(monkeypatch):
+    fake = _FakeRelease(monkeypatch, lock_busy=True)
 
-    release = _release_module()
-    calls: list[str] = []
+    assert fake.main() == 2
+    assert "tag" not in fake.calls
 
-    def failed_deploy(version: str) -> None:
-        raise subprocess.CalledProcessError(1, ["verify-deploy.py"])
 
-    monkeypatch.setattr(release, "run", lambda *args: calls.append(" ".join(args[:2])) or "")
-    monkeypatch.setattr(release, "next_version", lambda: "V3")
-    monkeypatch.setattr(release, "group_message", lambda path, version: "V3 出咗。")
-    monkeypatch.setattr(release, "take_deploy_lock", io.StringIO)
-    monkeypatch.setattr(release, "deploy", failed_deploy)
+def test_commits_not_on_origin_master_are_never_tagged(monkeypatch, capsys):
+    """The deploy checkout collects unpushed commits; pushing a tag on one
+    would publish it past master."""
+    fake = _FakeRelease(monkeypatch, ahead="2")
 
-    assert release.main([]) == 2
-    assert "git push" not in calls
+    assert fake.main() == 2
+    assert "tag" not in fake.calls
+    assert "not on origin/master" in capsys.readouterr().err
+
+
+def test_a_failed_deploy_removes_its_tag_and_pushes_nothing(monkeypatch, capsys):
+    """A tag left behind makes the rerun ask for the NEXT version's note, so
+    the release could not be retried without a hand `git tag -d`."""
+    fake = _FakeRelease(monkeypatch, deploy_fails=True)
+
+    assert fake.main() == 2
+    assert fake.calls == ["lock", "tag", "deploy", "untag"]
+    assert "rerun" in capsys.readouterr().err
+
+
+def test_a_failed_push_after_a_verified_deploy_names_the_push(monkeypatch, capsys):
+    """The containers are up and verified; only the push is missing. The tag
+    stays (the image is stamped with it) and the error says what to run."""
+    fake = _FakeRelease(monkeypatch, push_fails=True)
+
+    assert fake.main() == 2
+    assert fake.calls == ["lock", "tag", "deploy", "push"]
+    assert "git push origin V3" in capsys.readouterr().err
