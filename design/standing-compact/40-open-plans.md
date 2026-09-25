@@ -18,11 +18,14 @@ edges:
 `design/group-situation/10-standing-drops-plans.md` measured production
 folds dropping plans that were still open and still ahead of them: at least
 10 of 206, 5 of them substantive. The character budget was not the cause.
-What fits is the fold's anti-recap test, which reads a plan a member stated
-as a recap while the plan is still in the 40-message transcript window, plus
-«RE-JUDGE the whole paragraph, every turn». Together they let a plan be lost
-to a re-voicing even on a fold where nothing touched it. Notes did not
-reliably catch it, and the one note that did was dated to another event.
+Most of those drops predate the fold rewrite of 2026-09-24 (7fdb24b4), and
+two came from the rebuild-after-N-folds path that commit deleted. On today's
+fold the study saw one substantive drop and one minor one in 79 pairs, and
+the substantive one is the drop behind the wedding turn that started this.
+What fits the one on today's fold is the anti-recap test, which reads a plan
+a member stated as a recap while the plan is still in the 40-message
+transcript window, plus «RE-JUDGE the whole paragraph, every turn». Notes did
+not reliably catch it, and the one note that did was dated to another event.
 
 The working set (`30-working-set.md`) has the same weakness by design: the
 fold rewrites the array, and an item it leaves out is gone. That is right for
@@ -37,8 +40,10 @@ A third field on `Standing`, beside `body` and `working_set`:
 `OpenPlan = {id: str, what: str, on: date, at: str | None, first_seen: int}`
 
 - `id` is short and stable (`p1`, `p2`, …), assigned by code when the plan
-  first appears, never by the model. It is how a later fold refers to the
-  plan.
+  first appears, never by the model, and **never reused** in the room: the
+  next id is one past the highest ever issued in the room's revision chain,
+  so a fold closing a stale id can never remove a different plan. It is how
+  a later fold refers to the plan.
 - `what` is one line, in the room's language: what is planned and who is in
   it, as far as it is known.
 - `on` is the plan's day, as an ISO date. It is required: a plan with no day
@@ -49,15 +54,17 @@ A third field on `Standing`, beside `body` and `working_set`:
 
 It has its own budget, separate from the paragraph's and the working set's.
 Starting points, not load-bearing: `[standing] open_plans_max_items = 6`,
-`open_plans_max_chars = 600` (rendered JSON). An oversized set is refused as
-a whole and the prior is kept, exactly as the working set does. A DB CHECK
-ceiling sits above the operating cap.
+`open_plans_max_chars = 600` (rendered JSON). **Unlike the working set, the
+budget never refuses a carried plan.** It refuses only the NEW items that do
+not fit, and counts them. Refusing the whole set would wedge it: once full,
+no new plan could enter until one expired. A DB CHECK ceiling sits above the
+operating cap.
 
 ## 2. Lifetime: the brake is structural
 
 | how a plan leaves | who acts | when |
 |---|---|---|
-| its day has passed | render, deterministic | `on` is before today in HKT; the item never renders, the same fail-closed filter the working set's TTL uses |
+| its day has passed | write and render, deterministic | `on` is before the day in Asia/Hong_Kong: the write path removes it (so it frees its cap slot) and the render never shows it (so a quiet room's stale row is still safe) |
 | the room settled, cancelled, moved or replaced it | the fold, **explicitly** | the fold lists it under `closed_plans` with its `id` and a one-line `why` |
 | the fold left it out | **nobody: it stays** | code carries every prior plan that was not closed and has not expired |
 
@@ -67,8 +74,17 @@ remove a plan by saying so. An omission is carried and counted
 would have dropped plans stays measurable after it can no longer do it.
 
 A fold that returns a plan under an existing `id` revises it (a moved day, a
-new time, a new member). A `why` is screened and kept on the revision row,
-so a close is auditable.
+new time, a new member). A returned item with no `id` is first matched
+against existing plans on (`on`, whitespace- and case-normalised `what`), so
+a fold that re-sends a plan without its id revises it rather than
+duplicating it. A close's `id`, `what` and screened `why` are kept on the
+revision row (`closed_plans`, §5), so a close is auditable.
+
+**An operator can close a plan.** `write_if_unchanged` (the operator edit
+path) may remove plans, recorded as a close with the operator as its `why`,
+but may not add or edit one. A misdated or invented plan (the note tier
+shows the producer can misdate) is otherwise sticky until its date, and the
+operator needs a way out that does not wait for a fold.
 
 ## 3. Write path
 
@@ -84,15 +100,17 @@ The fold's JSON gains two optional keys:
 An item with no `id` is new. The write path:
 
 1. Parses `on` as a date. A date the model cannot write as ISO, or one before
-   the fold's own day, is refused and counted (`..._open_plan_refused_total`
-   with a reason). A plan whose day has already passed is not open.
+   the fold's own day in Asia/Hong_Kong, refuses **that item only** and is
+   counted (`..._open_plan_refused_total` with a reason). A plan whose day
+   has already passed is not open.
 2. Merges: prior plans, minus `closed_plans` ids, updated by the returned
    items with those ids, plus new items with new ids. Every prior plan the
    fold did not mention is carried unchanged.
 3. Screens each `what` and `why` through `nora.agent.dream_screen`, as the
    body and the working set already are.
-4. Checks the budget. On overflow, the whole new set is refused and the prior
-   kept. An unknown `id` in `closed_plans` is ignored and counted.
+4. Checks the budget: carried and revised plans always stay; new items that
+   do not fit are refused and counted. An unknown `id` in `closed_plans` is
+   ignored and counted.
 
 **Both folds write it.** The tag debrief and the watermark rollup
 (`nora/ingest/stages/standing_event.py`) share the validator, as they do for
@@ -122,9 +140,10 @@ and this does not.
 
 ## 5. Storage
 
-Migration `0066_standing_open_plans`: `open_plans jsonb NOT NULL DEFAULT
-'[]'` on `standing` and `standing_revision`, with a CHECK on item count and
-bytes. `read` and `read_as_of` return it beside `working_set`. An operator
+Migration `0067_standing_open_plans` (`0066` is `instagram_summons`):
+`open_plans jsonb NOT NULL DEFAULT '[]'` on `standing` and
+`standing_revision`, with a CHECK on item count and bytes, and
+`closed_plans jsonb NOT NULL DEFAULT '[]'` on `standing_revision` only. `read` and `read_as_of` return it beside `working_set`. An operator
 edit through `write_if_unchanged` may not change it, the same rule the
 working set has.
 
@@ -136,11 +155,29 @@ real tag turn whose fold dropped the plan. The judge reads the new position,
 the working set and the open plans, so a plan held in the new field counts
 as held.
 
-- **Before arm (master):** these reproduce the drop, or they are not the
-  defect.
-- **After arm:** the five pass, and the existing 15 cases do not regress. In
-  particular `recap` must not regress, since a field that holds room-stated
-  plans is a new place for recap to creep in.
+- **Four of the five drops predate today's fold.** Drops 1 to 4 (09-22) ran on
+  the fold before 7fdb24b4 (09-24), and drops 1 and 2 were its
+  rebuild-after-N-folds path (`fold_count` reset to 1), which that commit
+  deleted. Only drop 5 (09-25) is known to fail on today's fold. **The before
+  arm decides what this node is for:** a case that passes on master is a
+  regression guard, not evidence of the defect. If none reproduce except
+  drop 5, the build is sized to one confirmed failure, and that is stated
+  before it merges.
+- **Before arm, measured 2026-09-26** (`python -m evals standing --judge
+  --sample 3`, norty, eval source newest row 2026-09-25 20:56, arm 234ee8e5 =
+  master's fold with these cases): drops 1, 2 and 3 PASS 3/3 each, so today's
+  fold does not reproduce them and they are regression guards. Case 4 (the
+  control) 1 pass / 2 fail. Case 5 (the wedding meet-up and the stops before
+  dinner) 2 pass / 1 fail. **The confirmed defect on today's fold is one dated
+  case, dropped in about one draw in three.** The build is sized to that; its
+  after arm needs a higher n on case 5 than 3 to show a change.
+- **Case 4 is a control, not a target.** It is her own open question with no
+  day, and §1 keeps an undated matter in the paragraph, so the field cannot
+  hold it. The after arm is read as 4 targets plus 1 control.
+- **After arm:** the targets that reproduced now pass, and the existing
+  standing cases do not regress (15 in the corpus, 11 of them runnable; 4
+  are parked). In particular `recap` must not regress, since a field that
+  holds room-stated plans is a new place for recap to creep in.
 
 **Deterministic tests**, each revert-proved: an omitted plan is carried; an
 explicit close removes it; a past `on` never renders; a past `on` in the
@@ -157,16 +194,27 @@ fold is still omitting plans and the brake is catching them. Rows in
   the field instead.
 - It does not dedupe against notes. Notes are the unit's durable open
   questions and survive across rooms; open plans are one room's working
-  calendar. Overlap is measured after it ships, not designed away first.
-- It does not fix note-candidates writing a plan under another event's date.
-  That is its own eval case (`note_candidates.yaml`), not this field.
+  calendar. When a note and a plan name the same event with different days,
+  neither wins: the tag turn sees both, each with its own day and its
+  distance from now, and the disagreement is in front of her rather than
+  resolved silently. Overlap is measured after it ships.
+- It does not fix note-candidates writing a plan under another event's date,
+  and that case is **not** in the corpus yet. At the real moment (the wedding
+  room, 09-24, a booking on the 17th and a dinner on the 27th in one batch)
+  the unit already held a note dated the 27th, so a correct pass may either
+  create a correctly dated note or update that one. The harness grades a
+  date only on `create`, and `either` grades nothing about the date. The
+  case needs a grader that accepts «a create dated 2026-09-27, or an update
+  of the 27th's note» before it can be added without failing a correct
+  answer.
 - It does not wire the proactive pass (§4).
 
 ## Open questions
 
 - Should a new plan cite the message row that stated it? That would ground
-  it the way the working set's `source` grounds a finding. It is left out of
-  v1 because the rollup's rows and the debrief's rows carry different
-  handles.
+  it the way the working set's `source` grounds a finding, and make an
+  invented plan detectable. It is left out of v1 because the rollup's rows
+  and the debrief's rows carry different handles; the operator close path
+  (§2) is the v1 answer to a sticky mistake.
 - The 6-item cap is a guess. It is read back against the first week's live
   counts before anyone tunes it (`never-size-a-ceiling-on-n-1`).

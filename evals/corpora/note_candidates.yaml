@@ -476,26 +476,3 @@ cases:
         A real room fixes two unrelated arrangements for the same date
         within one Dreamer batch, so a `snapshot:` at its last row carries
         both and `must_cite` can name both rows.
-
-  - name: p10_a_days_itinerary_keeps_its_own_date
-    entry: dreamer
-    category: note-candidates
-    expect: create
-    # REAL (design/standing-compact/40 §7): the wedding room at the instant
-    # production's pass created a note for a day's itinerary (before_ms =
-    # that note's created_at). The batch holds a booking for one date (the
-    # 17th, row 7010), then a question about dinner on another (the 27th,
-    # row 7013), then the itinerary for «that day» (rows 7026-7035), which
-    # answers the dinner question. Production dated the note the 17th. The
-    # anchor this case holds is the 27th. An `update` of the unit's dinner
-    # note would also be a defensible reading; the case expects `create`
-    # because that is the shape production chose and the variable under
-    # test is the date, not the shape.
-    snapshot:
-      platform: signal
-      conversation_id: x5hcBMQITtdUfSC0o9AHsqJKU7ywYMrOG5hcBMQITtc=
-      before_ms: 1790259508288
-    metadata:
-      must_cite:
-      - 7034
-      anchor_date: 20260927

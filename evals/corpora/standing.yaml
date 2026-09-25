@@ -433,8 +433,13 @@ cases:
   # --- OPEN PLANS DROPPED BY A FOLD (design/group-situation/10, #555) -------
   # Five real folds that dropped an open plan still ahead of them, with
   # nothing between the two writes settling it. Each was confirmed by hand
-  # in that study. They measure design/standing-compact/40-open-plans.md:
-  # on master they reproduce the drop, after it the plan is held.
+  # in that study. They measure design/standing-compact/40-open-plans.md.
+  # Drops 1-4 ran on the fold before 7fdb24b4 (2026-09-24), and 1-2 on its
+  # deleted rebuild path; the before arm on today's fold decides which still
+  # reproduce (a case that passes on master is a regression guard). Case 4
+  # is undated, so the open-plans field cannot hold it: it is a control.
+  # Before arm 2026-09-26, n=3: drops 1-3 PASS 3/3, case 4 1/3, case 5 2/3.
+  # On today's fold only case 5 is a dated plan that still drops.
 
   - name: carry-a-same-evening-hand-over-through-a-correction
     entry: standing
