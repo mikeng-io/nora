@@ -18,11 +18,13 @@ she may answer once in public, with no room and no memory behind her
 (summons; built, shipped disabled and in dry-run). What she may *do* with what she knows is governed apart from what
 she can *see*: `ARCHITECTURE.md` §8, «What she may do with what she knows».
 
-Under the hood Nora v2 is a two-layer,
+Under the hood she is a two-layer,
 [Strands Agents SDK](https://github.com/strands-agents/sdk-python)-based
-rebuild of the original hand-rolled v1 — `ARCHITECTURE.md` (arc42) is the
-map; `design/00-overview.md` is the v2 rebuild's original plan (Signal only,
-SQLite), kept as history.
+rebuild of a hand-rolled original — `ARCHITECTURE.md` (arc42) is the map;
+`design/00-overview.md` is that rebuild's first plan (Signal only, SQLite),
+kept as history. Her releases are tagged `V1`, `V3`, `V4`…, one
+`docs/releases/V<n>.md` each; the rebuild is not a release number
+(«Versions, and the note she posts after an upgrade», below).
 
 **Reading order for a newcomer:** this file, then `GLOSSARY.md` (the words
 that mean something specific here), then `ARCHITECTURE.md`. Everything else
@@ -477,8 +479,8 @@ docker compose up -d --no-build
 
 ### Versions, and the note she posts after an upgrade
 
-Nora's version is **baked into the image at build time** — plain `V1`, `V2`, `V3`, no
-semver. Build with the wrapper rather than `docker build` directly:
+Nora's version is **baked into the image at build time** — plain `V1`, `V3`, `V4`, no
+semver (there is no `V2` tag; `pyproject.toml`'s `version` is not the release). Build with the wrapper rather than `docker build` directly:
 
 ```bash
 uv run python scripts/render_release_notes.py
