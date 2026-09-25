@@ -148,7 +148,16 @@ explicit `scope=` list, redirect `https://nora.67.zone/`, exchange, then
 and profile discovery are not, and nothing in this design depends on them:
 the fact check uses `web_search`.
 
-**App Review is the second gate, and it is not needed to start.** Without
+**App Review is the second gate, and the summons needs it** (measured
+2026-09-25, 10 §"What the first mention showed"). Under standard access a
+summons under a non-tester's post arrives without its parent: `root_post`
+and `replied_to` are withheld and the conversation is empty. So before
+review, Nora can only be summoned about posts that testers wrote, which is
+not the use case. The paragraph below was written before that measurement.
+Its first sentence was wrong: App Review **is** needed to start. The rest
+still holds.
+
+**App Review was expected to be the second gate, and not needed to start.** Without
 Advanced Access, `mentions` returns only mentions by tester accounts, reads
 are limited to what those accounts can see, and keyword search sees only the
 tester's own posts. With the operator and a few friends as testers, the
