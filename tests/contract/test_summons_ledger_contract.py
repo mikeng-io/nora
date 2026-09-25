@@ -132,16 +132,65 @@ async def test_only_a_live_staged_row_awaits_a_flush(ledger):
     assert waiting is not None and waiting.id == live and waiting.reply_text == "live"
 
 
-async def test_the_boot_sweep_fails_every_claimed_row_and_touches_nothing_else(ledger):
-    left = await _claim(ledger, "1001")
-    done = await _claim(ledger, "1002")
-    assert left is not None and done is not None
-    await ledger.finish(done, "silent", now=NOW)
-    assert await ledger.sweep_stale_claims(now=NOW) == 1
-    swept = await ledger.get(left)
-    kept = await ledger.get(done)
-    assert swept is not None and swept.state == "failed"
-    assert swept.bridge_code == "swept_at_boot"
-    assert kept is not None and kept.state == "silent"
-    # And it is a claim that stays claimed: the comment is still `seen`.
+TIMEOUT = timedelta(minutes=15)
+
+
+async def test_a_final_row_is_final(ledger):
+    """`finish` moves a row only out of claimed / staged / flushing. A second
+    writer (an old container overlapping a new one) cannot overwrite what the
+    first recorded. Falsified by dropping the state condition from `finish`'s
+    WHERE (or the fake's OPEN_STATES check): the silent row becomes published."""
+    summons_id = await _claim(ledger)
+    assert summons_id is not None
+    assert await ledger.finish(summons_id, "silent", now=NOW) is True
+    assert await ledger.finish(summons_id, "published", now=NOW, reply_comment_id="9") is False
+    row = await ledger.get(summons_id)
+    assert row is not None and row.state == "silent" and row.reply_comment_id is None
+
+
+async def test_a_staged_row_is_taken_for_flush_exactly_once(ledger):
+    summons_id = await _claim(ledger, mode="live")
+    assert summons_id is not None
+    await ledger.finish(summons_id, "staged", now=NOW, reply_text="x")
+    got = await asyncio.gather(*(ledger.take_for_flush(summons_id, now=NOW) for _ in range(10)))
+    assert got.count(True) == 1
+    row = await ledger.get(summons_id)
+    assert row is not None and row.state == "flushing"
+    # A flushing row is not waiting for a flush, and can still be finished.
+    assert await ledger.awaiting_flush() is None
+    assert await ledger.finish(summons_id, "published", now=NOW) is True
+
+
+async def test_only_a_staged_row_can_be_taken(ledger):
+    summons_id = await _claim(ledger, mode="live")
+    assert summons_id is not None
+    assert await ledger.take_for_flush(summons_id, now=NOW) is False  # still claimed
+    await ledger.finish(summons_id, "silent", now=NOW)
+    assert await ledger.take_for_flush(summons_id, now=NOW) is False  # final
+
+
+async def test_the_sweep_closes_old_open_rows_and_leaves_young_ones_alone(ledger):
+    """A `claimed` row older than the timeout is `failed`; a `flushing` one is
+    `ambiguous` (its POST may have gone out) and never re-posted; a row
+    younger than the timeout — another process still working it — is left
+    alone. Falsified by dropping the `updated_at` bound: the young row fails."""
+    old = NOW - timedelta(minutes=30)
+    left = await _claim(ledger, "1001", now=old)
+    flushing = await _claim(ledger, "1002", mode="live", now=old)
+    young = await _claim(ledger, "1003", now=NOW - timedelta(minutes=1))
+    done = await _claim(ledger, "1004", now=old)
+    assert None not in (left, flushing, young, done)
+    await ledger.finish(flushing, "staged", now=old, reply_text="x")
+    assert await ledger.take_for_flush(flushing, now=old)
+    await ledger.finish(done, "silent", now=old)
+
+    assert await ledger.sweep_stale_claims(now=NOW, older_than=TIMEOUT) == {
+        "failed": 1, "ambiguous": 1,
+    }
+    states = {cid: (await ledger.get(i)).state for cid, i in (
+        ("1001", left), ("1002", flushing), ("1003", young), ("1004", done),
+    )}
+    assert states == {"1001": "failed", "1002": "ambiguous", "1003": "claimed", "1004": "silent"}
+    assert (await ledger.get(left)).bridge_code == "swept_at_boot"
+    # A swept comment stays claimed: it is still `seen`, never answered again.
     assert await _claim(ledger, "1001") is None

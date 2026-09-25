@@ -304,7 +304,11 @@ PINNED: dict[str, tuple[int, str]] = {
     # names in their authority fields in the same change; neither is rendered,
     # so neither sha above moved and neither version was bumped.
     "public-voice": (1, "45841e6dfd7037cd234ce71ed2f1137db96aba609d574a6413ea54e3bfff888b"),
-    "public-conduct": (1, "556af2c3e1b603b905ddd7bbc65d34238ef737614ad89ec3db5f2f74dd3c5fdc"),
+    # public-conduct v2 (2026-09-25, review of #545): "# Drawing something" is
+    # deleted. `generate_image` is not in the summons' PUBLIC_GRANT (a comment
+    # carries no image, design 19), so a section telling her when to draw
+    # described a capability the occasion does not have.
+    "public-conduct": (2, "f27fa98dfa596e7a8ea865fc32c8094a243d5dd82b54b20c3272163b4556fc65"),
     "public-constraints": (
         1, "88b47c480e3948332c8281cacb0efbdc9094176d16f1704593df8eaa8b735dfa",
     ),

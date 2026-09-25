@@ -2976,8 +2976,8 @@ INSTAGRAM_SUMMONS = sa.Table(
     ),
     sa.CheckConstraint(
         "state IN ('claimed', 'ignored_summoner', 'stale', 'unreadable', "
-        "'silent', 'staged', 'published', 'refused', 'capped', 'duplicate', "
-        "'ambiguous', 'failed')",
+        "'silent', 'staged', 'flushing', 'published', 'refused', 'capped', "
+        "'duplicate', 'ambiguous', 'failed')",
         name="ck_instagram_summons_state",
     ),
     sa.CheckConstraint(
@@ -2986,7 +2986,7 @@ INSTAGRAM_SUMMONS = sa.Table(
     ),
 )
 
-# The two reads that scan: the boot sweep (`state = 'claimed'`) and the
+# The reads that scan: the sweep (`state IN ('claimed', 'flushing')`) and the
 # too_soon retry (`state = 'staged' AND mode = 'live'`).
 IDX_INSTAGRAM_SUMMONS_STATE = sa.Index(
     "idx_instagram_summons_state",

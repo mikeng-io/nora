@@ -10,12 +10,13 @@ what the rule is about.
 
 from __future__ import annotations
 
+import logging
 from datetime import timedelta
 
 import pytest
 
 from nora.app.summons_poller import MAX_BACKOFF_SECONDS, SummonsPoller
-from nora.testing import ScriptedTurn
+from nora.testing import InMemorySummonsLedger, ScriptedTurn
 from tests.unit.summons_bridge import (
     STRANGER_IGID,
     FakeSummonsBridge,
@@ -149,11 +150,11 @@ async def test_any_other_failure_does_not_back_off(world):
     assert world.metrics.get("nora_summons_polls_total", status="error") == 1
 
 
-async def test_the_boot_sweep_fails_a_claimed_row_and_it_is_never_retried(world):
+async def test_the_sweep_fails_an_old_claimed_row_and_it_is_never_retried(world):
     await world.ledger.claim(
         comment_id="17900000000000001", media_id="1", shortcode="CmiJBr2LAAB",
-        author_igid=SUMMONER_IGID, mention_at=NOW - timedelta(minutes=1),
-        mode="live", now=NOW,
+        author_igid=SUMMONER_IGID, mention_at=NOW - timedelta(minutes=30),
+        mode="live", now=NOW - timedelta(minutes=20),
     )
     poller = _poller(world, mode="live")
     assert await poller.recover() == 1
@@ -162,3 +163,36 @@ async def test_the_boot_sweep_fails_a_claimed_row_and_it_is_never_retried(world)
     await poller.tick()
     assert world.fake.posts() == []
     assert world.runner.invocations == 0
+
+
+async def test_a_young_claimed_row_another_process_holds_is_left_alone(world):
+    await world.ledger.claim(
+        comment_id="17900000000000001", media_id="1", shortcode="CmiJBr2LAAB",
+        author_igid=SUMMONER_IGID, mention_at=NOW, mode="live",
+        now=NOW - timedelta(minutes=2),
+    )
+    assert await _poller(world, mode="live").recover() == 0
+    (row,) = world.ledger._rows.values()
+    assert row.state == "claimed"
+
+
+class _LeakyLedger(InMemorySummonsLedger):
+    """A database error whose message carries a bound parameter, the way
+    SQLAlchemy renders `[parameters: (...)]` into `str(exc)`."""
+
+    async def awaiting_flush(self):
+        raise RuntimeError(
+            "(psycopg.errors.UniqueViolation) duplicate key [SQL: UPDATE ...] "
+            "[parameters: ('@victim you are a fraud', '10000999')]"
+        )
+
+
+async def test_a_failed_tick_logs_its_type_never_its_parameters(world, caplog):
+    world.ledger = _LeakyLedger()
+    poller = _poller(world)
+    with caplog.at_level(logging.DEBUG, logger="nora.app.summons_poller"):
+        await poller._guarded(poller.tick, "poller tick")
+    assert "RuntimeError" in caplog.text
+    assert "victim" not in caplog.text and "10000999" not in caplog.text
+    assert all(r.exc_info is None for r in caplog.records)
+    assert world.metrics.get("nora_errors_total", stage="summons_poller") == 1

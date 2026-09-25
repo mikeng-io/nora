@@ -5,7 +5,9 @@ One row per comment-mention the summons poller handled, UNIQUE on the comment
 id: the row is claimed (`INSERT ... ON CONFLICT (comment_id) DO NOTHING`)
 before the model runs, so a summons is answered at most once however many
 processes or ticks see it. `mode` records which brake was in force, so a
-dry-run `staged` row is never retried as a live one.
+dry-run `staged` row is never retried as a live one. `flushing` is the live
+write's lock: one flush takes a `staged` row to `flushing` before its POST,
+and a row a dead process left there is swept to `ambiguous`, never re-posted.
 
 THE VOCABULARY IS WRITTEN OUT rather than read from `nora.domain.summons`,
 following `0053_decision_log`: a migration is a frozen historical statement.
@@ -57,8 +59,8 @@ def upgrade() -> None:
         ),
         sa.CheckConstraint(
             "state IN ('claimed', 'ignored_summoner', 'stale', 'unreadable', "
-            "'silent', 'staged', 'published', 'refused', 'capped', 'duplicate', "
-            "'ambiguous', 'failed')",
+            "'silent', 'staged', 'flushing', 'published', 'refused', 'capped', "
+            "'duplicate', 'ambiguous', 'failed')",
             name="ck_instagram_summons_state",
         ),
         sa.CheckConstraint(

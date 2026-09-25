@@ -12,26 +12,33 @@ stale, a summoner nobody listed, a row another tick already holds — are
 recorded in the same tick, so a backlog of old mentions on first enable is
 filed in one pass rather than one per two minutes.
 
-A LIVE row left `staged` (the bridge said `too_soon`, or the process died
-mid-write) is that tick's one action: its flush is retried before any new
-mention is read, and no model call is made for it.
+A LIVE row left `staged` (the bridge said `too_soon`, or answered a 503
+before claiming) is that tick's one action: its flush is retried before any
+new mention is read, and no model call is made for it.
 
 **It backs off on `needs_human` and 503.** A checkpointed session is not
 retried every two minutes (design 19 rule 4: retrying a challenge is how a
 captcha becomes a ban); the interval doubles, up to 30 minutes, and returns
 to `poll_seconds` after the first good poll.
 
-**Boot recovery**: a row a dead process left `claimed` becomes `failed`,
-never a retry. Whether its comment went out is unknown, and a double public
-comment is worse than a missing one.
+**Recovery, at boot and at the top of every tick**: a row left `claimed` for
+longer than `CLAIM_TIMEOUT` becomes `failed`, and one left `flushing` (its
+POST in flight when the process died) becomes `ambiguous`. Neither is ever
+retried: whether its comment went out is unknown, and a double public comment
+is worse than a missing one. A younger row is left alone, because during a
+recreate the old container may still be working it.
+
+A failed step is logged by its exception TYPE only (`_guarded`): a database
+error renders its bound parameters, which here are comment ids, igids and
+reply text.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Callable
-from datetime import UTC, datetime
+from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime, timedelta
 
 from nora.app.summons import SummonsOccasion
 from nora.domain.summons import SummonsLedger, SummonsOutcome
@@ -42,6 +49,11 @@ log = logging.getLogger("nora.app.summons_poller")
 
 #: The longest the poller waits between two polls while backing off.
 MAX_BACKOFF_SECONDS = 1800.0
+
+#: How old a `claimed` or `flushing` row must be before the sweep closes it.
+#: Far above one turn's timeout, so a row another process (an old container
+#: overlapping a new one during a recreate) is still working is left alone.
+CLAIM_TIMEOUT = timedelta(minutes=15)
 
 #: Bridge codes that mean "the session needs a human" or "the bridge is
 #: reconnecting". Every other failure is not a reason to wait longer.
@@ -97,19 +109,27 @@ class SummonsPoller:
             )
 
     async def recover(self) -> int:
-        swept = await self._ledger.sweep_stale_claims(now=self._clock())
-        if swept:
-            log.warning(
-                "boot recovery: %d summons were left claimed by a dead process "
-                "and are now failed (never retried: whether a comment went out "
-                "is unknown)", swept,
-            )
-            self._metrics.inc(
-                "nora_summons_total", swept, outcome="failed", mode=self._occasion.mode,
-            )
-        return swept
+        """Close every `claimed` row (-> `failed`) and `flushing` row (->
+        `ambiguous`) older than `CLAIM_TIMEOUT`. Run at boot and at the top of
+        every tick, so a row a dead process left is closed within minutes
+        whether or not this process restarts. Never retried either way."""
+        swept = await self._ledger.sweep_stale_claims(
+            now=self._clock(), older_than=CLAIM_TIMEOUT,
+        )
+        for state, n in swept.items():
+            if n:
+                log.warning(
+                    "summons sweep: %d row(s) left open by a dead process are "
+                    "now %s (never retried: whether a comment went out is "
+                    "unknown)", n, state,
+                )
+                self._metrics.inc(
+                    "nora_summons_total", n, outcome=state, mode=self._occasion.mode,
+                )
+        return sum(swept.values())
 
     async def tick(self) -> None:
+        await self.recover()
         staged = await self._ledger.awaiting_flush()
         if staged is not None:
             outcome = await self._occasion.flush_staged(staged)
@@ -138,17 +158,21 @@ class SummonsPoller:
     def _after(self, outcome: SummonsOutcome) -> None:
         self._note(outcome.bridge_code)
 
+    async def _guarded(self, step: Callable[[], Awaitable[object]], what: str) -> None:
+        """Run one step; a failure is logged by its TYPE and a fixed message.
+
+        Never `str(exc)` and never a traceback: a SQLAlchemy error renders its
+        statement's BOUND PARAMETERS — a comment id, an igid, a reply's text —
+        into both, and this log line is where they would leak."""
+        try:
+            await step()
+        except Exception as exc:  # noqa: BLE001 — a loop that must outlive any tick
+            log.error("summons %s failed (%s)", what, type(exc).__name__)
+            self._metrics.inc("nora_errors_total", stage="summons_poller")
+
     async def run(self) -> None:
         log.info("summons poller started: poll every %.0fs", self._poll_seconds)
-        try:
-            await self.recover()
-        except Exception:
-            log.exception("summons boot recovery failed")
-            self._metrics.inc("nora_errors_total", stage="summons_poller")
+        await self._guarded(self.recover, "boot recovery")
         while True:
             await asyncio.sleep(self.next_delay)
-            try:
-                await self.tick()
-            except Exception:
-                log.exception("summons poller tick failed")
-                self._metrics.inc("nora_errors_total", stage="summons_poller")
+            await self._guarded(self.tick, "poller tick")

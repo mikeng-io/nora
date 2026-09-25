@@ -20,20 +20,31 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Literal, Protocol, get_args
 from uuid import UUID
 
 from nora.domain.blocks import wrap_outside_text
 
-#: Every state a ledger row can be in. `claimed` is the only non-terminal one
-#: besides a LIVE `staged` row waiting out the bridge's `too_soon`; the boot
-#: sweep turns a `claimed` row left by a dead process into `failed`, never
-#: into a retry (a double public comment is worse than a missing one).
+#: Every state a ledger row can be in. Three are OPEN and the rest are final
+#: (`finish` refuses to move a final row):
+#:
+#: * `claimed` — the run owns the row and has not ended;
+#: * `staged` — the reply passed every guard and is stored; final in
+#:   `dry_run`, and in `live` it is waiting for its flush (or for the
+#:   bridge's `too_soon` / a pre-claim 503 to clear);
+#: * `flushing` — ONE flush has taken the row (`take_for_flush`) and its POST
+#:   is in flight. Nothing else can take it, and a row left here by a dead
+#:   process is swept to `ambiguous`, never posted again.
+#:
+#: A `claimed` row older than the claim timeout is swept to `failed`, never
+#: retried (a double public comment is worse than a missing one).
 SummonsState = Literal[
     "claimed", "ignored_summoner", "stale", "unreadable", "silent", "staged",
-    "published", "refused", "capped", "duplicate", "ambiguous", "failed",
+    "flushing", "published", "refused", "capped", "duplicate", "ambiguous", "failed",
 ]
+#: The states `finish` may move a row OUT of.
+OPEN_STATES: tuple[str, ...] = ("claimed", "staged", "flushing")
 SUMMONS_STATES: tuple[str, ...] = get_args(SummonsState)
 
 SummonsMode = Literal["dry_run", "live"]
@@ -45,7 +56,7 @@ SUMMONS_MODES: tuple[str, ...] = get_args(SummonsMode)
 #: not end. DERIVED, so the help text and the increments cannot disagree.
 ALREADY_CLAIMED = "already_claimed"
 SUMMONS_OUTCOMES: tuple[str, ...] = (
-    *(s for s in SUMMONS_STATES if s != "claimed"), ALREADY_CLAIMED,
+    *(s for s in SUMMONS_STATES if s not in ("claimed", "flushing")), ALREADY_CLAIMED,
 )
 
 #: `nora_summons_polls_total`'s `status` label: what one `GET /mentions` came
@@ -173,8 +184,16 @@ class SummonsLedger(Protocol):
 
     `claim` is the idempotency line: `INSERT ... ON CONFLICT (comment_id) DO
     NOTHING`, so of two concurrent claims on one comment exactly one gets an
-    id and the other gets `None` and stops. `finish` records a terminal (or
-    live-`staged`) state; `sweep_stale_claims` is the boot recovery.
+    id and the other gets `None` and stops.
+
+    `finish` moves a row only out of an `OPEN_STATES` state and answers
+    whether it did: a final row is final, so a second writer (an old
+    container overlapping a new one, a sweep racing a run) cannot overwrite
+    what the first recorded. `take_for_flush` is the live write's lock:
+    `staged` -> `flushing` atomically, so of two flushes of one row exactly
+    one POSTs. `sweep_stale_claims` fails a `claimed` row and makes a
+    `flushing` row `ambiguous`, each only once it is older than
+    `older_than` — a row another process is still working is left alone.
     """
 
     async def claim(
@@ -187,7 +206,9 @@ class SummonsLedger(Protocol):
         person_id: str | None = None, reply_text: str | None = None,
         reply_comment_id: str | None = None, bridge_code: str | None = None,
         trace_id: str | None = None,
-    ) -> None: ...
+    ) -> bool: ...
+
+    async def take_for_flush(self, summons_id: UUID, *, now: datetime) -> bool: ...
 
     async def seen(self, comment_ids: tuple[str, ...]) -> frozenset[str]: ...
 
@@ -195,7 +216,9 @@ class SummonsLedger(Protocol):
 
     async def get(self, summons_id: UUID) -> SummonsRow | None: ...
 
-    async def sweep_stale_claims(self, *, now: datetime) -> int: ...
+    async def sweep_stale_claims(
+        self, *, now: datetime, older_than: timedelta,
+    ) -> dict[str, int]: ...
 
 
 # ---- building the context -------------------------------------------------------

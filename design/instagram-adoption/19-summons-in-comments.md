@@ -158,6 +158,22 @@ row and the trace. No write route exists yet.
 `replied_to_comment_id`, behind rules 4 and 6. It goes live only after a
 week of phase 1 polling without a checkpoint.
 
+## Two things the review of #545 recorded
+
+- **The reply tool's own text still speaks of "the room".** `send_reply`'s
+  description (shared with every occasion) mentions the room, the
+  transcript and `reply_to`. It is left as is. `public/constraints.md`
+  already says that "the room" on this surface means the thread, and a
+  summons-specific tool description would be a second copy of `send_reply`
+  to drift. Reopen this if a summons trace shows her reasoning about a
+  room.
+- **The rendered prompt reaches Langfuse**, as on every turn: the
+  strangers' usernames, the caption and the comments are in the
+  generation spans. The occasion's own span attributes, metric labels and
+  log lines carry only the ledger id. So "telemetry carries no identifier"
+  holds for Nora's instruments, and not for the model trace, which exists
+  to record what the model read.
+
 ## What would stop it
 
 - **A checkpoint caused by the polling** in phase 1. Polling stops, and the

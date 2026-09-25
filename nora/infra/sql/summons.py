@@ -9,7 +9,7 @@ any number of concurrent claims on one comment exactly one gets an id.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -18,11 +18,12 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.engine import Row
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from nora.domain.summons import SUMMONS_MODES, SUMMONS_STATES, SummonsRow
+from nora.domain.summons import OPEN_STATES, SUMMONS_MODES, SUMMONS_STATES, SummonsRow
 from nora.infra.sql.schema import INSTAGRAM_SUMMONS
 
-#: What the boot sweep writes into `bridge_code` for a row a dead process left
-#: `claimed`: nobody knows whether its comment went out, so it is never retried.
+#: What the sweep writes into `bridge_code` for a row a dead process left
+#: `claimed` (now `failed`) or `flushing` (now `ambiguous`): nobody knows
+#: whether its comment went out, so it is never retried.
 SWEPT_AT_BOOT = "swept_at_boot"
 
 
@@ -67,7 +68,7 @@ class SqlSummonsLedger:
         person_id: str | None = None, reply_text: str | None = None,
         reply_comment_id: str | None = None, bridge_code: str | None = None,
         trace_id: str | None = None,
-    ) -> None:
+    ) -> bool:
         if state not in SUMMONS_STATES:
             raise ValueError(f"unknown summons state {state!r}")
         values: dict[str, Any] = {"state": state, "updated_at": now}
@@ -78,13 +79,33 @@ class SqlSummonsLedger:
         ):
             if value is not None:
                 values[key] = value
+        # A final row is final: the WHERE is the state machine, enforced in
+        # the one statement that writes, so no read-then-write race exists.
         stmt = (
             sa.update(INSTAGRAM_SUMMONS)
-            .where(INSTAGRAM_SUMMONS.c.id == summons_id)
+            .where(
+                INSTAGRAM_SUMMONS.c.id == summons_id,
+                INSTAGRAM_SUMMONS.c.state.in_(OPEN_STATES),
+            )
             .values(**values)
         )
         async with self._engine.begin() as conn:
-            await conn.execute(stmt)
+            result = await conn.execute(stmt)
+        return bool(result.rowcount)
+
+    async def take_for_flush(self, summons_id: UUID, *, now: datetime) -> bool:
+        stmt = (
+            sa.update(INSTAGRAM_SUMMONS)
+            .where(
+                INSTAGRAM_SUMMONS.c.id == summons_id,
+                INSTAGRAM_SUMMONS.c.state == "staged",
+            )
+            .values(state="flushing", updated_at=now)
+            .returning(INSTAGRAM_SUMMONS.c.id)
+        )
+        async with self._engine.begin() as conn:
+            got = (await conn.execute(stmt)).scalar_one_or_none()
+        return got is not None
 
     async def seen(self, comment_ids: tuple[str, ...]) -> frozenset[str]:
         if not comment_ids:
@@ -116,12 +137,22 @@ class SqlSummonsLedger:
             row = (await conn.execute(stmt)).one_or_none()
         return None if row is None else _row(row)
 
-    async def sweep_stale_claims(self, *, now: datetime) -> int:
-        stmt = (
-            sa.update(INSTAGRAM_SUMMONS)
-            .where(INSTAGRAM_SUMMONS.c.state == "claimed")
-            .values(state="failed", bridge_code=SWEPT_AT_BOOT, updated_at=now)
-        )
+    async def sweep_stale_claims(
+        self, *, now: datetime, older_than: timedelta,
+    ) -> dict[str, int]:
+        """`{"failed": n, "ambiguous": m}`: how many `claimed` and `flushing`
+        rows older than `older_than` (by `updated_at`) it closed."""
+        cutoff = now - older_than
+        swept = {"failed": 0, "ambiguous": 0}
         async with self._engine.begin() as conn:
-            result = await conn.execute(stmt)
-        return int(result.rowcount or 0)
+            for state, to in (("claimed", "failed"), ("flushing", "ambiguous")):
+                result = await conn.execute(
+                    sa.update(INSTAGRAM_SUMMONS)
+                    .where(
+                        INSTAGRAM_SUMMONS.c.state == state,
+                        INSTAGRAM_SUMMONS.c.updated_at < cutoff,
+                    )
+                    .values(state=to, bridge_code=SWEPT_AT_BOOT, updated_at=now)
+                )
+                swept[to] += int(result.rowcount or 0)
+        return swept

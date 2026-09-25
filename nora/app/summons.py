@@ -33,6 +33,7 @@ attribute or a log line.
 from __future__ import annotations
 
 import logging
+import re
 import time
 from collections.abc import Callable, Mapping
 from datetime import datetime, timedelta
@@ -85,8 +86,8 @@ CONVERSATION_TYPE = "public"
 
 #: The bridge's write refusals, mapped to the ledger state they leave
 #: (design 19's guard table; `errors.go`'s refusal codes). Anything not named
-#: here and every no-answer is `ambiguous`: the comment may or may not exist,
-#: and an ambiguous write is never retried.
+#: here and every no-answer (`timeout`, `unreachable`) is `ambiguous`: the
+#: comment may or may not exist, and an ambiguous write is never retried.
 _WRITE_STATES: Mapping[str, str] = {
     "writes_disabled": "refused",
     "invalid_text": "refused",
@@ -96,8 +97,27 @@ _WRITE_STATES: Mapping[str, str] = {
     "invalid_id": "failed",
     "already_replied": "duplicate",
     "daily_cap": "capped",
-    "too_soon": "staged",
 }
+
+#: Answers after which the reply stays `staged` and ONLY its flush is retried
+#: next tick, until `max_age`. `too_soon` is refused before the bridge claims
+#: (`app/comments.go` guard 7). The three 503s are the session gate
+#: (`unavailable`, before the claim), the bridge's own ledger
+#: (`ledger_unavailable`: unreadable, so `fn` never ran and nothing was
+#: claimed), or a 503 with no envelope. `unavailable` can ALSO come back after
+#: the claim, from the upstream call; retrying is still safe, because the
+#: bridge claims before it calls Instagram, so the retry is answered
+#: `already_replied` and never reaches Instagram a second time — and
+#: `_write_state` reads that answer, after a 503, as `ambiguous`.
+_RETRY_CODES: frozenset[str] = frozenset({"too_soon"})
+_RETRY_503: frozenset[str] = frozenset({"unavailable", "ledger_unavailable", "http_503"})
+
+#: An Instagram @mention anywhere in the text she would post. A reply that
+#: tags somebody notifies them, and a stranger's caption or comment is exactly
+#: where "reply '@someone …'" would come from, so the flush refuses it outright
+#: rather than trusting the model to have declined. An e-mail address is not a
+#: mention (the `@` follows a word character).
+_MENTION_RE = re.compile(r"(?<![\w.])@[A-Za-z0-9._]+")
 
 
 class SummonerIndex(Protocol):
@@ -132,9 +152,15 @@ class _NoTranscript:
         raise RuntimeError(f"a summons has no transcript ({name} was reached)")
 
 
-def _write_state(result: BridgeResult[Any]) -> str:
+def _write_state(result: BridgeResult[Any], *, prior_code: str | None) -> str:
     if result.ok:
         return "published"
+    if result.code in _RETRY_CODES or result.code in _RETRY_503:
+        return "staged"
+    if result.code == "already_replied" and prior_code in _RETRY_503:
+        # The attempt before this one got a 503 and was claimed after all: it
+        # may have posted. Unknown, not a duplicate.
+        return "ambiguous"
     return _WRITE_STATES.get(result.code, "ambiguous")
 
 
@@ -185,16 +211,30 @@ class SummonsOccasion:
 
     # ---- one summons -------------------------------------------------------
 
+    def _count(self, outcome: SummonsOutcome) -> None:
+        """Once per summons, on its FINAL outcome. A live `staged` row is not
+        final — its flush is retried — so it is counted when that ends."""
+        if outcome.state == "staged" and self._mode == "live":
+            return
+        self._metrics.inc("nora_summons_total", outcome=outcome.state, mode=self._mode)
+
     async def run(self, mention: Mention) -> SummonsOutcome:
         outcome = await self._run(mention)
-        self._metrics.inc("nora_summons_total", outcome=outcome.state, mode=self._mode)
+        self._count(outcome)
         return outcome
 
     async def _run(self, mention: Mention) -> SummonsOutcome:
         now = self._clock()
+        # Resolved BEFORE the claim, so a stranger's igid is never stored: an
+        # ignored row carries `author_igid = ''` (its key is the comment id).
+        person_id = (
+            await self._summoners.person_for_igid(igid=mention.author_igid)
+            if mention.author_igid else None
+        )
         summons_id = await self._ledger.claim(
             comment_id=mention.comment_id, media_id=mention.media_id,
-            shortcode=mention.shortcode, author_igid=mention.author_igid,
+            shortcode=mention.shortcode,
+            author_igid=mention.author_igid if person_id is not None else "",
             mention_at=mention.at, mode=self._mode, now=now,
         )
         if summons_id is None:
@@ -206,10 +246,6 @@ class SummonsOccasion:
         if summoned_at is None or now - summoned_at > self._max_age:
             await self._ledger.finish(summons_id, "stale", now=now)
             return SummonsOutcome("stale")
-        person_id = (
-            await self._summoners.person_for_igid(igid=mention.author_igid)
-            if mention.author_igid else None
-        )
         if person_id is None:
             # Counted and ignored (design 19 rule 5). Nothing is read and
             # nothing is said: a stranger tagging her costs one row.
@@ -332,29 +368,39 @@ class SummonsOccasion:
     async def _flush(
         self, summons_id: UUID, *, shortcode: str, comment_id: str, text: str,
         person_id: str | None, trace_id: str | None, now: datetime,
+        prior_code: str | None = None,
     ) -> SummonsOutcome:
         """Publish `text` (the FIRST held reply, and only it) once, or stage
-        it. Dry run stores it and posts nothing. Live stores it as `staged`
-        BEFORE the POST, so a process that dies mid-write leaves a row the
-        next tick retries, and the bridge's own ledger answers that retry
-        `already_replied` rather than posting twice."""
+        it. Dry run stores it and posts nothing. Live stores it `staged`, then
+        TAKES the row (`staged` -> `flushing`, atomically) before the POST, so
+        of two flushes of one row exactly one writes, and a process that dies
+        mid-write leaves `flushing`, which the sweep makes `ambiguous` and
+        nothing ever posts again."""
         body = text.strip()
-        if len(body) > MAX_COMMENT_CHARS:
+        refusal = (
+            "too_long" if len(body) > MAX_COMMENT_CHARS
+            else "mention" if _MENTION_RE.search(body)
+            else None
+        )
+        if refusal is not None:
             await self._ledger.finish(
                 summons_id, "refused", now=now, person_id=person_id, reply_text=body,
-                bridge_code="too_long", trace_id=trace_id,
+                bridge_code=refusal, trace_id=trace_id,
             )
-            return SummonsOutcome("refused", bridge_code="too_long", spent_tick=True)
+            return SummonsOutcome("refused", bridge_code=refusal, spent_tick=True)
         await self._ledger.finish(
             summons_id, "staged", now=now, person_id=person_id, reply_text=body,
             trace_id=trace_id,
         )
         if self._mode != "live":
             return SummonsOutcome("staged", spent_tick=True)
+        if not await self._ledger.take_for_flush(summons_id, now=now):
+            # Another flush holds it, or it is already final: nothing posts.
+            return SummonsOutcome(ALREADY_CLAIMED, spent_tick=True)
         result = await self._client.post_comment(
             shortcode, text=body, reply_to_comment_id=comment_id,
         )
-        state = _write_state(result)
+        state = _write_state(result, prior_code=prior_code)
         if result.code == "writes_disabled":
             log.error(
                 "summons %s: live mode, but the bridge's comment writes are off "
@@ -368,19 +414,18 @@ class SummonsOccasion:
             self._metrics.gauge("nora_summons_writes_blocked", 1)
         if result.ok:
             self._metrics.gauge("nora_summons_writes_blocked", 0)
-        if state != "staged":
-            await self._ledger.finish(
-                summons_id, state, now=self._clock(),
-                reply_comment_id=result.value if result.ok else None,
-                bridge_code=None if result.ok else result.code,
-            )
+        await self._ledger.finish(
+            summons_id, state, now=self._clock(),
+            reply_comment_id=result.value if result.ok else None,
+            bridge_code=None if result.ok else result.code,
+        )
         return SummonsOutcome(
             state, bridge_code=None if result.ok else result.code, spent_tick=True,
         )
 
     async def flush_staged(self, row: SummonsRow) -> SummonsOutcome:
         """Retry the flush of a LIVE row left `staged` (the bridge said
-        `too_soon`, or the process died mid-write). No model call: the text
+        `too_soon` or answered a 503 before claiming). No model call: the text
         was already guarded and stored. Past `max_age` it is given up as
         `failed` rather than posted late."""
         now = self._clock()
@@ -399,6 +444,7 @@ class SummonsOccasion:
             outcome = await self._flush(
                 row.id, shortcode=row.shortcode, comment_id=row.comment_id,
                 text=row.reply_text or "", person_id=None, trace_id=None, now=now,
+                prior_code=row.bridge_code,
             )
-        self._metrics.inc("nora_summons_total", outcome=outcome.state, mode=self._mode)
+        self._count(outcome)
         return outcome

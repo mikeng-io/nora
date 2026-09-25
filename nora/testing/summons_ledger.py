@@ -12,10 +12,10 @@ from __future__ import annotations
 
 import dataclasses
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from uuid import UUID
 
-from nora.domain.summons import SUMMONS_MODES, SUMMONS_STATES, SummonsRow
+from nora.domain.summons import OPEN_STATES, SUMMONS_MODES, SUMMONS_STATES, SummonsRow
 
 
 class InMemorySummonsLedger:
@@ -45,12 +45,12 @@ class InMemorySummonsLedger:
         person_id: str | None = None, reply_text: str | None = None,
         reply_comment_id: str | None = None, bridge_code: str | None = None,
         trace_id: str | None = None,
-    ) -> None:
+    ) -> bool:
         if state not in SUMMONS_STATES:
             raise ValueError(f"unknown summons state {state!r}")
         row = self._rows.get(summons_id)
-        if row is None:
-            return
+        if row is None or row.state not in OPEN_STATES:
+            return False
         changes: dict[str, object] = {"state": state, "updated_at": now}
         for key, value in (
             ("person_id", person_id), ("reply_text", reply_text),
@@ -60,6 +60,14 @@ class InMemorySummonsLedger:
             if value is not None:
                 changes[key] = value
         self._rows[summons_id] = dataclasses.replace(row, **changes)  # type: ignore[arg-type]
+        return True
+
+    async def take_for_flush(self, summons_id: UUID, *, now: datetime) -> bool:
+        row = self._rows.get(summons_id)
+        if row is None or row.state != "staged":
+            return False
+        self._rows[summons_id] = dataclasses.replace(row, state="flushing", updated_at=now)
+        return True
 
     async def seen(self, comment_ids: tuple[str, ...]) -> frozenset[str]:
         return frozenset(c for c in comment_ids if c in self._by_comment)
@@ -74,12 +82,17 @@ class InMemorySummonsLedger:
     async def get(self, summons_id: UUID) -> SummonsRow | None:
         return self._rows.get(summons_id)
 
-    async def sweep_stale_claims(self, *, now: datetime) -> int:
-        swept = 0
+    async def sweep_stale_claims(
+        self, *, now: datetime, older_than: timedelta,
+    ) -> dict[str, int]:
+        cutoff = now - older_than
+        swept = {"failed": 0, "ambiguous": 0}
         for row_id, row in list(self._rows.items()):
-            if row.state == "claimed":
-                self._rows[row_id] = dataclasses.replace(
-                    row, state="failed", bridge_code="swept_at_boot", updated_at=now,
-                )
-                swept += 1
+            to = {"claimed": "failed", "flushing": "ambiguous"}.get(row.state)
+            if to is None or row.updated_at is None or not row.updated_at < cutoff:
+                continue
+            self._rows[row_id] = dataclasses.replace(
+                row, state=to, bridge_code="swept_at_boot", updated_at=now,
+            )
+            swept[to] += 1
         return swept
