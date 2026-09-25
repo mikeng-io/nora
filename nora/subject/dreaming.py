@@ -19,7 +19,9 @@ from typing import Any
 
 import sqlalchemy as sa
 
+from nora.domain.blocks import speaker_name
 from nora.domain.media_join import MediaJoin
+from nora.domain.note_body import cited_ids_in
 from nora.infra.sql import create_sql_engine
 from nora.infra.sql.notes import SqlNoteStore
 from nora.infra.sql.schema import NOTE_CANDIDATE, REMINDERS
@@ -74,6 +76,34 @@ class Pass:
     #: more than anything checked.
     staged: tuple[tuple[str, int, tuple[int, ...], str], ...] = ()
 
+    #: Every staged candidate's BODY, as `(status, body)`, in `staged`'s order.
+    #:
+    #: A separate field rather than a fifth element of `staged`, whose 4-tuple
+    #: shape other readers unpack. The body is what a later reader (a turn,
+    #: the curator, the proactive pass) gets instead of the room's messages,
+    #: so it is the output a change to the body's demonstration is measured
+    #: on: the corpus's `body_names`/`body_mentions` checks and the per-draw
+    #: body lengths both read it. `status == "created"` is a body that reached
+    #: the notebook, as a new note or an appended revision.
+    bodies: tuple[tuple[str, str], ...] = ()
+
+    #: Each batch row's id and the name the model was SHOWN for its sender
+    #: (`from=` on the rendered line, `speaker_name(person_name, sender_name)`).
+    #: What `body_names` resolves a cited row to, so a case can ask «does the
+    #: body name who said this» without writing anybody's name into a fixture.
+    speakers: tuple[tuple[int, str], ...] = ()
+
+    #: What the corpus's `body_schema` reading holds a written body against
+    #: (design 42 §4.5, §10.1), beside `speakers`, which are the rendered
+    #: rows: the roster as `(roster name, person_id)` — every person the
+    #: deployment's identity knows, a superset of the room's —, the name
+    #: Nora goes by, and the ids the heads this pass REVISED cited before it
+    #: (`carried`: read with `nora.domain.note_body.cited_ids_in`, so a
+    #: legacy head carries none, and a create carries none at all).
+    roster: tuple[tuple[str, str], ...] = ()
+    nora_names: tuple[str, ...] = ()
+    carried: tuple[int, ...] = ()
+
     #: Why the pass declined BEFORE any model call, from
     #: `nora_proactive_pass_total{reason}` — production's own counter.
     #:
@@ -126,27 +156,34 @@ def adaptor_names(subject: Subject) -> tuple[str, ...]:
 
 async def _staged(
     subject: Subject, workspace: str,
-) -> tuple[tuple[str, int, tuple[int, ...], str], ...]:
+) -> tuple[
+    tuple[tuple[str, int, tuple[int, ...], str], ...],
+    tuple[tuple[str, str], ...],
+]:
     """The pass's staged create-candidates, read off the table it writes.
 
     Queried directly because `SqlNoteStore` offers a write
     (`record_create_candidate`) and a status update, and no read — the
     production readers are the adaptor's own SQL. What a case needs is the
-    `message_ids` it cited, which is the only place a citation exists.
+    `message_ids` it cited, which is the only place a citation exists, and the
+    body it proposed, as `(status, body)` in the same order.
     """
     engine = create_sql_engine(subject.database_url)
     try:
         stmt = sa.select(
             NOTE_CANDIDATE.c.title, NOTE_CANDIDATE.c.anchor_date,
             NOTE_CANDIDATE.c.message_ids, NOTE_CANDIDATE.c.status,
+            NOTE_CANDIDATE.c.body,
         ).where(NOTE_CANDIDATE.c.unit == workspace)
         async with engine.begin() as conn:
             rows = (await conn.execute(stmt)).all()
-        return tuple(
+        staged = tuple(
             (str(r.title), int(r.anchor_date or 0),
              tuple(int(i) for i in (r.message_ids or ())), str(r.status))
             for r in rows
         )
+        bodies = tuple((str(r.status), str(r.body or "")) for r in rows)
+        return staged, bodies
     finally:
         await engine.dispose()
 
@@ -170,6 +207,23 @@ async def _notebook(subject: Subject, workspace: str) -> dict[str, tuple[str, st
     try:
         notes = await SqlNoteStore(engine).standing(unit=workspace)
         return {n.id: (n.title, n.head_revision_id) for n in notes}
+    finally:
+        await engine.dispose()
+
+
+async def _head_citations(subject: Subject, workspace: str) -> dict[str, frozenset[int]]:
+    """`note id -> the ids its HEAD body cites`, for every standing note,
+    read before the pass. Only the heads the pass then REVISES become
+    `Pass.carried` (design 42 §4.5: «the ids the head being revised already
+    cites»); a create carries none."""
+    engine = create_sql_engine(subject.database_url)
+    try:
+        store = SqlNoteStore(engine)
+        cited: dict[str, frozenset[int]] = {}
+        for note in await store.standing(unit=workspace):
+            read = await store.read(unit=workspace, note_id=note.id)
+            cited[note.id] = cited_ids_in(read[1].body) if read is not None else frozenset()
+        return cited
     finally:
         await engine.dispose()
 
@@ -257,6 +311,7 @@ async def dream(
     _, conversation_id = room or subject.room
     key = workspace if chosen.key_kind == "unit" else conversation_id
     before = await _notebook(subject, workspace)
+    head_citations = await _head_citations(subject, workspace)
     reminders_before = await _reminder_rows(subject)
     ok_before = _samples(subject, "ok")
     failed_before = _samples(subject, "unavailable")
@@ -309,7 +364,7 @@ async def dream(
     outcome = await runtime.run(adaptor=chosen, key=key, batch=batch)
 
     after = await _notebook(subject, workspace)
-    staged = await _staged(subject, workspace)
+    staged, bodies = await _staged(subject, workspace)
     changed = [("create", title) for nid, (title, _h) in after.items()
                if nid not in before]
     changed += [
@@ -330,4 +385,19 @@ async def dream(
         declined=_declined(subject),
         staged=staged,
         written_reminders=written_reminders,
+        bodies=bodies,
+        speakers=tuple(
+            (int(r.id), speaker_name(r.person_name, r.sender_name))
+            for r in batch
+        ),
+        roster=tuple(
+            (ref.name, person_id)
+            for person_id, ref in sorted(subject.deps.persons.by_person.items())
+        ),
+        nora_names=(subject.cfg.doctrine.display_name,),
+        carried=tuple(sorted({
+            i for nid, (_title, head) in after.items()
+            if nid in before and before[nid][1] != head
+            for i in head_citations.get(nid, frozenset())
+        })),
     )
