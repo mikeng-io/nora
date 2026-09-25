@@ -16,8 +16,12 @@ ROSTER = Persons(
     by_person={
         "p_ada": PersonRef(person_id="p_ada", name="Ada Roster", honcho_peer_id="p_ada"),
         "p_ben": PersonRef(person_id="p_ben", name="Ben Roster", honcho_peer_id="p_ben"),
+        "p_cat": PersonRef(person_id="p_cat", name="Cat Roster", honcho_peer_id="p_cat"),
     },
-    index={("signal", "+852111"): "p_ada", ("discord", "42"): "p_ben"},
+    index={
+        ("signal", "+852111"): "p_ada", ("signal", "+852222"): "p_ben",
+        ("discord", "42"): "p_ben",
+    },
 )
 
 
@@ -44,16 +48,17 @@ def test_a_minted_sender_is_given_back_an_id_the_roster_resolves():
 def test_a_minted_id_that_resolves_to_someone_else_is_replaced():
     """The sandbox's default sender id is a real roster id in some
     identities: a row of Ben's must never be named as Ada."""
-    [fixed] = with_roster_senders(
-        [_row(1, sender_id="+852111", person_id="p_ben")], persons=ROSTER, platform="discord",
-    )
-    assert fixed.sender_id == "42"
+    row = _row(1, sender_id="+852111", person_id="p_ben")
+    assert ROSTER.name_transcript([row], platform="signal")[0].person_name == "Ada Roster"
+    [fixed] = with_roster_senders([row], persons=ROSTER, platform="signal")
+    assert fixed.sender_id == "+852222"
+    assert ROSTER.name_transcript([fixed], platform="signal")[0].person_name == "Ben Roster"
 
 
 def test_rows_production_could_not_resolve_either_are_left_alone():
     rows = [
         _row(1, sender_id="+8529001", person_id=None),             # nobody at ingest
-        _row(2, sender_id="+8529002", person_id="p_ben"),          # no Signal id on file
+        _row(2, sender_id="+8529002", person_id="p_cat"),          # no Signal id on file
         _row(3, sender_id="+852111", person_id="p_ada"),           # already resolves
         _row(4, sender_id="+8529004", person_id="p_ada", is_nora=True),
     ]
