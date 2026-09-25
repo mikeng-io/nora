@@ -170,6 +170,42 @@ class Outcome:
     #: Rows the pass WROTE. The proactive decide pass's entire output.
     written: int = 0
 
+    #: This pass's own NEW reminder rows, as `(note_id, due_at_ms)`
+    #: (`nora.subject.dreaming.Pass.written_reminders`). `note_id` is `None`
+    #: for an UNLINKED row — `remind` lets `note` be omitted
+    #: (`nora/agent/tools.py` ~:8898, ~:8959), so a row that restates the
+    #: exact matter under test without naming it is still one of THESE, not
+    #: invisible. `written` alone cannot tell "wrote nothing about the note
+    #: under test" from "wrote nothing about a DIFFERENT note also due this
+    #: pass"; `evals.backbone` reduces this to `absent_note_clash`/
+    #: `remind_matched` below, which is what `meets()` actually reads (issue
+    #: #158 review, both rounds). Empty for every entry point but
+    #: `dreamer`'s proactive adaptor.
+    written_reminders: tuple[tuple[str | None, int], ...] = ()
+
+    #: Whether this pass's own writes clash with a `none` case's
+    #: `rows: [{note: ..., absent: true}]` declaration — a NEW reminder
+    #: linked to that note's id, or linked to NO note at all. `None` when the
+    #: case declares no `absent` row, so `meets()`'s blanket `none` rule
+    #: (nothing written at all) applies unchanged. Computed by
+    #: `evals.backbone._absent_note_clash`, which alone has the anchor's
+    #: title -> id resolution (`nora.subject.sandbox._note_ids_by_title`)
+    #: this needs and `Outcome` itself must not import (domain is
+    #: framework-free — this module's own docstring).
+    absent_note_clash: bool | None = None
+
+    #: Whether at least one of this pass's own new reminders satisfies EVERY
+    #: `rows` entry that states a `due_between` — linked to THAT row's own
+    #: note id AND due inside its window. `None` when no row states one, so
+    #: `meets()`'s blanket `remind` rule (`written > 0`, true of ANY row
+    #: about ANY note at ANY time) applies unchanged for a corpus that does
+    #: not state a per-row window. Computed by `evals.backbone._remind_match`
+    #: for the same reason `absent_note_clash` is (issue #158 review round
+    #: 2: `written > 0` alone let a `remind` case pass on a row about a
+    #: wholly different note, at any time, which is not what the corpus
+    #: header has always claimed to grade).
+    remind_matched: bool | None = None
+
     #: What the pass STAGED, as `(title, anchor_date, message_ids, status)`.
     staged: tuple[tuple[str, int, tuple[int, ...], str], ...] = ()
 
@@ -284,6 +320,15 @@ class Outcome:
         if expect in ("create", "update"):
             return any(kind == expect for kind, _ in self.changed)
         if expect == "remind":
+            # `remind_matched` is set by `evals.backbone._remind_match` when
+            # at least one `rows` entry states a `due_between` — the note-id
+            # AND window match the corpus header has always claimed to
+            # grade. `written > 0` alone is a blanket fallback for a corpus
+            # that states no window per row (none does today; kept so a
+            # future one is not silently held to a rule it never opted
+            # into — issue #158 review round 2).
+            if self.remind_matched is not None:
+                return self.remind_matched
             return self.written > 0
         if expect == "fold":
             # Nothing written is not a verdict about the position; and a
@@ -306,6 +351,15 @@ class Outcome:
                 return True
             return None
         if expect == "none":
+            # `absent_note_clash` is set by `evals.backbone._absent_note_
+            # clash` when a `rows` entry states `absent: true` — a SCOPED
+            # silence: this note gets no NEW reminder (linked to it, or
+            # linked to nothing at all — an unlinked row can restate the
+            # exact matter without naming it), whatever else the pass
+            # legitimately wrote about. `None` (no such row) falls to the
+            # blanket rule below.
+            if self.absent_note_clash is not None:
+                return not self.absent_note_clash
             # BOTH, because `none` is the negative of two different positives:
             # the note pass writing a note and the proactive pass writing a row.
             return not self.changed and self.written == 0
