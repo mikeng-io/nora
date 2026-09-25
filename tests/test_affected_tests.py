@@ -119,16 +119,24 @@ def test_non_markdown_docs_tree_file_still_selects_nothing():
     assert select(["design/ambient-loop/_index.yaml"]) == []
 
 
-def test_nora_skills_skill_md_selects_its_readers():
-    """tests/test_skill_content.py loads every shipped nora/skills/*/SKILL.md
-    whole (SkillStore(SKILLS_DIR).available()); the image-generation skill's
-    SKILL.md is additionally hashed by name in
-    tests/unit/test_canonical_self_reference.py (skill_self_handle(SKILL))."""
-    assert select(["nora/skills/navigation/SKILL.md"]) == [
-        "tests/architecture/test_doc_references_resolve.py",
-        "tests/test_skill_content.py",
-        "tests/unit/test_canonical_self_reference.py",
-    ]
+def test_nora_skills_change_selects_all():
+    """nora/skills/** goes straight to ALL, not a hand-picked reader list.
+
+    Re-review on 2026-09-25 found tests/test_factory.py (SKILLS_DIR = the
+    real nora/skills, asserts the navigation skill's real name/description)
+    and tests/unit/test_generate_image_description.py
+    (SkillStore(SKILLS_DIR).resolve(...)) both read the real tree and were
+    missing from the first cut's two-item list (tests/test_skill_content.py,
+    tests/unit/test_canonical_self_reference.py) — proof a hand-kept reader
+    list for this tree rots. Any path under the prefix qualifies, not just
+    `.md` — the rule is a whole-directory prefix match, unconditional on
+    extension, exactly like the doctrine/dreamer rule it sits beside."""
+    assert select(["nora/skills/navigation/SKILL.md"]) == ALL
+    assert select(["nora/skills/navigation/some_asset.txt"]) == ALL
+
+
+def test_nora_skills_mixed_with_something_else_still_selects_all():
+    assert select(["nora/skills/navigation/SKILL.md", "README.md"]) == ALL
 
 
 def test_compute_smith_markdown_selects_only_the_universal_doc_reader():
@@ -216,10 +224,19 @@ def test_mixed_markdown_and_docs_tree_change_unions_every_reader():
 
 
 def test_markdown_reader_regression_is_caught_by_reverting_the_mapping():
-    """Revert-proof: if nora/skills/*/SKILL.md silently went back to mapping
-    to nothing (the pre-#521 defect), this assertion is what turns red."""
-    assert select(["nora/skills/navigation/SKILL.md"]) != []
-    assert select(["nora/skills/navigation/SKILL.md"]) != ALL
+    """Revert-proof: if a generic docs/ .md silently went back to mapping to
+    nothing (the pre-#521 defect), this assertion is what turns red."""
+    assert select(["docs/foo.md"]) != []
+    assert select(["docs/foo.md"]) != ALL
+
+
+def test_nora_skills_all_mapping_is_caught_by_reverting_it():
+    """Revert-proof the other direction: if nora/skills/** silently went back
+    to a hand-picked reader LIST (the defect re-review found on 2026-09-25 —
+    narrower than ALL, and missing two real readers), this is what turns
+    red — the list can never equal ALL by construction, so any narrowing
+    regression is caught here regardless of which readers it names."""
+    assert select(["nora/skills/navigation/SKILL.md"]) == ALL
 
 
 # --- config.example.toml (review finding #2: tests/builders.py copies it for

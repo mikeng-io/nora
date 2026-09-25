@@ -46,8 +46,7 @@ selection to `ALL`.
 
 A third version of the same mistake lived in the docs rule until 2026-09-25:
 "every `.md` outside doctrine/dreamer is docs-only, run nothing" is false —
-tests DO read specific docs (`tests/test_skill_content.py` loads every
-`nora/skills/*/SKILL.md`, `tests/architecture/test_agent_skills.py` loads
+tests DO read specific docs (`tests/architecture/test_agent_skills.py` loads
 `AGENTS.md` and `.agents/skills/**`, `tests/architecture/test_doc_references_
 resolve.py` scans literally every tracked `.md` file for dangling path
 citations). Mapping every markdown path to the empty selection meant `make
@@ -60,6 +59,22 @@ at all" for a change to a file something in `tests/` demonstrably reads.
 `config.example.toml` got the same correction: `tests/builders.py` copies it
 for the whole config-fixture layer (~29 test modules), so a change to it alone
 is `ALL`, not the two narrow config tests — those stay mapped from `config.toml`.
+
+`nora/skills/**` went through the same mistake TWICE. The first cut of this
+table (2026-09-25) mapped it to a hand-picked pair of readers
+(`tests/test_skill_content.py`, `tests/unit/test_canonical_self_reference.py`)
+— found by grepping `tests/`, but not exhaustively enough: re-review the same
+day found `tests/test_factory.py` (`SKILLS_DIR` = the real `nora/skills`,
+asserts the wiring against real skill names/descriptions) and `tests/unit/
+test_generate_image_description.py` (`SkillStore(SKILLS_DIR).resolve(...)`)
+both read the same real tree and were missing from the list. A hand-kept
+reader list for a tree this many things read rots — each addition is a
+plausible-looking green diff with a real gap in it, and nothing catches the
+NEXT omission either. `nora/skills/**` now goes straight to `ALL`, the same
+shape as the doctrine/dreamer rule above and for the same kind of reason:
+skill content is runtime-loaded (`SkillStore`) and changes rarely, so the
+fail-closed cost of never narrowing it is low and the cost of a silently
+incomplete reader list is not.
 """
 
 from __future__ import annotations
@@ -78,6 +93,15 @@ ALL = "ALL"
 # docstring); getting this ordering backwards is exactly the failure this
 # feature must not have.
 _LOADED_MARKDOWN_PREFIXES = ("nora/doctrine/", "nora/dreamer/")
+
+# The on-demand skill layer (SkillStore), runtime-loaded like doctrine/
+# dreamer above and changes rarely — checked with the same priority, for the
+# same reason: a re-review on 2026-09-25 found two more readers
+# (tests/test_factory.py, tests/unit/test_generate_image_description.py)
+# beyond the ones a hand-picked reader list had already named, so the list
+# itself was the defect. Rather than keep auditing `tests/` for the next
+# missed reader, any change under this prefix goes straight to ALL.
+_ALWAYS_ALL_PREFIXES = ("nora/skills/",)
 
 # Whole-directory docs trees, any extension: no reader was found by grepping
 # `tests/` for any non-.md file under these (design/*.toml, design/*.yaml,
@@ -103,12 +127,9 @@ _ANY_MD_READER = "tests/architecture/test_doc_references_resolve.py"
 # matching none of these still gets `_ANY_MD_READER` if it ends in `.md`
 # (see `_markdown_targets`).
 _MD_PREFIX_READERS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    # Every shipped skill is loaded and validated whole
-    # (tests/test_skill_content.py: SkillStore(SKILLS_DIR).available()); the
-    # image-generation skill's own SKILL.md is additionally hashed by name
-    # (tests/unit/test_canonical_self_reference.py: skill_self_handle(SKILL)).
-    ("nora/skills/", ("tests/test_skill_content.py",
-                       "tests/unit/test_canonical_self_reference.py")),
+    # nora/skills/**/*.md is NOT listed here — it is handled by
+    # `_ALWAYS_ALL_PREFIXES` above, before this table is ever consulted.
+    #
     # nora/compute/smith/**/*.md (doctrine.md, the smith skills' own
     # SKILL.md files) has its OWN test suite under nora/compute/smith/tests/,
     # which is not on `testpaths` and is never collected by the tests/
@@ -182,6 +203,10 @@ def git_changed_paths(
 
 def _is_loaded_markdown(path: str) -> bool:
     return path.startswith(_LOADED_MARKDOWN_PREFIXES)
+
+
+def _is_always_all(path: str) -> bool:
+    return path.startswith(_ALWAYS_ALL_PREFIXES)
 
 
 def _markdown_targets(path: str) -> list[str]:
@@ -258,8 +283,10 @@ def select(changed: list[str]) -> list[str] | str:
 
     # Rule 0 — highest priority, checked before every other rule: loaded-at-
     # runtime markdown anywhere in the diff forces the full suite, no matter
-    # what else changed alongside it.
-    if any(_is_loaded_markdown(p) for p in changed):
+    # what else changed alongside it. nora/skills/** joins it here for the
+    # same reason (see _ALWAYS_ALL_PREFIXES): runtime-loaded, rarely changed,
+    # and a hand-kept reader list for it already rotted once.
+    if any(_is_loaded_markdown(p) or _is_always_all(p) for p in changed):
         return ALL
 
     # config.example.toml is deliberately NOT recognised by `_is_config_only`
