@@ -344,7 +344,8 @@ PINNED: dict[str, tuple[int, str]] = {
     # v6 (2026-09-26): sources named in words, no links (an Instagram comment
     # does not make them clickable); not finding a source is not a finding.
     # v7 (2026-09-26): names as plain words, never an @handle.
-    "public-conduct": (7, "14d0ef83a35d35b0de9fdb4f50297a2f0a253c11de9c6da82bacc05ba8f3ee00"),
+    # v8 (2026-09-26, operator): under 300 characters; a longer one is not posted.
+    "public-conduct": (8, "b9fd8db16d4d6b19cec8591c3f22d7136e268ac93f7fb3e3e583a424533e45a7"),
     "public-constraints": (
         1, "88b47c480e3948332c8281cacb0efbdc9094176d16f1704593df8eaa8b735dfa",
     ),

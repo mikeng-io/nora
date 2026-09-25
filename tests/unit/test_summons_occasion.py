@@ -749,3 +749,22 @@ async def test_a_reply_that_is_only_the_address_is_refused_not_posted_empty(worl
     out = await world.occasion(mode="live", turns=_replies("@miles_example ,")).run(_card())
     assert (out.state, out.bridge_code) == ("refused", "empty")
     assert world.fake.posts() == []
+
+
+async def test_a_reply_over_the_public_cap_is_refused_whole_and_one_under_posts(world):
+    """The first live reply (2026-09-26) was 533 characters. A public comment
+    is capped at PUBLIC_REPLY_MAX_CHARS and refused whole, never cut."""
+    from nora.domain.summons import PUBLIC_REPLY_MAX_CHARS
+
+    over = "a" * (PUBLIC_REPLY_MAX_CHARS + 1)
+    out = await world.occasion(mode="live", turns=_replies(over)).run(_card())
+    assert (out.state, out.bridge_code) == ("refused", "too_long")
+    assert world.fake.posts() == []
+
+
+async def test_a_reply_at_the_public_cap_posts(world):
+    from nora.domain.summons import PUBLIC_REPLY_MAX_CHARS
+
+    at = "a" * PUBLIC_REPLY_MAX_CHARS
+    out = await world.occasion(mode="live", turns=_replies(at)).run(_card())
+    assert out.state == "published"
