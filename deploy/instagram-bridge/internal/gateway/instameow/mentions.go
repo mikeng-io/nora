@@ -8,9 +8,8 @@ package instameow
 // # What the upstream call really is
 //
 // `POST https://www.instagram.com/api/v1/news/inbox/`, form-encoded, with
-// `jazoest`, `fb_dtsg` and `selected_filters=comments` — the request
-// Instagram WEB's own notifications panel makes with its "Comments" filter
-// tab, as captured from the operator's logged-in browser on 2026-09-25
+// `jazoest` and `fb_dtsg` and nothing else — the request Instagram WEB's own
+// notifications panel makes on its "All" tab, as captured from the operator's logged-in browser on 2026-09-25
 // (design 19, phase 1). It goes through restDo as a `webForm` POST (call.go):
 // the form tokens come from the session's own configs, built the way the
 // library builds its own web POST form (pkg/instameow/misc.go:40-48,57-58).
@@ -116,10 +115,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math"
 	"net/http"
 	"net/url"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -133,9 +134,12 @@ import (
 // exactly as the web client was captured calling it.
 const newsInboxEndpoint = "https://www.instagram.com/api/v1/news/inbox/"
 
-// newsInboxFilter is the web client's "Comments" filter tab
-// (`selected_filters=comments` in its form, captured 2026-09-25).
-const newsInboxFilter = "comments"
+// No `selected_filters`: the "All" tab. The first live summons test
+// (2026-09-25) came back with zero stories under `selected_filters=comments`
+// after a real @mention in a comment. That filter is the panel's "Comments"
+// tab (comments on HER posts); mentions sit under a separate tab whose filter
+// value was not captured. "All" was captured exactly (jazoest, fb_dtsg only)
+// and carries every story, which the classifier sorts.
 
 // mediaDestinations are the `args.destination` schemes whose `id` query
 // parameter is a MEDIA id (captured: `clips_home?id=<media>&...` on a
@@ -280,7 +284,7 @@ func readMentions(ctx context.Context, issuer RESTIssuer, self domain.Self) ([]d
 		method:   http.MethodPost,
 		endpoint: newsInboxEndpoint,
 		label:    "news_inbox",
-		form:     url.Values{"selected_filters": {newsInboxFilter}},
+		form:     url.Values{},
 		webForm:  true,
 	})
 	if err != nil {
@@ -314,6 +318,21 @@ func readMentions(ctx context.Context, issuer RESTIssuer, self domain.Self) ([]d
 		mention, ok := commentMentionOf(st, self)
 		if !ok {
 			skipped[st.StoryType]++
+			// Why, in words and booleans only: no id, no text, no username.
+			// The first live summons test (2026-09-25) skipped every story
+			// with no way to tell which check refused it.
+			scheme, query := destinationOf(st.Args.Destination)
+			_, hasMedia := mediaOf(st.Args, scheme, query)
+			slog.InfoContext(ctx, "news_inbox story skipped",
+				"story_type", st.StoryType,
+				"scheme", schemeWord(scheme),
+				"has_comment_id", commentIDOf(st.Args, query) != "",
+				"has_media", hasMedia,
+				"has_self_token", mentionsAccount(st.Args, self),
+				"type_excluded", nonMentionStoryTypes[st.StoryType],
+				"text_has_at", strings.Contains(st.Args.Text, "@"),
+				"rich_text_has_at", strings.Contains(st.Args.RichText, "@"),
+				"dest_param_names", destParamNames(query))
 			continue
 		}
 		mentions = append(mentions, mention)
@@ -574,4 +593,25 @@ func (s sessionREST) configs() (dumpedConfigs, error) {
 		return dumpedConfigs{}, errors.New("no configs in the dumped state")
 	}
 	return *dumped.Configs, nil
+}
+
+// schemeWord is a destination scheme with every digit removed, so a scheme
+// that ever carries an id cannot put it in a log line.
+func schemeWord(scheme string) string {
+	return strings.Map(func(r rune) rune {
+		if r >= '0' && r <= '9' {
+			return -1
+		}
+		return r
+	}, scheme)
+}
+
+// destParamNames is the sorted parameter NAMES of a destination, never values.
+func destParamNames(q url.Values) string {
+	names := make([]string, 0, len(q))
+	for k := range q {
+		names = append(names, schemeWord(k))
+	}
+	sort.Strings(names)
+	return strings.Join(names, ",")
 }
