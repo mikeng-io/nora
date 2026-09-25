@@ -62,10 +62,11 @@ else later flips.
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
-from datetime import date
+from datetime import date, datetime
 
 from ..domain.blocks import ContextBlock, render_elements
-from ..domain.notes import Note
+from ..domain.notes import Note, NoteRevision
+from ..domain.prompt import age, escape
 
 #
 # Between them sits what the line ALSO has to say, and what it did not say until
@@ -244,4 +245,91 @@ def _days_from(today: int, anchor: int) -> str:
         else f"{stamp}, yesterday" if delta == -1
         else f"{stamp}, in {delta} days" if delta > 0
         else f"{stamp}, {-delta} days ago"
+    )
+
+
+# ---------------------------------------------------------------------------
+# `<open_note>`: one open note WITH its body, for the passes that read bodies
+# ---------------------------------------------------------------------------
+
+
+def anchor_attrs(anchor_date: int | None, today: date) -> tuple[tuple[str, str], ...]:
+    """`anchor` and `anchor_is` for an open note: the day, and that day read
+    against `today`. A value that is not a real day renders as written."""
+    if anchor_date is None:
+        return ()
+    day = _as_date(anchor_date)
+    if day is None:
+        return (("anchor", str(anchor_date)),)
+    delta = (day - today).days
+    reading = (
+        "today" if delta == 0
+        else "tomorrow" if delta == 1
+        else "yesterday" if delta == -1
+        else f"in {delta} days" if delta > 0
+        else f"{-delta} days ago"
+    )
+    return (("anchor", f"{day:%Y-%m-%d %a}"), ("anchor_is", reading))
+
+
+#: `form` on an `<open_note>` whose body is not in the notebook's sections
+#: (design 42 §8.6): the input says what it is showing, so a legacy body is
+#: labelled as legacy rather than offered as the format (§6).
+FORM_LEGACY = (
+    "not in the notebook's sections: written before they existed, or added to "
+    "without them"
+)
+#: `form` on an `<open_note>` rendered without its body, because the pass's
+#: budget bound or its head could not be read (§8.6).
+FORM_NOT_SHOWN = "body not shown in this pass"
+
+
+def open_note_block(
+    note: Note, head: NoteRevision | None, *, room: str, now: datetime, today: date,
+    handle: str | None = None, changed: str | None = None,
+    excerpt: int | None = None, form: str | None = None, body: bool = True,
+) -> ContextBlock:
+    """One open note as an `<open_note>` block: what it is about, what is
+    undecided, what would settle it, and its body (design 42 §8.6).
+
+    ONE renderer for the two passes that read a note's body, so the type's
+    one description cannot drift between them. note-merge sets `handle` (its
+    `id`), `changed` and `excerpt`; note-candidates sets none of them, because
+    it names a note by title and restates what it reads, so the body is
+    rendered WHOLE. `form` is note-candidates' own field: it says a body is
+    not in the notebook's sections, or was left out of this pass for size
+    (`body=False`), so the input explains what it is showing. Every value is
+    escaped (R-13): titles and bodies are model-authored from what the group
+    typed.
+    """
+    attrs: tuple[tuple[str, str], ...] = (
+        *((("id", handle),) if handle is not None else ()),
+        ("title", note.title),
+        ("room", room),
+        ("written", age(note.created_at, now)),
+        *((("revised", age(head.written_at, now)),) if head is not None else ()),
+        *anchor_attrs(note.anchor_date, today),
+    )
+    if changed is not None:
+        attrs += (("changed", changed),)
+    if form is not None:
+        attrs += (("form", form),)
+    text = head.body.strip() if head is not None else ""
+    if not body or head is None:
+        shown_body = ""
+    elif excerpt is not None and len(text) > excerpt:
+        shown_body = (
+            f"\nbody (its first {excerpt} characters; it runs longer):\n"
+            f"{escape(text[:excerpt])}"
+        )
+    else:
+        shown_body = f"\nbody:\n{escape(text)}"
+    return ContextBlock(
+        name="open_note", attrs=attrs,
+        body=(
+            f"about: {escape(note.description)}\n"
+            f"undecided: {escape(note.uncertainty)}\n"
+            f"settled when: {escape(note.closing_condition)}"
+            f"{shown_body}"
+        ),
     )

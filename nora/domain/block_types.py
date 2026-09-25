@@ -442,13 +442,21 @@ BLOCK_TYPES: dict[str, BlockType] = {t.name: t for t in (
        title="what the note is called",
        room="the room the note was born in",
        written="how long ago the note was first written",
-       revised="how long ago anything was last added to it",
+       revised="how long ago it was last revised",
        anchor="on an entry that has one, the day it turns on",
        anchor_is="that day read against today",
        changed=(
            "`new` if it was written since this notebook was last read this "
            "way, `revised` if something was added to it since then; absent "
            "when neither"
+       ),
+       # Design 42 §8.6: the input says what it is showing, so a body written
+       # before the sections existed is labelled as such rather than offered
+       # as the format (§6), and a body left out for size says so.
+       form=(
+           "absent when the body is in the notebook's sections; otherwise why "
+           "it is not: written before the sections existed or added to "
+           "without them, or not shown in this pass"
        )),
 
     # -- people, rooms, and this deployment -----------------------------------

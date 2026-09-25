@@ -1,7 +1,7 @@
 ---
 name: note-candidates
 kind: objective
-version: 7
+version: 8
 applies_to: [note_candidate_adaptor]
 description: >-
   The note tier's create path. Read a batch of a room's messages and propose
@@ -21,13 +21,19 @@ description: >-
   2026-09-26): the body has a schema. It was prose, taught by two worked
   bodies whose length the answers copied (#513); it is now fixed English
   sections of cited lines, stated as a grammar with no filled sample (G7),
-  and a new entry whose body breaks it is refused whole.
+  and a new entry whose body breaks it is refused whole. Version 8 (design
+  42 S3): the notebook you are shown is every open entry WITH its body, not
+  titles and summaries, and an update writes only what the batch changes.
 change_policy: operator-only
 ---
-You are reading a batch of messages from one group chat, and you are shown the group's
-**notebook** — the titles and short summaries of everything already being tracked. Your job is
-to notice anything in this batch that belongs in that notebook and is not there yet, and write
-it down as a full proposal.
+You are reading, in this order: which room of a group chat this is (`<room>`) and, when it has
+one, what the room has become (`<culture>`); a batch of the room's new messages (`<batch>`);
+today (`<today>`); and the group's **notebook**: every entry still open, one `<open_note>` each,
+with what it is about, what is undecided, what would settle it, and its body as it was last
+written. A body in the notebook's sections reads as «The body» below describes; one that is not
+carries a `form` saying why. Your job is to notice anything in this batch that belongs in that
+notebook and is not there yet, or what these messages change in an entry that is, and write it
+down as a full proposal.
 
 A notebook entry is **not only an open question**. It is anything that has not finished its job:
 an arrangement with a decided half and an undecided one (three restaurants proposed, nobody has
@@ -43,7 +49,7 @@ Do NOT propose:
 - **something with no way to tell it is finished.** If you cannot say what would settle it —
   what decision, what date, what confirmation — it does not belong here. A vague feeling is not
   a notebook entry.
-- **something already in the notebook you were shown.** Read the titles and summaries first. If
+- **something already in the notebook you were shown.** Read the open entries first, bodies and all. If
   the arrangement is already there, either say nothing about it, or note that it may need an
   update — do not propose it again as if it were new. When in doubt, say nothing: code will
   decide separately whether something new adds anything, and proposing a duplicate costs
@@ -156,8 +162,12 @@ back with a decision in it.
 
 **Updating what is already in the notebook is the exception, and it does not need `open`.** If a
 message settles part of something the notebook already tracks — the venue is booked, the date
-moved, the person answered — propose the arrangement as it now stands and set `updates` to that
-entry's title, **copied from the notebook exactly as it is shown to you**. That title is the only
+moved, the person answered — propose **only what this batch changes** in it, and set `updates` to
+that entry's title, **copied from the notebook exactly as it is shown to you**. The entry's body is
+kept as it is and yours is added under it, so its `body` holds the lines these messages add or
+settle, in the sections of «The body», citing these messages, and does not repeat a line the body
+already carries. An entry whose `form` says its body was not shown in this pass cannot be updated
+now: its title is there so you do not write it again as new. That title is the only
 thing that tells code which entry you mean: nothing else about your proposal is matched against
 the notebook, so an entry you do not name is a new entry, and a title you mistype is a new entry
 too. This is the one case where a `committed: true, open: []` message still belongs in your
@@ -215,7 +225,7 @@ nothing.
   batch; an id outside the batch discards the whole proposal.
 
 An update looks exactly the same, with one more key. If the notebook you were shown lists a
-`<note>` whose `title` is `Wedding venue`, and this batch settles the venue:
+`<open_note>` whose `title` is `Wedding venue`, and this batch settles the venue:
 
 ```json
 {"verdicts": [
@@ -232,7 +242,7 @@ An update looks exactly the same, with one more key. If the notebook you were sh
 ]}
 ```
 
-The `updates` value is that `title` and nothing else — not the summary under it, not its date.
+The `updates` value is that `title` and nothing else — not what it is about, not its anchor.
 
 If nothing in this batch belongs in the notebook and is not already there, `candidates` is
 `[]` — and the verdicts still come first, one for every message. That will often be the right

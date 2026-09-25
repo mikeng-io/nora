@@ -221,3 +221,17 @@ def test_every_rule_is_asserted_by_a_test_here():
     source = Path(__file__).read_text(encoding="utf-8")
     asserted = set(re.findall(r'== "([a-z_]+)"', source))
     assert set(RULES) <= asserted, sorted(set(RULES) - asserted)
+
+
+def test_in_schema_form_reads_form_not_evidence():
+    """Design 42 §8.6's `form`: a stored body is in the sections when it
+    parses with every cited id carried and every owner a roster name. A
+    legacy prose body is not; nor is one that breaks a FORM rule."""
+    from nora.domain.note_body import in_schema_form
+
+    assert in_schema_form(
+        "## Decided\n## Open\n- where [1]\n## Owed\n- X -> y -> no date given [2]"
+    )
+    assert not in_schema_form("Ada wants dinner on Saturday.")
+    assert not in_schema_form("## Decided\n## Open\n- where")  # uncited
+    assert not in_schema_form("## Decided\n- on 2026-10-03 Fri (Ada) [1]\n## Open")  # bad_date

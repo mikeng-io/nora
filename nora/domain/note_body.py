@@ -208,6 +208,37 @@ def cited_ids_in(text: str) -> frozenset[int]:
     )
 
 
+#: The rules that are about a body's FORM, as against its evidence: what
+#: `in_schema_form` holds a stored body to. The rest (`unknown_id`,
+#: `cites_nora`, `misattributed`, `unknown_owner`) need the rows the writer was
+#: shown, which a reader of a stored body does not have.
+FORM_RULES: frozenset[str] = frozenset({
+    "unknown_section", "section_order", "missing_section", "not_a_line",
+    "uncited", "bad_date",
+})
+
+
+class _AnyName(dict[str, str]):
+    """A roster every name is on: `in_schema_form` reads form, not owners."""
+
+    def get(self, key: str, default: str | None = None) -> str:  # type: ignore[override]
+        return ""
+
+
+def in_schema_form(text: str) -> bool:
+    """Whether a STORED body is in the notebook's sections (design 42 §8.6's
+    `form`): it parses under §4 when every id it cites counts as carried and
+    every owner as a roster name. A legacy prose body is not; a schema body is,
+    whoever wrote it. Never a refusal: this is what a reader is told it is
+    looking at, and the validator runs on write, never on read (§9)."""
+    shown = Shown(carried=cited_ids_in(text), roster=_AnyName())
+    try:
+        parse_note_body(text, shown=shown)
+    except NoteBodyError as broke:
+        return broke.rule not in FORM_RULES
+    return True
+
+
 def _canonical_heading(name: str) -> str | None:
     folded = name.casefold()
     return next((h for h in SECTIONS if h.casefold() == folded), None)

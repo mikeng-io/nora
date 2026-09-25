@@ -31,7 +31,7 @@ from nora.language.note_candidates import (
     _parse_candidate,
     _resolve_updates,
 )
-from nora.language.note_render import render_notes
+from nora.language.note_render import FORM_LEGACY, FORM_NOT_SHOWN, render_notes
 from nora.obs.metrics import Metrics
 from nora.testing.note_store import InMemoryNoteStore
 
@@ -189,7 +189,9 @@ def test_the_registered_blocks_are_exactly_what_this_pass_carries():
     index` just below.
     """
     names = {name for name, _order, _key in _BLOCKS}
-    assert names == {"room", "culture", "batch", "notes"}
+    # Design 42 S3: the notebook is `today` + one `open_note` per open note,
+    # bodies whole, replacing the title-and-summary `notes` index.
+    assert names == {"room", "culture", "batch", "today", "open_note"}
 
 
 async def test_inputs_is_blank_for_an_empty_batch():
@@ -213,6 +215,131 @@ async def test_inputs_renders_the_batch_and_the_standing_note_index():
     assert '<m n="41" ' in rendered and "let's do Sai Kung this time" in rendered
     assert "Wedding venue" in rendered
     assert "Venue undecided" in rendered
+
+
+# ---------------------------------------------------------------------------
+# the notebook, with bodies (design 42 S3, §8.6)
+# ---------------------------------------------------------------------------
+
+_SCHEMA_BODY = "## Decided\n## Open\n- which venue [7]"
+
+
+async def _open_note(
+    store: InMemoryNoteStore, title: str, body: str, *,
+    established_in: str = "conv-0", now_ms: int = NOW,
+) -> str:
+    note = await store.create(
+        unit=WS, title=title, description=f"{title} is open",
+        uncertainty="which", closing_condition="it is settled",
+        established_in=established_in, body=body,
+        established_by="tag:miles", now_ms=now_ms, anchor_date=20260919,
+    )
+    return note.id
+
+
+async def test_the_notebook_renders_every_open_note_with_its_body_whole():
+    """Replacing the index: the model restates what it reads, so it reads
+    the body, whole, and `<today>` is what every `anchor` is read against.
+    No `<notes>` index is left beside it."""
+    adaptor, store = _adaptor()
+    long_body = "## Decided\n## Open\n" + "\n".join(
+        f"- corner {i} [7]" for i in range(200)
+    )
+    await _open_note(store, "Wedding venue", long_body)
+
+    rendered = await adaptor.inputs(key=SCOPE, batch=(_row(41, "hi", ts=NOW),))
+
+    assert "<today " in rendered and "<open_note " in rendered
+    assert "<notes " not in rendered
+    assert "- corner 199 [7]" in rendered  # never clipped
+    assert 'title="Wedding venue"' in rendered
+    assert 'form="' not in rendered  # a schema body is not labelled
+
+
+async def test_a_legacy_body_is_labelled_as_not_in_the_sections():
+    """§6: a body written before the schema demonstrates the OLD form, so the
+    input says what it is rather than offering it as the format."""
+    adaptor, store = _adaptor()
+    await _open_note(store, "Wedding venue", "two on the shortlist")
+
+    rendered = await adaptor.inputs(key=SCOPE, batch=(_row(41, "hi", ts=NOW),))
+
+    assert 'form="not in the notebook' in rendered
+    assert FORM_LEGACY.startswith("not in the notebook")
+    assert "two on the shortlist" in rendered
+
+
+async def test_when_the_budget_binds_this_room_then_the_newest_keep_their_bodies(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """§8.6: born-in-this-room first, then most recently revised, render
+    whole; the rest render with no body and say so. Nothing is dropped."""
+    import nora.language.note_candidates as nc
+
+    adaptor, store = _adaptor()
+    await _open_note(store, "Old elsewhere", _SCHEMA_BODY + "\n- old [7]", now_ms=NOW)
+    await _open_note(store, "New elsewhere", _SCHEMA_BODY + "\n- new [7]", now_ms=NOW + 5)
+    await _open_note(
+        store, "Born here", _SCHEMA_BODY + "\n- here [7]",
+        established_in=SCOPE, now_ms=NOW - 5,
+    )
+    one = len(await adaptor.inputs(key=SCOPE, batch=(_row(41, "hi", ts=NOW),)))
+    assert one  # a positive control: everything fits at the real budget
+    # Each of these blocks renders at about 1.2k: room for two, not three.
+    monkeypatch.setattr(nc, "NOTEBOOK_BODY_BUDGET_CHARS", 2_500)
+
+    rendered = await adaptor.inputs(key=SCOPE, batch=(_row(41, "hi", ts=NOW),))
+
+    assert "- here [7]" in rendered  # born in this room, though revised oldest
+    assert "- new [7]" in rendered  # then the most recently revised
+    assert "- old [7]" not in rendered
+    for title in ("Old elsewhere", "New elsewhere", "Born here"):
+        assert f'title="{title}"' in rendered  # every title stays on the ballot
+    assert FORM_NOT_SHOWN in rendered
+
+
+async def test_an_update_naming_a_note_shown_without_its_body_is_left_pending(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """`not_shown` (§8.6): the model cannot say what a batch changes in a
+    body it never saw, so nothing is written and the row stays pending."""
+    import nora.language.note_candidates as nc
+
+    metrics = Metrics()
+    adaptor, store = _adaptor(metrics=metrics)
+    note_id = await _open_note(store, "Wedding venue", _SCHEMA_BODY)
+    monkeypatch.setattr(nc, "NOTEBOOK_BODY_BUDGET_CHARS", 0)
+    await adaptor.inputs(key=SCOPE, batch=(_row(1, "booked it", ts=NOW),))
+    head_before = store.notes[note_id].head_revision_id
+    [candidate] = await adaptor.accept(key=SCOPE, items=[
+        _item(updates="Wedding venue", body="## Decided\n- booked (Ada) [1]\n## Open"),
+    ])
+
+    written = await adaptor.commit(key=SCOPE, proposals=[_proposal(candidate)], now_ms=NOW)
+
+    assert written == 0
+    assert store.notes[note_id].head_revision_id == head_before
+    assert metrics.get("nora_note_candidate_gate_total", action="not_shown") == 1
+    [row] = [r for r in store.create_candidates.values() if r.title == "Wedding venue"]
+    assert row.status == "pending"
+
+
+async def test_an_update_naming_a_note_shown_with_its_body_still_lands():
+    """The positive control for `not_shown`: the same update against a note
+    whose body WAS rendered goes through."""
+    metrics = Metrics()
+    adaptor, store = _adaptor(metrics=metrics)
+    note_id = await _open_note(store, "Wedding venue", _SCHEMA_BODY)
+    await adaptor.inputs(key=SCOPE, batch=(_row(1, "booked it", ts=NOW),))
+    head_before = store.notes[note_id].head_revision_id
+    [candidate] = await adaptor.accept(key=SCOPE, items=[
+        _item(updates="Wedding venue", body="## Decided\n- booked (Ada) [1]\n## Open"),
+    ])
+
+    await adaptor.commit(key=SCOPE, proposals=[_proposal(candidate)], now_ms=NOW)
+
+    assert store.notes[note_id].head_revision_id != head_before
+    assert metrics.get("nora_note_candidate_gate_total", action="not_shown") == 0
 
 
 # ---------------------------------------------------------------------------
@@ -599,6 +726,23 @@ def test_the_objective_states_the_grammar_and_shows_no_filled_body():
     assert bodies, "the objective shows no envelope carrying a body"
     for body in bodies:
         assert "##" not in body and not re.search(r"\[[0-9]", body), body
+
+
+def test_the_objective_says_what_the_pass_reads_and_that_an_update_is_the_change():
+    """Design 42 S3, the objective's two edits (one change): it says the
+    notebook is every open entry WITH its body (§8.7), and that an update
+    writes only what this batch changes, since code adds it under the body."""
+    from pathlib import Path
+
+    import nora
+
+    text = (
+        Path(nora.__file__).parent / "dreamer" / "objectives" / "note-candidates.md"
+    ).read_text(encoding="utf-8")
+    opening = text.split("---", 2)[2].strip().split("\n\n", 1)[0]
+    assert "<open_note>" in opening and "<today>" in opening
+    assert "titles and short summaries" not in text
+    assert "**only what this batch changes**" in text
 
 
 async def test_accept_names_the_body_by_the_roster_name_it_rendered():
