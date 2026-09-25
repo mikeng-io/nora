@@ -1348,6 +1348,7 @@ async def test_the_dreamer_batch_stays_unprojected_and_note_candidates_names_the
         body="dinner on the 3rd?", is_nora=False,
         delivery_status=DeliveryStatus.SENT, raw_json=None,
     )
+    assert roster.name_transcript([row], platform="signal")[0].person_name == "Ada Roster"
     store = InMemoryNoteStore()
     adaptor = NoteCandidateAdaptor(
         notes=store, candidates=store, unit_for=lambda _: "friends",
