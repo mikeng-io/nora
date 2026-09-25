@@ -72,7 +72,7 @@ curl healthcheck, `network: host` build), `config.toml` /
 (phone+lid account example), `policy.example.toml` (group JID room example +
 1:1 deny note), `docs/runbook.md` §4b (pairing, admission-by-recreate,
 failure-mode table), release fragment
-`release-fragments/unreleased/whatsapp-transport.json`.
+`release-fragments/released/V5/whatsapp-transport.json`.
 
 **The contract**: `design/whatsapp-adoption/03-transport-contract.md` pins
 every wire shape and normalization rule; both sides were built against it.
