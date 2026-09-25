@@ -655,6 +655,32 @@ IDX_REMINDERS_DUE = sa.Index(
     "idx_reminders_due", REMINDERS.c.state, REMINDERS.c.due_at
 )
 
+#: ONE OPEN PROACTIVE ROW PER NOTE (issue #158, migration 0064). The proactive
+#: adaptor booked the same note twice in production (23:01 and 01:01 for one
+#: 10:00; 07:02 and 18:04 for one 17:00), and nothing below the model said no.
+#: `nora.domain.reminders.open_proactive_note` is the rule; this is Postgres
+#: holding it, and `SqlReminderStore.create` names this index as its
+#: `ON CONFLICT` target, so the predicate below is exported for that.
+#: PARTIAL, because only a proactive row that is still going to be said
+#: (`pending`) or is being said (`firing`) holds its note open, and an
+#: expression, because the note id lives in `payload` (the store's conflict
+#: target spells the same expression as text, and says why). Both are invisible to
+#: `alembic check`, and `tests/infra/test_schema_parity.py` does not tie this
+#: declaration to the migration either: its dump comes from the migrated
+#: database and this file is in neither loop. What ties them is the Postgres
+#: half of `tests/contract/test_reminder_store_contract.py`: the store's
+#: `ON CONFLICT` target must match the index migration 0064 built, or Postgres
+#: refuses to infer an arbiter (42P10) and every proactive write fails there.
+UQ_REMINDERS_PROACTIVE_OPEN_NOTE_WHERE = sa.text(
+    "kind = 'proactive' AND state IN ('pending', 'firing')"
+)
+UQ_REMINDERS_PROACTIVE_OPEN_NOTE = sa.Index(
+    "uq_reminders_proactive_open_note",
+    REMINDERS.c.payload["note_id"].astext,
+    unique=True,
+    postgresql_where=UQ_REMINDERS_PROACTIVE_OPEN_NOTE_WHERE,
+)
+
 
 # `version_announcements` — the ledger that makes "announce a version once, ever"
 # true across a restart or a crash-loop (DEC-97, R-42).
