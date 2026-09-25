@@ -563,39 +563,77 @@ def _resolve(file_part: str, selector: str) -> str:
     return "unresolved"
 
 
-def _unresolved_selectors() -> tuple[list[str], int]:
-    """Unpinned unresolved selectors, and the total count of resolved ones."""
-    unresolved = []
-    resolved_count = 0
+#: Every bucket a `::selector` citation can land in, in the order the census
+#: line reports them. `total` is not a bucket a citation lands in — it is the
+#: sum of the other seven, asserted below so the census can never silently
+#: stop accounting for a citation.
+_CENSUS_BUCKETS = (
+    "resolved", "registry", "partial", "missing_file",
+    "marked_skip", "pinned", "unresolved",
+)
+
+
+def _census() -> tuple[dict[str, int], list[str]]:
+    """Every `::selector` citation, sorted into exactly one bucket.
+
+    - **resolved** — a real `def`/`class` in the cited file.
+    - **registry** — a module-level assignment (`RULE_TESTS`), the named
+      registry-form blind spot.
+    - **partial** — a proper prefix of a real `def`/`class`, the named
+      `-k`-style blind spot.
+    - **missing_file** — the cited FILE does not exist; this is
+      `test_every_row_naming_an_enforcing_test_either_has_it_or_says_it_does_not`'s
+      finding, not this census's, so it is counted but not re-reported below.
+    - **marked_skip** — the selector resolves to nothing in an existing file,
+      but the ROW says its guarantee is not live (DEPRECATED/REVERSED/NOT
+      ENFORCED), so the gap is a declared record, not a regression.
+    - **pinned** — unresolved, the row is not marked, but the triple is in
+      `_KNOWN_UNRESOLVED` with a stated reason.
+    - **unresolved** — none of the above: a real, unreported regression.
+
+    Every citation lands in exactly one bucket, so `sum(counts.values()) ==
+    total` always holds — asserted by the caller, not trusted here.
+    """
+    counts = dict.fromkeys(_CENSUS_BUCKETS, 0)
+    unresolved: list[str] = []
     for identifier, number, line in _rows():
         marked = _is_marked(line)
         for file_part, selector in _selector_citations(line):
             outcome = _resolve(file_part, selector)
-            if outcome == "resolved":
-                resolved_count += 1
+            if outcome in ("resolved", "registry", "partial", "missing_file"):
+                counts[outcome] += 1
                 continue
-            if outcome in ("registry", "partial", "missing_file"):
-                # "missing_file" is the file-level test's finding, not this
-                # one's — reporting it again here would just be noise on top
-                # of a failure already pointing at the right row.
-                continue
+            # outcome == "unresolved" from here down.
             if marked:
+                counts["marked_skip"] += 1
                 continue
             key = (identifier, file_part, selector[2:])
             if key in _KNOWN_UNRESOLVED:
+                counts["pinned"] += 1
                 continue
+            counts["unresolved"] += 1
             unresolved.append(f"{identifier} (line {number}): {file_part}::{selector[2:]}")
-    return unresolved, resolved_count
+    return counts, unresolved
+
+
+def _census_line(counts: dict[str, int]) -> str:
+    total = sum(counts.values())
+    parts = " ".join(f"{bucket}={counts[bucket]}" for bucket in _CENSUS_BUCKETS)
+    return f"total={total} {parts}"
 
 
 def test_every_selector_a_row_names_resolves_to_a_def_or_class_in_its_file() -> None:
-    unresolved, _ = _unresolved_selectors()
+    counts, unresolved = _census()
+    print(_census_line(counts))
+    assert sum(counts.values()) == sum(
+        len(_selector_citations(line)) for _, _, line in _rows()
+    ), "a `::selector` citation was not sorted into exactly one census bucket"
     assert not unresolved, (
         "decision-index rows name a `::selector` with no matching def/class in "
         "the cited file (the file itself exists — this is a rename or move "
         "WITHIN it, or a genuinely deleted test). Repoint the row, or add it to "
         "_KNOWN_UNRESOLVED with the reason if it needs a judgement call:\n  "
-        + "\n  ".join(unresolved)
+        + "\n  ".join(unresolved) + "\n  " + _census_line(counts)
     )
 
 
@@ -607,11 +645,48 @@ def test_the_selector_scan_still_resolves_real_selectors() -> None:
     large body of real citations, not finding zero because it looked at
     nothing.
     """
-    _, resolved_count = _unresolved_selectors()
-    assert resolved_count > 400, (
-        f"only {resolved_count} `::selector` citations resolved to a real "
-        "def/class — the parser or the AST match has probably broken"
+    counts, _ = _census()
+    assert counts["resolved"] > 400, (
+        f"only {counts['resolved']} `::selector` citations resolved to a real "
+        "def/class — the parser or the AST match has probably broken "
+        f"({_census_line(counts)})"
     )
+
+
+def _stale_pins(
+    rows: list[tuple[str, int, str]], known: dict[tuple[str, str, str], str]
+) -> dict[tuple[str, str, str], str]:
+    """`_KNOWN_UNRESOLVED` entries that no longer need pinning.
+
+    A pin goes stale TWO ways, and the first one is not "dropped from the
+    row" — `test_doc_references_resolve.py`'s `_KNOWN_DANGLING` only has the
+    second, because a dangling PATH cannot itself start resolving without the
+    citation changing. A `::selector` can: the row citing it is untouched, but
+    the test it names gets rewritten back under that name (re-added, restored
+    from a revert, an independent rename that happens to land on it) — the
+    citation is still LIVE, but `_resolve` now says "resolved". Missing
+    either check reopens the exact hole `test_known_unresolved_selectors_
+    are_still_unresolved` exists to close: a pin that never re-checks
+    `_resolve` stays pinned forever, even after the work it recorded is done.
+
+    - **No longer cited**: the (row, file, selector) triple is not among
+      today's citations at all — the row was fixed or renumbered.
+    - **Now resolves**: still cited, but `_resolve` returns `"resolved"` —
+      the def/class the pin said was missing exists again.
+    """
+    live: dict[tuple[str, str, str], tuple[str, str]] = {}
+    for identifier, _number, line in rows:
+        for file_part, selector in _selector_citations(line):
+            live[(identifier, file_part, selector[2:])] = (file_part, selector)
+    stale = {}
+    for key, reason in known.items():
+        if key not in live:
+            stale[key] = reason
+            continue
+        file_part, selector = live[key]
+        if _resolve(file_part, selector) == "resolved":
+            stale[key] = reason
+    return stale
 
 
 def test_known_unresolved_selectors_are_still_unresolved() -> None:
@@ -619,18 +694,66 @@ def test_known_unresolved_selectors_are_still_unresolved() -> None:
 
     Mirrors `test_doc_references_resolve.py`'s stale-pin check: a pin that
     silently stopped reproducing (the row was fixed, or the selector now
-    resolves some other way) is exactly the kind of finding this gate exists
-    to surface, and leaving it pinned would hide that the work is done.
+    resolves) is exactly the kind of finding this gate exists to surface, and
+    leaving it pinned would hide that the work is done.
     """
-    live: set[tuple[str, str, str]] = set()
-    for identifier, _number, line in _rows():
-        for file_part, selector in _selector_citations(line):
-            live.add((identifier, file_part, selector[2:]))
-    stale = {k: v for k, v in _KNOWN_UNRESOLVED.items() if k not in live}
+    stale = _stale_pins(_rows(), _KNOWN_UNRESOLVED)
     assert not stale, (
-        "_KNOWN_UNRESOLVED entr(y/ies) whose (row, file, selector) no longer "
-        f"appears in the index — drop them: {sorted(stale)}"
+        "_KNOWN_UNRESOLVED entr(y/ies) that no longer need pinning — either "
+        "the (row, file, selector) no longer appears in the index, or the "
+        f"selector now resolves. Drop them: {sorted(stale)}"
     )
+
+
+def test_a_pin_whose_selector_now_resolves_is_flagged_stale(tmp_path, monkeypatch) -> None:
+    """The bug this test guards against: a pin that never re-runs `_resolve`
+    stays pinned even after its function is re-added, restored, or renamed
+    back onto the exact name the pin recorded as missing."""
+    tests_dir = tmp_path / "tests"
+    tests_dir.mkdir()
+    (tests_dir / "test_fixture_module.py").write_text(
+        "def test_the_thing_that_came_back():\n    pass\n"
+    )
+    monkeypatch.setattr(
+        "tests.architecture.test_decision_index_tests_exist.ROOT", tmp_path
+    )
+    row = (
+        "| DEC-999 | Statement. | "
+        "`tests/test_fixture_module.py::test_the_thing_that_came_back` |"
+    )
+    rows = [("DEC-999", 1, row)]
+    known = {
+        ("DEC-999", "tests/test_fixture_module.py", "test_the_thing_that_came_back"): (
+            "was deleted; pinned 2026-01-01"
+        ),
+    }
+    stale = _stale_pins(rows, known)
+    assert list(stale) == [
+        ("DEC-999", "tests/test_fixture_module.py", "test_the_thing_that_came_back")
+    ]
+
+
+def test_a_pin_still_unresolved_and_still_cited_is_not_flagged_stale(
+    tmp_path, monkeypatch
+) -> None:
+    """The negative case: a pin whose selector is still cited and still does
+    NOT resolve must not be reported as stale."""
+    tests_dir = tmp_path / "tests"
+    tests_dir.mkdir()
+    (tests_dir / "test_fixture_module.py").write_text(
+        "def test_something_unrelated():\n    pass\n"
+    )
+    monkeypatch.setattr(
+        "tests.architecture.test_decision_index_tests_exist.ROOT", tmp_path
+    )
+    row = "| DEC-999 | Statement. | `tests/test_fixture_module.py::test_still_gone` |"
+    rows = [("DEC-999", 1, row)]
+    known = {
+        ("DEC-999", "tests/test_fixture_module.py", "test_still_gone"): (
+            "still deleted; pinned 2026-01-01"
+        ),
+    }
+    assert _stale_pins(rows, known) == {}
 
 
 def test_a_bare_selector_continues_the_last_file_named_on_the_row() -> None:
