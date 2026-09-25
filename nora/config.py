@@ -1602,19 +1602,23 @@ class InstagramSummonsConfig(BaseModel):
     comments, once, through the instagram-bridge's guarded write.
 
     **Off, and in `dry_run`, by default, and those are two separate brakes.**
-    `enabled` spawns the poller at all. `mode = "dry_run"` runs the WHOLE turn
+    `enabled` spawns the summons consumer at all (and lets the Instagram
+    adapter queue the bridge's `summons` SSE events for it; off, each one is
+    counted `disabled` and dropped). `mode = "dry_run"` runs the WHOLE turn
     and stores what she would have said in the ledger (state `staged`) without
     a POST; `mode = "live"` posts it. Live also needs the bridge's own
     `INSTAGRAM_COMMENT_WRITES=on`, which is a third brake Nora cannot flip.
 
-    `poll_seconds` has a FLOOR of 60 (design 19 rule 3: a poll interval in
-    minutes, not seconds, because the same session carries her group chats and
-    a flagged session takes them with it). 120 is the default: chosen, not
-    measured, and above the bridge's minimum spacing between two comments.
+    `poll_seconds` is DEPRECATED and read by nothing (2026-09-26). It was the
+    interval of the `GET /mentions` poller, which was removed: the
+    notification feed it read never carried a comment mention of her
+    (measured), and a summons now arrives as an SSE event. It is still
+    ACCEPTED, because the live `config.toml` sets it and this model forbids
+    unknown keys; delete it from the live file, then from here.
 
-    `max_age_minutes` is the only brake on a backlog: the first enable can see
-    weeks of old mentions, and a summons older than this is recorded `stale`
-    and never answered.
+    `max_age_minutes` is the only brake on a backlog: a card replayed long
+    after it arrived (a bridge buffer, cards queued behind a checkpoint
+    backoff) is recorded `stale` and never answered.
 
     `handle` is her own Instagram username, removed from the comment's text so
     the question she reads is the question, not her own name.
@@ -1624,7 +1628,7 @@ class InstagramSummonsConfig(BaseModel):
 
     enabled: bool = False
     mode: Literal["dry_run", "live"] = "dry_run"
-    poll_seconds: float = Field(default=120.0, ge=60)
+    poll_seconds: float | None = None  # DEPRECATED, read by nothing: see above
     max_age_minutes: float = Field(default=60.0, gt=0)
     handle: str = "noraexample"
 

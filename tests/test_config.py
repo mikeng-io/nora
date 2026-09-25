@@ -455,7 +455,7 @@ def test_the_instagram_summons_ships_off_in_dry_run_and_is_live_in_the_example(t
     summons = cfg.social.instagram.summons
     assert summons.enabled is False
     assert summons.mode == "dry_run"
-    assert summons.poll_seconds == 120.0
+    assert summons.poll_seconds is None  # deprecated, read by nothing
     assert summons.max_age_minutes == 60.0
     assert summons.handle == "noraexample"
 
@@ -480,18 +480,16 @@ def _in_section(text: str, header: str, old: str, new: str) -> str:
     return head + sep + tail.replace(old, new, 1)
 
 
-def test_the_summons_poll_interval_is_minutes_not_seconds(toml_path):
-    """design 19 rule 3: the session carries her group chats, so the poll has a
-    floor. 59 seconds is refused at load, 60 is accepted."""
+def test_the_deprecated_summons_poll_interval_is_still_accepted(toml_path):
+    """The live config.toml sets `poll_seconds = 120` (the retired poller's
+    interval) and the model forbids unknown keys: it must still load, and
+    nothing reads it. Deleting the field would crash-loop the deployment."""
     text = _in_section(
         toml_path.read_text(), "[social.instagram.summons]",
-        "enabled = false\n", "enabled = false\npoll_seconds = 59\n",
+        "enabled = false\n", "enabled = false\npoll_seconds = 120\n",
     )
     toml_path.write_text(text)
-    with pytest.raises(ConfigError, match="poll_seconds"):
-        load(toml_path)
-    toml_path.write_text(text.replace("poll_seconds = 59", "poll_seconds = 60"))
-    assert load(toml_path).social.instagram.summons.poll_seconds == 60
+    assert load(toml_path).social.instagram.summons.poll_seconds == 120
 
 
 def test_the_summons_mode_is_a_closed_set(toml_path):

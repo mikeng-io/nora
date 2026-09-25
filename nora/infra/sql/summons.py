@@ -2,8 +2,11 @@
 (`nora.domain.summons.SummonsLedger`, design/instagram-adoption/19).
 
 The one property the table exists for is that a summons is claimed ONCE:
-`claim` is `INSERT ... ON CONFLICT (comment_id) DO NOTHING RETURNING id`, so of
-any number of concurrent claims on one comment exactly one gets an id.
+`claim` is `INSERT ... ON CONFLICT (message_id) DO NOTHING RETURNING id`, keyed
+on the summons card's DM message id, so of any number of concurrent claims on
+one card exactly one gets an id. The comment the card resolves to is bound
+later (`bind_comment`), and `comment_id` stays UNIQUE, so two cards that
+resolve to one comment cannot both be answered.
 """
 
 from __future__ import annotations
@@ -29,7 +32,8 @@ SWEPT_AT_BOOT = "swept_at_boot"
 
 def _row(r: Row[Any]) -> SummonsRow:
     return SummonsRow(
-        id=r.id, comment_id=r.comment_id, media_id=r.media_id, shortcode=r.shortcode,
+        id=r.id, message_id=r.message_id, comment_id=r.comment_id,
+        media_id=r.media_id, shortcode=r.shortcode,
         author_igid=r.author_igid, person_id=r.person_id, mention_at=r.mention_at,
         seen_at=r.seen_at, state=r.state, mode=r.mode, reply_text=r.reply_text,
         reply_comment_id=r.reply_comment_id, bridge_code=r.bridge_code,
@@ -44,7 +48,7 @@ class SqlSummonsLedger:
         self._engine = engine
 
     async def claim(
-        self, *, comment_id: str, media_id: str, shortcode: str,
+        self, *, message_id: str, media_id: str, shortcode: str,
         author_igid: str, mention_at: datetime | None, mode: str, now: datetime,
     ) -> UUID | None:
         if mode not in SUMMONS_MODES:
@@ -52,16 +56,40 @@ class SqlSummonsLedger:
         stmt = (
             pg_insert(INSTAGRAM_SUMMONS)
             .values(
-                id=uuid.uuid4(), comment_id=comment_id, media_id=media_id,
+                id=uuid.uuid4(), message_id=message_id, media_id=media_id,
                 shortcode=shortcode, author_igid=author_igid, mention_at=mention_at,
                 seen_at=now, updated_at=now, state="claimed", mode=mode,
             )
-            .on_conflict_do_nothing(index_elements=["comment_id"])
+            .on_conflict_do_nothing(index_elements=["message_id"])
             .returning(INSTAGRAM_SUMMONS.c.id)
         )
         async with self._engine.begin() as conn:
             got = (await conn.execute(stmt)).scalar_one_or_none()
         return got
+
+    async def bind_comment(
+        self, summons_id: UUID, comment_id: str, *, now: datetime,
+    ) -> bool:
+        """Record the comment a `claimed` row resolved to, once. `False` when
+        the row is not an unbound `claimed` row, or when ANOTHER row already
+        holds that comment: the UNIQUE constraint decides, in the one
+        statement that writes, so two concurrent binds of one comment cannot
+        both succeed."""
+        stmt = (
+            sa.update(INSTAGRAM_SUMMONS)
+            .where(
+                INSTAGRAM_SUMMONS.c.id == summons_id,
+                INSTAGRAM_SUMMONS.c.state == "claimed",
+                INSTAGRAM_SUMMONS.c.comment_id.is_(None),
+            )
+            .values(comment_id=comment_id, updated_at=now)
+        )
+        try:
+            async with self._engine.begin() as conn:
+                result = await conn.execute(stmt)
+        except sa.exc.IntegrityError:
+            return False
+        return bool(result.rowcount)
 
     async def finish(
         self, summons_id: UUID, state: str, *, now: datetime,
@@ -106,16 +134,6 @@ class SqlSummonsLedger:
         async with self._engine.begin() as conn:
             got = (await conn.execute(stmt)).scalar_one_or_none()
         return got is not None
-
-    async def seen(self, comment_ids: tuple[str, ...]) -> frozenset[str]:
-        if not comment_ids:
-            return frozenset()
-        stmt = sa.select(INSTAGRAM_SUMMONS.c.comment_id).where(
-            INSTAGRAM_SUMMONS.c.comment_id.in_(comment_ids),
-        )
-        async with self._engine.connect() as conn:
-            rows = (await conn.execute(stmt)).scalars().all()
-        return frozenset(rows)
 
     async def awaiting_flush(self) -> SummonsRow | None:
         stmt = (

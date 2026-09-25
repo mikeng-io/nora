@@ -1,0 +1,15 @@
+{
+  "type": "fix",
+  "summary": "A public Instagram summons now reaches Nora: she hears it from the bridge's event stream when a comment tags her, instead of polling a notification feed that never carried those mentions.",
+  "details": [
+    "The instagram-bridge sends a summons event when a comment tagging her arrives as a DM card; Nora finds the summoner's own comment on the post (written by the card's sender and tagging @noraexample, the newest if several) and answers under it, once, through the same guarded write as before.",
+    "Each summons is claimed on the card's message id before anything is read, and one comment gets one reply however many cards point at it.",
+    "A card whose post the bridge could not identify is recorded as unresolved and never answered; a malformed one is counted and dropped. With [social.instagram.summons] off, cards are counted and dropped.",
+    "Summonses are worked one at a time; the consumer still backs off up to 30 minutes when the session needs a human or the bridge is reconnecting.",
+    "Needs migration 0067_summons_message_key. poll_seconds is still accepted in config.toml and is read by nothing."
+  ],
+  "limitations": [
+    "Two summonses by the same person under one post resolve to their newest tagging comment, so only one of them is answered.",
+    "A summons comment that is not on the first page of the post's comments is not answered."
+  ]
+}

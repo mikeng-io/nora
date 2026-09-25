@@ -15,24 +15,18 @@ import pytest
 
 from nora.domain.summons import (
     Comment,
-    Mention,
     PostItem,
     SummonsPost,
     build_context,
     question_of,
     render_summons,
+    summons_comment,
+    tags_handle,
 )
 
 NOW = datetime(2026, 9, 25, 12, 0, tzinfo=UTC)
 SUMMONS_ID = "8c1f6c55-0000-4000-8000-000000000001"
-
-
-def _mention(**kw) -> Mention:
-    return Mention(
-        comment_id=kw.get("comment_id", "105"), media_id="31", shortcode="CmiJBr2LAAB",
-        author_igid="10000001", author_username="miles_example",
-        at=kw.get("at", NOW - timedelta(minutes=5)),
-    )
+SUMMONER_IGID = "10000001"
 
 
 def _post(n_items: int = 3, *, more: bool = False) -> SummonsPost:
@@ -57,6 +51,7 @@ def _comments(n: int = 8, summons_at: int = 5) -> tuple[Comment, ...]:
             author="miles_example" if is_summons else f"user{i}",
             text="@noraexample is this a heron?" if is_summons else f"comment {i}",
             at=NOW - timedelta(minutes=60 - i),
+            author_igid=SUMMONER_IGID if is_summons else f"2000000{i}",
         ))
     # Shuffled: the thread is ordered by time, never by the page's order.
     return tuple(reversed(out))
@@ -64,7 +59,7 @@ def _comments(n: int = 8, summons_at: int = 5) -> tuple[Comment, ...]:
 
 def _context(**kw):
     return build_context(
-        summons_id=SUMMONS_ID, now=NOW, mention=_mention(),
+        summons_id=SUMMONS_ID, now=NOW, comment_id="105", summoner="miles_example",
         summoned_at=NOW - timedelta(minutes=5), handle="noraexample",
         post=kw.get("post", _post()), comments=kw.get("comments", _comments()),
     )
@@ -132,8 +127,73 @@ def test_a_caption_cannot_close_its_block_or_forge_a_line():
 
 
 def test_no_igid_reaches_the_render():
+    # Positive control: the igid IS on the comment the context was built from.
+    assert any(c.author_igid == SUMMONER_IGID for c in _comments())
     text = render_summons(_context())
-    assert "10000001" not in text
+    assert SUMMONER_IGID not in text
+
+
+# ---- finding the summoner's comment (the card carries no comment id) ----------
+
+
+def _c(cid: str, text: str, *, igid: str = SUMMONER_IGID, minutes_ago: int | None = 5,
+       author: str = "miles_example") -> Comment:
+    return Comment(
+        id=cid, parent_id=None, author=author, text=text,
+        at=None if minutes_ago is None else NOW - timedelta(minutes=minutes_ago),
+        author_igid=igid,
+    )
+
+
+def test_the_summons_comment_is_the_senders_comment_that_tags_her():
+    comments = (
+        _c("1", "nice pic", minutes_ago=9),
+        _c("2", "@noraexample what bird?", minutes_ago=5),
+        _c("3", "@noraexample what bird?", igid="20000009", author="someone", minutes_ago=1),
+    )
+    found = summons_comment(comments, igid=SUMMONER_IGID, handle="noraexample")
+    assert found is not None and found.id == "2"
+
+
+def test_a_comment_tagging_her_by_anybody_else_is_never_the_summons():
+    """The author-igid match is the guard: a stranger's tag under the same
+    post, newer than anything the summoner wrote, is not the one she answers
+    under. Falsified by dropping the igid condition from `summons_comment`:
+    the stranger's comment is chosen."""
+    comments = (
+        _c("1", "@noraexample what bird?", igid="20000009", author="someone", minutes_ago=1),
+        _c("2", "just a comment", minutes_ago=2),
+    )
+    assert summons_comment(comments, igid=SUMMONER_IGID, handle="noraexample") is None
+    assert summons_comment(comments, igid="", handle="noraexample") is None
+
+
+def test_of_several_matching_comments_the_newest_is_the_summons():
+    comments = (
+        _c("1", "@noraexample first", minutes_ago=30),
+        _c("3", "@noraexample third", minutes_ago=1),
+        _c("2", "@noraexample second", minutes_ago=10),
+        _c("4", "@noraexample no time", minutes_ago=None),
+    )
+    found = summons_comment(comments, igid=SUMMONER_IGID, handle="noraexample")
+    assert found is not None and found.id == "3"
+
+
+@pytest.mark.parametrize(("text", "tags"), [
+    ("@noraexample is this true", True),
+    ("is this true @NoraExample.", True),
+    ("(@noraexample)", True),
+    ("@noraexample, and?", True),
+    ("@noraexample2 is this true", False),
+    ("@noraexample.backup is this true", False),
+    ("@noraexample_ hi", False),
+    ("mail me@noraexample", False),
+    ("noraexample is this true", False),
+])
+def test_the_handle_is_matched_as_a_whole_word(text, tags):
+    assert tags_handle(text, "noraexample") is tags
+    found = summons_comment((_c("1", text),), igid=SUMMONER_IGID, handle="noraexample")
+    assert (found is not None) is tags
 
 
 def test_an_empty_question_means_the_post():

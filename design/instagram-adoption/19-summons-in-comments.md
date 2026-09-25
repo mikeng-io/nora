@@ -177,6 +177,44 @@ row and the trace. No write route exists yet.
 `replied_to_comment_id`, behind rules 4 and 6. It goes live only after a
 week of phase 1 polling without a checkpoint.
 
+## Intake moved to the DM card (2026-09-26)
+
+**Supersedes the `ingress` row above and the `GET /mentions` rule in the
+guard table.** The second "What would stop it" item below happened: the
+notification feed never carried a comment mention of her (measured). A
+mention reaches her instead as a DM card from the commenter (an XMA
+`SlideMessageLayeredXMA`, subtitle = the comment text); the bridge refetches
+the card's thread to find the post (`target_url`) and emits a `summons` event
+on its SSE stream beside the ordinary message event. The card names the post
+but NOT the comment.
+
+- **Intake.** `nora/platform/instagram/summons.py` parses the event once into
+  a `SummonsCard` (fail closed: no usable message id, time or boolean
+  `resolved` is refused and counted `malformed`). The adapter hands it to
+  `nora/app/summons_inbox.py` (bounded, drops the oldest, counted on
+  `nora_summons_intake_total`) and never to room ingest; with
+  `[social.instagram.summons]` off every card is counted `disabled` and
+  dropped. `nora/app/summons_consumer.py` works one card at a time, retries a
+  live `staged` flush first, backs off on `needs_human`/503, and runs the
+  stale-claim sweep at boot and every step. The poller and Nora's
+  `GET /mentions` read are gone; `poll_seconds` is accepted and read by
+  nothing.
+- **Occasion.** Claimed on the card's `message_id`. `resolved = false` is
+  `unresolved` (no read, no model call). The summoner gate is unchanged
+  (sender igid). Stale is `received_at` against `max_age_minutes`. The
+  comment is FOUND: author igid == sender igid AND the word-bounded
+  `@handle`, newest if several; none is `unreadable`. Its id is bound to the
+  row once (`comment_id` stays unique, so two cards for one comment get one
+  answer, the second `duplicate`) and is the `reply_to_comment_id` of the
+  one write. Everything from the turn to the flush is unchanged.
+- **Ledger.** `0067_summons_message_key`: `message_id` NOT NULL UNIQUE
+  (pre-existing rows backfilled `legacy:<comment_id>`), `comment_id`
+  nullable and still unique, state `unresolved` added.
+- **Bridge guard 3** now verifies the comment itself: a summons it served on
+  the SSE stream for that post within 7 days, whose sender wrote
+  `reply_to_comment_id` tagging her on the post's first comments page; else
+  `403 not_a_summons`, which the occasion records `failed` as before.
+
 ## Two things the review of #545 recorded
 
 - **The reply tool's own text still speaks of "the room".** `send_reply`'s

@@ -1,7 +1,11 @@
 """`InstagramSummonsClient` — the public summons' own client on the
-instagram-bridge (design/instagram-adoption/19): the mentions read, the post
-and comments reads the summons needs, and the ONE public write, a reply under
-a summons comment.
+instagram-bridge (design/instagram-adoption/19): the post and comments reads
+the summons needs, and the ONE public write, a reply under a summons comment.
+
+It has NO mentions read. The summons poller that used `GET /mentions` was
+removed on 2026-09-26: the notification feed behind it never carried a
+comment mention of her (measured). A summons now arrives as an SSE `summons`
+event (`nora.platform.instagram.summons`).
 
 **Not a method on `InstagramSocialClient`, on purpose.** That client is the
 model's read side and R-86's test pins it to GET-only; the Threads design
@@ -39,7 +43,7 @@ from urllib.parse import urlsplit
 import aiohttp
 
 from ...domain.instagram_links import SHORTCODE_RE, is_handle
-from ...domain.summons import Comment, Mention, PostItem, SummonsPost
+from ...domain.summons import Comment, PostItem, SummonsPost
 from ..trace_propagation import propagation_headers
 
 log = logging.getLogger("nora.infra.social.summons")
@@ -82,24 +86,6 @@ class InstagramSummonsClient:
         self._timeout_seconds = timeout_seconds
 
     # ---- reads -------------------------------------------------------------
-
-    async def mentions(self) -> BridgeResult[tuple[Mention, ...]]:
-        """`GET /mentions` → every well-formed comment-mention, in the bridge's
-        order. A row missing an id is dropped; a row with no `at` is kept with
-        `at=None`, which the occasion reads as stale (fail closed)."""
-        answer = await self._call("GET", "/mentions")
-        if not answer.ok:
-            return BridgeResult(None, answer.code, answer.status)
-        body = answer.value
-        items = body.get("items") if isinstance(body, dict) else None
-        if not isinstance(items, list):
-            return BridgeResult(None, "bad_body", answer.status)
-        out: list[Mention] = []
-        for row in items:
-            mention = _mention(row)
-            if mention is not None:
-                out.append(mention)
-        return BridgeResult(tuple(out), "ok", answer.status)
 
     async def post(self, shortcode: str) -> BridgeResult[SummonsPost]:
         """`GET /posts/{shortcode}` → the post, items on a measured CDN host
@@ -250,29 +236,6 @@ def _handle(value: Any) -> str | None:
     return value if isinstance(value, str) and is_handle(value) else None
 
 
-def _mention(row: Any) -> Mention | None:
-    if not isinstance(row, dict):
-        return None
-    author, media, comment = _obj(row.get("author")), _obj(row.get("media")), _obj(
-        row.get("comment"),
-    )
-    comment_id = _decimal(comment.get("id"))
-    media_id = _decimal(media.get("id"))
-    shortcode = media.get("shortcode")
-    if comment_id is None or media_id is None or not (
-        isinstance(shortcode, str) and SHORTCODE_RE.fullmatch(shortcode)
-    ):
-        return None
-    return Mention(
-        comment_id=comment_id, media_id=media_id, shortcode=shortcode,
-        # An igid that is not decimal is "" and so matches nobody: the gate
-        # fails closed rather than resolving a malformed id.
-        author_igid=_decimal(author.get("igid")) or "",
-        author_username=_handle(author.get("username")) or "",
-        at=_at(row.get("at")),
-    )
-
-
 def _is_cdn_url(value: Any) -> bool:
     if not isinstance(value, str) or not value.startswith("https://"):
         return False
@@ -327,4 +290,7 @@ def _comment(row: Any) -> Comment | None:
         id=comment_id, parent_id=_decimal(row.get("parent_id")),
         author=_handle(author.get("username")),
         text=text[:_MAX_TEXT], at=_at(row.get("at")),
+        # Kept to find the summoner's own comment and nothing else; an igid
+        # that is not decimal is "" and so matches nobody (fail closed).
+        author_igid=_decimal(author.get("igid")) or "",
     )

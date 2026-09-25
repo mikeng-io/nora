@@ -1,11 +1,13 @@
 """`SummonsLedger` has two implementations, so it gets one suite both pass.
 
 The property the table exists for is that a public summons is answered at
-most once (design/instagram-adoption/19): claimed before the model runs, and
-of two concurrent claims on one comment exactly one wins. The rest is what the
-poller reads back: `seen` (which mentions are already handled), `awaiting_flush`
-(a LIVE `staged` row, never a dry-run one), and the boot sweep, which turns a
-row a dead process left `claimed` into `failed` and never into a retry.
+most once (design/instagram-adoption/19): claimed on the summons CARD's
+message id before anything is read, and of two concurrent claims on one card
+exactly one wins; the comment the card resolves to is bound once and stays
+unique across rows, so two cards for one comment get one answer. The rest is
+what the consumer reads back: `awaiting_flush` (a LIVE `staged` row, never a
+dry-run one), and the boot sweep, which turns a row a dead process left
+`claimed` into `failed` and never into a retry.
 
 Database scoped to the MODULE and truncated between tests (AGENTS.md).
 """
@@ -22,7 +24,7 @@ import psycopg
 import pytest
 import sqlalchemy as sa
 
-from nora.domain.summons import SummonsLedger
+from nora.domain.summons import OPEN_STATES, SUMMONS_STATES, SummonsLedger
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.migrations_runner import run_migrations
 from nora.infra.sql.summons import SqlSummonsLedger
@@ -66,28 +68,76 @@ async def ledger(request: Any) -> AsyncIterator[SummonsLedger]:
         await engine.dispose()
 
 
-async def _claim(ledger: SummonsLedger, comment_id: str = "1001", *, mode: str = "dry_run",
-                 now: datetime = NOW):
+async def _claim(ledger: SummonsLedger, message_id: str = "mid.$1001", *,
+                 mode: str = "dry_run", now: datetime = NOW):
     return await ledger.claim(
-        comment_id=comment_id, media_id="2002", shortcode="CmiJBr2LAAB",
+        message_id=message_id, media_id="2002", shortcode="CmiJBr2LAAB",
         author_igid="3003", mention_at=now - timedelta(minutes=5), mode=mode, now=now,
     )
 
 
-async def test_a_comment_is_claimed_once_and_a_second_claim_gets_nothing(ledger):
+async def test_a_card_is_claimed_once_and_a_second_claim_gets_nothing(ledger):
     first = await _claim(ledger)
     assert first is not None
     assert await _claim(ledger) is None
     row = await ledger.get(first)
-    assert row is not None and row.state == "claimed" and row.comment_id == "1001"
+    assert row is not None and row.state == "claimed"
+    assert (row.message_id, row.comment_id) == ("mid.$1001", None)
 
 
-async def test_of_concurrent_claims_on_one_comment_exactly_one_wins(ledger):
-    """The idempotency line under concurrency: ten claims at once, one id.
-    Falsified by removing the ON CONFLICT (the SQL store raises
-    IntegrityError on nine) or the fake's membership check (ten ids)."""
+async def test_of_concurrent_claims_on_one_card_exactly_one_wins(ledger):
+    """The idempotency line under concurrency: ten claims of one message id at
+    once, one id. Falsified by keying the claim on anything but the message
+    id (the SQL store's ON CONFLICT target, or the fake's membership check):
+    ten ids, or IntegrityError on nine."""
     got = await asyncio.gather(*(_claim(ledger) for _ in range(10)))
     assert sum(1 for g in got if g is not None) == 1
+
+
+async def test_two_cards_are_two_claims_even_on_one_post(ledger):
+    a = await _claim(ledger, "mid.$a")
+    b = await _claim(ledger, "mid.$b")
+    assert a is not None and b is not None and a != b
+
+
+async def test_a_comment_is_bound_once_and_never_to_two_rows(ledger):
+    """Two cards that resolve to ONE comment: the first bind wins, the second
+    is refused (comment_id stays UNIQUE), and a bound row is never re-bound."""
+    a = await _claim(ledger, "mid.$a")
+    b = await _claim(ledger, "mid.$b")
+    assert a is not None and b is not None
+    assert await ledger.bind_comment(a, "9001", now=NOW) is True
+    assert await ledger.bind_comment(b, "9001", now=NOW) is False
+    assert await ledger.bind_comment(a, "9002", now=NOW) is False
+    assert (await ledger.get(a)).comment_id == "9001"
+    assert (await ledger.get(b)).comment_id is None
+
+
+async def test_of_concurrent_binds_of_one_comment_exactly_one_wins(ledger):
+    ids = [await _claim(ledger, f"mid.${i}") for i in range(10)]
+    got = await asyncio.gather(*(
+        ledger.bind_comment(i, "9001", now=NOW) for i in ids if i is not None
+    ))
+    assert got.count(True) == 1
+
+
+async def test_only_a_claimed_row_can_be_bound(ledger):
+    summons_id = await _claim(ledger)
+    assert summons_id is not None
+    await ledger.finish(summons_id, "unresolved", now=NOW)
+    assert await ledger.bind_comment(summons_id, "9001", now=NOW) is False
+
+
+async def test_every_state_in_the_vocabulary_can_be_written(ledger):
+    """The SQL CHECK and `SUMMONS_STATES` agree: each final state is
+    writable (the new `unresolved` among them)."""
+    for state in SUMMONS_STATES:
+        if state in OPEN_STATES:
+            continue
+        summons_id = await _claim(ledger, f"mid.${state}")
+        assert summons_id is not None
+        assert await ledger.finish(summons_id, state, now=NOW) is True
+        assert (await ledger.get(summons_id)).state == state
 
 
 async def test_finish_records_the_state_and_only_the_fields_it_was_given(ledger):
@@ -110,22 +160,15 @@ async def test_an_unknown_state_is_refused(ledger):
         await ledger.finish(summons_id, "posted", now=NOW)
 
 
-async def test_seen_names_exactly_the_comments_already_in_the_ledger(ledger):
-    await _claim(ledger, "1001")
-    await _claim(ledger, "1003")
-    assert await ledger.seen(("1001", "1002", "1003")) == frozenset({"1001", "1003"})
-    assert await ledger.seen(()) == frozenset()
-
-
 async def test_only_a_live_staged_row_awaits_a_flush(ledger):
     """A dry-run `staged` row is final: it must never be read as a live reply
     waiting out `too_soon`, or switching the mode to live would post a
     backlog of dry-run text."""
-    dry = await _claim(ledger, "1001", mode="dry_run")
+    dry = await _claim(ledger, "mid.$1001", mode="dry_run")
     assert dry is not None
     await ledger.finish(dry, "staged", now=NOW, reply_text="dry")
     assert await ledger.awaiting_flush() is None
-    live = await _claim(ledger, "1002", mode="live", now=NOW + timedelta(seconds=1))
+    live = await _claim(ledger, "mid.$1002", mode="live", now=NOW + timedelta(seconds=1))
     assert live is not None
     await ledger.finish(live, "staged", now=NOW, reply_text="live")
     waiting = await ledger.awaiting_flush()
@@ -175,10 +218,10 @@ async def test_the_sweep_closes_old_open_rows_and_leaves_young_ones_alone(ledger
     younger than the timeout — another process still working it — is left
     alone. Falsified by dropping the `updated_at` bound: the young row fails."""
     old = NOW - timedelta(minutes=30)
-    left = await _claim(ledger, "1001", now=old)
-    flushing = await _claim(ledger, "1002", mode="live", now=old)
-    young = await _claim(ledger, "1003", now=NOW - timedelta(minutes=1))
-    done = await _claim(ledger, "1004", now=old)
+    left = await _claim(ledger, "mid.$1001", now=old)
+    flushing = await _claim(ledger, "mid.$1002", mode="live", now=old)
+    young = await _claim(ledger, "mid.$1003", now=NOW - timedelta(minutes=1))
+    done = await _claim(ledger, "mid.$1004", now=old)
     assert None not in (left, flushing, young, done)
     await ledger.finish(flushing, "staged", now=old, reply_text="x")
     assert await ledger.take_for_flush(flushing, now=old)
@@ -192,5 +235,5 @@ async def test_the_sweep_closes_old_open_rows_and_leaves_young_ones_alone(ledger
     )}
     assert states == {"1001": "failed", "1002": "ambiguous", "1003": "claimed", "1004": "silent"}
     assert (await ledger.get(left)).bridge_code == "swept_at_boot"
-    # A swept comment stays claimed: it is still `seen`, never answered again.
-    assert await _claim(ledger, "1001") is None
+    # A swept card stays claimed: it is never answered again.
+    assert await _claim(ledger, "mid.$1001") is None
