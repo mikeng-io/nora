@@ -32,6 +32,9 @@ EXPECTED = {
     # may-speak half of silence.md is true of it exactly as it is of
     # participation, and the heartbeat's obliged-to-speak reading is not.
     "identity": ("identity", 10, ("tag", "heartbeat", "participation", "proactive")),
+    # Split out of identity.md 2026-09-25 (operator): her place in a group, so
+    # who she is can load on a surface that is not one.
+    "belonging": ("identity", 12, ("tag", "heartbeat", "participation", "proactive")),
     "voice": ("identity", 20, ("tag", "heartbeat", "participation", "proactive")),
     "silence": ("conduct", 25, ("tag", "participation", "proactive")),
     "conduct": ("conduct", 30, ("tag", "heartbeat", "participation", "proactive")),
@@ -87,7 +90,7 @@ def test_each_file_has_the_expected_name_kind_order_and_audience(stem, kind, ord
 def test_the_shipped_doctrine_assembles_in_strict_mode():
     doctrine = _shipped().get()
     assert [s.name for s in doctrine.sections] == \
-        ["identity", "voice", "silence", "conduct", "constraints"]
+        ["identity", "belonging", "voice", "silence", "conduct", "constraints"]
 
 
 def test_constraints_is_last_for_recency():
@@ -149,7 +152,8 @@ def test_identity_voice_and_silence_conduct_are_peers_on_purpose():
     # `participation-conduct` joins the conduct tier: an occasion-specific
     # conduct file, unranked against its two peers for exactly the reason
     # `silence` and `conduct` are unranked.
-    peers = (("identity", "voice"), ("silence", "conduct"),
+    peers = (("identity", "voice"), ("identity", "belonging"),
+             ("belonging", "voice"), ("silence", "conduct"),
              ("silence", "participation-conduct"),
              ("conduct", "participation-conduct"))
     for a, b in peers:
@@ -276,8 +280,7 @@ def test_identity_makes_no_claim_about_what_she_can_find_out():
     # fourth heading is a deliberate widening of this file and is pinned here so
     # a fifth cannot arrive quietly.
     assert [line for line in body.splitlines() if line.startswith("# ")] == \
-        ["# Who you are", "# Where you come from", "# Why you're here",
-         "# What you are"]
+        ["# Who you are", "# Where you come from", "# What you are"]
 
     # The widening's cost, guarded DERIVED rather than by a word list. This
     # file's whole scar is a capability claim that went stale in silence for
@@ -942,3 +945,21 @@ def test_no_doctrine_file_names_one_room():
     for path in sorted(DOCTRINE_DIR.glob("**/*.md")):
         body = path.read_text(encoding="utf-8")
         assert "Zone 42" not in body, path.name
+
+
+def test_identity_holds_who_she_is_and_belonging_holds_the_group():
+    """identity.md was split 2026-09-25 (operator) so who she is can load on a
+    surface that is not a group (design/instagram-adoption/19, a public
+    summons), and her place in a group loads only where there is one. Pinned
+    both ways: the group framing must not drift back into identity.md, where
+    it would tell a public reply it is among friends, and belonging.md must
+    carry all of it, so the split loses nothing for a room."""
+    sections = {s.name: s for s in _all_sections()}
+    identity, belonging = sections["identity"].body, sections["belonging"].body
+    group_framing = ("in this group", "hold a friend's place", "The group calls you",
+                     "you answer to the group", "Two loops", "What carries across turns")
+    for phrase in group_framing:
+        assert phrase.lower() not in identity.lower(), f"identity.md frames a group: {phrase!r}"
+        assert phrase.lower() in belonging.lower(), f"belonging.md lost: {phrase!r}"
+    assert [line for line in belonging.splitlines() if line.startswith("# ")] == \
+        ["# Your place in the group", "# Why you're here", "# How you serve a room"]
