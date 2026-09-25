@@ -23,7 +23,7 @@ from __future__ import annotations
 import logging
 import os
 import time
-from collections.abc import Awaitable, Iterator, Sequence
+from collections.abc import Awaitable, Callable, Iterator, Sequence
 from contextlib import contextmanager
 from typing import Literal, TypeVar, get_args
 
@@ -308,10 +308,22 @@ def _row_count(value: object) -> int | None:
         return None
 
 
-async def traced_read(store: str, method: str, coro: Awaitable[T]) -> T:
+async def traced_read(
+    store: str, method: str, coro: Awaitable[T],
+    *, count: Callable[[T], int | None] | None = None,
+) -> T:
     """Await `coro` — ONE store read — under `store.<store>.<method>`, with
     `nora.store.duration_ms` and (where the result is sized)
     `nora.store.row_count` recorded on success.
+
+    `count`, when given, replaces `_row_count` as how the row count is
+    derived from the result — for a result `_row_count` cannot read at all.
+    `MemoryStore.representation` answers a `Recollection`, not a sized
+    collection, so `_row_count` leaves it unmeasured even though the read
+    plainly has a count: how many conclusions it carries
+    (`len(recall.conclusions)`). A caller that knows its own result shape
+    passes `count=lambda r: len(r.conclusions)` rather than this function
+    growing a case for every store's own answer type.
 
     Issue #55's last open quarter: `nora/infra/**` (144 files, ~25k lines) had
     no instrumentation, and per-function spans across that surface was ruled
@@ -343,7 +355,7 @@ async def traced_read(store: str, method: str, coro: Awaitable[T]) -> T:
         attrs: dict[str, object] = {
             "nora.store.duration_ms": round((time.perf_counter() - started) * 1000, 3),
         }
-        rows = _row_count(result)
+        rows = count(result) if count is not None else _row_count(result)
         if rows is not None:
             attrs["nora.store.row_count"] = rows
         annotate(**attrs)

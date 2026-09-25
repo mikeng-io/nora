@@ -1662,6 +1662,45 @@ async def test_dream_adaptor_once_emits_a_span_per_cursor_read(exported_spans):
     assert since_span.attributes["nora.store.duration_ms"] >= 0
 
 
+async def test_a_scheduled_watermark_free_adaptors_clock_read_is_also_traced(
+    exported_spans,
+):
+    """Review finding on #526: `clock.last_fired` sits in the
+    `uses_watermark=False` branch, OUTSIDE the `language`/`record` reads
+    above — a scheduled adaptor (the note curator) has no watermark at all,
+    so this read IS its whole cursor, and it was the one left dark.
+    `record_fire` two lines below it is a WRITE and stays unwrapped, same as
+    `advance_watermark` in the watermark branch.
+
+    PROBE: replace the `traced_read(...)` call around `clock.last_fired` with
+    a bare `await` and `store.dream_schedule.last_fired` drops out of the
+    exported spans.
+    """
+    clock = InMemoryDreamScheduleClock()
+
+    await _dream_adaptor_once(
+        adaptor=_StubAdaptor("curator", uses_watermark=False),
+        runtime=_RecordingRunner(),
+        record=_FakeRecord({}), language=_KeyedLanguage(),
+        metrics=Metrics(), key="g1", safety_lag=0, quiet_seconds=0.0,
+        max_age_seconds=1e9, batch_limit=10,
+        schedules={"curator": AdaptorSchedule(
+            min_interval_seconds=1e9, batch_limit=10)},
+        clock=clock,
+    )
+
+    names = [s.name for s in exported_spans.get_finished_spans()]
+    assert names.count("store.dream_schedule.last_fired") == 1
+    # A never-fired pair answers `None` — `record_fire` (a write, never
+    # wrapped) is what the SLOT check below reads after this. Asserted so a
+    # future change that starts firing `record_fire` first does not also
+    # silently start wrapping it.
+    (recorded,) = [s for s in exported_spans.get_finished_spans()
+                    if s.name == "store.dream_schedule.last_fired"]
+    assert recorded.attributes["nora.store.row_count"] == 0
+    assert "store.dream_schedule.record_fire" not in names
+
+
 async def test_a_failing_cursor_read_ends_its_span_with_error_status(exported_spans):
     """The same visibility issue #55 asks for on the tag path: a cursor read
     that raises must not read, in the trace, the same as one that answered

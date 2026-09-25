@@ -466,6 +466,33 @@ async def test_traced_read_records_row_count_and_duration_on_success(spans):
     assert recorded.attributes["nora.store.duration_ms"] >= 0
 
 
+async def test_traced_read_uses_count_when_the_result_has_no_len(spans):
+    """Review finding on #526: `MemoryStore.representation` answers a
+    `Recollection`, which has no `__len__` — `_row_count` alone would leave
+    it unmeasured forever even though the read plainly has a count. `count=`
+    is the caller's own answer to "how many", for a result `_row_count`
+    cannot read.
+
+    PROBE: make `traced_read` ignore its `count` argument (always fall back
+    to `_row_count`) and this reddens — `nora.store.row_count` disappears.
+    """
+    class _Recollection:
+        def __init__(self, conclusions):
+            self.conclusions = conclusions
+
+    async def _read():
+        return _Recollection(("a", "b", "c"))
+
+    from nora.obs.tracing import traced_read
+
+    await traced_read(
+        "memory", "representation", _read(), count=lambda r: len(r.conclusions),
+    )
+
+    (recorded,) = spans.get_finished_spans()
+    assert recorded.attributes["nora.store.row_count"] == 3
+
+
 async def test_traced_read_leaves_row_count_off_a_scalar_result(spans):
     """A watermark, a `bool`, a `Standing | None` — none of these is a row
     count, and `traced_read` must not invent one for them.

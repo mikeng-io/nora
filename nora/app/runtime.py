@@ -713,7 +713,15 @@ async def _dream_adaptor_once(
         # what a time-driven pass (the note curator retires on anchor dates
         # that pass whether or not anyone speaks) must not do.
         now = _now_ms() if now_ms is None else now_ms
-        fired_at = await clock.last_fired(adaptor_name=adaptor.name, key=key)
+        # ISSUE #55, THE REVIEW'S FIRST GAP: this read sat outside the
+        # `uses_watermark` branch below, so a scheduled adaptor's whole read
+        # path (this method IS its cursor — there is no watermark here)
+        # stayed dark. `record_fire` two lines down is a WRITE and stays
+        # unwrapped, same as `advance_watermark` in the branch below.
+        fired_at = await traced_read(
+            "dream_schedule", "last_fired",
+            clock.last_fired(adaptor_name=adaptor.name, key=key),
+        )
         # An ABSENT row fires; an epoch-0 row does not get invented for it.
         # `last_fired` returns None for a pair that has never run, and the
         # first slot it sees is by definition one it has not fired in.

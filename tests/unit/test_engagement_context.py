@@ -844,6 +844,74 @@ async def test_a_store_read_span_carries_row_count_and_duration(exported_spans):
     assert recorded.attributes["nora.store.duration_ms"] >= 0
 
 
+async def test_presence_and_culture_reads_are_also_traced(exported_spans):
+    """Review finding on #526: `_culture` and `_presence` are gathered
+    alongside the six wrapped reads `test_assemble_emits_a_span_per_store_read`
+    covers, but were left bare — same store-port boundary, same class, and
+    the issue's own ask (`build_prefill`'s reads visible) does not stop at
+    six of eight.
+
+    PROBE: replace either `traced_read(...)` call — the one wrapping
+    `self._culture_reader.head(...)` or `self._presence_reader.read(...)` —
+    with a bare `await` and its name drops out of this list.
+    """
+    from nora.domain.self_presence import Presence
+    from nora.testing import InMemoryCultureStore
+
+    culture_store = InMemoryCultureStore()
+    await culture_store.append(
+        key="g1", body="a running joke about pineapple pizza",
+        written_at=1, established_by="fold",
+    )
+
+    class _Reader:
+        async def read(self, *, platform: str, conversation_id: str, direct: bool = False):
+            return Presence(platform=platform, label="Friends", here_state="up")
+
+    assembler = TranscriptInjection(
+        audit=FakeRecordStore(), memory=FakeMemory(), persons=_MILES,
+        context_window=10, metrics=Metrics(),
+        presence=_Reader(), culture=culture_store, policy=_policy(),
+    )
+
+    await assembler.assemble(request=_request())
+
+    names = [s.name for s in exported_spans.get_finished_spans()]
+    assert names.count("store.presence.read") == 1
+    assert names.count("store.culture.head") == 1
+
+
+async def test_memory_representation_row_count_is_the_conclusions_count(
+    exported_spans,
+):
+    """Review finding on #526: `Recollection` has no `__len__`, so plain
+    `_row_count` leaves `store.memory.representation` with no row count at
+    all — measurable, but never measured. `traced_read`'s `count=` callback
+    is what closes that, not a special case inside `_row_count` itself.
+
+    PROBE: drop `count=lambda r: len(r.conclusions)` from either
+    `traced_read(..., "representation", ...)` call in `_recall_self` /
+    `_recall_tagger` and `nora.store.row_count` disappears from its span.
+    """
+    assembler = TranscriptInjection(
+        audit=FakeRecordStore(), memory=FakeMemory(), persons=_MILES,
+        context_window=10, metrics=Metrics(),
+        ai_peer="nora", self_card_conclusions=3, tagger_card_conclusions=3,
+    )
+
+    await assembler.assemble(request=_request())
+
+    representation_spans = [
+        s for s in exported_spans.get_finished_spans()
+        if s.name == "store.memory.representation"
+    ]
+    assert len(representation_spans) == 2
+    for recorded in representation_spans:
+        # `FakeMemory.representation` answers one conclusion per call
+        # (module docstring / `FakeMemory.representation`'s own body).
+        assert recorded.attributes["nora.store.row_count"] == 1
+
+
 async def test_a_failing_read_ends_its_span_with_error_status(exported_spans):
     """The transcript read fails soft (`_recent`'s own try/except: a thinner
     reply beats no reply) — but the SPAN for it must still say the read

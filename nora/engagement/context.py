@@ -269,8 +269,15 @@ class TranscriptInjection:
         convo = self._policy.conversation(msg.platform, msg.conversation_id)
         if convo is None or not convo.primary_id:
             return None
+        # `traced_read` wraps the coroutine `read_culture` itself awaits
+        # (under `asyncio.wait_for`, hence this class rather than
+        # `nora.language.culture_render` — that timeout must stay outside the
+        # span, not inside it): a cancellation from the bound propagates
+        # through `span`'s own `BaseException` handler before `wait_for`
+        # converts it to the `TimeoutError` `read_culture` catches, so the
+        # span still ends ERROR on a read that timed out.
         return await read_culture(
-            self._culture_reader.head(key=convo.primary_id),
+            traced_read("culture", "head", self._culture_reader.head(key=convo.primary_id)),
             stage="tag_culture", platform=msg.platform, metrics=self._metrics,
         )
 
@@ -284,9 +291,11 @@ class TranscriptInjection:
         if self._presence_reader is None:
             return None
         try:
-            return await self._presence_reader.read(
-                platform=msg.platform, conversation_id=msg.conversation_id,
-                direct=msg.conversation_type == "dm",
+            return await traced_read(
+                "presence", "read", self._presence_reader.read(
+                    platform=msg.platform, conversation_id=msg.conversation_id,
+                    direct=msg.conversation_type == "dm",
+                ),
             )
         except Exception:
             log.exception("presence read failed; continuing with the network alone")
@@ -403,6 +412,9 @@ class TranscriptInjection:
                     search_query=msg.body or "",
                     max_conclusions=self._tagger_card_conclusions,
                 ),
+                # `Recollection` has no `__len__` — `_row_count` would leave
+                # this read unmeasured even though it plainly has a count.
+                count=lambda r: len(r.conclusions),
             )
         except Exception:
             log.exception("tagger-card recall failed; continuing without it")
@@ -448,6 +460,7 @@ class TranscriptInjection:
                     search_query=msg.body or "",
                     max_conclusions=self._self_card_conclusions,
                 ),
+                count=lambda r: len(r.conclusions),
             )
         except Exception:
             log.exception("self-card recall failed; continuing without it")
