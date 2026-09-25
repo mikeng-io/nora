@@ -101,8 +101,11 @@ from ..domain.notes import (
     TAG_PATH_PREFIX,
     Note,
     NoteRevision,
+    NoteSupersedeReason,
     StaleNoteHeadError,
+    is_tag_path_revision,
     note_handle,
+    tag_path_progressed_since_wake,
 )
 from ..domain.ports import (
     ComputeBackend,
@@ -126,7 +129,9 @@ from ..domain.ports import (
     VoicePresenceSource,
 )
 from ..domain.reminders import (
+    PROACTIVE_KIND,
     UNIT_SECONDS,
+    DuplicateProactiveNoteError,
     Recurrence,
     RecurrenceRule,
     Reminder,
@@ -1911,6 +1916,13 @@ def _stored_reading(obj) -> str:
     return "\n".join(parts)
 
 
+#: The outcome the fire-time screen writes on a proactive row whose note the
+#: tag path has moved (`nora.app.proactive_screen.CANCELLED_NOTE_MOVED`,
+#: which this layer may not import). `remind` writes the same one when it
+#: resolves such a row early (issue #158); a test holds the two equal.
+_CANCELLED_NOTE_MOVED = "cancelled_note_moved"
+
+
 def _record_created(metrics, status: str, **detail: object) -> None:
     """`remind`'s two counters, incremented together.
 
@@ -3404,9 +3416,10 @@ class NoteCollaborator(Protocol):
     `tests/contract/test_note_store_contract.py`, which is what actually holds
     them to one behaviour. This declares the verbs the tool layer calls
     and no more: `standing` (title resolution, §16.1), `read`, `search`,
-    `create`, `append_revision`, `record_miss`, and
+    `create`, `append_revision`, `record_miss`,
     `merged_successor_by_title` (a merged note's title forwards, design 41
-    §7.5).
+    §7.5), and `revision_chain`/`successor` (`remind`'s one-open-row check,
+    issue #158).
 
     `StaleNoteHeadError` lives in `nora.domain.notes` for the identical reason
     `GatheringNotFoundError` lives in `nora.domain.gatherings` — an exception TYPE has
@@ -3442,6 +3455,16 @@ class NoteCollaborator(Protocol):
     async def merged_successor_by_title(
         self, *, unit: str, title: str,
     ) -> Note | None: ...
+
+    # `remind`'s one-open-row check (issue #158) asks the two questions the
+    # fire-time screen asks (`nora/app/proactive_screen.py`): has the tag path
+    # moved this note since a waiting row was linked, and is a waiting row's
+    # retired note one that was MERGED into this one.
+    async def revision_chain(
+        self, *, unit: str, note_id: str,
+    ) -> tuple[NoteRevision, ...]: ...
+
+    async def successor(self, *, unit: str, note_id: str) -> Note | None: ...
 
 
 #: NOT DEFINED HERE — an ordinary import, used by `note_read`/`note_update`
@@ -8936,6 +8959,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         # revision is what the heartbeat's screen compares against: a
         # tag-path revision after it cancels the row before it fires.
         payload: dict[str, str] | None = None
+        linked: Note | None = None
         if note is not None and note.strip():
             book = _notebook()
             if book is None:
@@ -9033,7 +9057,59 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                         "the person who asked won't see it."
                     ),
                 }
+        # ONE OPEN PROACTIVE ROW PER NOTE (issue #158). Production booked the
+        # same note twice — decided 23:01 and again 01:01 for one 10:00, and
+        # 07:02 and again 18:04 for one 17:00 — each second row written while
+        # the first still waited. The doctrine says «one reminder per thing»
+        # and the model read its own pending row in the decisions block and
+        # wrote another anyway; the only per-note check below it was the wake
+        # clock, which charges a strike once per Hong Kong day and never saw
+        # the row. So the write refuses, here with a reason she can read and
+        # in the store (`uq_reminders_proactive_open_note`) for the race.
+        # A row that has gone off holds nothing: a re-raise after silence is
+        # the strikes brake's (39 D6), and a new occasion is a new decision.
+        stale: list[Reminder] = []
+        if proactive and linked is not None:
+            book = _notebook()
+            try:
+                held, stale = await _open_rows_on(
+                    book, linked, owner=owner,
+                ) if book is not None else (None, [])
+            except Exception:
+                log.exception("remind: the one-open-row check failed")
+                _record_created(metrics, "unavailable")
+                return {
+                    "status": "unavailable",
+                    "note": "I couldn't check whether this is already waiting, "
+                            "so I haven't set it. Leave it for the next pass.",
+                }
+            if held is not None:
+                _record_created(metrics, "duplicate_note")
+                # Both of the waiting row's moments, so she can see it is
+                # her own earlier decision rather than a failure to retry.
+                return {
+                    "status": "refused",
+                    "note": (
+                        "You already have a reminder waiting about this note: "
+                        f"decided {held.created_at.astimezone(_HKT):%-d %b %H:%M}, "
+                        f"for {held.due_at.astimezone(_HKT):%-d %b %H:%M}. One "
+                        "per thing: leave it. If it still matters after that "
+                        "moment, decide again then."
+                    ),
+                }
         try:
+            # A waiting row whose premise the tag path has since moved is
+            # resolved NOW, the way the fire-time screen would resolve it at
+            # its moment (39 D11): it would never be said, and left open it
+            # would hold the note against the decision that replaces it.
+            for dead in stale:
+                if await reminders.cancel(
+                    dead.id, conversation_id=dead.conversation_id,
+                ):
+                    await reminders.mark(
+                        dead.id, ReminderState.CANCELLED, fired_at=now,
+                        outcome=_CANCELLED_NOTE_MOVED,
+                    )
             pending = await reminders.count_pending(owner)
             if pending >= caps.max_pending_per_requester:
                 _record_created(metrics, "too_many")
@@ -9095,6 +9171,17 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 payload=payload,
             )
             await reminders.create(row)
+        except DuplicateProactiveNoteError:
+            # The store's half of the rule: another decision about this note
+            # landed between the check above and this write (two `remind`
+            # calls in one model step run concurrently), or its row is firing
+            # right now. Same answer as the check's.
+            _record_created(metrics, "duplicate_note")
+            return {
+                "status": "refused",
+                "note": "A reminder about this note is already waiting or "
+                        "going off now. One per thing: leave it.",
+            }
         except Exception:
             log.exception("remind failed")
             _record_created(metrics, "unavailable")
@@ -9791,6 +9878,78 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         # of the question, which lives on in the survivor.
         survivor = await book.merged_successor_by_title(unit=unit, title=title)
         return [survivor] if survivor is not None else []
+
+    async def _open_rows_on(
+        book: NoteCollaborator, note: Note, *, owner: str,
+    ) -> tuple[Reminder | None, list[Reminder]]:
+        """Nora's waiting proactive rows about `note`: the one that HOLDS it
+        (or None), and the ones whose premise is gone (issue #158).
+
+        «About» is what the fire-time screen would fire the row for
+        (`nora/app/proactive_screen.py`): a row linked to this note, or to a
+        note retired `retired-merged` whose survivor is this one — that row
+        FOLLOWS the survivor at fire (design 41 §7.5), so it is already this
+        note's reminder under another id. A row HOLDS the note unless the tag
+        path has written to the note since the row was linked, which is
+        exactly when the screen would cancel it `cancelled_note_moved` (39
+        D11); those come back as stale, for the caller to resolve now.
+
+        Reads raise, and the caller refuses on a raise: a check that could not
+        run is not a check that passed.
+        """
+        unit = _unit() or ""
+        if reminders is None:     # pragma: no cover — `remind` refused already
+            return None, []
+        chain: dict[str, tuple[str | None, str]] | None = None
+        revisions: tuple[NoteRevision, ...] = ()
+
+        async def _chain() -> dict[str, tuple[str | None, str]]:
+            nonlocal chain, revisions
+            if chain is None:
+                revisions = await book.revision_chain(unit=unit, note_id=note.id)
+                chain = {
+                    r.id: (r.parent_revision_id, r.established_by)
+                    for r in revisions
+                }
+            return chain
+
+        held: Reminder | None = None
+        stale: list[Reminder] = []
+        for row in await reminders.pending_of(owner):
+            if row.kind != PROACTIVE_KIND:
+                continue
+            about = (row.payload or {}).get("note_id")
+            if not about:
+                continue
+            if about == note.id:
+                dead = tag_path_progressed_since_wake(
+                    head_revision_id=note.head_revision_id,
+                    last_wake_revision_id=(row.payload or {}).get("revision_id") or None,
+                    chain=await _chain(),
+                )
+            else:
+                current = await book.read(unit=unit, note_id=about)
+                if current is None or current[0].retired_at is None:
+                    continue
+                if current[0].retire_reason != NoteSupersedeReason.RETIRED_MERGED:
+                    continue
+                survivor = await book.successor(unit=unit, note_id=about)
+                if survivor is None or survivor.id != note.id:
+                    continue
+                # The row names a revision of the DUPLICATE, so on the
+                # survivor «moved» is read by time, as the screen reads it.
+                await _chain()
+                linked_ms = int(row.created_at.timestamp() * 1000)
+                dead = any(
+                    is_tag_path_revision(r.established_by)
+                    and r.written_at > linked_ms
+                    for r in revisions
+                )
+            if dead:
+                stale.append(row)
+            elif held is None:
+                held = row
+        return held, stale
 
     def _ambiguous(candidates: list[Note]) -> dict:
         _record(metrics, "note_read", "refused", reason="ambiguous")

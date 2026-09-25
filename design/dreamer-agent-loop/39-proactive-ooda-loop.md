@@ -148,6 +148,7 @@ verbatim window is where the self-echo would be loudest.
 | Nora's message → note (close) | only a DELIVERED row, only as a `closed` citation, never as the group speaking | `_own_sends`, issue #199 | **narrowed** |
 | act turn → another reminder | `remind` refuses inside a fire turn | `tools.py:6205-6212` «a reminder that can set a reminder is a loop with no bound» | yes |
 | decide turn → unbounded rows | per-requester cap, requester is the `ai_peer` id | `max_pending_per_requester = 20` (D5) | yes |
+| decide turn → a second row on the same note | at most one open (pending or firing) proactive row per note; a row on a note merged into it counts, a row whose note the tag path moved does not and is cancelled | `remind` refuses `duplicate_note`; `uq_reminders_proactive_open_note` (issue #158, added 2026-09-25) | yes |
 | decide turn → its own note | no note-content writer declared; `record_wake` cannot reset its own strike | D6; `sql/notes.py:526-540` | yes |
 | act turn on a note that moved | screening cancels the row on a tag-path revision | D11 | **new** |
 | same note, nobody replies | strikes | `record_wake`, `MAX_DATELESS_STRIKES = 4` | yes |
