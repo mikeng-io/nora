@@ -28,7 +28,9 @@ type Self struct {
 	// tagged?" may compare against.
 	FBID string
 	// IGID is the public id. It is NOT a messaging id and must never be
-	// compared to a mention.
+	// compared to a DM mention. (The news inbox's
+	// `logging_context.mentioned_user_ids` is NOT compared against it: the
+	// live capture showed one id there on every story type, likes included.)
 	IGID     string
 	Username string
 }

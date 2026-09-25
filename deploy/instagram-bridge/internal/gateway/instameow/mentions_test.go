@@ -1,14 +1,16 @@
 package instameow
 
 // readMentions against LITERAL bytes (fakeig/mentions.go), decoded exactly as
-// the raw REST path decodes them. The bytes are UNMEASURED: built from the
-// task's own hypothesis, not captured. See mentions.go's package doc comment.
+// the raw REST path decodes them. NewsInboxJSON's KEYS were captured from the
+// live web client on 2026-09-25; every value is synthetic. See mentions.go's
+// doc comment.
 
 import (
 	"context"
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -37,6 +39,11 @@ type fakeRESTIssuer struct {
 
 	headers          http.Header
 	buildHeadersArgs [2]bool
+	// built is what BuildHeaders returns (a copy), standing in for the
+	// library's own header set; nil is an empty one.
+	built http.Header
+	// noTokens makes WebFormTokens answer empty values.
+	noTokens bool
 
 	// What the last request was, and how many went out through each entry
 	// point: a guard's "zero upstream calls" is calls() == 0.
@@ -55,8 +62,29 @@ func (f *fakeRESTIssuer) calls() int { return f.retrying + f.once }
 
 func (f *fakeRESTIssuer) BuildHeaders(withCookies, isSecFetchDocument bool) http.Header {
 	f.buildHeadersArgs = [2]bool{withCookies, isSecFetchDocument}
-	return http.Header{}
+	if f.built == nil {
+		return http.Header{}
+	}
+	return f.built.Clone()
 }
+
+// The synthetic web form tokens every webForm POST carries in these tests.
+const (
+	testJazoest     = "22222"
+	testFBDTSG      = "synthetic-fb-dtsg"
+	testRolloutHash = "1000000000"
+)
+
+func (f *fakeRESTIssuer) WebFormTokens() (string, string, string, error) {
+	if f.noTokens {
+		return "", "", "", nil
+	}
+	return testJazoest, testFBDTSG, testRolloutHash, nil
+}
+
+// testSelf is the account as the bridge knows it. Only the handle is used, for
+// the "@" token; `mentioned_user_ids` is never read (see mentionsAccount).
+var testSelf = domain.Self{FBID: "14963523149149302", IGID: fakeig.SelfIGID, Username: fakeig.SelfUsername}
 
 func (f *fakeRESTIssuer) WebSessionID() (string, error) {
 	if f.session == "" {
@@ -111,8 +139,8 @@ func (f *fakeRESTIssuer) answer(
 // Every field a comment-mention carries, off the one story in the fixture
 // shaped to produce one.
 func TestReadMentionsClassifiesACommentMentionWithEveryField(t *testing.T) {
-	issuer := &fakeRESTIssuer{body: []byte(fakeig.UnmeasuredNewsInboxJSON)}
-	mentions, skipped, err := readMentions(t.Context(), issuer, fakeig.SelfUsername)
+	issuer := &fakeRESTIssuer{body: []byte(fakeig.NewsInboxJSON)}
+	mentions, skipped, err := readMentions(t.Context(), issuer, testSelf)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,8 +148,8 @@ func TestReadMentionsClassifiesACommentMentionWithEveryField(t *testing.T) {
 		t.Fatalf("mentions = %d, want 1: %+v", len(mentions), mentions)
 	}
 	m := mentions[0]
-	if m.StoryType != 3 {
-		t.Errorf("story_type = %d, want 3", m.StoryType)
+	if m.StoryType != fakeig.MentionStoryType {
+		t.Errorf("story_type = %d, want %d", m.StoryType, fakeig.MentionStoryType)
 	}
 	if m.At != 1700000123 {
 		t.Errorf("at = %d, want 1700000123", m.At)
@@ -139,9 +167,10 @@ func TestReadMentionsClassifiesACommentMentionWithEveryField(t *testing.T) {
 		t.Errorf("notification text = %q, want the fixture's text", m.NotificationText)
 	}
 
-	// The three non-mentions, counted by story_type: like (1), follow (2),
-	// caption-mention with no comment id (4).
-	want := map[int]int{1: 1, 2: 1, 4: 1}
+	// The four non-mentions, counted by story_type: "liked your comment"
+	// (13), post like (768), story like (651), caption mention with no
+	// comment id.
+	want := map[int]int{13: 1, 768: 1, 651: 1, fakeig.CaptionMentionStoryType: 1}
 	if len(skipped) != len(want) {
 		t.Fatalf("skipped = %+v, want %+v", skipped, want)
 	}
@@ -155,8 +184,8 @@ func TestReadMentionsClassifiesACommentMentionWithEveryField(t *testing.T) {
 // The media shortcode is derived from the numeric pk when the payload
 // carries no "shortcode" key.
 func TestReadMentionsDerivesShortcodeWhenMissing(t *testing.T) {
-	issuer := &fakeRESTIssuer{body: []byte(fakeig.UnmeasuredNewsInboxNoShortcodeJSON)}
-	mentions, _, err := readMentions(t.Context(), issuer, fakeig.SelfUsername)
+	issuer := &fakeRESTIssuer{body: []byte(fakeig.NewsInboxNoShortcodeJSON)}
+	mentions, _, err := readMentions(t.Context(), issuer, testSelf)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -181,7 +210,7 @@ func TestReadMentionsFallsBackToCommentIDsFirstElement(t *testing.T) {
 		"media":[{"id":"` + fakeig.ImageMediaID + `_10000001","shortcode":"` + fakeig.ImageShortcode + `"}],
 		"comment_ids":["17900000000000099","17900000000000100"]
 	}}],"old_stories":[],"status":"ok"}`
-	mentions, _, err := readMentions(t.Context(), &fakeRESTIssuer{body: []byte(raw)}, fakeig.SelfUsername)
+	mentions, _, err := readMentions(t.Context(), &fakeRESTIssuer{body: []byte(raw)}, testSelf)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -194,33 +223,34 @@ func TestReadMentionsFallsBackToCommentIDsFirstElement(t *testing.T) {
 // not classified — the comment id check is load-bearing on its own.
 func TestReadMentionsSkipsAMentionWithNoCommentID(t *testing.T) {
 	mentions, skipped, err := readMentions(t.Context(),
-		&fakeRESTIssuer{body: []byte(fakeig.UnmeasuredNewsInboxJSON)}, fakeig.SelfUsername)
+		&fakeRESTIssuer{body: []byte(fakeig.NewsInboxJSON)}, testSelf)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, m := range mentions {
-		if m.StoryType == 4 {
-			t.Fatalf("the caption-mention (story_type 4, no comment id) was classified as a comment mention: %+v", m)
+		if m.StoryType == fakeig.CaptionMentionStoryType {
+			t.Fatalf("the caption-mention (no comment id) was classified as a comment mention: %+v", m)
 		}
 	}
-	if skipped[4] != 1 {
-		t.Errorf("skipped[4] = %d, want 1", skipped[4])
+	if skipped[fakeig.CaptionMentionStoryType] != 1 {
+		t.Errorf("skipped[caption] = %d, want 1", skipped[fakeig.CaptionMentionStoryType])
 	}
 }
 
-// An empty selfUsername classifies nothing: fail closed rather than guess
-// who "the account" is.
+// An identity with neither a username nor an igid classifies nothing: fail
+// closed rather than guess who "the account" is.
 func TestReadMentionsWithNoSelfUsernameClassifiesNothing(t *testing.T) {
 	mentions, skipped, err := readMentions(t.Context(),
-		&fakeRESTIssuer{body: []byte(fakeig.UnmeasuredNewsInboxJSON)}, "")
+		&fakeRESTIssuer{body: []byte(fakeig.NewsInboxJSON)}, domain.Self{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(mentions) != 0 {
-		t.Fatalf("mentions = %+v, want none with no self username", mentions)
+		t.Fatalf("mentions = %+v, want none with no self identity", mentions)
 	}
-	if skipped[3] != 1 {
-		t.Errorf("skipped[3] = %d, want 1 (the story that would otherwise have been the mention)", skipped[3])
+	if skipped[fakeig.MentionStoryType] != 1 {
+		t.Errorf("skipped[%d] = %d, want 1 (the story that would otherwise have been the mention)",
+			fakeig.MentionStoryType, skipped[fakeig.MentionStoryType])
 	}
 }
 
@@ -234,12 +264,12 @@ func TestReadMentionsRequiresAWordBoundaryAfterTheMention(t *testing.T) {
 		"media":[{"id":"` + fakeig.ImageMediaID + `_10000001","shortcode":"` + fakeig.ImageShortcode + `"}],
 		"comment_id":"17900000000000200"
 	}}],"old_stories":[],"status":"ok"}`
-	mentions, skipped, err := readMentions(t.Context(), &fakeRESTIssuer{body: []byte(raw)}, fakeig.SelfUsername)
+	mentions, skipped, err := readMentions(t.Context(), &fakeRESTIssuer{body: []byte(raw)}, testSelf)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(mentions) != 0 {
-		t.Fatalf("mentions = %+v, want none: \"@%s_fan\" is not a mention of %q", mentions, fakeig.SelfUsername, fakeig.SelfUsername)
+		t.Fatalf("mentions = %+v, want none: \"@%s_fan\" is not a mention of %q", mentions, fakeig.SelfUsername, testSelf)
 	}
 	if skipped[3] != 1 {
 		t.Errorf("skipped[3] = %d, want 1", skipped[3])
@@ -257,7 +287,7 @@ func TestReadMentionsMatchesAtAWordBoundary(t *testing.T) {
 		"media":[{"id":"` + fakeig.ImageMediaID + `_10000001","shortcode":"` + fakeig.ImageShortcode + `"}],
 		"comment_id":"17900000000000201"
 	}}],"old_stories":[],"status":"ok"}`
-	mentions, _, err := readMentions(t.Context(), &fakeRESTIssuer{body: []byte(raw)}, fakeig.SelfUsername)
+	mentions, _, err := readMentions(t.Context(), &fakeRESTIssuer{body: []byte(raw)}, testSelf)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -271,7 +301,7 @@ func TestReadMentionsMatchesAtAWordBoundary(t *testing.T) {
 // uses for either.
 func TestReadMentionsToleratesNumericIDsAndStringTimestamp(t *testing.T) {
 	issuer := &fakeRESTIssuer{body: []byte(fakeig.UnmeasuredNewsInboxNumericIDsJSON)}
-	mentions, _, err := readMentions(t.Context(), issuer, fakeig.SelfUsername)
+	mentions, _, err := readMentions(t.Context(), issuer, testSelf)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -295,7 +325,7 @@ func TestReadMentionsToleratesNumericIDsAndStringTimestamp(t *testing.T) {
 // the rest of the read still succeeds.
 func TestReadMentionsCountsAnUndecodableStoryAndKeepsGoing(t *testing.T) {
 	issuer := &fakeRESTIssuer{body: []byte(fakeig.UnmeasuredNewsInboxUndecodableJSON)}
-	mentions, skipped, err := readMentions(t.Context(), issuer, fakeig.SelfUsername)
+	mentions, skipped, err := readMentions(t.Context(), issuer, testSelf)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -314,7 +344,7 @@ func TestReadMentionsCountsAnUndecodableStoryAndKeepsGoing(t *testing.T) {
 // failure, and its upstream span says so.
 func TestReadMentionsFailureIn200IsRejectedAndMarksTheSpan(t *testing.T) {
 	rec := recordGatewaySpans(t)
-	_, _, err := readMentions(t.Context(), &fakeRESTIssuer{body: []byte(fakeig.UnmeasuredNewsInboxFailJSON)}, fakeig.SelfUsername)
+	_, _, err := readMentions(t.Context(), &fakeRESTIssuer{body: []byte(fakeig.UnmeasuredNewsInboxFailJSON)}, testSelf)
 	if !errors.Is(err, domain.ErrUpstreamRejected) {
 		t.Fatalf("err = %v, want ErrUpstreamRejected", err)
 	}
@@ -349,7 +379,7 @@ func TestReadMentionsClassifiesUpstreamStatuses(t *testing.T) {
 		{"transport-level checkpoint (no response at all)", &fakeRESTIssuer{err: httpclient.ErrCheckpointRequired}, domain.ErrNeedsHuman, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			_, _, err := readMentions(t.Context(), tc.issuer, fakeig.SelfUsername)
+			_, _, err := readMentions(t.Context(), tc.issuer, testSelf)
 			if domain.KindOf(err) != tc.kind {
 				t.Errorf("err = %v (kind %v), want %v", err, domain.KindOf(err), tc.kind)
 			}
@@ -376,7 +406,7 @@ func TestReadMentionsReadsACheckpointOutOfA4xxBody(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			issuer := &fakeRESTIssuer{status: http.StatusBadRequest, body: []byte(tc.body)}
-			_, _, err := readMentions(t.Context(), issuer, fakeig.SelfUsername)
+			_, _, err := readMentions(t.Context(), issuer, testSelf)
 			if !errors.Is(err, domain.ErrNeedsHuman) {
 				t.Errorf("err = %v, want ErrNeedsHuman", err)
 			}
@@ -384,44 +414,236 @@ func TestReadMentionsReadsACheckpointOutOfA4xxBody(t *testing.T) {
 	}
 	// login_required is the dead-token shape.
 	issuer := &fakeRESTIssuer{status: http.StatusBadRequest, body: []byte(`{"message":"login_required"}`)}
-	_, _, err := readMentions(t.Context(), issuer, fakeig.SelfUsername)
+	_, _, err := readMentions(t.Context(), issuer, testSelf)
 	if !errors.Is(err, httpclient.ErrTokenInvalidated) {
 		t.Errorf("err = %v, want it to wrap ErrTokenInvalidated", err)
 	}
 }
 
-// The headers a probe sends must be the SAME header set the library's own
-// REST callers send (call.go's `rest` doc comment): BuildHeaders(true,
-// false) plus x-requested-with, a bare base_url referer (no trailing
-// slash — FetchReel's own form) and the sec-fetch-* triple — never a
-// different header set that could read as a new client.
-func TestReadMentionsSendsTheWebClientsHeaders(t *testing.T) {
-	issuer := &fakeRESTIssuer{body: []byte(fakeig.UnmeasuredNewsInboxJSON)}
-	if _, _, err := readMentions(t.Context(), issuer, fakeig.SelfUsername); err != nil {
+// The request is the web client's own, as captured 2026-09-25: a POST to
+// /api/v1/news/inbox/, form-encoded, carrying jazoest, fb_dtsg and
+// selected_filters=comments, through the no-retry, no-redirect path. Its
+// headers are the library's own set (passed through unchanged) plus what
+// restDo adds: x-requested-with, a bare base_url referer, the sec-fetch-*
+// triple, X-Web-Session-ID, origin/priority for a POST, X-Instagram-AJAX (the
+// rollout hash) — and "0" for X-IG-WWW-Claim when BuildHeaders set none.
+func TestReadMentionsSendsTheWebClientsRequest(t *testing.T) {
+	library := http.Header{}
+	for k, v := range map[string]string{
+		"accept": "*/*", "x-csrftoken": "synthetic-csrf", "x-ig-app-id": "936619743392459",
+		"x-asbd-id": "359341", "X-IG-Max-Touch-Points": "0",
+	} {
+		library.Set(k, v)
+	}
+	issuer := &fakeRESTIssuer{body: []byte(fakeig.NewsInboxJSON), built: library}
+	if _, _, err := readMentions(t.Context(), issuer, testSelf); err != nil {
 		t.Fatal(err)
+	}
+	if issuer.method != http.MethodPost || issuer.url != "https://www.instagram.com/api/v1/news/inbox/" {
+		t.Errorf("request = %s %s, want POST https://www.instagram.com/api/v1/news/inbox/", issuer.method, issuer.url)
+	}
+	if issuer.once != 1 || issuer.retrying != 0 {
+		t.Errorf("once = %d, retrying = %d; want the no-retry, no-redirect path only", issuer.once, issuer.retrying)
+	}
+	if issuer.contentType != types.FORM || string(issuer.contentType) != "application/x-www-form-urlencoded" {
+		t.Errorf("content type = %q, want application/x-www-form-urlencoded", issuer.contentType)
+	}
+	form, err := url.ParseQuery(string(issuer.payload))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantForm := url.Values{"jazoest": {testJazoest}, "fb_dtsg": {testFBDTSG}, "selected_filters": {"comments"}}
+	if form.Encode() != wantForm.Encode() {
+		t.Errorf("form = %q, want exactly %q", form.Encode(), wantForm.Encode())
 	}
 	if issuer.buildHeadersArgs != [2]bool{true, false} {
 		t.Errorf("BuildHeaders called with %v, want (true, false)", issuer.buildHeadersArgs)
 	}
-	for _, h := range []string{"x-requested-with", "referer", "sec-fetch-dest", "sec-fetch-mode", "sec-fetch-site", "X-Web-Session-ID"} {
-		if issuer.headers.Get(h) == "" {
-			t.Errorf("header %q was not set", h)
+	for k := range library {
+		if issuer.headers.Get(k) != library.Get(k) {
+			t.Errorf("header %q = %q, want the library's %q unchanged", k, issuer.headers.Get(k), library.Get(k))
 		}
 	}
-	if got := issuer.headers.Get("x-requested-with"); got != "XMLHttpRequest" {
-		t.Errorf("x-requested-with = %q, want XMLHttpRequest", got)
+	for h, want := range map[string]string{
+		"x-requested-with": "XMLHttpRequest",
+		"referer":          "https://www.instagram.com",
+		"sec-fetch-dest":   "empty",
+		"sec-fetch-mode":   "cors",
+		"sec-fetch-site":   "same-origin",
+		"X-Web-Session-ID": "synthetic-web-session-id",
+		"origin":           "https://www.instagram.com",
+		"X-Instagram-AJAX": testRolloutHash,
+		"X-IG-WWW-Claim":   "0",
+	} {
+		if got := issuer.headers.Get(h); got != want {
+			t.Errorf("header %q = %q, want %q", h, got, want)
+		}
 	}
-	if got := issuer.headers.Get("referer"); got != "https://www.instagram.com" {
-		t.Errorf("referer = %q, want the bare base_url with NO trailing slash", got)
+}
+
+// A claim the session already holds (BuildHeaders sets it off the library's
+// cookies) is sent as it is, never overwritten with "0".
+func TestReadMentionsKeepsTheSessionsWWWClaim(t *testing.T) {
+	library := http.Header{}
+	library.Set("x-ig-www-claim", "hmac.synthetic-claim")
+	issuer := &fakeRESTIssuer{body: []byte(fakeig.NewsInboxJSON), built: library}
+	if _, _, err := readMentions(t.Context(), issuer, testSelf); err != nil {
+		t.Fatal(err)
+	}
+	if got := issuer.headers.Get("X-IG-WWW-Claim"); got != "hmac.synthetic-claim" {
+		t.Errorf("X-IG-WWW-Claim = %q, want the session's own claim", got)
+	}
+}
+
+// With any web form token missing, no request goes out: a form without
+// fb_dtsg is not the web client's request.
+func TestReadMentionsSendsNoRequestWithoutWebFormTokens(t *testing.T) {
+	issuer := &fakeRESTIssuer{body: []byte(fakeig.NewsInboxJSON), noTokens: true}
+	_, _, err := readMentions(t.Context(), issuer, testSelf)
+	if !errors.Is(err, errWebFormTokens) {
+		t.Fatalf("err = %v, want errWebFormTokens", err)
+	}
+	if issuer.calls() != 0 {
+		t.Errorf("%d request(s) went out with no web form tokens", issuer.calls())
+	}
+}
+
+// The capture's own finding: no story carries comment_id/comment_ids; a
+// comment's id rides in `destination`'s target_comment_id. The main
+// fixture's mention has its comment id ONLY there.
+func TestReadMentionsTakesTheCommentIDFromTheDestination(t *testing.T) {
+	if strings.Contains(fakeig.NewsInboxJSON, `"comment_id"`) {
+		t.Fatal("precondition: the captured-key fixture must carry no comment_id key")
+	}
+	mentions, _, err := readMentions(t.Context(), &fakeRESTIssuer{body: []byte(fakeig.NewsInboxJSON)}, testSelf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(mentions) != 1 || mentions[0].CommentID != fakeig.MentionCommentID {
+		t.Fatalf("mentions = %+v, want one with comment id %s from the destination", mentions, fakeig.MentionCommentID)
+	}
+}
+
+// With no media array, the media comes from a media destination's `id`;
+// a `user?id=` destination's id is a user, never taken as media.
+func TestReadMentionsTakesTheMediaFromAMediaDestinationOnly(t *testing.T) {
+	story := func(destination string) string {
+		return `{"new_stories":[{"story_type":900,"args":{
+			"text":"@` + fakeig.SelfUsername + ` look",
+			"profile_id":"600000000002","profile_name":"commenter_eta",
+			"timestamp":1700000800,
+			"destination":"` + destination + `"
+		}}],"old_stories":[],"status":"ok"}`
+	}
+	mentions, _, err := readMentions(t.Context(), &fakeRESTIssuer{body: []byte(story(
+		"clips_home?id=" + fakeig.ImageMediaID + "&target_comment_id=17900000000000300"))}, testSelf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(mentions) != 1 || mentions[0].MediaID != fakeig.ImageMediaID || mentions[0].MediaShortcode != fakeig.ImageShortcode ||
+		mentions[0].CommentID != "17900000000000300" {
+		t.Fatalf("mentions = %+v, want one on %s/%s with comment 17900000000000300", mentions, fakeig.ImageMediaID, fakeig.ImageShortcode)
+	}
+	mentions, skipped, err := readMentions(t.Context(), &fakeRESTIssuer{body: []byte(story(
+		"user?id=600000000002&username=commenter_eta&target_comment_id=17900000000000300"))}, testSelf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(mentions) != 0 || skipped[900] != 1 {
+		t.Fatalf("mentions = %+v, skipped = %v; a user destination's id is not a media id", mentions, skipped)
+	}
+}
+
+// story_type 13, "liked your comment": it has a comment id (in the
+// destination) and media, but it does not mention the account, so it is
+// skipped and counted — never a summons.
+func TestReadMentionsSkipsALikedYourCommentStory(t *testing.T) {
+	mentions, skipped, err := readMentions(t.Context(), &fakeRESTIssuer{body: []byte(fakeig.NewsInboxJSON)}, testSelf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range mentions {
+		if m.CommentID == fakeig.LikedCommentID || m.StoryType == 13 {
+			t.Fatalf("the liked-your-comment story was classified as a mention: %+v", m)
+		}
+	}
+	if skipped[13] != 1 {
+		t.Errorf("skipped[13] = %d, want 1", skipped[13])
+	}
+}
+
+// The account's own id in `logging_context.mentioned_user_ids` is NOT a
+// mention. The live capture (2026-09-25) had exactly one id there on every
+// story type, likes included, so it most likely names the notified account.
+// A story that carries a comment id and media but names her only there, like
+// a "liked your comment", must never become a summons.
+func TestReadMentionsIgnoresTheSelfIDInMentionedUserIDs(t *testing.T) {
+	raw := `{"new_stories":[{"story_type":13,"args":{
+		"text":"commenter_theta liked your comment: nice",
+		"profile_id":"600000000003","profile_name":"commenter_theta",
+		"timestamp":1700000900,
+		"destination":"clips_home?id=` + fakeig.ImageMediaID + `&target_comment_id=17900000000000400",
+		"logging_context":{"mentioned_user_ids":[` + fakeig.SelfIGID + `],"mentioned_content_ids":[],"content_id":"1"}
+	}}],"old_stories":[],"status":"ok"}`
+	mentions, skipped, err := readMentions(t.Context(), &fakeRESTIssuer{body: []byte(raw)}, testSelf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(mentions) != 0 || skipped[13] != 1 {
+		t.Fatalf("mentions = %+v, skipped = %v; want none and one skipped type-13", mentions, skipped)
+	}
+}
+
+// A logging_context this file does not expect (a string, a list of
+// non-ids) costs only that signal: the story still decodes, and the "@"
+// token still classifies it.
+func TestReadMentionsToleratesAnUnexpectedLoggingContext(t *testing.T) {
+	for name, lc := range map[string]string{
+		"a string":      `"logging_context":"{\"mentioned_user_ids\":[1]}"`,
+		"garbage ids":   `"logging_context":{"mentioned_user_ids":["abc", 1.5e3, null]}`,
+		"ids not array": `"logging_context":{"mentioned_user_ids":7}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			raw := `{"new_stories":[{"story_type":900,"args":{
+				"text":"@` + fakeig.SelfUsername + ` hello",` + lc + `,
+				"profile_id":"600000000004","profile_name":"commenter_iota",
+				"timestamp":1700001000,
+				"destination":"clips_home?id=` + fakeig.ImageMediaID + `&target_comment_id=17900000000000500"
+			}}],"old_stories":[],"status":"ok"}`
+			mentions, skipped, err := readMentions(t.Context(), &fakeRESTIssuer{body: []byte(raw)}, testSelf)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(mentions) != 1 || skipped[undecodableStoryType] != 0 {
+				t.Fatalf("mentions = %+v, skipped = %v; want the story classified by its @ token", mentions, skipped)
+			}
+		})
+	}
+}
+
+// A comment id in the destination that is not all digits is not carried.
+func TestReadMentionsRefusesANonNumericDestinationCommentID(t *testing.T) {
+	raw := `{"new_stories":[{"story_type":900,"args":{
+		"text":"@` + fakeig.SelfUsername + ` hello",
+		"profile_id":"600000000005","profile_name":"commenter_kappa",
+		"timestamp":1700001100,
+		"destination":"clips_home?id=` + fakeig.ImageMediaID + `&target_comment_id=1%3B2"
+	}}],"old_stories":[],"status":"ok"}`
+	mentions, skipped, err := readMentions(t.Context(), &fakeRESTIssuer{body: []byte(raw)}, testSelf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(mentions) != 0 || skipped[900] != 1 {
+		t.Fatalf("mentions = %+v, skipped = %v; want none", mentions, skipped)
 	}
 }
 
 // No web session id, no request: a request missing a header the real web
 // client always sends is the mismatch `rest` exists to avoid.
 func TestReadMentionsSendsNoRequestWithNoWebSessionID(t *testing.T) {
-	inner := &fakeRESTIssuer{body: []byte(fakeig.UnmeasuredNewsInboxJSON)}
+	inner := &fakeRESTIssuer{body: []byte(fakeig.NewsInboxJSON)}
 	failing := &failingWebSessionIssuer{fakeRESTIssuer: inner}
-	_, _, err := readMentions(t.Context(), failing, fakeig.SelfUsername)
+	_, _, err := readMentions(t.Context(), failing, testSelf)
 	if err == nil {
 		t.Fatal("want an error")
 	}
@@ -445,7 +667,7 @@ func (f *failingWebSessionIssuer) WebSessionID() (string, error) {
 // reach a span attribute/event or an error string.
 func TestReadMentionsNeverLeaksAnIdentifier(t *testing.T) {
 	rec := recordGatewaySpans(t)
-	mentions, _, err := readMentions(t.Context(), &fakeRESTIssuer{body: []byte(fakeig.UnmeasuredNewsInboxJSON)}, fakeig.SelfUsername)
+	mentions, _, err := readMentions(t.Context(), &fakeRESTIssuer{body: []byte(fakeig.NewsInboxJSON)}, testSelf)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -470,7 +692,7 @@ func TestReadMentionsNeverLeaksAnIdentifier(t *testing.T) {
 		checkNoSecret(t, "span "+s.Name()+" status description", s.Status().Description, secrets)
 	}
 
-	_, _, err2 := readMentions(t.Context(), &fakeRESTIssuer{status: http.StatusBadRequest, body: []byte(`{}`)}, fakeig.SelfUsername)
+	_, _, err2 := readMentions(t.Context(), &fakeRESTIssuer{status: http.StatusBadRequest, body: []byte(`{}`)}, testSelf)
 	if err2 == nil {
 		t.Fatal("want an error")
 	}
@@ -554,6 +776,31 @@ func TestMentionsCheckpointInA200FailFlipsTheSessionState(t *testing.T) {
 	}
 }
 
+// Now a POST, /mentions goes out through the no-redirect path: a 3xx to a
+// challenge or to /accounts/login/ is read by redirectSentinel, needs a
+// human, and flips the session exactly as a 4xx checkpoint body does.
+func TestMentionsRedirectToAChallengeFlipsTheSessionState(t *testing.T) {
+	for name, loc := range map[string]string{
+		"challenge":  "https://www.instagram.com/challenge/action/x/",
+		"login":      "https://www.instagram.com/accounts/login/?next=/",
+		"checkpoint": "https://www.instagram.com/checkpoint/1/",
+	} {
+		t.Run(name, func(t *testing.T) {
+			issuer := &fakeRESTIssuer{status: http.StatusFound, respHeader: http.Header{"Location": {loc}}}
+			b := mentionsTestBridge(t, issuer)
+			if _, _, err := b.Mentions(t.Context()); !errors.Is(err, domain.ErrNeedsHuman) {
+				t.Fatalf("err = %v, want ErrNeedsHuman", err)
+			}
+			if issuer.once != 1 || issuer.retrying != 0 {
+				t.Errorf("once = %d, retrying = %d; want the no-redirect path", issuer.once, issuer.retrying)
+			}
+			if st := b.Snapshot().State; st != domain.StateCheckpointed && st != domain.StateLoggedOut {
+				t.Errorf("state = %q, want it flipped off authenticated", st)
+			}
+		})
+	}
+}
+
 // "x@nora" is an email-like token, not a mention: the byte BEFORE the "@"
 // must not continue a username either.
 func TestReadMentionsRequiresAWordBoundaryBeforeTheMention(t *testing.T) {
@@ -564,7 +811,7 @@ func TestReadMentionsRequiresAWordBoundaryBeforeTheMention(t *testing.T) {
 		"media":[{"id":"` + fakeig.ImageMediaID + `_10000001","shortcode":"` + fakeig.ImageShortcode + `"}],
 		"comment_id":"17900000000000200"
 	}}],"old_stories":[],"status":"ok"}`
-	mentions, _, err := readMentions(t.Context(), &fakeRESTIssuer{body: []byte(raw)}, fakeig.SelfUsername)
+	mentions, _, err := readMentions(t.Context(), &fakeRESTIssuer{body: []byte(raw)}, testSelf)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -591,7 +838,7 @@ func TestReadMentionsRefusesAGarbageIDOrTimestamp(t *testing.T) {
 				"media":[{"id":"` + fakeig.ImageMediaID + `_10000001","shortcode":"` + fakeig.ImageShortcode + `"}],
 				"comment_id":"17900000000000200"
 			}}],"old_stories":[],"status":"ok"}`
-			mentions, skipped, err := readMentions(t.Context(), &fakeRESTIssuer{body: []byte(raw)}, fakeig.SelfUsername)
+			mentions, skipped, err := readMentions(t.Context(), &fakeRESTIssuer{body: []byte(raw)}, testSelf)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -599,5 +846,43 @@ func TestReadMentionsRefusesAGarbageIDOrTimestamp(t *testing.T) {
 				t.Fatalf("mentions = %+v, skipped = %v; want none and one undecodable", mentions, skipped)
 			}
 		})
+	}
+}
+
+// A type-13 "liked your comment" story quotes HER comment, so its text can
+// carry her own handle. It is never a summons (review of #549).
+func TestReadMentionsNeverTakesALikedYourCommentStoryEvenWithHerHandle(t *testing.T) {
+	raw := `{"new_stories":[{"story_type":13,"args":{
+		"text":"liker_beta liked your comment: @` + fakeig.SelfUsername + ` here, thanks",
+		"profile_id":"600000000004","profile_name":"liker_beta",
+		"timestamp":1700000900,
+		"media":[{"id":"` + fakeig.ImageMediaID + `_10000001","shortcode":"` + fakeig.ImageShortcode + `"}],
+		"destination":"clips_home?id=` + fakeig.ImageMediaID + `&target_comment_id=17900000000000401"
+	}}],"old_stories":[],"status":"ok"}`
+	mentions, skipped, err := readMentions(t.Context(), &fakeRESTIssuer{body: []byte(raw)}, testSelf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(mentions) != 0 || skipped[13] != 1 {
+		t.Fatalf("mentions = %+v, skipped = %v; want none and one skipped type-13", mentions, skipped)
+	}
+}
+
+// When media[0] and the destination's id name different posts, the story
+// names no one thread and is skipped (review of #549).
+func TestReadMentionsSkipsAStoryWhoseMediaAndDestinationDisagree(t *testing.T) {
+	raw := `{"new_stories":[{"story_type":900,"args":{
+		"text":"commenter_iota mentioned you in a comment: @` + fakeig.SelfUsername + ` is this true",
+		"profile_id":"600000000005","profile_name":"commenter_iota",
+		"timestamp":1700000900,
+		"media":[{"id":"` + fakeig.ImageMediaID + `_10000001","shortcode":"` + fakeig.ImageShortcode + `"}],
+		"destination":"clips_home?id=` + fakeig.CarouselMediaID + `&target_comment_id=17900000000000402"
+	}}],"old_stories":[],"status":"ok"}`
+	mentions, _, err := readMentions(t.Context(), &fakeRESTIssuer{body: []byte(raw)}, testSelf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(mentions) != 0 {
+		t.Fatalf("mentions = %+v, want none: media and destination name different posts", mentions)
 	}
 }

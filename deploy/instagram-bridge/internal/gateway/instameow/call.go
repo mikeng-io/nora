@@ -20,12 +20,12 @@
 //     array before `data`, because a failed document answers HTTP 200. The
 //     absence of that check hid a real bug for a day on 2026-09-22.
 //
-// The design names a third, `rest`, for raw REST endpoints. Written with its
-// first caller: mentions.go's `GET /mentions` probe. Before it, the one raw
-// REST call this bridge ever made (`web_profile_info`) had been removed when
-// it proved throttled. `restDo` is its general form (a method, a referer, a
-// form body): comments.go's comment read and the bridge's ONE public write,
-// the comment reply, go through it (design 19).
+// The design names a third, `rest`, for raw REST endpoints, written as
+// `restDo` (a method, a referer, a form body) with its first caller,
+// mentions.go's `GET /mentions` read. Before it, the one raw REST call this
+// bridge ever made (`web_profile_info`) had been removed when it proved
+// throttled. comments.go's comment read and the bridge's ONE public write,
+// the comment reply, go through it too (design 19).
 package instameow
 
 import (
@@ -135,8 +135,7 @@ func graphql(
 // RESTIssuer is the one pair of methods the raw REST path needs off
 // `*httpclient.HTTPClient`, mirroring GraphQLIssuer above: `*httpclient.HTTPClient`
 // satisfies it structurally, so a test can fake it with no real Instagram
-// session. mentions.go is its first caller (see the package doc comment's
-// note on `rest`).
+// session. mentions.go is its first caller (see the package doc comment).
 type RESTIssuer interface {
 	BuildHeaders(withCookies, isSecFetchDocument bool) http.Header
 	MakeRequest(ctx context.Context, url, method string, headers http.Header, payload []byte, contentType types.ContentType) (*http.Response, []byte, error)
@@ -166,12 +165,31 @@ type RESTIssuer interface {
 	// unexported configs, and its one exported path is `DumpState()`; see
 	// sessionREST in mentions.go.
 	WebSessionID() (string, error)
+	// WebFormTokens are the per-session values a web-client form POST
+	// carries, read off the same dumped configs, each from exactly where the
+	// library itself reads it:
+	//
+	//   - jazoest: `c.configs.Jazoest`, the form field the library's own web
+	//     POST sends (pkg/instameow/misc.go:45, pushRegisterQuery
+	//     `url:"jazoest"`, misc.go:28), parsed off the page's `__eqmc` ajax
+	//     URL (pkg/messagix/httpclient/modules.go:27-38);
+	//   - fbDTSG: `c.configs.BrowserConfigTable.DTSGInitData.Token`, the same
+	//     POST's `fb_dtsg` (misc.go:47, `url:"fb_dtsg"`, misc.go:29; also the
+	//     library's generic web query, httpclient/http.go:283);
+	//   - rolloutHash: `BrowserConfigTable.InstagramWebPushInfo.RolloutHash`,
+	//     which the library's own web-login POST sends as `x-instagram-ajax`
+	//     (pkg/instameow/login_web.go:187-196): the page's numeric client
+	//     revision.
+	//
+	// Plain strings rather than a struct, so fakeig can implement it without
+	// importing this package.
+	WebFormTokens() (jazoest, fbDTSG, rolloutHash string, err error)
 }
 
 // restOrigin is the referer every raw REST call sets, the same base URL
 // FetchMedia and FetchReel build theirs from (pkg/instameow/misc.go:
 // `c.GetEndpoint("base_url")`). Not read off the library's own endpoint
-// table: `rest`'s callers pass a full URL of their own (mentions.go's
+// table: `restDo`'s callers pass a full URL of their own (mentions.go's
 // endpoint has no entry in that table to begin with), so this is a plain
 // constant rather than a lookup with one unmatched key.
 const restOrigin = "https://www.instagram.com"
@@ -179,6 +197,11 @@ const restOrigin = "https://www.instagram.com"
 // errWebSessionID is left unclassified on purpose: the HTTP layer answers it
 // 500 (fail-closed). It is neither retryable nor the caller's fault.
 var errWebSessionID = errors.New("web session id unavailable; request not sent")
+
+// errWebFormTokens is errWebSessionID's twin for a web form POST: with no
+// jazoest, fb_dtsg or rollout hash, the request would go out different from
+// the web client's, so it does not go out. Unclassified for the same reason.
+var errWebFormTokens = errors.New("web form tokens unavailable; request not sent")
 
 // restCheckpointBody is the shape Instagram's own private/web APIs use to ask
 // for a human inside a failure body — UNMEASURED for this endpoint (no live
@@ -239,7 +262,7 @@ func restStatusError(label string, status int, body []byte) error {
 }
 
 // restRequest is one raw REST call. The zero value of every optional field is
-// the GET that `rest` has always made.
+// a plain GET.
 type restRequest struct {
 	// method is http.MethodGet when empty.
 	method   string
@@ -253,6 +276,14 @@ type restRequest struct {
 	// `types.FORM` content type (`application/x-www-form-urlencoded`), the
 	// way the library's own web POSTs send theirs (misc.go:57-59, route.go:84).
 	form url.Values
+	// webForm marks a POST the web client sends as one of its own ajax form
+	// posts: restDo adds `jazoest` and `fb_dtsg` to the form (misc.go:40-48,
+	// then `form.Encode()`, misc.go:57-58), sets `X-Instagram-AJAX` to the
+	// rollout hash (login_web.go:196) and, when BuildHeaders set no
+	// `x-ig-www-claim` because the session has not been handed one yet, sends
+	// "0", as the library's own web-login POST does (login_web.go:198-199).
+	// With any token missing, NO request is sent (errWebFormTokens).
+	webForm bool
 	// idsInURL marks an endpoint whose URL carries identifiers (a media pk,
 	// a comment id). Such a request goes out through
 	// MakeRequestOnceNoRedirect (see its doc comment for what that avoids),
@@ -287,12 +318,6 @@ type fixedTextError struct {
 
 func (e *fixedTextError) Error() string { return e.msg }
 func (e *fixedTextError) Unwrap() error { return e.cause }
-
-// rest issues one raw REST GET: restDo's original form, kept with its
-// original signature for mentions.go.
-func rest(ctx context.Context, issuer RESTIssuer, endpoint, label string) (int, []byte, error) {
-	return restDo(ctx, issuer, restRequest{endpoint: endpoint, label: label})
-}
 
 // restDo issues one raw REST request and returns its body only when the
 // request succeeded. It is the third helper `16` names and none existed until
@@ -361,8 +386,27 @@ func restDo(ctx context.Context, issuer RESTIssuer, req restRequest) (int, []byt
 		headers.Set("origin", restOrigin)
 		headers.Set("priority", "u=1, i")
 	}
-	if req.form != nil {
-		payload = []byte(req.form.Encode())
+	form := req.form
+	if req.webForm {
+		jazoest, fbDTSG, rolloutHash, tokErr := issuer.WebFormTokens()
+		if tokErr != nil || jazoest == "" || fbDTSG == "" || rolloutHash == "" {
+			failSpan(span, "web_form_tokens", errWebFormTokens)
+			return 0, nil, errWebFormTokens
+		}
+		// A copy: the caller's form is never mutated.
+		form = url.Values{}
+		for k, v := range req.form {
+			form[k] = append([]string(nil), v...)
+		}
+		form.Set("jazoest", jazoest)
+		form.Set("fb_dtsg", fbDTSG)
+		headers.Set("X-Instagram-AJAX", rolloutHash)
+		if headers.Get("x-ig-www-claim") == "" {
+			headers.Set("x-ig-www-claim", "0")
+		}
+	}
+	if form != nil {
+		payload = []byte(form.Encode())
 		contentType = types.FORM
 	}
 

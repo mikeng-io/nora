@@ -130,7 +130,8 @@ The most-used words in this repo, and none of them was here until 2026-09-08.
   (design/culture-tier/, DEC-207). The `culture` adaptor reads the room's own
   messages once a day and appends ONE short account to a chain
   (`culture`/`culture_revision`, keyed on the room's `primary_id`). Every
-  occasion reads it as `<culture>` except the Relevance Gate. It is a
+  occasion in a room reads it as `<culture>` except the Relevance Gate; the
+  public summons reads no room and no culture. It is a
   baseline, not a rule: a window read against it becomes a deviation. Not
   `<room>`, which is the operator's statement of what a room is FOR.
 
@@ -172,7 +173,9 @@ The most-used words in this repo, and none of them was here until 2026-09-08.
   one paragraph per room, what she currently thinks, distinct from what was
   said, plus its **working set** (below). It is *derived* state, written by
   the debrief path (`nora/engagement/stages/debrief.py`, which has created no
-  notes since DEC-202) after each tag turn and stored
+  notes since DEC-202) after each tag turn, and by the same fold spawned from
+  ingest once `[standing] fold_batch` new messages have piled up
+  (`nora/ingest/stages/standing_event.py`), and stored
   through `StandingStore`, and it passes the same egress screen a reply does
   before it is written. Standing is an **input** to a later turn, never an
   output of the current one — and it is rewritten each time and keeps
@@ -188,8 +191,8 @@ The most-used words in this repo, and none of them was here until 2026-09-08.
 - **working set** — the part of Standing that holds what she found on a turn
   and has not yet given the room: options, findings, a shortlist (#445,
   design/standing-compact/30). Bounded (`[standing] working_set_max_items`,
-  ceiling 20 items), aged out at render time, and shown on tag and
-  participation turns. Not a note: it holds her work, not the group's open
+  ceiling 20 items), aged out at render time (48 hours), and rendered
+  wherever Standing is: the tag turn and every fire turn. Not a note: it holds her work, not the group's open
   question.
 
 - **proactive** — Nora's other half (design/dreamer-agent-loop/39, DEC-162).
@@ -229,7 +232,8 @@ The most-used words in this repo, and none of them was here until 2026-09-08.
 
 - **Standing** — Nora's held position on a topic in a room: what she currently
   thinks, distinct from what was said. It is *derived* state, written by the
-  debrief path (`nora/engagement/stages/debrief.py`) and stored through
+  debrief path (`nora/engagement/stages/debrief.py`) after a tag turn or from
+  ingest (`nora/ingest/stages/standing_event.py`) and stored through
   `StandingStore`, and it passes the same egress screen a reply does before it
   is written — a screen applied before the write, not before the read, because
   a screen a cache hit skips is not a screen. Standing is an **input** to a
@@ -327,8 +331,10 @@ kind. The files sit in four scope folders — `core/` (wherever she is),
   (design/threads-adoption/10 names the `SocialSurface` port a second one
   would need). A voice channel is a surface OF a room, not a room (DEC-191).
 - **Relevance Gate** — a cheap, separate model call in front of participation
-  (design 36, `[relevance_gate]`): reads only the transcript and Standing and
-  answers whether the room is ASKING; only a `go` spends a full turn. Its
+  (design 36, `[relevance_gate]`): reads the transcript and Standing and
+  answers whether the room is ASKING; it also reads a one-line-per-tool
+  digest of what she can look up (`ToolRegistry.capability_digest()`). Only a
+  `go` spends a full turn. Its
   instruction is `doctrine/instruments/participation.md`, on an audience she
   never reads.
 - **terminal verb** — a tool that ends the turn: `send_reply` and `send_gif`,

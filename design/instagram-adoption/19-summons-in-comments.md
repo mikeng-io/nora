@@ -53,7 +53,7 @@ None of them is Threads-specific:
 | | Threads (parked) | Instagram |
 |---|---|---|
 | door | official Graph API, `threads-bridge` sidecar | the existing instagram-bridge, one session shared with her group chats |
-| ingress | `GET /{uid}/mentions` | her activity feed, polled through the bridge: `GET /mentions` over `/api/v1/news/inbox/` (unmeasured, phase 1) |
+| ingress | `GET /{uid}/mentions` | her activity feed, polled through the bridge: `GET /mentions` over `POST /api/v1/news/inbox/`, form `jazoest`, `fb_dtsg`, `selected_filters=comments` (the web client's own request, captured 2026-09-25; the response to a real comment mention still unread, phase 1) |
 | summoner identity | username only; the API exposes no id | **the actor's igid**, expected in the activity story's `profile_id` (a hypothesis until phase 1 reads a real story). An id, not a name, so the gate needs no pinning |
 | gate | `[[persons.<id>.threads]]` by username | `[[persons.<id>.instagram]]` by `igid`, the block `identity.toml` already has |
 | context | the post and its reply chain | the post (`GET /posts/{shortcode}`, live) plus the comment thread (new route, unmeasured) |
@@ -135,9 +135,28 @@ every other story by `story_type`. It is deployed, then:
 
 - **before the first live call**, the exact request the Instagram web client
   makes for its notifications panel is captured from a real browser (method,
-  path, query, headers). The route's endpoint is a hypothesis
-  (`/api/v1/news/inbox/`, which is not in the library's endpoint table), and
-  a request the web client never makes is the mismatch rule 2 forbids,
+  path, query, headers). The route's endpoint is not in the library's
+  endpoint table, and a request the web client never makes is the mismatch
+  rule 2 forbids. **Done 2026-09-25** (the operator's own browser, read
+  only). What it showed:
+  - the panel is `POST /api/v1/news/inbox/`, not GET, form-encoded with
+    `jazoest` and `fb_dtsg`, plus `selected_filters=comments` on the
+    Comments tab. The route now sends exactly that, with the form tokens
+    and `X-Instagram-AJAX` from the session's own configs, and does NOT send
+    the `news/inbox_seen/` POST the panel also makes;
+  - no story carries `comment_id`/`comment_ids`. A comment's id rides in the
+    story's `destination`, e.g. `clips_home?id=<media>&target_comment_id=<comment>`
+    on a "liked your comment" story (type 13), and the route reads it there;
+  - the comment read is exactly the hypothesis:
+    `GET /api/v1/media/<pk>/comments/?can_support_threading=true&permalink_enabled=false`.
+    The replies (`child_comments`) request was not observed: the sampled
+    post had none;
+  - no comment-mention story was in the feed, so its numeric `story_type` is
+    still unmeasured (types seen: 651, 13, 101, 75, 768, 117). The skipped
+    counts are how the first live read will show it;
+  - one header stays different: the web client sent a non-zero
+    `X-IG-WWW-Claim`, and the library keeps that claim in memory only, so a
+    bridge that has not been handed one since its last restart sends `0`,
 - the operator comments `@noraexample is this true?` under a post: his own
   first, then a stranger's public post,
 - `GET /mentions` is read back. **Pass:** the summons appears with the

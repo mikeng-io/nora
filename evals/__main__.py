@@ -23,6 +23,7 @@ from evals.backbone import (
     NORA_ERROR,
     NORA_POSITION,
     NORA_SHOWN,
+    NORA_WORKING_SET,
     PASS,
     RUN_ID,
     UNSTABLE,
@@ -260,22 +261,33 @@ def _case_state(case_row: dict[str, Any], name: str) -> Any:
 
 
 def _print_positions(report: Any) -> None:
-    """Every draw's WRITTEN position, with its length (issue #445).
+    """Every draw's WRITTEN position, with its length, and — separately,
+    labelled, never folded into the position — its working set (issue #445).
 
     The judge's reason says a finding was left out and cannot say WHY: a fold
     that never tried and a fold that was squeezed out by `[standing]
     max_chars` read the same in a reason line. The length against the cap is
-    the first thing that tells them apart, and the text is the second.
+    the first thing that tells them apart, and the text is the second. A
+    finding that landed in `working_set` instead of `position` is a THIRD
+    way a reason can read "left out" while nothing was actually lost, so a
+    human reading this output needs to see both to tell the three apart.
     Printed on the terminal only — never paste it into a PR or an issue; it
     is a room's own standing.
     """
+    from evals.rebuilt.fold_evidence import render_working_set
+
     for case_row, outputs in zip(report.cases, report.detailed_results, strict=True):
         position = _case_state(case_row, NORA_POSITION)
+        working_set = _case_state(case_row, NORA_WORKING_SET) or ()
         label = "/".join(str(getattr(out, "label", "?")) for out in outputs)
         size = "none" if position is None else f"{len(position)} chars"
         print(f"  [{label}] {case_row['name']}  ({size})")
         if position:
             for line in str(position).splitlines():
+                print(f"      | {line}")
+        if working_set:
+            print(f"      working set ({len(working_set)} item(s), not her position):")
+            for line in render_working_set(working_set).splitlines():
                 print(f"      | {line}")
 
 
