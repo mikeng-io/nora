@@ -61,13 +61,14 @@ def _policy(*, proactive: bool, home_room_here: bool) -> str:
     here = (
         'default = "deny"\n'
         f'[[conversations]]\nplatform = "{ROOM[0]}"\nid = "{ROOM[1]}"\n'
-        'persons = "*"\nunit = "nora"\n'
+        f'label = "{ROOM[1]}"\npersons = "*"\nunit = "nora"\n'
         + ("proactive = true\n" if proactive else "")
         + ("home_room = true\n" if home_room_here else "")
     )
     elsewhere = (
         '[[conversations]]\nplatform = "signal"\nid = "elsewhere"\n'
-        'persons = "*"\nunit = "somewhere-else"\nproactive = true\nhome_room = true\n'
+        'label = "elsewhere"\npersons = "*"\nunit = "somewhere-else"\n'
+        'proactive = true\nhome_room = true\n'
     )
     return here + elsewhere
 

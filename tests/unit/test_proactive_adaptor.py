@@ -1463,27 +1463,36 @@ async def test_the_birth_room_mark_reads_policy_as_remind_does(tmp_path):
     assert 'room="Zone 42" unprompted="not_allowed"' in quiet
 
 
-async def test_an_unlabelled_room_never_puts_its_id_in_the_proactive_prompt(tmp_path):
-    """R-18, from `policy.toml` to the rendered prompt. The composition root
-    built `UnitRoom.label` as `conv.label or conv.primary_id`, so an
-    unlabelled room's id reached `<rooms>` (and `<loop_decisions>`, and the
-    no-reader `<presence>`). The rooms here come from the composition root's
-    own builder, so the test sees exactly what production hands the pass."""
+async def test_an_unlabelled_room_never_puts_its_id_in_the_proactive_prompt():
+    """R-18, from `Policy` to the rendered prompt. The composition root built
+    `UnitRoom.label` as `conv.label or conv.primary_id`, so an unlabelled
+    room's id reached `<rooms>` (and `<loop_decisions>`, and the no-reader
+    `<presence>`). The rooms here come from the composition root's own
+    builder, so the test sees exactly what production hands the pass.
+
+    Built as a `Policy` directly rather than through `load_policy`: an
+    allowed room with no label is now a STARTUP error there (#200 part 2),
+    so `policy.toml` itself can no longer carry the unlabelled-room case this
+    test exists to prove is still handled — the render-time floor stays
+    defense in depth for a `Policy` built any other way."""
     from nora.app.composition import _unit_rooms
-    from nora.policy import load_policy
+    from nora.policy import Conversation, Policy
 
     room_id = "Z3JvdXAudW5sYWJlbGxlZA=="
-    path = tmp_path / "policy.toml"
-    path.write_text(
-        'default = "deny"\n'
-        "[[conversations]]\n"
-        f'platform = "signal"\nid = "{room_id}"\npersons = "*"\n'
-        f'unit = "{WS}"\nhome_room = true\n'
-        "[[conversations]]\n"
-        'platform = "discord"\nid = "111/222"\nlabel = "Zone 42"\npersons = "*"\n'
-        f'unit = "{WS}"\n'
+    convs = (
+        Conversation(
+            platform="signal", ids=frozenset({room_id}), persons=None,
+            primary_id=room_id, unit=WS, home_room=True,
+        ),
+        Conversation(
+            platform="discord", ids=frozenset({"111/222"}), persons=None,
+            label="Zone 42", primary_id="111/222", unit=WS,
+        ),
     )
-    rooms = _unit_rooms(load_policy(path))[WS]
+    policy = Policy(
+        conversations=convs, _by_id={(c.platform, c.primary_id): c for c in convs},
+    )
+    rooms = _unit_rooms(policy)[WS]
     standing = InMemoryStandingStore()
     for room in rooms:
         await standing.write(standing=Standing(

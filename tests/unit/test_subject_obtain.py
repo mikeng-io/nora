@@ -26,7 +26,7 @@ from nora.subject.obtain import SubjectSpec, _conversation_for, build_config, de
 _DEPLOYMENT_SHAPED = (
     'default = "deny"\n'
     '[[conversations]]\nplatform = "signal"\nid = "ridgeline-sig"\n'
-    'persons = ["miles_novak"]\nunit = "ridgeline"\nrelevance_gate = true\n'
+    'label = "Ridgeline"\npersons = ["miles_novak"]\nunit = "ridgeline"\nrelevance_gate = true\n'
     '[[conversations]]\nplatform = "signal"\nid = "friends-sig"\n'
     'label = "Friends"\ndescription = "the friends"\npersons = "*"\n'
     'unit = "friends"\nhome_room = true\n'
@@ -134,9 +134,9 @@ def test_a_policy_naming_the_rooms_id_on_a_different_entry_is_refused(
     stated = (
         'default = "deny"\n'
         '[[conversations]]\nplatform = "signal"\nid = "real-friends-sig"\n'
-        'also_ids = ["g-case3"]\npersons = "*"\nunit = "friends"\n'
+        'also_ids = ["g-case3"]\nlabel = "Friends"\npersons = "*"\nunit = "friends"\n'
         '[[conversations]]\nplatform = "discord"\nid = "g-case3"\n'
-        'persons = "*"\nunit = "friends"\n'
+        'label = "g-case3"\npersons = "*"\nunit = "friends"\n'
     )
     with pytest.raises(ValueError, match="resolves to primary_id"):
         build_config(_spec(tmp_path, room=("signal", "g-case3"), policy=stated))
@@ -152,7 +152,7 @@ def test_a_policy_naming_the_id_on_the_wrong_platform_is_refused(
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
     stated = (
         'default = "deny"\n[[conversations]]\nplatform = "discord"\n'
-        'id = "g-case4"\npersons = "*"\nunit = "nora"\n'
+        'id = "g-case4"\nlabel = "g-case4"\npersons = "*"\nunit = "nora"\n'
     )
     with pytest.raises(ValueError, match="names no conversation"):
         build_config(_spec(tmp_path, room=("signal", "g-case4"), policy=stated))
