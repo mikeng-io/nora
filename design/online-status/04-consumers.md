@@ -113,7 +113,7 @@ lives in the operator's agent skills, not in this repo):
 
 Per repo convention: worktree → PR → merge, never a direct master commit;
 independent adversarial review of the bundle before merge (never
-self-review); release fragment written (`release-fragments/unreleased/online-status.json`,
+self-review); release fragment written (`release-fragments/released/V5/online-status.json`,
 `type: "feat"` for the tool, or "none" for a design-only branch per the
 release-fragment gate); both gates run green:
 `scripts/check_release_fragments.py --base master` +

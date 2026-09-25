@@ -44,7 +44,7 @@ tree; (b) a base that is *not* the branch point silently widens or narrows the
 range — here it made a missing fragment look present. **Run this gate against the
 branch's own base, on a commit, not against `origin/master` on a dirty tree.**
 
-**Fixed:** `release-fragments/unreleased/vision-timeout-serial-factor.json`
+**Fixed:** `release-fragments/released/V5/vision-timeout-serial-factor.json`
 (`type: "fix"`).
 
 ---

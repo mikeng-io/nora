@@ -700,7 +700,7 @@ banners on both decisions carry the evidence and the reversal condition.
 **Built 2026-09-09**, in the order §6 numbers, on branch
 `mikeng-io/feat-proactive-ooda-adaptor`; DEC-162's test column names the
 tests, `scripts/mutations/proactive-adaptor.json` is the mutation record,
-and `release-fragments/unreleased/proactive-adaptor.json` is the product
+and `release-fragments/released/V5/proactive-adaptor.json` is the product
 note. One deviation from §2, on evidence: D3's optional `remind` parameter
 is `note` — a TITLE — rather than `note_id`, because `<notes>` renders no
 ids and `note_read` resolves titles («no id ever enters the prompt»,
