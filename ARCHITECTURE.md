@@ -36,6 +36,48 @@ pointer. Every «spec §n» below is the same kind of citation.) This file is pi
 `tests/test_architecture_doc.py`: it fails collection if a package under `nora/`
 goes unmentioned here.
 
+### What Nora is (2026-09-25)
+
+A persistent member of one circle of friends, not a chat bot. The bar the
+operator set (2026-09-25, `design/group-situation/00-intent.md` §0): «I expect
+Nora to think with/for us, and not for us to have to ask Nora to think.»
+
+What she holds, by the time scale it changes on. Every row is built and
+wired; every row ships off and is turned on per section in `config.toml` and
+per room in `policy.toml`, so which rows a deployment runs is its operator's
+decision, not this file's.
+
+| time scale | what she holds | where it comes from | how a turn reads it |
+|---|---|---|---|
+| seconds to minutes | where people are; who is online, playing, in voice | `presence/` (Life360), `design/online-status/` (Discord, Steam), the voice sidecar (DEC-187, DEC-191) | `where_is`, `online_now` |
+| minutes to days | what was said, shown and posted | the four platform adapters, the media read lane (DEC-197), the social reads (DEC-201, R-98) | the transcript window, `load_transcript`, `media_fetch`, `instagram_read` |
+| hours to days | each room's position, and her unsent work there | Standing and its working set (DEC-199, #445) | `<standing>` |
+| days to weeks | the group's open questions | the note tier and its three Dreamer writers (DEC-202) | `<notes>`, `note_read` |
+| weeks to months | people's usual places; what each room has become | `analytics/` (`design/proposed/27`); the culture tier (DEC-207) | `where_been`, `saved_places`, `<culture>` |
+| long-lived | conclusions about each person, and about herself | Honcho, an interpretation and never the record (ADR 0001) | `about`, `ask_memory`, `<self_card>` |
+
+**Where the build is behind that table.** Measured, not assumed:
+
+- **Sensing is ahead of deciding.** The proactive pass wakes only when a note
+  or a room's Standing changes (`nora/language/proactive.py::_changed_since`).
+  A change in where people are, or in what they post, never wakes it.
+- **A tag turn carries one person's places.** It renders the caller's peer
+  card; everyone else's places sit behind `where_is` and `where_been`, which
+  she seldom calls unasked. Rendering every member's usual places into the
+  turn did not deepen planning replies (`design/group-situation/`, measured
+  null, #543).
+- **What that study found instead** was a same-day plan dropped from a room's
+  Standing by the fold three minutes before a turn needed it. How often a
+  fold drops an open plan is being measured next.
+
+**Where she is going.** The sequence is `design/group-situation/00-intent.md`
+§0 and is not restated here: place identity, then a time-anchored forecast,
+then a proactive pass that also wakes on time anchors and changes in the
+world. More sensors are not on it. She already sees more than she uses; the
+hard part is attention — when something she knows is worth interrupting a
+room for — and what she may do with what she knows is §8's «What she may do
+with what she knows».
+
 **Status as of 2026-09-09.** Every package below exists and is wired; the
 three shipped-off paths that speak uncalled — the heartbeat's reminders, the
 participation occasion (design/dreamer-agent-loop/35) and the proactive
@@ -389,6 +431,39 @@ caption-by-URL command) and Threads support waits on a native OpenCLI adapter
 incidental: Browser Bridge drives Chrome window APIs, and GNOME RDP reports
 zero monitors while disconnected, which failed window creation — so RDP is
 optional administration only, never the runtime.
+
+### What she may do with what she knows
+
+Seeing something does not license remembering it, inferring from it, acting
+on it, or telling anyone. Each is a separate gate, and none is the model's
+judgement alone: each has a rule, and each rule has a test in
+`design/09-decision-index.md`.
+
+| step | what holds | rules |
+|---|---|---|
+| **Observe** | She records only rooms `policy.toml` lists; it is deny-by-default, and she refuses to start on an allowlist that permits nothing. A Discord guild is never allowlisted, only its channels. In a listed room every sender is recorded — `persons` gates who may call her, not who is recorded — and only mapped senders are fed to Honcho. | `nora/policy.py`, `nora/ingest/stages/` |
+| **Remember** | The record (Postgres) is verbatim and kept apart from interpretation (Honcho). Derived state — Standing, notes, culture — is written by named passes. A note or culture revision carries the instruction digest and model that wrote it; a Standing revision carries only whether a fold or the operator wrote it. Standing and every Dreamer write are screened for egress before they are stored. Nothing she says herself feeds the note tier. | ADR 0001, DEC-199, DEC-202, DEC-204, DEC-207 |
+| **Infer** | Background passes never speak. Their one act is a proactive reminder row, and the fire path re-reads policy when it comes due. | R-1, DEC-162 |
+| **Act** | Speaking unasked is its own per-room grant (`participation`, `proactive`, `home_room`), separate from being allowed to answer a tag. Every send goes through one `Deliverer`. A turn that may decline records `silent` as a success. A message crosses rooms only within one unit, at the request of someone allowed in both, under that person's name. | R-1b (amended by DEC-212), R-49 |
+| **Disclose** | Room-scoped tools resolve names only inside the room. The circle is who may be asked about; the room is only who may be told. A live position is disclosed only into a room that is a subset of the person's Life360 circle, unless the operator grants the room `location`. Identifiers never leave in a reply; a person's name or position never leaves in a routing call. A story is read only for a Tier 0 person. A summons loads no room doctrine and no memory. | R-21, R-47, R-31/DEC-79, R-18, R-28, R-98, DEC-212 |
+
+**Not governed yet.** These are gaps, not decisions, and each is the
+operator's to close:
+
+- **Grants are room-shaped.** `policy.toml` has no per-person capability, so
+  «this person agrees to be looked up from rooms they are not in» cannot be
+  expressed; Instagram's Tier 1 is blocked on it
+  (`design/instagram-adoption/07-social-boundary-and-scope.md`).
+- **An observation does not carry its audience, sensitivity or consent basis
+  as data.** Those are enforced at each tool's seam, one rule at a time, so a
+  new sensor is ungoverned until its own rule lands.
+- **Retention is per store, not per source.** `[store] prune_enabled` decides
+  the message record (the live deployment keeps it in full);
+  `[presence] retention_days` keeps location fixes for 720 days; media blobs
+  have no retention decision at all (`[media]`, DEC-43's open question).
+- **The people in a room who never tagged her** are covered by the rules
+  above only where a rule names them (R-31's subset, R-98's Tier 0). There is
+  no general statement of what a non-participant has agreed to.
 
 ### Ports and their current implementations
 

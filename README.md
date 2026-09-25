@@ -1,11 +1,24 @@
 # Nora
 
-A private ambient AI agent for a friend group's chat — Signal, Discord,
-WhatsApp and Instagram. She reads every message silently, answers when tagged, and — in
-rooms the operator has opted in — may speak once on her own: when a room goes
-quiet (participation), or when a pass over what the group has left open
-decides something is worth raising at a chosen hour (proactive). Nora v2 is a
-two-layer, [Strands Agents SDK](https://github.com/strands-agents/sdk-python)-based
+Nora is a persistent member of one circle of friends, not a bot in their
+chat. She is in the rooms where they talk — Signal, Discord, WhatsApp and
+Instagram groups, and a Discord voice channel — and, where people share it
+with her, she can see where they are (their Life360 circle), whether they are
+online or playing (Discord, Steam) and what they post (Instagram). She keeps what she learns at
+several time scales: the words themselves, each room's current position, the
+group's open questions, what each room has become, and what she has
+concluded about each person.
+
+She answers when tagged. In rooms the operator has opted in, she may also
+speak once on her own: when a room goes quiet (participation), or when a pass
+over what the group left open decides something is worth raising at a chosen
+hour (proactive). Tagged under a public Instagram post by someone she knows,
+she may answer once in public, with no room and no memory behind her
+(summons). What she may *do* with what she knows is governed apart from what
+she can *see*: `ARCHITECTURE.md` §8, «What she may do with what she knows».
+
+Under the hood Nora v2 is a two-layer,
+[Strands Agents SDK](https://github.com/strands-agents/sdk-python)-based
 rebuild of the original hand-rolled v1 — `ARCHITECTURE.md` (arc42) is the
 map; `design/00-overview.md` is the v2 rebuild's original plan (Signal only,
 SQLite), kept as history.
