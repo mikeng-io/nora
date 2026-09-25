@@ -168,7 +168,15 @@ def _sibling(url: str, name: str) -> str:
 #: never re-migrated per case) and it is dropped once, at run end, by
 #: `close_private_blank_templates`. `_migrated` gates re-entry into
 #: `_blank_template` for a given URL; this is what that re-entry returns.
-_private_blanks: dict[str, str] = {}
+#:
+#: `dict()`, not a `{}` literal, to match `_migrated` above: both are the
+#: same shape (a process-lifetime cache, constructed once, mutated by
+#: `.add`/subscript as the process runs), and
+#: `tests/architecture/test_no_module_level_mutable_singletons.py` reads a
+#: literal `{}`/`[]`/`{...}` that is mutated as a singleton — the DEC-13
+#: shape it exists to catch — but not a call to a builtin constructor,
+#: exactly as it already reads `_migrated`'s `set()` call.
+_private_blanks: dict[str, str] = dict()  # noqa: C408
 
 
 async def _blank_template(source_url: str) -> str:
