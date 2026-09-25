@@ -668,10 +668,15 @@ def self_account() -> str:
     doctrine = DoctrineStore(
         ROOT / "nora" / "doctrine", canary="C", metrics=Metrics(),
     ).get(applies_to="tag")
-    for section in doctrine.sections:
-        if section.name == "identity":
-            return section.body
-    raise AssertionError("identity.md must ship and must apply to the tag path")
+    # Since 2026-09-25 the self-account a ROOM receives is two sections:
+    # identity.md (true on any surface) and belonging.md (her place in a
+    # group, and the two halves that serve a room). The claims pinned below
+    # span both, so the fixture is both, in the order a tag assembles them.
+    bodies = {s.name: s.body for s in doctrine.sections}
+    missing = {"identity", "belonging"} - set(bodies)
+    if missing:
+        raise AssertionError(f"{sorted(missing)} must ship and must apply to the tag path")
+    return bodies["identity"] + "\n" + bodies["belonging"]
 
 
 def _portal_routes() -> tuple[str, ...]:
@@ -1064,9 +1069,17 @@ def test_the_view_is_named_as_material_she_may_not_recite_not_as_a_sanction(
     # The self-account is DOCTRINE since 2026-09-17, so it is in the doctrine
     # payload — and must NOT be in the skills payload, which is what would
     # silently happen if the retired skill were ever restored beside it.
-    assert self_account.strip() in in_her_prompt
+    # Two sections since the 2026-09-25 split (identity + belonging): each half
+    # is served, and neither is a skill.
+    halves = [s.body.strip() for s in store.get(applies_to="tag").sections
+              if s.name in ("identity", "belonging")]
+    assert len(halves) == 2
+    assert all(_flat(h) in _flat(self_account) for h in halves)
+    for half in halves:
+        assert half in in_her_prompt
     skills = asyncio.run(build_skills_payload(skills_dir=SKILLS_DIR))
-    assert self_account not in {s["instructions"] for s in skills}
+    for half in halves:
+        assert half not in {s["instructions"] for s in skills}
 
 
 def test_the_self_account_says_who_can_reach_the_web_view_and_who_cannot(
