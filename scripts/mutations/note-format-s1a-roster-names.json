@@ -1,0 +1,23 @@
+[
+  {
+    "name": "S1a: note-candidates renders the batch unprojected (profile names) again",
+    "file": "nora/language/note_candidates.py",
+    "old": "            batch = self._persons.name_transcript(batch, platform=platform)",
+    "new": "            pass",
+    "target": "tests/unit/test_note_candidates.py::test_the_batch_names_each_member_by_the_roster_not_the_profile"
+  },
+  {
+    "name": "S1a: the clock-driven pass renders profile names again (runtime level)",
+    "file": "nora/language/note_candidates.py",
+    "old": "            batch = self._persons.name_transcript(batch, platform=platform)",
+    "new": "            pass",
+    "target": "tests/unit/test_runtime.py::test_the_dreamer_batch_stays_unprojected_and_note_candidates_names_the_roster"
+  },
+  {
+    "name": "S1a eval path: minted sender ids are left minted",
+    "file": "nora/subject/dreaming.py",
+    "old": "                row = replace(row, sender_id=sorted(ids)[0])",
+    "new": "                pass",
+    "target": "tests/unit/test_subject_dreaming.py::test_a_minted_sender_is_given_back_an_id_the_roster_resolves"
+  }
+]
