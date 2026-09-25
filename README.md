@@ -22,7 +22,7 @@ Under the hood she is a two-layer,
 [Strands Agents SDK](https://github.com/strands-agents/sdk-python)-based
 rebuild of a hand-rolled original — `ARCHITECTURE.md` (arc42) is the map;
 `design/00-overview.md` is that rebuild's first plan (Signal only, SQLite),
-kept as history. Her releases are tagged `V1`, `V3`, `V4`…, one
+kept as history. Her releases are tagged `V1`, `V2`, `V3`…, one
 `docs/releases/V<n>.md` each; the rebuild is not a release number
 («Versions, and the note she posts after an upgrade», below).
 
@@ -479,8 +479,10 @@ docker compose up -d --no-build
 
 ### Versions, and the note she posts after an upgrade
 
-Nora's version is **baked into the image at build time** — plain `V1`, `V3`, `V4`, no
-semver (there is no `V2` tag; `pyproject.toml`'s `version` is not the release). Build with the wrapper rather than `docker build` directly:
+Nora's version is **baked into the image at build time** — plain `V1`, `V2`, `V3`, no
+semver (`pyproject.toml`'s `version` is not the release). A tag is made on the deploy host
+by `scripts/release.py`, so push it (`git push origin V<n>`): `V2` sat on the host alone
+from 2026-08-12 until V5. Build with the wrapper rather than `docker build` directly:
 
 ```bash
 uv run python scripts/render_release_notes.py
