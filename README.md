@@ -4,7 +4,8 @@ Nora is a persistent member of one circle of friends, not a bot in their
 chat. She is in the rooms where they talk — Signal, Discord, WhatsApp and
 Instagram groups, and a Discord voice channel — and, where people share it
 with her, she can see where they are (their Life360 circle), whether they are
-online or playing (Discord, Steam) and what they post (Instagram). She keeps what she learns at
+online or playing (Discord, Steam), and an Instagram profile, a post someone
+links, or a story from someone in one of her rooms. She keeps what she learns at
 several time scales: the words themselves, each room's current position, the
 group's open questions, what each room has become, and what she has
 concluded about each person.
@@ -14,7 +15,7 @@ speak once on her own: when a room goes quiet (participation), or when a pass
 over what the group left open decides something is worth raising at a chosen
 hour (proactive). Tagged under a public Instagram post by someone she knows,
 she may answer once in public, with no room and no memory behind her
-(summons). What she may *do* with what she knows is governed apart from what
+(summons; built, shipped disabled and in dry-run). What she may *do* with what she knows is governed apart from what
 she can *see*: `ARCHITECTURE.md` §8, «What she may do with what she knows».
 
 Under the hood Nora v2 is a two-layer,
@@ -134,7 +135,8 @@ too: a reminder coming due, a gathering's notify, a version announcement, a
 compute job, a relay, and two that the operator grants per room:
 
 - **participation** (design/dreamer-agent-loop/35): an untagged message in a
-  room with `participation = true` in `policy.toml` is noted, and once the
+  room with `relevance_gate = true` in `policy.toml` (the per-room opt-in,
+  renamed from `participation`) is noted, and once the
   room goes quiet for `[participation] settle_seconds` ONE determination runs
   with the right to stay silent, at most one send per room per
   `[participation] cooldown_minutes`. Optionally in front of it, the
@@ -208,8 +210,8 @@ Who may talk to her, and where, lives in `policy.toml` (see
 each with its `persons`, its `unit` (the social unit a room belongs to —
 rooms sharing one are the same people reachable in more than one place, and
 notes and relays are scoped to it), and the per-room grants: `location` (may
-`where_is` disclose here), `relevance_gate`, `participation`, `home_room` and
-`proactive`. `nora groups` prints every group's id beside its name.
+`where_is` disclose here), `relevance_gate` (may she speak here uncalled — the
+participation opt-in), `home_room`, `proactive` and `voice`. `nora groups` prints every group's id beside its name.
 
 Peer identity mapping lives in a separate file, `identity.toml` (see
 `identity.example.toml`): one `[[persons.<person_id>.<platform>]]` block per **account**,
