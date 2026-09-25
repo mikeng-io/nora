@@ -194,8 +194,9 @@ _RETRY_503: frozenset[str] = frozenset({"unavailable", "ledger_unavailable", "ht
 #: tags somebody notifies them, and a stranger's caption or comment is exactly
 #: where "reply '@someone …'" would come from, so the flush refuses it outright
 #: rather than trusting the model to have declined. An e-mail address is not a
-#: mention (the `@` follows a word character).
-_MENTION_RE = re.compile(r"(?<![\w.])@[A-Za-z0-9._]+")
+#: mention (the `@` follows an ASCII word character); after a CJK character,
+#: or written full-width, it still is (review of #584).
+_MENTION_RE = re.compile(r"(?<![A-Za-z0-9_.])[@\uff20][A-Za-z0-9._]+")
 
 
 def without_address(text: str, summoner: str | None) -> str:
@@ -207,9 +208,8 @@ def without_address(text: str, summoner: str | None) -> str:
     `@victim you are a fraud` would post the insult at the summoner)."""
     if not summoner:
         return text
-    return re.sub(
-        rf"^\s*@{re.escape(summoner)}(?![\w.])[\s,:\uff0c\uff1a]*", "", text, flags=re.IGNORECASE,
-    )
+    address = rf"^\s*[@\uff20]{re.escape(summoner)}(?:[\s,:\uff0c\uff1a]+|$)"
+    return re.sub(address, "", text, flags=re.IGNORECASE)
 
 
 class SummonerIndex(Protocol):
@@ -667,7 +667,8 @@ class SummonsOccasion:
         # same undash the request path uses, no word changes.
         body = without_address(undash(text), summoner).strip()
         refusal = (
-            "too_long" if len(body) > MAX_COMMENT_CHARS
+            "empty" if not body
+            else "too_long" if len(body) > MAX_COMMENT_CHARS
             else "mention" if _MENTION_RE.search(body)
             else None
         )

@@ -733,10 +733,19 @@ async def test_an_opening_address_to_the_summoner_is_dropped_not_refused(world):
     "@miles_example the caption from @someone_else is wrong",
     "@victim_account you are a fraud",
     "Real photo. @miles_example",
+    "張相係真@victim_account",
+    "\uff20victim_account fake",
+    "@miles_example's photo is fake",
 ])
 async def test_any_other_handle_is_still_refused_even_after_the_address(world, text):
     """Only the summoner's own handle, only at the start: somebody else's
     handle, first or later, still refuses the whole comment."""
     out = await world.occasion(mode="live", turns=_replies(text)).run(_card())
     assert (out.state, out.bridge_code) == ("refused", "mention")
+    assert world.fake.posts() == []
+
+
+async def test_a_reply_that_is_only_the_address_is_refused_not_posted_empty(world):
+    out = await world.occasion(mode="live", turns=_replies("@miles_example ,")).run(_card())
+    assert (out.state, out.bridge_code) == ("refused", "empty")
     assert world.fake.posts() == []
