@@ -44,5 +44,7 @@ Shared modules at this level:
   `FakeClock`, `FixedModelSource`). Port fakes live in `nora/testing/`.
 - `fixtures/` — captured data files.
 
-Run `make test-affected` while iterating and `make gate` before claiming
-anything is done (`AGENTS.md`, *Gate commands*).
+Run `make test-affected` (or the tests you touched) while iterating, and
+`make gate` once, on the final head, before claiming a PR is done — never a
+gate per fix round. `make full-gate` runs the whole suite serially and
+unconditionally (`AGENTS.md`, *Gate commands*).
