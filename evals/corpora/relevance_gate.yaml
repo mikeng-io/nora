@@ -2,7 +2,7 @@
 #
 # This grades the GATE, not a turn: each case is `transcript + standing ->
 # expected verdict`, driven through the real `RelevanceGate.decide` against
-# the real `nora/doctrine/participation.md` and the real model. No agent, no
+# the real `nora/doctrine/instruments/participation.md` and the real model. No agent, no
 # tools, no turn.
 #
 # PROVENANCE, because it is what makes these labels worth anything:

@@ -304,7 +304,7 @@ It would matter the day an edit re-delivers a share with its media, and then
 only for shares already in the record. Not fixed.
 
 **Possible follow-up: the reaction picker's reading of the label.**
-`nora/doctrine/reaction.md` tells the GIF picker that `[sticker …]` and
+`nora/doctrine/instruments/reaction.md` tells the GIF picker that `[sticker …]` and
 `[image …]` lines are «people answering with a picture instead of words». A
 `[cover image …]` is not that; it is the still of something shared. One clause
 saying so was drafted in #454 and taken back out: it is a doctrine change,

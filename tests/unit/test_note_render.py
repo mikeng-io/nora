@@ -129,7 +129,7 @@ def test_the_note_keeps_the_machinery_out_of_the_room():
     Scoped to the APPARATUS, and both halves are asserted, because the ban on
     its own is wider than the defect. #226(b) was the tool layer's WORD, not
     the subject; an unqualified «never mention the notes» would forbid the
-    honest answer `nora/doctrine/conduct.md` already requires when she has
+    honest answer `nora/doctrine/rooms/conduct.md` already requires when she has
     looked and found nothing, and would contradict, on the same turn, a skill
     that tells her she holds what a room has left unsettled. The permission
     sentence is what keeps the ban readable as a ban on the machinery."""

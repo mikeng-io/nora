@@ -27,7 +27,7 @@ to answer from, and a model with nothing to answer from answers anyway.
 
 ## Why the doctrine does not carry it, and must not
 
-`nora/doctrine/identity.md` forbids it in its own frontmatter (`not_here`):
+`nora/doctrine/core/identity.md` forbids it in its own frontmatter (`not_here`):
 *"No capability claims, and no instance of anything… a copy of it here would
 go stale in silence, as this file carried one for eight weeks."* The rule is
 right. A room list or capability list typed into doctrine is correct on the

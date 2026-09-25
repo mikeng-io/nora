@@ -283,9 +283,18 @@ def test_no_tool_asks_the_model_which_conversation_it_is_in(wiring):
 
 _DOCTRINE = Path(__file__).resolve().parents[1] / "nora" / "doctrine"
 
+# name -> scope folder, same table as tests/test_doctrine_content.py::_SCOPE_FOLDER.
+_DOCTRINE_SCOPE_FOLDER = {
+    "identity": "core", "constraints": "core",
+    "voice": "rooms", "conduct": "rooms", "silence": "rooms",
+    "participation-conduct": "rooms",
+    "participation": "instruments", "reaction": "instruments",
+}
+
 
 def _flat(name: str) -> str:
-    return " ".join((_DOCTRINE / f"{name}.md").read_text().split())
+    folder = _DOCTRINE_SCOPE_FOLDER[name]
+    return " ".join((_DOCTRINE / folder / f"{name}.md").read_text().split())
 
 
 def test_the_three_reply_defects_live_in_the_doctrine_not_the_send_reply_schema(wiring):
@@ -676,7 +685,7 @@ def test_a_second_message_must_earn_its_place():
     this incident.
     """
     section = " ".join(
-        (_DOCTRINE / "conduct.md").read_text()
+        (_DOCTRINE / "rooms" / "conduct.md").read_text()
         .split("# Follow the conversation", 1)[1].split("\n# ", 1)[0].split()
     ).lower()
     assert "has to earn its place" in section, (
