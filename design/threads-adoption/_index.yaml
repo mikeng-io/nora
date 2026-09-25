@@ -1,0 +1,33 @@
+kind: design_index
+title: "Threads: Nora answers where she is summoned, in public, from facts"
+description: >
+  A third kind of surface beside PlatformAdapter (rooms) and SocialProvider
+  (read-only reads). A summons on Threads, a mention of @noraexample in a
+  reply under a post, opens its own occasion: the chain is comprehended once
+  with ages, the model runs with a public-only tool grant (web search, media,
+  image generation, no memory or room tools), and a staging deliverer
+  publishes exactly one reply to that summons through a threads-bridge
+  sidecar that alone holds the token and alone can write. Polling first,
+  webhooks only on evidence. Blocked today: the token answers "API access
+  blocked".
+status: proposed
+governance: operator-directed
+timestamp: '2026-09-25'
+origin: >
+  Operator 2026-09-25: "Threads is completely different from all previous
+  integrations: it is not a platform adapter, but rather a social adapter.
+  When I tag Nora in a reply to a post (for example, asking questions like
+  'Is it true?'), it shouldn't just answer my question directly. It also
+  needs to reply based on facts via web search, etc., or even image
+  generation, similar to Grok or Meta AI."
+members:
+  - 00-intent.md
+  - 10-architecture.md
+  - 20-plan-and-verification.md
+edges:
+  - {src: 00-intent, dst: 10-architecture, rel: sequences, provenance: asserted}
+  - {src: 00-intent, dst: 20-plan-and-verification, rel: sequences, provenance: asserted}
+  - {src: 10-architecture, dst: 00-intent, rel: realizes, provenance: asserted}
+  - {src: 20-plan-and-verification, dst: 10-architecture, rel: depends_on, provenance: asserted}
+  - {src: 00-intent, dst: ../instagram-adoption/08-social-adapter-architecture.md, rel: extends, provenance: asserted}
+  - {src: 00-intent, dst: ../social-per-network/00-intent.md, rel: supersedes-scope-note, provenance: asserted}
