@@ -7499,6 +7499,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         _record(
             metrics, "web_fetch", out["status"],
             truncated=bool(out.get("truncated")),
+            saved_copy=bool(out.get("saved_copy")),
         )
         return _with_note(out, _FETCH_NOTES)
 

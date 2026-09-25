@@ -29,7 +29,7 @@ class _Exa:
     per-mode failures (401 bad key, 422 bad param)."""
 
     def __init__(self) -> None:
-        # ok | empty | unauth | badparam | notjson | failed | malformed | live_fails
+        # ok | empty | unauth | badparam | notjson | failed | malformed | live_fails | gone
         # `live_fails`: a crawl fails, the cache (`maxAgeHours: -1`) answers.
         self.mode = "ok"
         self.requests: list[dict] = []
@@ -79,6 +79,13 @@ class _Exa:
         if (failed := self._failure()) is not None:
             return failed
         live_failed = self.mode == "live_fails" and body_age(self.contents_requests[-1]) != -1
+        if self.mode == "gone":
+            return web.json_response({
+                "requestId": "r2", "results": [],
+                "statuses": [{"id": "https://gone.example/x", "status": "error",
+                              "source": "crawled",
+                              "error": {"tag": "CRAWL_NOT_FOUND", "httpStatusCode": 410}}],
+            })
         if self.mode in ("empty", "failed") or live_failed:
             # Exa's own miss: nothing crawled, and the statuses array says why.
             return web.json_response({
@@ -87,7 +94,7 @@ class _Exa:
                 "statuses": [{
                     "id": "https://dead.example/x", "status": "error",
                     "source": "crawled",
-                    "error": {"tag": "CRAWL_NOT_FOUND", "httpStatusCode": 404},
+                    "error": {"tag": "CRAWL_TIMEOUT"},
                 }],
             })
         if self.mode == "malformed":
@@ -433,6 +440,7 @@ async def test_a_failed_fresh_read_falls_back_to_the_saved_copy_and_says_so(exa)
     # The reading rule comes before the page text it is about.
     assert list(out)[:2] == ["status", "note"]
     assert "saved copy" in out["note"] and "out of date" in out["note"]
+    assert "never that they're wrong" in out["note"]
     assert out["text"].startswith("<fetched_page ")
 
 
@@ -458,3 +466,28 @@ async def test_a_call_failure_is_not_retried_against_the_cache(exa):
     fake.mode = "unauth"
     assert (await provider.fetch(url="https://hko.gov.hk/x"))["status"] == "unavailable"
     assert len(fake.contents_requests) == 1
+
+
+async def test_a_page_the_site_says_is_gone_is_not_retried_against_the_cache(exa):
+    """A saved copy of a page that answers 410 describes something that no
+    longer exists, so the gone answer stands."""
+    fake, provider = exa
+    fake.mode = "gone"
+    assert (await provider.fetch(url="https://gone.example/x"))["status"] == "nothing_found"
+    assert len(fake.contents_requests) == 1
+
+
+async def test_the_live_crawl_gives_up_before_our_client_does(exa):
+    """A client timeout is `unavailable` and never reaches the cache, so Exa's
+    own crawl limit is sent under `timeout_seconds` (5 s in this fixture)."""
+    fake, provider = exa
+    await provider.fetch(url="https://hko.gov.hk/x")
+    assert fake.contents_requests[0]["livecrawlTimeout"] == 1000
+    fake.mode = "live_fails"
+    await provider.fetch(url="https://hko.gov.hk/x")
+    assert "livecrawlTimeout" not in fake.contents_requests[-1]   # cache only
+
+
+def test_the_live_crawl_limit_follows_the_client_timeout():
+    assert ExaSearchProvider(api_key="k", timeout_seconds=12.0)._livecrawl_timeout_ms() == 8000
+    assert ExaSearchProvider(api_key="k", timeout_seconds=500.0)._livecrawl_timeout_ms() == 90000
