@@ -33,10 +33,18 @@ stated in 1200 characters is a summary, not a position: the tier is lossy by
 design, so a cap that never binds would mean it had stopped being lossy.
 
 Framework-free, per `nora/domain/`'s rule: stdlib and dataclasses only.
+
+**`working_set` (design/standing-compact/30-working-set.md, issue #445).** A
+second, small structured field beside `body`: things the fold found this turn
+and has not yet given the room — a restaurant a search returned but the reply
+only sent two of, not yet a position because nobody has been told. Its own
+budget, own render, own TTL; `body`'s own cap, rank order and consolidation
+are unchanged (§7 — this field does not touch them). See `WorkingSetItem`.
 """
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 
 #: The absolute ceiling on `Standing.body`, enforced HERE and by
@@ -94,6 +102,142 @@ DEFAULT_STANDING_STORE_TIMEOUT_SECONDS = 5.0
 #: `notes_sink.propose` went with them.
 STANDING_STORE_CALLS_PER_FOLD = 4
 
+#: The ABSOLUTE ceiling on how many items `Standing.working_set` may hold —
+#: the `working_set` sibling of `STANDING_BODY_CEILING_CHARS`: asserted HERE,
+#: in `Standing.__post_init__`, and again as
+#: `standing_working_set_item_count_fits_the_ceiling_check` in the database.
+#: Not the operating value (`[standing] working_set_max_items`, `StandingConfig`)
+#: — a backstop against a config typo, far above the operating default the same
+#: way 4000 sits above 1200 for the body.
+WORKING_SET_CEILING_ITEMS = 20
+
+#: The ABSOLUTE ceiling on the rendered JSON size, in BYTES, of
+#: `Standing.working_set` as a whole — asserted HERE and again as
+#: `standing_working_set_fits_the_ceiling_check` in the database. `octet_length`
+#: rather than a character count because the check on the Postgres side reads
+#: the jsonb value cast to `text`, which is byte-denominated; this domain-side
+#: figure is computed from the same field order (`_working_set_payload`) and is
+#: a close, not exact, match to Postgres's own re-serialisation (jsonb
+#: normalises key order and spacing on the way back out) — close enough for a
+#: backstop that exists to catch a typo, not to be a second copy of Postgres's
+#: serialiser.
+WORKING_SET_CEILING_BYTES = 2400
+
+#: Render-time TTL (design §2): a working-set item older than this renders
+#: ABSENT, never stale — no new deterministic sweep, the render function
+#: filters on `now - found_at` before it builds the block. The same order as
+#: DEC-203's two-day past-anchor lapse.
+WORKING_SET_TTL_HOURS = 48.0
+
+#: The default OPERATING cap — `[standing] working_set_max_items` —
+#: `DEFAULT_STANDING_MAX_CHARS`'s sibling: how many items the write path
+#: keeps before refusing the whole set and keeping the prior's (§1). Its own
+#: budget, separate from the body's 1200 characters, on purpose: a found
+#: option is not prose competing with "concluded or committed" clauses for
+#: the same cap under a rank order that puts it last.
+DEFAULT_WORKING_SET_MAX_ITEMS = 5
+
+#: The default OPERATING cap — `[standing] working_set_max_chars` — the
+#: rendered JSON size (all items combined) the write path refuses at.
+#: Refuse-and-keep-the-prior on overflow, never a silent truncation, the same
+#: argument `DEFAULT_STANDING_MAX_CHARS` makes for the body.
+DEFAULT_WORKING_SET_MAX_CHARS = 600
+
+
+@dataclass(frozen=True, slots=True)
+class WorkingSetItem:
+    """One thing the fold found this turn and has not yet given the room —
+    `Standing.working_set`'s element (design/standing-compact/30-working-set.md
+    §1, issue #445).
+
+    Not prose: a working-set item is a short, independently droppable string,
+    not a clause competing inside the 1200-character paragraph for the same
+    rank `body`'s own consolidation order already gives "concluded or
+    committed" over "found" (§1).
+
+    `found_at` is epoch ms, the SAME clock `Standing.updated_at` uses — **the
+    write path stamps it from its own instant; the model is never asked for
+    it and a model-supplied value is never trusted**, for `Standing`'s own
+    rule: "there is no second clock". `source` names the step (a tool call,
+    named) the item came from — provenance constrained to what the fold was
+    actually shown, never a paraphrase of the room's question. `bears_on` is
+    nullable: filled only when an open plan already named in the position
+    tells the reader what the item is FOR.
+    """
+
+    what: str
+    source: str
+    found_at: int
+    bears_on: str | None = None
+
+    def __post_init__(self) -> None:
+        if not self.what or not self.what.strip():
+            raise ValueError("a WorkingSetItem needs a what")
+        if not self.source or not self.source.strip():
+            raise ValueError("a WorkingSetItem needs a source")
+        if self.found_at < 0:
+            raise ValueError("found_at is never negative")
+        if self.bears_on is not None and not self.bears_on.strip():
+            # `None` is "no plan named"; a value has to be a real one, not a
+            # second spelling of absence — the same argument
+            # `last_folded_row_id`'s `None`-vs-`0` split makes.
+            raise ValueError("bears_on is a plan or None, never a blank string")
+
+
+def _working_set_payload(
+    items: tuple[WorkingSetItem, ...],
+) -> list[dict[str, object]]:
+    """`working_set`, as the plain JSON-shaped value both the store and the
+    ceiling check serialise — ONE mapping, so a field added to
+    `WorkingSetItem` cannot land in the database and not in the ceiling
+    check, or the reverse."""
+    return [
+        {
+            "what": item.what, "source": item.source,
+            "found_at": item.found_at, "bears_on": item.bears_on,
+        }
+        for item in items
+    ]
+
+
+def working_set_to_json(items: tuple[WorkingSetItem, ...]) -> list[dict[str, object]]:
+    """`Standing.working_set` as the value `SqlStandingStore`/
+    `InMemoryStandingStore` hand to a jsonb column — a plain list of dicts,
+    which SQLAlchemy's asyncpg dialect serialises itself (`tool_call_log`'s
+    own precedent: a JSONB column is written the Python value directly, never
+    a hand-rolled `json.dumps`)."""
+    return _working_set_payload(items)
+
+
+def working_set_from_json(raw: object) -> tuple[WorkingSetItem, ...]:
+    """The inverse of `working_set_to_json` — a stored jsonb value (already
+    decoded to Python by the driver) back into typed items.
+
+    `None` and anything not a list read as "no working set" rather than
+    raising: a row written before this column existed reads back `[]` from
+    the column's own `server_default`, but a defensive reader costs nothing
+    and a NULL is not a state this column should be able to reach malformed.
+    """
+    if not isinstance(raw, list):
+        return ()
+    items: list[WorkingSetItem] = []
+    for entry in raw:
+        if not isinstance(entry, dict):
+            continue
+        what = entry.get("what")
+        source = entry.get("source")
+        found_at = entry.get("found_at")
+        bears_on = entry.get("bears_on")
+        if not isinstance(what, str) or not isinstance(source, str):
+            continue
+        if not isinstance(found_at, int):
+            continue
+        items.append(WorkingSetItem(
+            what=what, source=source, found_at=found_at,
+            bears_on=bears_on if isinstance(bears_on, str) else None,
+        ))
+    return tuple(items)
+
 
 @dataclass(frozen=True, slots=True)
 class Standing:
@@ -124,6 +268,13 @@ class Standing:
     # sentinel that could compare equal to a real row id is a watermark
     # satisfiable by accident, so the only "never folded" spelling is `None`.
     last_folded_row_id: int | None = None
+    # Things the fold found this turn and has not yet given the room — its
+    # own budget, own render, own TTL (module docstring, §1 above). `()` is
+    # the correct reading of every row written before this field existed: no
+    # backfill, the same argument migration 0059 made for `standing_revision`
+    # not backfilling history that never existed. LAST, because a defaulted
+    # field cannot precede the ones above it.
+    working_set: tuple[WorkingSetItem, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.body or not self.body.strip():
@@ -141,3 +292,16 @@ class Standing:
             # beginning; `0` would be a second spelling of that state that
             # compares unequal to it, and messages ids start at 1 anyway.
             raise ValueError("last_folded_row_id is a row id or None")
+        if len(self.working_set) > WORKING_SET_CEILING_ITEMS:
+            raise ValueError(
+                f"Standing.working_set holds {len(self.working_set)} items, "
+                f"over the {WORKING_SET_CEILING_ITEMS}-item ceiling"
+            )
+        rendered_bytes = len(json.dumps(
+            _working_set_payload(self.working_set),
+        ).encode("utf-8"))
+        if rendered_bytes > WORKING_SET_CEILING_BYTES:
+            raise ValueError(
+                f"Standing.working_set is {rendered_bytes} bytes rendered, "
+                f"over the {WORKING_SET_CEILING_BYTES}-byte ceiling"
+            )

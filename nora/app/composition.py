@@ -2084,6 +2084,8 @@ async def build_dependencies(
             timeout_seconds=cfg.standing.timeout_seconds,
             store_timeout_seconds=cfg.standing.store_timeout_seconds,
             max_chars=cfg.standing.max_chars,
+            working_set_max_items=cfg.standing.working_set_max_items,
+            working_set_max_chars=cfg.standing.working_set_max_chars,
             # The room's account above the prior (DEC-207), keyed through the
             # policy to the room's `primary_id` — `culture_key` is `None` for a
             # room outside it.
@@ -2777,6 +2779,8 @@ async def build_dependencies(
             fold_batch=cfg.standing.fold_batch,
             timeout_seconds=cfg.standing.timeout_seconds,
             store_timeout_seconds=cfg.standing.store_timeout_seconds,
+            working_set_max_items=cfg.standing.working_set_max_items,
+            working_set_max_chars=cfg.standing.working_set_max_chars,
         )
     engagement = EngagementPipeline(
         # EVERY built adapter, not just Signal's: a tag is answered on the
