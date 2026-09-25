@@ -289,15 +289,22 @@ cases:
       tag_id: 637033a5c55549549dd3b1f12ef68c17
       kind: residue
     expected_output: |
-      A member asked for restaurant recommendations near a venue the group
-      had picked for a dated outing. Her web searches and place lookups
-      returned several restaurants of the kind asked for; the reply the room
-      received — the delivered row — recommended two. The outing is still
-      ahead and the choice is still open. The new position must carry at
-      least one restaurant that the searches found and the delivered reply
-      did NOT name, with where it came from (which search or source found
-      it). Carrying only the two the reply already recommended does not
-      satisfy.
+      A member asked for chicken-hotpot (雞煲) recommendations near a bowling
+      venue the group had picked for a dated outing in Kai Tak (啟德). Her web
+      searches and place lookups turned up chicken-hotpot places in several
+      different districts, not all near the venue, plus at least one unrelated
+      kind of place (a dim-sum house); the reply the room received — the
+      delivered row — recommended two chicken-hotpot places that ARE near the
+      venue. The outing is still ahead and the choice is still open. The new
+      position must carry at least one UNSENT chicken-hotpot option that is
+      both (a) the kind asked for — chicken hotpot, not a dim-sum house, a
+      bowling venue, or any other kind of place — and (b) near the venue
+      (Kai Tak / San Po Kong / Kowloon City), with where it came from (which
+      search or source found it). Carrying only the two the reply already
+      recommended does not satisfy; neither does carrying an unsent place that
+      fails (a) or (b) — a chicken-hotpot place in a different district (Tsim
+      Sha Tsui, Mong Kok, Causeway Bay, Yuen Long, ...), or a place of a
+      different kind near the venue.
 
   # --- recap (control) --------------------------------------------------------
 
