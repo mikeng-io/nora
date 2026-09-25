@@ -85,7 +85,7 @@ Signal / Discord / WhatsApp / Instagram room
    collect context (transcript window, standing, open notes, self card,
                     tagger's peer history, doctrine)
    → Agent(messages=[pre-filled context]) → agent.invoke_async(tag_message)
-   → 64 native tools (`NATIVE_TOOLS`); each tool's schema is its only
+   → 63 native tools (`NATIVE_TOOLS`, plus the `skills` plugin row); each tool's schema is its only
      description (DEC-150 deleted the generated capability section). Among them:
        transcript & memory   load_transcript / who_said / search_memory / about / ask_memory / remember
        people & places       group_members / lookup_person / where_is / saved_places / route / transit / weather / parking
@@ -150,8 +150,8 @@ the stores, pre-filled into each fresh agent's context:
 | the words, verbatim | Postgres `messages` | the record (`load_transcript`, `search_memory`) |
 | conclusions about each person, and about herself | Honcho | memory (`about`, `ask_memory`, `<self_card>`) |
 | the group's open questions — a dinner not yet placed, a trip not yet booked | Postgres `note` | the note tier (`<notes>`, `note_read`; written by people on a tag and by the `note-candidates` adaptor) |
-| her own position on where each room's conversation stands, plus a working set of options she found and has not yet given the room | Postgres `standing` | Standing (design 26; the room's compact, DEC-199; folded after each tag turn; working set #445) |
-| her account of what each room has become — how they talk, how things get decided | Postgres, one chain per room | the culture tier (`<culture>`; written daily by the `culture` adaptor, read by every occasion but the Relevance Gate, DEC-207) |
+| her own position on where each room's conversation stands, plus a working set of options she found and has not yet given the room | Postgres `standing` | Standing (design 26; the room's compact, DEC-199; folded after each tag turn and, from ingest, whenever `[standing] fold_batch` new messages have piled up since the last fold; working set #445) |
+| her account of what each room has become — how they talk, how things get decided | Postgres, one chain per room | the culture tier (`<culture>`; written daily by the `culture` adaptor, read by every occasion in a room but the Relevance Gate, DEC-207) |
 
 See `design/01-ambient-ingest.md`, `design/02-tagging-path.md`,
 `design/03-strands-reuse.md`, the `design/dreamer-agent-loop/` bundle for the
@@ -253,7 +253,8 @@ not hypothetical: `identity.md` (then `soul.md`) told Nora she knew two things f
 weeks after she knew five.
 
 `not_here` says what a file must NOT contain and where that lives instead; `change_policy`
-marks the `voice`, `identity` and `constraints` files and every Dreamer objective as
+marks the `identity`, `voice` and `constraints` files in every scope folder, `rooms/belonging.md`,
+`instruments/participation.md`, the Dreamer's own `dreamer.md` and every Dreamer objective as
 the operator's alone.
 
 ### Editing the doctrine — no restart required
