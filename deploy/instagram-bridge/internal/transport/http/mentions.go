@@ -3,7 +3,9 @@ package httptransport
 // GET /mentions — comment-mentions from Instagram's activity/notification
 // feed: the read-only probe route behind a later "summons" reply
 // (design/instagram-adoption task: Nora learning when someone @mentions her
-// in a COMMENT on a post).
+// in a COMMENT on a post). Superseded as the summons intake on 2026-09-26
+// (design 19): the summons arrives as a DM card and the SSE `summons` event;
+// this route stays as a read and authorizes no comment write.
 //
 // On 16's list convention: success is `{"items": [...], "next_cursor":
 // null, "skipped_story_types": {...}}` — items are domain-built DTOs, never

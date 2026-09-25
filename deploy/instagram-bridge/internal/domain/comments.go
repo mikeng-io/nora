@@ -4,13 +4,14 @@ package domain
 // write this bridge makes in public (design/instagram-adoption/19 §Account
 // safety, phases 2 and 4).
 //
-// The ledger is the bridge's own memory of two things: which comment
-// mentions it SERVED on `GET /mentions` (the only comments it may ever reply
-// to), and which replies it has claimed or published (so a summons is
-// answered at most once, and the rolling cap and spacing can be counted). The
-// rules live in the app layer; this file holds the vocabulary and the pure
-// arithmetic over it, so both the app and the session store can share it
-// without either importing the other.
+// The ledger is the bridge's own memory of two things: which summonses it
+// RECEIVED (a comment mentioning this account reaches it as a DM-thread card;
+// the gateway resolves the card to its post and records it here, design 19
+// "Intake, re-measured 2026-09-26"), and which replies it has claimed or
+// published (so a summons is answered at most once, and the rolling cap and
+// spacing can be counted). The rules live in the app layer; this file holds
+// the vocabulary and the pure arithmetic over it, so both the app and the
+// session store can share it without either importing the other.
 //
 // None of these values may enter a span, a log line or an error text: a
 // comment id, a media id, an author's igid or username, and above all a
@@ -99,11 +100,12 @@ type PostedComment struct {
 var (
 	// ErrWritesDisabled is INSTAGRAM_COMMENT_WRITES not being `on`.
 	ErrWritesDisabled = errors.New("comment writes are disabled in this bridge")
-	// ErrNotASummons is a reply target this bridge did not serve from
-	// GET /mentions, on this post, within the served window. It is also
-	// what a missing reply target answers: a top-level comment is never
-	// written.
-	ErrNotASummons = errors.New("the reply target is not a summons this bridge served on this post within the last 7 days")
+	// ErrNotASummons is a reply target that is not a summons: no summons
+	// card for this post reached the bridge within the served window, or
+	// the post's first comments page does not show that comment written by
+	// the card's sender and mentioning this account. It is also what a
+	// missing reply target answers: a top-level comment is never written.
+	ErrNotASummons = errors.New("the reply target is not a summons this bridge received for this post within the last 7 days")
 	// ErrAlreadyReplied is a summons with ANY reply attempt: claimed,
 	// published or failed.
 	ErrAlreadyReplied = errors.New("this summons already had its one reply attempt")
@@ -158,9 +160,10 @@ const MaxCommentRunes = 2200
 // --- the ledger -----------------------------------------------------------------
 
 const (
-	// ServedWindow is how long a served mention stays repliable, and how long
-	// the ledger keeps it. Reply records are NEVER pruned: they are tiny, and
-	// a pruned reply key is a summons that can be answered a second time.
+	// ServedWindow is how long a received summons stays repliable, and how
+	// long the ledger keeps it. Reply records are NEVER pruned: they are
+	// tiny, and a pruned reply key is a summons that can be answered a
+	// second time.
 	ServedWindow = 7 * 24 * time.Hour
 	// CapWindow is the rolling window the daily cap counts over.
 	CapWindow = 24 * time.Hour
@@ -182,10 +185,28 @@ const (
 	ReplyFailed ReplyState = "failed"
 )
 
-// ServedMention is one comment mention the bridge served on GET /mentions.
-type ServedMention struct {
-	MediaID  string
-	ServedAt time.Time
+// Summons is one summons card the gateway resolved to its post: a comment
+// mentioning this account, as it reached the account's DM thread. It is
+// what the ledger records when the SSE `summons` event goes out with
+// resolved=true.
+type Summons struct {
+	// MessageID is the card's DM message id: the ledger's key.
+	MessageID string
+	// Media is the post the card's target_url names.
+	Media MediaID
+	// Sender is the card's sender, the commenter: the ONLY author whose
+	// comment on Media may be answered on this card's authority.
+	Sender IGID
+	// ReceivedAt is when the card was sent (its timestamp), or when the
+	// bridge received it if it carried none.
+	ReceivedAt time.Time
+}
+
+// ServedSummons is one summons in the ledger.
+type ServedSummons struct {
+	MediaID    string
+	SenderIGID string
+	ReceivedAt time.Time
 }
 
 // Reply is one reply the bridge claimed, keyed in the ledger by the comment
@@ -199,11 +220,12 @@ type Reply struct {
 	CommentID string
 }
 
-// CommentLedger is the whole ledger at one instant. Maps are keyed by the
-// canonical comment id (CommentID.String()).
+// CommentLedger is the whole ledger at one instant. Replies is keyed by the
+// canonical comment id (CommentID.String()); Summonses by the card's DM
+// message id.
 type CommentLedger struct {
-	Served  map[string]ServedMention
-	Replies map[string]Reply
+	Summonses map[string]ServedSummons
+	Replies   map[string]Reply
 	// Blocked is the writes-off latch: set when Instagram answered a write
 	// with an action-block signal, and cleared only by an operator.
 	Blocked *WritesBlock
@@ -224,29 +246,37 @@ func (l *CommentLedger) Block(reason string, at time.Time) {
 
 // NewCommentLedger is an empty ledger.
 func NewCommentLedger() *CommentLedger {
-	return &CommentLedger{Served: map[string]ServedMention{}, Replies: map[string]Reply{}}
+	return &CommentLedger{Summonses: map[string]ServedSummons{}, Replies: map[string]Reply{}}
 }
 
-// RecordServed notes that the bridge served one mention. The FIRST serve
-// time is kept: the window runs from when the summons was first seen, not
-// from the latest poll that happened to show it again.
-func (l *CommentLedger) RecordServed(commentID CommentID, mediaID string, at time.Time) {
-	key := commentID.String()
-	if _, seen := l.Served[key]; seen {
-		return
-	}
-	l.Served[key] = ServedMention{MediaID: mediaID, ServedAt: at}
-}
-
-// IsSummons reports whether commentID was served on mediaID within the
-// served window before now.
-func (l *CommentLedger) IsSummons(commentID CommentID, mediaID string, now time.Time) bool {
-	s, ok := l.Served[commentID.String()]
-	if !ok || mediaID == "" || s.MediaID != mediaID {
+// RecordSummons notes one received summons and reports whether it was new.
+// The FIRST record is kept: the window runs from when the card was first
+// received, not from a replay of the same card.
+func (l *CommentLedger) RecordSummons(s Summons) bool {
+	if _, seen := l.Summonses[s.MessageID]; seen {
 		return false
 	}
-	age := now.Sub(s.ServedAt)
-	return age >= 0 && age <= ServedWindow
+	l.Summonses[s.MessageID] = ServedSummons{
+		MediaID: s.Media.String(), SenderIGID: s.Sender.String(), ReceivedAt: s.ReceivedAt,
+	}
+	return true
+}
+
+// SummonsSenders is the sender igid of every summons received for mediaID
+// within the served window before now: the only authors whose comments on
+// that post may be answered. Empty when there is none.
+func (l *CommentLedger) SummonsSenders(mediaID string, now time.Time) map[string]bool {
+	out := map[string]bool{}
+	if mediaID == "" {
+		return out
+	}
+	for _, s := range l.Summonses {
+		age := now.Sub(s.ReceivedAt)
+		if s.MediaID == mediaID && s.SenderIGID != "" && age >= 0 && age <= ServedWindow {
+			out[s.SenderIGID] = true
+		}
+	}
+	return out
 }
 
 // Replied reports whether commentID has ANY reply attempt, whatever its
@@ -298,12 +328,12 @@ func (l *CommentLedger) Settle(replyTo CommentID, state ReplyState, newID string
 	return true
 }
 
-// Prune drops served mentions older than the served window. Replies and
-// the latch are never pruned.
+// Prune drops summonses older than the served window. Replies and the latch
+// are never pruned.
 func (l *CommentLedger) Prune(now time.Time) {
-	for k, s := range l.Served {
-		if now.Sub(s.ServedAt) > ServedWindow {
-			delete(l.Served, k)
+	for k, s := range l.Summonses {
+		if now.Sub(s.ReceivedAt) > ServedWindow {
+			delete(l.Summonses, k)
 		}
 	}
 }

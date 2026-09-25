@@ -9,6 +9,8 @@ fi
 
 cd "$(dirname "$0")/.."
 VERSION="$1"
-uv run python scripts/gen_version_manifest.py --version "$VERSION"
+# python3, not `uv run`: the generator is stdlib-only, and `uv` is not on the
+# deploy host's non-interactive PATH, which is where a release runs.
+python3 scripts/gen_version_manifest.py --version "$VERSION"
 docker build --network=host --build-arg "NORA_VERSION=$VERSION" -t nora:"$VERSION" -t nora:latest .
 echo "built release nora:$VERSION"

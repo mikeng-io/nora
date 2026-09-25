@@ -148,14 +148,75 @@ def test_the_running_version_may_be_ahead_of_the_newest_tag(repo: Path):
 
 def test_a_dirty_tree_is_refused(repo: Path):
     """The image would contain code no commit describes, so the recorded commit
-    would name an artifact that never existed."""
-    (repo / "uncommitted.txt").write_text("half a change")
+    would name an artifact that never existed. A change to a TRACKED file is
+    dirty wherever it is."""
+    (repo / "a").write_text("half a change")
 
     done = _stamp(repo, "--version", "V2")
 
     assert done.returncode == 2
     assert "dirty" in done.stderr
     assert not (repo / "nora" / "version.json").exists()
+
+
+def test_an_untracked_file_the_image_copies_is_dirty(repo: Path):
+    """An untracked file under a directory the Dockerfile copies IS in the
+    image, and no commit describes it."""
+    (repo / "nora" / "stray.py").write_text("print('not committed')")
+
+    done = _stamp(repo, "--version", "V2")
+
+    assert done.returncode == 2
+    assert "dirty" in done.stderr
+
+
+def test_an_untracked_file_outside_the_image_is_not_dirty(repo: Path):
+    """The deploy host's checkout always holds untracked backups and tool
+    caches. None reaches the image, and refusing on them forced V5 through
+    `--allow-dirty`, which also waves through what the check is for."""
+    (repo / "config.toml.bak-20260907").write_text("a backup")
+    (repo / ".uacp").mkdir()
+    (repo / ".uacp" / "cache").write_text("a tool's cache")
+
+    done = _stamp(repo, "--version", "V2")
+
+    assert done.returncode == 0, done.stderr
+    assert (repo / "nora" / "version.json").exists()
+
+
+def test_the_image_dirs_are_every_directory_the_dockerfile_copies():
+    """`IMAGE_DIRS` is what the untracked half of the dirty check looks under,
+    so a directory the Dockerfile starts copying must join it, or untracked code
+    there ships unstamped."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("gen_version_manifest", GENERATOR)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    import json
+
+    # Join continuation lines first: a COPY split with `\\` is one instruction.
+    text = (ROOT / "Dockerfile").read_text().replace("\\\n", " ")
+    copied: set[str] = set()
+    for line in text.splitlines():
+        parts = line.split(maxsplit=1)
+        if len(parts) < 2 or parts[0].upper() not in ("COPY", "ADD"):
+            continue
+        body = parts[1]
+        if "--from" in body:  # from another stage, not the build context
+            continue
+        words = [w for w in body.split() if not w.startswith("--")]
+        if body.lstrip().startswith("["):
+            words = json.loads(body[body.index("["):])
+        for source in words[:-1]:
+            assert source.strip("./") != "", (
+                f"`{line.strip()}` copies the whole context; IMAGE_DIRS cannot bound it")
+            top = source.strip("./").split("/")[0]
+            if (ROOT / top).is_dir():
+                copied.add(top)
+    assert copied, "no directory COPY found: the Dockerfile parse is broken"
+    assert copied <= set(module.IMAGE_DIRS), copied - set(module.IMAGE_DIRS)
 
 
 def test_a_version_outside_the_scheme_is_refused(repo: Path):
@@ -279,6 +340,22 @@ def test_a_manual_release_tags_the_group_note_and_accumulated_changes(repo: Path
     note = _run(["git", "tag", "-l", "--format=%(contents)", "V3"], repo).stdout
     assert note.strip() == "今次係整順咗啲嘢，平時 restart 唔會再扮係新 version。"
     assert "fix: keep deployments untagged" not in note
+
+
+def test_a_manual_release_is_not_refused_by_an_untracked_backup(repo: Path):
+    """V5 could not run this on the deploy host: its checkout always holds
+    untracked backups, and the tag describes only committed files."""
+    (repo / "docs" / "releases").mkdir(parents=True)
+    (repo / "docs" / "releases" / "V3.md").write_text(
+        "# V3\n\n## Summary\nx\n\n## Group message\nV3 出咗。\n", encoding="utf-8")
+    _git(repo, "add", "docs/releases/V3.md")
+    _git(repo, "commit", "-qm", "docs: prepare V3 release")
+    (repo / "config.toml.bak-20260907").write_text("a backup")
+
+    done = _release(repo, "--skip-deploy")
+
+    assert done.returncode == 0, done.stderr
+    assert _run(["git", "tag", "-l", "V3"], repo).stdout.strip() == "V3"
 
 
 def test_a_manual_release_refuses_a_missing_group_note(repo: Path):

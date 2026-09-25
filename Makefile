@@ -135,7 +135,7 @@ release-notes:
 	uv run python scripts/render_release_notes.py
 
 release:
-	uv run python scripts/release.py
+	python3 scripts/release.py
 
 # --- build / deploy (README.md "Deployment") ---
 
