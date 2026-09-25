@@ -362,6 +362,54 @@ cases:
     metadata: {tools: [linkedin_search], not_tools: [linkedin_read, instagram_search, web_search]}
     snapshot: *room_a
 
+  # design/social-per-network/30-link-owner-registry.md, "Migration" PR 2:
+  # X and LinkedIn register in the link-owner registry, so `web_fetch`/
+  # `media_fetch` now REDIRECT a pasted page link instead of fetching it.
+  # These two are NOT `route_x_read_link`/`route_linkedin_read_profile_link`
+  # again (:321, :341 above): those forbid `web_fetch` outright (`not_tools`),
+  # so they grade whether the model already knows the right tool and never
+  # touch this PR's mechanism — reverting the whole registry leaves them
+  # green, because a model that reaches for `x_read` directly never asks
+  # `web_fetch` anything. These two PERMIT `web_fetch` and require the owner
+  # call to come after it when it runs: `before: {web_fetch: [x_read]}`
+  # (`metadata.before`, `ToolRouteGrader`, `evals/backbone.py:1697`) says
+  # `x_read` must not run before the first `web_fetch` — the same shape
+  # `{instagram_read: [media_fetch]}` uses further below, with the roles
+  # this PR needs (`web_fetch` first, the owner after). If `web_fetch` never
+  # runs at all the check does not apply, so a model that calls the owner
+  # directly still passes; only the owner running BEFORE a `web_fetch` that
+  # also ran is the order failure. Both kept: one measures routing
+  # preference, this one measures the
+  # registry's fallback. `args_include` is the link WITHOUT its scheme
+  # (`x_read`/`linkedin_read` accept either — design 30 "What each owning
+  # tool accepts"), so a call that dropped the scheme along the way still
+  # matches. The id and handle are synthetic.
+  - name: route_x_read_link_owner_registry
+    entry: tag
+    expect: reply
+    mention: true
+    input: https://x.com/synth_pr2_user/status/9200000000000000001 what does this say?
+    metadata:
+      tools: [x_read]
+      not_tools: [x_search, instagram_read, instagram_search]
+      before: {web_fetch: [x_read]}
+      args_include:
+        x_read: ["x.com/synth_pr2_user/status/9200000000000000001"]
+    snapshot: *room_a
+
+  - name: route_linkedin_read_link_owner_registry
+    entry: tag
+    expect: reply
+    mention: true
+    input: https://www.linkedin.com/in/synth-pr2-person what does this say?
+    metadata:
+      tools: [linkedin_read]
+      not_tools: [linkedin_search, x_read, instagram_read]
+      before: {web_fetch: [linkedin_read]}
+      args_include:
+        linkedin_read: ["www.linkedin.com/in/synth-pr2-person"]
+    snapshot: *room_a
+
   # --- what the call carried: the image-generation skill (2026-09-24) ---------
   # Routing alone passes all three of these on the failure they exist for: a
   # «draw yourself» answered with an empty room and no reference was one

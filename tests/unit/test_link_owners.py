@@ -5,11 +5,17 @@ it, the redirect shape is `nothing_found` with the exact note pinned, the
 note is COMPOSED from owner and fetcher slots rather than fetcher-held
 literal text, and registering a network touches no fetcher.
 
-PR 1 registers Instagram only (`LINK_OWNERS` has one row); X and LinkedIn are
-PRs 2 and 3, so this file's matrix stays Instagram-scoped on purpose — the
-negatives below (a CDN host, a shortener-shaped host, a plain page) are the
-ones design 30's "What live traffic shows" names as hosts a registry must
-never claim.
+**PR 2** ("Migration" step 2) adds X and LinkedIn: `LINK_OWNERS` now has
+three rows, and this file's matrix grows an X and a LinkedIn section beside
+Instagram's. The negatives carry every host the design's "What live traffic
+shows" and "Types" sections name as one a registry must never claim: X's and
+LinkedIn's own CDN hosts, `t.co` and `lnkd.in` (neither is its network's own
+page — the one live `lnkd.in` link led off-LinkedIn), a lookalike host
+(`x.com.evil.example`), a reserved X path (`/explore`), and a LinkedIn post
+link (recognised by the parser, but `linkedin_read` cannot read one from its
+link, so it is never claimed — design 30, "Design" §"Types"). PR 3 ("The
+owners use the registry") is not built here: `x_read`/`linkedin_read`/
+`instagram_read` keep their own hand-written cross-network branches.
 """
 
 from __future__ import annotations
@@ -78,17 +84,58 @@ _CLAIMED_MOBILE = (
     _INSTAGRAM_MOBILE_URL,
     "m.instagram.com/p/SynthPost01/",
 )
+
+# ---- X (PR 2): the parser's own host allowlist already accepts every
+# mobile/alternate spelling (`x_links.X_HOSTS`), so every one of these is
+# `readable=True` with no separate mobile shape.
+_X_POST_URL = "https://x.com/synth_user01/status/9000000000000000001"
+_X_PROFILE_URL = "https://twitter.com/synth_user02"
+_CLAIMED_X = (
+    _X_POST_URL,
+    _X_PROFILE_URL,
+    "https://mobile.x.com/synth_user03/status/9000000000000000003",
+    "https://mobile.twitter.com/synth_user04",
+    "https://www.x.com/synth_user05",
+    "x.com/synth_user01/status/9000000000000000001",  # no scheme
+)
+
+# ---- LinkedIn (PR 2): a person or company link is readable; `m.linkedin.com`
+# is claimed but not readable (the same shape as Instagram's mobile host);
+# a post is never claimed at all (below, in `_UNCLAIMED`).
+_LINKEDIN_PERSON_URL = "https://www.linkedin.com/in/synth-person-01"
+_LINKEDIN_COMPANY_URL = "https://linkedin.com/company/synth-company-01"
+_LINKEDIN_MOBILE_URL = "https://m.linkedin.com/in/synth-person-03"
+_CLAIMED_LINKEDIN = (
+    _LINKEDIN_PERSON_URL,
+    _LINKEDIN_COMPANY_URL,
+    "https://hk.linkedin.com/in/synth-person-02",  # a two-letter country subdomain
+    "linkedin.com/in/synth-person-01",  # no scheme
+)
+_CLAIMED_LINKEDIN_MOBILE = (
+    _LINKEDIN_MOBILE_URL,
+    "m.linkedin.com/company/synth-company-04",
+)
+
 _UNCLAIMED = (
     "https://scontent.cdninstagram.com/v/t51/synthetic.jpg",  # the item's own CDN file
     "https://x.com/pic.jpg",
     "https://lnkd.in/abc123",  # a shortener: not its network's own page
     "https://example.com/a",
     "https://www.instagram.com/explore/",  # an Instagram host, not a page kind
+    "https://t.co/synthShort1",  # X's own shortener, a different host
+    "https://pbs.twimg.com/media/synthetic.jpg",  # X's own CDN file
+    "https://x.com.evil.example/synth_user01",  # a lookalike host, not x.com
+    "https://x.com/explore",  # a reserved X page, not an account (non-goals)
+    "https://media.licdn.com/dms/image/synthetic.jpg",  # LinkedIn's own CDN file
+    # A LinkedIn post: recognised by the parser, never claimed (linkedin_read
+    # cannot read one from its link; web_fetch may).
+    "https://www.linkedin.com/posts/synth-person-01_synthetic-activity-9000000000000000001/",
+    "https://m.linkedin.com/posts/synth-person-01_synthetic-activity-9000000000000000002/",
 )
 
 
 @pytest.mark.parametrize("url", _CLAIMED_PAGE)
-def test_a_page_link_is_claimed_and_readable(url):
+def test_an_instagram_page_link_is_claimed_and_readable(url):
     found = owner_of(url)
     assert found is not None, url
     owner, claim = found
@@ -99,7 +146,38 @@ def test_a_page_link_is_claimed_and_readable(url):
 
 
 @pytest.mark.parametrize("url", _CLAIMED_MOBILE)
-def test_a_mobile_page_link_is_claimed_and_not_readable(url):
+def test_a_mobile_instagram_page_link_is_claimed_and_not_readable(url):
+    found = owner_of(url)
+    assert found is not None, url
+    _owner, claim = found
+    assert claim.readable is False
+    assert claim.unreadable_template, "an unreadable claim carries its own explanation"
+
+
+@pytest.mark.parametrize("url", _CLAIMED_X)
+def test_an_x_link_is_claimed_and_readable(url):
+    found = owner_of(url)
+    assert found is not None, url
+    owner, claim = found
+    assert owner.network == "x"
+    assert owner.tool == "x_read"
+    assert owner.param == "link"
+    assert claim.readable is True
+
+
+@pytest.mark.parametrize("url", _CLAIMED_LINKEDIN)
+def test_a_linkedin_person_or_company_link_is_claimed_and_readable(url):
+    found = owner_of(url)
+    assert found is not None, url
+    owner, claim = found
+    assert owner.network == "linkedin"
+    assert owner.tool == "linkedin_read"
+    assert owner.param == "link"
+    assert claim.readable is True
+
+
+@pytest.mark.parametrize("url", _CLAIMED_LINKEDIN_MOBILE)
+def test_a_mobile_linkedin_link_is_claimed_and_not_readable(url):
     found = owner_of(url)
     assert found is not None, url
     _owner, claim = found
@@ -112,11 +190,14 @@ def test_a_non_page_url_is_claimed_by_no_owner(url):
     assert owner_of(url) is None, url
 
 
-def test_no_url_in_the_two_matrices_is_claimed_by_two_owners():
-    """Trivial with one row today; the shape this locks stays true when X and
-    LinkedIn register (PRs 2/3): each url in the positive matrix is claimed by
-    exactly one `LinkOwner`."""
-    for url in _CLAIMED_PAGE + _CLAIMED_MOBILE:
+def test_no_url_in_the_matrices_is_claimed_by_two_owners():
+    """Each url in every positive matrix — Instagram, X and LinkedIn — is
+    claimed by exactly one `LinkOwner`: the three networks' hosts never
+    overlap, so "first match wins" never has to decide anything."""
+    for url in (
+        _CLAIMED_PAGE + _CLAIMED_MOBILE + _CLAIMED_X
+        + _CLAIMED_LINKEDIN + _CLAIMED_LINKEDIN_MOBILE
+    ):
         matches = [o for o in LINK_OWNERS if o.claim(url) is not None]
         assert len(matches) == 1, (url, matches)
 
@@ -160,6 +241,52 @@ def test_the_composed_note_matches_every_live_string():
     for expected, (owner, claim, link_input) in cases.items():
         composed = redirect(owner, claim, link_input)["note"]
         assert composed == expected, (expected, composed)
+
+
+def test_redirect_composes_the_x_and_linkedin_notes():
+    """X and LinkedIn have no historical literal (unlike Instagram's four
+    back-compat strings): their notes only ever exist composed, so this pins
+    them by construction rather than a fetcher-held string."""
+    media_link_input = NATIVE_TOOLS["media_fetch"].link_inputs[0]
+    web_link_input = NATIVE_TOOLS["web_fetch"].link_inputs[0]
+
+    x_owner, x_claim = owner_of(_X_POST_URL)
+    assert redirect(x_owner, x_claim, web_link_input) == {
+        "status": "nothing_found",
+        "note": "That link is an X link. Open it with x_read using this link.",
+    }
+    assert redirect(x_owner, x_claim, media_link_input) == {
+        "status": "nothing_found",
+        "note": "That link is an X link, not a picture or video file. Open it "
+                "with x_read using this link, then look at the media it returns.",
+    }
+
+    li_owner, li_claim = owner_of(_LINKEDIN_PERSON_URL)
+    assert redirect(li_owner, li_claim, web_link_input) == {
+        "status": "nothing_found",
+        "note": "That link is a LinkedIn link. Open it with linkedin_read "
+                "using this link.",
+    }
+    assert redirect(li_owner, li_claim, media_link_input) == {
+        "status": "nothing_found",
+        "note": "That link is a LinkedIn link, not a picture or video file. "
+                "Open it with linkedin_read using this link, then look at "
+                "the media it returns.",
+    }
+
+    mobile_owner, mobile_claim = owner_of(_LINKEDIN_MOBILE_URL)
+    assert redirect(mobile_owner, mobile_claim, web_link_input) == {
+        "status": "nothing_found",
+        "note": "That is a mobile LinkedIn page link, and it can't be opened "
+                "directly. Ask for the www.linkedin.com link to the same "
+                "profile or company.",
+    }
+    assert redirect(mobile_owner, mobile_claim, media_link_input) == {
+        "status": "nothing_found",
+        "note": "That is a mobile LinkedIn page link, not a picture or video "
+                "file, and it can't be read directly. Ask for the "
+                "www.linkedin.com link to the same profile or company.",
+    }
 
 
 # ---- an unreadable claim must carry a real note (ADR 0015 §3) --------------
