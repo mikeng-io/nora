@@ -249,15 +249,19 @@ async def test_a_firing_row_is_never_cancelled_for_a_pending_one(stores) -> None
 
 async def test_both_rows_firing_neither_is_cancelled(stores) -> None:
     """Both rows are `firing` — a real shape, not a corner case invented for
-    this test: the heartbeat can have both in flight at once. The tie falls
-    to `due_at`, but the LOSER must stay `firing`, untouched, because the
-    heartbeat's own `mark()` call is about to resolve it to `done`/`failed`
-    the moment its turn finishes and would silently overwrite a `cancelled`
-    written here. The winner (here, the duplicate's — earlier `due_at`) is
-    still re-pointed: only its PAYLOAD changes, never its `state`.
+    this test: the heartbeat can have both in flight at once. BOTH stay
+    firing, untouched, keeper included: the heartbeat's own `mark()` call is
+    about to resolve the loser to `done`/`failed` the moment its turn
+    finishes and would silently overwrite a `cancelled` written here — and
+    re-pointing the keeper's `note_id` onto the survivor while the loser
+    still holds that same id open (never cancelled) would collide with
+    `uq_reminders_proactive_open_note` at the re-point statement itself.
 
     Falsification: cancel the loser unconditionally (drop the `state ==
-    FIRING` exemption) and `still_firing.state` reads `CANCELLED`."""
+    FIRING` exemption) and `still_firing_loser.state` reads `CANCELLED`; or
+    keep the exemption but still try to re-point the keeper, and this
+    raises `IntegrityError` (23505) instead of leaving both alone — the bug
+    a first version of this fix shipped with, caught on norty."""
     notes, reminders, _engine = stores
     survivor = await _make_note(notes, title="Saturday dinner")
     duplicate = await _make_note(notes, title="Neway booking")
@@ -271,22 +275,26 @@ async def test_both_rows_firing_neither_is_cancelled(stores) -> None:
     await reminders.create(duplicate_row)
     outcomes: list[str] = []
 
-    fold = await _fold(
+    await _fold(
         notes, survivor=survivor, duplicate=duplicate,
         on_reminder_outcome=outcomes.append,
     )
 
-    still_firing = await reminders.get(survivor_row.id)
-    repointed = await reminders.get(duplicate_row.id)
-    assert still_firing is not None and repointed is not None
-    assert still_firing.state is ReminderState.FIRING
-    assert still_firing.outcome is None
-    assert still_firing.fired_at is None
-    assert repointed.state is ReminderState.FIRING, "state untouched by a re-point"
-    assert repointed.payload is not None
-    assert repointed.payload["note_id"] == survivor.id
-    assert repointed.payload["revision_id"] == fold.id
-    assert outcomes == ["skipped_firing_collision", "collision_repointed"]
+    still_firing_loser = await reminders.get(survivor_row.id)
+    still_firing_keeper = await reminders.get(duplicate_row.id)
+    assert still_firing_loser is not None and still_firing_keeper is not None
+    assert still_firing_loser.state is ReminderState.FIRING
+    assert still_firing_loser.outcome is None
+    assert still_firing_loser.fired_at is None
+    assert still_firing_loser.payload is not None
+    assert still_firing_loser.payload["note_id"] == survivor.id
+    assert still_firing_keeper.state is ReminderState.FIRING
+    assert still_firing_keeper.outcome is None
+    assert still_firing_keeper.payload is not None
+    assert still_firing_keeper.payload["note_id"] == duplicate.id, (
+        "untouched, not re-pointed — the keeper is left exactly as it was too"
+    )
+    assert outcomes == ["skipped_firing_collision"]
 
 
 async def test_a_repointed_row_fires_when_nothing_moved_since_it_was_linked(

@@ -1483,15 +1483,19 @@ class SqlNoteStore:
           send would be the double-send `sweep_firing`'s own docstring
           exists to prevent. **Unless the LOSER is also `firing`** (the only
           way `_keep_open_row` hands back a firing `drop`: both rows were
-          firing and the tie fell to `due_at`) — then the cancel is SKIPPED
-          entirely, state untouched, because the heartbeat's own `mark()`
-          call resolves that row to `done`/`failed` the moment its in-flight
-          turn finishes and would silently overwrite whatever this wrote.
-          Outcome: `skipped_firing_collision`. The KEEPER, whichever row it
-          is, is otherwise resolved exactly as the solo case above — a
-          collision never exempts the keeper from the moved-check — with
-          outcomes `collision_repointed` / `collision_kept_survivor` /
-          `moved` in place of the solo case's `repointed` / (nothing) /
+          firing and the tie fell to `due_at`) — then BOTH rows are left
+          ENTIRELY alone, keeper included, and this is not merely "also
+          skip the cancel": re-pointing the keeper onto `survivor_id` while
+          the loser is still open UNDER `survivor_id` too (never cancelled)
+          would try to open a second row on the same id the loser still
+          holds — the exact collision the unique index exists to refuse,
+          caught at the re-point statement itself rather than avoided. Both
+          resolve on their own within moments via the heartbeat's `mark()`
+          calls. Outcome: `skipped_firing_collision`, once. Otherwise the
+          keeper, whichever row it is, is resolved exactly as the solo case
+          above — a collision never exempts the keeper from the moved-check
+          — with outcomes `collision_repointed` / `collision_kept_survivor`
+          / `moved` in place of the solo case's `repointed` / (nothing) /
           `moved`.
 
         **Cancel before re-point, never the reverse**, when both rows exist
@@ -1533,24 +1537,36 @@ class SqlNoteStore:
             return
         keep, drop = _keep_open_row(d_row, s_row)
         if drop.state == ReminderState.FIRING.value:
+            # BOTH rows are firing (the only way `_keep_open_row` hands back
+            # a firing `drop`). `drop` is left ENTIRELY alone, not just
+            # un-cancelled: re-pointing `keep` onto `survivor_id` here would
+            # try to open a SECOND row on that same id while `drop` still
+            # holds it open too (it was never cancelled), which is exactly
+            # the collision `uq_reminders_proactive_open_note` exists to
+            # refuse — Postgres raises 23505 on the re-point statement
+            # itself. So `keep` is left alone too; both resolve on their
+            # own within moments via the heartbeat's `mark()` calls, and the
+            # next pass that finds either note still holding a stray open
+            # row (there should be none once both fire) is a bug report,
+            # not this method's job to prevent by inventing a third state.
             log.info(
-                "merge_into: reminder %s stays firing, uncancelled — both "
-                "it and the row surviving the fold (%s) were in flight; "
-                "the heartbeat's own mark() resolves it", drop.id, keep.id,
+                "merge_into: reminders %s and %s both stay firing, "
+                "untouched — both were in flight; the heartbeat's own "
+                "mark() resolves each", drop.id, keep.id,
             )
             if on_reminder_outcome is not None:
                 on_reminder_outcome("skipped_firing_collision")
-        else:
-            result = await conn.execute(_cancel_stmt(
-                drop.id, drop.state, CANCELLED_DUPLICATE_NOTE, fired_at,
-            ))
-            _require_row_changed(
-                result, what=f"cancel reminder {drop.id} (cancelled_duplicate_note)",
-            )
-            log.info(
-                "merge_into: reminder %s cancelled cancelled_duplicate_note "
-                "— note %s already had an open reminder", drop.id, survivor_id,
-            )
+            return
+        result = await conn.execute(_cancel_stmt(
+            drop.id, drop.state, CANCELLED_DUPLICATE_NOTE, fired_at,
+        ))
+        _require_row_changed(
+            result, what=f"cancel reminder {drop.id} (cancelled_duplicate_note)",
+        )
+        log.info(
+            "merge_into: reminder %s cancelled cancelled_duplicate_note "
+            "— note %s already had an open reminder", drop.id, survivor_id,
+        )
         if keep.id == d_row.id:
             await SqlNoteStore._resolve_repointed_row(
                 conn, row=keep, survivor_id=survivor_id,

@@ -795,13 +795,21 @@ class InMemoryNoteStore:
             return
         keep, drop = _keep_open_reminder(d_row, s_row)
         if drop.state is ReminderState.FIRING:
+            # Both firing (the only way `_keep_open_reminder` hands back a
+            # firing `drop`): BOTH rows are left alone, keeper included —
+            # `SqlNoteStore._repoint_proactive_rows`'s twin rule. Re-pointing
+            # `keep` here would model a note holding two open reminders at
+            # once, which is exactly the shape `uq_reminders_proactive_open_
+            # note` refuses in Postgres; this fake would not catch that on
+            # its own (a dict has no unique index), so the rule has to be
+            # enforced here explicitly rather than left to raise.
             if on_reminder_outcome is not None:
                 on_reminder_outcome("skipped_firing_collision")
-        else:
-            reminders._put(replace(
-                drop, state=ReminderState.CANCELLED,
-                outcome=CANCELLED_DUPLICATE_NOTE, fired_at=fired_at,
-            ))
+            return
+        reminders._put(replace(
+            drop, state=ReminderState.CANCELLED,
+            outcome=CANCELLED_DUPLICATE_NOTE, fired_at=fired_at,
+        ))
         if keep.id == d_row.id:
             self._resolve_repointed_reminder(
                 reminders, keep, survivor_id=survivor_id,

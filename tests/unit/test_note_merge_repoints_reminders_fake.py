@@ -162,15 +162,31 @@ async def test_both_rows_firing_neither_is_cancelled() -> None:
     await reminders.create(survivor_row)
     await reminders.create(duplicate_row)
 
-    await _fold(notes, survivor=survivor, duplicate=duplicate)
+    outcomes: list[str] = []
+    await notes.merge_into(
+        unit=WS, survivor_id=survivor.id, survivor_head=survivor.head_revision_id,
+        duplicate_id=duplicate.id, duplicate_head=duplicate.head_revision_id,
+        body="folded body", anchor_date=20260927, revisit_at=NOW_MS + 5_000,
+        reset_strikes=True, established_by="dream:note-merge:friends:1",
+        now_ms=NOW_MS + 1_000, on_reminder_outcome=outcomes.append,
+    )
 
-    still_firing = await reminders.get(survivor_row.id)
-    repointed = await reminders.get(duplicate_row.id)
-    assert still_firing is not None and still_firing.state is ReminderState.FIRING
-    assert still_firing.outcome is None
-    assert repointed is not None and repointed.state is ReminderState.FIRING
-    assert repointed.payload is not None
-    assert repointed.payload["note_id"] == survivor.id
+    still_firing_loser = await reminders.get(survivor_row.id)
+    still_firing_keeper = await reminders.get(duplicate_row.id)
+    assert still_firing_loser is not None
+    assert still_firing_loser.state is ReminderState.FIRING
+    assert still_firing_loser.outcome is None
+    assert still_firing_loser.payload is not None
+    assert still_firing_loser.payload["note_id"] == survivor.id
+    assert still_firing_keeper is not None
+    assert still_firing_keeper.state is ReminderState.FIRING
+    assert still_firing_keeper.payload is not None
+    assert still_firing_keeper.payload["note_id"] == duplicate.id, (
+        "untouched, not re-pointed — repointing it would model a note "
+        "holding two open reminders at once, the exact shape the real "
+        "unique index refuses"
+    )
+    assert outcomes == ["skipped_firing_collision"]
 
 
 async def test_a_repointed_row_is_cancelled_moved_when_the_survivor_moved_first() -> None:
