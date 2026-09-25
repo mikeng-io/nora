@@ -728,10 +728,15 @@ removes. Extensions, all graded on facts, never length:
 
 ### 10.2 What «better» means, fixed before any run
 
-Baseline is re-measured on master at S0, because #513's arms predate
-`<culture>` on this pass. Every comparison is paired, same source, same
-subject model, **k ≥ 15 on the update cases** (#513's own recommendation) and
-k ≥ 5 elsewhere; one run decides nothing.
+Per `docs/eval-sop.md` and the nora-eval skill («an eval confirms a fix; it
+never finds one»): each step is BUILT first, its input is read offline with
+`--print-input` to show the arms differ, and its run is a paired before/after
+whose before arm, on master at that moment, is the baseline. There is no
+standalone re-baseline, and #513's numbers are context, not a baseline: its
+arms predate `<culture>` on this pass. Same source, same subject model,
+**k ≥ 15 on the update cases** (#513's own recommendation) and k ≥ 5
+elsewhere; each run states its cost (cases × k × arms) before it starts. One
+run decides nothing.
 
 | number | from | better means |
 |---|---|---|
@@ -750,17 +755,17 @@ should fall toward zero after S4; the count of open notes by form.
 
 | step | what changes | what it measures |
 |---|---|---|
-| **S0** | #513's instrument plus §10.1's checks; the validator in the domain, called by nothing; a baseline run | the baseline on today's master |
+| **S0** | #513's instrument plus §10.1's checks; the validator in the domain, called by nothing; two unit tests confirming §4.3's and finding 4's read-only claims (the unprojected batch, the dropped `entity_ids`) | no run: an instrument confirms nothing until a step changes something |
 | **S1** | the Dreamer batch goes through `Persons.name_transcript` | a correctness fix (DEC-80 on this pass); read that the invented-note and create rates do not move |
 | **S2** | the schema on **creates**: objective «The body» section, worked-example bodies removed, validator refusing on the create arm | conformance, completeness, invented rate, create rate |
-| **S3** | the input's notebook becomes `today` + `open_note` with bodies, replacing the index; updates still append | update pass rate and wrong-note count with bodies visible and nothing else changed |
-| **S4** | restatement: the update arm writes the candidate body as the head, with the carry-forward check; the tag path's `note_update`/`note_create` validate (G4's mapping); the objective's update rule says restate | update pass rate, `dropped_citation`, `full`, and a `tool_selection` read for the tag tools (the nora-tool skill) |
+| **S3** | the input's notebook becomes `today` + `open_note` with bodies, replacing the index; updates still append, and the objective's update rule says «only what this batch changes», the append-consistent reading #513's v7 example already used. **An eval arm, not a deploy**: appended deltas would break the conformant bodies S2 is writing | update pass rate and wrong-note count with bodies visible and nothing else changed |
+| **S4** | restatement: the update arm writes the candidate body as the head, with the carry-forward check; the tag path's `note_update`/`note_create` validate (G4's mapping); the objective's update rule says restate. Ships with S3's input | update pass rate against S3's arm, `dropped_citation`, `full`, and a `tool_selection` read for the tag tools (the nora-tool skill) |
 | **S5** | `lead_in` and `standing` | whatever S2-S4 left: recall on cut exchanges, invented rate (the two blocks add context that can also add invention) |
 | **S6** | note-merge's section-wise fold and the `form`-aware excerpt | merge's own eval (41 §7.8), unchanged gate |
 
 S3 before S4 is deliberate: bodies in view is the change the wrong-note
 failures point at, and reading it apart from restatement says which of the
-two fixes them. S5 last among the input changes because it is the one most
+two fixes them. S3 is measured and not deployed; S3 and S4 deploy together. S5 last among the input changes because it is the one most
 likely to raise invention.
 
 A decision-index row is for a landed decision (the nora-decision skill): the
