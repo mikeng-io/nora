@@ -1,6 +1,6 @@
 ---
 name: nora-eval
-description: Runs Nora's eval suite (python -m evals) on the deploy host to decide a behavioural change by a measured before/after over labelled cases. Load when a task changes a prompt, doctrine, objective, tool description, gate, routing or model setting, or says run the eval, baseline, corpus, sample, or measure the arms. Not for proving a code fix is guarded by a test; that is nora-prove-fix.
+description: Confirms a BUILT behavioural fix with a before/after on Nora's labelled eval cases (python -m evals on the deploy host). Load when a task changes a prompt, doctrine, objective, tool text, gate, routing or model setting and the fix exists. A failing case is not a reason to run it; find the cause offline first. Not for proving a code fix is guarded by a test (nora-prove-fix).
 ---
 
 # nora-eval
@@ -18,6 +18,33 @@ can turn red (use nora-prove-fix). Many changes need both.
 **When a model judges badly, read its input before rewriting its instruction.** If
 the judgement turns on when, who, or whether something is still open, check the
 input carries the time, the index, or the fact that would close it.
+
+## An eval confirms a fix; it never finds one
+
+An eval says THAT a case fails, never WHY. It costs hours (a judged draw is
+~211s) and millions of tokens, and a failure is fixed by reading, not by
+drawing again. On 2026-09-25 one session queued a five-question batch plus an
+8-corpus re-baseline; it ran for hours (one agent ~5h), and every answer was a
+failure (0/5, 2/10, 0/15, 0/15) that reading the input would have explained
+with no model call. The operator stopped it: nothing was fixed, only measured.
+
+Before any run, all three hold, or you do not run:
+- **The cause is found offline.** A failing or suspect case is read first:
+  `--print-input CASE` (no model call), the render functions called directly on
+  the case's state, the case's own expectation and anchor, and the objective the
+  model runs. Name the cause: a wrong expectation, a fact missing from the
+  input, a doctrine line steering against it, or unlabelled material (the model
+  cannot tell what it is reading).
+- **A fix is built** (on a branch) that addresses that cause.
+- **The question is whether the fix moved the number**, on the smallest
+  selection that can show it: `--case` the failing cases plus one control,
+  the lowest n that separates the arms.
+
+Deterministic failure (every draw FAILs, on every arm) is an input, framing or
+labelling defect: never answer it with more samples. Re-baselines, higher-n
+re-runs and "measure the current state" runs are not work; do not queue them
+unless the operator asks. Keep one run under an hour; if the plan is longer,
+cut the selection or ask.
 
 ## Where it runs
 
@@ -133,8 +160,9 @@ flag. The dev-machine tunnel recipe with `--model` belonged to the deleted
      judged number against one measured on an older build.
    - A case that speaks (tag, participation, proactive_act) anchored in a Discord
      room ERRORs; Discord's adapter is off in the sandbox (2026-09-21).
-   - Before paying for more samples on a FAIL, read the case's anchor: a wrong
-     expectation fails every draw and measures the anchor, not the model.
+   - A FAIL is the end of the run, not a reason for more samples: go back to
+     "An eval confirms a fix" and read the case's input, anchor and expectation.
+     A wrong expectation fails every draw and measures the anchor, not the model.
    Check: every number you will quote has its n, draw split and arm beside it.
 
 9. **Write it into the PR body** (a `What` block, per `CONTRIBUTING.md`):

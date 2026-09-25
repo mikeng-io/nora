@@ -1,0 +1,1 @@
+{"type": "none", "reason": "Agent procedure only: the nora-eval skill, docs/eval-sop.md and the AGENTS.md skill row now require finding a failure's cause offline before any eval run. No runtime behaviour changes.", "details": [], "limitations": []}
