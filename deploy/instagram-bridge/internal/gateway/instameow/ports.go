@@ -196,3 +196,39 @@ func (b *Bridge) Post(ctx context.Context, code domain.Shortcode) (domain.Post, 
 	}
 	return readPost(ctx, cli, code)
 }
+
+// Mentions reads comment-mentions from Instagram's activity/notification
+// feed (`GET /mentions`, UNMEASURED; see mentions.go). skipped counts every
+// story this call did NOT classify as a mention, keyed by its story_type, so
+// the live probe can pin the numeric type a real comment-mention arrives as.
+//
+// A raw REST call goes through none of the library's own checkpoint
+// detection (sessionRejected's doc comment explains why), so this is the one
+// place that has to run it itself: a needsHuman or account-suspended answer
+// flips the session state the same way the socket's own AuthError branch
+// does, so /health and the next request both see it.
+func (b *Bridge) Mentions(ctx context.Context) ([]domain.CommentMention, map[int]int, error) {
+	self := b.selfSnapshot().Username
+	var (
+		mentions []domain.CommentMention
+		skipped  map[int]int
+		err      error
+	)
+	if b.restIssuer != nil {
+		mentions, skipped, err = readMentions(ctx, b.restIssuer, self)
+	} else {
+		cli, cliErr := b.client()
+		if cliErr != nil {
+			return nil, nil, cliErr
+		}
+		issuer, issuerErr := restIssuerFor(cli)
+		if issuerErr != nil {
+			return nil, nil, issuerErr
+		}
+		mentions, skipped, err = readMentions(ctx, issuer, self)
+	}
+	if err != nil && (needsHuman(err) || errors.Is(err, httpclient.ErrAccountSuspended)) {
+		b.sessionRejected(ctx, err)
+	}
+	return mentions, skipped, err
+}

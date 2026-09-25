@@ -46,6 +46,10 @@ type Social interface {
 	SearchAccounts(ctx context.Context, query string) ([]domain.AccountSummary, error)
 	// Post reads one post by its shortcode, with every carousel item.
 	Post(ctx context.Context, code domain.Shortcode) (domain.Post, error)
+	// Mentions reads comment-mentions from Instagram's activity/notification
+	// feed. The second return is a count of every story NOT classified as a
+	// mention, keyed by its story_type.
+	Mentions(ctx context.Context) ([]domain.CommentMention, map[int]int, error)
 }
 
 // --- stage errors -------------------------------------------------------------
@@ -369,4 +373,14 @@ func (s *Service) ReadPost(ctx context.Context, code domain.Shortcode) (domain.P
 		return domain.Post{}, err
 	}
 	return s.social.Post(ctx, code)
+}
+
+// ReadMentions reads comment-mentions from Instagram's activity/notification
+// feed (`GET /mentions`). Session gate first, like every other
+// Instagram-facing use case.
+func (s *Service) ReadMentions(ctx context.Context) ([]domain.CommentMention, map[int]int, error) {
+	if _, err := s.ready(); err != nil {
+		return nil, nil, err
+	}
+	return s.social.Mentions(ctx)
 }

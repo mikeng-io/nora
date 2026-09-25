@@ -63,6 +63,9 @@ func (f failingPorts) SearchAccounts(context.Context, string) ([]domain.AccountS
 func (f failingPorts) Post(context.Context, domain.Shortcode) (domain.Post, error) {
 	return domain.Post{}, f.err
 }
+func (f failingPorts) Mentions(context.Context) ([]domain.CommentMention, map[int]int, error) {
+	return nil, nil, f.err
+}
 
 // verbFailingPorts resolves every thread and fails only the VERB, so the
 // error reaches the handler as the verb's and not as a room lookup's.
@@ -144,6 +147,10 @@ func (p *okPorts) SearchAccounts(context.Context, string) ([]domain.AccountSumma
 func (p *okPorts) Post(context.Context, domain.Shortcode) (domain.Post, error) {
 	p.hit()
 	return domain.Post{}, nil
+}
+func (p *okPorts) Mentions(context.Context) ([]domain.CommentMention, map[int]int, error) {
+	p.hit()
+	return nil, nil, nil
 }
 
 type noEvents struct{}
