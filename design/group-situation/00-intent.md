@@ -1,7 +1,7 @@
 ---
 type: design
 title: "Intent: Nora reasons with the room's situation instead of waiting to be asked for it"
-description: "A planning reply in the wedding room treated the district most of its members live in as a detour. The members' usual places were already derived and one tool call away; the turn's input carried a place for the caller only. This node records what the turn saw, replays recorded planning turns with the room's usual places rendered into the input, and proposes the block."
+description: "A planning reply in the wedding room framed one district as a detour when it was not one for this group. The members' usual places were already derived and one tool call away; the turn's input carried a place for the caller only, and the afternoon plan had fallen out of the room's Standing three minutes earlier. This node records what the turn saw, replays recorded planning turns with the room's usual places rendered into the input, and records a null result."
 tags: [nora, personalisation, presence, context, tag-path, planning, measurement]
 timestamp: 2026-09-25
 status: measured-null
@@ -41,13 +41,13 @@ Yuen Long», framing Yuen Long as the trip.
 | the caller's peer card, which names his home area | yes |
 | a card, or any place, for the other four members | **no** |
 | each member's derived home and work place (`presence_derived_places`) | **no**. 4 of 5 members have a derived home; 1 has no presence data |
-| what the group does that afternoon | **no**. It was said in the `friends` Signal room on 09-22, a different unit (DEC-105 split), so no block of this unit can carry it |
+| what the group does that afternoon | **no**. The previous turn's `<standing>` (`50627096`, 18:52) carried it: a midday meet-up, then suits, shoes and shirts in TST before dinner. The fold after that turn rewrote Standing and dropped it; this turn's transcript kept two fragments. It was also said in full in the `friends` Signal room on 09-22, a different room of a different unit |
 | a member's own worry that Yuen Long runs late | yes, in `<standing>` |
 
 Tool calls on that turn: `place_info` ×7, `web_search` ×1. No `where_been`,
 `saved_places` or `where_is`. In the turn before it, the reply asked one member
 whether he was coming from Kai Tak or Tseung Kwan O; his derived home is in
-Yuen Long District.
+neither.
 
 So the judgement turned on *where*, and the input carried *where* for one person
 of five. The CMS rule for this is to read the input before rewriting the
@@ -58,7 +58,7 @@ premise nobody raised.
 ## 2. What already exists
 
 - **The derived layer.** `presence_derived_places` holds `home` / `work` per
-  subject with a confidence. On 2026-09-25: 13 rows, 9 subjects,
+  subject with a confidence. On 2026-09-25: 13 rows, 8 subjects,
   `saved_place_id` empty on all 13. `where_been what=places` serves it to the
   model on request, under R-28 (no coordinates, no corridor sequences).
 - **The tag path's people blocks.** `<peer_card>` and `<peer_history>` are
@@ -115,7 +115,9 @@ in context), inject the block into the per-turn message, and ask the deployed
 252 replays (14 cases, 3 arms, 6 samples). Excluded as ERROR, not as PASS: one
 wedding case returned an empty reply on 17 of its 18 calls in every arm (a
 harness failure for that case), and 10 other empty replies (A 7, B 2, C 1).
-224 graded, the judge answered all 224.
+224 graded, the judge answered all 224. The empty replies are uneven across
+arms (A 7, B 2, C 1), so A's denominator is not a random subsample of the
+others; with n this small that does not change the reading below.
 
 | arm | n | geo_use | geo_error | address_leak | answers | geo_noise |
 |---|---|---|---|---|---|---|
@@ -123,8 +125,9 @@ harness failure for that case), and 10 other empty replies (A 7, B 2, C 1).
 | B area block | 76 | 31 (0.41) | 0 | 0 | 75 | 1 |
 | C raw-label block | 77 | 33 (0.43) | 0 | 0 | 77 | 0 |
 
-- **The block does not move the aggregate.** 0.39 against 0.41 at n of about
-  75 per arm is noise. Granularity (C against B) moves nothing either, and no
+- **No effect detected on the aggregate.** 0.39 against 0.41 at n of about
+  75 per arm, with six clustered samples per case, is inside noise; the test
+  is underpowered for a small effect, so this is «not detected», not «none». Granularity (C against B) moves nothing either, and no
   street address leaked in either arm.
 - **It moves one case clearly.** A branch-choice turn in `friends` went from
   3/5 to 6/6 in B, with replies that set the branches against where the members
@@ -145,15 +148,17 @@ party's single measurement.
 
 ### 4.2 What the null says
 
-Missing homes are not the main reason the replies stay shallow. With the
-facts in front of her, she still answers the literal question («more hotpot in
-TST») and does not reopen the premise behind it. The one reply that got the
-failing turn right («TST is on the way: collect the suits at Harbour City,
-shoes and shirts, then eat; Yuen Long is the reverse») came from the
-**afternoon plan** in the transcript, not from anyone's home. What made TST
-right is where the group *will be* at the event time and where it goes after,
-which is step 2's forecast and the cross-unit plan (§5), not a static list of
-homes.
+This measurement found no effect from homes alone; it cannot say why the
+replies stay shallow. What it can point at: with the block in front of her,
+she still answered the literal question, more hotpot in TST, and did not
+reopen the premise behind it. The one reply in the whole run that reasoned the
+way the operator did («TST is on the way: suits at Harbour City, shoes and
+shirts, then eat; Yuen Long is the reverse») was case `50627096`, arm B, whose
+input still carried the afternoon plan in `<standing>`. The failing turn's
+input no longer did (§1). One reply decides nothing, but it names the next
+thing to measure: whether the turn carries where the group *will be* before,
+at and after the event, which is step 2's forecast and Standing's retention of
+a plan, not a static list of homes.
 
 **Decision: do not build `<people_places>` as measured.** Reopens if a
 situation block that carries the event-time picture (who is where before, at
@@ -162,10 +167,15 @@ premise failure.
 
 ## 5. Open questions
 
-- **Cross-unit context.** The afternoon plan that made TST the right answer was
-  said in another unit's room. DEC-105 splits notes and Standing by unit on
-  purpose; Honcho is not split. Whether the wedding turn may read a sibling
-  unit's Standing is a separate decision, not taken here.
+- **A plan that falls out of Standing.** Standing is rewritten on each fold
+  and keeps only what the fold carries forward; here a same-day plan was
+  dropped between two turns three minutes apart, and nothing else in the
+  room's input held it. Whether the day's arrangements belong in a note (which
+  survives a fold) is the question, not taken here.
+- **Cross-unit context.** The same plan was said in full in another unit's
+  room. Notes are keyed by unit and Standing by room, so the wedding turn reads
+  neither; Honcho is not split. Whether a turn may read a sibling unit's state
+  is a separate decision, not taken here.
 - **Area resolution.** The derived label is a reverse-geocoded road. Area needs
   a district lookup from coordinates (Hong Kong's 18 district boundaries are
   open data) or the place's own sublocality. Not chosen yet.
