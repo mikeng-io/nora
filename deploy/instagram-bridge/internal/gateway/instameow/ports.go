@@ -208,7 +208,7 @@ func (b *Bridge) Post(ctx context.Context, code domain.Shortcode) (domain.Post, 
 // flips the session state the same way the socket's own AuthError branch
 // does, so /health and the next request both see it.
 func (b *Bridge) Mentions(ctx context.Context) ([]domain.CommentMention, map[int]int, error) {
-	self := b.selfSnapshot().Username
+	self := b.selfSnapshot()
 	issuer, err := b.rawREST()
 	if err != nil {
 		return nil, nil, err

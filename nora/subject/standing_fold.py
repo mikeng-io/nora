@@ -82,7 +82,7 @@ from typing import Any
 import sqlalchemy as sa
 
 from nora.domain.models import DeliveryStatus, TranscriptRow
-from nora.domain.standing import Standing
+from nora.domain.standing import Standing, WorkingSetItem
 from nora.domain.tag_trace import TagTrace
 from nora.engagement.stages.debrief import Completion
 from nora.infra.sql import create_readonly_sql_engine, create_sql_engine
@@ -170,7 +170,14 @@ class Folded:
     outcome: str
     #: The position the store holds after the fold, when `outcome == "written"`.
     position: str | None
-    calls: tuple[FoldCall, ...]
+    #: `Standing.working_set` the store holds after the fold — what it found
+    #: this turn and has not given the room (issue #445), read back beside
+    #: `position` and by the SAME condition: `()` unless `outcome == "written"`.
+    #: Never backfilled and never guessed at — `working_set_from_json`'s own
+    #: reading of a row with nothing in the column is `()`, which is exactly
+    #: what a fold that found nothing new should read as.
+    working_set: tuple[WorkingSetItem, ...] = ()
+    calls: tuple[FoldCall, ...] = ()
 
 
 async def read_fold_turn(
@@ -442,7 +449,12 @@ async def fold(
         )
     [outcome] = moved
     position = None
+    working_set: tuple[WorkingSetItem, ...] = ()
     if outcome == "written":
         held = await wiring.store.read(platform=platform, conversation_id=conversation_id)
         position = held.body if held is not None else None
-    return Folded(outcome=outcome, position=position, calls=tuple(recorder.calls))
+        working_set = held.working_set if held is not None else ()
+    return Folded(
+        outcome=outcome, position=position, working_set=working_set,
+        calls=tuple(recorder.calls),
+    )

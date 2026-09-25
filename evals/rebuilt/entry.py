@@ -33,6 +33,7 @@ from typing import Any, Literal
 from zoneinfo import ZoneInfo
 
 from nora.app.fire import SENT, SILENT, participation_occasion
+from nora.domain.standing import WorkingSetItem
 from nora.subject import (
     Subject,
     act,
@@ -48,7 +49,7 @@ from nora.subject import (
 )
 from nora.subject.standing_fold import fold, read_fold_turn
 
-from .domain import Case, Outcome
+from .domain import Case, Outcome, WorkingSetFinding
 from .fold_evidence import render_evidence, render_shown
 
 
@@ -426,6 +427,19 @@ async def proactive_act(subject: Subject, case: Case, *, now_ms: int) -> Outcome
     )
 
 
+def _outcome_working_set(items: tuple[WorkingSetItem, ...]) -> tuple[WorkingSetFinding, ...]:
+    """`Folded.working_set` (`nora.domain.standing.WorkingSetItem`, `nora`-side)
+    into `Outcome.working_set` (`WorkingSetFinding`, domain-side) — the one
+    place this boundary is crossed, so `standing()` itself stays a single
+    `Outcome(...)` call (issue #445). `found_at` is dropped here: `Outcome`'s
+    own docstring says why.
+    """
+    return tuple(
+        WorkingSetFinding(what=item.what, source=item.source, bears_on=item.bears_on)
+        for item in items
+    )
+
+
 async def standing(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
     """The standing FOLD on one real tag turn, graded on the position it wrote.
 
@@ -549,6 +563,7 @@ async def standing(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
     return Outcome(
         admitted=None,
         position=folded.position,
+        working_set=_outcome_working_set(folded.working_set),
         evidence=render_evidence(
             turn, display_name=subject.cfg.doctrine.display_name,
             # The deployment's own zone (the one its recurrences keep), stated

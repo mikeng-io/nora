@@ -7,40 +7,90 @@ package instameow
 //
 // # What the upstream call really is
 //
-// `GET https://www.instagram.com/api/v1/news/inbox/` — Instagram WEB's own
-// notifications panel, issued with the web client's headers (call.go's
-// `rest` helper). UNMEASURED: no live response has been recorded. The shape
-// below is a HYPOTHESIS carried over from the private API and parsed
-// TOLERANTLY: a top-level `new_stories`/`old_stories` pair, each story an int
-// `story_type`/`type` and an `args` object (`text`, `rich_text`,
-// `profile_id`, `profile_name`, `timestamp`, `media[]`,
-// `comment_id`/`comment_ids`). fakeig/mentions.go's fixture is built from
-// this hypothesis, not captured bytes, and is labelled so.
+// `POST https://www.instagram.com/api/v1/news/inbox/`, form-encoded, with
+// `jazoest`, `fb_dtsg` and `selected_filters=comments` — the request
+// Instagram WEB's own notifications panel makes with its "Comments" filter
+// tab, as captured from the operator's logged-in browser on 2026-09-25
+// (design 19, phase 1). It goes through restDo as a `webForm` POST (call.go):
+// the form tokens come from the session's own configs, built the way the
+// library builds its own web POST form (pkg/instameow/misc.go:40-48,57-58).
+// Being a POST, it goes out through MakeRequestOnceNoRedirect: no library
+// retry, no redirect followed, a 3xx read by redirectSentinel and a failure
+// body by restCheckpointSentinel, so Bridge.Mentions still reaches
+// sessionRejected.
 //
-// Two things are tolerated on purpose, because nothing has measured which
-// form Instagram actually sends:
+// The web client ALSO posts `/api/v1/news/inbox_seen/` when the panel opens.
+// This route does NOT: marking the operator's notifications read is a side
+// effect on the account the operator did not ask for.
 //
-//   - every id (`profile_id`, `comment_id`, each of `comment_ids`, a media
-//     item's `id`) may arrive as a JSON string or a JSON number (flexID);
+// Header set against the capture's list. Sent, with the value the library
+// itself would send: X-CSRFToken, X-IG-App-ID, X-ASBD-ID,
+// X-IG-Max-Touch-Points "0" and Accept "*/*" (BuildHeaders,
+// httpclient/http.go:561,593,608-622), X-Web-Session-ID,
+// X-Requested-With, Content-Type (restDo), X-Instagram-AJAX (the rollout
+// hash) and X-IG-WWW-Claim (RESTIssuer.WebFormTokens' and restRequest.webForm's doc
+// comments). KNOWN DIFFERENCES, not closable from the library:
+//
+//   - X-IG-WWW-Claim: the web client sent a non-zero claim. The library
+//     holds the claim IN MEMORY only (cookies.go:57, set from a response's
+//     `x-ig-set-www-claim`, cookies.go:183-185; Cookies.MarshalJSON persists
+//     only the cookie map, cookies.go:69-70), so until some response since
+//     the last restart has set it, this sends "0" (the library's own
+//     fallback, login_web.go:198-199);
+//   - the form's field ORDER is `url.Values.Encode()`'s sorted order, the
+//     same as the library's own form (misc.go:57); the web client's order
+//     was not recorded;
+//   - BuildHeaders also sends `x-fb-lsd`, `x-mid` and `viewport-width`,
+//     which the capture's header list does not name. Whether the browser
+//     sent them and the list omitted them is unrecorded.
+//
+// # The response
+//
+// Top-level keys captured: counts, last_checked, priority_stories,
+// new_stories, old_stories, continuation_token, subscription, is_last_page,
+// partition, status. This route reads `new_stories` and `old_stories`. Each
+// story carries an int `story_type` and an `args` object; the keys of `args`
+// this file reads are `text`, `rich_text`, `profile_id`, `profile_name`,
+// `timestamp`, `media[]` (`id`, `shortcode`) and `destination`.
+// `logging_context` is read by nobody (see mentionsAccount). fakeig/mentions.go's fixture is built
+// from the captured KEY set with synthetic values.
+//
+// Two things are tolerated on purpose:
+//
+//   - every id may arrive as a JSON string or a JSON number (flexID): the
+//     capture has `profile_id` a string and some ids numbers;
 //   - `timestamp` may arrive as a float or as a numeric string
-//     (flexTimestamp).
+//     (flexTimestamp); the capture has a number.
 //
 // Each STORY is decoded on its own, from `[]json.RawMessage`, so one story
-// this hypothesis cannot parse never fails the whole read: it is counted
-// under `undecodableStoryType`, the same way a story this route chooses not
-// to classify is counted under its own real story_type.
+// that does not fit never fails the whole read: it is counted under
+// `undecodableStoryType`, the same way a story this route chooses not to
+// classify is counted under its own real story_type.
 //
 // # Classification is STRUCTURAL, not English wording
 //
-// A story is a comment-mention when it has a comment id (`args.comment_id`
-// or `args.comment_ids[0]`) AND carries media AND its text/rich_text
-// contains an "@" token naming THIS account — its own username, read off the
-// live session (never a hardcoded string) — rather than a keyword search for
-// a phrase like "mentioned you in a comment", which is locale-dependent and
-// something this route has not measured Instagram to send at all. A mention
-// IN A CAPTION rather than a comment can carry the same "@" token and even
-// the same media, but no comment id, which is why the comment id is a
-// separate, required check rather than folded into "looks like a mention".
+// A story is a comment-mention when it has a comment id AND media AND it
+// mentions THIS account.
+//
+// The COMMENT ID is `args.comment_id` or `args.comment_ids[0]` when present,
+// else the `target_comment_id` query parameter of `args.destination`. The
+// capture found NO story carrying `comment_id`/`comment_ids`: a comment's id
+// rides in the destination, e.g. story_type 13 ("liked your comment"),
+// `clips_home?id=<media>&target_comment_id=<comment>`. The MEDIA is
+// `args.media[0]` when it has an id, else the destination's `id` — only for
+// the schemes whose `id` IS a media (`media`, `clips_home`), never `user?id=`
+// (a user) or `story_fullscreen?reel_id=`.
+//
+// The MENTION is an "@" token naming this account's own username, read off
+// the live session (never a hardcoded string), word-bounded, in text or
+// rich_text. `logging_context.mentioned_user_ids` is not a mention signal: the
+// capture showed one id there on every story type, likes included.
+//
+// A "liked your comment" story (type 13) has a comment id AND media, so the
+// mention check is what keeps it out: Instagram's sentence names the liker,
+// not "@" this account. A mention IN A CAPTION rather than a comment can
+// carry the "@" token and media but no comment id, which is why the comment
+// id is a separate, required check.
 //
 // The "@" token is matched at a WORD BOUNDARY: a marker of "@nora" must not
 // match "@nora_fan", so the byte right after the marker is checked against
@@ -48,8 +98,9 @@ package instameow
 // `[A-Za-z0-9._]`) and rejected if it continues one.
 //
 // Everything not classified as a mention is SKIPPED but COUNTED by its
-// `story_type`, so the live probe (still to run) can read which numeric
-// type(s) a real comment-mention arrives as.
+// `story_type`. The numeric type a comment-mention arrives as is still
+// UNMEASURED: none was present in the captured feed (types seen: 651, 13,
+// 101, 75, 768, 117), and the counts are how a live read will show it.
 //
 // # What never crosses into a span or an error
 //
@@ -66,6 +117,8 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"net/http"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -77,8 +130,21 @@ import (
 
 // newsInboxEndpoint has no entry in the library's endpoint table
 // (pkg/messagix/endpoints/instagram.go), so it is written out in full,
-// exactly as specified.
+// exactly as the web client was captured calling it.
 const newsInboxEndpoint = "https://www.instagram.com/api/v1/news/inbox/"
+
+// newsInboxFilter is the web client's "Comments" filter tab
+// (`selected_filters=comments` in its form, captured 2026-09-25).
+const newsInboxFilter = "comments"
+
+// mediaDestinations are the `args.destination` schemes whose `id` query
+// parameter is a MEDIA id (captured: `clips_home?id=<media>&...` on a
+// "liked your comment" story, `media?id=` on a post like). Every other
+// scheme's `id` is something else (`user?id=` is a user).
+var mediaDestinations = map[string]bool{"media": true, "clips_home": true}
+
+// commentIDPattern is a comment id: digits only.
+var commentIDPattern = regexp.MustCompile(`^[0-9]+$`)
 
 // undecodableStoryType is the sentinel `skipped` key for a story this
 // hypothesis could not decode at all — never a real Instagram story_type,
@@ -177,8 +243,13 @@ type wireStoryArgs struct {
 	ProfileName string           `json:"profile_name"`
 	Timestamp   flexTimestamp    `json:"timestamp"`
 	Media       []wireStoryMedia `json:"media"`
-	CommentID   flexID           `json:"comment_id"`
-	CommentIDs  []flexID         `json:"comment_ids"`
+	// CommentID/CommentIDs were never seen in the capture; kept as the first
+	// source because a story that does carry one names its comment directly.
+	CommentID  flexID   `json:"comment_id"`
+	CommentIDs []flexID `json:"comment_ids"`
+	// Destination is the in-app link the story opens, e.g.
+	// `clips_home?id=<media>&target_comment_id=<comment>`.
+	Destination string `json:"destination"`
 }
 
 // wireStoryMedia is one entry of `args.media`: `id` is `<pk>_<owner igid>`,
@@ -201,19 +272,24 @@ func (e *mentionsReadError) Unwrap() error { return e.cause }
 
 // readMentions reads the activity feed and classifies every story.
 //
-// selfUsername is the account's OWN handle (Bridge.selfSnapshot().Username):
-// the structural token every comment-mention this route classifies must
-// carry ("@" + that username). An empty selfUsername — identity not yet
-// known — classifies nothing rather than guessing; see mentionsAccount.
-func readMentions(ctx context.Context, issuer RESTIssuer, selfUsername string) ([]domain.CommentMention, map[int]int, error) {
-	_, raw, err := rest(ctx, issuer, newsInboxEndpoint, "news_inbox")
+// self is the account's OWN identity (Bridge.selfSnapshot()): its Username
+// makes the "@" token. An unknown username classifies nothing rather than
+// guessing; see mentionsAccount.
+func readMentions(ctx context.Context, issuer RESTIssuer, self domain.Self) ([]domain.CommentMention, map[int]int, error) {
+	_, raw, err := restDo(ctx, issuer, restRequest{
+		method:   http.MethodPost,
+		endpoint: newsInboxEndpoint,
+		label:    "news_inbox",
+		form:     url.Values{"selected_filters": {newsInboxFilter}},
+		webForm:  true,
+	})
 	if err != nil {
 		return nil, nil, err
 	}
 
 	var envelope wireNewsInbox
 	if jsonErr := json.Unmarshal(raw, &envelope); jsonErr != nil {
-		// rest() already refuses a non-JSON 200 before returning bytes, so
+		// restDo() already refuses a non-JSON 200 before returning bytes, so
 		// this is reachable only if the envelope decodes as JSON but not as
 		// this shape (e.g. a bare JSON array). Refused the same way, with a
 		// fixed text.
@@ -235,7 +311,7 @@ func readMentions(ctx context.Context, issuer RESTIssuer, selfUsername string) (
 			skipped[undecodableStoryType]++
 			continue
 		}
-		mention, ok := commentMentionOf(st, selfUsername)
+		mention, ok := commentMentionOf(st, self)
 		if !ok {
 			skipped[st.StoryType]++
 			continue
@@ -245,16 +321,35 @@ func readMentions(ctx context.Context, issuer RESTIssuer, selfUsername string) (
 	return mentions, skipped, nil
 }
 
+// nonMentionStoryTypes are story types measured to be something other than a
+// mention, which the "@" check alone cannot always tell apart: 13 is "liked
+// your comment" and quotes her own comment (capture 2026-09-25).
+var nonMentionStoryTypes = map[int]bool{13: true}
+
 // commentMentionOf classifies one story.
-func commentMentionOf(st wireStory, selfUsername string) (domain.CommentMention, bool) {
-	commentID := st.Args.CommentID.String()
-	if commentID == "" && len(st.Args.CommentIDs) > 0 {
-		commentID = st.Args.CommentIDs[0].String()
-	}
-	if commentID == "" || len(st.Args.Media) == 0 || !mentionsAccount(st.Args, selfUsername) {
+func commentMentionOf(st wireStory, self domain.Self) (domain.CommentMention, bool) {
+	scheme, query := destinationOf(st.Args.Destination)
+	commentID := commentIDOf(st.Args, query)
+	media, hasMedia := mediaOf(st.Args, scheme, query)
+	if commentID == "" || !hasMedia || !mentionsAccount(st.Args, self) {
 		return domain.CommentMention{}, false
 	}
-	mediaID, shortcode := mediaIdentity(st.Args.Media[0])
+	// A "liked your comment" story (type 13, measured 2026-09-25) quotes HER
+	// comment, so its text can carry her own handle. It is never a summons,
+	// whatever the text says.
+	if nonMentionStoryTypes[st.StoryType] {
+		return domain.CommentMention{}, false
+	}
+	// The comment id can come from the destination while the media comes from
+	// media[0]. When both name a post and they disagree, the pair names no one
+	// thread: skip it rather than answer under the wrong post.
+	if destID := query.Get("id"); mediaDestinations[scheme] && destID != "" {
+		pk, _, _ := strings.Cut(media.ID.String(), "_")
+		if destPK, _, _ := strings.Cut(destID, "_"); pk != destPK {
+			return domain.CommentMention{}, false
+		}
+	}
+	mediaID, shortcode := mediaIdentity(media)
 	return domain.CommentMention{
 		StoryType:        st.StoryType,
 		At:               int64(st.Args.Timestamp),
@@ -267,16 +362,65 @@ func commentMentionOf(st wireStory, selfUsername string) (domain.CommentMention,
 	}, true
 }
 
+// destinationOf splits `args.destination` into its scheme and its query:
+// `clips_home?id=1&target_comment_id=2` is ("clips_home", {id, target_comment_id}).
+// A malformed query yields whatever pairs did parse; every value read off it
+// is checked against an id pattern before use.
+func destinationOf(destination string) (string, url.Values) {
+	scheme, rawQuery, _ := strings.Cut(destination, "?")
+	query, _ := url.ParseQuery(rawQuery)
+	return scheme, query
+}
+
+// commentIDOf is the story's comment id: `comment_id`, else
+// `comment_ids[0]`, else the destination's `target_comment_id` (the only
+// place the capture found one). "" when there is none.
+func commentIDOf(args wireStoryArgs, query url.Values) string {
+	if id := args.CommentID.String(); id != "" {
+		return id
+	}
+	if len(args.CommentIDs) > 0 && args.CommentIDs[0] != "" {
+		return args.CommentIDs[0].String()
+	}
+	if id := query.Get("target_comment_id"); commentIDPattern.MatchString(id) {
+		return id
+	}
+	return ""
+}
+
+// mediaOf is the story's media: `media[0]` when it carries an id, else the
+// destination's `id` for a scheme whose `id` is a media (mediaDestinations).
+func mediaOf(args wireStoryArgs, scheme string, query url.Values) (wireStoryMedia, bool) {
+	if len(args.Media) > 0 && args.Media[0].ID != "" {
+		return args.Media[0], true
+	}
+	if !mediaDestinations[scheme] {
+		return wireStoryMedia{}, false
+	}
+	if id := query.Get("id"); wireIDPattern.MatchString(id) {
+		return wireStoryMedia{ID: flexID(id)}, true
+	}
+	return wireStoryMedia{}, false
+}
+
 // mentionsAccount is the structural check this file's doc comment describes:
 // a WORD-BOUNDED "@" token naming THIS account's own username, in either
-// text field.
-func mentionsAccount(args wireStoryArgs, selfUsername string) bool {
-	if selfUsername == "" {
-		// Identity not yet known: fail closed rather than guess at who "the
+// text field. Nothing else counts.
+//
+// `logging_context.mentioned_user_ids` is deliberately NOT read. In the live
+// capture (2026-09-25) every story type carried exactly one id there, likes of
+// a story and likes of a post included, where nobody is mentioned. So the list
+// most likely names the account being notified, and matching our own id in it
+// would read "liked your comment" as a summons: a friend's like would make her
+// answer in public. Reopen only with a capture that shows the list's content
+// on a real comment-mention story next to a like.
+func mentionsAccount(args wireStoryArgs, self domain.Self) bool {
+	if self.Username == "" {
+		// Own username unknown: fail closed rather than guess at who "the
 		// account" is.
 		return false
 	}
-	marker := "@" + strings.ToLower(selfUsername)
+	marker := "@" + strings.ToLower(self.Username)
 	return containsMentionToken(strings.ToLower(args.Text), marker) ||
 		containsMentionToken(strings.ToLower(args.RichText), marker)
 }
@@ -375,20 +519,59 @@ type sessionREST struct {
 }
 
 func (s sessionREST) WebSessionID() (string, error) {
-	raw, err := s.state.DumpState()
+	cfg, err := s.configs()
 	if err != nil {
 		return "", err
 	}
-	var dumped struct {
-		Configs *struct {
-			WebSessionID string `json:"WebSessionID"`
-		} `json:"Configs"`
-	}
-	if err := json.Unmarshal(raw, &dumped); err != nil {
-		return "", err
-	}
-	if dumped.Configs == nil || dumped.Configs.WebSessionID == "" {
+	if cfg.WebSessionID == "" {
 		return "", errors.New("no web session id in the dumped state")
 	}
-	return dumped.Configs.WebSessionID, nil
+	return cfg.WebSessionID, nil
+}
+
+// WebFormTokens reads the three web form values off the same dumped configs,
+// at the JSON paths `httpclient.Configs` marshals them under: `Jazoest`, and
+// the config table's `DTSGInitData.token` and `InstagramWebPushInfo.rollout_hash`
+// (types/configs.go:68-70,260,271; types/account.go:73-76). An empty value is
+// returned as empty: restDo refuses to send without all three.
+func (s sessionREST) WebFormTokens() (jazoest, fbDTSG, rolloutHash string, err error) {
+	cfg, err := s.configs()
+	if err != nil {
+		return "", "", "", err
+	}
+	if t := cfg.BrowserConfigTable; t != nil {
+		fbDTSG, rolloutHash = t.DTSGInitData.Token, t.InstagramWebPushInfo.RolloutHash
+	}
+	return cfg.Jazoest, fbDTSG, rolloutHash, nil
+}
+
+// dumpedConfigs is the part of `DumpState()`'s `Configs` this file reads.
+type dumpedConfigs struct {
+	WebSessionID       string `json:"WebSessionID"`
+	Jazoest            string `json:"Jazoest"`
+	BrowserConfigTable *struct {
+		DTSGInitData struct {
+			Token string `json:"token"`
+		} `json:"DTSGInitData"`
+		InstagramWebPushInfo struct {
+			RolloutHash string `json:"rollout_hash"`
+		} `json:"InstagramWebPushInfo"`
+	} `json:"BrowserConfigTable"`
+}
+
+func (s sessionREST) configs() (dumpedConfigs, error) {
+	raw, err := s.state.DumpState()
+	if err != nil {
+		return dumpedConfigs{}, err
+	}
+	var dumped struct {
+		Configs *dumpedConfigs `json:"Configs"`
+	}
+	if err := json.Unmarshal(raw, &dumped); err != nil {
+		return dumpedConfigs{}, err
+	}
+	if dumped.Configs == nil {
+		return dumpedConfigs{}, errors.New("no configs in the dumped state")
+	}
+	return *dumped.Configs, nil
 }

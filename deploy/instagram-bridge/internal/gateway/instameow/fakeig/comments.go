@@ -93,11 +93,11 @@ type REST struct {
 	calls  []RESTCall
 }
 
-// FreshNewsInboxJSON is UnmeasuredNewsInboxJSON with the comment mention
-// dated NOW. The fixture's own date is 2023, and the ledger does not record a
-// mention the feed dates older than the 7-day window as a live summons.
+// FreshNewsInboxJSON is NewsInboxJSON with the comment mention dated NOW.
+// The fixture's own date is 2023, and the ledger does not record a mention
+// the feed dates older than the 7-day window as a live summons.
 func FreshNewsInboxJSON() string {
-	return strings.Replace(UnmeasuredNewsInboxJSON, `"timestamp": 1700000123`,
+	return strings.Replace(NewsInboxJSON, `"timestamp": 1700000123`,
 		`"timestamp": `+strconv.FormatInt(time.Now().Unix(), 10), 1)
 }
 
@@ -105,7 +105,7 @@ func FreshNewsInboxJSON() string {
 // comments page, a child comments page and a successful write.
 func NewREST() *REST {
 	return &REST{routes: map[string]RESTAnswer{
-		"GET https://www.instagram.com/api/v1/news/inbox/":    {Body: FreshNewsInboxJSON()},
+		"POST https://www.instagram.com/api/v1/news/inbox/":   {Body: FreshNewsInboxJSON()},
 		"GET https://www.instagram.com/api/v1/media/":         {Body: UnmeasuredCommentsJSON},
 		"GET child_comments":                                  {Body: UnmeasuredChildCommentsJSON},
 		"POST https://www.instagram.com/api/v1/web/comments/": {Body: UnmeasuredCommentAddedJSON},
@@ -127,20 +127,29 @@ func (f *REST) Calls() []RESTCall {
 	return append([]RESTCall(nil), f.calls...)
 }
 
-// Writes is how many POSTs reached it.
+// Writes is how many comment POSTs reached it. The news-inbox read is a POST
+// too (the web client's own method) and writes nothing, so it is not counted.
 func (f *REST) Writes() int {
 	n := 0
 	for _, c := range f.Calls() {
-		if c.Method == http.MethodPost {
+		if c.Method == http.MethodPost && strings.HasPrefix(c.URL, commentWritePrefix) {
 			n++
 		}
 	}
 	return n
 }
 
+const commentWritePrefix = "https://www.instagram.com/api/v1/web/comments/"
+
 func (f *REST) BuildHeaders(bool, bool) http.Header { return http.Header{} }
 
 func (f *REST) WebSessionID() (string, error) { return "synthetic-web-session-id", nil }
+
+// WebFormTokens answers synthetic values for all three, so a webForm POST
+// goes out.
+func (f *REST) WebFormTokens() (jazoest, fbDTSG, rolloutHash string, err error) {
+	return "22222", "synthetic-fb-dtsg", "1000000000", nil
+}
 
 func (f *REST) MakeRequest(ctx context.Context, url, method string, h http.Header, p []byte, ct types.ContentType) (*http.Response, []byte, error) {
 	return f.answer(url, method, h, p, ct, false)
