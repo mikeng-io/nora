@@ -566,6 +566,58 @@ did not appear in any draw: the log holds no such line. All 42 draws created
 their own workspace and none was left listed afterwards. The 5 ERRORs are
 judge timeouts at 300 s, not verdicts on her; n=3 is a direction, not a rate.
 
+### 1.10 The source and the template are SHARED, and a run must never migrate either (2026-09-25)
+
+**What was wrong.** `nora.subject.sandbox._blank_template` called
+`run_migrations` on `<source>_blank` unconditionally, every time it was not
+already cached in the calling process. `<source>_blank` (`nora_eval_blank`)
+is not this run's — it is the ONE template every session on the host clones
+its sandboxes from (§1.3). A run from a branch whose migration head was
+ahead of it (`0065_standing_working_set`, on `mikeng-io/standing-working-set`
+— #541, not yet merged) upgraded the shared template to that head.
+Every OTHER session's run — from master, at an older head — then failed at
+seeding with `Can't locate revision '0065_…'`: `alembic upgrade head` has to
+find the database's CURRENT revision in its OWN script directory to plan a
+path from it, and master's script directory has never heard of a revision
+only the ahead branch defines. Fixed by hand with a downgrade at the time.
+
+**What changed.** `nora/subject/sandbox.py`:
+
+- `_blank_template` upgrades the shared template only the FIRST time it is
+  ever created (nothing depends on it yet), or leaves it untouched when it is
+  already at the calling process's own head. Any other relationship — ahead
+  or behind — is a DIVERGENCE: a throwaway PRIVATE copy
+  (`<template>_run_<nonce>`) is cloned from the shared one at its own,
+  unmodified revision, migrated to the process's head, and dropped by
+  `close_private_blank_templates` when the run ends (`evals.__main__.main`'s
+  `finally`) — one copy per RUN, reused by every case in it, the same shape
+  the per-case sandbox already uses for its own drop, one level up.
+- `refuse_if_source_diverges_from_head` refuses the whole run, before any
+  case, if the READ-ONLY source's alembic revision differs from the
+  checkout's head, in either direction. The source cannot be migrated through
+  this module at all (`create_readonly_sql_engine`), but a branch whose
+  migration adds a column `snapshot()` selects would otherwise misread an
+  older source deep inside a case, with a message naming a column rather
+  than a reason. Chosen over teaching `snapshot()` to read only the columns
+  an old source has (with defaults for the rest): one comparison with no
+  exceptions is smaller and cannot itself be wrong about which gap is safe.
+- `shared_database_versions`/`assert_shared_databases_unchanged` are an
+  independent, second check, wired into `evals.__main__.main`: both shared
+  databases' alembic versions are recorded before anything runs and
+  re-read after, success or failure, and a run whose OWN two rules above
+  somehow did not hold ERRORs loudly rather than reporting a clean exit.
+
+Tests: `tests/unit/test_sandbox_shared_database_guard.py` (offline, a fake
+engine and mocked Alembic calls — a branch-ahead-or-behind run never issues
+`run_migrations` against the shared name), `tests/unit/
+test_eval_main_shared_db_guard.py` (the CLI wiring: refusal order, the
+guard surviving a raising case, never folding a caught mutation into `rc`),
+and `tests/integration/
+test_shared_eval_database_survives_a_branch_ahead_run.py` (two real
+Postgres databases, revert-proved: the shared one is provably unmoved by
+`_blank_template`, and provably moved by calling `run_migrations` on it
+directly — the exact call the old code made).
+
 ### Where the suite runs — DECIDED 2026-09-21: on the deploy host
 
 Not a preference. Measured: with the deployment's features on, composition

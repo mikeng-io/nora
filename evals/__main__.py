@@ -43,7 +43,15 @@ from evals.scenarios import (
     load_corpus,
 )
 from evals.subject_config import materialise
-from nora.subject import sweep_stale_draw_workspaces
+from nora.subject import (
+    SharedDatabaseMutatedError,
+    SourceRevisionMismatchError,
+    assert_shared_databases_unchanged,
+    close_private_blank_templates,
+    refuse_if_source_diverges_from_head,
+    shared_database_versions,
+    sweep_stale_draw_workspaces,
+)
 
 #: Coarse S-class grouping for `--class`, per `10-the-scenario-map.md` §2/§15.
 #: Approximate on purpose where a corpus is not wholly one class (e.g. only
@@ -455,58 +463,100 @@ def main() -> int:
         print(f"refusing to run: {exc}", file=sys.stderr)
         return 2
 
-    # THE SUBJECT'S CONFIG, REBUILT FOR THIS RUN, BEFORE ANY CASE.
-    #
-    # Every subject composes `config.evaluation.toml`, and this is the only
-    # thing that writes it. Regenerated per run rather than reused: a stale
-    # file is a run measuring a Nora the deployment has since stopped being,
-    # and nothing downstream would say so.
-    #
-    # It is also the one gate that can compare the two — `materialise()`
-    # REFUSES when the generated config disagrees with the deployment outside
-    # `ALLOWED_TO_DIFFER`, so a run never starts against a Nora nobody
-    # deployed. Fail-closed here, or every number after it is unattributable.
+    # FAIL-CLOSED, BEFORE ANY CASE: the source is read-only and this run will
+    # never migrate it, so a branch ahead of (or behind) it would silently
+    # misread it rather than write to it — `snapshot()` naming a column the
+    # source predates fails deep inside a case with a message that names the
+    # column, not the reason (`nora.subject.sandbox.
+    # refuse_if_source_diverges_from_head`'s own docstring).
     try:
-        generated = materialise(
-            example=_REPO_ROOT / "config.example.toml",
-            deployment=Path(args.deployment_config),
-            target=_REPO_ROOT / "config.evaluation.toml",
-        )
-    except FileNotFoundError:
-        print(
-            f"--deployment-config {args.deployment_config!r} does not exist. "
-            "An eval subject composes the DEPLOYMENT's config, never "
-            "config.example.toml — the example ships with almost everything "
-            "off, and running against it measures a different Nora "
-            "(design/evaluation/01-boundaries.md §5). Run this where the "
-            "deployment lives, or point --deployment-config at its "
-            "config.toml.",
-            file=sys.stderr,
-        )
-        return 2
-    except ValueError as exc:
+        refuse_if_source_diverges_from_head(source_url)
+    except SourceRevisionMismatchError as exc:
         print(f"refusing to run: {exc}", file=sys.stderr)
         return 2
-    print(f"subject config rebuilt from {args.deployment_config} -> {generated}")
-    # AFTER the rebuild: the sweep reads Honcho's address and the deployment's
-    # workspace off the config every subject composes.
-    print(f"run {RUN_ID}: every draw gets its own Honcho workspace")
-    _sweep_stale_workspaces()
 
-    if args.print_input:
-        return _print_input(names[0], args.print_input, source_url=source_url)
+    # THE GUARD (2026-09-25 hazard). Recorded here, before any case, and
+    # re-read in the `finally` below through `assert_shared_databases_unchanged`
+    # — a run must never change the alembic version of `nora_eval` or
+    # `nora_eval_blank`, the two databases every OTHER session on the host
+    # also reads. This does not trust that `_blank_template`'s own guard held;
+    # it measures the outcome.
+    shared_before = shared_database_versions(source_url)
 
-    judge = None if not args.judge else Judge(
-        base_url=args.judge_base_url, model=args.judge, samples=args.judge_samples,
-    )
+    try:
+        # THE SUBJECT'S CONFIG, REBUILT FOR THIS RUN, BEFORE ANY CASE.
+        #
+        # Every subject composes `config.evaluation.toml`, and this is the
+        # only thing that writes it. Regenerated per run rather than reused:
+        # a stale file is a run measuring a Nora the deployment has since
+        # stopped being, and nothing downstream would say so.
+        #
+        # It is also the one gate that can compare the two — `materialise()`
+        # REFUSES when the generated config disagrees with the deployment
+        # outside `ALLOWED_TO_DIFFER`, so a run never starts against a Nora
+        # nobody deployed. Fail-closed here, or every number after it is
+        # unattributable.
+        try:
+            generated = materialise(
+                example=_REPO_ROOT / "config.example.toml",
+                deployment=Path(args.deployment_config),
+                target=_REPO_ROOT / "config.evaluation.toml",
+            )
+        except FileNotFoundError:
+            print(
+                f"--deployment-config {args.deployment_config!r} does not exist. "
+                "An eval subject composes the DEPLOYMENT's config, never "
+                "config.example.toml — the example ships with almost everything "
+                "off, and running against it measures a different Nora "
+                "(design/evaluation/01-boundaries.md §5). Run this where the "
+                "deployment lives, or point --deployment-config at its "
+                "config.toml.",
+                file=sys.stderr,
+            )
+            return 2
+        except ValueError as exc:
+            print(f"refusing to run: {exc}", file=sys.stderr)
+            return 2
+        print(f"subject config rebuilt from {args.deployment_config} -> {generated}")
+        # AFTER the rebuild: the sweep reads Honcho's address and the
+        # deployment's workspace off the config every subject composes.
+        print(f"run {RUN_ID}: every draw gets its own Honcho workspace")
+        _sweep_stale_workspaces()
 
-    ok = True
-    for name in names:
-        ok = _run_one(
-            name, source_url=source_url, judge=judge, sample=args.sample,
-            only=only, all_reasons=args.reasons, positions=args.positions,
-        ) and ok
-    return 0 if ok else 1
+        if args.print_input:
+            return _print_input(names[0], args.print_input, source_url=source_url)
+
+        judge = None if not args.judge else Judge(
+            base_url=args.judge_base_url, model=args.judge, samples=args.judge_samples,
+        )
+
+        ok = True
+        for name in names:
+            ok = _run_one(
+                name, source_url=source_url, judge=judge, sample=args.sample,
+                only=only, all_reasons=args.reasons, positions=args.positions,
+            ) and ok
+        return 0 if ok else 1
+    finally:
+        # Drop this run's own private blank template, if `_blank_template`
+        # ever had to build one (branch-ahead/behind divergence) — then
+        # ASSERT the two SHARED databases moved not at all. A `finally`, not
+        # only the success path: a case that raised or a killed run must not
+        # skip the check that would have caught a mutation, and cleanup runs
+        # before the assertion so a private copy never counts as "left
+        # behind" against the shared names it was built to protect.
+        asyncio.run(close_private_blank_templates())
+        try:
+            assert_shared_databases_unchanged(source_url, shared_before)
+        except SharedDatabaseMutatedError as exc:
+            # Loud on purpose: this must never read as merely a nonzero exit
+            # among the run's own — it is a DIFFERENT session's next run that
+            # pays for it. Re-raised, not swallowed into a return code: ERROR
+            # is never a PASS (CLAUDE.md), and this is caught by nothing
+            # upstream of `if __name__ == "__main__":`, so it is the last
+            # word this process prints.
+            print(f"ERROR: {exc}", file=sys.stderr)
+            raise
 
 
 if __name__ == "__main__":

@@ -60,6 +60,46 @@ WHAT IS STILL NOT BYTE-IDENTICAL, each a stated limitation of the extraction:
   `snapshot.py` is how it closes, and `11-the-sandbox-rebuild.md` §6 R1 is
   the rule that will refuse a case once the extraction can say a tier is
   missing rather than merely unread.
+
+THE SOURCE AND THE TEMPLATE ARE BOTH SHARED, AND NEITHER MAY EVER BE
+MIGRATED BY A RUN (2026-09-25 hazard, fixed here). `nora_eval` (the source)
+and `nora_eval_blank` (the template `sandbox_database` clones every case
+from) are read by every session on the host, not just this run's. Measured
+2026-09-25: a run from a branch whose alembic head was AHEAD of
+`nora_eval_blank` called `run_migrations` on it — the ONLY place in this
+package that ever calls `run_migrations` on a shared, not per-case, name —
+which upgraded the shared template to that branch's head. Every OTHER
+session's run then failed at seeding, from master, with `Can't locate
+revision '0065_…'`: `command.upgrade(cfg, "head")` has to find the
+database's CURRENT revision in ITS OWN script directory to plan a path from
+it, and master's script directory had never heard of a revision only the
+ahead branch defined. Fixed by hand with a downgrade at the time; fixed
+structurally here:
+
+- `_blank_template` now upgrades the shared template ONLY the first time it
+  is ever created (nothing depends on it yet) or when it is already at this
+  process's own head (a no-op skipped entirely, not even attempted). Any
+  other relationship — this branch ahead OR behind what is already there —
+  is a DIVERGENCE, and the response is a throwaway PRIVATE copy
+  (`<template>_run_<nonce>`), cloned from the shared one at its own
+  untouched revision, migrated to this process's head, and dropped by
+  `close_private_blank_templates` when the run ends. The shared template is
+  never written to on that path.
+- The source is read-only by construction
+  (`create_readonly_sql_engine`/`default_transaction_read_only=on`), so it
+  cannot be migrated through this module at all — but it CAN be silently
+  misread: a branch whose migrations add a column `snapshot()` selects, run
+  against a source that predates that migration, fails deep in a query with
+  a message naming a column, not a reason. `refuse_if_source_diverges_from_head`
+  is the fail-closed, smaller alternative to teaching `snapshot()` to read
+  only what an old source has: refuse before any case runs, in either
+  direction (ahead or behind), rather than judge per column whether a given
+  gap happens to be safe.
+- `shared_database_versions`/`assert_shared_databases_unchanged` are the
+  independent, second check: recorded at run start and re-read at run end
+  (`evals.__main__.main`), they do not trust that the two rules above held —
+  they MEASURE the outcome, and ERROR loudly if either shared database's
+  alembic version moved.
 """
 
 from __future__ import annotations
@@ -81,7 +121,12 @@ from nora.domain.models import TranscriptRow
 from nora.domain.notes import Note, NoteRevision
 from nora.domain.reminders import Reminder, ReminderState
 from nora.infra.sql import create_readonly_sql_engine
-from nora.infra.sql.migrations_runner import run_migrations
+from nora.infra.sql.migrations_runner import (
+    current_revision,
+    head_revision,
+    run_migrations,
+    sync_url_for,
+)
 from nora.infra.sql.snapshot import Snapshot, snapshot
 from nora.persons import Persons
 
@@ -89,7 +134,10 @@ from .knowledge import Knowledge, Message, NoteSeed, ReminderSeed, know
 from .obtain import Subject
 
 __all__ = [
-    "Sandboxed", "as_knowledge", "judge_source", "sandbox_database", "sandbox_from_snapshot",
+    "Sandboxed", "SharedDatabaseMutatedError", "SharedDatabaseVersions",
+    "SourceRevisionMismatchError", "as_knowledge", "assert_shared_databases_unchanged",
+    "close_private_blank_templates", "judge_source", "refuse_if_source_diverges_from_head",
+    "sandbox_database", "sandbox_from_snapshot", "shared_database_versions",
 ]
 
 _HOUR_MS = 3_600_000
@@ -113,18 +161,47 @@ def _sibling(url: str, name: str) -> str:
     return make_url(url).set(database=name).render_as_string(hide_password=False)
 
 
-async def _blank_template(source_url: str) -> str:
-    """A migrated, EMPTY database beside the source, made once and reused.
+#: Private per-run copies `_blank_template` built because the SHARED
+#: `<source>_blank` diverged from this process's own migration head —
+#: `source_url -> the private database's name`. One per source per process:
+#: every case in this run reuses the SAME private copy (never re-created,
+#: never re-migrated per case) and it is dropped once, at run end, by
+#: `close_private_blank_templates`. `_migrated` gates re-entry into
+#: `_blank_template` for a given URL; this is what that re-entry returns.
+_private_blanks: dict[str, str] = {}
 
-    `<source>_blank`, so two runs against one source share it and a run
-    against a different source never does. Brought to head with the
-    repo's own migration chain, which is the schema production runs — a
-    sandbox at a different revision would be a different store.
+
+async def _blank_template(source_url: str) -> str:
+    """A migrated database beside the source, made once and reused — OR, if
+    this process's migration head differs from what the shared template
+    already holds, a PRIVATE copy this run alone uses and drops when it ends.
+
+    `<source>_blank` is SHARED: every session on the host reads and clones it
+    (`sandbox_database`), so nothing here may call `run_migrations` against
+    it except to ESTABLISH it the first time it is ever created — nothing
+    depends on it yet at that point. Once established, it is reused AS IS
+    when its revision already equals this process's own `head_revision()`
+    (no upgrade call at all, not even the idempotent no-op the old code paid
+    for on every process). Anything else — this branch ahead of what is
+    there, or behind it — is a DIVERGENCE, and upgrading the SHARED database
+    is exactly the 2026-09-25 hazard this function exists to end (module
+    docstring): a branch ahead of `nora_eval_blank` upgraded it to its own
+    head, and every OTHER session's run then failed at seeding, from an
+    older head, with `Can't locate revision '0065_…'`.
+
+    So a divergence never touches the shared template. It clones a
+    throwaway PRIVATE copy (`<template>_run_<nonce>`) from the shared one AT
+    ITS OWN, UNMODIFIED revision, migrates THAT to this process's head, and
+    tracks it in `_private_blanks` for `close_private_blank_templates` to
+    drop when the run ends — the same shape `sandbox_database`'s own
+    per-case drop already uses, one level up (one copy per RUN, not per
+    case, because the migration chain is a cost worth paying once).
     """
     name = f"{make_url(source_url).database}_blank"
     url = _sibling(source_url, name)
     if url in _migrated:
-        return name
+        return _private_blanks.get(source_url, name)
+
     admin = create_async_engine(_maintenance(source_url), isolation_level="AUTOCOMMIT")
     try:
         async with admin.connect() as conn:
@@ -135,11 +212,195 @@ async def _blank_template(source_url: str) -> str:
                 await conn.execute(sa.text(f'CREATE DATABASE "{name}"'))
     finally:
         await admin.dispose()
-    # Sync Alembic on the event loop's thread: the runner opens and closes its
-    # own engine, and this happens once per process per source.
-    run_migrations(url)
+
+    if not exists:
+        # First-ever establishment. Nothing else depends on this database
+        # yet, so migrating it in place is the baseline, not a divergence.
+        run_migrations(url)
+        _migrated.add(url)
+        return name
+
+    # Sync Alembic on the event loop's thread, exactly as the established
+    # path below does — a plain read, no lock, no upgrade attempt.
+    current = current_revision(url)
+    local_head = head_revision()
+    if current == local_head:
+        _migrated.add(url)
+        return name
+
+    # DIVERGED. Never call `run_migrations` on `url` (the shared name) from
+    # here on — build and migrate a private copy instead, and leave the
+    # shared template exactly as found.
+    private_name = f"{name}_run_{uuid.uuid4().hex[:12]}"
+    private_url = _sibling(source_url, private_name)
+    admin = create_async_engine(_maintenance(source_url), isolation_level="AUTOCOMMIT")
+    try:
+        async with admin.connect() as conn:
+            await conn.execute(sa.text(
+                "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                "WHERE datname = :t AND pid <> pg_backend_pid()"
+            ), {"t": name})
+            await conn.execute(sa.text(f'CREATE DATABASE "{private_name}" TEMPLATE "{name}"'))
+    finally:
+        await admin.dispose()
+    run_migrations(private_url)
     _migrated.add(url)
-    return name
+    _private_blanks[source_url] = private_name
+    return private_name
+
+
+async def close_private_blank_templates() -> None:
+    """Drop every private per-run blank template `_blank_template` built
+    because the shared one diverged, and forget it — call ONCE, at run end
+    (`evals.__main__.main`'s `finally`), never per case: one private copy is
+    reused by every case in the run, unlike the per-case sandbox
+    `sandbox_database` already drops on its own.
+
+    Best-effort per database, the same shape `sandbox_database`'s own
+    cleanup already uses: one that fails to drop must not stop the others,
+    and a run's READING must never depend on its own cleanup succeeding.
+    Safe to call when `_blank_template` never diverged this process — a
+    no-op.
+    """
+    for source_url, private_name in list(_private_blanks.items()):
+        admin = create_async_engine(_maintenance(source_url), isolation_level="AUTOCOMMIT")
+        try:
+            async with admin.connect() as conn:
+                with contextlib.suppress(Exception):
+                    await conn.execute(sa.text(
+                        "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                        "WHERE datname = :t AND pid <> pg_backend_pid()"
+                    ), {"t": private_name})
+                    await conn.execute(sa.text(f'DROP DATABASE IF EXISTS "{private_name}"'))
+        finally:
+            await admin.dispose()
+        del _private_blanks[source_url]
+        _migrated.discard(_sibling(source_url, f"{make_url(source_url).database}_blank"))
+
+
+def _exists(url: str) -> bool:
+    """Whether the database `url` names exists on its server.
+
+    Checked via the maintenance database (`postgres`), never by connecting
+    to `url` itself and treating a connection failure as "not created yet" —
+    that would also swallow a real connectivity error and misreport it as
+    the benign case, which is the exact ERROR-read-as-PASS this module's
+    guards exist to refuse.
+    """
+    admin = sa.create_engine(sync_url_for(_maintenance(url)))
+    try:
+        with admin.connect() as conn:
+            return bool(conn.execute(
+                sa.text("SELECT 1 FROM pg_database WHERE datname = :n"),
+                {"n": make_url(url).database},
+            ).scalar())
+    finally:
+        admin.dispose()
+
+
+@dataclass(frozen=True, slots=True)
+class SharedDatabaseVersions:
+    """Both shared eval databases' alembic versions at one instant — what
+    `refuse_if_source_diverges_from_head` and the run-start/run-end guard
+    (`assert_shared_databases_unchanged`) compare against."""
+
+    #: `nora_eval`-shaped: the clone every session reads, never written.
+    source_rev: str | None
+    #: `nora_eval_blank`-shaped. `None` means the template does not exist
+    #: yet — not a divergence, since nothing has been established to
+    #: diverge from.
+    blank_rev: str | None
+
+
+def shared_database_versions(source_url: str) -> SharedDatabaseVersions:
+    """A plain read of both shared databases' `alembic_version` — no lock,
+    no upgrade, nothing that could itself be the mutation this exists to
+    detect. `evals.__main__.main` calls this once at run start (the
+    baseline) and once at run end, through `assert_shared_databases_unchanged`.
+    """
+    blank_url = _sibling(source_url, f"{make_url(source_url).database}_blank")
+    return SharedDatabaseVersions(
+        source_rev=current_revision(source_url),
+        blank_rev=current_revision(blank_url) if _exists(blank_url) else None,
+    )
+
+
+class SharedDatabaseMutatedError(RuntimeError):
+    """A run's own end-of-run guard: `shared_database_versions` read a
+    DIFFERENT alembic version than it read at the start, for a database
+    that already existed then. Every path that could migrate a shared name
+    is refused earlier (`_blank_template`'s divergence branch never calls
+    `run_migrations` on the shared url; the source is read-only by
+    construction) — this does not trust that those held. It MEASURES the
+    outcome, independent of which code path ran, and it is never a PASS."""
+
+
+def assert_shared_databases_unchanged(
+    source_url: str, before: SharedDatabaseVersions,
+) -> None:
+    """ERROR, loudly, if either shared database changed alembic version
+    since `before` was read.
+
+    The template's `blank_rev` moving from `None` to a real value is the one
+    allowed transition: that is `_blank_template` establishing the baseline
+    the FIRST time it is ever created, not a mutation of something another
+    session already depended on. Every other change — the source moving at
+    all, or an already-established template moving — is the hazard this
+    module exists to end.
+    """
+    after = shared_database_versions(source_url)
+    problems: list[str] = []
+    if after.source_rev != before.source_rev:
+        problems.append(
+            f"source moved from {before.source_rev!r} to {after.source_rev!r}"
+        )
+    if before.blank_rev is not None and after.blank_rev != before.blank_rev:
+        problems.append(
+            f"template moved from {before.blank_rev!r} to {after.blank_rev!r}"
+        )
+    if problems:
+        raise SharedDatabaseMutatedError(
+            "this run changed a database every eval session on the host "
+            "shares, which must never happen: " + "; ".join(problems)
+        )
+
+
+class SourceRevisionMismatchError(RuntimeError):
+    """The source clone's alembic revision is not this checkout's migration
+    head. Refused before any case runs — see
+    `refuse_if_source_diverges_from_head`."""
+
+
+def refuse_if_source_diverges_from_head(source_url: str) -> None:
+    """Refuse the run if the source clone's alembic revision differs from
+    this checkout's own migration head, in EITHER direction.
+
+    The source is read-only (`create_readonly_sql_engine`; Postgres refuses
+    any write at the session level), so a branch ahead of it can never
+    silently WRITE to it — but it can silently MISREAD it: a query naming a
+    column this branch's migration added, run against a source that
+    predates that migration, fails deep inside `snapshot()` with a message
+    that names a column, not a reason. This check names the reason, before
+    any case is charged for reaching it.
+
+    Refuses on a source AHEAD of the branch too, even though that direction
+    is usually harmless (a column an older query never selects). Telling
+    "ahead and safe" from "ahead and breaking" apart needs walking the
+    alembic graph per column `snapshot.py` reads; the smaller, safer rule is
+    one comparison with no exceptions — the same shape
+    `design/evaluation/11-the-sandbox-rebuild.md` §6 R7 already uses for "no
+    case states its own window": refuse and say why, rather than reason per
+    case about whether a given gap happens to be safe.
+    """
+    source_rev = current_revision(source_url)
+    local_head = head_revision()
+    if source_rev != local_head:
+        raise SourceRevisionMismatchError(
+            f"source at {source_rev!r}, branch at {local_head!r}: refresh "
+            "the source (scripts/refresh_eval_clone.sh) or run on a branch "
+            "at the source's head. The source is read-only; this run will "
+            "not migrate it either way."
+        )
 
 
 @contextlib.asynccontextmanager
