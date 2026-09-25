@@ -171,7 +171,7 @@ taste:
 | surface | form | source |
 |---|---|---|
 | social profiles, web, chat, reactions, stickers, every generated image | **Mini Nora** (native) | `assets/nora-canonical-self.png`, `assets/nora-character-reference-sheet.png` |
-| small or square slots: favicon, PWA icon, app avatar, notification | **Mini Nora**, cut-out | `assets/nora-mini-icon.png` |
+| small or square slots: favicon, PWA icon, app avatar, notification | **Mini Nora**, cut-out, bare (§7) | `assets/nora-mini-icon.png` |
 | 3D avatar of the native form (VRM, stickers in 3D) | **Mini Nora** rig | `assets/nora-mini-tpose.png` |
 | human-scale 3D, VR/AR, spatial display, mocap, full-body interaction | **Embodied Nora** (interface) | `assets/nora-embodied-tpose.png` |
 | voice | no visual form | — |
@@ -274,6 +274,14 @@ this system rejects), no black weights.
 - **Label** (500, 0.75rem, sentence case): field labels, column headers, nav groups.
 - **Mono** (450, 0.8125rem, `tnum`): values that change or get copied.
 
+**Display register (the public site only).** The hierarchy above is the
+portal's. The public site (`site/`) needs larger type and extends it upward
+without changing its character: display 650 at `clamp(2.625rem, …, 5.25rem)`
+with `-0.035em` tracking, section titles 650 up to `3.25rem`, a lede at
+`1.125–1.3125rem`, body `1.0625rem`. Still Inter, still sentence case, never
+heavier than 650; tracking tightens only as size grows, and zh-Hant keeps
+normal tracking and a looser line (1.18 display, 1.75 body).
+
 ### Named rules
 **The Sentence-Case Rule.** Nora does not shout. No all-caps labels, headings or
 buttons, in any locale.
@@ -350,7 +358,12 @@ Surface fill, hairline border, `16px` radius, 16–24px padding. Titles in
 Wherever the portal shows Nora herself (her messages, her doctrine, her
 status):
 - her avatar is `assets/nora-mini-icon.png` on a blush-wash disc with a 2px
-  blush ring when she is active;
+  blush ring when she is active, **where she sits among other people's round
+  avatars** (a transcript, a member list);
+- everywhere else the cut-out is used **bare**: transparent, no disc, no ring.
+  Beside the wordmark, as the favicon, as a PWA icon (operator, 2026-09-26). A
+  platform that forbids transparency (the iOS home-screen icon, a maskable
+  icon) gets a full-bleed studio square with her inside it, never a circle;
 - her words sit on blush wash, everyone else's on surface;
 - her presence dot is blush; other people's dots are their person hue.
 
@@ -391,6 +404,15 @@ the provider's default blue-black), so person hues keep their contrast.
   digitally but is not depicted as circuitry.
 - **3D:** the T-poses are rig inputs. Earphones are a separate mesh so the
   cable does not deform with the arms.
+- **New renders of her** (the public site's art, `site/src/assets/art/`) are
+  made from the canonical image and the character sheet, checked by eye
+  against the eight anchors before use, and kept with their brief and prompt
+  beside them. One that drifts (the site's first wave came back four heads
+  tall) is re-rendered, not used.
+- **A colour that continues a photograph** (the backdrop behind a render, as
+  on the site's character plate) is sampled from that image, not taken from
+  the tokens: it has to match the picture, not the theme. It is the one place
+  a raw value is allowed, and it says where it was sampled.
 
 ## 9. Do's and don'ts
 
@@ -430,6 +452,10 @@ The portal predates this file. Measured against it on 2026-09-26
   blush); §7 "Nora in the UI" is new work.
 - **PWA icons:** `app/public/manifest.json` names `/icon-192.png` and
   `/icon-512.png`, neither of which exists in `app/public/`; they are to be
-  cut from `assets/nora-mini-icon.png` on a studio-grey disc, and the manifest's
+  cut from `assets/nora-mini-icon.png`, bare (§7), and the manifest's
   `theme_color` / `background_color` set to studio and ink.
 - **Fonts:** the CJK fallback is absent from `--font-sans`.
+
+The public landing page is no longer the portal's to fix: `site/` replaces
+`app/src/app/[locale]/page.tsx` (site/README.md, "Going live"), built on this
+file from the start. The login page still owes the list above.
