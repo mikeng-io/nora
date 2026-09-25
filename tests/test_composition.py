@@ -1452,6 +1452,71 @@ async def test_note_candidates_resolves_a_mapped_senders_canonical_name(cfg):
     assert "not-miles" not in text
 
 
+async def test_culture_resolves_a_mapped_senders_canonical_name(cfg):
+    """#200 follow-up: the review on #544 found `CultureAdaptor` still built
+    its own `<room_messages>` block from the raw batch and never called
+    `Persons.name_transcript` either — the SAME gap, one tier over. Wired
+    the same way `NoteCandidateAdaptor` already is: off `persons` and the
+    allowlist's `platform_for` (`identity.toml`'s `[persons.miles]` maps
+    signal `+852111` to `Miles`, the `cfg` fixture's own shape)."""
+    deps = await build_dependencies(override_config(cfg, {
+        "dreamer.enabled": True, "culture.enabled": True,
+    }))
+    culture = next(a for a in deps.dream_adaptors if a.name == "culture")
+    batch = (
+        TranscriptRow(
+            id=1, sender_id="+852111", sender_name="not-miles", ts=1_000,
+            body="dinner Saturday?", is_nora=False,
+            delivery_status=DeliveryStatus.SENT, raw_json=None,
+        ),
+    )
+
+    text = await culture.inputs(key="g1", batch=batch)
+
+    assert 'from="Miles"' in text
+    assert "not-miles" not in text
+
+
+async def test_note_curator_resolves_a_mapped_senders_canonical_name(cfg):
+    """#200 follow-up: `NoteCuratorAdaptor` carries the same gap a tier over
+    again — `_gather_evidence` builds a note's evidence rows off
+    `record.recent` and never called `Persons.name_transcript` either.
+    Composition wires the resolver the same way, keyed as `room_for` already
+    is (every id a room is known by, within its unit — `Note.established_in`
+    carries no platform of its own).
+
+    Exercised against the built closures directly rather than through a
+    seeded note: reaching `_gather_evidence` needs a real due-or-expired
+    note in `SqlNoteStore`, which is `tests/unit/test_note_curator.py`'s own
+    job (revert-proved there against a fake resolver). What only the
+    composition root can get wrong is whether these two callables reach the
+    adaptor at all, and resolve against the SAME allowlist row `room_for`
+    does — which is what this pins."""
+    deps = await build_dependencies(override_config(cfg, {
+        "dreamer.enabled": True,
+        "notes.enabled": True,
+        "notes.curator_enabled": True,
+    }))
+    curator = next(
+        a for a in deps.dream_adaptors if a.name == "note-curation"
+    )
+
+    assert curator._platform_for("g1", "nora") == "signal"
+    assert curator._platform_for("g1", "some-other-unit") is None
+    assert curator._platform_for("no-such-room", "nora") is None
+
+    batch = (
+        TranscriptRow(
+            id=1, sender_id="+852111", sender_name="not-miles", ts=1_000,
+            body="dinner Saturday?", is_nora=False,
+            delivery_status=DeliveryStatus.SENT, raw_json=None,
+        ),
+    )
+    resolved = curator._resolve_names(batch, "signal")
+
+    assert resolved[0].person_name == "Miles"
+
+
 async def test_the_dreamer_model_is_built_with_the_dreamers_own_effort(cfg):
     """**A config key nothing reads is the phantom-metric rule again**, and
     the first version of this change had exactly that: three config tests
