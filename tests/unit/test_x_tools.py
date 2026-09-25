@@ -111,10 +111,12 @@ async def test_an_ok_carries_how_to_report_it(social):
         {"handle": "nasa", "what": "story"},
         {"handle": "not a name!", "what": "profile"},
         {"handle": "na.sa", "what": "profile"},
-        # A link that names nothing, or another network.
+        # A link that names nothing. A link to another network is no longer
+        # here: it is a registry redirect (`nothing_found`), not a bad input
+        # (design/social-per-network/30-link-owner-registry.md, "Migration"
+        # step 3) — see test_an_instagram_link_names_the_tool_that_reads_it.
         {"link": "https://x.com/explore"},
         {"link": "https://evil.example/nasa/status/42"},
-        {"link": "https://www.instagram.com/p/SynthPost01/"},
         # `what` beside a link must name the same read.
         {"link": "https://x.com/nasa/status/42", "what": "posts"},
         {"link": "https://x.com/nasa/status/42", "what": "profile"},
@@ -130,7 +132,19 @@ async def test_a_bad_input_is_unavailable_and_nothing_is_sent(social, kwargs):
 
 async def test_an_instagram_link_names_the_tool_that_reads_it(social):
     out = await _tools(social)["x_read"](link="https://www.instagram.com/p/SynthPost01/")
+    assert out["status"] == "nothing_found"
     assert "instagram_read" in out["note"]
+    assert social.calls == []
+
+
+async def test_a_linkedin_link_names_the_tool_that_reads_it(social):
+    """The registry lookup (design/social-per-network/30-link-owner-registry.md,
+    "Migration" step 3) catches a LinkedIn link too, which the old
+    hand-written branch never did (it named only Instagram)."""
+    out = await _tools(social)["x_read"](link="https://www.linkedin.com/in/williamhgates/")
+    assert out["status"] == "nothing_found"
+    assert "linkedin_read" in out["note"]
+    assert social.calls == []
 
 
 async def test_no_input_is_echoed_back(social):

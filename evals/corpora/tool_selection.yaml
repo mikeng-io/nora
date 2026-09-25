@@ -370,17 +370,18 @@ cases:
   # so they grade whether the model already knows the right tool and never
   # touch this PR's mechanism — reverting the whole registry leaves them
   # green, because a model that reaches for `x_read` directly never asks
-  # `web_fetch` anything. These two PERMIT `web_fetch` and require the owner
-  # call to come after it when it runs: `before: {web_fetch: [x_read]}`
-  # (`metadata.before`, `ToolRouteGrader`, `evals/backbone.py:1697`) says
-  # `x_read` must not run before the first `web_fetch` — the same shape
-  # `{instagram_read: [media_fetch]}` uses further below, with the roles
-  # this PR needs (`web_fetch` first, the owner after). If `web_fetch` never
-  # runs at all the check does not apply, so a model that calls the owner
-  # directly still passes; only the owner running BEFORE a `web_fetch` that
-  # also ran is the order failure. Both kept: one measures routing
-  # preference, this one measures the
-  # registry's fallback. `args_include` is the link WITHOUT its scheme
+  # `web_fetch` anything. These two PERMIT `web_fetch` (it is not in
+  # `not_tools`) and only require that the owner is called with the right
+  # link — no `before:` ordering. A live run (n=5, deployed build) measured
+  # this UNSTABLE at 4 PASS / 1 FAIL with `before: {web_fetch: [x_read]}`:
+  # the failing draw ran `x_read, x_read, web_fetch` — she read the post with
+  # `x_read` FIRST, exactly the right call, then made an unrelated later
+  # `web_fetch` call, and the grader failed the whole case on `x_read`
+  # running before `web_fetch`. The case's intent is only that she ends up
+  # calling the owner with the right link; it never needed to say anything
+  # about a LATER, unrelated `web_fetch` call, so the ordering constraint was
+  # an anchor defect, not a model one, and is dropped here (and never added
+  # to the PR-3 case below). `args_include` is the link WITHOUT its scheme
   # (`x_read`/`linkedin_read` accept either — design 30 "What each owning
   # tool accepts"), so a call that dropped the scheme along the way still
   # matches. The id and handle are synthetic.
@@ -392,7 +393,6 @@ cases:
     metadata:
       tools: [x_read]
       not_tools: [x_search, instagram_read, instagram_search]
-      before: {web_fetch: [x_read]}
       args_include:
         x_read: ["x.com/synth_pr2_user/status/9200000000000000001"]
     snapshot: *room_a
@@ -405,9 +405,46 @@ cases:
     metadata:
       tools: [linkedin_read]
       not_tools: [linkedin_search, x_read, instagram_read]
-      before: {web_fetch: [linkedin_read]}
       args_include:
         linkedin_read: ["www.linkedin.com/in/synth-pr2-person"]
+    snapshot: *room_a
+
+  # design/social-per-network/30-link-owner-registry.md, "Migration" PR 3:
+  # the OWNERS now consult the registry too, so a wrong-first-owner call
+  # recovers instead of dead-ending on "I can't read that." The wrong owner
+  # here is `instagram_read` ON PURPOSE, not `linkedin_read`: before PR 3,
+  # `linkedin_read` ALREADY named `x_read` for an X link ("That is an X link.
+  # Read it with x_read, not this tool.", DEC-201) — a case built around that
+  # pair would pass on the reverted code too, since the model still gets a
+  # routing hint either way and this grader does not read `status`. Only
+  # `instagram_read` (an X or LinkedIn link) and `x_read` (a LinkedIn link)
+  # are the cells design 30's own table calls out as new: `instagram_read`
+  # named NO other network at all before this PR, a genuine dead end. So: an
+  # X status link, introduced as "this insta post" — a model that reaches
+  # for `instagram_read` first, off the person's own word, now gets
+  # redirected (`nothing_found`, naming `x_read` and the `link` param)
+  # instead of `instagram_read`'s old generic "isn't an Instagram ... link I
+  # can read" refusal, which named nothing else to try. No `before:` here,
+  # same correction as the two PR-2 cases above and for the same measured
+  # reason (n=5 on the deployed build): an ordering constraint would fail a
+  # model that read the link correctly and made some OTHER, later call for
+  # an unrelated reason, which is not this case's failure mode. `tools:
+  # [x_read]` only requires `x_read` to run at some point with the right
+  # link (`args_include`); `instagram_read` and `web_fetch` are deliberately
+  # NOT in `not_tools`, so an `instagram_read` call that gets redirected —
+  # the exact path this PR built, and the one the reverted code cannot
+  # recover from — grades PASS. Only the other networks stay excluded, since
+  # nothing here should reach for them. The id is synthetic.
+  - name: route_x_read_link_owner_registry_wrong_owner_instagram_first
+    entry: tag
+    expect: reply
+    mention: true
+    input: can you check this insta post, what does it say? https://x.com/synth_pr3_user/status/9300000000000000001
+    metadata:
+      tools: [x_read]
+      not_tools: [x_search, linkedin_read, linkedin_search, instagram_search]
+      args_include:
+        x_read: ["x.com/synth_pr3_user/status/9300000000000000001"]
     snapshot: *room_a
 
   # --- what the call carried: the image-generation skill (2026-09-24) ---------
