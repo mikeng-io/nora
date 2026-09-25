@@ -239,6 +239,27 @@ def in_schema_form(text: str) -> bool:
     return True
 
 
+def dropped_citations(head: str, body: str) -> tuple[frozenset[int], ...]:
+    """§7's carry-forward check: the citation sets of the HEAD's lines that
+    no line of the new `body` cites in full, in the head's order. Empty means
+    every line's evidence survives the restatement.
+
+    A restatement may rewrite a line, move it between sections or merge two
+    lines into one citing both; it may not make a line's evidence vanish.
+    Both sides are read LINE BY LINE WITH A PATTERN, never the parser, so the
+    check binds to any `[<ids>]` a head carries, parsed or not (§9): a legacy
+    head with no citations makes it vacuous, and that one revision is held to
+    form only.
+    """
+    new_lines = [cited_ids_in(line) for line in body.splitlines()]
+    dropped: list[frozenset[int]] = []
+    for line in head.splitlines():
+        ids = cited_ids_in(line)
+        if ids and not any(ids <= new for new in new_lines):
+            dropped.append(ids)
+    return tuple(dropped)
+
+
 def _canonical_heading(name: str) -> str | None:
     folded = name.casefold()
     return next((h for h in SECTIONS if h.casefold() == folded), None)

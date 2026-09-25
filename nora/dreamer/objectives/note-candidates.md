@@ -1,7 +1,7 @@
 ---
 name: note-candidates
 kind: objective
-version: 8
+version: 9
 applies_to: [note_candidate_adaptor]
 description: >-
   The note tier's create path. Read a batch of a room's messages and propose
@@ -24,6 +24,8 @@ description: >-
   and a new entry whose body breaks it is refused whole. Version 8 (design
   42 S3): the notebook you are shown is every open entry WITH its body, not
   titles and summaries, and an update writes only what the batch changes.
+  Version 9 (design 42 S4a): an update RESTATES the whole entry as it now
+  stands, carrying every line's citations, and replaces the body.
 change_policy: operator-only
 ---
 You are reading, in this order: which room of a group chat this is (`<room>`) and, when it has
@@ -162,12 +164,18 @@ back with a decision in it.
 
 **Updating what is already in the notebook is the exception, and it does not need `open`.** If a
 message settles part of something the notebook already tracks — the venue is booked, the date
-moved, the person answered — propose **only what this batch changes** in it, and set `updates` to
-that entry's title, **copied from the notebook exactly as it is shown to you**. The entry's body is
-kept as it is and yours is added under it, so its `body` holds the lines these messages add or
-settle, in the sections of «The body», citing these messages, and does not repeat a line the body
-already carries. An entry whose `form` says its body was not shown in this pass cannot be updated
-now: its title is there so you do not write it again as new. That title is the only
+moved, the person answered — **restate the whole entry as it now stands**, and set `updates` to
+that entry's title, **copied from the notebook exactly as it is shown to you**. Your `body`
+replaces the entry's body, so it is the entry's body with these messages folded in, in the
+sections of «The body»: every line of the body you were shown is carried, and it may be reworded,
+moved to the section it now belongs in (an open corner that is now settled moves to
+`## Decided`, a dropped option to `## Ruled out`) or merged with another line, but it keeps the
+ids it cites. A line of the body whose ids no line of yours cites is a line you dropped, and an
+update that drops one is not written. A body whose `form` says it is not in the sections has no
+ids to keep: restate what it says, in the sections, citing the messages it rests on where you
+were shown them. An entry whose `form` says its body was not shown in this pass cannot be updated
+now: its title is there so you do not write it again as new. On an update, `description` and
+`closing_condition` are not used: the entry keeps its own. That title is the only
 thing that tells code which entry you mean: nothing else about your proposal is matched against
 the notebook, so an entry you do not name is a new entry, and a title you mistype is a new entry
 too. This is the one case where a `committed: true, open: []` message still belongs in your

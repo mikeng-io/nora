@@ -2,22 +2,22 @@
   {
     "name": "accept() holds a create's body to the schema at all",
     "file": "nora/language/note_candidates.py",
-    "old": "            if candidate.updates is None:\n                body = self._held_to_schema(",
-    "new": "            if False:\n                body = self._held_to_schema(",
+    "old": "            body = self._held_to_schema(\n                candidate.body,\n",
+    "new": "            body = candidate.body if True else self._held_to_schema(\n                candidate.body,\n",
     "target": "tests/unit/test_note_candidates.py::test_accept_refuses_a_create_whose_body_breaks_the_schema tests/unit/test_note_candidates.py::test_accept_passes_a_conformant_create_body_through_normalised"
   },
   {
     "name": "a create carries the NORMALISED body, not the raw one",
     "file": "nora/language/note_candidates.py",
-    "old": "                candidate = replace(candidate, body=body)\n",
-    "new": "                candidate = replace(candidate, body=candidate.body)\n",
+    "old": "            candidate = replace(candidate, body=body)\n",
+    "new": "            candidate = replace(candidate, body=candidate.body)\n",
     "target": "tests/unit/test_note_candidates.py::test_accept_passes_a_conformant_create_body_through_normalised"
   },
   {
     "name": "a create's ## Open must hold a line (require_open)",
     "file": "nora/language/note_candidates.py",
-    "old": "parse_note_body(body, shown=shown, require_open=True)",
-    "new": "parse_note_body(body, shown=shown, require_open=False)",
+    "old": "                key=key, require_open=is_create,\n",
+    "new": "                key=key, require_open=False,\n",
     "target": "tests/unit/test_note_candidates.py::test_accept_refuses_a_create_whose_body_breaks_the_schema[missing_section]"
   },
   {

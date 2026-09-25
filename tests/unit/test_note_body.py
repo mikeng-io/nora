@@ -235,3 +235,17 @@ def test_in_schema_form_reads_form_not_evidence():
     assert not in_schema_form("Ada wants dinner on Saturday.")
     assert not in_schema_form("## Decided\n## Open\n- where")  # uncited
     assert not in_schema_form("## Decided\n- on 2026-10-03 Fri (Ada) [1]\n## Open")  # bad_date
+
+
+def test_dropped_citations_reads_every_head_line_against_the_new_body():
+    """§7's carry-forward check: a line may be rewritten, moved or merged,
+    as long as some new line cites ALL of its ids; a legacy head with no
+    citations makes it vacuous."""
+    from nora.domain.note_body import dropped_citations
+
+    head = "## Decided\n- a (Ada) [1]\n## Open\n- b [2, 3]\n- c [4]"
+    assert dropped_citations(head, "## Decided\n- a and b (Ada) [1, 2, 3]\n## Open\n- c [4]") == ()
+    assert dropped_citations(head, "## Decided\n- a (Ada) [1]\n## Open\n- b [2]\n- c [4]") == (
+        frozenset({2, 3}),
+    )
+    assert dropped_citations("Ada wants dinner.", "## Decided\n## Open\n- x [9]") == ()

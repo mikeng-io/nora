@@ -1528,13 +1528,16 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "nora_note_candidate_gate_total",
         "The note-candidates adaptor's deterministic gate, by outcome: "
         "created (the model named no standing note, so a brand new one was "
-        "written), updated (APPENDED as a revision to the standing note the "
-        "model NAMED in its updates field — resolved by title since "
-        "2026-09-13, the anchor date having been the key from 2026-09-08 "
-        "until it merged two unrelated occasions twice out of two firings, "
-        "and appending rather than replacing since the same day, issue "
-        "#228), unresolved (the model named a title NO standing note answers "
-        "to — mistyped or invented — so a new note was written; its own "
+        "written), updated (a revision of the standing note the model NAMED "
+        "in its updates field — resolved by title since 2026-09-13, the "
+        "anchor date having been the key from 2026-09-08 until it merged two "
+        "unrelated occasions twice out of two firings; appended from that "
+        "day, issue #228, and a restatement of the whole body since design "
+        "42 S4a, 2026-09-26), dropped_citation (a restatement that left some "
+        "line of the head with none of its citations carried — left PENDING, "
+        "nothing written, design 42 §7), unresolved (the model named a "
+        "title NO standing note answers to — mistyped or invented — so a "
+        "new note was written; its own "
         "action rather than part of created because this is the rate the "
         "whole design rests on being low, and it was invisible inside "
         "created, with no log either, until 2026-09-13), ambiguous (the "
@@ -1546,10 +1549,9 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "read «nothing MERGES the duplicate afterwards» before that, and "
         "issue #236 carries the bound), refused (a "
         "duplicate with nothing new, or a malformed proposal the domain type "
-        "itself rejected), full (the appended body would pass the note body "
-        "ceiling, so the revision was refused rather than truncated — a rate "
-        "here reads as the curator not retiring, never as a model fault), "
-        "deferred (a transient failure — a raced CAS, a store exception, "
+        "itself rejected; until design 42 S4a an appended body past the "
+        "ceiling was counted as full, which a restatement can no longer "
+        "reach), deferred (a transient failure — a raced CAS, a store exception, "
         "or a note that moved or retired between the read and the write — "
         "left PENDING for the next tick to retry, never a decision), or "
         "not_shown (the model named a note the pass rendered WITHOUT its "
@@ -1620,8 +1622,8 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "name that wrote none of the ids its line cites), unknown_owner (an "
         "## Owed owner the pass did not show as a sender, or Nora), bad_date "
         "(a malformed or impossible date, or the wrong weekday). One sample "
-        "per refused candidate; the candidate is not written, and an update's "
-        "body is not checked here.",
+        "per refused candidate; the candidate is not written. An update's body "
+        "is checked here too since design 42 S4a, as a restatement.",
         ("rule",),
     ),
     # A DELIBERATE second series over calls already counted, on

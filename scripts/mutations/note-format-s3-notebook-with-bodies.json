@@ -63,11 +63,11 @@
     "target": "tests/unit/test_note_merge.py::test_merge_renders_an_open_note_byte_identical_to_master"
   },
   {
-    "name": "the objective says an update is only what the batch changes",
+    "name": "the objective's update rule (S3's «only what changes», re-pointed to S4a's restatement)",
     "file": "nora/dreamer/objectives/note-candidates.md",
-    "old": "propose **only what this batch changes** in it,",
-    "new": "propose the arrangement as it now stands,",
-    "target": "tests/unit/test_note_candidates.py::test_the_objective_says_what_the_pass_reads_and_that_an_update_is_the_change"
+    "old": "**restate the whole entry as it now stands**",
+    "new": "the arrangement as it now stands",
+    "target": "tests/unit/test_note_candidates.py::test_the_objective_says_what_the_pass_reads_and_that_an_update_restates"
   },
   {
     "name": "the notebook's head reads are declared",

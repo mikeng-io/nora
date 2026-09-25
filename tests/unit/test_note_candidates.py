@@ -16,7 +16,7 @@ import pytest
 
 from nora.agent.dreamer import AdaptorToolError, verify_tool_subsets
 from nora.domain.models import DeliveryStatus, TranscriptRow
-from nora.domain.notes import BODY_MAX_CHARS, NoteSupersedeReason
+from nora.domain.notes import NoteSupersedeReason
 from nora.domain.ports import Proposal
 from nora.language.note_candidates import (
     _BLOCKS,
@@ -25,8 +25,6 @@ from nora.language.note_candidates import (
     STAGING_OUTCOMES,
     UNNAMED_ROOM,
     NoteCandidateAdaptor,
-    _adds_information,
-    _appended,
     _CreateCandidate,
     _parse_candidate,
     _resolve_updates,
@@ -334,7 +332,8 @@ async def test_an_update_naming_a_note_shown_with_its_body_still_lands():
     await adaptor.inputs(key=SCOPE, batch=(_row(1, "booked it", ts=NOW),))
     head_before = store.notes[note_id].head_revision_id
     [candidate] = await adaptor.accept(key=SCOPE, items=[
-        _item(updates="Wedding venue", body="## Decided\n- booked (Ada) [1]\n## Open"),
+        _item(updates="Wedding venue",
+              body="## Decided\n- booked (Ada) [1]\n## Open\n- which venue [7]"),
     ])
 
     await adaptor.commit(key=SCOPE, proposals=[_proposal(candidate)], now_ms=NOW)
@@ -729,10 +728,10 @@ def test_the_objective_states_the_grammar_and_shows_no_filled_body():
         assert "##" not in body and not re.search(r"\[[0-9]", body), body
 
 
-def test_the_objective_says_what_the_pass_reads_and_that_an_update_is_the_change():
-    """Design 42 S3, the objective's two edits (one change): it says the
-    notebook is every open entry WITH its body (§8.7), and that an update
-    writes only what this batch changes, since code adds it under the body."""
+def test_the_objective_says_what_the_pass_reads_and_that_an_update_restates():
+    """Design 42 S3's opening (the notebook is every open entry WITH its
+    body, §8.7) and S4a's update rule: an update restates the whole entry,
+    keeping every line's ids, since its body replaces the head (§7)."""
     from pathlib import Path
 
     import nora
@@ -743,7 +742,9 @@ def test_the_objective_says_what_the_pass_reads_and_that_an_update_is_the_change
     opening = text.split("---", 2)[2].strip().split("\n\n", 1)[0]
     assert "<candidate_open_note>" in opening and "<today>" in opening
     assert "titles and short summaries" not in text
-    assert "**only what this batch changes**" in text
+    # S4a replaced S3's «only what this batch changes»: an update restates.
+    assert "**restate the whole entry as it now stands**" in text
+    assert "keeps the\nids it cites" in text
 
 
 async def test_accept_names_the_body_by_the_roster_name_it_rendered():
@@ -782,20 +783,43 @@ async def test_accept_refuses_a_create_body_when_nothing_was_shown():
     assert _refused(metrics, "unknown_id") == 1
 
 
-async def test_accept_leaves_an_update_body_as_it_is_in_s2():
-    """One variable (design 42 §10.3): S2 holds CREATES. A candidate naming
-    `updates` keeps today's behaviour, prose and all, until S3/S4 change the
-    update arm."""
+async def test_accept_holds_an_update_body_to_the_schema_as_a_restatement():
+    """Design 42 S4a: an update's body is the whole entry restated, so it is
+    held to the schema too, with `## Open` allowed empty, and it may cite
+    the ids the rendered bodies already cite (§8.4) beside the batch's.
+    Prose is refused as it is on a create."""
+    metrics = Metrics()
+    adaptor, store = _adaptor(metrics=metrics)
+    await store.create(
+        unit=WS, title="Wedding venue", description="d", uncertainty="u",
+        closing_condition="c", established_in="conv-1",
+        body="## Decided\n## Open\n- which venue [900]",
+        established_by="tag:miles", now_ms=NOW, anchor_date=20260919,
+    )
+    await adaptor.inputs(key=SCOPE, batch=_BODY_BATCH)
+    restated = "## Decided\n- the beach club (Ben) [2, 900]\n## Open"
+
+    accepted = await adaptor.accept(key=SCOPE, items=[
+        _item(title="Restated", updates="Wedding venue", body=restated),
+        _item(title="Prose", updates="Wedding venue", body="Ben booked it for the 3rd."),
+    ])
+
+    assert [(c.title, c.body) for c in accepted] == [("Restated", restated)]
+    assert _refused(metrics, "not_a_line") == 1
+
+
+async def test_an_update_may_not_cite_an_id_no_rendered_body_carries():
+    """The carried set is the rendered bodies' ids, not any id at all."""
     metrics = Metrics()
     adaptor, _ = _adaptor(metrics=metrics)
     await adaptor.inputs(key=SCOPE, batch=_BODY_BATCH)
 
     accepted = await adaptor.accept(key=SCOPE, items=[
-        _item(updates="Wedding venue", body="Ben booked it for the 3rd."),
+        _item(updates="Wedding venue", body="## Decided\n- booked (Ben) [2, 900]\n## Open"),
     ])
 
-    assert [c.body for c in accepted] == ["Ben booked it for the 3rd."]
-    assert sum(_refused(metrics, r) for r in BODY_REFUSAL_RULES) == 0
+    assert accepted == ()
+    assert _refused(metrics, "unknown_id") == 1
 
 
 # ---------------------------------------------------------------------------
@@ -909,22 +933,6 @@ def test_a_named_title_resolves_through_the_index_escaping():
 # ---------------------------------------------------------------------------
 
 
-def test_adds_information_is_false_for_a_literal_restatement():
-    existing = "Two venues on the shortlist. Nobody has called either."
-    assert _adds_information(existing, existing) is False
-    assert _adds_information(existing.upper(), existing) is False, "case-insensitive"
-    assert _adds_information(
-        "  Two   venues on the shortlist.   Nobody has called either.  ",
-        existing,
-    ) is False, "whitespace-insensitive"
-
-
-def test_adds_information_is_true_for_genuinely_new_content():
-    existing = "Two venues on the shortlist. Nobody has called either."
-    updated = existing + " Ada ruled out the beach club — too far for her mum."
-    assert _adds_information(updated, existing) is True
-
-
 # ---------------------------------------------------------------------------
 # commit — create, staging-before-deciding, and the gate's fail-closed limit
 # ---------------------------------------------------------------------------
@@ -1009,9 +1017,9 @@ async def test_commit_stages_the_candidate_row_before_deciding():
 
 async def test_commit_updates_the_standing_note_the_model_named():
     """A candidate naming a standing note in `updates` becomes a REVISION of
-    THAT note, not a second note — and the body is appended, not swapped in.
-    The date it carries is irrelevant to the choice; only the name decided
-    it."""
+    THAT note, not a second note, and since design 42 S4a its body IS the
+    new head: a restatement, not an append. The date it carries is irrelevant
+    to the choice; only the name decided it."""
     metrics = Metrics()
     adaptor, store = _adaptor(metrics=metrics)
     await store.create(
@@ -1039,9 +1047,9 @@ async def test_commit_updates_the_standing_note_the_model_named():
     [note] = standing
     head = await store.read(unit=WS, note_id=note.id)
     assert head is not None
-    assert head[1].body == (
-        "original arrangement\n\na second sighting of the same arrangement"
-    ), "a revision APPENDS to the head; it does not replace it"
+    assert head[1].body == "a second sighting of the same arrangement", (
+        "a revision RESTATES the head (design 42 S4a)"
+    )
     [row] = store.create_candidates.values()
     assert row.status == "created"
     assert metrics.get("nora_note_candidate_gate_total", action="updated") == 1
@@ -1083,7 +1091,7 @@ async def test_the_named_note_wins_over_a_note_sharing_the_date():
     hiking = await store.read(unit=WS, note_id=notes["Hiking on the 20th"].id)
     deadline = await store.read(unit=WS, note_id=notes["Sign-up deadline"].id)
     assert hiking is not None and deadline is not None
-    assert hiking[1].body == "the hiking half\n\na car is booked for four"
+    assert hiking[1].body == "a car is booked for four"
     assert deadline[1].body == "the deadline half", (
         "the note sharing the date was not named and must not have moved"
     )
@@ -1421,35 +1429,62 @@ async def test_a_re_observation_is_not_counted_as_a_destroyed_proposal():
     ) == 1, "one occasion staged once, however many times it is re-observed"
 
 
-async def test_an_unrelated_candidate_on_the_same_date_cannot_destroy_the_head():
-    """Issue #228, measured in production 2026-09-13. The update arm had
-    fired twice since the tier shipped and both times it replaced a note's
-    body with a thread that shared nothing with it but the calendar day. Two
-    days later a proactive fire turn read one of those notes, found nothing
-    about its own subject in the body, fell back to the index description
-    and told the room something false.
-
-    The key itself narrowed in the same issue's second half, so the collision
-    this pins now needs the model to have NAMED the wrong note — which is
-    exactly the judgement the gate now trusts it to make. What this pins is
-    that trusting it costs at most a CONFLATION and never a loss: the head's
-    own text has to survive the revision verbatim. It is the ground the gate
-    above it stands on.
-    """
-    adaptor, store = _adaptor()
+async def test_a_restatement_that_drops_a_lines_evidence_is_left_pending():
+    """Issue #228, under restatement (design 42 §7). The update arm once
+    replaced a note's body with a thread that shared nothing with it but the
+    day, and a later turn read the note and told the room something false.
+    Append closed that by making a wrong `updates` cost a conflation, never
+    an erasure. A restatement can drop text, so what holds instead is the
+    carry-forward check: a body that leaves some line of the head with none
+    of its citations is NOT written, and the candidate stays pending."""
+    metrics = Metrics()
+    adaptor, store = _adaptor(metrics=metrics)
+    head_body = "## Decided\n## Open\n- nobody has committed to going [5]"
     await store.create(
         unit=WS, title="Sign-up deadline", description="d",
         uncertainty="u", closing_condition="c", established_in="conv-1",
-        body="one of them answered; nobody has committed to going",
-        established_by="tag:miles", now_ms=NOW, anchor_date=20260911,
+        body=head_body, established_by="tag:miles", now_ms=NOW,
+        anchor_date=20260911,
     )
 
     written = await adaptor.commit(
         key=SCOPE,
         proposals=(_proposal(_CreateCandidate(
-            title="Which night the game session is",
-            description="d2",
-            body="tonight was floated and turned down; no time settled",
+            title="Which night the game session is", description="d2",
+            body="## Decided\n## Open\n- no time settled [2]",
+            closing_condition="c", anchor_date=20260911,
+            anchor_entity_ids=(), message_ids=(2,),
+            updates="Sign-up deadline",
+        )),),
+        now_ms=NOW + 1,
+    )
+
+    assert written == 0
+    [note] = await store.standing(unit=WS)
+    head = await store.read(unit=WS, note_id=note.id)
+    assert head is not None and head[1].body == head_body, "the head moved"
+    [row] = store.create_candidates.values()
+    assert row.status == "pending"
+    assert metrics.get("nora_note_candidate_gate_total", action="dropped_citation") == 1
+
+
+async def test_a_restatement_that_carries_every_lines_evidence_lands():
+    """The positive control: the same revision, keeping the head's evidence
+    (its line moved to `## Decided` and merged with the new), is written."""
+    metrics = Metrics()
+    adaptor, store = _adaptor(metrics=metrics)
+    await store.create(
+        unit=WS, title="Sign-up deadline", description="d",
+        uncertainty="u", closing_condition="c", established_in="conv-1",
+        body="## Decided\n## Open\n- nobody has committed to going [5]",
+        established_by="tag:miles", now_ms=NOW, anchor_date=20260911,
+    )
+    restated = "## Decided\n- two are going (Ada) [2, 5]\n## Open\n- when [2]"
+
+    written = await adaptor.commit(
+        key=SCOPE,
+        proposals=(_proposal(_CreateCandidate(
+            title="Sign-up deadline", description="d2", body=restated,
             closing_condition="c", anchor_date=20260911,
             anchor_entity_ids=(), message_ids=(2,),
             updates="Sign-up deadline",
@@ -1460,51 +1495,36 @@ async def test_an_unrelated_candidate_on_the_same_date_cannot_destroy_the_head()
     assert written == 1
     [note] = await store.standing(unit=WS)
     head = await store.read(unit=WS, note_id=note.id)
-    assert head is not None
-    assert "nobody has committed to going" in head[1].body, (
-        "the arrangement that was already written down was destroyed"
-    )
-    assert "no time settled" in head[1].body, "the new thread never landed"
+    assert head is not None and head[1].body == restated
+    assert metrics.get("nora_note_candidate_gate_total", action="updated") == 1
 
 
-async def test_a_revision_past_the_body_ceiling_is_refused_not_truncated():
-    """`full`, not a silent cut. `nora.domain.notes` moved every length
-    decision into its constructors so an over-long value is unrepresentable
-    rather than quietly shortened; the same rule has to hold for a body this
-    module composes. A refusal keeps what is written and reads, in the
-    metric, as the curator not retiring — which is the thing to fix.
-    """
-    adaptor, store = _adaptor()
+async def test_a_restatement_that_says_what_the_head_says_is_a_duplicate():
+    """The duplicate check under restatement: the same body, whitespace
+    aside, is refused and settled, and nothing is written."""
+    metrics = Metrics()
+    adaptor, store = _adaptor(metrics=metrics)
+    body = "## Decided\n## Open\n- which venue [5]"
     await store.create(
         unit=WS, title="Wedding venue", description="d",
         uncertainty="u", closing_condition="c", established_in="conv-1",
-        body="x" * (BODY_MAX_CHARS - 4), established_by="tag:miles",
-        now_ms=NOW, anchor_date=20260919,
+        body=body, established_by="tag:miles", now_ms=NOW, anchor_date=20260919,
     )
 
     written = await adaptor.commit(
         key=SCOPE,
         proposals=(_proposal(_CreateCandidate(
-            title="Wedding venue (again)", description="d2",
-            body="a new sighting that does not fit",
+            title="Wedding venue", description="d2", body=body.replace("\n", "\n\n"),
             closing_condition="c", anchor_date=20260919,
-            anchor_entity_ids=(), message_ids=(2,),
-            updates="Wedding venue",
+            anchor_entity_ids=(), message_ids=(2,), updates="Wedding venue",
         )),),
         now_ms=NOW + 1,
     )
 
     assert written == 0
-    [note] = await store.standing(unit=WS)
-    head = await store.read(unit=WS, note_id=note.id)
-    assert head is not None
-    assert head[1].body == "x" * (BODY_MAX_CHARS - 4), "the head moved"
     [row] = store.create_candidates.values()
-    assert row.status == "refused", "a full note is terminal, never retried"
-
-
-def test_appended_keeps_both_bodies_and_separates_them_with_a_blank_line():
-    assert _appended("first\n", "  second  ") == "first\n\nsecond"
+    assert row.status == "refused"
+    assert metrics.get("nora_note_candidate_gate_total", action="refused") == 1
 
 
 async def test_commit_raises_for_an_unresolvable_scope():
