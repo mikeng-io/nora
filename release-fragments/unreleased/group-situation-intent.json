@@ -1,0 +1,6 @@
+{
+  "type": "none",
+  "reason": "Design node and replay measurement for rendering a room's usual places into the tag turn; nothing ships to the runtime.",
+  "details": [],
+  "limitations": []
+}
