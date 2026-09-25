@@ -102,9 +102,21 @@ def test_now_or_later_and_nothing_at_all_are_the_newest_read():
 
 
 def test_a_time_it_cannot_read_is_an_error_never_a_guess():
-    for unreadable in ("yesterday", "24/09/2026", "2026-09-24 25:00", "2026-02-30", "last week"):
+    for unreadable in ("yesterday", "24/09/2026", "2026-09-24 25:00", "2026-02-30",
+                       "last week", "yesterday 2026-09-24", "Sep 2026-09-24"):
         with pytest.raises(ValueError):
             _before_bound(unreadable, NOW)
+
+
+def test_another_zone_is_unreadable_not_eight_hours_off():
+    """Review of #538: the first parser dropped EVERY three-letter word, so
+    «21:14 UTC» read as 21:14 Hong Kong time. Only a weekday and HKT fold."""
+    for zoned in ("2026-09-24 21:14 UTC", "2026-09-24 21:14 GMT",
+                  "2026-09-24 21:14 PST", "2026-09-24 21:14 (UTC)"):
+        with pytest.raises(ValueError):
+            _before_bound(zoned, NOW)
+    for fine in ("2026-09-24 Thursday 21:14", "2026-09-24 thu 21:14", "2026-09-24 21:14 hkt"):
+        assert _before_bound(fine, NOW) == _at(24, 21, 15), fine
 
 
 # ---- load_transcript ---------------------------------------------------------
@@ -159,6 +171,36 @@ async def test_paging_across_a_crowded_minute_moves_on_and_skips_nothing(persons
         page = await _call(tool, limit=3, before=before)
     assert "note" not in page, "paging never reached the oldest row"
     assert seen == list("abcdefg")            # every row once, in order
+
+
+async def test_paging_never_strands_a_row_that_shares_its_timestamp(persons):
+    """Review of #538, reproduced: WhatsApp stamps whole seconds, so b and c
+    share one `ts`. With the page ending between them, the exclusive cursor
+    at that `ts` left b unreachable (pages read a, c, d, e)."""
+    same = _at(24, 12, 0, 2)
+    rows = [(_at(24, 12, 0, 1), "a"), (same, "b"), (same, "c"),
+            (_at(24, 12, 0, 3), "d"), (_at(24, 12, 0, 4), "e")]
+    tool = _load_transcript(persons, await _store(*rows))
+
+    seen: list[str] = []
+    page = await _call(tool, limit=3)
+    for _ in range(5):
+        seen = [m["body"] for m in page["messages"]] + seen
+        if "note" not in page:
+            break
+        before = page["note"].split('before="')[1].split('"')[0]
+        page = await _call(tool, limit=3, before=before)
+    assert seen == list("abcde")
+
+
+async def test_a_year_past_the_calendar_is_unreadable_not_a_crash(persons):
+    """Review of #538: 9999-12-31 overflowed `datetime` and escaped the tool
+    as an OverflowError, recorded nowhere."""
+    tool = _load_transcript(persons, await _store((_at(25, 9, 0), "today")))
+
+    out = await _call(tool, before="9999-12-31")
+    assert out["messages"] == []
+    assert '"YYYY-MM-DD HH:MM"' in out["note"]
 
 
 async def test_an_unreadable_before_reads_nothing_and_says_the_format(persons):

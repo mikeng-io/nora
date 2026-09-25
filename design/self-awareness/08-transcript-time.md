@@ -90,8 +90,17 @@ async def room_read(room: str, limit: int = 25, before: str | None = None) -> di
     page with the oldest row's minute, inclusive, on the grounds that a
     repeated row is cheaper than a skipped one. A test with four rows in one
     minute and a page of three handed back the same page forever. The
-    exclusive millisecond cursor fixes that. It could skip a row only if two
-    rows share the exact millisecond and a page boundary falls between them.
+    exclusive millisecond cursor fixes that.
+  - **Corrected in review (#538).** "Exact millisecond" was not rare: the
+    WhatsApp bridge stamps whole seconds, so two messages in one second share
+    a `ts`, and a page ending between them left the older one unreachable. A
+    page now never ends inside a tie group; the group moves to the next page.
+    Only a tie group larger than a whole page can still lose rows.
+- **What `before` will not guess.** Only a weekday, `HKT`, an ISO `T` and
+  the `(13h ago)` age fold away. Any other word (`UTC`, `PST`, `yesterday`)
+  makes the value unreadable, because «21:14 UTC» read as Hong Kong time is a
+  window eight hours off that looks like an answer. A year past the calendar
+  is unreadable too, not a crash.
 - **An "older messages exist" signal.** The tool asks the store for one row
   more than it returns, so it knows when more exist from the record, not from
   a guess. Only then does the result carry the note above. It rides on any

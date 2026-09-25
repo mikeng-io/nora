@@ -2533,6 +2533,13 @@ def _transcript_messages(
     return out, threaded
 
 
+#: The only words `before` folds away: the weekday `stamp` prints, and the zone
+#: every time here already is. A word outside this set is not guessed at.
+_BEFORE_FOLDED = re.compile(
+    r"\b(?:HKT|mon|tue|wed|thu|fri|sat|sun)(?:day|sday|nesday|rsday|urday)?\b",
+    re.IGNORECASE,
+)
+
 #: `before`'s accepted shape, once the forms a model may copy back have been
 #: folded away: a date, then optionally a 24-hour minute, a second, and the
 #: milliseconds the paging note's cursor carries.
@@ -2557,14 +2564,17 @@ def _before_bound(before: str | None, now: datetime) -> int | None:
 
     Lenient about what a model copies from a row's `when`
     («2026-09-24 Thu 21:14 (13h ago)»): the age in brackets, a weekday, `HKT`
-    and an ISO `T` are dropped before the shape is checked. A bound at or after
-    `now` is the same read as no bound, so it returns `None`.
+    and an ISO `T` are dropped before the shape is checked. NOTHING else is:
+    `UTC`, `PST` or any other word makes the value unreadable, because reading
+    «21:14 UTC» as Hong Kong time is a window eight hours off that looks like
+    an answer (review of #538). A bound at or after `now` is the same read as
+    no bound, so it returns `None`.
     """
     if before is None:
         return None
-    text = re.sub(r"\(.*?\)", " ", str(before))
+    text = re.sub(r"\((?:just now|\d+[mhd] ago)\)", " ", str(before))
     text = re.sub(r"(?<=\d)T(?=\d)", " ", text)
-    text = re.sub(r"\b(?:HKT|[A-Za-z]{3})\b", " ", text)
+    text = _BEFORE_FOLDED.sub(" ", text)
     text = " ".join(text.split())
     if not text:
         return None
@@ -2603,7 +2613,16 @@ async def _read_window(
     """The newest `asked` rows (ending before `before_ts` when given), and
     whether older rows exist beyond them. Asks the store for ONE more than it
     returns, so «there is more» is read from the record, never guessed from a
-    full window."""
+    full window.
+
+    **A page never ends inside a group of rows sharing one `ts`.** The next
+    page's cursor is exclusive at the oldest kept row's `ts`, so a same-`ts`
+    row left behind would never be read. WhatsApp stamps whole seconds, so two
+    messages in one second are ordinary there (review of #538: a burst paged as
+    a, c, d, e with b gone and nothing said). When the probe row ties the
+    oldest kept row, that tie group moves to the next page. Only a tie group
+    larger than a whole page (`asked` rows in one timestamp) is kept whole, and
+    then the rows of it that did not fit are not reachable by paging."""
     fetch = asked + 1
     if before_ts is None:
         rows = await store.recent(conversation_id=conversation_id, limit=fetch)
@@ -2611,8 +2630,15 @@ async def _read_window(
         rows = await store.recent_before(
             conversation_id=conversation_id, before_ts=before_ts, limit=fetch,
         )
-    more = len(rows) > asked
-    return (list(rows[-asked:]) if more else list(rows)), more
+    if len(rows) <= asked:
+        return list(rows), False
+    kept = list(rows[-asked:])
+    tie = rows[-asked - 1].ts
+    if kept[0].ts == tie:
+        untied = [r for r in kept if r.ts != tie]
+        if untied:
+            kept = untied
+    return kept, True
 
 
 def _older_note(rows: Sequence[TranscriptRow]) -> str:
@@ -4023,7 +4049,7 @@ def build_tool_specs(
         now = now_fn().astimezone(_HKT)
         try:
             before_ts = _before_bound(before, now)
-        except ValueError:
+        except (ValueError, OverflowError):
             # Not memory content, so not stamped `untrusted`; still `messages`,
             # the one key this tool's contract carries on every return.
             _record(metrics, "load_transcript", "unavailable", reason="before")
@@ -4254,7 +4280,7 @@ def build_tool_specs(
             # first; another unit's room and no room at all took the SAME
             # branch above, so this order discloses nothing (D1 = B).
             before_ts = _before_bound(before, now)
-        except ValueError:
+        except (ValueError, OverflowError):
             _record(metrics, "room_read", "unavailable", reason="before")
             return {"status": "unavailable", "note": _BEFORE_UNREADABLE}
         asked = LOAD_TRANSCRIPT_DEFAULT
