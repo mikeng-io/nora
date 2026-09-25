@@ -380,12 +380,154 @@ async def test_a_url_that_is_not_an_instagram_page_still_downloads(wiring, monke
     assert out["description"] == "A red one-pixel square."
 
 
+@pytest.mark.parametrize("url", [
+    "https://x.com/synth_user01/status/9000000000000000001",
+    "https://twitter.com/synth_user02",
+    "https://mobile.x.com/synth_user03/status/9000000000000000003",
+    "https://mobile.twitter.com/synth_user04",
+    "x.com/synth_user01/status/9000000000000000001",  # no scheme
+    "https://x.com/i/web/status/9000000000000000006",  # id-only post link
+    "https://x.com/synth_user01/status/9000000000000000001/photo/1",  # trailing segment ignored
+    "https://x.com/synth_user01/status/9000000000000000001?s=20",  # share junk in the query
+    "https://X.COM/synth_user06",  # urlsplit().hostname lowercases the host
+])
+async def test_an_x_link_is_sent_to_x_read_without_a_download(wiring, monkeypatch, url):
+    calls: list[str] = []
+
+    async def fake_download(got: str) -> tuple[bytes, str]:
+        calls.append(got)
+        return RED_PNG, "image/jpeg"
+    monkeypatch.setattr("nora.agent.tools._download_media", fake_download)
+
+    out = await _call(wiring["build"](), url=url)
+
+    assert out["status"] == "nothing_found"
+    assert "x_read" in out["note"]
+    assert calls == [], "an X link was downloaded"
+    assert wiring["vision"].calls == 0
+    assert not re.search("[–—]", out["note"]), "ADR 0015: no dash in a note"
+
+
+@pytest.mark.parametrize("url", [
+    "https://t.co/synthShort1",  # a shortener, not X's own page
+    "https://pbs.twimg.com/media/synthetic.jpg",  # X's own CDN file
+    "https://x.com.evil.example/synth_user01",  # a lookalike host
+    "https://x.com/explore",  # a reserved X page, not an account
+])
+async def test_an_x_shaped_url_that_is_not_a_page_still_downloads(wiring, monkeypatch, url):
+    calls: list[str] = []
+
+    async def fake_download(got: str) -> tuple[bytes, str]:
+        calls.append(got)
+        return RED_PNG, "image/jpeg"
+    monkeypatch.setattr("nora.agent.tools._download_media", fake_download)
+
+    out = await _call(wiring["build"](), url=url)
+
+    assert calls == [url]
+    assert out["status"] == "ok"
+    assert out["description"] == "A red one-pixel square."
+
+
+@pytest.mark.parametrize("url", [
+    "https://www.linkedin.com/in/synth-person-01",
+    "https://linkedin.com/company/synth-company-01",
+    "https://hk.linkedin.com/in/synth-person-02",
+    "linkedin.com/in/synth-person-01",  # no scheme
+])
+async def test_a_linkedin_person_or_company_link_is_sent_to_linkedin_read(wiring, monkeypatch, url):
+    calls: list[str] = []
+
+    async def fake_download(got: str) -> tuple[bytes, str]:
+        calls.append(got)
+        return RED_PNG, "image/jpeg"
+    monkeypatch.setattr("nora.agent.tools._download_media", fake_download)
+
+    out = await _call(wiring["build"](), url=url)
+
+    assert out["status"] == "nothing_found"
+    assert "linkedin_read" in out["note"]
+    assert calls == [], "a LinkedIn link was downloaded"
+    assert wiring["vision"].calls == 0
+    assert not re.search("[–—]", out["note"]), "ADR 0015: no dash in a note"
+
+
+@pytest.mark.parametrize("url", [
+    "https://m.linkedin.com/in/synth-person-03",
+    "https://m.linkedin.com/company/synth-company-04?igsh=c3ludGhldGlj",
+    "m.linkedin.com/in/synth-person-03",
+])
+async def test_a_mobile_linkedin_link_is_refused_and_asks_for_the_www_link(
+    wiring, monkeypatch, url,
+):
+    """`m.linkedin.com` is not a host `parse_link` accepts (the country
+    subdomain charset is exactly two letters, and `m` is one). A page path on
+    it is still a page, not media: nothing is downloaded, and the note asks
+    for the www link, since `linkedin_read` would refuse this host too."""
+    calls: list[str] = []
+
+    async def fake_download(got: str) -> tuple[bytes, str]:
+        calls.append(got)
+        return RED_PNG, "image/jpeg"
+    monkeypatch.setattr("nora.agent.tools._download_media", fake_download)
+
+    out = await _call(wiring["build"](), url=url)
+
+    assert out["status"] == "nothing_found"
+    assert calls == []
+    assert "www.linkedin.com" in out["note"]
+    assert not re.search("[–—]", out["note"]), "ADR 0015: no dash in a note"
+
+
+@pytest.mark.parametrize("url", [
+    # A LinkedIn post: recognised by the parser, never claimed — linkedin_read
+    # cannot read one from its link, and media_fetch may still find media on
+    # the page (design 30, "Design" §"Types").
+    "https://www.linkedin.com/posts/synth-person-01_synthetic-activity-9000000000000000001/",
+    "https://lnkd.in/synthShort2",  # a shortener, not LinkedIn's own page
+    "https://media.licdn.com/dms/image/synthetic.jpg",  # LinkedIn's own CDN file
+])
+async def test_a_url_that_is_not_a_linkedin_page_still_downloads(wiring, monkeypatch, url):
+    calls: list[str] = []
+
+    async def fake_download(got: str) -> tuple[bytes, str]:
+        calls.append(got)
+        return RED_PNG, "image/jpeg"
+    monkeypatch.setattr("nora.agent.tools._download_media", fake_download)
+
+    out = await _call(wiring["build"](), url=url)
+
+    assert calls == [url]
+    assert out["status"] == "ok"
+    assert out["description"] == "A red one-pixel square."
+
+
 async def test_code_and_url_together_or_neither_is_nothing_found(wiring):
     out = await _call(wiring["build"](), code=PNG_SHA[:6], url="https://x.com/p.jpg")
     assert out["status"] == "nothing_found"
     assert wiring["vision"].calls == 0
     out2 = await _call(wiring["build"]())
     assert out2["status"] == "nothing_found"
+    assert wiring["vision"].calls == 0
+
+
+async def test_a_code_beside_an_instagram_page_url_is_never_redirected(wiring):
+    """`NativeTool.link_inputs`'s `unless="code"` (design 30, PR 1) must hold:
+    a `code` given alongside an Instagram page `url` is judged by
+    `media_fetch`'s OWN "exactly one target" refusal, never by the link-owner
+    registry's redirect — the old inline guard's own condition (`url and not
+    code`) before it moved. Reverting `unless="code"` sends this to the
+    Instagram redirect note instead, which 132 other tests never exercise
+    (none pairs a real `code` with an Instagram page `url`)."""
+    out = await _call(
+        wiring["build"](), code=PNG_SHA[:6], url="https://www.instagram.com/p/SynthPost01/",
+    )
+    assert out["status"] == "nothing_found"
+    assert "instagram_read" not in out["note"], out["note"]
+    assert out["note"] == (
+        "Give me either the short media code from this "
+        "conversation or the link to a picture or a video."
+    )
     assert wiring["vision"].calls == 0
 
 

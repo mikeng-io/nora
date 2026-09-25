@@ -26,6 +26,7 @@ RESULT_MODULES = (
     "nora/agent/whereis.py",
     "nora/agent/relay.py",
     "nora/agent/surface.py",
+    "nora/agent/link_owners.py",
     "nora/infra/search/_shared.py",
     "nora/infra/routes/directions.py",
     "nora/infra/transit/arrivals.py",

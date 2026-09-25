@@ -1,0 +1,11 @@
+{
+  "type": "change",
+  "summary": "Store reads on the turn's critical path now open a span, so a slow or unbounded read is visible in a trace instead of a turn that silently takes longer.",
+  "details": [
+    "The prefill's transcript, peer-card, self/tagger recall, standing and note-index reads (nora.engagement.context.TranscriptInjection) and the Dreamer's cursor reads (record.since, the language watermark reads, media_join.enrich) each open a store.<store>.<method> span with a row-count and duration attribute.",
+    "One shared wrapper (nora.obs.tracing.traced_read) covers every one of these reads rather than a hand-written span at each call site; a failing read ends its span with an error status through the same path every other span in nora/ already uses."
+  ],
+  "limitations": [
+    "Only the reads on build_prefill's assembly and the Dreamer's cursor path are covered; the rest of nora/infra/** (writes, and every other reader) still opens no span of its own."
+  ]
+}

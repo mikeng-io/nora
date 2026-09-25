@@ -776,7 +776,9 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "origin room cannot be resolved, drifted across a unit, or is "
         "not proactive-trusted — design/dreamer-agent-loop/40 (#248), where "
         "the row's destination is the note's own room, never a fallback to "
-        "home; the "
+        "home; duplicate_note, a proactive row about a note that already has "
+        "one waiting or firing (issue #158: one reminder per thing, held at "
+        "the write and by uq_reminders_proactive_open_note); the "
         "recurrence refusals (bad_repeat, a repeat unit or every_n I do not "
         "accept; bad_bound, a times/until that cannot be honoured or was "
         "given with no repeat at all; too_often, a sub-day repeat faster than "
@@ -2078,6 +2080,28 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "rendered pass — a model call follows), unchanged (nothing moved, no "
         "call), nothing_open (fewer than two open notes, no call).",
         ("reason",),
+    ),
+    # `SqlNoteStore.merge_into`'s reminders step (issue #158 residue): what it
+    # did to either note's open proactive row, per fold. Separate from
+    # `nora_note_merge_total` above rather than a value on it: that series is
+    # one sample per (survivor, duplicate) PAIR judgement, and a pair can
+    # produce zero, one or two reminder events, so folding this axis into it
+    # would stop either series answering "how many pairs" or "how many
+    # reminder events" cleanly.
+    _CounterSpec(
+        "nora_note_merge_proactive_total",
+        "What a fold did to either note's open proactive reminder, by "
+        "outcome. repointed: only the duplicate held one; moved onto the "
+        "survivor. collision_repointed: both held one, the duplicate's "
+        "survived and was re-pointed. collision_kept_survivor: both held "
+        "one, the survivor's own survived, the duplicate's was cancelled "
+        "cancelled_duplicate_note. moved: a row that would have been "
+        "re-pointed was cancelled cancelled_note_moved instead — the "
+        "survivor's tag path wrote something after the row was linked. "
+        "skipped_firing_collision: both rows were firing; neither is "
+        "cancelled, since the heartbeat's own mark() resolves the one in "
+        "flight and would overwrite a cancel written here.",
+        ("outcome",),
     ),
 )
 

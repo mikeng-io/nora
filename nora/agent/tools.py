@@ -46,6 +46,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import inspect
 import json
 import logging
 import re
@@ -53,8 +54,9 @@ import urllib.parse
 import uuid
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from contextvars import ContextVar
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, time, timedelta, timezone
+from functools import wraps
 from types import MappingProxyType
 from typing import Any, Literal, Protocol, cast, get_args, get_type_hints
 from uuid import UUID
@@ -80,7 +82,6 @@ from ..domain.gatherings import (
 from ..domain.instagram_links import is_handle as _is_instagram_handle
 from ..domain.instagram_links import parse_link as _parse_instagram_link
 from ..domain.linkedin_links import is_handle as _is_linkedin_handle
-from ..domain.linkedin_links import is_linkedin_host as _is_linkedin_host
 from ..domain.linkedin_links import parse_link as _parse_linkedin_link
 from ..domain.media import (
     COVER_ROLE,
@@ -100,8 +101,11 @@ from ..domain.notes import (
     TAG_PATH_PREFIX,
     Note,
     NoteRevision,
+    NoteSupersedeReason,
     StaleNoteHeadError,
     note_handle,
+    proactive_row_forwarded_is_moved,
+    tag_path_progressed_since_wake,
 )
 from ..domain.ports import (
     ComputeBackend,
@@ -125,7 +129,9 @@ from ..domain.ports import (
     VoicePresenceSource,
 )
 from ..domain.reminders import (
+    PROACTIVE_KIND,
     UNIT_SECONDS,
+    DuplicateProactiveNoteError,
     Recurrence,
     RecurrenceRule,
     Reminder,
@@ -140,7 +146,6 @@ from ..domain.reminders import (
 from ..domain.self_presence import KnownRoom, UnitRooms, platform_name
 from ..domain.tool_call_log import ToolCallLogStore
 from ..domain.x_links import is_handle as _is_x_handle
-from ..domain.x_links import is_x_host as _is_x_host
 from ..domain.x_links import parse_link as _parse_x_link
 from ..infra.social.readings import READ_CONCURRENCY as _INSTAGRAM_READ_CONCURRENCY
 from ..infra.social.readings import TurnLook
@@ -160,6 +165,21 @@ from ..obs.tracing import annotate, span
 from .arithmetic import evaluate as evaluate_expression
 from .dream_screen import screen as _dream_screen
 from .egress import scan_reply
+
+# Re-exported, explicitly (`as`-aliased to themselves so ruff's F401 reads
+# them as intentional, not dead): `tests/test_media_fetch.py` and
+# `tests/unit/test_social_tool_notes.py` import these four by name off
+# `nora.agent.tools`, unchanged from before design 30's move, and neither
+# is touched by this PR. `redirect()` no longer reads them — see
+# `nora.agent.link_owners`'s module docstring.
+from .link_owners import _INSTAGRAM_MOBILE_PAGE_LINK as _INSTAGRAM_MOBILE_PAGE_LINK
+from .link_owners import _INSTAGRAM_PAGE_LINK as _INSTAGRAM_PAGE_LINK
+from .link_owners import _WEB_FETCH_INSTAGRAM_MOBILE_PAGE as _WEB_FETCH_INSTAGRAM_MOBILE_PAGE
+from .link_owners import _WEB_FETCH_INSTAGRAM_PAGE as _WEB_FETCH_INSTAGRAM_PAGE
+from .link_owners import OWNER_LINK_INPUT as _OWNER_LINK_INPUT
+from .link_owners import LinkClaim, LinkInput, LinkOwner
+from .link_owners import owner_of as _owner_of
+from .link_owners import redirect as _link_redirect
 from .links import LinkCarry
 from .ports import ToolSpec, adapt
 from .relay import Relay
@@ -417,6 +437,18 @@ class NativeTool:
     # docstring minus `Args:`). `None` is "not yet declared": the tools not yet
     # rewritten, on a shrink-only list in `tests/test_tool_surface_policy.py`.
     level: int | None = None
+    # `link_inputs` is the twelfth (design/social-per-network/
+    # 30-link-owner-registry.md, "Where the lookup runs" §C). Each entry names
+    # a parameter of THIS tool that may carry a link another tool owns
+    # (`nora.agent.link_owners.LINK_OWNERS`); `build_tool_specs`'s post-pass
+    # wraps `call` for every spec whose row declares one, so a claimed link
+    # returns the owner's redirect without the tool running at all, and an
+    # unclaimed one reaches the tool exactly as before. Empty tuple (the
+    # default) means "nothing here is ever another tool's link" — a fetcher
+    # that takes a URL and forgets to declare it is un-redirected, the same
+    # conservative direction `read_only` takes, because the failure mode of
+    # forgetting is a page fetched instead of routed, not the reverse.
+    link_inputs: tuple[LinkInput, ...] = ()
 
 
 #: The closed declared vocabularies (ADR 0008 §1/§2). The enforcement test reads
@@ -861,10 +893,26 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # `level=2` (ADR 0015 §3): L1 plus how to call it (exactly one of `code` or
     # `url`) and one SHOULD (a `question` costs a fresh look). How to report
     # each status, the untrusted-description rule included, is in the result.
+    # `link_inputs`: `url` may be an Instagram page (design 30, PR 1) — the
+    # same guard `_instagram_page_kind` ran inline before it moved to the
+    # registry. `unless="code"` keeps the old guard's own condition (`url and
+    # not code`): a `code` marker read is never re-judged as a link. The three
+    # slots are fetcher-generic, never a network's text (nora.agent.
+    # link_owners' module docstring): `media_fetch` came here to look at
+    # media, so its note says so (`not_clause`) and points at what to do with
+    # the redirect's result (`then`), and it "read"s a picture (`verb`).
     "media_fetch": NativeTool(4,
                              read_only=True,
                               side_effect_state="none", idempotency="idempotent", retry="safe",
-                              output_contract="three_state", level=2),
+                              output_contract="three_state", level=2,
+                              link_inputs=(
+                                  LinkInput(
+                                      "url", unless="code",
+                                      not_clause=", not a picture or video file",
+                                      then=", then look at the media it returns",
+                                      verb="read",
+                                  ),
+                              )),
     # generate_image (DEC-137): the one EXPENSIVE, EXTERNAL tool in the set —
     # a real provider call per generate, potentially with a reference image,
     # on a subscription lane that is quota-bounded, not metered. Budget 2:
@@ -927,10 +975,18 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     #
     # `level=1` (ADR 0015 §3): what + when + what it returns. How to read the
     # page (a stranger's words; say which page) is in `_FETCH_NOTES`.
+    # `link_inputs`: `url` may be an Instagram page (design 30, PR 1) — the
+    # same guard `_instagram_page_kind` ran inline before it moved to the
+    # registry. `web_fetch` is not asking about media, so its slots are empty
+    # except the unreadable case's own verb: it "opened" a page, it did not
+    # "read" one.
     "web_fetch": NativeTool(2,
                              source_tier="web", cacheable=True, read_only=True,
                             side_effect_state="none", idempotency="idempotent", retry="safe",
-                            output_contract="three_state", level=1),
+                            output_contract="three_state", level=1,
+                            link_inputs=(
+                                LinkInput("url", verb="opened"),
+                            )),
     # `x_read` and `x_search` (design/social-per-network, DEC-201): READ-ONLY X
     # via the host-side OpenCLI bridge, replacing `social_fetch` (DEC-151).
     # `x_read` budget 3: a post, then its author's profile or posts, and a
@@ -1858,6 +1914,13 @@ def _stored_reading(obj) -> str:
     if obj.caveat:
         parts.append(obj.caveat)
     return "\n".join(parts)
+
+
+#: The outcome the fire-time screen writes on a proactive row whose note the
+#: tag path has moved (`nora.app.proactive_screen.CANCELLED_NOTE_MOVED`,
+#: which this layer may not import). `remind` writes the same one when it
+#: resolves such a row early (issue #158); a test holds the two equal.
+_CANCELLED_NOTE_MOVED = "cancelled_note_moved"
 
 
 def _record_created(metrics, status: str, **detail: object) -> None:
@@ -3008,16 +3071,56 @@ def _with_scheme(link: str) -> str:
     return text if "://" in text else "https://" + text
 
 
-def _same_instagram_link(a: str, b: str) -> bool:
-    """Whether two pasted links name the same thing, judged by the one link
-    parser: `instagram.com/p/A/` and `https://www.instagram.com/p/A/?igsh=x`
-    agree. A link the parser refuses is compared as typed, trimmed, so two
-    identical refusals still agree and `instagram_read` refuses them once."""
-    parsed_a = _parse_instagram_link(_with_scheme(a))
-    parsed_b = _parse_instagram_link(_with_scheme(b))
+def _same_link(a: str, b: str, parse: Callable[[str], object | None]) -> bool:
+    """Whether two pasted links name the same thing, judged by that network's
+    one link parser (`parse`): `instagram.com/p/A/` and
+    `https://www.instagram.com/p/A/?igsh=x` agree, as do `twitter.com/n/status/1`
+    and `https://x.com/n/status/1?s=20`. A link the parser refuses is compared
+    as typed, trimmed, so two identical refusals still agree and the tool
+    refuses them once."""
+    parsed_a = parse(_with_scheme(a))
+    parsed_b = parse(_with_scheme(b))
     if parsed_a is None or parsed_b is None:
         return a.strip() == b.strip()
     return parsed_a == parsed_b
+
+
+#: What a read tool answers when `link` and `url` name two different things.
+#: Nothing is read, and neither link is echoed back.
+_URL_AND_LINK_DIFFER = {
+    "status": "unavailable",
+    "note": "Two different links were given, as link and as url. "
+            "Call again with the one link you mean, as link.",
+}
+
+
+def _resolve_url_alias(
+    tool: str,
+    link: str | None,
+    url: str | None,
+    parse: Callable[[str], object | None],
+    metrics,
+) -> tuple[str | None, bool]:
+    """`url` IS `link`, under the name a model reaches for first, for every
+    tool that reads a pasted link (`instagram_read`, `x_read`,
+    `linkedin_read`). Returns the link to read, and whether the two differ
+    (the caller then answers `dict(_URL_AND_LINK_DIFFER)`).
+
+    Why it is declared at all: Strands validates a call through a model built
+    from the signature, which silently drops any key the signature does not
+    name, so an undeclared `url=` arrived as no input (design 13,
+    2026-09-24: every deferred-catalogue `instagram_read` call used `url`).
+    R-99 now refuses such a call instead of dropping it, and on 2026-09-25
+    the deployed build still reached for `url=` in 7 of 20 `x_read`/
+    `linkedin_read` eval draws, each costing a retry; the operator took
+    design 30's decision 2 on that evidence. Two different links name no
+    one thing, so neither is read and neither is echoed back."""
+    if not (isinstance(url, str) and url.strip()):
+        return link, False
+    if isinstance(link, str) and link.strip() and not _same_link(link, url, parse):
+        _record(metrics, tool, "unavailable", reason="url_and_link")
+        return None, True
+    return url, False
 
 
 def social_read_vocabulary() -> Mapping[str, frozenset[tuple[str, str]]]:
@@ -3083,42 +3186,13 @@ _COVER_NOTE = (
     "item's link, if that line carries one."
 )
 
-# What `media_fetch(url=...)` says when the url is an Instagram PAGE (a
-# post, reel, story or profile link) rather than a picture or video file.
-# `nothing_found` under R-27: the link is not a describable picture, which
-# is that status's own documented meaning, and nothing was tried that could
-# have failed. The note names the next call and what to do with its result,
-# because the result (`instagram_read`'s post and story rows) is where the
-# files are. No dash, ADR 0015 §3 (`tests/unit/test_social_tool_notes.py`).
-_INSTAGRAM_PAGE_LINK = (
-    "That link is an Instagram page, not a picture or video file. Open it "
-    "with instagram_read using this link, then look at the media it returns."
-)
-
-# The same answer for a MOBILE page link (`m.instagram.com/reel/...`). The
-# host is not one `parse_link` accepts, and it stays that way
-# (`INSTAGRAM_HOSTS` is exact on purpose), so `instagram_read` would refuse
-# it too: the note asks for the www link rather than sending her there.
-_INSTAGRAM_MOBILE_PAGE_LINK = (
-    "That is a mobile Instagram page link, not a picture or video file, and "
-    "it can't be read directly. Ask for the www.instagram.com link to the "
-    "same post, reel, story or profile."
-)
-
-# What `web_fetch` says for the same two kinds of link (design 13,
-# 2026-09-24): 3 of 12 replays of a shared post sent its page link to
-# `web_fetch`, which reads an Instagram page as a login wall at best. The
-# page is `instagram_read`'s, so the answer is a route, `nothing_found` as in
-# `media_fetch`, and nothing is fetched. No dash, ADR 0015 §3.
-_WEB_FETCH_INSTAGRAM_PAGE = (
-    "That link is an Instagram page. Open it with instagram_read using this "
-    "link."
-)
-_WEB_FETCH_INSTAGRAM_MOBILE_PAGE = (
-    "That is a mobile Instagram page link, and it can't be opened directly. "
-    "Ask for the www.instagram.com link to the same post, reel, story or "
-    "profile."
-)
+# `_INSTAGRAM_PAGE_LINK`, `_INSTAGRAM_MOBILE_PAGE_LINK`,
+# `_WEB_FETCH_INSTAGRAM_PAGE`, `_WEB_FETCH_INSTAGRAM_MOBILE_PAGE` and
+# `_instagram_page_kind` moved to `nora.agent.link_owners`
+# (design/social-per-network/30-link-owner-registry.md, PR 1) and are
+# imported above, unchanged, so every existing reference to them by name
+# (`tests/test_media_fetch.py`, `tests/unit/test_social_tool_notes.py`)
+# still resolves off this module.
 
 # A shared POST or REEL line with its link, as the parser renders one: the
 # kind, an optional `by @author`, then the rebuilt link. The link is still
@@ -3144,24 +3218,27 @@ def _shared_page_link(body: str) -> str:
     return ""
 
 
-def _instagram_page_kind(url: str) -> str:
-    """`"page"` for an Instagram page link `parse_link` accepts, `"mobile"`
-    for the same shape on `m.instagram.com`, `""` for anything else. A link
-    given without a scheme is read as the parser reads a pasted one
-    (`_with_scheme`)."""
-    candidate = _with_scheme(url)
-    if _parse_instagram_link(candidate) is not None:
-        return "page"
-    try:
-        parts = urllib.parse.urlsplit(candidate)
-    except ValueError:
-        return ""
-    if (parts.hostname or "") != "m.instagram.com":
-        return ""
-    # Judged on the www spelling of the same path, so the shape and every
-    # charset are still the parser's. Nothing is read from the rebuilt url.
-    www = urllib.parse.urlunsplit(("https", "www.instagram.com", parts.path, "", ""))
-    return "mobile" if _parse_instagram_link(www) is not None else ""
+def _other_link_owner(text: str, this_tool: str) -> tuple[LinkOwner, LinkClaim] | None:
+    """`owner_of(text)` (design/social-per-network/30-link-owner-registry.md,
+    "Migration" step 3, "the owners use the registry"), filtered to a claim by
+    a DIFFERENT tool than `this_tool` — the one thing each owner's replaced
+    hand-written branch (`x_read`, `linkedin_read`, `instagram_read`) needs
+    that a fetcher's `_apply_link_owners` post-pass does not: a fetcher never
+    owns a network, so every claim it gets IS someone else's, but an owner
+    calling this from the exact spot its OWN `parse_link` just returned
+    `None` can still get a claim back for its OWN network — Instagram's and
+    LinkedIn's unreadable `mobile_page` shape (`m.instagram.com`,
+    `m.linkedin.com`) is a claim `owner_of` returns for THAT network even
+    when its own raw parser refuses the host. Redirecting a tool to itself
+    would be circular, so that claim is filtered out here and the caller
+    falls through to its own long-standing refusal instead — unchanged
+    behaviour for a link no fetcher-side redirect ever touched (the design
+    node's "Migration" step 3: "Behaviour is otherwise unchanged. Same-network
+    links read exactly as before.")."""
+    found = _owner_of(text)
+    if found is None or found[0].tool == this_tool:
+        return None
+    return found
 
 
 def _strip_media_markers(text: str) -> str:
@@ -3379,9 +3456,10 @@ class NoteCollaborator(Protocol):
     `tests/contract/test_note_store_contract.py`, which is what actually holds
     them to one behaviour. This declares the verbs the tool layer calls
     and no more: `standing` (title resolution, §16.1), `read`, `search`,
-    `create`, `append_revision`, `record_miss`, and
+    `create`, `append_revision`, `record_miss`,
     `merged_successor_by_title` (a merged note's title forwards, design 41
-    §7.5).
+    §7.5), and `revision_chain`/`successor` (`remind`'s one-open-row check,
+    issue #158).
 
     `StaleNoteHeadError` lives in `nora.domain.notes` for the identical reason
     `GatheringNotFoundError` lives in `nora.domain.gatherings` — an exception TYPE has
@@ -3417,6 +3495,16 @@ class NoteCollaborator(Protocol):
     async def merged_successor_by_title(
         self, *, unit: str, title: str,
     ) -> Note | None: ...
+
+    # `remind`'s one-open-row check (issue #158) asks the two questions the
+    # fire-time screen asks (`nora/app/proactive_screen.py`): has the tag path
+    # moved this note since a waiting row was linked, and is a waiting row's
+    # retired note one that was MERGED into this one.
+    async def revision_chain(
+        self, *, unit: str, note_id: str,
+    ) -> tuple[NoteRevision, ...]: ...
+
+    async def successor(self, *, unit: str, note_id: str) -> Note | None: ...
 
 
 #: NOT DEFINED HERE — an ordinary import, used by `note_read`/`note_update`
@@ -6088,23 +6176,14 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                             "it in plain words and I'll look.",
                 }
 
-        # AN INSTAGRAM PAGE IS NOT MEDIA, and it is answered before anything
-        # else, downloads and configuration included, because the answer is
-        # a route and not a reading. A reel, post, story or profile link is
-        # an HTML page: downloading it spends a fetch to learn that, and
-        # «I couldn't fetch that» would read as the item being gone. The
-        # link is judged by `parse_link`, the one Instagram link parser the
-        # transcript and `instagram_read` both use, so the three cannot
-        # disagree about what an Instagram page is. A CDN url (an item's own
-        # file, which `instagram_read` returns) is not an instagram.com page
-        # and still downloads.
-        page = _instagram_page_kind(url) if url and not code else ""
-        if page == "page":
-            _record_media(metrics, "nothing_found", reason="instagram_page")
-            return {"status": "nothing_found", "note": _INSTAGRAM_PAGE_LINK}
-        if page == "mobile":
-            _record_media(metrics, "nothing_found", reason="instagram_mobile_page")
-            return {"status": "nothing_found", "note": _INSTAGRAM_MOBILE_PAGE_LINK}
+        # AN INSTAGRAM PAGE IS NOT MEDIA, and it used to be answered here,
+        # before anything else, downloads and configuration included, because
+        # the answer is a route and not a reading. It is now
+        # `NATIVE_TOOLS["media_fetch"].link_inputs`, applied by
+        # `build_tool_specs`'s post-pass BEFORE this closure ever runs
+        # (design/social-per-network/30-link-owner-registry.md, PR 1) — so a
+        # claimed `url` never reaches this line, downloads, the question
+        # screen above, or the configuration gate below.
 
         # Gate FIRST — the inert-by-config shape (§5). Custody off (`[media]
         # enabled=false` or no key → no blob store) or no vision client wired
@@ -7366,19 +7445,14 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         Args:
             url: The link to open, exactly as given (must start with http:// or https://).
         """
-        # AN INSTAGRAM PAGE IS `instagram_read`'s, and it is answered before
-        # the scheme check, so a pasted `instagram.com/p/...` with no scheme
-        # is routed too rather than refused as «not a link». Judged by the
-        # same helper `media_fetch` uses (`parse_link` underneath), so the
-        # transcript, `instagram_read` and both fetch tools agree on what an
-        # Instagram page is. Nothing leaves: not to Tavily, not to Instagram.
-        page = _instagram_page_kind(url)
-        if page == "page":
-            _record(metrics, "web_fetch", "nothing_found", reason="instagram_page")
-            return {"status": "nothing_found", "note": _WEB_FETCH_INSTAGRAM_PAGE}
-        if page == "mobile":
-            _record(metrics, "web_fetch", "nothing_found", reason="instagram_mobile_page")
-            return {"status": "nothing_found", "note": _WEB_FETCH_INSTAGRAM_MOBILE_PAGE}
+        # AN INSTAGRAM PAGE IS `instagram_read`'s, and it used to be answered
+        # here, before the scheme check, so a pasted `instagram.com/p/...`
+        # with no scheme was routed too rather than refused as «not a link».
+        # It is now `NATIVE_TOOLS["web_fetch"].link_inputs`, applied by
+        # `build_tool_specs`'s post-pass BEFORE this closure ever runs
+        # (design/social-per-network/30-link-owner-registry.md, PR 1) — still
+        # before any scheme check, since the wrapper runs before the whole
+        # closure. Nothing leaves: not to Tavily, not to Instagram.
         if not url.startswith(("http://", "https://")):
             _record(metrics, "web_fetch", "nothing_found", reason="not_a_url")
             return {
@@ -7451,6 +7525,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         what: Literal["profile", "posts"] | None = None,
         handle: str | None = None,
         link: str | None = None,
+        url: str | None = None,
         limit: int = 5,
     ) -> dict:
         """Read an X (Twitter) post, profile or recent posts, by link or
@@ -7471,8 +7546,12 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             what: `profile` or `posts`. Leave it out with a post link.
             handle: an X username someone typed, with or without the @.
             link: an X post or account link, as pasted.
+            url: same as link.
             limit: how many posts to return with `posts` (1 to 20, default 5).
         """
+        link, differ = _resolve_url_alias("x_read", link, url, _parse_x_link, metrics)
+        if differ:
+            return dict(_URL_AND_LINK_DIFFER)
         given = [
             name for name, value in (("handle", handle), ("link", link))
             if isinstance(value, str) and value.strip()
@@ -7492,16 +7571,23 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             if parsed is None:
                 # The parser refused it: another network, an X page that
                 # names no account or post, a segment outside its charset.
-                # Nothing is sent, and the link is not echoed. A link to
-                # another network names the tool that reads it, so the model
-                # asks the right tool rather than concluding X is unreadable.
+                # Nothing is sent, and the link is not echoed. A claim by
+                # another registered owner (design/social-per-network/
+                # 30-link-owner-registry.md, "Migration" step 3) names the
+                # tool that reads it, so the model asks the right tool
+                # rather than concluding X is unreadable — one lookup
+                # replaces the hand-written Instagram-only check this used
+                # to carry, and it now also catches a LinkedIn link, which
+                # that check never did.
+                found = _other_link_owner(text, "x_read")
+                if found is not None:
+                    owner, claim = found
+                    _record(
+                        metrics, "x_read", "nothing_found", reason="link_owner",
+                        owner=owner.network, kind=claim.kind,
+                    )
+                    return _link_redirect(owner, claim, _OWNER_LINK_INPUT)
                 _record(metrics, "x_read", "unavailable", reason="link")
-                if not _is_x_host(text) and _parse_instagram_link(text) is not None:
-                    return {
-                        "status": "unavailable",
-                        "note": "That is an Instagram link. Read it with "
-                                "instagram_read, not this tool.",
-                    }
                 return {
                     "status": "unavailable",
                     "note": "That isn't an X post or account link I can read. "
@@ -7660,6 +7746,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         what: Literal["profile", "experience", "posts", "company"] | None = None,
         handle: str | None = None,
         link: str | None = None,
+        url: str | None = None,
         limit: int = 5,
     ) -> dict:
         """Read a LinkedIn profile, work history, recent posts or company
@@ -7680,12 +7767,16 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 out for a profile or a company link.
             handle: a LinkedIn profile id someone typed (the part after /in/).
             link: a LinkedIn profile or company link, as pasted.
+            url: same as link.
             limit: how many posts to return with `posts` (1 to 20, default 5).
         """
         if fire_turn or dream_adaptor:
             # Before anything is parsed, looked at or sent.
             _record(metrics, "linkedin_read", "refused", reason="unasked")
             return dict(_LINKEDIN_UNASKED)
+        link, differ = _resolve_url_alias("linkedin_read", link, url, _parse_linkedin_link, metrics)
+        if differ:
+            return dict(_URL_AND_LINK_DIFFER)
         given = [
             name for name, value in (("handle", handle), ("link", link))
             if isinstance(value, str) and value.strip()
@@ -7701,22 +7792,20 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             text = _with_scheme(cast(str, link))
             parsed = _parse_linkedin_link(text)
             if parsed is None:
-                # Nothing is sent, and the link is not echoed. A link to
-                # another network names the tool that reads it.
+                # Nothing is sent, and the link is not echoed. A claim by
+                # another registered owner (design/social-per-network/
+                # 30-link-owner-registry.md, "Migration" step 3) names the
+                # tool that reads it — one lookup replaces the two
+                # hand-written checks this used to carry.
+                found = _other_link_owner(text, "linkedin_read")
+                if found is not None:
+                    owner, claim = found
+                    _record(
+                        metrics, "linkedin_read", "nothing_found", reason="link_owner",
+                        owner=owner.network, kind=claim.kind,
+                    )
+                    return _link_redirect(owner, claim, _OWNER_LINK_INPUT)
                 _record(metrics, "linkedin_read", "unavailable", reason="link")
-                if not _is_linkedin_host(text):
-                    if _parse_x_link(text) is not None:
-                        return {
-                            "status": "unavailable",
-                            "note": "That is an X link. Read it with x_read, not "
-                                    "this tool.",
-                        }
-                    if _parse_instagram_link(text) is not None:
-                        return {
-                            "status": "unavailable",
-                            "note": "That is an Instagram link. Read it with "
-                                    "instagram_read, not this tool.",
-                        }
                 return {
                     "status": "unavailable",
                     "note": "That isn't a LinkedIn profile or company link I can "
@@ -7941,7 +8030,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
 
         `status` is `ok`, `nothing_found`, `unavailable`, `ambiguous` or
         `refused`. Anything but `ok` carries a `note` saying what to tell
-        them.
+        them, or, for a link another tool owns, which one to call instead.
 
         Args:
             what: `profile` or `story`. Leave it out with a link, unless
@@ -7951,25 +8040,11 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             link: an Instagram profile, post, reel or story link, as pasted.
             url: same as link.
         """
-        # `url` IS `link` under the name a model reaches for first (design
-        # 13, 2026-09-24): every `instagram_read` call made from the deferred
-        # catalogue, before the schema was loaded, passed `url=`, and with no
-        # such parameter Strands' input model dropped it silently, so each
-        # call arrived with no input and failed «exactly one». A parameter the
-        # signature does not name cannot be accepted quietly: Strands
-        # validates through a model built from this signature, which ignores
-        # any key it does not declare. So it is declared, in five words.
-        if isinstance(url, str) and url.strip():
-            if isinstance(link, str) and link.strip() and not _same_instagram_link(link, url):
-                # Two different links: nothing says which was meant, so
-                # neither is read, and neither is echoed back.
-                _record(metrics, "instagram_read", "unavailable", reason="url_and_link")
-                return {
-                    "status": "unavailable",
-                    "note": "Two different links were given, as link and as url. "
-                            "Call again with the one link you mean, as link.",
-                }
-            link = url
+        link, differ = _resolve_url_alias(
+            "instagram_read", link, url, _parse_instagram_link, metrics,
+        )
+        if differ:
+            return dict(_URL_AND_LINK_DIFFER)
         given = [
             name for name, value in (("person", person), ("handle", handle), ("link", link))
             if isinstance(value, str) and value.strip()
@@ -7988,11 +8063,24 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         # handle needs `what`.
         target = ""
         if source == "link":
-            parsed = _parse_instagram_link(_with_scheme(cast(str, link)))
+            text = _with_scheme(cast(str, link))
+            parsed = _parse_instagram_link(text)
             if parsed is None:
                 # The parser refused it: a host that is not Instagram's, a
                 # segment outside its charset, a path that names nothing
-                # this reads. Nothing is sent, and the link is not echoed.
+                # this reads. Nothing is sent, and the link is not echoed. A
+                # claim by another registered owner (design/social-per-network/
+                # 30-link-owner-registry.md, "Migration" step 3) names the
+                # tool that reads it — `instagram_read` named no other network
+                # before this PR.
+                found = _other_link_owner(text, "instagram_read")
+                if found is not None:
+                    owner, claim = found
+                    _record(
+                        metrics, "instagram_read", "nothing_found", reason="link_owner",
+                        owner=owner.network, kind=claim.kind,
+                    )
+                    return _link_redirect(owner, claim, _OWNER_LINK_INPUT)
                 _record(metrics, "instagram_read", "unavailable", reason="link")
                 return {
                     "status": "unavailable",
@@ -8907,6 +8995,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         # revision is what the heartbeat's screen compares against: a
         # tag-path revision after it cancels the row before it fires.
         payload: dict[str, str] | None = None
+        linked: Note | None = None
         if note is not None and note.strip():
             book = _notebook()
             if book is None:
@@ -9004,7 +9093,59 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                         "the person who asked won't see it."
                     ),
                 }
+        # ONE OPEN PROACTIVE ROW PER NOTE (issue #158). Production booked the
+        # same note twice — decided 23:01 and again 01:01 for one 10:00, and
+        # 07:02 and again 18:04 for one 17:00 — each second row written while
+        # the first still waited. The doctrine says «one reminder per thing»
+        # and the model read its own pending row in the decisions block and
+        # wrote another anyway; the only per-note check below it was the wake
+        # clock, which charges a strike once per Hong Kong day and never saw
+        # the row. So the write refuses, here with a reason she can read and
+        # in the store (`uq_reminders_proactive_open_note`) for the race.
+        # A row that has gone off holds nothing: a re-raise after silence is
+        # the strikes brake's (39 D6), and a new occasion is a new decision.
+        stale: list[Reminder] = []
+        if proactive and linked is not None:
+            book = _notebook()
+            try:
+                held, stale = await _open_rows_on(
+                    book, linked, owner=owner,
+                ) if book is not None else (None, [])
+            except Exception:
+                log.exception("remind: the one-open-row check failed")
+                _record_created(metrics, "unavailable")
+                return {
+                    "status": "unavailable",
+                    "note": "I couldn't check whether this is already waiting, "
+                            "so I haven't set it. Leave it for the next pass.",
+                }
+            if held is not None:
+                _record_created(metrics, "duplicate_note")
+                # Both of the waiting row's moments, so she can see it is
+                # her own earlier decision rather than a failure to retry.
+                return {
+                    "status": "refused",
+                    "note": (
+                        "You already have a reminder waiting about this note: "
+                        f"decided {held.created_at.astimezone(_HKT):%-d %b %H:%M}, "
+                        f"for {held.due_at.astimezone(_HKT):%-d %b %H:%M}. One "
+                        "per thing: leave it. If it still matters after that "
+                        "moment, decide again then."
+                    ),
+                }
         try:
+            # A waiting row whose premise the tag path has since moved is
+            # resolved NOW, the way the fire-time screen would resolve it at
+            # its moment (39 D11): it would never be said, and left open it
+            # would hold the note against the decision that replaces it.
+            for dead in stale:
+                if await reminders.cancel(
+                    dead.id, conversation_id=dead.conversation_id,
+                ):
+                    await reminders.mark(
+                        dead.id, ReminderState.CANCELLED, fired_at=now,
+                        outcome=_CANCELLED_NOTE_MOVED,
+                    )
             pending = await reminders.count_pending(owner)
             if pending >= caps.max_pending_per_requester:
                 _record_created(metrics, "too_many")
@@ -9066,6 +9207,17 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 payload=payload,
             )
             await reminders.create(row)
+        except DuplicateProactiveNoteError:
+            # The store's half of the rule: another decision about this note
+            # landed between the check above and this write (two `remind`
+            # calls in one model step run concurrently), or its row is firing
+            # right now. Same answer as the check's.
+            _record_created(metrics, "duplicate_note")
+            return {
+                "status": "refused",
+                "note": "A reminder about this note is already waiting or "
+                        "going off now. One per thing: leave it.",
+            }
         except Exception:
             log.exception("remind failed")
             _record_created(metrics, "unavailable")
@@ -9762,6 +9914,85 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         # of the question, which lives on in the survivor.
         survivor = await book.merged_successor_by_title(unit=unit, title=title)
         return [survivor] if survivor is not None else []
+
+    async def _open_rows_on(
+        book: NoteCollaborator, note: Note, *, owner: str,
+    ) -> tuple[Reminder | None, list[Reminder]]:
+        """Nora's waiting proactive rows about `note`: the one that HOLDS it
+        (or None), and the ones whose premise is gone (issue #158).
+
+        «About» is what the fire-time screen would fire the row for
+        (`nora/app/proactive_screen.py`): a row linked to this note, or to a
+        note retired `retired-merged` whose survivor is this one — that row
+        FOLLOWS the survivor at fire (design 41 §7.5), so it is already this
+        note's reminder under another id. A row HOLDS the note unless the tag
+        path has written to the note since the row was linked, which is
+        exactly when the screen would cancel it `cancelled_note_moved` (39
+        D11); those come back as stale, for the caller to resolve now.
+
+        Reads raise, and the caller refuses on a raise: a check that could not
+        run is not a check that passed.
+        """
+        unit = _unit() or ""
+        if reminders is None:     # pragma: no cover — `remind` refused already
+            return None, []
+        chain: dict[str, tuple[str | None, str]] | None = None
+        revisions: tuple[NoteRevision, ...] = ()
+
+        async def _chain() -> dict[str, tuple[str | None, str]]:
+            nonlocal chain, revisions
+            if chain is None:
+                revisions = await book.revision_chain(unit=unit, note_id=note.id)
+                chain = {
+                    r.id: (r.parent_revision_id, r.established_by)
+                    for r in revisions
+                }
+            return chain
+
+        held: Reminder | None = None
+        stale: list[Reminder] = []
+        for row in await reminders.pending_of(owner):
+            if row.kind != PROACTIVE_KIND:
+                continue
+            about = (row.payload or {}).get("note_id")
+            if not about:
+                continue
+            if about == note.id:
+                dead = tag_path_progressed_since_wake(
+                    head_revision_id=note.head_revision_id,
+                    last_wake_revision_id=(row.payload or {}).get("revision_id") or None,
+                    chain=await _chain(),
+                )
+            else:
+                current = await book.read(unit=unit, note_id=about)
+                if current is None or current[0].retired_at is None:
+                    continue
+                if current[0].retire_reason != NoteSupersedeReason.RETIRED_MERGED:
+                    continue
+                survivor = await book.successor(unit=unit, note_id=about)
+                if survivor is None or survivor.id != note.id:
+                    continue
+                # A forwarded row: the SAME two-step check the fire-time
+                # screen and `merge_into` use (the duplicate's own chain,
+                # then the survivor's by time), so the three cannot drift
+                # (#520 round-3 review: this copy read only the second step).
+                await _chain()
+                dup_chain = await book.revision_chain(unit=unit, note_id=about)
+                dead = proactive_row_forwarded_is_moved(
+                    duplicate_head=current[0].head_revision_id,
+                    duplicate_chain={
+                        r.id: (r.parent_revision_id, r.established_by)
+                        for r in dup_chain
+                    },
+                    revision_id=(row.payload or {}).get("revision_id") or None,
+                    created_at_ms=int(row.created_at.timestamp() * 1000),
+                    survivor_chain=((r.written_at, r.established_by) for r in revisions),
+                )
+            if dead:
+                stale.append(row)
+            elif held is None:
+                held = row
+        return held, stale
 
     def _ambiguous(candidates: list[Note]) -> dict:
         _record(metrics, "note_read", "refused", reason="ambiguous")
@@ -10714,7 +10945,7 @@ Args:
                     "unknown": [], "refused": [], "note": LOAD_TOOLS_UNAVAILABLE_NOTE}
         return load_onto(getattr(tool_context, "agent", None), shelf, names)
 
-    return (
+    return _apply_link_owners((
         _spec("now", now),
         _spec("calculate", calculate),
         _spec("transit", transit),
@@ -10778,8 +11009,88 @@ Args:
         _spec("search_gifs", search_gifs),
         _spec("send_gif", send_gif),
         _spec("load_tools", load_tools),
-    )
+    ), metrics=metrics)
 
+
+def _apply_link_owners(specs: tuple[ToolSpec, ...], *, metrics) -> tuple[ToolSpec, ...]:
+    """`build_tool_specs`'s one post-pass (design/social-per-network/
+    30-link-owner-registry.md, "Where the lookup runs" §C, the option chosen
+    over a per-fetcher helper and a Strands `BeforeToolCallEvent` hook).
+
+    Every spec whose `NATIVE_TOOLS` row declares `link_inputs` gets its `call`
+    wrapped by `_link_owner_wrapped` below; every other spec passes through
+    unchanged. Applied ONCE, here, rather than inside each fetcher, so a new
+    fetcher is routed by declaring `link_inputs` on its own `NativeTool` row
+    rather than by writing this check into its body.
+    """
+    out = []
+    for spec in specs:
+        link_inputs = NATIVE_TOOLS[spec.name].link_inputs
+        if not link_inputs:
+            out.append(spec)
+            continue
+        out.append(replace(
+            spec, call=_link_owner_wrapped(spec.name, spec.call, link_inputs, metrics),
+        ))
+    return tuple(out)
+
+
+def _link_owner_wrapped(
+    tool_name: str, call: Callable[..., Awaitable[Any]],
+    link_inputs: tuple[LinkInput, ...], metrics,
+) -> Callable[..., Awaitable[Any]]:
+    """`call`, with each of `link_inputs` checked against the link-owner
+    registry before `call` ever runs.
+
+    The first named argument that both (a) is not held back by its own
+    `unless` parameter and (b) `owner_of` claims returns that claim's
+    `redirect(...)` at once — counted through `_record_media` for
+    `media_fetch` (its own series, `nora_media_fetch_total`) or `_record` for
+    every other tool, `reason="link_owner"`, naming the owner's network AND
+    `claim.kind` (so a page and a mobile-page redirect can still be told
+    apart in the log, the way the old `reason="instagram_page"`/
+    `"instagram_mobile_page"` pair could). Nothing here changes an UNCLAIMED
+    argument's path: `call` still runs with every argument exactly as given.
+
+    `functools.wraps` is load-bearing, not cosmetic (the same note `ports.
+    _validated` carries): Strands derives the model-facing schema from the
+    wrapped callable's own signature, so an unwrapped closure would ship an
+    empty one. `inspect.signature(call)` — not `_signature(routed)` — is
+    bound against `call` for the same reason: `wraps` copies `__wrapped__`,
+    so a caller inspecting `routed` already sees `call`'s own signature, and
+    binding against `call` directly keeps this function's own logic in step
+    with what the model schema promises.
+    """
+    signature = inspect.signature(call)
+
+    @wraps(call)
+    async def routed(*args: object, **kwargs: object) -> Any:
+        bound = signature.bind_partial(*args, **kwargs)
+        bound.apply_defaults()
+        for link_input in link_inputs:
+            if link_input.unless and bound.arguments.get(link_input.unless):
+                continue
+            value = bound.arguments.get(link_input.param)
+            if not value:
+                continue
+            found = _owner_of(str(value))
+            if found is None:
+                continue
+            owner, claim = found
+            if tool_name == "media_fetch":
+                _record_media(
+                    metrics, "nothing_found", reason="link_owner",
+                    owner=owner.network, kind=claim.kind,
+                )
+            else:
+                _record(
+                    metrics, tool_name, "nothing_found",
+                    reason="link_owner", owner=owner.network, kind=claim.kind,
+                )
+            return _link_redirect(owner, claim, link_input)
+        return await call(*args, **kwargs)
+
+    return routed
 
 
 def platform_message_id_of(raw: object) -> str | None:

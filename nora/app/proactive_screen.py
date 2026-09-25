@@ -52,7 +52,7 @@ from nora.domain.notes import (
     Note,
     NoteRevision,
     NoteSupersedeReason,
-    is_tag_path_revision,
+    proactive_row_forwarded_is_moved,
     tag_path_progressed_since_wake,
 )
 from nora.domain.reminders import Reminder, ReminderState
@@ -155,26 +155,44 @@ class ProactiveScreen:
         merged = current[0].retire_reason == NoteSupersedeReason.RETIRED_MERGED
         if current[0].retired_at is not None and not merged:
             return ReminderState.CANCELLED, CANCELLED_NOTE_RETIRED
-        moved = tag_path_progressed_since_wake(
+        duplicate_chain = {r.id: (r.parent_revision_id, r.established_by) for r in chain}
+        # The row's OWN note first, open or merged — the order this screen
+        # had before #520, so a row whose own note moved reads
+        # `cancelled_note_moved` whatever later happened to its survivor
+        # (#520 round-3 review: running this only inside `_follow_survivor`
+        # let a retired or unreadable survivor change the label). For a
+        # merged note, `proactive_row_forwarded_is_moved` repeats this step
+        # and finds nothing; the shared function stays the one definition.
+        if tag_path_progressed_since_wake(
             head_revision_id=current[0].head_revision_id,
-            last_wake_revision_id=linked_at,
-            chain={r.id: (r.parent_revision_id, r.established_by) for r in chain},
-        )
-        if moved:
+            last_wake_revision_id=linked_at, chain=duplicate_chain,
+        ):
             return ReminderState.CANCELLED, CANCELLED_NOTE_MOVED
         if current[0].retired_at is None:
             return None
-        return await self._follow_survivor(row, unit=convo.unit, note_id=note_id)
+        return await self._follow_survivor(
+            row, unit=convo.unit, note_id=note_id,
+            duplicate_head=current[0].head_revision_id,
+            duplicate_chain=duplicate_chain, linked_at=linked_at,
+        )
 
     async def _follow_survivor(
         self, row: Reminder, *, unit: str, note_id: str,
+        duplicate_head: str, duplicate_chain: Mapping[str, tuple[str | None, str]],
+        linked_at: str | None,
     ) -> tuple[ReminderState, str] | None:
         """A row on a `retired-merged` note is screened against the open note
         its question was folded into (design 41 §7.5): re-pointed in effect,
-        not cancelled. The row's own `revision_id` names a revision of the
-        DUPLICATE, so on the survivor «moved» is a tag-path revision written
-        after the row was — the same premise D11 checks, read by time because
-        no revision of the survivor was ever linked."""
+        not cancelled. `proactive_row_forwarded_is_moved` is the two-step
+        check — the DUPLICATE's own chain (an ancestry walk from
+        `duplicate_head`/`duplicate_chain`, the caller's own read, back to
+        `linked_at`) first, THEN the survivor's (a scan by time, since
+        nothing links this row to any revision of the survivor — it was
+        never about the survivor). `SqlNoteStore.merge_into`'s re-point
+        (issue #158 residue) calls the SAME function, which is the whole
+        reason it is a shared domain function rather than inlined here
+        twice — a first version of that re-point inlined only the second
+        step and a stale reminder fired (#520 review round 2)."""
         if self._notes is None:     # pragma: no cover — checked by the caller
             return ReminderState.FAILED, FAILED_ERROR
         try:
@@ -192,9 +210,11 @@ class ProactiveScreen:
         if survivor is None:
             return ReminderState.CANCELLED, CANCELLED_NOTE_RETIRED
         linked_ms = int(row.created_at.timestamp() * 1000)
-        if any(
-            is_tag_path_revision(r.established_by) and r.written_at > linked_ms
-            for r in chain
-        ):
+        moved = proactive_row_forwarded_is_moved(
+            duplicate_head=duplicate_head, duplicate_chain=duplicate_chain,
+            revision_id=linked_at, created_at_ms=linked_ms,
+            survivor_chain=((r.written_at, r.established_by) for r in chain),
+        )
+        if moved:
             return ReminderState.CANCELLED, CANCELLED_NOTE_MOVED
         return None

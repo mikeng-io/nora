@@ -91,6 +91,10 @@ members:
   - 38-proactive-adapter-handoff.md
   - 39-proactive-ooda-loop.md
   - 40-proactive-origin-delivery.md
+  # ADDED 2026-09-25: 41 has been in this directory since 2026-09-16 and was
+  # never listed (the same stale-membership finding as the block above).
+  - 41-note-tier-time-is-optional.md
+  - 42-note-format.md
 edges:
   - {src: 00-overview, dst: 01-live-state, rel: motivated_by, provenance: asserted}
   - {src: 00-overview, dst: 02-instrument-blindness, rel: motivated_by, provenance: asserted}
@@ -181,6 +185,11 @@ edges:
   - {src: 39-proactive-ooda-loop, dst: 38-proactive-adapter-handoff, rel: supersedes, provenance: asserted}
   - {src: 40-proactive-origin-delivery, dst: 39-proactive-ooda-loop, rel: extends, provenance: asserted}
   - {src: 37-note-candidates-v2, dst: 27-note-dreamer, rel: revises, provenance: asserted}
+  - {src: 41-note-tier-time-is-optional, dst: 37-note-candidates-v2, rel: extends, provenance: asserted}
+  - {src: 42-note-format, dst: 37-note-candidates-v2, rel: extends, provenance: asserted}
+  - {src: 42-note-format, dst: 41-note-tier-time-is-optional, rel: revises, provenance: asserted}
+  - {src: 42-note-format, dst: 27-note-dreamer, rel: revises, provenance: asserted}
+  - {src: 42-note-format, dst: 33-note-dreamer-schedule, rel: revises, provenance: asserted}
   - {src: 03-no-agent-loop, dst: 17-failure-classes, rel: relates_to, provenance: asserted}
   - {src: 03-no-agent-loop, dst: 39-proactive-ooda-loop, rel: relates_to, provenance: asserted}
   - {src: 13-doctrine, dst: 03-no-agent-loop, rel: relates_to, provenance: asserted}

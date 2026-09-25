@@ -35,38 +35,38 @@
     "target": "tests/unit/test_instagram_parser.py::test_a_share_with_no_valid_link_keeps_its_cover tests/unit/test_instagram_parser.py::test_a_cover_with_no_link_stays_trailing_and_takes_its_handle tests/unit/test_instagram_shared_on_demand.py::test_a_shared_thumbnail_is_held_but_never_sent_to_the_interpreter"
   },
   {
-    "name": "the Instagram page-link refusal is removed: media_fetch downloads the page",
-    "file": "nora/agent/tools.py",
-    "old": "        if page == \"page\":\n            _record_media(",
-    "new": "        if False:\n            _record_media(",
+    "name": "the Instagram page claim is dropped (design 30 PR1): media_fetch downloads the page",
+    "file": "nora/agent/link_owners.py",
+    "old": "    if kind == \"page\":\n        return LinkClaim(network=\"instagram\", kind=\"page\", readable=True)\n",
+    "new": "    if False:\n        return LinkClaim(network=\"instagram\", kind=\"page\", readable=True)\n",
     "target": "tests/test_media_fetch.py -k instagram_page_link"
   },
   {
-    "name": "the page-link refusal waits on media being configured",
-    "file": "nora/agent/tools.py",
-    "old": "        page = _instagram_page_kind(url) if url and not code else \"\"\n",
-    "new": "        page = _instagram_page_kind(url) if url and not code and blob_store is not None and vision_source is not None else \"\"\n",
+    "name": "the page-link refusal no longer depends on media being configured (structural since design 30 PR1: the post-pass runs before media_fetch's closure and cannot see blob_store/vision_source at all, so the only way left to break this test is to drop the claim itself)",
+    "file": "nora/agent/link_owners.py",
+    "old": "    if kind == \"page\":\n        return LinkClaim(network=\"instagram\", kind=\"page\", readable=True)\n",
+    "new": "    if False:\n        return LinkClaim(network=\"instagram\", kind=\"page\", readable=True)\n",
     "target": "tests/test_media_fetch.py::test_an_instagram_page_link_is_routed_even_with_media_unconfigured"
   },
   {
-    "name": "every url is refused as a page, a CDN file included",
-    "file": "nora/agent/tools.py",
-    "old": "        if page == \"page\":\n            _record_media(",
-    "new": "        if url and not code:\n            _record_media(",
+    "name": "every url is claimed as a page, a CDN file included",
+    "file": "nora/agent/link_owners.py",
+    "old": "    kind = _instagram_page_kind(text)\n",
+    "new": "    kind = \"page\"\n",
     "target": "tests/test_media_fetch.py -k not_an_instagram_page_still_downloads"
   },
   {
     "name": "a page link without a scheme is not read as the parser reads a pasted one",
-    "file": "nora/agent/tools.py",
+    "file": "nora/agent/link_owners.py",
     "old": "    candidate = _with_scheme(url)\n",
     "new": "    candidate = url\n",
     "target": "tests/test_media_fetch.py -k without_a_scheme"
   },
   {
-    "name": "the m.instagram.com page refusal is removed: the mobile page is downloaded",
-    "file": "nora/agent/tools.py",
-    "old": "        if page == \"mobile\":\n            _record_media(",
-    "new": "        if False:\n            _record_media(",
+    "name": "the m.instagram.com page claim is dropped: the mobile page is downloaded",
+    "file": "nora/agent/link_owners.py",
+    "old": "    if kind == \"mobile\":\n        return LinkClaim(\n            network=\"instagram\", kind=\"mobile_page\", readable=False,\n            unreadable_template=_INSTAGRAM_MOBILE_TEMPLATE,\n        )\n",
+    "new": "    if False:\n        return LinkClaim(\n            network=\"instagram\", kind=\"mobile_page\", readable=False,\n            unreadable_template=_INSTAGRAM_MOBILE_TEMPLATE,\n        )\n",
     "target": "tests/test_media_fetch.py -k mobile_page_link"
   },
   {
@@ -91,10 +91,10 @@
     "target": "tests/test_media_fetch.py -k stale_cover_beside"
   },
   {
-    "name": "the page-link note stops naming instagram_read",
-    "file": "nora/agent/tools.py",
-    "old": "    \"with instagram_read using this link, then look at the media it returns.\"",
-    "new": "    \"with the right tool, then look at the media it returns.\"",
+    "name": "the page-link note stops naming instagram_read (design 30's coordinator revision: the note is composed, not fetcher-held, so this now mutates redirect()'s own template rather than a literal)",
+    "file": "nora/agent/link_owners.py",
+    "old": "            f\"Open it with {owner.tool} using this {owner.param}{link_input.then}.\"\n",
+    "new": "            f\"Open it with the right tool using this {owner.param}{link_input.then}.\"\n",
     "target": "tests/test_media_fetch.py -k instagram_page_link_is_sent_to_instagram_read"
   },
   {

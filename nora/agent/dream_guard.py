@@ -64,7 +64,7 @@ from strands.hooks import (
 
 from ..obs.metrics import Metrics
 from .call_ledger import CallLedger
-from .guards import _list_tool_names
+from .guards import _list_tool_names, unknown_arguments_veto
 
 log = logging.getLogger("nora.dream_guard")
 
@@ -100,12 +100,22 @@ _PASS_MEMORY = "<memory reads this pass>"  # noqa: S105 — a ledger key, not a 
 #: rate is the instrument for `[dreamer.budgets.<adaptor>] tool_calls`: a
 #: sustained non-zero on a read verb says the number is too low for the work,
 #: which is exactly what `memory-budget` says for the memory ration.
-GuardRule = Literal["R-7", "memory-budget", "tool-budget"]
+#:
+#: **`R-99` is the fourth** (design/social-per-network/30-link-owner-registry.md,
+#: added on review 2026-09-25): an argument a tool's own signature does not
+#: declare, refused before Strands' generated pydantic model can silently drop
+#: it. It shares the exact name `ReplyGuard` uses for the identical rule on the
+#: tag/participation path — the two counters differ (`nora_dream_guard_vetoes_
+#: total` carries `adaptor`, `nora_guard_vetoes_total` does not), but the RULE
+#: is the same decision-index row, and `unknown_arguments_veto` (`nora.agent.
+#: guards`) is the one function both guards call, so the two cannot drift.
+GuardRule = Literal["R-7", "memory-budget", "tool-budget", "R-99"]
 GUARD_RULES: frozenset[str] = frozenset(get_args(GuardRule))
 
 _R7_RULE: GuardRule = "R-7"
 _MEMORY_RULE: GuardRule = "memory-budget"
 _TOOL_BUDGET_RULE: GuardRule = "tool-budget"
+_BAD_ARGUMENTS_RULE: GuardRule = "R-99"
 
 #: What a memory verb refused by the per-pass ceiling says, verbatim. A
 #: CONSTANT because two readers depend on the exact words — the model, which
@@ -147,10 +157,20 @@ class DreamGuard(HookProvider):
         result_caps: Mapping[str, int] | None = None,
         memory_tools: frozenset[str] = frozenset(),
         memory_budget: int | None = None,
+        param_names: Mapping[str, frozenset[str]] | None = None,
     ) -> None:
         self._adaptor = adaptor
         self._metrics = metrics
         self._ledger = CallLedger(budgets)
+        # R-99 (design/social-per-network/30-link-owner-registry.md): each
+        # tool's accepted argument names, from `DreamToolSource.tool_param_
+        # names()` (`RegistryToolSource` delegates to the same `ToolRegistry.
+        # tool_param_names()` `ReplyGuard` reads — one source, two guards).
+        # `None`, the shape every field on this guard not yet given a caller
+        # takes, is the rule OFF: a Dreamer test built with no tool source in
+        # scope keeps its old, veto-free behaviour rather than being forced to
+        # invent a table it does not have.
+        self._param_names = param_names
         # For the unknown-tool sentence only. The ledger is the authority on
         # membership (`knows`); this is the same set spelled for a human, held
         # once rather than re-derived on every veto.
@@ -202,16 +222,28 @@ class DreamGuard(HookProvider):
     def evaluate(self, tool_name: str, tool_input: dict) -> str | None:
         """The corrective sentence to cancel this call with, or None to admit it.
 
-        Pure and SDK-free. `tool_input` is accepted and unread: it is the raw
-        input the model emitted, and it is part of the signature because a rule
-        that looks at arguments (the shape R-45 and R-4 take on the tag path)
-        must be addable here without changing every call site and every test.
+        Pure and SDK-free. `tool_input` was accepted and unread until R-99
+        (2026-09-25) — it is the raw input the model emitted, and it was
+        already part of the signature so a rule that looks at arguments (the
+        shape R-45 and R-4 take on the tag path) could be added here without
+        changing every call site and every test. R-99 is exactly that rule.
         """
         if not self._ledger.knows(tool_name):
             return self._veto(
                 _R7_RULE, f"The tool {tool_name!r} does not exist. "
                        f"Use {_list_tool_names(self._tool_names)}.",
             )
+        # R-99 (design/social-per-network/30-link-owner-registry.md): the
+        # SAME check `ReplyGuard.evaluate` runs, from the SAME function
+        # (`nora.agent.guards.unknown_arguments_veto`) — see that function's
+        # own docstring for the exemption and the fail-closed-on-no-data
+        # reasoning, which apply here unchanged. A Dreamer pass runs native
+        # tools built by the identical `build_tool_specs` and was silently
+        # exempt from this rule until review caught it: the `file=`-shaped
+        # defect is exactly as reachable from a background pass as a tag.
+        bad_arguments = unknown_arguments_veto(tool_name, tool_input, self._param_names)
+        if bad_arguments is not None:
+            return self._veto(_BAD_ARGUMENTS_RULE, bad_arguments)
         # Finished PLUS admitted-and-still-running, so a parallel batch is
         # measured against itself. The number quoted is the same one, because
         # «you already called it 0 time(s)» while refusing the fifth call of a

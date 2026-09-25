@@ -105,6 +105,11 @@ class _ToolSource:
     def read_only(self) -> frozenset[str]:
         return self._ceiling
 
+    def tool_param_names(self) -> dict[str, frozenset[str]]:
+        """Builds nothing (class docstring), so there is no signature for
+        R-99 to check anything against here either."""
+        return {}
+
     def build(
         self, *, key: str, names: frozenset[str], unit: str | None = None,
         adaptor: str = "", grant: Any = None,

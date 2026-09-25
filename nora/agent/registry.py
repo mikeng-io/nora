@@ -25,6 +25,7 @@ policy) built once per process by the composition root.
 
 from __future__ import annotations
 
+import inspect
 import logging
 from collections.abc import Awaitable, Callable, Container, Iterable, Mapping
 from datetime import datetime
@@ -86,6 +87,17 @@ from .tools import (
 from .whereis import Circle, PresenceReader
 
 log = logging.getLogger("nora.agent.registry")
+
+#: Parameters Strands injects itself rather than asks the model to supply —
+#: mirrors `FunctionToolMetadata._is_special_parameter`
+#: (`.venv/lib/python3.12/site-packages/strands/tools/decorator.py:419-439`,
+#: verified against strands-agents 1.50.2). `tool_param_names()` below excludes
+#: these from what it calls a tool's ACCEPTED arguments — the model was never
+#: asked to supply them, so a call missing one is not the R-99 defect this
+#: table exists to catch. `"tool_context"` is fixed rather than read per tool:
+#: `nora.agent.ports.adapt` always passes `context=True` (never a renamed
+#: parameter) when a tool's signature declares one at all.
+_SPECIAL_TOOL_PARAMS: frozenset[str] = frozenset({"self", "cls", "agent", "tool_context"})
 
 
 def _opening(description: str) -> str:
@@ -449,6 +461,10 @@ class ToolRegistry:
         # `_descriptions()`'s memo — process-lifetime for the reason the
         # transit catalogue is, and empty until the first catalogue renders.
         self._described: dict[str, str] | None = None
+        # `tool_param_names()`'s memo, the same shape and the same reason
+        # (R-99): a tool's signature is fixed by the code that shipped, so
+        # re-introspecting it every tag would be pure waste.
+        self._param_names: dict[str, frozenset[str]] | None = None
 
     def budgets(self, *, allowed_mcp: frozenset[str] = frozenset()) -> Mapping[str, int]:
         """The per-tool call-count ceiling `ReplyGuard` enforces under R-7.
@@ -725,28 +741,8 @@ class ToolRegistry:
         declared fields with `description` dropped — one bad tool must never
         sink the endpoint (R-27), and the failure is logged server-side.
         """
-        specs = build_tool_specs(
-            store=None,
-            conversation_id="catalog",
-            conversation_type="group",
-            persons=None,
-            honcho=None,
-            deliverer=None,
-            metrics=None,
-            room=self._catalog_room(),
-            # The catalog is the DECLARED surface — «what can this deployment
-            # call», not «what does one room see». `_catalog_room()` already
-            # says platform="discord" so the Discord-only music verbs appear;
-            # this is the same exception for the Dreamer-only memory verb
-            # (#350). Both gates live in `build_tool_specs`, and an endpoint
-            # that dropped either would under-report what the agent can do.
-            dream_adaptor="catalog",
-            question="",
-            context_window=40,
-            transit_source=self._transit,
-        )
         catalog = []
-        for spec in specs:
+        for spec in self._introspection_specs():
             declared = NATIVE_TOOLS[spec.name]
             entry: dict = {
                 "name": spec.name,
@@ -770,6 +766,84 @@ class ToolRegistry:
                 log.exception("could not introspect tool %s for the catalog", spec.name)
             catalog.append(entry)
         return tuple(sorted(catalog, key=lambda entry: entry["name"]))
+
+    def _introspection_specs(self) -> tuple[ToolSpec, ...]:
+        """Every native tool, built ONLY to introspect its callable — never invoked.
+
+        Factored out of `catalog()` so `tool_param_names()` (R-99) reads the
+        identical built specs rather than a second copy of this all-but-one-
+        argument-None `build_tool_specs()` call — two copies of "how to build
+        a spec for introspection alone" is exactly how one of them drifts
+        (CLAUDE.md). `_catalog_room()`'s docstring says why the room stand-in
+        is enough for both callers: no tool is CALLED here, only introspected.
+        """
+        return build_tool_specs(
+            store=None,
+            conversation_id="catalog",
+            conversation_type="group",
+            persons=None,
+            honcho=None,
+            deliverer=None,
+            metrics=None,
+            room=self._catalog_room(),
+            # The catalog is the DECLARED surface — «what can this deployment
+            # call», not «what does one room see». `_catalog_room()` already
+            # says platform="discord" so the Discord-only music verbs appear;
+            # this is the same exception for the Dreamer-only memory verb
+            # (#350). Both gates live in `build_tool_specs`, and an endpoint
+            # that dropped either would under-report what the agent can do.
+            dream_adaptor="catalog",
+            question="",
+            context_window=40,
+            transit_source=self._transit,
+        )
+
+    def tool_param_names(self) -> Mapping[str, frozenset[str]]:
+        """Each tool's ACCEPTED argument names, read off its own signature —
+        never hand-copied — for `ReplyGuard`'s R-99 unknown-argument veto
+        (design/social-per-network/30-link-owner-registry.md).
+
+        `strands.tools.decorator.FunctionToolMetadata._create_input_model`
+        (`.venv/lib/python3.12/site-packages/strands/tools/decorator.py:
+        190-231`) builds its validating pydantic model from exactly these
+        names — one field per signature parameter, no `model_config` set
+        anywhere in that class, so pydantic v2's own default
+        (`extra="ignore"`) makes `validate_input` (decorator.py:369-393)
+        SILENTLY DROP any key a call carries that is not one of them. Reading
+        the same signature here, the same way, is what lets `ReplyGuard` veto
+        that call BEFORE Strands' validation ever runs (`BeforeToolCallEvent`
+        fires on the raw `tool_use`, ahead of it).
+
+        A tool this registry does not BUILD — a `plugin=True` entry
+        (`skills`), or an MCP tool folded in only through `budgets(allowed_
+        mcp=...)` — has no entry here at all, deliberately: this table is
+        read from `build_tool_specs()`'s own output, which never constructs
+        either kind, so there is no signature to derive one from. `evaluate`
+        treats a missing entry as "cannot verify", never as "reject
+        everything" — the same fail-closed-on-the-CHECK-itself direction
+        `catalog()`'s per-spec `except Exception` already takes.
+
+        Memoized like `_descriptions()`: fixed by the code that shipped, so
+        re-introspecting fifty-odd closures every tag would be pure waste.
+        """
+        if self._param_names is None:
+            names: dict[str, frozenset[str]] = {}
+            for spec in self._introspection_specs():
+                try:
+                    params = inspect.signature(spec.call).parameters
+                except (TypeError, ValueError):
+                    # Mirrors `catalog()`'s own `except Exception` around the
+                    # identical introspection call: one tool whose callable
+                    # cannot be read must not sink this table for every other
+                    # tool (R-27's fail-closed direction applied to the CHECK).
+                    log.exception(
+                        "could not introspect tool %s for tool_param_names", spec.name)
+                    continue
+                names[spec.name] = frozenset(
+                    name for name in params if name not in _SPECIAL_TOOL_PARAMS
+                )
+            self._param_names = names
+        return self._param_names
 
     @staticmethod
     def _catalog_room() -> Any:

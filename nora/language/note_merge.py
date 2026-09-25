@@ -151,6 +151,18 @@ MERGE_TOTAL_OUTCOMES: frozenset[str] = frozenset(get_args(MergeOutcome))
 PassReason = Literal["changed", "unchanged", "nothing_open"]
 PASS_REASONS: frozenset[str] = frozenset(get_args(PassReason))
 
+#: `nora_note_merge_proactive_total{outcome}`: what `SqlNoteStore.merge_into`'s
+#: reminders step (issue #158 residue) did to either note's open proactive
+#: row, one call per event via `on_reminder_outcome` — see that method's
+#: docstring for what each value means.
+ProactiveReminderOutcome = Literal[
+    "repointed", "collision_repointed", "collision_kept_survivor", "moved",
+    "skipped_firing_collision",
+]
+PROACTIVE_REMINDER_OUTCOMES: frozenset[str] = frozenset(
+    get_args(ProactiveReminderOutcome)
+)
+
 MergeMode = Literal["shadow", "on"]
 
 
@@ -174,6 +186,7 @@ class _NoteStore(Protocol):
         anchor_date: int | None, revisit_at: int, reset_strikes: bool,
         established_by: str, now_ms: int,
         instruction_sha256: str | None = None, model: str | None = None,
+        on_reminder_outcome: Callable[[str], None] | None = None,
     ) -> NoteRevision: ...
 
     async def record_merge_decision(self, *, decision: NoteMergeDecision) -> None: ...
@@ -233,6 +246,9 @@ class NoteMergeAdaptor:
     _VOCABULARIES: ClassVar[dict[str, tuple[str, frozenset[str]]]] = {
         "nora_note_merge_total": ("outcome", MERGE_TOTAL_OUTCOMES),
         "nora_note_merge_pass_total": ("reason", PASS_REASONS),
+        "nora_note_merge_proactive_total": (
+            "outcome", PROACTIVE_REMINDER_OUTCOMES,
+        ),
     }
 
     def __init__(
@@ -519,6 +535,9 @@ class NoteMergeAdaptor:
                         provenance.instruction_sha256 if provenance else None
                     ),
                     model=provenance.model if provenance else None,
+                    on_reminder_outcome=lambda outcome: self._inc(
+                        "nora_note_merge_proactive_total", outcome=outcome,
+                    ),
                 )
             except StaleNoteHeadError:
                 await self._record(

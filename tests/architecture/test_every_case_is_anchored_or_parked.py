@@ -187,9 +187,33 @@ def test_the_whole_corpus_is_accounted_for() -> None:
     «draw yourself again» skill-skip failure; it does not reproduce the live
     condition, since standing replayed from production cannot carry it,
     ADR 0015/0016), plus `appearance`'s 2 (2026-09-25, identity.md v12/v13:
-    what she says about her own form, asked and unasked); a change to it is
-    a change to what the suite claims to measure and belongs in a commit that
+    what she says about her own form, asked and unasked), plus
+    `tool_selection`'s 2 link-owner-registry cases (2026-09-25,
+    design/social-per-network/30-link-owner-registry.md "Migration" PR 2: a
+    pasted X post link and a LinkedIn profile link, each "what does this
+    say?", expecting the network's own read tool with the link — the same
+    property P10/P12 pins for Instagram, over the two networks this PR
+    registers), plus its 1 PR-3 case
+    (`route_x_read_link_owner_registry_wrong_owner_instagram_first`,
+    2026-09-25, "Migration" PR 3: an X link introduced as "this insta post",
+    grading a recovery through the registry's cross-network redirect rather
+    than a dead end — `instagram_read`, not `linkedin_read`, is the wrong
+    owner this case primes, because `linkedin_read` already named `x_read`
+    for an X link before this PR (DEC-201) and so would not tell the two
+    arms apart; no `before:` ordering, since the redirect path is an
+    `instagram_read` call the case must PERMIT, not forbid), plus
+    `proactive_decide`'s 3 (2026-09-25, issue #158: d01, d02 and d03
+    each gain a `d0N_already_booked_*` guard case at their old
+    07:00 moment — a reminder already pending on the exact note there, so
+    the correct answer is silence about THAT note, not a second row on it
+    (`expect: none` with `rows: [{note: ..., absent: true}]`, reviewed twice:
+    the first re-anchor of d01 and d02 was itself found wrong and redone —
+    d01 moves from active to parked alongside d03, since no instant is both
+    the objective's "right day" and free of an already-pending reminder on
+    this note; d02 re-anchors to a genuinely clean instant before ANY
+    decision, pending or resolved, about its note); a change to it is a
+    change to what the suite claims to measure and belongs in a commit that
     says so. Recomputed with `census()` at each merge, never summed."""
     totals = [census(n) for n in CORPORA]
-    assert sum(c.total for c in totals) == 225
-    assert sum(c.active + c.parked for c in totals) == 225
+    assert sum(c.total for c in totals) == 231
+    assert sum(c.active + c.parked for c in totals) == 231

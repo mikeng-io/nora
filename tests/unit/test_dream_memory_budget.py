@@ -79,6 +79,12 @@ class _Tools:
     def read_only(self) -> frozenset[str]:
         return frozenset(self._names)
 
+    def tool_param_names(self) -> dict[str, frozenset[str]]:
+        """Every fake tool this source can build declares one real parameter
+        (`person`, `_spec` below) — the accepted-name table an R-99 check
+        against one of these would actually see."""
+        return {name: frozenset({"person"}) for name in self._names}
+
     def _spec(self, name: str) -> Any:
         async def call(person: str = "") -> dict:
             self.ran.append(name)
@@ -140,8 +146,17 @@ class _ScriptedModel(Model):
     the thing this file is about.
     """
 
-    def __init__(self, script: Sequence[str | None]) -> None:
+    def __init__(
+        self, script: Sequence[str | None], *, inputs: Sequence[str] | None = None,
+    ) -> None:
         self._script = list(script)
+        # Per-turn tool-call input, as the raw JSON string Strands streams
+        # (`contentBlockDelta.delta.toolUse.input`). `None` (every caller
+        # before R-99) keeps every turn's the same hardcoded `person`, which
+        # is all the memory-budget property needs; a caller measuring an
+        # ARGUMENT itself (`test_dream_guard_wiring.py`) supplies its own,
+        # one string per script entry that calls a tool.
+        self._inputs = list(inputs) if inputs is not None else None
         self.turn = 0
         self.seen: list[list[dict]] = []
 
@@ -167,10 +182,14 @@ class _ScriptedModel(Model):
             yield {"contentBlockStop": {}}
             yield {"messageStop": {"stopReason": "end_turn"}}
         else:
+            call_input = (
+                self._inputs[self.turn - 1] if self._inputs is not None
+                else '{"person": "熱咖啡"}'
+            )
             yield {"contentBlockStart": {"start": {"toolUse": {
                 "name": call, "toolUseId": f"t{self.turn}"}}}}
             yield {"contentBlockDelta": {"delta": {"toolUse": {
-                "input": '{"person": "熱咖啡"}'}}}}
+                "input": call_input}}}}
             yield {"contentBlockStop": {}}
             yield {"messageStop": {"stopReason": "tool_use"}}
         yield {"metadata": {
@@ -603,15 +622,23 @@ def test_the_guard_rule_labels_come_from_one_vocabulary():
     `tool-budget` was carried on `R-7` until 2026-09-17, which is what made
     «is a ceiling binding» unanswerable from this series — see
     `GuardRule`'s own note and `nora/obs/metric_specs.py`.
+
+    **`R-99` is the fourth** (design/social-per-network/30-link-owner-registry.md,
+    2026-09-25): an argument the tool's own signature does not declare, from
+    the SAME `nora.agent.guards.unknown_arguments_veto` `ReplyGuard` calls —
+    see that function's docstring rather than a second copy of the reasoning
+    here.
     """
-    assert set(GUARD_RULES) == {"R-7", "memory-budget", "tool-budget"}
+    assert set(GUARD_RULES) == {"R-7", "memory-budget", "tool-budget", "R-99"}
 
     m = Metrics()
     guard = DreamGuard(
         adaptor="proactive", budgets={"about": 1}, metrics=m,
         memory_tools=MEMORY_TOOLS, memory_budget=1,
+        param_names={"about": frozenset({"query"})},
     )
     assert guard.evaluate("write_fact", {}) is not None       # R-7
+    assert guard.evaluate("about", {"bogus": "x"}) is not None  # R-99
     _run(guard, "about", "t1")
     assert guard.evaluate("about", {}) is not None            # tool-budget
     assert guard.memory_refusal("about") is not None          # memory-budget

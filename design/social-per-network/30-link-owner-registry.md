@@ -88,14 +88,16 @@ to register them side by side.
 
 | Tool | Link parameter | `url` alias |
 |---|---|---|
-| `instagram_read` (`tools.py:7920`) | `link` | yes, since design 13 (`tools.py:7925`, `7962`) |
-| `x_read` (`tools.py:7450`) | `link` | **no** |
-| `linkedin_read` (`tools.py:7659`) | `link` | **no** |
+| `instagram_read` | `link` | yes, since design 13 |
+| `x_read` | `link` | yes, since 2026-09-25 (decision 2, below) |
+| `linkedin_read` | `link` | yes, since 2026-09-25 (decision 2, below) |
 
 Strands validates through a model built from the signature and drops any
 key it does not declare, silently (design 13, «`instagram_read` accepts
-`url` as `link`»). A redirect that says «call x_read with url» produces a
-call with no input.
+`url` as `link`»). Until 2026-09-25 a redirect that said «call x_read with
+url» produced a call with no input; since R-99 (#511) such a call is refused
+as `bad_arguments`, and since decision 2 was taken (below) all three owners
+declare `url`, through the one shared `_resolve_url_alias` in `tools.py`.
 
 ### Three hand-written cross-network matrices already exist
 
@@ -244,15 +246,28 @@ its own result contract, which is the question the next section answers.
 
 ### Types
 
+**Shipped shape (PR 1), superseding the sketch this section originally
+carried.** The note is composed from TWO independent slot sets rather than a
+`hint`/`status=`/`then=` triple passed into `redirect` at the call site —
+the owner's half (what the link is, who reads it, and, only the network
+knows this, why an unreadable one can't be) and the fetcher's half (what
+kind of tool is asking):
+
 ```python
-# nora.agent.link_owners (proposed)
+# nora.agent.link_owners
 
 @dataclass(frozen=True)
 class LinkClaim:
     network: str               # "instagram" | "x" | "linkedin"
     kind: str                  # the parser's kind, or "mobile_page"
     readable: bool             # can the owner read this kind?
-    hint: str = ""             # what to ask for instead, when not readable
+    # The network's OWN explanation, required when readable=False
+    # (LinkClaim.__post_init__ enforces this — ADR 0015 §3: no non-ok status
+    # ships with an empty note). A str.format template with exactly two
+    # fetcher-filled slots, {not_clause} and {verb}; a template naming any
+    # other slot fails at LinkClaim construction, not at redirect()'s own
+    # call.
+    unreadable_template: str = ""
 
 @dataclass(frozen=True)
 class LinkOwner:
@@ -268,32 +283,73 @@ LINK_OWNERS: tuple[LinkOwner, ...] = (
     LinkOwner("linkedin", "linkedin_read", "link", "a LinkedIn link", _linkedin_claim),
 )
 
+@dataclass(frozen=True)
+class LinkInput:
+    # Fetcher-generic only: no network name, no network text. NativeTool.
+    # link_inputs is a tuple of these.
+    param: str
+    unless: str = ""       # another parameter of the same tool that means
+                            # "don't check this one" (media_fetch's "code")
+    not_clause: str = ""   # e.g. ", not a picture or video file"
+    then: str = ""         # e.g. ", then look at the media it returns"
+    verb: str = ""         # e.g. "read" / "opened"
+
 def owner_of(text: str) -> tuple[LinkOwner, LinkClaim] | None: ...
-def redirect(owner: LinkOwner, claim: LinkClaim, *, status: str, then: str = "") -> dict: ...
+def redirect(owner: LinkOwner, claim: LinkClaim, link_input: LinkInput) -> dict: ...
 ```
 
 - **A recogniser claims a PAGE, never a host.** Each wraps its network's
   `parse_link` after `_with_scheme`. Instagram's also claims the
-  `m.instagram.com` form as `readable=False` with the hint «ask for the
-  www.instagram.com link», which is what `_instagram_page_kind` does today.
-  LinkedIn's claims `person` and `company` only: a LinkedIn `post` is
-  **not claimed**, because `linkedin_read` cannot read one and a public
-  LinkedIn post page is something `web_fetch` may be able to read. Refusing
-  it in `web_fetch` would route her to a tool that says «I can't».
+  `m.instagram.com` form as `readable=False`, with its own
+  `unreadable_template` asking for the www.instagram.com link — what
+  `_instagram_page_kind` does today. X's needs no such shape: `x_links.
+  X_HOSTS` already accepts every mobile/alternate spelling
+  (`mobile.x.com`, `mobile.twitter.com`, bare `x.com`/`twitter.com`) as
+  fully readable, so `_x_claim` is a plain wrap with every claim
+  `readable=True`.
+  **Shipped, PR 2.** LinkedIn's claims `person` and `company` as
+  `readable=True`, and — the same shape as Instagram's mobile host —
+  `m.linkedin.com` as `readable=False`: a real `linkedin.com` subdomain
+  the parser's own host charset refuses on purpose (`_host_ok`'s country
+  code is exactly two letters, and `m` is one), judged on the www spelling
+  of the same path, with its own `unreadable_template` asking for the
+  `www.linkedin.com` link. A LinkedIn `post` is **not claimed at all** (on
+  `linkedin.com`, `www.linkedin.com` or `m.linkedin.com` alike), because
+  `linkedin_read` cannot read one and a public LinkedIn post page is
+  something `web_fetch` may be able to read. Refusing it in `web_fetch`
+  would route her to a tool that says «I can't».
 - **Shorteners and CDN hosts are never claimed** (`t.co`, `lnkd.in`,
-  `*.cdninstagram.com`, `*.fbcdn.net`, `pbs.twimg.com`). The live `lnkd.in`
-  turn and the six CDN reads are the evidence. The matrix test carries each
-  as a negative row.
+  `*.cdninstagram.com`, `*.fbcdn.net`, `pbs.twimg.com`, `*.twimg.com`,
+  `media.licdn.com`). The live `lnkd.in` turn and the six CDN reads are the
+  evidence. The matrix test carries each as a negative row.
+- **Every other LinkedIn page shape stays unclaimed, PR 2's own scope
+  reading.** `/posts/`, `/feed/`, `/pulse/` are the parser's own `post`
+  kind (never claimed, above); `/school/`, `/showcase/` and `/jobs/` are
+  real LinkedIn page types the parser does not recognise at all (`parse_link`
+  returns `None`: no `in`/`company`/post-first-segment matches), so they
+  reach `web_fetch` unclaimed, same as any page no owner can read — adding
+  them is a parser change, not a registry one, the day `linkedin_read`
+  grows a page-type it can read for them. Only `m.linkedin.com` gets the
+  special unreadable treatment; a non-canonical subdomain the parser
+  doesn't otherwise special-case (a historical mobile alias such as
+  `touch.www.linkedin.com`) is simply unclaimed and reaches `web_fetch` as
+  an ordinary page, exactly like `x.com.evil.example` — claiming every
+  lookalike or legacy subdomain by name is the «claim a whole host»
+  anti-pattern this node's non-goals reject.
 - **Order is explicit and the claims are disjoint.** The hosts do not
   overlap, and a test asserts that no URL in the matrix is claimed by two
   owners, so «first match wins» never has to decide anything.
-- **ONE result shape**: `{"status": <status>, "note": <note>}`, built only
-  by `redirect`. The note is two parts: the owner's sentence, generated
-  from `label`, `tool` and `param` («That is an X link. Open it with
-  x_read, passing it as link.»), or the claim's `hint` when it is not
-  readable; then the caller's optional `then` («then look at the media it
-  returns»), declared by the fetcher, never written inline. The link is
-  never echoed, as today (`tests/test_web_fetch_tool.py:183`).
+- **ONE result shape**: `{"status": "nothing_found", "note": <note>}`, built
+  only by `redirect`, status fixed (open decision 1, accepted). The note is
+  composed, never a fetcher-held literal: the owner's sentence from `label`,
+  `tool` and `param` («That link is an X link. Open it with x_read using
+  this link.») plus the fetcher's `not_clause`/`then` when the claim is
+  readable, or the claim's own `unreadable_template` (filled with the
+  fetcher's `not_clause`/`verb`) when it is not. Adding a network is one
+  `LinkOwner` row (plus, if it has an unreadable shape, one
+  `unreadable_template`); adding or changing a fetcher's own wording is one
+  `LinkInput` — neither ever touches the other. The link is never echoed, as
+  today (`tests/test_web_fetch_tool.py:183`).
 
 ### Where the lookup runs
 
@@ -328,13 +384,18 @@ one level smaller.
 
 **C. A declared wrapper, applied once where tools are built. Chosen.**
 `NativeTool` (`tools.py:201`) gains one field, `link_inputs`: the
-parameters of this tool that carry a URL another tool may own, each with
-its `then` tail and its redirect status:
+parameters of this tool that carry a URL another tool may own, each a
+`LinkInput` of fetcher-generic slots only (no redirect status here — it is
+fixed, see above):
 
 ```python
-"web_fetch": NativeTool(2, ..., link_inputs=(LinkInput("url"),)),
+"web_fetch": NativeTool(2, ..., link_inputs=(LinkInput("url", verb="opened"),)),
 "media_fetch": NativeTool(4, ..., link_inputs=(
-    LinkInput("url", then="then look at the media it returns"),)),
+    LinkInput(
+        "url", unless="code", not_clause=", not a picture or video file",
+        then=", then look at the media it returns", verb="read",
+    ),
+)),
 ```
 
 `build_tool_specs` applies ONE post-pass to the tuple it returns
@@ -342,9 +403,10 @@ its `then` tail and its redirect status:
 gets its `call` wrapped. The wrapper reads the named arguments, asks
 `owner_of`, and on a claim returns `redirect(...)` without calling the
 tool, counted through the tool's own recorder (`_record`, or
-`_record_media` for `media_fetch`) with `reason="link_owner"` and the
-owner's name. `functools.wraps` keeps the signature Strands derives the
-schema from, the same way `_validated` does (`ports.py:277`). This is the
+`_record_media` for `media_fetch`) with `reason="link_owner"`, the owner's
+network, and `claim.kind` (so a page and a mobile-page redirect can still
+be told apart in the log). `functools.wraps` keeps the signature Strands
+derives the schema from, the same way `_validated` does (`ports.py:277`). This is the
 precedent this repo already has for «one seam every native tool passes
 through, driven by a declaration»: `output_contract` on the same table,
 applied in `adapt()`.
@@ -463,6 +525,31 @@ cites this node.
    into the router. At eight fetches of an owned link in seven weeks
    (7 X, 1 Instagram, 0 LinkedIn), the round trip costs nothing
    measurable.
+
+**2026-09-25, operator: all three accepted as recommended.** `nothing_found`
+is the one redirect status; `x_read`/`linkedin_read` get no `url` alias yet,
+and decision 2 does not schedule one — it stays "not yet" until a live
+`x_read`/`linkedin_read` call is seen arriving empty with `url`; a claimed
+link redirects, it is never rewritten to the owner's call. PR 1 (this
+commit) builds only the Instagram row under decision 1 — the owners'
+cross-network branches (decision 1's other half) are PR 3's work, not built
+here.
+
+**2026-09-25, decision 2 taken, by the operator, on eval evidence.** The
+accepted text above waits for a LIVE call arriving empty with `url`. That
+never happened, and since R-99 (#511) it cannot: an undeclared `url` is
+refused as `bad_arguments` and she retries with `link`. What was seen
+instead: on the deployed build (#512, 91abdf9b), `python -m evals
+tool_selection` over the four X/LinkedIn routing cases at n=5 drew 20
+turns, and 7 of them called the owner with `url=` (5 `x_read`, 2
+`linkedin_read`), each costing a model round trip before the retry. The
+operator, shown those numbers, ruled the question no longer open and the
+alias added. The cost decision 2 weighed stands and is accepted: about 22
+tokens per tool on every turn the schema is loaded. `x_read` and
+`linkedin_read` now declare `url` through the one `_resolve_url_alias` all
+three read tools share (`instagram_read`'s own inline copy is gone): `url`
+alone reads as `link`, two spellings of one link agree by the network's
+parser, and two different links read nothing.
 
 ## Non-goals
 

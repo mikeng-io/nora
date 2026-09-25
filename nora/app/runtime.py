@@ -48,7 +48,7 @@ from ..domain.media_join import MediaJoin
 from ..domain.models import TranscriptRow
 from ..domain.ports import DreamAdaptor
 from ..obs.metrics import Metrics
-from ..obs.tracing import TRACE_KIND, span
+from ..obs.tracing import TRACE_KIND, span, traced_read
 
 log = logging.getLogger("nora.app.runtime")
 
@@ -713,7 +713,15 @@ async def _dream_adaptor_once(
         # what a time-driven pass (the note curator retires on anchor dates
         # that pass whether or not anyone speaks) must not do.
         now = _now_ms() if now_ms is None else now_ms
-        fired_at = await clock.last_fired(adaptor_name=adaptor.name, key=key)
+        # ISSUE #55, THE REVIEW'S FIRST GAP: this read sat outside the
+        # `uses_watermark` branch below, so a scheduled adaptor's whole read
+        # path (this method IS its cursor — there is no watermark here)
+        # stayed dark. `record_fire` two lines down is a WRITE and stays
+        # unwrapped, same as `advance_watermark` in the branch below.
+        fired_at = await traced_read(
+            "dream_schedule", "last_fired",
+            clock.last_fired(adaptor_name=adaptor.name, key=key),
+        )
         # An ABSENT row fires; an epoch-0 row does not get invented for it.
         # `last_fired` returns None for a pair that has never run, and the
         # first slot it sees is by definition one it has not fired in.
@@ -753,20 +761,37 @@ async def _dream_adaptor_once(
             await clock.record_fire(adaptor_name=adaptor.name, key=key, at_ms=now)
         return status
 
-    watermark = await language.watermark_for(
-        consolidator_name=adaptor.name, scope_id=key)
+    # ISSUE #55'S LAST OPEN QUARTER: the Dreamer's cursor reads, unlit before
+    # this. `traced_read` (`nora.obs.tracing`) is the ONE wrapper — no store
+    # class under `nora/infra/**` gained a span of its own — named
+    # `store.<store>.<method>` per call, nested under whatever `span` is
+    # current (`dream.pass` -> the per-adaptor `dream:<name>` span, or a root
+    # of its own for a standalone caller with no pass around it).
+    watermark = await traced_read(
+        "language", "watermark_for", language.watermark_for(
+            consolidator_name=adaptor.name, scope_id=key),
+    )
 
     # The fail-closed tell: a watermark below the
     # oldest surviving row means messages were deleted before they were ever
     # read — R-27's `unavailable`, never `nothing_found`.
-    if await language.watermark_is_behind_the_record(
-            scope_id=key, watermark=watermark):
+    if await traced_read(
+        "language", "watermark_is_behind_the_record",
+        language.watermark_is_behind_the_record(scope_id=key, watermark=watermark),
+    ):
         metrics.inc("nora_dream_evidence_lost_total", scope=key)
 
-    lag = await language.lag(scope_id=key, after_id=watermark)
-    quiet = await language.seconds_since_last_message(scope_id=key)
-    age = await language.watermark_age_seconds(
-        consolidator_name=adaptor.name, scope_id=key)
+    lag = await traced_read(
+        "language", "lag", language.lag(scope_id=key, after_id=watermark),
+    )
+    quiet = await traced_read(
+        "language", "seconds_since_last_message",
+        language.seconds_since_last_message(scope_id=key),
+    )
+    age = await traced_read(
+        "language", "watermark_age_seconds", language.watermark_age_seconds(
+            consolidator_name=adaptor.name, scope_id=key),
+    )
 
     fires: bool
     if sched is not None:
@@ -800,8 +825,10 @@ async def _dream_adaptor_once(
             "scope=%s limit=%d (from %d)",
             failure_count, adaptor.name, key, limit, base_limit,
         )
-    batch = await record.since(
-        conversation_id=key, after_id=watermark, limit=limit)
+    batch = await traced_read(
+        "record", "since", record.since(
+            conversation_id=key, after_id=watermark, limit=limit),
+    )
     if media_join is not None:
         # HERE rather than inside each adaptor (issue #116): every scope-keyed
         # dream adaptor reads this one batch, so joining once covers all of
@@ -809,7 +836,9 @@ async def _dream_adaptor_once(
         # renders these rows for a model deciding what the conversation
         # ARRANGED — a photo it cannot see is exactly the content the issue was
         # opened about.
-        batch = list(await media_join.enrich(batch, path="dreamer"))
+        batch = list(await traced_read(
+            "media_join", "enrich", media_join.enrich(batch, path="dreamer"),
+        ))
 
     outcome = await runtime.run(adaptor=adaptor, key=key, batch=batch)
 

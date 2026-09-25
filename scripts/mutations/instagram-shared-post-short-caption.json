@@ -79,15 +79,15 @@
   {
     "name": "the url alias is removed: url is accepted and ignored",
     "file": "nora/agent/tools.py",
-    "old": "            link = url\n",
-    "new": "            pass\n",
+    "old": "    return url, False\n",
+    "new": "    return link, False\n",
     "target": "tests/unit/test_instagram_read_links.py -k url"
   },
   {
     "name": "url and link that differ are not refused: url silently wins",
     "file": "nora/agent/tools.py",
-    "old": "            if isinstance(link, str) and link.strip() and not _same_instagram_link(link, url):\n",
-    "new": "            if False:\n",
+    "old": "    if isinstance(link, str) and link.strip() and not _same_link(link, url, parse):\n",
+    "new": "    if False:\n",
     "target": "tests/unit/test_instagram_read_links.py::test_url_and_link_that_differ_read_nothing"
   },
   {
@@ -98,17 +98,17 @@
     "target": "tests/unit/test_instagram_read_links.py -k spelling_the_same_link"
   },
   {
-    "name": "the web_fetch Instagram page guard is removed: the page goes to the provider",
-    "file": "nora/agent/tools.py",
-    "old": "        page = _instagram_page_kind(url)\n",
-    "new": "        page = \"\"\n",
+    "name": "the web_fetch Instagram page guard is removed (design 30 PR1: the shared registry's page claim): the page goes to the provider",
+    "file": "nora/agent/link_owners.py",
+    "old": "    if kind == \"page\":\n        return LinkClaim(network=\"instagram\", kind=\"page\", readable=True)\n",
+    "new": "    if False:\n        return LinkClaim(network=\"instagram\", kind=\"page\", readable=True)\n",
     "target": "tests/test_web_fetch_tool.py -k instagram"
   },
   {
     "name": "the web_fetch guard judges only links with a scheme: a pasted one is refused as not a link",
-    "file": "nora/agent/tools.py",
-    "old": "        page = _instagram_page_kind(url)\n",
-    "new": "        page = _instagram_page_kind(url) if url.startswith((\"http://\", \"https://\")) else \"\"\n",
+    "file": "nora/agent/link_owners.py",
+    "old": "    candidate = _with_scheme(url)\n",
+    "new": "    candidate = url if url.startswith((\"http://\", \"https://\")) else \"\"\n",
     "target": "tests/test_web_fetch_tool.py::test_an_instagram_page_link_is_routed_to_instagram_read_and_never_fetched tests/test_web_fetch_tool.py::test_a_mobile_instagram_page_link_asks_for_the_www_link"
   }
 ]

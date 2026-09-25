@@ -529,6 +529,18 @@ class DreamToolSource(Protocol):
         adaptor: str = "", grant: AdaptorGrant | None = None,
     ) -> list[Any]: ...
 
+    # R-99 (design/social-per-network/30-link-owner-registry.md, added on
+    # review 2026-09-25): `DreamGuard` needs the same accepted-argument table
+    # `ReplyGuard` reads off `ToolRegistry.tool_param_names()`, or a Dreamer
+    # pass is silently exempt from the same rule a tag turn holds — a native
+    # tool built by `build_tool_specs` is exactly as reachable from either
+    # loop, and `media_fetch(file=...)`'s silent drop is exactly as live here.
+    # THE FULL registry table, like `read_only()` above, not one adaptor's own
+    # granted subset: `verify_tool_subsets` already reads `read_only()` this
+    # way for the identical reason — a ceiling is checked against the whole
+    # surface, never against what one call happened to ask for.
+    def tool_param_names(self) -> Mapping[str, frozenset[str]]: ...
+
 
 # The read-only tools a UNIT-keyed adaptor may hold, and the reason the
 # set is exactly this.
@@ -1018,6 +1030,9 @@ class RegistryToolSource:
 
     def read_only(self) -> frozenset[str]:
         return self._registry.read_only_tools()
+
+    def tool_param_names(self) -> Mapping[str, frozenset[str]]:
+        return self._registry.tool_param_names()
 
     def build(
         self, *, key: str, names: frozenset[str], unit: str | None = None,
@@ -1706,6 +1721,11 @@ class DreamerRuntime:
             result_caps=_TOOL_RESULT_CAPS,
             memory_tools=MEMORY_TOOLS,
             memory_budget=budget.max_memory_calls,
+            # R-99 (design/social-per-network/30-link-owner-registry.md):
+            # the same table `deliver.build`'s callers thread into
+            # `ReplyGuard`, read off the SAME `DreamToolSource` this method
+            # already holds — never a second `ToolRegistry` instance.
+            param_names=self._tools.tool_param_names(),
         )
         # One per SAMPLE, beside the guard and for the same reason: it holds
         # this sample's own call counts, and a shared one would fold N samples
