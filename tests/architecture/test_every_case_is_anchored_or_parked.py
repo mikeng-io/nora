@@ -202,7 +202,8 @@ def test_the_whole_corpus_is_accounted_for() -> None:
     for an X link before this PR (DEC-201) and so would not tell the two
     arms apart; no `before:` ordering, since the redirect path is an
     `instagram_read` call the case must PERMIT, not forbid), plus
-    `proactive_decide`'s 3 (2026-09-25, issue #158: d01, d02 and d03 each gain a `d0N_already_booked_*` guard case at their old
+    `proactive_decide`'s 3 (2026-09-25, issue #158: d01, d02 and d03
+    each gain a `d0N_already_booked_*` guard case at their old
     07:00 moment — a reminder already pending on the exact note there, so
     the correct answer is silence about THAT note, not a second row on it
     (`expect: none` with `rows: [{note: ..., absent: true}]`, reviewed twice:
