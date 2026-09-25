@@ -14,7 +14,13 @@
 # Sandboxes and the blank template are dropped and rebuilt too, so a schema
 # change in the image reaches them: `nora_eval_blank` is migrated to head by
 # the suite on its next run, and a leftover `nora_eval_sb_*` is a case that
-# never finished.
+# never finished. `nora_eval_blank_run_*` (`nora.subject.sandbox.
+# _blank_template`'s own PRIVATE copies, built when a run's branch diverged
+# from `nora_eval_blank`) are dropped unconditionally here too, unlike
+# `python -m evals`'s own startup sweep of the same pattern (`nora.subject.
+# sandbox.sweep_stale_private_blank_templates`), which only drops one that
+# is both old AND holds no live connection — this script already documents
+# itself as killing any run in flight, so that caution does not apply here.
 set -euo pipefail
 
 CONTAINER="${NORA_DB_CONTAINER:-nora-db-1}"
@@ -24,8 +30,8 @@ CLONE="${NORA_EVAL_DB:-nora_eval}"
 
 psql_() { docker exec -i "$CONTAINER" psql -U "$USER_" -v ON_ERROR_STOP=1 -d postgres -Atc "$1"; }
 
-echo "dropping sandboxes and the blank template beside ${CLONE}"
-for db in $(psql_ "select datname from pg_database where datname like '${CLONE}_sb_%' or datname = '${CLONE}_blank'"); do
+echo "dropping sandboxes, the blank template and its private per-run copies beside ${CLONE}"
+for db in $(psql_ "select datname from pg_database where datname like '${CLONE}_sb_%' or datname like '${CLONE}_blank_run_%' or datname = '${CLONE}_blank'"); do
   psql_ "select pg_terminate_backend(pid) from pg_stat_activity where datname = '${db}' and pid <> pg_backend_pid()" >/dev/null
   psql_ "drop database \"${db}\""
 done
