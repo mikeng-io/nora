@@ -1,5 +1,6 @@
 """The command boundary keeps ordinary deployments distinct from releases."""
 
+import io
 import os
 from pathlib import Path
 
@@ -96,7 +97,8 @@ def test_a_release_locks_then_tags_then_deploys_then_pushes(monkeypatch):
     monkeypatch.setattr(release, "run", fake_run)
     monkeypatch.setattr(release, "next_version", lambda: "V3")
     monkeypatch.setattr(release, "group_message", lambda path, version: "V3 出咗。")
-    monkeypatch.setattr(release, "take_deploy_lock", lambda: calls.append("lock") or open(os.devnull))
+    monkeypatch.setattr(
+        release, "take_deploy_lock", lambda: calls.append("lock") or io.StringIO())
     monkeypatch.setattr(release, "deploy", lambda version: calls.append("deploy"))
 
     assert release.main([]) == 0
@@ -115,7 +117,7 @@ def test_a_failed_deploy_pushes_no_tag(monkeypatch):
     monkeypatch.setattr(release, "run", lambda *args: calls.append(" ".join(args[:2])) or "")
     monkeypatch.setattr(release, "next_version", lambda: "V3")
     monkeypatch.setattr(release, "group_message", lambda path, version: "V3 出咗。")
-    monkeypatch.setattr(release, "take_deploy_lock", lambda: open(os.devnull))
+    monkeypatch.setattr(release, "take_deploy_lock", io.StringIO)
     monkeypatch.setattr(release, "deploy", failed_deploy)
 
     assert release.main([]) == 2
