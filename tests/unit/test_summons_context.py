@@ -14,7 +14,10 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from nora.domain.summons import (
+    MAX_ITEMS_SHOWN,
+    READING_MAX_CHARS,
     Comment,
+    ItemReading,
     PostItem,
     SummonsPost,
     build_context,
@@ -22,6 +25,7 @@ from nora.domain.summons import (
     render_summons,
     summons_comment,
     tags_handle,
+    with_readings,
 )
 
 NOW = datetime(2026, 9, 25, 12, 0, tzinfo=UTC)
@@ -89,8 +93,9 @@ def test_a_summons_not_on_the_page_builds_no_context():
 def test_items_past_the_cap_are_counted_not_dropped():
     ctx = _context(post=_post(7, more=True))
     assert ctx is not None
-    assert len(ctx.items) == 5
-    assert ctx.elided_items == 3  # two past the cap, plus the bridge's own `more`
+    assert len(ctx.items) == MAX_ITEMS_SHOWN == 4
+    assert ctx.elided_items == 4  # three past the cap, plus the bridge's own `more`
+    assert "(4 more item(s) not listed or read)" in render_summons(ctx)
 
 
 def test_the_render_carries_an_age_on_everything_and_says_which_end_is_newest():
@@ -131,6 +136,85 @@ def test_no_igid_reaches_the_render():
     assert any(c.author_igid == SUMMONER_IGID for c in _comments())
     text = render_summons(_context())
     assert SUMMONER_IGID not in text
+
+
+# ---- what each item shows (read before the turn) -------------------------------
+
+
+def _post_block(text: str) -> str:
+    return text.split('<social_post source="the instagram post"', 1)[1].split(
+        "</social_post>", 1)[0]
+
+
+def test_each_item_carries_its_reading_inside_the_post_block():
+    ctx = with_readings(_context(post=_post(3)), (
+        ItemReading("seen", "a grey heron in reeds"),
+        ItemReading("unreadable"),
+        ItemReading("withheld"),
+    ), now=NOW)
+    text = render_summons(ctx)
+    head = text.partition("<social_post")[0]
+    block = _post_block(text)
+    assert "a grey heron in reeds" not in head
+    assert "  shows: a grey heron in reeds" in block
+    assert "  could not be read\n" in block
+    assert "  not shown: what it shows contains what looks like a phone number or ID" in block
+
+
+@pytest.mark.parametrize("state", ["unreadable", "too_long", "unknown_length", "over_video_cap"])
+def test_a_not_read_line_states_a_fact_and_tells_her_nothing(state):
+    """What she does with an unread item is `public/conduct.md`'s call: the
+    line carries no instruction and no pointer to a tool (her own
+    `media_fetch` is a model read, which caches)."""
+    ctx = with_readings(_context(post=_post(1)), (ItemReading(state),), now=NOW)
+    line = next(
+        row for row in _post_block(render_summons(ctx)).splitlines() if row.startswith("  ")
+    ).strip()
+    assert line.startswith(("could not be read", "not read: "))
+    for instruction in ("say", "don't", "media_fetch", "guess", "you"):
+        assert instruction not in line, line
+
+
+def test_the_ages_are_measured_from_when_the_reading_ended():
+    later = NOW + timedelta(minutes=3)
+    ctx = with_readings(_context(post=_post(1)), (ItemReading("unreadable"),), now=later)
+    text = render_summons(ctx)
+    assert "It is now 2026-09-25 12:03 UTC" in text
+    assert "@miles_example tagged you 8m ago" in text
+
+
+def test_an_item_never_looked_at_says_so_rather_than_nothing():
+    assert "  not read" in _post_block(render_summons(_context(post=_post(1))))
+
+
+def test_a_long_reading_is_clamped_and_its_coverage_sentence_survives():
+    coverage = "(About 2 minutes of this 3-minute clip were watched.)"
+    ctx = with_readings(_context(post=_post(1)), (
+        ItemReading("seen", "frame [0:00] " + "a heron wading " * 400, coverage),
+    ), now=NOW)
+    line = next(
+        row for row in _post_block(render_summons(ctx)).splitlines()
+        if row.strip().startswith("shows:")
+    )
+    assert line.endswith(coverage)
+    assert " … " in line
+    assert len(line) < READING_MAX_CHARS + len(coverage) + 20
+    # A reading cannot forge a media marker, and cannot break the line.
+    assert "[0:00]" not in line and "(0:00)" in line
+
+
+def test_readings_must_be_one_per_item():
+    with pytest.raises(ValueError, match="one per item"):
+        with_readings(_context(post=_post(2)), (ItemReading("unreadable"),), now=NOW)
+
+
+def test_a_reading_carries_text_exactly_when_it_was_seen():
+    with pytest.raises(ValueError):
+        ItemReading("seen")
+    with pytest.raises(ValueError):
+        ItemReading("unreadable", "guessed words")
+    with pytest.raises(ValueError):
+        ItemReading("guessed")  # type: ignore[arg-type]
 
 
 # ---- finding the summoner's comment (the card carries no comment id) ----------

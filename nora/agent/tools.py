@@ -1848,15 +1848,49 @@ def _record_room(metrics, tool: str, status: str, **detail: object) -> None:
 
 
 #: Who is asking `media_fetch` for THIS read, and whether it may write the
-#: content caches. Set only by `instagram_read`'s per-item looks
-#: (design/instagram-adoption/18 §"Typed views, one renderer, and readings"),
-#: around the call, in the task that makes it; every other read is the
-#: model's own, and caches as it always has. A `ContextVar` rather than a
-#: parameter because a parameter on `media_fetch` would be in the model's
-#: schema, and neither fact is the model's to choose.
+#: content caches. Set only by a `media_look` (below): `instagram_read`'s
+#: per-item looks (design/instagram-adoption/18 §"Typed views, one renderer,
+#: and readings") and the public summons' reading of its post, around the
+#: call, in the task that makes it; every other read is the model's own, and
+#: caches as it always has. A `ContextVar` rather than a parameter because a
+#: parameter on `media_fetch` would be in the model's schema, and neither fact
+#: is the model's to choose.
 _MEDIA_READ: ContextVar[tuple[str, bool]] = ContextVar(
     "nora_media_read", default=(MEDIA_FETCH_CALLERS[0], True),
 )
+
+
+def media_look(
+    fetch: Callable[..., Awaitable[Any]],
+    *,
+    caller: str,
+    persist: bool,
+    max_video_seconds: float,
+    slots: asyncio.Semaphore | None = None,
+) -> TurnLook:
+    """A `TurnLook` whose every look is `fetch` — `media_fetch` itself, from
+    the turn's own tool set — called with the url alone, labelled `caller`
+    on `nora_media_fetch_total`, and writing the content caches only when
+    `persist`. The ONE way an automatic reading reaches `media_fetch`:
+    `instagram_read`'s items and the summons' post both come through here,
+    so neither has a copy of the label-and-persist wrapper to drift.
+
+    `caller` must be one of `MEDIA_FETCH_CALLERS` (a label outside the
+    vocabulary would be a series nothing declares); `slots` defaults to a
+    fresh `READ_CONCURRENCY` semaphore for a caller that owns the whole read."""
+    if caller not in MEDIA_FETCH_CALLERS:
+        raise ValueError(f"media_look caller {caller!r} is not in MEDIA_FETCH_CALLERS")
+
+    async def look(*, url: str) -> Any:
+        token = _MEDIA_READ.set((caller, persist))
+        try:
+            return await fetch(url=url)
+        finally:
+            _MEDIA_READ.reset(token)
+
+    if slots is None:
+        return TurnLook(fetch=look, max_video_seconds=float(max_video_seconds))
+    return TurnLook(fetch=look, slots=slots, max_video_seconds=float(max_video_seconds))
 
 
 def _record_media(metrics, status: str, *, cached: bool = False, **detail: object) -> None:
@@ -8159,18 +8193,11 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
     _instagram_story_urls: set[str] = set()
 
     def _instagram_look(*, story: bool) -> TurnLook:
-        async def fetch(*, url: str) -> dict:
-            token = _MEDIA_READ.set((MEDIA_FETCH_CALLERS[1], not story))
-            try:
-                return await media_fetch(url=url)
-            finally:
-                _MEDIA_READ.reset(token)
-
         # The longest video read here is one reading window, as CONFIGURED
         # (`[media.describe.video] chunk_seconds`), not the default.
-        return TurnLook(
-            fetch=fetch, slots=_instagram_slots,
-            max_video_seconds=float(video_chunk_seconds),
+        return media_look(
+            media_fetch, caller="instagram_read", persist=not story,
+            max_video_seconds=float(video_chunk_seconds), slots=_instagram_slots,
         )
 
     async def instagram_read(

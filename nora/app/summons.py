@@ -1,7 +1,8 @@
 """The public Instagram summons occasion (design/instagram-adoption/19).
 
 Somebody in `identity.toml` tags her (`@noraexample`) in a comment under an
-Instagram post; she reads the post and the thread around the summons and
+Instagram post; she reads the post (what each of its items SHOWS is read for
+her before the turn, `_read_items`) and the thread around the summons, and
 answers in the comments, once, or says nothing.
 
 **How a summons arrives (the 2026-09-26 intake).** Instagram tells her about
@@ -45,29 +46,38 @@ from __future__ import annotations
 import logging
 import re
 import time
-from collections.abc import Callable, Mapping
+from collections import Counter
+from collections.abc import Callable, Iterable, Mapping
 from datetime import datetime, timedelta
 from typing import Any, Protocol
 from uuid import UUID
 
+from nora.agent.ports import ToolSpec
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
+from nora.agent.tools import media_look
 from nora.doctrine.loader import DoctrineStore
 from nora.domain.audience import SUMMONS
 from nora.domain.models import ConversationTarget, NormalizedMessage, TagContext
 from nora.domain.summons import (
     ALREADY_CLAIMED,
     MAX_COMMENT_CHARS,
+    MAX_ITEMS_SHOWN,
+    ItemReading,
     SummonsCard,
+    SummonsContext,
     SummonsLedger,
     SummonsOutcome,
     SummonsRow,
     build_context,
     render_summons,
     summons_comment,
+    with_readings,
 )
 from nora.engagement.stages import deliver, invoke
+from nora.infra.social.readings import read_view
 from nora.infra.social.summons_client import BridgeResult, InstagramSummonsClient
+from nora.infra.social.views import ItemKind, ItemView, PostView, Reading
 from nora.obs.metrics import Metrics
 from nora.obs.tracing import TRACE_KIND, annotate, current_trace_id, span
 from nora.persons import Persons
@@ -76,11 +86,14 @@ log = logging.getLogger("nora.app.summons")
 
 #: The tools a public summons may call (design/threads-adoption/10
 #: §"PUBLIC_GRANT", minus `generate_image` per design 19: a comment carries no
-#: image). Read-only lookups on the open web and X, `media_fetch` for the
-#: post's own items by url, the clock and arithmetic, and `send_reply` into the
-#: staging deliverer. NOTHING that reads a room, a roster, memory, notes,
-#: persons or places, and no Instagram tool: `instagram_read` reads stories
-#: that are roster-scoped, over the same session this occasion writes with.
+#: image). Read-only lookups on the open web and X, `media_fetch` (the post's
+#: items are already read before the turn, `_read_items`, and the render does
+#: not point her at it; it stays granted for anything else, and HER call is
+#: an ordinary `caller="model"` read that caches as every model read does),
+#: the clock and arithmetic, and `send_reply` into the staging deliverer.
+#: NOTHING that reads a room, a roster, memory, notes, persons or places,
+#: and no Instagram tool: `instagram_read` reads stories that are
+#: roster-scoped, over the same session this occasion writes with.
 #: `tests/unit/test_summons_occasion.py` pins it as a subset of the registry's
 #: read-only tools plus `send_reply`.
 PUBLIC_GRANT: frozenset[str] = frozenset({
@@ -94,6 +107,31 @@ PUBLIC_GRANT: frozenset[str] = frozenset({
 #: The synthetic conversation type a summons' target and tool log carry. Not
 #: `group` or `dm`: nothing that keys on those may mistake this for a room.
 CONVERSATION_TYPE = "public"
+
+#: The one time budget for reading the post's items before the turn, all of
+#: them together (and each on its own). Not shorter: the reel that motivated
+#: the read took 82 s uncached live (`readings.ITEM_TIMEOUT_SECONDS`'s
+#: measurement), and one look's ceiling is the single-window vision ceiling
+#: (120 s) plus the download (25 s) plus ffmpeg (5 s). A summons answers a
+#: comment, so two and a half minutes of reading costs nothing a person
+#: waits on, and a reel that times out is exactly the failure this read
+#: exists to end. Past it, an item is said to be unreadable, never guessed.
+MEDIA_READ_SECONDS = 150.0
+
+#: One look's own ceiling inside that budget: the same number, so in
+#: production the two bind together and there is ONE budget. Kept a separate
+#: knob so a test can tell a look that ran out of its own time from a read
+#: that ran out of the whole budget.
+MEDIA_ITEM_SECONDS = 150.0
+
+#: `web_search` calls one summons turn may make. `public/conduct.md` v3: when
+#: a post makes several claims, each claim she judges gets its OWN check, not
+#: one settled as a side effect of another. A live summons post named seven
+#: companies; the registry's per-turn budget (a room tag's, sized for one
+#: question) would have left three of them unchecked. Raised for THIS
+#: occasion only: a room tag keeps the registry's value, and `x_search` is
+#: unchanged.
+SUMMONS_WEB_SEARCHES = 8
 
 #: The bridge's write refusals, mapped to the ledger state they leave
 #: (design 19's guard table; `errors.go`'s refusal codes). Anything not named
@@ -177,6 +215,29 @@ def _write_state(result: BridgeResult[Any], *, prior_code: str | None) -> str:
     return _WRITE_STATES.get(result.code, "ambiguous")
 
 
+#: A post item's kind as `readings` types it. The client already narrows it
+#: to these, with `media` for anything else.
+_ITEM_KINDS: Mapping[str, ItemKind] = {"image": "image", "video": "video"}
+
+#: `readings.Reading` states that mean the look did not come back with what
+#: the item shows: she is told it could not be read.
+_UNREADABLE: frozenset[str] = frozenset({"failed", "timed_out", "not_started"})
+
+
+def _item_reading(reading: Reading | None) -> ItemReading:
+    """The `instagram_read` reading of one item → the summons' own. Every
+    look that did not come back seen or withheld is `unreadable`; a video
+    not opened by design keeps its reason. `None` (never looked at) is
+    `unreadable` too: an item she is shown is one she was meant to see."""
+    if reading is None or reading.state in _UNREADABLE:
+        return ItemReading("unreadable")
+    if reading.state == "seen":
+        return ItemReading("seen", reading.text, reading.coverage)
+    if reading.state in ("withheld", "too_long", "unknown_length", "over_video_cap"):
+        return ItemReading(reading.state)
+    return ItemReading("unreadable")
+
+
 class SummonsOccasion:
     """One summons, from a card to a ledger row. `run` and `flush_staged`
     NEVER raise into the consumer for a reason a bridge or a model can cause;
@@ -200,6 +261,8 @@ class SummonsOccasion:
         limits: Mapping[str, Any],
         timeout_seconds: float,
         clock: Callable[[], datetime],
+        media_read_seconds: float = MEDIA_READ_SECONDS,
+        media_item_seconds: float = MEDIA_ITEM_SECONDS,
     ) -> None:
         self._client = client
         self._ledger = ledger
@@ -216,6 +279,8 @@ class SummonsOccasion:
         self._limits = dict(limits)
         self._timeout_seconds = timeout_seconds
         self._clock = clock
+        self._media_read_seconds = media_read_seconds
+        self._media_item_seconds = media_item_seconds
 
     @property
     def mode(self) -> str:
@@ -339,8 +404,7 @@ class SummonsOccasion:
                 "unreadable", bridge_code="not_on_page", reached_bridge=True,
             )
 
-        held = await self._turn(summons_id, context_text=render_summons(context),
-                                question=context.question, now=now)
+        held = await self._turn(summons_id, context=context, now=now)
         if not held:
             await self._ledger.finish(
                 summons_id, "silent", now=now, person_id=person_id, trace_id=trace_id,
@@ -352,10 +416,12 @@ class SummonsOccasion:
         )
 
     async def _turn(
-        self, summons_id: UUID, *, context_text: str, question: str, now: datetime,
+        self, summons_id: UUID, *, context: SummonsContext, now: datetime,
     ) -> tuple[str, ...]:
-        """One model turn against a staging deliverer → what it HELD. Nothing
-        it does reaches a room, and its `final_text` is discarded."""
+        """Read the post's items, then one model turn against a staging
+        deliverer → what it HELD. Nothing it does reaches a room, and its
+        `final_text` is discarded."""
+        question = context.question
         doctrine = self._doctrine_store.get(applies_to=SUMMONS)
         conversation_id = f"summons:{summons_id}"
         target = ConversationTarget("instagram", conversation_id, CONVERSATION_TYPE)
@@ -367,7 +433,11 @@ class SummonsOccasion:
             # ONE reply, and `send_reply` alone ends the turn: `send_gif` is
             # not granted, and leaving it terminal with a budget would let the
             # guard wait on a verb she cannot call.
-            budgets={**self._registry.budgets(), "send_reply": 1},
+            budgets={
+                **self._registry.budgets(), "send_reply": 1,
+                # Each claim its own check (`SUMMONS_WEB_SEARCHES`).
+                "web_search": SUMMONS_WEB_SEARCHES,
+            },
             terminal=frozenset({"send_reply"}),
             metrics=self._metrics, audience=SUMMONS,
             # No roster and no preview: a comment tags nobody.
@@ -380,18 +450,28 @@ class SummonsOccasion:
             platform="", conversation_id=conversation_id, roster_source=None,
             persons=self._persons,
         )
-        surface = self._registry.surface(
-            store=_NoTranscript(), conversation_id=conversation_id,
-            conversation_type=CONVERSATION_TYPE, persons=self._persons,
-            honcho=None, deliverer=handle.deliverer, metrics=self._metrics,
-            room=room, question=question, transcript=(),
+        turn_tools: dict[str, Any] = {
+            "store": _NoTranscript(), "conversation_id": conversation_id,
+            "conversation_type": CONVERSATION_TYPE, "persons": self._persons,
+            "honcho": None, "deliverer": handle.deliverer, "metrics": self._metrics,
+            "room": room, "question": question, "transcript": (),
             # Not a tag: `send_reply` asks no reaction picker for a GIF.
-            fire_turn=True, links=handle.links, grant=PUBLIC_GRANT,
+            "fire_turn": True, "links": handle.links,
+        }
+        surface = self._registry.surface(**turn_tools, grant=PUBLIC_GRANT)
+        # What the post SHOWS is read before she is, by a `media_fetch` the
+        # registry builds from the SAME arguments as the tools she is handed:
+        # a second build, so a second closure, with the same no-room
+        # collaborators and the same configuration as hers. Her own calls
+        # are not this one's (hers are `caller="model"`).
+        context = await self._read_items(
+            summons_id, context, self._registry.specs(**turn_tools),
         )
+        context_text = render_summons(context)
         message = NormalizedMessage(
             platform="instagram", conversation_id=conversation_id,
             conversation_type=CONVERSATION_TYPE, sender_id="", sender_name=None,
-            timestamp=int(now.timestamp() * 1000), body=question, raw={},
+            timestamp=int(context.now.timestamp() * 1000), body=question, raw={},
         )
         ctx = TagContext(
             tag_id=str(summons_id), message=message, tagger=None,
@@ -406,6 +486,82 @@ class SummonsOccasion:
             metrics=self._metrics, audience=SUMMONS,
         )
         return handle.deliverer.held_texts
+
+    # ---- reading the post: what each item SHOWS, before the turn -----------
+
+    async def _read_items(
+        self, summons_id: UUID, context: SummonsContext, specs: Iterable[ToolSpec],
+    ) -> SummonsContext:
+        """`context` with a reading on every item it shows (at most
+        `MAX_ITEMS_SHOWN`; the rest are already counted in `elided_items`).
+
+        The `instagram_read` mechanism, not a second one
+        (design/instagram-adoption/18 §"Typed views, one renderer, and
+        readings"): `readings.read_view` over a `PostView` of the items, each
+        look `media_fetch(url=...)` itself through `tools.media_look`. So the
+        url egress screen, the download ceilings, the image vision call, the
+        chunked video read, the identifier screen on what comes back, and the
+        per-video length and count caps are the ones every other reading
+        has. The caption is not in the view: nothing a stranger wrote can
+        reach a vision prompt.
+
+        **The pre-read stores nothing** (`persist=False`, the story frame's
+        switch). A url read writes no blob and no `media_objects` row in any
+        case (its bytes are never kept, `media_fetch`'s url path); with
+        `persist` off these looks write neither content cache either. That
+        is a claim about THIS read only: a `media_fetch` she makes herself in
+        the turn is an ordinary `caller="model"` read and caches as every one
+        does, which is why the render never points her at it.
+
+        Never raises for a reading's sake: a look that fails, times out or
+        never started is `unreadable`, and her context says it could not be
+        read. `context.now` moves to when the read ended (`with_readings`),
+        so every age she is shown is measured after it."""
+        if not context.items:
+            return context
+        fetch = next((spec.call for spec in specs if spec.name == "media_fetch"), None)
+        if fetch is None:  # pragma: no cover — media_fetch is always registered
+            return with_readings(
+                context, tuple(ItemReading("unreadable") for _ in context.items),
+                now=self._clock(),
+            )
+        look = media_look(
+            fetch, caller="summons", persist=False,
+            max_video_seconds=float(self._registry.video_chunk_seconds),
+        )
+        # Only what a look needs: kind, url, a video's length. No author, no
+        # caption: the view carries nothing a stranger wrote.
+        view = PostView(
+            author=None, caption=None, taken_at=None,
+            items=tuple(
+                ItemView(
+                    kind=_ITEM_KINDS.get(item.kind, "media"),
+                    url=item.url, duration_seconds=item.duration_seconds,
+                )
+                for item in context.items
+            ),
+        )
+        # Counts and states only: never a url, an id or any text.
+        with span("summons.read_items", **{"nora.items": len(view.items)}):
+            try:
+                read = await read_view(
+                    view, look, max_items=MAX_ITEMS_SHOWN,
+                    item_timeout=self._media_item_seconds,
+                    total_timeout=self._media_read_seconds,
+                )
+                readings = tuple(_item_reading(item.reading) for item in read.items)
+            except Exception as exc:  # noqa: BLE001 — a reading never ends a summons
+                # The type only: an exception's message can carry the url.
+                log.error(
+                    "summons %s: reading the post's items raised %s",
+                    summons_id, type(exc).__name__,
+                )
+                readings = tuple(ItemReading("unreadable") for _ in context.items)
+            annotate(**{
+                f"nora.items_{state}": count
+                for state, count in Counter(r.state for r in readings).items()
+            })
+        return with_readings(context, readings, now=self._clock())
 
     # ---- the flush: the ONE place a comment is written ----------------------
 

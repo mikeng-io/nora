@@ -308,7 +308,10 @@ PINNED: dict[str, tuple[int, str]] = {
     # deleted. `generate_image` is not in the summons' PUBLIC_GRANT (a comment
     # carries no image, design 19), so a section telling her when to draw
     # described a capability the occasion does not have.
-    "public-conduct": (2, "f27fa98dfa596e7a8ea865fc32c8094a243d5dd82b54b20c3272163b4556fc65"),
+    # v3 (2026-09-26): each claim the post makes gets its own check, and "found
+    # nothing" is only said of something actually looked for. A live dry-run
+    # summons called one named company unverifiable without ever searching it.
+    "public-conduct": (3, "80136f149db6e5d3c9235ddc88668f978065b4be13ca29dd8a51a435b12183e5"),
     "public-constraints": (
         1, "88b47c480e3948332c8281cacb0efbdc9094176d16f1704593df8eaa8b735dfa",
     ),
