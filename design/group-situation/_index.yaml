@@ -1,0 +1,26 @@
+kind: design_index
+title: "Group situation: Nora reasons with where the room is, unasked"
+description: >
+  A planning reply framed one district as a detour when it was not one for
+  this group. The members' usual places were derived and one tool call away; the
+  turn's input carried a place for the caller only, and the afternoon plan had
+  fallen out of the room's Standing three minutes earlier. Step 1 of three:
+  render the room's usual places into the tag turn, measured by replaying
+  recorded planning turns with and without the block. Result: no effect
+  detected; not built. Steps 2 (place identity, then the time-anchored
+  forecast) and 3 (a proactive pass that wakes on time anchors and world
+  changes) follow in their own nodes.
+status: measured-null
+governance: operator-directed
+timestamp: '2026-09-25'
+origin: >
+  Operator 2026-09-25, on the wedding room's reply about Yuen Long: "there is
+  no location awareness ... no awareness of hobbies or event arrangements", and
+  "I expect Nora to think with/for us, and not for us to have to ask Nora to
+  think." Measured the same day off Langfuse and the presence tables on norty.
+members:
+  - 00-intent.md
+edges:
+  - {src: 00-intent, dst: ../context-assembly/00-overview.md, rel: extends, provenance: asserted}
+  - {src: 00-intent, dst: ../proposed/27-presence-analytics.md, rel: consumes, provenance: asserted}
+  - {src: 00-intent, dst: ../dreamer-agent-loop/39-proactive-ooda-loop.md, rel: precedes, provenance: asserted}
