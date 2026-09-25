@@ -25,7 +25,7 @@ def policy(tmp_path):
     p = tmp_path / "policy.toml"
     p.write_text(
         'default = "deny"\n[[conversations]]\nplatform = "signal"\n'
-        f'id = "{ALLOWED}"\npersons = ["miles"]\n'
+        f'id = "{ALLOWED}"\nlabel = "allowed"\npersons = ["miles"]\n'
     )
     return load_policy(Path(p))
 

@@ -15,7 +15,7 @@ from dataclasses import replace
 import pytest
 
 from nora.agent.dreamer import AdaptorToolError, verify_tool_subsets
-from nora.domain.models import DeliveryStatus, PersonRef, TranscriptRow
+from nora.domain.models import DeliveryStatus, TranscriptRow
 from nora.domain.notes import BODY_MAX_CHARS, NoteSupersedeReason
 from nora.domain.ports import Proposal
 from nora.language.note_candidates import (
@@ -32,7 +32,6 @@ from nora.language.note_candidates import (
 )
 from nora.language.note_render import render_notes
 from nora.obs.metrics import Metrics
-from nora.persons import Persons
 from nora.testing.note_store import InMemoryNoteStore
 
 WS = "friends"
@@ -81,15 +80,15 @@ def _adaptor(
     unit_for=lambda _: WS,
     label_for=lambda _: LABEL,
     description_for=lambda _: None,
-    persons: Persons | None = None,
+    platform_for=None,
+    resolve_names=None,
 ) -> tuple[NoteCandidateAdaptor, InMemoryNoteStore]:
     store = notes if notes is not None else InMemoryNoteStore()
     adaptor = NoteCandidateAdaptor(
         notes=store, candidates=store, unit_for=unit_for,
         label_for=label_for, description_for=description_for,
-        persons=persons if persons is not None else Persons(by_person={}, index={}),
-        platform_for=lambda _: "signal",
         metrics=metrics or Metrics(),
+        platform_for=platform_for, resolve_names=resolve_names,
     )
     return adaptor, store
 
@@ -1373,13 +1372,11 @@ async def test_inputs_renders_moments_in_the_adaptors_zone():
     ahead = NoteCandidateAdaptor(
         notes=store, candidates=store, unit_for=lambda _: WS,
         label_for=lambda _: LABEL, description_for=lambda _: None,
-        persons=Persons(by_person={}, index={}), platform_for=lambda _: "signal",
         timezone=ZoneInfo("Pacific/Kiritimati"),
     )
     behind = NoteCandidateAdaptor(
         notes=store, candidates=store, unit_for=lambda _: WS,
         label_for=lambda _: LABEL, description_for=lambda _: None,
-        persons=Persons(by_person={}, index={}), platform_for=lambda _: "signal",
         timezone=ZoneInfo("Pacific/Niue"),
     )
 
@@ -1388,41 +1385,6 @@ async def test_inputs_renders_moments_in_the_adaptors_zone():
 
     assert 'at="2026-09-08 Tue' in a, a
     assert 'at="2026-09-07 Mon' in b, b
-
-
-async def test_the_batch_names_each_member_by_the_roster_not_the_profile():
-    """Design 42 §4.3, S1a. The clock hands this pass an UNPROJECTED batch
-    (`record.since`, no `Persons.name_transcript`), so `from=` was the
-    member's self-set profile name while every live turn renders the roster
-    name (DEC-80). The adaptor projects it itself: a sender the roster knows
-    renders by the roster name; one it does not keeps the profile name; ids
-    are unchanged, so `accept()`'s join against the batch still holds."""
-    roster = Persons(
-        by_person={"p_ada": PersonRef(person_id="p_ada", name="Ada Roster",
-                                      honcho_peer_id="p_ada")},
-        index={("signal", "p1"): "p_ada"},
-    )
-    adaptor, _ = _adaptor(persons=roster)
-    stranger = replace(_row(2, "count me in"), sender_id="p9", sender_name="Zed")
-
-    prompt = await adaptor.inputs(key=SCOPE, batch=(_row(1, "dinner on the 3rd?"), stranger))
-
-    assert 'n="1"' in prompt and 'from="Ada Roster"' in prompt
-    assert 'from="Ada"' not in prompt
-    assert 'n="2"' in prompt and 'from="Zed"' in prompt
-    kept = await adaptor.accept(key=SCOPE, items=[_item(message_ids=[1, 2])])
-    assert len(kept) == 1
-
-
-async def test_a_scope_with_no_platform_raises_rather_than_rendering_unnamed():
-    store = InMemoryNoteStore()
-    adaptor = NoteCandidateAdaptor(
-        notes=store, candidates=store, unit_for=lambda _: WS,
-        label_for=lambda _: LABEL, description_for=lambda _: None,
-        persons=Persons(by_person={}, index={}), platform_for=lambda _: None,
-    )
-    with pytest.raises(LookupError, match="no platform"):
-        await adaptor.inputs(key=SCOPE, batch=(_row(1, "dinner?"),))
 
 
 def test_a_members_message_cannot_forge_the_notes_block_below_it():
@@ -1483,6 +1445,73 @@ def test_an_unmapped_sender_is_named_unknown_and_never_by_their_phone_number():
         room="ridgeline", tz=ZoneInfo("UTC"),
     )
     assert "Grant Carver" in named and "Chi Ming" not in named
+
+
+async def test_inputs_resolves_names_through_the_injected_resolver():
+    """#200 part 1, the residual defect: `_render_line` never leaked a raw id
+    even before this fix (the test above), but nothing on the Dreamer path
+    ever called `Persons.name_transcript`, so a MAPPED sender's line still
+    carried their self-set, spoofable `sender_name` rather than the
+    operator's canonical name for them — `inputs()` handed `_render_line`
+    rows whose `person_name` was always `None`.
+
+    `resolve_names`/`platform_for` (composition wires `persons.
+    name_transcript`, the way `MediaJoin` gets `scan_identifiers`) is what
+    closes that: a row whose `sender_id` the resolver maps renders its
+    canonical name, and a row it does not map still renders `sender_name` —
+    or `unknown` — never the raw id either way.
+    """
+    def _resolve(rows: Sequence[TranscriptRow], platform: str) -> Sequence[TranscriptRow]:
+        assert platform == "signal"
+        return tuple(
+            replace(r, person_name="Grant Carver") if r.sender_id == "+85291234567"
+            else r
+            for r in rows
+        )
+
+    adaptor, _ = _adaptor(
+        platform_for=lambda _key: "signal", resolve_names=_resolve,
+    )
+    batch = (
+        TranscriptRow(
+            id=1, sender_id="+85291234567", sender_name="Chi Ming", ts=1_000,
+            body="去邊食", is_nora=False, delivery_status=DeliveryStatus.SENT,
+            raw_json=None,
+        ),
+        TranscriptRow(
+            id=2, sender_id="+85299999999", sender_name=None, ts=1_000,
+            body="唔知喎", is_nora=False, delivery_status=DeliveryStatus.SENT,
+            raw_json=None,
+        ),
+    )
+
+    text = await adaptor.inputs(key=SCOPE, batch=batch)
+
+    assert 'from="Grant Carver"' in text
+    assert "Chi Ming" not in text
+    assert 'from="unknown"' in text
+    assert "99999999" not in text and "+852" not in text
+
+
+async def test_inputs_never_resolves_names_when_unwired():
+    """Positive control for the test above: an adaptor built without
+    `platform_for`/`resolve_names` (every construction before #200, and
+    every test in this file that does not pass them) renders the OLD,
+    unresolved shape — `sender_name` or `unknown`, never a raw id — rather
+    than raising or silently doing nothing different. Proves the new
+    parameters are additive, not load-bearing for every existing caller."""
+    adaptor, _ = _adaptor()
+    batch = (
+        TranscriptRow(
+            id=1, sender_id="+85291234567", sender_name="Chi Ming", ts=1_000,
+            body="去邊食", is_nora=False, delivery_status=DeliveryStatus.SENT,
+            raw_json=None,
+        ),
+    )
+
+    text = await adaptor.inputs(key=SCOPE, batch=batch)
+
+    assert 'from="Chi Ming"' in text
 
 
 # --- design 41 §7.5-7.6: a merged note forwards to its survivor --------------

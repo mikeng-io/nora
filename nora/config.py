@@ -29,8 +29,12 @@ from nora.domain.ports import (
 from nora.domain.standing import (
     DEFAULT_STANDING_MAX_CHARS,
     DEFAULT_STANDING_STORE_TIMEOUT_SECONDS,
+    DEFAULT_WORKING_SET_MAX_CHARS,
+    DEFAULT_WORKING_SET_MAX_ITEMS,
     STANDING_BODY_CEILING_CHARS,
     STANDING_STORE_CALLS_PER_FOLD,
+    WORKING_SET_CEILING_BYTES,
+    WORKING_SET_CEILING_ITEMS,
 )
 
 # `nora.config` may import `nora.domain` — the forbidden direction is the
@@ -2240,6 +2244,15 @@ class StandingConfig(BaseModel):
 
     enabled: bool = False
     max_chars: int = Field(default=DEFAULT_STANDING_MAX_CHARS, ge=1)
+    # `working_set`'s own two operating caps (design/standing-compact/
+    # 30-working-set.md §1, issue #445) — `max_chars`'s siblings, and the
+    # SAME two-layer split: these are the judgement call, tunable without a
+    # migration; `WORKING_SET_CEILING_ITEMS`/`_BYTES` (asserted below) are
+    # the DDL backstop no config value may pass. A found option gets its own
+    # budget rather than sharing `max_chars`' 1200 characters on purpose —
+    # see `DEFAULT_WORKING_SET_MAX_ITEMS`'s docstring.
+    working_set_max_items: int = Field(default=DEFAULT_WORKING_SET_MAX_ITEMS, ge=1)
+    working_set_max_chars: int = Field(default=DEFAULT_WORKING_SET_MAX_CHARS, ge=1)
     # The fold's batch size AND the event trigger's accumulator threshold —
     # ONE number (design/standing-watermark D1). Every fold reads
     # `since_including_nora(after_id=watermark, limit=fold_batch)`: the NEXT
@@ -2362,6 +2375,30 @@ class StandingConfig(BaseModel):
                 f"(standing_body_fits_the_ceiling_check). The ceiling is DDL "
                 f"and cannot be raised from config; every fold above it would "
                 f"be refused by Postgres at write time."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _working_set_caps_stay_under_the_database_ceiling(self) -> StandingConfig:
+        """`working_set_max_items`/`_max_chars`'s own version of the check
+        above — refuse to START rather than fail at the first oversized fold,
+        `StandingConfig`'s own posture applied to `working_set`'s pair of
+        operating caps instead of `body`'s one."""
+        if self.working_set_max_items > WORKING_SET_CEILING_ITEMS:
+            raise ValueError(
+                f"[standing] working_set_max_items = "
+                f"{self.working_set_max_items} is above the database ceiling "
+                f"of {WORKING_SET_CEILING_ITEMS} "
+                f"(standing_working_set_fits_the_ceiling_check). The ceiling "
+                f"is DDL and cannot be raised from config."
+            )
+        if self.working_set_max_chars > WORKING_SET_CEILING_BYTES:
+            raise ValueError(
+                f"[standing] working_set_max_chars = "
+                f"{self.working_set_max_chars} is above the database ceiling "
+                f"of {WORKING_SET_CEILING_BYTES} bytes "
+                f"(standing_working_set_fits_the_ceiling_check). The ceiling "
+                f"is DDL and cannot be raised from config."
             )
         return self
 

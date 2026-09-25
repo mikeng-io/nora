@@ -77,7 +77,6 @@ from nora.language.note_candidates import NoteCandidateAdaptor
 from nora.language.note_curator import NoteCuratorAdaptor
 from nora.language.proactive import ProactiveAdaptor, UnitRoom
 from nora.obs.metrics import Metrics
-from nora.persons import Persons
 from nora.skills.loader import SkillStore
 from nora.testing import (
     InMemoryCultureStore,
@@ -306,7 +305,6 @@ async def candidates(body: str = "去邊食", *, name: str = "Ada") -> str:
         notes=notes, candidates=notes, unit_for=lambda _: WS,
         label_for=lambda _: "Zone 42",
         description_for=lambda _: "a games room; 2200 is when people log on",
-        persons=Persons(by_person={}, index={}), platform_for=lambda _: "discord",
         metrics=Metrics(),
     )
     return await adaptor.inputs(
@@ -473,6 +471,7 @@ SHAPES = {
   <m from n>""",
     "debrief.fold": """
 <standing_prior description fields written>
+<standing_working_set_prior description fields>
 <turn at description fields outcome>
   <what_happened description>
   <transcript description fields>
@@ -482,6 +481,7 @@ SHAPES = {
     <step role>""",
     "debrief.rollup": """
 <standing_prior description fields written>
+<standing_working_set_prior description fields>
 <conversation at description fields>
   <stretch description fields>
     <m at from>""",

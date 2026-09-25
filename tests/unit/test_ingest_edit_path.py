@@ -550,7 +550,7 @@ async def test_an_edit_is_never_a_relevance_gate_candidate():
     p = Path(tempfile.mkdtemp()) / "policy.toml"
     p.write_text(
         'default = "deny"\n[[conversations]]\nplatform = "signal"\n'
-        'id = "g1"\npersons = "*"\nrelevance_gate = true\n'
+        'id = "g1"\nlabel = "g1"\npersons = "*"\nrelevance_gate = true\n'
     )
     opted_in = RelevanceGatePolicy(load_policy(p))
     store = FakeRecordStore()

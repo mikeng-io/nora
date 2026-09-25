@@ -72,7 +72,6 @@ from nora.language.note_curator import NoteCuratorAdaptor
 from nora.language.note_merge import NoteMergeAdaptor
 from nora.language.proactive import ProactiveAdaptor, UnitRoom
 from nora.obs.metrics import Metrics
-from nora.persons import Persons
 from nora.testing import InMemoryDreamScheduleClock, InMemoryNoteStore
 from nora.testing.fakes import FakeRecordStore
 from nora.testing.reminders import FakeReminderStore
@@ -333,8 +332,6 @@ def _build_note_candidates() -> tuple[NoteCandidateAdaptor, InMemoryNoteStore]:
             unit_for=lambda scope: _NOTE_WS if scope == KEY else None,
             label_for=lambda scope: "Zone 42" if scope == KEY else None,
             description_for=lambda _scope: None,
-            persons=Persons(by_person={}, index={}),
-            platform_for=lambda _scope: "discord",
             metrics=Metrics(),
         ),
         store,

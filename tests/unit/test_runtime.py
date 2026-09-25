@@ -1332,12 +1332,12 @@ class _RenderingRunner:
 
 
 async def test_the_dreamer_batch_stays_unprojected_and_note_candidates_names_the_roster():
-    """Design 42 §4.3 and S1a. The clock reads the batch with `record.since`
-    and projects nothing, so the rows reach every scope-keyed adaptor with
-    `person_name` unset, and the culture fold's input is what it was. The
-    projection is note-candidates' own: its prompt names the member by the
-    roster name every live turn reads (DEC-80), not the self-set profile
-    name it rendered before S1a."""
+    """Design 42 §4.3 (S0's confirming test, flipped once #544 landed the
+    projection). The clock reads the batch with `record.since` and projects
+    nothing, so the rows reach every scope-keyed adaptor with `person_name`
+    unset, and the culture fold's input is what it was. The projection is
+    note-candidates' own: its prompt names the member by the roster name
+    every live turn reads (DEC-80), not the self-set profile name."""
     roster = Persons(
         by_person={"p_ada": PersonRef(person_id="p_ada", name="Ada Roster",
                                       honcho_peer_id="p_ada")},
@@ -1353,7 +1353,9 @@ async def test_the_dreamer_batch_stays_unprojected_and_note_candidates_names_the
     adaptor = NoteCandidateAdaptor(
         notes=store, candidates=store, unit_for=lambda _: "friends",
         label_for=lambda _: "Friends", description_for=lambda _: None,
-        persons=roster, platform_for=lambda _: "signal",
+        # Wired as composition wires it (#544): the roster's own projection.
+        platform_for=lambda _: "signal",
+        resolve_names=lambda rows, platform: roster.name_transcript(rows, platform=platform),
     )
     runner = _RenderingRunner()
 

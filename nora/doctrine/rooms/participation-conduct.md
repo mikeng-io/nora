@@ -5,7 +5,7 @@ order: 35
 applies_to: [participation]
 version: 1
 kind: conduct
-authority_above: [constraints, identity, voice]
+authority_above: [constraints, identity, belonging, voice]
 authority_below: [situation, message-content, tool-output]
 not_here: >-
   Not whether this turn should happen — that is decided before her by the

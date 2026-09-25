@@ -68,6 +68,7 @@ async def client(tmp_path, monkeypatch, pg_url, aiohttp_client):
         "[[conversations]]\n"
         'platform = "discord"\n'
         f'id = "{CONV}"\n'
+        f'label = "{CONV}"\n'
         'persons = "*"\n'
         # The guild's speech is recorded HERE (design/voice-channel/07 §12.2,
         # reversed 2026-09-17) — this room is a TEXT channel, and that is the
@@ -169,6 +170,7 @@ async def test_an_utterance_from_an_unmarked_guild_records_nothing(
         "[[conversations]]\n"
         'platform = "discord"\n'
         f'id = "{CONV}"\n'
+        f'label = "{CONV}"\n'
         'persons = "*"\n'
         # The guild's speech is recorded HERE (design/voice-channel/07 §12.2,
         # reversed 2026-09-17) — this room is a TEXT channel, and that is the

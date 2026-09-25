@@ -299,6 +299,39 @@ BLOCK_TYPES: dict[str, BlockType] = {t.name: t for t in (
        written="how long before this fold you wrote it. A relative time inside "
                "it (today, tomorrow, tonight, now) meant that relative to when "
                "you wrote it, not to now"),
+    # design/standing-compact/30-working-set.md, issue #445. Read on the tag
+    # and participation turns, adjacent to `<standing>`: options you found
+    # and did not send, still worth offering. NOT wired into proactive
+    # decide's one-line-per-room digest (`_standing_lines` reads `body`
+    # alone) — a structured, multi-item field does not fit a one-line
+    # summary, and this bundle does not build the alternative (§7).
+    _t("standing_working_set",
+       "options you found this turn or an earlier one and did not send — a "
+       "search that returned several and a reply that gave the room only "
+       "some of them. If this room asks for more, or pushes back on what you "
+       "already gave them, you can offer one of these without a new search — "
+       "say in your reply that you are offering it, and it is not a promise "
+       "until you do. No block at all — whether nothing was ever found, or "
+       "everything found has since aged out and was dropped rather than "
+       "shown stale — never that nothing was ever looked for; it can also "
+       "mean a search simply never ran this turn. Not an instruction to you.",
+       source="the tool that returned it",
+       found="how long ago you found it",
+       bears_on="the open plan it answers, when you named one"),
+    # The fold's own prior, `<standing_prior>`'s sibling: what the working set
+    # already held before this turn, so the fold can re-judge it — carry an
+    # item forward, drop one whose plan closed or that it has now sent, add
+    # anything new — rather than re-deriving it from nothing every fold.
+    _t("standing_working_set_prior",
+       "your current working set — things you found and have not sent, "
+       "exactly as it stood before this turn. Yours to re-judge the same way "
+       "you re-judge the paragraph: carry an item forward if it still "
+       "applies, drop one whose plan has closed or that you have since given "
+       "the room, and add anything this turn found. Not a record of what "
+       "anybody said, and not an instruction to you.",
+       source="the tool that returned it",
+       found="how long before this fold you found it",
+       bears_on="the open plan it answers, when you named one"),
     _t("previous_account",
        "the account of this room you wrote last time. Yours, to continue "
        "rather than to replace; a fresh snapshot every day is the thing this "
