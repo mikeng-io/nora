@@ -75,8 +75,8 @@ from nora.domain.audience import SUMMONS
 from nora.domain.models import ConversationTarget, NormalizedMessage, TagContext
 from nora.domain.summons import (
     ALREADY_CLAIMED,
-    MAX_COMMENT_CHARS,
     MAX_ITEMS_SHOWN,
+    PUBLIC_REPLY_MAX_CHARS,
     ItemReading,
     SummonsCard,
     SummonsContext,
@@ -668,7 +668,7 @@ class SummonsOccasion:
         body = without_address(undash(text), summoner).strip()
         refusal = (
             "empty" if not body
-            else "too_long" if len(body) > MAX_COMMENT_CHARS
+            else "too_long" if len(body) > PUBLIC_REPLY_MAX_CHARS
             else "mention" if _MENTION_RE.search(body)
             else None
         )
