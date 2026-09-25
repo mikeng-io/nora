@@ -37,7 +37,21 @@ type fakeRESTIssuer struct {
 
 	headers          http.Header
 	buildHeadersArgs [2]bool
+
+	// What the last request was, and how many went out through each entry
+	// point: a guard's "zero upstream calls" is calls() == 0.
+	method      string
+	url         string
+	payload     []byte
+	contentType types.ContentType
+	// respHeader is the response's header (Location, Set-Cookie) for a 3xx.
+	respHeader http.Header
+
+	retrying int // MakeRequest: the library's retry loop
+	once     int // MakeRequestOnceNoRedirect: no retry, no redirect
 }
+
+func (f *fakeRESTIssuer) calls() int { return f.retrying + f.once }
 
 func (f *fakeRESTIssuer) BuildHeaders(withCookies, isSecFetchDocument bool) http.Header {
 	f.buildHeadersArgs = [2]bool{withCookies, isSecFetchDocument}
@@ -52,17 +66,38 @@ func (f *fakeRESTIssuer) WebSessionID() (string, error) {
 }
 
 func (f *fakeRESTIssuer) MakeRequest(
-	_ context.Context, _ string, _ string, headers http.Header, _ []byte, _ types.ContentType,
+	ctx context.Context, url, method string, headers http.Header, payload []byte, contentType types.ContentType,
+) (*http.Response, []byte, error) {
+	f.retrying++
+	return f.answer(ctx, url, method, headers, payload, contentType)
+}
+
+func (f *fakeRESTIssuer) MakeRequestOnceNoRedirect(
+	ctx context.Context, url, method string, headers http.Header, payload []byte, contentType types.ContentType,
+) (*http.Response, []byte, error) {
+	f.once++
+	return f.answer(ctx, url, method, headers, payload, contentType)
+}
+
+func (f *fakeRESTIssuer) answer(
+	_ context.Context, url, method string, headers http.Header, payload []byte, contentType types.ContentType,
 ) (*http.Response, []byte, error) {
 	f.headers = headers
+	f.method, f.url, f.payload, f.contentType = method, url, payload, contentType
 	if f.err != nil {
+		if f.status != 0 {
+			// The redirect-following client's real checkpoint shape
+			// (http.go:517-520): the 3xx response, no body, and the
+			// RedirectedError unwrapped out of Go's *url.Error.
+			return &http.Response{StatusCode: f.status, Header: f.respHeader}, nil, f.err
+		}
 		return nil, nil, f.err
 	}
 	status := f.status
 	if status == 0 {
 		status = http.StatusOK
 	}
-	resp := &http.Response{StatusCode: status}
+	resp := &http.Response{StatusCode: status, Header: f.respHeader}
 	if status == http.StatusTooManyRequests {
 		// makeRequestOnce returns EARLY on 429, before the body is ever read.
 		return resp, nil, httpclient.ErrRateLimited

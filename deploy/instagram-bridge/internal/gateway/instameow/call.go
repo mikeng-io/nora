@@ -23,7 +23,9 @@
 // The design names a third, `rest`, for raw REST endpoints. Written with its
 // first caller: mentions.go's `GET /mentions` probe. Before it, the one raw
 // REST call this bridge ever made (`web_profile_info`) had been removed when
-// it proved throttled.
+// it proved throttled. `restDo` is its general form (a method, a referer, a
+// form body): comments.go's comment read and the bridge's ONE public write,
+// the comment reply, go through it (design 19).
 package instameow
 
 import (
@@ -32,6 +34,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"instagram-bridge/internal/domain"
@@ -137,6 +140,27 @@ func graphql(
 type RESTIssuer interface {
 	BuildHeaders(withCookies, isSecFetchDocument bool) http.Header
 	MakeRequest(ctx context.Context, url, method string, headers http.Header, payload []byte, contentType types.ContentType) (*http.Response, []byte, error)
+	// MakeRequestOnceNoRedirect is MakeRequest WITHOUT the library's retry
+	// loop (httpclient/http.go:425-482: up to MaxHTTPRetries=5 more attempts
+	// on a transport error or a 5xx, http.go:302) and without following a
+	// redirect (http.go:490-496). Every non-GET and every request whose URL
+	// carries ids goes through it:
+	//
+	//   - a retried POST is a second public comment when the first one
+	//     landed and only its answer was lost;
+	//   - the retrying form logs the request URL at error level on a failure
+	//     (http.go:448-464), and a comment URL carries a media id and a
+	//     comment id;
+	//   - the redirect-following form runs checkHTTPRedirect
+	//     (http.go:365-381), which logs the redirect's url and prev_url at
+	//     warn level (the request URL, ids and all), and which does NOT treat
+	//     a redirect to /accounts/login/ as a dead token. With no redirect
+	//     followed, restDo reads the 3xx's Location itself
+	//     (redirectSentinel).
+	//
+	// makeRequestOnce itself logs nothing (http.go:498-544); UpdateProxy logs
+	// only when a proxy is configured, and this bridge configures none.
+	MakeRequestOnceNoRedirect(ctx context.Context, url, method string, headers http.Header, payload []byte, contentType types.ContentType) (*http.Response, []byte, error)
 	// WebSessionID is the `X-Web-Session-ID` the library's own REST callers
 	// send (FetchMedia, FetchReel). It lives on `*instameow.Client`'s
 	// unexported configs, and its one exported path is `DumpState()`; see
@@ -214,37 +238,107 @@ func restStatusError(label string, status int, body []byte) error {
 	}
 }
 
-// rest issues one raw REST GET and returns its body only when the request
-// succeeded. It is the third helper `16` names and none existed until now
-// (see this file's package doc comment): mentions.go is its first caller.
+// restRequest is one raw REST call. The zero value of every optional field is
+// the GET that `rest` has always made.
+type restRequest struct {
+	// method is http.MethodGet when empty.
+	method   string
+	endpoint string
+	// label names the endpoint in error text and in the span
+	// (`instagram.rest <label>`). It must never carry an id.
+	label string
+	// referer is restOrigin when empty.
+	referer string
+	// form, when non-nil, is sent form-encoded with the library's own
+	// `types.FORM` content type (`application/x-www-form-urlencoded`), the
+	// way the library's own web POSTs send theirs (misc.go:57-59, route.go:84).
+	form url.Values
+	// idsInURL marks an endpoint whose URL carries identifiers (a media pk,
+	// a comment id). Such a request goes out through
+	// MakeRequestOnceNoRedirect (see its doc comment for what that avoids),
+	// and a transport failure's text, which the library builds from Go's
+	// *url.Error and so QUOTES the URL, is replaced with a fixed one before
+	// it can reach a span, a log line or an envelope.
+	idsInURL bool
+}
+
+// restAnswered marks a REST failure where Instagram ANSWERED at the endpoint
+// with a refusal: a 4xx (429 included), or a 200 carrying "status":"fail".
+// For a write, that is the one outcome where the thing is known NOT to have
+// happened; every other failure (no response, a 5xx, a 200 that is not JSON)
+// is ambiguous. The text is the wrapped error's, unchanged.
+type restAnswered struct {
+	err    error
+	status int
+	// body is the refusal's body, for a caller that reads it (postComment's
+	// action-block check). It never enters Error().
+	body []byte
+}
+
+func (e *restAnswered) Error() string { return e.err.Error() }
+func (e *restAnswered) Unwrap() error { return e.err }
+
+// fixedTextError carries a cause for errors.Is while showing only its own,
+// fixed text.
+type fixedTextError struct {
+	msg   string
+	cause error
+}
+
+func (e *fixedTextError) Error() string { return e.msg }
+func (e *fixedTextError) Unwrap() error { return e.cause }
+
+// rest issues one raw REST GET: restDo's original form, kept with its
+// original signature for mentions.go.
+func rest(ctx context.Context, issuer RESTIssuer, endpoint, label string) (int, []byte, error) {
+	return restDo(ctx, issuer, restRequest{endpoint: endpoint, label: label})
+}
+
+// restDo issues one raw REST request and returns its body only when the
+// request succeeded. It is the third helper `16` names and none existed until
+// mentions.go needed it (see this file's package doc comment).
 //
 // Headers are built the SAME header SET the library's own REST callers
 // build theirs from — FetchMedia and FetchReel, pkg/instameow/misc.go —
 // because a request that looks different from what the web client already
 // sends risks a checkpoint on this account: `BuildHeaders(true, false)`
 // (cookies, x-csrftoken, x-mid, x-ig-app-id, viewport-width, x-asbd-id, the
-// sec-ch-* set, ...) plus `x-requested-with: XMLHttpRequest`, the plain
-// base_url referer FetchReel uses (this is a feed read, not a single post,
-// so there is no shortcode-specific `/p/{code}/` path the way FetchMedia
-// builds one), the sec-fetch-* triple, and `X-Web-Session-ID`, which
-// FetchMedia reads off `*instameow.Client`'s unexported configs. That
-// value's one exported path is `(*instameow.Client).DumpState()`
-// (issuer.WebSessionID). When it cannot be read, NO request is sent: a
-// request missing a header the real web client always sends is the mismatch
-// this helper exists to avoid, so the call fails closed instead of going out
-// different.
+// sec-ch-* set, ...) plus `x-requested-with: XMLHttpRequest`, a referer
+// (FetchReel's plain base_url by default; a caller reading or writing ONE post
+// passes FetchMedia's `/p/{shortcode}/` form, misc.go:85-89), the sec-fetch-*
+// triple, and `X-Web-Session-ID`, which FetchMedia reads off
+// `*instameow.Client`'s unexported configs. That value's one exported path is
+// `(*instameow.Client).DumpState()` (issuer.WebSessionID). When it cannot be
+// read, NO request is sent: a request missing a header the real web client
+// always sends is the mismatch this helper exists to avoid, so the call fails
+// closed instead of going out different.
 //
-// `label` names the endpoint in error text ("news_inbox") and the span
-// (`instagram.rest news_inbox`), the same convention `graphql`'s `label`
-// uses.
+// A POST adds what the library's own web-client POST adds on top of that set:
+// `origin` and `priority`, mirrored from its route-definition POST
+// (pkg/instameow/route.go:74-84, `BuildHeaders(true, false)` + origin +
+// referer + priority + sec-fetch-*, sent with `types.FORM`). Its other web
+// POST, RegisterPushNotifications (misc.go:51-59), sets a subset of the same
+// (x-requested-with, Referer, types.FORM). A POST never goes through the
+// library's retry loop and never follows a redirect
+// (RESTIssuer.MakeRequestOnceNoRedirect's doc comment).
 //
 // `"status":"fail"` inside an HTTP 200 is a failure too — the REST form of
 // the check `graphql` above already applies to a GraphQL `errors` array (16
 // §Tracing: "Status ERROR on any failure, including a 200 carrying...
 // errors").
-func rest(ctx context.Context, issuer RESTIssuer, endpoint, label string) (int, []byte, error) {
+func restDo(ctx context.Context, issuer RESTIssuer, req restRequest) (int, []byte, error) {
+	label := req.label
 	ctx, span := startUpstream(ctx, "instagram.rest "+label)
 	defer span.End()
+
+	method := req.method
+	if method == "" {
+		method = http.MethodGet
+	}
+	referer := req.referer
+	if referer == "" {
+		referer = restOrigin
+	}
 
 	sessionID, err := issuer.WebSessionID()
 	if err != nil || sessionID == "" {
@@ -254,12 +348,34 @@ func rest(ctx context.Context, issuer RESTIssuer, endpoint, label string) (int, 
 	headers := issuer.BuildHeaders(true, false)
 	headers.Set("X-Web-Session-ID", sessionID)
 	headers.Set("x-requested-with", "XMLHttpRequest")
-	headers.Set("referer", restOrigin)
+	headers.Set("referer", referer)
 	headers.Set("sec-fetch-dest", "empty")
 	headers.Set("sec-fetch-mode", "cors")
 	headers.Set("sec-fetch-site", "same-origin")
 
-	resp, raw, err := issuer.MakeRequest(ctx, endpoint, http.MethodGet, headers, nil, types.NONE)
+	var (
+		payload     []byte
+		contentType = types.NONE
+	)
+	if method != http.MethodGet {
+		headers.Set("origin", restOrigin)
+		headers.Set("priority", "u=1, i")
+	}
+	if req.form != nil {
+		payload = []byte(req.form.Encode())
+		contentType = types.FORM
+	}
+
+	var (
+		resp *http.Response
+		raw  []byte
+	)
+	noRedirect := method != http.MethodGet || req.idsInURL
+	if noRedirect {
+		resp, raw, err = issuer.MakeRequestOnceNoRedirect(ctx, req.endpoint, method, headers, payload, contentType)
+	} else {
+		resp, raw, err = issuer.MakeRequest(ctx, req.endpoint, method, headers, payload, contentType)
+	}
 	status := 0
 	if resp != nil {
 		status = resp.StatusCode
@@ -277,14 +393,36 @@ func rest(ctx context.Context, issuer RESTIssuer, endpoint, label string) (int, 
 			// issues itself. restStatusError reads that body.
 			outErr := restStatusError(label, status, raw)
 			failSpan(span, errorType(outErr), outErr)
+			if status < 500 {
+				outErr = &restAnswered{err: outErr, status: status, body: raw}
+			}
 			return status, nil, outErr
 		}
 		// A transport-level failure with no usable status: a network error,
 		// or a challenge/checkpoint the library already turned into its own
 		// typed sentinel during a redirect, with no response body at all.
 		// classify() already recognizes those sentinels via needsHuman.
+		if req.idsInURL {
+			// The library's text for this is Go's *url.Error, which quotes
+			// the URL, ids and all (http.go:527). A checkpoint keeps the
+			// sentinel's own (fixed) name, which is what the operator reads
+			// in /health's detail.
+			msg := label + " request failed before an answer"
+			if sentinel := humanSentinel(err); sentinel != nil {
+				msg = label + ": " + sentinel.Error()
+			}
+			err = &fixedTextError{msg: msg, cause: err}
+		}
 		failSpan(span, errorType(err), err)
 		return status, nil, classify(err)
+	}
+	if noRedirect && status >= 300 && status < 400 {
+		// Not followed, so read here what checkHTTPRedirect would have read,
+		// plus the one thing it misses: a redirect to /accounts/login/ is a
+		// dead session. Anything else is refused as an unexpected redirect.
+		outErr := redirectError(label, resp)
+		failSpan(span, errorType(outErr), outErr)
+		return status, nil, &restAnswered{err: outErr, status: status}
 	}
 	if status != http.StatusOK {
 		// Fail-closed fallback. Nothing observed reaches this today — the
@@ -307,6 +445,12 @@ func rest(ctx context.Context, issuer RESTIssuer, endpoint, label string) (int, 
 		// body) is a failure too, and its span says so.
 		span.SetAttributes(attribute.String("error.type", "upstream_rejected"))
 		span.SetStatus(codes.Error, "upstream_rejected")
+		if req.idsInURL {
+			// A JSON syntax error quotes a byte of the body, and this body
+			// can be people's words.
+			return status, nil, domain.Classify(domain.ErrUpstreamRejected,
+				&fixedTextError{msg: fmt.Sprintf("%s did not return JSON (%d bytes)", label, len(raw)), cause: err})
+		}
 		return status, nil, domain.Classify(domain.ErrUpstreamRejected,
 			fmt.Errorf("%s did not return JSON (%d bytes): %w", label, len(raw), err))
 	}
@@ -317,14 +461,52 @@ func rest(ctx context.Context, issuer RESTIssuer, endpoint, label string) (int, 
 		if sentinel := restCheckpointSentinel(raw); sentinel != nil {
 			span.SetAttributes(attribute.String("error.type", "needs_human"))
 			span.SetStatus(codes.Error, "needs_human")
-			return status, nil, domain.Classify(domain.ErrNeedsHuman, fmt.Errorf("%s: %w", label, sentinel))
+			return status, nil, &restAnswered{status: status, body: raw,
+				err: domain.Classify(domain.ErrNeedsHuman, fmt.Errorf("%s: %w", label, sentinel))}
 		}
 		span.SetAttributes(attribute.String("error.type", "upstream_rejected"))
 		span.SetStatus(codes.Error, "upstream_rejected")
-		return status, nil, domain.Classify(domain.ErrUpstreamRejected,
-			fmt.Errorf("%s returned HTTP 200 with a failure status", label))
+		return status, nil, &restAnswered{status: status, body: raw, err: domain.Classify(domain.ErrUpstreamRejected,
+			fmt.Errorf("%s returned HTTP 200 with a failure status", label))}
 	}
 	return status, raw, nil
+}
+
+// redirectError classifies a 3xx this bridge chose not to follow, from its
+// Location path and its Set-Cookie, the same checks checkHTTPRedirect
+// (http.go:383-403) makes, plus /accounts/login/, which it does not. The text
+// is fixed: the Location is never quoted (it can carry a `next=` with ids).
+func redirectError(label string, resp *http.Response) error {
+	if sentinel := redirectSentinel(resp); sentinel != nil {
+		return domain.Classify(domain.ErrNeedsHuman, fmt.Errorf("%s: %w", label, sentinel))
+	}
+	return domain.Classify(domain.ErrUpstreamRejected, fmt.Errorf("%s answered with an unexpected redirect", label))
+}
+
+func redirectSentinel(resp *http.Response) error {
+	for _, c := range resp.Cookies() {
+		if (c.Name == "sessionid" || c.Name == "xs") && c.MaxAge < 0 {
+			return httpclient.ErrTokenInvalidated
+		}
+	}
+	loc, err := resp.Location()
+	if err != nil {
+		return nil
+	}
+	path := "/" + strings.Trim(loc.Path, "/") + "/"
+	switch {
+	case strings.Contains(path, "/challenge/"), strings.Contains(path, "/auth_platform/"):
+		return httpclient.ErrChallengeRequired
+	case strings.Contains(path, "/checkpoint/"):
+		return httpclient.ErrCheckpointRequired
+	case path == "/accounts/suspended/":
+		return httpclient.ErrAccountSuspended
+	case path == "/consent/", strings.HasPrefix(path, "/privacy/consent/"):
+		return httpclient.ErrConsentRequired
+	case strings.HasPrefix(path, "/accounts/login/"), path == "/login.php/":
+		return httpclient.ErrTokenInvalidated
+	}
+	return nil
 }
 
 // classify maps what Instagram and the library say onto the closed set.
@@ -369,6 +551,19 @@ func isGraphQLFailure(err error) bool {
 	}
 	var resp *types.ErrorResponse
 	return errors.As(err, &resp)
+}
+
+// humanSentinel is whichever needs-a-human sentinel err carries, or nil.
+func humanSentinel(err error) error {
+	for _, sentinel := range []error{
+		httpclient.ErrChallengeRequired, httpclient.ErrCheckpointRequired,
+		httpclient.ErrConsentRequired, httpclient.ErrTokenInvalidated,
+	} {
+		if errors.Is(err, sentinel) {
+			return sentinel
+		}
+	}
+	return nil
 }
 
 // needsHuman is Instagram asking for a person: a challenge, a checkpoint, a

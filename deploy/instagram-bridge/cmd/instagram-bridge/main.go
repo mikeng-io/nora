@@ -79,12 +79,18 @@ func main() {
 
 	store := session.Store{Dir: *sessionDir}
 	self, _ := store.LoadSelf()
+	commentPolicy, problems := commentPolicyFromEnv(os.Getenv)
+	for _, p := range problems {
+		slog.Error("comment writes disabled: invalid configuration", "problem", p)
+	}
+	slog.Info("comment writes", "enabled", commentPolicy.WritesEnabled,
+		"daily_cap", commentPolicy.DailyCap, "min_interval", commentPolicy.MinInterval.String())
 	gw, handler := wire(gateway.Options{
 		Store:  store,
 		State:  domain.StateLoggedOut,
 		Detail: "starting",
 		Self:   self,
-	}, stream.NewHub(), time.Now())
+	}, stream.NewHub(), time.Now(), commentPolicy)
 
 	// instameow's own log output, as JSON on the same stream and with slog's
 	// field names, so an operator reads one format.

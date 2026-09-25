@@ -209,26 +209,68 @@ func (b *Bridge) Post(ctx context.Context, code domain.Shortcode) (domain.Post, 
 // does, so /health and the next request both see it.
 func (b *Bridge) Mentions(ctx context.Context) ([]domain.CommentMention, map[int]int, error) {
 	self := b.selfSnapshot().Username
-	var (
-		mentions []domain.CommentMention
-		skipped  map[int]int
-		err      error
-	)
-	if b.restIssuer != nil {
-		mentions, skipped, err = readMentions(ctx, b.restIssuer, self)
-	} else {
-		cli, cliErr := b.client()
-		if cliErr != nil {
-			return nil, nil, cliErr
-		}
-		issuer, issuerErr := restIssuerFor(cli)
-		if issuerErr != nil {
-			return nil, nil, issuerErr
-		}
-		mentions, skipped, err = readMentions(ctx, issuer, self)
+	issuer, err := b.rawREST()
+	if err != nil {
+		return nil, nil, err
 	}
+	mentions, skipped, err := readMentions(ctx, issuer, self)
+	b.checkRejected(ctx, err)
+	return mentions, skipped, err
+}
+
+// Comments reads one page of a post's comments, or one comment's replies
+// (design 19 phase 2; comments.go). A checkpoint goes through
+// sessionRejected, exactly as on Mentions (design 19 §Account safety, rule
+// 4: "by every route this design adds").
+func (b *Bridge) Comments(
+	ctx context.Context, code domain.Shortcode, media domain.MediaID, parent *domain.CommentID,
+) (domain.CommentPage, error) {
+	issuer, err := b.rawREST()
+	if err != nil {
+		return domain.CommentPage{}, err
+	}
+	page, err := readComments(ctx, issuer, code, media, parent)
+	b.checkRejected(ctx, err)
+	return page, err
+}
+
+// PostComment writes one reply under a summons comment: the bridge's only
+// public write (design 19 phase 4; comments.go). Every guard runs BEFORE this,
+// in the app layer; this is the call itself. It runs on a context detached
+// from the request's cancellation, bounded by commentWriteTimeout, so a caller
+// hanging up cannot turn a clean answer into an ambiguous one.
+func (b *Bridge) PostComment(
+	ctx context.Context, code domain.Shortcode, media domain.MediaID, replyTo domain.CommentID, text string,
+) (domain.PostedComment, error) {
+	issuer, err := b.rawREST()
+	if err != nil {
+		return domain.PostedComment{}, err
+	}
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), commentWriteTimeout)
+	defer cancel()
+	posted, err := postComment(ctx, issuer, code, media, replyTo, text)
+	b.checkRejected(ctx, err)
+	return posted, err
+}
+
+// rawREST is the REST issuer a raw call goes through: the injected one in a
+// test, otherwise the live session client's.
+func (b *Bridge) rawREST() (RESTIssuer, error) {
+	if b.restIssuer != nil {
+		return b.restIssuer, nil
+	}
+	cli, err := b.client()
+	if err != nil {
+		return nil, err
+	}
+	return restIssuerFor(cli)
+}
+
+// checkRejected runs sessionRejected for a needs-human or account-suspended
+// answer off a raw call (see sessionRejected's doc comment for why a raw
+// call has to do this itself).
+func (b *Bridge) checkRejected(ctx context.Context, err error) {
 	if err != nil && (needsHuman(err) || errors.Is(err, httpclient.ErrAccountSuspended)) {
 		b.sessionRejected(ctx, err)
 	}
-	return mentions, skipped, err
 }
