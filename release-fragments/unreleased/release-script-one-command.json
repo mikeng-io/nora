@@ -1,0 +1,1 @@
+{"type": "none", "reason": "Operator tooling only: scripts/release.py now does the whole release on the deploy host (lock, tag, build, recreate every service, verify, push the tag); nothing a group member sees changes.", "details": [], "limitations": []}

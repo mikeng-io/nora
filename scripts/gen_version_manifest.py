@@ -2,7 +2,7 @@
 
 Run on the HOST, immediately before `docker build`, by `scripts/build-image.sh`:
 
-    uv run python scripts/gen_version_manifest.py --version V3
+    python3 scripts/gen_version_manifest.py --version V3
 
 WHY THE HOST AND NOT THE IMAGE. `.dockerignore` excludes `.git/`, and it should:
 the build context has no history and the container has no git binary, so nothing
@@ -29,7 +29,15 @@ TWO REFUSALS, both because a wrong stamp is worse than no stamp:
   * a version that is not `V<n>` (the scheme is plain V1/V2/V3 — no semver);
   * a dirty working tree, unless `--allow-dirty` is passed. A dirty tree means
     the image contains code no commit describes, so the recorded `commit` would
-    be a claim about an artifact that never existed.
+    be a claim about an artifact that never existed. «Dirty» is any change to a
+    tracked file, or an untracked file under a directory the image copies
+    (`IMAGE_DIRS`). An untracked file anywhere else never reaches the image,
+    and refusing on one made this unusable on the deploy host, whose checkout
+    always holds some (backups, `.uacp/`): V5 had to pass `--allow-dirty`,
+    which also waved through what this check exists to catch.
+
+Standard library only, so the deploy host runs it with `python3`, where `uv`
+is not on a non-interactive shell's PATH.
 """
 
 from __future__ import annotations
@@ -55,6 +63,12 @@ VERSION_RE = re.compile(r"^V\d+$")
 # (the fetch-token lesson, DEC-73). Twenty is a readable "what was in it".
 MAX_SUBJECTS = 20
 
+# The directories the `Dockerfile` COPYs into the image. An untracked file
+# under one of them is in the image and no commit describes it; an untracked
+# file outside them is not in the image. Pinned against the Dockerfile's COPY
+# lines by `tests/test_version_stamp_build.py`.
+IMAGE_DIRS = ("nora", "evals", "scripts")
+
 
 def _git(*args: str) -> str:
     out = subprocess.run(  # noqa: S603 - fixed argv, no shell, repo-local
@@ -62,6 +76,14 @@ def _git(*args: str) -> str:
         cwd=ROOT, capture_output=True, text=True, check=False,
     )
     return out.stdout.strip() if out.returncode == 0 else ""
+
+
+def _dirty() -> str:
+    """What makes this tree unfit to stamp: any tracked change, or an
+    untracked file under `IMAGE_DIRS`. Empty when clean."""
+    tracked = _git("status", "--porcelain", "--untracked-files=no")
+    in_image = _git("status", "--porcelain", "--untracked-files=all", "--", *IMAGE_DIRS)
+    return tracked or in_image
 
 
 def _tags() -> list[str]:
@@ -109,7 +131,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out", default=str(MANIFEST))
     args = parser.parse_args(argv)
 
-    if _git("status", "--porcelain") and not args.allow_dirty:
+    if _dirty() and not args.allow_dirty:
         print(
             "refusing to stamp a dirty working tree: the image would contain "
             "code no commit describes, so the recorded commit would name an "
