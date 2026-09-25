@@ -41,8 +41,9 @@ const (
 	// account" is.
 	SelfUsername = "not_____nora"
 	// SelfIGID is the same account's igid (fake.go's GetProfile Viewer, and
-	// the tests' Options.Self): what `logging_context.mentioned_user_ids` is
-	// compared against.
+	// the tests' Options.Self). The fixture puts it in every story's
+	// `logging_context.mentioned_user_ids`, as the capture showed an id there
+	// on every story type; the classifier must not read it.
 	SelfIGID = "79597894900"
 
 	// MentionStoryType and CaptionMentionStoryType are PLACEHOLDERS, chosen
@@ -113,7 +114,7 @@ const NewsInboxJSON = `{
         "media": [{"id": "` + ImageMediaID + `_10000001", "image": "https://example.invalid/m/2.jpg", "shortcode": "` + ImageShortcode + `"}],
         "images": [],
         "media_destination": "media?id=` + ImageMediaID + `_10000001",
-        "logging_context": {"mentioned_user_ids": [500000000099], "mentioned_content_ids": [], "content_id": "` + LikedCommentID + `"},
+        "logging_context": {"mentioned_user_ids": [` + SelfIGID + `], "mentioned_content_ids": [], "content_id": "` + LikedCommentID + `"},
         "content_version_id": "1",
         "aggregation_type": "none",
         "timestamp": 1700000200,

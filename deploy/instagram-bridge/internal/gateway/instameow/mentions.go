@@ -289,7 +289,7 @@ func readMentions(ctx context.Context, issuer RESTIssuer, self domain.Self) ([]d
 
 	var envelope wireNewsInbox
 	if jsonErr := json.Unmarshal(raw, &envelope); jsonErr != nil {
-		// rest() already refuses a non-JSON 200 before returning bytes, so
+		// restDo() already refuses a non-JSON 200 before returning bytes, so
 		// this is reachable only if the envelope decodes as JSON but not as
 		// this shape (e.g. a bare JSON array). Refused the same way, with a
 		// fixed text.
@@ -321,6 +321,11 @@ func readMentions(ctx context.Context, issuer RESTIssuer, self domain.Self) ([]d
 	return mentions, skipped, nil
 }
 
+// nonMentionStoryTypes are story types measured to be something other than a
+// mention, which the "@" check alone cannot always tell apart: 13 is "liked
+// your comment" and quotes her own comment (capture 2026-09-25).
+var nonMentionStoryTypes = map[int]bool{13: true}
+
 // commentMentionOf classifies one story.
 func commentMentionOf(st wireStory, self domain.Self) (domain.CommentMention, bool) {
 	scheme, query := destinationOf(st.Args.Destination)
@@ -328,6 +333,21 @@ func commentMentionOf(st wireStory, self domain.Self) (domain.CommentMention, bo
 	media, hasMedia := mediaOf(st.Args, scheme, query)
 	if commentID == "" || !hasMedia || !mentionsAccount(st.Args, self) {
 		return domain.CommentMention{}, false
+	}
+	// A "liked your comment" story (type 13, measured 2026-09-25) quotes HER
+	// comment, so its text can carry her own handle. It is never a summons,
+	// whatever the text says.
+	if nonMentionStoryTypes[st.StoryType] {
+		return domain.CommentMention{}, false
+	}
+	// The comment id can come from the destination while the media comes from
+	// media[0]. When both name a post and they disagree, the pair names no one
+	// thread: skip it rather than answer under the wrong post.
+	if destID := query.Get("id"); mediaDestinations[scheme] && destID != "" {
+		pk, _, _ := strings.Cut(media.ID.String(), "_")
+		if destPK, _, _ := strings.Cut(destID, "_"); pk != destPK {
+			return domain.CommentMention{}, false
+		}
 	}
 	mediaID, shortcode := mediaIdentity(media)
 	return domain.CommentMention{

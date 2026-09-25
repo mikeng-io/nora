@@ -82,8 +82,8 @@ func (f *fakeRESTIssuer) WebFormTokens() (string, string, string, error) {
 	return testJazoest, testFBDTSG, testRolloutHash, nil
 }
 
-// testSelf is the account as the bridge knows it: the handle for the "@"
-// token, the igid for `mentioned_user_ids`.
+// testSelf is the account as the bridge knows it. Only the handle is used, for
+// the "@" token; `mentioned_user_ids` is never read (see mentionsAccount).
 var testSelf = domain.Self{FBID: "14963523149149302", IGID: fakeig.SelfIGID, Username: fakeig.SelfUsername}
 
 func (f *fakeRESTIssuer) WebSessionID() (string, error) {
@@ -846,5 +846,43 @@ func TestReadMentionsRefusesAGarbageIDOrTimestamp(t *testing.T) {
 				t.Fatalf("mentions = %+v, skipped = %v; want none and one undecodable", mentions, skipped)
 			}
 		})
+	}
+}
+
+// A type-13 "liked your comment" story quotes HER comment, so its text can
+// carry her own handle. It is never a summons (review of #549).
+func TestReadMentionsNeverTakesALikedYourCommentStoryEvenWithHerHandle(t *testing.T) {
+	raw := `{"new_stories":[{"story_type":13,"args":{
+		"text":"liker_beta liked your comment: @` + fakeig.SelfUsername + ` here, thanks",
+		"profile_id":"600000000004","profile_name":"liker_beta",
+		"timestamp":1700000900,
+		"media":[{"id":"` + fakeig.ImageMediaID + `_10000001","shortcode":"` + fakeig.ImageShortcode + `"}],
+		"destination":"clips_home?id=` + fakeig.ImageMediaID + `&target_comment_id=17900000000000401"
+	}}],"old_stories":[],"status":"ok"}`
+	mentions, skipped, err := readMentions(t.Context(), &fakeRESTIssuer{body: []byte(raw)}, testSelf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(mentions) != 0 || skipped[13] != 1 {
+		t.Fatalf("mentions = %+v, skipped = %v; want none and one skipped type-13", mentions, skipped)
+	}
+}
+
+// When media[0] and the destination's id name different posts, the story
+// names no one thread and is skipped (review of #549).
+func TestReadMentionsSkipsAStoryWhoseMediaAndDestinationDisagree(t *testing.T) {
+	raw := `{"new_stories":[{"story_type":900,"args":{
+		"text":"commenter_iota mentioned you in a comment: @` + fakeig.SelfUsername + ` is this true",
+		"profile_id":"600000000005","profile_name":"commenter_iota",
+		"timestamp":1700000900,
+		"media":[{"id":"` + fakeig.ImageMediaID + `_10000001","shortcode":"` + fakeig.ImageShortcode + `"}],
+		"destination":"clips_home?id=` + fakeig.CarouselMediaID + `&target_comment_id=17900000000000402"
+	}}],"old_stories":[],"status":"ok"}`
+	mentions, _, err := readMentions(t.Context(), &fakeRESTIssuer{body: []byte(raw)}, testSelf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(mentions) != 0 {
+		t.Fatalf("mentions = %+v, want none: media and destination name different posts", mentions)
 	}
 }
