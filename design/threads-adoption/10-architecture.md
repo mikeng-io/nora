@@ -157,8 +157,9 @@ she may say.
 |---|---|
 | does a tester's mention arrive in `/mentions` | yes, once the account accepted the tester invite; not before |
 | fields on the mention | `id`, `text`, `username`, `timestamp`, `media_type`, `is_reply`, `root_post.id`, `replied_to.id`, `permalink`; no `owner` |
-| can the root post be read | yes, with text, author username, timestamp and permalink, but this root was the operator's own post; **a third party's root is still unmeasured** |
-| a probe under a non-tester's post (2026-09-25) | **WITHDRAWN.** The reply read back with `is_reply: true` and no `root_post`/`replied_to`, but the operator deleted a comment around the same time. Minutes later the reply answered «does not exist», so neither its parent nor its state when read is known. It needs re-running with a reply that stays up until it is read |
+| can the root post be read | yes, when a tester wrote it (text, author username, timestamp, permalink) |
+| **a summons under a non-tester's post** | the mention arrives with `is_reply: true`, but **`root_post` and `replied_to` are absent**, and `/{summons}/conversation` answers `{"data":[]}`. The post she is asked about is invisible. Measured on a reply that was still up and readable (`GET /{id}` 200, `hide_status: NOT_HUSHED`). A first probe was withdrawn because its reply was deleted around the read |
+| the public web page of that summons | a JavaScript shell (282 kB) with neither the summons text nor the parent in it; no server-rendered fallback |
 | `/{root}/conversation` | yes, the reply tree with `replied_to` on each item |
 | a quote post | `is_quote_post: true`, but `quoted_post` did not come back when requested. **What was quoted is invisible so far**, and a claim is often in the quoted post |
 

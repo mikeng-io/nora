@@ -152,9 +152,11 @@ prompt back and check that the arms differ.
 - **Polling lags webhooks by minutes** (phase 1 measurement): build the
   webhook route. That is Nora's first public inbound endpoint, so it gets its
   own ADR.
-- **Standard access cannot read a third party's root post** (phase 1): the
-  summons cannot work for testers either, App Review moves to the front, and
-  this bundle waits.
+- **Standard access cannot read a third party's root post.** TRIGGERED
+  2026-09-25: a summons under a non-tester's post arrives with its parent
+  withheld. App Review for Advanced Access moves to the front. Phases 1 to 3
+  still build and prove the whole path against posts testers wrote, and
+  they are unchanged. Only phase 3's live switch waits for review.
 - **A reply needs more than 500 characters** often enough to matter (read
   from phase 2's dry runs): Threads now supports long-form text attachments
   (up to 10,000 characters, 2026-04). A second format in the deliverer, not
