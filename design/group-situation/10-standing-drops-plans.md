@@ -106,6 +106,14 @@ committed instrument (§4).
   The anti-recap reading is true only while the plan is in the transcript
   window. That window is 40 messages. On the failing wedding turn, 40 messages
   covered 56 minutes, and after that nothing else holds the plan.
+- **Corrected 2026-09-26: the folds with no new rows were mostly a deleted
+  path.** 8 of the 11 pairs below reset `fold_count` to 1: that is the
+  rebuild-after-N-folds re-derivation, which 7fdb24b4 (2026-09-24) deleted,
+  and drops 1 and 2 are among them. The paragraph below stands as a reading
+  of the old fold, not of today's. On today's fold (the 79 pairs written
+  after 7fdb24b4) the confirmed drops are one substantive (drop 5) and one
+  minor. See `design/standing-compact/40-open-plans.md` §6 for what that does
+  to the build.
 - **Most folds with no new rows still rewrite nearly everything.** 11 pairs had
   no new message rows between them. The rows had already been folded, so the
   debrief folded the turn's own `<steps>` against an empty batch (the watermark
