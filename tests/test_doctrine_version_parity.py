@@ -312,7 +312,9 @@ PINNED: dict[str, tuple[int, str]] = {
     # v1 (2026-09-26): split out of constraints.md v11, see above. Body is
     # byte-identical to the section it was; loaded for the four room occasions
     # only, immediately before constraints (order 38).
-    "pictures": (1, "63ccbb4e9b38b54de7952fe455d1c9daf699e52376bd8f77732820b356b5a394"),
+    # v2 (2026-09-26, operator): whoever sent it is looking at the thing
+    # itself; the description is for her eyes, not to read back.
+    "pictures": (2, "b4e07054e67027d63ce254615890f2e7d2dc7d911e00c9f58bcf5b798ce59817"),
     # The public summons files (design/instagram-adoption/19), v1 (2026-09-25):
     # drafted for the operator to rewrite, loaded only on `applies_to="summons"`.
     # identity and constraints gained `summons` in `applies_to` and the public
@@ -341,7 +343,8 @@ PINNED: dict[str, tuple[int, str]] = {
     # while its own searches had found a named photographer.
     # v6 (2026-09-26): sources named in words, no links (an Instagram comment
     # does not make them clickable); not finding a source is not a finding.
-    "public-conduct": (6, "8931609a0af56d90a893ca058767e76ff9a4501be689059ad5134807659a7e12"),
+    # v7 (2026-09-26): names as plain words, never an @handle.
+    "public-conduct": (7, "14d0ef83a35d35b0de9fdb4f50297a2f0a253c11de9c6da82bacc05ba8f3ee00"),
     "public-constraints": (
         1, "88b47c480e3948332c8281cacb0efbdc9094176d16f1704593df8eaa8b735dfa",
     ),

@@ -155,6 +155,13 @@ services:
       # spans to Jaeger (and to Langfuse when a trace carries a model call).
       - OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://host.docker.internal:4318/v1/traces
       - OTEL_SERVICE_NAME=instagram-bridge
+      # The summons comment write, the bridge's only public write (design
+      # instagram-adoption/19; the guards and the latch are documented in
+      # deploy/instagram-bridge/compose.fragment.yml). Off unless the host's
+      # .env says exactly `on`: the switch is operator config, not code.
+      - INSTAGRAM_COMMENT_WRITES=${INSTAGRAM_COMMENT_WRITES:-off}
+      - INSTAGRAM_COMMENT_DAILY_CAP=${INSTAGRAM_COMMENT_DAILY_CAP:-10}
+      - INSTAGRAM_COMMENT_MIN_INTERVAL=${INSTAGRAM_COMMENT_MIN_INTERVAL:-90s}
     command: ["--port", "18082", "--session", "/session"]
     healthcheck:
       # Proves the bridge's HTTP layer serves. It CANNOT prove the Instagram
