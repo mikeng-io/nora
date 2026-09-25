@@ -3071,16 +3071,56 @@ def _with_scheme(link: str) -> str:
     return text if "://" in text else "https://" + text
 
 
-def _same_instagram_link(a: str, b: str) -> bool:
-    """Whether two pasted links name the same thing, judged by the one link
-    parser: `instagram.com/p/A/` and `https://www.instagram.com/p/A/?igsh=x`
-    agree. A link the parser refuses is compared as typed, trimmed, so two
-    identical refusals still agree and `instagram_read` refuses them once."""
-    parsed_a = _parse_instagram_link(_with_scheme(a))
-    parsed_b = _parse_instagram_link(_with_scheme(b))
+def _same_link(a: str, b: str, parse: Callable[[str], object | None]) -> bool:
+    """Whether two pasted links name the same thing, judged by that network's
+    one link parser (`parse`): `instagram.com/p/A/` and
+    `https://www.instagram.com/p/A/?igsh=x` agree, as do `twitter.com/n/status/1`
+    and `https://x.com/n/status/1?s=20`. A link the parser refuses is compared
+    as typed, trimmed, so two identical refusals still agree and the tool
+    refuses them once."""
+    parsed_a = parse(_with_scheme(a))
+    parsed_b = parse(_with_scheme(b))
     if parsed_a is None or parsed_b is None:
         return a.strip() == b.strip()
     return parsed_a == parsed_b
+
+
+#: What a read tool answers when `link` and `url` name two different things.
+#: Nothing is read, and neither link is echoed back.
+_URL_AND_LINK_DIFFER = {
+    "status": "unavailable",
+    "note": "Two different links were given, as link and as url. "
+            "Call again with the one link you mean, as link.",
+}
+
+
+def _resolve_url_alias(
+    tool: str,
+    link: str | None,
+    url: str | None,
+    parse: Callable[[str], object | None],
+    metrics,
+) -> tuple[str | None, bool]:
+    """`url` IS `link`, under the name a model reaches for first, for every
+    tool that reads a pasted link (`instagram_read`, `x_read`,
+    `linkedin_read`). Returns the link to read, and whether the two differ
+    (the caller then answers `dict(_URL_AND_LINK_DIFFER)`).
+
+    Why it is declared at all: Strands validates a call through a model built
+    from the signature, which silently drops any key the signature does not
+    name, so an undeclared `url=` arrived as no input (design 13,
+    2026-09-24: every deferred-catalogue `instagram_read` call used `url`).
+    R-99 now refuses such a call instead of dropping it, and on 2026-09-25
+    the deployed build still reached for `url=` in 7 of 20 `x_read`/
+    `linkedin_read` eval draws, each costing a retry; the operator took
+    design 30's decision 2 on that evidence. Two different links name no
+    one thing, so neither is read and neither is echoed back."""
+    if not (isinstance(url, str) and url.strip()):
+        return link, False
+    if isinstance(link, str) and link.strip() and not _same_link(link, url, parse):
+        _record(metrics, tool, "unavailable", reason="url_and_link")
+        return None, True
+    return url, False
 
 
 def social_read_vocabulary() -> Mapping[str, frozenset[tuple[str, str]]]:
@@ -7485,6 +7525,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         what: Literal["profile", "posts"] | None = None,
         handle: str | None = None,
         link: str | None = None,
+        url: str | None = None,
         limit: int = 5,
     ) -> dict:
         """Read an X (Twitter) post, profile or recent posts, by link or
@@ -7505,8 +7546,12 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             what: `profile` or `posts`. Leave it out with a post link.
             handle: an X username someone typed, with or without the @.
             link: an X post or account link, as pasted.
+            url: same as link.
             limit: how many posts to return with `posts` (1 to 20, default 5).
         """
+        link, differ = _resolve_url_alias("x_read", link, url, _parse_x_link, metrics)
+        if differ:
+            return dict(_URL_AND_LINK_DIFFER)
         given = [
             name for name, value in (("handle", handle), ("link", link))
             if isinstance(value, str) and value.strip()
@@ -7701,6 +7746,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         what: Literal["profile", "experience", "posts", "company"] | None = None,
         handle: str | None = None,
         link: str | None = None,
+        url: str | None = None,
         limit: int = 5,
     ) -> dict:
         """Read a LinkedIn profile, work history, recent posts or company
@@ -7721,12 +7767,16 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 out for a profile or a company link.
             handle: a LinkedIn profile id someone typed (the part after /in/).
             link: a LinkedIn profile or company link, as pasted.
+            url: same as link.
             limit: how many posts to return with `posts` (1 to 20, default 5).
         """
         if fire_turn or dream_adaptor:
             # Before anything is parsed, looked at or sent.
             _record(metrics, "linkedin_read", "refused", reason="unasked")
             return dict(_LINKEDIN_UNASKED)
+        link, differ = _resolve_url_alias("linkedin_read", link, url, _parse_linkedin_link, metrics)
+        if differ:
+            return dict(_URL_AND_LINK_DIFFER)
         given = [
             name for name, value in (("handle", handle), ("link", link))
             if isinstance(value, str) and value.strip()
@@ -7990,25 +8040,11 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             link: an Instagram profile, post, reel or story link, as pasted.
             url: same as link.
         """
-        # `url` IS `link` under the name a model reaches for first (design
-        # 13, 2026-09-24): every `instagram_read` call made from the deferred
-        # catalogue, before the schema was loaded, passed `url=`, and with no
-        # such parameter Strands' input model dropped it silently, so each
-        # call arrived with no input and failed «exactly one». A parameter the
-        # signature does not name cannot be accepted quietly: Strands
-        # validates through a model built from this signature, which ignores
-        # any key it does not declare. So it is declared, in five words.
-        if isinstance(url, str) and url.strip():
-            if isinstance(link, str) and link.strip() and not _same_instagram_link(link, url):
-                # Two different links: nothing says which was meant, so
-                # neither is read, and neither is echoed back.
-                _record(metrics, "instagram_read", "unavailable", reason="url_and_link")
-                return {
-                    "status": "unavailable",
-                    "note": "Two different links were given, as link and as url. "
-                            "Call again with the one link you mean, as link.",
-                }
-            link = url
+        link, differ = _resolve_url_alias(
+            "instagram_read", link, url, _parse_instagram_link, metrics,
+        )
+        if differ:
+            return dict(_URL_AND_LINK_DIFFER)
         given = [
             name for name, value in (("person", person), ("handle", handle), ("link", link))
             if isinstance(value, str) and value.strip()
