@@ -456,6 +456,7 @@ The portal predates this file. Measured against it on 2026-09-26
   `theme_color` / `background_color` set to studio and ink.
 - **Fonts:** the CJK fallback is absent from `--font-sans`.
 
-The public landing page is no longer the portal's to fix: `site/` replaces
-`app/src/app/[locale]/page.tsx` (site/README.md, "Going live"), built on this
-file from the start. The login page still owes the list above.
+The public landing page is no longer the portal's to fix: `site/` replaced
+it on 2026-09-26 (site/README.md, "Going live"), built on this file from the
+start, and `app/src/app/[locale]/page.tsx` now only redirects to the login.
+The login page still owes the list above.

@@ -1,0 +1,8 @@
+{
+  "type": "feature",
+  "summary": "nora.67.zone has a new front page: a short tour of who Nora is, in Cantonese and English, with a scripted group chat you can play through.",
+  "details": [
+    "The portal is unchanged behind it: Sign in on the page leads to the same Discord login, and /zh-Hant or /en now go straight to that login."
+  ],
+  "limitations": []
+}

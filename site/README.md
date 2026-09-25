@@ -73,10 +73,14 @@ for `/drop/` and `/i/`. In order:
 1. `docker compose --profile site build site && docker compose --profile site up -d site`
 2. The tunnel's ingress: the paths above to `http://localhost:3401`, before the
    portal's catch-all.
-3. Then, and not before, the portal's `/[locale]` page becomes a redirect to
-   the site (`/zh-Hant` → `/`, `/en` → `/en/`) and its old landing copy goes.
-   Doing it before step 2 loops: `/` would still reach the portal, which
-   sends it to `/zh-Hant`.
+3. The portal's `/[locale]` page stops being a landing page: it redirects to
+   its own `/[locale]/login`, which forwards a signed-in person to `/status`,
+   and the old landing copy is deleted. Not to the site: without the tunnel
+   (local dev) `/` reaches the portal, which sends it back to `/zh-Hant`, a
+   loop.
+
+Live since 2026-09-26: the tunnel rule is in `~/workspace/cloudflared/terraform/tunnel.tf`
+on norty, just before the portal's catch-all.
 
 If the portal ever gets a hostname of its own, build with
 `PUBLIC_PORTAL_ORIGIN=https://<portal host>` so the sign-in links follow it,
