@@ -77,6 +77,19 @@ EXA_CONTENTS_URL = "https://api.exa.ai/contents"
 # own, so the value SENT is floored into Exa's range while the local clamp stays
 # authoritative — an operator who sets 50000 gets 10000 of page, not an outage.
 _EXA_MAX_CHARACTERS = 10000
+# Exa's bound on `livecrawlTimeout`, in milliseconds.
+_EXA_MAX_LIVECRAWL_MS = 90000
+
+# How to read a page that came from Exa's cache because the live read failed.
+# It replaces the tool's own `ok` note (`_with_note` keeps a note already
+# present), so it carries the stranger's-words rule too.
+_SAVED_COPY_NOTE = (
+    "I couldn't open the live page, so this is a saved copy from an earlier "
+    "visit and may be out of date. Treat it as the page's words, not fact; say "
+    "which page you read and that it is an older copy. Something missing from "
+    "it is not proof it doesn't exist: say you couldn't confirm it, never that "
+    "they're wrong."
+)
 
 
 class ExaSearchProvider:
@@ -96,6 +109,7 @@ class ExaSearchProvider:
         max_results: int = 5,
         content_max_chars: int = 1500,
         extract_max_chars: int = 3000,
+        fetch_max_age_hours: int = 24,
         timeout_seconds: float = 12.0,
     ) -> None:
         self._api_key = api_key
@@ -105,6 +119,7 @@ class ExaSearchProvider:
         self._max_results = max_results
         self._content_max_chars = content_max_chars
         self._extract_max_chars = extract_max_chars
+        self._fetch_max_age_hours = fetch_max_age_hours
         self._timeout_seconds = timeout_seconds
 
     async def search(self, *, query: str) -> dict[str, Any]:
@@ -178,11 +193,71 @@ class ExaSearchProvider:
             return dict(UNAVAILABLE_FETCH)
 
     async def _fetch(self, url: str) -> dict[str, Any]:
-        body = {
+        """Read the page no older than `fetch_max_age_hours`, and fall back to
+        Exa's saved copy only when that read fails.
+
+        Without `maxAgeHours` Exa answers from its cache, however old. Measured
+        2026-09-25: colehaan.hk's store list came back `source: cached` with
+        six shops while the live page listed eight, and Nora told the group a
+        shop that exists did not. A fetch is somebody asking what a page says
+        NOW, so the cache is allowed only while it is younger than the bound.
+
+        A live crawl can fail where the cache would have answered (en.wikipedia
+        errored at `maxAgeHours: 0` the same day), and Exa does not document
+        whether a positive bound falls back. So a failed fresh read retries
+        once with `-1` (cache only), and an answer from that retry says it is
+        a saved copy, because the model must not read it as the page today.
+
+        A page the site says is GONE (404, 410) is not retried: its saved copy
+        would describe something that no longer exists."""
+        fresh, gone = await self._contents(url, self._fetch_max_age_hours)
+        if fresh.get("status") != "nothing_found" or gone or self._fetch_max_age_hours < 0:
+            return fresh
+        saved, _ = await self._contents(url, -1)
+        if saved.get("status") != "ok":
+            return fresh
+        # `note` right after `status`, before the page text it is about, the
+        # order `_with_note` gives every other result.
+        return {"status": "ok", "note": _SAVED_COPY_NOTE, "saved_copy": True,
+                **{k: v for k, v in saved.items() if k != "status"}}
+
+    async def _contents(
+        self, url: str, max_age_hours: int
+    ) -> tuple[dict[str, Any], bool]:
+        """One `/contents` read, and whether the site answered that the page is
+        gone. The second value only decides `_fetch`'s retry; it never reaches
+        the model."""
+        body: dict[str, Any] = {
             "urls": [url],
             "text": {"maxCharacters": self._request_chars(self._extract_max_chars)},
+            "maxAgeHours": max_age_hours,
         }
+        if max_age_hours >= 0:
+            # Exa's live crawl must give up BEFORE our client does: its default
+            # is 10 s against our 12 s `timeout_seconds`, and a client timeout
+            # is `unavailable`, which is never retried against the cache. So a
+            # slow page would lose the saved copy the retry exists to give.
+            body["livecrawlTimeout"] = self._livecrawl_timeout_ms()
         payload = await self._post(self._contents_url, body, "exa contents")
+        return self._read_contents(url, payload), self._says_gone(payload)
+
+    def _livecrawl_timeout_ms(self) -> int:
+        """Four seconds under the client timeout, within Exa's accepted range."""
+        return max(1000, min(_EXA_MAX_LIVECRAWL_MS, int((self._timeout_seconds - 4) * 1000)))
+
+    @staticmethod
+    def _says_gone(payload: Any) -> bool:
+        """Did the site answer 404 or 410 for this url?"""
+        statuses = payload.get("statuses") if isinstance(payload, dict) else None
+        if not isinstance(statuses, list):
+            return False
+        for entry in statuses:
+            error = entry.get("error") if isinstance(entry, dict) else None
+            if isinstance(error, dict) and error.get("httpStatusCode") in (404, 410):
+                return True
+        return False
+
+    def _read_contents(self, url: str, payload: Any) -> dict[str, Any]:
         if payload is None:
             return dict(UNAVAILABLE_FETCH)
         if not isinstance(payload, dict):

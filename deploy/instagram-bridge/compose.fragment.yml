@@ -51,6 +51,32 @@ services:
       # spans to Jaeger (and to Langfuse when a trace carries a model call).
       - OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://host.docker.internal:4318/v1/traces
       - OTEL_SERVICE_NAME=instagram-bridge
+      # The comment reply under a summons, the bridge's ONLY public write
+      # (design/instagram-adoption/19-summons-in-comments.md, §Account safety
+      # rule 4 and phase 4). OFF by default: design 19 turns it on only after
+      # a week of GET /mentions polling without a checkpoint, because this
+      # session also carries Nora's group chats. Exactly `on` enables it;
+      # anything else is off. The cap (replies per rolling 24 h) and the
+      # spacing (a Go duration) are enforced in the bridge, before any call
+      # to Instagram; a value that does not parse turns writes OFF rather
+      # than falling back. The ledger that enforces them is comments.json in
+      # the session volume. Every attempt counts toward the cap and each
+      # summons gets ONE attempt, whatever its outcome.
+      #
+      # The latch: when Instagram answers a write with an action block
+      # (feedback_required, spam, sentry_block, or a 429), the bridge writes
+      # `writes_blocked` into comments.json and refuses every later write
+      # with 403 writes_blocked, across restarts. Setting this variable does
+      # NOT clear it. To clear it (after deciding the block has passed):
+      #   docker compose stop instagram-bridge
+      #   jq 'del(.writes_blocked)' state/instagram/comments.json > /tmp/c.json &&
+      #     mv /tmp/c.json state/instagram/comments.json &&
+      #     chmod 600 state/instagram/comments.json &&
+      #     chown 1000:1000 state/instagram/comments.json   # the container's uid
+      #   docker compose start instagram-bridge
+      - INSTAGRAM_COMMENT_WRITES=off
+      - INSTAGRAM_COMMENT_DAILY_CAP=10
+      - INSTAGRAM_COMMENT_MIN_INTERVAL=90s
     command: ["--port", "18082", "--session", "/session"]
     healthcheck:
       # Proves the bridge's HTTP layer serves. It CANNOT prove the Instagram

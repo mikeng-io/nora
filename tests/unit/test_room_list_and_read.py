@@ -403,7 +403,7 @@ async def test_activity_counts_people_over_24_hours_and_says_when_last(
 
     wa = rooms["Friends WA"]
     assert wa["messages_last_24h"] == 2       # the 30h-old row and Nora's are not
-    assert wa["last_message"] == "2026-09-24 10:00 HKT (2 hours ago)"
+    assert wa["last_message"] == "2026-09-24 Thu 10:00 (2h ago)"
     assert rooms["Zone 42"]["messages_last_24h"] == 0
     assert rooms["Zone 42"]["last_message"] == "none on record"
 
@@ -475,6 +475,20 @@ async def test_room_read_reads_the_named_room_not_this_one(policy, persons, stor
         "old news", "dinner at 8?", "I'm in", "noted",
     ]
     assert "here" not in [m["body"] for m in result["messages"]]
+
+
+async def test_room_read_says_when_each_message_was_sent_in_words(
+    policy, persons, store,
+):
+    """design/self-awareness/08 §1: «what did they say yesterday» needs a
+    calendar day on every row. The raw epoch `ts` was unreadable as a time and
+    is a handle R-18 keeps off the wire, so it must not come back at all."""
+    result = await _call(_tools(policy, persons, store)["room_read"], room="Friends WA")
+
+    assert [m["when"] for m in result["messages"][:2]] == [
+        "2026-09-23 Wed 06:00 (30h ago)", "2026-09-24 Thu 09:00 (3h ago)",
+    ]
+    assert not any("ts" in m for m in result["messages"])
 
 
 async def test_room_read_output_is_wrapped_as_untrusted(policy, persons, store):

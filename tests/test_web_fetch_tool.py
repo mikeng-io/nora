@@ -387,3 +387,7 @@ async def test_an_ok_web_note_comes_before_the_page_written_text():
     assert list(page)[:2] == ["status", "note"]
     assert page["text"] == "the page"
     assert "which page" in page["note"] and "stranger" in page["note"]
+    # A page or snippet is partial: absence from it is not proof of absence
+    # (2026-09-25, a shop list's first page used to tell someone they were wrong).
+    assert "not proof it doesn't exist" in found["note"]
+    assert "not proof it doesn't exist" in page["note"]
