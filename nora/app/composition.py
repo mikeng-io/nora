@@ -1867,6 +1867,33 @@ async def build_dependencies(
             agent_name=cfg.agent.name,
             metrics=metrics,
         )
+    # The public Instagram summons' runner (design/instagram-adoption/19,
+    # `nora.app.summons`): the SAME `AFTER_SPEAKING` shape as the
+    # participation runner above, for the same reason — a summons may end in
+    # silence, which the tag runner's `FIRST_CALL` pin makes inexpressible.
+    # Its own, not the participation one, because it is wired on its own
+    # flags and its reasoning effort is the tag lane's (she was asked).
+    # `skills_dir=None`: runtime skills are a tool outside `PUBLIC_GRANT`.
+    summons_wired = bool(
+        cfg.social.instagram.enabled and cfg.social.instagram.summons.enabled
+    )
+    summons_runner: LiveAgentRunner | None = None
+    if summons_wired:
+        summons_runner = LiveAgentRunner(
+            models=factory.ModelSource(
+                client=client,
+                spec=factory.ModelSpec(
+                    model=tier.model, max_tokens=tier.max_tokens,
+                    temperature=tier.temperature,
+                    reasoning_effort=tier.reasoning_effort,
+                    tool_choice=tool_choice.AFTER_SPEAKING,
+                ),
+            ),
+            retry=factory.build_retry_policy(timeout_seconds=tier.timeout_seconds),
+            skills_dir=None,
+            agent_name=cfg.agent.name,
+            metrics=metrics,
+        )
     # `output_tokens` comes from `[llm.limits]`, NOT from `tier.max_tokens`.
     # The two were the same value until 2026-08-06, which made the whole
     # loop's output budget equal to one call's ceiling — see
@@ -3123,6 +3150,46 @@ async def build_dependencies(
         # `announcer.run()` above are: a boot must not wait on a background
         # loop, and `BackgroundTasks` holds the strong reference.
         background.spawn(compute_poller.run())
+
+    # The public Instagram summons poller (design/instagram-adoption/19),
+    # gated on BOTH `[social.instagram] enabled` and its own `summons.enabled`
+    # (the config refuses the second without the first). It needs no
+    # `fire_path`: a summons speaks into no room. Spawned, never awaited;
+    # `cancel_all` stops it at shutdown with every other background loop.
+    if summons_wired and summons_runner is not None and social_subjects is not None:
+        from datetime import timedelta
+
+        from nora.app.summons import SummonsOccasion
+        from nora.app.summons_poller import SummonsPoller
+        from nora.infra.social.summons_client import InstagramSummonsClient
+        from nora.infra.sql.summons import SqlSummonsLedger
+
+        summons_cfg = cfg.social.instagram.summons
+        summons_client = InstagramSummonsClient(
+            base_url=cfg.social.instagram.base_url,
+            timeout_seconds=cfg.social.instagram.timeout_seconds,
+        )
+        summons_ledger = SqlSummonsLedger(engine)
+        summons_poller = SummonsPoller(
+            client=summons_client,
+            occasion=SummonsOccasion(
+                client=summons_client, ledger=summons_ledger,
+                summoners=social_subjects, persons=persons,
+                doctrine_store=doctrine_store, registry=tool_registry,
+                runner=summons_runner, metrics=metrics,
+                canary=cfg.doctrine.canary, handle=summons_cfg.handle,
+                mode=summons_cfg.mode,
+                max_age=timedelta(minutes=summons_cfg.max_age_minutes),
+                limits=limits, timeout_seconds=tier.timeout_seconds, clock=clock,
+            ),
+            ledger=summons_ledger, metrics=metrics,
+            poll_seconds=summons_cfg.poll_seconds, clock=clock,
+        )
+        background.spawn(summons_poller.run())
+        log.info(
+            "instagram summons poller wired (mode=%s, every %.0fs)",
+            summons_cfg.mode, summons_cfg.poll_seconds,
+        )
 
     # The participation occasion (design/dreamer-agent-loop/35): trigger, then
     # dispatcher. Gated on BOTH the flag and a live `fire_path` — the same

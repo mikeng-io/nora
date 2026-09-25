@@ -11,9 +11,13 @@ from nora.obs.metrics import Metrics
 
 DOCTRINE_DIR = Path(__file__).resolve().parents[1] / "nora" / "doctrine"
 
-# stem -> (kind, order, applies_to). The stem, the frontmatter `name` and the
-# section tag all agree from the frontmatter commit onwards; commit 1
-# deliberately left the names behind so the rename could be proved byte-neutral.
+# section name -> (kind, order, applies_to). Keyed by the frontmatter `name`,
+# which is what the section tag renders and what the authority graph uses, and
+# which is unique across the doctrine. It was keyed by file STEM until the
+# public summons (design/instagram-adoption/19): `public/conduct.md` has the
+# same stem as `rooms/conduct.md`, so a stem key would read one file for the
+# other and pass by coincidence. `_SCOPE_FOLDER` below maps each name to its
+# file.
 #
 # The audience is pinned per file, not asserted as one blanket `("tag",)`,
 # because that is the whole point of the split: everything occasion-neutral
@@ -31,7 +35,9 @@ EXPECTED = {
     # floor — Nora's own earlier intention, put back to her — so the
     # may-speak half of silence.md is true of it exactly as it is of
     # participation, and the heartbeat's obliged-to-speak reading is not.
-    "identity": ("identity", 10, ("tag", "heartbeat", "participation", "proactive")),
+    # `identity` and `constraints` are core: true on every surface, so they
+    # reach the public summons too (design/instagram-adoption/19).
+    "identity": ("identity", 10, ("tag", "heartbeat", "participation", "proactive", "summons")),
     # Split out of identity.md 2026-09-25 (operator): her place in a group, so
     # who she is can load on a surface that is not one.
     "belonging": ("identity", 12, ("tag", "heartbeat", "participation", "proactive")),
@@ -47,23 +53,38 @@ EXPECTED = {
     # never does — several things worth answering at once, none addressed to
     # her. `conduct.md` is occasion-neutral and must not carry it.
     "participation-conduct": ("conduct", 35, ("participation",)),
-    "constraints": ("constraint", 40, ("tag", "heartbeat", "participation", "proactive")),
+    "constraints": (
+        "constraint", 40, ("tag", "heartbeat", "participation", "proactive", "summons"),
+    ),
+    # The public surface: a summons under an Instagram post, read by strangers.
+    # Exactly `summons` and nothing else, so none of it reaches a room.
+    "public-voice": ("identity", 21, ("summons",)),
+    "public-conduct": ("conduct", 31, ("summons",)),
+    "public-constraints": ("constraint", 41, ("summons",)),
 }
 
 
-# stem -> the scope folder it ships under (`nora/doctrine/<folder>/<stem>.md`).
-# `tests/architecture/test_doctrine_scope_folders.py` pins the folder -> allowed
-# -audience table this mirrors; this dict only needs to resolve a real path.
+# section name -> (scope folder, file stem): the file is
+# `nora/doctrine/<folder>/<stem>.md`. `tests/architecture/test_doctrine_scope_
+# folders.py` pins the folder -> allowed-audience table this mirrors; this dict
+# only needs to resolve a real path. The stem is the name everywhere except
+# `public/`, whose files drop the `public-` prefix because the folder says it.
 _SCOPE_FOLDER = {
-    "identity": "core", "constraints": "core",
-    "belonging": "rooms", "voice": "rooms", "conduct": "rooms", "silence": "rooms",
-    "participation-conduct": "rooms",
-    "participation": "instruments", "reaction": "instruments",
+    "identity": ("core", "identity"), "constraints": ("core", "constraints"),
+    "belonging": ("rooms", "belonging"), "voice": ("rooms", "voice"),
+    "conduct": ("rooms", "conduct"), "silence": ("rooms", "silence"),
+    "participation-conduct": ("rooms", "participation-conduct"),
+    "participation": ("instruments", "participation"),
+    "reaction": ("instruments", "reaction"),
+    "public-voice": ("public", "voice"),
+    "public-conduct": ("public", "conduct"),
+    "public-constraints": ("public", "constraints"),
 }
 
 
-def _path(stem: str) -> Path:
-    return DOCTRINE_DIR / _SCOPE_FOLDER[stem] / f"{stem}.md"
+def _path(name: str) -> Path:
+    folder, stem = _SCOPE_FOLDER[name]
+    return DOCTRINE_DIR / folder / f"{stem}.md"
 
 
 def _shipped(**kw):
@@ -72,16 +93,21 @@ def _shipped(**kw):
 
 
 def test_exactly_the_expected_files_ship():
-    assert {p.stem for p in DOCTRINE_DIR.glob("**/*.md")} == set(EXPECTED)
+    shipped = {
+        parse_section(p).name: (p.parent.name, p.stem)
+        for p in DOCTRINE_DIR.glob("**/*.md")
+    }
+    assert set(shipped) == set(EXPECTED)
+    assert shipped == _SCOPE_FOLDER
 
 
 @pytest.mark.parametrize(
-    "stem,kind,order,applies_to",
-    sorted((s, k, o, a) for s, (k, o, a) in EXPECTED.items()),
+    "name,kind,order,applies_to",
+    sorted((n, k, o, a) for n, (k, o, a) in EXPECTED.items()),
 )
-def test_each_file_has_the_expected_name_kind_order_and_audience(stem, kind, order, applies_to):
-    section = parse_section(_path(stem))
-    assert section.name == stem
+def test_each_file_has_the_expected_name_kind_order_and_audience(name, kind, order, applies_to):
+    section = parse_section(_path(name))
+    assert section.name == name
     assert section.kind == kind
     assert section.order == order
     assert section.applies_to == applies_to
@@ -95,6 +121,23 @@ def test_the_shipped_doctrine_assembles_in_strict_mode():
 
 def test_constraints_is_last_for_recency():
     assert _shipped().get().sections[-1].name == "constraints"
+
+
+def test_the_summons_doctrine_assembles_in_strict_mode_from_core_and_public_only():
+    """The public summons (design/instagram-adoption/19) reads who she is and
+    the hard rules, plus the public files, and NOTHING about a room: no
+    belonging, no group voice, no room conduct, no silence rule written for a
+    group. A strict load of the real tree, so a broken authority edge or an
+    unknown audience fails here rather than at boot on the deploy host."""
+    doctrine = _shipped().get(applies_to="summons")
+    names = [s.name for s in doctrine.sections]
+    assert names == [
+        "identity", "public-voice", "public-conduct", "constraints", "public-constraints",
+    ]
+    for room_only in ("belonging", "voice", "conduct", "silence", "participation-conduct"):
+        assert room_only not in names
+    for section in doctrine.sections:
+        assert len(section.not_here) > 40, section.name
 
 
 def test_every_shipped_file_says_what_it_must_not_contain():

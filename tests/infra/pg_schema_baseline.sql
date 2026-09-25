@@ -65,6 +65,7 @@
 );
 );
 );
+);
 ADD CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num);
 ADD CONSTRAINT analytics_watermark_pkey PRIMARY KEY (deriver_name, subject_id);
 ADD CONSTRAINT artifacts_pkey PRIMARY KEY (id);
@@ -95,6 +96,8 @@ ADD CONSTRAINT fact_premise_pkey PRIMARY KEY (fact_id, premise_fact_id);
 ADD CONSTRAINT fact_premise_premise_fact_id_fkey FOREIGN KEY (premise_fact_id) REFERENCES public.fact(id) ON DELETE CASCADE;
 ADD CONSTRAINT fact_superseded_by_fkey FOREIGN KEY (superseded_by) REFERENCES public.fact(id);
 ADD CONSTRAINT geocode_cache_pkey PRIMARY KEY (lat_rounded, lng_rounded);
+ADD CONSTRAINT instagram_summons_comment_id_key UNIQUE (comment_id);
+ADD CONSTRAINT instagram_summons_pkey PRIMARY KEY (id);
 ADD CONSTRAINT language_observation_message_id_canonical_form_sense_key UNIQUE (message_id, canonical_form, sense);
 ADD CONSTRAINT language_observation_pkey PRIMARY KEY (id);
 ADD CONSTRAINT media_objects_pkey PRIMARY KEY (sha256);
@@ -172,6 +175,8 @@ ALTER TABLE ONLY public.fact_premise
 ALTER TABLE ONLY public.fact_premise
 ALTER TABLE ONLY public.fact_premise
 ALTER TABLE ONLY public.geocode_cache
+ALTER TABLE ONLY public.instagram_summons
+ALTER TABLE ONLY public.instagram_summons
 ALTER TABLE ONLY public.language_observation
 ALTER TABLE ONLY public.language_observation
 ALTER TABLE ONLY public.media_objects
@@ -246,6 +251,8 @@ CONSTRAINT ck_corridor_speed_how CHECK (((hour_of_week >= 0) AND (hour_of_week <
 CONSTRAINT ck_derived_places_kind CHECK ((kind = ANY (ARRAY['home'::text, 'work'::text, 'unlabeled'::text])))
 CONSTRAINT ck_event_rsvps_response CHECK ((response = ANY (ARRAY['yes'::text, 'no'::text, 'maybe'::text])))
 CONSTRAINT ck_events_status CHECK ((status = ANY (ARRAY['proposed'::text, 'confirmed'::text, 'cancelled'::text])))
+CONSTRAINT ck_instagram_summons_mode CHECK ((mode = ANY (ARRAY['dry_run'::text, 'live'::text]))),
+CONSTRAINT ck_instagram_summons_state CHECK ((state = ANY (ARRAY['claimed'::text, 'ignored_summoner'::text, 'stale'::text, 'unreadable'::text, 'silent'::text, 'staged'::text, 'flushing'::text, 'published'::text, 'refused'::text, 'capped'::text, 'duplicate'::text, 'ambiguous'::text, 'failed'::text])))
 CONSTRAINT ck_music_queue_position_non_negative CHECK (("position" >= 0))
 CONSTRAINT ck_music_session_volume_range CHECK (((volume >= (0.0)::double precision) AND (volume <= (2.0)::double precision)))
 CONSTRAINT ck_occupancy_how CHECK (((hour_of_week >= 0) AND (hour_of_week < 168)))
@@ -351,6 +358,7 @@ CREATE INDEX idx_exchange_observation_scope ON public.exchange_observation USING
 CREATE INDEX idx_fact_disputed ON public.fact USING btree (unit) WHERE (disputed_at IS NOT NULL);
 CREATE INDEX idx_fact_premise_premise_fact_id ON public.fact_premise USING btree (premise_fact_id);
 CREATE INDEX idx_fact_standing ON public.fact USING btree (unit, subject_id) WHERE (superseded_at IS NULL);
+CREATE INDEX idx_instagram_summons_state ON public.instagram_summons USING btree (state, mode);
 CREATE INDEX idx_language_observation_scope ON public.language_observation USING btree (scope_id);
 CREATE INDEX idx_message_edit_message_ts ON public.message_edit USING btree (message_id, ts);
 CREATE INDEX idx_messages_conv_platform_message_id ON public.messages USING btree (conversation_id, platform_message_id);
@@ -393,6 +401,7 @@ CREATE TABLE public.fact_candidate (
 CREATE TABLE public.fact_entity (
 CREATE TABLE public.fact_premise (
 CREATE TABLE public.geocode_cache (
+CREATE TABLE public.instagram_summons (
 CREATE TABLE public.language_observation (
 CREATE TABLE public.media_objects (
 CREATE TABLE public.message_edit (
@@ -504,6 +513,7 @@ asserted_by text,
 asserted_by text,
 attempts integer DEFAULT 0 NOT NULL,
 attempts integer DEFAULT 0 NOT NULL,
+author_igid text NOT NULL,
 avg_speed_kmh double precision NOT NULL,
 backend_job_id text NOT NULL,
 battery double precision,
@@ -514,6 +524,7 @@ body text NOT NULL,
 body text,
 body text,
 body text,
+bridge_code text,
 canonical_form text NOT NULL,
 canonical_form text NOT NULL,
 canonical_name text NOT NULL,
@@ -526,6 +537,7 @@ circle_id text NOT NULL,
 circle_id text NOT NULL,
 closing_condition text NOT NULL,
 closing_condition text,
+comment_id text NOT NULL,
 completed_at timestamp with time zone,
 confidence double precision NOT NULL,
 consolidator_name text NOT NULL,
@@ -668,6 +680,7 @@ id uuid NOT NULL,
 id uuid NOT NULL,
 id uuid NOT NULL,
 id uuid NOT NULL,
+id uuid NOT NULL,
 instruction_sha256 text NOT NULL,
 instruction_sha256 text NOT NULL,
 instruction_sha256 text,
@@ -721,10 +734,12 @@ lng double precision NOT NULL,
 lng_rounded double precision NOT NULL,
 mean_arrival_minute double precision,
 mean_departure_minute double precision,
+media_id text NOT NULL,
 media_json text,
 media_type text DEFAULT ''::text NOT NULL,
 media_type text DEFAULT ''::text NOT NULL,
 media_type text NOT NULL,
+mention_at timestamp with time zone,
 mentions_json text,
 mentions_json text,
 message_id integer NOT NULL,
@@ -733,6 +748,7 @@ message_id integer NOT NULL,
 message_ids integer[] DEFAULT '{}'::integer[] NOT NULL,
 message_ids integer[] NOT NULL,
 messages jsonb NOT NULL,
+mode text NOT NULL,
 mode text NOT NULL,
 model text NOT NULL,
 model text NOT NULL,
@@ -788,6 +804,7 @@ person_id text NOT NULL,
 person_id text NOT NULL,
 person_id text,
 person_id text,
+person_id text,
 place_id integer
 place_id integer NOT NULL,
 place_id integer NOT NULL,
@@ -831,6 +848,8 @@ recurrence_until timestamp with time zone,
 reminder_id uuid,
 reminder_id uuid,
 replaced_by uuid,
+reply_comment_id text,
+reply_text text,
 requester_person_id text NOT NULL,
 requester_person_id text NOT NULL,
 resolved_at timestamp with time zone DEFAULT now() NOT NULL
@@ -855,6 +874,7 @@ scope_id text NOT NULL,
 scope_id text NOT NULL,
 scope_id text NOT NULL,
 scope_id text NOT NULL,
+seen_at timestamp with time zone DEFAULT now() NOT NULL,
 sender_id text NOT NULL,
 sender_name text,
 sense text NOT NULL,
@@ -866,6 +886,7 @@ series_id uuid,
 sha256 text NOT NULL,
 sha256 text NOT NULL,
 sha256 text NOT NULL,
+shortcode text NOT NULL,
 size bigint DEFAULT '0'::bigint NOT NULL,
 size integer DEFAULT 0 NOT NULL,
 size_bytes bigint NOT NULL,
@@ -881,6 +902,7 @@ started_ts bigint NOT NULL,
 state text DEFAULT 'live'::text NOT NULL,
 state text DEFAULT 'live'::text NOT NULL,
 state text DEFAULT 'pending'::text NOT NULL,
+state text NOT NULL,
 state text NOT NULL,
 state text NOT NULL,
 status text NOT NULL,
@@ -925,6 +947,7 @@ title text,
 tool_input jsonb NOT NULL,
 tool_name text NOT NULL,
 tool_result jsonb NOT NULL,
+trace_id text,
 transcript jsonb NOT NULL,
 ts bigint NOT NULL,
 ts bigint NOT NULL,
@@ -949,6 +972,7 @@ updated_at timestamp with time zone DEFAULT now() NOT NULL
 updated_at timestamp with time zone DEFAULT now() NOT NULL
 updated_at timestamp with time zone DEFAULT now() NOT NULL
 updated_at timestamp with time zone DEFAULT now() NOT NULL
+updated_at timestamp with time zone DEFAULT now() NOT NULL,
 updated_at timestamp with time zone NOT NULL,
 updated_ms bigint NOT NULL,
 updated_ts bigint NOT NULL

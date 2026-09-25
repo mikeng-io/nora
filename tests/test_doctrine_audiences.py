@@ -68,6 +68,13 @@ HER_AUDIENCES: dict[str, tuple[str, ...]] = {
     "heartbeat": AUTHORED,
     "participation": (*AUTHORED, "silence", "participation-conduct"),
     "proactive": (*AUTHORED, "silence"),
+    # The public summons (design/instagram-adoption/19): who she is and the hard
+    # rules from core/, and the public/ files — and nothing written for a room.
+    # Strangers read this surface, so belonging, the group voice and room
+    # conduct are exactly what must NOT arrive; `==` pins that side too.
+    "summons": (
+        "identity", "public-voice", "public-conduct", "constraints", "public-constraints",
+    ),
 }
 
 # A section tag with nothing behind it is not doctrine. `voice.md` truncated to

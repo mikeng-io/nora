@@ -2942,3 +2942,53 @@ IDX_REASONING_STRIP_LOG_PATH_TS = sa.Index(
     "idx_reasoning_strip_log_path_ts",
     REASONING_STRIP_LOG.c.path, REASONING_STRIP_LOG.c.created_at,
 )
+
+
+# `instagram_summons` — the public summons ledger (design/instagram-adoption/19,
+# `nora.app.summons`). One row per comment-mention the poller ever handled,
+# keyed UNIQUE on the comment id: the row is CLAIMED before the model runs, so
+# two claims on one comment cannot both win, and a summons is answered at most
+# once. `mode` records which brake was in force when it was handled, so a
+# dry-run `staged` row is never mistaken for a live one waiting to post.
+INSTAGRAM_SUMMONS = sa.Table(
+    "instagram_summons",
+    METADATA,
+    sa.Column("id", pg.UUID(as_uuid=True), primary_key=True),
+    sa.Column("comment_id", sa.Text, nullable=False, unique=True),
+    sa.Column("media_id", sa.Text, nullable=False),
+    sa.Column("shortcode", sa.Text, nullable=False),
+    sa.Column("author_igid", sa.Text, nullable=False),
+    sa.Column("person_id", sa.Text, nullable=True),
+    sa.Column("mention_at", sa.DateTime(timezone=True), nullable=True),
+    sa.Column(
+        "seen_at", sa.DateTime(timezone=True), nullable=False,
+        server_default=sa.text("now()"),
+    ),
+    sa.Column("state", sa.Text, nullable=False),
+    sa.Column("mode", sa.Text, nullable=False),
+    sa.Column("reply_text", sa.Text, nullable=True),
+    sa.Column("reply_comment_id", sa.Text, nullable=True),
+    sa.Column("bridge_code", sa.Text, nullable=True),
+    sa.Column("trace_id", sa.Text, nullable=True),
+    sa.Column(
+        "updated_at", sa.DateTime(timezone=True), nullable=False,
+        server_default=sa.text("now()"),
+    ),
+    sa.CheckConstraint(
+        "state IN ('claimed', 'ignored_summoner', 'stale', 'unreadable', "
+        "'silent', 'staged', 'flushing', 'published', 'refused', 'capped', "
+        "'duplicate', 'ambiguous', 'failed')",
+        name="ck_instagram_summons_state",
+    ),
+    sa.CheckConstraint(
+        "mode IN ('dry_run', 'live')",
+        name="ck_instagram_summons_mode",
+    ),
+)
+
+# The reads that scan: the sweep (`state IN ('claimed', 'flushing')`) and the
+# too_soon retry (`state = 'staged' AND mode = 'live'`).
+IDX_INSTAGRAM_SUMMONS_STATE = sa.Index(
+    "idx_instagram_summons_state",
+    INSTAGRAM_SUMMONS.c.state, INSTAGRAM_SUMMONS.c.mode,
+)
