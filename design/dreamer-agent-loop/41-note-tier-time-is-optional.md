@@ -4,7 +4,7 @@ title: "Time Is a Property of a Note, Not Its Axis — the Note Tier's Dated and
 description: "The note tier was built around a date: the create path demands an anchor_date, the curator selects on passed anchors, the index renders a countdown. The operator's reframe is that the architecture had it backwards — a note is a thing the room must not drop, and whether it has a moment attached is a PROPERTY of that thing, not the axis the tier is organised on. The living thread («what game next») has no date and must still be a note. This node records the reframe and maps the cascade the operator asked for: schema, the Dreamer's per-note timer, index render, curator selection, proactive, and the three issues it absorbs. Time becomes optional; it does not become ignorable — silence is still the one signal a conversation cannot carry."
 tags: [nora, note-tier, dreamer, curator, candidates, dateless, anchor, revisit, strikes, timer, schema, proactive, duplicates, note-merge]
 timestamp: '2026-09-16'
-updated: '2026-09-24'
+updated: '2026-09-25'
 edges:
   - {dst: 37-note-candidates-v2, rel: extends, provenance: asserted}
   - {dst: 34-note-dreamer-consolidation, rel: revises, provenance: asserted}
@@ -810,6 +810,30 @@ differs from §7.3-7.8, and why:
   row**: a row on a merged note fires unless the survivor was revised on the
   tag path after the row was written. `remind` and the per-note wake limit do
   not forward yet; neither can meet a merged note until `on`.
+
+**2026-09-25 — a prerequisite for `on` built: `merge_into` resolves both
+notes' open proactive rows, not just one.** PR #517 (`0064_proactive_open_note`,
+merged `e8ded3c4`) added the ONE-open-row index and the fire-time survivor
+rule, but keyed the index on the RAW note id a row's `payload` carries — so
+two notes that EACH held an open row, folded together, produced two rows
+that both forward to the survivor through `successor()` and both fire,
+unreachable by the index because neither row's own note id ever collided.
+Only reachable under `merge_mode = "on"`, never `shadow`, which this repo
+still runs in production. Fixed in `SqlNoteStore.merge_into`
+(`nora/infra/sql/notes.py`), inside the fold's own transaction: the
+duplicate's open row is re-pointed to the survivor; if the survivor already
+held one, exactly one of the two is kept (earliest `due_at`, a `firing` row
+never given up for a `pending` one — the opposite of 0064's own boot-time
+tie-break, and why, is in `_repoint_proactive_rows`'s docstring) and the
+other cancelled `cancelled_duplicate_note`, 0064's own outcome for the
+identical condition. Cancel runs before re-point when both are needed: the
+index is not deferrable, so the two rows would collide mid-transaction in
+the other order. `InMemoryNoteStore.merge_into` does NOT model this — that
+double has no `reminders` table at all — so the property is pinned only
+against real Postgres, in `tests/infra/
+test_note_merge_repoints_reminders.py`, not in the dual-parametrized
+contract suite. `nora.testing.note_store`'s docstring says so rather than
+leaving the gap silent.
 
 Related: #118 (the build), #159 (follow-on), #236 (duplicate bound), #101
 (discharge, shipped, off), #103 (proactive adapter). The design lineage is

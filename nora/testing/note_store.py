@@ -656,7 +656,25 @@ class InMemoryNoteStore:
     ) -> NoteRevision:
         """`SqlNoteStore.merge_into`: both compare-and-swaps are decided
         BEFORE either mutation, which is where the SQL transaction's
-        all-or-nothing is observable from outside."""
+        all-or-nothing is observable from outside.
+
+        **Does not model reminders, and that is a real gap, not an
+        oversight this docstring is papering over.** `SqlNoteStore.merge_into`
+        also re-points or cancels either note's open proactive reminder
+        (issue #158 residue) inside the same transaction as the fold, because
+        two notes that each held one would otherwise both forward to the
+        survivor and both fire. This double has no `reminders` dict and
+        nothing else in `InMemoryNoteStore` writes one — `notes`, `revisions`
+        and the three decision/candidate tables above are the whole of its
+        state — so a caller that folds two notes through THIS store and then
+        asks a `FakeReminderStore` what happened will see nothing changed.
+        `tests/contract/test_note_store_contract.py` runs `merge_into`
+        against both implementations and cannot see this divergence either,
+        because its harness never wires a reminders collaborator in. What
+        DOES pin the reminders half is `tests/infra/
+        test_note_merge_repoints_reminders.py`, against real Postgres only —
+        the SQL contract parameter is where this behaviour actually lives.
+        """
         if survivor_id == duplicate_id:
             raise ValueError("a note cannot be folded into itself")
         revision = NoteRevision(

@@ -81,6 +81,18 @@ PROACTIVE_KIND = "proactive"
 #: said now. A note may have at most ONE proactive row in them.
 OPEN_STATES: frozenset[str] = frozenset({"pending", "firing"})
 
+#: Stamped on the row a note-merge fold cancels when it resolves two notes'
+#: open proactive rows into one (`SqlNoteStore.merge_into`, issue #158
+#: residue: `uq_reminders_proactive_open_note` keys on the RAW note id a row
+#: carries, so a merge that left both rows alone produced two rows that both
+#: FORWARD to the same survivor through `successor()` — the index never sees
+#: that collision, because neither row's own note id ever collided). The
+#: same string migration `0064_proactive_open_note` already uses for its
+#: boot-time cleanup of the identical condition — one vocabulary for the
+#: same reason a row went, whether it is found at boot or made live by a
+#: fold.
+CANCELLED_DUPLICATE_NOTE = "cancelled_duplicate_note"
+
 
 def open_proactive_note(row: Reminder) -> str | None:
     """The note a row holds open, or `None` when it holds none.

@@ -1,0 +1,44 @@
+[
+  {
+    "name": "#158 residue: merge_into resolves both notes' open proactive rows",
+    "file": "nora/infra/sql/notes.py",
+    "old": "            await self._repoint_proactive_rows(\n                conn, survivor_id=survivor_id, duplicate_id=duplicate_id,\n                now_ms=now_ms,\n            )",
+    "new": "            if False:\n                await self._repoint_proactive_rows(\n                    conn, survivor_id=survivor_id, duplicate_id=duplicate_id,\n                    now_ms=now_ms,\n                )",
+    "target": "tests/infra/test_note_merge_repoints_reminders.py::test_both_open_rows_resolve_to_one_earliest_due_on_the_survivor"
+  },
+  {
+    "name": "#158 residue: only the duplicate's row is re-pointed, not left stale",
+    "file": "nora/infra/sql/notes.py",
+    "old": "        if s_row is None:\n            await conn.execute(_repoint_stmt(d_row.id, d_row.state, survivor_id))\n            return",
+    "new": "        if False:\n            await conn.execute(_repoint_stmt(d_row.id, d_row.state, survivor_id))\n            return",
+    "target": "tests/infra/test_note_merge_repoints_reminders.py::test_only_the_duplicate_has_an_open_row_is_repointed"
+  },
+  {
+    "name": "#158 residue: a firing row is never cancelled for a pending one",
+    "file": "nora/infra/sql/notes.py",
+    "old": "    if a_firing != b_firing:\n        return (a, b) if a_firing else (b, a)",
+    "new": "    if a_firing != b_firing:\n        return (b, a) if a_firing else (a, b)",
+    "target": "tests/infra/test_note_merge_repoints_reminders.py::test_a_firing_row_is_never_cancelled_for_a_pending_one"
+  },
+  {
+    "name": "#158 residue: the earliest due_at survives a collision, not the latest",
+    "file": "nora/infra/sql/notes.py",
+    "old": "    return (a, b) if key[0] <= key[1] else (b, a)",
+    "new": "    return (b, a) if key[0] <= key[1] else (a, b)",
+    "target": "tests/infra/test_note_merge_repoints_reminders.py::test_both_open_rows_resolve_to_one_earliest_due_on_the_survivor"
+  },
+  {
+    "name": "#158 residue: the collision is cancelled BEFORE the keeper is re-pointed, never after",
+    "file": "nora/infra/sql/notes.py",
+    "old": "        await conn.execute(\n            sa.update(REMINDERS)\n            .where(REMINDERS.c.id == drop.id, REMINDERS.c.state == drop.state)\n            .values(\n                state=ReminderState.CANCELLED.value,\n                outcome=CANCELLED_DUPLICATE_NOTE,\n                fired_at=fired_at,\n            )\n        )\n        if keep.id == d_row.id:\n            await conn.execute(_repoint_stmt(keep.id, keep.state, survivor_id))",
+    "new": "        if keep.id == d_row.id:\n            await conn.execute(_repoint_stmt(keep.id, keep.state, survivor_id))\n        await conn.execute(\n            sa.update(REMINDERS)\n            .where(REMINDERS.c.id == drop.id, REMINDERS.c.state == drop.state)\n            .values(\n                state=ReminderState.CANCELLED.value,\n                outcome=CANCELLED_DUPLICATE_NOTE,\n                fired_at=fired_at,\n            )\n        )",
+    "target": "tests/infra/test_note_merge_repoints_reminders.py::test_both_open_rows_resolve_to_one_earliest_due_on_the_survivor"
+  },
+  {
+    "name": "#158 residue: a moved survivor head rolls back before reminders are ever touched",
+    "file": "nora/infra/sql/notes.py",
+    "old": "            if swapped.rowcount == 0:\n                raise StaleNoteHeadError(\n                    f\"note {survivor_id} moved or retired before the fold — \"\n                    f\"read it again\",\n                    observed_head=None,\n                )\n            await conn.execute(sa.insert(NOTE_REVISION).values(",
+    "new": "            if False:\n                raise StaleNoteHeadError(\n                    f\"note {survivor_id} moved or retired before the fold — \"\n                    f\"read it again\",\n                    observed_head=None,\n                )\n            await conn.execute(sa.insert(NOTE_REVISION).values(",
+    "target": "tests/infra/test_note_merge_repoints_reminders.py::test_merge_rollback_leaves_reminders_untouched"
+  }
+]
