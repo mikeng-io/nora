@@ -6,7 +6,7 @@ tags: [nora, note-tier, dreamer, note-candidates, schema, body, revision, contex
 timestamp: '2026-09-25'
 edges:
   - {dst: 37-note-candidates-v2, rel: extends, provenance: asserted}
-  - {dst: 41-note-tier-time-is-optional, rel: extends, provenance: asserted}
+  - {dst: 41-note-tier-time-is-optional, rel: revises, provenance: asserted}
   - {dst: 27-note-dreamer, rel: revises, provenance: asserted}
   - {dst: 33-note-dreamer-schedule, rel: revises, provenance: asserted}
 version: 1
@@ -26,7 +26,8 @@ the task, and are marked where they appear; nothing here was read on norty.
 
 ## 0. The short form
 
-- **The body is a schema**: six fixed English headings in a fixed order, a line
+- **The body is a schema**: seven fixed English headings in a fixed order (two
+  written by code only), a line
   grammar per heading, every claim ending in the ids of the messages that
   support it, every person named the way the input named them, every date
   absolute. Content stays in the room's own language. A validator in code
@@ -37,10 +38,10 @@ the task, and are marked where they appear; nothing here was read on norty.
   every reader in §1; a mechanical carry-forward check replaces the
   «append cannot destroy text» argument #228 rested on.
 - **note-candidates is shown what it revises.** Its input becomes `room`,
-  `culture`, `standing`, a new `lead_in`, `batch`, `today` and one
+  `culture`, `people`, `standing`, a new `lead_in`, `batch`, `today` and one
   `open_note` per open note of the unit, body included, all in the existing
   block grammar with one new type.
-- **Build in seven steps, one variable per step**, schema before input, each
+- **Build in steps, one variable per step**, schema before input, each
   measured on the note-candidates corpus with body checks carried over from
   closed PR #513.
 
@@ -56,7 +57,7 @@ note is for.
 | **Nora writing on the tag path** | `note_update(title, body)` after a `note_read` (`nora/agent/tools.py:10150`) | the whole current state, because «`body` replaces the current contents» (the tool's own docstring) | **restate** semantics, while note-candidates writes the same bodies with **append** semantics: two writers, two meanings of a revision, on one field |
 | **the curator** | `_note_block` renders the body whole, beside `uncertainty`, `closing condition` and the evidence (`nora/language/note_curator.py:1982`) | what was still open, to judge from the evidence whether it has closed | the whole body, whatever its shape; «bodies are rendered whole, the body IS the question» |
 | **note-merge** | `open_note` blocks, the body clipped at `DEFAULT_BODY_EXCERPT_CHARS = 600` (`nora/language/note_merge.py:127`, `:644`) | enough of each note to tell whether two ask the same open question | the FIRST 600 characters, which under append are the OLDEST text; its fold appends the duplicate under `MERGE_MARKER` with `title:`/`uncertainty:`/`closing condition:` lines (`nora/domain/notes.py:960`) |
-| **the proactive pass** | `note_read`, rationed to 3 reads per pass (`nora/dreamer/objectives/proactive.md`, «Before you set any reminder») | «Read the note body to know who that is»: whose plan it is, who has to answer, and by when | whatever the body happens to say; `_people_block`'s own docstring records that «a note's body is written in whatever the group calls each other; the roster holds the mapped name; nothing joined the two» (`nora/language/proactive.py:743`) |
+| **the proactive pass** | `note_read`, rationed to 3 reads per pass (`nora/dreamer/objectives/proactive.md`, «Before you set any reminder») | «Read the note body to know who that is»: whose plan it is, who has to answer, and by when | whatever the body happens to say, in whatever names the writer used. The pass carries a `people` block that joins «whatever the group calls each other» to roster names (`_people_block`, `nora/language/proactive.py:737`), built because nothing joined the two before it; a body already in roster names needs no join |
 | **note-candidates' own update path** | **never**: the notebook it is shown is `render_notes`, title + description (`nora/language/note_candidates.py:1114`); `_update` reads the head body only to append to it (`:1415`) | the note's current state, to decide whether this batch changes it, and which of two similar notes it is | a title and 200 characters. Per the operator's eval read-back (#513), every update failure on both arms revised a different, similarly titled note |
 | **evals** | the note-candidates corpus graded note existence, anchor and citations; #513 added `body_names`/`body_mentions` on a closed branch | named facts in the body, gradable without a judge | #513's date check needed nine spellings of one day (`"27th", "27 sep", "sep 27", "27/9", "9/27", "27號", "27日", …`) because nothing fixes how a body writes a date |
 
@@ -79,7 +80,9 @@ the task did not name:
    drops both. `description`, `uncertainty` and `closing_condition` are
    written once, at create (`nora/infra/sql/notes.py:291`); no store verb
    ever changes them. So the index line every tag reads goes stale the moment
-   an update lands, which is #226's shape (a stale summary read as current).
+   an update lands. #226 is what that costs: a description read aloud to the
+   room as if it were what happened, with the transcript that contradicted it
+   in the same prompt.
    And `entity_ids` on the revision proposal has no column
    (`note_revision`, `nora/infra/sql/schema.py:1923`): it is silently dropped.
 
@@ -97,7 +100,7 @@ the task did not name:
 | `anchor_date` / `anchor_entity_ids` | at least one, CHECK `note_has_an_anchor_check`; the date is `YYYYMMDD` | when the thing happens; free-text names nothing resolves | **only as a cited fact.** «dinner on 2026-09-27» is a claim somebody made in a message and is cited like any other; the anchor field stays the machine's copy. |
 | `established_in`, `created_at`, `retired_at`, `replaced_by`, `retire_reason`, `revisit_at`, `strikes`, `event_id`, `reminder_id` | lifecycle and routing | when and where, and what became of it | **no**. Never in the body. |
 | `note_revision.body` | non-empty; `BODY_MAX_CHARS = 8000` in the domain types, `NOTE_BODY_CEILING_CHARS = 32000` in the table (`nora/domain/notes.py:65`, `:86`) | the arrangement | **the body** |
-| `note_revision.{parent_revision_id, written_at, established_by, instruction_sha256, model}` | the CAS chain and its provenance (`nora/domain/notes.py:425`) | who wrote each version, when, from what | **no**. This is the history the restate rule relies on (§4). |
+| `note_revision.{parent_revision_id, written_at, established_by, instruction_sha256, model}` | the CAS chain and its provenance (`nora/domain/notes.py:425`) | who wrote each version, when, from what | **no**. This is the history the restate rule relies on (§7). |
 
 So the body carries exactly what no field can: **the arrangement, line by line,
 each line attributed and cited.** Who said what, what is decided, what is open,
@@ -153,24 +156,25 @@ Searched between measuring and designing, per the nora-decision skill.
 
 ### 4.1 Sections
 
-Six sections, in this order. A heading is a level-two markdown heading,
+Seven sections, in this order. A heading is a level-two markdown heading,
 spelled exactly as below, on its own line. No other heading, no heading
 twice, no text outside a section.
 
 | # | heading | required | what it holds |
 |---|---|---|---|
-| 1 | `## Decided` | **yes, at least one line** | what somebody has committed to or settled. A note is only created from a message that is `committed` (the objective's own rule), so there is always one. |
-| 2 | `## Open` | **yes, the heading always; at least one line on a create, none allowed on a revision** | each unsettled corner, one per line: the objective's per-message `open` verdicts, carried into the note. A create needs one, the objective's own rule for a new entry (`committed` AND a non-empty `open`). On a revision the heading with no lines under it means «nothing left open as of this revision», a readable signal for the curator. |
+| 1 | `## Decided` | **the heading always; it may be empty** | what somebody has committed to or settled. It may be empty: the tag path's `note_create` is for «an undecided thing nobody has settled» (`nora/agent/tools.py:10050`), a living note (37 §3) may never settle anything, and a revision can move the only decided line to `## Ruled out` when it is called off. |
+| 2 | `## Open` | **the heading always; it may be empty, except on a note-candidates create** | each unsettled corner, one per line: the objective's per-message `open` verdicts, carried into the note. A note-candidates create needs one line, the objective's own rule for a new entry (`committed` AND a non-empty `open`). Elsewhere the heading with no lines under it means «nothing left open as of this revision», a readable signal for the curator. **`## Decided` and `## Open` together hold at least one line.** |
 | 3 | `## Owed` | no | an action a named person has taken on or been asked for, with when it is due. |
 | 4 | `## Proposed` | no | options on the table for an open corner, each with who put it there. |
 | 5 | `## Ruled out` | no | an option dropped, with why. |
-| 6 | `## Folded` | no, and written by code only | a note `note-merge` folded into this one: its title and its closing condition. |
+| 6 | `## From memory` | no, and written by code only | 37 §5's Stage B (decided 2026-09-08, not built): what memory answered about these people for this topic, as of a date. Never evidence, never cited, replaced whole each time Stage B runs. 37 §8 records it as «appended and labelled»; under this schema the label is the heading and the append is a restated section. |
+| 7 | `## Folded` | no, and written by code only | a note `note-merge` folded into this one: its title and its closing condition. |
 
 **Why this order.** Readers look for the state first: the curator for what was
 open, proactive for who owes what, merge in its first 600 characters. `Decided`
 before `Open` because an open corner is legible only against what has been
-settled around it (the minutes convention). `Folded` last because it is
-bookkeeping.
+settled around it (the minutes convention). The two code-written sections
+last, because neither is the room's own word.
 
 ### 4.2 Line grammar
 
@@ -189,6 +193,8 @@ between sections is allowed and normalised). Each section has one grammar:
 - <option> (<names>) [<ids>]
 ## Ruled out
 - <option>: <reason> (<names>) [<ids>]
+## From memory
+- <what memory answered> (as of <date>)
 ## Folded
 - <title of the folded note>: <its closing condition> (folded <date>)
 ```
@@ -199,9 +205,14 @@ defines each one. It is not a sample and carries no content (§6).
 ### 4.3 The conventions each slot follows
 
 **`<ids>`: how a claim cites its source.** A comma-separated list of message
-ids, each exactly as the input's `n` attribute showed it: `[3393]`,
-`[3393, 3397]`. Every line except `## Folded` ends with one. The validator
-refuses an id the writer was not shown (§4.5). This is the provenance the
+ids: `[3393]`, `[3393, 3397]`. note-candidates is shown ids (the batch's `n`
+is the row id) and cites them as shown. The tag path is shown positions, not
+ids (her `<transcript>`'s `n` is a 1..N position, `nora/domain/blocks.py:86`),
+so it cites a position with a `#`, `[#4]`, and the tool maps each `#n` to its
+row id before the body is stored (G4). A stored body holds only ids; within
+one write the two forms cannot be confused, because a position always carries
+its `#`. Every line except the two code-written sections ends with one. The
+validator refuses an id the writer was neither shown nor carrying (§4.5). This is the provenance the
 spine asks every serialized value to carry, and it is what makes the body
 checkable at all: a line whose source cannot be named is a line nobody can
 re-derive.
@@ -216,7 +227,7 @@ projection runs, so `person_name` is `None` on every row and `from` is the
 member's **self-set platform profile name**, while every live turn reads the
 roster name (DEC-80). A body written today names people in a name-space the
 turn that reads it does not use; that is the two-name-space defect DEC-80
-fixed on the tag path, one pass over. Build step S1 (§10.3) applies the
+fixed on the tag path, one pass over. Build step S1a (§10.3) applies the
 projection to the Dreamer batch, and from then the convention is: **a person
 is named by their roster name, exactly as `from` shows it.**
 
@@ -224,17 +235,20 @@ is named by their roster name, exactly as `from` shows it.**
   must be the `from` of at least one message the line cites. This is «who
   said what», made checkable: the attribution is the author of the evidence.
 - In `## Owed`, `<name>` is the person who owes. They may not have spoken (Ada
-  asks Ben to book), so the rule is looser and still grounded: the name is the
-  `from` of a shown message, or it appears in the text of a message the line
-  cites.
+  asks Ben to book), and the message that says so uses whatever the group
+  calls Ben, not his roster name (the `people` type's own description). So
+  the input carries the room's roster (`people`, §8.3a) and the rule is: the
+  owner is a roster name of this room. AGENTS.md's «on *who*, it carries an
+  index», applied to the writer.
 - Nora's own display name is never an Owed owner. What she owes the room is
   established by `<standing>` alone (the `standing` type's description,
   `nora/domain/block_types.py:280`), and a note is the group's, not hers.
 - **Code attaches `person_id`s; the model never writes one.** The validator
-  resolves each name through the `person_id` of the shown row whose `from` it
-  matched, and the revision records the set. Today there is nowhere to record
-  it (finding 4, §1); §11 G5 decides between a column and dropping the dead
-  field.
+  resolves each author name through the `person_id` of the shown row whose
+  `from` it matched, and each owner through the roster. This is 37 §5 Stage
+  A's decision («code adds the involved `person_id`s … the model is not asked
+  to guess names»), never built: the field that would carry it,
+  `NoteRevisionProposal.entity_ids`, has no column (finding 4, §1). §11 G5.
 
 **`<statement>`, `<question>`, `<what>`, `<option>`, `<reason>`: content.**
 One line each, in the room's own language (§5). Concrete: names, places,
@@ -264,13 +278,17 @@ the call-off as its reason.
 
 ### 4.4 What must not appear
 
-- **Nora's own turns as the group's decision** (#199's class). The batch
-  excludes her rows in the query (`MESSAGES.c.is_nora == 0`,
-  `nora/infra/sql/audit.py:272`) and the lead-in does the same (§8.4, G3), so
-  no id she authored is citable, and the validator refuses a line citing one.
-  `<standing>` is shown for reading, and it has no ids: **nothing can enter a
-  body on Standing's word alone**, because every line must cite a message.
-  The citation rule is what enforces #199's boundary mechanically.
+- **Nora's own turns as the group's decision** (#199's class: the debrief
+  turned one of her turn outcomes into a room position, and a note followed on
+  the same false premise). The batch excludes her rows in the query
+  (`MESSAGES.c.is_nora == 0`, `nora/infra/sql/audit.py:272`) and the lead-in
+  does the same (§8.4, G3), so no id she authored is citable, and the
+  validator refuses a line citing one. `<standing>` has no ids, so no line
+  can cite it. **That is necessary, not sufficient**: the validator checks
+  that a cited message exists and who wrote it, never that it supports the
+  line, so a premise read in Standing can still be written as a line citing a
+  nearby message. That residue is #199's exact shape, and S5b adds a negative
+  case built on it (§10).
 - Anything already in a field (§2): the title, the description, the closing
   condition, lifecycle data.
 - A claim with no message behind it: an inference, a summary of the mood, a
@@ -282,9 +300,18 @@ the call-off as its reason.
 ### 4.5 The validator: what it refuses, what it repairs
 
 One pure function in the domain, `parse_note_body(text, *, shown) -> NoteBody`,
-raising `NoteBodyError` with a sentence that names the rule broken. `shown` is
-what the writer was shown: the message ids and, per id, the `from` name,
-`person_id`, whether it is Nora's, and its text. It is called by each WRITER
+raising `NoteBodyError` with a sentence that names the rule broken. `shown`
+has two tiers, because a restatement cites messages this write never saw:
+
+- **rendered**: the rows this write put in front of the model, each with its
+  id, `from`, `person_id`, whether it is Nora's, and its text; plus the room's
+  roster (§8.3a);
+- **carried**: the ids the head being revised already cites, as ids only.
+  They are not re-read: a row the audit pruner has since deleted
+  (`prune_enabled`, `nora/config.py:767`) must not turn into a refusal.
+
+Author, owner and Nora checks run on rendered ids; a carried id is accepted
+because the head carried it. It is called by each WRITER
 (note-candidates' commit, the tag path's `note_create`/`note_update`, the merge
 fold), **not** by `NoteRevision.__post_init__`, because rows written before the
 schema must still read back (§9).
@@ -298,23 +325,32 @@ case (`## decided` to `## Decided`).
 | rule | refusal |
 |---|---|
 | a heading that is not one of the six, repeated, or out of order | `unknown_section` / `section_order` |
-| `## Decided` or `## Open` missing; `## Decided` empty; `## Open` empty on a create | `missing_section` |
+| `## Decided` or `## Open` missing; both empty; `## Open` empty on a note-candidates create | `missing_section` |
 | text outside a list item, a nested list | `not_a_line` |
-| a line (other than `## Folded`) with no `[<ids>]` | `uncited` |
-| an id the writer was not shown (§8.4 says which) | `unknown_id` |
+| a line (outside the code-written sections) with no `[<ids>]` | `uncited` |
+| an id neither rendered nor carried (§8.4 says which rendered ids count) | `unknown_id` |
 | an id of one of Nora's own messages | `cites_nora` |
 | a `(<names>)` name that authored none of the cited ids | `misattributed` |
-| an `## Owed` owner neither shown as `from` nor in a cited message's text; Nora as owner | `unknown_owner` |
+| an `## Owed` owner that is not a roster name of this room; Nora as owner | `unknown_owner` |
 | a malformed or impossible date, or a weekday that is not that date's | `bad_date` |
 | over `BODY_MAX_CHARS` | unchanged: the existing refusal |
 
 **Refused or repaired?** Refused. A body is a record other readers act on; a
 repair that changes more than whitespace is code writing content the model
 did not, the invent-a-value move `nora/domain/notes.py`'s own docstring
-forbids, and a silent repair makes the refusal rate unreadable. On
-note-candidates a refused body refuses the candidate, counted as its own
-gate action (`malformed_body`), exactly as `_parse_candidate` already drops a
-malformed item whole. On the tag path the tool returns
+forbids, and a silent repair makes the refusal rate unreadable.
+
+**Where note-candidates refuses, and why there.** In `accept()`, before
+anything is staged, beside `_parse_candidate`'s own drop of a malformed item,
+and counted on its own series (`nora_note_candidate_body_refused_total{rule}`).
+Not at the gate: a staged row the gate settles is settled for good on its key,
+because `record_create_candidate` upserts only `WHERE status = 'pending'`
+(`nora/infra/sql/notes.py`, its own docstring), so a body refused after
+staging would make every corrected re-proposal of that title and anchor a
+no-op. The update-only checks that need the head (§7's carry-forward, §8.6's
+`not_shown`) do run at the gate, and leave the row pending, as `ambiguous`
+does; both join `GATE_ACTIONS` and the metric's help text in
+`nora/obs/metric_specs.py`. On the tag path the tool returns
 `{"status": "refused", "note": <the rule>}`, the domain-refusal shape
 `note_create` already uses (`nora/agent/tools.py`, `except ValueError`), so
 the model can correct its call: 27 §5.3's «the procedure is taught by the
@@ -325,11 +361,14 @@ failure, at the moment it matters».
 - **No floor, no target.** Completeness is measured as named facts in the
   right section (§10), never as length. A length target is what the two worked
   examples set by accident (§6).
-- **Ceiling unchanged**: `BODY_MAX_CHARS = 8000`. Under restatement a body
-  holds the current state of one arrangement, not its history, so it is
-  bounded by the arrangement rather than by how often it was revised; the
-  `full` gate action should fall toward zero, and a non-zero rate after S4
-  says a body is carrying history it should have dropped.
+- **Ceiling unchanged, reason changed**: `BODY_MAX_CHARS = 8000`. 27 §5.2
+  sized it as «an arrangement with its history»; under restatement the
+  history is the chain, so 8000 is room for one arrangement's facts. A body
+  grows with what the arrangement accumulates (decisions, options ruled out),
+  not with how often it is revised, and §7's carry-forward check means a cited
+  fact is merged or moved, never dropped, so a long-lived note does grow.
+  `full` is the reading: a rate says notes are outliving their arrangements,
+  which is the curator's question.
 - **Against the 200-character description**: the description is the index
   line, read on every tag to decide whether to open the body; the body is what
   `note_read` opens. They never repeat each other (§2). The body's `## Open`
@@ -426,8 +465,8 @@ the model no conformant body:
    demonstrate the OLD form.
 
 For (2) the input says what it is showing: a body that does not parse renders
-with a `form` field reading «free text, written before the notebook had
-sections» (§8.6), so a legacy body is labelled as legacy rather than offered as
+with a `form` field saying it is not in the notebook's sections (§8.6), so a
+legacy body is labelled as legacy rather than offered as
 the format. For (1) the grammar block is the only structure in view. It is a
 skeleton, slots and fixed tokens with no content, so it cannot anchor length
 or subject; it is the schema, not a sample. **The measurement that would
@@ -467,22 +506,37 @@ free to disagree.
 `updates` rests on append: a wrong judgement «costs a conflation, not an
 erasure». A restated head can drop text. Two things hold instead:
 
+This revises the ground two documents stand on, and says so: the
+`note_candidates.py` module docstring and 33's «superseded in part» note both
+argue that append made the gate non-destructive, so the model could be
+trusted to name the note.
+
 1. **Nothing is erased from the store.** Every earlier head is a revision row;
    an undo is a new revision, as `note_update`'s own docstring already promises
    the tag path.
-2. **A carry-forward check, in code.** Every message id cited in the head
-   being revised must be cited somewhere in the new body, and every
-   `## Owed` owner in the head must still appear somewhere in it. A restatement
-   may move a line between sections (`## Open` to `## Decided`, `## Proposed`
-   to `## Ruled out`) and may rewrite it; it may not make a cited source
-   vanish. A body that drops one is refused (`dropped_citation`) and the
-   candidate stays pending. This is the conservation the append gave for
-   free, stated as a property and checked.
+2. **A carry-forward check, in code, per line.** For every line of the head
+   being revised, some line of the new body cites all of that line's ids. A
+   restatement may rewrite a line, move it between sections (`## Open` to
+   `## Decided`, `## Proposed` to `## Ruled out`) or merge two lines into one
+   that cites both; it may not make a line's evidence vanish. An `## Owed`
+   line is a line like any other, so an owed action cannot silently drop out.
+   The head's ids are read with a pattern, not the parser, so the check also
+   works against a head that does not parse (§9). A body that fails it is
+   refused (`dropped_citation`) and the candidate stays pending.
+
+**What this protects, and what it does not.** It protects provenance: every
+source the note ever rested on stays cited in its current body. It does not
+protect meaning. A line rewritten to say the opposite keeps its ids and
+passes; that is what the eval's placed-fact checks measure (§10), not this.
+And it binds note-candidates only: the tag path's `note_update` keeps
+replacing freely, as its contract already says, because that is where a
+conflated line gets taken back out (#228's remedy) with a person in the turn.
 
 On the failure #228 actually feared, a note conflated with another: a
-restatement that folds note A's arrangement into note B still has to keep all
-of B's citations, so it is no worse than today's append on conflation, and a
-reader can see it in one place rather than across two paragraphs.
+restatement that folds note A's arrangement into note B still has to keep
+every line of B's evidence, so it is no worse than today's append on
+conflation, and a reader sees it in one place rather than across two
+paragraphs.
 
 **How each writer changes.**
 
@@ -491,16 +545,22 @@ reader can see it in one place rather than across two paragraphs.
   was shown with its body (§8.6; otherwise `not_shown`, left pending); the body
   parses against what was shown plus the head's own ids; the carry-forward
   check; the body differs from the head after whitespace normalisation
-  (otherwise `refused`, the duplicate case, as today). The candidate's
+  (otherwise `refused`, the duplicate case). That last check is weaker than
+  today's: `_adds_information` refuses a body that is a substring of the head,
+  and under restatement a paraphrased re-sighting is a new revision. Revisions
+  per note per day is the reading that says whether it matters. The candidate's
   `description` and `closing_condition` are still discarded until G2 is
   decided; that is stated in the objective, not left for the model to find out.
-- **The tag path's `note_update`.** Already restate. It gains the validator, run
-  against her turn's shown messages, and the tool's refusal names the broken
-  rule. Its citations need ids, and her `<transcript>` shows positions, not
-  ids (`HandleStyle` «`index`», `nora/domain/blocks.py:86`), deliberately.
-  G4 decides how; the recommendation is that the tool maps positions to row
-  ids from the rows her prefill rendered, so she cites what she sees and the
-  store keeps ids. `note_create` gets the same validator.
+- **The tag path's `note_update` and `note_create`.** Already restate. They
+  gain the validator, run against her turn's shown messages, and the refusal
+  names the broken rule. She cites positions as `[#n]`, which the tool maps to
+  row ids from the rows her prefill rendered (§4.3, G4); a bare id in her body
+  must be one the head already carries. **Where she learns the grammar**: 27
+  §5.3 puts procedure in the tool descriptions, so the `body` argument of
+  both tools names the seven headings and the line rule in two sentences
+  (ADR 0015's length rule), `note_read` hands back bodies in the schema, and
+  the refusal teaches the rest at the moment it matters. A nora-tool change,
+  with its own `tool_selection` read.
 - **note-merge's fold.** `merged_body` is replaced, for two conformant bodies,
   by a section-wise union: each section of the survivor, then the duplicate's
   lines of that section that the survivor does not already contain
@@ -512,7 +572,11 @@ reader can see it in one place rather than across two paragraphs.
   open appears in both `## Decided` and `## Open`. Code cannot judge which is
   current; the next restatement by note-candidates or the tag path, which
   reads the body, resolves it. If either body is legacy, the fold falls back to
-  today's `MERGE_MARKER` append.
+  today's `MERGE_MARKER` append. **This revises 41 §7.7 and DEC-202's
+  «appended revision»** for conformant bodies; the survivor, the anchor rule,
+  the strikes rule and the transaction are unchanged. Until it ships, note-merge
+  must not run `on` against schema bodies (it is `off` by default and writes
+  nothing in `shadow`), or its fold writes a `MERGE_MARKER` block into one.
 - **The curator.** Unchanged: it retires and never writes a body. Its objective
   may later read `## Open` explicitly (an empty `## Open` is «the note says
   nothing is left»), which is a separate measured change.
@@ -534,14 +598,15 @@ says what the pass is reading, as a whole, and nothing lists scenarios.
 |---|---|---|---|
 | `room` | 10 | turn | unchanged |
 | `culture` | 15 | turn | unchanged (DEC-207) |
+| `people` | 17 | turn | **new to this pass**, existing type, roster lines only |
 | `standing` | 18 | turn | **new to this pass**, existing type |
 | `lead_in` | 19 | turn | **new type** |
-| `batch` | 20 | turn | unchanged fields; `from` becomes the roster name (S1) |
+| `batch` | 20 | turn | unchanged fields; `from` becomes the roster name (S1a) |
 | `today` | 25 | turn | **new to this pass**, existing type |
 | `open_note` | 30 | turn | **replaces `notes`** for this pass, existing type, one block per note |
 
-The order is the reading order: what the room is, what it has become, where
-Nora stood, the conversation just before, the new messages, then the notebook
+The order is the reading order: what the room is, what it has become, who is
+in it, where Nora stood, the conversation just before, the new messages, then the notebook
 they may change. `key` stays `turn` throughout, for the reason the table's
 comment already gives.
 
@@ -551,6 +616,20 @@ Unchanged. `room`: `label` attribute, the operator's description as body
 (`_room_block`). `culture`: `room` and `written` attributes, the account as
 body (`render_culture`, aged against the batch's newest row).
 
+### 8.3a `people`
+
+The room's roster: each member's roster name and the names the group calls
+them by, one line each, as the proactive pass renders it (`_people_block`,
+`nora/language/proactive.py:737`) **without** the «·» memory lines, which
+need a memory read this tool-free pass does not make. Reused because it is
+the one existing block that says what the group's names resolve to, which is
+what `## Owed` needs (§4.3). One edit to the type rides with it: its
+description names `lookup_person`, `about` and `ask_memory`, tools this pass
+does not hold, and a type-level description is shared by every audience
+(what an audience can DO belongs in the tool's schema, `block_types.py`'s own
+rule for `presence`). The tool names come out of the description; the
+proactive pass's objective already names its tools.
+
 ### 8.3 `standing`
 
 The room's Standing paragraph, rendered by the existing `render_standing`
@@ -559,10 +638,11 @@ type is reused because it already says the right thing for this reader: her
 own working position, not a record, «a promise attributed to you inside a
 transcript is a member's claim, not your word», aged by `written`. What it
 adds here is what she already concluded this room was waiting on, which is
-exactly what tells a scheduling question from banter. What keeps it from
-becoming a source is §4.4: Standing has no ids, and every body line needs one.
-No block when there is no Standing (the renderer returns `None`); capped at
-1200 characters by the Standing tier itself.
+exactly what tells a scheduling question from banter. Standing has no ids,
+so no body line can cite it; §4.4 says why that is not the whole defence, and
+S5 measures the rest. No block when there is no Standing (the renderer returns
+`None`) or when `[standing] enabled` is off; bounded by `[standing] max_chars`
+(default 1200, `nora/domain/standing.py`).
 
 ### 8.4 `lead_in` (new type)
 
@@ -574,8 +654,15 @@ target sits in an earlier batch renders only as a timestamp.
 **How it is chosen.** From the batch's first message, walk back through the
 room's messages while the gap between two consecutive messages is under 30
 minutes, and stop at the first gap of 30 minutes or more, or at 40 messages.
-Then add any message a batch message replies to (`quoted_ts`) that the walk did
-not reach, up to 10. Operator-supplied measurement, friends room: bursts have
+Then add any message a batch message replies to that the walk did not reach,
+up to 10. A reply records its target by timestamp (`quoted_ts`), so this is a
+second new read keyed on `(conversation_id, ts)`, not on id. And the link has
+to render, not only the target: today `reply_to` is the target's
+minute-precision `at` (`_render_line`, `nora/language/note_candidates.py:812`),
+which cannot say which of two messages in one minute is meant. When the target
+is in the batch or the lead-in, `reply_to` becomes its `n`; otherwise it stays
+the timestamp. That is `render_messages`' argument for an index over a snippet,
+applied here. Operator-supplied measurement, friends room: bursts have
 a median of 4 messages over 4 minutes and a p90 of 26 over 40 minutes,
 separated by 30-minute gaps; so the 30-minute rule is the burst boundary, and
 40 covers the p90 burst whole. **Why not further back**: earlier bursts are
@@ -609,7 +696,7 @@ cites, since a restatement carries those forward.
 
 Unchanged in shape and type: `n`, `at`, `from`, `room`, `reply_to`, at most
 `MAX_RENDERED_MESSAGES`. The one change is that `from` is the roster name once
-the Dreamer batch is projected through `Persons.name_transcript` (S1). The
+the Dreamer batch is projected through `Persons.name_transcript` (S1a). The
 batch description already says what it is: «the room's messages this pass is
 proposing from».
 
@@ -627,19 +714,24 @@ would be false. `open_note` is note-merge's type
 entry of this group's notebook that is still open, as it was written down:
 what it is about, what is undecided, what would settle it, and its body so
 far». Reusing it keeps one description of an open note for both passes that
-read one. Fields, as merge renders them: `id`, `title`, `room`, `written`,
+read one. Fields, as merge renders them: `title`, `room`, `written`,
 `revised`, `anchor`, `anchor_is`; plus one new field:
 
-- `form`: absent on a body that parses; on one that does not, «free text,
-  written before the notebook had sections». This is the input explaining
-  itself (§6).
+- `form`: absent on a body that parses; on one that does not, «not in the
+  notebook's sections: written before they existed, or added to without
+  them». This is the input explaining itself (§6).
 
-`changed` is merge-only and is not rendered here. The block's body is merge's
-`about:` / `undecided:` / `settled when:` lines and then the body **whole**,
-never clipped: this pass restates what it reads, and a restatement of a prefix
-drops the rest (the carry-forward check would refuse it anyway). One renderer
-serves both passes, with the excerpt a parameter merge sets and this pass does
-not.
+`id` is NOT rendered here: this pass names a note by its title (`updates`),
+and a second handle the model could type instead is a second way to miss.
+`changed` is merge-only. `revised`'s annotation («how long ago anything was
+last added to it») is append wording, and becomes «how long ago it was last
+revised». The block's body is merge's `about:` / `undecided:` /
+`settled when:` lines and then the body **whole**, never clipped: this pass
+restates what it reads, and a restatement of a prefix drops the rest (the
+carry-forward check would refuse it anyway). One renderer serves both passes,
+with the excerpt and `id` parameters merge sets and this pass does not, and a
+test pinning merge's rendered prompt byte-identical until S6 changes it on
+purpose.
 
 **`updates` still names a title.** The `title` attribute is what the model
 copies into `updates`, resolved through `note_handle` as today. Switching to
@@ -665,8 +757,8 @@ again (the argument `note_render` makes for the uncapped index).
 The objective's first paragraph changes from «you are shown the group's
 notebook — the titles and short summaries» to a description of the input as a
 whole, in the form note-merge's v1 objective uses (framing what the model is
-reading, not a menu): what room this is and what it has become; where Nora
-last stood in it; the conversation just before, already read; the new
+reading, not a menu): what room this is and what it has become; who is in
+it and what they are called; where Nora last stood in it; the conversation just before, already read; the new
 messages; today; and every entry of the group's notebook that is still open,
 each with its body as last written, in sections. Then what the pass is FOR,
 which is unchanged: notice what belongs in that notebook and is not there,
@@ -686,11 +778,19 @@ author's reading of a first author's summary, two hops from what was said.
 - The validator runs on write, never on read, so every legacy row still
   constructs.
 - **The first restatement of a legacy note converts it.** The carry-forward
-  check is vacuous against a head with no citations, so that one revision is
-  checked for form only; the legacy text stays in the chain. This is the one
-  place a restatement can drop something without code noticing, stated here
-  rather than discovered.
+  check reads the head's ids with a pattern (§7), so it still binds to any
+  `[<ids>]` a partly structured head carries; against a head with no
+  citations at all it is vacuous, and that one revision is checked for form
+  only. The legacy text stays in the chain. This is the one place a
+  restatement can drop something without code noticing, stated here rather
+  than discovered.
 - note-merge falls back to its current append when either body is legacy.
+- **No writer may append onto a schema body.** Between the schema's first
+  write and restatement's first write, today's appenders (note-candidates'
+  `_appended`, a free-text `note_update`, note-merge's `MERGE_MARKER` fold)
+  would each produce a body that is neither the schema nor legacy. §10.3
+  therefore deploys the schema and restatement together, and note-merge stays
+  out of `on` until its fold is section-wise.
 
 **How fast it turns over**: dated notes retire on their anchors, so the
 notebook's legacy share falls without any migration pass. A count of open
@@ -744,33 +844,43 @@ run decides nothing.
 | invented-note rate (the 12+ negative cases) | existing `none` grading | **not worse** than baseline (#513: 10/60 on both arms). A step that raises it does not land, whatever else it improves |
 | completeness (p1b, p3b and extended cases) | `body_sections` | at least 90% of draws carry every named fact in its section |
 | conformance | `body_schema` | at least 95% of written bodies parse; separately on empty-notebook creates (§6's decision reading) |
-| create pass rate (p1–p4, p7, p8) | existing | not worse |
+| create pass rate (p1–p4, p7; p8 is parked, P-A) | existing | not worse |
+| Standing laundering (S5) | a new negative case shaped like #199: Standing holds a premise the messages do not support | no body line states it, k ≥ 5 |
 
-Production, alongside: `nora_note_candidate_gate_total{action}` gains
-`malformed_body`, `dropped_citation` and `not_shown`, each its own reading
-(`GATE_ACTIONS`' existing rule: one action per settled candidate); `full`
-should fall toward zero after S4; the count of open notes by form.
+Production, alongside: `nora_note_candidate_body_refused_total{rule}` (the
+`accept()` refusals, §4.5); `nora_note_candidate_gate_total{action}` gains
+`dropped_citation` and `not_shown`, each its own reading (`GATE_ACTIONS`'
+existing rule: one action per settled candidate), registered in
+`nora/obs/metric_specs.py`; `full`; revisions per note per day (§7); the count
+of open notes by form.
 
 ### 10.3 Build steps, one variable each
 
 | step | what changes | what it measures |
 |---|---|---|
 | **S0** | #513's instrument plus §10.1's checks; the validator in the domain, called by nothing; two unit tests confirming §4.3's and finding 4's read-only claims (the unprojected batch, the dropped `entity_ids`) | no run: an instrument confirms nothing until a step changes something |
-| **S1** | the Dreamer batch goes through `Persons.name_transcript` | a correctness fix (DEC-80 on this pass); read that the invented-note and create rates do not move |
-| **S2** | the schema on **creates**: objective «The body» section, worked-example bodies removed, validator refusing on the create arm | conformance, completeness, invented rate, create rate |
-| **S3** | the input's notebook becomes `today` + `open_note` with bodies, replacing the index; updates still append, and the objective's update rule says «only what this batch changes», the append-consistent reading #513's v7 example already used. **An eval arm, not a deploy**: appended deltas would break the conformant bodies S2 is writing | update pass rate and wrong-note count with bodies visible and nothing else changed |
-| **S4** | restatement: the update arm writes the candidate body as the head, with the carry-forward check; the tag path's `note_update`/`note_create` validate (G4's mapping); the objective's update rule says restate. Ships with S3's input | update pass rate against S3's arm, `dropped_citation`, `full`, and a `tool_selection` read for the tag tools (the nora-tool skill) |
-| **S5** | `lead_in` and `standing` | whatever S2-S4 left: recall on cut exchanges, invented rate (the two blocks add context that can also add invention) |
-| **S6** | note-merge's section-wise fold and the `form`-aware excerpt | merge's own eval (41 §7.8), unchanged gate |
+| **S1a** | note-candidates' batch goes through `Persons.name_transcript`, **inside the adaptor**, not in `_dream_adaptor_once`, which also feeds culture (`nora/language/culture.py`) and would change its input too; and the eval path (`nora/subject/dreaming.py`) does the same, or the run measures the old input | a correctness fix with no failing case (the SOP's case b): the invented-note and create rates do not move. Deploys alone |
+| **S1b** | the `people` block (§8.3a), with the tool names out of its description | the same, and `unknown_owner` can be measured from S2 on. Deploys alone |
+| **S2** | the schema on **creates**: objective «The body» section, worked-example bodies removed, the validator in `accept()` | conformance, completeness, invented rate, create rate. **Eval arm** |
+| **S3** | the input's notebook becomes `today` + `open_note` with bodies, replacing the index. Two edits, one change: the objective's update rule must also say «only what this batch changes», or the arm appends a restated body onto the head (#513's «Also»). **Eval arm** | update pass rate and wrong-note count with bodies visible, against S2 |
+| **S4a** | restatement on note-candidates' update arm, with the carry-forward check; the objective's update rule says restate | update pass rate against S3, `dropped_citation`, `full`. **Eval arm** |
+| **S4b** | the tag path: `note_update`/`note_create` validate, cite `[#n]`, and their `body` argument names the grammar (§7) | a `tool_selection` read and the tag-path suites (the nora-tool skill). **Eval arm** |
+| **deploy** | S2, S3, S4a and S4b together, once each arm has passed | the live read-back: body refusals by rule, `dropped_citation`, open notes by form |
+| **S5a** | `lead_in`, with `reply_to` as an index where the target is shown | recall on exchanges the watermark cut; invented rate. Deploys alone |
+| **S5b** | `standing` | invented rate and the Standing-laundering case. Deploys alone |
+| **S6** | note-merge's section-wise fold and `form`-aware render; only then may `merge_mode` go `on` | merge's own eval (41 §7.8), unchanged gate |
 
-S3 before S4 is deliberate: bodies in view is the change the wrong-note
+S3 before S4a is deliberate: bodies in view is the change the wrong-note
 failures point at, and reading it apart from restatement says which of the
-two fixes them. S3 is measured and not deployed; S3 and S4 deploy together. S5 last among the input changes because it is the one most
-likely to raise invention.
+two fixes them. The four middle steps are measured one at a time and deployed
+together, because any one of them alone in production puts an appender onto a
+schema body (§9). S5 comes last among the input changes because its two
+blocks are the most likely to raise invention, and they are split so that
+Standing, the #199 exposure, is read on its own.
 
 A decision-index row is for a landed decision (the nora-decision skill): the
-restatement rule and the schema take their DEC numbers when S2 and S4 merge,
-and S4 is where an ADR belongs, since it reverses the ground #228's gate was
+restatement rule and the schema take their DEC numbers when the deploy step
+merges, and restatement is where an ADR belongs, since it reverses the ground #228's gate was
 argued on and will look wrong to a reader who knows only that argument.
 
 ## 11. G. Open decisions for the operator
@@ -778,10 +888,10 @@ argued on and will look wrong to a reader who knows only that argument.
 | # | question | recommendation |
 |---|---|---|
 | G1 | A malformed body: refused, or repaired? | **Refused**, with the rule named and counted; repair whitespace, bullets and heading case only (§4.5). A repair that changes content is code authoring the note. |
-| G2 | Should an update also revise `description` and `closing_condition`? Today they are written once and never change (§1, finding 4), so the index line every tag reads goes stale when an update lands. | **Yes, after S4, as its own step.** Store both on the revision and read the head's, so the chain keeps their history. It is the tag path's #226 exposure and it grows once bodies are current. |
+| G2 | Should an update also revise `description` and `closing_condition`? Today they are written once and never change (§1, finding 4), so the index line every tag reads goes stale when an update lands. | **Yes, after the deploy step, as its own step.** Store both on the revision and read the head's, so the chain keeps their history. It is the tag path's #226 exposure and it grows once bodies are current. |
 | G3 | Does the lead-in include Nora's own messages? | **No, in v1.** Same predicate as the batch; #199's class stays unreachable by construction. Reopen if S5's recall cases fail on exchanges that answer her. |
-| G4 | How does the tag path cite, when her transcript shows positions? | **The tool maps positions to row ids** from the rows her prefill rendered, so she cites what she sees. The alternative, tag-path lines exempt from `[<ids>]`, leaves Nora's own writes the one uncheckable source. |
-| G5 | Where do the code-attached `person_id`s go? `NoteRevisionProposal.entity_ids` has no column and is dropped today. | **A `person_ids` column on `note_revision`**, filled by the validator, since proactive's people block is the join `_people_block` says is missing. If no reader is built within the schema's first month, delete the dead field instead. |
+| G4 | How does the tag path cite, when her transcript shows positions? | **`[#n]` for a position, mapped to a row id by the tool** (§4.3), so she cites what she sees and the store keeps ids. One consequence to accept or refuse: `note_read` then hands her stored message ids, the raw identifiers her transcript's positions exist to keep from her (`nora/domain/blocks.py:86`). They are row numbers, not people's identifiers (R-18/R-28 are about those), and the alternative, translating ids back to positions on read, fails for any message outside her window. The other alternative, tag-path lines exempt from `[<ids>]`, leaves Nora's own writes the one uncheckable source. |
+| G5 | Where do the code-attached `person_id`s go? `NoteRevisionProposal.entity_ids` has no column and is dropped today. | **A `person_ids` column on `note_revision`**, filled by the validator: it is 37 §5 Stage A's decision, and Stage B's question («what do *these people* prefer») is the reader it names. If Stage B is not built, delete the dead field instead of keeping a value nothing stores. |
 | G6 | Relative time words: counted or refused? | **Counted in v1**, refusal only once the eval shows the word list's false-positive rate on Cantonese content. |
 | G7 | May the objective show a filled sample body? | **No, the grammar block only** (§6). Reopen on the empty-notebook conformance reading. |
 | G8 | Is 48k characters the right notebook budget for this pass? | **Yes, as a ceiling**, with the over-budget behaviour of §8.6. Re-read the largest unit's rendered notebook at S3. |
@@ -796,11 +906,16 @@ medians, the 13 open notes, burst sizes, #513's eval tallies) are the
 operator's and #513's, restated rather than re-measured; nothing was read on
 norty. Two things this node asserts from reading and did not execute: that
 the Dreamer batch reaches the adaptor with `person_name` unset (read from
-`_dream_adaptor_once` and the composition root, which pass no `Persons`), and
-that `NoteRevisionProposal.entity_ids` is not persisted (read from
-`note_revision`'s columns). Both are one test each to confirm at S0.
+`_dream_adaptor_once` and `nora/subject/dreaming.py`, neither of which calls
+`name_transcript`; the composition root hands the Dreamer a `Persons` for its
+tools, never for the batch), and that `NoteRevisionProposal.entity_ids` is
+not persisted (read from `note_revision`'s columns and the revision arm of
+`propose`). Both are one test each to confirm at S0. An independent review of
+this node's first draft confirmed both by reading, and its findings are
+folded in.
 
-Related: #118 (the tier's build), #199 (Nora's turns as group decisions),
-#226 (a stale description read aloud), #228 (the update key and append),
+Related: #118 (the tier's build), #199 (a turn outcome became a room position
+and then a note), #226 (a description read aloud as what happened), #228
+(the update key and append),
 #292 (the element grammar), #513 (body examples and the body instrument,
 closed). Lineage: 27 → 33 → 37 → 41 → this node.

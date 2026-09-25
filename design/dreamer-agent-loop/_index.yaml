@@ -187,7 +187,7 @@ edges:
   - {src: 37-note-candidates-v2, dst: 27-note-dreamer, rel: revises, provenance: asserted}
   - {src: 41-note-tier-time-is-optional, dst: 37-note-candidates-v2, rel: extends, provenance: asserted}
   - {src: 42-note-format, dst: 37-note-candidates-v2, rel: extends, provenance: asserted}
-  - {src: 42-note-format, dst: 41-note-tier-time-is-optional, rel: extends, provenance: asserted}
+  - {src: 42-note-format, dst: 41-note-tier-time-is-optional, rel: revises, provenance: asserted}
   - {src: 42-note-format, dst: 27-note-dreamer, rel: revises, provenance: asserted}
   - {src: 42-note-format, dst: 33-note-dreamer-schedule, rel: revises, provenance: asserted}
   - {src: 03-no-agent-loop, dst: 17-failure-classes, rel: relates_to, provenance: asserted}
