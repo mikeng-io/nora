@@ -531,7 +531,7 @@ func (b *Bridge) emitDelta(d *slidetypes.Delta) {
 	own := b.ownFBID()
 	switch data := d.Data.(type) {
 	case *slidetypes.NewMessageEvent:
-		b.logSummonsCard(data.Message)
+		b.logSummonsCard(room, data.Message)
 		if ev := normalizeMessage(room, data.Message, own); ev != nil {
 			b.sink.Emit(ev)
 		}
@@ -816,7 +816,7 @@ func (b *Bridge) selfSnapshot() domain.Self {
 // whose text carries "@<own username>" ONLY, it logs the card and the message
 // in full, once, so the field that does name the post can be found. It is the
 // operator's own test content; remove this function once the field is known.
-func (b *Bridge) logSummonsCard(msg *slidetypes.Message) {
+func (b *Bridge) logSummonsCard(room string, msg *slidetypes.Message) {
 	if msg == nil {
 		return
 	}
@@ -836,4 +836,39 @@ func (b *Bridge) logSummonsCard(msg *slidetypes.Message) {
 	card, _ := json.Marshal(x)
 	whole, _ := json.Marshal(msg)
 	slog.Warn("summons card diagnostic (temporary)", "xma", string(card), "message", string(whole))
+	// The live delta carries no post reference. The web client's own thread
+	// query (IGDThreadDetailQuery, the call readRoster makes) may carry the
+	// full card: fetch the thread once and log that same message as it comes
+	// back there.
+	go func(room, id string) {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		cli, err := b.client()
+		if err != nil {
+			slog.Warn("summons card refetch: no client", "error", err.Error())
+			return
+		}
+		resp, err := cli.GetThread(ctx, slidetypes.MakeGetThreadInfoRequest(room))
+		if err != nil {
+			slog.Warn("summons card refetch failed", "error", err.Error())
+			return
+		}
+		if resp == nil || resp.ThreadInfo.AsIGDirectThread == nil || resp.ThreadInfo.AsIGDirectThread.SlideMessages == nil {
+			slog.Warn("summons card refetch: no messages in the thread response")
+			return
+		}
+		found := false
+		for _, e := range resp.ThreadInfo.AsIGDirectThread.SlideMessages.Edges {
+			m := e.Node
+			if m == nil || m.MessageID != id {
+				continue
+			}
+			found = true
+			full, _ := json.Marshal(m)
+			slog.Warn("summons card refetch (temporary)", "message", string(full))
+		}
+		if !found {
+			slog.Warn("summons card refetch: message not in the first page", "edges", len(resp.ThreadInfo.AsIGDirectThread.SlideMessages.Edges))
+		}
+	}(room, msg.MessageID)
 }
