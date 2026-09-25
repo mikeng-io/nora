@@ -752,3 +752,31 @@ func TestSharedPostTextComesOffTheXMAWrapper(t *testing.T) {
 		t.Errorf("text = %q, want the XMA text body", ev.Text)
 	}
 }
+
+// A post mentioning the account in its caption arrives as an inline-share XMA
+// with no target_url (measured 2026-09-25). target_id and the CTA action URLs
+// are the fields that may name the post, so both ride through uninterpreted,
+// and a card carrying ONLY them is still a shared post, not an empty XMA.
+func TestSharedCardCarriesTargetIDAndActionsThrough(t *testing.T) {
+	ev := normalizeMessage(threadShort, xmaMessage(&slidetypes.XMAContent{
+		XMATitle:     "someaccount",
+		SubtitleText: "@noraexample can u see",
+		TargetID:     "3500000000000000001",
+		Typename:     "SlideMessageLayeredXMA",
+		CTAButtons:   []*slidetypes.CTAButton{{ActionURL: "https://www.instagram.com/p/ABC123/", CTAType: "xma_web_url"}, nil, {ActionURL: ""}},
+	}, ""), 0)
+	if ev == nil || ev.Shared == nil {
+		t.Fatal("the card was dropped")
+	}
+	if ev.Shared.TargetID != "3500000000000000001" {
+		t.Errorf("target_id = %q", ev.Shared.TargetID)
+	}
+	if len(ev.Shared.Actions) != 1 || ev.Shared.Actions[0] != "https://www.instagram.com/p/ABC123/" {
+		t.Errorf("actions = %v, want the one non-empty action url", ev.Shared.Actions)
+	}
+
+	only := normalizeMessage(threadShort, xmaMessage(&slidetypes.XMAContent{TargetID: "3500000000000000002"}, ""), 0)
+	if only == nil || only.Shared == nil || only.Shared.TargetID != "3500000000000000002" {
+		t.Fatal("a card carrying only target_id was reported as an empty XMA")
+	}
+}
