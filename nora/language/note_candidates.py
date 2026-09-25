@@ -1067,12 +1067,19 @@ class NoteCandidateAdaptor:
         # conversation id NEVER — see `UNNAMED_ROOM`.
         room = self._label_for(key) or unit or UNNAMED_ROOM
         # Named for RENDERING only: ids, order and bodies are the batch's, so
-        # `accept()`'s join against `_message_ids` above is unchanged. A room
-        # the allowlist gives no platform has no roster to resolve against
-        # and renders as it did.
+        # `accept()`'s join against `_message_ids` above is unchanged. A key
+        # with no platform RAISES, as `commit` does for one with no unit:
+        # every allowlisted room has a platform, so `None` is a map keyed
+        # wrong, and rendering unnamed would be the plausible, wrong prompt
+        # nothing counts. Raised, the runtime reports the pass `unavailable`
+        # and holds the watermark.
         platform = self._platform_for(key)
-        if platform is not None:
-            batch = self._persons.name_transcript(batch, platform=platform)
+        if platform is None:
+            raise LookupError(
+                f"note-candidates: scope {key!r} resolves to no platform, so "
+                f"its batch cannot be named by the roster."
+            )
+        batch = self._persons.name_transcript(batch, platform=platform)
         lines = [
             _render_line(row, room=room, tz=self._tz)
             for row in batch[:MAX_RENDERED_MESSAGES]

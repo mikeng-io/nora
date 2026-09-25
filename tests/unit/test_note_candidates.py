@@ -1414,6 +1414,17 @@ async def test_the_batch_names_each_member_by_the_roster_not_the_profile():
     assert len(kept) == 1
 
 
+async def test_a_scope_with_no_platform_raises_rather_than_rendering_unnamed():
+    store = InMemoryNoteStore()
+    adaptor = NoteCandidateAdaptor(
+        notes=store, candidates=store, unit_for=lambda _: WS,
+        label_for=lambda _: LABEL, description_for=lambda _: None,
+        persons=Persons(by_person={}, index={}), platform_for=lambda _: None,
+    )
+    with pytest.raises(LookupError, match="no platform"):
+        await adaptor.inputs(key=SCOPE, batch=(_row(1, "dinner?"),))
+
+
 def test_a_members_message_cannot_forge_the_notes_block_below_it():
     """R-13. These lines are members' own typed messages — one hop, not two —
     and the `<notes>` index is appended to the SAME prompt directly beneath

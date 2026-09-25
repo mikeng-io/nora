@@ -41,6 +41,15 @@ def test_a_minted_sender_is_given_back_an_id_the_roster_resolves():
     assert ROSTER.name_transcript([fixed], platform="signal")[0].person_name == "Ada Roster"
 
 
+def test_a_minted_id_that_resolves_to_someone_else_is_replaced():
+    """The sandbox's default sender id is a real roster id in some
+    identities: a row of Ben's must never be named as Ada."""
+    [fixed] = with_roster_senders(
+        [_row(1, sender_id="+852111", person_id="p_ben")], persons=ROSTER, platform="discord",
+    )
+    assert fixed.sender_id == "42"
+
+
 def test_rows_production_could_not_resolve_either_are_left_alone():
     rows = [
         _row(1, sender_id="+8529001", person_id=None),             # nobody at ingest

@@ -125,15 +125,21 @@ def with_roster_senders(
     live. In memory only: no adaptor renders a sender id (R-18), and nothing
     is written back to the sandbox.
 
-    Left alone: Nora's rows, a row with no `person_id` (a sender production
-    could not resolve either), a row whose id the roster already resolves,
-    and a person with no id on this platform.
+    Replaced too: a minted id that happens to resolve to SOMEONE ELSE (the
+    sandbox's fixed `+852111` for a sender named like its default), so a row
+    is never named as another person.
+
+    Left alone: Nora's rows, a row with no `person_id` (unresolved at ingest;
+    production resolves at render time against today's roster, so such a row
+    may read differently live), a row whose id already resolves to its own
+    person, and a person with no id on this platform.
     """
     named: list[TranscriptRow] = []
     for row in batch:
+        resolved = persons.resolve(platform, row.sender_id)
         if (
             not row.is_nora and row.person_id
-            and persons.resolve(platform, row.sender_id) is None
+            and (resolved is None or resolved.person_id != row.person_id)
         ):
             ids = persons.platform_ids(platform, row.person_id)
             if ids:
