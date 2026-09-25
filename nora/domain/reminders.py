@@ -81,6 +81,28 @@ PROACTIVE_KIND = "proactive"
 #: said now. A note may have at most ONE proactive row in them.
 OPEN_STATES: frozenset[str] = frozenset({"pending", "firing"})
 
+#: Stamped on the row a note-merge fold cancels when it resolves two notes'
+#: open proactive rows into one (`SqlNoteStore.merge_into`, issue #158
+#: residue: `uq_reminders_proactive_open_note` keys on the RAW note id a row
+#: carries, so a merge that left both rows alone produced two rows that both
+#: FORWARD to the same survivor through `successor()` — the index never sees
+#: that collision, because neither row's own note id ever collided). The
+#: same string migration `0064_proactive_open_note` already uses for its
+#: boot-time cleanup of the identical condition — one vocabulary for the
+#: same reason a row went, whether it is found at boot or made live by a
+#: fold.
+CANCELLED_DUPLICATE_NOTE = "cancelled_duplicate_note"
+
+#: Stamped when `SqlNoteStore.merge_into`'s reminders step finds that the
+#: survivor's tag path wrote something after a row it is about to re-point
+#: was linked — the same premise `nora.app.proactive_screen.
+#: CANCELLED_NOTE_MOVED` and `nora.agent.tools._CANCELLED_NOTE_MOVED` already
+#: name at fire time and at `remind` time respectively, duplicated here for
+#: the same reason `CANCELLED_DUPLICATE_NOTE` is: a store may not import the
+#: application layer, so its own copy of the vocabulary lives at the layer a
+#: store may read from.
+CANCELLED_NOTE_MOVED = "cancelled_note_moved"
+
 
 def open_proactive_note(row: Reminder) -> str | None:
     """The note a row holds open, or `None` when it holds none.

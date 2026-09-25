@@ -4,7 +4,7 @@ title: "Time Is a Property of a Note, Not Its Axis — the Note Tier's Dated and
 description: "The note tier was built around a date: the create path demands an anchor_date, the curator selects on passed anchors, the index renders a countdown. The operator's reframe is that the architecture had it backwards — a note is a thing the room must not drop, and whether it has a moment attached is a PROPERTY of that thing, not the axis the tier is organised on. The living thread («what game next») has no date and must still be a note. This node records the reframe and maps the cascade the operator asked for: schema, the Dreamer's per-note timer, index render, curator selection, proactive, and the three issues it absorbs. Time becomes optional; it does not become ignorable — silence is still the one signal a conversation cannot carry."
 tags: [nora, note-tier, dreamer, curator, candidates, dateless, anchor, revisit, strikes, timer, schema, proactive, duplicates, note-merge]
 timestamp: '2026-09-16'
-updated: '2026-09-24'
+updated: '2026-09-25'
 edges:
   - {dst: 37-note-candidates-v2, rel: extends, provenance: asserted}
   - {dst: 34-note-dreamer-consolidation, rel: revises, provenance: asserted}
@@ -810,6 +810,77 @@ differs from §7.3-7.8, and why:
   row**: a row on a merged note fires unless the survivor was revised on the
   tag path after the row was written. `remind` and the per-note wake limit do
   not forward yet; neither can meet a merged note until `on`.
+
+**2026-09-25 — a prerequisite for `on` built and proven (PR #520): `merge_into`
+resolves both notes' open proactive rows, not just one.** PR #517
+(`0064_proactive_open_note`, merged `e8ded3c4`) added the ONE-open-row index
+and the fire-time survivor rule, but keyed the index on the RAW note id a
+row's `payload` carries — so two notes that EACH held an open row, folded
+together, produced two rows that both forward to the survivor through
+`successor()` and both fire, unreachable by the index because neither row's
+own note id ever collided. Only reachable under `merge_mode = "on"`, never
+`shadow`, which this repo still runs in production. Fixed in
+`SqlNoteStore.merge_into` (`nora/infra/sql/notes.py`), inside the fold's own
+transaction: the duplicate's open row is re-pointed to the survivor
+(`note_id` AND `revision_id` — see below); if the survivor already held one,
+exactly one of the two is kept (earliest `due_at`, a `firing` row never
+given up for a `pending` one — the opposite of 0064's own boot-time
+tie-break, and why, is in `_repoint_proactive_rows`'s docstring) and the
+other cancelled `cancelled_duplicate_note`, 0064's own outcome for the
+identical condition. Cancel runs before re-point when both are needed: the
+index is not deferrable, so the two rows would collide mid-transaction in
+the other order.
+
+**A first review round found a BLOCKER, fixed the same day.** Re-pointing
+only `note_id` left `revision_id` naming a revision of the retired
+duplicate — not in the survivor's chain — so `ProactiveScreen.refusal`'s
+`tag_path_progressed_since_wake` walk never found it, fell to the note's
+root revision, and returned `True` (moved) the moment it met ANY tag-path
+write, which is nearly every note's own creation: a forwarded reminder was
+being CANCELLED, not delivered. Fixed by moving `revision_id` onto the
+fold's own new revision too, which in turn required replicating
+`ProactiveScreen._follow_survivor`'s "moved" check EAGERLY (against the
+survivor's pre-fold chain, at the row's own `created_at`) — re-pointing
+straight onto the fold's revision would otherwise hide a genuine tag-path
+write that happened between the row being linked and the fold. Four more
+findings from the same round: `InMemoryNoteStore.merge_into` now models the
+repoint too (an optional `reminders: FakeReminderStore | None`, preferred
+over leaving the gap SQL-only — and this is what caught, in seconds rather
+than on norty, a stale-`survivor_head` bug in a test's own setup); a
+concurrent `remind` insert landing between the transaction's `SELECT ...
+FOR UPDATE` and its re-point `UPDATE` now translates the resulting
+`IntegrityError` (23505 only) into `StaleNoteHeadError`, which
+`note_merge.py`'s `_fold` already catches as `stale`; every write is
+rowcount-checked, raising loudly rather than silently no-op'ing; and
+`nora_note_merge_proactive_total{outcome}` (new counter, `nora/obs/
+metric_specs.py`) plus a log line record what the step did, via an
+`on_reminder_outcome` callback `SqlNoteStore` takes rather than a `Metrics`
+dependency — the store still takes no config, clock or metrics itself. A
+SECOND finding, from norty's real Postgres rather than a second review
+(the first fix for "both rows firing" still re-pointed the firing keeper
+onto the survivor while the un-cancelled firing loser held that same id
+open, which collided with the unique index it was trying to respect): both
+rows are now left alone, keeper included, when both collide firing.
+
+**Superseded the same day by rounds 2–3; the round-1 proof below it is
+history.** A second review found the eager check was a hand-copy that
+diverged from the fire-time screen twice: it read only the survivor's
+chain (a tag edit on the DUPLICATE after its row was linked let a stale row
+fire), and it chose a keeper before classifying the duplicate's row (a live
+survivor row could be cancelled for a stale one). Round 3 found the mirror
+case: an unclassified STALE survivor row due first won the tie-break over a
+live duplicate row, so nothing fired. Now one shared domain function,
+`proactive_row_forwarded_is_moved` (`nora/domain/notes.py`), is what both
+`ProactiveScreen._follow_survivor` and `merge_into` call, and `merge_into`
+classifies both rows (the duplicate's by that function, the survivor's by
+the ordinary walk) before any keeper is chosen. A `firing` row is never
+classified or cancelled. The invariant is pinned by
+`tests/unit/test_note_merge_reminder_parity.py`: for six scenarios,
+`merge_into`'s outcome equals what the fire-time screen decides for the
+same row left un-re-pointed.
+
+Round-1 proof (history): 16/16 passed, 8/8 mutations RED, `make gate`
+GATE_RC 0 with 10627 passed, on norty.
 
 Related: #118 (the build), #159 (follow-on), #236 (duplicate bound), #101
 (discharge, shipped, off), #103 (proactive adapter). The design lineage is
