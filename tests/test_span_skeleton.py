@@ -430,3 +430,120 @@ def test_an_attribute_that_cannot_be_rendered_costs_only_itself(spans):
     (recorded,) = spans.get_finished_spans()
     assert recorded.attributes["keeper"] == "kept"
     assert "bad" not in recorded.attributes
+
+
+# ---------------------------------------------------------------------------
+# `traced_read` — issue #55's last open quarter, `nora/infra/**` store reads.
+# The ONE wrapper `nora.engagement.context.TranscriptInjection` and
+# `nora.app.runtime`'s Dreamer cursor reads both go through, tested here in
+# isolation from either call site: what it names the span, what it records on
+# success, and that a raising read still ends up `span`'s own ERROR path.
+# ---------------------------------------------------------------------------
+
+
+async def test_traced_read_names_the_span_store_dot_store_dot_method(spans):
+    async def _read():
+        return ["a", "b"]
+
+    from nora.obs.tracing import traced_read
+
+    result = await traced_read("record", "recent", _read())
+
+    assert result == ["a", "b"]
+    assert [s.name for s in spans.get_finished_spans()] == ["store.record.recent"]
+
+
+async def test_traced_read_records_row_count_and_duration_on_success(spans):
+    async def _read():
+        return [1, 2, 3]
+
+    from nora.obs.tracing import traced_read
+
+    await traced_read("notes", "standing", _read())
+
+    (recorded,) = spans.get_finished_spans()
+    assert recorded.attributes["nora.store.row_count"] == 3
+    assert recorded.attributes["nora.store.duration_ms"] >= 0
+
+
+async def test_traced_read_uses_count_when_the_result_has_no_len(spans):
+    """Review finding on #526: `MemoryStore.representation` answers a
+    `Recollection`, which has no `__len__` — `_row_count` alone would leave
+    it unmeasured forever even though the read plainly has a count. `count=`
+    is the caller's own answer to "how many", for a result `_row_count`
+    cannot read.
+
+    PROBE: make `traced_read` ignore its `count` argument (always fall back
+    to `_row_count`) and this reddens — `nora.store.row_count` disappears.
+    """
+    class _Recollection:
+        def __init__(self, conclusions):
+            self.conclusions = conclusions
+
+    async def _read():
+        return _Recollection(("a", "b", "c"))
+
+    from nora.obs.tracing import traced_read
+
+    await traced_read(
+        "memory", "representation", _read(), count=lambda r: len(r.conclusions),
+    )
+
+    (recorded,) = spans.get_finished_spans()
+    assert recorded.attributes["nora.store.row_count"] == 3
+
+
+async def test_traced_read_leaves_row_count_off_a_scalar_result(spans):
+    """A watermark, a `bool`, a `Standing | None` — none of these is a row
+    count, and `traced_read` must not invent one for them.
+
+    PROBE: change `_row_count` to return `1` for anything that is not `None`
+    and this reddens.
+    """
+    async def _read():
+        return 42
+
+    from nora.obs.tracing import traced_read
+
+    await traced_read("language", "watermark_for", _read())
+
+    (recorded,) = spans.get_finished_spans()
+    assert "nora.store.row_count" not in recorded.attributes
+    assert "nora.store.duration_ms" in recorded.attributes
+
+
+async def test_traced_read_records_zero_rows_for_none(spans):
+    """`None` — a `Standing` store's «no row yet» — is a real zero, not «not
+    measurable»: `_row_count` treats it differently from a `bool` or an `int`
+    on purpose."""
+    async def _read():
+        return None
+
+    from nora.obs.tracing import traced_read
+
+    await traced_read("standing", "read", _read())
+
+    (recorded,) = spans.get_finished_spans()
+    assert recorded.attributes["nora.store.row_count"] == 0
+
+
+async def test_traced_read_ends_its_span_with_error_status_on_a_raising_read(spans):
+    """`span`'s own failure path, not a second one `traced_read` adds — see
+    that function's docstring for why a second `except` here would be a
+    place for the two to drift.
+
+    PROBE: add a `try/except Exception: return default` around `await coro`
+    in `traced_read` and this reddens — the span goes back to OK.
+    """
+    async def _read():
+        raise RuntimeError("db down")
+
+    from nora.obs.tracing import traced_read
+
+    with pytest.raises(RuntimeError):
+        await traced_read("record", "recent", _read())
+
+    (recorded,) = spans.get_finished_spans()
+    assert recorded.status.status_code.name == "ERROR"
+    assert recorded.attributes["nora.outcome"] == "RuntimeError"
+    assert "nora.store.row_count" not in recorded.attributes

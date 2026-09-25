@@ -25,8 +25,8 @@ line number, so it survives the file moving around it: `x_read`,
 `linkedin_read` and `instagram_read` each read their OWN network's link to
 decide what to read (never another's, which goes through
 `nora.agent.tools._other_link_owner`/`owner_of` instead), and
-`_same_instagram_link`/`_shared_page_link` are the Instagram share render's
-own helpers (design 30, "What the registry does not do": a different
+`_shared_page_link` is the Instagram share render's
+own helper (design 30, "What the registry does not do": a different
 question, from a different input -- a rendered transcript line or a stored
 share's own two links, never a model-facing tool argument). It only
 SHRINKS: removing a row because a hand-written branch was replaced by the
@@ -71,7 +71,6 @@ _ALLOWED: dict[str, str] = {
     "x_read": "the tool's own read of an X link",
     "linkedin_read": "the tool's own read of a LinkedIn link",
     "instagram_read": "the tool's own read of an Instagram link",
-    "_same_instagram_link": "the Instagram share render's own link compare",
     "_shared_page_link": "the Instagram share render's own stale-cover link",
 }
 

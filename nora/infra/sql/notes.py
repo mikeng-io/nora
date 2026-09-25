@@ -95,7 +95,9 @@ tables with no reader, per the deletion rule that drops schema separately.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+import logging
+from collections.abc import Callable, Sequence
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -103,6 +105,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql as pg
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.engine import Row
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from nora.domain.notes import (
@@ -121,15 +124,34 @@ from nora.domain.notes import (
     StaleNoteHeadError,
     WakeOutcome,
     note_handle,
+    proactive_row_forwarded_is_moved,
     tag_path_progressed_since_wake,
 )
 from nora.domain.ports import Proposal
+from nora.domain.reminders import (
+    CANCELLED_DUPLICATE_NOTE,
+    CANCELLED_NOTE_MOVED,
+    OPEN_STATES,
+    PROACTIVE_KIND,
+    ReminderState,
+)
 from nora.infra.sql.schema import (
     NOTE,
     NOTE_CANDIDATE,
     NOTE_MERGE_DECISION,
     NOTE_REVISION,
+    REMINDERS,
 )
+
+log = logging.getLogger("nora.infra.sql.notes")
+
+# PostgreSQL SQLSTATE 23505, unique_violation — `nora.infra.sql.reminders`'s
+# own constant, duplicated rather than imported: `_repoint_stmt`'s caller
+# needs to tell "the row I'm updating collided with another open row" apart
+# from every other `IntegrityError` a plain `UPDATE` could raise, and that is
+# the one property this store cares about, matched the same way the sibling
+# store already does.
+_PG_UNIQUE_VIOLATION = "23505"
 
 
 def _row_to_note(r: Row[Any]) -> Note:
@@ -175,6 +197,120 @@ def _is_uuid(value: str) -> bool:
     except ValueError:
         return False
     return True
+
+
+#: The two proactive rows `merge_into`'s `_repoint_proactive_rows` is
+#: choosing between — `id`, `state`, `due_at`, `created_at`, keyed to the one
+#: note id each names. A `Row[Any]`, not `Reminder`: this reads only the four
+#: columns the choice and the cancel need, never the payload's own body or a
+#: full decode `_row_to_reminder`-shaped (that decoder lives in
+#: `nora.infra.sql.reminders`, and a note store importing it would import a
+#: sibling's private helper for four columns it can select itself).
+def _keep_open_row(
+    a: Row[Any], b: Row[Any],
+) -> tuple[Row[Any], Row[Any]]:
+    """Which of two open proactive rows on notes a fold is about to make ONE
+    note survives, and which is cancelled — `(keep, drop)`.
+
+    A `firing` row is never given up for a `pending` one — see
+    `_repoint_proactive_rows`'s docstring for why that is the opposite of
+    migration 0064's own boot-time tie-break rather than a second copy of it.
+    Otherwise the earliest `due_at` wins: it is the decision that would have
+    spoken first, and every later copy only repeats it. `created_at` then
+    `id` break a tie so the choice is deterministic rather than whichever
+    order Postgres happened to hand the `SELECT` back in.
+
+    **`drop` can itself be `firing`** — the one shape this function cannot
+    avoid handing back — when BOTH rows were firing (`a_firing == b_firing
+    == True`; the tie then falls through to the `due_at` branch like any
+    other tie). The caller does not cancel a firing `drop`; see
+    `_repoint_proactive_rows`.
+    """
+    a_firing = a.state == ReminderState.FIRING.value
+    b_firing = b.state == ReminderState.FIRING.value
+    if a_firing != b_firing:
+        return (a, b) if a_firing else (b, a)
+    key = (a.due_at, a.created_at, a.id), (b.due_at, b.created_at, b.id)
+    return (a, b) if key[0] <= key[1] else (b, a)
+
+
+def _repoint_stmt(
+    reminder_id: Any, state: str, survivor_id: str, revision_id: str,
+) -> Any:
+    """`payload = payload || {"note_id": ..., "revision_id": ...}` — a JSONB
+    merge, not a replace, so anything else the payload carries (`note_title`,
+    `intent`) survives the re-point untouched.
+
+    **Both keys move together, and that is the fix for a real defect, not
+    decoration.** Moving `note_id` alone leaves `revision_id` naming a
+    revision of the DUPLICATE — a note that no longer exists in the
+    survivor's chain. At fire time `nora.app.proactive_screen.
+    ProactiveScreen.refusal` (and `remind`'s own `_open_rows_on`) now reads
+    this row as an ordinary row ON the survivor (its `note_id` says so), not
+    a forwarded one, so it runs `tag_path_progressed_since_wake` against the
+    SURVIVOR's chain with a `last_wake_revision_id` that chain does not
+    contain. That walk never finds it, falls all the way to the note's root
+    revision, and returns `True` the moment it meets ANY tag-path-established
+    revision — which is nearly every note's own creation — cancelling
+    `cancelled_note_moved` a row that was never actually stale. `revision_id`
+    here is always the FOLD's own new revision (`merge_into`'s
+    `revision.id`), which — because the caller only reaches this statement
+    once `_repoint_proactive_rows` has classified the row live — is
+    genuinely the survivor's head at the moment this statement runs, so the
+    very next check against it starts from `False`.
+
+    Guarded on `state` too, matching this module's house style for a write
+    inside a transaction that already holds the row's lock
+    (`with_for_update`). The CALLER checks the returned `rowcount` and raises
+    if it is not exactly 1 — under that lock a mismatch should be
+    unreachable before this transaction commits, so a 0 here is a bug
+    surfacing loudly rather than a row silently left un-repointed."""
+    return (
+        sa.update(REMINDERS)
+        .where(REMINDERS.c.id == reminder_id, REMINDERS.c.state == state)
+        .values(
+            payload=REMINDERS.c.payload.op("||")(
+                sa.func.jsonb_build_object(
+                    "note_id", survivor_id, "revision_id", revision_id,
+                )
+            ),
+        )
+    )
+
+
+def _cancel_stmt(
+    reminder_id: Any, state: str, outcome: str, fired_at: datetime,
+) -> Any:
+    """The shared shape of both cancellations `_repoint_proactive_rows`
+    writes — collision loss (`cancelled_duplicate_note`)
+    and staleness (`cancelled_note_moved`) differ only in `outcome`. Same
+    `state`-guarded, rowcount-checked-by-the-caller contract as `_repoint_stmt`."""
+    return (
+        sa.update(REMINDERS)
+        .where(REMINDERS.c.id == reminder_id, REMINDERS.c.state == state)
+        .values(
+            state=ReminderState.CANCELLED.value, outcome=outcome,
+            fired_at=fired_at,
+        )
+    )
+
+
+def _require_row_changed(result: Any, *, what: str) -> None:
+    """`rowcount` checked, not assumed — the "state guard fails loudly" claim
+    `_repoint_stmt`'s docstring makes is only true if a CALLER actually reads
+    the result it returns. Every write `_repoint_proactive_rows` and
+    `_repoint_row` issue is against a row this same transaction
+    already `SELECT ... FOR UPDATE`'d, so under READ COMMITTED nothing else
+    can have changed its `state` before this statement runs — a 0 here means
+    that invariant broke, not that the row was merely busy, and a silent
+    no-op would leave a reminder in whatever state it already had while the
+    caller believed it had been cancelled or re-pointed."""
+    if not result.rowcount:
+        raise RuntimeError(
+            f"SqlNoteStore.merge_into could not {what}: the row's state "
+            f"changed after this transaction's own SELECT ... FOR UPDATE, "
+            f"which should be unreachable before commit"
+        )
 
 
 class SqlNoteStore:
@@ -1164,6 +1300,7 @@ class SqlNoteStore:
         now_ms: int,
         instruction_sha256: str | None = None,
         model: str | None = None,
+        on_reminder_outcome: Callable[[str], None] | None = None,
     ) -> NoteRevision:
         """Fold one duplicate into its survivor, in ONE transaction (design 41
         §7.6 guard 2, §7.7). Not on `DreamSink`: that port's two verbs each own
@@ -1176,17 +1313,61 @@ class SqlNoteStore:
            AND `retired_at IS NULL`.
         2. The duplicate is retired `retired-merged` with `replaced_by` the
            survivor. Compare-and-swap on ITS head and `retired_at IS NULL`.
+        3. Either note's open proactive reminder is resolved onto the
+           survivor's single slot — see `_repoint_proactive_rows` below. Issue
+           #158's index keys on the RAW note id a row's `payload` carries, so
+           two notes that each held an open row never collided AT the index:
+           the fold is what makes them the same note, and nothing upstream of
+           this method re-checks the row once that happens. Without this step
+           both rows go on forwarding to the survivor through
+           `nora.app.proactive_screen`'s `successor()` chase and both fire —
+           reachable only under `[notes] merge_mode = "on"`, never `shadow`,
+           because `shadow` never calls this method. A re-pointed row also
+           gets `revision_id` moved onto THIS fold's own new revision — see
+           `_repoint_stmt`'s docstring for the defect that was, when only
+           `note_id` moved. Both notes' rows are classified first, by the
+           same shared check the fire-time screen uses
+           (`proactive_row_forwarded_is_moved` for the duplicate's, the
+           ordinary walk for the survivor's): a stale one is cancelled
+           `cancelled_note_moved` and never chosen as the keeper. The order
+           and why are in `_repoint_proactive_rows`'s docstring.
 
-        Either swap matching no row raises `StaleNoteHeadError` and the
-        transaction rolls back, so nothing is half-folded: no appended
-        revision on a survivor whose duplicate is still open, no retired
-        duplicate whose question reached nothing. The duplicate's row and its
-        whole chain are kept, so clearing `retired_at`/`replaced_by` restores
-        it exactly (§7.7, «what reversible means here»).
+        `on_reminder_outcome`, when given, is called once per reminder this
+        step touches, naming what happened (`_repoint_proactive_rows`'s
+        docstring lists the vocabulary) — `nora.language.note_merge` passes a
+        closure that increments `nora_note_merge_proactive_total{outcome}`.
+        This store still takes no `Metrics` itself (module docstring: "no
+        config, no clock, no metrics"); a plain callback is what lets the
+        caller own that observation without this store importing
+        `nora.obs.metrics` or `nora.language`.
+
+        Either of the first two swaps matching no row raises
+        `StaleNoteHeadError` and the transaction rolls back, so nothing is
+        half-folded: no appended revision on a survivor whose duplicate is
+        still open, no retired duplicate whose question reached nothing, and
+        — because step 3 runs after both and inside the same `begin()` — no
+        reminder touched either. The duplicate's row and its whole chain are
+        kept, so clearing `retired_at`/`replaced_by` restores it exactly
+        (§7.7, «what reversible means here»); a cancelled reminder is not
+        restored by that alone, matching supersede's own retirement (a status
+        change, never a delete, but not self-inverting on the row it cancels).
 
         `body` is built by the caller (`nora.domain.notes.merged_body`) and
         constructed as a `NoteRevision` BEFORE the transaction opens, so an
         over-long or blank body refuses identically on both implementations.
+
+        **Reaches `REMINDERS` directly rather than going through
+        `note_merge.py`'s call site.** Both tables are `nora.infra.sql`
+        siblings — no layering rule separates them (`nora.language`, where
+        the call site lives, sits ABOVE `nora.infra` and has no access to
+        this method's connection) — and the one property step 3 cannot give
+        up is running inside the SAME transaction as steps 1 and 2: a
+        collision between two now-open rows can only be prevented by writing
+        the cancel before the re-point WITHIN one transaction (the unique
+        index is not deferrable, so it is checked at each statement, not at
+        commit). A call site one transaction later would either re-derive
+        that ordering non-atomically or accept a window where a merge landed
+        and both rows were still live.
         """
         if survivor_id == duplicate_id:
             raise ValueError("a note cannot be folded into itself")
@@ -1256,7 +1437,267 @@ class SqlNoteStore:
                     f"read it again",
                     observed_head=None,
                 )
+            await self._repoint_proactive_rows(
+                conn, survivor_id=survivor_id, duplicate_id=duplicate_id,
+                duplicate_head=duplicate_head, revision_id=revision.id,
+                now_ms=now_ms, on_reminder_outcome=on_reminder_outcome,
+            )
         return revision
+
+    @staticmethod
+    async def _repoint_proactive_rows(
+        conn: AsyncConnection, *, survivor_id: str, duplicate_id: str,
+        duplicate_head: str, revision_id: str, now_ms: int,
+        on_reminder_outcome: Callable[[str], None] | None,
+    ) -> None:
+        """The merge's reminders half (issue #158 residue), inside the same
+        transaction as `merge_into`'s two swaps above. **Order is
+        load-bearing** (#520 review round 2 — a first version chose a
+        keeper BEFORE checking staleness and could cancel the wrong row, or
+        classify the duplicate's row as live from only half the check a
+        forwarded row actually gets):
+
+        (a) The duplicate's row (if any), UNLESS it is `firing`, is
+            classified `moved`/`live` by `proactive_row_forwarded_is_moved`
+            — the SAME two-step check (the duplicate's own chain, then the
+            survivor's) `ProactiveScreen._follow_survivor` runs at fire
+            time on an un-re-pointed forwarded row, so a row this method
+            resolves and a row it leaves for the next tick agree. A
+            `firing` row is never classified at all — see (below) — it is
+            already being delivered.
+        (b) `moved` is CANCELLED `cancelled_note_moved` here and now,
+            eliminated as a keeper candidate. Nothing else runs: if the
+            survivor also held an open row, it is left EXACTLY as it was —
+            it was never stale, never part of a real collision, and its own
+            real fire time will evaluate it correctly on its own terms.
+        (b2) The SURVIVOR's own row (if any), UNLESS it is `firing`, is
+            classified by the ordinary walk a live note's row gets at fire
+            (`tag_path_progressed_since_wake` from the survivor's head, now
+            the fold's revision, back to the row's own `revision_id`). A
+            stale one is CANCELLED `cancelled_note_moved` and drops out of
+            (c) — otherwise a stale survivor row due first wins the
+            tie-break, the live duplicate row is cancelled, and nothing
+            fires (#520 round 3, the parity suite's S6).
+        (c) Among what is left standing (the duplicate's row if it was
+            `firing` or classified `live`, and the survivor's row if it
+            has one), if BOTH exist, exactly one is KEPT — a `firing` row
+            is never given up for a merely `pending` one, otherwise the
+            earliest `due_at` wins, `created_at` then `id` breaking a tie
+            (`_keep_open_row`). **0064's own boot-time tie-break is the
+            OPPOSITE** (pending survives firing) and that is not a
+            contradiction — 0064 runs before the recovery sweep
+            (`sweep_firing`) fails every row a dead process left `firing`;
+            here, mid-transaction on a live note, a `firing` row is not
+            orphaned, it is a row the heartbeat holds right now, and
+            cancelling it would be the double-send `sweep_firing`'s own
+            docstring exists to prevent. **Unless the LOSER is also
+            `firing`** (both rows were firing; the tie fell to `due_at`) —
+            then BOTH are left ENTIRELY alone: re-pointing the keeper while
+            the loser still holds `survivor_id` open (never cancelled)
+            would collide with the loser at the re-point statement itself.
+            The loser (when not `firing`) is CANCELLED `cancelled_
+            duplicate_note`, migration 0064's own outcome for the identical
+            condition, found at boot instead of made live by a fold.
+        (d) The keeper, if it is the duplicate's row, is RE-POINTED —
+            `note_id` AND `revision_id`, both onto the fold's own new
+            revision (`_repoint_stmt`'s docstring says why `revision_id`
+            has to move too). If the keeper is already the survivor's own
+            row, nothing more to do.
+        (e) **Cancel before re-point, never the reverse**, in (c)/(d):
+            `uq_reminders_proactive_open_note` is a plain unique index, not
+            `DEFERRABLE INITIALLY DEFERRED`, so Postgres checks it at the
+            end of EACH statement. Re-pointing the duplicate's row onto the
+            survivor's id while the survivor's own row is still open would
+            collide inside this very transaction; freeing that slot first
+            is what makes the second statement legal.
+
+        Outcomes an `on_reminder_outcome` callback receives, one call per
+        event: `moved` (b), `skipped_firing_collision` (c's both-firing
+        exemption), `repointed` (d, no collision), `collision_repointed`
+        (d, after a collision), `collision_kept_survivor` (c resolved in
+        the survivor's favour, no re-point needed).
+        """
+        rows = (await conn.execute(
+            sa.select(
+                REMINDERS.c.id, REMINDERS.c.state, REMINDERS.c.due_at,
+                REMINDERS.c.created_at,
+                REMINDERS.c.payload["note_id"].astext.label("note_id"),
+                REMINDERS.c.payload["revision_id"].astext.label("revision_id"),
+            )
+            .where(
+                REMINDERS.c.kind == PROACTIVE_KIND,
+                REMINDERS.c.state.in_(OPEN_STATES),
+                REMINDERS.c.payload["note_id"].astext.in_(
+                    (survivor_id, duplicate_id)
+                ),
+            )
+            .with_for_update()
+        )).all()
+        by_note = {r.note_id: r for r in rows}
+        d_row = by_note.get(duplicate_id)
+        if d_row is None:
+            return
+        fired_at = datetime.fromtimestamp(now_ms / 1000, tz=UTC)
+        if d_row.state != ReminderState.FIRING.value:
+            moved = proactive_row_forwarded_is_moved(
+                duplicate_head=duplicate_head,
+                duplicate_chain=await SqlNoteStore._chain_by_id(conn, duplicate_id),
+                revision_id=d_row.revision_id,
+                created_at_ms=int(d_row.created_at.timestamp() * 1000),
+                survivor_chain=await SqlNoteStore._chain_pairs(conn, survivor_id),
+            )
+            if moved:
+                result = await conn.execute(_cancel_stmt(
+                    d_row.id, d_row.state, CANCELLED_NOTE_MOVED, fired_at,
+                ))
+                _require_row_changed(
+                    result, what=f"cancel reminder {d_row.id} (cancelled_note_moved)",
+                )
+                log.info(
+                    "merge_into: reminder %s cancelled cancelled_note_moved "
+                    "— the duplicate's or the survivor's tag path wrote "
+                    "after the row was linked", d_row.id,
+                )
+                if on_reminder_outcome is not None:
+                    on_reminder_outcome("moved")
+                return
+        s_row = by_note.get(survivor_id)
+        if s_row is not None and s_row.state != ReminderState.FIRING.value and (
+            tag_path_progressed_since_wake(
+                head_revision_id=revision_id,
+                last_wake_revision_id=s_row.revision_id,
+                chain=await SqlNoteStore._chain_by_id(conn, survivor_id),
+            )
+        ):
+            # The SURVIVOR's own row is stale — the ordinary fire-time walk
+            # on a live note would cancel it `moved`. Classify it before the
+            # keeper is chosen, or a stale survivor row can win the
+            # tie-break over a live duplicate row (#520 round 3, S6). The
+            # walk starts at `revision_id`, the fold's own revision, now the
+            # survivor's head; the fold itself is not a tag-path write.
+            result = await conn.execute(_cancel_stmt(
+                s_row.id, s_row.state, CANCELLED_NOTE_MOVED, fired_at,
+            ))
+            _require_row_changed(
+                result, what=f"cancel reminder {s_row.id} (cancelled_note_moved)",
+            )
+            log.info(
+                "merge_into: reminder %s cancelled cancelled_note_moved — "
+                "the survivor's tag path wrote after its own row was linked",
+                s_row.id,
+            )
+            if on_reminder_outcome is not None:
+                on_reminder_outcome("moved")
+            s_row = None
+        if s_row is None:
+            await SqlNoteStore._repoint_row(
+                conn, row=d_row, survivor_id=survivor_id,
+                revision_id=revision_id, on_reminder_outcome=on_reminder_outcome,
+                outcome="repointed",
+            )
+            return
+        keep, drop = _keep_open_row(d_row, s_row)
+        if drop.state == ReminderState.FIRING.value:
+            # BOTH rows are firing (the only way `_keep_open_row` hands back
+            # a firing `drop`, since a live-or-firing `d_row` never lost
+            # this point above). See (c) in the docstring for why the
+            # keeper is left untouched too, not just the loser.
+            log.info(
+                "merge_into: reminders %s and %s both stay firing, "
+                "untouched — both were in flight; the heartbeat's own "
+                "mark() resolves each", drop.id, keep.id,
+            )
+            if on_reminder_outcome is not None:
+                on_reminder_outcome("skipped_firing_collision")
+            return
+        result = await conn.execute(_cancel_stmt(
+            drop.id, drop.state, CANCELLED_DUPLICATE_NOTE, fired_at,
+        ))
+        _require_row_changed(
+            result, what=f"cancel reminder {drop.id} (cancelled_duplicate_note)",
+        )
+        log.info(
+            "merge_into: reminder %s cancelled cancelled_duplicate_note "
+            "— note %s already had an open reminder", drop.id, survivor_id,
+        )
+        if keep.id == d_row.id:
+            await SqlNoteStore._repoint_row(
+                conn, row=keep, survivor_id=survivor_id,
+                revision_id=revision_id, on_reminder_outcome=on_reminder_outcome,
+                outcome="collision_repointed",
+            )
+        elif on_reminder_outcome is not None:
+            on_reminder_outcome("collision_kept_survivor")
+
+    @staticmethod
+    async def _chain_by_id(
+        conn: AsyncConnection, note_id: str,
+    ) -> dict[str, tuple[str | None, str]]:
+        """One note's whole chain as `tag_path_progressed_since_wake`/
+        `proactive_row_forwarded_is_moved` want it: `id -> (parent, established_by)`."""
+        rows = (await conn.execute(
+            sa.select(
+                NOTE_REVISION.c.id, NOTE_REVISION.c.parent_revision_id,
+                NOTE_REVISION.c.established_by,
+            ).where(NOTE_REVISION.c.note_id == note_id)
+        )).all()
+        return {r.id: (r.parent_revision_id, r.established_by) for r in rows}
+
+    @staticmethod
+    async def _chain_pairs(
+        conn: AsyncConnection, note_id: str,
+    ) -> list[tuple[int, str]]:
+        """One note's whole chain as `proactive_row_forwarded_is_moved`'s
+        `survivor_chain` wants it: `(written_at, established_by)` pairs —
+        no ancestry needed for that half of the check, a scan by time.
+        Includes the fold's own new revision when `note_id` is the
+        survivor and it has already been inserted: harmless, since its
+        `established_by` is `dream:note-merge:...`, never tag-path."""
+        rows = (await conn.execute(
+            sa.select(NOTE_REVISION.c.written_at, NOTE_REVISION.c.established_by)
+            .where(NOTE_REVISION.c.note_id == note_id)
+        )).all()
+        return [(r.written_at, r.established_by) for r in rows]
+
+    @staticmethod
+    async def _repoint_row(
+        conn: AsyncConnection, *, row: Row[Any], survivor_id: str,
+        revision_id: str, on_reminder_outcome: Callable[[str], None] | None,
+        outcome: str,
+    ) -> None:
+        """The re-point statement alone — `row` has already been classified
+        `live` (or is `firing`, never classified) by the caller. Translates
+        a concurrent collision into `StaleNoteHeadError` and checks
+        `rowcount`; see `_repoint_stmt`'s docstring for why both keys move."""
+        try:
+            result = await conn.execute(
+                _repoint_stmt(row.id, row.state, survivor_id, revision_id)
+            )
+        except IntegrityError as exc:
+            if getattr(exc.orig, "sqlstate", None) != _PG_UNIQUE_VIOLATION:
+                raise
+            # A `remind` call landed on the survivor between this
+            # transaction's own `SELECT ... FOR UPDATE` above (which locks
+            # only rows that existed then) and this UPDATE — the one window
+            # `FOR UPDATE` cannot close, since it takes no lock on a row
+            # that does not exist yet. `StaleNoteHeadError` is what
+            # `nora.language.note_merge._fold` already catches to record
+            # `stale`, so this reaches the SAME refusal path as a head that
+            # moved, rather than an unhandled `IntegrityError` taking the
+            # pass down.
+            raise StaleNoteHeadError(
+                f"note {survivor_id} gained a new open proactive reminder "
+                f"while this fold was re-pointing one onto it — read it "
+                f"again",
+                observed_head=None,
+            ) from exc
+        _require_row_changed(result, what=f"re-point reminder {row.id}")
+        log.info(
+            "merge_into: reminder %s re-pointed to survivor %s (revision %s)",
+            row.id, survivor_id, revision_id,
+        )
+        if on_reminder_outcome is not None:
+            on_reminder_outcome(outcome)
 
     async def record_merge_decision(self, *, decision: NoteMergeDecision) -> None:
         """Append one `note_merge_decision` row (design 41 §7.8). Nothing

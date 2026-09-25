@@ -55,12 +55,13 @@ final check, not the loop (2026-08-21: eight gate runs in one session).
 
 ```bash
 make gate > "$LOG/gate.log" 2>&1; GATE_RC=$?; echo "GATE_RC=$GATE_RC" > "$LOG/gate.rc"
-grep -cE '^uv run (ruff|mypy|lint-imports|pytest)' "$LOG/gate.log"   # 4 = every step ran
-grep -E 'passed|failed|error' "$LOG/gate.log" | tail -n 5
+grep -cE '^uv run (ruff|mypy|lint-imports)' "$LOG/gate.log"   # 3 = every static step ran
+grep -E '^affected_tests:|passed|failed|error' "$LOG/gate.log" | tail -n 5
 ```
 
-PASS needs `GATE_RC=0`, 4 steps, and a pytest summary with no `failed`: make
-stops at the first red step, so a run that died in ruff never reached pytest.
+`make gate`: static steps in full, then the tests the diff against `origin/master`
+reaches (all when unmapped). PASS: `GATE_RC=0`, 3 steps, no `failed`. ONCE per PR,
+on the final head; fix rounds run their own tests. `make full-gate` = whole suite.
 
 - Never `make gate | tail`: the rc is tail's (2026-09-22, merged a red master).
 - In the background, read `$LOG/gate.rc`, never the completion notice: it
