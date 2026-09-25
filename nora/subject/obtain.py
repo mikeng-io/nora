@@ -172,12 +172,19 @@ def default_policy(room: tuple[str, str], *, unit: str = "nora") -> str:
     package makes: `obtain()` resolves the room's entry and carries
     `Subject.unit`, so a seed and a turn key under the same value by
     construction rather than by two files agreeing.
+
+    Carries a `label` (the room id, which is what this function is handed and
+    all it has) because `load_policy` refuses an allowed room with none as a
+    STARTUP error (#200 part 2) — the same refusal a deployment's own
+    `policy.toml` is held to, so a subject that skipped it here would compose
+    against a policy shape production could never actually run.
     """
     platform, conversation_id = room
     return (
         'default = "deny"\n'
         f'[[conversations]]\nplatform = "{platform}"\n'
-        f'id = "{conversation_id}"\npersons = "*"\nunit = "{unit}"\n'
+        f'id = "{conversation_id}"\nlabel = "{conversation_id}"\n'
+        f'persons = "*"\nunit = "{unit}"\n'
     )
 
 

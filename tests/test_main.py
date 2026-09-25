@@ -48,7 +48,7 @@ async def env(tmp_path, monkeypatch, aiohttp_server, pg_url, example_config_path
     )
     (tmp_path / "policy.toml").write_text(
         'default = "deny"\n[[conversations]]\nplatform = "signal"\n'
-        'id = "Z3JvdXA="\npersons = "*"\n'
+        'id = "Z3JvdXA="\nlabel = "group"\npersons = "*"\n'
     )
     path = tmp_path / "config.toml"
     with path.open("wb") as f:

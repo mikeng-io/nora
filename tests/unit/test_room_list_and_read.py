@@ -28,7 +28,7 @@ from nora.engagement.self_presence import PresenceReader
 from nora.infra.transit import TransitClient
 from nora.obs.metrics import Metrics
 from nora.persons import load_persons
-from nora.policy import load_policy
+from nora.policy import Conversation, Policy, load_policy
 from nora.testing import FakeMemoryStore, FakeRecordStore, FakeRosterSource
 from tests.fakes import SinkSender
 
@@ -350,12 +350,33 @@ async def test_room_list_carries_no_member_name_and_no_id(policy, persons, store
         assert rid not in text
 
 
-async def test_an_unlabelled_room_is_named_by_its_network_never_its_id(
-    tmp_path, persons, store,
-):
-    path = tmp_path / "policy.toml"
-    path.write_text(_POLICY.replace('label = "Friends WA"\n', ""))
-    result = await _call(_tools(load_policy(path), persons, store)["room_list"])
+async def test_an_unlabelled_room_is_named_by_its_network_never_its_id(persons, store):
+    """Built as a `Policy` directly rather than through `load_policy`: an
+    allowed room with no label is now a STARTUP error there (#200 part 2), so
+    a `policy.toml` can no longer carry the case this test proves is still
+    handled — the render-time floor stays defense in depth regardless."""
+    convs = (
+        Conversation(
+            platform="signal", ids=frozenset({"SIGNAL-FRIENDS-ID"}), persons=None,
+            label="Friends", primary_id="SIGNAL-FRIENDS-ID", unit="friends",
+        ),
+        Conversation(
+            platform="discord", ids=frozenset({"111/222"}), persons=None,
+            label="Zone 42", primary_id="111/222", unit="friends",
+        ),
+        Conversation(
+            platform="whatsapp", ids=frozenset({"WA-FRIENDS-ID"}), persons=None,
+            primary_id="WA-FRIENDS-ID", unit="friends",
+        ),
+        Conversation(
+            platform="instagram", ids=frozenset({"IG-RIDGELINE-ID"}), persons=None,
+            label="Ridgeline Secret Club", primary_id="IG-RIDGELINE-ID", unit="ridgeline",
+        ),
+    )
+    policy = Policy(
+        conversations=convs, _by_id={(c.platform, c.primary_id): c for c in convs},
+    )
+    result = await _call(_tools(policy, persons, store)["room_list"])
 
     rooms = _by_room(result)
     assert "WhatsApp" in rooms

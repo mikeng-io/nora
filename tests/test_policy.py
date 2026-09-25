@@ -62,6 +62,18 @@ def test_a_listed_person_in_an_unlisted_room_is_refused(policy):
     assert _allowed(policy, "some-other-group", "miles") is False
 
 
+def test_an_allowed_room_with_no_label_refuses_to_start(tmp_path):
+    """#200 part 2: `UnitRoom.label`/`label_for` both render a floor for an
+    unlabelled room rather than falling back to its id (R-18) — the right
+    failure mode for old data a render meets after the fact, but the wrong
+    one for a room the operator is adding today, where it silently makes two
+    unlabelled rooms read as one (#161). Refused at startup instead, the
+    same shape as a second home room."""
+    body = TOML.replace('label    = "Work"\n', "")
+    with pytest.raises(PolicyError, match="has no label"):
+        load_policy(_write(tmp_path, body))
+
+
 def test_the_wildcard_admits_an_unmapped_sender(policy):
     """The room is the trust boundary. D6 already settled that an unmapped
     sender is answered but never remembered; refusing them here would reverse
@@ -167,6 +179,7 @@ def test_a_blank_room_description_is_absent_not_empty(tmp_path):
 [[conversations]]
 platform    = "discord"
 id          = "123456789012345678/1234567890123456789"
+label       = "Zone 42"
 persons     = ["miles"]
 description = "   "
 '''
@@ -218,6 +231,7 @@ default = "deny"
 [[conversations]]
 platform = "signal"
 id = "g1"
+label = "g1"
 persons = ["miles"]
 """)
     policy = load_policy(policy_file)
@@ -232,6 +246,7 @@ default = "deny"
 [[conversations]]
 platform = "signal"
 id = "g1"
+label = "g1"
 persons = ["miles"]
 tools = ["pulse"]
 """)
@@ -247,7 +262,7 @@ def test_location_flag_defaults_false_and_parses_true(policy, tmp_path):
     assert policy.conversation("signal", GROUP).location is False
     body = (
         'default = "deny"\n[[conversations]]\nplatform="signal"\n'
-        f'id="{GROUP}"\npersons=["miles"]\nlocation=true\n'
+        f'id="{GROUP}"\nlabel="Ridgeline"\npersons=["miles"]\nlocation=true\n'
     )
     trusted = load_policy(_write(tmp_path, body))
     assert trusted.conversation("signal", GROUP).location is True
@@ -264,7 +279,7 @@ def test_relevance_gate_flag_defaults_false_and_parses_true(policy, tmp_path):
     assert policy.conversation("signal", GROUP).relevance_gate is False
     body = (
         'default = "deny"\n[[conversations]]\nplatform="signal"\n'
-        f'id="{GROUP}"\npersons=["miles"]\nrelevance_gate=true\n'
+        f'id="{GROUP}"\nlabel="Ridgeline"\npersons=["miles"]\nrelevance_gate=true\n'
     )
     opted_in = load_policy(_write(tmp_path, body))
     assert opted_in.conversation("signal", GROUP).relevance_gate is True

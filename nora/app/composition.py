@@ -3502,6 +3502,23 @@ async def build_dependencies(
                     # reads, for the same reason: «this Saturday» is a
                     # question about the room's calendar, not the process's.
                     timezone=ZoneInfo(cfg.reminders.timezone),
+                    # THE ROOM'S PLATFORM and A NAME RESOLVER (issue #200),
+                    # off the SAME allowlist read `label_for`/`description_for`
+                    # already are, plus `persons` — the one instance every
+                    # other write path in this file already holds. This is
+                    # what lets `inputs()` fill `person_name` from the SAME
+                    # roster the tag path resolves against (DEC-80) before a
+                    # batch line ever renders a mapped sender's self-set,
+                    # spoofable profile name instead of their canonical one.
+                    platform_for={
+                        conv.primary_id: conv.platform
+                        for conv in allowlist.conversations
+                        if conv.primary_id
+                    }.get,
+                    resolve_names=(
+                        lambda rows, platform:
+                            persons.name_transcript(rows, platform=platform)
+                    ),
                 ),
             )
         # NOTE-MERGE (design/dreamer-agent-loop/41 §7, DEC-202): the back-stop

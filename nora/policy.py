@@ -516,6 +516,29 @@ def load_policy(path: Path) -> Policy:
                 )
             by_id[key] = convo
 
+    # EVERY ALLOWED ROOM CARRIES A LABEL (issue #200 part 2). `UnitRoom.label`
+    # (`nora.app.composition._unit_rooms`) and the note-candidates pass's
+    # `label_for` both render `label` or a floor — `UNNAMED_ROOM`, «a room
+    # with no name» — for a room the operator left unlabelled, deliberately,
+    # so a missing label never puts a raw `primary_id` on the model's wire
+    # (R-18, 2026-09-23). That floor is the right failure mode for OLD data a
+    # render meets after the fact; it is the wrong one for a room the
+    # operator is choosing to ADD to `policy.toml` today — two unlabelled
+    # rooms then render identically (#161's own bug), silently, and the
+    # operator who wrote neither label finds out from a confused reply
+    # instead of from this file. Refused here, in `policy.toml`'s own
+    # refuse-to-start shape (R-5), the same way a second home room already
+    # is — never left to the render-time floor to paper over.
+    for convo in conversations:
+        if not convo.label:
+            raise PolicyError(
+                f"{convo.platform}:{convo.primary_id!r} has no label. Every "
+                "allowed room needs one: it is what every model-facing "
+                "render calls the room, and two unlabelled rooms would "
+                "otherwise render as the same room. Add "
+                f'label = "..." to this conversation in {path}.'
+            )
+
     # ONE home room per unit (39 D2). Two would make «which room does the
     # unit-keyed adaptor stand in» a guess, and a guessed room is a
     # disclosure decision nobody made — the exact thing `home_room` exists to
