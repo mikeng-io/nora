@@ -71,9 +71,12 @@ decision, not this file's.
   not none», and underpowered (`design/group-situation/`, measured null,
   #543).
 - **What that study found instead** was a same-day plan dropped from a room's
-  Standing by the fold three minutes before a turn needed it. How often a
-  fold drops an open plan is an open question that bundle names and does not
-  take.
+  Standing by the fold three minutes before a turn needed it. Measured since
+  over 206 production folds: at least 10 dropped a plan still open and still
+  ahead, 5 of them substantive, clustered in one room on one day; the
+  1200-character budget is not the cause (`design/group-situation/10-standing-drops-plans.md`,
+  #555). Holding what is open is the gap nearest the operator's bar, not
+  seeing more.
 
 **Where she is going.** The sequence is `design/group-situation/00-intent.md`
 §0 and is not restated here: place identity, then a time-anchored forecast,
