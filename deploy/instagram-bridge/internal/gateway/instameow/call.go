@@ -86,7 +86,14 @@ func graphql(
 	defer span.End()
 
 	resp, raw, err := issuer.MakeGraphQLRequest(ctx, doc, vars)
-	if err != nil {
+	// The library answers every status >= 400 with an error (ErrUnexpectedError,
+	// http.go's makeRequestOnce) AND the response and its body, the only place
+	// a checkpoint shows up on a raw call (issue #533; restDo reads it the same
+	// way). Such an answer goes to the status branch below, which reads the
+	// body. A typed sentinel the library already found (a redirect to a
+	// challenge or to login) keeps its own classification.
+	answered := resp != nil && resp.StatusCode >= 400
+	if err != nil && (!answered || needsHuman(err) || errors.Is(err, httpclient.ErrAccountSuspended)) {
 		failSpan(span, errorType(err), err)
 		return 0, nil, classify(err)
 	}

@@ -26,6 +26,7 @@ package instameow
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -94,6 +95,12 @@ func (f *fakeGraphQLIssuer) MakeGraphQLRequest(
 	status := f.status
 	if status == 0 {
 		status = http.StatusOK
+	}
+	if status >= 400 {
+		// The live library's shape (httpclient/http.go makeRequestOnce): a
+		// status >= 400 comes back as an error AND the response and body.
+		return &http.Response{StatusCode: status}, f.body,
+			fmt.Errorf("%w %d", httpclient.ErrUnexpectedError, status)
 	}
 	return &http.Response{StatusCode: status}, f.body, nil
 }
