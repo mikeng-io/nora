@@ -11,6 +11,7 @@ mode on Postgres and no chain to walk.
 
 from __future__ import annotations
 
+import json
 import uuid
 
 import pytest
@@ -295,3 +296,80 @@ def test_0060_backfills_the_platform_handle_from_raw_json(pg_url):
     finally:
         engine.dispose()
     assert got == ["3EB0A", "1234567890123456789", "mid.$m", None, None, None]
+
+
+def test_0064_resolves_open_duplicates_before_it_builds_the_index(pg_url):
+    """Issue #158, review of #517: migrations run at app start, so an index
+    that could not be built over an existing duplicate would stop Nora
+    booting — and the old image writes duplicates until the new one is live.
+    Two open proactive rows on one note, seeded under 0063: 0064 keeps the
+    earliest-due one, cancels the other `cancelled_duplicate_note`, leaves a
+    finished row and another note's row alone, and then builds the index."""
+    from alembic import command as alembic_command
+
+    run_migrations(pg_url)
+    alembic_command.downgrade(alembic_config(pg_url), "0063_note_merge_decision")
+
+    n1, n2, n3 = ({"note_id": n} for n in ("n1", "n2", "n3"))
+    # name: (state, due_at, kind, payload)
+    rows = {
+        "kept": ("pending", "2026-09-13 02:00+00", "proactive", n1),
+        "later": ("pending", "2026-09-13 03:00+00", "proactive", n1),
+        "finished": ("done", "2026-09-12 02:00+00", "proactive", n1),
+        "other": ("pending", "2026-09-13 03:00+00", "proactive", n2),
+        # A pending row is kept before a FIRING one even when the firing one
+        # is due first: boot recovery fails every firing row after the
+        # migrations run, so keeping it would leave the note with nothing.
+        "firing_first": ("firing", "2026-09-13 01:00+00", "proactive", n3),
+        "pending_after": ("pending", "2026-09-13 04:00+00", "proactive", n3),
+        # No note id: nothing to be a duplicate of.
+        "no_note_a": ("pending", "2026-09-13 02:00+00", "proactive", {"intent": "x"}),
+        "no_note_b": ("pending", "2026-09-13 02:00+00", "proactive", {"intent": "x"}),
+        # A person's reminder carrying the same note id is not proactive.
+        "persons": ("pending", "2026-09-13 01:00+00", "reminder", n1),
+    }
+    ids = {name: uuid.uuid4() for name in rows}
+    engine = sa.create_engine(sync_url_for(pg_url))
+    try:
+        with engine.begin() as conn:
+            for name, (state, due, kind, payload) in rows.items():
+                conn.execute(sa.text(
+                    "INSERT INTO reminders (id, requester_person_id, platform, "
+                    "conversation_id, conversation_type, text, created_at, "
+                    "due_at, state, kind, payload) VALUES (:id, 'nora', "
+                    "'signal', 'c', 'group', 'x', '2026-09-12 15:01+00', :due, "
+                    ":state, :kind, CAST(:payload AS jsonb))"
+                ), {"id": ids[name], "due": due, "state": state, "kind": kind,
+                    "payload": json.dumps(payload)})
+    finally:
+        engine.dispose()
+
+    run_migrations(pg_url)
+
+    engine = sa.create_engine(sync_url_for(pg_url))
+    try:
+        with engine.connect() as conn:
+            after = {
+                row.id: (row.state, row.outcome)
+                for row in conn.execute(sa.text(
+                    "SELECT id, state, outcome FROM reminders"
+                ))
+            }
+            index = conn.execute(sa.text(
+                "SELECT indexdef FROM pg_indexes "
+                "WHERE indexname = 'uq_reminders_proactive_open_note'"
+            )).scalar_one_or_none()
+    finally:
+        engine.dispose()
+    cancelled = ("cancelled", "cancelled_duplicate_note")
+    assert after[ids["kept"]] == ("pending", None)
+    assert after[ids["later"]] == cancelled
+    assert after[ids["finished"]] == ("done", None)
+    assert after[ids["other"]] == ("pending", None)
+    assert after[ids["pending_after"]] == ("pending", None)
+    assert after[ids["firing_first"]] == cancelled
+    assert after[ids["no_note_a"]] == ("pending", None)
+    assert after[ids["no_note_b"]] == ("pending", None)
+    assert after[ids["persons"]] == ("pending", None)
+    assert index is not None and "UNIQUE" in index
+    assert current_revision(pg_url) == head_revision()

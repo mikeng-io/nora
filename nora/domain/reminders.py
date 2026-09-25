@@ -71,6 +71,49 @@ class DuplicateReminderError(NoraError):
         self.reminder_id = reminder_id
 
 
+#: The `kind` a proactive decision's row carries. The same spelling as
+#: `nora.app.proactive_screen.PROACTIVE_KIND`, which the heartbeat reads; it is
+#: here too because the one-open-row rule below is the STORE's, and a store
+#: may not import the application layer.
+PROACTIVE_KIND = "proactive"
+
+#: The states in which a proactive row is still going to be said, or is being
+#: said now. A note may have at most ONE proactive row in them.
+OPEN_STATES: frozenset[str] = frozenset({"pending", "firing"})
+
+
+def open_proactive_note(row: Reminder) -> str | None:
+    """The note a row holds open, or `None` when it holds none.
+
+    ONE PROACTIVE ROW PER NOTE, OPEN AT A TIME (issue #158). Two passes of the
+    proactive adaptor booked the same note twice in production: 23:01 and
+    01:01 for the same 10:00, and 07:02 and 18:04 for the same 17:00. The
+    only per-note check anywhere was the wake clock (`_may_wake_today` in
+    `nora/language/proactive.py`), which charges a STRIKE once per Hong Kong
+    day and never looked at the row being written. So this is the rule, and
+    both stores hold it at insert time: a second open row on the same note is
+    `DuplicateProactiveNoteError`. A row that has fired, failed or been
+    cancelled holds nothing open, so a re-raise after silence (the strikes
+    brake, design/dreamer-agent-loop/39 D6) and a new occasion after the first
+    one went off are both still writable.
+    """
+    if row.kind != PROACTIVE_KIND or row.state.value not in OPEN_STATES:
+        return None
+    note_id = (row.payload or {}).get("note_id")
+    return note_id if isinstance(note_id, str) and note_id else None
+
+
+class DuplicateProactiveNoteError(NoraError):
+    """`create()` was handed a proactive row for a note that already has an
+    open one (`open_proactive_note`). Postgres enforces it with
+    `uq_reminders_proactive_open_note`; the in-memory store with the same
+    check, no `await` between it and the write."""
+
+    def __init__(self, note_id: str) -> None:
+        super().__init__(f"note {note_id} already has an open proactive reminder")
+        self.note_id = note_id
+
+
 class UnknownRecurrenceZoneError(ValueError):
     """A recurrence names a timezone this host's tz database does not have.
 
@@ -594,8 +637,10 @@ class ReminderStore(Protocol):
     async def create(self, reminder: Reminder) -> None:
         """Insert-only. A duplicate `id` raises `DuplicateReminderError` — it
         never overwrites, because an overwrite loses a reminder while reporting
-        success. Naive datetimes raise `NaiveDatetimeError`; aware ones are
-        stored normalised to UTC."""
+        success. A proactive row on a note that already has an open one
+        (`open_proactive_note`) raises `DuplicateProactiveNoteError` and writes
+        nothing (issue #158). Naive datetimes raise `NaiveDatetimeError`; aware
+        ones are stored normalised to UTC."""
         ...
 
     async def get(self, reminder_id: UUID) -> Reminder | None:
@@ -640,6 +685,13 @@ class ReminderStore(Protocol):
         ...
 
     async def count_pending(self, requester_person_id: str) -> int: ...
+
+    async def pending_of(self, requester_person_id: str) -> Sequence[Reminder]:
+        """One requester's PENDING rows, ordered like `due()`: the rows
+        `count_pending` counts. `remind` reads Nora's own (the `ai_peer`'s)
+        to find the one a new proactive decision about the same note would
+        double (issue #158); `max_pending_per_requester` bounds it."""
+        ...
 
     async def history(
         self, *, requester_person_id: str, since: datetime, limit: int,

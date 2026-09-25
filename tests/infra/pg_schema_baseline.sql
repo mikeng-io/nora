@@ -428,6 +428,7 @@ CREATE TABLE public.turn_verdict (
 CREATE TABLE public.version_announcements (
 CREATE TABLE public.video_readings (
 CREATE UNIQUE INDEX note_candidate_create_anchor_key ON public.note_candidate USING btree (unit, anchor_date, anchor_entity_ids, lower(btrim(title))) WHERE (kind = 'create'::text);
+CREATE UNIQUE INDEX uq_reminders_proactive_open_note ON public.reminders USING btree (((payload ->> 'note_id'::text))) WHERE ((kind = 'proactive'::text) AND (state = ANY (ARRAY['pending'::text, 'firing'::text])));
 INCREMENT BY 1
 INCREMENT BY 1
 INCREMENT BY 1

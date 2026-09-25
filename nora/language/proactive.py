@@ -1278,8 +1278,10 @@ class ProactiveAdaptor:
         readable returns `unavailable` before `commit` is called at all, an
         item the Dreamer's screen rejects never reaches `accept`, and an item
         naming a handle this pass did not show is dropped in `accept`. On each
-        of those the row exists, the note has no wake, and `_may_wake_today`
-        therefore lets the NEXT pass write a second row about the same note.
+        of those the row exists and the note has no wake, so the note goes
+        uncharged: the NEXT pass's raise would be its first strike, not its
+        second. (`_may_wake_today` never stopped a second ROW either way; it
+        gates strikes. `remind` refuses a second open row itself, #158.)
         So after the envelope is walked the rows themselves are read back — the
         real property, not the model's account of it — and any note raised
         without a wake is charged one. The window starts at the pass clock this
@@ -1338,9 +1340,15 @@ class ProactiveAdaptor:
             #
             # Stamped last, every cancellation leaves the slot open: the next
             # tick re-renders, `_raised_since` reaches back over the orphaned
-            # rows, and `_may_wake_today` still stops a second raise. The cost
-            # is one re-render after a genuine timeout, which is the cheap
-            # direction.
+            # rows, and `_may_wake_today` still stops a second STRIKE. It never
+            # stopped a second ROW, which is what this comment used to claim:
+            # it gates the wake, keyed on the Hong Kong day of the last one,
+            # and reads nothing `remind` writes. Production booked one note at
+            # 23:01 and again at 01:01, and another at 07:02 and again at
+            # 18:04 the same day. A second row is refused at
+            # the write, by `remind` and `uq_reminders_proactive_open_note`
+            # (issue #158). The cost is one re-render after a genuine timeout,
+            # which is the cheap direction.
             await self._clock_store.record_fire(
                 adaptor_name=PASS_CLOCK_NAME, key=key, at_ms=now_ms,
             )
@@ -1469,7 +1477,10 @@ class ProactiveAdaptor:
         """At most one wake per note per Hong Kong day (39 D6 as amended by
         issue #136): a change-driven pass may decide the same note several
         times a day, and each of those is one decision the room has not yet
-        had a chance to answer."""
+        had a chance to answer.
+
+        A STRIKE gate, not a row gate: it does not stop a second `remind`
+        about the note. That is `remind`'s own one-open-row check (#158)."""
         if self._clock_store is None:
             return True
         last = await self._clock_store.last_fired(

@@ -68,7 +68,7 @@ import contextlib
 import re
 import uuid
 from collections.abc import AsyncGenerator, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 import sqlalchemy as sa
@@ -79,7 +79,7 @@ from nora.agent.prefill import render_transcript
 from nora.domain.media_join import MediaJoin
 from nora.domain.models import TranscriptRow
 from nora.domain.notes import Note, NoteRevision
-from nora.domain.reminders import Reminder
+from nora.domain.reminders import Reminder, ReminderState
 from nora.infra.sql import create_readonly_sql_engine
 from nora.infra.sql.migrations_runner import run_migrations
 from nora.infra.sql.snapshot import Snapshot, snapshot
@@ -190,6 +190,64 @@ async def sandbox_database(
         await admin.dispose()
 
 
+def _collapse_duplicate_proactive_notes(
+    reminders: Sequence[Reminder],
+) -> tuple[Reminder, ...]:
+    """At most ONE open proactive reminder per note — reproducing what
+    production would hold AFTER migration 0064's own collapse
+    (`nora/infra/sql/migrations/versions/0064_proactive_open_note.py`,
+    issue #158).
+
+    Production HISTORY holds instants with TWO open proactive rows on one
+    note — the double-booking #517 fixed going forward, never undone in the
+    past (`0064`'s own upgrade cancelled what was open on 2026-09-25, not
+    what a `before_ms` anchored earlier ever held). `Snapshot.reminders`
+    reconstructs the room AS IT WAS, so it still carries both, and seeding
+    both into the sandbox's own store — which, since #517, enforces the same
+    `uq_reminders_proactive_open_note` production does — raises
+    `DuplicateProactiveNoteError` on the second one. This collapses BEFORE
+    seeding, using 0064's OWN rule (its `_RESOLVE_DUPLICATES` — pending
+    before firing, then earliest `due_at`, then `created_at`, then `id`), so
+    the sandbox reproduces what production's own migration would have left
+    standing rather than an invented resolution.
+
+    Every `Snapshot.reminders` row is already normalized to `PENDING`
+    as-of the instant (`nora.infra.sql.snapshot._as_of_reminder`), so the
+    pending-before-firing key is always equal here — kept for fidelity to
+    0064's own rule rather than assumed away.
+
+    Non-proactive rows, and proactive rows naming NO note, are UNTOUCHED:
+    the constraint (and 0064's own collapse) only ever applies to
+    `kind = 'proactive' AND payload ->> 'note_id' IS NOT NULL`. Order is
+    preserved — the caller's own (`_reminders`' `created_at, id` — this
+    never reorders, only drops).
+    """
+    def note_id(reminder: Reminder) -> str | None:
+        if reminder.kind != "proactive":
+            return None
+        payload = reminder.payload or {}
+        note_id_value = payload.get("note_id") if isinstance(payload, dict) else None
+        return str(note_id_value) if note_id_value else None
+
+    grouped: dict[str, list[Reminder]] = {}
+    for reminder in reminders:
+        nid = note_id(reminder)
+        if nid is not None:
+            grouped.setdefault(nid, []).append(reminder)
+
+    def sort_key(reminder: Reminder) -> tuple[bool, datetime, datetime, object]:
+        return (
+            reminder.state == ReminderState.FIRING, reminder.due_at,
+            reminder.created_at, reminder.id,
+        )
+
+    winners = {nid: min(rows, key=sort_key) for nid, rows in grouped.items()}
+    return tuple(
+        reminder for reminder in reminders
+        if note_id(reminder) is None or reminder is winners[note_id(reminder)]  # type: ignore[index]
+    )
+
+
 def as_knowledge(shot: Snapshot) -> Knowledge:
     """A reconstruction, as the `Knowledge` that reproduces it AT ITS OWN
     CLOCK.
@@ -234,9 +292,61 @@ def as_knowledge(shot: Snapshot) -> Knowledge:
         # the copy at the moment's own clock: `know()` is handed
         # `now_ms=shot.before_ms`, so `base + due_in_seconds` reproduces the
         # real `due_at` exactly, and an overdue row stays overdue by the
-        # number of seconds it really was.
-        reminders=tuple(_reminder_seed(r, before_ms=shot.before_ms) for r in shot.reminders),
+        # number of seconds it really was. COLLAPSED to one open proactive
+        # row per note FIRST (`_collapse_duplicate_proactive_notes`, issue
+        # #158): production history can hold two, and seeding both would hit
+        # #517's own `uq_reminders_proactive_open_note` on the second.
+        reminders=tuple(
+            _reminder_seed(r, before_ms=shot.before_ms)
+            for r in _collapse_duplicate_proactive_notes(shot.reminders)
+        ),
     )
+
+
+def _pending_reminder_note_ids(reminders: Sequence[Reminder]) -> frozenset[str]:
+    """The note IDS NORA's own outstanding reminders name, off
+    `Snapshot.reminders` — everything there was pending at the instant
+    (`_reminder_seed`'s own docstring), so no `state`/`due_at` check is
+    needed here, only whose request it was and which note it names.
+
+    BY ID, not by title (issue #158 review): a title match is silently wrong
+    twice over — a renamed note is missed, and a unit with two notes sharing
+    a title (`NOTE` has no unique constraint on `(workspace, title)`, per
+    `_notebook`'s own docstring) collapses them. `payload["note_id"]`
+    (`nora/agent/tools.py:8923`, written beside `note_title` on every
+    `remind` call) is the same id `Note.id` names, so this is comparable
+    against `_note_ids_by_title`'s resolution of a case's own stated title.
+
+    Pure and DB-free: `sandbox_from_snapshot` calls it on a `Snapshot`
+    already read, and a fixture can call it directly
+    (`tests/unit/test_subject_sandbox_translation.py`).
+    """
+    ids: set[str] = set()
+    for reminder in reminders:
+        if reminder.requester_person_id != "nora":
+            continue
+        note_id = (reminder.payload or {}).get("note_id")
+        if note_id:
+            ids.add(str(note_id))
+    return frozenset(ids)
+
+
+def _note_ids_by_title(
+    notes: Sequence[tuple[Note, NoteRevision]],
+) -> dict[str, tuple[str, ...]]:
+    """`note title -> every note id that carries it`, at this instant.
+
+    A `dict[str, tuple[str, ...]]` rather than `dict[str, str]` ON PURPOSE:
+    `_notebook`'s own docstring is that `NOTE` has no unique constraint on
+    `(workspace, title)`, so a title can resolve to zero, one, or several
+    ids. `evals.backbone._refuse_a_remind_case_already_pending` refuses
+    (ERRORs) a `remind` case whose stated note title does not resolve to
+    EXACTLY one id here, rather than guessing which one it meant.
+    """
+    by_title: dict[str, list[str]] = {}
+    for note, _revision in notes:
+        by_title.setdefault(note.title, []).append(note.id)
+    return {title: tuple(ids) for title, ids in by_title.items()}
 
 
 def _reminder_seed(reminder: Reminder, *, before_ms: int) -> ReminderSeed:
@@ -273,6 +383,15 @@ def _note_seed(note: Note, revision: NoteRevision) -> NoteSeed:
     reconstruction came from. Raising here says which note and why. It is not
     silently dropped: a note missing from the index is invisible, and invisible
     is indistinguishable from absent.
+
+    **`id=note.id` — the SOURCE's own id, not left for `know()` to assign
+    (issue #158, review).** A reminder seeded alongside keeps this SAME id in
+    its payload's `note_id` (`_reminder_seed` copies `payload` verbatim), and
+    `_note_ids_by_title` resolves a case's stated title against notes read
+    from this SAME source snapshot — so every id `evals.backbone` compares
+    against a written reminder's `note_id` is a SOURCE id. Letting `know()`
+    assign the sandbox note a fresh one (`NoteSeed.id`'s own docstring) would
+    leave nothing in the sandbox agreeing on what a note's id even was.
     """
     if note.anchor_date is None:
         raise ValueError(
@@ -281,6 +400,7 @@ def _note_seed(note: Note, revision: NoteRevision) -> NoteSeed:
             "would reach `Note.__post_init__` with no anchor at all"
         )
     return NoteSeed(
+        id=note.id,
         title=note.title,
         description=note.description,
         body=revision.body,
@@ -307,6 +427,24 @@ class Sandboxed:
     #: #458, and a judge told to fail any unlinked attribution was handed a
     #: source that linked nobody to anything.
     transcript: tuple[str, ...]
+    #: The note IDS NORA already has a reminder OUTSTANDING for, at this
+    #: instant — read off `Snapshot.reminders` (`_reminder_seed`'s own
+    #: docstring: everything there was pending at `before_ms`), before it is
+    #: seeded into anything. BY ID rather than title (issue #158 review: a
+    #: title match is missed by a rename and collapsed by a duplicate title).
+    #: `evals.backbone` refuses a `remind` case whose own expected note
+    #: resolves to an id in here: the decide turn's `<decisions>` would show
+    #: the row pending, and a correct decline ("one reminder per thing")
+    #: would measure the double-booking guard rather than the case itself.
+    #: Defaulted so a fake `Sandboxed` built before this field existed still
+    #: constructs.
+    pending_reminder_note_ids: frozenset[str] = frozenset()
+    #: `note title -> every note id sharing it`, at this instant
+    #: (`_note_ids_by_title`) — what `evals.backbone` resolves a `remind`
+    #: case's stated title against, refusing (ERROR) rather than guessing
+    #: when the title names zero or several notes. Defaulted for the same
+    #: reason as `pending_reminder_note_ids`.
+    note_ids_by_title: dict[str, tuple[str, ...]] = field(default_factory=dict)
 
 
 #: Where one `<m>` element ends and the next begins in `render_transcript`'s
@@ -447,4 +585,6 @@ async def sandbox_from_snapshot(
             display_name=subject.cfg.doctrine.display_name,
             now=subject.deps.clock(),
         ),
+        pending_reminder_note_ids=_pending_reminder_note_ids(shot.reminders),
+        note_ids_by_title=_note_ids_by_title(shot.notes),
     )

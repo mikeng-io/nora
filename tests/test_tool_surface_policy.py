@@ -447,10 +447,12 @@ def test_no_text_after_args_is_silently_dropped(tool: str, doc: str) -> None:
 # -- not a nested helper's returns (`generate_image`'s `_made_note`/
 # `_canonical_self`/`resolve` return bytes, a marker, `str | None`, never the
 # tool's own status dict). This read every OWN return and classifies its
-# value into one of five shapes, drawn from what these eight tools actually
+# value into one of six shapes, drawn from what these eight tools actually
 # do, TWICE REVISED after review (Opus, issue #482 follow-up, 2026-09-25 and
 # a same-day second pass) -- what each pass found is recorded beside the
-# shape it broke, because the fixes are the spec:
+# shape it broke, because the fixes are the spec -- plus one shape ADDED,
+# not revised, on 2026-09-25 (design/social-per-network/
+# 30-link-owner-registry.md "Migration" PR 3):
 #
 #   (a) a dict literal, `{"status": "X", ..., "note": ...}`. Pass 1: a
 #       `status` that is not itself a literal (`remind`'s `{"status": rule.
@@ -489,8 +491,21 @@ def test_no_text_after_args_is_silently_dropped(tool: str, doc: str) -> None:
 #       value (a literal dict with a note, or `dict(CONST)` with one); any
 #       other binding -- a comprehension, a subscript, a plain string --
 #       fails closed, naming the offending binding.
+#   (f) `_link_redirect(owner, claim, link_input)` -- `nora.agent.
+#       link_owners.redirect`, imported under that name, called directly
+#       from `x_read`'s, `linkedin_read`'s and `instagram_read`'s own
+#       closures (PR 3, "the owners use the registry": a claim by another
+#       registered owner). Recognised by name rather than followed into its
+#       own module the way an in-module helper is (f) is not (b)/(d) reread
+#       through an import: `redirect()`'s CONTRACT is what is trusted, not
+#       its current source -- it always returns `{"status": "nothing_found",
+#       "note": <composed>}`, and the note is never empty by construction
+#       (`LinkClaim.__post_init__` refuses to build an unreadable claim with
+#       no `unreadable_template`; the readable template always fills every
+#       slot). A literal status ("nothing_found") with a note this test can
+#       trust, same as (a).
 #
-# For (a)/(b)/(d), whose literal status is one the docstring lists, the
+# For (a)/(b)/(d)/(f), whose literal status is one the docstring lists, the
 # return's `note` must be present and PROVABLY a non-empty string (a
 # `Constant`, an f-string, string concatenation, an `if`/`else` expression,
 # or a `{...}.get(key, default)` lookup resolved through local assignments
@@ -512,7 +527,7 @@ def test_no_text_after_args_is_silently_dropped(tool: str, doc: str) -> None:
 # that does and does not verify, and for what is still NOT checked (a
 # genuine, stated limit of static analysis, not an oversight).
 #
-# A `return` whose value fits none of the five shapes -- or a bare `return`
+# A `return` whose value fits none of the six shapes -- or a bare `return`
 # with no value, or a helper call this cannot resolve, or a pass-through
 # binding this cannot verify -- is a FAILURE naming the shape, not a skip
 # (fail-closed): the property this enforces is "every return path has a
@@ -1097,14 +1112,22 @@ def _classify_value(
     ret: ast.Return, blocks: dict[int, list[ast.stmt]],
     local_funcs: dict[str, ast.AST] | None = None, allow_helper: bool = True,
 ) -> list[tuple]:
-    """Classify one `ast.Return`'s value into the five shapes (see the
-    module comment): `("literal", status, ok)` for (a)/(b)/(d) -- a known
+    """Classify one `ast.Return`'s value into the six shapes (see the
+    module comment): `("literal", status, ok)` for (a)/(b)/(d)/(f) -- a known
     status and whether its note is provably non-empty; `("delegate",
     mapping_keys)` for (c)/(e) -- status unknown, `mapping_keys` is what a
     (c)-shaped `_with_note` mapping covers (empty for (e)); `("skip",)` for
     a dict literal whose `status` key is present but not a literal and DOES
     carry a note key that is not provably empty (`remind`'s `rule.
     outcome`); `("bad", why)` for anything else -- fail-closed."""
+    # (f) `_link_redirect(owner, claim, link_input)` -- `nora.agent.
+    # link_owners.redirect`, recognised by name (see the module comment):
+    # its contract is a fixed literal status and a note that is never empty
+    # by construction, checked once at `LinkClaim` build time, not per call
+    # site here.
+    if (isinstance(value, ast.Call) and isinstance(value.func, ast.Name)
+            and value.func.id == "_link_redirect"):
+        return [("literal", "nothing_found", True)]
     # (a) a dict literal carrying a LITERAL `status` key, whether or not it
     # also spreads something alongside it (`instagram_read`'s
     # `{"status": "ambiguous", **_asked_about(spoken), "note": ...}`: the

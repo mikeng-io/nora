@@ -16,10 +16,26 @@ network's own `parse_link` (`nora/domain/x_links.py`,
 fake owner. This is the behaviour change the design node names for this PR:
 a pasted X post or profile link, or a LinkedIn person or company link, is
 now redirected by both fetchers instead of reaching the provider or the
-downloader. `x_read` and `linkedin_read` keep their own hand-written
-cross-network branches (`nora/agent/tools.py`'s `x_read`/`linkedin_read`) —
-replacing those with `owner_of` is step 3 ("The owners use the registry"),
-not built here.
+downloader. `x_read` and `linkedin_read` kept their own hand-written
+cross-network branches as of THIS PR (`nora/agent/tools.py`'s `x_read`/
+`linkedin_read`); replacing those with `owner_of` is step 3 ("The owners use
+the registry"), built below, not in PR 2.
+
+**PR 3** ("Migration" step 3, this commit): `instagram_read`, `x_read` and
+`linkedin_read` replace their three DISAGREEING hand-written cross-network
+branches with one call each to `owner_of`, in `nora.agent.tools`. An owner
+never goes through `_apply_link_owners`'s post-pass (that wrapper would
+redirect an owner's OWN readable link away from itself, since it has no way
+to tell "claimed by me" from "claimed by someone else") — it calls
+`owner_of`/`redirect` directly, from the exact spot its own `parse_link` call
+already returns `None`, so a link claimed by nobody still falls through to
+that tool's own long-standing refusal. `OWNER_LINK_INPUT` below is the one
+`LinkInput` all three pass to `redirect()`; no per-owner `LinkInput` and no
+new dataclass, because an owning tool's slots never vary by which network it
+is (see `OWNER_LINK_INPUT`'s own comment for why). The three disagreeing
+matrices in the design node's "What exists today" become one, and every
+redirect from an owner is `nothing_found` (2026-09-25, this node's "Open
+decisions" §1), replacing each tool's own `unavailable` cross-network answer.
 
 Placement (the node's "Design" §"Placement"): the network parsers stay in
 `nora.domain`, framework-free and shared with the Instagram adapter; this
@@ -237,8 +253,8 @@ def _x_claim(text: str) -> LinkClaim | None:
     wraps Instagram's. Unlike Instagram, X's OWN host allowlist
     (`x_links.X_HOSTS`, `x_links.py:34-37`) already accepts
     `mobile.x.com`/`mobile.twitter.com` and the bare `x.com`/`twitter.com`
-    spellings as fully readable — `x_read` reads every one of them
-    (`tools.py:7480`, same `parse_link` call) — so there is no separate
+    spellings as fully readable — `x_read`'s own read of an X link uses the
+    same `parse_link` call — so there is no separate
     "readable=False" mobile shape here: every claim `parse_link` returns is
     `readable=True`.
 
@@ -275,8 +291,9 @@ def _linkedin_claim(text: str) -> LinkClaim | None:
     §"Types"):
 
     - **A `post` is never claimed.** `linkedin_read` refuses to open one
-      from its link (`tools.py:7714-7724`: "No backend reads one LinkedIn
-      post by its URL"), and a public LinkedIn post page is something
+      from its link ("No backend reads one LinkedIn post by its URL", in its
+      own `parsed.kind == "post"` branch), and a public LinkedIn post page is
+      something
       `web_fetch` may still be able to read — claiming it would route a
       readable page to a tool that says "I can't". Returning `None` here is
       what lets the fetcher try it as an ordinary page, the same as `lnkd.in`
@@ -315,9 +332,12 @@ def _linkedin_claim(text: str) -> LinkClaim | None:
 
 
 #: Instagram (PR 1), X and LinkedIn (PR 2, `design/social-per-network/
-#: 30-link-owner-registry.md` "Migration" step 2). Step 3 — the owners
-#: consulting the registry for EACH OTHER's links, replacing their own
-#: hand-written cross-network branches — is not built here.
+#: 30-link-owner-registry.md` "Migration" step 2). Step 3 (PR 3, this commit):
+#: `instagram_read`, `x_read` and `linkedin_read` in `nora.agent.tools` now
+#: consult this table for EACH OTHER's links, through `owner_of` directly
+#: (never `_apply_link_owners`'s fetcher post-pass — see the module
+#: docstring's "PR 3" paragraph), replacing their own hand-written
+#: cross-network branches.
 LINK_OWNERS: tuple[LinkOwner, ...] = (
     LinkOwner(
         network="instagram", tool="instagram_read", param="link",
@@ -379,6 +399,32 @@ class LinkInput:
     not_clause: str = ""
     then: str = ""
     verb: str = ""
+
+
+#: PR 3 ("the owners use the registry"): the slot set `instagram_read`,
+#: `x_read` and `linkedin_read` pass to `redirect()` when THEY are handed a
+#: link another owner claims. One shared instance, not a `LinkInput` per
+#: owner, and no new dataclass: an owning tool is never asking about media
+#: (`not_clause`/`then` stay at their `LinkInput` defaults, `""`, exactly as
+#: `web_fetch`'s does) and it reads, so `verb="read"` fills the one slot an
+#: UNREADABLE claim needs (e.g. `x_read` handed `m.instagram.com` — Instagram's
+#: own `_INSTAGRAM_MOBILE_TEMPLATE`, "...and it can't be {verb} directly").
+#: `param` is not read by `redirect()` at all (only `link_input.param` in
+#: `_link_owner_wrapped`'s FETCHER path uses it, to find which argument to
+#: check) — it is set to `"link"` here purely as documentation, since that is
+#: every owner's own parameter name. A fourth owner needs no new `LinkInput`
+#: either: which owner is redirecting is the `owner`/`claim` pair `owner_of`
+#: already returned, never this shared, fetcher-generic value.
+#:
+#: A 1-tuple, not a bare `NAME = LinkInput(...)`: `LinkInput` is defined in
+#: THIS module, and `tests/architecture/test_no_module_level_mutable_
+#: singletons.py` forbids binding a module-level name directly to a call
+#: that constructs a locally-defined class (the same reason `LINK_OWNERS`
+#: above is a tuple of `LinkOwner(...)` calls, never one bare `LinkOwner(...)`
+#: assignment). `LinkInput` is frozen and stateless either way; this is about
+#: the AST shape the gate reads, not about avoiding real shared state.
+_OWNER_LINK_INPUTS: tuple[LinkInput, ...] = (LinkInput(param="link", verb="read"),)
+OWNER_LINK_INPUT = _OWNER_LINK_INPUTS[0]
 
 
 def redirect(owner: LinkOwner, claim: LinkClaim, link_input: LinkInput) -> dict:
