@@ -28,7 +28,10 @@ type Self struct {
 	// tagged?" may compare against.
 	FBID string
 	// IGID is the public id. It is NOT a messaging id and must never be
-	// compared to a mention.
+	// compared to a DM mention. (The news inbox's
+	// `logging_context.mentioned_user_ids` is Instagram's own id space, so
+	// gateway/instameow/mentions.go compares IGID there, an inference its doc
+	// comment records.)
 	IGID     string
 	Username string
 }

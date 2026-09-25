@@ -41,7 +41,7 @@ func mustComment(t *testing.T, s string) domain.CommentID {
 }
 
 // webClientHeaders is the header set restDo sends on EVERY request, GET or
-// POST: the set TestReadMentionsSendsTheWebClientsHeaders pins for the GET.
+// POST: the set TestReadMentionsSendsTheWebClientsRequest pins.
 var webClientHeaders = []string{"x-requested-with", "referer", "sec-fetch-dest", "sec-fetch-mode", "sec-fetch-site", "X-Web-Session-ID"}
 
 // restDo's POST: the form body, the library's own FORM content type, the SAME
@@ -49,7 +49,7 @@ var webClientHeaders = []string{"x-requested-with", "referer", "sec-fetch-dest",
 // priority), and no library retry.
 func TestRestPOSTSendsTheFormWithTheSameHeaders(t *testing.T) {
 	get := &fakeRESTIssuer{body: []byte(`{"status":"ok"}`)}
-	if _, _, err := rest(t.Context(), get, "https://www.instagram.com/api/v1/news/inbox/", "news_inbox"); err != nil {
+	if _, _, err := restDo(t.Context(), get, restRequest{endpoint: "https://www.instagram.com/api/v1/media/1/comments/", label: "comments"}); err != nil {
 		t.Fatal(err)
 	}
 	post := &fakeRESTIssuer{body: []byte(`{"status":"ok"}`)}
@@ -280,9 +280,9 @@ func TestCommentRoutesClassifyARedirectThemselves(t *testing.T) {
 }
 
 // The redirect-FOLLOWING client's real checkpoint shape (http.go:517-520): a
-// 302 response, no body, and the library's RedirectedError. On GET /mentions
-// (which still follows redirects) it needs a human and flips the session; on
-// a comment route, should that shape ever arrive, the same, with a fixed
+// 302 response, no body, and the library's RedirectedError. Should that
+// shape ever arrive on /mentions or a comment route (both now go out through
+// the no-redirect path) it needs a human and flips the session, with a fixed
 // text even for the RedirectedError kinds whose text quotes the URL.
 func TestTheRealRedirectedErrorShape(t *testing.T) {
 	code, media := mustCode(t, fakeig.CarouselShortcode)
