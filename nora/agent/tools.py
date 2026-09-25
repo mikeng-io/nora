@@ -82,7 +82,6 @@ from ..domain.gatherings import (
 from ..domain.instagram_links import is_handle as _is_instagram_handle
 from ..domain.instagram_links import parse_link as _parse_instagram_link
 from ..domain.linkedin_links import is_handle as _is_linkedin_handle
-from ..domain.linkedin_links import is_linkedin_host as _is_linkedin_host
 from ..domain.linkedin_links import parse_link as _parse_linkedin_link
 from ..domain.media import (
     COVER_ROLE,
@@ -147,7 +146,6 @@ from ..domain.reminders import (
 from ..domain.self_presence import KnownRoom, UnitRooms, platform_name
 from ..domain.tool_call_log import ToolCallLogStore
 from ..domain.x_links import is_handle as _is_x_handle
-from ..domain.x_links import is_x_host as _is_x_host
 from ..domain.x_links import parse_link as _parse_x_link
 from ..infra.social.readings import READ_CONCURRENCY as _INSTAGRAM_READ_CONCURRENCY
 from ..infra.social.readings import TurnLook
@@ -178,7 +176,8 @@ from .link_owners import _INSTAGRAM_MOBILE_PAGE_LINK as _INSTAGRAM_MOBILE_PAGE_L
 from .link_owners import _INSTAGRAM_PAGE_LINK as _INSTAGRAM_PAGE_LINK
 from .link_owners import _WEB_FETCH_INSTAGRAM_MOBILE_PAGE as _WEB_FETCH_INSTAGRAM_MOBILE_PAGE
 from .link_owners import _WEB_FETCH_INSTAGRAM_PAGE as _WEB_FETCH_INSTAGRAM_PAGE
-from .link_owners import LinkInput
+from .link_owners import OWNER_LINK_INPUT as _OWNER_LINK_INPUT
+from .link_owners import LinkClaim, LinkInput, LinkOwner
 from .link_owners import owner_of as _owner_of
 from .link_owners import redirect as _link_redirect
 from .links import LinkCarry
@@ -3177,6 +3176,29 @@ def _shared_page_link(body: str) -> str:
         if parsed is not None and parsed.kind == kind:
             return parsed.url
     return ""
+
+
+def _other_link_owner(text: str, this_tool: str) -> tuple[LinkOwner, LinkClaim] | None:
+    """`owner_of(text)` (design/social-per-network/30-link-owner-registry.md,
+    "Migration" step 3, "the owners use the registry"), filtered to a claim by
+    a DIFFERENT tool than `this_tool` — the one thing each owner's replaced
+    hand-written branch (`x_read`, `linkedin_read`, `instagram_read`) needs
+    that a fetcher's `_apply_link_owners` post-pass does not: a fetcher never
+    owns a network, so every claim it gets IS someone else's, but an owner
+    calling this from the exact spot its OWN `parse_link` just returned
+    `None` can still get a claim back for its OWN network — Instagram's and
+    LinkedIn's unreadable `mobile_page` shape (`m.instagram.com`,
+    `m.linkedin.com`) is a claim `owner_of` returns for THAT network even
+    when its own raw parser refuses the host. Redirecting a tool to itself
+    would be circular, so that claim is filtered out here and the caller
+    falls through to its own long-standing refusal instead — unchanged
+    behaviour for a link no fetcher-side redirect ever touched (the design
+    node's "Migration" step 3: "Behaviour is otherwise unchanged. Same-network
+    links read exactly as before.")."""
+    found = _owner_of(text)
+    if found is None or found[0].tool == this_tool:
+        return None
+    return found
 
 
 def _strip_media_markers(text: str) -> str:
@@ -7504,16 +7526,23 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             if parsed is None:
                 # The parser refused it: another network, an X page that
                 # names no account or post, a segment outside its charset.
-                # Nothing is sent, and the link is not echoed. A link to
-                # another network names the tool that reads it, so the model
-                # asks the right tool rather than concluding X is unreadable.
+                # Nothing is sent, and the link is not echoed. A claim by
+                # another registered owner (design/social-per-network/
+                # 30-link-owner-registry.md, "Migration" step 3) names the
+                # tool that reads it, so the model asks the right tool
+                # rather than concluding X is unreadable — one lookup
+                # replaces the hand-written Instagram-only check this used
+                # to carry, and it now also catches a LinkedIn link, which
+                # that check never did.
+                found = _other_link_owner(text, "x_read")
+                if found is not None:
+                    owner, claim = found
+                    _record(
+                        metrics, "x_read", "nothing_found", reason="link_owner",
+                        owner=owner.network, kind=claim.kind,
+                    )
+                    return _link_redirect(owner, claim, _OWNER_LINK_INPUT)
                 _record(metrics, "x_read", "unavailable", reason="link")
-                if not _is_x_host(text) and _parse_instagram_link(text) is not None:
-                    return {
-                        "status": "unavailable",
-                        "note": "That is an Instagram link. Read it with "
-                                "instagram_read, not this tool.",
-                    }
                 return {
                     "status": "unavailable",
                     "note": "That isn't an X post or account link I can read. "
@@ -7713,22 +7742,20 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             text = _with_scheme(cast(str, link))
             parsed = _parse_linkedin_link(text)
             if parsed is None:
-                # Nothing is sent, and the link is not echoed. A link to
-                # another network names the tool that reads it.
+                # Nothing is sent, and the link is not echoed. A claim by
+                # another registered owner (design/social-per-network/
+                # 30-link-owner-registry.md, "Migration" step 3) names the
+                # tool that reads it — one lookup replaces the two
+                # hand-written checks this used to carry.
+                found = _other_link_owner(text, "linkedin_read")
+                if found is not None:
+                    owner, claim = found
+                    _record(
+                        metrics, "linkedin_read", "nothing_found", reason="link_owner",
+                        owner=owner.network, kind=claim.kind,
+                    )
+                    return _link_redirect(owner, claim, _OWNER_LINK_INPUT)
                 _record(metrics, "linkedin_read", "unavailable", reason="link")
-                if not _is_linkedin_host(text):
-                    if _parse_x_link(text) is not None:
-                        return {
-                            "status": "unavailable",
-                            "note": "That is an X link. Read it with x_read, not "
-                                    "this tool.",
-                        }
-                    if _parse_instagram_link(text) is not None:
-                        return {
-                            "status": "unavailable",
-                            "note": "That is an Instagram link. Read it with "
-                                    "instagram_read, not this tool.",
-                        }
                 return {
                     "status": "unavailable",
                     "note": "That isn't a LinkedIn profile or company link I can "
@@ -7953,7 +7980,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
 
         `status` is `ok`, `nothing_found`, `unavailable`, `ambiguous` or
         `refused`. Anything but `ok` carries a `note` saying what to tell
-        them.
+        them, or, for a link another tool owns, which one to call instead.
 
         Args:
             what: `profile` or `story`. Leave it out with a link, unless
@@ -8000,11 +8027,24 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         # handle needs `what`.
         target = ""
         if source == "link":
-            parsed = _parse_instagram_link(_with_scheme(cast(str, link)))
+            text = _with_scheme(cast(str, link))
+            parsed = _parse_instagram_link(text)
             if parsed is None:
                 # The parser refused it: a host that is not Instagram's, a
                 # segment outside its charset, a path that names nothing
-                # this reads. Nothing is sent, and the link is not echoed.
+                # this reads. Nothing is sent, and the link is not echoed. A
+                # claim by another registered owner (design/social-per-network/
+                # 30-link-owner-registry.md, "Migration" step 3) names the
+                # tool that reads it — `instagram_read` named no other network
+                # before this PR.
+                found = _other_link_owner(text, "instagram_read")
+                if found is not None:
+                    owner, claim = found
+                    _record(
+                        metrics, "instagram_read", "nothing_found", reason="link_owner",
+                        owner=owner.network, kind=claim.kind,
+                    )
+                    return _link_redirect(owner, claim, _OWNER_LINK_INPUT)
                 _record(metrics, "instagram_read", "unavailable", reason="link")
                 return {
                     "status": "unavailable",
