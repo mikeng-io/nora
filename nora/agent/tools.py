@@ -1467,11 +1467,11 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # budget stayed 2 — a decision, not an oversight, on the argument that the
     # number bounds how many domains ONE message can span, not how many skills
     # exist. **That skill was retired on 2026-09-17**: its body moved into
-    # `nora/doctrine/identity.md`, where a self-account does not have to be
+    # `nora/doctrine/core/identity.md`, where a self-account does not have to be
     # fetched by a model mid-question to be in front of her (operator, #227).
     #
     # `personalization` was retired the same way on 2026-09-24 (ADR 0016): its
-    # ladder moved into `nora/doctrine/conduct.md`, so it reaches a plan or a
+    # ladder moved into `nora/doctrine/rooms/conduct.md`, so it reaches a plan or a
     # picture without a second activation. The directory is two again
     # (`image-generation`, `navigation`), and the budget stays 2 for the same
     # reason as before: one message can span both.

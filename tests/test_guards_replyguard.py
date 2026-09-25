@@ -476,7 +476,7 @@ def test_the_skills_veto_does_not_claim_she_holds_a_skill_she_never_loaded():
     the move that produced #227.
 
     2026-09-17: the `self-description` skill was retired into
-    `nora/doctrine/identity.md` (operator, #227), so two skills now ship against
+    `nora/doctrine/core/identity.md` (operator, #227), so two skills now ship against
     a budget of 2. That does NOT restore R-7's generic sentence, for the reason
     above, and this test is unchanged by it — only the skill named in the veto
     below moved, because the retired one no longer exists to name.
