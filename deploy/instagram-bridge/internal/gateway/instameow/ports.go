@@ -196,3 +196,23 @@ func (b *Bridge) Post(ctx context.Context, code domain.Shortcode) (domain.Post, 
 	}
 	return readPost(ctx, cli, code)
 }
+
+// Mentions reads comment-mentions from Instagram's activity/notification
+// feed (`GET /mentions`, UNMEASURED; see mentions.go). skipped counts every
+// story this call did NOT classify as a mention, keyed by its story_type, so
+// the live probe can pin the numeric type a real comment-mention arrives as.
+func (b *Bridge) Mentions(ctx context.Context) ([]domain.CommentMention, map[int]int, error) {
+	self := b.selfSnapshot().Username
+	if b.restIssuer != nil {
+		return readMentions(ctx, b.restIssuer, self)
+	}
+	cli, err := b.client()
+	if err != nil {
+		return nil, nil, err
+	}
+	issuer, err := restIssuerFor(cli)
+	if err != nil {
+		return nil, nil, err
+	}
+	return readMentions(ctx, issuer, self)
+}

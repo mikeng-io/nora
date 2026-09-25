@@ -217,3 +217,31 @@ type PostItem struct {
 	Height          int
 	DurationSeconds *float64
 }
+
+// CommentMention is one comment on a post that @mentioned this account, read
+// from Instagram's activity/notification feed (`GET /mentions`, UNMEASURED;
+// see gateway/instameow/mentions.go). It is Instagram's PUBLIC comment
+// surface, not a DM: no thread id, no message id.
+type CommentMention struct {
+	// StoryType is Instagram's own numeric classification of the
+	// notification. Nothing has measured which value(s) a real
+	// comment-mention carries yet, so this is recorded on every mention the
+	// route DOES classify, for the live probe to pin down.
+	StoryType int
+	// At is Unix seconds, truncated from Instagram's `args.timestamp`
+	// (a float).
+	At int64
+	// AuthorIGID/AuthorUsername are the COMMENTER, never this account.
+	AuthorIGID     string
+	AuthorUsername string
+	// MediaID is the post's numeric pk. MediaShortcode is Instagram's own
+	// when the payload carries one, otherwise derived from MediaID
+	// (domain.MediaID.Shortcode()).
+	MediaID        string
+	MediaShortcode string
+	CommentID      string
+	// CommentText is the comment's own free text. It must not enter a span,
+	// a log line or an error (16 §Tracing's never-list) — it reaches the 200
+	// body and nowhere else, the same rule Post.Caption already carries.
+	CommentText string
+}

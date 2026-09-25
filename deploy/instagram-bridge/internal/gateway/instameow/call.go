@@ -20,9 +20,10 @@
 //     array before `data`, because a failed document answers HTTP 200. The
 //     absence of that check hid a real bug for a day on 2026-09-22.
 //
-// The design names a third, `rest`, for raw REST endpoints. None exists: the
-// one raw REST call this bridge ever made (`web_profile_info`) was removed
-// when it proved throttled. It gets written with its first caller.
+// The design names a third, `rest`, for raw REST endpoints. Written with its
+// first caller: mentions.go's `GET /mentions` probe. Before it, the one raw
+// REST call this bridge ever made (`web_profile_info`) had been removed when
+// it proved throttled.
 package instameow
 
 import (
@@ -126,6 +127,116 @@ func graphql(
 			fmt.Errorf("%s returned a GraphQL error: %s (code=%d): %s", label, e.Summary, e.Code, e.Message))
 	}
 	return http.StatusOK, raw, nil
+}
+
+// RESTIssuer is the one pair of methods the raw REST path needs off
+// `*httpclient.HTTPClient`, mirroring GraphQLIssuer above: `*httpclient.HTTPClient`
+// satisfies it structurally, so a test can fake it with no real Instagram
+// session. mentions.go is its first caller (see the package doc comment's
+// note on `rest`).
+type RESTIssuer interface {
+	BuildHeaders(withCookies, isSecFetchDocument bool) http.Header
+	MakeRequest(ctx context.Context, url, method string, headers http.Header, payload []byte, contentType types.ContentType) (*http.Response, []byte, error)
+	// WebSessionID is the `X-Web-Session-ID` the library's own REST callers
+	// send (FetchMedia, FetchReel). It lives on `*instameow.Client`'s
+	// unexported configs, and its one exported path is `DumpState()`; see
+	// sessionREST in mentions.go.
+	WebSessionID() (string, error)
+}
+
+// restOrigin is the referer every raw REST call sets, the same base URL
+// FetchMedia and FetchReel build theirs from (pkg/instameow/misc.go:
+// `c.GetEndpoint("base_url")`). Not read off the library's own endpoint
+// table: `rest`'s callers pass a full URL of their own (mentions.go's
+// endpoint has no entry in that table to begin with), so this is a plain
+// constant rather than a lookup with one unmatched key.
+const restOrigin = "https://www.instagram.com"
+
+// errWebSessionID is left unclassified on purpose: the HTTP layer answers it
+// 500 (fail-closed). It is neither retryable nor the caller's fault.
+var errWebSessionID = errors.New("web session id unavailable; request not sent")
+
+// rest issues one raw REST GET and returns its body only when the request
+// succeeded. It is the third helper `16` names and none existed until now
+// (see this file's package doc comment): mentions.go is its first caller.
+//
+// Headers are built the SAME way the library's own REST callers build
+// theirs — FetchMedia and FetchReel, pkg/instameow/misc.go — because a
+// request that looks different from what the web client already sends risks
+// a checkpoint on this account: `BuildHeaders(true, false)` (cookies,
+// x-csrftoken, x-mid, x-ig-app-id, viewport-width, x-asbd-id, the sec-ch-*
+// set, ...) plus `x-requested-with: XMLHttpRequest`, a same-origin referer
+// and the sec-fetch-* triple, exactly what those two callers add on top of
+// BuildHeaders, and `X-Web-Session-ID`, which FetchMedia reads off
+// `*instameow.Client`'s unexported configs. That value's one exported path
+// is `(*instameow.Client).DumpState()` (issuer.WebSessionID). When it cannot
+// be read, NO request is sent: a request missing a header the real web
+// client always sends is the mismatch this helper exists to avoid, so the
+// call fails closed instead of going out different.
+//
+// `label` names the endpoint in error text ("news_inbox") and the span
+// (`instagram.rest news_inbox`), the same convention `graphql`'s `label`
+// uses.
+//
+// `"status":"fail"` inside an HTTP 200 is a failure too — the REST form of
+// the check `graphql` above already applies to a GraphQL `errors` array (16
+// §Tracing: "Status ERROR on any failure, including a 200 carrying...
+// errors").
+func rest(ctx context.Context, issuer RESTIssuer, endpoint, label string) (int, []byte, error) {
+	ctx, span := startUpstream(ctx, "instagram.rest "+label)
+	defer span.End()
+
+	sessionID, err := issuer.WebSessionID()
+	if err != nil || sessionID == "" {
+		failSpan(span, "web_session_id", errWebSessionID)
+		return 0, nil, errWebSessionID
+	}
+	headers := issuer.BuildHeaders(true, false)
+	headers.Set("X-Web-Session-ID", sessionID)
+	headers.Set("x-requested-with", "XMLHttpRequest")
+	headers.Set("referer", restOrigin+"/")
+	headers.Set("sec-fetch-dest", "empty")
+	headers.Set("sec-fetch-mode", "cors")
+	headers.Set("sec-fetch-site", "same-origin")
+
+	resp, raw, err := issuer.MakeRequest(ctx, endpoint, http.MethodGet, headers, nil, types.NONE)
+	if err != nil {
+		failSpan(span, errorType(err), err)
+		return 0, nil, classify(err)
+	}
+	status := 0
+	if resp != nil {
+		status = resp.StatusCode
+		span.SetAttributes(attribute.Int("http.response.status_code", status))
+	}
+	if status != http.StatusOK {
+		span.SetAttributes(attribute.String("error.type", "upstream_http"))
+		span.SetStatus(codes.Error, "upstream_http")
+		return status, nil, domain.Classify(domain.ErrUpstreamRejected,
+			fmt.Errorf("%s returned a non-200: %d", label, status))
+	}
+
+	// The REST form of the same "errors before data" rule graphql() applies:
+	// a REST failure can still be an HTTP 200, with `"status":"fail"` where a
+	// real answer would be (posts.go's rule for FetchMedia).
+	var envelope struct {
+		Status string `json:"status"`
+	}
+	if err := json.Unmarshal(raw, &envelope); err != nil {
+		// A 200 that is not JSON at all (an HTML challenge page, a truncated
+		// body) is a failure too, and its span says so.
+		span.SetAttributes(attribute.String("error.type", "upstream_rejected"))
+		span.SetStatus(codes.Error, "upstream_rejected")
+		return status, nil, domain.Classify(domain.ErrUpstreamRejected,
+			fmt.Errorf("%s did not return JSON (%d bytes): %w", label, len(raw), err))
+	}
+	if envelope.Status == "fail" {
+		span.SetAttributes(attribute.String("error.type", "upstream_rejected"))
+		span.SetStatus(codes.Error, "upstream_rejected")
+		return status, nil, domain.Classify(domain.ErrUpstreamRejected,
+			fmt.Errorf("%s returned HTTP 200 with a failure status", label))
+	}
+	return status, raw, nil
 }
 
 // classify maps what Instagram and the library say onto the closed set.

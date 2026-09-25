@@ -65,21 +65,25 @@ type Options struct {
 	Upload Uploader
 	// Issuer replaces the client's own raw GraphQL issuer. Nil in production.
 	Issuer GraphQLIssuer
+	// RESTIssuer replaces the client's own raw REST issuer (mentions.go's
+	// `rest` helper). Nil in production.
+	RESTIssuer RESTIssuer
 }
 
 // NewBridge builds the session with no client; Supervise builds one.
 func NewBridge(o Options) *Bridge {
 	b := &Bridge{
-		store:     o.Store,
-		sink:      o.Sink,
-		issuer:    o.Issuer,
-		state:     o.State,
-		detail:    o.Detail,
-		connected: o.Connected,
-		seq:       o.Seq,
-		self:      o.Self,
-		out:       o.Client,
-		up:        o.Upload,
+		store:      o.Store,
+		sink:       o.Sink,
+		issuer:     o.Issuer,
+		restIssuer: o.RESTIssuer,
+		state:      o.State,
+		detail:     o.Detail,
+		connected:  o.Connected,
+		seq:        o.Seq,
+		self:       o.Self,
+		out:        o.Client,
+		up:         o.Upload,
 	}
 	// The cache outlives any single client: thread ids do not change, and a
 	// reconnect that rebuilt the client should not also re-pay a route lookup
@@ -163,6 +167,9 @@ type Bridge struct {
 	// issuer, when set, replaces the session client's own raw GraphQL
 	// issuer. Production leaves it nil.
 	issuer GraphQLIssuer
+	// restIssuer, when set, replaces the session client's own raw REST
+	// issuer (mentions.go). Production leaves it nil.
+	restIssuer RESTIssuer
 
 	mu  sync.RWMutex
 	cli *instameow.Client
