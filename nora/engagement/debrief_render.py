@@ -66,7 +66,7 @@ from nora.domain.blocks import ContextBlock, render_elements, speaker_name
 from nora.domain.culture import CultureRevision
 from nora.domain.models import DeliveryStatus, TranscriptRow
 from nora.domain.prompt import age, escape
-from nora.domain.standing import Standing
+from nora.domain.standing import Standing, WorkingSetItem
 from nora.domain.tag_trace import TagTrace
 from nora.language.culture_render import render_culture
 from nora.obs.metrics import Metrics
@@ -384,6 +384,42 @@ def _standing_prior(prior: Standing | None, *, now_ms: int) -> str:
     ).render()
 
 
+def _standing_working_set_prior(
+    working_set: tuple[WorkingSetItem, ...], *, now_ms: int,
+) -> str:
+    """Her current working set, exactly as `_standing_prior` shows the
+    paragraph — ALWAYS rendered, even empty, `_standing_prior`'s own reason:
+    an absent block and a block the fold failed to read look identical from
+    inside the prompt (§4.2), and the field's ordinary state is empty on
+    most turns, which must not be indistinguishable from "the read failed".
+
+    **Unfiltered by TTL, deliberately — unlike its `<standing_working_set>`
+    sibling.** This is the fold's OWN re-judgment input, not a downstream
+    reader's: the render function that builds `<standing_working_set>` for
+    the tag/participation prompt filters on `now - found_at` before it
+    builds the block (design §2), but the fold is where an item is meant to
+    age OUT by the model's own judgement — "re-judge it the same way [as the
+    paragraph]" — the same reason `_standing_prior` shows the WHOLE paragraph
+    rather than pre-editing it for staleness.
+    """
+    if not working_set:
+        return ContextBlock(
+            name="standing_working_set_prior",
+            body="(no working set yet)",
+        ).render()
+    now = datetime.fromtimestamp(now_ms / 1000, tz=UTC)
+    body = render_elements(
+        working_set, tag="item",
+        attrs=lambda item, _i: (
+            ("source", item.source),
+            ("found", age(item.found_at, now)),
+            ("bears_on", item.bears_on),
+        ),
+        body=lambda item: item.what,
+    )
+    return ContextBlock(name="standing_working_set_prior", body=body).render()
+
+
 def _conversation(block: str, *, at: str) -> str:
     """The event-path fold's envelope around an already-rendered transcript.
 
@@ -413,6 +449,39 @@ def _clip(
         return text
     metrics.inc(_CLIPS_METRIC, block=kind)
     return f"{text[:limit]} …[{_CLIP_MARK}]"
+
+
+def shown_step_tool_names(messages: Sequence[Mapping[str, Any]]) -> frozenset[str]:
+    """Every tool name this turn's `<steps>` block actually shows —
+    `nora.engagement.stages.debrief`'s check that a working-set item's
+    `source` references a step the fold was shown
+    (design/standing-compact/30-working-set.md §3), rather than a paraphrase
+    of the room's own question.
+
+    The SAME `toolUse` blocks `_steps`/`_block` render as `(called NAME
+    with …)`, walked independently here rather than threading a second
+    return value through `_steps`'s string-building: a name set is a
+    different shape from a rendered line, and computing it from the same raw
+    `messages` the render already reads is what keeps the two from being able
+    to disagree about what was actually called.
+    """
+    names: set[str] = set()
+    for message in messages:
+        if not isinstance(message, Mapping):
+            continue
+        content = message.get("content")
+        if not isinstance(content, Sequence) or isinstance(content, str | bytes):
+            continue
+        for block in content:
+            if not isinstance(block, Mapping):
+                continue
+            use = block.get("toolUse")
+            if not isinstance(use, Mapping):
+                continue
+            name = use.get("name")
+            if isinstance(name, str) and name.strip():
+                names.add(name)
+    return frozenset(names)
 
 
 def _steps(messages: Sequence[Mapping[str, Any]], *, metrics: Metrics) -> str:
@@ -691,14 +760,26 @@ def render_debrief_input(
 
     The prior's age is measured against the TURN's own time, the same instant
     `<turn at=…>` renders, so the two clocks in one prompt cannot disagree.
+
+    `<standing_working_set_prior>` sits right after `<standing_prior>`,
+    `_standing_working_set_prior`'s own reason and the same always-emitted
+    contract (design/standing-compact/30-working-set.md §4): "here is my
+    position, here is what I have not told you" — before the turn being
+    folded, which is what both are being re-judged AGAINST.
     """
     prior_block = _standing_prior(prior, now_ms=trace.created_at)
+    working_set_prior_block = _standing_working_set_prior(
+        prior.working_set if prior is not None else (), now_ms=trace.created_at,
+    )
     turn = render_debrief_turn(
         trace=trace, display_name=display_name, metrics=metrics,
         since_rows=since_rows, tz=tz,
     )
     return _with_culture(
-        culture, f"{prior_block}\n\n{turn}", now_ms=trace.created_at)
+        culture,
+        f"{prior_block}\n\n{working_set_prior_block}\n\n{turn}",
+        now_ms=trace.created_at,
+    )
 
 
 def _with_culture(
@@ -729,14 +810,29 @@ def render_rollup_input(
     reasoning or tag to label it with. The prior block carries the same
     always-present contract `render_debrief_input` uses — a rollup fold that
     cannot see the prior position cannot correct it.
+
+    `<standing_working_set_prior>` rides beside it, `render_debrief_input`'s
+    own reason: the shared `standing-debrief` objective (`OBJECTIVE` in
+    `nora.engagement.stages.debrief`, read by both this fold and the tag
+    fold) tells the model «you are shown your current working set» on every
+    call, so a call that omitted the block would make that sentence false.
+    The rollup fold's own write path never reads a NEW item out of what the
+    model returns here — it has no `<steps>` to source one from — but it
+    still needs to SEE the prior to correctly carry it forward unchanged
+    rather than silently dropping it.
     """
     prior_block = _standing_prior(prior, now_ms=now_ms)
+    working_set_prior_block = _standing_working_set_prior(
+        prior.working_set if prior is not None else (), now_ms=now_ms,
+    )
     at = datetime.fromtimestamp(now_ms / 1000, tz=tz).strftime(
         "%Y-%m-%d %H:%M %Z").strip()
     block = _transcript_block(
         rows, display_name=display_name, tz=tz, name="stretch",
     )
     return _with_culture(
-        culture, f"{prior_block}\n\n" + _conversation(block, at=at),
+        culture,
+        f"{prior_block}\n\n{working_set_prior_block}\n\n"
+        + _conversation(block, at=at),
         now_ms=now_ms,
     )

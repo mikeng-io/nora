@@ -70,7 +70,11 @@ from nora.domain.notes import (
     NOTE_MERGE_MODES,
     NOTE_MERGE_OUTCOMES,
 )
-from nora.domain.standing import STANDING_BODY_CEILING_CHARS
+from nora.domain.standing import (
+    STANDING_BODY_CEILING_CHARS,
+    WORKING_SET_CEILING_BYTES,
+    WORKING_SET_CEILING_ITEMS,
+)
 
 #: bge-m3's width, MEASURED against the live endpoint on 2026-08-28 rather
 #: than read off a model card. The migration reads this same constant.
@@ -2334,11 +2338,31 @@ STANDING = sa.Table(
     # SAME statement as the position (the fold's write is one upsert), never by
     # a follow-up UPDATE.
     sa.Column("last_folded_row_id", sa.BigInteger, nullable=True),
+    # Things found this turn and not yet given the room — a second, small
+    # structured field beside `body`, its own budget entirely
+    # (design/standing-compact/30-working-set.md, issue #445). `'[]'::jsonb`
+    # is both the default for a new row and the correct reading of every row
+    # that predates the column (module docstring, `Standing.working_set`'s
+    # own comment): no backfill, migration 0059's argument one field over.
+    sa.Column(
+        "working_set", pg.JSONB, nullable=False,
+        server_default=sa.text("'[]'::jsonb"),
+    ),
     sa.CheckConstraint(
         f"length(btrim(body)) > 0 and length(body) <= {STANDING_BODY_CEILING_CHARS}",
         name="standing_body_fits_the_ceiling_check",
     ),
     sa.CheckConstraint("fold_count >= 0", name="standing_fold_count_is_not_negative_check"),
+    # The ABSOLUTE ceiling — `WORKING_SET_CEILING_ITEMS`/`_BYTES` in
+    # `nora.domain.standing`, mirrored here exactly as
+    # `standing_body_fits_the_ceiling_check` mirrors `STANDING_BODY_CEILING_CHARS`.
+    # The operating cap (`[standing] working_set_max_items`/`_max_chars`) is
+    # tunable config well under this; this is the backstop no writer can pass.
+    sa.CheckConstraint(
+        f"jsonb_array_length(working_set) <= {WORKING_SET_CEILING_ITEMS} "
+        f"and octet_length(working_set::text) <= {WORKING_SET_CEILING_BYTES}",
+        name="standing_working_set_fits_the_ceiling_check",
+    ),
 )
 
 #: One position, as it stood at the moment a fold set it — the chain behind
@@ -2406,6 +2430,14 @@ STANDING_REVISION = sa.Table(
     sa.Column(
         "source", sa.Text, nullable=False, server_default=sa.text("'fold'")
     ),
+    # The SAME field the head carries, at the SAME ceiling, not a looser one —
+    # a revision holds a value the head held, so a working set this table
+    # would accept and `standing` would refuse is a history recording a
+    # position that could never have been taken.
+    sa.Column(
+        "working_set", pg.JSONB, nullable=False,
+        server_default=sa.text("'[]'::jsonb"),
+    ),
     # The SAME ceiling the head carries, not a looser one: a revision holds a
     # value the head held, so a body this table would accept and `standing`
     # would refuse is a history recording a position that could never have been
@@ -2421,6 +2453,11 @@ STANDING_REVISION = sa.Table(
     sa.CheckConstraint(
         "source IN ('fold', 'operator')",
         name="standing_revision_source_is_fold_or_operator_check",
+    ),
+    sa.CheckConstraint(
+        f"jsonb_array_length(working_set) <= {WORKING_SET_CEILING_ITEMS} "
+        f"and octet_length(working_set::text) <= {WORKING_SET_CEILING_BYTES}",
+        name="standing_revision_working_set_fits_the_ceiling_check",
     ),
 )
 

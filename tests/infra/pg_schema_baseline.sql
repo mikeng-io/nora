@@ -336,10 +336,12 @@ CONSTRAINT room_lexeme_instruction_sha256_check CHECK (((instruction_sha256 IS N
 CONSTRAINT room_lexeme_model_check CHECK (((model IS NULL) OR (length(btrim(model)) > 0))),
 CONSTRAINT room_lexeme_state_check CHECK ((state = ANY (ARRAY['live'::text, 'fading'::text, 'stale'::text])))
 CONSTRAINT standing_body_fits_the_ceiling_check CHECK (((length(btrim(body)) > 0) AND (length(body) <= 4000))),
-CONSTRAINT standing_fold_count_is_not_negative_check CHECK ((fold_count >= 0))
+CONSTRAINT standing_fold_count_is_not_negative_check CHECK ((fold_count >= 0)),
 CONSTRAINT standing_revision_body_fits_the_ceiling_check CHECK (((length(btrim(body)) > 0) AND (length(body) <= 4000))),
 CONSTRAINT standing_revision_fold_count_is_not_negative_check CHECK ((fold_count >= 0)),
-CONSTRAINT standing_revision_source_is_fold_or_operator_check CHECK ((source = ANY (ARRAY['fold'::text, 'operator'::text])))
+CONSTRAINT standing_revision_source_is_fold_or_operator_check CHECK ((source = ANY (ARRAY['fold'::text, 'operator'::text]))),
+CONSTRAINT standing_revision_working_set_fits_the_ceiling_check CHECK (((jsonb_array_length(working_set) <= 20) AND (octet_length((working_set)::text) <= 2400)))
+CONSTRAINT standing_working_set_fits_the_ceiling_check CHECK (((jsonb_array_length(working_set) <= 20) AND (octet_length((working_set)::text) <= 2400)))
 CONSTRAINT tag_trace_outcome_check CHECK ((outcome = ANY (ARRAY['send_reply'::text, 'recovered'::text, 'silent'::text, 'vetoed'::text, 'timeout'::text, 'llm_error'::text])))
 CONSTRAINT turn_verdict_grounded_has_no_unsupported_check CHECK ((NOT (grounded AND (cardinality(unsupported) > 0)))),
 CONSTRAINT turn_verdict_unsupported_fits_the_list_check CHECK ((cardinality(unsupported) <= 10))
@@ -995,6 +997,8 @@ voice_channel_id text NOT NULL,
 volume double precision NOT NULL,
 warrant_kind text DEFAULT 'source'::text NOT NULL,
 wire_state text NOT NULL,
+working_set jsonb DEFAULT '[]'::jsonb NOT NULL,
+working_set jsonb DEFAULT '[]'::jsonb NOT NULL,
 writer text NOT NULL,
 written_at bigint NOT NULL,
 written_at bigint NOT NULL,

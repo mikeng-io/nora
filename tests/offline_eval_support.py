@@ -1204,7 +1204,18 @@ async def run_note_candidates_case(
             ts=int(m["ts_ms"]), body=m.get("body"), is_nora=False,
             delivery_status=DeliveryStatus.SENT, raw_json=None,
             media_json="[{}]" if m.get("media") else None,
-            person_id=str(m["person"]), person_name=str(m["name"]),
+            person_id=str(m["person"]),
+            # `person_name` intentionally left `None` — issue #200 item 3.
+            # Production only fills it via `Persons.name_transcript`, for a
+            # sender `identity.toml` actually maps; presetting it here from
+            # the case's own display name made every case's attribution
+            # column operator-canonical while the live one was self-set (or
+            # worse), which is exactly what hid the defect #200 found. A row
+            # renders through `speaker_name(person_name, sender_name)`
+            # (`nora.domain.blocks`), so this is a no-op for `m["name"]`
+            # itself — it still becomes the rendered `from=` via the
+            # `sender_name` fallback — and now honestly exercises the SAME
+            # unmapped-sender path production runs by default.
         )
         for m in batch
     ]

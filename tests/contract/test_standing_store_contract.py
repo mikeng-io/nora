@@ -37,7 +37,7 @@ import psycopg
 import pytest
 import sqlalchemy as sa
 
-from nora.domain.standing import STANDING_BODY_CEILING_CHARS, Standing
+from nora.domain.standing import STANDING_BODY_CEILING_CHARS, Standing, WorkingSetItem
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.migrations_runner import run_migrations
 from nora.infra.sql.standing import SqlStandingStore
@@ -106,10 +106,12 @@ async def store(request: Any) -> AsyncIterator[_StandingStore]:
 def _standing(body: str = "They are picking a restaurant.", *,
               platform: str = PLATFORM, conversation_id: str = CONV,
               fold_count: int = 1, updated_at: int = NOW,
-              last_folded_row_id: int | None = None) -> Standing:
+              last_folded_row_id: int | None = None,
+              working_set: tuple[WorkingSetItem, ...] = ()) -> Standing:
     return Standing(platform=platform, conversation_id=conversation_id,
                     body=body, fold_count=fold_count, updated_at=updated_at,
-                    last_folded_row_id=last_folded_row_id)
+                    last_folded_row_id=last_folded_row_id,
+                    working_set=working_set)
 
 
 async def test_a_conversation_with_no_position_reads_as_none(store):
@@ -168,6 +170,38 @@ async def test_the_row_id_watermark_round_trips_including_its_null(store):
     await store.write(standing=_standing(last_folded_row_id=None))
     row = await store.read(platform=PLATFORM, conversation_id=CONV)
     assert row is not None and row.last_folded_row_id is None
+
+
+async def test_the_working_set_round_trips_empty_populated_and_back(store):
+    """`Standing.working_set` (design/standing-compact/30-working-set.md,
+    issue #445), the `working_set` sibling of the row-id watermark test above:
+    a store that dropped the column would pass the plain write/read tests —
+    it round-trips `body` and everything else — so this is its own case, and
+    it goes empty -> populated -> empty to prove the upsert names the column
+    in its `set_` rather than keeping the previous row's value by omission.
+    """
+    await store.write(standing=_standing(working_set=()))
+    row = await store.read(platform=PLATFORM, conversation_id=CONV)
+    assert row is not None and row.working_set == ()
+
+    items = (
+        WorkingSetItem(
+            what="陳儀興玫瑰餐廳 — chicken hotpot, near the venue",
+            source="web_search", found_at=NOW, bears_on="dinner plan",
+        ),
+        WorkingSetItem(
+            what="a second option the search returned",
+            source="web_search", found_at=NOW + 1,
+        ),
+    )
+    await store.write(standing=_standing(
+        updated_at=NOW + 1000, working_set=items))
+    row = await store.read(platform=PLATFORM, conversation_id=CONV)
+    assert row is not None and row.working_set == items
+
+    await store.write(standing=_standing(updated_at=NOW + 2000, working_set=()))
+    row = await store.read(platform=PLATFORM, conversation_id=CONV)
+    assert row is not None and row.working_set == ()
 
 
 async def test_the_row_id_watermark_advances_with_the_position_in_one_write(store):

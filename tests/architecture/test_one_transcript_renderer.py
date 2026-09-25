@@ -97,6 +97,12 @@ _NOT_A_TRANSCRIPT = {
     # anybody sent, so the transcript rule does not apply; it is here because
     # "calls an element renderer" is the net this gate casts.
     "nora/skills/loader.py": "renders the skill catalogue, not a transcript",
+    # THE WORKING SET, not a transcript — one element per thing found and not
+    # yet given the room, through the same `render_elements` the transcripts
+    # use (design/standing-compact/30-working-set.md, issue #445). `note_
+    # render.py`'s own reason one tier over: it renders no message, so the
+    # transcript rule does not apply.
+    "nora/language/standing_render.py": "renders the working set, not a transcript",
 }
 
 #: The operator's surfaces: a Discord review channel, not a prompt. Exempt from

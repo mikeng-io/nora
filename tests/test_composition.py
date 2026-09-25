@@ -16,7 +16,7 @@ from nora.app.composition import Dependencies, StartupError, build_dependencies
 from nora.app.fire import FirePath
 from nora.app.heartbeat import HEARTBEAT_NOT_RUNNING
 from nora.config import load
-from nora.domain.models import NormalizedMessage
+from nora.domain.models import DeliveryStatus, NormalizedMessage, TranscriptRow
 from nora.infra.blobs import FilesystemBlobStore, RustfsBlobStore
 from nora.platform.discord.media import DiscordMediaSource
 from nora.platform.instagram.media import InstagramMediaSource
@@ -52,10 +52,13 @@ def cfg(tmp_path, monkeypatch, pg_url, example_config_path):
         '[persons.miles]\nname = "Miles"\n[[persons.miles.signal]]\nphone = "+852111"\n'
     )
     # policy.toml resolves the same way. `persons = "*"` keeps these wiring
-    # tests about the dependency graph rather than the allowlist.
+    # tests about the dependency graph rather than the allowlist. `label` is
+    # required at startup as of #200 part 2 (an unlabelled allowed room is a
+    # `PolicyError`, the way a second home room already is) — this fixture's
+    # room needs one for `load_policy` to succeed at all.
     (tmp_path / "policy.toml").write_text(
         'default = "deny"\n[[conversations]]\nplatform = "signal"\n'
-        'id = "g1"\npersons = "*"\n'
+        'id = "g1"\nlabel = "g1"\npersons = "*"\n'
     )
     # store.data_dir is overridden to tmp_path so media custody lands in a
     # throwaway directory; the record store's own database is the throwaway
@@ -1417,6 +1420,36 @@ async def test_note_candidates_builds_its_own_unit_resolver(cfg):
     }))
 
     assert any(a.name == "note-candidates" for a in deps.dream_adaptors)
+
+
+async def test_note_candidates_resolves_a_mapped_senders_canonical_name(cfg):
+    """#200 part 1: the composition root wires `persons.name_transcript` into
+    `NoteCandidateAdaptor` the way `MediaJoin` gets `scan_identifiers` —
+    nothing on the Dreamer path ever called it before, so a mapped sender's
+    batch line carried their self-set, spoofable platform profile name
+    instead of the operator's canonical one for them (`identity.toml`'s
+    `[persons.miles]` maps signal `+852111` to `Miles`, the `cfg` fixture's own
+    shape)."""
+    deps = await build_dependencies(override_config(cfg, {
+        "dreamer.enabled": True,
+        "notes.enabled": True,
+        "notes.candidates_enabled": True,
+    }))
+    candidates = next(
+        a for a in deps.dream_adaptors if a.name == "note-candidates"
+    )
+    batch = (
+        TranscriptRow(
+            id=1, sender_id="+852111", sender_name="not-miles", ts=1_000,
+            body="dinner Saturday?", is_nora=False,
+            delivery_status=DeliveryStatus.SENT, raw_json=None,
+        ),
+    )
+
+    text = await candidates.inputs(key="g1", batch=batch)
+
+    assert 'from="Miles"' in text
+    assert "not-miles" not in text
 
 
 async def test_the_dreamer_model_is_built_with_the_dreamers_own_effort(cfg):

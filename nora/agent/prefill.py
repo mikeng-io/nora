@@ -30,7 +30,7 @@ from ..language.culture_render import render_culture
 from ..language.note_render import render_notes
 from ..language.presence_render import render_presence
 from ..language.self_card_render import render_self_card
-from ..language.standing_render import render_standing
+from ..language.standing_render import render_standing, render_standing_working_set
 from ..obs.tracing import annotate, span
 from .clock import local_now, state_time
 
@@ -158,6 +158,12 @@ _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     # everything after it.
     ("culture", 55, "room"),
     ("standing", 60, "room"),
+    # design/standing-compact/30-working-set.md, issue #445. Immediately
+    # after `standing` and before the transcript, on purpose — the read
+    # order stays "here is my position, here is what I have not told you,
+    # here is what has been said since". `room`, `standing`'s own key: this
+    # block is keyed off the same `(platform, conversation_id)` row.
+    ("standing_working_set", 65, "room"),
     ("group_transcript", 70, "room"),
 )
 
@@ -814,6 +820,23 @@ def _standing_block(ctx: TagContext) -> ContextBlock | None:
     return render_standing(ctx.standing)
 
 
+def _standing_working_set_block(ctx: TagContext) -> ContextBlock | None:
+    """Options she found and has not given this room, as
+    `<standing_working_set>` (design/standing-compact/30-working-set.md §4,
+    issue #445). Sits immediately after `_standing_block` in `_BLOCKS` (order
+    65 beside `standing`'s 60) — `_standing_block`'s own reasoning applies
+    unchanged: read as a pair, «here is my position, here is what I have not
+    told you», before the transcript underneath both of them.
+
+    `ctx.standing` already carries `working_set` — no second context field
+    or second store read, the same way `Standing.body` reaches
+    `_standing_block` above.
+    """
+    return render_standing_working_set(
+        ctx.standing.working_set if ctx.standing is not None else (),
+    )
+
+
 def _culture_block(ctx: TagContext, *, now: datetime) -> ContextBlock | None:
     """What this ROOM is like, as `<culture>` (design/culture-tier).
 
@@ -954,6 +977,7 @@ def build_prefill(
             _restamp(_decisions_block(ctx, now=clock)),
             _restamp(_culture_block(ctx, now=clock)),
             _restamp(_standing_block(ctx)),
+            _restamp(_standing_working_set_block(ctx)),
             _transcript_block(ctx, display_name, clock, context_window),
         ])
         # WHICH blocks were actually built (non-empty body — `assemble`'s own

@@ -441,10 +441,10 @@ async def _drive(tmp_path: Path) -> _Journey:
     (tmp_path / "policy.toml").write_text(
         'default = "deny"\n'
         f'[[conversations]]\nplatform = "signal"\nid = "{THREAD_ROOM}"\n'
-        'persons = "*"\nrelevance_gate = true\n'
+        f'label = "{THREAD_ROOM}"\npersons = "*"\nrelevance_gate = true\n'
         f'unit = "{UNIT}"\n'
         f'[[conversations]]\nplatform = "signal"\nid = "{HOME_ROOM}"\n'
-        'persons = "*"\n'
+        f'label = "{HOME_ROOM}"\npersons = "*"\n'
         f'unit = "{UNIT}"\nhome_room = true\n'
     )
     cfg = _config(tmp_path)

@@ -689,3 +689,84 @@ async def test_an_edit_folds_only_once_it_had_happened(engine: Any) -> None:
     assert [r.body for r in after.transcript] == ["dinner at 8"]
     assert after.transcript[0].edit is not None
     assert after.transcript[0].edit.was == "dinner at 7"
+
+
+# --- a source BEHIND this checkout's migration head --------------------------
+#
+# `nora.subject.sandbox.refuse_if_source_diverges_from_head` allows a source
+# behind head to run at all (refusing on every routine deploy lag would
+# refuse nearly every ordinary run from master). `snapshot()` is the
+# fail-closed second layer for the rare migration that actually mattered: a
+# read that hits a column or table a NEWER migration added, against a source
+# that predates it. Simulated here by dropping a column off an otherwise
+# fully migrated, throwaway database — the SAME symptom a genuinely-behind
+# source produces, on a schema this suite controls precisely rather than one
+# built by checking out an old revision.
+
+
+@pytest.fixture
+async def behind_schema_engine(pg_admin: Any) -> AsyncIterator[Any]:
+    """A database at THIS checkout's migration head, minus one column
+    `transcript_select` names — dropped and re-added around the test so
+    nothing else in the suite sees the missing column, and its own database
+    (never `_snapshot_db`, module-scoped and shared) so nothing else in this
+    module does either."""
+    dbname = "t_snapshot_behind_" + uuid4().hex
+    with psycopg.connect(pg_admin.dsn(pg_admin.maintenance_db), autocommit=True) as conn:
+        conn.execute(f'CREATE DATABASE "{dbname}"')
+    url = (
+        f"postgresql+asyncpg://{pg_admin.user}:{pg_admin.password}"
+        f"@{pg_admin.host}:{pg_admin.port}/{dbname}"
+    )
+    run_migrations(url)
+    eng = create_sql_engine(url)
+    try:
+        yield eng
+    finally:
+        await eng.dispose()
+        with psycopg.connect(
+            pg_admin.dsn(pg_admin.maintenance_db), autocommit=True
+        ) as conn:
+            conn.execute(
+                "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                "WHERE datname = %s AND pid <> pg_backend_pid()",
+                (dbname,),
+            )
+            conn.execute(f'DROP DATABASE IF EXISTS "{dbname}"')
+
+
+async def test_snapshot_runs_on_a_source_behind_head_with_a_compatible_schema(
+    behind_schema_engine: Any,
+) -> None:
+    """The positive case, paired with the refusal below: a source whose
+    schema this checkout's reads are actually compatible with (every real
+    "behind head" case, bar the one migration that adds a column/table a
+    read names) runs exactly as a source at head does."""
+    await _say(behind_schema_engine, "dinner at 7", at=T0)
+
+    shot = await snapshot(
+        behind_schema_engine, platform=PLATFORM, conversation_id=CONV,
+        culture_key=CULTURE_KEY, unit=UNIT, before_ms=T0 + MINUTE,
+    )
+
+    assert [r.body for r in shot.transcript] == ["dinner at 7"]
+
+
+async def test_snapshot_fails_closed_with_a_clear_message_when_a_column_is_missing(
+    behind_schema_engine: Any,
+) -> None:
+    from nora.infra.sql.migrations_runner import SourceRevisionMismatchError
+
+    async with behind_schema_engine.begin() as conn:
+        await conn.execute(sa.text("ALTER TABLE messages DROP COLUMN sender_name"))
+
+    with pytest.raises(SourceRevisionMismatchError) as excinfo:
+        await snapshot(
+            behind_schema_engine, platform=PLATFORM, conversation_id=CONV,
+            culture_key=CULTURE_KEY, unit=UNIT, before_ms=T0 + MINUTE,
+        )
+    message = str(excinfo.value)
+    assert "source at" in message
+    assert "branch at" in message
+    assert "missing column or table" in message
+    assert "make eval-source" in message

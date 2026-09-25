@@ -2111,6 +2111,8 @@ async def build_dependencies(
             timeout_seconds=cfg.standing.timeout_seconds,
             store_timeout_seconds=cfg.standing.store_timeout_seconds,
             max_chars=cfg.standing.max_chars,
+            working_set_max_items=cfg.standing.working_set_max_items,
+            working_set_max_chars=cfg.standing.working_set_max_chars,
             # The room's account above the prior (DEC-207), keyed through the
             # policy to the room's `primary_id` — `culture_key` is `None` for a
             # room outside it.
@@ -2804,6 +2806,8 @@ async def build_dependencies(
             fold_batch=cfg.standing.fold_batch,
             timeout_seconds=cfg.standing.timeout_seconds,
             store_timeout_seconds=cfg.standing.store_timeout_seconds,
+            working_set_max_items=cfg.standing.working_set_max_items,
+            working_set_max_chars=cfg.standing.working_set_max_chars,
         )
     engagement = EngagementPipeline(
         # EVERY built adapter, not just Signal's: a tag is answered on the
@@ -3570,6 +3574,23 @@ async def build_dependencies(
                     # reads, for the same reason: «this Saturday» is a
                     # question about the room's calendar, not the process's.
                     timezone=ZoneInfo(cfg.reminders.timezone),
+                    # THE ROOM'S PLATFORM and A NAME RESOLVER (issue #200),
+                    # off the SAME allowlist read `label_for`/`description_for`
+                    # already are, plus `persons` — the one instance every
+                    # other write path in this file already holds. This is
+                    # what lets `inputs()` fill `person_name` from the SAME
+                    # roster the tag path resolves against (DEC-80) before a
+                    # batch line ever renders a mapped sender's self-set,
+                    # spoofable profile name instead of their canonical one.
+                    platform_for={
+                        conv.primary_id: conv.platform
+                        for conv in allowlist.conversations
+                        if conv.primary_id
+                    }.get,
+                    resolve_names=(
+                        lambda rows, platform:
+                            persons.name_transcript(rows, platform=platform)
+                    ),
                 ),
             )
         # NOTE-MERGE (design/dreamer-agent-loop/41 §7, DEC-202): the back-stop

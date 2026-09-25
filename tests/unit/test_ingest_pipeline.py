@@ -172,7 +172,7 @@ async def test_a_denied_conversation_is_never_recorded():
     p = Path(d) / "policy.toml"
     p.write_text(
         'default = "deny"\n[[conversations]]\nplatform = "signal"\n'
-        'id = "allowed"\npersons = "*"\n'
+        'id = "allowed"\nlabel = "allowed"\npersons = "*"\n'
     )
     store = FakeRecordStore()
     pipeline = _pipeline(
@@ -198,7 +198,7 @@ async def test_a_denied_sender_is_recorded_but_not_answered():
     p = Path(d) / "policy.toml"
     p.write_text(
         'default = "deny"\n[[conversations]]\nplatform = "signal"\n'
-        'id = "g1"\npersons = ["someone-else"]\n'
+        'id = "g1"\nlabel = "g1"\npersons = ["someone-else"]\n'
     )
     store = FakeRecordStore()
     pipeline = _pipeline(
@@ -524,7 +524,7 @@ def _policy_of(*, room: str = "g1", persons: str = '"*"'):
     p = Path(tempfile.mkdtemp()) / "policy.toml"
     p.write_text(
         'default = "deny"\n[[conversations]]\nplatform = "signal"\n'
-        f'id = "{room}"\npersons = {persons}\n'
+        f'id = "{room}"\nlabel = "{room}"\npersons = {persons}\n'
     )
     return load_policy(p)
 

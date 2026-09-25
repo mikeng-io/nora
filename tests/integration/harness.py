@@ -365,7 +365,7 @@ async def build_handler(
         'default = "deny"\n'
         + "".join(
             f'[[conversations]]\nplatform = "signal"\nid = "{cid}"\n'
-            'persons = "*"\n'
+            f'label = "{cid}"\npersons = "*"\n'
             + (
                 # The participation occasion's room opt-in (35 §7): only present
                 # when the scenario wired a participation runner at all.

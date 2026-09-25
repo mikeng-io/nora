@@ -983,6 +983,28 @@ class NoteCandidateAdaptor:
         # no policy lookup stands between the two. `None` while
         # `[culture] enabled = false`.
         culture: CultureReader | None = None,
+        # THE ROOM'S PLATFORM (issue #200) — the same `.get` over the
+        # allowlist `unit_for`/`label_for`/`description_for` already are, so
+        # a name resolver keyed on `(platform, sender_id)` can be called at
+        # all. `None` (unwired, or the room maps to no platform) skips
+        # resolution: `_render_line` already never renders a raw id either
+        # way (`speaker_name`'s `or "unknown"`), so an unwired composition
+        # only loses the canonical name, never gains a leak.
+        platform_for: Callable[[str], str | None] | None = None,
+        # A NAME RESOLVER, INJECTED the way `MediaJoin` gets `scan_identifiers`
+        # at the composition root: `nora/language/` sits below `nora/persons`'
+        # callers in the import contract, so this module cannot reach
+        # `Persons.name_transcript` itself. Composition hands in
+        # `persons.name_transcript` (wrapped to take `platform` positionally),
+        # so a batch row's `person_name` is filled from the SAME roster the
+        # tag path resolves against (DEC-80) before `_render_line` ever sees
+        # it — closing the gap #200 found: this adaptor is the Dreamer's own
+        # transcript assembler and never called `name_transcript`, so a
+        # mapped sender rendered their self-set, spoofable `sender_name`
+        # instead of the operator's canonical name for them, on every fire.
+        resolve_names: (
+            Callable[[Sequence[TranscriptRow], str], Sequence[TranscriptRow]] | None
+        ) = None,
     ) -> None:
         self._notes = notes
         self._culture = culture
@@ -992,6 +1014,8 @@ class NoteCandidateAdaptor:
         self._description_for = description_for
         self._metrics = metrics
         self._tz = timezone
+        self._platform_for = platform_for
+        self._resolve_names = resolve_names
         # Per key, written by `inputs` and read by `accept` — the only
         # channel between them (`DreamAdaptor.accept` takes no batch).
         # Keyed by `key`, not a bare attribute, because
@@ -1035,6 +1059,19 @@ class NoteCandidateAdaptor:
         self._message_ids[key] = frozenset(row.id for row in batch)
         if not batch:
             return ""
+        # RESOLVE NAMES (issue #200), the same projection the tag path
+        # applies before its own transcript ever renders (DEC-80). Every row
+        # this adaptor gets from `record.since` carries `person_name=None` —
+        # nothing on the Dreamer path ever called `Persons.name_transcript`
+        # — so without this a mapped sender's line was attributed to their
+        # self-set, spoofable `sender_name` instead of the operator's name
+        # for them. `_render_line` still never renders a raw id either way
+        # (`speaker_name`'s `or "unknown"`); this is what makes the MAPPED
+        # case correct rather than merely non-leaking.
+        if self._resolve_names is not None:
+            platform = self._platform_for(key) if self._platform_for is not None else None
+            if platform is not None:
+                batch = tuple(self._resolve_names(batch, platform))
         unit = self._unit_for(key)
         # THE ROOM (issue #161). `key` IS the room's conversation id, so the
         # room was always knowable here; `room = unit or key` threw it

@@ -25,7 +25,7 @@ from nora.language.presence_render import render_presence
 from nora.platform.discord.adapter import DiscordAdapter
 from nora.platform.instagram.self_id import derive_identity, read_username
 from nora.platform.registry import AdapterRegistry
-from nora.policy import load_policy
+from nora.policy import Conversation, Policy, load_policy
 
 
 def _ctx(platform: str = "signal", **kwargs) -> TagContext:
@@ -164,13 +164,37 @@ async def test_a_unit_alone_in_policy_does_not_claim_other_groups(tmp_path):
     assert "other groups" not in body
 
 
-async def test_no_room_id_reaches_the_block(tmp_path):
+async def test_no_room_id_reaches_the_block():
     """R-18. The WhatsApp room here has NO label, which is the case that
     matters: `UnitRoom` falls back to `primary_id` for exactly that, and a
-    reader copying it would put a room id in every turn."""
-    path = tmp_path / "policy.toml"
-    path.write_text(_POLICY.replace('label = "Friends WA"\n', ""))
-    body = await _body(PresenceReader(policy=load_policy(path), adapters=_adapters()))
+    reader copying it would put a room id in every turn.
+
+    Built as a `Policy` directly rather than through `load_policy`: an
+    allowed room with no label is now a STARTUP error there (#200 part 2), so
+    a `policy.toml` can no longer carry the case this test proves is still
+    handled — the render-time floor stays defense in depth regardless."""
+    convs = (
+        Conversation(
+            platform="signal", ids=frozenset({"SIGNAL-FRIENDS-ID"}), persons=None,
+            label="Friends", primary_id="SIGNAL-FRIENDS-ID", unit="friends",
+        ),
+        Conversation(
+            platform="discord", ids=frozenset({"111/222"}), persons=None,
+            label="Zone 42", primary_id="111/222", unit="friends",
+        ),
+        Conversation(
+            platform="whatsapp", ids=frozenset({"WA-FRIENDS-ID"}), persons=None,
+            primary_id="WA-FRIENDS-ID", unit="friends",
+        ),
+        Conversation(
+            platform="instagram", ids=frozenset({"IG-RIDGELINE-ID"}), persons=None,
+            label="Ridgeline Secret Club", primary_id="IG-RIDGELINE-ID", unit="ridgeline",
+        ),
+    )
+    policy = Policy(
+        conversations=convs, _by_id={(c.platform, c.primary_id): c for c in convs},
+    )
+    body = await _body(PresenceReader(policy=policy, adapters=_adapters()))
 
     assert "and WhatsApp." in body          # named by its network alone
     for rid in ("SIGNAL-FRIENDS-ID", "111/222", "WA-FRIENDS-ID", "IG-RIDGELINE-ID"):

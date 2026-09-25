@@ -1392,6 +1392,35 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "message's check retries).",
         ("stage",),
     ),
+    # design/standing-compact/30-working-set.md, issue #445. A dropped item
+    # never reaches `screen` and is never a candidate for the overflow
+    # refusal below — it was never a candidate at all.
+    _CounterSpec(
+        "nora_standing_working_set_unsourced_dropped_total",
+        "Working-set items the fold's write path dropped because their "
+        "`source` did not name a step this turn's <steps> actually showed, "
+        "EXACTLY (a carried-forward item, unchanged from its prior, is not "
+        "re-checked). A rising series says the objective or the model is "
+        "naming sources that are not exact tool names — a description or a "
+        "paraphrase, not the tool itself.",
+    ),
+    _CounterSpec(
+        "nora_standing_working_set_expired_dropped_total",
+        "Working-set items the fold's write path dropped because they were "
+        "a carry-forward past [standing]'s working-set TTL — the model "
+        "re-stated an item whose found_at is too old to keep, and the write "
+        "path refused it deterministically rather than writing it back and "
+        "resetting nothing. Distinct from the render-time TTL filter "
+        "(render_standing_working_set): this is the same rule enforced "
+        "where the row is WRITTEN, not just where it is read.",
+    ),
+    _CounterSpec(
+        "nora_standing_working_set_overflow_refusals_total",
+        "Working-set writes refused for exceeding [standing] "
+        "working_set_max_items or working_set_max_chars. The whole new set "
+        "is refused and the PRIOR working set is kept — never a silent "
+        "truncation, no consolidate retry (unlike the body's own overflow).",
+    ),
     _CounterSpec(
         "nora_standing_event_folds_total",
         "Event-triggered standing fold ROUTINES (design/standing-watermark/10): "
