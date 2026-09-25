@@ -350,6 +350,33 @@ def test_the_objective_gives_a_concrete_recap_vs_position_contrast():
     assert 'The position answers "what I am holding open' in body
 
 
+def test_the_derivability_test_and_closing_line_require_usefulness_for_a_finding():
+    """Issue #445 review: v8 first added "found and have not yet given the
+    room" to the derivability test and the closing line without the bullet's
+    own condition, "while it is still useful to someone here" (line "what I
+    found or worked out..." above). Without it, the every-sentence test lets
+    in a finding that is mere trivia — another placing, a field size, a team
+    background — because those too are "found and not yet given". Both
+    sentences must carry the full clause, not just "found ... not yet given
+    the room".
+
+    Pinned on the shipped objective through the real loader, like the
+    deployment's hot-reload reads it. Guarded by
+    scripts/mutations/standing-compact.json (two entries, one per sentence)."""
+    from tests.objectives import shipped_objectives
+
+    body = shipped_objectives().objective_body("standing-debrief")
+    clause = "found, have not yet given the room, and is still useful to someone here"
+    assert (
+        "it is what YOU concluded, committed to, are still holding open, "
+        f"or {clause}."
+    ) in body, "the derivability test dropped the usefulness condition"
+    assert (
+        'The position answers "what I am holding open, committed to, '
+        f'concluding, or {clause}". Write the second.'
+    ) in body, "the closing line dropped the usefulness condition"
+
+
 async def test_a_second_overflow_writes_nothing_and_the_prior_position_stands():
     """§4.0's fail-closed half. Truncating here would be the silent eviction
     that turns a rolling position into a recent summary; writing the over-long

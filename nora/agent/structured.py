@@ -24,7 +24,17 @@ five — while costing 2.6x the tokens (2026-09-09; `evals/relevance_gate.py
 
 So this is NOT a drop-in replacement for a raw completion on a path whose
 verdict is security-relevant. It is here to be measured against, and to be
-the one home for the SDK call if that transport limitation is lifted.
+the one home for the SDK call.
+
+**The limitation is lifted for the agent loop, not here** (DEC-208, #325,
+2026-09-25). The drop was the SDK's formatter, not the transport: the upstream
+reads a prior assistant message's reasoning from a `reasoning` field, and
+`nora.agent.reasoning_carry` now puts it there for every provider
+`factory.create_model_provider` builds. `build_structured_model` below still
+builds the plain `DashFreeOpenAIModel` ON PURPOSE: `ask_structured` is the arm
+ADR 0011 measured, and carrying the reasoning would change the arm the eval
+compares against. Moving it onto the carrying model is a new measurement of
+the gate's `--via-sdk` arm first, not an edit.
 
 **The relevance gate is that exception, and since 2026-09-11 it is HONOURED
 rather than only warned about.** This paragraph was written in the same change
