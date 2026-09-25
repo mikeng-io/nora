@@ -103,9 +103,13 @@ files.
 - **Neither T-pose wears the earphones.** Right for a rig base: the avatar
   spike already adds earphones as a separate decal/mesh, so the cable does not
   deform with the arms.
-- **The embodied T-pose departs from 05's anchors beyond proportion:** a
-  cropped fitted top in place of the plain white top, and a styling that leans
-  toward the "generic AI-girl" 05 warns against. 05 says the core anchors hold
+- **The embodied T-pose departs from 05 beyond proportion, in rendering first
+  and wardrobe second.** It is a photorealistic render (realistic face, skin
+  and anatomy), where 05 says "Nora is a stylized 3D character, not a
+  photorealistic human" and to avoid "virtual-influencer aesthetics" and
+  "generic AI-girl imagery": the very pattern this node's framing exists to
+  stay clear of. Wardrobe: a cropped, fitted top in place of the plain white
+  top, and no earphones. 05 says the core anchors hold
   "across avatars, illustrations, 3D environments"; whether the embodied form
   is bound by the anchors other than proportion (hair, hoodie, earphones,
   jeans, sneakers) and by the rendering exclusions is an operator decision

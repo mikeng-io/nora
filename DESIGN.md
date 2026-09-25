@@ -193,6 +193,14 @@ Rules that hold on every surface:
 
 ## 3. Colors
 
+**Two themes, one set of roles.** Every colour exists as a pair: `studio` and
+`night-studio`, `denim` and `night-denim`, and so on. The components block in
+the frontmatter names the light key only; a reference resolves inside the
+active theme's set, so `{colors.surface}` on `{colors.denim}` means
+night-surface on night-denim in dark mode, never light surface on night denim.
+In code this is one CSS custom property per role, redefined per theme (the
+portal's `globals.css` already works this way).
+
 ### Accent
 - **Denim** (`#48587A` / night `#9AA9CA`): primary action, focus ring, links,
   current selection, the active nav item. Her jeans, the one blue she wears. It
@@ -230,7 +238,9 @@ light and 4.80 night.
 ### Named rules
 **The Blush Rule.** Blush means Nora. It is never an error, a warning, a
 highlight or decoration. If a blush element does not point at her, it is the
-wrong colour. Because blush and danger are both warm, danger always carries an
+wrong colour. Blush and danger sit about 17° apart in hue and 1.7:1 apart in
+contrast, too close for colour alone under colour-vision deficiency, so the
+mitigation is load-bearing: danger always carries an
 icon and a word, and blush never does the job of either.
 
 **The One-Accent Rule.** Denim is the only accent. A second hue for "brand" or
@@ -352,7 +362,20 @@ surface, four destinations, no raised centre button.
 ### Map
 Warm-grey basemap, people in their person hue, routes as a single 2px line
 (the Cable Rule), Nora (when shown) in blush. The live-position pulse is the
-map's only loop.
+map's only loop. In dark mode the basemap is a dark warm-grey tile set (never
+the provider's default blue-black), so person hues keep their contrast.
+
+### Data and states
+- **Charts:** a single series is denim. Series that are people take their
+  person hue; other categorical series step through denim, ink-soft and seam.
+  Blush only for a series that is Nora. Gridlines are hairline, axis text
+  ink-muted, values in mono.
+- **Loading:** a static hoodie-coloured skeleton sized to the content it
+  stands in for, cross-faded out when the data lands. No shimmer sweep (the
+  No-Ambience Rule); a spinner only where the wait is open-ended.
+- **Empty:** one sentence in ink-soft saying what would appear here and how it
+  gets there. Mini Nora may appear in an empty state at small size; never a
+  generic illustration.
 
 ## 8. Imagery and her other surfaces
 
