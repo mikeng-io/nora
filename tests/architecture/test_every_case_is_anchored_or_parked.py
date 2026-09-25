@@ -219,9 +219,11 @@ def test_the_whole_corpus_is_accounted_for() -> None:
     42 §10.1: the one real moment predates #228's title key), plus
     `standing`'s 5 open-plan `carry` cases (2026-09-26,
     design/standing-compact/40-open-plans.md §6: the five production folds
-    design/group-situation/10 confirmed dropped an open plan); a change to it
+    design/group-situation/10 confirmed dropped an open plan), less the
+    dated meet-up case removed when design 40 was withdrawn (2026-09-26: a
+    dated plan is the note tier's to hold); a change to it
     is a change to what the suite claims to measure and belongs in a commit that
     says so. Recomputed with `census()` at each merge, never summed."""
     totals = [census(n) for n in CORPORA]
-    assert sum(c.total for c in totals) == 239
-    assert sum(c.active + c.parked for c in totals) == 239
+    assert sum(c.total for c in totals) == 238
+    assert sum(c.active + c.parked for c in totals) == 238
