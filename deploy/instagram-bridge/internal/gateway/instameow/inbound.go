@@ -176,6 +176,15 @@ type eventShared struct {
 	// a vocabulary nothing has measured.
 	Typename string `json:"typename,omitempty"`
 	Layout   string `json:"layout,omitempty"`
+	// TargetID is the XMA's `target_id`, passed through uninterpreted. A post
+	// that mentions @noraexample in its caption arrives in a DM thread as an
+	// inline-share XMA with NO target_url (measured 2026-09-25), so this is
+	// the one field that may name the post. What id space it is in is
+	// unmeasured.
+	TargetID string `json:"target_id,omitempty"`
+	// Actions are the XMA's CTA buttons' `action_url`s, uninterpreted, for
+	// the same reason: the other place a card can carry its link.
+	Actions []string `json:"actions,omitempty"`
 }
 
 type messageEvent struct {
@@ -298,8 +307,16 @@ func sharedOf(msg *slidetypes.Message) *eventShared {
 		TargetURL: x.TargetURL,
 		Typename:  x.Typename,
 		Layout:    x.PreviewLayoutType,
+		TargetID:  x.TargetID,
 	}
-	if *out == (eventShared{}) {
+	for _, b := range x.CTAButtons {
+		if b != nil && b.ActionURL != "" {
+			out.Actions = append(out.Actions, b.ActionURL)
+		}
+	}
+	if out.Caption == "" && out.Author == "" && out.Subtitle == "" && out.Title == "" &&
+		out.TargetURL == "" && out.Typename == "" && out.Layout == "" &&
+		out.TargetID == "" && len(out.Actions) == 0 {
 		// An XMA that carried nothing readable. Returning an all-empty object
 		// would tell the adapter "a post was shared" on no evidence at all,
 		// which is a claim; nil says "not a shared post as far as I can tell",
