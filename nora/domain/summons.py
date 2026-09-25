@@ -435,16 +435,18 @@ def build_context(
 
 
 def with_readings(
-    ctx: SummonsContext, readings: tuple[ItemReading, ...],
+    ctx: SummonsContext, readings: tuple[ItemReading, ...], *, now: datetime,
 ) -> SummonsContext:
     """`ctx` with what each of its items shows, one reading per item in the
-    context's own order. A count that does not match is a wiring bug and
-    raises: a reading pinned to the wrong item is worse than none."""
+    context's own order, and `now` moved to when the reading ENDED: the read
+    can take minutes, and every age she is shown is measured from `now`. A
+    count that does not match is a wiring bug and raises: a reading pinned to
+    the wrong item is worse than none."""
     if len(readings) != len(ctx.items):
         raise ValueError(
             f"{len(readings)} reading(s) for {len(ctx.items)} item(s): one per item",
         )
-    return replace(ctx, items=tuple(
+    return replace(ctx, now=now, items=tuple(
         replace(item, reading=reading)
         for item, reading in zip(ctx.items, readings, strict=True)
     ))
@@ -483,22 +485,17 @@ def _who(name: str | None) -> str:
     return f"@{name}" if name else "someone"
 
 
-#: What an item line says when there is no reading to show, by state. The
-#: wording is `instagram_read`'s (`nora.infra.social.render._NOT_SEEN`),
-#: except that every failure is one sentence here: she cannot act on why.
+#: What an item line says when there is no reading to show, by state. FACTS
+#: ONLY: no instruction to her and no pointer to a tool. What she does with
+#: an unread item is `public/conduct.md`'s to say, not this render's (a
+#: room's wording here once told her to "say you couldn't see it", which on
+#: a public surface is the doctrine's call, not a data line's).
 _NOT_SEEN: dict[str, str] = {
-    "withheld": "not shown: what it shows has what looks like a phone number or ID in it",
-    "unreadable": "could not be read: say you couldn't see it, don't guess what it shows",
-    "too_long": (
-        "not read: longer than one reading window; "
-        "media_fetch(url=...) on its link reads it"
-    ),
-    "unknown_length": (
-        "not read: a video of unknown length; media_fetch(url=...) on its link reads it"
-    ),
-    "over_video_cap": (
-        "not read: past the videos read per post; media_fetch(url=...) on its link reads it"
-    ),
+    "withheld": "not shown: what it shows contains what looks like a phone number or ID",
+    "unreadable": "could not be read",
+    "too_long": "not read: longer than one reading window",
+    "unknown_length": "not read: a video of unknown length",
+    "over_video_cap": "not read: past the number of videos read per post",
 }
 
 
@@ -532,9 +529,8 @@ def render_summons(ctx: SummonsContext) -> str:
         "you send is posted once, as a public reply to that comment, where "
         "strangers read it. Saying nothing is a complete answer. It is now "
         f"{now.strftime('%Y-%m-%d %H:%M')} UTC. {_who(ctx.summoner)} tagged "
-        f"you {age(ctx.summoned_at, now)}. Each item of the post was looked "
-        "at for you before this turn: under each one is what it shows, or "
-        "that it could not be read."
+        f"you {age(ctx.summoned_at, now)}. Under each item of the post is "
+        "what a reading of it before this turn found, or that it was not read."
     )
     post_lines = [
         f"posted by {_who(ctx.post_author)} "

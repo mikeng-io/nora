@@ -309,14 +309,23 @@ now read BEFORE the turn and are part of what she reads:
   the rest are counted, never read), one budget of `MEDIA_READ_SECONDS` =
   150 s for all of them (one look's ceiling: the 82 s reel measured in 18,
   with headroom). An item that fails, times out or never started renders
-  "could not be read"; the turn runs either way.
-- **Nothing is stored.** A url read keeps no bytes and writes no
-  `media_objects` row; with `persist` off (the story frame's switch) it
-  writes neither content cache. Counted on
+  "could not be read"; the turn runs either way. The ages she reads are
+  measured from when the read ended.
+- **The pre-read stores nothing.** Its url reads keep no bytes and write no
+  `media_objects` row; with `persist` off (the story frame's switch) they
+  write neither content cache. Counted on
   `nora_media_fetch_total{caller="summons"}`; the stage span
-  `summons.read_items` carries counts and states only.
+  `summons.read_items` carries counts and states only. A `media_fetch` she
+  makes herself is an ordinary model read and caches as any does.
 - **Rendered inside the post's `social_post` block**, one reading line
-  under each item. `media_fetch` stays granted for anything else.
+  under each item: facts only ("could not be read", "not read: longer than
+  one reading window"), with no instruction to her and no pointer to a
+  tool; what she does with an unread item is `public/conduct.md`'s call.
+  `media_fetch` stays granted for anything else.
+- **Each claim its own check.** A summons turn may call `web_search` 8 times
+  (`SUMMONS_WEB_SEARCHES`), not the registry's per-turn 4: `public/conduct.md`
+  v3 asks for one check per claim she judges, and a live post named seven
+  companies. A room tag keeps the registry's value; `x_search` is unchanged.
 
 ## Two things the review of #545 recorded
 

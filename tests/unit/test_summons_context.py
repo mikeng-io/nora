@@ -151,14 +151,36 @@ def test_each_item_carries_its_reading_inside_the_post_block():
         ItemReading("seen", "a grey heron in reeds"),
         ItemReading("unreadable"),
         ItemReading("withheld"),
-    ))
+    ), now=NOW)
     text = render_summons(ctx)
     head = text.partition("<social_post")[0]
     block = _post_block(text)
     assert "a grey heron in reeds" not in head
     assert "  shows: a grey heron in reeds" in block
-    assert "  could not be read: say you couldn't see it, don't guess what it shows" in block
-    assert "  not shown: what it shows has what looks like a phone number or ID" in block
+    assert "  could not be read\n" in block
+    assert "  not shown: what it shows contains what looks like a phone number or ID" in block
+
+
+@pytest.mark.parametrize("state", ["unreadable", "too_long", "unknown_length", "over_video_cap"])
+def test_a_not_read_line_states_a_fact_and_tells_her_nothing(state):
+    """What she does with an unread item is `public/conduct.md`'s call: the
+    line carries no instruction and no pointer to a tool (her own
+    `media_fetch` is a model read, which caches)."""
+    ctx = with_readings(_context(post=_post(1)), (ItemReading(state),), now=NOW)
+    line = next(
+        row for row in _post_block(render_summons(ctx)).splitlines() if row.startswith("  ")
+    ).strip()
+    assert line.startswith(("could not be read", "not read: "))
+    for instruction in ("say", "don't", "media_fetch", "guess", "you"):
+        assert instruction not in line, line
+
+
+def test_the_ages_are_measured_from_when_the_reading_ended():
+    later = NOW + timedelta(minutes=3)
+    ctx = with_readings(_context(post=_post(1)), (ItemReading("unreadable"),), now=later)
+    text = render_summons(ctx)
+    assert "It is now 2026-09-25 12:03 UTC" in text
+    assert "@miles_example tagged you 8m ago" in text
 
 
 def test_an_item_never_looked_at_says_so_rather_than_nothing():
@@ -169,7 +191,7 @@ def test_a_long_reading_is_clamped_and_its_coverage_sentence_survives():
     coverage = "(About 2 minutes of this 3-minute clip were watched.)"
     ctx = with_readings(_context(post=_post(1)), (
         ItemReading("seen", "frame [0:00] " + "a heron wading " * 400, coverage),
-    ))
+    ), now=NOW)
     line = next(
         row for row in _post_block(render_summons(ctx)).splitlines()
         if row.strip().startswith("shows:")
@@ -183,7 +205,7 @@ def test_a_long_reading_is_clamped_and_its_coverage_sentence_survives():
 
 def test_readings_must_be_one_per_item():
     with pytest.raises(ValueError, match="one per item"):
-        with_readings(_context(post=_post(2)), (ItemReading("unreadable"),))
+        with_readings(_context(post=_post(2)), (ItemReading("unreadable"),), now=NOW)
 
 
 def test_a_reading_carries_text_exactly_when_it_was_seen():

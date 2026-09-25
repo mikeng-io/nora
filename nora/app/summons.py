@@ -87,12 +87,13 @@ log = logging.getLogger("nora.app.summons")
 #: The tools a public summons may call (design/threads-adoption/10
 #: §"PUBLIC_GRANT", minus `generate_image` per design 19: a comment carries no
 #: image). Read-only lookups on the open web and X, `media_fetch` (the post's
-#: items are already read before the turn, `_read_items`; this is for a
-#: question the reading does not answer, a video too long to read up front,
-#: or any other picture), the clock and arithmetic, and `send_reply` into the
-#: staging deliverer. NOTHING that reads a room, a roster, memory, notes,
-#: persons or places, and no Instagram tool: `instagram_read` reads stories
-#: that are roster-scoped, over the same session this occasion writes with.
+#: items are already read before the turn, `_read_items`, and the render does
+#: not point her at it; it stays granted for anything else, and HER call is
+#: an ordinary `caller="model"` read that caches as every model read does),
+#: the clock and arithmetic, and `send_reply` into the staging deliverer.
+#: NOTHING that reads a room, a roster, memory, notes, persons or places,
+#: and no Instagram tool: `instagram_read` reads stories that are
+#: roster-scoped, over the same session this occasion writes with.
 #: `tests/unit/test_summons_occasion.py` pins it as a subset of the registry's
 #: read-only tools plus `send_reply`.
 PUBLIC_GRANT: frozenset[str] = frozenset({
@@ -116,6 +117,21 @@ CONVERSATION_TYPE = "public"
 #: waits on, and a reel that times out is exactly the failure this read
 #: exists to end. Past it, an item is said to be unreadable, never guessed.
 MEDIA_READ_SECONDS = 150.0
+
+#: One look's own ceiling inside that budget: the same number, so in
+#: production the two bind together and there is ONE budget. Kept a separate
+#: knob so a test can tell a look that ran out of its own time from a read
+#: that ran out of the whole budget.
+MEDIA_ITEM_SECONDS = 150.0
+
+#: `web_search` calls one summons turn may make. `public/conduct.md` v3: when
+#: a post makes several claims, each claim she judges gets its OWN check, not
+#: one settled as a side effect of another. A live summons post named seven
+#: companies; the registry's per-turn budget (a room tag's, sized for one
+#: question) would have left three of them unchecked. Raised for THIS
+#: occasion only: a room tag keeps the registry's value, and `x_search` is
+#: unchanged.
+SUMMONS_WEB_SEARCHES = 8
 
 #: The bridge's write refusals, mapped to the ledger state they leave
 #: (design 19's guard table; `errors.go`'s refusal codes). Anything not named
@@ -246,6 +262,7 @@ class SummonsOccasion:
         timeout_seconds: float,
         clock: Callable[[], datetime],
         media_read_seconds: float = MEDIA_READ_SECONDS,
+        media_item_seconds: float = MEDIA_ITEM_SECONDS,
     ) -> None:
         self._client = client
         self._ledger = ledger
@@ -263,6 +280,7 @@ class SummonsOccasion:
         self._timeout_seconds = timeout_seconds
         self._clock = clock
         self._media_read_seconds = media_read_seconds
+        self._media_item_seconds = media_item_seconds
 
     @property
     def mode(self) -> str:
@@ -415,7 +433,11 @@ class SummonsOccasion:
             # ONE reply, and `send_reply` alone ends the turn: `send_gif` is
             # not granted, and leaving it terminal with a budget would let the
             # guard wait on a verb she cannot call.
-            budgets={**self._registry.budgets(), "send_reply": 1},
+            budgets={
+                **self._registry.budgets(), "send_reply": 1,
+                # Each claim its own check (`SUMMONS_WEB_SEARCHES`).
+                "web_search": SUMMONS_WEB_SEARCHES,
+            },
             terminal=frozenset({"send_reply"}),
             metrics=self._metrics, audience=SUMMONS,
             # No roster and no preview: a comment tags nobody.
@@ -437,10 +459,11 @@ class SummonsOccasion:
             "fire_turn": True, "links": handle.links,
         }
         surface = self._registry.surface(**turn_tools, grant=PUBLIC_GRANT)
-        # What the post SHOWS is read before she is: through THIS turn's own
-        # `media_fetch`, built over the same no-room collaborators as the
-        # tools she is handed, so the read and any look she takes herself go
-        # through one closure.
+        # What the post SHOWS is read before she is, by a `media_fetch` the
+        # registry builds from the SAME arguments as the tools she is handed:
+        # a second build, so a second closure, with the same no-room
+        # collaborators and the same configuration as hers. Her own calls
+        # are not this one's (hers are `caller="model"`).
         context = await self._read_items(
             summons_id, context, self._registry.specs(**turn_tools),
         )
@@ -448,7 +471,7 @@ class SummonsOccasion:
         message = NormalizedMessage(
             platform="instagram", conversation_id=conversation_id,
             conversation_type=CONVERSATION_TYPE, sender_id="", sender_name=None,
-            timestamp=int(now.timestamp() * 1000), body=question, raw={},
+            timestamp=int(context.now.timestamp() * 1000), body=question, raw={},
         )
         ctx = TagContext(
             tag_id=str(summons_id), message=message, tagger=None,
@@ -482,21 +505,25 @@ class SummonsOccasion:
         has. The caption is not in the view: nothing a stranger wrote can
         reach a vision prompt.
 
-        **Nothing is stored** (`persist=False`, the story frame's switch). A
-        url read writes no blob and no `media_objects` row in any case (its
-        bytes are never kept, `media_fetch`'s url path); with `persist` off
-        it writes neither content cache either. A stranger's public post is
-        read for one answer and kept nowhere, the conversation it is read in
-        (`summons:<uuid>`) is no room, and no row anywhere names it.
+        **The pre-read stores nothing** (`persist=False`, the story frame's
+        switch). A url read writes no blob and no `media_objects` row in any
+        case (its bytes are never kept, `media_fetch`'s url path); with
+        `persist` off these looks write neither content cache either. That
+        is a claim about THIS read only: a `media_fetch` she makes herself in
+        the turn is an ordinary `caller="model"` read and caches as every one
+        does, which is why the render never points her at it.
 
         Never raises for a reading's sake: a look that fails, times out or
-        never started is `unreadable`, and she is told so."""
+        never started is `unreadable`, and her context says it could not be
+        read. `context.now` moves to when the read ended (`with_readings`),
+        so every age she is shown is measured after it."""
         if not context.items:
             return context
         fetch = next((spec.call for spec in specs if spec.name == "media_fetch"), None)
         if fetch is None:  # pragma: no cover — media_fetch is always registered
             return with_readings(
                 context, tuple(ItemReading("unreadable") for _ in context.items),
+                now=self._clock(),
             )
         look = media_look(
             fetch, caller="summons", persist=False,
@@ -519,7 +546,7 @@ class SummonsOccasion:
             try:
                 read = await read_view(
                     view, look, max_items=MAX_ITEMS_SHOWN,
-                    item_timeout=self._media_read_seconds,
+                    item_timeout=self._media_item_seconds,
                     total_timeout=self._media_read_seconds,
                 )
                 readings = tuple(_item_reading(item.reading) for item in read.items)
@@ -534,7 +561,7 @@ class SummonsOccasion:
                 f"nora.items_{state}": count
                 for state, count in Counter(r.state for r in readings).items()
             })
-        return with_readings(context, readings)
+        return with_readings(context, readings, now=self._clock())
 
     # ---- the flush: the ONE place a comment is written ----------------------
 
