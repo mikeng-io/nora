@@ -7957,7 +7957,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
 
         `status` is `ok`, `nothing_found`, `unavailable`, `ambiguous` or
         `refused`. Anything but `ok` carries a `note` saying what to tell
-        them.
+        them, or, for a link another tool owns, which one to call instead.
 
         Args:
             what: `profile` or `story`. Leave it out with a link, unless

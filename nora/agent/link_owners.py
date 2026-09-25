@@ -16,10 +16,10 @@ network's own `parse_link` (`nora/domain/x_links.py`,
 fake owner. This is the behaviour change the design node names for this PR:
 a pasted X post or profile link, or a LinkedIn person or company link, is
 now redirected by both fetchers instead of reaching the provider or the
-downloader. `x_read` and `linkedin_read` keep their own hand-written
-cross-network branches (`nora/agent/tools.py`'s `x_read`/`linkedin_read`) —
-replacing those with `owner_of` is step 3 ("The owners use the registry"),
-not built here.
+downloader. `x_read` and `linkedin_read` kept their own hand-written
+cross-network branches as of THIS PR (`nora/agent/tools.py`'s `x_read`/
+`linkedin_read`); replacing those with `owner_of` is step 3 ("The owners use
+the registry"), built below, not in PR 2.
 
 **PR 3** ("Migration" step 3, this commit): `instagram_read`, `x_read` and
 `linkedin_read` replace their three DISAGREEING hand-written cross-network
@@ -253,8 +253,8 @@ def _x_claim(text: str) -> LinkClaim | None:
     wraps Instagram's. Unlike Instagram, X's OWN host allowlist
     (`x_links.X_HOSTS`, `x_links.py:34-37`) already accepts
     `mobile.x.com`/`mobile.twitter.com` and the bare `x.com`/`twitter.com`
-    spellings as fully readable — `x_read` reads every one of them
-    (`tools.py:7480`, same `parse_link` call) — so there is no separate
+    spellings as fully readable — `x_read`'s own read of an X link uses the
+    same `parse_link` call — so there is no separate
     "readable=False" mobile shape here: every claim `parse_link` returns is
     `readable=True`.
 
@@ -291,8 +291,9 @@ def _linkedin_claim(text: str) -> LinkClaim | None:
     §"Types"):
 
     - **A `post` is never claimed.** `linkedin_read` refuses to open one
-      from its link (`tools.py:7714-7724`: "No backend reads one LinkedIn
-      post by its URL"), and a public LinkedIn post page is something
+      from its link ("No backend reads one LinkedIn post by its URL", in its
+      own `parsed.kind == "post"` branch), and a public LinkedIn post page is
+      something
       `web_fetch` may still be able to read — claiming it would route a
       readable page to a tool that says "I can't". Returning `None` here is
       what lets the fetcher try it as an ordinary page, the same as `lnkd.in`

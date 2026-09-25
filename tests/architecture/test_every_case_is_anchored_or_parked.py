@@ -194,11 +194,14 @@ def test_the_whole_corpus_is_accounted_for() -> None:
     say?", expecting the network's own read tool with the link — the same
     property P10/P12 pins for Instagram, over the two networks this PR
     registers), plus its 1 PR-3 case
-    (`route_x_read_link_owner_registry_wrong_owner_first`, 2026-09-25,
-    "Migration" PR 3: an X link introduced as "this LinkedIn", grading a
-    recovery through the registry's cross-network redirect rather than a
-    dead end — no `before:` ordering, since the redirect path is a
-    `linkedin_read` call the case must PERMIT, not forbid); a change to it
+    (`route_x_read_link_owner_registry_wrong_owner_instagram_first`,
+    2026-09-25, "Migration" PR 3: an X link introduced as "this insta post",
+    grading a recovery through the registry's cross-network redirect rather
+    than a dead end — `instagram_read`, not `linkedin_read`, is the wrong
+    owner this case primes, because `linkedin_read` already named `x_read`
+    for an X link before this PR (DEC-201) and so would not tell the two
+    arms apart; no `before:` ordering, since the redirect path is an
+    `instagram_read` call the case must PERMIT, not forbid); a change to it
     is a change to what the suite claims to measure and belongs in a commit
     that says so. Recomputed with `census()` at each merge, never summed."""
     totals = [census(n) for n in CORPORA]

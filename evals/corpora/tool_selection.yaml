@@ -411,31 +411,38 @@ cases:
 
   # design/social-per-network/30-link-owner-registry.md, "Migration" PR 3:
   # the OWNERS now consult the registry too, so a wrong-first-owner call
-  # recovers instead of dead-ending on "I can't read that." The message names
-  # the wrong network on purpose (an X status link, called "this LinkedIn") —
-  # the shape the routing note is FOR: a model that reaches for `linkedin_read`
-  # first, off the person's own word, now gets redirected (`nothing_found`,
-  # naming `x_read` and the `link` param) instead of `linkedin_read`'s old
-  # dead-end refusal, and should recover onto `x_read` with the right link.
-  # No `before:` here, same correction as the two PR-2 cases above and for
-  # the same measured reason (n=5 on the deployed build): an ordering
-  # constraint would fail a model that read the link correctly and made some
-  # OTHER, later call for an unrelated reason, which is not this case's
-  # failure mode. `tools: [x_read]` only requires `x_read` to run at some
-  # point with the right link (`args_include`); `linkedin_read` and
-  # `web_fetch` are deliberately NOT in `not_tools`, so a `linkedin_read`
-  # call that gets redirected — the exact path this PR built — grades PASS,
-  # and so does a `web_fetch` call for something unrelated later in the same
-  # turn. Only the other networks stay excluded, since nothing here should
-  # reach for them. The id is synthetic.
-  - name: route_x_read_link_owner_registry_wrong_owner_first
+  # recovers instead of dead-ending on "I can't read that." The wrong owner
+  # here is `instagram_read` ON PURPOSE, not `linkedin_read`: before PR 3,
+  # `linkedin_read` ALREADY named `x_read` for an X link ("That is an X link.
+  # Read it with x_read, not this tool.", DEC-201) — a case built around that
+  # pair would pass on the reverted code too, since the model still gets a
+  # routing hint either way and this grader does not read `status`. Only
+  # `instagram_read` (an X or LinkedIn link) and `x_read` (a LinkedIn link)
+  # are the cells design 30's own table calls out as new: `instagram_read`
+  # named NO other network at all before this PR, a genuine dead end. So: an
+  # X status link, introduced as "this insta post" — a model that reaches
+  # for `instagram_read` first, off the person's own word, now gets
+  # redirected (`nothing_found`, naming `x_read` and the `link` param)
+  # instead of `instagram_read`'s old generic "isn't an Instagram ... link I
+  # can read" refusal, which named nothing else to try. No `before:` here,
+  # same correction as the two PR-2 cases above and for the same measured
+  # reason (n=5 on the deployed build): an ordering constraint would fail a
+  # model that read the link correctly and made some OTHER, later call for
+  # an unrelated reason, which is not this case's failure mode. `tools:
+  # [x_read]` only requires `x_read` to run at some point with the right
+  # link (`args_include`); `instagram_read` and `web_fetch` are deliberately
+  # NOT in `not_tools`, so an `instagram_read` call that gets redirected —
+  # the exact path this PR built, and the one the reverted code cannot
+  # recover from — grades PASS. Only the other networks stay excluded, since
+  # nothing here should reach for them. The id is synthetic.
+  - name: route_x_read_link_owner_registry_wrong_owner_instagram_first
     entry: tag
     expect: reply
     mention: true
-    input: can you check this LinkedIn, what does it say? https://x.com/synth_pr3_user/status/9300000000000000001
+    input: can you check this insta post, what does it say? https://x.com/synth_pr3_user/status/9300000000000000001
     metadata:
       tools: [x_read]
-      not_tools: [x_search, instagram_read, instagram_search, linkedin_search]
+      not_tools: [x_search, linkedin_read, linkedin_search, instagram_search]
       args_include:
         x_read: ["x.com/synth_pr3_user/status/9300000000000000001"]
     snapshot: *room_a
