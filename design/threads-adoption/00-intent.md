@@ -157,6 +157,23 @@ not the use case. The paragraph below was written before that measurement.
 Its first sentence was wrong: App Review **is** needed to start. The rest
 still holds.
 
+What Meta documents, read 2026-09-25:
+
+- mentions: «If your app has not been approved for advanced access for the
+  `threads_manage_mentions` permission, only mentions made by a Threads
+  tester on the app will be returned» (docs/threads/threads-mentions);
+- keyword search, the same rule for content: without approval «the search
+  will be performed only on posts owned by the authenticated user»
+  (docs/threads/keyword-search);
+- Graph API access levels: standard-access features work only for users
+  who hold a role on the app, and advanced access needs **business
+  verification** plus App Review for each permission
+  (docs/graph-api/overview/access-levels).
+
+None of these pages says in so many words that a non-tester's parent post
+is withheld from a mention. The access-levels rule predicts it, and the
+measurement shows it.
+
 **App Review was expected to be the second gate, and not needed to start.** Without
 Advanced Access, `mentions` returns only mentions by tester accounts, reads
 are limited to what those accounts can see, and keyword search sees only the
