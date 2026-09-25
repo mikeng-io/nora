@@ -21,10 +21,12 @@ from evals.backbone import (
     NORA_JUDGED,
     NORA_JUDGED_WHY,
     NORA_POSITION,
+    NORA_WORKING_SET,
     PASS,
     MeetsGrader,
 )
-from evals.rebuilt.domain import Outcome
+from evals.rebuilt.domain import Outcome, WorkingSetFinding
+from evals.rebuilt.fold_evidence import render_working_set
 from evals.rebuilt.grading import Judgement
 from evals.rebuilt.judge import (
     POSITION_CRITERION,
@@ -95,6 +97,90 @@ def test_the_position_prompt_carries_the_evidence_the_kind_and_the_case() -> Non
     assert POSITION_CRITERION in prompt
     with pytest.raises(ValueError, match="unknown standing kind"):
         _build_position_prompt(kind="vibes", prop="p", evidence="e", position="x")
+
+
+def test_the_position_prompt_omits_the_working_set_section_when_there_is_none() -> None:
+    """Issue #445: a case's judge input must GAIN nothing when the fold's
+    working set is empty or absent — the prompt without `working_set` and the
+    prompt with `working_set=""` must read identically, and neither carries
+    the section's own header."""
+    bare = _build_position_prompt(
+        kind="carry", prop="p", evidence="e", position="THE-POSITION",
+    )
+    explicit_empty = _build_position_prompt(
+        kind="carry", prop="p", evidence="e", position="THE-POSITION", working_set="",
+    )
+    assert bare == explicit_empty
+    assert "working set" not in bare.lower()
+
+
+def test_the_position_prompt_shows_the_working_set_as_a_separate_labelled_thing() -> None:
+    """The paragraph is her position; the working set is options she found and
+    has not given the room (context framing, per CMS: tell the judge what it
+    is READING, not only what it can do). Both sections are present, in order,
+    and the working-set one says out loud that it is not her position."""
+    prompt = _build_position_prompt(
+        kind="residue", prop="THE-CASE-PROPERTY", evidence="THE-RECORD",
+        position="THE-POSITION", working_set="- an unsent restaurant (source: web_search)",
+    )
+    assert "THE-POSITION" in prompt
+    assert "an unsent restaurant (source: web_search)" in prompt
+    position_at = prompt.index("THE-POSITION")
+    working_set_at = prompt.index("an unsent restaurant")
+    assert position_at < working_set_at, "the position is shown before the working set"
+    # Labelled as NOT the position, in the text right above the rendered items.
+    header = prompt[:working_set_at]
+    assert "not her position" in header.lower()
+
+
+def test_a_working_set_item_does_not_read_as_the_position_recapping() -> None:
+    """Recap (control): `FOLD_KINDS['recap']` grades ONE thing — whether the
+    WRITTEN POSITION is a transcript recap — and that text is untouched by a
+    working set being present. The item lives in its own section, clearly not
+    part of "the position she wrote after the turn" the property is graded
+    against, so a working-set entry cannot itself satisfy or violate a recap
+    property; it never appears inside the position's own fenced block."""
+    prompt = _build_position_prompt(
+        kind="recap", prop="THE-CASE-PROPERTY", evidence="THE-RECORD",
+        position="HER WORKING STATE, NOT A RECAP",
+        working_set="- the member said they would confirm tomorrow (source: web_search)",
+    )
+    # The rubric's own text is untouched by this change — it says "working
+    # state" (her holding-open state, the pre-existing phrase), never
+    # "working set" (the tier's name), so the property itself never asks the
+    # judge to read the section below as part of "the position".
+    assert "working set" not in FOLD_KINDS["recap"].lower()
+    position_block = prompt[
+        prompt.index("```\nHER WORKING STATE") : prompt.index("```\nHER WORKING STATE") + 200
+    ]
+    assert "the member said they would confirm tomorrow" not in position_block
+
+
+def test_grade_position_renders_the_working_set_into_the_prompt(monkeypatch) -> None:
+    """`Judge.grade_position` is a thin wrapper over `_build_position_prompt`
+    (module docstring) — this pins that its own new `working_set` argument
+    actually reaches the prompt, without a model call."""
+    import evals.rebuilt.grading as grading_mod
+
+    captured: dict[str, object] = {}
+
+    def fake_build(**kwargs: object) -> str:
+        captured.update(kwargs)
+        return "PROMPT"
+
+    async def fake_draw(self, prompt: str, bound: tuple[str, ...]) -> Judgement:
+        return Judgement(criterion=POSITION_CRITERION, verdict="PASS", samples=())
+
+    monkeypatch.setattr(grading_mod, "_build_position_prompt", fake_build)
+    monkeypatch.setattr(grading_mod.Judge, "_draw", fake_draw)
+    judge = grading_mod.Judge(base_url="http://x")
+    import asyncio
+
+    asyncio.run(judge.grade_position(
+        position="POS", evidence="EV", kind="residue", prop="PROP",
+        working_set="- an unsent option (source: web_search)",
+    ))
+    assert captured["working_set"] == "- an unsent option (source: web_search)"
 
 
 def test_a_position_verdict_parses_fail_closed() -> None:
@@ -289,3 +375,107 @@ def test_the_prior_is_varied_in_the_standing_corpus_and_nothing_else_is(
     }
     with pytest.raises(ValueError, match=complaint):
         _check(corpus, row)
+
+
+# --- the working_set capture (issue #445, PR #541) --------------------------
+
+
+def test_the_outcome_working_set_capture_reads_a_seeded_working_set() -> None:
+    """The one boundary the fold's write-back crosses: `nora.domain.standing.
+    WorkingSetItem` (`nora`-side) into `evals.rebuilt.domain.WorkingSetFinding`
+    (domain-side, no `nora` import — module docstring). Seed one, as the store
+    would hold it after a fold wrote it, and check the capture carries
+    `what`/`source`/`bears_on` and drops `found_at` (`Outcome.working_set`'s
+    own docstring: not a property a corpus or a judge grades against)."""
+    from evals.rebuilt.entry import _outcome_working_set
+    from nora.domain.standing import WorkingSetItem
+
+    seeded = (
+        WorkingSetItem(
+            what="Fu Kee chicken hotpot, Kai Tak",
+            source="web_search: 啟德 雞煲",
+            found_at=1_790_000_000_000,
+            bears_on="the bowling outing",
+        ),
+        WorkingSetItem(what="a second find", source="place_info", found_at=1),
+    )
+    captured = _outcome_working_set(seeded)
+    assert captured == (
+        WorkingSetFinding(
+            what="Fu Kee chicken hotpot, Kai Tak",
+            source="web_search: 啟德 雞煲",
+            bears_on="the bowling outing",
+        ),
+        WorkingSetFinding(what="a second find", source="place_info", bears_on=None),
+    )
+    # `found_at` is nowhere on the captured type at all — not merely unset.
+    assert not hasattr(captured[0], "found_at")
+
+
+def test_the_outcome_working_set_capture_reads_empty_as_empty() -> None:
+    from evals.rebuilt.entry import _outcome_working_set
+
+    assert _outcome_working_set(()) == ()
+
+
+def test_folded_carries_a_working_set_beside_its_position() -> None:
+    """`nora.subject.standing_fold.Folded` — the read-back's own type — holds
+    `working_set` beside `position`, defaulted to `()` the same way `position`
+    defaults to `None`, so a caller that does not pass one gets the same
+    "nothing found" reading `working_set_from_json` gives a row with nothing
+    in the column."""
+    from nora.domain.standing import WorkingSetItem
+    from nora.subject.standing_fold import Folded
+
+    item = WorkingSetItem(what="w", source="s", found_at=1)
+    folded = Folded(outcome="written", position="THE POSITION", working_set=(item,))
+    assert folded.working_set == (item,)
+
+    bare = Folded(outcome="malformed", position=None)
+    assert bare.working_set == ()
+
+
+def test_render_working_set_reads_both_findings_and_plain_dicts() -> None:
+    """`render_working_set` is fed `Outcome.working_set` directly (a tuple of
+    `WorkingSetFinding`) inside a live run, and a report's `actual_
+    environment_state` after it has gone through `EvaluationData.model_dump()`
+    — which turns each `WorkingSetFinding` into a plain dict with the same
+    three keys (`evals.__main__._print_positions`'s own read path). Both must
+    render the same text."""
+    finding = WorkingSetFinding(what="a place", source="web_search", bears_on="an outing")
+    as_dict = {"what": "a place", "source": "web_search", "bears_on": "an outing"}
+    assert render_working_set((finding,)) == render_working_set((as_dict,))
+    assert "a place" in render_working_set((finding,))
+    assert "source: web_search" in render_working_set((finding,))
+    assert "bears on: an outing" in render_working_set((finding,))
+
+
+def test_render_working_set_omits_bears_on_when_absent_and_is_empty_when_there_is_none() -> None:
+    no_plan = WorkingSetFinding(what="a place", source="web_search")
+    rendered = render_working_set((no_plan,))
+    assert "bears on" not in rendered
+    assert render_working_set(()) == ""
+
+
+def test_nora_working_set_is_its_own_state_distinct_from_the_position() -> None:
+    """`NORA_WORKING_SET` is a real, separate `EnvironmentState` name — not a
+    second spelling of `NORA_POSITION` — so a reader (`--positions`,
+    `evals.backbone._drive`'s grade_position call) can tell "no working set
+    was captured" from "the position itself was empty"."""
+    assert NORA_WORKING_SET != NORA_POSITION
+    assert NORA_WORKING_SET == "nora.working_set"
+
+
+def test_the_residue_case_accepts_the_finding_in_either_the_position_or_the_working_set() -> None:
+    """Issue #445 review: the fold now has somewhere DESIGNED to hold an
+    unsent option — `working_set` — and the one active residue case has to
+    say so, or a fold that correctly used it reads as a miss. The kind-asked
+    and near-the-venue conditions must still be there, unweakened."""
+    [case] = [
+        c for c in load_all("standing")
+        if c.name == "residue-restaurants-found-two-sent"
+    ]
+    text = case.expected_output.lower()
+    assert "working set" in text
+    assert "either" in text
+    assert "chicken hotpot" in text and "near the venue" in text

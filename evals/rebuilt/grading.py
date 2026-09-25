@@ -162,13 +162,19 @@ class Judge:
         return await self._draw(prompt, bound)
 
     async def grade_position(
-        self, *, position: str, evidence: str, kind: str, prop: str,
+        self, *, position: str, evidence: str, kind: str, prop: str, working_set: str = "",
     ) -> Judgement:
         """One written standing position, the case's ONE property, `samples`
         draws, majority verdict — the same fail-closed reading `grade` makes,
-        over `evals.rebuilt.judge._build_position_prompt`."""
+        over `evals.rebuilt.judge._build_position_prompt`.
+
+        `working_set` (issue #445) is the SAME fold's `Standing.working_set`,
+        pre-rendered (`evals.rebuilt.fold_evidence.render_working_set`) and
+        shown beside the position, labelled as a separate thing — `""` omits
+        the section (that function's own contract)."""
         prompt = _build_position_prompt(
             kind=kind, prop=prop, evidence=evidence, position=position,
+            working_set=working_set,
         )
         return await self._draw(prompt, (POSITION_CRITERION,))
 
