@@ -1,0 +1,30 @@
+[
+  {
+    "name": "linkedin_read's registry lookup is dropped: an X or Instagram link stops naming the tool that reads it",
+    "file": "nora/agent/tools.py",
+    "old": "                found = _other_link_owner(text, \"linkedin_read\")",
+    "new": "                found = None",
+    "target": "tests/unit/test_linkedin_tools.py::test_another_network_s_link_names_the_tool_that_reads_it"
+  },
+  {
+    "name": "instagram_read's registry lookup is dropped: instagram_read names no other network again",
+    "file": "nora/agent/tools.py",
+    "old": "                found = _other_link_owner(text, \"instagram_read\")",
+    "new": "                found = None",
+    "target": "tests/unit/test_link_owners.py::test_every_owner_redirects_every_other_owners_canonical_link"
+  },
+  {
+    "name": "the self-network filter is dropped from _other_link_owner: an owner redirects to itself on its own unreadable shape",
+    "file": "nora/agent/tools.py",
+    "old": "    if found is None or found[0].tool == this_tool:\n        return None\n",
+    "new": "    if found is None:\n        return None\n",
+    "target": "tests/unit/test_instagram_read_links.py::test_a_hostile_link_never_reaches_the_bridge"
+  },
+  {
+    "name": "OWNER_LINK_INPUT's verb is dropped: an owner's unreadable cross-network redirect stops saying what it can't do to the link",
+    "file": "nora/agent/link_owners.py",
+    "old": "_OWNER_LINK_INPUTS: tuple[LinkInput, ...] = (LinkInput(param=\"link\", verb=\"read\"),)",
+    "new": "_OWNER_LINK_INPUTS: tuple[LinkInput, ...] = (LinkInput(param=\"link\"),)",
+    "target": "tests/unit/test_link_owners.py::test_an_owner_redirects_an_unreadable_claim_with_owner_link_input"
+  }
+]

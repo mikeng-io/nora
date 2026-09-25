@@ -84,10 +84,10 @@
     "target": "tests/test_acceptance_rules.py::test_r86_social_reads_are_read_only_at_three_layers"
   },
   {
-    "name": "x_read stops naming instagram_read for an Instagram link (DEC-201: was social_fetch's redirect)",
+    "name": "x_read stops naming instagram_read for an Instagram link (DEC-201: was social_fetch's redirect; re-pointed at the link-owner registry lookup design 30 PR 3 replaced this branch with)",
     "file": "nora/agent/tools.py",
-    "old": "if not _is_x_host(text) and _parse_instagram_link(text) is not None:",
-    "new": "if False:",
+    "old": "                found = _other_link_owner(text, \"x_read\")",
+    "new": "                found = None",
     "target": "tests/unit/test_x_tools.py::test_an_instagram_link_names_the_tool_that_reads_it"
   },
   {

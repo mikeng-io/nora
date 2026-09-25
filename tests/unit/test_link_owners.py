@@ -13,9 +13,16 @@ LinkedIn's own CDN hosts, `t.co` and `lnkd.in` (neither is its network's own
 page — the one live `lnkd.in` link led off-LinkedIn), a lookalike host
 (`x.com.evil.example`), a reserved X path (`/explore`), and a LinkedIn post
 link (recognised by the parser, but `linkedin_read` cannot read one from its
-link, so it is never claimed — design 30, "Design" §"Types"). PR 3 ("The
-owners use the registry") is not built here: `x_read`/`linkedin_read`/
-`instagram_read` keep their own hand-written cross-network branches.
+link, so it is never claimed — design 30, "Design" §"Types").
+
+**PR 3** ("Migration" step 3, "the owners use the registry") adds the
+three-by-three matrix at the bottom of this file: `x_read`, `linkedin_read`
+and `instagram_read` now call `owner_of` (through `nora.agent.tools.
+_other_link_owner`, which filters out a claim on the asking tool's OWN
+network — Instagram's and LinkedIn's unreadable mobile shape is a claim on
+their OWN network too) from the exact spot their own `parse_link` returned
+`None`, replacing three disagreeing hand-written "not mine" branches with
+one call each.
 """
 
 from __future__ import annotations
@@ -365,3 +372,94 @@ def test_every_owner_names_a_built_tool_and_a_real_parameter(owner):
     assert owner.param in signature.parameters, (
         f"{owner.network}: {owner.tool} has no parameter named {owner.param!r}"
     )
+
+
+# ---- PR 3 ("the owners use the registry"): the three-by-three matrix -------
+#
+# design/social-per-network/30-link-owner-registry.md's own falsification for
+# "Migration" step 3: "a three-by-three test (each owner handed each other
+# network's link) reddens when any owner falls back to its own hand branch."
+# Each owner tool's OWN canonical link, so the six off-diagonal cells (every
+# owner asked about every OTHER network) exercise the real production
+# closures built with no backend wired at all — the redirect happens before
+# `social_source`/`linkedin_source` is ever consulted, exactly as the
+# unwired `test_every_owner_names_a_built_tool_and_a_real_parameter` above
+# relies on.
+_OWNER_CANONICAL_LINK = {
+    "instagram_read": _INSTAGRAM_PAGE_URL,
+    "x_read": _X_POST_URL,
+    "linkedin_read": _LINKEDIN_PERSON_URL,
+}
+_TOOL_FOR_NETWORK = {owner.network: owner.tool for owner in LINK_OWNERS}
+assert set(_OWNER_CANONICAL_LINK) == set(_TOOL_FOR_NETWORK.values())
+
+_CROSS_NETWORK_CASES = [
+    (asking_tool, target_tool)
+    for asking_tool in _OWNER_CANONICAL_LINK
+    for target_tool in _TOOL_FOR_NETWORK.values()
+    if target_tool != asking_tool
+]
+assert len(_CROSS_NETWORK_CASES) == 6, _CROSS_NETWORK_CASES
+
+
+@pytest.mark.parametrize(
+    ("asking_tool", "target_tool"), _CROSS_NETWORK_CASES,
+    ids=[f"{a}-given-{t}-link" for a, t in _CROSS_NETWORK_CASES],
+)
+async def test_every_owner_redirects_every_other_owners_canonical_link(asking_tool, target_tool):
+    """The falsification: reverting ANY ONE of `x_read`'s, `linkedin_read`'s
+    or `instagram_read`'s `owner_of` call back to a hand-written "not mine"
+    branch turns the two cases where it is `asking_tool` red — either the
+    status stays `unavailable` (the old status this PR retires) or the note
+    never names the right tool (`instagram_read`'s old branch named no other
+    network at all)."""
+    calls = _built_calls()
+    target_url = _OWNER_CANONICAL_LINK[target_tool]
+
+    out = await calls[asking_tool](link=target_url)
+
+    assert out["status"] == "nothing_found", (asking_tool, target_tool, out)
+    assert f"with {target_tool} using this link" in out["note"], out["note"]
+
+
+async def test_every_owner_still_reads_its_own_canonical_link():
+    """The positive control for the matrix above: the redirect only fires for
+    ANOTHER network's link. Each owner's own canonical link is not a claim
+    `_other_link_owner` returns at all (it is the tool's OWN `parse_link`
+    succeeding, before `owner_of` is ever consulted), so none of these are
+    `nothing_found`."""
+    calls = _built_calls()
+    for tool, url in _OWNER_CANONICAL_LINK.items():
+        out = await calls[tool](link=url)
+        assert out["status"] != "nothing_found", (tool, out)
+
+
+async def test_an_owner_redirects_an_unreadable_claim_with_owner_link_input():
+    """A cross-network redirect can land on an UNREADABLE claim too — `x_read`
+    handed a mobile Instagram link, which `instagram_read` itself refuses. The
+    note is composed with `OWNER_LINK_INPUT` (`verb="read"`, no `not_clause`/
+    `then`): an owner is never asking about media, and it reads, so this is
+    the one slot the unreadable template needs filled from an owner's own
+    call, distinct from `web_fetch`'s `verb="opened"` or `media_fetch`'s
+    `verb="read", not_clause=", not a picture or video file"`."""
+    calls = _built_calls()
+    out = await calls["x_read"](link=_INSTAGRAM_MOBILE_URL)
+
+    assert out["status"] == "nothing_found"
+    assert out["note"] == (
+        "That is a mobile Instagram page link, and it can't be read directly. "
+        "Ask for the www.instagram.com link to the same post, reel, story or "
+        "profile."
+    )
+
+
+async def test_a_hostile_mobile_link_to_its_own_network_is_not_a_self_redirect():
+    """The self-network guard's own positive control, from the owner's side
+    (`_HOSTILE`'s `m.instagram.com` row in `tests/unit/test_instagram_read_links.py`
+    is the negative: `instagram_read` given ITS OWN unreadable mobile shape
+    must not redirect to itself). `linkedin_read` given its own
+    `m.linkedin.com` is the same shape for the second network with one."""
+    calls = _built_calls()
+    out = await calls["linkedin_read"](link="https://m.linkedin.com/in/synth-person-03")
+
+    assert out["status"] != "nothing_found", out
