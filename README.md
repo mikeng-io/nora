@@ -481,13 +481,14 @@ docker compose up -d --no-build
 
 Nora's version is **baked into the image at build time** — plain `V1`, `V2`, `V3`, no
 semver (`pyproject.toml`'s `version` is not the release). A tag is made on the deploy host
-by `scripts/release.py`, so push it (`git push origin V<n>`): `V2` sat on the host alone
-from 2026-08-12 until V5. Build with the wrapper rather than `docker build` directly:
+by `scripts/release.py`, which pushes it once the deploy verifies (`V2`, made before it did,
+sat on the host alone from 2026-08-12 until V5). Release with the one command rather than
+`docker build` directly:
 
 ```bash
 uv run python scripts/render_release_notes.py
 # Review/edit docs/releases/V3.md, then explicitly release it:
-uv run python scripts/release.py
+python3 scripts/release.py   # on the deploy host: lock, tag, build, deploy, verify, push
 ```
 
 JSON fragments accumulate user-visible changes between releases. They are
