@@ -700,3 +700,17 @@ def test_the_public_grant_is_read_only_lookups_plus_send_reply_and_nothing_of_a_
         "send_reply", "web_search", "web_fetch", "x_read", "x_search",
         "media_fetch", "now", "calculate",
     } == PUBLIC_GRANT
+
+
+async def test_an_em_dash_never_leaves_in_a_public_comment(world):
+    """The model is never shown an em dash, yet a live dry run still wrote
+    one (2026-09-26). The comment posted is the reply with each em dash made
+    a comma, punctuation only."""
+    dashed = "Not a photo — it circulates as a wallpaper, no original anywhere."
+    out = await world.occasion(mode="live", turns=_replies(dashed)).run(_card())
+    assert out.state == "published"
+    [post] = world.fake.posts()
+    assert "—" not in post["text"]
+    assert post["text"] == "Not a photo, it circulates as a wallpaper, no original anywhere."
+    row = await world.row()
+    assert "—" not in row.reply_text

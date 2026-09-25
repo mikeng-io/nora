@@ -357,3 +357,15 @@ def test_an_empty_question_means_the_post():
 def test_ages(delta, said):
     from nora.domain.summons import age
     assert age(NOW - delta, NOW) == said
+
+
+def test_an_item_carries_no_code_like_label_and_no_url():
+    """A live dry run (2026-09-26) passed "item 1" to media_fetch as a media
+    code. The post block names items in words and lists no URL: the pre-read
+    has already looked at each one."""
+    import re as _re
+
+    from nora.domain import summons as _s
+
+    assert _s._ordinal(1) == "first" and _s._ordinal(3) == "third"
+    assert not _re.search(r"\bitem \d", "the post's first image:")
