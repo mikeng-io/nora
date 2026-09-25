@@ -35,7 +35,7 @@ import sqlalchemy as sa
 
 from evals.backbone import _close
 from nora.domain.models import NormalizedMessage
-from nora.domain.reminders import Reminder, ReminderState
+from nora.domain.reminders import DuplicateProactiveNoteError, Reminder, ReminderState
 from nora.domain.standing import Standing
 from nora.infra.sql import create_sql_engine
 from nora.infra.sql.audit import SqlRecordStore
@@ -48,8 +48,10 @@ from nora.subject import (
     Knowledge,
     Message,
     NoteSeed,
+    ReminderSeed,
     Subject,
     SubjectSpec,
+    know,
     obtain,
     sandbox_database,
     sandbox_from_snapshot,
@@ -513,3 +515,63 @@ async def test_the_sandbox_database_exists_at_head_and_is_dropped_afterwards(
         finally:
             await eng.dispose()
     assert name not in _databases(pg_admin)
+
+
+# --- issue #158: the store itself enforces one open proactive row per note --
+
+
+async def test_the_store_refuses_two_open_proactive_rows_on_one_note(sandbox) -> None:
+    """THE PROOF `nora.subject.sandbox._collapse_duplicate_proactive_notes`
+    exists for: #517's own constraint (`uq_reminders_proactive_open_note`,
+    migration 0064) is what actually enforces "one open proactive reminder
+    per note", at the SQL store `know()` writes through
+    (`nora.infra.sql.reminders.SqlReminderStore.create`).
+
+    Production HISTORY holds instants with two open proactive rows on one
+    note (the double-booking #517 fixed going forward, never undone in the
+    past) — `nora.infra.sql.snapshot._reminders` reconstructs the room AS IT
+    WAS, so `Snapshot.reminders` can still carry both. This is what
+    `as_knowledge` would hand `know()` if its own collapse (tested in
+    `tests/unit/test_subject_sandbox_translation.py`) were reverted: the
+    SECOND `create()` call raises here, live, against the real store — a
+    revert of the collapse is what turns this from passing (nothing calls
+    `know()` with two open rows on one note) to reproducing the ERROR the
+    review found ("DuplicateProactiveNoteError: note cb12...").
+    """
+    duplicate = Knowledge(reminders=(
+        ReminderSeed(
+            text="ask about the dinner plan", due_in_seconds=3600.0,
+            requester_person_id="nora", kind="proactive",
+            payload={"note_id": "note-x", "note_title": "Dinner plan"},
+        ),
+        ReminderSeed(
+            text="ask about the dinner plan again", due_in_seconds=7200.0,
+            requester_person_id="nora", kind="proactive",
+            payload={"note_id": "note-x", "note_title": "Dinner plan"},
+        ),
+    ))
+    with pytest.raises(DuplicateProactiveNoteError):
+        await know(sandbox, duplicate, now_ms=BEFORE_MS)
+
+
+async def test_the_store_allows_two_open_reminders_on_different_notes(sandbox) -> None:
+    """The constraint is scoped to ONE note (`payload ->> 'note_id'`), not to
+    proactive rows in general — a unit legitimately owing reminders about two
+    different open corners the same morning must not collide."""
+    two_notes = Knowledge(reminders=(
+        ReminderSeed(
+            text="ask about the dinner plan", due_in_seconds=3600.0,
+            requester_person_id="nora", kind="proactive",
+            payload={"note_id": "note-x", "note_title": "Dinner plan"},
+        ),
+        ReminderSeed(
+            text="ask about the pickup", due_in_seconds=7200.0,
+            requester_person_id="nora", kind="proactive",
+            payload={"note_id": "note-y", "note_title": "Pickup before Saturday"},
+        ),
+    ))
+    written = await know(sandbox, two_notes, now_ms=BEFORE_MS)
+    assert written.now_ms == BEFORE_MS
+    assert {r.text for r in await _pending(sandbox)} == {
+        "ask about the dinner plan", "ask about the pickup",
+    }

@@ -142,6 +142,24 @@
 # never existed); or a title resolves to more than one (`NOTE` has no unique
 # constraint on `(workspace, title)`).
 #
+# THE SANDBOX COLLAPSES A HISTORICAL DOUBLE-BOOKING TO ONE ROW (2026-09-25,
+# issue #158 review round 4). #517 (migration 0064) added
+# `uq_reminders_proactive_open_note` — at most one open proactive reminder
+# per note — enforced by the SAME store the sandbox seeds through. Production
+# HISTORY (what d01-d03's own table above reads) still holds instants with
+# TWO open proactive rows on one note, because 0064 resolved what was open on
+# the day it ran, not what an earlier `before_ms` reconstructs. Seeding both
+# raised `DuplicateProactiveNoteError` on the second — found live, on a
+# different corpus's case, once #517 was merged.
+# `nora.subject.sandbox._collapse_duplicate_proactive_notes` collapses to ONE
+# per note BEFORE seeding, using 0064's own rule (pending before firing, then
+# earliest `due_at`, then `created_at`, then `id`), so the sandbox reproduces
+# what production's own migration would have left standing. d03's guard case
+# (`d03_already_booked_follow_up`) is the one active case this changes: its
+# anchor's raw history has 2 pending rows on the note, the sandbox now seeds
+# 1 (see its own comment) — the case's own assertion (silence about that
+# note) is unaffected either way.
+#
 # `--reasons` AND THIS CORPUS. The grader's own reason is structural
 # ("did not meet expect='remind'"); the decide turn's own rationale for
 # raising or declining is deliberately NOT carried anywhere the harness can
@@ -306,13 +324,19 @@ cases:
     expect: none
     # The DOUBLE-BOOKING GUARD: the old anchor for this note. Production had
     # already decided TWO reminders about "Blake 拉人跑馬拉松，邊個落水未定"
-    # (09-12 23:01 and 09-13 01:01, both due 09-13 10:00) by this instant, so
-    # both are PENDING in `<decisions>` (verified offline: 2 pending rows on
-    # this note). Silence about THIS note, not a third row — `absent: true`
-    # scopes it. (The note's body at this instant is the same pre-repair
-    # revision `d03_follow_up_owed_today` is parked over; that does not
-    # affect what this case measures, which is whether an already-pending
-    # reminder blocks a second one.)
+    # (09-12 23:01 and 09-13 01:01, both due 09-13 10:00) by this instant —
+    # verified offline against the RAW history: 2 pending rows on this note.
+    # The SANDBOX now sees only ONE of them (issue #158 review round 4):
+    # `nora.subject.sandbox._collapse_duplicate_proactive_notes` reproduces
+    # what production's own migration 0064 would hold after #517 — at most
+    # one open proactive row per note, the earliest survives (0064's own
+    # rule: same due_at here, so the 09-12 23:01 one, decided first, wins).
+    # Silence about THIS note is still the correct answer either way — a
+    # third row is refused whether one or two are already pending — so
+    # `absent: true` still scopes it the same. (The note's body at this
+    # instant is the same pre-repair revision `d03_follow_up_owed_today` is
+    # parked over; that does not affect what this case measures, which is
+    # whether an already-pending reminder blocks a second one.)
     snapshot:
       platform: signal
       conversation_id: MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08=

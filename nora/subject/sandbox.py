@@ -79,7 +79,7 @@ from nora.agent.prefill import render_transcript
 from nora.domain.media_join import MediaJoin
 from nora.domain.models import TranscriptRow
 from nora.domain.notes import Note, NoteRevision
-from nora.domain.reminders import Reminder
+from nora.domain.reminders import Reminder, ReminderState
 from nora.infra.sql import create_readonly_sql_engine
 from nora.infra.sql.migrations_runner import run_migrations
 from nora.infra.sql.snapshot import Snapshot, snapshot
@@ -190,6 +190,64 @@ async def sandbox_database(
         await admin.dispose()
 
 
+def _collapse_duplicate_proactive_notes(
+    reminders: Sequence[Reminder],
+) -> tuple[Reminder, ...]:
+    """At most ONE open proactive reminder per note — reproducing what
+    production would hold AFTER migration 0064's own collapse
+    (`nora/infra/sql/migrations/versions/0064_proactive_open_note.py`,
+    issue #158).
+
+    Production HISTORY holds instants with TWO open proactive rows on one
+    note — the double-booking #517 fixed going forward, never undone in the
+    past (`0064`'s own upgrade cancelled what was open on 2026-09-25, not
+    what a `before_ms` anchored earlier ever held). `Snapshot.reminders`
+    reconstructs the room AS IT WAS, so it still carries both, and seeding
+    both into the sandbox's own store — which, since #517, enforces the same
+    `uq_reminders_proactive_open_note` production does — raises
+    `DuplicateProactiveNoteError` on the second one. This collapses BEFORE
+    seeding, using 0064's OWN rule (its `_RESOLVE_DUPLICATES` — pending
+    before firing, then earliest `due_at`, then `created_at`, then `id`), so
+    the sandbox reproduces what production's own migration would have left
+    standing rather than an invented resolution.
+
+    Every `Snapshot.reminders` row is already normalized to `PENDING`
+    as-of the instant (`nora.infra.sql.snapshot._as_of_reminder`), so the
+    pending-before-firing key is always equal here — kept for fidelity to
+    0064's own rule rather than assumed away.
+
+    Non-proactive rows, and proactive rows naming NO note, are UNTOUCHED:
+    the constraint (and 0064's own collapse) only ever applies to
+    `kind = 'proactive' AND payload ->> 'note_id' IS NOT NULL`. Order is
+    preserved — the caller's own (`_reminders`' `created_at, id` — this
+    never reorders, only drops).
+    """
+    def note_id(reminder: Reminder) -> str | None:
+        if reminder.kind != "proactive":
+            return None
+        payload = reminder.payload or {}
+        note_id_value = payload.get("note_id") if isinstance(payload, dict) else None
+        return str(note_id_value) if note_id_value else None
+
+    grouped: dict[str, list[Reminder]] = {}
+    for reminder in reminders:
+        nid = note_id(reminder)
+        if nid is not None:
+            grouped.setdefault(nid, []).append(reminder)
+
+    def sort_key(reminder: Reminder) -> tuple[bool, datetime, datetime, object]:
+        return (
+            reminder.state == ReminderState.FIRING, reminder.due_at,
+            reminder.created_at, reminder.id,
+        )
+
+    winners = {nid: min(rows, key=sort_key) for nid, rows in grouped.items()}
+    return tuple(
+        reminder for reminder in reminders
+        if note_id(reminder) is None or reminder is winners[note_id(reminder)]  # type: ignore[index]
+    )
+
+
 def as_knowledge(shot: Snapshot) -> Knowledge:
     """A reconstruction, as the `Knowledge` that reproduces it AT ITS OWN
     CLOCK.
@@ -234,8 +292,14 @@ def as_knowledge(shot: Snapshot) -> Knowledge:
         # the copy at the moment's own clock: `know()` is handed
         # `now_ms=shot.before_ms`, so `base + due_in_seconds` reproduces the
         # real `due_at` exactly, and an overdue row stays overdue by the
-        # number of seconds it really was.
-        reminders=tuple(_reminder_seed(r, before_ms=shot.before_ms) for r in shot.reminders),
+        # number of seconds it really was. COLLAPSED to one open proactive
+        # row per note FIRST (`_collapse_duplicate_proactive_notes`, issue
+        # #158): production history can hold two, and seeding both would hit
+        # #517's own `uq_reminders_proactive_open_note` on the second.
+        reminders=tuple(
+            _reminder_seed(r, before_ms=shot.before_ms)
+            for r in _collapse_duplicate_proactive_notes(shot.reminders)
+        ),
     )
 
 
