@@ -17,6 +17,8 @@ code — after everything does, success or not.
 
 from __future__ import annotations
 
+import signal
+
 import pytest
 
 import evals.__main__ as m
@@ -24,6 +26,19 @@ import evals.__main__ as m
 
 def _set_argv(monkeypatch: pytest.MonkeyPatch, *args: str) -> None:
     monkeypatch.setattr("sys.argv", ["python -m evals", *args])
+
+
+def _stub_leaked_blank_sweep(monkeypatch: pytest.MonkeyPatch, order: list | None = None) -> None:
+    """Every test below that gets past the refusal reaches
+    `_sweep_stale_private_blanks` — never left unmocked, or it would try a
+    real `asyncio.run` against a real (nonexistent, in a unit test) Postgres.
+    Appends to `order` when given, matching the other stub helpers' shape."""
+    if order is None:
+        monkeypatch.setattr(m, "_sweep_stale_private_blanks", lambda url: None)
+    else:
+        monkeypatch.setattr(
+            m, "_sweep_stale_private_blanks", lambda url: order.append("sweep_private_blanks"),
+        )
 
 
 def test_refuses_before_any_case_when_the_source_diverges_from_branch_head(
@@ -39,6 +54,10 @@ def test_refuses_before_any_case_when_the_source_diverges_from_branch_head(
 
     monkeypatch.setattr(m, "refuse_if_source_diverges_from_head", _refuse)
     # Nothing past the refusal may run: each of these blows up if reached.
+    monkeypatch.setattr(
+        m, "_sweep_stale_private_blanks",
+        lambda url: (_ for _ in ()).throw(AssertionError("reached past the refusal")),
+    )
     monkeypatch.setattr(
         m, "shared_database_versions",
         lambda url: (_ for _ in ()).throw(AssertionError("reached past the refusal")),
@@ -60,9 +79,10 @@ def test_refuses_before_any_case_when_the_source_diverges_from_branch_head(
 def test_a_stable_run_captures_the_baseline_before_materialise_and_checks_it_last(
     monkeypatch,
 ):
-    """Pins the ORDER: refuse -> capture the baseline -> (config rebuild,
-    sweep, the corpus itself) -> drop any private template -> assert the
-    SAME baseline object is what gets checked at the end."""
+    """Pins the ORDER: refuse -> sweep leaked private blanks -> capture the
+    baseline -> (config rebuild, Honcho sweep, the corpus itself) -> drop
+    any private template -> assert the SAME baseline object is what gets
+    checked at the end."""
     order: list[object] = []
     sentinel_before = object()
 
@@ -70,6 +90,7 @@ def test_a_stable_run_captures_the_baseline_before_materialise_and_checks_it_las
     monkeypatch.setattr(
         m, "refuse_if_source_diverges_from_head", lambda url: order.append("refuse"),
     )
+    _stub_leaked_blank_sweep(monkeypatch, order)
 
     def _versions(url: str) -> object:
         order.append("baseline")
@@ -97,7 +118,8 @@ def test_a_stable_run_captures_the_baseline_before_materialise_and_checks_it_las
 
     assert rc == 0
     assert order == [
-        "refuse", "baseline", "materialise", "sweep", "run", "close", ("assert", True),
+        "refuse", "sweep_private_blanks", "baseline", "materialise", "sweep", "run",
+        "close", ("assert", True),
     ]
 
 
@@ -110,6 +132,7 @@ def test_the_guard_wraps_print_input_too(monkeypatch):
 
     monkeypatch.setattr(m, "source_url_for", lambda *a, **k: "URL")
     monkeypatch.setattr(m, "refuse_if_source_diverges_from_head", lambda url: None)
+    _stub_leaked_blank_sweep(monkeypatch)
     monkeypatch.setattr(m, "shared_database_versions", lambda url: sentinel_before)
     monkeypatch.setattr(m, "materialise", lambda **k: "config.evaluation.toml")
     monkeypatch.setattr(m, "_sweep_stale_workspaces", lambda: None)
@@ -141,6 +164,7 @@ def test_a_shared_database_mutation_is_never_swallowed_into_a_return_code(
     moved. The finding is raised out of `main()`, not folded into `rc`."""
     monkeypatch.setattr(m, "source_url_for", lambda *a, **k: "URL")
     monkeypatch.setattr(m, "refuse_if_source_diverges_from_head", lambda url: None)
+    _stub_leaked_blank_sweep(monkeypatch)
     monkeypatch.setattr(m, "shared_database_versions", lambda url: object())
     monkeypatch.setattr(m, "materialise", lambda **k: "config.evaluation.toml")
     monkeypatch.setattr(m, "_sweep_stale_workspaces", lambda: None)
@@ -178,6 +202,7 @@ def test_the_guard_still_runs_when_a_case_raises(monkeypatch):
 
     monkeypatch.setattr(m, "source_url_for", lambda *a, **k: "URL")
     monkeypatch.setattr(m, "refuse_if_source_diverges_from_head", lambda url: None)
+    _stub_leaked_blank_sweep(monkeypatch)
     monkeypatch.setattr(m, "shared_database_versions", lambda url: object())
     monkeypatch.setattr(m, "materialise", lambda **k: "config.evaluation.toml")
     monkeypatch.setattr(m, "_sweep_stale_workspaces", lambda: None)
@@ -200,3 +225,140 @@ def test_the_guard_still_runs_when_a_case_raises(monkeypatch):
         m.main()
 
     assert order == ["close", "assert"]
+
+
+def test_a_case_raising_and_a_shared_mutation_both_surface(monkeypatch, capsys):
+    """LOW-severity follow-up: a case that raises AND a mutation the guard
+    catches must BOTH be visible — the mutation as the exception that
+    propagates (it fires last, inside the `finally`), the case's own error
+    CHAINED onto it (`__context__`, Python's own implicit chaining for an
+    exception raised while another is already propagating — no `raise ...
+    from ...` needed, since nothing here catches the case's error to attach
+    it by hand). Neither is swallowed: the mutation is not silently folded
+    into the case's own traceback, and the case's error is not discarded
+    just because something else was raised over it."""
+    monkeypatch.setattr(m, "source_url_for", lambda *a, **k: "URL")
+    monkeypatch.setattr(m, "refuse_if_source_diverges_from_head", lambda url: None)
+    _stub_leaked_blank_sweep(monkeypatch)
+    monkeypatch.setattr(m, "shared_database_versions", lambda url: object())
+    monkeypatch.setattr(m, "materialise", lambda **k: "config.evaluation.toml")
+    monkeypatch.setattr(m, "_sweep_stale_workspaces", lambda: None)
+
+    case_error = RuntimeError("the corpus itself blew up")
+
+    def _blows_up(*a: object, **k: object) -> bool:
+        raise case_error
+
+    monkeypatch.setattr(m, "_run_one", _blows_up)
+
+    closed = []
+
+    async def _close() -> None:
+        closed.append(True)
+
+    monkeypatch.setattr(m, "close_private_blank_templates", _close)
+
+    def _assert_unchanged(url: str, before: object) -> None:
+        raise m.SharedDatabaseMutatedError("shared db moved while the case was also failing")
+
+    monkeypatch.setattr(m, "assert_shared_databases_unchanged", _assert_unchanged)
+
+    _set_argv(monkeypatch, "no_trigger")
+    with pytest.raises(m.SharedDatabaseMutatedError) as excinfo:
+        m.main()
+
+    # BOTH surfaced: the mutation is what propagated out of `main()`...
+    assert "shared db moved while the case was also failing" in str(excinfo.value)
+    # ...and the case's own exception is right there, chained, not lost.
+    assert excinfo.value.__context__ is case_error
+    # Cleanup still ran despite the case having raised first.
+    assert closed == [True]
+    assert "ERROR: shared db moved while the case was also failing" in capsys.readouterr().err
+
+
+# --------------------------------------------------------------------------
+# SIGTERM: a `kill <pid>` (not `-9`) must still run the `finally` above.
+# --------------------------------------------------------------------------
+
+
+def test_raise_on_sigterm_is_an_ordinary_system_exit_143():
+    with pytest.raises(SystemExit) as excinfo:
+        m._raise_on_sigterm(signal.SIGTERM, None)
+    assert excinfo.value.code == 143
+
+
+def test_main_installs_the_handler_and_restores_the_previous_one(monkeypatch):
+    """No mock of `signal.signal` itself — this installs and restores a
+    REAL handler on the real signal table, and proves it by reading
+    `signal.getsignal` before and after. Safe: nothing here ever sends the
+    process a SIGTERM, so the handler is never actually invoked."""
+    monkeypatch.setattr(m, "source_url_for", lambda *a, **k: "URL")
+    monkeypatch.setattr(m, "refuse_if_source_diverges_from_head", lambda url: None)
+    _stub_leaked_blank_sweep(monkeypatch)
+    monkeypatch.setattr(m, "shared_database_versions", lambda url: object())
+    monkeypatch.setattr(m, "materialise", lambda **k: "config.evaluation.toml")
+    monkeypatch.setattr(m, "_sweep_stale_workspaces", lambda: None)
+
+    seen_during_run: list[object] = []
+
+    def _run_one_reads_the_handler(*a: object, **k: object) -> bool:
+        seen_during_run.append(signal.getsignal(signal.SIGTERM))
+        return True
+
+    monkeypatch.setattr(m, "_run_one", _run_one_reads_the_handler)
+
+    async def _close() -> None:
+        return None
+
+    monkeypatch.setattr(m, "close_private_blank_templates", _close)
+    monkeypatch.setattr(m, "assert_shared_databases_unchanged", lambda url, before: None)
+
+    before = signal.getsignal(signal.SIGTERM)
+    _set_argv(monkeypatch, "no_trigger")
+    rc = m.main()
+    after = signal.getsignal(signal.SIGTERM)
+
+    assert rc == 0
+    assert seen_during_run == [m._raise_on_sigterm]  # installed FOR THE RUN
+    assert after is before  # and restored once it ends
+
+
+def test_a_sigterm_mid_run_still_drops_the_private_template_and_checks_the_guard(
+    monkeypatch,
+):
+    """The end-to-end shape: `_run_one` fires the SAME handler `main()`
+    installed (simulating the OS delivering SIGTERM mid-case — deterministic
+    here, rather than racing a real `os.kill` against interpreter bytecode
+    timing), and the `finally` still runs before the process exits."""
+    order: list[object] = []
+
+    monkeypatch.setattr(m, "source_url_for", lambda *a, **k: "URL")
+    monkeypatch.setattr(m, "refuse_if_source_diverges_from_head", lambda url: None)
+    _stub_leaked_blank_sweep(monkeypatch)
+    monkeypatch.setattr(m, "shared_database_versions", lambda url: object())
+    monkeypatch.setattr(m, "materialise", lambda **k: "config.evaluation.toml")
+    monkeypatch.setattr(m, "_sweep_stale_workspaces", lambda: None)
+
+    def _run_one_gets_killed(*a: object, **k: object) -> bool:
+        order.append("run")
+        m._raise_on_sigterm(signal.SIGTERM, None)
+        return True  # never reached
+
+    monkeypatch.setattr(m, "_run_one", _run_one_gets_killed)
+
+    async def _close() -> None:
+        order.append("close")
+
+    monkeypatch.setattr(m, "close_private_blank_templates", _close)
+    monkeypatch.setattr(
+        m, "assert_shared_databases_unchanged", lambda url, before: order.append("assert"),
+    )
+
+    before = signal.getsignal(signal.SIGTERM)
+    _set_argv(monkeypatch, "no_trigger")
+    with pytest.raises(SystemExit) as excinfo:
+        m.main()
+
+    assert excinfo.value.code == 143
+    assert order == ["run", "close", "assert"]
+    assert signal.getsignal(signal.SIGTERM) is before  # restored even on this path

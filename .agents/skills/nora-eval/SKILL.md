@@ -59,11 +59,14 @@ flag. The dev-machine tunnel recipe with `--model` belonged to the deleted
 `evals.run` harness.
 
 `nora_eval`/`nora_eval_blank` are SHARED with every other session on the host:
-a run refuses if the source's alembic revision is not this checkout's own head
-(refresh it or switch branch), and a divergent branch migrates a private
-per-run copy of the template rather than the shared one — fixed 2026-09-25
-after an ahead branch upgraded `nora_eval_blank` and broke every other
-session's seeding (`design/evaluation/11-the-sandbox-rebuild.md` §1.10).
+a run refuses only if the source is AHEAD of this checkout's own head
+(refresh it with `make eval-source` or switch branch — a source BEHIND head
+runs, and a read that actually hits a column it lacks refuses just as
+clearly), and a divergent template migrates a private per-run copy rather
+than the shared one, swept at startup if a killed run (or SIGTERM) left one
+behind — fixed 2026-09-25 after an ahead branch upgraded `nora_eval_blank`
+and broke every other session's seeding
+(`design/evaluation/11-the-sandbox-rebuild.md` §1.10).
 
 ## Procedure
 

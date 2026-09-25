@@ -166,3 +166,33 @@ async def test_assert_shared_databases_unchanged_catches_a_real_mutation(
     run_migrations(blank_url)
     with pytest.raises(sandbox.SharedDatabaseMutatedError, match="template moved"):
         sandbox.assert_shared_databases_unchanged(source_url, before)
+
+
+async def test_sweep_stale_private_blank_templates_against_real_postgres(
+    pg_admin: Any, shared_names,
+) -> None:
+    """The sweep's SQL, against real `pg_database`/`pg_stat_activity` — the
+    offline `tests/unit/test_sandbox_shared_database_guard.py` fakes those
+    tables' shape; this proves the real queries parse and mean what the
+    fake assumes. Two private-blank-shaped databases, one genuinely idle and
+    old, one old but held open by a live connection: only the idle one goes.
+    """
+    from datetime import UTC, datetime, timedelta
+
+    source_url, blank_name, _blank_url = shared_names
+    old = datetime.now(UTC) - timedelta(hours=7)
+    idle_name = f"{blank_name}_run_{old:%Y%m%dT%H%M%S}-aaaa"
+    active_name = f"{blank_name}_run_{old:%Y%m%dT%H%M%S}-bbbb"
+    _create_database(pg_admin, idle_name)
+    _create_database(pg_admin, active_name)
+
+    with psycopg.connect(pg_admin.dsn(active_name)):
+        # A LIVE connection held open on `active_name` for the duration of
+        # the sweep call — the exact condition that must protect it.
+        swept = await sandbox.sweep_stale_private_blank_templates(source_url)
+
+    assert idle_name in swept
+    assert active_name not in swept
+    databases = _databases(pg_admin)
+    assert idle_name not in databases
+    assert active_name in databases

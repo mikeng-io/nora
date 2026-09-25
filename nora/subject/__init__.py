@@ -74,6 +74,7 @@ from .sandbox import (
     sandbox_database,
     sandbox_from_snapshot,
     shared_database_versions,
+    sweep_stale_private_blank_templates,
 )
 
 __all__ = [
@@ -117,4 +118,5 @@ __all__ = [
     "shared_database_versions",
     "silent_failures",
     "sweep_stale_draw_workspaces",
+    "sweep_stale_private_blank_templates",
 ]

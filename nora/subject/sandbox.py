@@ -91,10 +91,17 @@ structurally here:
   misread: a branch whose migrations add a column `snapshot()` selects, run
   against a source that predates that migration, fails deep in a query with
   a message naming a column, not a reason. `refuse_if_source_diverges_from_head`
-  is the fail-closed, smaller alternative to teaching `snapshot()` to read
-  only what an old source has: refuse before any case runs, in either
-  direction (ahead or behind), rather than judge per column whether a given
-  gap happens to be safe.
+  refuses before any case runs, but ONLY when the source is AHEAD of this
+  checkout's head (a revision `revision_is_known` does not recognize at all
+  — this repo's ONE linear alembic chain makes "known at all" the same fact
+  as "an ancestor of head"). A source BEHIND head runs — refusing there
+  would refuse nearly every ordinary run from master, since most migrations
+  add nothing `snapshot()` selects (measured 2026-09-25: source at `0063`,
+  head at `0064`, an index-only migration) — and `nora.infra.sql.snapshot.
+  snapshot` is the second, fail-closed layer: a read that actually hits a
+  missing column or table there raises the SAME `SourceRevisionMismatchError`
+  (defined in `nora.infra.sql.migrations_runner`, the lower layer both
+  raisers share), naming both revisions.
 - `shared_database_versions`/`assert_shared_databases_unchanged` are the
   independent, second check: recorded at run start and re-read at run end
   (`evals.__main__.main`), they do not trust that the two rules above held —
@@ -109,7 +116,7 @@ import re
 import uuid
 from collections.abc import AsyncGenerator, Sequence
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import sqlalchemy as sa
 from sqlalchemy.engine import make_url
@@ -122,8 +129,10 @@ from nora.domain.notes import Note, NoteRevision
 from nora.domain.reminders import Reminder, ReminderState
 from nora.infra.sql import create_readonly_sql_engine
 from nora.infra.sql.migrations_runner import (
+    SourceRevisionMismatchError,
     current_revision,
     head_revision,
+    revision_is_known,
     run_migrations,
     sync_url_for,
 )
@@ -131,6 +140,7 @@ from nora.infra.sql.snapshot import Snapshot, snapshot
 from nora.persons import Persons
 
 from .knowledge import Knowledge, Message, NoteSeed, ReminderSeed, know
+from .memory_workspace import new_run_id
 from .obtain import Subject
 
 __all__ = [
@@ -138,6 +148,7 @@ __all__ = [
     "SourceRevisionMismatchError", "as_knowledge", "assert_shared_databases_unchanged",
     "close_private_blank_templates", "judge_source", "refuse_if_source_diverges_from_head",
     "sandbox_database", "sandbox_from_snapshot", "shared_database_versions",
+    "sweep_stale_private_blank_templates",
 ]
 
 _HOUR_MS = 3_600_000
@@ -239,7 +250,14 @@ async def _blank_template(source_url: str) -> str:
     # DIVERGED. Never call `run_migrations` on `url` (the shared name) from
     # here on — build and migrate a private copy instead, and leave the
     # shared template exactly as found.
-    private_name = f"{name}_run_{uuid.uuid4().hex[:12]}"
+    #
+    # `new_run_id()` (not a bare `uuid4().hex`): the name CARRIES its own
+    # creation instant (`YYYYMMDDTHHMMSS-nonce`), which
+    # `sweep_stale_private_blank_templates` reads back to tell a killed
+    # run's leftover from another session's live one — Postgres's
+    # `pg_database` has no creation-timestamp column to read instead
+    # (unlike `pg_stat_activity`, which the sweep also checks).
+    private_name = f"{name}_run_{new_run_id()}"
     private_url = _sibling(source_url, private_name)
     admin = create_async_engine(_maintenance(source_url), isolation_level="AUTOCOMMIT")
     try:
@@ -284,6 +302,106 @@ async def close_private_blank_templates() -> None:
             await admin.dispose()
         del _private_blanks[source_url]
         _migrated.discard(_sibling(source_url, f"{make_url(source_url).database}_blank"))
+
+
+#: How old a private blank template (`<blank>_run_<ts>-<nonce>`) must be
+#: before the startup sweep will even consider it — the SAME reasoning
+#: `nora.subject.memory_workspace.STALE_AFTER` uses for Honcho draw
+#: workspaces: a single run's own private copy lives for the run, which is
+#: minutes to a few hours; six hours is far outside any run and inside a
+#: day, so another session's LIVE copy is never old enough to match.
+STALE_PRIVATE_BLANK_AFTER = timedelta(hours=6)
+
+#: `<anything>_run_YYYYMMDDTHHMMSS-hex` — `new_run_id()`'s own shape
+#: (`nora.subject.memory_workspace.new_run_id`), read back by
+#: `_private_blank_created_at`. Anchored at the end (`$`): `_run_` cannot
+#: appear earlier by construction (`_blank_template` only ever appends this
+#: suffix once), but anchoring costs nothing and refuses to guess at a name
+#: shaped some other way.
+_PRIVATE_BLANK_RUN = re.compile(r"_run_(\d{8}T\d{6})-[0-9a-f]+$")
+
+
+def _private_blank_created_at(name: str) -> datetime | None:
+    """The instant `_blank_template` created `name`, read back from the name
+    itself — `None` for a name that does not carry `new_run_id`'s shape
+    (never guessed at; see `sweep_stale_private_blank_templates`, which
+    treats `None` as "too new to touch", the same as an age it cannot read).
+    """
+    match = _PRIVATE_BLANK_RUN.search(name)
+    if match is None:
+        return None
+    try:
+        return datetime.strptime(match.group(1), "%Y%m%dT%H%M%S").replace(tzinfo=UTC)
+    except ValueError:
+        return None
+
+
+async def sweep_stale_private_blank_templates(
+    source_url: str, *, older_than: timedelta = STALE_PRIVATE_BLANK_AFTER,
+    now: datetime | None = None,
+) -> tuple[str, ...]:
+    """Drop private blank templates (`_blank_template`'s own,
+    `<template>_run_<ts>-<nonce>`) a KILLED run left behind. Called once, at
+    run start (`evals.__main__.main`, before any case — the same point
+    `_sweep_stale_workspaces` already sweeps Honcho's leftovers from), so a
+    run that was `kill -9`'d (bypassing `close_private_blank_templates`'s
+    own `finally` entirely — see `evals.__main__._raise_on_sigterm` for the
+    ordinary `SIGTERM` case, which this sweep backstops) does not leak a
+    migrated database forever.
+
+    A candidate is dropped ONLY when BOTH hold:
+
+    - **it is older than `older_than`.** Read from the name itself
+      (`_private_blank_created_at`) — Postgres's `pg_database` carries no
+      creation timestamp to read instead. A name this cannot parse is
+      treated as too new, never as "unknown, sweep it anyway": a name this
+      sweep does not recognize is not this sweep's to guess about.
+    - **it holds no connection in `pg_stat_activity` right now.** A
+      currently-running session's own copy is either being created/migrated
+      (briefly) or about to be cloned FROM (`sandbox_database`'s own
+      `CREATE DATABASE ... TEMPLATE`, which itself needs zero connections on
+      the template — Postgres's own rule) — either way, a live connection is
+      the strongest signal "still in use", checked LAST and closest to the
+      drop so the window between checking and dropping is as small as
+      possible.
+
+    Neither check alone is safe: age alone could catch a run that has
+    genuinely not touched its template in a while but is still running
+    (unlikely within `older_than`, not impossible); a connection check alone
+    could pass on a genuinely dead copy that happens to be mid-clone by a
+    DIFFERENT run reusing the name after a restart (impossible in practice —
+    the nonce makes that a collision — but the age floor costs nothing and
+    removes the need to argue it). Best-effort per database, the same shape
+    `close_private_blank_templates` already uses: one that fails to drop
+    must not stop the sweep from trying the rest.
+    """
+    cutoff = (now or datetime.now(UTC)) - older_than
+    blank = f"{make_url(source_url).database}_blank"
+    pattern = f"{blank}_run_%"
+    admin = create_async_engine(_maintenance(source_url), isolation_level="AUTOCOMMIT")
+    swept: list[str] = []
+    try:
+        async with admin.connect() as conn:
+            names = (await conn.execute(
+                sa.text("SELECT datname FROM pg_database WHERE datname LIKE :p"),
+                {"p": pattern},
+            )).scalars().all()
+            for name in names:
+                created = _private_blank_created_at(name)
+                if created is None or created >= cutoff:
+                    continue
+                active = (await conn.execute(sa.text(
+                    "SELECT 1 FROM pg_stat_activity WHERE datname = :n "
+                    "AND pid <> pg_backend_pid() LIMIT 1"
+                ), {"n": name})).scalar()
+                if active:
+                    continue
+                with contextlib.suppress(Exception):
+                    await conn.execute(sa.text(f'DROP DATABASE IF EXISTS "{name}"'))
+                    swept.append(name)
+    finally:
+        await admin.dispose()
+    return tuple(swept)
 
 
 def _exists(url: str) -> bool:
@@ -373,42 +491,55 @@ def assert_shared_databases_unchanged(
         )
 
 
-class SourceRevisionMismatchError(RuntimeError):
-    """The source clone's alembic revision is not this checkout's migration
-    head. Refused before any case runs — see
-    `refuse_if_source_diverges_from_head`."""
+#: `SourceRevisionMismatchError` is defined in `nora.infra.sql.migrations_
+#: runner` (imported above), not here: `nora.infra.sql.snapshot.snapshot`
+#: raises the SAME type on its own fail-closed catch (a missing column/table
+#: mid-read), and `nora.infra.sql` is a LOWER layer than `nora.subject` — the
+#: error has to live at or below the layer that first needs to raise it.
 
 
 def refuse_if_source_diverges_from_head(source_url: str) -> None:
-    """Refuse the run if the source clone's alembic revision differs from
-    this checkout's own migration head, in EITHER direction.
+    """Refuse the run ONLY if the source clone is AHEAD of this checkout's
+    own migration head — a revision `revision_is_known` does not recognize
+    at all.
 
     The source is read-only (`create_readonly_sql_engine`; Postgres refuses
-    any write at the session level), so a branch ahead of it can never
-    silently WRITE to it — but it can silently MISREAD it: a query naming a
-    column this branch's migration added, run against a source that
-    predates that migration, fails deep inside `snapshot()` with a message
-    that names a column, not a reason. This check names the reason, before
-    any case is charged for reaching it.
+    any write at the session level), so this is about a MISREAD, not a
+    write: a query naming a column this branch's migration added, run
+    against a source that predates it, fails deep inside `snapshot()` with a
+    message that names a column, not a reason.
 
-    Refuses on a source AHEAD of the branch too, even though that direction
-    is usually harmless (a column an older query never selects). Telling
-    "ahead and safe" from "ahead and breaking" apart needs walking the
-    alembic graph per column `snapshot.py` reads; the smaller, safer rule is
-    one comparison with no exceptions — the same shape
-    `design/evaluation/11-the-sandbox-rebuild.md` §6 R7 already uses for "no
-    case states its own window": refuse and say why, rather than reason per
-    case about whether a given gap happens to be safe.
+    **A source BEHIND head is allowed to run.** This repo keeps ONE linear
+    alembic chain, so a revision this checkout recognizes at all —
+    `revision_is_known` — is by construction an ANCESTOR of head: the
+    source is behind or current, never on a separate branch. Refusing on
+    every routine deploy lag would refuse nearly every ordinary run from
+    master (measured 2026-09-25: source at `0063_note_merge_decision`, head
+    at `0064_proactive_open_note`, which only adds an index nothing here
+    selects) — most migrations add nothing `snapshot()`'s five reads name.
+    What a behind source cannot promise is that EVERY later migration was
+    that harmless, so `snapshot()` itself is the fail-closed second layer:
+    a read that actually hits a missing column or table there raises this
+    SAME error type, naming both revisions, instead of a bare "column does
+    not exist" deep inside a case.
+
+    A source with NO revision at all (`current_revision` reads `None` — an
+    unmigrated or unreadable database) is refused unconditionally: there is
+    nothing to call "behind" about a database with no history.
     """
     source_rev = current_revision(source_url)
     local_head = head_revision()
-    if source_rev != local_head:
-        raise SourceRevisionMismatchError(
-            f"source at {source_rev!r}, branch at {local_head!r}: refresh "
-            "the source (scripts/refresh_eval_clone.sh) or run on a branch "
-            "at the source's head. The source is read-only; this run will "
-            "not migrate it either way."
-        )
+    if source_rev == local_head:
+        return
+    if source_rev is not None and revision_is_known(source_rev):
+        return  # BEHIND head — allowed; `snapshot()` covers the rest
+    raise SourceRevisionMismatchError(
+        f"source at {source_rev!r}, branch at {local_head!r}: the source is "
+        "ahead of this checkout's migration head (or carries no revision "
+        "this checkout recognizes at all). Refresh the source (`make "
+        "eval-source`) or run on a branch at the source's head. The source "
+        "is read-only; this run will not migrate it either way."
+    )
 
 
 @contextlib.asynccontextmanager

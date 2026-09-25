@@ -23,10 +23,12 @@ resets them — otherwise test order would decide which branch of
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
 
+from nora.infra.sql.migrations_runner import revision_is_known
 from nora.subject import sandbox
 
 SOURCE_URL = "postgresql+asyncpg://nora:pw@127.0.0.1:5435/nora_eval"
@@ -325,25 +327,205 @@ def test_assert_shared_databases_unchanged_errors_loudly_when_established_templa
 def test_refuse_if_source_diverges_from_head_passes_when_equal(monkeypatch):
     monkeypatch.setattr(sandbox, "current_revision", lambda url: "0064_x")
     monkeypatch.setattr(sandbox, "head_revision", lambda: "0064_x")
+    monkeypatch.setattr(
+        sandbox, "revision_is_known",
+        lambda rev: (_ for _ in ()).throw(AssertionError("equal short-circuits before this")),
+    )
 
     sandbox.refuse_if_source_diverges_from_head(SOURCE_URL)  # no raise
 
 
-def test_refuse_if_source_diverges_from_head_refuses_when_branch_is_ahead(monkeypatch):
-    monkeypatch.setattr(sandbox, "current_revision", lambda url: "0064_x")
-    monkeypatch.setattr(sandbox, "head_revision", lambda: "0065_standing_working_set")
+def test_refuse_if_source_diverges_from_head_allows_a_source_behind_head(monkeypatch):
+    """MEASURED 2026-09-25: source at `0063_note_merge_decision`, head at
+    `0064_proactive_open_note` (an index-only migration) refused every
+    ordinary master run under the old, direction-blind rule. A source
+    behind head — a revision THIS checkout's own chain recognizes, i.e. an
+    ANCESTOR of head — must be allowed to run; `snapshot()` is the
+    fail-closed net for the rare migration that actually matters."""
+    monkeypatch.setattr(sandbox, "current_revision", lambda url: "0063_note_merge_decision")
+    monkeypatch.setattr(sandbox, "head_revision", lambda: "0064_proactive_open_note")
+    monkeypatch.setattr(
+        sandbox, "revision_is_known", lambda rev: rev == "0063_note_merge_decision",
+    )
+
+    sandbox.refuse_if_source_diverges_from_head(SOURCE_URL)  # no raise
+
+
+def test_refuse_if_source_diverges_from_head_refuses_when_source_is_ahead_of_head(monkeypatch):
+    """The source names a revision this checkout has never heard of —
+    `0065_standing_working_set` (#541, not yet merged here) — the ONE
+    direction that is unsafe: a read could hit a column only that migration
+    added."""
+    monkeypatch.setattr(sandbox, "current_revision", lambda url: "0065_standing_working_set")
+    monkeypatch.setattr(sandbox, "head_revision", lambda: "0064_proactive_open_note")
+    monkeypatch.setattr(sandbox, "revision_is_known", lambda rev: False)
 
     with pytest.raises(
-        sandbox.SourceRevisionMismatchError, match=r"source at '0064_x', branch at '0065",
+        sandbox.SourceRevisionMismatchError,
+        match=r"source at '0065_standing_working_set', branch at '0064_proactive_open_note'",
     ) as excinfo:
         sandbox.refuse_if_source_diverges_from_head(SOURCE_URL)
-    assert "refresh the source" in str(excinfo.value)
+    assert "make eval-source" in str(excinfo.value)
     assert "read-only" in str(excinfo.value)
 
 
-def test_refuse_if_source_diverges_from_head_refuses_when_branch_is_behind(monkeypatch):
-    monkeypatch.setattr(sandbox, "current_revision", lambda url: "0065_standing_working_set")
+def test_refuse_if_source_diverges_from_head_refuses_when_source_has_no_revision(monkeypatch):
+    """`current_revision` reads `None` — an unmigrated or unreadable
+    source. Nothing to call "behind" about a database with no history, and
+    `revision_is_known(None)` is never even asked."""
+    monkeypatch.setattr(sandbox, "current_revision", lambda url: None)
     monkeypatch.setattr(sandbox, "head_revision", lambda: "0064_x")
+    monkeypatch.setattr(
+        sandbox, "revision_is_known",
+        lambda rev: (_ for _ in ()).throw(AssertionError("None must short-circuit before this")),
+    )
 
-    with pytest.raises(sandbox.SourceRevisionMismatchError):
+    with pytest.raises(sandbox.SourceRevisionMismatchError, match=r"source at None"):
         sandbox.refuse_if_source_diverges_from_head(SOURCE_URL)
+
+
+# --------------------------------------------------------------------------
+# `revision_is_known` — the REAL function, against the REAL script
+# directory (no Postgres either way: it never opens a connection).
+# --------------------------------------------------------------------------
+
+
+def test_revision_is_known_is_true_for_a_real_ancestor_revision():
+    # The very first migration — always an ancestor of head, whatever head
+    # currently is.
+    assert revision_is_known("0001_pg_baseline") is True
+
+
+def test_revision_is_known_is_false_for_an_unknown_revision():
+    assert revision_is_known("totally_bogus_revision_id") is False
+
+
+# --------------------------------------------------------------------------
+# `sweep_stale_private_blank_templates` — the safe-leak-cleanup selection
+# logic (issue: SIGTERM/kill can skip `close_private_blank_templates`'s own
+# `finally`, and `_run_`-suffixed private copies from a killed run must not
+# accumulate forever).
+# --------------------------------------------------------------------------
+
+
+class _SweepResult:
+    def __init__(self, *, rows: list[str] | None = None, scalar_value: object = None) -> None:
+        self._rows = rows
+        self._scalar_value = scalar_value
+
+    def scalars(self) -> _SweepResult:
+        return self
+
+    def all(self) -> list[str]:
+        return list(self._rows or [])
+
+    def scalar(self) -> object:
+        return self._scalar_value
+
+
+class _SweepConn:
+    def __init__(self, engine: _SweepEngine) -> None:
+        self._engine = engine
+
+    async def __aenter__(self) -> _SweepConn:
+        return self
+
+    async def __aexit__(self, *exc: object) -> bool:
+        return False
+
+    async def execute(self, stmt: object, params: dict | None = None) -> _SweepResult:
+        sql = str(stmt)
+        self._engine.calls.append((sql, dict(params or {})))
+        if "SELECT datname FROM pg_database" in sql:
+            return _SweepResult(rows=self._engine.candidates)
+        if "pg_stat_activity" in sql:
+            name = (params or {}).get("n")
+            return _SweepResult(scalar_value=name in self._engine.active)
+        if sql.strip().upper().startswith("DROP DATABASE"):
+            return _SweepResult()
+        raise AssertionError(f"unexpected SQL in the sweep fake: {sql}")
+
+
+class _SweepEngine:
+    def __init__(self, candidates: list[str], active: set[str]) -> None:
+        self.candidates = candidates
+        self.active = active
+        self.calls: list[tuple[str, dict]] = []
+
+    def connect(self) -> _SweepConn:
+        return _SweepConn(self)
+
+    async def dispose(self) -> None:
+        return None
+
+
+def _stamped(name_suffix: str, *, at: datetime) -> str:
+    return f"nora_eval_blank_run_{at:%Y%m%dT%H%M%S}-{name_suffix}"
+
+
+async def test_sweep_drops_only_old_databases_with_no_active_connection(monkeypatch):
+    now = datetime(2026, 9, 25, 12, 0, tzinfo=UTC)
+    old_idle = _stamped("aaaa", at=now - timedelta(hours=7))
+    old_active = _stamped("bbbb", at=now - timedelta(hours=7))
+    young_idle = _stamped("cccc", at=now - timedelta(hours=1))
+    unparseable = "nora_eval_blank_run_not-a-timestamp"
+
+    engine = _SweepEngine(
+        candidates=[old_idle, old_active, young_idle, unparseable],
+        active={old_active},
+    )
+    monkeypatch.setattr(sandbox, "create_async_engine", lambda *a, **k: engine)
+
+    swept = await sandbox.sweep_stale_private_blank_templates(SOURCE_URL, now=now)
+
+    assert swept == (old_idle,)
+    drop_calls = [c for c in engine.calls if c[0].strip().upper().startswith("DROP DATABASE")]
+    assert len(drop_calls) == 1
+    assert f'"{old_idle}"' in drop_calls[0][0]
+
+
+async def test_sweep_never_drops_a_database_with_a_live_connection_even_if_old(monkeypatch):
+    """The safety this whole function exists for: a concurrent session's
+    genuinely in-use copy is never dropped, however old it reads."""
+    now = datetime(2026, 9, 25, 12, 0, tzinfo=UTC)
+    ancient_but_active = _stamped("live", at=now - timedelta(days=3))
+    engine = _SweepEngine(candidates=[ancient_but_active], active={ancient_but_active})
+    monkeypatch.setattr(sandbox, "create_async_engine", lambda *a, **k: engine)
+
+    swept = await sandbox.sweep_stale_private_blank_templates(SOURCE_URL, now=now)
+
+    assert swept == ()
+    assert not any(c[0].strip().upper().startswith("DROP DATABASE") for c in engine.calls)
+
+
+async def test_sweep_never_drops_a_database_too_young_even_if_idle(monkeypatch):
+    now = datetime(2026, 9, 25, 12, 0, tzinfo=UTC)
+    young_idle = _stamped("cccc", at=now - timedelta(minutes=1))
+    engine = _SweepEngine(candidates=[young_idle], active=set())
+    monkeypatch.setattr(sandbox, "create_async_engine", lambda *a, **k: engine)
+
+    swept = await sandbox.sweep_stale_private_blank_templates(SOURCE_URL, now=now)
+
+    assert swept == ()
+
+
+async def test_sweep_is_a_noop_with_no_candidates(monkeypatch):
+    engine = _SweepEngine(candidates=[], active=set())
+    monkeypatch.setattr(sandbox, "create_async_engine", lambda *a, **k: engine)
+
+    swept = await sandbox.sweep_stale_private_blank_templates(SOURCE_URL)
+
+    assert swept == ()
+    assert not any(c[0].strip().upper().startswith("DROP DATABASE") for c in engine.calls)
+
+
+def test_private_blank_created_at_parses_new_run_ids_own_shape():
+    name = "nora_eval_blank_run_20260925T120000-a1b2"
+    assert sandbox._private_blank_created_at(name) == datetime(
+        2026, 9, 25, 12, 0, 0, tzinfo=UTC,
+    )
+
+
+def test_private_blank_created_at_is_none_for_a_name_it_does_not_recognize():
+    assert sandbox._private_blank_created_at("nora_eval_blank_run_not-a-timestamp") is None
+    assert sandbox._private_blank_created_at("nora_eval_blank") is None

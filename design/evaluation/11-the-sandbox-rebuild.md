@@ -618,6 +618,50 @@ Postgres databases, revert-proved: the shared one is provably unmoved by
 `_blank_template`, and provably moved by calling `run_migrations` on it
 directly — the exact call the old code made).
 
+**Review, same day: three follow-ups, all in the same shape.**
+
+1. **`refuse_if_source_diverges_from_head` refused too much.** "In either
+   direction" refused every ordinary run from master too: production's clone
+   trails its own deploy by however long between deploys, so a routine
+   `source at 0063, branch at 0064` (an index-only migration) refused
+   EVERY run, not just an ahead branch's. Narrowed to refuse ONLY when the
+   source is AHEAD — `nora.infra.sql.migrations_runner.revision_is_known`
+   answers this with no database connection: this repo keeps ONE linear
+   alembic chain, so a revision the checkout's own script directory
+   recognizes at all is, by construction, an ancestor of head, never a
+   sibling branch. A source BEHIND head now runs; `nora.infra.sql.snapshot.
+   snapshot` is the fail-closed second layer, catching an asyncpg/psycopg
+   `UndefinedColumnError`/`UndefinedTableError` (SQLSTATE `42703`/`42P01`)
+   from any of its five reads and re-raising the SAME
+   `SourceRevisionMismatchError` (moved to `nora.infra.sql.migrations_runner`
+   so both raisers — `nora.subject.sandbox` and `nora.infra.sql.snapshot` —
+   can share one type without `nora.infra.sql` reaching upward for it),
+   naming both revisions and `make eval-source`.
+2. **A `kill <pid>` (SIGTERM) skipped the `finally`.** Neither
+   `close_private_blank_templates` nor `assert_shared_databases_unchanged`
+   ran, and a leaked `nora_eval_blank_run_*` outlived the process — which
+   `scripts/refresh_eval_clone.sh`'s own sweep did not know to look for
+   either (it only swept `_sb_%` and the bare `_blank`). Fixed three ways:
+   `evals.__main__._raise_on_sigterm` turns a SIGTERM into an ordinary
+   `SystemExit` so the `finally` runs like any other exception path; the
+   refresh script's sweep now also matches `_blank_run_%`; and
+   `nora.subject.sandbox.sweep_stale_private_blank_templates` runs at every
+   `python -m evals` start, dropping a leaked private copy ONLY when it is
+   both older than a grace period (`STALE_PRIVATE_BLANK_AFTER`, six hours —
+   the same reasoning `nora.subject.memory_workspace.STALE_AFTER` uses) AND
+   holds no connection in `pg_stat_activity` right now — the name itself
+   carries its creation instant (`_blank_template` now builds it from
+   `nora.subject.memory_workspace.new_run_id`, not a bare uuid), since
+   `pg_database` has no creation-timestamp column to read instead.
+3. **Both a case's own error and a caught shared-database mutation must
+   surface.** They do, with no code change needed: Python chains an
+   exception raised inside a `finally` onto whatever was already
+   propagating (`__context__`), so the mutation (which fires last, and is
+   what `main()` re-raises) carries the case's own error as its context
+   rather than discarding it. Pinned in `tests/unit/
+   test_eval_main_shared_db_guard.py::
+   test_a_case_raising_and_a_shared_mutation_both_surface`.
+
 ### Where the suite runs — DECIDED 2026-09-21: on the deploy host
 
 Not a preference. Measured: with the deployment's features on, composition
