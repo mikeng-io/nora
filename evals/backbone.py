@@ -1118,6 +1118,45 @@ def _updates_named(named: str | None, updates: Sequence[str]) -> list[str]:
     return []
 
 
+def _date_split(spec: Any, outcome: Any, rows: Mapping[Any, int]) -> list[str]:
+    """`date_split` — a batch that mixes two dates (design 42 S2-S4's
+    production defect: a booking on one day and a dinner on another, merged
+    into one note under the wrong date). A mapping of:
+
+    - `anchor`: the day the plan is on. PASS needs a note dated it that this
+      pass CREATED, or one it REVISED (the unit may already hold it; either
+      is a correct answer, which `expect: create` could not say and
+      `either` could not grade);
+    - `not_anchor`: the other day in the batch;
+    - `rows`: the row LABELS (real ids) that state the plan. FAIL on any note
+      dated `not_anchor` that this pass created or revised carrying one of
+      them, cited in its head body or in a staged candidate's
+      `message_ids`, which is the misdating itself.
+    """
+    if not spec:
+        return []
+    want, wrong = int(spec["anchor"]), int(spec["not_anchor"])
+    plan = {rows[label] for label in spec.get("rows") or () if label in rows}
+    if len(plan) != len(spec.get("rows") or ()):
+        return [f"date_split names a row the snapshot did not seed: {spec.get('rows')}"]
+    dated = list(getattr(outcome, "changed_dated", ()))
+    failed: list[str] = []
+    if not any(anchor == want for _kind, anchor, _ids in dated):
+        failed.append(f"date_split: nothing dated {want} was created or revised")
+    carried = {
+        i for _kind, anchor, ids in dated if anchor == wrong for i in ids
+    } | {
+        i for _t, anchor, message_ids, status in outcome.staged
+        if anchor == wrong and status == "created" for i in message_ids
+    }
+    if plan & carried:
+        failed.append(
+            f"date_split: a note dated {wrong} carries the {want} plan's rows "
+            f"{sorted(plan & carried)}"
+        )
+    return failed
+
+
 def _check_the_corpus_assertions(
     case: Any, outcome: Any, rows: Mapping[Any, int],
 ) -> Any:
@@ -1180,6 +1219,7 @@ def _check_the_corpus_assertions(
             elif not negate and absent:
                 failed.append(f"{key}: the reply does not contain {absent}")
     failed += _check_the_body(meta, outcome, rows, require_open=case.expect == "create")
+    failed += _date_split(meta.get("date_split"), outcome, rows)
 
     return dataclasses.replace(outcome, checks_failed=tuple(failed))
 

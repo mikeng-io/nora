@@ -476,3 +476,26 @@ cases:
         A real room fixes two unrelated arrangements for the same date
         within one Dreamer batch, so a `snapshot:` at its last row carries
         both and `must_cite` can name both rows.
+
+  - name: p10_two_dates_in_one_batch_the_plan_keeps_its_own_day
+    entry: dreamer
+    category: note-candidates
+    expect: either
+    # REAL: a production defect (design/standing-compact/40 §7). One batch
+    # carries a fitting booked for one day and, rows later, a dinner planned
+    # for another, with its schedule (7026, 7028, 7034, 7035). The production
+    # Dreamer wrote ONE note dated the fitting's day (20261017) carrying the
+    # dinner's schedule. At this instant the unit already held open notes
+    # dated the dinner's day (20260927), so a correct pass either creates a
+    # note dated 20260927 or revises one already dated it; `date_split`
+    # grades that compound answer, and fails any note dated 20261017 this
+    # pass wrote that carries the schedule rows.
+    snapshot:
+      platform: signal
+      conversation_id: x5hcBMQITtdUfSC0o9AHsqJKU7ywYMrOG5hcBMQITtc=
+      before_ms: 1790258095552
+    metadata:
+      date_split:
+        anchor: 20260927
+        not_anchor: 20261017
+        rows: [7026, 7028, 7034, 7035]

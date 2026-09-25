@@ -239,6 +239,9 @@ class Outcome:
     roster: tuple[tuple[str, str], ...] = ()
     nora_names: tuple[str, ...] = ()
     carried: tuple[int, ...] = ()
+    #: `(kind, anchor_date, head citations)` per note the pass created or
+    #: revised (`nora.subject.dreaming.Pass.changed_dated`).
+    changed_dated: tuple[tuple[str, int | None, tuple[int, ...]], ...] = ()
 
     #: Structural assertions the corpus made and the outcome did not meet.
     #:

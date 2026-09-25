@@ -107,6 +107,13 @@ class Pass:
     nora_names: tuple[str, ...] = ()
     carried: tuple[int, ...] = ()
 
+    #: Every note the pass created or revised, as `(kind, the note's anchor
+    #: date, the ids its NEW head body cites)`, in `changed`'s order. What a
+    #: case graded on WHICH DAY a note landed on reads (the note-candidates
+    #: corpus's `date_split`): `staged` carries the candidate's own anchor,
+    #: which on an update is not the anchor of the note it revised.
+    changed_dated: tuple[tuple[str, int | None, tuple[int, ...]], ...] = ()
+
     #: Why the pass declined BEFORE any model call, from
     #: `nora_proactive_pass_total{reason}` — production's own counter.
     #:
@@ -274,6 +281,25 @@ async def _notebook(subject: Subject, workspace: str) -> dict[str, tuple[str, st
         await engine.dispose()
 
 
+async def _dated(
+    subject: Subject, workspace: str, changed: Sequence[tuple[str, str]],
+) -> tuple[tuple[str, int | None, tuple[int, ...]], ...]:
+    """`(kind, anchor_date, head citations)` per changed note id, read after
+    the pass; see `Pass.changed_dated`."""
+    engine = create_sql_engine(subject.database_url)
+    try:
+        store = SqlNoteStore(engine)
+        out: list[tuple[str, int | None, tuple[int, ...]]] = []
+        for kind, note_id in changed:
+            got = await store.read(unit=workspace, note_id=note_id)
+            if got is not None:
+                note, head = got
+                out.append((kind, note.anchor_date, tuple(sorted(cited_ids_in(head.body)))))
+        return tuple(out)
+    finally:
+        await engine.dispose()
+
+
 async def _head_citations(subject: Subject, workspace: str) -> dict[str, frozenset[int]]:
     """`note id -> the ids its HEAD body cites`, for every standing note,
     read before the pass. Only the heads the pass then REVISES become
@@ -435,6 +461,11 @@ async def dream(
         ("update", title) for nid, (title, head) in after.items()
         if nid in before and before[nid][1] != head
     ]
+    changed_dated = await _dated(subject, workspace, [
+        ("create" if nid not in before else "update", nid)
+        for nid, (_title, head) in after.items()
+        if nid not in before or before[nid][1] != head
+    ])
     reminders_after = await _reminder_rows(subject)
     written_reminders = tuple(
         v for rid, v in reminders_after.items() if rid not in reminders_before
@@ -456,6 +487,7 @@ async def dream(
             for person_id, ref in sorted(subject.deps.persons.by_person.items())
         ),
         nora_names=(subject.cfg.doctrine.display_name,),
+        changed_dated=changed_dated,
         carried=tuple(sorted({
             i for nid, (_title, head) in after.items()
             if nid in before and before[nid][1] != head
