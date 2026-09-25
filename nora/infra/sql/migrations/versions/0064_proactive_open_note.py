@@ -15,9 +15,41 @@ open, so a re-raise after silence is still writable.
 THE VOCABULARY IS WRITTEN OUT rather than read from `nora.domain.reminders`,
 following `0053_decision_log`: a migration is a frozen historical statement.
 
-This fails, and changes nothing, on a database that already holds two open
-proactive rows on one note. That is deliberate: which of them to keep is the
-operator's call, never a migration's. Production held none on 2026-09-25.
+EXISTING DUPLICATES ARE RESOLVED FIRST, because this runs at app start
+(`run_migrations` in the composition root): an index that could not be built
+over a duplicate would stop Nora booting, and the old image keeps writing
+duplicates (26% of note-linked proactive rows, measured 2026-09-25) until the
+new one is live, so a pre-check on the day proves nothing at deploy time.
+Production held none open on 2026-09-25; this is for the gap. For each note
+with more than one open proactive row, ONE is kept and the rest are cancelled:
+
+    WITH ranked AS (
+      SELECT id, row_number() OVER (
+        PARTITION BY payload ->> 'note_id'
+        ORDER BY (state = 'firing'), due_at, created_at, id
+      ) AS n
+      FROM reminders
+      WHERE kind = 'proactive' AND state IN ('pending', 'firing')
+        AND payload ->> 'note_id' IS NOT NULL
+    )
+    UPDATE reminders SET state = 'cancelled',
+      outcome = 'cancelled_duplicate_note', fired_at = now()
+    FROM ranked WHERE reminders.id = ranked.id AND ranked.n > 1
+
+- The EARLIEST-DUE row is kept: it is the decision that would have spoken
+  first, and every later copy would only have repeated it (in production the
+  copies fell due at the same moment and rode one fire turn together).
+- A `pending` row is kept before a `firing` one. Migrations run at boot, before
+  boot recovery (`sweep_firing`) fails every row a dead process left `firing`;
+  keeping that one would leave the note with nothing.
+- `cancelled_duplicate_note` follows the fire-time screen's `cancelled_*`
+  outcomes (`cancelled_note_retired`, `cancelled_note_moved`), and `fired_at`
+  is stamped as they stamp it: the moment the row was HANDLED. The decisions
+  block renders that outcome, so her own log says why the row went.
+
+The count is logged (`alembic.runtime.migration`). The downgrade drops the
+index and does not un-cancel: which copy should have spoken is not knowable
+afterwards.
 
 Revision ID: 0064_proactive_open_note
 Revises: 0063_note_merge_decision
@@ -25,6 +57,8 @@ Create Date: 2026-09-25
 """
 
 from __future__ import annotations
+
+import logging
 
 import sqlalchemy as sa
 from alembic import op
@@ -38,7 +72,30 @@ branch_labels = None
 depends_on = None
 
 
+log = logging.getLogger("alembic.runtime.migration")
+
+_RESOLVE_DUPLICATES = sa.text("""
+    WITH ranked AS (
+      SELECT id, row_number() OVER (
+        PARTITION BY payload ->> 'note_id'
+        ORDER BY (state = 'firing'), due_at, created_at, id
+      ) AS n
+      FROM reminders
+      WHERE kind = 'proactive' AND state IN ('pending', 'firing')
+        AND payload ->> 'note_id' IS NOT NULL
+    )
+    UPDATE reminders SET state = 'cancelled',
+      outcome = 'cancelled_duplicate_note', fired_at = now()
+    FROM ranked WHERE reminders.id = ranked.id AND ranked.n > 1
+""")
+
+
 def upgrade() -> None:
+    cancelled = op.get_bind().execute(_RESOLVE_DUPLICATES).rowcount
+    log.info(
+        "0064: cancelled %d duplicate open proactive reminder(s) before "
+        "creating uq_reminders_proactive_open_note", cancelled,
+    )
     op.create_index(
         "uq_reminders_proactive_open_note", "reminders",
         [sa.text("(payload ->> 'note_id')")],

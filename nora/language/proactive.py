@@ -1278,8 +1278,10 @@ class ProactiveAdaptor:
         readable returns `unavailable` before `commit` is called at all, an
         item the Dreamer's screen rejects never reaches `accept`, and an item
         naming a handle this pass did not show is dropped in `accept`. On each
-        of those the row exists, the note has no wake, and `_may_wake_today`
-        therefore lets the NEXT pass write a second row about the same note.
+        of those the row exists and the note has no wake, so the note goes
+        uncharged: the NEXT pass's raise would be its first strike, not its
+        second. (`_may_wake_today` never stopped a second ROW either way; it
+        gates strikes. `remind` refuses a second open row itself, #158.)
         So after the envelope is walked the rows themselves are read back — the
         real property, not the model's account of it — and any note raised
         without a wake is charged one. The window starts at the pass clock this

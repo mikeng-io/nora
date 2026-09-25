@@ -665,8 +665,12 @@ IDX_REMINDERS_DUE = sa.Index(
 #: (`pending`) or is being said (`firing`) holds its note open, and an
 #: expression, because the note id lives in `payload` (the store's conflict
 #: target spells the same expression as text, and says why). Both are invisible to
-#: `alembic check`; `tests/infra/test_schema_parity.py`'s baseline dump is
-#: what holds this declaration and the migration in step.
+#: `alembic check`, and `tests/infra/test_schema_parity.py` does not tie this
+#: declaration to the migration either: its dump comes from the migrated
+#: database and this file is in neither loop. What ties them is the Postgres
+#: half of `tests/contract/test_reminder_store_contract.py`: the store's
+#: `ON CONFLICT` target must match the index migration 0064 built, or Postgres
+#: refuses to infer an arbiter (42P10) and every proactive write fails there.
 UQ_REMINDERS_PROACTIVE_OPEN_NOTE_WHERE = sa.text(
     "kind = 'proactive' AND state IN ('pending', 'firing')"
 )
