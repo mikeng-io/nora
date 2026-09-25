@@ -466,7 +466,7 @@ async def test_a_concurrent_insert_during_repoint_becomes_stale_not_a_crash(
 
     White-box on purpose: reproducing the actual race needs two real
     concurrent transactions interleaved at a specific statement, which is not
-    reproducible on demand. This calls `SqlNoteStore._resolve_repointed_row`
+    reproducible on demand. This calls `SqlNoteStore._repoint_row`
     directly with the collision already committed, which is the exact state
     the real race leaves the re-point `UPDATE` to find — the same failure,
     reached by construction instead of by luck.
@@ -494,10 +494,10 @@ async def test_a_concurrent_insert_during_repoint_becomes_stale_not_a_crash(
     async with engine.begin() as conn:
         row = (await conn.execute(sel)).one()
         with pytest.raises(StaleNoteHeadError):
-            await SqlNoteStore._resolve_repointed_row(
+            await SqlNoteStore._repoint_row(
                 conn, row=row, survivor_id=survivor.id,
-                revision_id=str(uuid.uuid4()), fired_at=T0,
-                on_reminder_outcome=None, context="solo",
+                revision_id=str(uuid.uuid4()), on_reminder_outcome=None,
+                outcome="repointed",
             )
 
     # And nothing was left half-written: the duplicate's row is exactly as

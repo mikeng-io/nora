@@ -197,6 +197,24 @@ SCENARIOS = {
 }
 
 
+#: What each scenario MUST resolve to, stated by hand. Parity alone cannot
+#: catch a defect in `proactive_row_forwarded_is_moved` itself — the fire-
+#: time screen and `merge_into` both call it, so a wrong function agrees with
+#: itself (the S1 mutant survived parity-only). The baseline is pinned here.
+EXPECTED = {
+    "S1 tag on duplicate after link": {"d_row": "cancelled/cancelled_note_moved"},
+    "S2 collision, survivor tag between links": {
+        "d_row": "cancelled/cancelled_note_moved", "s_row": "FIRES",
+    },
+    "S3 tag on survivor after fold": {"d_row": "cancelled/cancelled_note_moved"},
+    "S4 non-tag write on survivor after fold": {"d_row": "FIRES"},
+    "S5 survivor tag same ms as link": {"d_row": "FIRES"},
+    "S6 collision, survivor row stale, duplicate live": {
+        "d_row": "FIRES", "s_row": "cancelled/cancelled_note_moved",
+    },
+}
+
+
 async def _outcome(row: Reminder, screen: ProactiveScreen) -> str:
     """A row's resolved state if `merge_into` already touched it, or the
     fire-time screen's verdict if not — one string, comparable either way."""
@@ -235,4 +253,5 @@ async def test_merge_time_outcome_matches_the_fire_time_baseline(name: str) -> N
     scenario = SCENARIOS[name]
     baseline = await _run(scenario, wired=False)
     pr = await _run(scenario, wired=True)
+    assert baseline == EXPECTED[name]
     assert pr == baseline

@@ -15,10 +15,10 @@
   },
   {
     "name": "#520 review: a survivor tag-path write before the fold cancels the row instead of re-pointing it",
-    "file": "nora/infra/sql/notes.py",
+    "file": "nora/domain/notes.py",
     "old": "    return any(\n        is_tag_path_revision(established_by) and written_at > created_at_ms\n        for written_at, established_by in survivor_chain\n    )",
     "new": "    return False",
-    "target": "tests/infra/test_note_merge_repoints_reminders.py::test_a_repointed_row_is_cancelled_moved_when_the_survivor_moved_first"
+    "target": "tests/unit/test_note_merge_reminder_parity.py::test_merge_time_outcome_matches_the_fire_time_baseline"
   },
   {
     "name": "#520 review: both rows firing leaves both alone (repointing the keeper would collide with the un-cancelled loser)",

@@ -255,7 +255,7 @@ def _repoint_stmt(
     `cancelled_note_moved` a row that was never actually stale. `revision_id`
     here is always the FOLD's own new revision (`merge_into`'s
     `revision.id`), which — because the caller only reaches this statement
-    once `_resolve_repointed_row` has confirmed nothing moved since — is
+    once `_repoint_proactive_rows` has classified the row live — is
     genuinely the survivor's head at the moment this statement runs, so the
     very next check against it starts from `False`.
 
@@ -281,8 +281,8 @@ def _repoint_stmt(
 def _cancel_stmt(
     reminder_id: Any, state: str, outcome: str, fired_at: datetime,
 ) -> Any:
-    """The shared shape of both cancellations `_repoint_proactive_rows` and
-    `_resolve_repointed_row` write — collision loss (`cancelled_duplicate_note`)
+    """The shared shape of both cancellations `_repoint_proactive_rows`
+    writes — collision loss (`cancelled_duplicate_note`)
     and staleness (`cancelled_note_moved`) differ only in `outcome`. Same
     `state`-guarded, rowcount-checked-by-the-caller contract as `_repoint_stmt`."""
     return (
@@ -299,7 +299,7 @@ def _require_row_changed(result: Any, *, what: str) -> None:
     """`rowcount` checked, not assumed — the "state guard fails loudly" claim
     `_repoint_stmt`'s docstring makes is only true if a CALLER actually reads
     the result it returns. Every write `_repoint_proactive_rows` and
-    `_resolve_repointed_row` issue is against a row this same transaction
+    `_repoint_row` issue is against a row this same transaction
     already `SELECT ... FOR UPDATE`'d, so under READ COMMITTED nothing else
     can have changed its `state` before this statement runs — a 0 here means
     that invariant broke, not that the row was merely busy, and a silent
