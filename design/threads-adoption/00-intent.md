@@ -113,35 +113,27 @@ otherwise.
 
 ## What blocks it today
 
-**The token does not work.** `THREAD_API_ACCESS_TOKEN` in norty's `.env`
-(prefix `THAA`, 197 characters, no stray quotes or carriage return) was used
-on 2026-09-25 from norty and from the Mac:
+**The token lacks the mention scope.** `THREAD_API_ACCESS_TOKEN` in norty's
+`.env` answered «API access blocked» (`OAuthException` code 200) on every
+call on the morning of 2026-09-25, while the new Facebook account behind the
+app was restricted. The same token worked once the operator reported the
+account restored. Read back from norty the same day:
 
 | call | answer |
 |---|---|
-| `GET /v1.0/me?fields=id,username` | `OAuthException` code 200, «API access blocked.» |
-| `GET /v1.0/me/threads?fields=id,text` | same |
-| `GET /refresh_access_token?grant_type=th_refresh_token` | same |
-| `GET /v1.0/me` (no fields) | code 190, «Invalid OAuth 2.0 Access Token» |
+| `GET /me?fields=id,username` | `27316499435041440`, `noraexample` |
+| `GET /debug_token` | valid, `USER`, issued 2026-09-24, expires 2026-11-23; scopes `threads_basic`, `threads_content_publish`, `threads_manage_replies`, `threads_manage_insights`, `threads_read_replies` |
+| `GET /{uid}/threads_publishing_limit` | 0/250 posts, 0/1000 replies per 24 h |
+| `GET /{uid}/mentions` | HTTP 500, «An unknown error occurred» |
+| `GET /keyword_search`, `GET /profile_lookup` | HTTP 500, empty body |
+| `GET /location_search` | code 10, «Application does not have permission» |
 
-Code 200 is a policy block on the app or the account. It is not a malformed
-token, and it reproduces from two hosts, so the network is not the cause.
-Meta does not document this message for Threads. The causes developers most
-often report, in the order to check them in the App Dashboard:
-
-1. The app's **"Access the Threads API" use case** is missing, detached or
-   under review.
-2. The token was minted with the parent Facebook app's ID and secret instead
-   of the **Threads app ID and secret**. The Threads use case has its own
-   pair.
-3. The app carries a **restriction banner** (policy or spam flag), or
-   **business verification** is pending.
-4. The Threads account is not an **accepted Threads tester**: invited under
-   App Roles, then accepted in the Threads app under Settings → Account →
-   Website permissions.
-
-Nothing downstream can be measured until `GET /me?fields=id,username` answers
-`noraexample`. Phase 0 in 20 is exactly that read-back.
+The 500s are the endpoints whose scope the token was not granted.
+**`threads_manage_mentions` is the ingress of this whole design**, so the
+token has to be minted again with it, plus `threads_keyword_search` and
+`threads_profile_discovery` if the fact check is to search Threads itself.
+Phase 0 in 20 passes when `debug_token` lists `threads_manage_mentions` and
+`/mentions` answers 200.
 
 **App Review is the second gate, and it is not needed to start.** Without
 Advanced Access, `mentions` returns only mentions by tester accounts, reads

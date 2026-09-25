@@ -15,18 +15,20 @@ edges:
 Each phase is one PR. None starts before the phase before it has passed
 its live read-back.
 
-## Phase 0: the token answers (operator, no code)
+## Phase 0: the token carries every scope the design uses (operator, no code)
 
-Fix the "API access blocked" state (00 §"What blocks it today"). Then,
-from norty:
+Mint the token again with `threads_manage_mentions` (required),
+`threads_keyword_search` and `threads_profile_discovery` added to the five
+it has (00 §"What blocks it today"). Then, from norty:
 
 ```
-GET https://graph.threads.net/v1.0/me?fields=id,username
+GET https://graph.threads.net/v1.0/debug_token?input_token=…
+GET https://graph.threads.net/v1.0/{uid}/mentions
 ```
 
-**Pass:** `username == "noraexample"`. The `id` becomes the bridge's
-`THREADS_USER_ID`. Also read `GET /v1.0/{id}/threads_publishing_limit` to
-confirm the publish permission is on the token, not just read access.
+**Pass:** the scopes list `threads_manage_mentions`, and `/mentions`
+answers 200. The user id is `27316499435041440` (`noraexample`, read back
+2026-09-25). It becomes the bridge's `THREADS_USER_ID`.
 
 ## Phase 1: `threads-bridge`, read-only, and the measurements design needs
 
