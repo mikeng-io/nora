@@ -234,6 +234,12 @@ NORA_BODY_SCHEMA = "nora.body_schema"
 #: diffed before a model is paid for. `NORA_JUDGED_WHY` is the judge's own
 #: rationale, so a FAIL says why without another run.
 NORA_POSITION = "nora.position"
+#: The `working_set` the SAME fold wrote beside `position` (issue #445, PR
+#: #541) — `Outcome.working_set`, a `WorkingSetFinding` tuple. Carried as its
+#: own state, never folded into `NORA_POSITION`'s string: the judge and
+#: `--positions` both have to show a reader which of the two things they are
+#: reading, and a single string cannot label its own halves.
+NORA_WORKING_SET = "nora.working_set"
 NORA_SHOWN = "nora.shown"
 NORA_JUDGED_WHY = "nora.judged_why"
 #: The Honcho workspace this draw's subject read and wrote: a workspace of
@@ -1556,9 +1562,12 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
                 spec.judge is not None and port.judged_on == "position"
                 and outcome.position is not None and outcome.error is None
             ):
+                from evals.rebuilt.fold_evidence import render_working_set
+
                 judgement = await spec.judge.grade_position(
                     position=outcome.position, evidence=outcome.evidence,
                     kind=str(md.get("kind") or ""), prop=str(case.expected_output or ""),
+                    working_set=render_working_set(outcome.working_set),
                 )
                 judged_why = judgement.why
                 outcome = dataclasses.replace(
@@ -1668,6 +1677,7 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
                     EnvironmentState(name=NORA_TOOL_INPUTS, state=tool_inputs),
                     EnvironmentState(name=NORA_SHOWN_NOW, state=shown_now),
                     EnvironmentState(name=NORA_POSITION, state=outcome.position),
+                    EnvironmentState(name=NORA_WORKING_SET, state=outcome.working_set),
                     EnvironmentState(name=NORA_SHOWN, state=outcome.shown),
                     EnvironmentState(name=NORA_JUDGED_WHY, state=judged_why),
                     EnvironmentState(name=NORA_SHOWN_WHERE, state=shown),
@@ -1760,6 +1770,7 @@ def nora_task(spec: Spec):
                     EnvironmentState(name=NORA_TOOL_INPUTS, state=None),
                     EnvironmentState(name=NORA_SHOWN_NOW, state=None),
                     EnvironmentState(name=NORA_POSITION, state=None),
+                    EnvironmentState(name=NORA_WORKING_SET, state=()),
                     EnvironmentState(name=NORA_SHOWN, state=""),
                     EnvironmentState(name=NORA_JUDGED_WHY, state=""),
                     EnvironmentState(name=NORA_SHOWN_WHERE, state=None),

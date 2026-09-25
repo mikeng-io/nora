@@ -270,16 +270,76 @@ def criterion_rationales(raws: list[str] | tuple[str, ...], criterion: str) -> t
     return tuple(out)
 
 
-def _build_position_prompt(*, kind: str, prop: str, evidence: str, position: str) -> str:
+def _build_position_prompt(
+    *, kind: str, prop: str, evidence: str, position: str, working_set: str = "",
+) -> str:
     """Ask for ONE criterion: does the written position hold the case's property.
 
     The evidence is the RECORD of the turn (`evals.rebuilt.fold_evidence`), the
     same on both arms; the position is what this arm's fold wrote. An unknown
     `kind` RAISES: a case asking for a property nobody defined would be graded
     on whatever the judge guessed it meant.
+
+    `working_set` (issue #445, PR #541) is `nora.domain.standing.Standing.
+    working_set` rendered by `evals.rebuilt.fold_evidence.render_working_set`
+    — things the SAME fold found this turn and has not given the room, e.g.
+    an unsent restaurant a search returned. `""` (empty or absent working set)
+    omits the section entirely: a case whose property the position alone
+    satisfies must see nothing new, and a `residue` case may see the finding
+    in EITHER place, per its own `expected_output`. Labelled as a thing
+    SEPARATE from the position, never folded into it — the design put options
+    in `working_set` and conclusions in `body`, and a prompt that blurred them
+    would ask the judge to grade a distinction the fold itself was told to
+    keep.
     """
     if kind not in FOLD_KINDS:
         raise ValueError(f"unknown standing kind {kind!r}; known: {sorted(FOLD_KINDS)}")
+    # BOTH conditional on the same test, and both absent together: an empty
+    # working set must not add a single word to the prompt, so a case that
+    # never carries one is judged on an unchanged input (issue #445 review —
+    # "the judge input only GAINS an empty or absent working-set section").
+    if working_set:
+        after_position = (
+            "Then the position she wrote after it, and — separately, labelled "
+            "on its own below — her working set. Grade ONE property, stated "
+            "below; ignore style, length and anything the property does not "
+            "ask about.\n\n"
+        )
+        working_set_block = (
+            "## What she found this turn and has not given the room (her "
+            "working set — OPTIONS she is holding, NOT her position, and not "
+            "something she has told anybody)\n"
+            f"{working_set}\n\n"
+        )
+        # Widened ONLY here: a `residue` property may be satisfied by either
+        # section (its own `expected_output` says so), so the scoring line
+        # cannot say "in the written position" unconditionally once a working
+        # set is shown — but it must say so when none is, or this line alone
+        # changes what every OTHER case's prompt asks (review, PR #548: the
+        # unconditional widened line leaked into cases with no working set at
+        # all, contradicting "the prompt gains nothing when there is none").
+        scoring_line = (
+            "Score 1.0 when the property holds and 0.0 when it does not; state "
+            "your confidence (0.0-1.0). Return ONLY a JSON array with one "
+            "object, in this exact shape (a ```json fenced block is "
+            "tolerated):\n"
+        )
+    else:
+        after_position = (
+            "Then the position she wrote after it. Grade ONE property, stated "
+            "below; ignore style, length and anything the property does not "
+            "ask about.\n\n"
+        )
+        working_set_block = ""
+        # The ORIGINAL text, byte-for-byte (pre-#445,
+        # `git show origin/master:evals/rebuilt/judge.py`) — pinned by
+        # `test_the_no_working_set_prompt_matches_the_pre_pr_text_byte_for_byte`.
+        scoring_line = (
+            "Score 1.0 when the property holds in the written position and 0.0 when "
+            "it does not; state your confidence (0.0-1.0). Return ONLY a JSON array "
+            "with one object, in this exact shape (a ```json fenced block is "
+            "tolerated):\n"
+        )
     return (
         "You are grading one STANDING POSITION that Nora — an AI member of a "
         "Hong Kong group chat — wrote about one room, right after one of her "
@@ -291,18 +351,15 @@ def _build_position_prompt(*, kind: str, prop: str, evidence: str, position: str
         "transcript and this, nothing else. It is Cantonese prose.\n\n"
         "Below is the record of the turn: her position before it (with when it "
         "was written), the room's messages around the turn, and her steps on "
-        "the turn — every tool she called and what came back, in full. Then "
-        "the position she wrote after it. Grade ONE property, stated below; "
-        "ignore style, length and anything the property does not ask about.\n\n"
+        "the turn — every tool she called and what came back, in full. "
+        f"{after_position}"
         f"{evidence}\n"
         "## The position she wrote after the turn (what you are grading)\n"
         f"```\n{position.strip()}\n```\n\n"
+        f"{working_set_block}"
         f"## The property ({kind})\n{FOLD_KINDS[kind]}\n\n"
         f"## This case\n{prop.strip()}\n\n"
-        "Score 1.0 when the property holds in the written position and 0.0 when "
-        "it does not; state your confidence (0.0-1.0). Return ONLY a JSON array "
-        "with one object, in this exact shape (a ```json fenced block is "
-        "tolerated):\n"
+        f"{scoring_line}"
         f'[{{"criterion": "{POSITION_CRITERION}", "score": <0-1 float>, '
         '"confidence": <0-1 float>, "rationale": "<one sentence naming what '
         'was or was not held>"}]'

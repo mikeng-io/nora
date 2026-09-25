@@ -143,6 +143,25 @@ class Case:
 
 
 @dataclass(frozen=True, slots=True)
+class WorkingSetFinding:
+    """One `Standing.working_set` item, as the fold wrote it — `Outcome.
+    working_set`'s element (issue #445).
+
+    A capture, not the domain type: this module does not import from `nora`
+    (module docstring), so this mirrors `nora.domain.standing.WorkingSetItem`'s
+    shape rather than importing it. `what`/`source`/`bears_on` only —
+    `found_at` is the write path's own clock stamp
+    (`WorkingSetItem`'s own rule: "the model is never asked for it"), never a
+    property a corpus states or a judge grades against, so it is not carried
+    here.
+    """
+
+    what: str
+    source: str
+    bears_on: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class Outcome:
     """What happened, in ONE shape, for a grader to judge.
 
@@ -277,6 +296,21 @@ class Outcome:
     #: The standing position a fold WROTE, verbatim; `None` for every entry
     #: point that does not fold, and for a fold that wrote nothing.
     position: str | None = None
+
+    #: `Standing.working_set` the fold WROTE beside `position` (issue #445,
+    #: PR #541) — things it found this turn and has not given the room, e.g.
+    #: an unsent restaurant a search returned. `()` for every entry point that
+    #: does not fold, for a fold that wrote nothing, and for a fold that wrote
+    #: a position with an empty working set — the three read the same because
+    #: none of them found something worth keeping.
+    #:
+    #: Not read by `.meets()`: no `Expectation` binds on it (yet), and a field
+    #: nothing grades that still LOOKS graded is how a fold gets to write
+    #: nonsense into it for free. It exists for `evals.rebuilt.judge` to show
+    #: a `fold` case's judge, and for `--positions` to print, alongside
+    #: `position` — both label it a SEPARATE thing from the position, per the
+    #: field's own docstring in `nora.domain.standing`.
+    working_set: tuple[WorkingSetFinding, ...] = ()
 
     #: What a judge grades a written position AGAINST: the prior, the turn and
     #: its steps, rendered from the RECORD rather than from what the fold was

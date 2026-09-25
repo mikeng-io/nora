@@ -148,3 +148,38 @@ def render_shown(calls: Sequence[Any]) -> str:
             f"----- user -----\n{call.prompt}\n"
         )
     return "\n".join(parts)
+
+
+def _field(item: Any, name: str) -> Any:
+    """`item.<name>` for a `WorkingSetFinding`, or `item[name]` for the plain
+    dict a `WorkingSetFinding` round-trips to once a report's `actual_
+    environment_state` has gone through `EvaluationData.model_dump()`
+    (`evals.__main__._print_positions`'s own read path) — one function so
+    both callers render the same way."""
+    return item.get(name) if isinstance(item, Mapping) else getattr(item, name)
+
+
+def render_working_set(items: Sequence[Any]) -> str:
+    """`Outcome.working_set` (`evals.rebuilt.domain.WorkingSetFinding`, a
+    plain dict with the same three keys, or anything else with the same three
+    fields), rendered for a reader who must not mistake it for the position
+    (issue #445).
+
+    `""` for an empty or absent working set — never a header over nothing.
+    A section that always prints, even empty, is how a fold that never tried
+    and a fold with a genuinely empty working set end up reading the same to
+    whoever is grading; `_build_position_prompt` and `_print_positions` both
+    rely on this to OMIT the section rather than print a labelled blank.
+
+    `found_at` is left out on purpose: `WorkingSetItem`'s own docstring says
+    it is the write path's clock stamp, not a property a reader grades
+    against, and neither a case's `expected_output` nor the judge's rubric
+    states a time — only `what` (is it the kind asked for), `source` (where
+    it came from) and `bears_on` (what open plan it is for) do.
+    """
+    lines = []
+    for item in items:
+        what, source, bears_on = (_field(item, n) for n in ("what", "source", "bears_on"))
+        suffix = f"; bears on: {bears_on}" if bears_on else ""
+        lines.append(f"- {what} (source: {source}{suffix})")
+    return "\n".join(lines)
