@@ -56,6 +56,10 @@ EXPECTED = {
     "constraints": (
         "constraint", 40, ("tag", "heartbeat", "participation", "proactive", "summons"),
     ),
+    # Split out of constraints.md 2026-09-26: how a room's media placeholders
+    # read. Room-chat mechanics, so the four room occasions only, and order 38
+    # puts it immediately before constraints in every one of them.
+    "pictures": ("constraint", 38, ("tag", "heartbeat", "participation", "proactive")),
     # The public surface: a summons under an Instagram post, read by strangers.
     # Exactly `summons` and nothing else, so none of it reaches a room.
     "public-voice": ("identity", 21, ("summons",)),
@@ -74,6 +78,7 @@ _SCOPE_FOLDER = {
     "belonging": ("rooms", "belonging"), "voice": ("rooms", "voice"),
     "conduct": ("rooms", "conduct"), "silence": ("rooms", "silence"),
     "participation-conduct": ("rooms", "participation-conduct"),
+    "pictures": ("rooms", "pictures"),
     "participation": ("instruments", "participation"),
     "reaction": ("instruments", "reaction"),
     "public-voice": ("public", "voice"),
@@ -116,7 +121,7 @@ def test_each_file_has_the_expected_name_kind_order_and_audience(name, kind, ord
 def test_the_shipped_doctrine_assembles_in_strict_mode():
     doctrine = _shipped().get()
     assert [s.name for s in doctrine.sections] == \
-        ["identity", "belonging", "voice", "silence", "conduct", "constraints"]
+        ["identity", "belonging", "voice", "silence", "conduct", "pictures", "constraints"]
 
 
 def test_constraints_is_last_for_recency():
@@ -134,7 +139,8 @@ def test_the_summons_doctrine_assembles_in_strict_mode_from_core_and_public_only
     assert names == [
         "identity", "public-voice", "public-conduct", "constraints", "public-constraints",
     ]
-    for room_only in ("belonging", "voice", "conduct", "silence", "participation-conduct"):
+    for room_only in ("belonging", "voice", "conduct", "silence", "participation-conduct",
+                      "pictures"):
         assert room_only not in names
     for section in doctrine.sections:
         assert len(section.not_here) > 40, section.name
