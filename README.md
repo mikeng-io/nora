@@ -1,13 +1,14 @@
 # Nora
 
-A private ambient AI agent for a friend group's chat — Signal, Discord and
-WhatsApp. She reads every message silently, answers when tagged, and — in
+A private ambient AI agent for a friend group's chat — Signal, Discord,
+WhatsApp and Instagram. She reads every message silently, answers when tagged, and — in
 rooms the operator has opted in — may speak once on her own: when a room goes
 quiet (participation), or when a pass over what the group has left open
 decides something is worth raising at a chosen hour (proactive). Nora v2 is a
 two-layer, [Strands Agents SDK](https://github.com/strands-agents/sdk-python)-based
-rebuild of the original hand-rolled v1 — see `design/00-overview.md` for the
-architecture and `ARCHITECTURE.md` (arc42) for the map.
+rebuild of the original hand-rolled v1 — `ARCHITECTURE.md` (arc42) is the
+map; `design/00-overview.md` is the v2 rebuild's original plan (Signal only,
+SQLite), kept as history.
 
 **Reading order for a newcomer:** this file, then `GLOSSARY.md` (the words
 that mean something specific here), then `ARCHITECTURE.md`. Everything else
@@ -63,15 +64,16 @@ one tag, one turn, one reply, owed always. The **ambient loop** is how she is
 present when nobody has: one observe–orient–decide–act loop over the ingest
 path (Observe), the memory layer — notes, Standing, Honcho — (Orient), two
 deciders — participation and proactive — (Decide), and the fire path (Act),
-closed through a human. The tag path feeds the loop: its debrief writes
-Standing and proposes notes. `design/ambient-loop/` names the loop, the
+closed through a human. The tag path feeds the loop: its fold rewrites the
+room's Standing (it has proposed no notes since DEC-202; notes come from people
+and the `note-candidates` pass). `design/ambient-loop/` names the loop, the
 contract on each seam between its stages, and the incident that showed why
 the seams matter (#199). The diagram below is the same picture drawn as code
 paths.
 
 
 ```
-Signal / Discord / WhatsApp room
+Signal / Discord / WhatsApp / Instagram room
    │  the platform adapter pushes every message
    ▼
 ① AMBIENT PATH (always, no Agent SDK)
@@ -83,7 +85,8 @@ Signal / Discord / WhatsApp room
    collect context (transcript window, standing, open notes, self card,
                     tagger's peer history, doctrine)
    → Agent(messages=[pre-filled context]) → agent.invoke_async(tag_message)
-   → ~50 native tools, generated into the doctrine's capability section:
+   → 63 native tools (`NATIVE_TOOLS`, plus the `skills` plugin row); each tool's schema is its only
+     description (DEC-150 deleted the generated capability section). Among them:
        transcript & memory   load_transcript / who_said / search_memory / about / ask_memory / remember
        people & places       group_members / lookup_person / where_is / saved_places / route / transit / weather / parking
        what the group holds  note_read / note_search / note_create / note_update / list_events / create_event / rsvp_event
@@ -98,12 +101,22 @@ Signal / Discord / WhatsApp room
    → reply → audit row → Honcho feed
 
 ④ THE DREAMER (background, [dreamer] enabled — never speaks, writes derived state)
-   hourly/daily adaptors over the record and the notes: note-candidates,
-   note-curation, proactive (writes a reminder row for ③ to speak)
+   five adaptors over the record, the notes and Standing: note-candidates
+   (stages notes), note-curation (retires them), note-merge (folds duplicates;
+   `[notes] merge_mode`), culture (one account per room of what it has become,
+   daily; `[culture]`), proactive (writes a reminder row for ③ to speak)
+
+⑤ PUBLIC SUMMONS (Instagram, [social.instagram.summons], ships off + dry-run)
+   a mapped person tags her under a public post → one turn on the `summons`
+   audience (core/ + public/ doctrine only, no room, no memory) → the text is
+   HELD by the deliverer and leaves through the instagram-bridge's guarded
+   comment write, never through a room's adapter (DEC-212)
 ```
 
-Path ③ is the only way Nora ever speaks without being asked; the set of
-senders is closed and enumerated at two (R-1b). Its occasions are enumerated
+Path ③ is the only way Nora speaks in a room without being asked. The set of
+senders is closed: the tag path and the fire path, plus the summons (⑤), which
+DEC-212 added as a third caller of `deliver.build` that can reach no room's
+adapter (R-1b as amended). Path ③'s occasions are enumerated
 too: a reminder coming due, a gathering's notify, a version announcement, a
 compute job, a relay, and two that the operator grants per room:
 
@@ -137,7 +150,8 @@ the stores, pre-filled into each fresh agent's context:
 | the words, verbatim | Postgres `messages` | the record (`load_transcript`, `search_memory`) |
 | conclusions about each person, and about herself | Honcho | memory (`about`, `ask_memory`, `<self_card>`) |
 | the group's open questions — a dinner not yet placed, a trip not yet booked | Postgres `note` | the note tier (`<notes>`, `note_read`; written by people on a tag and by the `note-candidates` adaptor) |
-| her own position on where each room's conversation stands | Postgres `standing` | Standing (design 26; folded after each tag turn) |
+| her own position on where each room's conversation stands, plus a working set of options she found and has not yet given the room | Postgres `standing` | Standing (design 26; the room's compact, DEC-199; folded after each tag turn and, from ingest, whenever `[standing] fold_batch` new messages have piled up since the last fold; working set #445) |
+| her account of what each room has become — how they talk, how things get decided | Postgres, one chain per room | the culture tier (`<culture>`; written daily by the `culture` adaptor, read by every occasion in a room but the Relevance Gate, DEC-207) |
 
 See `design/01-ambient-ingest.md`, `design/02-tagging-path.md`,
 `design/03-strands-reuse.md`, the `design/dreamer-agent-loop/` bundle for the
@@ -170,7 +184,8 @@ Notable knobs:
 - The unprompted paths are each a section that ships `enabled = false`:
   `[heartbeat]` (reminders fire), `[participation]`, `[relevance_gate]`,
   `[notes]` (the index and the read tools; `candidates_enabled` for the
-  background writer, `curator_enabled` for retirement), `[standing]`,
+  background writer, `curator_enabled` for retirement, `merge_mode` for the
+  duplicate fold), `[standing]`, `[culture]`, `[social.instagram.summons]`,
   `[dreamer]` (the background runtime all adaptors run on). The proactive
   adaptor has no flag of its own: a `home_room = true` in `policy.toml` is
   the opt-in, and it needs `[dreamer]` and `[notes]` on.
@@ -194,52 +209,62 @@ account requires a restart.
 ## The doctrine: `nora/doctrine/`
 
 Nora's character is content, not code, and lives entirely in the Markdown files under
-`nora/doctrine/`:
+`nora/doctrine/`, in four scope folders: `core/` (true wherever she is),
+`rooms/` (a group she belongs to), `public/` (strangers reading a public post)
+and `instruments/` (cheap model calls that are not her):
 
 | File | Holds |
 |---|---|
-| `identity.md` | `kind: identity` — who Nora is, why she's in the group, where she comes from |
-| `voice.md` | `kind: identity` — register, language policy, the sound to hit and avoid |
-| `silence.md` | `kind: conduct` — when she speaks at all: called means must-speak, offered means may-speak. Reaches the `tag`, `participation` and `proactive` audiences, not `heartbeat` (a reminder turn is owed to whoever asked) |
-| `conduct.md` | `kind: conduct` — how she behaves once a turn is under way: when and how she replies |
-| `participation-conduct.md` | `kind: conduct` — the one thing an offered floor has that a tag never does: several things worth answering at once. `participation` audience only |
-| `participation.md` | `kind: instrument` — NOT hers: the Relevance Gate's whole instruction, on the `relevance_gate` audience no turn of hers reads |
-| `constraints.md` | `kind: constraint` — hard rules that override everything else, including anything a message asks for |
-| *(no file)* | `kind: capability` — what she can find out and when to reach for it, GENERATED from the tool registry |
+| `core/identity.md` | `kind: identity` — who Nora is and where she comes from, wherever she is |
+| `core/constraints.md` | `kind: constraint` — hard rules that override everything else, including anything a message asks for |
+| `rooms/belonging.md` | `kind: identity` — her place in a group, a friend's and not a service's, and the two halves of her that serve a room |
+| `rooms/voice.md` | `kind: identity` — register, Cantonese, humour: the sound to hit and avoid |
+| `rooms/silence.md` | `kind: conduct` — when she speaks at all: called means must-speak, offered means may-speak. Reaches the `tag`, `participation` and `proactive` audiences, not `heartbeat` (a reminder turn is owed to whoever asked) |
+| `rooms/conduct.md` | `kind: conduct` — how she behaves once a turn is under way: when and how she replies |
+| `rooms/participation-conduct.md` | `kind: conduct` — the one thing an offered floor has that a tag never does: several things worth answering at once. `participation` audience only |
+| `public/voice.md`, `public/conduct.md`, `public/constraints.md` | how she sounds and behaves when summoned in public, and the hard rules added there. `summons` audience only |
+| `instruments/participation.md` | `kind: instrument` — NOT hers: the Relevance Gate's whole instruction, on the `relevance_gate` audience no turn of hers reads |
+| `instruments/reaction.md` | `kind: instrument` — the GIF reaction picker's instruction, `reaction` audience |
+
+There is no `capability` file and no generated one: DEC-150 deleted that
+section, and each tool's schema is the only description of what it does.
 
 Every file declares its **audiences** (`applies_to`): `tag`, `heartbeat`
-(a reminder or announcement coming due), `participation`, `proactive`. A turn
-assembles only the files that name its audience, so a fire turn still gets
-identity, voice, conduct and constraints, and only the occasions that may
-decline the floor get `silence.md`'s may-speak half.
+(a reminder or announcement coming due), `participation`, `proactive`,
+`summons`, plus the instruments' own. A turn assembles only the files that
+name its audience, so a fire turn still gets identity, voice, conduct and
+constraints, only the occasions that may decline the floor get `silence.md`'s
+may-speak half, and a summons never loads a `rooms/` file.
 
 The Dreamer has its own corpus under `nora/dreamer/` — `doctrine/dreamer.md`
 (who it is on every run) and `objectives/*.md`, one per adaptor
-(`note-candidates`, `note-curation`, `proactive`, plus the tag path's
-`standing-debrief`). Same hot-reload, same bind mount; none of the doctrine
+(`note-candidates`, `note-curation`, `note-merge`, `culture`, `proactive`,
+plus the tag path's `standing-debrief`). Same hot-reload, same bind mount; none of the doctrine
 loader's gates run on it.
 
 Each file has YAML frontmatter (`name`, `description`, `order`, `applies_to`, `version`,
 `kind`, `authority_above`, `authority_below`, `not_here`, `change_policy`) in roughly the
 shape of an Agent Skill. The last four are DEC-29's, and the loader enforces them: a file
 with no `kind` will not load, an `identity` or `conduct` file that names a tool will not
-load, and a file claiming `kind: capability` will not load at all — capability's source of
-truth is the registry, so an authored copy is a cache that goes stale in silence. That is
+load, and a file claiming a derived kind (`situation`) will not load at all — its source of
+truth is code, so an authored copy is a cache that goes stale in silence (`capability` is no
+longer a kind: DEC-150 deleted it, and an unknown kind does not load either). That is
 not hypothetical: `identity.md` (then `soul.md`) told Nora she knew two things for eight
 weeks after she knew five.
 
 `not_here` says what a file must NOT contain and where that lives instead; `change_policy`
-marks `voice.md`, `identity.md`, `constraints.md` and every Dreamer objective as
+marks the `identity`, `voice` and `constraints` files in every scope folder, `rooms/belonging.md`,
+`instruments/participation.md`, the Dreamer's own `dreamer.md` and every Dreamer objective as
 the operator's alone.
 
 ### Editing the doctrine — no restart required
 
 Doctrine files are hot-reloaded. With `doctrine.reload = "mtime"` (the default), every tag
 re-stats the files in `nora/doctrine/` and reparses only the ones whose mtime changed —
-**no restart needed** to change how Nora sounds or behaves. Edit `voice.md` (or any of the
-four files), save it, and the very next tag picks up the new doctrine. The generated
-`capability` section is the exception and needs no editing: it is rebuilt from the registry,
-so adding a tool changes what she believes she can do with no file to remember.
+**no restart needed** to change how Nora sounds or behaves. Edit `rooms/voice.md` (or any
+doctrine file), save it, and the very next tag picks up the new doctrine. What she can do is
+not in the doctrine at all: it is each tool's schema, so adding a tool changes it with no
+file to remember.
 
 If an edit breaks parsing (bad frontmatter, missing required key, unparseable YAML), the
 loader keeps the **last good doctrine**, logs `doctrine_reload_failed`, and increments
@@ -382,7 +407,7 @@ lives in the `db` service's `db-data` volume.
 
 ### Editing the doctrine in the container
 
-Same workflow as bare-metal: edit `nora/doctrine/*.md` on the host and save. Because
+Same workflow as bare-metal: edit a file under `nora/doctrine/` on the host and save. Because
 `nora/doctrine/` is a live bind mount and `doctrine.reload = "mtime"` re-stats on every tag,
 the running container picks up the change on the next tag — **no rebuild, no
 restart**.

@@ -12,6 +12,14 @@ edges:
   - {dst: 04-config-identity, rel: decided_by, provenance: asserted}
 ---
 
+> **HISTORICAL — the v2 rebuild's original plan (2026-08-03), not today's map.**
+> It describes a Signal-only agent over SQLite with four tools. Nora now runs on
+> Signal, Discord, WhatsApp and Instagram over Postgres, with 63 native tools, a
+> Dreamer, a fire path and a public summons. The current map is `ARCHITECTURE.md`,
+> which cites the D1 boundary rule below with its later amendments (participation,
+> and the ingest-spawned Standing fold). Kept, not rewritten, because design nodes
+> are the history.
+
 # Nora — Ambient Signal Group Agent: Overview & Topology
 
 ## Identity & Scope

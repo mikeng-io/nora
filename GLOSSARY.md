@@ -22,7 +22,7 @@ The worst collision in the codebase. All three are live, all three are called
 |---|---|---|
 | **identity (resolution)** | mapping a platform *account* — phone number, ACI — to a person | `nora/ingest/stages/identity.py` |
 | **`PlatformIdentity`** | **Nora's own account** on a platform, used for self-tag checks (R-12) | `domain/models.py`, `adapter.resolve_identity()` |
-| **`doctrine/identity.md`** | who Nora *is* — character, not accounts | the doctrine layer |
+| **`doctrine/core/identity.md`** | who Nora *is* — character, not accounts (her place in a group is `doctrine/rooms/belonging.md`) | the doctrine layer |
 
 Because of this, tools that answer *"who is 阿豹?"* are named **`person_*`**,
 never `identity_*`. See Person below.
@@ -113,16 +113,27 @@ The most-used words in this repo, and none of them was here until 2026-09-08.
   creativity: it is the tier that runs while nobody is asking, which is
   exactly why it never speaks. `design/dreamer-agent-loop/` is its bundle.
 
-  **The three live adaptors** are `note-candidates` (hourly, per room, reads
+  **The five live adaptors** are `note-candidates` (hourly, per room, reads
   the new messages and stages notes), `note-curation` (daily, per unit,
-  retires notes that closed or expired — off by default) and `proactive`
-  (below). A fourth, `note-merge` (hourly, per unit, `[notes] merge_mode`,
-  off by default), folds two open notes that ask the same question; in
-  `shadow` it only records the folds it would make, in `note_merge_decision`.
+  retires notes that closed or expired — off by default), `note-merge`
+  (hourly, per unit, `[notes] merge_mode`, off by default; folds two open
+  notes that ask the same question, and in `shadow` only records the folds it
+  would make, in `note_merge_decision`), `culture` (below) and `proactive`
+  (below).
   Two earlier tiers — the knowledge tier (the "fact tier") and the
   language tier — were deprecated 2026-09-07 and their code deleted; a design
   node numbered 20, 21, 23, 24, 25, 28, 31 or 32 in that bundle describes code
   that no longer exists.
+
+- **culture** — her account of what a room has BECOME: how they talk, how
+  things get decided, what they call themselves, and her own standing there
+  (design/culture-tier/, DEC-207). The `culture` adaptor reads the room's own
+  messages once a day and appends ONE short account to a chain
+  (`culture`/`culture_revision`, keyed on the room's `primary_id`). Every
+  occasion in a room reads it as `<culture>` except the Relevance Gate; the
+  public summons reads no room and no culture. It is a
+  baseline, not a rule: a window read against it becomes a deviation. Not
+  `<room>`, which is the operator's statement of what a room is FOR.
 
   **The deterministic check comes first.** Every adaptor's `inputs()` is a
   store read that returns `""` when there is nothing to reason about — no new
@@ -160,8 +171,11 @@ The most-used words in this repo, and none of them was here until 2026-09-08.
 
 - **Standing** — Nora's held position on where a room's conversation stands:
   one paragraph per room, what she currently thinks, distinct from what was
-  said. It is *derived* state, written by the debrief path
-  (`nora/engagement/stages/debrief.py`) after each tag turn and stored
+  said, plus its **working set** (below). It is *derived* state, written by
+  the debrief path (`nora/engagement/stages/debrief.py`, which has created no
+  notes since DEC-202) after each tag turn, and by the same fold spawned from
+  ingest once `[standing] fold_batch` new messages have piled up
+  (`nora/ingest/stages/standing_event.py`), and stored
   through `StandingStore`, and it passes the same egress screen a reply does
   before it is written. Standing is an **input** to a later turn, never an
   output of the current one — and it is rewritten each time and keeps
@@ -173,6 +187,13 @@ The most-used words in this repo, and none of them was here until 2026-09-08.
   Do not read "standing" as status or as a queue position; it is a *stance*.
   And do not read `NoteStore.standing()` — the query for not-retired notes —
   as this tier; the two collided once (39 D8).
+
+- **working set** — the part of Standing that holds what she found on a turn
+  and has not yet given the room: options, findings, a shortlist (#445,
+  design/standing-compact/30). Bounded (`[standing] working_set_max_items`,
+  ceiling 20 items), aged out at render time (48 hours), and rendered
+  wherever Standing is: the tag turn and every fire turn. Not a note: it holds her work, not the group's open
+  question.
 
 - **proactive** — Nora's other half (design/dreamer-agent-loop/39, DEC-162).
   The passive half answers when tagged; the active half acts when nobody
@@ -211,7 +232,8 @@ The most-used words in this repo, and none of them was here until 2026-09-08.
 
 - **Standing** — Nora's held position on a topic in a room: what she currently
   thinks, distinct from what was said. It is *derived* state, written by the
-  debrief path (`nora/engagement/stages/debrief.py`) and stored through
+  debrief path (`nora/engagement/stages/debrief.py`) after a tag turn or from
+  ingest (`nora/ingest/stages/standing_event.py`) and stored through
   `StandingStore`, and it passes the same egress screen a reply does before it
   is written — a screen applied before the write, not before the read, because
   a screen a cache hit skips is not a screen. Standing is an **input** to a
@@ -236,10 +258,15 @@ Five `kind`s, and the line through the middle is the whole design:
 | `constraint` | the operator's decision | yes |
 | `identity` / voice | the operator's taste | yes |
 | `conduct` | the operator's judgement | yes |
-| **`capability`** | **the tool registry** | **no — generated** |
+| `instrument` | the operator's tuning of a cheap model call that is not her | yes |
 | **`situation`** | **the running turn** | **no — generated** |
 
-A capability claim in an authored file now **fails to load**.
+`capability` was a sixth, generated from the tool registry, until DEC-150
+deleted it (2026-08-30): each tool's schema is now the only description of what
+it does, and a file claiming `kind: capability` **fails to load** as an unknown
+kind. The files sit in four scope folders — `core/` (wherever she is),
+`rooms/` (a group she belongs to), `public/` (a public summons),
+`instruments/` — and an audience loads only the folders written for it.
 
 ## A turn
 
@@ -256,7 +283,8 @@ A capability claim in an authored file now **fails to load**.
   is the system's, not the proactive adaptor's; the components are its
   stages, and each seam between two of them carries a contract
   (design/ambient-loop/01). The tag path is the *other* backbone and feeds
-  this one: its debrief writes Standing and proposes notes. The **shared
+  this one: its debrief writes Standing (it has proposed no notes since
+  DEC-202). The **shared
   decision log** (DEC-179, a new store) is what lets the participation turn,
   the proactive turns and the tag path see each other's recent verdicts; it is
   not the proactive adaptor's own **decision log** of its reminder rows,
@@ -266,7 +294,8 @@ A capability claim in an authored file now **fails to load**.
   calls**; each call is a **round trip** (~4s) and each retained tool result is
   **re-sent on every subsequent call**, which is why intake compounds.
 - **fire turn** — a turn nobody asked for: same stages, same guards, but no tag
-  behind it. The second of exactly two paths that may send (R-1b).
+  behind it. The second of two paths that may send into a room (R-1b); the
+  public **summons** is a third sender that reaches no room (DEC-212).
 - **occasion** — WHY a fire turn is happening, as a value (`nora.domain.events.Event`, DEC-139):
   where she speaks, on whose authority, the words put to her, and the header
   that explains the moment. The factories on `nora.app.fire` enumerate them —
@@ -276,8 +305,9 @@ A capability claim in an authored file now **fails to load**.
   proactive turn name NOBODY, which is what stops the turn being refused
   under a rule about a grant it never held.
 - **audience** — which occasion a doctrine file speaks to (`applies_to`):
-  `tag`, `heartbeat`, `participation`, `proactive`, and `relevance_gate` for
-  the gate's own instruction. The same word labels every failure counter
+  `tag`, `heartbeat`, `participation`, `proactive`, `summons`, and the
+  instruments' own (`relevance_gate`, `reaction`, and `dreamer` for the
+  background tier). The same word labels every failure counter
   (`nora_silent_failures_total{audience}`), so a fire turn's failures are
   never charged to the tag budget.
 - **participation** — the occasion triggered by the room itself
@@ -289,10 +319,24 @@ A capability claim in an authored file now **fails to load**.
   `participation = true` in `policy.toml`). **Shadow mode** mirrors every
   determination to a review channel and holds the live send, for reading
   before the flip.
+- **summons** — a public occasion (design/instagram-adoption/19, DEC-212):
+  somebody in `identity.toml` tags her under a public Instagram post, and ONE
+  turn on the `summons` audience answers in the comments or says nothing. It
+  builds no room and writes no memory; it loads only `core/` and `public/`
+  doctrine; its text is HELD by a staging deliverer and leaves only through
+  the instagram-bridge's guarded comment write. Ships `enabled = false`,
+  `mode = "dry_run"`.
+- **surface** — where her words land. A **room** is a private surface she
+  belongs to; a public post is a **public surface** read by strangers
+  (design/threads-adoption/10 names the `SocialSurface` port a second one
+  would need). A voice channel is a surface OF a room, not a room (DEC-191).
 - **Relevance Gate** — a cheap, separate model call in front of participation
-  (design 36, `[relevance_gate]`): reads only the transcript and Standing and
-  answers whether the room is ASKING; only a `go` spends a full turn. Its
-  instruction is `doctrine/participation.md`, on an audience she never reads.
+  (design 36, `[relevance_gate]`): reads the transcript and Standing and
+  answers whether the room is ASKING; it also reads a one-line-per-tool
+  digest of what she can look up (`ToolRegistry.capability_digest()`). Only a
+  `go` spends a full turn. Its
+  instruction is `doctrine/instruments/participation.md`, on an audience she
+  never reads.
 - **terminal verb** — a tool that ends the turn: `send_reply` and `send_gif`,
   on both paths. A participation turn and a proactive act turn are the turns
   that may choose silence: they compose `tool_choice="auto"`, so ending in
