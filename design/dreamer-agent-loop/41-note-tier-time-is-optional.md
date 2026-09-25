@@ -811,8 +811,9 @@ differs from §7.3-7.8, and why:
   tag path after the row was written. `remind` and the per-note wake limit do
   not forward yet; neither can meet a merged note until `on`.
 
-**2026-09-25 — a prerequisite for `on` built: `merge_into` resolves both
-notes' open proactive rows, not just one.** PR #517 (`0064_proactive_open_note`,
+**2026-09-25 — a prerequisite for `on` built (PR #520): `merge_into`
+resolves both notes' open proactive rows, not just one.** PR #517
+(`0064_proactive_open_note`,
 merged `e8ded3c4`) added the ONE-open-row index and the fire-time survivor
 rule, but keyed the index on the RAW note id a row's `payload` carries — so
 two notes that EACH held an open row, folded together, produced two rows
@@ -833,7 +834,10 @@ double has no `reminders` table at all — so the property is pinned only
 against real Postgres, in `tests/infra/
 test_note_merge_repoints_reminders.py`, not in the dual-parametrized
 contract suite. `nora.testing.note_store`'s docstring says so rather than
-leaving the gap silent.
+leaving the gap silent. **Not yet proven**: the session that built this
+could not start Docker Desktop, so neither the new SQL test file nor its
+mutation table (`scripts/mutations/merge-repoints-reminders.json`) has run
+— PR #520's Gate section names this; run both before trusting the fold.
 
 Related: #118 (the build), #159 (follow-on), #236 (duplicate bound), #101
 (discharge, shipped, off), #103 (proactive adapter). The design lineage is
