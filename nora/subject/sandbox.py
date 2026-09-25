@@ -383,6 +383,15 @@ def _note_seed(note: Note, revision: NoteRevision) -> NoteSeed:
     reconstruction came from. Raising here says which note and why. It is not
     silently dropped: a note missing from the index is invisible, and invisible
     is indistinguishable from absent.
+
+    **`id=note.id` — the SOURCE's own id, not left for `know()` to assign
+    (issue #158, review).** A reminder seeded alongside keeps this SAME id in
+    its payload's `note_id` (`_reminder_seed` copies `payload` verbatim), and
+    `_note_ids_by_title` resolves a case's stated title against notes read
+    from this SAME source snapshot — so every id `evals.backbone` compares
+    against a written reminder's `note_id` is a SOURCE id. Letting `know()`
+    assign the sandbox note a fresh one (`NoteSeed.id`'s own docstring) would
+    leave nothing in the sandbox agreeing on what a note's id even was.
     """
     if note.anchor_date is None:
         raise ValueError(
@@ -391,6 +400,7 @@ def _note_seed(note: Note, revision: NoteRevision) -> NoteSeed:
             "would reach `Note.__post_init__` with no anchor at all"
         )
     return NoteSeed(
+        id=note.id,
         title=note.title,
         description=note.description,
         body=revision.body,

@@ -43,6 +43,7 @@ from nora.infra.sql.culture import SqlCultureStore
 from nora.infra.sql.notes import SqlNoteStore
 from nora.infra.sql.reminders import SqlReminderStore
 from nora.infra.sql.schema import MESSAGES
+from nora.infra.sql.snapshot import snapshot
 from nora.infra.sql.standing import SqlStandingStore
 from nora.subject import (
     Knowledge,
@@ -56,6 +57,7 @@ from nora.subject import (
     sandbox_database,
     sandbox_from_snapshot,
 )
+from nora.subject.sandbox import _note_ids_by_title
 from tests.sandbox_fixtures import ROOM, Source, seed_source
 
 BEFORE_MS = 1_752_000_000_000
@@ -575,3 +577,95 @@ async def test_the_store_allows_two_open_reminders_on_different_notes(sandbox) -
     assert {r.text for r in await _pending(sandbox)} == {
         "ask about the dinner plan", "ask about the pickup",
     }
+
+
+# --- issue #158 (BLOCKING review): a note's SOURCE id, end to end ----------
+
+
+async def test_a_seeded_note_keeps_its_source_id_end_to_end(
+    sandbox, source, engine,
+) -> None:
+    """THE BLOCKING BUG (issue #158, final review) this proves fixed: seeding
+    a note under a FRESH sandbox id while its reminder's payload kept the
+    SOURCE id left nothing in the sandbox agreeing on what a note's id even
+    was. `evals.backbone`'s title -> id resolution is built from the SOURCE
+    snapshot (`nora.subject.sandbox._note_ids_by_title`); a written
+    reminder's `note_id` came from whatever the SANDBOX assigned — two
+    different id spaces, so `_remind_match`/`_absent_note_clash` could never
+    match a real write, and #517's own duplicate-note constraint (keyed on
+    `payload ->> 'note_id'`) could not see a seeded row and a fresh one on
+    the SAME note as the same note either.
+
+    Three claims, each a distinct way the old seeding was wrong:
+    1. the reminder seeded alongside the note carries a `note_id` that IS a
+       real note's id in the sandbox's own store;
+    2. the grader's own resolver, built from the SOURCE snapshot, names that
+       SAME id for the note's title;
+    3. #517's `DuplicateProactiveNoteError` fires for a second `remind` on
+       that note, INSIDE the sandbox — the store sees the seeded row and the
+       new one as one note, not two.
+
+    Revert `nora.subject.sandbox._note_seed`'s `id=note.id` (or `know()`'s
+    branch that honours it) and this goes RED: claim 1 fails first (the
+    seeded reminder's `note_id` is a source id no sandbox note carries).
+    """
+    notes = SqlNoteStore(engine)
+    linked = await notes.create(
+        unit="nora", title="Marathon signup", description="who is running",
+        uncertainty="open", closing_condition="somebody answers",
+        established_in=ROOM[1], body="Blake asked, nobody answered",
+        established_by="test-seed", now_ms=BEFORE_MS - HOUR, anchor_date=20260920,
+    )
+    await SqlReminderStore(engine).create(Reminder(
+        id=UUID("77777777-0000-4000-8000-000000000001"),
+        requester_person_id="nora", platform=ROOM[0], conversation_id=ROOM[1],
+        conversation_type="group", text="ask again about the marathon",
+        created_at=_at(BEFORE_MS - 30 * MINUTE), due_at=_at(BEFORE_MS + HOUR),
+        state=ReminderState.PENDING, fired_at=None, outcome=None,
+        kind="proactive",
+        payload={
+            "note_id": linked.id, "note_title": linked.title,
+            "established_in": ROOM[1],
+        },
+    ))
+
+    await _seed(sandbox, source)
+
+    # 1. The seeded reminder's payload note_id is a REAL sandbox note's id —
+    #    and that id is the SOURCE's own (id-preserving seeding, not luck).
+    sandbox_engine = create_sql_engine(sandbox.database_url)
+    try:
+        sandbox_notes = await SqlNoteStore(sandbox_engine).standing(unit=sandbox.unit)
+        [sandbox_note] = [n for n in sandbox_notes if n.title == "Marathon signup"]
+        assert sandbox_note.id == linked.id
+        [seeded] = [
+            r for r in await _pending(sandbox)
+            if r.text == "ask again about the marathon"
+        ]
+        assert seeded.payload is not None
+        assert seeded.payload["note_id"] == sandbox_note.id
+
+        # 2. The grader's own resolver, over the SOURCE snapshot, names the
+        #    SAME id.
+        shot = await snapshot(
+            engine, platform=ROOM[0], conversation_id=ROOM[1],
+            culture_key=ROOM[1], unit="nora", before_ms=BEFORE_MS,
+        )
+        assert _note_ids_by_title(shot.notes)["Marathon signup"] == (linked.id,)
+
+        # 3. #517's own constraint fires for a SECOND `remind` on this note,
+        #    inside the sandbox.
+        with pytest.raises(DuplicateProactiveNoteError):
+            await SqlReminderStore(sandbox_engine).create(Reminder(
+                id=UUID("77777777-0000-4000-8000-000000000002"),
+                requester_person_id="nora", platform=ROOM[0],
+                conversation_id=ROOM[1], conversation_type="group",
+                text="a second, unwanted ask", created_at=_at(BEFORE_MS),
+                due_at=_at(BEFORE_MS + 2 * HOUR), state=ReminderState.PENDING,
+                fired_at=None, outcome=None, kind="proactive",
+                payload={
+                    "note_id": sandbox_note.id, "note_title": sandbox_note.title,
+                },
+            ))
+    finally:
+        await sandbox_engine.dispose()
