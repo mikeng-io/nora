@@ -129,6 +129,20 @@ WORKING_SET_CEILING_BYTES = 2400
 #: DEC-203's two-day past-anchor lapse.
 WORKING_SET_TTL_HOURS = 48.0
 
+#: The default OPERATING cap — `[standing] working_set_max_items` —
+#: `DEFAULT_STANDING_MAX_CHARS`'s sibling: how many items the write path
+#: keeps before refusing the whole set and keeping the prior's (§1). Its own
+#: budget, separate from the body's 1200 characters, on purpose: a found
+#: option is not prose competing with "concluded or committed" clauses for
+#: the same cap under a rank order that puts it last.
+DEFAULT_WORKING_SET_MAX_ITEMS = 5
+
+#: The default OPERATING cap — `[standing] working_set_max_chars` — the
+#: rendered JSON size (all items combined) the write path refuses at.
+#: Refuse-and-keep-the-prior on overflow, never a silent truncation, the same
+#: argument `DEFAULT_STANDING_MAX_CHARS` makes for the body.
+DEFAULT_WORKING_SET_MAX_CHARS = 600
+
 
 @dataclass(frozen=True, slots=True)
 class WorkingSetItem:
