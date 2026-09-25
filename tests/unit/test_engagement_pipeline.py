@@ -2512,7 +2512,7 @@ async def test_the_debriefs_cost_is_excluded_from_the_tag_latency_series(monkeyp
     started` is read BEFORE the debrief is awaited (26-standing §5) — so on
     this fake clock `total` is fixed at `0.0` the instant it is computed, no
     matter how large a "cost" the debrief racks up afterwards. The debrief
-    (`_ClockAdvancingDebrief`) advances the fake clock by `_DEBRIEF_SECONDS`
+    (`_ClockAdvancingDebrief`) advances the fake clock by `debrief_seconds`
     — a deliberately absurd 300s, impossible to clear by luck — INSTEAD OF
     sleeping, so proving the exclusion costs the test no real time and
     cannot itself inject wall-clock noise into the pipeline's own portion.
@@ -2520,15 +2520,15 @@ async def test_the_debriefs_cost_is_excluded_from_the_tag_latency_series(monkeyp
     makes it hang fails the test instead of hanging `make gate`.
 
     PROBE: move `total = time.perf_counter() - started` (pipeline.py) to
-    AFTER `await self._debrief(...)`, and `total` becomes `>= _DEBRIEF_
-    SECONDS` on this fake clock — the assertion below goes red on exactly
+    AFTER `await self._debrief(...)`, and `total` becomes `>= debrief_
+    seconds` on this fake clock — the assertion below goes red on exactly
     the leaked cost, not on an unrelated scheduling artifact.
     """
     timer = _FakePerfCounter()
     monkeypatch.setattr(time, "perf_counter", timer)
-    _DEBRIEF_SECONDS = 300.0
+    debrief_seconds = 300.0
 
-    _patch_debrief(monkeypatch, _ClockAdvancingDebrief(timer, _DEBRIEF_SECONDS))
+    _patch_debrief(monkeypatch, _ClockAdvancingDebrief(timer, debrief_seconds))
     pipeline, metrics, _audit, _memory, background = _build_pipeline(
         debrief_wiring=_wiring(),
     )
@@ -2538,7 +2538,7 @@ async def test_the_debriefs_cost_is_excluded_from_the_tag_latency_series(monkeyp
 
     observed = metrics.observations("nora_tag_latency_seconds")
     assert len(observed) == 1
-    assert observed[0] < _DEBRIEF_SECONDS / 2, (
+    assert observed[0] < debrief_seconds / 2, (
         "the debrief's own duration leaked into nora_tag_latency_seconds"
     )
 
