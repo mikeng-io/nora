@@ -57,6 +57,11 @@ to `nora.infra.sql.culture.SqlCultureStore` by
 `tests/contract/test_culture_store_contract.py`. Its chain is parent links,
 never insertion order, and it records every key `head` was asked for.
 
+`InMemorySummonsLedger` is the same rule for the public summons ledger
+(design/instagram-adoption/19), bound to `nora.infra.sql.summons.
+SqlSummonsLedger` by `tests/contract/test_summons_ledger_contract.py`. Its
+claim is atomic within one event loop, as the SQL one is across processes.
+
 `InMemoryNoteStore` is the same rule for the note tier, bound to
 `nora.infra.sql.notes.SqlNoteStore` by
 `tests/contract/test_note_store_contract.py`. It lives in its own module
@@ -151,6 +156,7 @@ from nora.testing.scripted_agent import (
     limit_stop_reason,
 )
 from nora.testing.standing_store import InMemoryStandingStore
+from nora.testing.summons_ledger import InMemorySummonsLedger
 
 __all__ = [
     "BACKED_TOOLS",
@@ -194,6 +200,7 @@ __all__ = [
     "InMemoryDreamScheduleClock",
     "InMemoryNoteStore",
     "InMemoryStandingStore",
+    "InMemorySummonsLedger",
     "NoteCandidate",
     "ScriptedModel",
     "ScriptedTurn",

@@ -1,0 +1,77 @@
+"""The public summons writes a comment from ONE place: the flush.
+
+`InstagramSummonsClient.post_comment` is the only public write Nora has on
+Instagram (design/instagram-adoption/19), and the account it writes with also
+carries her group chats. So the call is pinned structurally, the way
+`test_only_two_paths_can_send.py` pins `adapter.send`: exactly one call site
+under `nora/`, inside `SummonsOccasion._flush`, and every call of `_flush`
+hands it either the FIRST held reply (`held[0]`, straight from the staging
+deliverer's `held_texts`) or the row that reply was stored in. Nothing else —
+not the model's `final_text`, not a join of every held message — can reach
+the wire. The behaviour half is in `tests/unit/test_summons_occasion.py`.
+
+AST, not grep: a docstring naming `post_comment` is not a call.
+"""
+
+from __future__ import annotations
+
+import ast
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[2]
+NORA = ROOT / "nora"
+OCCASION = NORA / "app" / "summons.py"
+
+
+def _calls_named(tree: ast.AST, attr: str) -> list[ast.Call]:
+    return [
+        node for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == attr
+    ]
+
+
+def _function(tree: ast.Module, name: str) -> ast.AsyncFunctionDef:
+    for node in ast.walk(tree):
+        if isinstance(node, ast.AsyncFunctionDef) and node.name == name:
+            return node
+    raise AssertionError(f"{name} not found in {OCCASION.relative_to(ROOT)}")
+
+
+def test_post_comment_has_exactly_one_call_site_and_it_is_the_flush():
+    sites = [
+        (path.relative_to(ROOT), call)
+        for path in sorted(NORA.rglob("*.py"))
+        for call in _calls_named(ast.parse(path.read_text()), "post_comment")
+    ]
+    assert [str(p) for p, _ in sites] == ["nora/app/summons.py"], (
+        f"post_comment is called from {[str(p) for p, _ in sites]}; the flush "
+        "is the one place a public comment may be written"
+    )
+    flush = _function(ast.parse(OCCASION.read_text()), "_flush")
+    assert len(_calls_named(flush, "post_comment")) == 1
+
+
+def test_the_flush_is_handed_the_first_held_reply_or_its_stored_row():
+    tree = ast.parse(OCCASION.read_text())
+    calls = _calls_named(tree, "_flush")
+    assert len(calls) == 2, "positive control: the answer path and the staged retry"
+    texts = []
+    for call in calls:
+        text = next(k.value for k in call.keywords if k.arg == "text")
+        texts.append(ast.unparse(text))
+    assert sorted(texts) == ["held[0]", "row.reply_text or ''"], texts
+    # And `held` IS the staging deliverer's `held_texts`, via `_turn`.
+    answer = _function(tree, "_answer")
+    held = [
+        n for n in ast.walk(answer)
+        if isinstance(n, ast.Assign)
+        and any(isinstance(t, ast.Name) and t.id == "held" for t in n.targets)
+    ]
+    assert len(held) == 1 and "self._turn(" in ast.unparse(held[0].value)
+    turn = _function(tree, "_turn")
+    returns = [n for n in ast.walk(turn) if isinstance(n, ast.Return)]
+    assert [ast.unparse(r.value) for r in returns if r.value is not None] == [
+        "handle.deliverer.held_texts",
+    ]

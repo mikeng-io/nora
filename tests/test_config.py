@@ -445,6 +445,82 @@ def test_the_instagram_social_backend_is_declared_live_in_the_example(toml_path)
         load(toml_path)
 
 
+def test_the_instagram_summons_ships_off_in_dry_run_and_is_live_in_the_example(toml_path):
+    """design/instagram-adoption/19. Off and `dry_run` are two separate brakes
+    and both are the shipped state. The header is LIVE in the example, so
+    `extra="forbid"` runs against that block (the `[social.instagram]`
+    argument above), and deleting the block still loads with the same
+    class defaults."""
+    cfg = load(toml_path)
+    summons = cfg.social.instagram.summons
+    assert summons.enabled is False
+    assert summons.mode == "dry_run"
+    assert summons.poll_seconds == 120.0
+    assert summons.max_age_minutes == 60.0
+    assert summons.handle == "noraexample"
+
+    text = toml_path.read_text()
+    head, _, tail = text.partition("\n[social.instagram.summons]\n")
+    assert tail, "config.example.toml no longer declares a live [social.instagram.summons]"
+    toml_path.write_text(head + "\n[social.instagram.summons]\nnot_a_key = 1\n" + tail)
+    with pytest.raises(ConfigError, match="not_a_key"):
+        load(toml_path)
+
+    remainder = tail.split("\n[", 1)
+    toml_path.write_text(head + ("\n[" + remainder[1] if len(remainder) > 1 else ""))
+    assert load(toml_path).social.instagram.summons == summons
+
+
+def _in_section(text: str, header: str, old: str, new: str) -> str:
+    """`old` -> `new`, first occurrence AFTER `header`, asserting it landed
+    (`_set_key`'s reason: a replace that matches nothing is a silent no-op)."""
+    head, sep, tail = text.partition(f"\n{header}\n")
+    assert sep, f"no {header} in the example"
+    assert old in tail, f"{old!r} not under {header}"
+    return head + sep + tail.replace(old, new, 1)
+
+
+def test_the_summons_poll_interval_is_minutes_not_seconds(toml_path):
+    """design 19 rule 3: the session carries her group chats, so the poll has a
+    floor. 59 seconds is refused at load, 60 is accepted."""
+    text = _in_section(
+        toml_path.read_text(), "[social.instagram.summons]",
+        "enabled = false\n", "enabled = false\npoll_seconds = 59\n",
+    )
+    toml_path.write_text(text)
+    with pytest.raises(ConfigError, match="poll_seconds"):
+        load(toml_path)
+    toml_path.write_text(text.replace("poll_seconds = 59", "poll_seconds = 60"))
+    assert load(toml_path).social.instagram.summons.poll_seconds == 60
+
+
+def test_the_summons_mode_is_a_closed_set(toml_path):
+    toml_path.write_text(_in_section(
+        toml_path.read_text(), "[social.instagram.summons]",
+        'mode = "dry_run"', 'mode = "on"',
+    ))
+    with pytest.raises(ConfigError, match="mode"):
+        load(toml_path)
+
+
+def test_a_summons_without_the_instagram_backend_is_refused_at_load(toml_path):
+    """A summons is read and answered over [social.instagram]'s bridge; on
+    alone it would be a poller with nothing behind it."""
+    on = _in_section(
+        toml_path.read_text(), "[social.instagram.summons]",
+        "enabled = false", "enabled = true",
+    )
+    toml_path.write_text(on)
+    with pytest.raises(ConfigError, match=r"social.instagram.summons"):
+        load(toml_path)
+    toml_path.write_text(_in_section(
+        on, "[social.instagram]", "enabled = false", "enabled = true",
+    ))
+    cfg = load(toml_path)
+    assert cfg.social.instagram.enabled is True
+    assert cfg.social.instagram.summons.enabled is True
+
+
 def test_the_analytics_section_is_optional_and_ships_inert(toml_path):
     """DEC-115. `[analytics]` deleted from the example must keep loading, and
     the default is INERT (enabled = false): the presence analytics substrate

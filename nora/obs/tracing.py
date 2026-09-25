@@ -282,6 +282,24 @@ def annotate(**attributes: object) -> None:
         log.debug("span annotation not recorded", exc_info=True)
 
 
+def current_trace_id() -> str | None:
+    """The CURRENT span's trace id as 32 hex characters, or `None` when there
+    is no recording span (tracing off, or called outside one). Never raises.
+
+    For a row that must point at the trace that produced it (the summons
+    ledger's `trace_id`, `nora.app.summons`): the row is the claim, the trace
+    is its provenance, and `None` says honestly that there is none rather
+    than storing the all-zero id of a non-recording span."""
+    try:
+        context = trace.get_current_span().get_span_context()
+        if not context.is_valid:
+            return None
+        return format(context.trace_id, "032x")
+    except Exception:  # a broken tracer must not break a turn
+        log.debug("trace id not read", exc_info=True)
+        return None
+
+
 #: `traced_read`'s own generic parameter — whatever the wrapped read returns,
 #: unchanged, is what it hands back.
 T = TypeVar("T")

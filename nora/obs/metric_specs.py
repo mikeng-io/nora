@@ -22,6 +22,7 @@ from nora.domain.reasoning_strip import (
     STRIP_OUTCOMES,
     WRITE_OUTCOMES,
 )
+from nora.domain.summons import POLL_STATUSES, SUMMONS_MODES, SUMMONS_OUTCOMES
 
 _DEFAULT_BUCKETS: tuple[float, ...] = (0.1, 0.25, 0.5, 1, 2, 5, 10, 15, 30)
 
@@ -152,6 +153,8 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "Failures kept silent from the group, by reason and by which path was "
         "speaking (audience=\"tag\" | \"heartbeat\" | \"participation\" | "
         "\"proactive\" — a kind=proactive row's act turn, design 39 D12 — | "
+        "\"summons\" — a public Instagram summons, whose reply is held and "
+        "published by its own flush, never a room adapter — | "
         "\"participation-shadow\" — the §10.6 mirror — | "
         "\"relevance-gate-shadow\" — the Relevance Gate's review post, which "
         "has no turn behind it at all. Both shadow audiences are "
@@ -2132,6 +2135,27 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "flight and would overwrite a cancel written here.",
         ("outcome",),
     ),
+    # The public Instagram summons (design/instagram-adoption/19,
+    # `nora.app.summons`). Both label vocabularies are DERIVED from
+    # `nora.domain.summons`, which is what the increments pass.
+    _CounterSpec(
+        "nora_summons_total",
+        "Public Instagram summons handled, by outcome ("
+        + " / ".join(SUMMONS_OUTCOMES)
+        + ") and mode (" + " / ".join(SUMMONS_MODES) + "). staged in "
+        "dry_run is the whole turn with nothing posted; staged in live is a "
+        "reply waiting out the bridge's too_soon, retried next tick. "
+        "ambiguous is a write whose result is unknown and is never retried.",
+        ("outcome", "mode"),
+    ),
+    _CounterSpec(
+        "nora_summons_polls_total",
+        "GET /mentions polls by the summons poller, by status ("
+        + " / ".join(POLL_STATUSES)
+        + "). needs_human and unavailable make the poller back off, up to "
+        "30 minutes between polls.",
+        ("status",),
+    ),
 )
 
 _GAUGES: tuple[_GaugeSpec, ...] = (
@@ -2373,6 +2397,15 @@ _GAUGES: tuple[_GaugeSpec, ...] = (
         "pass has not run for that unit at all, which is the distinction "
         "that says whether the curator is wired.",
         ("unit",),
+    ),
+    # 1 once a summons write came back `writes_blocked`: Instagram answered a
+    # comment with an action block and the bridge latched writes off until an
+    # operator clears it. 0 after a write publishes. ABSENT before any write.
+    _GaugeSpec(
+        "nora_summons_writes_blocked",
+        "1 when the last public summons write was refused writes_blocked "
+        "(the bridge latched comment writes off after an action block; an "
+        "operator must clear it), 0 after a write published.",
     ),
 )
 

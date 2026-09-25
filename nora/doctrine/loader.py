@@ -94,11 +94,14 @@ KINDS = (*AUTHORED_KINDS, *DERIVED_KINDS)
 # call sites in the engagement and fire paths, `participation` and `proactive`
 # are the two occasions that may decline the floor, `relevance_gate` is the
 # gate's own instrument file, `dreamer` is the background tier's, and
-# `reaction` is the reaction picker's (`nora.agent.reaction`). Adding an
-# occasion means adding it here — which is the point.
+# `reaction` is the reaction picker's (`nora.agent.reaction`), and `summons`
+# is the public Instagram summons (`nora.app.summons`, design/instagram-adoption
+# /19): strangers read what she writes there, so it loads only `core/` and
+# `public/` and never a room file. Adding an occasion means adding it here —
+# which is the point.
 AUDIENCES = (
     "tag", "heartbeat", "participation", "proactive",
-    "relevance_gate", "dreamer", "reaction",
+    "relevance_gate", "dreamer", "reaction", "summons",
 )
 
 AUTHORITY_TERMINALS = ("situation", "message-content", "tool-output")
@@ -597,7 +600,7 @@ class DoctrineStore:
 
     def _scan(self) -> tuple[DoctrineSection, ...]:
         # Recursive: doctrine lives in scope folders (`core/`, `rooms/`,
-        # `instruments/`, and `public/` later) under `self._dir`, not flat.
+        # `instruments/`, `public/`) under `self._dir`, not flat.
         # `order` is authoritative for assembly (below); this sort is only
         # processing order, so a folder move cannot change what is served.
         files = sorted(self._dir.glob("**/*.md"), key=lambda p: p.name)

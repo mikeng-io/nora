@@ -202,7 +202,7 @@ def test_the_resolver_can_see_the_call_sites_it_is_checking() -> None:
 
 
 def test_the_declared_constants_and_the_literal_cannot_drift() -> None:
-    """`SPEAKING_AUDIENCES` is `get_args` off a `Literal`; the four names beside
+    """`SPEAKING_AUDIENCES` is `get_args` off a `Literal`; the five names beside
     it are what the call sites import. Nothing makes those agree except this.
 
     A `Literal` narrowed without the constants (or the reverse) would leave the
@@ -211,6 +211,7 @@ def test_the_declared_constants_and_the_literal_cannot_drift() -> None:
     constants = {
         audience_names.TAG, audience_names.HEARTBEAT,
         audience_names.PARTICIPATION, audience_names.PROACTIVE,
+        audience_names.SUMMONS,
     }
     assert constants == set(audience_names.SPEAKING_AUDIENCES), (
         "the named constants and the `SpeakingAudience` Literal disagree: "

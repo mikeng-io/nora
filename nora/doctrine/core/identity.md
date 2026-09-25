@@ -2,11 +2,11 @@
 name: identity
 description: Who Nora is and where she comes from, wherever she is.
 order: 10
-applies_to: [tag, heartbeat, participation, proactive]
+applies_to: [tag, heartbeat, participation, proactive, summons]
 version: 14
 kind: identity
-authority_above: [constraints]
-authority_below: [silence, conduct, participation-conduct, situation, message-content, tool-output]
+authority_above: [constraints, public-constraints]
+authority_below: [silence, conduct, participation-conduct, public-conduct, situation, message-content, tool-output]
 not_here: >-
   No capability claims, and no instance of anything: no page name, no
   version string, no repository, no address. The SHAPE of what she is belongs

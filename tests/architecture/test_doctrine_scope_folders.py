@@ -15,8 +15,8 @@ docstring).
 **The three folders, and what each promises:**
 
 - `core/` — every surface she speaks on. A file here reaches ALL FOUR of her
-  audiences (`tag`, `heartbeat`, `participation`, `proactive`) — not a
-  subset, because "core" means occasion-neutral, and a core file that
+  room audiences (`tag`, `heartbeat`, `participation`, `proactive`) AND the
+  public `summons` — not a subset, because "core" means occasion-neutral, and a core file that
   narrowed its own audience would be a `rooms/` file mis-filed.
 - `rooms/` — group chats. A file here reaches SOME of those same four
   audiences (silence.md is the `tag`/`participation`/`proactive` split
@@ -32,11 +32,13 @@ docstring).
   from every prompt silently" cuts both ways — the wrong name ADDS it
   somewhere it must never reach, too).
 
-`public/` (strangers, DEC pending, design/threads-adoption/10-architecture.md)
-and `rooms/belonging.md` both come later, in another PR. **This dict is the
-one place a folder gets added** — a new `public/` row here, and nowhere
-else, is what "the folder->allowed-audience table" in the PR description
-means.
+- `public/` — strangers (design/instagram-adoption/19, the public summons).
+  A file here reaches EXACTLY `summons` and nothing else: a public file in a
+  group turn would tell her the room is strangers, and a room file in a
+  summons would tell strangers about the room. `core/` is the only folder
+  that reaches both, which is why `core/` now declares `summons` too.
+
+**This dict is the one place a folder gets added.**
 """
 
 from __future__ import annotations
@@ -56,15 +58,19 @@ DOCTRINE_DIR = ROOT / "nora" / "doctrine"
 # hand-duplicated silently.
 _HER_AUDIENCES = frozenset({"tag", "heartbeat", "participation", "proactive"})
 _INSTRUMENT_AUDIENCES = frozenset({"relevance_gate", "reaction", "dreamer"})
+# The public surface: a turn of hers, but one strangers read (design/
+# instagram-adoption/19). Its own set, so `rooms/` can never draw from it.
+_PUBLIC_AUDIENCES = frozenset({"summons"})
 
 # folder -> ("exact" | "subset", the allowed/required audience set).
 # "exact": every file in the folder must declare EXACTLY this set.
 # "subset": every file in the folder must declare a non-empty SUBSET of it.
 # Add a new scope folder's row HERE and nowhere else (module docstring).
 _SCOPE_FOLDERS: dict[str, tuple[str, frozenset[str]]] = {
-    "core": ("exact", _HER_AUDIENCES),
+    "core": ("exact", _HER_AUDIENCES | _PUBLIC_AUDIENCES),
     "rooms": ("subset", _HER_AUDIENCES),
     "instruments": ("subset", _INSTRUMENT_AUDIENCES),
+    "public": ("exact", _PUBLIC_AUDIENCES),
 }
 
 
@@ -78,8 +84,9 @@ def test_the_scope_folders_cover_the_audiences_the_loader_knows():
     audience silently falling into neither set."""
     from nora.doctrine.loader import AUDIENCES
 
-    assert set(AUDIENCES) == _HER_AUDIENCES | _INSTRUMENT_AUDIENCES
+    assert set(AUDIENCES) == _HER_AUDIENCES | _INSTRUMENT_AUDIENCES | _PUBLIC_AUDIENCES
     assert _HER_AUDIENCES.isdisjoint(_INSTRUMENT_AUDIENCES)
+    assert _PUBLIC_AUDIENCES.isdisjoint(_HER_AUDIENCES | _INSTRUMENT_AUDIENCES)
 
 
 def test_no_doctrine_file_sits_directly_at_the_top_level():
@@ -90,7 +97,7 @@ def test_no_doctrine_file_sits_directly_at_the_top_level():
     top_level = sorted(p.name for p in DOCTRINE_DIR.glob("*.md"))
     assert top_level == [], (
         f"{top_level} sit directly under {DOCTRINE_DIR}, not in a scope folder "
-        "(core/, rooms/, instruments/)"
+        "(core/, rooms/, instruments/, public/)"
     )
 
 
@@ -120,9 +127,8 @@ def test_each_files_audiences_match_its_folders_contract(path: Path):
 
     if mode == "exact":
         assert declared == allowed, (
-            f"{path.relative_to(DOCTRINE_DIR)} is in core/ but applies_to="
-            f"{sorted(declared)} is not every one of her audiences "
-            f"{sorted(allowed)} — core/ means occasion-neutral"
+            f"{path.relative_to(DOCTRINE_DIR)} is in {folder}/ but applies_to="
+            f"{sorted(declared)} is not exactly {sorted(allowed)}"
         )
     else:
         assert declared <= allowed, (
@@ -142,6 +148,8 @@ def test_rooms_never_declares_an_instrument_audience_and_vice_versa():
             continue
         declared = set(parse_section(path).applies_to)
         if folder == "rooms":
-            assert declared.isdisjoint(_INSTRUMENT_AUDIENCES), path
+            assert declared.isdisjoint(_INSTRUMENT_AUDIENCES | _PUBLIC_AUDIENCES), path
         elif folder == "instruments":
-            assert declared.isdisjoint(_HER_AUDIENCES), path
+            assert declared.isdisjoint(_HER_AUDIENCES | _PUBLIC_AUDIENCES), path
+        elif folder == "public":
+            assert declared.isdisjoint(_HER_AUDIENCES | _INSTRUMENT_AUDIENCES), path

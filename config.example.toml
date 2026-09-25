@@ -1122,6 +1122,23 @@ enabled = false
 # base_url = "http://instagram-bridge:18082"   # private compose `nora` net; publishes nothing
 # timeout_seconds = 30.0                       # no browser behind it, unlike [social] above
 
+[social.instagram.summons]
+# The public summons (design/instagram-adoption/19): somebody in identity.toml
+# tags her in a comment under an Instagram post, and she answers in the
+# comments, once. Needs [social.instagram] enabled above (refused at load
+# otherwise). Only identity.toml people can summon her, matched by igid.
+#
+# THREE brakes, all off here. `enabled` spawns the poller. `mode` is
+# "dry_run" (the whole turn runs and what she would have said is stored in
+# the instagram_summons table, nothing is posted) or "live". And the bridge
+# posts nothing unless its own INSTAGRAM_COMMENT_WRITES=on, which Nora cannot
+# set. A live header for the reason [social.instagram] has one.
+enabled = false
+mode = "dry_run"
+# poll_seconds = 120.0        # floor 60: minutes, not seconds (design 19 rule 3)
+# max_age_minutes = 60.0      # an older summons is recorded stale, never answered
+# handle = "noraexample"      # her username, removed from the question
+
 [social.linkedin]
 # linkedin_read and linkedin_search (design/social-per-network, DEC-201):
 # READ-ONLY LinkedIn through the SAME host-side OpenCLI bridge as X, so it

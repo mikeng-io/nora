@@ -55,8 +55,18 @@ NORA = ROOT / "nora"
 SENDER = "nora/agent/guards.py"
 # The one module that may construct a `Deliverer`.
 BUILDER = "nora/engagement/stages/deliver.py"
-# The two paths that may cause a send. THIS IS THE RULE.
-CALLERS = {"nora/engagement/pipeline.py", "nora/app/fire.py"}
+# The paths that may cause a send. THIS IS THE RULE.
+CALLERS = {
+    "nora/engagement/pipeline.py",
+    "nora/app/fire.py",
+    # DEC-212 amends R-1b: a public summons is a third sending path,
+    # delivering only through the instagram-bridge's guarded comment write.
+    # Its deliverer is a STAGING one (`send_permitted=False`): every guard
+    # runs, the text is held, no adapter and no audit store is ever reached,
+    # and `tests/architecture/test_the_summons_writes_in_one_place.py` pins
+    # the one call that publishes what it held.
+    "nora/app/summons.py",
+}
 
 
 def _sources() -> list[tuple[str, ast.Module]]:
@@ -116,6 +126,7 @@ def test_only_the_tag_path_and_the_fire_path_can_send():
         "the tag path's"
     )
     assert _modules_where(_is_deliver_build) == CALLERS, (
-        "the tag path and the fire path are the only two senders; a third "
-        "caller of deliver.build is a third way for Nora to speak unprompted"
+        "the tag path, the fire path and the public summons are the only "
+        "senders; another caller of deliver.build is another way for Nora to "
+        "speak unprompted"
     )
