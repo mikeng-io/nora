@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"go.mau.fi/mautrix-meta/pkg/instameow/slidetypes"
 	"go.mau.fi/mautrix-meta/pkg/messagix/httpclient"
 	"go.mau.fi/mautrix-meta/pkg/messagix/types"
 )
@@ -194,4 +195,48 @@ func (f *REST) answer(url, method string, h http.Header, p []byte, ct types.Cont
 		return resp, []byte(a.Body), fmt.Errorf("%w %d", httpclient.ErrUnexpectedError, status)
 	}
 	return resp, []byte(a.Body), nil
+}
+
+// The summons intake's fixtures (design 19, "Intake, re-measured
+// 2026-09-26"). A summons is a DM-thread card from the commenter
+// (SummonsCard); the post's comments page then carries that commenter's
+// comment mentioning the account (SummonsCommentsJSON), next to CommentTopID
+// by somebody who never sent a card, mentioning the account too.
+const (
+	SummonsMessageID  = "mid.$summonscard0001"
+	SummonsSenderFBID = "106115654119830"
+	SummonsCardText   = "@" + SelfUsername + " is this true 3f9c"
+)
+
+// SummonsCommentsJSON is CarouselShortcode's first comments page with the
+// summons comment on it.
+const SummonsCommentsJSON = `{
+  "comments": [
+    {"pk": "` + MentionCommentID + `", "text": "` + SummonsCardText + `", "created_at": 1700000500,
+     "user": {"pk": "` + MentionCommentAuthorIGID + `", "username": "` + MentionCommentAuthorUsername + `"}},
+    {"pk": "` + CommentTopID + `", "text": "@` + SelfUsername + ` ` + CommentText + `", "created_at": 1700000600,
+     "user": {"pk": "` + CommentAuthorIGID + `", "username": "` + CommentAuthorName + `"}}
+  ],
+  "status": "ok"
+}`
+
+// SummonsCard is the card as the live delta carries it (no target_url) when
+// targetURL is "", and as the thread refetch returns it otherwise.
+func SummonsCard(targetURL string) *slidetypes.Message {
+	m := &slidetypes.Message{
+		ThreadFBID:  ThreadShort,
+		MessageID:   SummonsMessageID,
+		SenderFBID:  106115654119830,
+		ContentType: "MESSAGE_INLINE_SHARE",
+		Content: slidetypes.MessageContentWrapper{Content: &slidetypes.MessageContentXMA{XMA: &slidetypes.XMAContent{
+			Typename:     "SlideMessageLayeredXMA",
+			XMATitle:     MentionCommentAuthorUsername,
+			TitleText:    MentionCommentAuthorUsername,
+			SubtitleText: SummonsCardText,
+			TargetURL:    targetURL,
+		}}},
+		Sender: &slidetypes.MessageSender{ID: SummonsSenderFBID, IGID: MentionCommentAuthorIGID},
+	}
+	m.Sender.UserDict.Username = MentionCommentAuthorUsername
+	return m
 }
