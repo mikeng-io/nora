@@ -1325,12 +1325,12 @@ class SqlNoteStore:
            because `shadow` never calls this method. A re-pointed row also
            gets `revision_id` moved onto THIS fold's own new revision — see
            `_repoint_stmt`'s docstring for the defect that was, when only
-           `note_id` moved — and is cancelled `cancelled_note_moved` instead
-           of re-pointed when the survivor's tag path wrote something after
-           the row was linked, replicating `nora.app.proactive_screen.
-           ProactiveScreen._follow_survivor`'s check eagerly rather than
-           leaving a row that would resolve to cancelled anyway sitting open
-           until the next fire tick finds out.
+           `note_id` moved. Both notes' rows are classified first, by the
+           same shared check the fire-time screen uses
+           (`proactive_row_forwarded_is_moved` for the duplicate's, the
+           ordinary walk for the survivor's): a stale one is cancelled
+           `cancelled_note_moved` and never chosen as the keeper. The order
+           and why are in `_repoint_proactive_rows`'s docstring.
 
         `on_reminder_outcome`, when given, is called once per reminder this
         step touches, naming what happened (`_repoint_proactive_rows`'s

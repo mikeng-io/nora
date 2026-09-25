@@ -247,6 +247,49 @@ async def test_a_row_on_a_note_merged_into_this_one_holds_it() -> None:
     assert len(await store.all_pending(limit=10)) == 1
 
 
+@pytest.mark.asyncio
+async def test_a_merged_row_whose_own_note_moved_holds_nothing() -> None:
+    """#520 round-3 review: `remind` read only the survivor half of the
+    forwarded check. A row on the duplicate, then a tag edit on the
+    DUPLICATE, then the fold: the screen would cancel that row `moved` at
+    fire, so it holds nothing and booking the survivor lands. The check is
+    `proactive_row_forwarded_is_moved`, the one the screen and `merge_into`
+    call."""
+    store, notes, metrics = FakeReminderStore(), InMemoryNoteStore(), Metrics()
+    clock = _Clock(_hkt(12, 9, 0))
+    duplicate = await _note(notes, "馬拉松報名", at=_hkt(11, 20, 0))
+    survivor = await _note(notes, at=_hkt(11, 21, 0))
+    first = await _decide(store, notes, clock, metrics)(
+        when="2026-09-13T10:00:00+08:00", text="提返報名", note="馬拉松報名",
+    )
+    assert first["status"] == "ok", first
+    moved = await notes.append_revision(
+        unit=UNIT, note_id=duplicate.id, body="改咗做下個月。",
+        parent_revision_id=duplicate.head_revision_id, established_by="tag:blake",
+        now_ms=int(_hkt(12, 9, 30).timestamp() * 1000),
+    )
+    await notes.merge_into(
+        unit=UNIT, survivor_id=survivor.id,
+        survivor_head=survivor.head_revision_id, duplicate_id=duplicate.id,
+        duplicate_head=moved.id, body="合併。",
+        anchor_date=20260913, revisit_at=0, reset_strikes=False,
+        established_by="dream:note_merge:run-1",
+        now_ms=int(_hkt(12, 10, 0).timestamp() * 1000),
+    )
+
+    clock.now = _hkt(12, 11, 0)
+    second = await _decide(store, notes, clock, metrics)(
+        when="2026-09-13T10:30:00+08:00", text="提返", note=TITLE,
+    )
+
+    assert second["status"] == "ok", second
+    old = await store.get(uuid.UUID(first["id"]))
+    assert old is not None
+    assert (old.state, old.outcome) == (
+        ReminderState.CANCELLED, proactive_screen.CANCELLED_NOTE_MOVED,
+    )
+
+
 def test_the_outcome_and_kind_spellings_match_the_screen() -> None:
     """The tool layer and the store may not import `nora.app`, so each holds
     its own copy of two words the fire-time screen owns."""

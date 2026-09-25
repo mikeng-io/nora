@@ -14,7 +14,7 @@ in isolation (does it cancel, does it re-point, does it skip a firing
 collision). This file pins the CROSS-CHECK: whatever `merge_into` decided,
 running the fire-time screen on the un-re-pointed row (the world as it
 would look if the fold never touched reminders at all, exactly as PR #517
-shipped) must reach the identical verdict. Six scenarios, adapted from the
+shipped) must reach the identical verdict. Seven scenarios, adapted from the
 review's own probe script (S1-S5), the two that exposed real defects (S1,
 S2) and three that already matched (S3-S5, kept so the parity check itself
 is proven to distinguish agreement from disagreement — a check that always
@@ -186,6 +186,25 @@ async def _s6_collision_survivor_row_stale_duplicate_live(notes, reminders):
     return {"d_row": rd.id, "s_row": rs.id}
 
 
+
+async def _s7_duplicate_moved_then_survivor_retired(notes, reminders):
+    """A tag edit on the duplicate after its row was linked, the fold, and
+    then the SURVIVOR retired. The row's own note moved, so it reads
+    `cancelled_note_moved` whatever later became of the survivor (#520
+    round-3 review: with the duplicate step only inside `_follow_survivor`,
+    a retired survivor turned the label into `cancelled_note_retired`)."""
+    s = await _mk(notes, "S", MS0 - 10_000)
+    d = await _mk(notes, "D", MS0 - 10_000)
+    r = _row_on(d, created_ms=MS0, due_h=1)
+    await reminders.create(r)
+    await _write(notes, d.id, "tag:miles", MS0 + 1_000)
+    await _fold(notes, s.id, d.id, MS0 + 2_000)
+    await notes.supersede(
+        key=WS, target=s.id, replaced_by=None, because="retired-expired",
+        source=None, now_ms=MS0 + 3_000,
+    )
+    return {"d_row": r.id}
+
 SCENARIOS = {
     "S1 tag on duplicate after link": _s1_tag_on_duplicate_after_link,
     "S2 collision, survivor tag between links": _s2_collision_survivor_tag_between_links,
@@ -194,6 +213,7 @@ SCENARIOS = {
     "S5 survivor tag same ms as link": _s5_survivor_tag_same_ms_as_link,
     "S6 collision, survivor row stale, duplicate live":
         _s6_collision_survivor_row_stale_duplicate_live,
+    "S7 duplicate moved, then survivor retired": _s7_duplicate_moved_then_survivor_retired,
 }
 
 
@@ -212,6 +232,7 @@ EXPECTED = {
     "S6 collision, survivor row stale, duplicate live": {
         "d_row": "FIRES", "s_row": "cancelled/cancelled_note_moved",
     },
+    "S7 duplicate moved, then survivor retired": {"d_row": "cancelled/cancelled_note_moved"},
 }
 
 

@@ -156,19 +156,19 @@ class ProactiveScreen:
         if current[0].retired_at is not None and not merged:
             return ReminderState.CANCELLED, CANCELLED_NOTE_RETIRED
         duplicate_chain = {r.id: (r.parent_revision_id, r.established_by) for r in chain}
+        # The row's OWN note first, open or merged — the order this screen
+        # had before #520, so a row whose own note moved reads
+        # `cancelled_note_moved` whatever later happened to its survivor
+        # (#520 round-3 review: running this only inside `_follow_survivor`
+        # let a retired or unreadable survivor change the label). For a
+        # merged note, `proactive_row_forwarded_is_moved` repeats this step
+        # and finds nothing; the shared function stays the one definition.
+        if tag_path_progressed_since_wake(
+            head_revision_id=current[0].head_revision_id,
+            last_wake_revision_id=linked_at, chain=duplicate_chain,
+        ):
+            return ReminderState.CANCELLED, CANCELLED_NOTE_MOVED
         if current[0].retired_at is None:
-            # An ORDINARY open note — never forwards, so the ancestry walk
-            # alone answers it (`proactive_row_forwarded_is_moved`'s own
-            # step 1, inlined here rather than called with a `survivor_
-            # chain` of `()` — that would be the same answer, but this
-            # module does not import a "forwarding" name for a row that is
-            # not being forwarded).
-            moved = tag_path_progressed_since_wake(
-                head_revision_id=current[0].head_revision_id,
-                last_wake_revision_id=linked_at, chain=duplicate_chain,
-            )
-            if moved:
-                return ReminderState.CANCELLED, CANCELLED_NOTE_MOVED
             return None
         return await self._follow_survivor(
             row, unit=convo.unit, note_id=note_id,

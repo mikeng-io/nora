@@ -104,8 +104,8 @@ from ..domain.notes import (
     NoteRevision,
     NoteSupersedeReason,
     StaleNoteHeadError,
-    is_tag_path_revision,
     note_handle,
+    proactive_row_forwarded_is_moved,
     tag_path_progressed_since_wake,
 )
 from ..domain.ports import (
@@ -9896,14 +9896,21 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 survivor = await book.successor(unit=unit, note_id=about)
                 if survivor is None or survivor.id != note.id:
                     continue
-                # The row names a revision of the DUPLICATE, so on the
-                # survivor «moved» is read by time, as the screen reads it.
+                # A forwarded row: the SAME two-step check the fire-time
+                # screen and `merge_into` use (the duplicate's own chain,
+                # then the survivor's by time), so the three cannot drift
+                # (#520 round-3 review: this copy read only the second step).
                 await _chain()
-                linked_ms = int(row.created_at.timestamp() * 1000)
-                dead = any(
-                    is_tag_path_revision(r.established_by)
-                    and r.written_at > linked_ms
-                    for r in revisions
+                dup_chain = await book.revision_chain(unit=unit, note_id=about)
+                dead = proactive_row_forwarded_is_moved(
+                    duplicate_head=current[0].head_revision_id,
+                    duplicate_chain={
+                        r.id: (r.parent_revision_id, r.established_by)
+                        for r in dup_chain
+                    },
+                    revision_id=(row.payload or {}).get("revision_id") or None,
+                    created_at_ms=int(row.created_at.timestamp() * 1000),
+                    survivor_chain=((r.written_at, r.established_by) for r in revisions),
                 )
             if dead:
                 stale.append(row)
