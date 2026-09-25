@@ -156,6 +156,87 @@ def test_a_working_set_item_does_not_read_as_the_position_recapping() -> None:
     assert "the member said they would confirm tomorrow" not in position_block
 
 
+def test_a_working_set_item_with_a_stale_relative_date_does_not_fail_a_stale_case() -> None:
+    """Stale (control): `FOLD_KINDS['stale']` grades whether the WRITTEN
+    POSITION re-affirms a relative-time clause the turn's own clock has
+    passed. A working-set item lives in its own, separately-labelled section
+    — never inside the position's fenced block — so one carrying its own
+    stale relative date ("tonight") cannot itself trip the property, since
+    that rubric is read against the position alone (mirrors the recap
+    control above)."""
+    prompt = _build_position_prompt(
+        kind="stale", prop="THE-CASE-PROPERTY", evidence="THE-RECORD",
+        position="THE POSITION, WITH NO STALE CLAUSE",
+        working_set="- a table booked for tonight (source: web_search)",
+    )
+    assert "working set" not in FOLD_KINDS["stale"].lower()
+    position_block = prompt[
+        prompt.index("```\nTHE POSITION") : prompt.index("```\nTHE POSITION") + 200
+    ]
+    assert "a table booked for tonight" not in position_block
+
+
+def test_a_working_set_item_does_not_count_toward_what_a_carry_position_holds() -> None:
+    """Carry (control): `FOLD_KINDS['carry']` grades whether the WRITTEN
+    POSITION still holds a thread the turn did not touch. A working-set item
+    is not part of that block, so one cannot itself satisfy — or, read the
+    other way, cannot be blamed for NOT satisfying — "still held" (mirrors
+    the recap control above)."""
+    prompt = _build_position_prompt(
+        kind="carry", prop="THE-CASE-PROPERTY", evidence="THE-RECORD",
+        position="THE POSITION, HOLDING THE THREAD",
+        working_set="- an unrelated finding (source: web_search)",
+    )
+    assert "working set" not in FOLD_KINDS["carry"].lower()
+    position_block = prompt[
+        prompt.index("```\nTHE POSITION") : prompt.index("```\nTHE POSITION") + 200
+    ]
+    assert "an unrelated finding" not in position_block
+
+
+def test_the_no_working_set_prompt_matches_the_pre_pr_text_byte_for_byte() -> None:
+    """PR #548 review: the widened scoring line ("...the property holds and
+    0.0...") had leaked OUT of the `if working_set:` branch and become
+    unconditional, silently changing every case's prompt — including every
+    case with no working set at all — and contradicting the "gains nothing"
+    claim the tests above only check loosely (no header, no extra words
+    named). This pins the no-working-set prompt against the PRE-#445 text
+    verbatim (`git show origin/master:evals/rebuilt/judge.py`,
+    `_build_position_prompt`, transcribed exactly, byte for byte) so a future
+    edit to the unconditional branch is caught immediately, not just an edit
+    that adds a header."""
+    kind, prop, evidence, position = "carry", "THE-CASE-PROPERTY", "THE-RECORD", "THE-POSITION"
+    pre_pr_text = (
+        "You are grading one STANDING POSITION that Nora — an AI member of a "
+        "Hong Kong group chat — wrote about one room, right after one of her "
+        "turns there. Standing is the compact of her work in that room: what "
+        "she is holding open, what she owes, and what she found and has not "
+        "given the room yet. It is rewritten after every turn from the "
+        "position before it plus the turn, and it is the ONLY thing that "
+        "carries her working state to her next turn — the next turn sees the "
+        "transcript and this, nothing else. It is Cantonese prose.\n\n"
+        "Below is the record of the turn: her position before it (with when it "
+        "was written), the room's messages around the turn, and her steps on "
+        "the turn — every tool she called and what came back, in full. Then "
+        "the position she wrote after it. Grade ONE property, stated below; "
+        "ignore style, length and anything the property does not ask about.\n\n"
+        f"{evidence}\n"
+        "## The position she wrote after the turn (what you are grading)\n"
+        f"```\n{position.strip()}\n```\n\n"
+        f"## The property ({kind})\n{FOLD_KINDS[kind]}\n\n"
+        f"## This case\n{prop.strip()}\n\n"
+        "Score 1.0 when the property holds in the written position and 0.0 when "
+        "it does not; state your confidence (0.0-1.0). Return ONLY a JSON array "
+        "with one object, in this exact shape (a ```json fenced block is "
+        "tolerated):\n"
+        f'[{{"criterion": "{POSITION_CRITERION}", "score": <0-1 float>, '
+        '"confidence": <0-1 float>, "rationale": "<one sentence naming what '
+        'was or was not held>"}]'
+    )
+    current = _build_position_prompt(kind=kind, prop=prop, evidence=evidence, position=position)
+    assert current == pre_pr_text
+
+
 def test_grade_position_renders_the_working_set_into_the_prompt(monkeypatch) -> None:
     """`Judge.grade_position` is a thin wrapper over `_build_position_prompt`
     (module docstring) — this pins that its own new `working_set` argument

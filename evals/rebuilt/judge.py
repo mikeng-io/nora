@@ -311,6 +311,19 @@ def _build_position_prompt(
             "something she has told anybody)\n"
             f"{working_set}\n\n"
         )
+        # Widened ONLY here: a `residue` property may be satisfied by either
+        # section (its own `expected_output` says so), so the scoring line
+        # cannot say "in the written position" unconditionally once a working
+        # set is shown — but it must say so when none is, or this line alone
+        # changes what every OTHER case's prompt asks (review, PR #548: the
+        # unconditional widened line leaked into cases with no working set at
+        # all, contradicting "the prompt gains nothing when there is none").
+        scoring_line = (
+            "Score 1.0 when the property holds and 0.0 when it does not; state "
+            "your confidence (0.0-1.0). Return ONLY a JSON array with one "
+            "object, in this exact shape (a ```json fenced block is "
+            "tolerated):\n"
+        )
     else:
         after_position = (
             "Then the position she wrote after it. Grade ONE property, stated "
@@ -318,6 +331,15 @@ def _build_position_prompt(
             "ask about.\n\n"
         )
         working_set_block = ""
+        # The ORIGINAL text, byte-for-byte (pre-#445,
+        # `git show origin/master:evals/rebuilt/judge.py`) — pinned by
+        # `test_the_no_working_set_prompt_matches_the_pre_pr_text_byte_for_byte`.
+        scoring_line = (
+            "Score 1.0 when the property holds in the written position and 0.0 when "
+            "it does not; state your confidence (0.0-1.0). Return ONLY a JSON array "
+            "with one object, in this exact shape (a ```json fenced block is "
+            "tolerated):\n"
+        )
     return (
         "You are grading one STANDING POSITION that Nora — an AI member of a "
         "Hong Kong group chat — wrote about one room, right after one of her "
@@ -337,9 +359,7 @@ def _build_position_prompt(
         f"{working_set_block}"
         f"## The property ({kind})\n{FOLD_KINDS[kind]}\n\n"
         f"## This case\n{prop.strip()}\n\n"
-        "Score 1.0 when the property holds and 0.0 when it does not; state "
-        "your confidence (0.0-1.0). Return ONLY a JSON array with one object, "
-        "in this exact shape (a ```json fenced block is tolerated):\n"
+        f"{scoring_line}"
         f'[{{"criterion": "{POSITION_CRITERION}", "score": <0-1 float>, '
         '"confidence": <0-1 float>, "rationale": "<one sentence naming what '
         'was or was not held>"}]'
