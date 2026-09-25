@@ -1971,6 +1971,7 @@ async def test_an_ok_note_rides_only_with_a_description(wiring):
     assert withheld.get("withheld") is True and "description" not in withheld
     assert "not as fact" not in withheld["note"]
 
+
 def test_the_reading_note_says_what_she_is_reading_and_never_asks_for_a_report():
     """design/proposed/32-shared-media-register.md: the note used to say
     «Report it as what it looks like», and in the 14 days before 2026-09-26

@@ -3351,9 +3351,8 @@ _COVER_NOTE = (
 # the reading back to the person who had just sent it, item by item in the
 # reading's own order, and a served reading was answered that way with or
 # without that sentence (5 of 5 with it, 11 of 12 before it existed). So the
-# word was not
-# the carrier; the reading was, handed over as a description with nothing
-# saying the sender is already looking at the thing
+# word was not the carrier; the reading was, handed over as a description
+# with nothing saying the sender is already looking at the thing
 # (design/proposed/32-shared-media-register.md). The hedge stays: a vision
 # model wrote this about somebody else's bytes.
 _MEDIA_READING_NOTE = (
