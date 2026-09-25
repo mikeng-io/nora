@@ -31,6 +31,8 @@ import (
 	"testing"
 
 	"instagram-bridge/internal/domain"
+	"instagram-bridge/internal/gateway/instameow/fakeig"
+	"instagram-bridge/internal/session"
 
 	"go.mau.fi/mautrix-meta/pkg/instameow/slidetypes"
 	"go.mau.fi/mautrix-meta/pkg/messagix/httpclient"
@@ -342,5 +344,61 @@ func TestInstagramsTooLongRefusalIsErrTooLarge(t *testing.T) {
 	f = &fakeIG{SendErr: errors.New("some new graphql error nobody has seen")}
 	if _, err := sendText(t.Context(), f, threadShort, "x", nil, ""); domain.KindOf(err) != nil {
 		t.Errorf("an unknown failure was classified as %v", domain.KindOf(err))
+	}
+}
+
+// --- Bridge.SocialProfile: the session-state side effect (issue #533) --------
+//
+// The raw GraphQL profile read goes through none of the library's own
+// checkpoint detection, so a checkpoint it meets has to reach sessionRejected
+// from Bridge.SocialProfile itself, as on Mentions.
+
+func socialTestBridge(t *testing.T, issuer *fakeGraphQLIssuer) *Bridge {
+	t.Helper()
+	return NewBridge(Options{
+		Store:     session.Store{Dir: t.TempDir()},
+		State:     domain.StateAuthenticated,
+		Connected: true,
+		Self:      domain.Self{FBID: "14963523149149302", IGID: "79597894900", Username: fakeig.SelfUsername},
+		Issuer:    issuer,
+	})
+}
+
+func TestSocialProfileCheckpointFlipsTheSessionState(t *testing.T) {
+	for name, issuer := range map[string]*fakeGraphQLIssuer{
+		"4xx body":   {status: http.StatusBadRequest, body: []byte(`{"message":"checkpoint_required","checkpoint_url":"https://i.instagram.com/challenge/x"}`)},
+		"200 fail":   {body: []byte(`{"status":"fail","message":"challenge_required"}`)},
+		"dead token": {status: http.StatusForbidden, body: []byte(`{"message":"login_required","status":"fail"}`)},
+	} {
+		t.Run(name, func(t *testing.T) {
+			b := socialTestBridge(t, issuer)
+			read := b.SocialProfile(t.Context(), mustIGID(t, "123"))
+			if !errors.Is(read.Err, domain.ErrNeedsHuman) {
+				t.Fatalf("err = %v, want ErrNeedsHuman", read.Err)
+			}
+			snap := b.Snapshot()
+			if snap.State != domain.StateCheckpointed && snap.State != domain.StateLoggedOut {
+				t.Errorf("state = %q, want the session stopped", snap.State)
+			}
+		})
+	}
+}
+
+// An ordinary failure (a plain 500, a GraphQL error with no checkpoint shape)
+// must NOT stop the session.
+func TestSocialProfileOrdinaryFailureDoesNotFlipTheSessionState(t *testing.T) {
+	for name, issuer := range map[string]*fakeGraphQLIssuer{
+		"500":           {status: http.StatusInternalServerError, body: []byte(`{}`)},
+		"graphql error": {body: []byte(`{"errors":[{"message":"x","code":1,"summary":"y"}]}`)},
+	} {
+		t.Run(name, func(t *testing.T) {
+			b := socialTestBridge(t, issuer)
+			if read := b.SocialProfile(t.Context(), mustIGID(t, "123")); !errors.Is(read.Err, domain.ErrUpstreamRejected) {
+				t.Fatalf("err = %v, want ErrUpstreamRejected", read.Err)
+			}
+			if snap := b.Snapshot(); snap.State != domain.StateAuthenticated {
+				t.Errorf("state = %q, want authenticated (unchanged)", snap.State)
+			}
+		})
 	}
 }
