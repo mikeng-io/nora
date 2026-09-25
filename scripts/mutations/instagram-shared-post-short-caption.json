@@ -79,15 +79,15 @@
   {
     "name": "the url alias is removed: url is accepted and ignored",
     "file": "nora/agent/tools.py",
-    "old": "            link = url\n",
-    "new": "            pass\n",
+    "old": "    return url, False\n",
+    "new": "    return link, False\n",
     "target": "tests/unit/test_instagram_read_links.py -k url"
   },
   {
     "name": "url and link that differ are not refused: url silently wins",
     "file": "nora/agent/tools.py",
-    "old": "            if isinstance(link, str) and link.strip() and not _same_instagram_link(link, url):\n",
-    "new": "            if False:\n",
+    "old": "    if isinstance(link, str) and link.strip() and not _same_link(link, url, parse):\n",
+    "new": "    if False:\n",
     "target": "tests/unit/test_instagram_read_links.py::test_url_and_link_that_differ_read_nothing"
   },
   {
