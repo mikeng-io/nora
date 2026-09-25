@@ -1,0 +1,6 @@
+{
+  "type": "none",
+  "reason": "Spec-only: re-anchored 7 stale entries in scripts/mutations/shared-decision-log.json (#199/DEC-179) so the table matches current source; deleted one entry whose subject was deliberately removed by #314. No production code changed.",
+  "details": [],
+  "limitations": []
+}
