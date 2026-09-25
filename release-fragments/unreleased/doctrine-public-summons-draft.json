@@ -1,1 +1,1 @@
-{"type": "none", "reason": "Draft doctrine for a public summons, not loaded by any occasion yet; it lands with the summons occasion that consumes it.", "details": [], "limitations": []}
+{"type": "none", "reason": "The public summons doctrine (public/ scope folder), loaded only on applies_to=summons; its user-observable effect ships with the summons occasion's own fragment, instagram-summons-occasion.json.", "details": [], "limitations": []}

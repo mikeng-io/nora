@@ -298,6 +298,16 @@ PINNED: dict[str, tuple[int, str]] = {
     # lookup, which is the operation the file prices separately as always a real
     # look and a real wait. "Quiet is not a question" is back.
     "constraints": (11, "b7269c4e154a7e06039340f9a7d3a017a121265a8e256cf3977ecedc8db9a49f"),
+    # The public summons files (design/instagram-adoption/19), v1 (2026-09-25):
+    # drafted for the operator to rewrite, loaded only on `applies_to="summons"`.
+    # identity and constraints gained `summons` in `applies_to` and the public
+    # names in their authority fields in the same change; neither is rendered,
+    # so neither sha above moved and neither version was bumped.
+    "public-voice": (1, "45841e6dfd7037cd234ce71ed2f1137db96aba609d574a6413ea54e3bfff888b"),
+    "public-conduct": (1, "556af2c3e1b603b905ddd7bbc65d34238ef737614ad89ec3db5f2f74dd3c5fdc"),
+    "public-constraints": (
+        1, "88b47c480e3948332c8281cacb0efbdc9094176d16f1704593df8eaa8b735dfa",
+    ),
 }
 
 

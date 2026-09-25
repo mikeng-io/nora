@@ -42,8 +42,13 @@ PARTICIPATION = "participation"
 #: speak into a room, that one is a background research pass that cannot.
 #: The word is shared and the loops are not.
 PROACTIVE = "proactive"
+#: A public summons: tagged under an Instagram post, answered in the comments
+#: (`nora.app.summons`, design/instagram-adoption/19). It runs a model loop, so
+#: it is SPEAKING, but its deliverer never reaches a room adapter: the reply is
+#: held and published once by the summons' own flush.
+SUMMONS = "summons"
 
-SpeakingAudience = Literal["tag", "heartbeat", "participation", "proactive"]
+SpeakingAudience = Literal["tag", "heartbeat", "participation", "proactive", "summons"]
 
 #: Every audience that runs a model loop, and therefore every `path` value
 #: `reasoning_strip_log` can carry that is not a Dreamer adaptor. DERIVED from

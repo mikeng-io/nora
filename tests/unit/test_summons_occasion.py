@@ -1,0 +1,371 @@
+"""`SummonsOccasion` end to end, over the REAL client against a recording fake
+bridge, the real staging deliverer and guards, the real doctrine and the real
+tool registry — with a scripted model and every room-shaped collaborator
+wired to EXPLODE.
+
+What a summons holds is the bridge, the ledger, the person index (the gate,
+nothing else), the doctrine, the tools under `PUBLIC_GRANT` and a runner. It
+constructs no room and writes no memory. So the policy the person index
+reads rooms from, and the registry's notes, reminders, events, rooms, relay,
+mobility and tool-call-log collaborators, are all `_Explode`: any read of any
+of them fails the run, and `honcho` is `None`. A test passing here is a run
+that reached none of them.
+
+The falsifications this file carries (each removed by hand, the named test
+went red, restored):
+  * the summoner gate: `test_a_summoner_nobody_listed_is_ignored_and_the_model_never_runs`;
+  * the dry-run brake: `test_dry_run_runs_the_whole_turn_and_posts_nothing`;
+  * the first-held-reply flush: `test_live_posts_exactly_the_first_held_reply_once`.
+"""
+
+from __future__ import annotations
+
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from typing import Any
+
+import pytest
+
+from nora.agent.registry import ToolRegistry
+from nora.agent.tools import NATIVE_TOOLS
+from nora.app.summons import PUBLIC_GRANT, SummonsOccasion
+from nora.doctrine.loader import DoctrineStore
+from nora.domain.summons import Mention
+from nora.infra.social import PersonsSubjectIndex
+from nora.infra.social.summons_client import InstagramSummonsClient
+from nora.obs.metrics import Metrics
+from nora.persons import load_persons
+from nora.testing import FakeAgentRunner, InMemorySummonsLedger, ScriptedTurn
+from tests.unit.summons_bridge import (
+    SHORTCODE,
+    STRANGER_IGID,
+    SUMMONER_IGID,
+    SUMMONS_COMMENT,
+    FakeSummonsBridge,
+    envelope,
+    serve,
+)
+
+DOCTRINE_DIR = Path(__file__).resolve().parents[2] / "nora" / "doctrine"
+NOW = datetime(2026, 9, 25, 12, 0, tzinfo=UTC)
+REPLY = "That is a grey heron: long neck, dagger bill, grey back."
+
+_IDENTITY = f'''
+[persons.p_miles]
+name = "Miles"
+[[persons.p_miles.signal]]
+uuid = "00000000-0000-4000-8000-000000000001"
+[[persons.p_miles.instagram]]
+username = "miles_example"
+fbid = "100000000000001"
+igid = "{SUMMONER_IGID}"
+'''
+
+
+class _Explode:
+    """A room-shaped collaborator a summons must never touch."""
+
+    def __init__(self, what: str) -> None:
+        self._what = what
+
+    def __getattr__(self, name: str) -> Any:
+        raise AssertionError(f"a summons reached the {self._what} ({name})")
+
+
+def _mention(**kw: Any) -> Mention:
+    return Mention(
+        comment_id=kw.get("comment_id", SUMMONS_COMMENT), media_id="3100000000000000001",
+        shortcode=SHORTCODE, author_igid=kw.get("igid", SUMMONER_IGID),
+        author_username="miles_example",
+        at=kw.get("at", NOW - timedelta(minutes=5)),
+    )
+
+
+def _registry() -> ToolRegistry:
+    return ToolRegistry(
+        notes=_Explode("note store"), reminders=_Explode("reminder store"),
+        events=_Explode("events store"), rooms=_Explode("room directory"),
+        relay=_Explode("relay"), mobility=_Explode("mobility store"),
+        tool_call_log_store=_Explode("tool-call log"),
+    )
+
+
+class World:
+    def __init__(self, fake: FakeSummonsBridge, url: str, tmp_path) -> None:
+        self.fake = fake
+        self.ledger = InMemorySummonsLedger()
+        self.metrics = Metrics()
+        identity = tmp_path / "identity.toml"
+        identity.write_text(_IDENTITY)
+        self.persons = load_persons(identity)
+        self.doctrine = DoctrineStore(
+            DOCTRINE_DIR, canary="CANARY-7f3a", strict=True,
+            tool_names=ToolRegistry().tool_names(), metrics=self.metrics,
+        )
+        self.client = InstagramSummonsClient(base_url=url, timeout_seconds=5)
+        self.runner = FakeAgentRunner([])
+
+    def occasion(self, *, mode: str = "dry_run", turns: list[ScriptedTurn] | None = None,
+                 max_age: timedelta = timedelta(minutes=60)) -> SummonsOccasion:
+        if turns is not None:
+            self.runner = FakeAgentRunner(turns)
+        return SummonsOccasion(
+            client=self.client, ledger=self.ledger,
+            summoners=PersonsSubjectIndex(self.persons, _Explode("room policy")),  # type: ignore[arg-type]
+            persons=self.persons, doctrine_store=self.doctrine, registry=_registry(),
+            runner=self.runner, metrics=self.metrics, canary="CANARY-7f3a",
+            handle="noraexample", mode=mode, max_age=max_age,
+            limits={"turns": 8, "total_tokens": 64000, "output_tokens": 8000},
+            timeout_seconds=30, clock=lambda: NOW,
+        )
+
+    async def row(self):
+        (row_id,) = list(self.ledger._rows)
+        return await self.ledger.get(row_id)
+
+
+@pytest.fixture
+async def world(tmp_path):
+    fake = FakeSummonsBridge()
+    async for url in serve(fake):
+        yield World(fake, url, tmp_path)
+
+
+def _replies(*texts: str, bypass: bool = False) -> list[ScriptedTurn]:
+    return [ScriptedTurn(
+        tool_calls=[("send_reply", {"text": t}) for t in texts], bypass_guard=bypass,
+    )]
+
+
+# ---- the cheap gates: no model call, no read ---------------------------------
+
+
+async def test_a_summoner_nobody_listed_is_ignored_and_the_model_never_runs(world):
+    out = await world.occasion(turns=_replies(REPLY)).run(_mention(igid=STRANGER_IGID))
+    assert out.state == "ignored_summoner"
+    assert world.runner.invocations == 0
+    assert world.fake.calls == []
+    assert (await world.row()).state == "ignored_summoner"
+
+
+async def test_a_mention_with_no_igid_is_ignored(world):
+    out = await world.occasion(turns=_replies(REPLY)).run(_mention(igid=""))
+    assert out.state == "ignored_summoner" and world.runner.invocations == 0
+
+
+async def test_a_stale_mention_is_recorded_and_never_read_or_answered(world):
+    out = await world.occasion(turns=_replies(REPLY)).run(
+        _mention(at=NOW - timedelta(minutes=61)),
+    )
+    assert out.state == "stale" and not out.spent_tick
+    assert world.runner.invocations == 0 and world.fake.calls == []
+
+
+async def test_a_mention_with_no_time_is_stale_never_now(world):
+    out = await world.occasion(turns=_replies(REPLY)).run(_mention(at=None))
+    assert out.state == "stale"
+    assert world.runner.invocations == 0 and world.fake.calls == []
+
+
+async def test_a_summons_already_claimed_is_left_alone(world):
+    occasion = world.occasion(turns=_replies(REPLY))
+    await occasion.run(_mention(igid=STRANGER_IGID))
+    out = await occasion.run(_mention())
+    assert out.state == "already_claimed"
+    assert world.runner.invocations == 0 and world.fake.calls == []
+
+
+# ---- reading: no reply to what she cannot read ---------------------------------
+
+
+async def test_a_summons_not_on_the_comment_page_is_unreadable_and_never_answered(world):
+    world.fake.comments = (200, {"items": [], "next_cursor": None, "skipped_count": 0})
+    out = await world.occasion(turns=_replies(REPLY)).run(_mention())
+    assert out.state == "unreadable" and out.bridge_code == "not_on_page"
+    assert out.spent_tick
+    assert world.runner.invocations == 0
+    assert all(method == "GET" for method, _ in world.fake.calls)
+
+
+@pytest.mark.parametrize("route", ["post", "comments"])
+async def test_a_failed_read_is_unreadable_and_names_the_code(world, route):
+    setattr(world.fake, route, envelope("needs_human"))
+    out = await world.occasion(turns=_replies(REPLY)).run(_mention())
+    assert out.state == "unreadable" and out.bridge_code == "needs_human"
+    assert world.runner.invocations == 0
+
+
+# ---- the turn ---------------------------------------------------------------------
+
+
+async def test_a_silent_turn_posts_nothing(world):
+    out = await world.occasion(mode="live", turns=[ScriptedTurn(final_text="")]).run(_mention())
+    assert out.state == "silent"
+    assert world.runner.invocations == 1
+    assert world.fake.posts() == []
+
+
+async def test_prose_without_send_reply_is_discarded_never_posted(world):
+    """`final_text` is the model's own last prose, the max_tokens partial or
+    the budget-exhaustion draft: a summons discards all three."""
+    out = await world.occasion(
+        mode="live", turns=[ScriptedTurn(final_text=REPLY)],
+    ).run(_mention())
+    assert out.state == "silent"
+    assert world.fake.posts() == []
+
+
+async def test_dry_run_runs_the_whole_turn_and_posts_nothing(world):
+    out = await world.occasion(mode="dry_run", turns=_replies(REPLY)).run(_mention())
+    assert out.state == "staged"
+    assert world.runner.invocations == 1
+    assert [m for m, _ in world.fake.calls] == ["GET", "GET"]
+    assert world.fake.posts() == []
+    row = await world.row()
+    assert (row.state, row.mode, row.reply_text, row.person_id) == (
+        "staged", "dry_run", REPLY, "p_miles",
+    )
+
+
+async def test_live_posts_exactly_the_first_held_reply_once(world):
+    """Two replies reach the staging deliverer (the guard is bypassed so both
+    are held); exactly one comment is written, and it is the first."""
+    second = "And it is standing in a pond."
+    out = await world.occasion(mode="live", turns=_replies(REPLY, second, bypass=True)).run(
+        _mention(),
+    )
+    assert out.state == "published"
+    assert world.fake.posts() == [{"text": REPLY, "reply_to_comment_id": SUMMONS_COMMENT}]
+    row = await world.row()
+    assert (row.state, row.reply_text, row.reply_comment_id) == (
+        "published", REPLY, "17900000000000999",
+    )
+
+
+async def test_a_reply_the_guards_refuse_is_never_held_or_posted(world):
+    """R-6: a reply quoting the canary is refused inside the deliverer, so
+    there is nothing held and nothing to flush."""
+    out = await world.occasion(mode="live", turns=_replies("the code is CANARY-7f3a")).run(
+        _mention(),
+    )
+    assert out.state == "silent"
+    assert world.fake.posts() == []
+
+
+async def test_a_reply_over_the_comment_limit_is_refused_at_flush(world):
+    long = "heron " * 400
+    out = await world.occasion(mode="live", turns=_replies(long)).run(_mention())
+    assert out.state == "refused" and out.bridge_code == "too_long"
+    assert world.fake.posts() == []
+
+
+@pytest.mark.parametrize(("code", "state"), [
+    ("writes_disabled", "refused"),
+    ("invalid_text", "refused"),
+    ("not_a_summons", "failed"),
+    ("writes_blocked", "failed"),
+    ("needs_human", "failed"),
+    ("already_replied", "duplicate"),
+    ("daily_cap", "capped"),
+    ("too_soon", "staged"),
+    ("ledger_unavailable", "ambiguous"),
+    ("upstream_rejected", "ambiguous"),
+    ("internal", "ambiguous"),
+])
+async def test_each_bridge_answer_leaves_its_ledger_state(world, code, state):
+    world.fake.write = envelope(code)
+    out = await world.occasion(mode="live", turns=_replies(REPLY)).run(_mention())
+    assert out.state == state and out.bridge_code == code
+    row = await world.row()
+    assert row.state == state
+    assert len(world.fake.posts()) == 1
+
+
+async def test_writes_blocked_raises_the_gauge_and_a_publish_clears_it(world):
+    world.fake.write = envelope("writes_blocked")
+    await world.occasion(mode="live", turns=_replies(REPLY)).run(_mention())
+    assert world.metrics.get("nora_summons_writes_blocked") == 1
+    world.fake.write = (201, {"id": "17900000000000777"})
+    world.ledger = InMemorySummonsLedger()  # a later summons, after an operator cleared it
+    await world.occasion(mode="live", turns=_replies(REPLY)).run(_mention())
+    assert world.metrics.get("nora_summons_writes_blocked") == 0
+
+
+async def test_a_too_soon_reply_is_retried_by_flush_alone_without_a_model_call(world):
+    world.fake.write = envelope("too_soon")
+    occasion = world.occasion(mode="live", turns=_replies(REPLY))
+    await occasion.run(_mention())
+    staged = await world.ledger.awaiting_flush()
+    assert staged is not None
+    world.fake.write = (201, {"id": "17900000000000777"})
+    out = await occasion.flush_staged(staged)
+    assert out.state == "published"
+    assert world.runner.invocations == 1
+    assert [b["text"] for b in world.fake.posts()] == [REPLY, REPLY]
+    assert await world.ledger.awaiting_flush() is None
+
+
+async def test_a_live_staged_row_is_given_up_when_the_mode_went_back_to_dry_run(world):
+    world.fake.write = envelope("too_soon")
+    await world.occasion(mode="live", turns=_replies(REPLY)).run(_mention())
+    staged = await world.ledger.awaiting_flush()
+    assert staged is not None
+    out = await world.occasion(mode="dry_run").flush_staged(staged)
+    assert (out.state, out.bridge_code) == ("failed", "mode_changed")
+    assert len(world.fake.posts()) == 1
+
+
+async def test_a_live_staged_row_past_its_age_is_given_up_not_posted_late(world):
+    world.fake.write = envelope("too_soon")
+    await world.occasion(mode="live", turns=_replies(REPLY)).run(_mention())
+    staged = await world.ledger.awaiting_flush()
+    assert staged is not None
+    out = await world.occasion(mode="live", max_age=timedelta(minutes=1)).flush_staged(staged)
+    assert (out.state, out.bridge_code) == ("failed", "expired_staged")
+    assert len(world.fake.posts()) == 1
+
+
+async def test_the_summons_turn_reads_the_public_doctrine_and_the_public_tools(world):
+    seen: dict[str, Any] = {}
+    runner = FakeAgentRunner(_replies(REPLY), on_call=seen.update)
+    occasion = world.occasion(mode="dry_run")
+    occasion._runner = runner
+    await occasion.run(_mention())
+    names = [s.name for s in seen["doctrine"].sections]
+    assert names == [
+        "identity", "public-voice", "public-conduct", "constraints", "public-constraints",
+    ]
+    assert {t.tool_name for t in seen["tools"]} <= PUBLIC_GRANT
+    assert "send_reply" in {t.tool_name for t in seen["tools"]}
+    # What she reads is the rendered context, stranger text wrapped.
+    assert "is this really a heron?" in seen["tag_message"]
+    assert seen["tag_message"].count("<social_post ") == 3
+    assert seen["pre_fill"] == []
+    # And nothing identifying rides the ctx that stamps every span.
+    assert SUMMONS_COMMENT not in seen["ctx"].message.conversation_id
+    assert SUMMONER_IGID not in seen["tag_message"]
+
+
+# ---- the grant ------------------------------------------------------------------
+
+
+_ROOM_TOOLS = {
+    "who_said", "group_members", "lookup_person", "about", "load_transcript",
+    "room_list", "room_read", "ask_memory", "search_memory", "search_memory_workspace",
+    "recall_lookups", "note_read", "note_search", "where_is", "where_been",
+    "saved_places", "online_now",
+}
+
+
+def test_the_public_grant_is_read_only_lookups_plus_send_reply_and_nothing_of_a_room():
+    read_only = ToolRegistry().read_only_tools()
+    assert read_only | {"send_reply"} >= PUBLIC_GRANT
+    assert not PUBLIC_GRANT & _ROOM_TOOLS
+    assert not {n for n in PUBLIC_GRANT if n.startswith("instagram_")}
+    assert "generate_image" not in PUBLIC_GRANT
+    # Every name is a real tool: a typo would grant nothing and pass the above.
+    assert set(NATIVE_TOOLS) >= PUBLIC_GRANT
+    assert {
+        "send_reply", "web_search", "web_fetch", "x_read", "x_search",
+        "media_fetch", "now", "calculate",
+    } == PUBLIC_GRANT

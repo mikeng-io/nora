@@ -1592,6 +1592,39 @@ class SearchConfig(BaseModel):
         return self.exa.api_key_env if self.provider == "exa" else self.tavily.api_key_env
 
 
+class InstagramSummonsConfig(BaseModel):
+    """The public Instagram summons (design/instagram-adoption/19): somebody in
+    `identity.toml` tags her in a comment under a post, and she answers in the
+    comments, once, through the instagram-bridge's guarded write.
+
+    **Off, and in `dry_run`, by default, and those are two separate brakes.**
+    `enabled` spawns the poller at all. `mode = "dry_run"` runs the WHOLE turn
+    and stores what she would have said in the ledger (state `staged`) without
+    a POST; `mode = "live"` posts it. Live also needs the bridge's own
+    `INSTAGRAM_COMMENT_WRITES=on`, which is a third brake Nora cannot flip.
+
+    `poll_seconds` has a FLOOR of 60 (design 19 rule 3: a poll interval in
+    minutes, not seconds, because the same session carries her group chats and
+    a flagged session takes them with it). 120 is the default: chosen, not
+    measured, and above the bridge's minimum spacing between two comments.
+
+    `max_age_minutes` is the only brake on a backlog: the first enable can see
+    weeks of old mentions, and a summons older than this is recorded `stale`
+    and never answered.
+
+    `handle` is her own Instagram username, removed from the comment's text so
+    the question she reads is the question, not her own name.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    enabled: bool = False
+    mode: Literal["dry_run", "live"] = "dry_run"
+    poll_seconds: float = Field(default=120.0, ge=60)
+    max_age_minutes: float = Field(default=60.0, gt=0)
+    handle: str = "noraexample"
+
+
 class InstagramSocialConfig(BaseModel):
     """The Instagram social backend — `instagram_read`'s profile and story
     reads and `instagram_search`'s account search, via the instagram-bridge
@@ -1638,6 +1671,16 @@ class InstagramSocialConfig(BaseModel):
     # `FetchReel`, neither of which drives a browser — so nothing here needs
     # the OpenCLI path's 90s.
     timeout_seconds: float = Field(default=30.0, gt=0)
+    summons: InstagramSummonsConfig = Field(default_factory=InstagramSummonsConfig)
+
+    @model_validator(mode="after")
+    def _summons_needs_the_instagram_backend(self) -> InstagramSocialConfig:
+        if self.summons.enabled and not self.enabled:
+            raise ValueError(
+                "[social.instagram.summons] enabled needs [social.instagram] "
+                "enabled: a summons is read and answered over the same bridge"
+            )
+        return self
 
 
 class LinkedInSocialConfig(BaseModel):
