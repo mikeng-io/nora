@@ -2305,6 +2305,42 @@ def _patch_debrief(monkeypatch, spy) -> None:
     monkeypatch.setattr(debrief_module, "run", spy)
 
 
+class _FakePerfCounter:
+    """A `time.perf_counter` stand-in that never advances on its own — only
+    an explicit `.advance()` call moves it. `nora/engagement/pipeline.py` and
+    `nora/engagement/stages/invoke.py` both read the real `time.perf_counter`
+    (a single shared module object, so patching either name patches both),
+    and this class replaces it for exactly one test: `total`s and `elapsed`s
+    computed from it become exact and load-independent instead of a race
+    against the scheduler (#503's class of flake)."""
+
+    def __init__(self) -> None:
+        self.value = 0.0
+
+    def __call__(self) -> float:
+        return self.value
+
+    def advance(self, seconds: float) -> None:
+        self.value += seconds
+
+
+class _ClockAdvancingDebrief:
+    """Stands in for `debrief.run` the way `_RecordingDebrief` does, but
+    instead of `asyncio.sleep`ing a fixed duration it jumps `timer` forward
+    by `seconds` — its "cost" is exact and it spends no real wall-clock time
+    doing it, so the test below runs in milliseconds regardless of how large
+    `seconds` is."""
+
+    def __init__(self, timer: _FakePerfCounter, seconds: float) -> None:
+        self.calls: list[dict] = []
+        self._timer = timer
+        self._seconds = seconds
+
+    async def __call__(self, **kwargs) -> None:
+        self.calls.append(kwargs)
+        self._timer.advance(self._seconds)
+
+
 async def test_no_debrief_wiring_means_the_stage_is_never_reached(monkeypatch):
     """`[standing] enabled = false` — the shipped default and every offline/
     eval composition. It must cost NOTHING: no await, so the slot is held for
@@ -2462,18 +2498,47 @@ async def test_the_debriefs_cost_is_excluded_from_the_tag_latency_series(monkeyp
     changing what it measures — a broken gate wearing a passing number. The
     debrief's cost is real and user-visible; it belongs on
     `nora_debrief_seconds`, which is the series the p95 <= 5s gate reads.
+
+    PROVEN WITHOUT THE WALL CLOCK (same class as #430 / PR #503). The
+    previous version slept the fake debrief for 0.25s and asserted
+    `observed[0] < 0.25` — a threshold exactly equal to the debrief's own
+    delay, with zero margin against ordinary scheduling jitter in the
+    pipeline's OWN (non-debrief) work. Under `make gate`'s `-n 8` parallel
+    load that jitter alone pushed `observed[0]` to 0.29, and the test read
+    that as the debrief leaking in when nothing had leaked.
+
+    `time.perf_counter` is replaced with `_FakePerfCounter`, which only
+    moves when told to. `pipeline.py`'s `total = time.perf_counter() -
+    started` is read BEFORE the debrief is awaited (26-standing §5) — so on
+    this fake clock `total` is fixed at `0.0` the instant it is computed, no
+    matter how large a "cost" the debrief racks up afterwards. The debrief
+    (`_ClockAdvancingDebrief`) advances the fake clock by `_DEBRIEF_SECONDS`
+    — a deliberately absurd 300s, impossible to clear by luck — INSTEAD OF
+    sleeping, so proving the exclusion costs the test no real time and
+    cannot itself inject wall-clock noise into the pipeline's own portion.
+    `pipeline.run` is wrapped in `asyncio.wait_for` so a regression that
+    makes it hang fails the test instead of hanging `make gate`.
+
+    PROBE: move `total = time.perf_counter() - started` (pipeline.py) to
+    AFTER `await self._debrief(...)`, and `total` becomes `>= _DEBRIEF_
+    SECONDS` on this fake clock — the assertion below goes red on exactly
+    the leaked cost, not on an unrelated scheduling artifact.
     """
-    _patch_debrief(monkeypatch, _RecordingDebrief(sleep=0.25))
+    timer = _FakePerfCounter()
+    monkeypatch.setattr(time, "perf_counter", timer)
+    _DEBRIEF_SECONDS = 300.0
+
+    _patch_debrief(monkeypatch, _ClockAdvancingDebrief(timer, _DEBRIEF_SECONDS))
     pipeline, metrics, _audit, _memory, background = _build_pipeline(
         debrief_wiring=_wiring(),
     )
 
-    await pipeline.run(_request())
+    await asyncio.wait_for(pipeline.run(_request()), timeout=5.0)
     await _drain(background)
 
     observed = metrics.observations("nora_tag_latency_seconds")
     assert len(observed) == 1
-    assert observed[0] < 0.25, (
+    assert observed[0] < _DEBRIEF_SECONDS / 2, (
         "the debrief's own duration leaked into nora_tag_latency_seconds"
     )
 
