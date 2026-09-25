@@ -1,4 +1,4 @@
-"""reminders_proactive_open_note -- at most one open proactive row per note
+"""proactive_open_note -- at most one open proactive row per note
 (issue #158).
 
 The proactive adaptor booked the same note's reminder twice in production:
@@ -19,7 +19,7 @@ This fails, and changes nothing, on a database that already holds two open
 proactive rows on one note. That is deliberate: which of them to keep is the
 operator's call, never a migration's. Production held none on 2026-09-25.
 
-Revision ID: 0064_reminders_proactive_open_note
+Revision ID: 0064_proactive_open_note
 Revises: 0063_note_merge_decision
 Create Date: 2026-09-25
 """
@@ -29,7 +29,10 @@ from __future__ import annotations
 import sqlalchemy as sa
 from alembic import op
 
-revision = "0064_reminders_proactive_open_note"
+# 24 characters: `alembic_version.version_num` is varchar(32), and the
+# first name for this file (`0064_reminders_proactive_open_note`, 34) failed
+# every migration in the gate.
+revision = "0064_proactive_open_note"
 down_revision = "0063_note_merge_decision"
 branch_labels = None
 depends_on = None
