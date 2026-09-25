@@ -630,6 +630,21 @@ does not hold, and a type-level description is shared by every audience
 rule for `presence`). The tool names come out of the description; the
 proactive pass's objective already names its tools.
 
+**Amendment, 2026-09-25 (S1a, #528): each member's current self-set profile
+name is listed among the names they go by.** S1a names the batch by the
+roster, but every note written before it named people by the profile name
+the unprojected batch showed. Read on the eval source at p5's and p6's
+anchors (counts only): of the six roster members in each batch, three have a
+profile name different from their roster name, and the note bodies carry
+both forms for all three; two of the three also appear under their profile
+name in the index. Aliases alone do not join the two, since a profile name is
+self-set and is not necessarily an alias. So the `people` line for a member
+names the roster name, the aliases, AND the profile name their most recent
+message in the room carried, so that a legacy note naming someone by profile
+resolves to the same person as a batch naming them by roster. The profile
+name is the member's own string: it is escaped as the batch's `from` is
+(R-13), and it never replaces the roster name as the member's name.
+
 ### 8.3 `standing`
 
 The room's Standing paragraph, rendered by the existing `render_standing`
