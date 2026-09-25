@@ -53,7 +53,7 @@ None of them is Threads-specific:
 | | Threads (parked) | Instagram |
 |---|---|---|
 | door | official Graph API, `threads-bridge` sidecar | the existing instagram-bridge, one session shared with her group chats |
-| ingress | `GET /{uid}/mentions` | her activity feed, polled through the bridge: `GET /mentions` over `POST /api/v1/news/inbox/`, form `jazoest`, `fb_dtsg`, `selected_filters=comments` (the web client's own request, captured 2026-09-25; the response to a real comment mention still unread, phase 1) |
+| ingress | `GET /{uid}/mentions` | **Superseded 2026-09-26 (see "Intake, re-measured 2026-09-26"): a DM-thread card, not the feed.** Was: her activity feed, polled through the bridge: `GET /mentions` over `POST /api/v1/news/inbox/`, form `jazoest`, `fb_dtsg`, `selected_filters=comments` (the web client's own request, captured 2026-09-25; the response to a real comment mention still unread, phase 1) |
 | summoner identity | username only; the API exposes no id | **the actor's igid**, expected in the activity story's `profile_id` (a hypothesis until phase 1 reads a real story). An id, not a name, so the gate needs no pinning |
 | gate | `[[persons.<id>.threads]]` by username | `[[persons.<id>.instagram]]` by `igid`, the block `identity.toml` already has |
 | context | the post and its reply chain | the post (`GET /posts/{shortcode}`, live) plus the comment thread (new route, unmeasured) |
@@ -78,7 +78,8 @@ out of Instagram entirely. The rules:
    headers.** A request built by hand with copied cookies looks like a
    second client, and that is how a session gets flagged. That is design
    16's one-way-to-call rule, and it matters more here than anywhere else.
-3. **A poll interval measured in minutes, not seconds** (default 120 s,
+3. **(Superseded 2026-09-26: there is no feed poll; the intake is the DM
+   card, one thread read per card. Kept for the record.)** **A poll interval measured in minutes, not seconds** (default 120 s,
    chosen, not measured: how often the web client polls its own
    notifications is unknown). A summons is answered minutes late, which a
    researched public answer can afford.
@@ -113,7 +114,7 @@ all in the bridge and all before any upstream call:
 |---|---|
 | `INSTAGRAM_COMMENT_WRITES=on` | 403 `writes_disabled` |
 | the session is ready | the existing not-ready answer |
-| `reply_to_comment_id` is a comment this bridge served from `GET /mentions`, on the same media, within 7 days | 403 `not_a_summons` |
+| ~~`reply_to_comment_id` is a comment this bridge served from `GET /mentions`, on the same media, within 7 days~~ superseded 2026-09-26: a summons card for this media within 7 days, and the post's first comments page shows `reply_to_comment_id` by that card's sender, mentioning her (see "Intake, re-measured 2026-09-26") | 403 `not_a_summons` |
 | no earlier reply to that comment (claimed or published) | 409 `already_replied` |
 | text non-empty, at most 2,200 characters | 400 |
 | at most `INSTAGRAM_COMMENT_DAILY_CAP` (10) replies per rolling 24 hours | 429 `daily_cap` |
@@ -128,7 +129,10 @@ model, decides what may be written.
 
 Each phase ends in a live read-back and is one PR.
 
-**Phase 1: read the activity feed (read-only, this PR).** A bridge route
+**Phase 1: read the activity feed (read-only, this PR).** **Superseded
+2026-09-26:** the feed never carried a comment-mention; the intake is the DM
+card (see "Intake, re-measured 2026-09-26"). `GET /mentions` stays as a read
+and authorizes no write. The original text follows. A bridge route
 `GET /mentions` over `/api/v1/news/inbox/`, which classifies comment
 mentions by structure (a comment id, media, and a mention of her) and counts
 every other story by `story_type`. It is deployed, then:
@@ -176,6 +180,88 @@ row and the trace. No write route exists yet.
 **Phase 4: write.** The bridge gets `POST /posts/{shortcode}/comments` with
 `replied_to_comment_id`, behind rules 4 and 6. It goes live only after a
 week of phase 1 polling without a checkpoint.
+
+## Intake, re-measured 2026-09-26
+
+This section supersedes the notification-feed poller (the ingress row of
+the table above, rule 3, phase 1 and the guard-3 row of the write's table).
+That text is kept, marked, for the record.
+
+### What was measured
+
+- A comment (or a caption) mentioning `@noraexample` reaches her as a
+  **DM-thread message**, a `NewMessageEvent` on the realtime socket:
+  `content_type` `MESSAGE_INLINE_SHARE`, XMA typename
+  `SlideMessageLayeredXMA`, `subtitle_text` = the comment's text (for
+  example `@noraexample is this true`), `xmaTitle`/`title_text` = the
+  COMMENTER's username (not the post owner's), the preview image = the post
+  image. The sender is the commenter (igid, fbid, username). **The live
+  delta carries no `target_url`, no `target_id` and no CTA:** nothing in it
+  names the post.
+- The thread query (`GetThread`, `IGDThreadDetailQuery`, the read the roster
+  route makes) returns the same message **with** `content.xma.target_url` =
+  `https://www.instagram.com/p/<shortcode>/` (a reel: `/reel/<code>/`).
+- The notification feed (`POST /api/v1/news/inbox/`) never carried these
+  mentions.
+- The comment's id is **not** in the card. It is found by reading the post's
+  comments (`GET /api/v1/media/<pk>/comments/?can_support_threading=true&permalink_enabled=false`,
+  confirmed) and matching author igid = the card's sender igid, text
+  carrying the word-bounded `@` handle.
+
+### The intake (bridge)
+
+For a `NewMessageEvent` whose content is an XMA card, sent by somebody other
+than her, whose subtitle, caption or title carries word-bounded
+`@<her username>`, the bridge (`gateway/instameow/summons.go`):
+
+1. emits the ordinary `message` event as always (the adapter keeps dropping
+   unknown-policy threads);
+2. refetches the thread **once** through `GetThread` on the short id, off
+   the socket goroutine, 30 s timeout, deduplicated by message id (a bounded
+   set of the last 1,024), a checkpoint on it flipping the session like any
+   read;
+3. finds the message on the returned first page, reads `target_url`,
+   parses the shortcode out of `/p/<code>/` or `/reel/<code>/` and decodes
+   the media pk;
+4. when that worked, records a **served summons** in `comments.json`
+   (message id -> media pk, sender igid, received at; pruned at 7 days;
+   atomic and fsynced like every ledger write) BEFORE the event goes out;
+5. emits a new SSE event:
+
+```json
+{"kind":"summons","message_id":"mid.$...","room_id":"<short thread id>",
+ "sender":{"fbid":"...","igid":"...","username":"..."},
+ "text":"<subtitle_text>","shortcode":"<code>","media_id":"<pk>",
+ "received_at_ms":1790000000000,"resolved":true}
+```
+
+`resolved` is false, with `shortcode` and `media_id` empty, when the
+refetch failed, the message was not on the first page, or it carried no
+usable `target_url`. Nora records that and does not answer.
+`received_at_ms` is the card's own timestamp (the bridge's clock when it
+carried none). Log lines carry fixed messages, a boolean and a reason word:
+never an id, a username or text.
+
+### Write guard 3, replaced
+
+`POST /posts/{shortcode}/comments {text, reply_to_comment_id}` now requires,
+before any upstream write:
+
+- **(a)** a served summons for this media pk within 7 days, and
+- **(b)** the bridge's own read of the post's first comments page shows
+  `reply_to_comment_id`, written by the sender of such a summons and
+  carrying word-bounded `@<her username>`.
+
+Anything else is 403 `not_a_summons`, fail closed: a comment beyond the first
+page, a failed read and an unknown own username included. (b) is the one
+guard that calls Instagram, and it is a read: it runs only after the latch,
+(a) and guards 4 to 7 have passed, so no other refusal costs a call. The
+claim transaction then re-runs every ledger guard and re-checks the author
+against the live summonses, so a window that closes during the read
+authorizes nothing. All other guards and their order are unchanged.
+`GET /mentions` stays as a read and no longer authorizes a write; a
+`comments.json` that still holds its old `served` key loads, and the key is
+dropped on the next write.
 
 ## Two things the review of #545 recorded
 

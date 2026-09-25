@@ -387,17 +387,13 @@ func (s *Service) ReadPost(ctx context.Context, code domain.Shortcode) (domain.P
 // feed (`GET /mentions`). Session gate first, like every other
 // Instagram-facing use case.
 //
-// Every mention it serves is recorded in the summons ledger (comments.go's
-// recordServed): a reply may only ever go under a comment this read served
-// (design 19). Recording never fails the read.
+// It is a READ and nothing more. It used to record what it served as the
+// authority for a comment reply; the 2026-09-26 re-measure (design 19)
+// found the feed never carried a comment-mention, and guard 3 now binds on
+// the summons card the DM intake records (comments.go's RecordSummons).
 func (s *Service) ReadMentions(ctx context.Context) ([]domain.CommentMention, map[int]int, error) {
 	if _, err := s.ready(); err != nil {
 		return nil, nil, err
 	}
-	mentions, skipped, err := s.social.Mentions(ctx)
-	if err != nil {
-		return mentions, skipped, err
-	}
-	s.recordServed(ctx, mentions)
-	return mentions, skipped, nil
+	return s.social.Mentions(ctx)
 }
