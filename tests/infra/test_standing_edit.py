@@ -23,6 +23,7 @@ from nora.domain.standing import (
     DEFAULT_STANDING_MAX_CHARS,
     STANDING_BODY_CEILING_CHARS,
     Standing,
+    WorkingSetItem,
 )
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.migrations_runner import run_migrations
@@ -138,6 +139,31 @@ async def test_apply_lands_as_operator_and_keeps_fold_count_and_watermark(
     assert head.body == "the operator's correction"
     assert head.fold_count == 3
     assert head.last_folded_row_id == 42
+
+
+async def test_apply_on_a_room_holding_a_working_set_lands_and_keeps_it(
+    store: SqlStandingStore,
+) -> None:
+    """#541 added `working_set`; the edit rebuilt `Standing` field by field
+    without it, so the edit wrote an empty working set over the held one and
+    `write_if_unchanged` refused every edit of such a room."""
+    held = (WorkingSetItem(what="two more options", source="web_search", found_at=T0),)
+    await store.write(standing=Standing(
+        platform=PLATFORM, conversation_id=CONV, body="the fold's position",
+        fold_count=3, updated_at=T0, last_folded_row_id=42, working_set=held,
+    ))
+
+    outcome = await apply_operator_edit(
+        platform=PLATFORM, conversation_id=CONV,
+        new_body="the operator's correction", store=store, now_ms=T0 + 1000,
+        max_chars=MAX_CHARS, recheck_delay_seconds=0,
+    )
+    assert outcome.after.working_set == held
+
+    head = await store.read(platform=PLATFORM, conversation_id=CONV)
+    assert head is not None
+    assert head.body == "the operator's correction"
+    assert head.working_set == held
 
 
 async def test_apply_on_a_room_with_no_standing_row_is_refused(
