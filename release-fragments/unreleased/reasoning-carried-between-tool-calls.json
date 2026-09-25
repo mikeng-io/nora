@@ -1,0 +1,11 @@
+{
+  "type": "fix",
+  "summary": "When Nora thinks before a tool call, the next step of the same task now sees that thinking instead of starting again without it.",
+  "details": [
+    "Background research passes (proactive reminders and room culture) run with reasoning on; until now each step after a tool call was formed without the reasoning that led to the call.",
+    "Replies in rooms run with reasoning off and are unchanged."
+  ],
+  "limitations": [
+    "Whether this changes what the background passes decide is still being measured."
+  ]
+}

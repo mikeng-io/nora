@@ -154,13 +154,13 @@ class _RecordingStore:
 
 async def _drive(
     *, reasons: bool, terminal=frozenset(), metrics=None, store=None,
-    budgets=None,
+    budgets=None, model=None,
 ):
     """One real turn. Returns `(model, watch, store, metrics)`."""
     metrics = metrics or Metrics()
     budgets = budgets or BUDGETS
     store = store if store is not None else _RecordingStore()
-    model = _ScriptedModel(reasons=reasons)
+    model = model if model is not None else _ScriptedModel(reasons=reasons)
     watch = ReasoningStripWatch(
         path="tag", tag_id="tag-1", store=store, metrics=metrics,
     )
