@@ -10,7 +10,7 @@ from dataclasses import replace
 
 from nora.domain.models import DeliveryStatus, PersonRef, TranscriptRow
 from nora.persons import Persons
-from nora.subject.dreaming import with_roster_senders
+from nora.subject.dreaming import shown_speakers, with_roster_senders
 
 ROSTER = Persons(
     by_person={
@@ -63,3 +63,18 @@ def test_rows_production_could_not_resolve_either_are_left_alone():
         _row(4, sender_id="+8529004", person_id="p_ada", is_nora=True),
     ]
     assert with_roster_senders(rows, persons=ROSTER, platform="signal") == rows
+
+
+def test_the_speakers_the_instrument_grades_are_the_names_the_model_was_shown():
+    """S0's `body_names`/`body_schema` resolve a row to its shown `from`;
+    after S1a that is the roster name, for a minted sandbox row too."""
+    batch = with_roster_senders(
+        [
+            _row(1, sender_id="+8529000", person_id="p_ada"),
+            _row(2, sender_id="+8529001", person_id=None),
+        ],
+        persons=ROSTER, platform="signal",
+    )
+    assert shown_speakers(batch, persons=ROSTER, platform="signal") == (
+        (1, "Ada Roster"), (2, "profile2"),
+    )
