@@ -87,6 +87,13 @@ INTAKE_OUTCOMES: tuple[str, ...] = get_args(IntakeOutcome)
 #: is what the bridge's `utf8.RuneCountInString` counts.
 MAX_COMMENT_CHARS = 2200
 
+#: The longest reply she POSTS, far under Instagram's limit: a comment is a
+#: sentence or two (public/voice.md). The first live reply (2026-09-26) was
+#: 533 characters of five sentences; the operator chose a hard cap, refused
+#: whole rather than cut, since a cut fact-check can say the opposite of the
+#: whole one. public/conduct.md tells her 300, so the cap has headroom.
+PUBLIC_REPLY_MAX_CHARS = 320
+
 #: How many of a post's items she is shown, and every one of them is READ
 #: before her turn (`nora.app.summons`: `media_fetch` itself, through the
 #: `instagram_read` mechanism). A carousel can hold 20; the rest are counted,
