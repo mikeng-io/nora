@@ -74,18 +74,40 @@ async def room_read(room: str, limit: int = 25, before: str | None = None) -> di
 
 - `before`: HKT, `"YYYY-MM-DD HH:MM"`, or `"YYYY-MM-DD"`, which means the end
   of that day. Returns the `limit` newest rows sent before it, oldest first,
-  in the same shape as today. Omitted, or at or after now: today's behaviour,
-  byte for byte.
-- **Inclusive of the named minute** (`ts < minute + 60s`). Paging passes the
-  oldest row's `when` back as `before`. At minute resolution an exclusive bound
-  would skip rows that share the oldest row's minute, so the bound errs toward
-  a repeated row rather than a gap.
-- **A "more before this" signal.** `recent()` already over-fetches by one
-  (`nora.domain.bounds`), so the tool knows when the window was full. Only
-  then does the result carry a `note`: there is more before the first row, and
-  to go further back, call again with `before` set to its `when`. The
-  description stays short, and the note is paid for only when it applies (ADR
-  0015 §3).
+  in the same shape as today. Omitted, or at or after now: the same rows as
+  before this change. The one addition to an omitted-`before` read is the
+  "older messages exist" note below, on a full window.
+- **A time a person gives is a span, and it is included.** A date alone runs
+  to the end of that day, `21:14` to the end of that minute, and a time with
+  seconds to the end of that second. The tool accepts what a model copies from
+  a row's `when` («2026-09-24 Thu 21:14 (13h ago)»): the age in brackets, the
+  weekday, `HKT` and an ISO `T` are dropped before parsing.
+- **The paging cursor is a point, and it is excluded.** When older rows exist,
+  the result's `note` gives the exact value to pass next: the oldest row's own
+  moment to the millisecond, `before="2026-09-24 12:00:40.123"`, read as
+  `ts < that`. Every page is then strictly older than the last.
+  - **Corrected while building (2026-09-25).** This section first said to
+    page with the oldest row's minute, inclusive, on the grounds that a
+    repeated row is cheaper than a skipped one. A test with four rows in one
+    minute and a page of three handed back the same page forever. The
+    exclusive millisecond cursor fixes that.
+  - **Corrected in review (#538).** "Exact millisecond" was not rare: the
+    WhatsApp bridge stamps whole seconds, so two messages in one second share
+    a `ts`, and a page ending between them left the older one unreachable. A
+    page now never ends inside a tie group; the group moves to the next page.
+    Only a tie group larger than a whole page can still lose rows.
+- **What `before` will not guess.** Only a weekday, `HKT`, an ISO `T` and
+  the `(13h ago)` age fold away. Any other word (`UTC`, `PST`, `yesterday`)
+  makes the value unreadable, because «21:14 UTC» read as Hong Kong time is a
+  window eight hours off that looks like an answer. A year past the calendar
+  is unreadable too, not a crash.
+- **An "older messages exist" signal.** The tool asks the store for one row
+  more than it returns, so it knows when more exist from the record, not from
+  a guess. Only then does the result carry the note above. It rides on any
+  full window, with or without `before`, because that is where she learns
+  paging exists. The description stays short, and the note costs tokens only
+  when it applies (ADR 0015 §3). An empty `before` read says nothing is on
+  record before that time.
 - **A malformed `before`** never silently falls back to "newest". That would
   answer a question about yesterday with today's messages, and it would look
   like an answer. `room_read` (`three_state`) returns `unavailable` with a
@@ -96,9 +118,13 @@ async def room_read(room: str, limit: int = 25, before: str | None = None) -> di
   `before` jumps straight to the time in question instead of walking back to
   it, so reaching yesterday costs one call however busy today was. Paging
   depth stays bounded by the budgets (4 × 60 and 3 × 60 rows).
-- **Store.** `RecordStore.recent(conversation_id, limit, before_ts=None)`: one
-  added predicate on the same `idx_messages_conv_ts` seek. `SqlRecordStore` and
-  `FakeRecordStore` both get it, with one contract test
+- **Store.** A new `RecordStore.recent_before(conversation_id, before_ts,
+  limit)`, not a keyword on `recent`: about fifteen test doubles implement
+  `recent`, and none of them needs to learn a new argument. In
+  `SqlRecordStore` both methods share one query body (`_newest`), which adds
+  one predicate on the same `idx_messages_conv_ts` seek, so the over-fetch,
+  tie-break and edit fold cannot drift apart. `FakeRecordStore` mirrors it,
+  and one contract test checks both
   (`tests/contract/test_audit_store_contract.py`).
 - **The clock.** "Now" comes from the same `now_fn` `room_list` uses, and HKT
   from `_HKT`. The model already sees «Right now it is …» on every turn
@@ -145,9 +171,10 @@ one-liner, and run the humanizer over both openings.
    `edited` and `edited_ts`. Prove it by reverting (`nora-prove-fix`). Ship
    it.
 2. **§2**: the store predicate and contract test, both tools, the note, the
-   parse. Tests: paging across a shared minute repeats a row and never skips
-   one; a malformed `before` never returns newest rows; an omitted `before`
-   gives today's result.
+   parse. Tests (`tests/unit/test_transcript_before.py`, and the store
+   contract): paging across a crowded minute reaches the oldest row, every row
+   once; a malformed `before` never returns newest rows; an omitted `before`
+   gives the same rows as before.
 3. **Measure** (`nora-eval`), before and after on the deployed alias:
    - `tool_selection`: add a case, «what did we decide yesterday» in a room
      whose prefill cannot reach yesterday, expecting `load_transcript` and not
