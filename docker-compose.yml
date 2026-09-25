@@ -474,6 +474,23 @@ services:
       # reads the identical bytes.
       - ./identity.toml:/app/identity.toml:ro
 
+  # site — Nora's public site (site/, Astro, static). Loopback-only like
+  # `app`; it answers `/`, `/en/`, `/_astro/*`, `/_site/*`, `/favicon.ico`
+  # and `/robots.txt` on the portal's own hostname once the tunnel routes
+  # those paths here (site/README.md, "Going live"). Behind a profile until
+  # then, so `docker compose up -d` does not start it:
+  #   docker compose --profile site build site && docker compose --profile site up -d site
+  site:
+    build:
+      context: .
+      dockerfile: site/Dockerfile
+      network: host
+    image: nora-site:latest
+    container_name: nora-site
+    profiles: [site]
+    restart: unless-stopped
+    ports: ["127.0.0.1:3401:8080"]
+
   # presence — the Life360 presence collector (design/19 §4). Same image as
   # nora, a DIFFERENT command and a SEPARATE process: `python -m nora.presence`
   # polls each circle derived from identity.toml and records fixes into the
