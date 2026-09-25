@@ -75,11 +75,15 @@ STORY_FRAMING = (
 )
 
 #: Added to the story framing when the frames were looked at: what the two
-#: kinds of text in a frame ARE, and that they can disagree.
+#: kinds of text in a frame ARE, and that they can disagree. A shows line is
+#: NOTES FOR HER, so she can see the frame too: read as a description to hand
+#: on, it came back as one, item by item in its own order
+#: (design/proposed/32-shared-media-register.md). A story is read by person or
+#: handle, so nothing here claims the asker has seen it.
 STORY_READ_FRAMING = (
-    "Each shows line is what a vision model saw in that frame, and a "
-    "caption is what they wrote; the two can disagree. A frame with no "
-    "shows line says why, and where it can be read."
+    "Each shows line is a vision model's notes on that frame, so you can see "
+    "it too, and a caption is what they wrote; the two can disagree. A frame "
+    "with no shows line says why, and where it can be read."
 )
 
 #: Added to the story framing when no frame was seen because they were not
@@ -117,12 +121,18 @@ POST_FRAMING = (
 #: The post framing when the items were looked at. It says what she is
 #: READING, which is the whole of it: two kinds of text, who wrote each, and
 #: that they can disagree. It does not tell her how to settle a
-#: disagreement; she has both in front of her.
+#: disagreement; she has both in front of her. Nor does it ask her to report
+#: anything: until 2026-09-26 it said «report what an item shows», and a
+#: tagged answer about a shared post opened by translating the shows lines
+#: back, in order, to the person who had shared it. A post is read from its
+#: link only, so whoever linked it has usually seen it, and the note says so
+#: (design/proposed/32-shared-media-register.md).
 POST_READ_FRAMING = (
     "One Instagram post, item by item. The caption is what the poster wrote; "
-    "each shows line is what a vision model saw in that item. The two can "
-    "disagree, so read them side by side, and report what an item shows as "
-    "how it looks, not as fact. An item with no shows line says why, and "
+    "each shows line is a vision model's notes on that item, so you can see "
+    "it too. The two can disagree, so read them side by side, and take a "
+    "shows line as how it looks, not as fact. Whoever shared or linked the "
+    "post has usually seen it. An item with no shows line says why, and "
     "where it can be read; every item's link is in items, in the same order, "
     "for media_fetch(url=...)."
 )

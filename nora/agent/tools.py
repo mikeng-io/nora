@@ -3344,6 +3344,23 @@ _COVER_NOTE = (
     "item's link, if that line carries one."
 )
 
+# What `media_fetch` says beside a reading it serves. It says what she is
+# READING and who else has the thing, and it never asks her to report it.
+# Until 2026-09-26 it said «Report it as what it looks like». In the 14 days
+# before, 16 of 18 tagged answers about shared media opened by translating
+# the reading back to the person who had just sent it, item by item in the
+# reading's own order, and a served reading was answered that way with or
+# without that sentence (5 of 5 with it, 11 of 12 before it existed). So the
+# word was not the carrier; the reading was, handed over as a description
+# with nothing saying the sender is already looking at the thing
+# (design/proposed/32-shared-media-register.md). The hedge stays: a vision
+# model wrote this about somebody else's bytes.
+_MEDIA_READING_NOTE = (
+    "A vision model's notes on media somebody sent or linked, so you can see "
+    "it too; whoever sent it has usually seen the thing itself. Take them as "
+    "how it looks, not as fact you can vouch for."
+)
+
 # `_INSTAGRAM_PAGE_LINK`, `_INSTAGRAM_MOBILE_PAGE_LINK`,
 # `_WEB_FETCH_INSTAGRAM_PAGE`, `_WEB_FETCH_INSTAGRAM_MOBILE_PAGE` and
 # `_instagram_page_kind` moved to `nora.agent.link_owners`
@@ -6966,15 +6983,14 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 "note": f"{withheld} {_COVER_NOTE}" if cover else withheld,
             }
         _record_media(metrics, "ok", cached=cached, chars=len(description))
-        # ADR 0015 §3: the reporting rule that left the description rides with
-        # the `description` it is about. A vision model wrote it about somebody
-        # else's bytes, so she reports it as how it looks, not as a fact.
+        # ADR 0015 §3: the framing rides with the `description` it is about.
+        # A vision model wrote it about somebody else's bytes, so it is how it
+        # looks, not a fact; and it is notes for her eyes, not a reply to hand
+        # back to whoever sent it (`_MEDIA_READING_NOTE`).
         served: dict[str, object] = {
             "status": "ok", "code": code,
             "description": description,
-            "note": "A vision model wrote this about media somebody else sent "
-                    "or linked. Report it as what it looks like, not as fact "
-                    "you can vouch for.",
+            "note": _MEDIA_READING_NOTE,
         }
         if cover:
             served["note"] = f"{served['note']} {_COVER_NOTE}"

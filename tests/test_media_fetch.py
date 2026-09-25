@@ -28,6 +28,7 @@ from nora.agent.tools import (
     _COVER_NOTE,
     _INSTAGRAM_MOBILE_PAGE_LINK,
     _INSTAGRAM_PAGE_LINK,
+    _MEDIA_READING_NOTE,
     NATIVE_TOOL_BUDGETS,
     build_tools,
 )
@@ -1954,13 +1955,14 @@ async def test_every_non_ok_status_carries_a_note(wiring, monkeypatch):
 
 
 async def test_an_ok_note_rides_only_with_a_description(wiring):
-    """The rule that left the description (a vision model wrote this about
-    somebody else's media, so report it as how it looks) arrives with the
+    """The framing that left the description (a vision model's notes on
+    somebody else's media, how it looks and not fact) arrives with the
     `description` it is about. A withheld serve has no description, so it
     carries its own note and not this one."""
     await _append_image(wiring["store"], conversation_id="g1", sha256=PNG_SHA)
     out = await _call(wiring["build"](), code=PNG_SHA[:6])
     assert out["status"] == "ok" and "description" in out
+    assert out["note"] == _MEDIA_READING_NOTE
     assert "not as fact" in out["note"]
     assert not any(d in out["note"] for d in _DASHES)
 
@@ -1968,6 +1970,23 @@ async def test_an_ok_note_rides_only_with_a_description(wiring):
     withheld = await _call(wiring["build"](vision_cache=VisionCache()), code=PNG_SHA[:6])
     assert withheld.get("withheld") is True and "description" not in withheld
     assert "not as fact" not in withheld["note"]
+
+
+def test_the_reading_note_says_what_she_is_reading_and_never_asks_for_a_report():
+    """design/proposed/32-shared-media-register.md: the note used to say
+    «Report it as what it looks like», and in the 14 days before 2026-09-26
+    a tagged answer about shared media opened by translating the reading back,
+    item by item, to the person who had sent it (16 of 18). The note now says
+    what the reading IS (notes for her, so she sees it too) and that the
+    sender has usually seen the thing; the hedge stays. Reverting the note
+    reddens this."""
+    note = _MEDIA_READING_NOTE
+    assert "report" not in note.lower()
+    assert "so you can see it too" in note
+    assert "has usually seen the thing itself" in note
+    assert "not as fact" in note
+    assert not any(d in note for d in _DASHES)
+
 
 # ---- the video reading cache (migration 0061) --------------------------------
 #

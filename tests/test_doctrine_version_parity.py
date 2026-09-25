@@ -249,7 +249,14 @@ PINNED: dict[str, tuple[int, str]] = {
     # `self-description` into identity.md on 2026-09-17. Its trigger and
     # not-for became the paragraph's opening scope, and it now ranks where
     # conduct does, below the situation block, where the skill ranked above.
-    "conduct": (32, "02d9ce20e6a76c4717c4c5eb9637c479d610c98471869a55bb99fa43f7088bf9"),
+    # v33 (2026-09-26, design/proposed/32-shared-media-register.md): one
+    # paragraph in «Follow the conversation». Something somebody shows her is
+    # already in front of them, and what she was given on it is for her own
+    # eyes: 16 of 18 tagged answers about shared media in the 14 days before
+    # opened by translating the vision reading back, item by item, to the
+    # person who had sent it. The tool notes were reframed in the same change;
+    # this reaches the answers that read only a transcript placeholder.
+    "conduct": (33, "b1c1de0176fe1f5fe872dab1c66305da8e8c8d37914365dea1c84954a3ea3296"),
     # NOT Nora's: the Relevance Gate's instruction, pinned here like any other
     # authored file so a silent edit to what the gate is told is impossible.
     # v5 (2026-09-10, issue #144): the digest v4 pointed at is not shipped —

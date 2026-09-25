@@ -612,6 +612,22 @@ def test_a_story_with_failed_and_not_read_frames_gets_the_mixed_note():
     assert note == f"{STORY_FRAMING} {STORY_MIXED_FRAMING}"
 
 
+def test_the_read_notes_frame_a_shows_line_as_her_notes_and_never_ask_for_a_report():
+    """design/proposed/32-shared-media-register.md: POST_READ_FRAMING said
+    «report what an item shows», and a tagged answer about a shared post
+    opened by translating the shows lines back, in order, to whoever shared
+    it. Both read notes now say a shows line is notes for her, so she can see
+    it too. Only the post note claims the sharer has seen it: a post is read
+    from its link only, while a story is read by person or handle, and the
+    asker may not have seen that."""
+    for note in (POST_READ_FRAMING, STORY_READ_FRAMING):
+        assert "report" not in note.lower()
+        assert "notes on that" in note and "so you can see it too" in note
+    assert "Whoever shared or linked the post has usually seen it." in POST_READ_FRAMING
+    assert "seen it" not in STORY_READ_FRAMING
+    assert "not as fact" in POST_READ_FRAMING
+
+
 def test_the_read_note_does_not_contradict_the_not_read_here_lines():
     """An item without a shows line may be one «media_fetch reads»; the read
     note must not call every such item unseen."""
