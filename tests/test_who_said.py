@@ -27,6 +27,8 @@ What each test here pins, and why it is the clause worth pinning:
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 import pytest
 
 from nora.agent.egress import scan_identifiers
@@ -134,7 +136,7 @@ def persons(tmp_path):
     return load_persons(path)
 
 
-def _build(persons, *, window=WINDOW, metrics=None, store=None):
+def _build(persons, *, window=WINDOW, metrics=None, store=None, clock=None):
     metrics = metrics or Metrics()
     store = store if store is not None else _StoreWithOlderRows()
     room = Room(platform="signal", conversation_id=CONV, roster_source=None,
@@ -144,6 +146,7 @@ def _build(persons, *, window=WINDOW, metrics=None, store=None):
         persons=persons, honcho=FakeMemoryStore(), deliverer=SinkSender(),
         metrics=metrics, room=room, transit_source=_UNREACHABLE_TRANSIT,
         question="邊個話收隊", context_window=40, transcript=window,
+        clock=clock,
     )
     return {t.tool_name: t for t in tools}, metrics, store
 
@@ -537,13 +540,17 @@ async def test_load_transcript_says_a_message_was_edited_and_what_it_first_said(
     called this tool, got the new text with no marker, and answered «冇變».
     The prefill marks the row; this tool re-reads the same row and must too."""
     window = _edited_window()
-    tools, _, _ = _build(persons, window=window, store=_StoreOf(window))
+    # 09:00 HKT on the rows' own day, so the edit (6 s after 08:00) is 59m old.
+    clock = lambda: datetime(1970, 1, 1, 1, 0, tzinfo=UTC)  # noqa: E731
+    tools, _, _ = _build(persons, window=window, store=_StoreOf(window), clock=clock)
     out = await _call(tools["load_transcript"], limit=10)
     last = out["messages"][-1]
     assert last["body"] == "2 3 4 5 6 7 8"
-    assert (last["edited_ts"], last["was"]) == (6_000, "2 3 4 5 7 8")
-    assert all("edited_ts" not in m and "was" not in m for m in out["messages"][:-1]), \
+    # `edited`, a readable time, never the raw `edited_ts` (design/self-awareness/08 §1).
+    assert (last["edited"], last["was"]) == ("1970-01-01 Thu 08:00 (59m ago)", "2 3 4 5 7 8")
+    assert all("edited" not in m and "was" not in m for m in out["messages"][:-1]), \
         "a message never edited must not carry either key"
+    assert not any("edited_ts" in m or "ts" in m for m in out["messages"])
 
 
 async def test_who_said_finds_words_only_the_first_version_carried(persons):
@@ -584,6 +591,7 @@ async def test_load_transcript_explains_an_edit_only_when_one_came_back(persons)
     plain_tools, _, _ = _build(persons, window=WINDOW, store=_StoreOf(WINDOW))
     unedited = await _call(plain_tools["load_transcript"], limit=10)
 
-    assert "`was`" in edited["note"] and "edited_ts" in edited["note"]
+    assert "`was`" in edited["note"] and "`edited`" in edited["note"]
+    assert "edited_ts" not in edited["note"]
     assert "—" not in edited["note"] and "–" not in edited["note"]
     assert unedited["messages"] and "note" not in unedited
