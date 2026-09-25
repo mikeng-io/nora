@@ -1720,6 +1720,20 @@ async def build_dependencies(
     def note_room_for(cid: str, unit: str) -> tuple[str, str | None] | None:
         return note_rooms.get((cid, unit))
 
+    # THE SAME JOIN, for the note curator's name resolver (issue #200): every
+    # id a room is known by, within the note's unit, to the room's platform —
+    # what `Persons.name_transcript` needs and `Note.established_in` alone
+    # cannot supply, since a note carries no platform of its own.
+    note_platforms: dict[tuple[str, str], str] = {
+        (cid, conv.unit): conv.platform
+        for conv in allowlist.conversations
+        if conv.primary_id and conv.unit
+        for cid in conv.ids
+    }
+
+    def note_platform_for(cid: str, unit: str) -> str | None:
+        return note_platforms.get((cid, unit))
+
     assembler = build_assembler(
         cfg, audit=audit, memory=memory, persons=persons, metrics=metrics,
         # `None` while `[notes] enabled = false`. `policy=allowlist` is the
@@ -3464,6 +3478,18 @@ async def build_dependencies(
                     # UNIT: ids are unique per platform, not across platforms.
                     culture=culture_reader,
                     room_for=note_room_for,
+                    # THE ROOM'S PLATFORM and A NAME RESOLVER (issue #200),
+                    # the same `persons.name_transcript` every other Dreamer
+                    # adaptor's evidence now resolves through, keyed the same
+                    # way `room_for` is. This is what lets `_gather_evidence`
+                    # fill a mapped sender's canonical name into a note's
+                    # evidence rows before `_render_evidence` ever renders
+                    # them, instead of their self-set, spoofable profile name.
+                    platform_for=note_platform_for,
+                    resolve_names=(
+                        lambda rows, platform:
+                            persons.name_transcript(rows, platform=platform)
+                    ),
                     # The discharge pipeline (design/dreamer-agent-loop/33 §7,
                     # issue #101), on its OWN gate — see `NotesConfig.
                     # discharge_enabled`'s docstring for why it does not ride
@@ -3749,6 +3775,22 @@ async def build_dependencies(
                         if conv.primary_id and conv.description
                     }.get,
                     metrics=metrics,
+                    # THE ROOM'S PLATFORM and A NAME RESOLVER (issue #200),
+                    # off the SAME allowlist read `label_for`/`description_for`
+                    # already are, plus `persons` — the one instance every
+                    # other write path in this file already holds. This is
+                    # what lets `inputs()` fill a mapped sender's canonical
+                    # name into `<room_messages>` before it renders, the same
+                    # wiring `NoteCandidateAdaptor` already carries.
+                    platform_for={
+                        conv.primary_id: conv.platform
+                        for conv in allowlist.conversations
+                        if conv.primary_id
+                    }.get,
+                    resolve_names=(
+                        lambda rows, platform:
+                            persons.name_transcript(rows, platform=platform)
+                    ),
                 ),
             )
 
