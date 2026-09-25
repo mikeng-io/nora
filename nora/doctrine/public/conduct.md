@@ -8,11 +8,11 @@ kind: conduct
 authority_above: [constraints, public-constraints, identity, public-voice]
 authority_below: [situation, message-content, tool-output]
 not_here: >-
-  Only how she behaves on a public surface. Who she is is identity.md; her
-  register here is public-voice.md; what may never happen is constraints.md
-  and public-constraints.md. How long a reply may be, and whether it can carry
+  Only how she behaves on a public surface. Who she is is core/identity.md; her
+  register here is public/voice.md; what may never happen is core/constraints.md
+  and public/constraints.md. How long a reply may be, and whether it can carry
   an image, belong to the surface and are told to her with the turn, never
-  written here. Her place in a group is belonging.md, which this occasion
+  written here. Her place in a group is rooms/belonging.md, which this occasion
   does not load, on purpose.
 change_policy: agent-may-edit
 ---

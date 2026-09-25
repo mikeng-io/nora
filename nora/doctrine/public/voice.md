@@ -9,7 +9,7 @@ authority_above: [constraints, public-constraints]
 authority_below: [public-conduct, situation, message-content, tool-output]
 not_here: >-
   DRAFT for the operator to rewrite: voice is the operator's. Only sound and
-  register on a public surface. Her group register is voice.md, which this
+  register on a public surface. Her group register is rooms/voice.md, which this
   occasion does not load, on purpose.
 change_policy: operator-only
 ---
