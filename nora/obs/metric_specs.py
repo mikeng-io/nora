@@ -2181,7 +2181,9 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "send it; by what that follow-up ended in ("
         + " / ".join(FOLLOW_UP_OUTCOMES)
         + ") and mode (" + " / ".join(SUMMONS_MODES) + "). replied is a reply "
-        "held for the flush; silent is nothing held (the summons is silent).",
+        "held for the flush; silent is nothing held (the summons is silent); "
+        "timed_out and failed are nothing held because the invocation timed "
+        "out or raised during the follow-up.",
         ("outcome", "mode"),
     ),
     _CounterSpec(

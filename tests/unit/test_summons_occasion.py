@@ -119,9 +119,13 @@ class World:
 
     def occasion(self, *, mode: str = "dry_run", turns: list[ScriptedTurn] | None = None,
                  max_age: timedelta = timedelta(minutes=60),
-                 follow_up: list[ScriptedTurn] | None = None) -> SummonsOccasion:
+                 follow_up: list[ScriptedTurn] | None = None,
+                 follow_up_delay: float = 0.0,
+                 timeout_seconds: float = 30) -> SummonsOccasion:
         if turns is not None:
-            self.runner = FakeAgentRunner(turns, follow_up_turns=follow_up)
+            self.runner = FakeAgentRunner(
+                turns, follow_up_turns=follow_up, follow_up_delay=follow_up_delay,
+            )
         return SummonsOccasion(
             client=self.client, ledger=self.ledger,
             summoners=PersonsSubjectIndex(self.persons, _Explode("room policy")),  # type: ignore[arg-type]
@@ -129,7 +133,7 @@ class World:
             runner=self.runner, metrics=self.metrics, canary="CANARY-7f3a",
             handle="noraexample", mode=mode, max_age=max_age,
             limits={"turns": 8, "total_tokens": 64000, "output_tokens": 8000},
-            timeout_seconds=30, clock=lambda: NOW,
+            timeout_seconds=timeout_seconds, clock=lambda: NOW,
         )
 
     async def row(self):
@@ -398,6 +402,44 @@ async def test_a_send_the_deliverer_refused_is_not_followed_up(world):
     assert out.state == "silent"
     assert world.runner.follow_ups == []
     assert world.fake.posts() == []
+
+
+async def test_a_vetoed_send_then_the_follow_up_holds_one_reply_posted_once(world):
+    """A `send_reply` the guard VETOED before it ran (R-4: empty text) costs
+    no budget (DEC-33) and holds nothing, so the prose after it is followed
+    up; the one send she then makes is the one reply, posted once."""
+    out = await world.occasion(
+        mode="live",
+        turns=[ScriptedTurn(tool_calls=[("send_reply", {"text": "  "})], final_text=REPLY)],
+        follow_up=_replies(SENT),
+    ).run(_card())
+    assert out.state == "published"
+    assert world.runner.follow_ups == [UNSENT_REPLY_FOLLOW_UP]
+    assert world.fake.posts() == [{"text": SENT, "reply_to_comment_id": SUMMONS_COMMENT}]
+    assert (await world.row()).reply_text == SENT
+    assert world.metrics.get(
+        "nora_summons_follow_ups_total", outcome="replied", mode="live",
+    ) == 1
+
+
+async def test_a_follow_up_cut_off_by_the_timeout_is_recorded_as_timed_out(world):
+    """The follow-up runs inside the turn's one timeout. When it runs out
+    there, nothing is held and nothing is posted, and the record says the
+    follow-up TIMED OUT rather than that she chose silence."""
+    out = await world.occasion(
+        mode="live", turns=[ScriptedTurn(final_text=REPLY)], follow_up=_replies(SENT),
+        follow_up_delay=5.0, timeout_seconds=0.2,
+    ).run(_card())
+    assert (out.state, out.bridge_code) == ("silent", "follow_up_timed_out")
+    assert world.runner.follow_ups == [UNSENT_REPLY_FOLLOW_UP]
+    assert world.fake.posts() == []
+    assert (await world.row()).bridge_code == "follow_up_timed_out"
+    assert world.metrics.get(
+        "nora_summons_follow_ups_total", outcome="timed_out", mode="live",
+    ) == 1
+    assert world.metrics.get(
+        "nora_summons_follow_ups_total", outcome="silent", mode="live",
+    ) == 0
 
 
 async def test_a_follow_up_spends_what_the_first_pass_left_of_the_loop_caps(world):

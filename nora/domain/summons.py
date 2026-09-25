@@ -67,8 +67,10 @@ SUMMONS_OUTCOMES: tuple[str, ...] = (
 #: `nora_summons_follow_ups_total`'s `outcome` label: what one follow-up
 #: (`nora.app.summons.UNSENT_REPLY_FOLLOW_UP`) ended in. `replied` is a
 #: `send_reply` that passed the guards and was held (the flush may still
-#: refuse it, and a dry run posts nothing); `silent` is nothing held.
-FollowUpOutcome = Literal["replied", "silent"]
+#: refuse it, and a dry run posts nothing); `silent` is nothing held;
+#: `timed_out` / `failed` is nothing held because the invocation hit its
+#: timeout or raised after the follow-up began.
+FollowUpOutcome = Literal["replied", "silent", "timed_out", "failed"]
 FOLLOW_UP_OUTCOMES: tuple[str, ...] = get_args(FollowUpOutcome)
 
 #: `nora_summons_intake_total`'s `outcome` label: what became of one `summons`

@@ -12,8 +12,10 @@ not a fresh set (Strands' caps are per-invocation, `factory.remaining_limits`).
 from __future__ import annotations
 
 from collections.abc import AsyncIterable
+from types import SimpleNamespace
 from typing import Any
 
+import pytest
 from strands.models.model import Model
 
 from nora.agent import factory
@@ -103,9 +105,19 @@ async def _invoke(
     model: _ScriptedModel, *, follow_up: Any, limits: dict | None = None,
     clock: _Clock | None = None,
 ) -> tuple[str | None, str]:
+    stop_reason, text, _trace = await _invoke_traced(
+        model, follow_up=follow_up, limits=limits, clock=clock,
+    )
+    return stop_reason, text
+
+
+async def _invoke_traced(
+    model: _ScriptedModel, *, follow_up: Any, limits: dict | None = None,
+    clock: _Clock | None = None,
+) -> tuple[str | None, str, Any]:
     clock = clock or _Clock()
     runner = LiveAgentRunner(models=FixedModelSource(model), retry=RETRY)
-    stop_reason, text, _trace = await runner.invoke(
+    return await runner.invoke(
         doctrine=_doctrine(),
         tools=[adapt(ToolSpec(name="now", description="", schema={}, call=clock.now, budget=1))],
         pre_fill=[],
@@ -114,7 +126,6 @@ async def _invoke(
         tag_message="<summons/>", limits=dict(limits or LIMITS), ctx=_ctx(),
         trace_attributes={}, follow_up=follow_up,
     )
-    return stop_reason, text
 
 
 def _texts(message: dict[str, Any]) -> list[str]:
@@ -190,3 +201,91 @@ async def test_a_loop_cut_off_by_a_cap_is_never_followed_up():
     )
     assert stop_reason == "limit_total_tokens"
     assert asked == []
+
+
+def _all_text(messages: Any) -> str:
+    return repr(messages)
+
+
+async def test_the_trace_carries_the_follow_up_and_its_reply():
+    """One turn, one trace: the follow-up user turn and what she answered to
+    it are in the extracted `TagTrace`, after the first pass's prose."""
+    model = _ScriptedModel([("text", "It is a heron."), ("text", "fine, silent")])
+    _stop, _text, trace = await _invoke_traced(model, follow_up=lambda _t: FOLLOW_UP)
+    flat = _all_text(trace.messages)
+    assert "It is a heron." in flat and FOLLOW_UP in flat and "fine, silent" in flat
+    assert flat.index("It is a heron.") < flat.index(FOLLOW_UP) < flat.index("fine, silent")
+
+
+@pytest.mark.parametrize(
+    "stop_reason",
+    ["guardrail_intervened", "stop_sequence", "content_filtered", None,
+     "limit_turns", "limit_total_tokens", "limit_output_tokens"],
+)
+async def test_only_end_turn_is_ever_followed_up(monkeypatch, stop_reason):
+    """A guardrail, a stop sequence, a filter, a cap or a stop reason the SDK
+    did not give is not a turn she ended in prose: never continued, even with
+    prose in hand and a follow-up that would answer."""
+    asked: list[str] = []
+
+    def follow_up(text: str) -> str | None:
+        asked.append(text)
+        return FOLLOW_UP
+
+    real_invoke = factory.invoke
+
+    async def relabelled(agent: Any, message: str, **kw: Any) -> Any:
+        # The REAL loop runs (so its metrics exist and caps are left); only
+        # the stop reason it reports is swapped.
+        result = await real_invoke(agent, message, **kw)
+        return SimpleNamespace(stop_reason=stop_reason, message=result.message)
+
+    monkeypatch.setattr(factory, "invoke", relabelled)
+    model = _ScriptedModel([("text", "It is a heron."), ("text", "sent")])
+    _stop, text = await _invoke(model, follow_up=follow_up)
+    assert asked == []
+    assert len(model.seen) == 1
+    assert text == "It is a heron."
+
+
+async def test_the_relabelled_control_is_followed_up_on_end_turn(monkeypatch):
+    """The control for the test above: the same relabelling harness with
+    `end_turn` IS followed up, so the negatives are not an artefact of it."""
+    real_invoke = factory.invoke
+
+    async def relabelled(agent: Any, message: str, **kw: Any) -> Any:
+        result = await real_invoke(agent, message, **kw)
+        return SimpleNamespace(stop_reason="end_turn", message=result.message)
+
+    monkeypatch.setattr(factory, "invoke", relabelled)
+    model = _ScriptedModel([("text", "It is a heron."), ("text", "sent")])
+    _stop, text = await _invoke(model, follow_up=lambda _t: FOLLOW_UP)
+    assert len(model.seen) == 2 and text == "sent"
+
+
+def _agent_with(invocation: Any) -> Any:
+    return SimpleNamespace(event_loop_metrics=SimpleNamespace(latest_agent_invocation=invocation))
+
+
+@pytest.mark.parametrize("invocation", [
+    None,
+    SimpleNamespace(cycles=[1], usage=None),
+    SimpleNamespace(cycles=None, usage={"outputTokens": 1, "totalTokens": 1}),
+    SimpleNamespace(usage={"outputTokens": 1, "totalTokens": 1}),
+    SimpleNamespace(cycles=[1]),
+    SimpleNamespace(cycles=[1], usage={"totalTokens": 1}),
+    SimpleNamespace(cycles=[1], usage={"outputTokens": "1", "totalTokens": 1}),
+])
+def test_remaining_limits_fails_closed_on_missing_metrics(invocation):
+    """What the SDK did not measure is not room left: no remainder, so no
+    follow-up, never a fresh budget."""
+    assert factory.remaining_limits(_agent_with(invocation), dict(LIMITS)) is None
+
+
+def test_remaining_limits_is_the_cap_minus_the_spend():
+    invocation = SimpleNamespace(cycles=[1, 2], usage={"outputTokens": 100, "totalTokens": 900})
+    assert factory.remaining_limits(_agent_with(invocation), dict(LIMITS)) == {
+        "turns": 6, "output_tokens": 11_900, "total_tokens": 63_100,
+    }
+    spent = SimpleNamespace(cycles=[1] * 8, usage={"outputTokens": 0, "totalTokens": 0})
+    assert factory.remaining_limits(_agent_with(spent), dict(LIMITS)) is None

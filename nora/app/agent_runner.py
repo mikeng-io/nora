@@ -148,8 +148,8 @@ class LiveAgentRunner:
 
         **`follow_up`: at most ONE continuation of the same conversation.**
         Asked once, with the first pass's final prose, after a loop that
-        ended on its own (never after one of R-8's caps: there is no ceiling
-        left to continue under). A message back is sent as the next user
+        ended `end_turn` (never after one of R-8's caps, a guardrail, a stop
+        sequence or a stop reason the SDK did not give). A message back is sent as the next user
         turn to THIS `agent` — the same messages, tools, guard (so the same
         per-tool budgets: nothing is re-granted) and trace — under what is
         left of `limits` (`factory.remaining_limits`); None, or a spent cap,
@@ -219,7 +219,10 @@ class LiveAgentRunner:
         stop_reason = stop_reason if isinstance(stop_reason, str) else None
         text = factory.final_text(result)
         followed_up = False
-        if follow_up is not None and stop_reason not in _BUDGET_STOP_REASONS:
+        # `end_turn` ONLY: the one stop that means she finished on her own. A
+        # cap, a guardrail, a stop sequence or an unreadable reason is not a
+        # turn she chose to end in prose, and is never continued.
+        if follow_up is not None and stop_reason == "end_turn":
             remaining = factory.remaining_limits(agent, limits)
             message = follow_up(text) if remaining is not None else None
             if message:

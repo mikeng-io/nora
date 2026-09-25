@@ -79,8 +79,8 @@ def test_the_flush_is_handed_the_first_held_reply_or_its_stored_row():
         texts.append(ast.unparse(text))
     assert sorted(texts) == ["held[0]", "row.reply_text or ''"], texts
     # And `held` IS the staging deliverer's `held_texts`, via `_turn` (whose
-    # second value is whether the turn got its one follow-up: a flag, never
-    # text, so the model's `final_text` still has no route to the flush).
+    # second value is how its one follow-up ended: an outcome word, never
+    # her text, so the model's `final_text` still has no route to the flush).
     answer = _function(tree, "_answer")
     held = [
         n for n in ast.walk(answer)
@@ -96,5 +96,5 @@ def test_the_flush_is_handed_the_first_held_reply_or_its_stored_row():
     turn = _function(tree, "_turn")
     returns = _own_returns(turn)
     assert [ast.unparse(r.value) for r in returns if r.value is not None] == [
-        "(handle.deliverer.held_texts, followed_up)",
+        "(handle.deliverer.held_texts, follow_up_end)",
     ]

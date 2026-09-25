@@ -318,12 +318,16 @@ class FakeAgentRunner:
     def __init__(self, turns: list[ScriptedTurn] | None = None, *, delay: float = 0.0,
                  raises: Exception | None = None,
                  on_call: Callable[[dict], None] | None = None,
-                 follow_up_turns: list[ScriptedTurn] | None = None) -> None:
+                 follow_up_turns: list[ScriptedTurn] | None = None,
+                 follow_up_delay: float = 0.0) -> None:
         self.turns = turns or []
         # What the model does AFTER a `follow_up` message, when the caller
         # passes one and it answers (`LiveAgentRunner.invoke`'s contract).
         # Replayed against the SAME hooks, guard and spend as `turns`.
         self.follow_up_turns = follow_up_turns or []
+        # Wall clock the follow-up spends before its first turn, so a test can
+        # run it into the caller's timeout (the real one runs inside it).
+        self.follow_up_delay = follow_up_delay
         self.delay = delay
         self.raises = raises
         self._on_call = on_call
@@ -405,6 +409,8 @@ class FakeAgentRunner:
             message = follow_up(final)
             if message:
                 self.follow_ups.append(message)
+                if self.follow_up_delay:
+                    await asyncio.sleep(self.follow_up_delay)
                 stop, final = await self._replay(
                     self.follow_up_turns, hooks=hooks, agent=agent, model=model,
                     tools_by_name=tools_by_name, limits=limits, spent=spent,

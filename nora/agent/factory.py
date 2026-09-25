@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -741,15 +741,25 @@ def remaining_limits(agent: Agent, limits: dict) -> dict | None:
     )
     if invocation is None:
         return None
-    usage = getattr(invocation, "usage", None) or {}
-    spent = {
-        "turns": len(getattr(invocation, "cycles", ()) or ()),
-        "output_tokens": int(usage.get("outputTokens", 0)),
-        "total_tokens": int(usage.get("totalTokens", 0)),
+    usage = getattr(invocation, "usage", None)
+    cycles = getattr(invocation, "cycles", None)
+    if not isinstance(usage, Mapping) or not isinstance(cycles, list):
+        return None
+    spent: dict[str, Any] = {
+        "turns": len(cycles),
+        "output_tokens": usage.get("outputTokens"),
+        "total_tokens": usage.get("totalTokens"),
     }
-    left = {
-        key: cap - spent.get(key, 0) for key, cap in limits.items() if cap is not None
-    }
+    left: dict[str, int] = {}
+    for key, cap in limits.items():
+        if cap is None:
+            continue
+        used = spent.get(key)
+        # A cap nothing measures, or a count that is not a number, is not a
+        # cap with room left: no continuation.
+        if not isinstance(used, int) or isinstance(used, bool):
+            return None
+        left[key] = cap - used
     if any(value <= 0 for value in left.values()):
         return None
     return left
