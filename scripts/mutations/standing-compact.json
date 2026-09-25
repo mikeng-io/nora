@@ -135,8 +135,8 @@
  {
   "name": "standing-compact §1: one model call per rollup fold",
   "file": "nora/ingest/stages/standing_event.py",
-  "old": "        body, refusal = await asyncio.wait_for(\n            _standing(), timeout=wiring.timeout_seconds,\n        )",
-  "new": "        (body, refusal), _verdict = await asyncio.wait_for(\n            asyncio.gather(_standing(), _debrief_complete(\n                wiring.client, call=\"verdict\", tag_id=\"\",\n                conversation_id=conversation_id, prompt=(\"VERDICT-TEXT\", rendered),\n            )),\n            timeout=wiring.timeout_seconds,\n        )",
+  "old": "        body, working_set_raw, refusal = await asyncio.wait_for(\n            _standing(), timeout=wiring.timeout_seconds,\n        )",
+  "new": "        (body, working_set_raw, refusal), _verdict = await asyncio.wait_for(\n            asyncio.gather(_standing(), _debrief_complete(\n                wiring.client, call=\"verdict\", tag_id=\"\",\n                conversation_id=conversation_id, prompt=(\"VERDICT-TEXT\", rendered),\n            )),\n            timeout=wiring.timeout_seconds,\n        )",
   "target": "tests/unit/test_standing_event.py -k a_rollup_fold_makes_exactly_one_model_call"
  },
  {
