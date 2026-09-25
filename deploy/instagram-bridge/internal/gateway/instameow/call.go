@@ -156,23 +156,83 @@ const restOrigin = "https://www.instagram.com"
 // 500 (fail-closed). It is neither retryable nor the caller's fault.
 var errWebSessionID = errors.New("web session id unavailable; request not sent")
 
+// restCheckpointBody is the shape Instagram's own private/web APIs use to ask
+// for a human inside a failure body — UNMEASURED for this endpoint (no live
+// 4xx from news_inbox has been captured), so only the literal `message`
+// values and the `checkpoint_url` presence check are trusted, never a guess
+// from prose. `login_required` is the shape a dead token answers with
+// (distinct from the redirect-based ErrTokenInvalidated checkHTTPRedirect
+// already catches elsewhere in the library).
+type restCheckpointBody struct {
+	Message       string `json:"message"`
+	CheckpointURL string `json:"checkpoint_url"`
+}
+
+// restCheckpointSentinel reads a REST failure body for that shape and
+// returns the matching httpclient sentinel, or nil when the body does not
+// look like one (including an empty or non-JSON body, e.g. the 429 path,
+// which the library never reads a body for at all).
+func restCheckpointSentinel(body []byte) error {
+	if len(body) == 0 {
+		return nil
+	}
+	var b restCheckpointBody
+	if err := json.Unmarshal(body, &b); err != nil {
+		return nil
+	}
+	switch {
+	case b.Message == "checkpoint_required", b.CheckpointURL != "":
+		return httpclient.ErrCheckpointRequired
+	case b.Message == "challenge_required":
+		return httpclient.ErrChallengeRequired
+	case b.Message == "consent_required":
+		return httpclient.ErrConsentRequired
+	case b.Message == "login_required":
+		return httpclient.ErrTokenInvalidated
+	default:
+		return nil
+	}
+}
+
+// restStatusError classifies a non-2xx REST answer, mirroring
+// fetchMediaFailure's own status table (posts.go:111-130): 404 is "no such
+// thing", 429 is retryable, and any other status Instagram answered with is
+// upstream-rejected — UNLESS the body itself names a checkpoint, a
+// challenge, a consent screen or a dead token, which needs a human and takes
+// priority over the bare status code.
+func restStatusError(label string, status int, body []byte) error {
+	if sentinel := restCheckpointSentinel(body); sentinel != nil {
+		return domain.Classify(domain.ErrNeedsHuman, fmt.Errorf("%s: %w", label, sentinel))
+	}
+	switch status {
+	case http.StatusNotFound:
+		return domain.Classify(domain.ErrNotFound, fmt.Errorf("%s returned 404", label))
+	case http.StatusTooManyRequests:
+		return domain.Classify(domain.ErrUnavailable, fmt.Errorf("%s was rate limited", label))
+	default:
+		return domain.Classify(domain.ErrUpstreamRejected, fmt.Errorf("%s returned a non-200: %d", label, status))
+	}
+}
+
 // rest issues one raw REST GET and returns its body only when the request
 // succeeded. It is the third helper `16` names and none existed until now
 // (see this file's package doc comment): mentions.go is its first caller.
 //
-// Headers are built the SAME way the library's own REST callers build
-// theirs — FetchMedia and FetchReel, pkg/instameow/misc.go — because a
-// request that looks different from what the web client already sends risks
-// a checkpoint on this account: `BuildHeaders(true, false)` (cookies,
-// x-csrftoken, x-mid, x-ig-app-id, viewport-width, x-asbd-id, the sec-ch-*
-// set, ...) plus `x-requested-with: XMLHttpRequest`, a same-origin referer
-// and the sec-fetch-* triple, exactly what those two callers add on top of
-// BuildHeaders, and `X-Web-Session-ID`, which FetchMedia reads off
-// `*instameow.Client`'s unexported configs. That value's one exported path
-// is `(*instameow.Client).DumpState()` (issuer.WebSessionID). When it cannot
-// be read, NO request is sent: a request missing a header the real web
-// client always sends is the mismatch this helper exists to avoid, so the
-// call fails closed instead of going out different.
+// Headers are built the SAME header SET the library's own REST callers
+// build theirs from — FetchMedia and FetchReel, pkg/instameow/misc.go —
+// because a request that looks different from what the web client already
+// sends risks a checkpoint on this account: `BuildHeaders(true, false)`
+// (cookies, x-csrftoken, x-mid, x-ig-app-id, viewport-width, x-asbd-id, the
+// sec-ch-* set, ...) plus `x-requested-with: XMLHttpRequest`, the plain
+// base_url referer FetchReel uses (this is a feed read, not a single post,
+// so there is no shortcode-specific `/p/{code}/` path the way FetchMedia
+// builds one), the sec-fetch-* triple, and `X-Web-Session-ID`, which
+// FetchMedia reads off `*instameow.Client`'s unexported configs. That
+// value's one exported path is `(*instameow.Client).DumpState()`
+// (issuer.WebSessionID). When it cannot be read, NO request is sent: a
+// request missing a header the real web client always sends is the mismatch
+// this helper exists to avoid, so the call fails closed instead of going out
+// different.
 //
 // `label` names the endpoint in error text ("news_inbox") and the span
 // (`instagram.rest news_inbox`), the same convention `graphql`'s `label`
@@ -194,22 +254,42 @@ func rest(ctx context.Context, issuer RESTIssuer, endpoint, label string) (int, 
 	headers := issuer.BuildHeaders(true, false)
 	headers.Set("X-Web-Session-ID", sessionID)
 	headers.Set("x-requested-with", "XMLHttpRequest")
-	headers.Set("referer", restOrigin+"/")
+	headers.Set("referer", restOrigin)
 	headers.Set("sec-fetch-dest", "empty")
 	headers.Set("sec-fetch-mode", "cors")
 	headers.Set("sec-fetch-site", "same-origin")
 
 	resp, raw, err := issuer.MakeRequest(ctx, endpoint, http.MethodGet, headers, nil, types.NONE)
-	if err != nil {
-		failSpan(span, errorType(err), err)
-		return 0, nil, classify(err)
-	}
 	status := 0
 	if resp != nil {
 		status = resp.StatusCode
 		span.SetAttributes(attribute.Int("http.response.status_code", status))
 	}
+	if err != nil {
+		if status >= 400 {
+			// The library's own `MakeRequest` wraps every status >= 400 in
+			// `ErrUnexpectedError` (http.go's `makeRequestOnce`) but still
+			// hands back the response AND its body — the only place a
+			// checkpoint/challenge/consent screen shows up on a RAW REST
+			// call, since the library's own checkpoint detection
+			// (`checkResponseError`, client.go) only fires for its OWN
+			// typed and GraphQL calls, never for a request this bridge
+			// issues itself. restStatusError reads that body.
+			outErr := restStatusError(label, status, raw)
+			failSpan(span, errorType(outErr), outErr)
+			return status, nil, outErr
+		}
+		// A transport-level failure with no usable status: a network error,
+		// or a challenge/checkpoint the library already turned into its own
+		// typed sentinel during a redirect, with no response body at all.
+		// classify() already recognizes those sentinels via needsHuman.
+		failSpan(span, errorType(err), err)
+		return status, nil, classify(err)
+	}
 	if status != http.StatusOK {
+		// Fail-closed fallback. Nothing observed reaches this today — the
+		// library only returns a nil error for a plain 200 — but a non-200
+		// must never read as a success either way.
 		span.SetAttributes(attribute.String("error.type", "upstream_http"))
 		span.SetStatus(codes.Error, "upstream_http")
 		return status, nil, domain.Classify(domain.ErrUpstreamRejected,

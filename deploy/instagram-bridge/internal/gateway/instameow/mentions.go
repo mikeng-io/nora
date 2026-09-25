@@ -17,6 +17,19 @@ package instameow
 // `comment_id`/`comment_ids`). fakeig/mentions.go's fixture is built from
 // this hypothesis, not captured bytes, and is labelled so.
 //
+// Two things are tolerated on purpose, because nothing has measured which
+// form Instagram actually sends:
+//
+//   - every id (`profile_id`, `comment_id`, each of `comment_ids`, a media
+//     item's `id`) may arrive as a JSON string or a JSON number (flexID);
+//   - `timestamp` may arrive as a float or as a numeric string
+//     (flexTimestamp).
+//
+// Each STORY is decoded on its own, from `[]json.RawMessage`, so one story
+// this hypothesis cannot parse never fails the whole read: it is counted
+// under `undecodableStoryType`, the same way a story this route chooses not
+// to classify is counted under its own real story_type.
+//
 // # Classification is STRUCTURAL, not English wording
 //
 // A story is a comment-mention when it has a comment id (`args.comment_id`
@@ -29,6 +42,11 @@ package instameow
 // the same media, but no comment id, which is why the comment id is a
 // separate, required check rather than folded into "looks like a mention".
 //
+// The "@" token is matched at a WORD BOUNDARY: a marker of "@nora" must not
+// match "@nora_fan", so the byte right after the marker is checked against
+// Instagram's own username alphabet (domain.ParseUsername's
+// `[A-Za-z0-9._]`) and rejected if it continues one.
+//
 // Everything not classified as a mention is SKIPPED but COUNTED by its
 // `story_type`, so the live probe (still to run) can read which numeric
 // type(s) a real comment-mention arrives as.
@@ -39,8 +57,8 @@ package instameow
 // `instagram.rest news_inbox`, and this file adds no attribute to it — only
 // counts ever leave readMentions (transport/http/mentions.go's job). Every
 // error this file raises has a FIXED text, the same `postReadError` pattern
-// posts.go uses: no igid, username, media id, comment id or comment text
-// ever reaches `Error()`.
+// posts.go uses: no igid, username, media id, comment id or notification
+// text ever reaches `Error()`.
 
 import (
 	"context"
@@ -60,10 +78,70 @@ import (
 // exactly as specified.
 const newsInboxEndpoint = "https://www.instagram.com/api/v1/news/inbox/"
 
-// wireNewsInbox is the top-level envelope.
+// undecodableStoryType is the sentinel `skipped` key for a story this
+// hypothesis could not decode at all — never a real Instagram story_type,
+// which is always a small non-negative integer (17 P.. UNMEASURED, but every
+// value seen anywhere in the private API is >= 0).
+const undecodableStoryType = -1
+
+// flexID decodes a wire id that may arrive as a JSON string or a JSON
+// number. UNMEASURED which this endpoint sends, so both are accepted and
+// always yield the decimal string.
+type flexID string
+
+func (f *flexID) UnmarshalJSON(b []byte) error {
+	if string(b) == "null" {
+		*f = ""
+		return nil
+	}
+	var s string
+	if err := json.Unmarshal(b, &s); err == nil {
+		*f = flexID(s)
+		return nil
+	}
+	var n json.Number
+	if err := json.Unmarshal(b, &n); err == nil {
+		*f = flexID(n.String())
+		return nil
+	}
+	return fmt.Errorf("id is neither a string nor a number: %s", string(b))
+}
+
+func (f flexID) String() string { return string(f) }
+
+// flexTimestamp decodes `args.timestamp`, which may arrive as a JSON float
+// (the hypothesis in this file's doc comment) or as a numeric string.
+// UNMEASURED which this endpoint sends.
+type flexTimestamp float64
+
+func (f *flexTimestamp) UnmarshalJSON(b []byte) error {
+	var n json.Number
+	if err := json.Unmarshal(b, &n); err == nil {
+		v, convErr := n.Float64()
+		if convErr != nil {
+			return convErr
+		}
+		*f = flexTimestamp(v)
+		return nil
+	}
+	var s string
+	if err := json.Unmarshal(b, &s); err == nil {
+		v, convErr := strconv.ParseFloat(s, 64)
+		if convErr != nil {
+			return convErr
+		}
+		*f = flexTimestamp(v)
+		return nil
+	}
+	return fmt.Errorf("timestamp is neither a number nor a string: %s", string(b))
+}
+
+// wireNewsInbox is the top-level envelope. Each story is kept RAW here: it is
+// decoded individually in readMentions, so one story this hypothesis cannot
+// parse does not fail the whole read.
 type wireNewsInbox struct {
-	NewStories []wireStory `json:"new_stories"`
-	OldStories []wireStory `json:"old_stories"`
+	NewStories []json.RawMessage `json:"new_stories"`
+	OldStories []json.RawMessage `json:"old_stories"`
 }
 
 // wireStory is one notification. `pk` is not modelled: nothing in this
@@ -77,18 +155,18 @@ type wireStory struct {
 type wireStoryArgs struct {
 	Text        string           `json:"text"`
 	RichText    string           `json:"rich_text"`
-	ProfileID   string           `json:"profile_id"`
+	ProfileID   flexID           `json:"profile_id"`
 	ProfileName string           `json:"profile_name"`
-	Timestamp   float64          `json:"timestamp"`
+	Timestamp   flexTimestamp    `json:"timestamp"`
 	Media       []wireStoryMedia `json:"media"`
-	CommentID   string           `json:"comment_id"`
-	CommentIDs  []string         `json:"comment_ids"`
+	CommentID   flexID           `json:"comment_id"`
+	CommentIDs  []flexID         `json:"comment_ids"`
 }
 
 // wireStoryMedia is one entry of `args.media`: `id` is `<pk>_<owner igid>`,
 // the same composite shape posts.go's `sameIdentity` already splits.
 type wireStoryMedia struct {
-	ID        string `json:"id"`
+	ID        flexID `json:"id"`
 	Shortcode string `json:"shortcode"`
 }
 
@@ -125,13 +203,20 @@ func readMentions(ctx context.Context, issuer RESTIssuer, selfUsername string) (
 			&mentionsReadError{msg: "news_inbox did not return the expected shape", cause: jsonErr})
 	}
 
-	stories := make([]wireStory, 0, len(envelope.NewStories)+len(envelope.OldStories))
-	stories = append(stories, envelope.NewStories...)
-	stories = append(stories, envelope.OldStories...)
+	rawStories := make([]json.RawMessage, 0, len(envelope.NewStories)+len(envelope.OldStories))
+	rawStories = append(rawStories, envelope.NewStories...)
+	rawStories = append(rawStories, envelope.OldStories...)
 
 	mentions := make([]domain.CommentMention, 0)
 	skipped := make(map[int]int)
-	for _, st := range stories {
+	for _, rawStory := range rawStories {
+		var st wireStory
+		if decodeErr := json.Unmarshal(rawStory, &st); decodeErr != nil {
+			// This one story does not fit the hypothesis. Counted, never
+			// dropped silently and never failing the rest of the read.
+			skipped[undecodableStoryType]++
+			continue
+		}
 		mention, ok := commentMentionOf(st, selfUsername)
 		if !ok {
 			skipped[st.StoryType]++
@@ -144,28 +229,29 @@ func readMentions(ctx context.Context, issuer RESTIssuer, selfUsername string) (
 
 // commentMentionOf classifies one story.
 func commentMentionOf(st wireStory, selfUsername string) (domain.CommentMention, bool) {
-	commentID := st.Args.CommentID
+	commentID := st.Args.CommentID.String()
 	if commentID == "" && len(st.Args.CommentIDs) > 0 {
-		commentID = st.Args.CommentIDs[0]
+		commentID = st.Args.CommentIDs[0].String()
 	}
 	if commentID == "" || len(st.Args.Media) == 0 || !mentionsAccount(st.Args, selfUsername) {
 		return domain.CommentMention{}, false
 	}
 	mediaID, shortcode := mediaIdentity(st.Args.Media[0])
 	return domain.CommentMention{
-		StoryType:      st.StoryType,
-		At:             int64(st.Args.Timestamp),
-		AuthorIGID:     st.Args.ProfileID,
-		AuthorUsername: st.Args.ProfileName,
-		MediaID:        mediaID,
-		MediaShortcode: shortcode,
-		CommentID:      commentID,
-		CommentText:    commentTextOf(st.Args),
+		StoryType:        st.StoryType,
+		At:               int64(st.Args.Timestamp),
+		AuthorIGID:       st.Args.ProfileID.String(),
+		AuthorUsername:   st.Args.ProfileName,
+		MediaID:          mediaID,
+		MediaShortcode:   shortcode,
+		CommentID:        commentID,
+		NotificationText: notificationTextOf(st.Args),
 	}, true
 }
 
 // mentionsAccount is the structural check this file's doc comment describes:
-// an "@" token naming THIS account's own username, in either text field.
+// a WORD-BOUNDED "@" token naming THIS account's own username, in either
+// text field.
 func mentionsAccount(args wireStoryArgs, selfUsername string) bool {
 	if selfUsername == "" {
 		// Identity not yet known: fail closed rather than guess at who "the
@@ -173,8 +259,33 @@ func mentionsAccount(args wireStoryArgs, selfUsername string) bool {
 		return false
 	}
 	marker := "@" + strings.ToLower(selfUsername)
-	return strings.Contains(strings.ToLower(args.Text), marker) ||
-		strings.Contains(strings.ToLower(args.RichText), marker)
+	return containsMentionToken(strings.ToLower(args.Text), marker) ||
+		containsMentionToken(strings.ToLower(args.RichText), marker)
+}
+
+// containsMentionToken finds marker as a whole @mention, not as a prefix of
+// a longer one: "@nora" must not match inside "@nora_fan". The byte right
+// after a candidate match is checked against Instagram's own username
+// alphabet (domain.ParseUsername's `[A-Za-z0-9._]`) and, if it continues one,
+// the search resumes past that occurrence rather than accepting it.
+func containsMentionToken(haystack, marker string) bool {
+	from := 0
+	for {
+		i := strings.Index(haystack[from:], marker)
+		if i < 0 {
+			return false
+		}
+		pos := from + i
+		end := pos + len(marker)
+		if end >= len(haystack) || !isUsernameByte(haystack[end]) {
+			return true
+		}
+		from = pos + 1
+	}
+}
+
+func isUsernameByte(b byte) bool {
+	return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || (b >= '0' && b <= '9') || b == '.' || b == '_'
 }
 
 // mediaIdentity is the numeric media pk (the `<pk>` half of `<pk>_<owner>`,
@@ -182,7 +293,7 @@ func mentionsAccount(args wireStoryArgs, selfUsername string) bool {
 // the wire's own, when the payload carries one, otherwise derived from the
 // pk with domain's own encoder (the inverse of Shortcode.MediaID).
 func mediaIdentity(m wireStoryMedia) (id, shortcode string) {
-	pk, _, _ := strings.Cut(m.ID, "_")
+	pk, _, _ := strings.Cut(m.ID.String(), "_")
 	if m.Shortcode != "" {
 		return pk, m.Shortcode
 	}
@@ -197,9 +308,10 @@ func mediaIdentity(m wireStoryMedia) (id, shortcode string) {
 	return pk, mediaID.Shortcode().String()
 }
 
-// commentTextOf prefers the plain text Instagram sent; rich_text is a
-// fallback for a story that carries only the decorated form.
-func commentTextOf(args wireStoryArgs) string {
+// notificationTextOf prefers the plain text Instagram sent; rich_text is a
+// fallback for a story that carries only the decorated form. Neither is the
+// comment's own content — see domain.CommentMention.NotificationText.
+func notificationTextOf(args wireStoryArgs) string {
 	if args.Text != "" {
 		return args.Text
 	}

@@ -240,8 +240,14 @@ type CommentMention struct {
 	MediaID        string
 	MediaShortcode string
 	CommentID      string
-	// CommentText is the comment's own free text. It must not enter a span,
-	// a log line or an error (16 §Tracing's never-list) — it reaches the 200
-	// body and nowhere else, the same rule Post.Caption already carries.
-	CommentText string
+	// NotificationText is Instagram's OWN notification sentence
+	// ("X mentioned you in a comment: ..."), not the comment's content —
+	// `args.text`/`args.rich_text` on this feed is the notification's
+	// wording, never a clean copy of what the commenter typed. Reading the
+	// real comment text is phase 2's job, once a comment-read mechanism
+	// exists; this route only knows a comment happened and roughly what
+	// Instagram said about it. It must not enter a span, a log line or an
+	// error (16 §Tracing's never-list) — it reaches the 200 body and nowhere
+	// else, the same rule Post.Caption already carries.
+	NotificationText string
 }

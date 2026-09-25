@@ -7,49 +7,54 @@ package instameow
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
 
 	"instagram-bridge/internal/domain"
 	"instagram-bridge/internal/gateway/instameow/fakeig"
+	"instagram-bridge/internal/session"
 
 	"go.mau.fi/mautrix-meta/pkg/messagix/httpclient"
 	"go.mau.fi/mautrix-meta/pkg/messagix/types"
 	"go.opentelemetry.io/otel/codes"
 )
 
-// fakeRESTIssuer records the headers it was asked to send and answers with
-// canned bytes — the seam that stands in for `*httpclient.HTTPClient`, the
-// same role fakeGraphQLIssuer plays for the raw GraphQL path
-// (social_profile_test.go).
+// fakeRESTIssuer records the headers and BuildHeaders args it was asked for
+// and answers with the library's OWN (resp, body, error) shape — the same
+// role fakeGraphQLIssuer plays for the raw GraphQL path
+// (social_profile_test.go), but honest about what makeRequestOnce actually
+// returns (http.go:498-541): a >=400 status hands back the response AND its
+// body ALONGSIDE a non-nil error (`%w %d` around ErrUnexpectedError); 429
+// hands back the response with NO body and ErrRateLimited; only a genuine
+// transport failure (no response at all) omits the response.
 type fakeRESTIssuer struct {
 	status  int
 	body    []byte
-	err     error
-	headers http.Header
-	// noSessionID makes WebSessionID fail, to prove rest() then sends nothing.
-	noSessionID bool
-	calls       int
+	err     error // a transport-level failure with no HTTP response at all
+	session string
+
+	headers          http.Header
+	buildHeadersArgs [2]bool
 }
 
-func (f *fakeRESTIssuer) BuildHeaders(bool, bool) http.Header { return http.Header{} }
-
-// fakeWebSessionID is what the fake reports unless noSessionID is set.
-const fakeWebSessionID = "fake:web:session"
+func (f *fakeRESTIssuer) BuildHeaders(withCookies, isSecFetchDocument bool) http.Header {
+	f.buildHeadersArgs = [2]bool{withCookies, isSecFetchDocument}
+	return http.Header{}
+}
 
 func (f *fakeRESTIssuer) WebSessionID() (string, error) {
-	if f.noSessionID {
-		return "", errors.New("no web session id")
+	if f.session == "" {
+		return "synthetic-web-session-id", nil
 	}
-	return fakeWebSessionID, nil
+	return f.session, nil
 }
 
 func (f *fakeRESTIssuer) MakeRequest(
 	_ context.Context, _ string, _ string, headers http.Header, _ []byte, _ types.ContentType,
 ) (*http.Response, []byte, error) {
 	f.headers = headers
-	f.calls++
 	if f.err != nil {
 		return nil, nil, f.err
 	}
@@ -57,7 +62,15 @@ func (f *fakeRESTIssuer) MakeRequest(
 	if status == 0 {
 		status = http.StatusOK
 	}
-	return &http.Response{StatusCode: status}, f.body, nil
+	resp := &http.Response{StatusCode: status}
+	if status == http.StatusTooManyRequests {
+		// makeRequestOnce returns EARLY on 429, before the body is ever read.
+		return resp, nil, httpclient.ErrRateLimited
+	}
+	if status >= 400 {
+		return resp, f.body, fmt.Errorf("%w %d", httpclient.ErrUnexpectedError, status)
+	}
+	return resp, f.body, nil
 }
 
 // Every field a comment-mention carries, off the one story in the fixture
@@ -87,8 +100,8 @@ func TestReadMentionsClassifiesACommentMentionWithEveryField(t *testing.T) {
 	if m.CommentID != fakeig.MentionCommentID {
 		t.Errorf("comment id = %q, want %q", m.CommentID, fakeig.MentionCommentID)
 	}
-	if m.CommentText != fakeig.MentionCommentText {
-		t.Errorf("comment text = %q, want the fixture's text", m.CommentText)
+	if m.NotificationText != fakeig.MentionNotificationText {
+		t.Errorf("notification text = %q, want the fixture's text", m.NotificationText)
 	}
 
 	// The three non-mentions, counted by story_type: like (1), follow (2),
@@ -176,6 +189,92 @@ func TestReadMentionsWithNoSelfUsernameClassifiesNothing(t *testing.T) {
 	}
 }
 
+// "@" + self must not match as a PREFIX of a longer handle: "@nora_fan" is
+// not a mention of "nora".
+func TestReadMentionsRequiresAWordBoundaryAfterTheMention(t *testing.T) {
+	raw := `{"new_stories":[{"story_type":3,"type":3,"args":{
+		"text":"@` + fakeig.SelfUsername + `_fan loves this post, commented",
+		"profile_id":"700000000001","profile_name":"impostor",
+		"timestamp":1700000600,
+		"media":[{"id":"` + fakeig.ImageMediaID + `_10000001","shortcode":"` + fakeig.ImageShortcode + `"}],
+		"comment_id":"17900000000000200"
+	}}],"old_stories":[],"status":"ok"}`
+	mentions, skipped, err := readMentions(t.Context(), &fakeRESTIssuer{body: []byte(raw)}, fakeig.SelfUsername)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(mentions) != 0 {
+		t.Fatalf("mentions = %+v, want none: \"@%s_fan\" is not a mention of %q", mentions, fakeig.SelfUsername, fakeig.SelfUsername)
+	}
+	if skipped[3] != 1 {
+		t.Errorf("skipped[3] = %d, want 1", skipped[3])
+	}
+}
+
+// The exact same text with a boundary character (a space) after the handle
+// DOES classify — proves the word-boundary test above is not just failing
+// to match at all.
+func TestReadMentionsMatchesAtAWordBoundary(t *testing.T) {
+	raw := `{"new_stories":[{"story_type":3,"type":3,"args":{
+		"text":"@` + fakeig.SelfUsername + ` nice! commented",
+		"profile_id":"700000000002","profile_name":"real_fan",
+		"timestamp":1700000700,
+		"media":[{"id":"` + fakeig.ImageMediaID + `_10000001","shortcode":"` + fakeig.ImageShortcode + `"}],
+		"comment_id":"17900000000000201"
+	}}],"old_stories":[],"status":"ok"}`
+	mentions, _, err := readMentions(t.Context(), &fakeRESTIssuer{body: []byte(raw)}, fakeig.SelfUsername)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(mentions) != 1 {
+		t.Fatalf("mentions = %+v, want 1", mentions)
+	}
+}
+
+// Ids arriving as JSON NUMBERS and a timestamp arriving as a numeric STRING
+// both decode: nothing has measured which JSON type this endpoint actually
+// uses for either.
+func TestReadMentionsToleratesNumericIDsAndStringTimestamp(t *testing.T) {
+	issuer := &fakeRESTIssuer{body: []byte(fakeig.UnmeasuredNewsInboxNumericIDsJSON)}
+	mentions, _, err := readMentions(t.Context(), issuer, fakeig.SelfUsername)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(mentions) != 1 {
+		t.Fatalf("mentions = %d, want 1: %+v", len(mentions), mentions)
+	}
+	m := mentions[0]
+	if m.AuthorIGID != fakeig.MentionCommentAuthorIGID {
+		t.Errorf("author igid = %q, want %q (decoded from a JSON number)", m.AuthorIGID, fakeig.MentionCommentAuthorIGID)
+	}
+	if m.CommentID != fakeig.MentionCommentID {
+		t.Errorf("comment id = %q, want %q (decoded from a JSON number)", m.CommentID, fakeig.MentionCommentID)
+	}
+	if m.At != 1700000123 {
+		t.Errorf("at = %d, want 1700000123 (decoded from a numeric string)", m.At)
+	}
+}
+
+// One story that does not fit the hypothesis at all (args.text is a JSON
+// number, not a string) is counted under undecodableStoryType and skipped —
+// the rest of the read still succeeds.
+func TestReadMentionsCountsAnUndecodableStoryAndKeepsGoing(t *testing.T) {
+	issuer := &fakeRESTIssuer{body: []byte(fakeig.UnmeasuredNewsInboxUndecodableJSON)}
+	mentions, skipped, err := readMentions(t.Context(), issuer, fakeig.SelfUsername)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(mentions) != 0 {
+		t.Fatalf("mentions = %+v, want none", mentions)
+	}
+	if skipped[undecodableStoryType] != 1 {
+		t.Errorf("skipped[%d] = %d, want 1", undecodableStoryType, skipped[undecodableStoryType])
+	}
+	if skipped[2] != 1 {
+		t.Errorf("skipped[2] = %d, want 1 (the ordinary follow story alongside it)", skipped[2])
+	}
+}
+
 // The REST form of an error inside an HTTP 200 (`"status": "fail"`) is a
 // failure, and its upstream span says so.
 func TestReadMentionsFailureIn200IsRejectedAndMarksTheSpan(t *testing.T) {
@@ -193,20 +292,26 @@ func TestReadMentionsFailureIn200IsRejectedAndMarksTheSpan(t *testing.T) {
 	}
 }
 
-// Non-2xx statuses and a transport-level checkpoint classify onto the closed
-// set, with FIXED error text: no id ever reaches Error().
-func TestReadMentionsClassifiesUpstreamFailures(t *testing.T) {
+// Every non-2xx status MakeRequest can answer with, classified the way
+// fetchMediaFailure classifies FetchMedia's (posts.go:111-130): 404 is "no
+// such thing", 429 is retryable, any other 4xx is upstream-rejected — with
+// FIXED error text, no id ever reaching Error().
+func TestReadMentionsClassifiesUpstreamStatuses(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
 		issuer  *fakeRESTIssuer
 		kind    error
 		wantMsg string
 	}{
-		{"429", &fakeRESTIssuer{status: http.StatusTooManyRequests, body: []byte(`{}`)},
-			domain.ErrUpstreamRejected, "news_inbox returned a non-200: 429"},
-		{"checkpoint", &fakeRESTIssuer{err: httpclient.ErrCheckpointRequired}, domain.ErrNeedsHuman, ""},
-		{"not json", &fakeRESTIssuer{body: []byte("<html>challenge</html>")},
-			domain.ErrUpstreamRejected, ""},
+		{"404", &fakeRESTIssuer{status: http.StatusNotFound, body: []byte(`{}`)},
+			domain.ErrNotFound, "news_inbox returned 404"},
+		{"429", &fakeRESTIssuer{status: http.StatusTooManyRequests},
+			domain.ErrUnavailable, "news_inbox was rate limited"},
+		{"400 (no checkpoint shape)", &fakeRESTIssuer{status: http.StatusBadRequest, body: []byte(`{"message":"something else"}`)},
+			domain.ErrUpstreamRejected, "news_inbox returned a non-200: 400"},
+		{"500", &fakeRESTIssuer{status: http.StatusInternalServerError, body: []byte(`{}`)},
+			domain.ErrUpstreamRejected, "news_inbox returned a non-200: 500"},
+		{"transport-level checkpoint (no response at all)", &fakeRESTIssuer{err: httpclient.ErrCheckpointRequired}, domain.ErrNeedsHuman, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, _, err := readMentions(t.Context(), tc.issuer, fakeig.SelfUsername)
@@ -220,16 +325,50 @@ func TestReadMentionsClassifiesUpstreamFailures(t *testing.T) {
 	}
 }
 
-// The headers a probe sends must be the SAME shape the library's own REST
-// callers send (call.go's `rest` doc comment): x-requested-with, referer and
-// the sec-fetch-* triple on top of BuildHeaders — never a different header
-// set that could read as a new client.
+// A 4xx body naming a checkpoint/challenge/consent screen or a dead token
+// classifies as ErrNeedsHuman, taking priority over the bare status — the
+// ONLY place a raw REST failure body is ever read for this, since the
+// library's own checkResponseError never sees a raw MakeRequest's error.
+func TestReadMentionsReadsACheckpointOutOfA4xxBody(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		body string
+	}{
+		{"checkpoint_required message", `{"message":"checkpoint_required"}`},
+		{"non-empty checkpoint_url alone", `{"message":"something else","checkpoint_url":"https://i.instagram.com/challenge/x"}`},
+		{"challenge_required", `{"message":"challenge_required"}`},
+		{"consent_required", `{"message":"consent_required"}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			issuer := &fakeRESTIssuer{status: http.StatusBadRequest, body: []byte(tc.body)}
+			_, _, err := readMentions(t.Context(), issuer, fakeig.SelfUsername)
+			if !errors.Is(err, domain.ErrNeedsHuman) {
+				t.Errorf("err = %v, want ErrNeedsHuman", err)
+			}
+		})
+	}
+	// login_required is the dead-token shape.
+	issuer := &fakeRESTIssuer{status: http.StatusBadRequest, body: []byte(`{"message":"login_required"}`)}
+	_, _, err := readMentions(t.Context(), issuer, fakeig.SelfUsername)
+	if !errors.Is(err, httpclient.ErrTokenInvalidated) {
+		t.Errorf("err = %v, want it to wrap ErrTokenInvalidated", err)
+	}
+}
+
+// The headers a probe sends must be the SAME header set the library's own
+// REST callers send (call.go's `rest` doc comment): BuildHeaders(true,
+// false) plus x-requested-with, a bare base_url referer (no trailing
+// slash — FetchReel's own form) and the sec-fetch-* triple — never a
+// different header set that could read as a new client.
 func TestReadMentionsSendsTheWebClientsHeaders(t *testing.T) {
 	issuer := &fakeRESTIssuer{body: []byte(fakeig.UnmeasuredNewsInboxJSON)}
 	if _, _, err := readMentions(t.Context(), issuer, fakeig.SelfUsername); err != nil {
 		t.Fatal(err)
 	}
-	for _, h := range []string{"x-requested-with", "referer", "sec-fetch-dest", "sec-fetch-mode", "sec-fetch-site"} {
+	if issuer.buildHeadersArgs != [2]bool{true, false} {
+		t.Errorf("BuildHeaders called with %v, want (true, false)", issuer.buildHeadersArgs)
+	}
+	for _, h := range []string{"x-requested-with", "referer", "sec-fetch-dest", "sec-fetch-mode", "sec-fetch-site", "X-Web-Session-ID"} {
 		if issuer.headers.Get(h) == "" {
 			t.Errorf("header %q was not set", h)
 		}
@@ -237,10 +376,38 @@ func TestReadMentionsSendsTheWebClientsHeaders(t *testing.T) {
 	if got := issuer.headers.Get("x-requested-with"); got != "XMLHttpRequest" {
 		t.Errorf("x-requested-with = %q, want XMLHttpRequest", got)
 	}
+	if got := issuer.headers.Get("referer"); got != "https://www.instagram.com" {
+		t.Errorf("referer = %q, want the bare base_url with NO trailing slash", got)
+	}
 }
 
-// R-18: no igid, username, media id, comment id or comment text may reach a
-// span attribute/event or an error string.
+// No web session id, no request: a request missing a header the real web
+// client always sends is the mismatch `rest` exists to avoid.
+func TestReadMentionsSendsNoRequestWithNoWebSessionID(t *testing.T) {
+	inner := &fakeRESTIssuer{body: []byte(fakeig.UnmeasuredNewsInboxJSON)}
+	failing := &failingWebSessionIssuer{fakeRESTIssuer: inner}
+	_, _, err := readMentions(t.Context(), failing, fakeig.SelfUsername)
+	if err == nil {
+		t.Fatal("want an error")
+	}
+	if inner.headers != nil {
+		t.Error("a request went out with no web session id")
+	}
+}
+
+// failingWebSessionIssuer overrides WebSessionID() to fail, so
+// TestReadMentionsSendsNoRequestWithNoWebSessionID does not need a THIRD
+// sentinel field on the shared fake.
+type failingWebSessionIssuer struct {
+	*fakeRESTIssuer
+}
+
+func (f *failingWebSessionIssuer) WebSessionID() (string, error) {
+	return "", errors.New("no session id available")
+}
+
+// R-18: no igid, username, media id, comment id or notification text may
+// reach a span attribute/event or an error string.
 func TestReadMentionsNeverLeaksAnIdentifier(t *testing.T) {
 	rec := recordGatewaySpans(t)
 	mentions, _, err := readMentions(t.Context(), &fakeRESTIssuer{body: []byte(fakeig.UnmeasuredNewsInboxJSON)}, fakeig.SelfUsername)
@@ -252,7 +419,7 @@ func TestReadMentionsNeverLeaksAnIdentifier(t *testing.T) {
 	}
 	secrets := []string{
 		fakeig.MentionCommentAuthorIGID, fakeig.MentionCommentAuthorUsername,
-		fakeig.MentionCommentID, fakeig.MentionCommentText,
+		fakeig.MentionCommentID, fakeig.MentionNotificationText,
 		fakeig.CarouselMediaID, fakeig.CarouselShortcode,
 	}
 
@@ -284,23 +451,57 @@ func checkNoSecret(t *testing.T, where, got string, secrets []string) {
 	}
 }
 
-// The web client always sends X-Web-Session-ID. rest() sends the session's
-// own value, and without one it sends NOTHING rather than a request that
-// looks different from the web client (the checkpoint risk design 19 names).
-func TestRestSendsTheWebSessionIDAndRefusesWithoutOne(t *testing.T) {
-	issuer := &fakeRESTIssuer{body: []byte(fakeig.UnmeasuredNewsInboxJSON)}
-	if _, _, err := readMentions(t.Context(), issuer, fakeig.SelfUsername); err != nil {
-		t.Fatal(err)
-	}
-	if got := issuer.headers.Get("X-Web-Session-ID"); got != fakeWebSessionID {
-		t.Fatalf("X-Web-Session-ID = %q, want %q", got, fakeWebSessionID)
+// --- Bridge.Mentions: the session-state side effect ---------------------------
+//
+// A raw REST call goes through none of the library's own checkpoint
+// detection (bridge.go's sessionRejected doc comment), so Bridge.Mentions has
+// to run it itself. This is the blocker: without it, a checkpoint discovered
+// through /mentions left the session reporting `authenticated` forever.
+
+func mentionsTestBridge(t *testing.T, issuer *fakeRESTIssuer) *Bridge {
+	t.Helper()
+	return NewBridge(Options{
+		Store:      session.Store{Dir: t.TempDir()},
+		State:      domain.StateAuthenticated,
+		Connected:  true,
+		Self:       domain.Self{FBID: "14963523149149302", IGID: "79597894900", Username: fakeig.SelfUsername},
+		RESTIssuer: issuer,
+	})
+}
+
+// The blocker's own test: a 400 body naming checkpoint_required flips the
+// BRIDGE's session state to checkpointed, asserted through Snapshot() — not
+// just the returned error.
+func TestMentionsCheckpointBodyFlipsTheSessionState(t *testing.T) {
+	issuer := &fakeRESTIssuer{status: http.StatusBadRequest, body: []byte(`{"message":"checkpoint_required","checkpoint_url":"https://i.instagram.com/challenge/x"}`)}
+	b := mentionsTestBridge(t, issuer)
+
+	if snap := b.Snapshot(); snap.State != domain.StateAuthenticated {
+		t.Fatalf("precondition: state = %q, want authenticated", snap.State)
 	}
 
-	bare := &fakeRESTIssuer{body: []byte(fakeig.UnmeasuredNewsInboxJSON), noSessionID: true}
-	if _, _, err := readMentions(t.Context(), bare, fakeig.SelfUsername); err == nil {
-		t.Fatal("readMentions succeeded without a web session id")
+	_, _, err := b.Mentions(t.Context())
+	if !errors.Is(err, domain.ErrNeedsHuman) {
+		t.Fatalf("err = %v, want ErrNeedsHuman", err)
 	}
-	if bare.calls != 0 {
-		t.Fatalf("MakeRequest called %d times without a web session id, want 0", bare.calls)
+	snap := b.Snapshot()
+	if snap.State != domain.StateCheckpointed {
+		t.Errorf("state = %q, want checkpointed", snap.State)
+	}
+	if snap.Detail == "" {
+		t.Error("detail is empty; want it to name what Instagram said")
+	}
+}
+
+// An ordinary upstream failure (a plain 500, no checkpoint shape) must NOT
+// flip the session state: only a needs-human answer does.
+func TestMentionsOrdinaryFailureDoesNotFlipTheSessionState(t *testing.T) {
+	issuer := &fakeRESTIssuer{status: http.StatusInternalServerError, body: []byte(`{}`)}
+	b := mentionsTestBridge(t, issuer)
+	if _, _, err := b.Mentions(t.Context()); !errors.Is(err, domain.ErrUpstreamRejected) {
+		t.Fatalf("err = %v, want ErrUpstreamRejected", err)
+	}
+	if snap := b.Snapshot(); snap.State != domain.StateAuthenticated {
+		t.Errorf("state = %q, want authenticated (unchanged)", snap.State)
 	}
 }

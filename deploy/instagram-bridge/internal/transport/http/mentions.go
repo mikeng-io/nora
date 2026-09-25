@@ -44,19 +44,27 @@ type mentionMedia struct {
 	Shortcode string `json:"shortcode"`
 }
 
+// mentionComment carries only the id: the COMMENT's own text is not what
+// this route reads. `args.text`/`args.rich_text` on the activity feed is
+// Instagram's own NOTIFICATION sentence, not the comment's content — see
+// domain.CommentMention.NotificationText — so it rides as its own top-level
+// field, never inside `comment`, where a reader would mistake it for the
+// comment.
 type mentionComment struct {
-	ID   string `json:"id"`
-	Text string `json:"text"`
+	ID string `json:"id"`
 }
 
 // mentionItem is one comment-mention. No thread or message id: this is
-// Instagram's public comment surface, not a DM.
+// Instagram's public comment surface, not a DM. `at` is OMITTED, not
+// rendered as the Unix epoch, when the story carried no timestamp: a missing
+// `at` must read as "unknown", never as "1970-01-01".
 type mentionItem struct {
-	StoryType int            `json:"story_type"`
-	At        string         `json:"at"`
-	Author    mentionAuthor  `json:"author"`
-	Media     mentionMedia   `json:"media"`
-	Comment   mentionComment `json:"comment"`
+	StoryType        int            `json:"story_type"`
+	At               *string        `json:"at,omitempty"`
+	Author           mentionAuthor  `json:"author"`
+	Media            mentionMedia   `json:"media"`
+	Comment          mentionComment `json:"comment"`
+	NotificationText string         `json:"notification_text"`
 }
 
 // mentionsBody is the 200 shape.
@@ -67,13 +75,18 @@ type mentionsBody struct {
 }
 
 func mentionItemOf(m domain.CommentMention) mentionItem {
-	return mentionItem{
-		StoryType: m.StoryType,
-		At:        time.Unix(m.At, 0).UTC().Format(time.RFC3339),
-		Author:    mentionAuthor{IGID: m.AuthorIGID, Username: m.AuthorUsername},
-		Media:     mentionMedia{ID: m.MediaID, Shortcode: m.MediaShortcode},
-		Comment:   mentionComment{ID: m.CommentID, Text: m.CommentText},
+	item := mentionItem{
+		StoryType:        m.StoryType,
+		Author:           mentionAuthor{IGID: m.AuthorIGID, Username: m.AuthorUsername},
+		Media:            mentionMedia{ID: m.MediaID, Shortcode: m.MediaShortcode},
+		Comment:          mentionComment{ID: m.CommentID},
+		NotificationText: m.NotificationText,
 	}
+	if m.At != 0 {
+		at := time.Unix(m.At, 0).UTC().Format(time.RFC3339)
+		item.At = &at
+	}
+	return item
 }
 
 func mentionItemsOf(in []domain.CommentMention) []mentionItem {
@@ -104,9 +117,17 @@ func (s *Server) handleMentions(w http.ResponseWriter, r *http.Request) {
 	// COUNTS only — never an id, a username or comment text (file header;
 	// 16 §Tracing's never-list). The same convention handlePost's item_count
 	// and handleAccountsSearch's result_count already use.
+	//
+	// skipped_count is the number of SKIPPED STORIES (the sum of every
+	// story_type's count), not the number of distinct story_types: len(skipped)
+	// would undercount whenever two or more skipped stories share a type.
+	skippedTotal := 0
+	for _, n := range skipped {
+		skippedTotal += n
+	}
 	trace.SpanFromContext(r.Context()).SetAttributes(
 		attribute.Int("instagram.mentions.count", len(mentions)),
-		attribute.Int("instagram.mentions.skipped_count", len(skipped)),
+		attribute.Int("instagram.mentions.skipped_count", skippedTotal),
 	)
 	writeJSON(w, http.StatusOK, mentionsBody{
 		Items:             mentionItemsOf(mentions),

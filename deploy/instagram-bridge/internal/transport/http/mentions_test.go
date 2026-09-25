@@ -14,6 +14,10 @@ import (
 
 	"instagram-bridge/internal/app"
 	"instagram-bridge/internal/domain"
+
+	"go.opentelemetry.io/otel"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
 
 // mentionsOnlyPorts answers Mentions from its own fields and fails any other
@@ -40,14 +44,14 @@ func mentionsHandler(snap domain.Session, social *mentionsOnlyPorts) http.Handle
 }
 
 var oneMention = domain.CommentMention{
-	StoryType:      3,
-	At:             1700000123,
-	AuthorIGID:     "500000000001",
-	AuthorUsername: "commenter_alpha",
-	MediaID:        "3000000000000000001",
-	MediaShortcode: "CmiJBr2LAAB",
-	CommentID:      "17900000000000001",
-	CommentText:    "nice shot",
+	StoryType:        3,
+	At:               1700000123,
+	AuthorIGID:       "500000000001",
+	AuthorUsername:   "commenter_alpha",
+	MediaID:          "3000000000000000001",
+	MediaShortcode:   "CmiJBr2LAAB",
+	CommentID:        "17900000000000001",
+	NotificationText: "someone mentioned you in a comment: nice shot",
 }
 
 func TestMentionsSucceedsWithTheFullShape(t *testing.T) {
@@ -75,8 +79,8 @@ func TestMentionsSucceedsWithTheFullShape(t *testing.T) {
 	if item.StoryType != 3 {
 		t.Errorf("story_type = %d, want 3", item.StoryType)
 	}
-	if item.At != "2023-11-14T22:15:23Z" {
-		t.Errorf("at = %q, want the RFC3339 form of 1700000123", item.At)
+	if item.At == nil || *item.At != "2023-11-14T22:15:23Z" {
+		t.Errorf("at = %v, want the RFC3339 form of 1700000123", item.At)
 	}
 	if item.Author.IGID != "500000000001" || item.Author.Username != "commenter_alpha" {
 		t.Errorf("author = %+v", item.Author)
@@ -84,11 +88,88 @@ func TestMentionsSucceedsWithTheFullShape(t *testing.T) {
 	if item.Media.ID != "3000000000000000001" || item.Media.Shortcode != "CmiJBr2LAAB" {
 		t.Errorf("media = %+v", item.Media)
 	}
-	if item.Comment.ID != "17900000000000001" || item.Comment.Text != "nice shot" {
-		t.Errorf("comment = %+v", item.Comment)
+	// `comment` carries ONLY the id now: the text at that key was always the
+	// NOTIFICATION sentence, never the comment's own content.
+	if item.Comment.ID != "17900000000000001" {
+		t.Errorf("comment = %+v, want id 17900000000000001", item.Comment)
+	}
+	if item.NotificationText != "someone mentioned you in a comment: nice shot" {
+		t.Errorf("notification_text = %q", item.NotificationText)
 	}
 	if got.SkippedStoryTypes["1"] != 2 || got.SkippedStoryTypes["4"] != 1 || len(got.SkippedStoryTypes) != 2 {
 		t.Errorf("skipped_story_types = %+v, want {1:2, 4:1}", got.SkippedStoryTypes)
+	}
+}
+
+// `at` is OMITTED, never rendered as the Unix epoch, when the story carried
+// no timestamp.
+func TestMentionsOmitsAtWhenTheTimestampIsUnknown(t *testing.T) {
+	noTimestamp := oneMention
+	noTimestamp.At = 0
+	p := &mentionsOnlyPorts{mentions: []domain.CommentMention{noTimestamp}}
+	rec := get(mentionsHandler(authenticated, p), "/mentions")
+	var raw map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &raw); err != nil {
+		t.Fatal(err)
+	}
+	items := raw["items"].([]any)
+	item := items[0].(map[string]any)
+	if _, has := item["at"]; has {
+		t.Errorf("at = %v, want the field OMITTED (not rendered as 1970-01-01)", item["at"])
+	}
+}
+
+// recordServerSpans installs a recording provider for one test and restores
+// the global afterwards, so a test can inspect the request's own SERVER span
+// attributes.
+func recordServerSpans(t *testing.T) *tracetest.SpanRecorder {
+	t.Helper()
+	rec := tracetest.NewSpanRecorder()
+	prev := otel.GetTracerProvider()
+	otel.SetTracerProvider(sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(rec)))
+	t.Cleanup(func() { otel.SetTracerProvider(prev) })
+	return rec
+}
+
+func spanAttr(s sdktrace.ReadOnlySpan, key string) (int64, bool) {
+	for _, kv := range s.Attributes() {
+		if string(kv.Key) == key {
+			return kv.Value.AsInt64(), true
+		}
+	}
+	return 0, false
+}
+
+// The span's skipped_count is the number of SKIPPED STORIES (the sum of
+// every story_type's count), not the number of distinct story_types:
+// len(skipped) would have answered 2 here, not 7.
+func TestMentionsSkippedCountIsTheSumNotTheDistinctTypeCount(t *testing.T) {
+	rec := recordServerSpans(t)
+	p := &mentionsOnlyPorts{skipped: map[int]int{1: 3, 2: 4}} // 2 distinct types, 7 stories
+	res := get(mentionsHandler(authenticated, p), "/mentions")
+	if res.Code != http.StatusOK {
+		t.Fatalf("answered %d: %s", res.Code, res.Body.String())
+	}
+	var got mentionsBody
+	if err := json.Unmarshal(res.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	// The BODY still carries per-type counts unchanged.
+	if got.SkippedStoryTypes["1"] != 3 || got.SkippedStoryTypes["2"] != 4 {
+		t.Errorf("skipped_story_types = %+v, want {1:3, 2:4}", got.SkippedStoryTypes)
+	}
+
+	var found bool
+	for _, s := range rec.Ended() {
+		if v, ok := spanAttr(s, "instagram.mentions.skipped_count"); ok {
+			found = true
+			if v != 7 {
+				t.Errorf("instagram.mentions.skipped_count = %d, want 7 (the sum, not 2 distinct types)", v)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("no span carried instagram.mentions.skipped_count")
 	}
 }
 

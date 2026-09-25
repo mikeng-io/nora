@@ -437,31 +437,10 @@ func (b *Bridge) onEvent(ctx context.Context, evt slidetypes.ClientEvent) error 
 		slog.WarnContext(ctx, "socket disconnected", "failures", e.FailureCount, "detail", detail)
 
 	case *slidetypes.AuthError:
-		// The single most important branch in the file. Instagram rejected the
-		// session mid-stream: record WHICH kind of rejection, keep serving, and
-		// hand control back to the supervisor.
-		//
-		// The handback is not optional. Connect() blocks and reconnects on its
-		// own, so without it the socket would sit there retrying while the
-		// bridge reported `checkpointed` FOREVER — including long after the
-		// operator cleared the challenge, because nothing would ever call
-		// LoadIndex again to discover that it had been cleared. A state that
-		// cannot recover on its own is a state somebody has to notice, and the
-		// whole point of reporting it as a field is that nobody has to.
-		//
-		// Disconnect must run on another goroutine: it waits for the socket
-		// loop to stop, and this handler IS the socket loop.
-		state := classifyAuthError(e.Error)
-		detail := ""
-		if e.Error != nil {
-			detail = e.Error.Error()
-		}
-		b.setState(state, detail)
-		b.invalidateSeq()
-		slog.ErrorContext(ctx, "session rejected by instagram", "state", state, "detail", detail)
-		if cli := b.currentClient(); cli != nil {
-			go cli.Disconnect()
-		}
+		// The single most important branch in the file. See sessionRejected's
+		// own doc comment for why this exists and why the handback is not
+		// optional.
+		b.sessionRejected(ctx, e.Error)
 
 	case *slidetypes.SeqIDUpdate:
 		b.setSeq(e.SeqID)
@@ -493,6 +472,48 @@ func (b *Bridge) onEvent(ctx context.Context, evt slidetypes.ClientEvent) error 
 		b.emitDelta(e)
 	}
 	return nil
+}
+
+// sessionRejected records Instagram asking for a human (or suspending the
+// account) and hands control back to the supervisor.
+//
+// It is the socket's AuthError branch, extracted: record WHICH kind of
+// rejection, keep serving, and let the supervisor rebuild. The handback is
+// not optional. Connect() blocks and reconnects on its own, so without it the
+// socket would sit there retrying while the bridge reported `checkpointed`
+// FOREVER — including long after the operator cleared the challenge, because
+// nothing would ever call LoadIndex again to discover that it had been
+// cleared. A state that cannot recover on its own is a state somebody has to
+// notice, and the whole point of reporting it as a field is that nobody has
+// to.
+//
+// It is not only the socket's. The library's own checkpoint detection
+// (`(*instameow.Client).checkResponseError`, client.go) fires ONLY for its
+// own typed and GraphQL calls — never for a raw REST request this bridge
+// issues itself (mentions.go's `rest` helper), because a raw `MakeRequest`
+// failure comes back as a bare `ErrUnexpectedError` with no idea what the
+// body said. `rest` reads that body itself (call.go's `restStatusError`) and
+// classifies the result `ErrNeedsHuman`, but classifying an error is not the
+// same as recording that the SESSION was rejected — nothing upstream of a
+// raw REST call ever saw a `slidetypes.AuthError` to react to. Any caller
+// that gets `needsHuman` or `ErrAccountSuspended` off a call outside the
+// socket must run this too (Bridge.Mentions does).
+//
+// Disconnect must run on another goroutine: called from the socket loop it
+// would wait for itself to stop; called from a request handler it must not
+// block the response on a teardown that can take a moment.
+func (b *Bridge) sessionRejected(ctx context.Context, err error) {
+	state := classifyAuthError(err)
+	detail := ""
+	if err != nil {
+		detail = err.Error()
+	}
+	b.setState(state, detail)
+	b.invalidateSeq()
+	slog.ErrorContext(ctx, "session rejected by instagram", "state", state, "detail", detail)
+	if cli := b.currentClient(); cli != nil {
+		go cli.Disconnect()
+	}
 }
 
 // emitDelta maps one delta onto the SSE stream. Deltas whose type carries no

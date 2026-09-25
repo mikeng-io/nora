@@ -37,9 +37,10 @@ None of them is Threads-specific:
 - **A summons is its own occasion.** It shares the model loop, the tool
   surface and tracing, but constructs no room and writes no memory
   (§"The occasion").
-- **Public tools only**, through `ToolScope.grant` (§"`PUBLIC_GRANT`").
-- **A staging deliverer** that reuses `send_reply` and `generate_image` and
-  publishes once. Nora chooses what to say, never where: the reply target
+- **Public tools only**, through `ToolScope.grant` (§"`PUBLIC_GRANT`"),
+  **minus `generate_image`**: a comment carries no image (see the table
+  below), so the Instagram grant is the Threads one without it.
+- **A staging deliverer** that reuses `send_reply` and publishes once. Nora chooses what to say, never where: the reply target
   is the summons comment, fixed before the model runs.
 - **One reply per summons, idempotent**, claimed in Postgres before the
   model runs.
@@ -53,7 +54,7 @@ None of them is Threads-specific:
 |---|---|---|
 | door | official Graph API, `threads-bridge` sidecar | the existing instagram-bridge, one session shared with her group chats |
 | ingress | `GET /{uid}/mentions` | her activity feed, polled through the bridge: `GET /mentions` over `/api/v1/news/inbox/` (unmeasured, phase 1) |
-| summoner identity | username only; the API exposes no id | **the actor's igid** on the activity story. An id, not a name, so the gate needs no pinning |
+| summoner identity | username only; the API exposes no id | **the actor's igid**, expected in the activity story's `profile_id` (a hypothesis until phase 1 reads a real story). An id, not a name, so the gate needs no pinning |
 | gate | `[[persons.<id>.threads]]` by username | `[[persons.<id>.instagram]]` by `igid`, the block `identity.toml` already has |
 | context | the post and its reply chain | the post (`GET /posts/{shortcode}`, live) plus the comment thread (new route, unmeasured) |
 | reply | a Threads reply post, 500 characters | a comment reply (`replied_to_comment_id`); length limit unmeasured |
@@ -77,13 +78,17 @@ out of Instagram entirely. The rules:
    headers.** A request built by hand with copied cookies looks like a
    second client, and that is how a session gets flagged. That is design
    16's one-way-to-call rule, and it matters more here than anywhere else.
-3. **A poll interval measured in minutes, not seconds** (default 120 s). The
-   web client polls its own notifications about that often. A summons is
-   answered minutes late, which a researched public answer can afford.
+3. **A poll interval measured in minutes, not seconds** (default 120 s,
+   chosen, not measured: how often the web client polls its own
+   notifications is unknown). A summons is answered minutes late, which a
+   researched public answer can afford.
 4. **Writes behind a hard cap in the bridge**, not in Nora: at most N comments
-   per rolling 24 hours (start at 10), enforced in the process that writes,
-   and a checkpoint (`ErrNeedsHuman`) stops every write until a human clears
-   it.
+   per rolling 24 hours (start at 10), enforced in the process that writes.
+   A checkpoint seen by ANY bridge call, `GET /mentions` included, goes
+   through the same path the socket's auth errors take: the session state
+   becomes `checkpointed`, the session disconnects, and every read and write
+   stops until a human clears it. The first version of the route did not do
+   this; review of #529 caught it.
 5. **Only `identity.toml` people can summon her** (operator rule, carried
    over). A mention from anyone else is counted and ignored. This is also
    the volume control: the number of summoners is the number of friends.
@@ -100,6 +105,11 @@ Each phase ends in a live read-back and is one PR.
 mentions by structure (a comment id, media, and a mention of her) and counts
 every other story by `story_type`. It is deployed, then:
 
+- **before the first live call**, the exact request the Instagram web client
+  makes for its notifications panel is captured from a real browser (method,
+  path, query, headers). The route's endpoint is a hypothesis
+  (`/api/v1/news/inbox/`, which is not in the library's endpoint table), and
+  a request the web client never makes is the mismatch rule 2 forbids,
 - the operator comments `@noraexample is this true?` under a post: his own
   first, then a stranger's public post,
 - `GET /mentions` is read back. **Pass:** the summons appears with the
