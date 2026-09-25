@@ -321,7 +321,9 @@ PINNED: dict[str, tuple[int, str]] = {
     # v2 (2026-09-26, operator direction: "it's NOT commenting, it's
     # reporting"): a comment to the person, a sentence or two, no report
     # framing, no lists; the language follows the comment.
-    "public-voice": (2, "7b234ec7d7ab0e3f33db8a22df83e48781a39292cbffb1543bdc631e58d6d479"),
+    # v3 (2026-09-26, operator: "reply like she always"): her own voice, no
+    # narrated checking, no taglines or punchlines, and never a dash.
+    "public-voice": (3, "0ffb503c7e70266092f85aa994e70bdc28b88c603f15db775c27d078cd327ab5"),
     # public-conduct v2 (2026-09-25, review of #545): "# Drawing something" is
     # deleted. `generate_image` is not in the summons' PUBLIC_GRANT (a comment
     # carries no image, design 19), so a section telling her when to draw
@@ -337,7 +339,9 @@ PINNED: dict[str, tuple[int, str]] = {
     # a lead's page is opened before she leans on it, and the reply goes to the
     # person who tagged her. A live dry run called a photo "AI" from pixels
     # while its own searches had found a named photographer.
-    "public-conduct": (5, "5416fb92a4cfbc3c59ae0e31a7ba5311e4936c646b3942f08f4b2db39287dcfb"),
+    # v6 (2026-09-26): sources named in words, no links (an Instagram comment
+    # does not make them clickable); not finding a source is not a finding.
+    "public-conduct": (6, "8931609a0af56d90a893ca058767e76ff9a4501be689059ad5134807659a7e12"),
     "public-constraints": (
         1, "88b47c480e3948332c8281cacb0efbdc9094176d16f1704593df8eaa8b735dfa",
     ),

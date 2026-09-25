@@ -546,9 +546,12 @@ def render_summons(ctx: SummonsContext) -> str:
         f"{age(_epoch(ctx.post_taken_at), now)}",
         f"caption: {_one_line(ctx.caption) or '(none)'}",
     ]
+    # No "item N" label and no URL: a live dry run passed "item 1" to
+    # media_fetch as if it were a media code (2026-09-26), and the pre-read
+    # has already looked at each one, so a link invites a second, wrong look.
     for i, item in enumerate(ctx.items, 1):
-        dur = (f", {item.duration_seconds:g}s" if item.duration_seconds is not None else "")
-        post_lines.append(f"item {i}: {item.kind}{dur} {item.url}")
+        dur = (f", {item.duration_seconds:g} seconds" if item.duration_seconds is not None else "")
+        post_lines.append(f"the post's {_ordinal(i)} {item.kind}{dur}:")
         post_lines.append(f"  {_reading_line(item.reading)}")
     if ctx.elided_items:
         post_lines.append(f"({ctx.elided_items} more item(s) not listed or read)")
@@ -589,3 +592,9 @@ class SummonsOutcome:
     state: str
     bridge_code: str | None = None
     reached_bridge: bool = False
+
+
+def _ordinal(n: int) -> str:
+    """1 -> "first" ... a word, never a number that reads like a code."""
+    words = ("first", "second", "third", "fourth", "fifth", "sixth")
+    return words[n - 1] if 0 < n <= len(words) else f"number {n}"

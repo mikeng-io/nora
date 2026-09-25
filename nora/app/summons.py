@@ -66,6 +66,7 @@ from typing import Any, Protocol
 from uuid import UUID
 
 from nora.agent.ports import ToolSpec
+from nora.agent.punctuation import undash
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
 from nora.agent.tools import media_look
@@ -644,7 +645,12 @@ class SummonsOccasion:
         of two flushes of one row exactly one writes, and a process that dies
         mid-write leaves `flushing`, which the sweep makes `ambiguous` and
         nothing ever posts again."""
-        body = text.strip()
+        # The model is never SHOWN an em dash (nora.agent.punctuation), yet
+        # about 3% of replies still carry one (measured 2026-09-24), and a
+        # live dry-run summons did (2026-09-26). Room replies let that
+        # residue through; a public comment does not. Punctuation only: the
+        # same undash the request path uses, no word changes.
+        body = undash(text).strip()
         refusal = (
             "too_long" if len(body) > MAX_COMMENT_CHARS
             else "mention" if _MENTION_RE.search(body)

@@ -4,12 +4,21 @@ title: "Open plans: a dated arrangement on Standing leaves by its date or by an 
 description: "Standing folds drop open, dated plans (design/group-situation/10: at least 10 of 206 production folds, 5 substantive, the same afternoon plan lost twice). This node adds a third field to Standing, open_plans, which code carries forward across folds. A plan leaves when its day has passed (render-time, deterministic) or when a fold closes it by id with a reason. A fold that leaves it out does not remove it. Measured by five standing-corpus carry cases taken from the real drops, before and after."
 tags: [nora, standing, fold, plans, carry, measurement]
 timestamp: 2026-09-26
-status: proposed
+status: withdrawn
 edges:
   - {dst: 30-working-set.md, rel: extends, provenance: asserted}
   - {dst: 20-verification.md, rel: measured_by, provenance: asserted}
   - {dst: ../group-situation/10-standing-drops-plans.md, rel: motivated_by, provenance: asserted}
 ---
+
+> **Withdrawn 2026-09-26.** The operator ruled that remembering a dated plan
+> is the note tier's job (design/dreamer-agent-loop/42), not Standing's, so
+> Standing gets no `open_plans` field. The build (PR #565, never merged) was
+> closed; its one fix that stands alone, `scripts/standing_edit.py` keeping
+> `working_set` on an operator edit, landed separately. On today's fold the
+> drop this design answered was 1 substantive in 79 revision pairs
+> (design/group-situation/10). The rest of this node is the record of the
+> proposal, not a plan.
 
 # Open plans
 
