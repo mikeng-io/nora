@@ -1,0 +1,30 @@
+[
+  {
+    "name": "the clock-driven pass renders profile names again (#544's projection, runtime level)",
+    "file": "nora/language/note_candidates.py",
+    "old": "                batch = tuple(self._resolve_names(batch, platform))",
+    "new": "                pass",
+    "target": "tests/unit/test_runtime.py::test_the_dreamer_batch_stays_unprojected_and_note_candidates_names_the_roster"
+  },
+  {
+    "name": "S1a eval path: minted sender ids are left minted",
+    "file": "nora/subject/dreaming.py",
+    "old": "                row = replace(row, sender_id=sorted(ids)[0])",
+    "new": "                pass",
+    "target": "tests/unit/test_subject_dreaming.py::test_a_minted_sender_is_given_back_an_id_the_roster_resolves"
+  },
+  {
+    "name": "S1a eval path: a minted id resolving to someone else is kept",
+    "file": "nora/subject/dreaming.py",
+    "old": "            and (resolved is None or resolved.person_id != row.person_id)",
+    "new": "            and resolved is None",
+    "target": "tests/unit/test_subject_dreaming.py::test_a_minted_id_that_resolves_to_someone_else_is_replaced"
+  },
+  {
+    "name": "S0 instrument: speakers graded as profile names, not the names shown",
+    "file": "nora/subject/dreaming.py",
+    "old": "        for r in persons.name_transcript(batch, platform=platform)",
+    "new": "        for r in batch",
+    "target": "tests/unit/test_subject_dreaming.py::test_the_speakers_the_instrument_grades_are_the_names_the_model_was_shown"
+  }
+]
