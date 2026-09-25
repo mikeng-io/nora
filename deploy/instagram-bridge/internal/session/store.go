@@ -30,7 +30,7 @@ import (
 
 // --- the session directory ---------------------------------------------------
 //
-// Four files, each with one job, so a partial loss degrades instead of
+// Six files, each with one job, so a partial loss degrades instead of
 // bricking the bridge:
 //
 //	cookies.json  the credential. Losing it means re-doing the browser login.
@@ -44,6 +44,9 @@ import (
 //	              last delta we saw.
 //	self.json     own identity, cached so /health can answer it after a resume
 //	              that never called LoadIndex (see Store.LoadSelf).
+//	comments.json the summons ledger (ledger.go). NOT disposable: it is what
+//	              stops a summons being answered twice, so an unreadable one
+//	              refuses every comment write rather than reading as empty.
 
 // Store is the session directory.
 type Store struct{ Dir string }
@@ -84,11 +87,38 @@ func writeAtomic(path string, data []byte) error {
 		_ = f.Close()
 		return err
 	}
+	// The data reaches the disk BEFORE the rename publishes it: a rename of
+	// an unsynced file can survive a power loss as an empty or partial file
+	// under the new name. For comments.json that is a claim that vanished
+	// after the upstream call it guarded went out.
+	if err := syncFile(f); err != nil {
+		_ = f.Close()
+		return err
+	}
 	if err := f.Close(); err != nil {
 		return err
 	}
-	return os.Rename(tmp, path)
+	if err := os.Rename(tmp, path); err != nil {
+		return err
+	}
+	// And the rename itself: it lives in the directory, which is its own
+	// inode with its own dirty state.
+	return syncDir(filepath.Dir(path))
 }
+
+// syncFile and syncDir are variables so a test can count them; nothing else
+// replaces them.
+var (
+	syncFile = func(f *os.File) error { return f.Sync() }
+	syncDir  = func(dir string) error {
+		d, err := os.Open(dir)
+		if err != nil {
+			return err
+		}
+		defer d.Close()
+		return d.Sync()
+	}
+)
 
 // selfRecord is self.json's shape. Its field names are the ones the file has
 // always had, so a cache written before this package existed still loads.

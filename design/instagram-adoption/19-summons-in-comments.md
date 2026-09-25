@@ -101,6 +101,31 @@ out of Instagram entirely. The rules:
 
 ## Phases
 
+**Order changed (operator, 2026-09-25):** every bridge route is built
+before anything is tested or deployed: the mentions read (phase 1), the
+comments read (phase 2) and the comment write (phase 4's bridge half). The
+write ships **off** (`INSTAGRAM_COMMENT_WRITES` unset). Turning it on is a
+config change made after phase 1's live read-back and the week of polling.
+Building it early does not bring that date forward. The write's guards,
+all in the bridge and all before any upstream call:
+
+| guard | refusal |
+|---|---|
+| `INSTAGRAM_COMMENT_WRITES=on` | 403 `writes_disabled` |
+| the session is ready | the existing not-ready answer |
+| `reply_to_comment_id` is a comment this bridge served from `GET /mentions`, on the same media, within 7 days | 403 `not_a_summons` |
+| no earlier reply to that comment (claimed or published) | 409 `already_replied` |
+| text non-empty, at most 2,200 characters | 400 |
+| at most `INSTAGRAM_COMMENT_DAILY_CAP` (10) replies per rolling 24 hours | 429 `daily_cap` |
+| at least `INSTAGRAM_COMMENT_MIN_INTERVAL` (90 s) since the last one | 429 `too_soon` |
+
+The reply is claimed in the ledger (`comments.json` in the session
+directory) before the upstream call. An ambiguous failure leaves it
+claimed and is never retried: a double public comment is worse than a
+missing one. That is the write-side analogue of R-86: the bridge, not the
+model, decides what may be written.
+
+
 Each phase ends in a live read-back and is one PR.
 
 **Phase 1: read the activity feed (read-only, this PR).** A bridge route

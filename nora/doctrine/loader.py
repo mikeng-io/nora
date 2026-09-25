@@ -586,7 +586,7 @@ class DoctrineStore:
         self._watcher: DirectoryWatcher[tuple[DoctrineSection, ...]] = DirectoryWatcher(
             self._dir, scan=self._scan, metrics=metrics, subject="doctrine",
             failure_counter=RELOAD_FAILURES_COUNTER, error=DoctrineError,
-            log=log, reload=reload,
+            log=log, glob="**/*.md", reload=reload,
         )
 
     @property
@@ -596,7 +596,11 @@ class DoctrineStore:
         return self._watcher.failures
 
     def _scan(self) -> tuple[DoctrineSection, ...]:
-        files = sorted(self._dir.glob("*.md"), key=lambda p: p.name)
+        # Recursive: doctrine lives in scope folders (`core/`, `rooms/`,
+        # `instruments/`, and `public/` later) under `self._dir`, not flat.
+        # `order` is authoritative for assembly (below); this sort is only
+        # processing order, so a folder move cannot change what is served.
+        files = sorted(self._dir.glob("**/*.md"), key=lambda p: p.name)
         if not files:
             raise DoctrineError(f"no doctrine files (*.md) in {self._dir}")
         sections: list[DoctrineSection] = []

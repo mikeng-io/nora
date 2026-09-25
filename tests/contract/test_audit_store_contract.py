@@ -63,6 +63,18 @@ async def test_recent_limit_takes_the_newest(store):
         == ["m3", "m4"]
 
 
+async def test_recent_before_takes_the_newest_strictly_before_the_bound(store):
+    """design/self-awareness/08 §2: the transcript tools' `before`. Exclusive
+    at the bound, newest `limit` below it, oldest-first, one conversation."""
+    for i in range(6):
+        await store.append(message=_msg(body=f"m{i}", ts=i * 10))
+    await store.append(message=_msg(conv="g2", body="other", ts=5))
+    rows = await store.recent_before(conversation_id="g1", before_ts=40, limit=2)
+    assert [r.body for r in rows] == ["m2", "m3"]          # ts 20, 30; not 40
+    assert await store.recent_before(conversation_id="g1", before_ts=0, limit=5) == []
+    assert await store.recent_before(conversation_id="g1", before_ts=40, limit=0) == []
+
+
 async def test_recent_is_scoped_to_the_conversation(store):
     await store.append(message=_msg(conv="g1", body="a"))
     await store.append(message=_msg(conv="g2", body="b"))

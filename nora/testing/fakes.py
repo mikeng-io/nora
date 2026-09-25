@@ -270,6 +270,19 @@ class FakeRecordStore:
         window = matching[-limit:] if limit > 0 else []
         return [self._transcript_row(r) for r in window]
 
+    async def recent_before(
+        self, *, conversation_id: str, before_ts: int, limit: int,
+    ) -> list[TranscriptRow]:
+        """Mirrors `SqlRecordStore.recent_before`: `recent` over the rows with
+        `ts < before_ts` only."""
+        if self.fail_on_recent:
+            raise RuntimeError("db down")
+        matching = [r for r in self.rows
+                    if r["conversation_id"] == conversation_id and r["ts"] < before_ts]
+        matching.sort(key=lambda r: (r["ts"], r["id"]))
+        window = matching[-limit:] if limit > 0 else []
+        return [self._transcript_row(r) for r in window]
+
     async def depth_to(self, *, conversation_id: str, ts: int) -> int | None:
         """Mirrors `SqlRecordStore.depth_to`: `None` when no row in this
         conversation carries `ts`, otherwise the `recent(limit=...)` size that

@@ -624,7 +624,7 @@ class ToolRegistry:
         It decides «is there something in this room she can actually serve?» —
         a question about her capabilities — and until 2026-09-10 it was told
         nothing about them: its whole knowledge was a hand-written five-item
-        list in `nora/doctrine/participation.md`, against 53 registered tools.
+        list in `nora/doctrine/instruments/participation.md`, against 53 registered tools.
         Issue #144. DEC-150 deleted `kind: capability` for exactly this failure
         («tools are the source of truth, an authored copy is a cache that goes
         stale silently»); the gate's list was the same artifact, wearing

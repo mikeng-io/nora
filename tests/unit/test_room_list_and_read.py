@@ -470,6 +470,33 @@ async def test_room_read_says_when_each_message_was_sent_in_words(
     assert not any("ts" in m for m in result["messages"])
 
 
+async def test_room_read_before_reads_the_room_up_to_that_time(policy, persons, store):
+    """design/self-awareness/08 §2: «what did they say on WhatsApp yesterday»
+    reads that room up to the time asked, not its newest rows."""
+    result = await _call(_tools(policy, persons, store)["room_read"],
+                         room="Friends WA", before="2026-09-24 08:00")
+
+    assert result["status"] == "ok"
+    assert [m["body"] for m in result["messages"]] == ["old news"]
+
+
+async def test_room_read_with_an_unreadable_before_is_unavailable(policy, persons, store):
+    result = await _call(_tools(policy, persons, store)["room_read"],
+                         room="Friends WA", before="yesterday")
+
+    assert result["status"] == "unavailable"
+    assert '"YYYY-MM-DD HH:MM"' in result["note"]
+    assert "messages" not in result
+
+
+async def test_room_read_before_anything_was_said_is_nothing_found(policy, persons, store):
+    result = await _call(_tools(policy, persons, store)["room_read"],
+                         room="Friends WA", before="2026-09-01")
+
+    assert result["status"] == "nothing_found"
+    assert "before that time" in result["note"]
+
+
 async def test_room_read_output_is_wrapped_as_untrusted(policy, persons, store):
     """R-13: another room's words are text people wrote, carried with the
     same demotion `load_transcript` has."""

@@ -788,7 +788,7 @@ def test_recall_lookups_is_offered_as_evidence_not_only_as_a_cache():
     # The original cost framing is kept, not replaced — re-running is still waste.
     assert "re-running" in doc, doc
 
-    conduct = (ROOT / "nora" / "doctrine" / "conduct.md").read_text()
+    conduct = (ROOT / "nora" / "doctrine" / "rooms" / "conduct.md").read_text()
     section = conduct.split("# Being contradicted", 1)[1].split("\n# ", 1)[0]
     # The prose is hard-wrapped, so every phrase below spans a newline in the
     # file; match on the sentence, not on the line breaks it happens to have.
@@ -809,11 +809,22 @@ def test_recall_lookups_is_offered_as_evidence_not_only_as_a_cache():
     assert "recall_lookups" not in conduct
 
 
+# name -> the scope folder it ships under, same table as
+# tests/test_doctrine_content.py::_SCOPE_FOLDER.
+_DOCTRINE_SCOPE_FOLDER = {
+    "identity": "core", "constraints": "core",
+    "voice": "rooms", "conduct": "rooms", "silence": "rooms",
+    "participation-conduct": "rooms",
+    "participation": "instruments", "reaction": "instruments",
+}
+
+
 def _doctrine(name: str) -> str:
     """Whitespace-normalised, because every doctrine file is hard-wrapped and
     every phrase asserted below spans a line break in it."""
+    folder = _DOCTRINE_SCOPE_FOLDER[name]
     return " ".join(
-        (ROOT / "nora" / "doctrine" / f"{name}.md").read_text().split()
+        (ROOT / "nora" / "doctrine" / folder / f"{name}.md").read_text().split()
     )
 
 
@@ -881,7 +892,7 @@ def test_r83_the_anti_cave_position_is_scoped_to_a_checked_claim():
     # move her at all. `voice.md` owns how it SOUNDS and is operator-only; a
     # copy there is the drift DEC-92's split exists to prevent.
     section = " ".join(
-        (ROOT / "nora" / "doctrine" / "conduct.md").read_text()
+        (ROOT / "nora" / "doctrine" / "rooms" / "conduct.md").read_text()
         .split("# Being contradicted", 1)[1].split("\n# ", 1)[0].split()
     )
 
@@ -938,7 +949,7 @@ def test_the_verdict_position_names_the_mechanism_that_performs_a_tag():
     the honest reason this was done for clarity and not for compression.
     """
     section = " ".join(
-        (ROOT / "nora" / "doctrine" / "conduct.md").read_text()
+        (ROOT / "nora" / "doctrine" / "rooms" / "conduct.md").read_text()
         .split("# Being asked to judge", 1)[1].split("\n# ", 1)[0].split()
     )
 
