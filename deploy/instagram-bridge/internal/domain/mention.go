@@ -38,7 +38,12 @@ func ContainsMentionToken(haystack, marker string) bool {
 		pos := from + i
 		end := pos + len(marker)
 		startsWord := pos == 0 || !isUsernameByte(haystack[pos-1])
-		endsWord := end >= len(haystack) || !isUsernameByte(haystack[end])
+		// A trailing "." that ends a sentence is punctuation, since no
+		// Instagram username ends in one: "@nora." tags @nora, "@nora.x"
+		// does not. The same rule as Nora's own (nora/domain/summons.py
+		// _handle_pattern), so the two sides cannot disagree on a boundary.
+		endsWord := end >= len(haystack) || !isUsernameByte(haystack[end]) ||
+			(haystack[end] == '.' && (end+1 >= len(haystack) || !isHandleCoreByte(haystack[end+1])))
 		if startsWord && endsWord {
 			return true
 		}
@@ -48,4 +53,9 @@ func ContainsMentionToken(haystack, marker string) bool {
 
 func isUsernameByte(b byte) bool {
 	return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || (b >= '0' && b <= '9') || b == '.' || b == '_'
+}
+
+// isHandleCoreByte is a username byte other than ".".
+func isHandleCoreByte(b byte) bool {
+	return b != '.' && isUsernameByte(b)
 }
