@@ -46,11 +46,13 @@ from typing import Any
 from uuid import UUID
 
 import sqlalchemy as sa
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.engine import Row
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.domain.reminders import (
+    DuplicateProactiveNoteError,
     DuplicateReminderError,
     Recurrence,
     RecurrenceRule,
@@ -60,15 +62,26 @@ from nora.domain.reminders import (
     check_limit,
     ensure_utc,
     normalise_reminder,
+    open_proactive_note,
     plan_successor,
 )
-from nora.infra.sql.schema import REMINDERS
+from nora.infra.sql.schema import REMINDERS, UQ_REMINDERS_PROACTIVE_OPEN_NOTE_WHERE
 
 # PostgreSQL SQLSTATE 23505, unique_violation. Matched EXACTLY rather than
 # treating every `IntegrityError` as a duplicate: this table also carries
 # `ck_reminders_state`, and a bad state value arrives as an `IntegrityError`
 # too — reporting that as "duplicate id" would name the wrong defect.
 _PG_UNIQUE_VIOLATION = "23505"
+
+# The conflict target of a proactive insert: `uq_reminders_proactive_open_note`'s
+# expression and predicate, so the inferred arbiter is that index and nothing
+# wider. The expression is TEXT, not `schema.py`'s column expression: that one
+# compiles `->>` with a BOUND `'note_id'`, and a parameter in an ON CONFLICT
+# target does not match the index's constant, so Postgres refuses to infer
+# (42P10) — the reason `SqlNoteStore`'s candidate upsert spells its key the
+# same way.
+_OPEN_NOTE_KEY = sa.text("(payload ->> 'note_id')")
+_OPEN_NOTE_WHERE = UQ_REMINDERS_PROACTIVE_OPEN_NOTE_WHERE
 
 
 log = logging.getLogger("nora.infra.sql.reminders")
@@ -177,16 +190,41 @@ class SqlReminderStore:
     async def create(self, reminder: Reminder) -> None:
         """Insert-only, with the primary key's own unique violation translated
         to `DuplicateReminderError` so the in-memory store can be held to the
-        same observable behaviour (it used to overwrite silently)."""
+        same observable behaviour (it used to overwrite silently).
+
+        A proactive row on a note is inserted `ON CONFLICT DO NOTHING` against
+        `uq_reminders_proactive_open_note` (issue #158): the statement decides,
+        so two decisions racing for one note cannot both land, and a row that
+        did not land is `DuplicateProactiveNoteError`, never a silent no-op.
+        The conflict target names that index alone, so a primary-key collision
+        still raises and still translates as it always did."""
         row = normalise_reminder(reminder)
-        stmt = sa.insert(REMINDERS).values(**_insert_values(row))
+        note_id = open_proactive_note(row)
+        stmt = pg_insert(REMINDERS).values(**_insert_values(row))
+        if note_id is not None:
+            stmt = stmt.on_conflict_do_nothing(
+                index_elements=[_OPEN_NOTE_KEY], index_where=_OPEN_NOTE_WHERE,
+            )
         try:
             async with self._engine.begin() as conn:
-                await conn.execute(stmt)
+                result = await conn.execute(stmt)
+                # Nothing landed. Postgres checks the ARBITER first, so a row
+                # whose id AND note both collide is skipped here rather than
+                # raising on the primary key; the id is the more basic fault
+                # and the one the in-memory store names, so it is asked first.
+                taken = note_id is not None and not result.rowcount and (
+                    await conn.execute(
+                        sa.select(REMINDERS.c.id).where(REMINDERS.c.id == row.id),
+                    )
+                ).first() is not None
         except IntegrityError as exc:
             if getattr(exc.orig, "sqlstate", None) != _PG_UNIQUE_VIOLATION:
                 raise
             raise DuplicateReminderError(row.id) from exc
+        if taken:
+            raise DuplicateReminderError(row.id)
+        if note_id is not None and not result.rowcount:
+            raise DuplicateProactiveNoteError(note_id)
 
     async def get(self, reminder_id: UUID) -> Reminder | None:
         stmt = sa.select(REMINDERS).where(REMINDERS.c.id == reminder_id)
@@ -293,6 +331,19 @@ class SqlReminderStore:
         async with self._engine.connect() as conn:
             total = (await conn.execute(stmt)).scalar_one()
         return int(total)
+
+    async def pending_of(self, requester_person_id: str) -> Sequence[Reminder]:
+        stmt = (
+            sa.select(REMINDERS)
+            .where(
+                REMINDERS.c.requester_person_id == requester_person_id,
+                REMINDERS.c.state == ReminderState.PENDING.value,
+            )
+            .order_by(REMINDERS.c.due_at.asc(), REMINDERS.c.id.asc())
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+        return self._decode_due(rows)
 
     async def history(
         self, *, requester_person_id: str, since: datetime, limit: int,

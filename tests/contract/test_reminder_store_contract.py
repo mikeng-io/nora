@@ -9,6 +9,7 @@ from datetime import UTC, datetime, timedelta, timezone
 import pytest
 
 from nora.domain.reminders import (
+    DuplicateProactiveNoteError,
     DuplicateReminderError,
     NaiveDatetimeError,
     Recurrence,
@@ -772,3 +773,92 @@ async def test_default_kind_is_reminder(store):
     assert back is not None
     assert back.kind == "reminder"
     assert back.payload is None
+
+
+# -- one open proactive row per note (issue #158) -----------------------------
+
+
+def _proactive(note_id: str | None = "note-1", **kw) -> Reminder:
+    payload = {"intent": "raise it"} if note_id is None else {
+        "note_id": note_id, "revision_id": "rev-1", "intent": "raise it",
+    }
+    return _row(
+        requester_person_id="nora", kind="proactive", payload=payload, **kw,
+    )
+
+
+@pytest.mark.parametrize("held", [ReminderState.PENDING, ReminderState.FIRING])
+async def test_a_second_open_proactive_row_on_a_note_is_refused(store, held):
+    """The production shape: a pass wrote a row while an earlier row on the
+    same note still waited (or was being said). The store refuses it and
+    writes nothing, whichever implementation holds it."""
+    first = _proactive(state=held)
+    await store.create(first)
+
+    second = _proactive(due_at=T0 + timedelta(hours=3))
+    with pytest.raises(DuplicateProactiveNoteError) as caught:
+        await store.create(second)
+
+    assert caught.value.note_id == "note-1"
+    assert await store.get(second.id) is None
+
+
+async def test_the_same_proactive_row_twice_is_a_duplicate_id(store):
+    """Its id and its note both collide; the id is named. Postgres checks the
+    `ON CONFLICT` arbiter first and would skip on the note, so the SQL store
+    has to ask for the id itself to agree with the in-memory one."""
+    row = _proactive()
+    await store.create(row)
+
+    with pytest.raises(DuplicateReminderError):
+        await store.create(row)
+
+
+@pytest.mark.parametrize(
+    "gone", [ReminderState.DONE, ReminderState.CANCELLED, ReminderState.FAILED],
+)
+async def test_a_row_that_went_off_holds_its_note_no_longer(store, gone):
+    """A re-raise after silence is writable: only an open row holds a note."""
+    await store.create(_proactive(state=gone))
+
+    again = _proactive()
+    await store.create(again)
+
+    assert await store.get(again.id) is not None
+
+
+async def test_the_rule_is_per_note_and_proactive_only(store):
+    """Another note, a proactive row with no note, and a person's reminder
+    carrying the same note id are none of them a duplicate."""
+    await store.create(_proactive("note-1"))
+
+    await store.create(_proactive("note-2"))
+    await store.create(_proactive(None))
+    await store.create(_proactive(None))
+    await store.create(_row(payload={"note_id": "note-1"}))
+
+    assert len(await store.all_pending(limit=10)) == 5
+
+
+async def test_a_claimed_row_still_holds_its_note(store):
+    """`claim` moves the SAME row pending -> firing; it neither trips the rule
+    nor frees the note."""
+    first = _proactive()
+    await store.create(first)
+    assert await store.claim(first.id, now=first.due_at)
+
+    with pytest.raises(DuplicateProactiveNoteError):
+        await store.create(_proactive())
+
+
+async def test_pending_of_is_one_requesters_pending_rows_in_due_order(store):
+    late = _proactive("note-1", due_at=T0 + timedelta(hours=2))
+    early = _proactive("note-2", due_at=T0 + timedelta(hours=1))
+    await store.create(late)
+    await store.create(early)
+    await store.create(_proactive("note-3", state=ReminderState.DONE))
+    await store.create(_row())                          # miles's, not nora's
+
+    rows = await store.pending_of("nora")
+
+    assert [r.id for r in rows] == [early.id, late.id]

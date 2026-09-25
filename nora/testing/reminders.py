@@ -34,12 +34,14 @@ from datetime import datetime
 from uuid import UUID
 
 from nora.domain.reminders import (
+    DuplicateProactiveNoteError,
     DuplicateReminderError,
     Reminder,
     ReminderState,
     check_limit,
     ensure_utc,
     normalise_reminder,
+    open_proactive_note,
     plan_successor,
 )
 
@@ -64,6 +66,15 @@ class FakeReminderStore:
     async def create(self, reminder: Reminder) -> None:
         if reminder.id in self._rows:
             raise DuplicateReminderError(reminder.id)
+        # `uq_reminders_proactive_open_note`, spelled out: one open proactive
+        # row per note (issue #158). No `await` between this and `_put`, so
+        # two concurrent creates cannot both pass it — the same argument
+        # `claim`'s successor makes.
+        note_id = open_proactive_note(reminder)
+        if note_id is not None and any(
+            open_proactive_note(r) == note_id for r in self._rows.values()
+        ):
+            raise DuplicateProactiveNoteError(note_id)
         self._put(reminder)
 
     async def get(self, reminder_id: UUID) -> Reminder | None:
@@ -95,6 +106,14 @@ class FakeReminderStore:
         return sum(1 for r in self._rows.values()
                    if r.requester_person_id == requester_person_id
                    and r.state is ReminderState.PENDING)
+
+    async def pending_of(self, requester_person_id: str) -> Sequence[Reminder]:
+        return sorted(
+            (r for r in self._rows.values()
+             if r.requester_person_id == requester_person_id
+             and r.state is ReminderState.PENDING),
+            key=_order,
+        )
 
     async def history(
         self, *, requester_person_id: str, since: datetime, limit: int,
