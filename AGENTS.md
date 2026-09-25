@@ -193,7 +193,10 @@ the decision.
 6. `CONTRIBUTING.md` — branch, commit, PR and issue conventions, and the
    issue → ADR → decision-row flow.
 7. `docs/adr/` — Nygard-form ADRs: why a decision was made and what it cost.
-8. `docs/observability.md`, `docs/eval-sop.md`, `docs/runbook.md` — how to
+8. `DESIGN.md` — the visual system for every Nora surface (portal, social,
+   imagery, 3D): palette, type, shape, motion. Read it before touching `app/`
+   styling or anything she looks like.
+9. `docs/observability.md`, `docs/eval-sop.md`, `docs/runbook.md` — how to
    read an instrument back, how a behavioural change is measured before it
    ships, and what to do when production misbehaves. Read the one the task
    touches; the matching skill (below) is the procedure, these are the reasons.

@@ -46,6 +46,11 @@ with two distinct roles:
   (operator, 2026-09-23). Kept so the look she presents publicly is on file
   beside the canon; not ingested, because each places her in a scene (desk,
   laptop, cat) that a generation would copy.
+- **`assets/nora-mini-icon.png`**, **`assets/nora-mini-tpose.png`** and
+  **`assets/nora-embodied-tpose.png`** — **REFERENCE ONLY, not assets**
+  (operator, 2026-09-26): a cut-out icon of the native form and the two
+  T-pose rig inputs, one per form. `07-native-and-embodied-form.md` carries
+  their roles and the native/embodied framing.
 
 At build time the ingest one-shot (`scripts/ingest_self_asset.py`) ingests the
 canonical single image into Nora's media library, marks `role: self`, and the
