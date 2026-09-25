@@ -246,7 +246,8 @@ def _pending_reminder_titles(reminders: Sequence[Reminder]) -> frozenset[str]:
     needed here, only whose request it was and what note it names.
 
     Pure and DB-free: `sandbox_from_snapshot` calls it on a `Snapshot`
-    already read, and a fixture can call it directly (`nora/subject/tests`).
+    already read, and a fixture can call it directly
+    (`tests/unit/test_subject_sandbox_translation.py`).
     """
     titles: set[str] = set()
     for reminder in reminders:
