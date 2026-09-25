@@ -93,6 +93,16 @@ OPEN_STATES: frozenset[str] = frozenset({"pending", "firing"})
 #: fold.
 CANCELLED_DUPLICATE_NOTE = "cancelled_duplicate_note"
 
+#: Stamped when `SqlNoteStore.merge_into`'s reminders step finds that the
+#: survivor's tag path wrote something after a row it is about to re-point
+#: was linked — the same premise `nora.app.proactive_screen.
+#: CANCELLED_NOTE_MOVED` and `nora.agent.tools._CANCELLED_NOTE_MOVED` already
+#: name at fire time and at `remind` time respectively, duplicated here for
+#: the same reason `CANCELLED_DUPLICATE_NOTE` is: a store may not import the
+#: application layer, so its own copy of the vocabulary lives at the layer a
+#: store may read from.
+CANCELLED_NOTE_MOVED = "cancelled_note_moved"
+
 
 def open_proactive_note(row: Reminder) -> str | None:
     """The note a row holds open, or `None` when it holds none.
