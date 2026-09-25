@@ -73,4 +73,10 @@ class InMemoryStandingStore:
             )
         if standing.fold_count < 0:
             raise ValueError("standing_fold_count_is_not_negative_check")
+        # `working_set` needs no divergence check the way `body` does above:
+        # `Standing.__post_init__` already refuses an over-ceiling
+        # `working_set` the same way it refuses an over-ceiling `body`, and
+        # unlike `btrim` vs `strip()` there is no known gap between that
+        # check and `standing_working_set_fits_the_ceiling_check` — holding
+        # `Standing` objects (not dicts) is what makes that refusal free here.
         self._rows[(standing.platform, standing.conversation_id)] = standing

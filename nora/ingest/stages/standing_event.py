@@ -445,6 +445,17 @@ async def _fold_batch(
         # ascending, so `rows[-1]` is the furthest). Written in the SAME
         # statement as the position (20-watermark-read.md).
         last_folded_row_id=rows[-1].id,
+        # CARRIED FORWARD, unchanged — the rollup objective produces no
+        # `working_set` key (`render_rollup_input` shows it no `<steps>`, so
+        # it has nothing tool-shaped to source an item from;
+        # design/standing-compact/30-working-set.md's write path is the tag
+        # fold only). Without this the field defaults to `()` on every
+        # dataclass construction and a rollup fold would silently wipe
+        # whatever the tag fold had just written — the same "never by
+        # accident" argument `SqlStandingStore.write`'s upsert makes for
+        # `last_folded_row_id` above, applied to a field this path does not
+        # otherwise touch at all.
+        working_set=prior.working_set if prior is not None else (),
     )
     try:
         await asyncio.wait_for(

@@ -510,7 +510,7 @@ async def test_write_if_unchanged_refuses_a_standing_that_changes_the_key_or_the
                 "last_folded_row_id", before.last_folded_row_id),
         )
         with pytest.raises(ValueError, match="platform, conversation_id, "
-                                              "fold_count and last_folded_row_id"):
+                                              "fold_count, last_folded_row_id"):
             await store.write_if_unchanged(expected=before, standing=bad)
 
     # Nothing landed for any of the four attempts.
