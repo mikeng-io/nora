@@ -3496,6 +3496,15 @@ async def build_dependencies(
                         for conv in allowlist.conversations
                         if conv.primary_id and conv.description
                     }.get,
+                    # The ROSTER, resolved against the room's own platform,
+                    # so `from=` is the roster name every live turn reads
+                    # (design 42 §4.3, S1a; DEC-80).
+                    persons=persons,
+                    platform_for={
+                        conv.primary_id: conv.platform
+                        for conv in allowlist.conversations
+                        if conv.primary_id
+                    }.get,
                     metrics=metrics,
                     # The ROOM's zone for each rendered message's moment —
                     # the same `[reminders] timezone` the curator's `_today`

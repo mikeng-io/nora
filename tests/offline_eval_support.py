@@ -1196,6 +1196,9 @@ async def run_note_candidates_case(
         # live — the honest default, not a nicer one.
         label_for=lambda _key: room_label,
         description_for=lambda _key: room_description,
+        # The roster, as composition supplies it (design 42 S1a): the batch's
+        # `from=` is the roster name a live turn reads.
+        persons=_EVAL_PERSONS, platform_for=lambda _key: "signal",
         metrics=Metrics(), timezone=ZoneInfo(cfg.reminders.timezone),
     )
     rows = [

@@ -610,6 +610,7 @@ async def _drive(tmp_path: Path) -> _Journey:
         # is the deployment's state too.
         label_for={THREAD_ROOM: "thread", HOME_ROOM: "home"}.get,
         description_for={}.get,
+        persons=persons, platform_for=lambda _scope: "signal",
     )
     journey.note_candidates_envelope = await candidates.inputs(
         key=THREAD_ROOM, batch=batch,

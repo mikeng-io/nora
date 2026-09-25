@@ -461,6 +461,15 @@ class _NoteStore(DreamSink, Protocol):
     ) -> Note | None: ...
 
 
+class _NamesTranscript(Protocol):
+    """`nora.persons.Persons`, seen from here: the one verb that names a
+    batch the way every live turn names its transcript (DEC-80)."""
+
+    def name_transcript(
+        self, transcript: Sequence[TranscriptRow], *, platform: str,
+    ) -> tuple[TranscriptRow, ...]: ...
+
+
 class _CandidateStore(Protocol):
     """`SqlNoteStore`'s create-candidate surface, seen from here — the
     `note_candidate(kind='create')` staging table's own two verbs, structural
@@ -971,6 +980,18 @@ class NoteCandidateAdaptor:
         # the failure this adaptor already paid for once.
         label_for: Callable[[str], str | None],
         description_for: Callable[[str], str | None],
+        # THE ROSTER, and the room's platform to resolve against (design 42
+        # §4.3, S1a). The clock reads the batch with `record.since` and
+        # projects nothing, so until this every `from=` on the batch was the
+        # member's SELF-SET profile name while every live turn reads the
+        # roster name (DEC-80): a note named people in a name space the turn
+        # that reads it does not use. Projected HERE and not in
+        # `_dream_adaptor_once`, which hands the same batch to the culture
+        # fold, whose input this must not change. Both REQUIRED, for
+        # `label_for`'s reason: a wiring gap renders a plausible, wrong prompt
+        # and nothing counts it.
+        persons: _NamesTranscript,
+        platform_for: Callable[[str], str | None],
         metrics: Metrics | None = None,
         # The ROOM's zone for rendering each message's moment (see
         # `_LINE_TIME_FORMAT`). Defaults to UTC so a bare construction still
@@ -990,6 +1011,8 @@ class NoteCandidateAdaptor:
         self._unit_for = unit_for
         self._label_for = label_for
         self._description_for = description_for
+        self._persons = persons
+        self._platform_for = platform_for
         self._metrics = metrics
         self._tz = timezone
         # Per key, written by `inputs` and read by `accept` — the only
@@ -1043,6 +1066,13 @@ class NoteCandidateAdaptor:
         # a fallback for a room the operator left unlabelled, and the
         # conversation id NEVER — see `UNNAMED_ROOM`.
         room = self._label_for(key) or unit or UNNAMED_ROOM
+        # Named for RENDERING only: ids, order and bodies are the batch's, so
+        # `accept()`'s join against `_message_ids` above is unchanged. A room
+        # the allowlist gives no platform has no roster to resolve against
+        # and renders as it did.
+        platform = self._platform_for(key)
+        if platform is not None:
+            batch = self._persons.name_transcript(batch, platform=platform)
         lines = [
             _render_line(row, room=room, tz=self._tz)
             for row in batch[:MAX_RENDERED_MESSAGES]

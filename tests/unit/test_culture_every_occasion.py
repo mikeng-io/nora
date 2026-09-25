@@ -27,6 +27,7 @@ from nora.language.note_candidates import NoteCandidateAdaptor
 from nora.language.note_curator import NoteCuratorAdaptor
 from nora.language.proactive import ProactiveAdaptor, UnitRoom
 from nora.obs.metrics import Metrics
+from nora.persons import Persons
 from nora.testing import InMemoryCultureStore, InMemoryNoteStore
 from nora.testing.fakes import FakeRecordStore
 from nora.testing.reminders import FakeReminderStore
@@ -61,6 +62,7 @@ def _candidates(culture: InMemoryCultureStore | None) -> NoteCandidateAdaptor:
     return NoteCandidateAdaptor(
         notes=notes, candidates=notes, unit_for=lambda _: WS,
         label_for=lambda _: "Friends", description_for=lambda _: None,
+        persons=Persons(by_person={}, index={}), platform_for=lambda _: "signal",
         metrics=Metrics(), culture=culture,
     )
 

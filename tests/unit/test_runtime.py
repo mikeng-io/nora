@@ -32,10 +32,13 @@ from nora.app.runtime import (
     start_adapters,
     supervise_adapter,
 )
-from nora.domain.models import DeliveryStatus, TranscriptRow
+from nora.domain.models import DeliveryStatus, PersonRef, TranscriptRow
+from nora.language.note_candidates import NoteCandidateAdaptor
 from nora.obs.metrics import Metrics
+from nora.persons import Persons
 from nora.tag import Debounce
 from nora.testing import InMemoryDreamScheduleClock
+from nora.testing.note_store import InMemoryNoteStore
 from tests.objectives import shipped_objectives
 
 # The `objective` collaborator, wired the way production wires it: the REAL
@@ -1312,6 +1315,58 @@ async def test_a_retry_reads_fewer_rows_than_the_attempt_that_failed():
     assert runner.calls == [("note-candidates", "g1", 40)]
     assert metrics.get(
         "nora_dream_batch_shrunk_total", adaptor="note-candidates") == 1
+
+
+class _RenderingRunner:
+    """Runs the adaptor's `inputs` on exactly what the clock handed it, and
+    stops there: the model call is not what these tests are about."""
+
+    def __init__(self) -> None:
+        self.batches: list[tuple[TranscriptRow, ...]] = []
+        self.prompts: list[str] = []
+
+    async def run(self, *, adaptor, key, batch):
+        self.batches.append(tuple(batch))
+        self.prompts.append(await adaptor.inputs(key=key, batch=batch))
+        return _StubOutcome(status="ok")
+
+
+async def test_the_dreamer_batch_stays_unprojected_and_note_candidates_names_the_roster():
+    """Design 42 §4.3 and S1a. The clock reads the batch with `record.since`
+    and projects nothing, so the rows reach every scope-keyed adaptor with
+    `person_name` unset, and the culture fold's input is what it was. The
+    projection is note-candidates' own: its prompt names the member by the
+    roster name every live turn reads (DEC-80), not the self-set profile
+    name it rendered before S1a."""
+    roster = Persons(
+        by_person={"p_ada": PersonRef(person_id="p_ada", name="Ada Roster",
+                                      honcho_peer_id="p_ada")},
+        index={("signal", "+852111"): "p_ada"},
+    )
+    row = TranscriptRow(
+        id=1, sender_id="+852111", sender_name="ada_profile", ts=1_000,
+        body="dinner on the 3rd?", is_nora=False,
+        delivery_status=DeliveryStatus.SENT, raw_json=None,
+    )
+    store = InMemoryNoteStore()
+    adaptor = NoteCandidateAdaptor(
+        notes=store, candidates=store, unit_for=lambda _: "friends",
+        label_for=lambda _: "Friends", description_for=lambda _: None,
+        persons=roster, platform_for=lambda _: "signal",
+    )
+    runner = _RenderingRunner()
+
+    await _dream_adaptor_once(
+        adaptor=adaptor, runtime=runner, record=_FakeRecord({"g1": [row]}),
+        language=_KeyedLanguage(lag=99), metrics=Metrics(), key="g1",
+        safety_lag=0, quiet_seconds=0.0, max_age_seconds=1e9, batch_limit=80,
+    )
+
+    [batch] = runner.batches
+    assert [r.person_name for r in batch] == [None]
+    [prompt] = runner.prompts
+    assert 'from="Ada Roster"' in prompt
+    assert "ada_profile" not in prompt
 
 
 async def test_a_first_attempt_reads_the_whole_batch_and_counts_no_shrink():
