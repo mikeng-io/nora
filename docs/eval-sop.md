@@ -101,7 +101,8 @@ whether she replied.
    (`--print-input`, the case's anchor and expectation, the objective), per
    `.agents/skills/nora-eval/SKILL.md` "An eval confirms a fix; it never finds
    one".
-3. **Serialize.** Fix, run the same case and its corpus after, and put both
+3. **Serialize.** Fix, then run the same selection on both arms (the case,
+   plus its corpus if the fix can move other cases there), and put both
    numbers, the draw count and the spend in the PR.
 
 A failure you fixed but did not add a case for is a failure you will ship

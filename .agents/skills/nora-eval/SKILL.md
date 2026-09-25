@@ -1,6 +1,6 @@
 ---
 name: nora-eval
-description: Confirms a BUILT behavioural fix with a before/after on Nora's labelled eval cases (python -m evals on the deploy host). Load when a task changes a prompt, doctrine, objective, tool text, gate, routing or model setting and the fix exists. A failing case is not a reason to run it; find the cause offline first. Not for proving a code fix is guarded by a test (nora-prove-fix).
+description: Runs Nora's eval suite (python -m evals on the deploy host) as a before/after that CONFIRMS a built change to a prompt, doctrine, objective, tool text, gate, routing or model setting. Load when a task says run the eval, baseline, corpus, sample or measure the arms. It never diagnoses a failing case; find the cause offline first. Not for proving a code fix is guarded by a test (nora-prove-fix).
 ---
 
 # nora-eval
@@ -28,23 +28,25 @@ drawing again. On 2026-09-25 one session queued a five-question batch plus an
 failure (0/5, 2/10, 0/15, 0/15) that reading the input would have explained
 with no model call. The operator stopped it: nothing was fixed, only measured.
 
-Before any run, all three hold, or you do not run:
-- **The cause is found offline.** A failing or suspect case is read first:
-  `--print-input CASE` (no model call), the render functions called directly on
-  the case's state, the case's own expectation and anchor, and the objective the
-  model runs. Name the cause: a wrong expectation, a fact missing from the
-  input, a doctrine line steering against it, or unlabelled material (the model
-  cannot tell what it is reading).
-- **A fix is built** (on a branch) that addresses that cause.
-- **The question is whether the fix moved the number**, on the smallest
-  selection that can show it: `--case` the failing cases plus one control,
-  the lowest n that separates the arms.
+No run answers WHY a case fails. Before any run, one of these holds:
+- **(a) A fix for a failing case.** The cause is named offline first:
+  `--print-input CASE` (no model call), the render functions called on the
+  case's state, the case's own anchor and expectation, and the objective the
+  model runs. Name it: a wrong expectation, a fact missing from the input, a
+  doctrine line steering against it, or unlabelled material (the model cannot
+  tell what it is reading). The fix is built; the run is `--case` those cases
+  plus one control, and the corpus they sit in when the fix can move others.
+- **(b) A change with no failing case** (a model, effort or routing swap, a
+  tool rename, new doctrine or behaviour, a no-regression check). It is built,
+  step 5 shows the arms differ, and the run covers the corpora it can move at
+  step 6's n.
 
 Deterministic failure (every draw FAILs, on every arm) is an input, framing or
-labelling defect: never answer it with more samples. Re-baselines, higher-n
-re-runs and "measure the current state" runs are not work; do not queue them
-unless the operator asks. Keep one run under an hour; if the plan is longer,
-cut the selection or ask.
+labelling defect: never answer it with more samples. The before arm of a
+confirming run is its baseline; a standalone re-baseline or higher-n re-run
+"to see where we are" is not work unless the operator asks. Before launching,
+compute cases x n x arms x ~211s (judged) and state it; over 60 minutes, cut
+the selection or ask.
 
 ## Where it runs
 
@@ -156,8 +158,8 @@ flag. The dev-machine tunnel recipe with `--model` belonged to the deleted
      call the result a direction, not a rate, and treat a "you already asked"
      FAIL as #462 before calling it a model defect.
    - Judged corpora: the judge's source is bound to the window her turn
-     rendered since #459 (fixed 2026-09-25) — re-baseline before comparing a
-     judged number against one measured on an older build.
+     rendered since #459 (fixed 2026-09-25): a judged number from an older
+     build is not a baseline; compare only against a before arm run now.
    - A case that speaks (tag, participation, proactive_act) anchored in a Discord
      room ERRORs; Discord's adapter is off in the sandbox (2026-09-21).
    - A FAIL is the end of the run, not a reason for more samples: go back to
