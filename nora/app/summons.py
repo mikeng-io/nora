@@ -9,7 +9,7 @@ transcript. What it holds is the bridge, the ledger, the person index (for the
 summoner gate and nothing else), the doctrine, the tool registry under
 `PUBLIC_GRANT`, and a runner.
 
-**A third sending path, and why it is not a third `adapter.send`.** DEC-TBD
+**A third sending path, and why it is not a third `adapter.send`.** DEC-212
 amends R-1b: `tests/architecture/test_only_two_paths_can_send.py` names this
 module as the third caller of `deliver.build`. It builds a STAGING deliverer
 (`send_permitted=False`): `send_reply` runs every guard the tag path runs —

@@ -59,7 +59,7 @@ BUILDER = "nora/engagement/stages/deliver.py"
 CALLERS = {
     "nora/engagement/pipeline.py",
     "nora/app/fire.py",
-    # DEC-TBD amends R-1b: a public summons is a third sending path,
+    # DEC-212 amends R-1b: a public summons is a third sending path,
     # delivering only through the instagram-bridge's guarded comment write.
     # Its deliverer is a STAGING one (`send_permitted=False`): every guard
     # runs, the text is held, no adapter and no audit store is ever reached,
