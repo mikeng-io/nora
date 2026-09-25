@@ -723,6 +723,38 @@ async def draft_from_exhausted_loop(
     return final_text(result)
 
 
+def remaining_limits(agent: Agent, limits: dict) -> dict | None:
+    """What is left of `limits` after the agent's LATEST invocation, or None
+    when any cap is already spent.
+
+    Strands' caps are per-invocation (`draft_from_exhausted_loop` above): a
+    second `invoke_async` on the same agent starts from zero. A continuation
+    that must count against the SAME turn's ceilings (the summons' one
+    follow-up, `nora.app.agent_runner.LiveAgentRunner.invoke`'s `follow_up`)
+    is therefore handed the remainder, read off the same metrics
+    `_check_limits` reads (`latest_agent_invocation`: its cycle count and its
+    `outputTokens`/`totalTokens`). A cap absent from `limits` stays absent.
+    Fail-closed: metrics the SDK did not keep read as None, never as a full
+    fresh budget."""
+    invocation = getattr(
+        getattr(agent, "event_loop_metrics", None), "latest_agent_invocation", None,
+    )
+    if invocation is None:
+        return None
+    usage = getattr(invocation, "usage", None) or {}
+    spent = {
+        "turns": len(getattr(invocation, "cycles", ()) or ()),
+        "output_tokens": int(usage.get("outputTokens", 0)),
+        "total_tokens": int(usage.get("totalTokens", 0)),
+    }
+    left = {
+        key: cap - spent.get(key, 0) for key, cap in limits.items() if cap is not None
+    }
+    if any(value <= 0 for value in left.values()):
+        return None
+    return left
+
+
 def final_text(result: Any) -> str:
     """The model's last PROSE, or "" — the words it wrote instead of calling
     `send_reply` (DEC-93).

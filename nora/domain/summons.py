@@ -64,6 +64,13 @@ SUMMONS_OUTCOMES: tuple[str, ...] = (
     *(s for s in SUMMONS_STATES if s not in ("claimed", "flushing")), ALREADY_CLAIMED,
 )
 
+#: `nora_summons_follow_ups_total`'s `outcome` label: what one follow-up
+#: (`nora.app.summons.UNSENT_REPLY_FOLLOW_UP`) ended in. `replied` is a
+#: `send_reply` that passed the guards and was held (the flush may still
+#: refuse it, and a dry run posts nothing); `silent` is nothing held.
+FollowUpOutcome = Literal["replied", "silent"]
+FOLLOW_UP_OUTCOMES: tuple[str, ...] = get_args(FollowUpOutcome)
+
 #: `nora_summons_intake_total`'s `outcome` label: what became of one `summons`
 #: event from the bridge's SSE stream. `queued` reached the consumer's inbox;
 #: `disabled` arrived while `[social.instagram.summons]` is off and was

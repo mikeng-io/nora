@@ -317,12 +317,19 @@ class FakeAgentRunner:
 
     def __init__(self, turns: list[ScriptedTurn] | None = None, *, delay: float = 0.0,
                  raises: Exception | None = None,
-                 on_call: Callable[[dict], None] | None = None) -> None:
+                 on_call: Callable[[dict], None] | None = None,
+                 follow_up_turns: list[ScriptedTurn] | None = None) -> None:
         self.turns = turns or []
+        # What the model does AFTER a `follow_up` message, when the caller
+        # passes one and it answers (`LiveAgentRunner.invoke`'s contract).
+        # Replayed against the SAME hooks, guard and spend as `turns`.
+        self.follow_up_turns = follow_up_turns or []
         self.delay = delay
         self.raises = raises
         self._on_call = on_call
         self.invocations = 0
+        # Every follow-up message sent, in order: at most one per invoke.
+        self.follow_ups: list[str] = []
         self.models: list[ScriptedModel] = []
         self.tool_choices: list = []
 
@@ -382,8 +389,36 @@ class FakeAgentRunner:
         model = ScriptedModel()
         self.models.append(model)
         agent = _Agent(model)
-        cycles = total_tokens = output_tokens = 0
-        for turn in self.turns:
+        spent = [0, 0, 0]  # cycles, total_tokens, output_tokens: the WHOLE turn's
+        stop, final = await self._replay(
+            self.turns, hooks=hooks, agent=agent, model=model,
+            tools_by_name=tools_by_name, limits=limits, spent=spent,
+        )
+        # The real runner's one continuation: consulted only after a loop that
+        # ended on its own, and only when a cap is left. The spend is NOT
+        # reset, so the follow-up is bounded by what the first pass left —
+        # `factory.remaining_limits`'s arithmetic, expressed as one counter.
+        follow_up = kwargs.get("follow_up")
+        if follow_up is not None and stop == "end_turn" and limit_stop_reason(
+            cycles=spent[0], total_tokens=spent[1], output_tokens=spent[2], limits=limits,
+        ) is None:
+            message = follow_up(final)
+            if message:
+                self.follow_ups.append(message)
+                stop, final = await self._replay(
+                    self.follow_up_turns, hooks=hooks, agent=agent, model=model,
+                    tools_by_name=tools_by_name, limits=limits, spent=spent,
+                )
+        return stop, final, trace
+
+    async def _replay(
+        self, turns: list[ScriptedTurn], *, hooks: _HookRegistry, agent: _Agent,
+        model: ScriptedModel, tools_by_name: dict, limits: dict | None, spent: list[int],
+    ) -> tuple[str, str]:
+        """One loop over `turns` → `(stop_reason, final_text)`, charging
+        `spent` in place. The body `invoke` always had, lifted so a follow-up
+        can replay a second script over the same hooks."""
+        for turn in turns:
             cancel = (await hooks.dispatch(_BeforeModelCall(agent))).cancel
             if cancel:
                 # A terminal verb has run and the guard ended the turn, so the
@@ -395,7 +430,7 @@ class FakeAgentRunner:
                 # tests (pre-deploy review 2026-08-10). CLAUDE.md's rule, in the
                 # one shape it mattered: make the fake behave like the real
                 # server, INCLUDING its wrong-call shapes.
-                return "end_turn", cancel if isinstance(cancel, str) else "", trace
+                return "end_turn", cancel if isinstance(cancel, str) else ""
             # Recorded AFTER the hooks, because that is when the SDK reads the
             # model's config to build the request — a value sampled before them
             # would miss the relaxation this line exists to make visible.
@@ -411,17 +446,17 @@ class FakeAgentRunner:
                         continue
                 tool_result = await _invoke_tool(tools_by_name[name], **args)
                 await hooks.dispatch(_AfterToolCall(name, args, result=tool_result))
-            cycles += 1
-            total_tokens += turn.total_tokens
-            output_tokens += turn.output_tokens
+            spent[0] += 1
+            spent[1] += turn.total_tokens
+            spent[2] += turn.output_tokens
             if not turn.tool_calls:
                 # The cycle ended `end_turn`, so the loop stops here and never
                 # reaches the top-of-cycle check — a one-shot answer cannot
                 # trip a cap however much it spent. See `limit_stop_reason`.
-                return "end_turn", turn.final_text or "", trace
+                return "end_turn", turn.final_text or ""
             stop = limit_stop_reason(
-                cycles=cycles, total_tokens=total_tokens,
-                output_tokens=output_tokens, limits=limits,
+                cycles=spent[0], total_tokens=spent[1],
+                output_tokens=spent[2], limits=limits,
             )
             if stop is not None:
                 # `final_text` on a budget stop, not "" (#110). The REAL runner
@@ -436,6 +471,6 @@ class FakeAgentRunner:
                 # So a ScriptedTurn that trips a cap WITH `final_text` is a
                 # runner that drafted; one without is a draft that came back
                 # empty. Both are real production states.
-                return stop, turn.final_text or "", trace
-        final = (self.turns[-1].final_text or "") if self.turns else ""
-        return "end_turn", final, trace
+                return stop, turn.final_text or ""
+        final = (turns[-1].final_text or "") if turns else ""
+        return "end_turn", final

@@ -311,7 +311,10 @@ PINNED: dict[str, tuple[int, str]] = {
     # identity and constraints gained `summons` in `applies_to` and the public
     # names in their authority fields in the same change; neither is rendered,
     # so neither sha above moved and neither version was bumped.
-    "public-voice": (1, "45841e6dfd7037cd234ce71ed2f1137db96aba609d574a6413ea54e3bfff888b"),
+    # v2 (2026-09-26, operator direction: "it's NOT commenting, it's
+    # reporting"): a comment to the person, a sentence or two, no report
+    # framing, no lists; the language follows the comment.
+    "public-voice": (2, "7b234ec7d7ab0e3f33db8a22df83e48781a39292cbffb1543bdc631e58d6d479"),
     # public-conduct v2 (2026-09-25, review of #545): "# Drawing something" is
     # deleted. `generate_image` is not in the summons' PUBLIC_GRANT (a comment
     # carries no image, design 19), so a section telling her when to draw
@@ -323,7 +326,11 @@ PINNED: dict[str, tuple[int, str]] = {
     # the site's name, never a shortened one (a live reply cited a truncated
     # stock-photo link); and "# What the post shows": the post's media was read
     # before her turn, and an item marked not read has not been seen.
-    "public-conduct": (4, "6e9cc775db93a9427e7f0e158e1911b2fa0d56ca9d147eb5971db31dec229390"),
+    # v5 (2026-09-26): her own reading of a picture never overrules the sources,
+    # a lead's page is opened before she leans on it, and the reply goes to the
+    # person who tagged her. A live dry run called a photo "AI" from pixels
+    # while its own searches had found a named photographer.
+    "public-conduct": (5, "5416fb92a4cfbc3c59ae0e31a7ba5311e4936c646b3942f08f4b2db39287dcfb"),
     "public-constraints": (
         1, "88b47c480e3948332c8281cacb0efbdc9094176d16f1704593df8eaa8b735dfa",
     ),

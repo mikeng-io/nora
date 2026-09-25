@@ -40,6 +40,7 @@ from __future__ import annotations
 import dataclasses
 import logging
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -140,9 +141,22 @@ class LiveAgentRunner:
         limits: dict[str, Any],
         ctx: TagContext,
         trace_attributes: dict[str, Any],
+        follow_up: Callable[[str], str | None] | None = None,
     ) -> tuple[str | None, str, TagTrace]:
         """Run the turn and return Strands' `stop_reason` (R-23) plus a
         `TagTrace` of what happened.
+
+        **`follow_up`: at most ONE continuation of the same conversation.**
+        Asked once, with the first pass's final prose, after a loop that
+        ended on its own (never after one of R-8's caps: there is no ceiling
+        left to continue under). A message back is sent as the next user
+        turn to THIS `agent` — the same messages, tools, guard (so the same
+        per-tool budgets: nothing is re-granted) and trace — under what is
+        left of `limits` (`factory.remaining_limits`); None, or a spent cap,
+        ends the turn as before. What the continuation returns replaces the
+        first pass's `stop_reason` and text. It is never asked twice, and
+        the budget draft below never runs after it. The caller decides what
+        the prose means; this layer only continues the conversation.
 
         This method used to `await factory.invoke(...)` and DISCARD the
         `AgentResult` it returned, so `stop_reason` — the SDK's only signal
@@ -204,6 +218,18 @@ class LiveAgentRunner:
         stop_reason = getattr(result, "stop_reason", None)
         stop_reason = stop_reason if isinstance(stop_reason, str) else None
         text = factory.final_text(result)
+        followed_up = False
+        if follow_up is not None and stop_reason not in _BUDGET_STOP_REASONS:
+            remaining = factory.remaining_limits(agent, limits)
+            message = follow_up(text) if remaining is not None else None
+            if message:
+                followed_up = True
+                result = await factory.invoke(
+                    agent, message, invocation_state={}, limits=remaining or {},
+                )
+                stop_reason = getattr(result, "stop_reason", None)
+                stop_reason = stop_reason if isinstance(stop_reason, str) else None
+                text = factory.final_text(result)
         # THE BUDGET-EXHAUSTION DRAFT (#110, operator 2026-09-06). The loop hit
         # one of R-8's caps mid-work and left no prose behind, so the only thing
         # the pipeline could deliver was a canned apology — on a turn that had
@@ -224,7 +250,7 @@ class LiveAgentRunner:
         # already sent something has `final_text == ""` too, and the pipeline
         # checks `deliverer.delivered` before delivering anything from here.
         drafted = False
-        if stop_reason in _BUDGET_STOP_REASONS and not text.strip():
+        if not followed_up and stop_reason in _BUDGET_STOP_REASONS and not text.strip():
             text = await factory.draft_from_exhausted_loop(
                 agent,
                 timeout_seconds=self._draft_timeout_seconds,

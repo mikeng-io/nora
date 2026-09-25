@@ -39,6 +39,22 @@ def _function(tree: ast.Module, name: str) -> ast.AsyncFunctionDef:
     raise AssertionError(f"{name} not found in {OCCASION.relative_to(ROOT)}")
 
 
+def _own_returns(fn: ast.AsyncFunctionDef) -> list[ast.Return]:
+    """`fn`'s own `return`s, not those of a function nested in it (`_turn`'s
+    `follow_up` callback returns the follow-up message, which is not what
+    `_turn` hands back)."""
+    found: list[ast.Return] = []
+    stack: list[ast.AST] = list(fn.body)
+    while stack:
+        node = stack.pop()
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+            continue
+        if isinstance(node, ast.Return):
+            found.append(node)
+        stack.extend(ast.iter_child_nodes(node))
+    return found
+
+
 def test_post_comment_has_exactly_one_call_site_and_it_is_the_flush():
     sites = [
         (path.relative_to(ROOT), call)
@@ -62,16 +78,23 @@ def test_the_flush_is_handed_the_first_held_reply_or_its_stored_row():
         text = next(k.value for k in call.keywords if k.arg == "text")
         texts.append(ast.unparse(text))
     assert sorted(texts) == ["held[0]", "row.reply_text or ''"], texts
-    # And `held` IS the staging deliverer's `held_texts`, via `_turn`.
+    # And `held` IS the staging deliverer's `held_texts`, via `_turn` (whose
+    # second value is whether the turn got its one follow-up: a flag, never
+    # text, so the model's `final_text` still has no route to the flush).
     answer = _function(tree, "_answer")
     held = [
         n for n in ast.walk(answer)
         if isinstance(n, ast.Assign)
-        and any(isinstance(t, ast.Name) and t.id == "held" for t in n.targets)
+        and any(
+            (isinstance(t, ast.Name) and t.id == "held")
+            or (isinstance(t, ast.Tuple) and isinstance(t.elts[0], ast.Name)
+                and t.elts[0].id == "held")
+            for t in n.targets
+        )
     ]
     assert len(held) == 1 and "self._turn(" in ast.unparse(held[0].value)
     turn = _function(tree, "_turn")
-    returns = [n for n in ast.walk(turn) if isinstance(n, ast.Return)]
+    returns = _own_returns(turn)
     assert [ast.unparse(r.value) for r in returns if r.value is not None] == [
-        "handle.deliverer.held_texts",
+        "(handle.deliverer.held_texts, followed_up)",
     ]
