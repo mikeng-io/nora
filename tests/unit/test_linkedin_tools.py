@@ -115,11 +115,12 @@ async def test_the_input_decides_the_read(social, kwargs, sent):
         # `what` must fit the link.
         {"link": "https://www.linkedin.com/in/williamhgates/", "what": "company"},
         {"link": "https://www.linkedin.com/company/nvidia/", "what": "posts"},
-        # Pages that name nothing, and other networks.
+        # Pages that name nothing. A link to another network is no longer
+        # here: it is a registry redirect (`nothing_found`), not a bad input
+        # (design/social-per-network/30-link-owner-registry.md, "Migration"
+        # step 3) — see test_another_network_s_link_names_the_tool_that_reads_it.
         {"link": "https://www.linkedin.com/jobs/view/1/"},
         {"link": "https://evil.example/in/williamhgates/"},
-        {"link": "https://x.com/nasa"},
-        {"link": "https://www.instagram.com/p/SynthPost01/"},
         # One post cannot be read from its link.
         {"link": "https://www.linkedin.com/posts/williamhgates_ai-activity-1-a/"},
         # A leading dash would reach OpenCLI as a flag.
@@ -141,7 +142,9 @@ async def test_a_bad_input_is_unavailable_and_nothing_is_sent(social, kwargs):
 )
 async def test_another_network_s_link_names_the_tool_that_reads_it(social, link, tool):
     out = await _tools(social)["linkedin_read"](link=link)
+    assert out["status"] == "nothing_found"
     assert tool in out["note"]
+    assert social.calls == []
 
 
 async def test_a_post_link_says_it_cannot_be_read_and_offers_the_author(social):
@@ -172,6 +175,11 @@ async def test_the_query_junk_of_a_link_never_leaves(social):
     [
         ("linkedin_read", {"handle": "williamhgates", "what": "profile"}),
         ("linkedin_read", {"link": "https://www.linkedin.com/company/nvidia/"}),
+        ("linkedin_read", {"url": "https://www.linkedin.com/company/nvidia/"}),
+        # Refused BEFORE the url alias is judged: two different links in an
+        # unasked turn are `refused`, never the alias's `unavailable`.
+        ("linkedin_read", {"link": "https://www.linkedin.com/in/williamhgates/",
+                           "url": "https://www.linkedin.com/company/nvidia/"}),
         ("linkedin_search", {"query": "satya nadella"}),
     ],
 )
@@ -286,3 +294,34 @@ def test_the_description_meets_adr_0015(name):
     whole = json.dumps(sent, ensure_ascii=False)
     assert not re.search("[–—]", whole)
     assert not re.search("[^\x00-ɏ]", whole)
+
+
+# ---- `url` is `link` (design 30 decision 2, triggered 2026-09-25) ----------
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "sent"),
+    [
+        ({"url": "https://www.linkedin.com/in/williamhgates/?trk=x"},
+         ("linkedin", "profile", "williamhgates")),
+        ({"url": "https://www.linkedin.com/company/nvidia/"}, ("linkedin", "company", "nvidia")),
+        ({"link": "linkedin.com/in/williamhgates",
+          "url": "https://www.linkedin.com/in/williamhgates/?trk=x"},
+         ("linkedin", "profile", "williamhgates")),
+    ],
+)
+async def test_url_reads_as_link(social, kwargs, sent):
+    out = await _tools(social)["linkedin_read"](**kwargs)
+    assert out["status"] == "ok"
+    assert [c[:3] for c in social.calls] == [sent]
+
+
+async def test_url_and_link_that_differ_read_nothing(social):
+    out = await _tools(social)["linkedin_read"](
+        link="https://www.linkedin.com/in/williamhgates/",
+        url="https://www.linkedin.com/company/nvidia/",
+    )
+    assert out["status"] == "unavailable"
+    assert "as link" in out["note"]
+    assert "williamhgates" not in out["note"] and "nvidia" not in out["note"]
+    assert social.calls == []

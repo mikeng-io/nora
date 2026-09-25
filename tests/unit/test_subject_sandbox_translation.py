@@ -22,6 +22,7 @@ it is, and it would read as coverage.
 
 from __future__ import annotations
 
+import dataclasses
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -33,7 +34,12 @@ from nora.domain.notes import Note, NoteRevision
 from nora.domain.reminders import Reminder, ReminderState
 from nora.domain.standing import Standing
 from nora.infra.sql.snapshot import Snapshot
-from nora.subject.sandbox import as_knowledge
+from nora.subject.sandbox import (
+    _collapse_duplicate_proactive_notes,
+    _note_ids_by_title,
+    _pending_reminder_note_ids,
+    as_knowledge,
+)
 
 #: The historical instant the snapshot reconstructs — and, under one path,
 #: the instant the case is driven at.
@@ -325,3 +331,136 @@ def test_a_proactive_row_keeps_its_kind_and_payload() -> None:
 
 def test_a_snapshot_with_no_reminders_seeds_none() -> None:
     assert as_knowledge(_shot()).reminders == ()
+
+
+# --- issue #158: which notes NORA already has a reminder pending on ---------
+
+
+def test_pending_reminder_note_ids_reads_noras_own_rows_that_name_a_note() -> None:
+    """Backs `evals.backbone._refuse_a_remind_case_already_pending`: only
+    NORA's own outstanding reminders that name a note count — a member's own
+    reminder, or a row with no note, is not a pending decision about one.
+
+    BY ID (issue #158 review), off `payload["note_id"]`
+    (`nora/agent/tools.py:8923`) — not the title, which a rename or a
+    duplicate title would make unreliable."""
+    ids = _pending_reminder_note_ids((
+        _reminder(requester_person_id="nora", kind="proactive",
+                   payload={"note_id": "note-1", "note_title": "Dinner plan"}),
+        _reminder(requester_person_id="tyler_cortez", kind="proactive",
+                   payload={"note_id": "note-2", "note_title": "F1 update"}),
+        _reminder(requester_person_id="nora", kind="reminder", payload=None),
+    ))
+    assert ids == frozenset({"note-1"})
+
+
+def test_pending_reminder_note_ids_is_empty_with_nothing_pending() -> None:
+    assert _pending_reminder_note_ids(()) == frozenset()
+
+
+def test_note_ids_by_title_resolves_a_single_note() -> None:
+    notes = ((_note(), _revision("open")),)
+    assert _note_ids_by_title(notes) == {"Dinner 19 Sept": ("note-1",)}
+
+
+def test_note_ids_by_title_collects_every_id_sharing_a_title() -> None:
+    """`NOTE` has no unique constraint on `(workspace, title)` (`_notebook`'s
+    own docstring): two notes can share a title, and a caller resolving one
+    by title must be able to see that it is ambiguous rather than pick one."""
+    twin = dataclasses.replace(_note(), id="note-2")
+    notes = ((_note(), _revision("open")), (twin, _revision("open")))
+    assert _note_ids_by_title(notes) == {"Dinner 19 Sept": ("note-1", "note-2")}
+
+
+def test_note_ids_by_title_is_empty_with_no_notes() -> None:
+    assert _note_ids_by_title(()) == {}
+
+
+# --- issue #158: at most one open proactive reminder per note --------------
+
+
+def test_collapse_keeps_the_earliest_of_two_duplicate_proactive_notes() -> None:
+    """0064's own rule (pending before firing, then earliest `due_at`, then
+    `created_at`, then `id`): production history holds instants with TWO open
+    proactive rows on the same note — the double-booking #517 (migration
+    0064) fixed going forward. Seeding both would hit the sandbox's own copy
+    of `uq_reminders_proactive_open_note`; this collapses to the one 0064's
+    own migration would have kept."""
+    earlier = _reminder(
+        id=UUID("22222222-0000-4000-8000-000000000001"),
+        kind="proactive", payload={"note_id": "note-1", "note_title": "Dinner plan"},
+        due_at=_at(BEFORE_MS + HOUR), created_at=_at(BEFORE_MS - 2 * HOUR),
+    )
+    later = _reminder(
+        id=UUID("22222222-0000-4000-8000-000000000002"),
+        kind="proactive", payload={"note_id": "note-1", "note_title": "Dinner plan"},
+        due_at=_at(BEFORE_MS + 2 * HOUR), created_at=_at(BEFORE_MS - HOUR),
+    )
+    survivors = _collapse_duplicate_proactive_notes((earlier, later))
+    assert [r.id for r in survivors] == [earlier.id]
+
+
+def test_collapse_breaks_a_due_at_tie_on_created_at_then_id() -> None:
+    same_due = _at(BEFORE_MS + HOUR)
+    earlier_created = _reminder(
+        id=UUID("33333333-0000-4000-8000-000000000002"),
+        kind="proactive", payload={"note_id": "note-1"},
+        due_at=same_due, created_at=_at(BEFORE_MS - 2 * HOUR),
+    )
+    later_created = _reminder(
+        id=UUID("33333333-0000-4000-8000-000000000001"),
+        kind="proactive", payload={"note_id": "note-1"},
+        due_at=same_due, created_at=_at(BEFORE_MS - HOUR),
+    )
+    survivors = _collapse_duplicate_proactive_notes((later_created, earlier_created))
+    assert [r.id for r in survivors] == [earlier_created.id]
+
+
+def test_collapse_leaves_non_proactive_reminders_untouched() -> None:
+    plain = _reminder(kind="reminder", payload=None)
+    survivors = _collapse_duplicate_proactive_notes((plain,))
+    assert survivors == (plain,)
+
+
+def test_collapse_leaves_a_note_less_proactive_reminder_untouched() -> None:
+    """A proactive row with no note link (`remind` allows omitting `note`,
+    `nora/agent/tools.py` ~:8898, ~:8959) never hits the constraint — it is
+    not what `uq_reminders_proactive_open_note` is keyed on."""
+    unlinked = _reminder(kind="proactive", payload={"intent": "check in"})
+    another_unlinked = _reminder(
+        id=UUID("44444444-0000-4000-8000-000000000002"),
+        kind="proactive", payload={"intent": "check in again"},
+    )
+    survivors = _collapse_duplicate_proactive_notes((unlinked, another_unlinked))
+    assert survivors == (unlinked, another_unlinked)
+
+
+def test_collapse_preserves_original_order_and_leaves_a_single_note_alone() -> None:
+    plain = _reminder(
+        id=UUID("55555555-0000-4000-8000-000000000001"),
+        kind="reminder", payload=None,
+    )
+    solo_proactive = _reminder(
+        id=UUID("55555555-0000-4000-8000-000000000002"),
+        kind="proactive", payload={"note_id": "note-9"},
+    )
+    survivors = _collapse_duplicate_proactive_notes((plain, solo_proactive))
+    assert survivors == (plain, solo_proactive)
+
+
+def test_as_knowledge_collapses_duplicate_proactive_notes_before_seeding() -> None:
+    """The fix lives in `as_knowledge` itself, not just the helper: a
+    `Snapshot` carrying the real historical duplicate seeds only one."""
+    earlier = _reminder(
+        id=UUID("66666666-0000-4000-8000-000000000001"),
+        kind="proactive", payload={"note_id": "note-1", "note_title": "Dinner plan"},
+        due_at=_at(BEFORE_MS + HOUR),
+    )
+    later = _reminder(
+        id=UUID("66666666-0000-4000-8000-000000000002"),
+        kind="proactive", payload={"note_id": "note-1", "note_title": "Dinner plan"},
+        due_at=_at(BEFORE_MS + 2 * HOUR),
+    )
+    seeds = as_knowledge(_shot(reminders=(earlier, later))).reminders
+    assert len(seeds) == 1
+    assert seeds[0].due_in_seconds == HOUR / 1000

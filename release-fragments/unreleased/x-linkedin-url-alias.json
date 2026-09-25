@@ -1,0 +1,9 @@
+{
+  "type": "change",
+  "summary": "x_read and linkedin_read accept url as another name for link, as instagram_read already did (design/social-per-network/30-link-owner-registry.md, decision 2): the deployed model called them with url= in 7 of 20 eval turns on 2026-09-25, and each such call cost a retry.",
+  "details": [
+    "A url alone reads exactly as the same link would. A link and a url that spell the same X post or LinkedIn profile differently agree; two different links read nothing and neither is echoed back.",
+    "instagram_read's url handling is unchanged in behaviour and wording; all three tools now share one helper for it."
+  ],
+  "limitations": []
+}

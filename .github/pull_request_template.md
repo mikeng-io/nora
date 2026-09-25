@@ -19,7 +19,9 @@ not apply.
 
 ## Gate on the merged tree
 
-<!-- The real `make gate` outcome. A pre-existing unrelated failure is named
+<!-- The real `make gate` outcome, run once on the final head (`make gate`
+     scopes tests to the diff, `scripts/affected_tests.py`; `make full-gate`
+     is the unconditional full run). A pre-existing unrelated failure is named
      explicitly with its issue number — never absorbed into "tests pass". -->
 
 ## Deploy note

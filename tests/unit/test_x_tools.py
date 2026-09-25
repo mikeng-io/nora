@@ -111,10 +111,12 @@ async def test_an_ok_carries_how_to_report_it(social):
         {"handle": "nasa", "what": "story"},
         {"handle": "not a name!", "what": "profile"},
         {"handle": "na.sa", "what": "profile"},
-        # A link that names nothing, or another network.
+        # A link that names nothing. A link to another network is no longer
+        # here: it is a registry redirect (`nothing_found`), not a bad input
+        # (design/social-per-network/30-link-owner-registry.md, "Migration"
+        # step 3) — see test_an_instagram_link_names_the_tool_that_reads_it.
         {"link": "https://x.com/explore"},
         {"link": "https://evil.example/nasa/status/42"},
-        {"link": "https://www.instagram.com/p/SynthPost01/"},
         # `what` beside a link must name the same read.
         {"link": "https://x.com/nasa/status/42", "what": "posts"},
         {"link": "https://x.com/nasa/status/42", "what": "profile"},
@@ -130,7 +132,19 @@ async def test_a_bad_input_is_unavailable_and_nothing_is_sent(social, kwargs):
 
 async def test_an_instagram_link_names_the_tool_that_reads_it(social):
     out = await _tools(social)["x_read"](link="https://www.instagram.com/p/SynthPost01/")
+    assert out["status"] == "nothing_found"
     assert "instagram_read" in out["note"]
+    assert social.calls == []
+
+
+async def test_a_linkedin_link_names_the_tool_that_reads_it(social):
+    """The registry lookup (design/social-per-network/30-link-owner-registry.md,
+    "Migration" step 3) catches a LinkedIn link too, which the old
+    hand-written branch never did (it named only Instagram)."""
+    out = await _tools(social)["x_read"](link="https://www.linkedin.com/in/williamhgates/")
+    assert out["status"] == "nothing_found"
+    assert "linkedin_read" in out["note"]
+    assert social.calls == []
 
 
 async def test_no_input_is_echoed_back(social):
@@ -237,7 +251,7 @@ def test_x_read_s_schema_has_what_as_an_enum_and_nothing_required():
 
     spec = next(s for s in _specs(None) if s.name == "x_read")
     schema = adapt(spec).tool_spec["inputSchema"]["json"]
-    assert set(schema["properties"]) == {"what", "handle", "link", "limit"}
+    assert set(schema["properties"]) == {"what", "handle", "link", "url", "limit"}
     assert not schema.get("required")
     assert "posts" in json.dumps(schema["properties"]["what"])
 
@@ -246,3 +260,32 @@ def test_social_fetch_is_gone():
     assert "social_fetch" not in NATIVE_TOOLS
     assert "social_fetch" not in {s.name for s in _specs(None)}
     assert "social_fetch" not in UNIT_SAFE_TOOLS
+
+
+# ---- `url` is `link` (design 30 decision 2, triggered 2026-09-25) ----------
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "sent"),
+    [
+        ({"url": "https://x.com/nasa/status/42?s=20"}, ("x", "post", "42")),
+        ({"url": "https://x.com/nasa", "what": "posts"}, ("x", "posts", "nasa")),
+        # Two spellings of one link agree: the parser judges them, not the text.
+        ({"link": "twitter.com/nasa/status/42", "url": "https://x.com/nasa/status/42?s=20"},
+         ("x", "post", "42")),
+    ],
+)
+async def test_url_reads_as_link(social, kwargs, sent):
+    out = await _tools(social)["x_read"](**kwargs)
+    assert out["status"] == "ok"
+    assert [c[:3] for c in social.calls] == [sent]
+
+
+async def test_url_and_link_that_differ_read_nothing(social):
+    out = await _tools(social)["x_read"](
+        link="https://x.com/nasa/status/42", url="https://x.com/esa/status/7",
+    )
+    assert out["status"] == "unavailable"
+    assert "as link" in out["note"]
+    assert "nasa" not in out["note"] and "esa" not in out["note"]
+    assert social.calls == []

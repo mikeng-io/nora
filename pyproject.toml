@@ -160,7 +160,10 @@ select = ["E", "F", "W", "I", "N", "UP", "B", "BLE", "ASYNC", "S", "C4", "SIM", 
 #           accumulated across the culture-tier and participation-measure suites and
 #           `make gate` went red at its FIRST step. Renaming them was the alternative
 #           and is worse: it costs the emphasis and churns names `design/09-decision-index.md`
-#           cites (#187 already carries 91 stale selectors, largely from renames).
+#           cites (#187: the reproducible derivation in
+#           `tests/architecture/test_decision_index_tests_exist.py` found 40 stale
+#           `::selector` citations after triage, largely from renames — the "91"
+#           this comment used to cite was one of two disputed pre-derivation counts).
 #           Scoped to tests/ on purpose — in `nora/` lowercase function names ARE the rule.
 "tests/**" = ["S101", "S104", "S311", "S607", "RUF001", "N802", "N803", "N818"]
 "evals/**" = ["S101"]

@@ -1,24 +1,28 @@
-"""Every built tool whose signature has a parameter named `url` is EITHER an
-owner (`nora.agent.link_owners.LINK_OWNERS` names it as `owner.tool`) OR
-declares that parameter in `NativeTool.link_inputs` (design/social-per-network/
-30-link-owner-registry.md, "Tests and enforcement": "every tool whose
-signature has a parameter named url or link is either an owner or declares it
-in link_inputs").
+"""Every built tool whose signature has a parameter named `url` OR `link` is
+EITHER an owner (`nora.agent.link_owners.LINK_OWNERS` names it as
+`owner.tool`) OR declares that parameter in `NativeTool.link_inputs`
+(design/social-per-network/30-link-owner-registry.md, "Tests and
+enforcement": "every tool whose signature has a parameter named url or link
+is either an owner or declares it in link_inputs").
 
-**Scoped to `url`, not `link`, for PR 1.** `instagram_read` — today's only
-owner — accepts both `link` (its own reading parameter) and `url` (design
-13's alias, "same as link"); it is exempted here as an owner rather than by
-declaring `link_inputs`, since its `url` is not a redirect TARGET, it is the
-same argument under the name a model reaches for first. `x_read` and
-`linkedin_read` will need the same exemption once PR 2/3 register them and
-add their own `link` parameter to this check; widening this gate to cover
-`link` for every tool, not just owners, is PR 3's job ("the owners use the
-registry"), when those three tools start consulting the registry themselves
-for a link belonging to a DIFFERENT network. `url` is the generic-fetcher
-spelling (`web_fetch`, `media_fetch`) this PR's registry actually routes, so
-this is the gate that catches a new one of THOSE that forgets to declare
-itself — the failure design 30's "Where the lookup runs" §A calls out: "a new
-fetcher that forgets the call is silently unrouted."
+**Widened to `link` in PR 3** ("the owners use the registry"), from a PR-1
+gate scoped to `url` alone. `instagram_read`, `x_read` and `linkedin_read` now
+all consult the registry themselves for a link belonging to a DIFFERENT
+network (`owner_of`, called directly from `nora.agent.tools`, never through
+`_apply_link_owners`'s fetcher post-pass — an owner's OWN readable link must
+never be redirected away from itself, which that wrapper cannot tell apart
+from a claim by someone else). All three are exempted here as owners, the
+same as `instagram_read`'s `url` was under the PR-1 gate: none declares
+`link_inputs`, and none needs to, because none is a generic fetcher a claimed
+link should bypass entirely before the tool runs. `url` is still the
+generic-fetcher spelling (`web_fetch`, `media_fetch`) the registry actually
+routes through that post-pass, so this remains the gate that catches a new
+one of THOSE that forgets to declare itself — the failure design 30's "Where
+the lookup runs" §A calls out: "a new fetcher that forgets the call is
+silently unrouted." No tool other than the three owners has ever had a `link`
+parameter (checked by grep at PR-3 time), so widening this gate to `link` is
+about the day a fourth `link`-taking tool is added without registering as an
+owner or declaring `link_inputs`, not about today's three.
 """
 
 from __future__ import annotations
@@ -58,19 +62,21 @@ def _built_specs():
     )
 
 
-def test_every_url_parameter_is_declared_a_link_input():
+def test_every_url_or_link_parameter_is_declared_a_link_input():
     undeclared = []
     for spec in _built_specs():
         if spec.name in _OWNER_TOOLS:
             continue
         signature = inspect.signature(spec.call)
-        if "url" not in signature.parameters:
+        present = {name for name in ("url", "link") if name in signature.parameters}
+        if not present:
             continue
         declared = {link_input.param for link_input in NATIVE_TOOLS[spec.name].link_inputs}
-        if "url" not in declared:
-            undeclared.append(spec.name)
+        missing = sorted(present - declared)
+        if missing:
+            undeclared.append((spec.name, missing))
     assert undeclared == [], (
-        f"tool(s) with a url parameter and no link_inputs declaration: {undeclared}"
+        f"tool(s) with a url/link parameter and no link_inputs declaration: {undeclared}"
     )
 
 
@@ -83,3 +89,20 @@ def test_at_least_one_tool_actually_exercises_this_gate():
         name for name, declared in NATIVE_TOOLS.items() if declared.link_inputs
     }
     assert {"web_fetch", "media_fetch"} <= declaring
+
+
+def test_every_link_parameter_tool_is_a_registered_owner():
+    """The `link` half's own positive control. Every built tool with a `link`
+    parameter today (`instagram_read`, `x_read`, `linkedin_read`) is exempted
+    from the sweep above only because `_OWNER_TOOLS` names it — an empty
+    `link_tools` set would mean this module's own widening from `url` to
+    `link` (this file's docstring) exercises nothing."""
+    link_tools = {
+        spec.name for spec in _built_specs()
+        if "link" in inspect.signature(spec.call).parameters
+    }
+    assert link_tools, "no built tool has a link parameter — untested widening"
+    assert link_tools <= _OWNER_TOOLS, (
+        f"tool(s) with a link parameter that are not registered owners: "
+        f"{sorted(link_tools - _OWNER_TOOLS)}"
+    )

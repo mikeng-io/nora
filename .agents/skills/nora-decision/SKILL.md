@@ -135,8 +135,11 @@ two branches can take the same number and git merges both rows without a conflic
    done
    ```
 4. **Duplicates.** On the merged tree, `tests/architecture/test_decision_index_ids_are_unique.py`
-   passes (it is in `make gate`) and `make decision-numbers` prints nothing under
-   either heading. On origin/master itself:
+   passes (`scripts/affected_tests.py` maps `design/09-decision-index.md` into
+   `make gate` whenever a diff touches it, and to the whole suite otherwise —
+   run `make full-gate` to always include it regardless of what changed) and
+   `make decision-numbers` prints nothing under either heading. On
+   origin/master itself:
    ```bash
    for ns in DEC R; do
      d=$(git show origin/master:design/09-decision-index.md | grep -oE "^\| $ns-[0-9]+[a-z]? \|" | tr -d '| ' | sort | uniq -d)

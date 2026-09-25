@@ -88,6 +88,7 @@ def _shared_payloads() -> dict[str, object]:
         "tools._LINKEDIN_OFF": tools_module._LINKEDIN_OFF,
         "tools._LINKEDIN_FAILED": tools_module._LINKEDIN_FAILED,
         "tools._LINKEDIN_UNASKED": tools_module._LINKEDIN_UNASKED,
+        "tools._URL_AND_LINK_DIFFER": tools_module._URL_AND_LINK_DIFFER,
         "tools._LINKEDIN_READ_NOTES[ok]": {"note": tools_module._LINKEDIN_READ_NOTES["ok"]},
         "tools._LINKEDIN_SEARCH_NOTES[ok]": {"note": tools_module._LINKEDIN_SEARCH_NOTES["ok"]},
         "tools._INSTAGRAM_OFF": tools_module._INSTAGRAM_OFF,
