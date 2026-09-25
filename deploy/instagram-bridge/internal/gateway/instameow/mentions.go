@@ -8,9 +8,8 @@ package instameow
 // # What the upstream call really is
 //
 // `POST https://www.instagram.com/api/v1/news/inbox/`, form-encoded, with
-// `jazoest`, `fb_dtsg` and `selected_filters=comments` — the request
-// Instagram WEB's own notifications panel makes with its "Comments" filter
-// tab, as captured from the operator's logged-in browser on 2026-09-25
+// `jazoest` and `fb_dtsg` and nothing else — the request Instagram WEB's own
+// notifications panel makes on its "All" tab, as captured from the operator's logged-in browser on 2026-09-25
 // (design 19, phase 1). It goes through restDo as a `webForm` POST (call.go):
 // the form tokens come from the session's own configs, built the way the
 // library builds its own web POST form (pkg/instameow/misc.go:40-48,57-58).
@@ -133,9 +132,12 @@ import (
 // exactly as the web client was captured calling it.
 const newsInboxEndpoint = "https://www.instagram.com/api/v1/news/inbox/"
 
-// newsInboxFilter is the web client's "Comments" filter tab
-// (`selected_filters=comments` in its form, captured 2026-09-25).
-const newsInboxFilter = "comments"
+// No `selected_filters`: the "All" tab. The first live summons test
+// (2026-09-25) came back with zero stories under `selected_filters=comments`
+// after a real @mention in a comment. That filter is the panel's "Comments"
+// tab (comments on HER posts); mentions sit under a separate tab whose filter
+// value was not captured. "All" was captured exactly (jazoest, fb_dtsg only)
+// and carries every story, which the classifier sorts.
 
 // mediaDestinations are the `args.destination` schemes whose `id` query
 // parameter is a MEDIA id (captured: `clips_home?id=<media>&...` on a
@@ -280,7 +282,7 @@ func readMentions(ctx context.Context, issuer RESTIssuer, self domain.Self) ([]d
 		method:   http.MethodPost,
 		endpoint: newsInboxEndpoint,
 		label:    "news_inbox",
-		form:     url.Values{"selected_filters": {newsInboxFilter}},
+		form:     url.Values{},
 		webForm:  true,
 	})
 	if err != nil {
