@@ -359,8 +359,8 @@
  {
   "name": "working-set #445 fix: found_at is stamped by the write path, never trusted from the model",
   "file": "nora/engagement/stages/debrief.py",
-  "old": "        carried = prior_found_at.get((what, source))\n        if carried is None and not any(\n            name.lower() in source.lower() for name in shown_steps\n        ):\n            metrics.inc(\"nora_standing_working_set_unsourced_dropped_total\")\n            continue\n        candidates.append(WorkingSetItem(\n            what=what, source=source,\n            found_at=carried if carried is not None else now_ms,\n",
-  "new": "        carried = prior_found_at.get((what, source))\n        if carried is None and not any(\n            name.lower() in source.lower() for name in shown_steps\n        ):\n            metrics.inc(\"nora_standing_working_set_unsourced_dropped_total\")\n            continue\n        _model_found_at = entry.get(\"found_at\")\n        candidates.append(WorkingSetItem(\n            what=what, source=source,\n            found_at=(_model_found_at if isinstance(_model_found_at, int)\n                      else (carried if carried is not None else now_ms)),\n",
+  "old": "        candidates.append(WorkingSetItem(\n            what=what, source=source,\n            found_at=carried if carried is not None else now_ms,\n",
+  "new": "        _model_found_at = entry.get(\"found_at\")\n        candidates.append(WorkingSetItem(\n            what=what, source=source,\n            found_at=(_model_found_at if isinstance(_model_found_at, int)\n                      else (carried if carried is not None else now_ms)),\n",
   "target": "tests/unit/test_debrief.py -k test_found_at_is_stamped_by_the_write_path_not_the_model"
  },
  {
@@ -373,8 +373,8 @@
  {
   "name": "working-set #445 fix: a new item's source must reference a step the fold was shown",
   "file": "nora/engagement/stages/debrief.py",
-  "old": "        carried = prior_found_at.get((what, source))\n        if carried is None and not any(\n            name.lower() in source.lower() for name in shown_steps\n        ):\n            metrics.inc(\"nora_standing_working_set_unsourced_dropped_total\")\n            continue\n",
-  "new": "        carried = prior_found_at.get((what, source))\n",
+  "old": "        carried = prior_found_at.get((what, source))\n        if carried is None:\n            # A NEW item: its source must be a shown step's tool name,\n            # EXACTLY — equality, never a substring match, so a description\n            # that merely mentions the tool cannot pass as sourced.\n            if not any(name.lower() == source.lower() for name in shown_steps):\n                metrics.inc(\"nora_standing_working_set_unsourced_dropped_total\")\n                continue\n",
+  "new": "        carried = prior_found_at.get((what, source))\n        if carried is None:\n            pass\n",
   "target": "tests/unit/test_debrief.py -k test_an_item_whose_source_does_not_match_a_shown_step_is_dropped"
  },
  {
