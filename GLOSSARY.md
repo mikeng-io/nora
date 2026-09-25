@@ -316,7 +316,8 @@ kind. The files sit in four scope folders — `core/` (wherever she is),
   determination runs with the right to stay silent. NOT "ambient" — ambient
   means recorded, never answered; participation is the governed exception to
   it. Ships disabled (`[participation] enabled = false` plus a per-room
-  `participation = true` in `policy.toml`). **Shadow mode** mirrors every
+  `relevance_gate = true` in `policy.toml`, the opt-in's name since it was
+  renamed from `participation`). **Shadow mode** mirrors every
   determination to a review channel and holds the live send, for reading
   before the flip.
 - **summons** — a public occasion (design/instagram-adoption/19, DEC-212):

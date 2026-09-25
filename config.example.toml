@@ -361,7 +361,7 @@ output_tokens = 12000
 # The participation occasion (design/dreamer-agent-loop/35): Nora MAY speak in a
 # room she was NOT tagged in, judged once per quiescence-closed window, with
 # silence as the healthy default. OFF by default, and even when enabled it
-# engages nowhere until a room is ALSO opted in with `participation = true` on
+# engages nowhere until a room is ALSO opted in with `relevance_gate = true` on
 # its [[conversations]] entry in policy.toml — "allowed to answer when tagged"
 # and "allowed to speak uncalled" are separate grants, both required.
 enabled = false
