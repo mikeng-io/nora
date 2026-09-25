@@ -99,14 +99,13 @@ side, "read the Threads post a room member pasted", is still a
 6. **Only people in `identity.toml` can summon her** (operator,
    2026-09-25: «in prod, I expect noraexample only exposed to the people in
    identity.toml»). A summoner is recognised by a `[[persons.<id>.threads]]`
-   account block, matched on the Threads **user id** and never on the
-   handle, because a handle can be changed and an id cannot (design/10 §1.3,
-   the rule every other platform already follows). A summons from anyone
-   else is recorded as `ignored_summoner` and gets no reply at all, not even
-   a refusal. There is no `"anyone"` switch. Opening her to strangers would
-   be a new decision, not a config value. Before App Review Meta only
-   delivers mentions from accounts added as Threads testers anyway, so the
-   testers and the identity.toml accounts are the same set of people.
+   account block. A summons from anyone else is recorded as
+   `ignored_summoner` and gets no reply at all, not even a refusal. There is
+   no switch that opens her to strangers; that would be a new decision, not
+   a config value. The block is matched on the **username**, because the
+   API gives no other author identifier (10 §"Who may summon", measured
+   2026-09-25). That is safe only while Meta's tester list still gates by
+   account id underneath. See 10 for what has to change before App Review.
 7. **A public-surface doctrine.** A new `public.md`, loaded only for this
    occasion. It covers audience (strangers, permanently), register, claims
    with sources, a 500-character limit, and refusing what she cannot ground

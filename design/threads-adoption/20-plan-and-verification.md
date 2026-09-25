@@ -99,7 +99,7 @@ because the operator asked for the summons.
 | the bridge's write allowlist has exactly one route, pinned against its router | same |
 | `PUBLIC_GRANT` holds no tool that is not `read_only` other than `send_reply` and `generate_image`, and no room-scoped, memory or persons tool | new: tests/unit/test_threads_grant.py |
 | a summons occasion constructs no `RoomView`, writes no Honcho message, no audit row and no decision-log row | new: tests/unit/test_summons_occasion.py, with fakes that fail on any call |
-| a summons whose author id resolves to no `[[persons.<id>.threads]]` block reaches no model call, and one matched only by handle is not a match | same |
+| a summons whose author username matches no `[[persons.<id>.threads]]` block reaches no model call | same |
 | the deliverer refuses text over 500 characters after `strip_markdown` with a note, and never truncates | new: tests/unit/test_threads_deliverer.py |
 | a second `send_reply` in one summons is refused; the flush publishes once | same |
 | the same summons polled twice runs the occasion once | new: tests/unit/test_summons_poller.py |
@@ -143,8 +143,9 @@ prompt back and check that the arms differ.
    15-minute expiry. The alternative is a separate public bucket outside
    `drop`, which costs one more public surface.
 4. **One `[[persons.<id>.threads]]` block per friend who may summon her**,
-   each keyed on their Threads user id. The ids are read from their first
-   mention in phase 1, so a friend tags her once before they are admitted.
+   keyed on their Threads username, and each of them a Threads tester.
+   Before App Review, the username has to be pinned to an account
+   (10 §"Who may summon").
 
 ## What would reopen it
 

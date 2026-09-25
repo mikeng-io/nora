@@ -111,18 +111,55 @@ need to know about it.
 ## Who may summon
 
 The bridge serves every mention. `nora` filters. The occasion resolves the
-summoner through `Persons` against `[[persons.<id>.threads]]` blocks, by
-the mention author's Threads user id. The field that carries it is
-confirmed on the first real mention in phase 1: the author's `username` is
-always present, but it is not an identity. A summoner who resolves to no
-person is recorded as `ignored_summoner` and gets no answer. Posting a
-refusal in public to a stranger is worse than saying nothing.
+summoner through `Persons` against `[[persons.<id>.threads]]` blocks. A
+summoner who resolves to no person is recorded as `ignored_summoner` and
+gets no answer. Posting a refusal in public to a stranger is worse than
+saying nothing.
+
+**The API exposes no author id, only a username** (measured 2026-09-25 on
+the first real mention): `/mentions` returns `username`, and `owner` is
+absent even when asked for, on the mention and on its root post.
+`profile_lookup` needs `threads_profile_discovery`, which the OAuth flow did
+not grant. So the block is matched on the username. design/10 §1.3 says a
+name is spoofable and a platform id is not, and a username is spoofable in
+exactly one way: someone renames, releases the handle, and a stranger claims
+it.
+
+That gap is closed today by something other than Nora. Until App Review,
+Meta delivers mentions **only from accounts that hold a tester role on the
+app**, and the tester role is held by account, not by handle. A stranger who
+claims a friend's released handle is not a tester, so their mention never
+arrives. The two gates together are the rule: Meta's tester list binds the
+account, and `identity.toml` binds the person.
+
+**Before App Review is ever passed**, the first gate disappears and the
+username has to be pinned to an account. The candidate: a Threads username
+is its Instagram account's username, so the instagram-bridge's exact-match
+account lookup (`GET /accounts?query=`, measured exact in instagram-adoption
+P9) can resolve it to an `igid`, which the block then stores and compares.
+That is unmeasured. It couples the check to the Instagram session's health,
+and it has to fail closed. It is not needed while the app is unreviewed.
+
+The Threads account need not be the same one the person uses on Instagram
+elsewhere in `identity.toml`. The operator's Threads account is `mikeng_io`,
+and his `instagram` block holds a different account. So a summoner's
+`threads` block is its own entry, not derived from `instagram`.
 
 Resolving the summoner to a person does **not** open that person's private
 context to the occasion. The summons still runs with no memory and no room
 (decision 1), because the audience is public even when the summoner is a
 friend. Being in `identity.toml` decides who can make her speak, not what
 she may say.
+
+## What the first mention showed (2026-09-25)
+
+| Question | Answer |
+|---|---|
+| does a tester's mention arrive in `/mentions` | yes, once the account accepted the tester invite; not before |
+| fields on the mention | `id`, `text`, `username`, `timestamp`, `media_type`, `is_reply`, `root_post.id`, `replied_to.id`, `permalink`; no `owner` |
+| can the root post be read | yes, with text, author username, timestamp and permalink, but this root was the operator's own post; **a third party's root is still unmeasured** |
+| `/{root}/conversation` | yes, the reply tree with `replied_to` on each item |
+| a quote post | `is_quote_post: true`, but `quoted_post` did not come back when requested. **What was quoted is invisible so far**, and a claim is often in the quoted post |
 
 ## Comprehend: the `SummonsContext`
 
