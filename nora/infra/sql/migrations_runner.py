@@ -48,6 +48,7 @@ from alembic import command
 from alembic.config import Config
 from alembic.runtime.migration import MigrationContext
 from alembic.script import ScriptDirectory
+from alembic.util.exc import CommandError
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
 
@@ -131,6 +132,52 @@ def current_revision(url: str) -> str | None:
             return MigrationContext.configure(conn).get_current_revision()
     finally:
         engine.dispose()
+
+
+def revision_is_known(revision: str) -> bool:
+    """Whether `revision` is one THIS CHECKOUT'S OWN migration chain
+    defines — a file under `nora/infra/sql/migrations/versions/` names it
+    as its `revision =`.
+
+    Answers "behind head" vs. "ahead of head" with NO database connection,
+    using only the local script directory: this repo keeps ONE linear
+    alembic chain (every migration's own convention — `uv run alembic
+    heads` must print exactly one line, `0027_fact_candidate_provenance`'s
+    own comment), so a revision this checkout recognizes at all is, by
+    construction, an ANCESTOR of (or equal to) `head_revision()` — never a
+    sibling branch. A revision this checkout has never heard of is
+    therefore either ahead of head (introduced by a branch not yet merged)
+    or simply invalid; either way, "known" is what tells the two apart from
+    "not known", and `SourceRevisionMismatchError`'s callers use exactly
+    that.
+
+    `ScriptDirectory.get_revision` raises `CommandError` for an unknown id
+    and returns the `Script` (never `None`) for a known one — verified
+    against a real bogus/real revision id, 2026-09-25.
+    """
+    script = ScriptDirectory(str(_MIGRATIONS))
+    try:
+        return script.get_revision(revision) is not None
+    except CommandError:
+        return False
+
+
+class SourceRevisionMismatchError(RuntimeError):
+    """An eval source's alembic revision cannot be trusted for this
+    checkout's reads.
+
+    Raised in two places, deliberately the SAME type so a caller handles
+    one case rather than two:
+
+    - `nora.subject.sandbox.refuse_if_source_diverges_from_head` — the
+      upfront, no-query refusal, when the source is AHEAD of this
+      checkout's head (a revision `revision_is_known` does not recognize).
+      This never runs a query; it only compares two revision strings.
+    - `nora.infra.sql.snapshot.snapshot` — the fail-closed catch, when a
+      source BEHIND head (which `refuse_if_source_diverges_from_head`
+      allows, since most migrations add nothing `snapshot()` selects) turns
+      out to be missing a column or table a read actually named.
+    """
 
 
 @contextlib.contextmanager

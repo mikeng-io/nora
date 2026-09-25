@@ -28,7 +28,7 @@ import pytest
 
 from nora.doctrine.loader import DoctrineStore
 
-AUTHORED = ("identity", "voice", "conduct", "constraints")
+AUTHORED = ("identity", "belonging", "voice", "conduct", "constraints")
 
 # Every audience of HERS, and exactly what the ASSEMBLY must resolve to.
 #
@@ -341,7 +341,7 @@ def test_the_gate_instruction_reaches_no_audience_of_hers(doctrine_store):
     gate = doctrine_store.get(applies_to="relevance_gate").text
     assert needle in gate
     assert gate.count("<section ") == 1
-    for hers in ("identity", "voice", "silence", "conduct", "constraints"):
+    for hers in ("identity", "belonging", "voice", "silence", "conduct", "constraints"):
         assert f'name="{hers}"' not in gate
 
 

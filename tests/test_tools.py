@@ -265,9 +265,13 @@ def test_no_tool_asks_the_model_which_conversation_it_is_in(wiring):
         assert not properties & {"conversation_id", "conversation_type"}, (
             f"{name} makes the model invent a conversation nothing reads"
         )
+    # `before` (design/self-awareness/08 §2) is not a value she must invent:
+    # it is a time the person SAID («yesterday») or one printed on a row she
+    # was handed (`when`), the same class as `reply_to` below. A value nobody
+    # can read, or a time after now, reads the newest rows exactly as before.
     assert set(
         wiring["tools"]["load_transcript"].tool_spec["inputSchema"]["json"]["properties"]
-    ) == {"limit"}
+    ) == {"limit", "before"}
     # `reply_to` is the one thing DEC-24 permits that looks like what it
     # forbids. The rule is against a parameter the model must INVENT — a
     # conversation id it cannot know, a limit nothing downstream honours
@@ -283,9 +287,18 @@ def test_no_tool_asks_the_model_which_conversation_it_is_in(wiring):
 
 _DOCTRINE = Path(__file__).resolve().parents[1] / "nora" / "doctrine"
 
+# name -> scope folder, same table as tests/test_doctrine_content.py::_SCOPE_FOLDER.
+_DOCTRINE_SCOPE_FOLDER = {
+    "identity": "core", "constraints": "core",
+    "voice": "rooms", "conduct": "rooms", "silence": "rooms",
+    "participation-conduct": "rooms",
+    "participation": "instruments", "reaction": "instruments",
+}
+
 
 def _flat(name: str) -> str:
-    return " ".join((_DOCTRINE / f"{name}.md").read_text().split())
+    folder = _DOCTRINE_SCOPE_FOLDER[name]
+    return " ".join((_DOCTRINE / folder / f"{name}.md").read_text().split())
 
 
 def test_the_three_reply_defects_live_in_the_doctrine_not_the_send_reply_schema(wiring):
@@ -349,7 +362,8 @@ def test_strands_drops_an_out_of_schema_argument_instead_of_rejecting_the_call(w
         # exactly one key.
         ("send_reply", {"conversation_id": "gEVIL", "conversation_type": "group",
                         "text": "hi"}, {"text": "hi", "reply_to": None}),
-        ("load_transcript", {"conversation_id": "gEVIL", "limit": 5}, {"limit": 5}),
+        ("load_transcript", {"conversation_id": "gEVIL", "limit": 5},
+         {"limit": 5, "before": None}),
     ):
         assert wiring["tools"][name]._metadata.validate_input(supplied) == expected
 
@@ -481,7 +495,9 @@ async def test_load_transcript_clamps_a_hostile_limit(wiring, monkeypatch):
     for hostile in (-1, 0):
         rows = (await _call(wiring["tools"]["load_transcript"], limit=hostile))["messages"]
         assert len(rows) <= 1
-    assert seen == [1, 1]
+    # 1, plus the ONE row that only says whether older rows exist and is never
+    # returned (`_read_window`). Never a non-positive limit.
+    assert seen == [2, 2]
 
 
 async def test_load_transcript_clamps_the_top_end_to_the_declared_ceiling(wiring, monkeypatch):
@@ -505,11 +521,14 @@ async def test_load_transcript_clamps_the_top_end_to_the_declared_ceiling(wiring
     monkeypatch.setattr(wiring["store"], "recent", spy)
     for greedy in (LOAD_TRANSCRIPT_MAX + 1, 200, 10_000):
         await _call(wiring["tools"]["load_transcript"], limit=greedy)
-    assert seen == [LOAD_TRANSCRIPT_MAX, LOAD_TRANSCRIPT_MAX, LOAD_TRANSCRIPT_MAX]
+    # The ceiling plus the ONE probe row that says whether older rows exist
+    # (`_read_window`); it is dropped before anything reaches the model, which
+    # `test_load_transcript_never_returns_more_than_the_ceiling` pins.
+    assert seen == [LOAD_TRANSCRIPT_MAX + 1] * 3
     # Spelled out, not just compared to the constant: an assertion written only
     # against `LOAD_TRANSCRIPT_MAX` asserts the implementation back to itself and
     # would stay green if the ceiling went back to 200.
-    assert seen == [60, 60, 60]
+    assert seen == [61, 61, 61]
 
 
 async def test_load_transcript_defaults_to_less_than_the_ceiling(wiring, monkeypatch):
@@ -526,8 +545,8 @@ async def test_load_transcript_defaults_to_less_than_the_ceiling(wiring, monkeyp
 
     monkeypatch.setattr(wiring["store"], "recent", spy)
     await _call(wiring["tools"]["load_transcript"])
-    assert seen == [LOAD_TRANSCRIPT_DEFAULT]
-    assert seen == [25]                       # the literal, for the same reason as above
+    assert seen == [LOAD_TRANSCRIPT_DEFAULT + 1]   # plus the older-rows probe
+    assert seen == [26]                       # the literal, for the same reason as above
     assert LOAD_TRANSCRIPT_DEFAULT < LOAD_TRANSCRIPT_MAX
 
 
@@ -676,7 +695,7 @@ def test_a_second_message_must_earn_its_place():
     this incident.
     """
     section = " ".join(
-        (_DOCTRINE / "conduct.md").read_text()
+        (_DOCTRINE / "rooms" / "conduct.md").read_text()
         .split("# Follow the conversation", 1)[1].split("\n# ", 1)[0].split()
     ).lower()
     assert "has to earn its place" in section, (

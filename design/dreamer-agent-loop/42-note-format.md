@@ -398,8 +398,8 @@ Invented, never shown to any model (§6), to make the grammar concrete:
 ## 5. Language: fixed keys in English, content in the room's words
 
 The rooms speak Cantonese and English, mixed. The repo's precedent is a split
-by what a text is FOR: `nora/doctrine/conduct.md` is English because it
-describes, `nora/doctrine/voice.md` is Cantonese because it is a specimen of
+by what a text is FOR: `nora/doctrine/rooms/conduct.md` is English because it
+describes, `nora/doctrine/rooms/voice.md` is Cantonese because it is a specimen of
 the register it asks for (DEC-113).
 
 - **Headings, separators and the fixed tokens** (`## Decided`, `->`, `:`,

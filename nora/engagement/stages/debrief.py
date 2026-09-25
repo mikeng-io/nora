@@ -172,7 +172,7 @@ import time
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import tzinfo
-from typing import Protocol
+from typing import Any, Protocol
 
 from opentelemetry.util.types import AttributeValue
 
@@ -181,12 +181,20 @@ from nora.domain.culture import CultureRevision
 from nora.domain.media_join import MediaJoin
 from nora.domain.models import TranscriptRow
 from nora.domain.ports import RecordStore, StandingStore
-from nora.domain.standing import STANDING_STORE_CALLS_PER_FOLD, Standing
+from nora.domain.standing import (
+    DEFAULT_WORKING_SET_MAX_CHARS,
+    DEFAULT_WORKING_SET_MAX_ITEMS,
+    STANDING_STORE_CALLS_PER_FOLD,
+    WORKING_SET_TTL_HOURS,
+    Standing,
+    WorkingSetItem,
+    working_set_to_json,
+)
 from nora.domain.tag_trace import TagTrace
 from nora.obs.metrics import Metrics
 from nora.obs.tracing import annotate
 
-from ..debrief_render import render_debrief_input
+from ..debrief_render import render_debrief_input, shown_step_tool_names
 
 log = logging.getLogger("nora.engagement.debrief")
 
@@ -327,8 +335,22 @@ async def _complete(
     )
 
 
+def _working_set_rule(*, working_set_max_items: int, working_set_max_chars: int) -> str:
+    """The working set's own length rule — `working_set_max_chars`/`_max_items`'s
+    sentence, stated in both `_prompt` and `_consolidate_prompt` the same way
+    `max_chars`' rule already is, so the system message is consistent across
+    the fold and its retry (design/standing-compact/30-working-set.md §1)."""
+    return (
+        f"The working set can hold at most {working_set_max_items} items "
+        f"and must fit inside {working_set_max_chars} characters combined, "
+        f"rendered as JSON. Leave it empty, or omit the key, when there is "
+        f"nothing to carry."
+    )
+
+
 def _prompt(
     *, instructions: str, rendered: str, max_chars: int,
+    working_set_max_items: int, working_set_max_chars: int,
 ) -> tuple[str, str]:
     """`(system, user)` — the objective and its length rule in the SYSTEM
     role, the turn being folded in the USER role.
@@ -338,15 +360,21 @@ def _prompt(
     message an instruction written by a member sits in the same role as the
     operator's, and nothing downstream can tell which is which.
     """
+    rule = _working_set_rule(
+        working_set_max_items=working_set_max_items,
+        working_set_max_chars=working_set_max_chars,
+    )
     return (
         f"{instructions}\n\n"
-        f"The position you write must be at most {max_chars} characters.",
+        f"The position you write must be at most {max_chars} characters.\n\n"
+        f"{rule}",
         rendered,
     )
 
 
 def _consolidate_prompt(
-    *, instructions: str, rendered: str, max_chars: int, over: str
+    *, instructions: str, rendered: str, max_chars: int, over: str,
+    working_set_max_items: int, working_set_max_chars: int,
 ) -> tuple[str, str]:
     """The retry, and it is a RETRY rather than a truncation.
 
@@ -381,9 +409,14 @@ def _consolidate_prompt(
     # `(system, user)`: the objective, the length rule and the consolidation
     # rules are the OPERATOR's and go in the system role; the turn and the
     # model's own over-long answer are the material being worked on.
+    rule = _working_set_rule(
+        working_set_max_items=working_set_max_items,
+        working_set_max_chars=working_set_max_chars,
+    )
     return (
         f"{instructions}\n\n"
-        f"The position you write must be at most {max_chars} characters.",
+        f"The position you write must be at most {max_chars} characters.\n\n"
+        f"{rule}",
         f"{rendered}\n\n"
         f"Your previous answer was {len(over)} characters, which is over the "
         f"{max_chars}-character limit, so it was NOT saved. Consolidate it now "
@@ -398,25 +431,165 @@ def _consolidate_prompt(
     )
 
 
-def _body(raw: str) -> str | None:
-    """The `standing` string out of the model's JSON, or `None`.
-
-    A missing key, a non-string value, a body that is only whitespace, or text
-    that is not JSON at all are ONE outcome here (`malformed`) and deliberately
-    not four: every one of them means the same thing operationally — nothing
-    was written and the prior position stands — and splitting them would be
-    four labels on a counter nobody could act on differently.
-    """
+def _parsed(raw: str) -> dict[str, Any] | None:
+    """The model's answer, as a JSON object, or `None` — the shared first step
+    `_body`/`_working_set_raw` both need, split out so working_set parsing
+    reads the SAME object `standing` is read from rather than a second
+    `json.loads` of the same string that could theoretically disagree."""
     try:
         parsed = json.loads(raw)
     except (ValueError, TypeError):
         return None
-    if not isinstance(parsed, dict):
-        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def _body(parsed: dict[str, Any]) -> str | None:
+    """The `standing` string out of the model's parsed JSON, or `None`.
+
+    A missing key, a non-string value, or a body that is only whitespace are
+    ONE outcome here (`malformed`) and deliberately not three: every one of
+    them means the same thing operationally — nothing was written and the
+    prior position stands — and splitting them would be three labels on a
+    counter nobody could act on differently.
+    """
     body = parsed.get("standing")
     if not isinstance(body, str) or not body.strip():
         return None
     return body.strip()
+
+
+def _working_set_raw(parsed: dict[str, Any]) -> list[Any] | None:
+    """The `working_set` array out of the model's parsed JSON, or `None` when
+    absent, empty, or not a list — all of which read as "nothing to carry"
+    (the objective's own words), never as a malformed answer: unlike
+    `standing`, this key is optional on every turn that found nothing worth
+    holding, which the objective says is the ordinary state."""
+    raw = parsed.get("working_set")
+    return raw if isinstance(raw, list) and raw else None
+
+
+def _working_set(
+    raw: list[Any] | None, *,
+    now_ms: int,
+    shown_steps: frozenset[str],
+    prior: tuple[WorkingSetItem, ...],
+    max_items: int,
+    max_chars: int,
+    metrics: Metrics,
+) -> tuple[WorkingSetItem, ...]:
+    """The revised `working_set`, from the model's raw array
+    (design/standing-compact/30-working-set.md §3) — never raises, and every
+    exit is one of "the new set", "the prior set, unchanged" or `()`.
+
+    **`found_at` is stamped HERE, from `now_ms` — never read off the model's
+    JSON.** `WorkingSetItem`'s own rule: "there is no second clock". An item
+    the model re-states UNCHANGED from `prior` (same `what` AND `source`) is
+    a CARRY-FORWARD, and keeps the `found_at` it already had — the model is
+    shown its own prior (`<standing_working_set_prior>`) and told to
+    re-judge it the same way it re-judges the paragraph, so an item surviving
+    that re-judgment did not just get found again; only a `(what, source)`
+    pair absent from `prior` is a genuinely NEW item, and only a new item's
+    `found_at` becomes `now_ms`.
+
+    **A carry-forward past its OWN TTL is dropped here, deterministically,
+    whatever the model does.** The render side (`render_standing_working_set`)
+    already filters an expired item out of what a downstream reader sees, but
+    that is a READ-time filter over what the row still HOLDS — nothing before
+    this stopped the model from re-stating a stale item every turn (its
+    `found_at` preserved, per the paragraph above) and having it written back
+    forever, occupying a budget slot no live item could use. There is no
+    "the model chose to keep it" here: an item whose `now_ms - found_at`
+    exceeds `WORKING_SET_TTL_HOURS` is refused a place in the WRITTEN row,
+    counted, full stop — the same fail-closed posture the render side already
+    has, now also at the one other place this field's state can persist.
+
+    **A NEW item's `source` must name a step this turn's `<steps>` actually
+    showed, EXACTLY** (`shown_step_tool_names`) — the tool's own name and
+    nothing else, never a paraphrase of the room's question or a description
+    that happens to mention the tool. A SUBSTRING match let
+    `"the room's own web_search question, paraphrased"` through, because it
+    merely CONTAINS `web_search`; equality is what the objective's own worked
+    example already shows (`"source": "web_search"`, bare). One that does not
+    match exactly is DROPPED, counted, and never reaches `screen` at all: it
+    was never a candidate, so its drop is not the budget refusal below. A
+    CARRIED-FORWARD item is not re-checked against THIS turn's steps — it was
+    checked when it was new, and most turns call no tools at all, which would
+    otherwise make every carry-forward unsourced on sight.
+
+    **Screened like the body** (§3/§4.3), item by item, before the budget
+    check: an item dropped here was never a candidate for overflow either.
+
+    **The budget is the OPERATING cap** (`[standing] working_set_max_items`/
+    `_max_chars`), checked on the SURVIVING set. Overflowing it refuses the
+    WHOLE new working set and keeps `prior` UNCHANGED — never a silent
+    truncation, the same "a coherent stale position beats one cut in half"
+    argument §4.0 makes for the body, applied to this field. There is no
+    consolidate retry for this cap, unlike the body's: the objective states
+    the limit up front and asks the model to self-manage it, and the
+    fail-closed backstop here is a single refusal, not a second model call.
+    """
+    if raw is None:
+        return ()
+    ttl_ms = int(WORKING_SET_TTL_HOURS * 3_600_000)
+    prior_found_at = {(item.what, item.source): item.found_at for item in prior}
+    candidates: list[WorkingSetItem] = []
+    for entry in raw:
+        if not isinstance(entry, dict):
+            continue
+        what = entry.get("what")
+        source = entry.get("source")
+        bears_on = entry.get("bears_on")
+        if not isinstance(what, str) or not what.strip():
+            continue
+        if not isinstance(source, str) or not source.strip():
+            continue
+        what = what.strip()
+        source = source.strip()
+        carried = prior_found_at.get((what, source))
+        if carried is None:
+            # A NEW item: its source must be a shown step's tool name,
+            # EXACTLY — equality, never a substring match, so a description
+            # that merely mentions the tool cannot pass as sourced.
+            if not any(name.lower() == source.lower() for name in shown_steps):
+                metrics.inc("nora_standing_working_set_unsourced_dropped_total")
+                continue
+        elif now_ms - carried > ttl_ms:
+            # A CARRY-FORWARD past its own TTL: dropped here, deterministically
+            # — never kept merely because the model re-stated it.
+            metrics.inc("nora_standing_working_set_expired_dropped_total")
+            continue
+        candidates.append(WorkingSetItem(
+            what=what, source=source,
+            found_at=carried if carried is not None else now_ms,
+            bears_on=(
+                bears_on.strip()
+                if isinstance(bears_on, str) and bears_on.strip() else None
+            ),
+        ))
+    if not candidates:
+        return ()
+    _kept, rejected = screen(
+        adaptor="debrief_working_set",
+        items=[
+            {"what": item.what, "source": item.source,
+             "bears_on": item.bears_on or ""}
+            for item in candidates
+        ],
+        metrics=metrics,
+    )
+    rejected_indices = {r.index for r in rejected}
+    survivors = tuple(
+        item for i, item in enumerate(candidates) if i not in rejected_indices
+    )
+    if not survivors:
+        return ()
+    rendered_chars = len(json.dumps(
+        working_set_to_json(survivors), separators=(",", ":"), ensure_ascii=False,
+    ))
+    if len(survivors) > max_items or rendered_chars > max_chars:
+        metrics.inc("nora_standing_working_set_overflow_refusals_total")
+        return prior
+    return survivors
 
 
 @dataclass(frozen=True)
@@ -462,6 +635,13 @@ class Wiring:
     # bare handles the row actually carries. LAST, because a defaulted field
     # cannot precede the ones above it.
     media_join: MediaJoin | None = None
+    # `working_set`'s own two operating caps (design/standing-compact/
+    # 30-working-set.md §1, issue #445) — `max_chars`'s siblings and, like
+    # it, config (`StandingConfig.working_set_max_items`/`_max_chars`).
+    # Defaulted so a caller (and every existing test fixture) that predates
+    # this field keeps building a `Wiring` unchanged.
+    working_set_max_items: int = DEFAULT_WORKING_SET_MAX_ITEMS
+    working_set_max_chars: int = DEFAULT_WORKING_SET_MAX_CHARS
 
 
 async def run(
@@ -482,6 +662,8 @@ async def run(
     media_join: MediaJoin | None = None,
     tz: tzinfo | None = None,
     culture: CultureRevision | None = None,
+    working_set_max_items: int = DEFAULT_WORKING_SET_MAX_ITEMS,
+    working_set_max_chars: int = DEFAULT_WORKING_SET_MAX_CHARS,
 ) -> None:
     """Fold this finished turn into the conversation's position. **Never
     raises, and never returns anything** — a stage that runs after delivery has
@@ -593,15 +775,17 @@ async def run(
         # included: the budget the slot can afford is a total, and a retry
         # bounded on its own would add up to twice it on exactly the turn that
         # was already slow.
-        async def _fold() -> tuple[str | None, str]:
+        async def _fold() -> tuple[str | None, list[Any] | None, str]:
             """The standing call, and its consolidate retry when the first
-            answer does not fit, as `(body, refusal_label)`."""
+            answer does not fit, as `(body, working_set_raw, refusal_label)`."""
             reply = await _complete(
                 client, call="fold",
                 tag_id=trace.tag_id, conversation_id=trace.conversation_id,
                 prompt=_prompt(
                     instructions=instructions, rendered=rendered,
                     max_chars=max_chars,
+                    working_set_max_items=working_set_max_items,
+                    working_set_max_chars=working_set_max_chars,
                 ),
             )
             first = _check(reply, trace.tag_id)
@@ -619,11 +803,13 @@ async def run(
                 prompt=_consolidate_prompt(
                     instructions=instructions, rendered=rendered,
                     max_chars=max_chars, over=first[0],
+                    working_set_max_items=working_set_max_items,
+                    working_set_max_chars=working_set_max_chars,
                 ),
             )
             return _check(retry, trace.tag_id)
 
-        body, refusal = await asyncio.wait_for(
+        body, working_set_raw, refusal = await asyncio.wait_for(
             _fold(), timeout=timeout_seconds)
         if body is None:
             outcome = refusal
@@ -657,6 +843,19 @@ async def run(
             )
             outcome = "screened"
             return
+
+        # §3: the working set's own validation — stamped, sourced, screened
+        # and budget-checked. Runs AFTER the body's own overflow/screen
+        # checks pass, not before: if the paragraph itself is refused,
+        # nothing is written at all and the prior stands whole, working set
+        # included, exactly as it did before this field existed.
+        working_set = _working_set(
+            working_set_raw, now_ms=now_ms,
+            shown_steps=shown_step_tool_names(trace.messages),
+            prior=prior.working_set if prior is not None else (),
+            max_items=working_set_max_items, max_chars=working_set_max_chars,
+            metrics=metrics,
+        )
 
         # Bounded and labelled `unavailable`, NOT `timeout`, exactly as the read
         # above is. `asyncio.TimeoutError IS TimeoutError` on every Python this
@@ -699,6 +898,7 @@ async def run(
                 batch[-1].id if batch else (
                     prior.last_folded_row_id if prior is not None else None)
             ),
+            working_set=working_set,
         )
         try:
             await asyncio.wait_for(
@@ -800,8 +1000,11 @@ def _truncated(completion: Completion, tag_id: str, *, what: str) -> bool:
     return False
 
 
-def _check(completion: Completion, tag_id: str) -> tuple[str | None, str]:
-    """`(body, refusal_label)` for the STANDING call — `finish_reason` first.
+def _check(
+    completion: Completion, tag_id: str,
+) -> tuple[str | None, list[Any] | None, str]:
+    """`(body, working_set_raw, refusal_label)` for the STANDING call —
+    `finish_reason` first.
 
     **The two failures carry DIFFERENT labels and that is the point**, even
     though both write nothing. `"unavailable"` is «the call was cut off, I
@@ -811,8 +1014,19 @@ def _check(completion: Completion, tag_id: str) -> tuple[str | None, str]:
     size is wrong, a rising `malformed` says the objective text or the schema
     is. Collapsing them would make the one instrument this stage has unable to
     tell an infrastructure problem from a prompt problem.
+
+    `working_set_raw` rides beside `body` rather than being parsed a second
+    time by the caller: both come out of the SAME `_parsed` call, so a
+    truncated or malformed completion that refuses `standing` refuses
+    `working_set` with it — there is no reading where the paragraph is
+    rejected and an unvalidated working set is written anyway.
     """
     if _truncated(completion, tag_id, what="the fold"):
-        return None, "unavailable"
-    body = _body(completion.content)
-    return (body, "") if body is not None else (None, "malformed")
+        return None, None, "unavailable"
+    parsed = _parsed(completion.content)
+    if parsed is None:
+        return None, None, "malformed"
+    body = _body(parsed)
+    if body is None:
+        return None, None, "malformed"
+    return body, _working_set_raw(parsed), ""

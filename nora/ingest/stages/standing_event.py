@@ -66,7 +66,11 @@ from nora.domain.culture import CultureRevision
 from nora.domain.media_join import MediaJoin
 from nora.domain.models import NormalizedMessage, TranscriptRow
 from nora.domain.ports import CultureReader, RecordStore, StandingStore
-from nora.domain.standing import Standing
+from nora.domain.standing import (
+    DEFAULT_WORKING_SET_MAX_CHARS,
+    DEFAULT_WORKING_SET_MAX_ITEMS,
+    Standing,
+)
 from nora.engagement.debrief_render import render_rollup_input
 from nora.engagement.slots import ConversationSlots
 from nora.engagement.stages.debrief import (
@@ -82,6 +86,9 @@ from nora.engagement.stages.debrief import (
 )
 from nora.engagement.stages.debrief import (
     _prompt as _debrief_prompt,
+)
+from nora.engagement.stages.debrief import (
+    _working_set as _debrief_working_set,
 )
 from nora.language.culture_render import read_culture
 from nora.obs.metrics import Metrics
@@ -133,6 +140,15 @@ class Wiring:
     # room outside the policy. Both `None` while `[culture] enabled = false`.
     culture: CultureReader | None = None
     culture_key: Callable[[str, str], str | None] | None = None
+    # `working_set`'s own two operating caps (design/standing-compact/
+    # 30-working-set.md, issue #445) — `debrief.Wiring`'s own fields, since
+    # this fold shares its `_prompt`. The rollup has no `<steps>`, so its
+    # write path (`_fold_batch`) can only ever CARRY the prior working set
+    # forward, never source a new item from it — but the shared objective
+    # states this budget on every call, this one included, so the numbers
+    # here should match what the room's tag folds are told.
+    working_set_max_items: int = DEFAULT_WORKING_SET_MAX_ITEMS
+    working_set_max_chars: int = DEFAULT_WORKING_SET_MAX_CHARS
 
 
 async def run(
@@ -365,9 +381,11 @@ async def _fold_batch(
         ),
     )
 
-    async def _standing() -> tuple[str | None, str]:
+    async def _standing() -> tuple[str | None, list[Any] | None, str]:
         system, user = _debrief_prompt(
             instructions=instructions, rendered=rendered, max_chars=wiring.max_chars,
+            working_set_max_items=wiring.working_set_max_items,
+            working_set_max_chars=wiring.working_set_max_chars,
         )
         # Through `debrief._complete` (issue #209) — the same delegation the
         # tag path's fold call uses, so this reaches the collector labelled
@@ -384,7 +402,7 @@ async def _fold_batch(
         return _debrief_check(reply, conversation_id)
 
     try:
-        body, refusal = await asyncio.wait_for(
+        body, working_set_raw, refusal = await asyncio.wait_for(
             _standing(), timeout=wiring.timeout_seconds,
         )
     except TimeoutError:
@@ -433,6 +451,18 @@ async def _fold_batch(
             "the prior position", key,
         )
         return False
+    # `shown_steps=frozenset()`: this fold has no `<steps>` (no `<turn>` at
+    # all — `render_rollup_input`), so it can never source a genuinely NEW
+    # item; `_debrief_working_set` therefore only ever carries forward an
+    # item that exactly matches one already in `prior` (same `what` AND
+    # `source`, so its `found_at` is preserved), which is this path's own
+    # rule stated in the shared validator rather than hardcoded here twice.
+    working_set = _debrief_working_set(
+        working_set_raw, now_ms=now_ms, shown_steps=frozenset(),
+        prior=prior.working_set if prior is not None else (),
+        max_items=wiring.working_set_max_items,
+        max_chars=wiring.working_set_max_chars, metrics=metrics,
+    )
     revised = Standing(
         platform=platform,
         conversation_id=conversation_id,
@@ -445,6 +475,17 @@ async def _fold_batch(
         # ascending, so `rows[-1]` is the furthest). Written in the SAME
         # statement as the position (20-watermark-read.md).
         last_folded_row_id=rows[-1].id,
+        # VALIDATED above via the shared `_debrief_working_set` — in
+        # practice this only ever CARRIES the prior forward (unchanged, or
+        # trimmed by a budget refusal back to the prior), since
+        # `shown_steps=frozenset()` means no candidate can ever be treated as
+        # new. Without this the field would default to `()` on every
+        # dataclass construction and a rollup fold would silently wipe
+        # whatever the tag fold had just written — the same "never by
+        # accident" argument `SqlStandingStore.write`'s upsert makes for
+        # `last_folded_row_id` above, applied to a field this path does not
+        # otherwise touch at all.
+        working_set=working_set,
     )
     try:
         await asyncio.wait_for(

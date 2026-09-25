@@ -464,7 +464,7 @@ def test_the_sourcing_priority_lives_in_conduct_not_a_generated_block():
     declared `source_tier` nothing renders is decoration; the gate found the
     model web-searching a fact with a closer source, and the priority now
     lives in conduct's 'What you can actually do' section."""
-    conduct = (ROOT / "nora" / "doctrine" / "conduct.md").read_text()
+    conduct = (ROOT / "nora" / "doctrine" / "rooms" / "conduct.md").read_text()
     assert "prefer your own" in conduct
     assert "open web, which is the last resort" in conduct
 
@@ -474,7 +474,7 @@ def test_the_closed_world_clause_lives_in_conduct_not_a_generated_block(): # DEC
     the gap: a restaurant answer ended «講清楚我幫你睇埋使唔使訂位» — offering to
     check a booking, which no tool here does and none is planned. DEC-150 moved
     the rule to conduct.md; it must read exactly as strongly there."""
-    conduct = (ROOT / "nora" / "doctrine" / "conduct.md").read_text()
+    conduct = (ROOT / "nora" / "doctrine" / "rooms" / "conduct.md").read_text()
     assert "That list is the WHOLE of what you can do" in conduct
     assert "no request you can put in on somebody's behalf" in conduct
     assert "Never offer, promise or volunteer an action that is not one of those tools" in conduct
@@ -488,9 +488,9 @@ def test_the_closed_world_clause_forbids_offers_not_ignorance():
     cannot find something out — `constraints.md` and `conduct.md` both insist on
     it — so the ban is on PROMISED ACTS. The two sentences sit in different
     files now, which is exactly why they could not contradict before."""
-    conduct = (ROOT / "nora" / "doctrine" / "conduct.md").read_text()
+    conduct = (ROOT / "nora" / "doctrine" / "rooms" / "conduct.md").read_text()
     assert conduct.index("That list is the WHOLE") < conduct.index("prefer your own")
-    constraints = (ROOT / "nora" / "doctrine" / "constraints.md").read_text()
+    constraints = (ROOT / "nora" / "doctrine" / "core" / "constraints.md").read_text()
     assert "我唔知」 and 「我查唔到」 are real" in " ".join(constraints.split())
 
 

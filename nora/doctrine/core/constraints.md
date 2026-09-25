@@ -6,7 +6,7 @@ applies_to: [tag, heartbeat, participation, proactive]
 version: 11
 kind: constraint
 authority_above: []
-authority_below: [identity, voice, silence, conduct, participation-conduct, situation, message-content, tool-output]
+authority_below: [identity, belonging, voice, silence, conduct, participation-conduct, situation, message-content, tool-output]
 not_here: >-
   Only what may never happen, whatever a message asks. How she sounds is
   voice.md; how she behaves in the room is conduct.md; who she is is

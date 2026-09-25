@@ -64,6 +64,15 @@ from evals.situation import (
     shown_where,
     varied_transport,
 )
+from nora.domain.note_body import (
+    ATTRIBUTED,
+    SECTIONS,
+    NoteBody,
+    NoteBodyError,
+    Shown,
+    ShownMessage,
+    parse_note_body,
+)
 from nora.subject import (
     DrawWorkspace,
     SubjectSpec,
@@ -205,6 +214,19 @@ NORA_CHECKS_FAILED = "nora.checks_failed"
 #: `expect` applies unchanged.
 NORA_ABSENT_NOTE_CLASH = "nora.absent_note_clash"
 NORA_REMIND_MATCHED = "nora.remind_matched"
+#: The character length of every body a dream pass WROTE (a staged candidate
+#: whose status is `created`: a new note or an appended revision), one per
+#: body, in no particular order. Printed on the grader's reason so `--reasons` carries it per draw:
+#: the body is what every later reader gets instead of the room's messages,
+#: and a change to how the objective demonstrates one is measured on it.
+NORA_BODY_CHARS = "nora.body_chars"
+#: Per written body, in `NORA_BODY_CHARS`' order: `ok` when it parses under
+#: design 42 §4 (`nora.domain.note_body.parse_note_body`) against the draw's
+#: shown set, else the rule it broke. A READING printed on the grader's reason
+#: as `body_schema=[...]`, not a verdict: bodies are prose until S2 puts the
+#: schema in the objective, and a verdict here would fail every create case
+#: before then. A case opts into it as a check with `body_schema: true`.
+NORA_BODY_SCHEMA = "nora.body_schema"
 #: The standing corpus (`design/standing-compact/20-verification.md` §1).
 #: `NORA_POSITION` is the position a fold wrote (`Outcome.position`), what
 #: `MeetsGrader` needs for `expect: fold`. `NORA_SHOWN` is what the subject's
@@ -907,11 +929,195 @@ def substitute_trigger(text: str, trigger: str) -> str:
 SNAPSHOT_KEYS = frozenset({"platform", "conversation_id", "before_ms"})
 
 
+#: A staged candidate whose body reached the notebook (`nora.domain.notes.
+#: CANDIDATE_CREATED`: a new note or a revision appended to one).
+_WRITTEN = "created"
+
+
+def _written_bodies(outcome: Any) -> list[str]:
+    return [b for status, b in getattr(outcome, "bodies", ()) if status == _WRITTEN]
+
+
+def _shown_set(outcome: Any) -> Shown:
+    """What the draw's model was shown, as `parse_note_body` takes it: the
+    batch rows by the name each was rendered under, the roster, Nora's name,
+    and the ids the notebook already cited (design 42 §4.5)."""
+    return Shown(
+        rendered=tuple(
+            ShownMessage(id=int(i), sender=str(name))
+            for i, name in getattr(outcome, "speakers", ())
+        ),
+        carried=frozenset(getattr(outcome, "carried", ())),
+        roster=dict(getattr(outcome, "roster", ())),
+        nora_names=frozenset(getattr(outcome, "nora_names", ())),
+    )
+
+
+def _parsed_bodies(
+    outcome: Any, *, require_open: bool,
+) -> list[tuple[str, NoteBody | None]]:
+    """Each WRITTEN body as `(rule, parsed)`: `("ok", body)` when it holds to
+    the schema, `(<the rule it broke>, None)` when it does not."""
+    shown = _shown_set(outcome)
+    parsed: list[tuple[str, NoteBody | None]] = []
+    for body in _written_bodies(outcome):
+        try:
+            parsed.append(("ok", parse_note_body(body, shown=shown, require_open=require_open)))
+        except NoteBodyError as refused:
+            parsed.append((refused.rule, None))
+    return parsed
+
+
+def _check_the_sections(
+    sections: Mapping[str, Any], outcome: Any, rows: Mapping[Any, int], *, require_open: bool,
+) -> list[str]:
+    """`body_sections` — `body_names`/`body_mentions`, PLACED (design 42
+    §10.1). A mapping of heading to items. An item that is a row LABEL (an
+    int) names that row's sender, by the name the model was shown: under
+    `Owed` they must own a line, under `Decided`/`Proposed`/`Ruled out` a
+    line must name them, under `Open` a line must cite the row. Any other
+    item is a fact (a string, or a list of alternatives) some line of that
+    section must contain, case-insensitively. Only bodies that parse count:
+    a fact in the wrong section, or in prose, is not placed."""
+    parsed = [b for rule, b in _parsed_bodies(outcome, require_open=require_open) if b]
+    if not parsed:
+        return ["body_sections: no written body holds to the schema"]
+    speakers = dict(getattr(outcome, "speakers", ()))
+    failed: list[str] = []
+    for heading, items in sections.items():
+        if heading not in SECTIONS:
+            # A misspelt heading would find no lines and fail every draw for
+            # a reason about the fixture, not the body; say so instead.
+            failed.append(f"body_sections: {heading!r} is not a heading of the schema")
+            continue
+        lines = [
+            ln for b in parsed if (s := b.section(heading)) is not None for ln in s.lines
+        ]
+        for item in items or ():
+            if isinstance(item, int):
+                row_id = rows.get(item)
+                name = speakers.get(row_id) if row_id is not None else None
+                if name is None:
+                    failed.append(f"body_sections: row {item} was not in the batch")
+                    continue
+                if heading == "Owed":
+                    met = any(ln.owner == name for ln in lines)
+                elif heading in ATTRIBUTED:
+                    met = any(name in ln.names for ln in lines)
+                else:
+                    met = any(row_id in ln.ids for ln in lines)
+                if not met:
+                    failed.append(
+                        f"body_sections: ## {heading} has no line for the sender of row {item}"
+                    )
+                continue
+            alternatives = [item] if isinstance(item, str) else list(item)
+            text = "\n".join(ln.text for ln in lines).casefold()
+            if not any(str(a).casefold() in text for a in alternatives):
+                failed.append(f"body_sections: ## {heading} carries none of {alternatives}")
+    return failed
+
+
+def _names(name: str, text: str) -> bool:
+    """Whether casefolded `text` names `name` — see `_check_the_body`."""
+    for part in (name, *(w for w in name.split() if len(w) >= 2)):
+        folded = part.casefold()
+        if folded.isascii():
+            if re.search(rf"(?<!\w){re.escape(folded)}(?!\w)", text):
+                return True
+        elif folded in text:
+            return True
+    return False
+
+
+def _check_the_body(
+    meta: Mapping[str, Any], outcome: Any, rows: Mapping[Any, int],
+    *, require_open: bool = False,
+) -> list[str]:
+    """`body_names` and `body_mentions` — whether a WRITTEN body carries the
+    thread, checked as named facts rather than as a length.
+
+    `body_names` lists row LABELS (real row ids, as `must_cite` does); each
+    row's sender, by the name the model was SHOWN on that line, must be named
+    in a written body. The name is resolved at grade time from the batch, so a
+    fixture names a row and never a person. A shown name of several words
+    («given family») is met by any one word of two or more characters, since
+    a body that says «Ada» of «Ada Lovelace» has named her. A Latin-script
+    word must stand as a WORD (a two-letter given name is inside half the
+    words of an English sentence); a word in another script, where words are
+    not separated, is matched as written.
+
+    `body_mentions` lists facts; each is a string or a list of alternatives
+    (one fact in the several ways a body may write it, e.g. a weekday in two
+    languages), met when any alternative is a case-insensitive substring of a
+    written body.
+
+    No written body at all fails both: there is nothing to carry the thread.
+
+    `body_schema: true` fails a draw whose written body breaks design 42 §4,
+    naming the rule; `body_sections` places facts (`_check_the_sections`).
+    `require_open` is the create case's rule that `## Open` holds a line.
+    """
+    names = meta.get("body_names") or ()
+    mentions = meta.get("body_mentions") or ()
+    sections = meta.get("body_sections") or {}
+    schema = bool(meta.get("body_schema"))
+    if not names and not mentions and not sections and not schema:
+        return []
+    bodies = _written_bodies(outcome)
+    if not bodies:
+        return ["body_names/body_mentions: no body was written"]
+    text = "\n".join(bodies).casefold()
+    failed: list[str] = []
+    if schema:
+        failed += [
+            f"body_schema: {rule}"
+            for rule, _b in _parsed_bodies(outcome, require_open=require_open)
+            if rule != "ok"
+        ]
+    if sections:
+        failed += _check_the_sections(sections, outcome, rows, require_open=require_open)
+    shown = dict(getattr(outcome, "speakers", ()))
+    for label in names:
+        row_id = rows.get(label)
+        name = shown.get(row_id) if row_id is not None else None
+        if name is None:
+            failed.append(f"body_names: row {label} was not in the batch")
+            continue
+        if not _names(name, text):
+            failed.append(f"body_names: the sender of row {label} is not named")
+    for fact in mentions:
+        alternatives = [fact] if isinstance(fact, str) else list(fact)
+        if not any(str(a).casefold() in text for a in alternatives):
+            failed.append(f"body_mentions: none of {alternatives}")
+    return failed
+
+
+def _updates_named(named: str | None, updates: Sequence[str]) -> list[str]:
+    """`updates_named` (design 42 §10.1): the revision landed on the note the
+    case names and on no other. Three failures, each its own words, so a
+    tally separates «wrong note» from «no update», which #513 could report
+    only in prose: a similarly titled sibling revised INSTEAD, nothing
+    revised, or the named note revised ALONG WITH another."""
+    if not named:
+        return []
+    others = [t for t in updates if t != named]
+    hits = len(updates) - len(others)
+    if hits == 0 and others:
+        return [f"updates_named: wrong note: revised {others}, not {named!r}"]
+    if hits == 0:
+        return [f"updates_named: no update: {named!r} was not revised"]
+    if others or hits > 1:
+        return [f"updates_named: also revised {others or [named]} beside {named!r}"]
+    return []
+
+
 def _check_the_corpus_assertions(
     case: Any, outcome: Any, rows: Mapping[Any, int],
 ) -> Any:
     """`must_cite`, `anchor_date`, `creates`, `updates` — the four the
-    note-candidates corpus states.
+    note-candidates corpus states — and `body_names`/`body_mentions`
+    (`_check_the_body`).
 
     `rows` translates a case's own message LABEL — the REAL row id in the
     source, under `snapshot:` — into the id the sandbox assigned. That
@@ -929,8 +1135,7 @@ def _check_the_corpus_assertions(
     updates = [t for kind, t in outcome.changed if kind == "update"]
     if meta.get("creates") is not None and len(creates) != int(meta["creates"]):
         failed.append(f"creates: expected {meta['creates']}, got {len(creates)}")
-    if meta.get("updates") and meta["updates"] not in updates:
-        failed.append(f"updates: {meta['updates']!r} was not revised; got {updates}")
+    failed += _updates_named(meta.get("updates"), updates)
     if case.expect == "create" and updates:
         failed.append(f"create case also revised {updates}")
 
@@ -968,6 +1173,7 @@ def _check_the_corpus_assertions(
                 failed.append(f"{key}: the reply contains {present}")
             elif not negate and absent:
                 failed.append(f"{key}: the reply does not contain {absent}")
+    failed += _check_the_body(meta, outcome, rows, require_open=case.expect == "create")
 
     return dataclasses.replace(outcome, checks_failed=tuple(failed))
 
@@ -1444,6 +1650,19 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
                     EnvironmentState(name=NORA_CHANGED, state=outcome.changed),
                     EnvironmentState(name=NORA_JUDGED, state=outcome.judged),
                     EnvironmentState(name=NORA_CHECKS_FAILED, state=outcome.checks_failed),
+                    EnvironmentState(
+                        name=NORA_BODY_CHARS,
+                        state=tuple(len(b) for b in _written_bodies(outcome)),
+                    ),
+                    EnvironmentState(
+                        name=NORA_BODY_SCHEMA,
+                        state=tuple(
+                            rule for rule, _b in _parsed_bodies(
+                                outcome,
+                                require_open=(case.metadata or {}).get("expect") == "create",
+                            )
+                        ),
+                    ),
                     EnvironmentState(name=NORA_TOOLS, state=tools_called),
                     EnvironmentState(name=NORA_TOOL_RESULTS, state=tool_results),
                     EnvironmentState(name=NORA_TOOL_INPUTS, state=tool_inputs),
@@ -1853,6 +2072,17 @@ class MeetsGrader(Evaluator):
         verdict = outcome.meets(expect)
         why = state_of(data, NORA_JUDGED_WHY) or ""
         why = f" — judge: {why}" if why else ""
+        # The written bodies' lengths ride on the reason, so `--reasons`
+        # prints them per draw (`NORA_BODY_CHARS`); only a pass that wrote one.
+        chars = state_of(data, NORA_BODY_CHARS)
+        if chars:
+            why += f" — body_chars={list(chars)}"
+        schema = state_of(data, NORA_BODY_SCHEMA)
+        if schema:
+            why += f" — body_schema={list(schema)}"
+        failed = outcome.checks_failed
+        if failed:
+            why += f" — checks: {list(failed)}"
         if verdict is None:
             reason = (
                 f"the case did not run: {error}" if error

@@ -72,7 +72,7 @@ RELEVANCE GATE — ONE structured model call
 
 ### 2.1 Prompt — it is a doctrine file, not a constant
 
-The gate's whole instruction is **`nora/doctrine/participation.md`**, read
+The gate's whole instruction is **`nora/doctrine/instruments/participation.md`**, read
 from the `DoctrineStore` at `applies_to: [relevance_gate]` — an audience no
 other file declares. `build_prompt` puts that text first, then the room's two
 untrusted blocks, then the JSON contract, which stays in CODE because the
@@ -484,7 +484,7 @@ under-scoped it in one direction and over-scoped it in another. Corrected:
 - DEC-188, the participation metrics family, the slot/cooldown policy.
 
 **What is added**:
-- `nora/doctrine/participation.md`, the gate's instruction, on its own
+- `nora/doctrine/instruments/participation.md`, the gate's instruction, on its own
   audience and its own `kind: instrument` (§2.1).
 - `[relevance_gate]` config block: `enabled` (false), `model`
   (`nora-gate`), `shadow` (true), `shadow_channel`, `shadow_platform`,

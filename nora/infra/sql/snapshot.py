@@ -143,6 +143,11 @@ from nora.domain.notes import Note, NoteRevision
 from nora.domain.reminders import Reminder, ReminderState
 from nora.domain.standing import Standing
 from nora.infra.sql.audit import transcript_row, transcript_select
+from nora.infra.sql.migrations_runner import (
+    SourceRevisionMismatchError,
+    current_revision,
+    head_revision,
+)
 from nora.infra.sql.notes import _row_to_note, _row_to_revision
 from nora.infra.sql.reminders import _row_to_reminder
 from nora.infra.sql.schema import (
@@ -155,6 +160,15 @@ from nora.infra.sql.schema import (
 from nora.infra.sql.standing import SqlStandingStore
 
 __all__ = ["Snapshot", "snapshot"]
+
+#: Postgres SQLSTATEs for "a read named a column/table that does not exist"
+#: (`undefined_column`, `undefined_table`) — driver-agnostic: both asyncpg's
+#: `UndefinedColumnError`/`UndefinedTableError` and psycopg's
+#: `UndefinedColumn`/`UndefinedTable` expose the SAME `.sqlstate` attribute
+#: with these values (verified against a real Postgres, 2026-09-25), so this
+#: needs no import of either driver package — only `exc.orig.sqlstate`,
+#: through whatever DBAPI wrapper SQLAlchemy used to reach it.
+_MISSING_SCHEMA_SQLSTATES = frozenset({"42703", "42P01"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -255,28 +269,54 @@ async def snapshot(
     for the whole reconstruction would mean threading it through every helper,
     and `read_as_of` is a store method that owns its own — a cost with nothing
     to buy, since a sequence of reads never contends with itself.
+
+    **FAIL-CLOSED on a source behind this checkout's migration head.**
+    `nora.subject.sandbox.refuse_if_source_diverges_from_head` allows a
+    source behind head to run at all — most migrations add nothing these
+    five reads select (an index; `0064`'s own kind) — but cannot promise
+    every column a NEWER migration added is one of them. This is the net:
+    `UndefinedColumnError`/`UndefinedTableError` (SQLSTATE `42703`/`42P01`,
+    driver-agnostic) from any of the five reads is caught and re-raised as
+    `SourceRevisionMismatchError`, naming both revisions, rather than
+    surfacing as a bare "column does not exist" deep inside a case.
     """
-    transcript = await _transcript(
-        engine, platform=platform, conversation_id=conversation_id,
-        before_ms=before_ms, limit=transcript_limit,
-    )
-    # Bound to a NAME rather than called inline off the constructor, and that
-    # is not style: `tests/architecture/test_store_methods_have_production_
-    # callers.py` resolves a caller as an attribute access on a name-bound
-    # receiver, because `(await conn.execute(stmt)).all()` once certified
-    # `SqlMusicSessionStore.all` as used. `SqlStandingStore(engine).read_as_of(
-    # ...)` is invisible to it, so writing it that way leaves the method
-    # reading as «no production caller» while it has one.
-    standing_store = SqlStandingStore(engine)
-    standing = await standing_store.read_as_of(
-        platform=platform, conversation_id=conversation_id, before_ms=before_ms,
-    )
-    culture = await _culture(engine, culture_key=culture_key, before_ms=before_ms)
-    notes = await _notes(engine, unit=unit, before_ms=before_ms)
-    reminders = await _reminders(
-        engine, platform=platform, conversation_id=conversation_id,
-        before_ms=before_ms,
-    )
+    try:
+        transcript = await _transcript(
+            engine, platform=platform, conversation_id=conversation_id,
+            before_ms=before_ms, limit=transcript_limit,
+        )
+        # Bound to a NAME rather than called inline off the constructor, and
+        # that is not style: `tests/architecture/test_store_methods_have_
+        # production_callers.py` resolves a caller as an attribute access on
+        # a name-bound receiver, because `(await conn.execute(stmt)).all()`
+        # once certified `SqlMusicSessionStore.all` as used.
+        # `SqlStandingStore(engine).read_as_of(...)` is invisible to it, so
+        # writing it that way leaves the method reading as «no production
+        # caller» while it has one.
+        standing_store = SqlStandingStore(engine)
+        standing = await standing_store.read_as_of(
+            platform=platform, conversation_id=conversation_id, before_ms=before_ms,
+        )
+        culture = await _culture(engine, culture_key=culture_key, before_ms=before_ms)
+        notes = await _notes(engine, unit=unit, before_ms=before_ms)
+        reminders = await _reminders(
+            engine, platform=platform, conversation_id=conversation_id,
+            before_ms=before_ms,
+        )
+    except sa.exc.DBAPIError as exc:
+        sqlstate = getattr(exc.orig, "sqlstate", None)
+        if sqlstate not in _MISSING_SCHEMA_SQLSTATES:
+            raise
+        source_rev = current_revision(
+            engine.url.render_as_string(hide_password=False)
+        )
+        raise SourceRevisionMismatchError(
+            f"source at {source_rev!r}, branch at {head_revision()!r}: a "
+            f"read hit a missing column or table (SQLSTATE {sqlstate}) — "
+            "the source predates a migration this checkout has. Refresh "
+            "the source (`make eval-source`) or run on a branch at the "
+            "source's head."
+        ) from exc
     return Snapshot(
         platform=platform,
         conversation_id=conversation_id,

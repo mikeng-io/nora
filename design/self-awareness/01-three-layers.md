@@ -7,7 +7,7 @@ is a copy, and copies go stale in silence.
 
 ## Who: doctrine, unchanged
 
-`nora/doctrine/identity.md` already carries the shape: an agent, not a person;
+`nora/doctrine/core/identity.md` already carries the shape: an agent, not a person;
 built by Miles, answering to the group; *"You are in several [groups], on more
 than one platform, and the same you is in all of them."* That sentence is
 true for as long as she exists. It is the right thing to put in a cached

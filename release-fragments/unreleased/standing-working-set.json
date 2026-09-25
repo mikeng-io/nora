@@ -1,0 +1,10 @@
+{
+  "type": "change",
+  "summary": "Standing carries a second, small working set of things found and not yet given the room.",
+  "details": [
+    "The debrief fold's position paragraph now has a sibling field: options a step found (a search that returned several restaurants, a page with several candidates) that the reply only gave the room some of. Each item names what it is, the tool it came from, and the plan it answers, and expires 48 hours after it was found if nothing carries it forward.",
+    "Rendered as <standing_working_set> on the tag and participation turns, right after the position paragraph, and as the fold's own prior so it can be re-judged the same way the paragraph is.",
+    "Not wired into proactive decide's one-line-per-room digest."
+  ],
+  "limitations": []
+}

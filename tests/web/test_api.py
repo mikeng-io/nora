@@ -106,6 +106,7 @@ async def test_doctrine_route_returns_the_shipped_sections_in_order(client):
     body = await resp.json()
     assert [section["name"] for section in body] == [
         "identity",
+        "belonging",
         "voice",
         "silence",
         "conduct",

@@ -406,7 +406,7 @@ do you look like?" in an ordinary turn, nothing always-loaded told her either,
 because this skill's trigger is image-only and a plain question about her
 appearance never loads it.
 
-**The change.** `nora/doctrine/identity.md` (v12, heading renamed to "Your
+**The change.** `nora/doctrine/core/identity.md` (v12, heading renamed to "Your
 form" in v13 to stop colliding with this skill's own "What you look like"
 heading once both load in the same turn) gains one short, descriptive
 sentence: not being a person does not mean having no form, naming three of
@@ -430,7 +430,7 @@ which fails if either file names an anchor the other has stopped naming.
 **Measured**, `python -m evals appearance --sample 5 --judge`, on norty, a
 fresh `git archive` checkout (never `~/workspace/nora`), production config,
 one run on the host at a time. Both arms are the same checkout; only
-`nora/doctrine/identity.md` is swapped between them (diffed before each run):
+`nora/doctrine/core/identity.md` is swapped between them (diffed before each run):
 
 | case | before (no sentence) | after (this change) |
 |---|---|---|

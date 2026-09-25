@@ -202,11 +202,30 @@ class SqlRecordStore:
         returns `[]` for `limit <= 0`; this keeps both implementations
         agreeing (see `tests/contract/test_audit_store_contract.py`).
         """
+        return await self._newest(conversation_id=conversation_id, limit=limit)
+
+    async def recent_before(
+        self, *, conversation_id: str, before_ts: int, limit: int,
+    ) -> list[TranscriptRow]:
+        """See `nora.domain.ports.RecordStore.recent_before`."""
+        return await self._newest(
+            conversation_id=conversation_id, limit=limit, before_ts=before_ts,
+        )
+
+    async def _newest(
+        self, *, conversation_id: str, limit: int, before_ts: int | None = None,
+    ) -> list[TranscriptRow]:
+        """`recent` and `recent_before`'s one query: the newest `limit` rows,
+        optionally ending before `before_ts`, oldest-first. One body, so the
+        two reads cannot drift in their over-fetch, tie-break or edit fold."""
         if limit <= 0:
             return []
+        where = [MESSAGES.c.conversation_id == conversation_id]
+        if before_ts is not None:
+            where.append(MESSAGES.c.ts < before_ts)
         stmt = (
             transcript_select()
-            .where(MESSAGES.c.conversation_id == conversation_id)
+            .where(*where)
             .order_by(MESSAGES.c.ts.desc(), MESSAGES.c.id.desc())
             # OVER-FETCH BY ONE (`nora.domain.bounds`). This window is what
             # every per-turn derived block was built from, so a silent cut

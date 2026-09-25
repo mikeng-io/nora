@@ -522,6 +522,8 @@ class EngagementPipeline:
                 fold_batch=wiring.fold_batch,
                 timeout_seconds=wiring.timeout_seconds,
                 store_timeout_seconds=wiring.store_timeout_seconds,
+                working_set_max_items=wiring.working_set_max_items,
+                working_set_max_chars=wiring.working_set_max_chars,
                 now_ms=int(time.time() * 1000),
                 culture=culture,
             )

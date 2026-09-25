@@ -76,7 +76,7 @@ async def test_missing_secret_refuses_to_start(env, monkeypatch):
 async def test_a_broken_doctrine_refuses_to_start(env, tmp_path):
     doctrine_dir = tmp_path / "doctrine"
     doctrine_dir.mkdir()
-    shutil.copy(ROOT / "nora" / "doctrine" / "identity.md", doctrine_dir / "identity.md")
+    shutil.copy(ROOT / "nora" / "doctrine" / "core" / "identity.md", doctrine_dir / "identity.md")
     (doctrine_dir / "broken.md").write_text("no frontmatter")
     cfg = tomllib.loads(env.read_text())
     cfg["doctrine"]["dir"] = str(doctrine_dir)

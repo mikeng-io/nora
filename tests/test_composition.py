@@ -250,7 +250,7 @@ async def test_the_root_hands_the_loader_the_tool_names_its_gate_needs(cfg, tmp_
 
     d = tmp_path / "doctrine"
     shutil.copytree(ROOT / "nora" / "doctrine", d)
-    conduct = d / "conduct.md"
+    conduct = d / "rooms" / "conduct.md"
     conduct.write_text(conduct.read_text().replace(
         "# Honesty", "Reach for `about` when you need to.\n\n# Honesty", 1))
     with pytest.raises(StartupError, match="may not name a tool"):

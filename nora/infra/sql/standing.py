@@ -42,7 +42,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from nora.domain.standing import Standing
+from nora.domain.standing import Standing, working_set_from_json, working_set_to_json
 from nora.infra.sql.schema import STANDING, STANDING_REVISION
 
 
@@ -61,6 +61,7 @@ def _standing(row: sa.Row[Any]) -> Standing:
         fold_count=row.fold_count,
         updated_at=row.updated_at,
         last_folded_row_id=row.last_folded_row_id,
+        working_set=working_set_from_json(row.working_set),
     )
 
 
@@ -176,6 +177,7 @@ class SqlStandingStore:
             fold_count=standing.fold_count,
             updated_at=standing.updated_at,
             last_folded_row_id=standing.last_folded_row_id,
+            working_set=working_set_to_json(standing.working_set),
         )
         stmt = stmt.on_conflict_do_update(
             index_elements=[STANDING.c.platform, STANDING.c.conversation_id],
@@ -198,6 +200,12 @@ class SqlStandingStore:
                 # statement, never a position and a watermark that can drift
                 # apart).
                 "last_folded_row_id": stmt.excluded.last_folded_row_id,
+                # Written on every upsert, same reasoning as the watermark
+                # above: the caller (the fold, or the rollup carrying the
+                # prior's set forward unchanged) decided the value, and an
+                # omitted key here would silently keep whatever the row held
+                # instead of the decision the caller made.
+                "working_set": stmt.excluded.working_set,
             },
         )
         # The APPEND, beside the upsert and inside the same transaction. Same
@@ -220,6 +228,7 @@ class SqlStandingStore:
             updated_at=standing.updated_at,
             last_folded_row_id=standing.last_folded_row_id,
             source=source,
+            working_set=working_set_to_json(standing.working_set),
         )
         async with self._engine.begin() as conn:
             await conn.execute(stmt)
@@ -279,11 +288,12 @@ class SqlStandingStore:
             or standing.conversation_id != expected.conversation_id
             or standing.fold_count != expected.fold_count
             or standing.last_folded_row_id != expected.last_folded_row_id
+            or standing.working_set != expected.working_set
         ):
             raise ValueError(
                 "write_if_unchanged only changes body and updated_at — "
-                "platform, conversation_id, fold_count and last_folded_row_id "
-                "must match `expected` exactly"
+                "platform, conversation_id, fold_count, last_folded_row_id "
+                "and working_set must match `expected` exactly"
             )
         last_folded_row_id_matches = (
             STANDING.c.last_folded_row_id == expected.last_folded_row_id
@@ -305,6 +315,12 @@ class SqlStandingStore:
                 fold_count=standing.fold_count,
                 updated_at=standing.updated_at,
                 last_folded_row_id=standing.last_folded_row_id,
+                # UNCHANGED by an operator edit (the raise above already
+                # proved `standing.working_set == expected.working_set`),
+                # written explicitly rather than omitted — the same
+                # "never by accident" argument `write`'s upsert makes for
+                # this column.
+                working_set=working_set_to_json(standing.working_set),
             )
         )
         revision = sa.insert(STANDING_REVISION).values(
@@ -315,6 +331,7 @@ class SqlStandingStore:
             updated_at=standing.updated_at,
             last_folded_row_id=standing.last_folded_row_id,
             source="operator",
+            working_set=working_set_to_json(standing.working_set),
         )
         async with self._engine.begin() as conn:
             result = await conn.execute(update_stmt)
