@@ -137,51 +137,81 @@ _ROW_ID = re.compile(r"\|\s*((?:DEC|R|D|A)-?[0-9]+[a-z]?)\s*\|")
 #: unambiguous single successor were repointed in the index itself rather than
 #: pinned here (see the PR body's triage table for the full repoint list).
 _KNOWN_UNRESOLVED: dict[tuple[str, str, str], str] = {
-    ("R-33", "tests/test_vision.py", "test_the_vision_timeout_is_always_shorter_than_the_loop_budget"): (
+    (
+        "R-33", "tests/test_vision.py",
+        "test_the_vision_timeout_is_always_shorter_than_the_loop_budget",
+    ): (
         "replaced (a5e0d747) by a parametrised AGGREGATE-budget test "
         "(`test_the_budget_of_vision_calls_together_stays_under_the_loop`) "
         "covering several calls together, not one — whether that subsumes "
         "R-33's single-call claim or narrows it is a product call"
     ),
-    ("DEC-23", "tests/infra/test_alembic.py", "test_0003_adds_quoted_ts_without_disturbing_the_ts_desc_index"): (
+    (
+        "DEC-23", "tests/infra/test_alembic.py",
+        "test_0003_adds_quoted_ts_without_disturbing_the_ts_desc_index",
+    ): (
         "the SQLite-specific migration-trap test; deleted in e5baa538 "
         "('Postgres test isolation + rebuilt parity gate'). No 1:1 Postgres "
         "successor asserts this exact index-shape trap"
     ),
-    ("DEC-23", "tests/test_prefill.py", "test_the_arrow_name_is_the_literal_label_the_parents_own_line_uses"): (
+    (
+        "DEC-23", "tests/test_prefill.py",
+        "test_the_arrow_name_is_the_literal_label_the_parents_own_line_uses",
+    ): (
         "deleted in e4fe9dfe when the ↳-arrow transcript format was replaced "
         "by XML tags (DEC-80 era); no successor names this specific "
         "byte-identical-label claim"
     ),
-    ("DEC-29", "tests/test_doctrine_assembly.py", "test_the_capability_section_is_generated_and_sits_between_conduct_and_constraints"): (
+    (
+        "DEC-29", "tests/test_doctrine_assembly.py",
+        "test_the_capability_section_is_generated_and_sits_between_conduct_and_constraints",
+    ): (
         "DEC-150 deleted the generated capability section itself (d799c027, "
         "'both hand-written catalogues die'); whether DEC-29's own claim "
         "still stands under a different mechanism is DEC-150's call, not "
         "this gate's"
     ),
-    ("DEC-29", "tests/test_doctrine_content.py", "test_the_negative_space_split_by_kind_and_the_capability_claim_died"): (
+    (
+        "DEC-29", "tests/test_doctrine_content.py",
+        "test_the_negative_space_split_by_kind_and_the_capability_claim_died",
+    ): (
         "same DEC-150 capability-block removal (2254452e); the claim this "
         "test pinned (a negative-space split) has no confirmed successor"
     ),
-    ("DEC-29", "tests/test_prefill.py", "test_the_generated_capability_block_names_exactly_the_tools_that_exist"): (
+    (
+        "DEC-29", "tests/test_prefill.py",
+        "test_the_generated_capability_block_names_exactly_the_tools_that_exist",
+    ): (
         "same DEC-150 capability-block removal (d799c027)"
     ),
-    ("DEC-29", "tests/test_composition.py", "test_the_doctrine_the_root_builds_carries_the_generated_capability"): (
+    (
+        "DEC-29", "tests/test_composition.py",
+        "test_the_doctrine_the_root_builds_carries_the_generated_capability",
+    ): (
         "same DEC-150 capability-block removal (d799c027); the file's "
         "replacement test asserts the OPPOSITE "
         "('carries_no_capability_section'), which is DEC-150's finding to "
         "cite, not this row's to be silently repointed to"
     ),
-    ("DEC-31", "tests/test_prefill.py", "test_the_arrow_quotes_the_parent_so_two_lines_from_one_author_are_told_apart"): (
+    (
+        "DEC-31", "tests/test_prefill.py",
+        "test_the_arrow_quotes_the_parent_so_two_lines_from_one_author_are_told_apart",
+    ): (
         "deleted with the ↳-arrow transcript format (e4fe9dfe); superseded "
         "by the XML-tag rendering DEC-80 introduced, with no confirmed "
         "successor test for this exact ambiguity claim"
     ),
-    ("DEC-31", "tests/test_prefill.py", "test_the_snippet_cannot_forge_a_transcript_line_out_of_a_newline"): (
+    (
+        "DEC-31", "tests/test_prefill.py",
+        "test_the_snippet_cannot_forge_a_transcript_line_out_of_a_newline",
+    ): (
         "same ↳-arrow deletion (e4fe9dfe); the newline-forgery claim may or "
         "may not still hold against the XML-tag renderer — unverified"
     ),
-    ("DEC-36", "tests/unit/test_engagement_feedback.py", "test_noras_reply_never_reaches_any_peers_stream"): (
+    (
+        "DEC-36", "tests/unit/test_engagement_feedback.py",
+        "test_noras_reply_never_reaches_any_peers_stream",
+    ): (
         "deleted during the Honcho v2 rewrite (5120019c); the row's OTHER "
         "citation on the same line (`test_only_the_taggers_own_words_are_fed_"
         "under_the_taggers_peer`) was renamed forward in the same commit and "
@@ -189,75 +219,129 @@ _KNOWN_UNRESOLVED: dict[tuple[str, str, str], str] = {
         "differently-scoped test (multi-message feed completeness), not a "
         "rename of this claim"
     ),
-    ("DEC-43", "tests/infra/test_alembic.py", "test_0004_adds_media_json_without_disturbing_the_ts_desc_index"): (
+    (
+        "DEC-43", "tests/infra/test_alembic.py",
+        "test_0004_adds_media_json_without_disturbing_the_ts_desc_index",
+    ): (
         "same SQLite-to-Postgres migration-test rebuild as DEC-23 (e5baa538)"
     ),
-    ("DEC-43", "tests/infra/test_schema_parity.py", "test_media_json_is_the_last_declared_column"): (
+    (
+        "DEC-43", "tests/infra/test_schema_parity.py",
+        "test_media_json_is_the_last_declared_column",
+    ): (
         "same rebuild (e5baa538); replaced by a parametrised "
         "`test_every_table_in_the_metadata_exists`, which checks a different "
         "property (table existence, not column order)"
     ),
-    ("DEC-80", "tests/test_prefill.py", "test_the_arrow_uses_the_identity_name_on_both_lines"): (
+    (
+        "DEC-80", "tests/test_prefill.py",
+        "test_the_arrow_uses_the_identity_name_on_both_lines",
+    ): (
         "deleted with the ↳-arrow format itself (e4fe9dfe) — DEC-80's own "
         "row is about that format, and the format it pinned no longer exists "
         "in the renderer (XML tags replaced it)"
     ),
-    ("DEC-88", "tests/test_doctrine_content.py", "test_conduct_says_what_earns_a_second_message_and_what_does_not"): (
+    (
+        "DEC-88", "tests/test_doctrine_content.py",
+        "test_conduct_says_what_earns_a_second_message_and_what_does_not",
+    ): (
         "deleted, no replacement in the same hunk, when DEC-96 rewrote "
         "voice/conduct/constraints 'from scratch' as a portrait (2254452e); "
         "DEC-96's row documents the rewrite but does not enumerate which "
         "earlier clause each deleted test's claim maps to now"
     ),
-    ("DEC-91", "tests/test_doctrine_content.py", "test_voice_names_the_generated_text_tells_it_exists_to_remove"): (
+    (
+        "DEC-91", "tests/test_doctrine_content.py",
+        "test_voice_names_the_generated_text_tells_it_exists_to_remove",
+    ): (
         "same portrait rewrite (2254452e), same no-enumerated-successor gap"
     ),
-    ("DEC-91", "tests/test_doctrine_content.py", "test_the_anti_hedge_rule_does_not_collide_with_saying_you_dont_know"): (
+    (
+        "DEC-91", "tests/test_doctrine_content.py",
+        "test_the_anti_hedge_rule_does_not_collide_with_saying_you_dont_know",
+    ): (
         "same portrait rewrite (2254452e)"
     ),
-    ("DEC-92", "tests/test_doctrine_content.py", "test_conduct_refuses_to_record_a_contradiction_as_a_fact"): (
+    (
+        "DEC-92", "tests/test_doctrine_content.py",
+        "test_conduct_refuses_to_record_a_contradiction_as_a_fact",
+    ): (
         "same portrait rewrite (2254452e); diff shows pure deletion (three "
         "blank lines), no replacement test in the same commit"
     ),
-    ("DEC-94", "tests/test_doctrine_content.py", "test_voice_carries_the_groups_own_register_not_a_polite_gesture_at_it"): (
+    (
+        "DEC-94", "tests/test_doctrine_content.py",
+        "test_voice_carries_the_groups_own_register_not_a_polite_gesture_at_it",
+    ): (
         "same portrait rewrite (2254452e)"
     ),
-    ("DEC-94", "tests/test_doctrine_content.py", "test_voice_separates_a_fixed_expletive_from_targeting_a_real_person"): (
+    (
+        "DEC-94", "tests/test_doctrine_content.py",
+        "test_voice_separates_a_fixed_expletive_from_targeting_a_real_person",
+    ): (
         "same portrait rewrite (2254452e)"
     ),
-    ("DEC-95", "tests/test_doctrine_content.py", "test_voice_teaches_the_inversion_particle_not_just_a_vocabulary_list"): (
+    (
+        "DEC-95", "tests/test_doctrine_content.py",
+        "test_voice_teaches_the_inversion_particle_not_just_a_vocabulary_list",
+    ): (
         "same portrait rewrite (2254452e); no history hit at all for this "
         "exact name, suggesting it may never have resolved even when DEC-95 "
         "landed — needs the operator's memory, not just git log"
     ),
-    ("DEC-95", "tests/test_doctrine_content.py", "test_voice_gates_the_target_not_the_topic"): (
+    (
+        "DEC-95", "tests/test_doctrine_content.py",
+        "test_voice_gates_the_target_not_the_topic",
+    ): (
         "same as the sibling DEC-95 entries above"
     ),
-    ("DEC-95", "tests/test_doctrine_content.py", "test_voice_keeps_the_in_trouble_limit_as_a_limit_not_an_aside"): (
+    (
+        "DEC-95", "tests/test_doctrine_content.py",
+        "test_voice_keeps_the_in_trouble_limit_as_a_limit_not_an_aside",
+    ): (
         "same as the sibling DEC-95 entries above"
     ),
-    ("DEC-95", "tests/test_doctrine_content.py", "test_conduct_says_what_earns_a_second_message_and_what_does_not"): (
+    (
+        "DEC-95", "tests/test_doctrine_content.py",
+        "test_conduct_says_what_earns_a_second_message_and_what_does_not",
+    ): (
         "duplicate of DEC-88's citation above (same deleted test, cited by "
         "two rows); same portrait-rewrite gap"
     ),
-    ("DEC-96", "tests/test_doctrine_content.py", "test_voice_keeps_the_two_limits_that_are_about_aim_not_volume"): (
+    (
+        "DEC-96", "tests/test_doctrine_content.py",
+        "test_voice_keeps_the_two_limits_that_are_about_aim_not_volume",
+    ): (
         "DEC-96 is the row THAT DESCRIBES the portrait rewrite, and its own "
         "enforcing-test citation did not survive it — the most pointed "
         "instance of this whole gap"
     ),
-    ("DEC-130", "tests/contract/test_dream_sink_contract.py", "test_an_empty_propose_still_reaches_the_sink"): (
+    (
+        "DEC-130", "tests/contract/test_dream_sink_contract.py",
+        "test_an_empty_propose_still_reaches_the_sink",
+    ): (
         "renamed to `test_an_empty_propose_still_reaches_the_fake` (52069ae0)"
         ", whose own docstring explicitly disclaims being 'a port-level "
         "guarantee' — narrower than what DEC-130's row claims; the sibling "
         "citation on the same row WAS a clean rename and is repointed"
     ),
-    ("R-73", "tests/unit/test_debrief.py", "test_an_identifier_never_reaches_the_collector"): (
+    (
+        "R-73", "tests/unit/test_debrief.py",
+        "test_an_identifier_never_reaches_the_collector",
+    ): (
         "file extensively rewritten when tracing moved to strands.telemetry "
         "(7f93934b / cd600f2f); no confirmed 1:1 successor found"
     ),
-    ("R-73", "tests/unit/test_debrief.py", "test_a_coordinate_in_the_answer_never_reaches_the_collector"): (
+    (
+        "R-73", "tests/unit/test_debrief.py",
+        "test_a_coordinate_in_the_answer_never_reaches_the_collector",
+    ): (
         "same strands.telemetry rewrite (7f93934b)"
     ),
-    ("R-73", "tests/unit/test_debrief.py", "test_the_traced_prompt_is_the_prompt_the_model_was_actually_given"): (
+    (
+        "R-73", "tests/unit/test_debrief.py",
+        "test_the_traced_prompt_is_the_prompt_the_model_was_actually_given",
+    ): (
         "same rewrite (7f93934b); a similarly-named test survives with a "
         "changed signature (`store_verdict=None` argument added), so this "
         "may be a rename rather than a deletion — left pinned rather than "
@@ -567,7 +651,9 @@ def test_a_class_selector_resolves_like_a_function_selector(tmp_path, monkeypatc
     assert _resolve("test_fixture_module.py", "::test_method") == "resolved"
 
 
-def test_a_registry_form_selector_is_a_named_blind_spot_not_a_failure(tmp_path, monkeypatch) -> None:
+def test_a_registry_form_selector_is_a_named_blind_spot_not_a_failure(
+    tmp_path, monkeypatch
+) -> None:
     target = tmp_path / "test_fixture_module.py"
     target.write_text("RULE_TESTS = {'R-1': 'test_something'}\n")
     monkeypatch.setattr(
