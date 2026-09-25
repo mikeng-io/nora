@@ -115,10 +115,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math"
 	"net/http"
 	"net/url"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -316,6 +318,21 @@ func readMentions(ctx context.Context, issuer RESTIssuer, self domain.Self) ([]d
 		mention, ok := commentMentionOf(st, self)
 		if !ok {
 			skipped[st.StoryType]++
+			// Why, in words and booleans only: no id, no text, no username.
+			// The first live summons test (2026-09-25) skipped every story
+			// with no way to tell which check refused it.
+			scheme, query := destinationOf(st.Args.Destination)
+			_, hasMedia := mediaOf(st.Args, scheme, query)
+			slog.InfoContext(ctx, "news_inbox story skipped",
+				"story_type", st.StoryType,
+				"scheme", schemeWord(scheme),
+				"has_comment_id", commentIDOf(st.Args, query) != "",
+				"has_media", hasMedia,
+				"has_self_token", mentionsAccount(st.Args, self),
+				"type_excluded", nonMentionStoryTypes[st.StoryType],
+				"text_has_at", strings.Contains(st.Args.Text, "@"),
+				"rich_text_has_at", strings.Contains(st.Args.RichText, "@"),
+				"dest_param_names", destParamNames(query))
 			continue
 		}
 		mentions = append(mentions, mention)
@@ -576,4 +593,25 @@ func (s sessionREST) configs() (dumpedConfigs, error) {
 		return dumpedConfigs{}, errors.New("no configs in the dumped state")
 	}
 	return *dumped.Configs, nil
+}
+
+// schemeWord is a destination scheme with every digit removed, so a scheme
+// that ever carries an id cannot put it in a log line.
+func schemeWord(scheme string) string {
+	return strings.Map(func(r rune) rune {
+		if r >= '0' && r <= '9' {
+			return -1
+		}
+		return r
+	}, scheme)
+}
+
+// destParamNames is the sorted parameter NAMES of a destination, never values.
+func destParamNames(q url.Values) string {
+	names := make([]string, 0, len(q))
+	for k := range q {
+		names = append(names, schemeWord(k))
+	}
+	sort.Strings(names)
+	return strings.Join(names, ",")
 }
