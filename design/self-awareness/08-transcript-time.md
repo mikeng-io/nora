@@ -30,7 +30,7 @@ real handles never reach the model… it is why the index and not the timestamp
 is rendered»). Both tools hand the raw handle back.
 
 **Fix.** Replace `ts` with `when` and `edited_ts` with `edited`, both as
-`"2026-09-24 Wed 21:14 (13h ago)"`, rendered by one formatter,
+`"2026-09-24 Thu 21:14 (13h ago)"`, rendered by one formatter,
 `nora.domain.prompt.stamp`, beside `age`. `room_list`'s `last_message` uses it
 too. It gives the calendar day and weekday for «yesterday» and «last
 Tuesday», and an age for «is this still current», in one string (16 cl100k

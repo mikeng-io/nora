@@ -102,7 +102,7 @@ def age(ts_ms: int, now: datetime) -> str:
 
 def stamp(ts_ms: int, now: datetime) -> str:
     """When something was, as a calendar moment AND an age:
-    «2026-09-24 Wed 21:14 (13h ago)», in `now`'s own zone.
+    «2026-09-24 Thu 21:14 (13h ago)», in `now`'s own zone.
 
     For a record a model is asked to place in time, not only to judge fresh.
     `age` answers «is this still current»; «what did we say yesterday» turns on
