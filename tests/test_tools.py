@@ -373,7 +373,9 @@ async def test_load_transcript_returns_only_model_relevant_fields(wiring):
     rows = (await _call(wiring["tools"]["load_transcript"], limit=40))["messages"]
     # No raw_json, no ids. `reply_to` is absent rather than null on an
     # unthreaded row — see test_load_transcript_omits_reply_to_* below.
-    assert set(rows[0]) == {"sender", "body", "ts"}
+    # `when`, never the raw `ts` (design/self-awareness/08 §1): the epoch
+    # integer was unreadable as a time and is a handle R-18 keeps off the wire.
+    assert set(rows[0]) == {"sender", "body", "when"}
 
 
 async def test_load_transcript_names_speakers_the_same_way_the_prefill_does(wiring):
@@ -425,7 +427,11 @@ async def test_load_transcript_marks_a_reply_with_the_name_it_answers(wiring):
         quote=Quote(author_id="+852111", text="whatever", quoted_ts=1),
     ))
     rows = (await _call(wiring["tools"]["load_transcript"], limit=40))["messages"]
-    assert rows[-1] == {"sender": "Tyler", "body": "你屋企", "ts": 9, "reply_to": "Miles"}
+    last = rows[-1]
+    assert {k: v for k, v in last.items() if k != "when"} == {
+        "sender": "Tyler", "body": "你屋企", "reply_to": "Miles",
+    }
+    assert last["when"].startswith("1970-01-01 Thu 08:00 (")   # ts=9 ms, in HKT
 
 
 async def test_load_transcript_omits_reply_to_when_the_parent_is_not_in_the_rows(wiring):
