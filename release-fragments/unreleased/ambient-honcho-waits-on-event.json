@@ -1,0 +1,1 @@
+{"type": "none", "reason": "Test-only: an ingest test proves the memory feed is spawned by waiting on an event instead of a wall-clock bound that flaked under load. No runtime change.", "details": [], "limitations": []}

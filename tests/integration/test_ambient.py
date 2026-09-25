@@ -105,7 +105,15 @@ async def test_a_honcho_failure_does_not_block_ingest(harness):
 
 
 async def test_ingest_does_not_wait_on_a_slow_honcho(harness):
+    """Ingest SPAWNS the memory feed; it never awaits it. Proven on the
+    condition, not the clock: the fake feed blocks on an event nobody sets
+    until after `on_event` has returned, so an ingest that awaited the feed
+    would never return and `wait_for` would time out. The wall-clock bound
+    this replaced (`< 0.2s` against a 1s sleep) failed under full-suite load
+    on the deploy host (load average about 6) while passing 3/3 alone, the
+    class #430 and #180 retired elsewhere."""
     entered = False
+    release = asyncio.Event()
 
     async def slow_feed(peer_id, text, conversation_id=None, metadata=None):
         """PRODUCTION'S SIGNATURE (#74). It was `(peer_id, text)` while
@@ -118,24 +126,24 @@ async def test_ingest_does_not_wait_on_a_slow_honcho(harness):
         """
         nonlocal entered
         entered = True
-        await asyncio.sleep(1.0)
+        await release.wait()
         return True
 
     harness.honcho.feed = slow_feed
-    started = asyncio.get_running_loop().time()
-    await harness.handler.on_event(group_event(body="hi"))
-    assert asyncio.get_running_loop().time() - started < 0.2
+    # An ingest that awaited the feed would block on `release` forever; the
+    # timeout is a hang guard, not a latency bound.
+    await asyncio.wait_for(harness.handler.on_event(group_event(body="hi")), timeout=10)
     # THE POSITIVE CONTROL, and the reason the signature fix matters: with the
-    # wrong signature the fake raised in microseconds, so `< 0.2` was true of
-    # a call that never slept and the test measured nothing. Asserting the
-    # fake was actually entered is what makes the elapsed time a statement
-    # about the SPAWN rather than about an exception.
+    # wrong signature the fake raised in microseconds, so returning promptly
+    # was true of a call that never blocked and the test measured nothing.
+    # Asserting the fake was actually entered is what makes the return a
+    # statement about the SPAWN rather than about an exception.
     #
     # After one loop tick, not before: the feed is SPAWNED, so it has not
-    # started when `on_event` returns — which is the very property the
-    # elapsed-time assertion above is about.
+    # started when `on_event` returns.
     await asyncio.sleep(0)
-    assert entered, "the slow feed must have been reached, or 0.2s proves nothing"
+    assert entered, "the slow feed must have been reached, or the return proves nothing"
+    release.set()
 
 
 async def test_debounce_window(harness_factory):
