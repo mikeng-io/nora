@@ -90,19 +90,7 @@ _ASCII_WORD = re.compile(r"[a-z]{4,}")
 _PINNED: frozenset[tuple[str, str]] = frozenset({
     # «Miles 自己 build» vs "Built by Miles" — an irregular past tense, so the
     # prefix rule cannot see them as the same word.
-    ("landing.whatBody", "build"),
     ("tools.dek", "build"),
-    # «佢對你嘅 read» vs "What she remembers about you." — the loanword the
-    # room actually uses for Honcho's representation.
-    ("landing.capability.memory.description", "read"),
-    # «賣 proactive» vs "sell proactivity" — adjective vs noun; the prefix
-    # rule stops one character short.
-    ("landing.diff.3.description", "proactive"),
-    # «每條 message 都 ambient ingest 去 Honcho» vs "Every message is fed to
-    # Honcho in the background" — the pipeline's own two words, where the
-    # English copy describes the effect instead.
-    ("landing.tier.memory.description", "ambient"),
-    ("landing.tier.memory.description", "ingest"),
 })
 
 
@@ -139,11 +127,13 @@ def test_pinned_list_only_shrinks() -> None:
     test still passes, because the pin swallows the one word that would have
     caught it.
 
-    6 is the count measured on 2026-09-13, the day this guard was added. A
-    shrink lowers this number along with the list; growing the list without
-    lowering this number is the back door, and this is what turns that red.
+    6 was the count measured on 2026-09-13, the day this guard was added; 1
+    since 2026-09-26, when the portal's landing copy (five of the six pins)
+    moved to site/. A shrink lowers this number along with the list; growing
+    the list without lowering this number is the back door, and this is what
+    turns that red.
     """
-    assert len(_PINNED) <= 6, (
+    assert len(_PINNED) <= 1, (
         f"_PINNED grew to {len(_PINNED)} entries without this ceiling "
         "moving with it. Its docstring says the list only shrinks — if a "
         "new pin is genuinely a style difference, argue it in the pin's "
