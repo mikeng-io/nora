@@ -78,7 +78,7 @@ Threads fits neither column:
   list, so no roster, and design/instagram-adoption/00 already ruled that a
   surface without one cannot carry an ambient agent. Every room-scoped
   guard assumes a bounded audience: R-21 resolves names within the room's
-  membership, and R-31's disclosure subset checks the room against a trusted
+  membership, and the disclosure subset (`AGENTS.md`'s "R-31", which has no row in the decision index) checks the room against a trusted
   circle. Pushed through the `EngagementPipeline`, a summons would write
   a stranger's words into Honcho, the audit rows, notes and standing, and her
   prefill would hand the model the private context of whatever room the
@@ -120,7 +120,8 @@ side, "read the Threads post a room member pasted", is still a
    public post.
 4. **Public tools only.** The occasion's `ToolScope.grant` admits web search,
    web fetch, media comprehension of the thread's own images, image
-   generation, `threads_read`, and the terminal `send_reply`. No memory,
+   generation and the terminal `send_reply`. The full list is
+   10 §"`PUBLIC_GRANT`", and that table is the reference. No memory,
    recall, notes, presence, `where_is`, persons, rooms, `send_to` or
    reminders. The grant is the enforcement. Doctrine alone is not.
 5. **Ingress is polling first.** `GET /{user-id}/mentions`, run from inside
@@ -141,7 +142,7 @@ side, "read the Threads post a room member pasted", is still a
 7. **A public-surface doctrine.** A new `public.md`, loaded only for this
    occasion. It covers audience (strangers, permanently), register, claims
    with sources, a 500-character limit, and refusing what she cannot ground
-   (R-5 applies with more force, not less). The same doctrine set stays the
+   (the spine's «never assert what you cannot ground», with more force, not less). The same doctrine set stays the
    base, and this file adds to it.
 
 Each of these holds unless the reading in 20 §"What would reopen it" says
@@ -149,8 +150,8 @@ otherwise.
 
 ## What blocked it, and the token now
 
-**The token lacks the mention scope.** `THREAD_API_ACCESS_TOKEN` in norty's
-`.env` answered «API access blocked» (`OAuthException` code 200) on every
+**The token lacked the mention scope.** `THREAD_API_ACCESS_TOKEN` in norty's
+`.env` (the first token; the re-minted one below is `THREAD_API_AUTH_TOKEN` in the Mac worktree's `.env`) answered «API access blocked» (`OAuthException` code 200) on every
 call on the morning of 2026-09-25, while the new Facebook account behind the
 app was restricted. The same token worked once the operator reported the
 account restored. Read back from norty the same day:
@@ -185,9 +186,9 @@ the fact check uses `web_search`.
 summons under a non-tester's post arrives without its parent: `root_post`
 and `replied_to` are withheld and the conversation is empty. So before
 review, Nora can only be summoned about posts that testers wrote, which is
-not the use case. The paragraph below was written before that measurement.
-Its first sentence was wrong: App Review **is** needed to start. The rest
-still holds.
+not the use case. (An earlier revision of this section said review was not
+needed to start and that testers alone made the summons work end to end.
+The measurement overturned both.)
 
 What Meta documents, read 2026-09-25:
 
@@ -205,12 +206,3 @@ What Meta documents, read 2026-09-25:
 None of these pages says in so many words that a non-tester's parent post
 is withheld from a mention. The access-levels rule predicts it, and the
 measurement shows it.
-
-**App Review was expected to be the second gate, and not needed to start.** Without
-Advanced Access, `mentions` returns only mentions by tester accounts, reads
-are limited to what those accounts can see, and keyword search sees only the
-tester's own posts. With the operator and a few friends as testers, the
-summons works end to end. Advanced Access (review of
-`threads_manage_mentions`, `threads_read_replies`,
-`threads_content_publish`, probably business verification) is needed only
-before strangers can summon her, which decision 6 keeps off anyway.

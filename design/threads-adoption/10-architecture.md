@@ -233,8 +233,8 @@ reactions, GIFs, music, `instagram_read` (its story reads are
 roster-scoped), and `linkedin_*` (a profile visit its subject can see).
 `ToolScope.grant` already exists and already works this way for the
 Dreamer (`nora/agent/surface.py`). The grant is a frozen set in code, pinned
-by a test that fails if a tool with `read_only=False` or a room-scoped tool
-enters it.
+by a test that fails if a room-scoped tool, or a tool with
+`read_only=False` other than `send_reply` and `generate_image`, enters it.
 
 ## Egress: the `ThreadsDeliverer`
 
@@ -270,9 +270,10 @@ upload. `generate_image` returns bytes (`xai_adapter.py` asks for
 `expires_at` and returns a public slug. Two things stand in the way, and
 both are measured before phase 4:
 
-1. `drop`'s public listener serves `/drop/{slug}` as a **rendered page**,
-   not raw bytes. A raw route (`/m/{slug}`, image types only, served only
-   until `expires_at`) is needed.
+1. `drop`'s public listener already serves `/drop/{slug}` as the stored
+   bytes with their stored media type (`deploy/drop/server.py`,
+   `render_artifact`), so no new route is needed for the bytes. What is
+   needed is that the served URL stops working at `expires_at`.
 2. `drop`'s public listener **rejects every bot user agent** (an operator
    requirement, `deploy/drop/hardening.py`). Meta fetches `image_url` with a
    crawler user agent that has not been measured. Exempting it on `/m/` only
@@ -292,7 +293,9 @@ has to run the OAuth flow again. A value in `.env` cannot be rewritten by a
 container, so:
 
 - `threads-bridge` seeds a one-row `threads_token` table from
-  `THREAD_API_ACCESS_TOKEN` on first start and reads the table from then on,
+  `THREAD_API_AUTH_TOKEN` (the variable name the re-minted token uses; the
+  bridge reads it from the deploy host's `.env`, so it has to be copied to
+  norty first) on first start and reads the table from then on,
 - it refreshes daily once the token is older than 24 hours, and records
   `refreshed_at` and `expires_at`,
 - `/health` reports `days_to_expiry`, and an alert fires under 14 days or on
@@ -304,11 +307,12 @@ container, so:
 
 | Guard | On a summons |
 |---|---|
-| R-5, silence over a wrong answer | stronger: publishing nothing is always allowed, and the doctrine says so |
+| R-5, no error text reaches the audience | unchanged: a failed summons publishes nothing, never an error |
+| grounding (the spine: never assert what you cannot ground) | stronger: publishing nothing is always allowed, and the doctrine says so |
 | R-18, no identifier egress | unchanged; the screen runs on staged text |
 | R-21, room-scoped name resolution | unreachable: no room tool is granted |
 | R-28, no name or coordinate in routing arguments | unchanged on `web_search`; no routing tool is granted |
-| R-31, the disclosure subset | unreachable: nothing private is in context or in reach |
+| the disclosure subset (`AGENTS.md`'s R-31, no index row) | unreachable: nothing private is in context or in reach |
 | R-86, read-only social | unchanged on the read axis; the write axis gets its own allowlist in the bridge |
 | strict silence | unchanged; the deliverer publishes only what the tools staged |
 

@@ -15,7 +15,7 @@ edges:
 Each phase is one PR. None starts before the phase before it has passed
 its live read-back.
 
-## Phase 0: the token carries every scope the design uses (operator, no code)
+## Phase 0: the token carries every scope the design uses (operator, no code) — PASSED 2026-09-25
 
 Mint the token again with `threads_manage_mentions` (required),
 `threads_keyword_search` and `threads_profile_discovery` added to the five
@@ -42,7 +42,7 @@ written. Each one decides something:
 | Measurement | Decides |
 |---|---|
 | a mention from the operator appears in `/summonses`; time from posting to first appearance, over at least 10 mentions | the poll interval, and whether webhooks are needed |
-| the chain of a summons under a **third party's** public post: root text, root `media_url`, `replied_to` walk | whether standard access can read the post she is asked about at all. If not, phase 2 waits for Advanced Access |
+| the chain of a summons under a **third party's** public post: root text, root `media_url`, `replied_to` walk | whether standard access can read the post she is asked about at all. MEASURED 2026-09-25: it cannot (10 §"What the first mention showed"); see §"What would reopen it" |
 | a summons under a post with an image: is `media_url` fetchable from the `nora` container | whether `media_fetch` can comprehend it |
 | a quoted post and a repost in a chain | how the chain renders them |
 | the token refreshes (forced once it is at least 24 hours old); `expires_at` moves | refresh works before anything depends on it |
@@ -76,8 +76,8 @@ under it. The count must be one.
 
 ## Phase 4: images
 
-The raw media route in `drop`, the operator's decision on Meta's fetcher (see
-below), and the image branch of the flush.
+An expiry on `drop`'s served artifact URL, the operator's decision on Meta's
+fetcher (see below), and the image branch of the flush.
 
 Read-back: a "draw this" summons, the published post's `media_url` read
 back, then the `drop` URL left to expire and the post read again. The
@@ -132,15 +132,15 @@ prompt back and check that the arms differ.
 
 ## Needs the operator
 
-1. **Unblock the token** (phase 0). Only the operator can open the Meta App
-   Dashboard.
+1. **Unblock the token** (phase 0). Done 2026-09-25: the account was
+   restored, and the token was re-minted through the OAuth flow.
 2. **Add testers.** Every friend in `identity.toml` who should be able to
    summon her is invited as a Threads tester and accepts in the Threads app.
    Until App Review, nobody else's mention reaches the app.
 3. **Meta's image fetcher on `drop`** (phase 4). The operator's rule is that
    `drop` rejects every bot. Serving Threads images needs one exemption: the
-   raw media route admits Meta's fetcher, for image types only, until a
-   15-minute expiry. The alternative is a separate public bucket outside
+   public `/drop/{slug}` route admits Meta's fetcher, for image artifacts
+   only, until a 15-minute expiry. The alternative is a separate public bucket outside
    `drop`, which costs one more public surface.
 4. **One `[[persons.<id>.threads]]` block per friend who may summon her**,
    keyed on their Threads username, and each of them a Threads tester.
