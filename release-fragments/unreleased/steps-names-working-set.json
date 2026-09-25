@@ -1,0 +1,10 @@
+{
+  "type": "change",
+  "summary": "The debrief fold's own turn record now points at its working set where the candidate data already sits, not only in the distant objective.",
+  "details": [
+    "The `<steps>` block's description now says: when a result below names several of a kind and the delivered row sent only some, the rest sitting there unsent is the working set."
+  ],
+  "limitations": [
+    "Annotation only, held at objective v10; whether this alone moves the write rate is a separate, measured question (issue #445)."
+  ]
+}
