@@ -36,10 +36,10 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from ..domain.blocks import ContextBlock
+from ..domain.blocks import ContextBlock, render_elements
 from ..domain.prompt import age as _age
 from ..domain.prompt import escape
-from ..domain.standing import Standing
+from ..domain.standing import WORKING_SET_TTL_HOURS, Standing, WorkingSetItem
 
 
 def render_standing(
@@ -73,3 +73,45 @@ def render_standing(
         name="standing", attrs=(("written", written),),
         body=escape(standing.body),
     )
+
+
+def render_standing_working_set(
+    working_set: tuple[WorkingSetItem, ...], *, now: datetime | None = None,
+) -> ContextBlock | None:
+    """`<standing_working_set>` — options found and not yet given the room
+    (design/standing-compact/30-working-set.md §2/§4, issue #445).
+
+    **Fail-closed on the TTL, by construction, not by a sweep.** An item
+    older than `WORKING_SET_TTL_HOURS` is filtered out HERE, before the block
+    is built — the same place `render_standing` already computes `written`
+    as an age at render time rather than trusting a stored label. An expired
+    item is never emitted: it does not render as stale, it does not render
+    at all, identical to a room whose working set is empty. No new
+    deterministic sweep exists or is needed — the fold's own next pass
+    rewrites the stored array independently (`nora.engagement.stages.debrief`).
+
+    `None` when there is nothing LIVE to show — an empty `working_set`, or
+    one whose every item has aged out — for `render_standing`'s reason: a
+    room with nothing found is not a room she considered and found nothing
+    in, and the type's own description already says so.
+    """
+    if not working_set:
+        return None
+    now = now or datetime.now().astimezone()
+    now_ms = int(now.timestamp() * 1000)
+    ttl_ms = int(WORKING_SET_TTL_HOURS * 3_600_000)
+    live = tuple(
+        item for item in working_set if now_ms - item.found_at <= ttl_ms
+    )
+    if not live:
+        return None
+    body = render_elements(
+        live, tag="item",
+        attrs=lambda item, _i: (
+            ("source", item.source),
+            ("found", _age(item.found_at, now)),
+            ("bears_on", item.bears_on),
+        ),
+        body=lambda item: item.what,
+    )
+    return ContextBlock(name="standing_working_set", body=body)

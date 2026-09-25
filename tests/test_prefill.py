@@ -22,7 +22,7 @@ from nora.domain.models import (
 )
 from nora.domain.notes import Note
 from nora.domain.prompt import escape_attr
-from nora.domain.standing import Standing
+from nora.domain.standing import Standing, WorkingSetItem
 
 
 def _ctx(transcript=(), peer_card=(), body="nora.000 what time", tagger=None, self_card=(),
@@ -53,9 +53,26 @@ def _decisions() -> tuple[tuple[str, tuple[DecisionRow, ...]], ...]:
     ),)),)
 
 
-def _standing(body="They are deciding where to eat; nobody has picked yet.") -> Standing:
+def _standing(body="They are deciding where to eat; nobody has picked yet.",
+              working_set: tuple[WorkingSetItem, ...] = ()) -> Standing:
     return Standing(platform="signal", conversation_id="g1", body=body,
-                    fold_count=3, updated_at=1)
+                    fold_count=3, updated_at=1, working_set=working_set)
+
+
+def _working_set_item(
+    what="a second restaurant the search returned", source="web_search",
+    bears_on="where to eat",
+) -> WorkingSetItem:
+    """A live one — `found_at` is NOW, not a fixed fixture constant, because
+    `render_standing_working_set`'s TTL is measured against the real clock
+    (`build_prefill` here takes no `now=`) and a fixed epoch-1 timestamp
+    would have aged out of every render decades ago, silently emptying the
+    one fixture `test_every_declared_block_actually_renders_in_the_full_fixture`
+    needs populated."""
+    return WorkingSetItem(
+        what=what, source=source,
+        found_at=int(datetime.now(UTC).timestamp() * 1000), bears_on=bears_on,
+    )
 
 
 def _culture(body=(
@@ -225,7 +242,9 @@ def _full_prefill_body() -> str:
     ctx = _ctx(
         _rows("hello"), peer_card=("likes espresso",), self_card=("nora said a thing",),
         tagger_card=("asked about dinner",), tagger=PersonRef("miles", "Miles", "miles"),
-        notes=(_note(),), standing=_standing(), culture=_culture(), decisions=_decisions(),
+        notes=(_note(),),
+        standing=_standing(working_set=(_working_set_item(),)),
+        culture=_culture(), decisions=_decisions(),
         people_in_window=(("Grant", ("asked about dinner",)),),
     )
     return build_prefill(
