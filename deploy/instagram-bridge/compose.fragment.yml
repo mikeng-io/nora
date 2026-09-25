@@ -71,7 +71,8 @@ services:
       #   docker compose stop instagram-bridge
       #   jq 'del(.writes_blocked)' state/instagram/comments.json > /tmp/c.json &&
       #     mv /tmp/c.json state/instagram/comments.json &&
-      #     chmod 600 state/instagram/comments.json
+      #     chmod 600 state/instagram/comments.json &&
+      #     chown 1000:1000 state/instagram/comments.json   # the container's uid
       #   docker compose start instagram-bridge
       - INSTAGRAM_COMMENT_WRITES=off
       - INSTAGRAM_COMMENT_DAILY_CAP=10

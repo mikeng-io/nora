@@ -19,7 +19,8 @@ package session
 //
 //	docker compose stop instagram-bridge
 //	jq 'del(.writes_blocked)' state/instagram/comments.json > /tmp/c.json \
-//	  && mv /tmp/c.json state/instagram/comments.json && chmod 600 state/instagram/comments.json
+//	  && mv /tmp/c.json state/instagram/comments.json && chmod 600 state/instagram/comments.json \
+//	  && chown 1000:1000 state/instagram/comments.json   # the container runs as uid 1000
 //	docker compose start instagram-bridge
 //
 // It is NOT disposable the way state.json and seq.json are. Losing it forgets

@@ -24,6 +24,10 @@ const (
 	envCommentWrites      = "INSTAGRAM_COMMENT_WRITES"
 	envCommentDailyCap    = "INSTAGRAM_COMMENT_DAILY_CAP"
 	envCommentMinInterval = "INSTAGRAM_COMMENT_MIN_INTERVAL"
+
+	// minCommentInterval is the lowest spacing the bridge accepts. Below it,
+	// writes stay off, like any other value that does not parse.
+	minCommentInterval = 30 * time.Second
 )
 
 // commentPolicyFromEnv reads the policy through getenv. problems names each
@@ -41,8 +45,11 @@ func commentPolicyFromEnv(getenv func(string) string) (app.CommentPolicy, []stri
 	}
 	if v := getenv(envCommentMinInterval); v != "" {
 		d, err := time.ParseDuration(v)
-		if err != nil || d < 0 {
-			problems = append(problems, fmt.Sprintf("%s must be a non-negative Go duration", envCommentMinInterval))
+		// A floor, not just non-negative: the writes-off latch is recorded when
+		// a write RETURNS, so the spacing is what stops a second write going out
+		// into an action block the first one just drew (review of #537).
+		if err != nil || d < minCommentInterval {
+			problems = append(problems, fmt.Sprintf("%s must be a Go duration of at least %s", envCommentMinInterval, minCommentInterval))
 		} else {
 			policy.MinInterval = d
 		}

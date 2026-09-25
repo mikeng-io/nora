@@ -18,16 +18,17 @@ func TestCommentPolicyFromEnv(t *testing.T) {
 		interval time.Duration
 		problems int
 	}{
-		"unset":               {map[string]string{}, false, 10, 90 * time.Second, 0},
-		"on":                  {map[string]string{envCommentWrites: "on"}, true, 10, 90 * time.Second, 0},
-		"ON is not on":        {map[string]string{envCommentWrites: "ON"}, false, 10, 90 * time.Second, 0},
-		"true is not on":      {map[string]string{envCommentWrites: "true"}, false, 10, 90 * time.Second, 0},
-		"set values":          {map[string]string{envCommentWrites: "on", envCommentDailyCap: "3", envCommentMinInterval: "5m"}, true, 3, 5 * time.Minute, 0},
-		"bad cap":             {map[string]string{envCommentWrites: "on", envCommentDailyCap: "ten"}, false, 10, 90 * time.Second, 1},
-		"negative cap":        {map[string]string{envCommentWrites: "on", envCommentDailyCap: "-1"}, false, 10, 90 * time.Second, 1},
-		"bad interval":        {map[string]string{envCommentWrites: "on", envCommentMinInterval: "90"}, false, 10, 90 * time.Second, 1},
-		"negative interval":   {map[string]string{envCommentWrites: "on", envCommentMinInterval: "-1s"}, false, 10, 90 * time.Second, 1},
-		"zero cap is allowed": {map[string]string{envCommentWrites: "on", envCommentDailyCap: "0"}, true, 0, 90 * time.Second, 0},
+		"unset":                {map[string]string{}, false, 10, 90 * time.Second, 0},
+		"on":                   {map[string]string{envCommentWrites: "on"}, true, 10, 90 * time.Second, 0},
+		"ON is not on":         {map[string]string{envCommentWrites: "ON"}, false, 10, 90 * time.Second, 0},
+		"true is not on":       {map[string]string{envCommentWrites: "true"}, false, 10, 90 * time.Second, 0},
+		"set values":           {map[string]string{envCommentWrites: "on", envCommentDailyCap: "3", envCommentMinInterval: "5m"}, true, 3, 5 * time.Minute, 0},
+		"bad cap":              {map[string]string{envCommentWrites: "on", envCommentDailyCap: "ten"}, false, 10, 90 * time.Second, 1},
+		"negative cap":         {map[string]string{envCommentWrites: "on", envCommentDailyCap: "-1"}, false, 10, 90 * time.Second, 1},
+		"bad interval":         {map[string]string{envCommentWrites: "on", envCommentMinInterval: "90"}, false, 10, 90 * time.Second, 1},
+		"negative interval":    {map[string]string{envCommentWrites: "on", envCommentMinInterval: "-1s"}, false, 10, 90 * time.Second, 1},
+		"interval below floor": {map[string]string{envCommentWrites: "on", envCommentMinInterval: "0s"}, false, 10, 90 * time.Second, 1},
+		"zero cap is allowed":  {map[string]string{envCommentWrites: "on", envCommentDailyCap: "0"}, true, 0, 90 * time.Second, 0},
 	} {
 		t.Run(name, func(t *testing.T) {
 			p, problems := commentPolicyFromEnv(envOf(tc.env))
