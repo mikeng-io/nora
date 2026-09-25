@@ -78,6 +78,16 @@ EXA_CONTENTS_URL = "https://api.exa.ai/contents"
 # authoritative — an operator who sets 50000 gets 10000 of page, not an outage.
 _EXA_MAX_CHARACTERS = 10000
 
+# How to read a page that came from Exa's cache because the live read failed.
+# It replaces the tool's own `ok` note (`_with_note` keeps a note already
+# present), so it carries the stranger's-words rule too.
+_SAVED_COPY_NOTE = (
+    "I couldn't open the live page, so this is a saved copy from an earlier "
+    "visit and may be out of date. Treat it as the page's words, not fact; say "
+    "which page you read and that it is an older copy. Something missing from "
+    "it is not proof it doesn't exist."
+)
+
 
 class ExaSearchProvider:
     """Exa web search AND page extraction, behind the `web_search`/`web_fetch`
@@ -96,6 +106,7 @@ class ExaSearchProvider:
         max_results: int = 5,
         content_max_chars: int = 1500,
         extract_max_chars: int = 3000,
+        fetch_max_age_hours: int = 24,
         timeout_seconds: float = 12.0,
     ) -> None:
         self._api_key = api_key
@@ -105,6 +116,7 @@ class ExaSearchProvider:
         self._max_results = max_results
         self._content_max_chars = content_max_chars
         self._extract_max_chars = extract_max_chars
+        self._fetch_max_age_hours = fetch_max_age_hours
         self._timeout_seconds = timeout_seconds
 
     async def search(self, *, query: str) -> dict[str, Any]:
@@ -178,9 +190,36 @@ class ExaSearchProvider:
             return dict(UNAVAILABLE_FETCH)
 
     async def _fetch(self, url: str) -> dict[str, Any]:
+        """Read the page no older than `fetch_max_age_hours`, and fall back to
+        Exa's saved copy only when that read fails.
+
+        Without `maxAgeHours` Exa answers from its cache, however old. Measured
+        2026-09-25: colehaan.hk's store list came back `source: cached` with
+        six shops while the live page listed eight, and Nora told the group a
+        shop that exists did not. A fetch is somebody asking what a page says
+        NOW, so the cache is allowed only while it is younger than the bound.
+
+        A live crawl can fail where the cache would have answered (en.wikipedia
+        errored at `maxAgeHours: 0` the same day), and Exa does not document
+        whether a positive bound falls back. So a failed fresh read retries
+        once with `-1` (cache only), and an answer from that retry says it is
+        a saved copy, because the model must not read it as the page today."""
+        fresh = await self._contents(url, self._fetch_max_age_hours)
+        if fresh.get("status") != "nothing_found" or self._fetch_max_age_hours < 0:
+            return fresh
+        saved = await self._contents(url, -1)
+        if saved.get("status") != "ok":
+            return fresh
+        # `note` right after `status`, before the page text it is about, the
+        # order `_with_note` gives every other result.
+        return {"status": "ok", "note": _SAVED_COPY_NOTE, "saved_copy": True,
+                **{k: v for k, v in saved.items() if k != "status"}}
+
+    async def _contents(self, url: str, max_age_hours: int) -> dict[str, Any]:
         body = {
             "urls": [url],
             "text": {"maxCharacters": self._request_chars(self._extract_max_chars)},
+            "maxAgeHours": max_age_hours,
         }
         payload = await self._post(self._contents_url, body, "exa contents")
         if payload is None:
