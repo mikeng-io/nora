@@ -52,7 +52,7 @@
     "name": "note-candidates renders a body whole, never an excerpt",
     "file": "nora/language/note_render.py",
     "old": "    elif excerpt is not None and len(text) > excerpt:\n",
-    "new": "    elif len(text) > (excerpt or 600):\n",
+    "new": "    elif len(text) > (excerpt := excerpt or 600):\n",
     "target": "tests/unit/test_note_candidates.py::test_the_notebook_renders_every_open_note_with_its_body_whole"
   },
   {
