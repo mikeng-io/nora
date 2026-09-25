@@ -289,3 +289,34 @@ def test_the_description_meets_adr_0015(name):
     whole = json.dumps(sent, ensure_ascii=False)
     assert not re.search("[–—]", whole)
     assert not re.search("[^\x00-ɏ]", whole)
+
+
+# ---- `url` is `link` (design 30 decision 2, triggered 2026-09-25) ----------
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "sent"),
+    [
+        ({"url": "https://www.linkedin.com/in/williamhgates/?trk=x"},
+         ("linkedin", "profile", "williamhgates")),
+        ({"url": "https://www.linkedin.com/company/nvidia/"}, ("linkedin", "company", "nvidia")),
+        ({"link": "linkedin.com/in/williamhgates",
+          "url": "https://www.linkedin.com/in/williamhgates/?trk=x"},
+         ("linkedin", "profile", "williamhgates")),
+    ],
+)
+async def test_url_reads_as_link(social, kwargs, sent):
+    out = await _tools(social)["linkedin_read"](**kwargs)
+    assert out["status"] == "ok"
+    assert [c[:3] for c in social.calls] == [sent]
+
+
+async def test_url_and_link_that_differ_read_nothing(social):
+    out = await _tools(social)["linkedin_read"](
+        link="https://www.linkedin.com/in/williamhgates/",
+        url="https://www.linkedin.com/company/nvidia/",
+    )
+    assert out["status"] == "unavailable"
+    assert "as link" in out["note"]
+    assert "williamhgates" not in out["note"] and "nvidia" not in out["note"]
+    assert social.calls == []

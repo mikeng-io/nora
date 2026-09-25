@@ -88,7 +88,7 @@ def _with_scheme(link: str) -> str:
     imported: `nora.agent.tools` imports THIS module (for `owner_of`/
     `redirect`/`LINK_OWNERS`), so the reverse import would cycle. The other
     copy stays in `tools.py` for its own remaining callers
-    (`_same_instagram_link`, `x_read`, `linkedin_read`, `instagram_read`),
+    (`_same_link`, `x_read`, `linkedin_read`, `instagram_read`),
     none of which move in this PR.
     """
     text = link.strip()
