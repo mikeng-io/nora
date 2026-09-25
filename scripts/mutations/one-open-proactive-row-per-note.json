@@ -1,0 +1,37 @@
+[
+  {
+    "name": "#158: remind checks the note's waiting proactive row before writing",
+    "file": "nora/agent/tools.py",
+    "old": "        if proactive and linked is not None:\n            book = _notebook()",
+    "new": "        if False:\n            book = _notebook()",
+    "target": "tests/unit/test_remind_one_open_row_per_note.py::test_a_second_booking_across_midnight_is_refused"
+  },
+  {
+    "name": "#158: the in-memory store refuses a second open proactive row on a note",
+    "file": "nora/testing/reminders.py",
+    "old": "        if note_id is not None and any(",
+    "new": "        if False and any(",
+    "target": "tests/unit/test_remind_one_open_row_per_note.py::test_two_bookings_in_one_step_land_one_row"
+  },
+  {
+    "name": "#158: the store rule, as the contract suite states it (in-memory half)",
+    "file": "nora/testing/reminders.py",
+    "old": "        if note_id is not None and any(",
+    "new": "        if False and any(",
+    "target": "tests/contract/test_reminder_store_contract.py -k fake"
+  },
+  {
+    "name": "#158: a waiting row whose note the tag path moved is resolved, not held",
+    "file": "nora/agent/tools.py",
+    "old": "            if dead:\n                stale.append(row)",
+    "new": "            if False:\n                stale.append(row)",
+    "target": "tests/unit/test_remind_one_open_row_per_note.py::test_a_note_the_room_moved_since_the_row_was_linked_can_be_rebooked"
+  },
+  {
+    "name": "#158/#495: a row on a note merged into this one holds this one",
+    "file": "nora/agent/tools.py",
+    "old": "                if survivor is None or survivor.id != note.id:",
+    "new": "                if True:",
+    "target": "tests/unit/test_remind_one_open_row_per_note.py::test_a_row_on_a_note_merged_into_this_one_holds_it"
+  }
+]

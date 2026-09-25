@@ -1,0 +1,12 @@
+{
+  "type": "fix",
+  "summary": "Nora no longer books a second unprompted reminder about something she already has one waiting for.",
+  "details": [
+    "When her own reminder about a note is still waiting, or going off, a second one about the same note is refused, and she is told when the first is due.",
+    "A reminder about a note that was merged into another one counts as that note's reminder.",
+    "Once a reminder has gone off she can raise the thing again later. If the group has changed the plan since she booked it, the old reminder is cancelled and she can book a new one."
+  ],
+  "limitations": [
+    "Reminders already booked twice before this change are left as they are."
+  ]
+}
