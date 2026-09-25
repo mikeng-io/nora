@@ -22,6 +22,7 @@ revision: '2026-08-27 — adversarial review (Hermes delegate) of the earlier si
 revision_2026_09_16: 'Scope narrowed to self-only (operator: 「no need operator, just nora」) — the operator canonical asset is dropped from v1 and the operator-photo ambiguity class is carried by the ask rule alone; the canonical self image (assets/nora-canonical-self.png, 1024x1536, sha256 4b8825fe…) is accepted and the multi-panel sheet is reclassified as the descriptive source, not an asset.'
 revision_2026_09_23_build: 'Built. Operator placed the content in an on-demand SKILL (nora/skills/image-generation/), not doctrine: her look is needed only when she makes an image. The skill leads with whether she herself is in the picture, then whose photo is whose, her appearance per 05, and per-model notes from xAI docs. Resolver exemption, URL refusal and ingest built with tests; 06 is the as-built record.'
 revision_2026_09_23: 'Canon replaced by the mascot form (operator, 2026-09-23): new self asset (sha256 535e4da5…), new Mini Form sheet, the operator''s spec kept verbatim as 05, social avatar and banner added as reference-only. The human form is retired, not kept as an alternative.'
+revision_2026_09_26: 'One identity, two representations (operator, 2026-09-26, 07): Mini Nora is the native form on every internet surface; Embodied Nora is a human-scale interface for spatial surfaces, not a human identity, so 05 and the 2026-09-23 retirement of the human-form canon stand. Three reference-only images added (nora-mini-icon, nora-mini-tpose, nora-embodied-tpose); nothing ingested, runtime unchanged. The repo-wide visual system is DESIGN.md.'
 origin: "self-reference design discussion with miles after the 2026-08-27 cow-avatar image failure"
 members:
   - 00-overview.md
@@ -31,6 +32,7 @@ members:
   - 04-tests-and-files.md
   - 05-visual-identity-spec.md
   - 06-implementation-plan.md
+  - 07-native-and-embodied-form.md
 edges:
   - {src: 01-appearance-doctrine, dst: 05-visual-identity-spec, rel: depends_on, provenance: asserted}
   - {src: 05-visual-identity-spec, dst: 00-overview, rel: realizes, provenance: asserted}
@@ -45,6 +47,8 @@ edges:
   - {src: 06-implementation-plan, dst: 04-tests-and-files, rel: realizes, provenance: asserted}
   - {src: 06-implementation-plan, dst: 01-appearance-doctrine, rel: depends_on, provenance: asserted}
   - {src: 06-implementation-plan, dst: 02-canonical-assets, rel: depends_on, provenance: asserted}
+  - {src: 07-native-and-embodied-form, dst: 05-visual-identity-spec, rel: depends_on, provenance: asserted}
+  - {src: 07-native-and-embodied-form, dst: 00-overview, rel: realizes, provenance: asserted}
 scope:
   v1:
     - "image-generation skill (nora/skills/image-generation/SKILL.md), on demand: the in-the-picture judgement, recognition/no-guess rules, her visual form, per-model notes (built as a skill, not the designed appearance.md doctrine file)"

@@ -64,8 +64,8 @@ reaches (all when unmapped). PASS: `GATE_RC=0`, 3 steps, no `failed`. ONCE per P
 on the final head; fix rounds run their own tests. `make full-gate` = whole suite.
 
 - Never `make gate | tail`: the rc is tail's (2026-09-22, merged a red master).
-- In the background, read `$LOG/gate.rc`, never the completion notice: it
-  reports the last command's rc (2026-09-22: notice 0, real rc 2, twice).
+- In the background read `$LOG/gate.rc`, not the notice (last command's rc).
+  Kill only a PID you recorded, never `pkill -f`: it kills other sessions' gates.
 
 **Docs-only** (every path is `.md` outside `nora/doctrine` and `nora/dreamer`,
 or under `docs/`, `design/`, `release-fragments/`):
@@ -77,8 +77,9 @@ uv run pytest -q tests/architecture/test_doc_references_resolve.py tests/test_re
 ```
 
 `design/09-decision-index.md` changed: add `tests/architecture/test_decision_index_tests_exist.py`
-and `tests/architecture/test_decision_index_ids_are_unique.py`. Run `make gate`
-once before the merge anyway (2026-09-22: a docs-only merge reddened master).
+and `tests/architecture/test_decision_index_ids_are_unique.py`. This IS the gate
+for a docs-only diff, merge included; no `make gate` (operator, 2026-09-26). The
+2026-09-22 red master was a doc reference this command now checks.
 
 ## 4. Commit
 

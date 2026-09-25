@@ -10,6 +10,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -29,6 +30,12 @@ const (
 	summonsB  = "17900000000000002"
 	summonsC  = "17900000000000003"
 	summonsD  = "17900000000000004"
+
+	// summoner is the igid of the account whose card and comment make a
+	// summons; stranger is anybody else. selfName is this account's handle.
+	summoner = "500000000001"
+	stranger = "500000000002"
+	selfName = "not_____nora"
 )
 
 var t0 = time.Date(2026, 9, 25, 12, 0, 0, 0, time.UTC)
@@ -55,24 +62,54 @@ func code(t *testing.T, s string) domain.Shortcode {
 	return c
 }
 
-// fakeComments is the Comments port. postErr, when set, is every write's
-// answer; onPost runs INSIDE the upstream call, before it answers.
+// fakeComments is the Comments port. pages is each post's first comments
+// page, by media pk; readErr, when set, is every read's answer. postErr, when
+// set, is every write's answer; onPost runs INSIDE the upstream call, before
+// it answers.
 type fakeComments struct {
+	mu      sync.Mutex
 	posts   int
 	reads   int
+	pages   map[string][]domain.Comment
+	readErr error
+	// onRead runs INSIDE the comments read, before it answers.
+	onRead  func()
 	postErr error
 	onPost  func()
 	lastTo  string
 	lastTxt string
 }
 
-func (f *fakeComments) Comments(context.Context, domain.Shortcode, domain.MediaID, *domain.CommentID) (domain.CommentPage, error) {
+func (f *fakeComments) Comments(_ context.Context, _ domain.Shortcode, media domain.MediaID, parent *domain.CommentID) (domain.CommentPage, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.reads++
-	return domain.CommentPage{}, nil
+	if f.onRead != nil {
+		f.onRead()
+	}
+	if f.readErr != nil {
+		return domain.CommentPage{}, f.readErr
+	}
+	if parent != nil {
+		return domain.CommentPage{}, nil
+	}
+	return domain.CommentPage{Items: append([]domain.Comment(nil), f.pages[media.String()]...)}, nil
+}
+
+// onPage puts one comment on a post's first page.
+func (f *fakeComments) onPage(media string, c domain.Comment) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.pages == nil {
+		f.pages = map[string][]domain.Comment{}
+	}
+	f.pages[media] = append(f.pages[media], c)
 }
 
 func (f *fakeComments) PostComment(_ context.Context, _ domain.Shortcode, _ domain.MediaID, replyTo domain.CommentID, text string) (domain.PostedComment, error) {
+	f.mu.Lock()
 	f.posts++
+	f.mu.Unlock()
 	f.lastTo, f.lastTxt = replyTo.String(), text
 	if f.onPost != nil {
 		f.onPost()
@@ -90,6 +127,7 @@ type commentRig struct {
 	session *fakeSession
 	clk     *clock
 	dir     string
+	cards   int
 }
 
 func openPolicy() CommentPolicy {
@@ -99,11 +137,14 @@ func openPolicy() CommentPolicy {
 func newCommentRig(t *testing.T, policy CommentPolicy) *commentRig {
 	t.Helper()
 	r := &commentRig{
-		port:    &fakeComments{},
-		social:  &fakePorts{},
-		session: &fakeSession{snap: domain.Session{State: domain.StateAuthenticated, HasClient: true}},
-		clk:     &clock{t: t0},
-		dir:     t.TempDir(),
+		port:   &fakeComments{},
+		social: &fakePorts{},
+		session: &fakeSession{snap: domain.Session{
+			State: domain.StateAuthenticated, HasClient: true,
+			Self: domain.Self{FBID: "14963523149149302", IGID: "79597894900", Username: selfName},
+		}},
+		clk: &clock{t: t0},
+		dir: t.TempDir(),
 	}
 	r.svc = r.build(policy)
 	return r
@@ -120,14 +161,35 @@ func (r *commentRig) build(policy CommentPolicy) *Service {
 	})
 }
 
-// serve runs GET /mentions' use case over these summonses on postMedia.
+// serve makes each comment id a summons on postMedia: a summons card from
+// summoner reaches the bridge (RecordSummons, what the gateway's intake
+// calls), and summoner's comment mentioning this account is on the post's
+// first page.
 func (r *commentRig) serve(t *testing.T, commentIDs ...string) {
 	t.Helper()
-	r.social.mentions = nil
 	for _, id := range commentIDs {
-		r.social.mentions = append(r.social.mentions, domain.CommentMention{CommentID: id, MediaID: postMedia, At: r.clk.t.Unix()})
+		r.card(t, postMedia, summoner)
+		r.port.onPage(postMedia, domain.Comment{ID: id, AuthorIGID: summoner, Text: "@" + selfName + " is this true?"})
 	}
-	if _, _, err := r.svc.ReadMentions(t.Context()); err != nil {
+}
+
+// card records one summons card for media from sender, received now, under
+// a fresh message id.
+func (r *commentRig) card(t *testing.T, media, sender string) {
+	t.Helper()
+	r.cards++
+	n, err := strconv.ParseUint(media, 10, 64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, _ := domain.MediaIDOf(n)
+	igid, err := domain.ParseIGID(sender)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := r.svc.RecordSummons(t.Context(), domain.Summons{
+		MessageID: "mid.$card" + strconv.Itoa(r.cards), Media: m, Sender: igid, ReceivedAt: r.clk.t,
+	}); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -149,7 +211,8 @@ func (r *commentRig) ledger(t *testing.T) *domain.CommentLedger {
 	return got
 }
 
-// Every guard refuses with its own error and with ZERO upstream calls.
+// Every guard refuses with its own error and with ZERO upstream calls, read
+// or write. (Guard 3(b), the one that reads, has its own test below.)
 func TestEveryCommentGuardRefusesBeforeAnyUpstreamCall(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
@@ -184,10 +247,6 @@ func TestEveryCommentGuardRefusesBeforeAnyUpstreamCall(t *testing.T) {
 			r.serve(t, summonsA)
 			return "17900000000000001x", "hi"
 		}, domain.ErrNotASummons},
-		{"a comment id never served", func(t *testing.T, r *commentRig) (string, string) {
-			r.serve(t, summonsA)
-			return summonsB, "hi"
-		}, domain.ErrNotASummons},
 		{"served on another post", func(t *testing.T, r *commentRig) (string, string) {
 			r.serve(t, summonsA)
 			return summonsA, "hi" // asked on otherCode below
@@ -202,7 +261,7 @@ func TestEveryCommentGuardRefusesBeforeAnyUpstreamCall(t *testing.T) {
 			if _, err := r.reply(t, summonsA, "first"); err != nil {
 				t.Fatal(err)
 			}
-			r.port.posts = 0
+			r.port.posts, r.port.reads = 0, 0
 			r.clk.advance(time.Hour)
 			return summonsA, "second"
 		}, domain.ErrAlreadyReplied},
@@ -228,7 +287,7 @@ func TestEveryCommentGuardRefusesBeforeAnyUpstreamCall(t *testing.T) {
 			if _, err := r.reply(t, summonsA, "first"); err != nil {
 				t.Fatal(err)
 			}
-			r.port.posts = 0
+			r.port.posts, r.port.reads = 0, 0
 			r.clk.advance(89 * time.Second)
 			return summonsB, "hi"
 		}, domain.ErrTooSoon},
@@ -252,6 +311,11 @@ func TestEveryCommentGuardRefusesBeforeAnyUpstreamCall(t *testing.T) {
 			}
 			if r.port.posts != 0 {
 				t.Errorf("%d upstream write(s) after the refusal, want 0", r.port.posts)
+			}
+			// No guard in this table is 3(b), the one that reads: each
+			// refuses before ANY call, the comments read included.
+			if r.port.reads != 0 {
+				t.Errorf("%d upstream read(s) after the refusal, want 0", r.port.reads)
 			}
 		})
 	}
@@ -420,36 +484,24 @@ func TestAnActionBlockLatchesWritesOff(t *testing.T) {
 	}
 }
 
-// A mention GET /mentions serves with no date is never recorded, so it can
-// never be answered; and a reply record is never pruned, so a summons the
-// feed shows again long after is still answered.
+// A reply record is never pruned, so a summons whose card is long pruned
+// and whose comment draws a fresh card later is still answered only once.
 func TestNoReReplyAfterPruning(t *testing.T) {
 	r := newCommentRig(t, openPolicy())
-	r.social.mentions = []domain.CommentMention{{CommentID: summonsA, MediaID: postMedia}}
-	if _, _, err := r.svc.ReadMentions(t.Context()); err != nil {
-		t.Fatal(err)
-	}
-	if _, ok := r.ledger(t).Served[summonsA]; ok {
-		t.Fatal("a mention with no date was recorded as a summons")
-	}
-	if _, err := r.reply(t, summonsA, "hi"); !errors.Is(err, domain.ErrNotASummons) {
-		t.Errorf("reply to an undated mention err = %v, want not a summons", err)
-	}
-
 	r.serve(t, summonsB)
 	if _, err := r.reply(t, summonsB, "hi"); err != nil {
 		t.Fatal(err)
 	}
-	// 40 days on, the served record is long pruned; the feed shows the same
-	// comment again, freshly dated.
+	// 40 days on, the card is long pruned; a fresh card arrives for the
+	// same post and the same comment is still on the page.
 	r.clk.advance(40 * 24 * time.Hour)
-	r.serve(t, summonsC) // a write, which prunes B's 40-day-old served record
-	if _, ok := r.ledger(t).Served[summonsB]; ok {
-		t.Fatal("precondition: the served record was not pruned")
+	r.card(t, otherMedia(t), summoner) // a write, which prunes B's 40-day-old card
+	if len(r.ledger(t).SummonsSenders(postMedia, r.clk.t)) != 0 {
+		t.Fatal("precondition: the old card was not pruned")
 	}
-	r.serve(t, summonsB) // recorded afresh
-	if !r.ledger(t).IsSummons(mustID(t, summonsB), postMedia, r.clk.t) {
-		t.Fatal("precondition: the re-served mention is not a live summons")
+	r.card(t, postMedia, summoner) // recorded afresh
+	if !r.ledger(t).SummonsSenders(postMedia, r.clk.t)[summoner] {
+		t.Fatal("precondition: the fresh card is not a live summons")
 	}
 	if _, err := r.reply(t, summonsB, "hi"); !errors.Is(err, domain.ErrAlreadyReplied) {
 		t.Errorf("re-reply after pruning err = %v, want already replied", err)
@@ -457,6 +509,15 @@ func TestNoReReplyAfterPruning(t *testing.T) {
 	if r.port.posts != 1 {
 		t.Errorf("%d upstream writes, want 1", r.port.posts)
 	}
+}
+
+func otherMedia(t *testing.T) string {
+	t.Helper()
+	m, err := code(t, otherCode).MediaID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return m.String()
 }
 
 // N concurrent requests for the same summons, against a port that blocks
@@ -577,37 +638,189 @@ func TestTheMinimumIntervalIsMeasuredFromTheLastClaim(t *testing.T) {
 	}
 }
 
-// GET /mentions records what it serves, keeps the FIRST serve time, skips a
-// mention the feed dates older than the window, and a broken ledger never
-// fails the read.
-func TestReadMentionsRecordsWhatItServes(t *testing.T) {
+// GET /mentions is a read and nothing more: a mention it serves, dated now,
+// on this post, authorizes no reply (guard 3 binds on the summons card).
+func TestReadMentionsAuthorizesNothing(t *testing.T) {
 	r := newCommentRig(t, openPolicy())
-	r.serve(t, summonsA)
-	first := r.ledger(t).Served[summonsA]
-	if first.MediaID != postMedia || !first.ServedAt.Equal(t0) {
-		t.Fatalf("served = %+v", first)
-	}
-	r.clk.advance(time.Hour)
-	r.serve(t, summonsA)
-	if got := r.ledger(t).Served[summonsA]; !got.ServedAt.Equal(t0) {
-		t.Errorf("served_at moved to %v on a later poll, want the first serve %v", got.ServedAt, t0)
-	}
-
-	r.social.mentions = []domain.CommentMention{{CommentID: summonsB, MediaID: postMedia, At: r.clk.t.Add(-domain.ServedWindow - time.Hour).Unix()}}
+	r.social.mentions = []domain.CommentMention{{CommentID: summonsA, MediaID: postMedia, At: r.clk.t.Unix()}}
+	r.port.onPage(postMedia, domain.Comment{ID: summonsA, AuthorIGID: summoner, Text: "@" + selfName + " hi"})
 	if _, _, err := r.svc.ReadMentions(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := r.ledger(t).Served[summonsB]; ok {
-		t.Error("a mention dated older than the window was recorded as a live summons")
+	if n := len(r.ledger(t).Summonses); n != 0 {
+		t.Fatalf("GET /mentions recorded %d summons(es), want 0", n)
 	}
+	if _, err := r.reply(t, summonsA, "hi"); !errors.Is(err, domain.ErrNotASummons) {
+		t.Errorf("reply to a served mention err = %v, want not a summons", err)
+	}
+	if r.port.posts != 0 || r.port.reads != 0 {
+		t.Errorf("%d write(s), %d read(s), want 0 and 0", r.port.posts, r.port.reads)
+	}
+}
 
+// RecordSummons keeps the FIRST record of a card, dates a future card now,
+// refuses one beyond the window, and a broken ledger is an error, never a
+// panic or a silent success.
+func TestRecordSummons(t *testing.T) {
+	r := newCommentRig(t, openPolicy())
+	m, _ := code(t, postCode).MediaID()
+	igid, _ := domain.ParseIGID(summoner)
+	other, _ := domain.ParseIGID(stranger)
+	card := domain.Summons{MessageID: "mid.$x", Media: m, Sender: igid, ReceivedAt: r.clk.t.Add(time.Minute)}
+	if err := r.svc.RecordSummons(t.Context(), card); err != nil {
+		t.Fatal(err)
+	}
+	got := r.ledger(t).Summonses["mid.$x"]
+	if got.MediaID != postMedia || got.SenderIGID != summoner || !got.ReceivedAt.Equal(t0) {
+		t.Fatalf("record = %+v, want media %s, sender %s, received now", got, postMedia, summoner)
+	}
+	card.Sender, card.ReceivedAt = other, r.clk.t.Add(-time.Hour)
+	if err := r.svc.RecordSummons(t.Context(), card); err != nil {
+		t.Fatal(err)
+	}
+	if got := r.ledger(t).Summonses["mid.$x"]; got.SenderIGID != summoner || !got.ReceivedAt.Equal(t0) {
+		t.Errorf("a replayed card replaced the first record: %+v", got)
+	}
+	stale := domain.Summons{MessageID: "mid.$old", Media: m, Sender: igid, ReceivedAt: r.clk.t.Add(-domain.ServedWindow - time.Second)}
+	if err := r.svc.RecordSummons(t.Context(), stale); err == nil {
+		t.Error("a card dated beyond the window was recorded")
+	}
+	if err := r.svc.RecordSummons(t.Context(), domain.Summons{Media: m, Sender: igid}); err == nil {
+		t.Error("a card with no message id was recorded")
+	}
 	if err := os.WriteFile(filepath.Join(r.dir, "comments.json"), []byte("garbage"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	r.social.mentions = []domain.CommentMention{{CommentID: summonsC, MediaID: postMedia}}
-	got, _, err := r.svc.ReadMentions(t.Context())
-	if err != nil || len(got) != 1 {
-		t.Errorf("a broken ledger failed the read: %v, %d mention(s)", err, len(got))
+	if err := r.svc.RecordSummons(t.Context(), domain.Summons{MessageID: "mid.$y", Media: m, Sender: igid}); !errors.Is(err, domain.ErrLedgerUnavailable) {
+		t.Errorf("broken ledger err = %v, want ledger unavailable", err)
+	}
+}
+
+// Guard 3, both halves: a reply goes out ONLY under a comment that (a) a
+// live summons card for this post vouches for, and (b) the post's first
+// page shows, written by that card's sender and mentioning this account.
+// Every refusal is not_a_summons with ZERO writes; the (b) refusals cost
+// exactly one read, the (a) refusals none.
+func TestGuardThreeNeedsTheCardAndTheComment(t *testing.T) {
+	mention := "@" + selfName + " is this true?"
+	for _, tc := range []struct {
+		name  string
+		setup func(t *testing.T, r *commentRig)
+		on    string
+		reads int
+		want  error
+	}{
+		{"card and comment agree", func(t *testing.T, r *commentRig) {
+			r.card(t, postMedia, summoner)
+			r.port.onPage(postMedia, domain.Comment{ID: summonsA, AuthorIGID: summoner, Text: mention})
+		}, postCode, 1, nil},
+		{"handle in another case and mid-sentence", func(t *testing.T, r *commentRig) {
+			r.card(t, postMedia, summoner)
+			r.port.onPage(postMedia, domain.Comment{ID: summonsA, AuthorIGID: "0" + summoner, Text: "so, @NOT_____NORA?"})
+		}, postCode, 1, nil},
+		{"no summons card at all", func(t *testing.T, r *commentRig) {
+			r.port.onPage(postMedia, domain.Comment{ID: summonsA, AuthorIGID: summoner, Text: mention})
+		}, postCode, 0, domain.ErrNotASummons},
+		{"the card is for another post", func(t *testing.T, r *commentRig) {
+			r.card(t, otherMedia(t), summoner)
+			r.port.onPage(postMedia, domain.Comment{ID: summonsA, AuthorIGID: summoner, Text: mention})
+		}, postCode, 0, domain.ErrNotASummons},
+		{"the card is older than 7 days", func(t *testing.T, r *commentRig) {
+			r.card(t, postMedia, summoner)
+			r.port.onPage(postMedia, domain.Comment{ID: summonsA, AuthorIGID: summoner, Text: mention})
+			r.clk.advance(domain.ServedWindow + time.Second)
+		}, postCode, 0, domain.ErrNotASummons},
+		{"the comment is not on the first page", func(t *testing.T, r *commentRig) {
+			r.card(t, postMedia, summoner)
+			r.port.onPage(postMedia, domain.Comment{ID: summonsB, AuthorIGID: summoner, Text: mention})
+		}, postCode, 1, domain.ErrNotASummons},
+		{"the comment's author is not the card's sender", func(t *testing.T, r *commentRig) {
+			r.card(t, postMedia, summoner)
+			r.port.onPage(postMedia, domain.Comment{ID: summonsA, AuthorIGID: stranger, Text: mention})
+		}, postCode, 1, domain.ErrNotASummons},
+		{"the comment has no author", func(t *testing.T, r *commentRig) {
+			r.card(t, postMedia, summoner)
+			r.port.onPage(postMedia, domain.Comment{ID: summonsA, Text: mention})
+		}, postCode, 1, domain.ErrNotASummons},
+		{"the comment does not mention this account", func(t *testing.T, r *commentRig) {
+			r.card(t, postMedia, summoner)
+			r.port.onPage(postMedia, domain.Comment{ID: summonsA, AuthorIGID: summoner, Text: "@" + selfName + "_fan is this true?"})
+		}, postCode, 1, domain.ErrNotASummons},
+		{"the comments read fails", func(t *testing.T, r *commentRig) {
+			r.card(t, postMedia, summoner)
+			r.port.onPage(postMedia, domain.Comment{ID: summonsA, AuthorIGID: summoner, Text: mention})
+			r.port.readErr = domain.Classify(domain.ErrUnavailable, errors.New("media_comments request failed"))
+		}, postCode, 1, domain.ErrNotASummons},
+		{"own username unknown", func(t *testing.T, r *commentRig) {
+			r.card(t, postMedia, summoner)
+			r.port.onPage(postMedia, domain.Comment{ID: summonsA, AuthorIGID: summoner, Text: mention})
+			r.session.snap.Self.Username = ""
+		}, postCode, 0, domain.ErrNotASummons},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := newCommentRig(t, openPolicy())
+			tc.setup(t, r)
+			_, err := r.svc.PostComment(t.Context(), code(t, tc.on), "hi", summonsA)
+			if tc.want == nil {
+				if err != nil || r.port.posts != 1 || r.port.lastTo != summonsA {
+					t.Fatalf("err = %v, %d write(s) to %q, want one write to the summons", err, r.port.posts, r.port.lastTo)
+				}
+				return
+			}
+			if !errors.Is(err, tc.want) {
+				t.Fatalf("err = %v, want %v", err, tc.want)
+			}
+			if r.port.posts != 0 {
+				t.Errorf("%d upstream write(s) after the refusal, want 0", r.port.posts)
+			}
+			if tc.name != "own username unknown" && r.port.reads != tc.reads {
+				t.Errorf("%d upstream read(s), want %d", r.port.reads, tc.reads)
+			}
+			if _, ok := r.ledger(t).Replies[summonsA]; ok {
+				t.Error("a refused reply was claimed")
+			}
+		})
+	}
+}
+
+// The claim transaction checks the author against the ledger AGAIN: a card
+// whose window closes while guard 3(b) reads the page authorizes nothing,
+// even with another sender's card for the same post still live.
+func TestTheClaimRechecksTheSummonsAfterTheRead(t *testing.T) {
+	r := newCommentRig(t, openPolicy())
+	r.serve(t, summonsA)
+	r.clk.advance(time.Hour)
+	r.card(t, postMedia, stranger)
+	r.clk.advance(domain.ServedWindow - time.Hour - time.Second)
+	r.port.onRead = func() { r.clk.advance(2 * time.Second) }
+	if _, err := r.reply(t, summonsA, "hi"); !errors.Is(err, domain.ErrNotASummons) {
+		t.Fatalf("err = %v, want not a summons", err)
+	}
+	if r.port.posts != 0 || r.port.reads != 1 {
+		t.Errorf("%d write(s), %d read(s); want 0 and 1", r.port.posts, r.port.reads)
+	}
+}
+
+// A card from ANOTHER sender for the same post authorizes only that
+// sender's comments: two cards, two authors, each comment answerable, and a
+// third person's comment on the same post is not.
+func TestEachCardAuthorizesOnlyItsOwnSender(t *testing.T) {
+	r := newCommentRig(t, CommentPolicy{WritesEnabled: true, DailyCap: 10})
+	r.card(t, postMedia, summoner)
+	r.port.onPage(postMedia, domain.Comment{ID: summonsA, AuthorIGID: summoner, Text: "@" + selfName})
+	r.port.onPage(postMedia, domain.Comment{ID: summonsB, AuthorIGID: stranger, Text: "@" + selfName})
+	if _, err := r.reply(t, summonsB, "hi"); !errors.Is(err, domain.ErrNotASummons) {
+		t.Fatalf("the uncarded author's comment err = %v, want not a summons", err)
+	}
+	if _, err := r.reply(t, summonsA, "hi"); err != nil {
+		t.Fatal(err)
+	}
+	r.card(t, postMedia, stranger)
+	if _, err := r.reply(t, summonsB, "hi"); err != nil {
+		t.Fatalf("after the second card: %v", err)
+	}
+	if r.port.posts != 2 {
+		t.Errorf("%d writes, want 2", r.port.posts)
 	}
 }
 

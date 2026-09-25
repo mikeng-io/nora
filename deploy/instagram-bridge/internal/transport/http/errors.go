@@ -36,8 +36,10 @@ package httptransport
 //	                         (feedback_required, spam, sentry_block, or a 429):
 //	                         latched off until an operator clears it. NOT a
 //	                         429 or 503, which would invite a retry.
-//	403  not_a_summons       the reply target was not served by GET /mentions
-//	                         on this post in the last 7 days (or is missing)
+//	403  not_a_summons       the reply target is not a summons (no summons card
+//	                         for this post in 7 days, or the post's comments
+//	                         page does not show it by the card's sender,
+//	                         mentioning this account; or it is missing)
 //	409  already_replied     this summons already had its one attempt
 //	400  invalid_text        empty, over 2200 characters, or not UTF-8
 //	429  daily_cap           the rolling 24-hour cap is reached

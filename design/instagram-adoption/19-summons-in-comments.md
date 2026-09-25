@@ -53,7 +53,7 @@ None of them is Threads-specific:
 | | Threads (parked) | Instagram |
 |---|---|---|
 | door | official Graph API, `threads-bridge` sidecar | the existing instagram-bridge, one session shared with her group chats |
-| ingress | `GET /{uid}/mentions` | her activity feed, polled through the bridge: `GET /mentions` over `POST /api/v1/news/inbox/`, form `jazoest`, `fb_dtsg`, `selected_filters=comments` (the web client's own request, captured 2026-09-25; the response to a real comment mention still unread, phase 1) |
+| ingress | `GET /{uid}/mentions` | **Superseded 2026-09-26 (see "Intake, re-measured 2026-09-26"): a DM-thread card, not the feed.** Was: her activity feed, polled through the bridge: `GET /mentions` over `POST /api/v1/news/inbox/`, form `jazoest`, `fb_dtsg`, `selected_filters=comments` (the web client's own request, captured 2026-09-25; the response to a real comment mention still unread, phase 1) |
 | summoner identity | username only; the API exposes no id | **the actor's igid**, expected in the activity story's `profile_id` (a hypothesis until phase 1 reads a real story). An id, not a name, so the gate needs no pinning |
 | gate | `[[persons.<id>.threads]]` by username | `[[persons.<id>.instagram]]` by `igid`, the block `identity.toml` already has |
 | context | the post and its reply chain | the post (`GET /posts/{shortcode}`, live) plus the comment thread (new route, unmeasured) |
@@ -78,7 +78,8 @@ out of Instagram entirely. The rules:
    headers.** A request built by hand with copied cookies looks like a
    second client, and that is how a session gets flagged. That is design
    16's one-way-to-call rule, and it matters more here than anywhere else.
-3. **A poll interval measured in minutes, not seconds** (default 120 s,
+3. **(Superseded 2026-09-26: there is no feed poll; the intake is the DM
+   card, one thread read per card. Kept for the record.)** **A poll interval measured in minutes, not seconds** (default 120 s,
    chosen, not measured: how often the web client polls its own
    notifications is unknown). A summons is answered minutes late, which a
    researched public answer can afford.
@@ -113,7 +114,7 @@ all in the bridge and all before any upstream call:
 |---|---|
 | `INSTAGRAM_COMMENT_WRITES=on` | 403 `writes_disabled` |
 | the session is ready | the existing not-ready answer |
-| `reply_to_comment_id` is a comment this bridge served from `GET /mentions`, on the same media, within 7 days | 403 `not_a_summons` |
+| ~~`reply_to_comment_id` is a comment this bridge served from `GET /mentions`, on the same media, within 7 days~~ superseded 2026-09-26: a summons card for this media within 7 days, and the post's first comments page shows `reply_to_comment_id` by that card's sender, mentioning her (see "Intake, re-measured 2026-09-26") | 403 `not_a_summons` |
 | no earlier reply to that comment (claimed or published) | 409 `already_replied` |
 | text non-empty, at most 2,200 characters | 400 |
 | at most `INSTAGRAM_COMMENT_DAILY_CAP` (10) replies per rolling 24 hours | 429 `daily_cap` |
@@ -128,7 +129,10 @@ model, decides what may be written.
 
 Each phase ends in a live read-back and is one PR.
 
-**Phase 1: read the activity feed (read-only, this PR).** A bridge route
+**Phase 1: read the activity feed (read-only, this PR).** **Superseded
+2026-09-26:** the feed never carried a comment-mention; the intake is the DM
+card (see "Intake, re-measured 2026-09-26"). `GET /mentions` stays as a read
+and authorizes no write. The original text follows. A bridge route
 `GET /mentions` over `/api/v1/news/inbox/`, which classifies comment
 mentions by structure (a comment id, media, and a mention of her) and counts
 every other story by `story_type`. It is deployed, then:
@@ -176,6 +180,152 @@ row and the trace. No write route exists yet.
 **Phase 4: write.** The bridge gets `POST /posts/{shortcode}/comments` with
 `replied_to_comment_id`, behind rules 4 and 6. It goes live only after a
 week of phase 1 polling without a checkpoint.
+
+## Intake, re-measured 2026-09-26
+
+This section supersedes the notification-feed poller (the ingress row of
+the table above, rule 3, phase 1 and the guard-3 row of the write's table).
+That text is kept, marked, for the record.
+
+### What was measured
+
+- A comment (or a caption) mentioning `@noraexample` reaches her as a
+  **DM-thread message**, a `NewMessageEvent` on the realtime socket:
+  `content_type` `MESSAGE_INLINE_SHARE`, XMA typename
+  `SlideMessageLayeredXMA`, `subtitle_text` = the comment's text (for
+  example `@noraexample is this true`), `xmaTitle`/`title_text` = the
+  COMMENTER's username (not the post owner's), the preview image = the post
+  image. The sender is the commenter (igid, fbid, username). **The live
+  delta carries no `target_url`, no `target_id` and no CTA:** nothing in it
+  names the post.
+- The thread query (`GetThread`, `IGDThreadDetailQuery`, the read the roster
+  route makes) returns the same message **with** `content.xma.target_url` =
+  `https://www.instagram.com/p/<shortcode>/` (a reel: `/reel/<code>/`).
+- The notification feed (`POST /api/v1/news/inbox/`) never carried these
+  mentions.
+- The comment's id is **not** in the card. It is found by reading the post's
+  comments (`GET /api/v1/media/<pk>/comments/?can_support_threading=true&permalink_enabled=false`,
+  confirmed) and matching author igid = the card's sender igid, text
+  carrying the word-bounded `@` handle.
+
+### The intake (bridge)
+
+For a `NewMessageEvent` with `content_type` `MESSAGE_INLINE_SHARE` whose XMA
+typename is `SlideMessageLayeredXMA`, sent by somebody other than her, whose
+**subtitle** carries word-bounded `@<her username>` (ASCII case folding; a
+sentence-final `.` is punctuation), the bridge (`gateway/instameow/summons.go`):
+
+1. emits the ordinary `message` event as always (the adapter keeps dropping
+   unknown-policy threads);
+2. refetches the thread **once** through `GetThread` on the short id, off
+   the socket goroutine, 30 s timeout, deduplicated by message id (a bounded
+   set of the last 1,024), within a budget of 6 refetches per 10 minutes
+   across all senders (past it the card is emitted unresolved and costs no
+   read), a checkpoint on it flipping the session like any read;
+3. finds the message on the returned first page, reads `target_url`,
+   parses the shortcode out of `/p/<code>/` or `/reel/<code>/` and decodes
+   the media pk;
+4. when that worked, records a **served summons** in `comments.json`
+   (message id -> media pk, sender igid, received at; pruned at 7 days;
+   atomic and fsynced like every ledger write) BEFORE the event goes out;
+5. emits a new SSE event:
+
+```json
+{"kind":"summons","message_id":"mid.$...","room_id":"<short thread id>",
+ "sender":{"fbid":"...","igid":"...","username":"..."},
+ "text":"<subtitle_text>","shortcode":"<code>","media_id":"<pk>",
+ "received_at_ms":1790000000000,"resolved":true}
+```
+
+`resolved` is false, with `shortcode` and `media_id` empty, when the
+refetch failed or was over budget, the message was not on the first page,
+it carried no usable `target_url`, or recording the served summons failed. Nora records that and does not answer.
+`received_at_ms` is the card's own timestamp (the bridge's clock when it
+carried none). Log lines carry fixed messages, a boolean and a reason word:
+never an id, a username or text.
+
+### Write guard 3, replaced
+
+`POST /posts/{shortcode}/comments {text, reply_to_comment_id}` now requires,
+before any upstream write:
+
+- **(a)** a served summons for this media pk within 7 days, and
+- **(b)** the bridge's own read of the post's first comments page shows
+  `reply_to_comment_id`, written by the sender of such a summons and
+  carrying word-bounded `@<her username>`.
+
+Anything else is 403 `not_a_summons`, fail closed: a comment beyond the first
+page, a failed read and an unknown own username included. (b) is the one
+guard that calls Instagram, and it is a read: it runs only after the latch,
+(a) and guards 4 to 7 have passed, so no other refusal costs a call. The
+claim transaction then re-runs every ledger guard and re-checks the author
+against the live summonses, so a window that closes during the read
+authorizes nothing. All other guards and their order are unchanged.
+`GET /mentions` stays as a read and no longer authorizes a write; a
+`comments.json` that still holds its old `served` key loads, and the key is
+dropped on the next write.
+
+### The intake (Nora)
+
+- **Intake.** `nora/platform/instagram/summons.py` parses the event once into
+  a `SummonsCard` (fail closed: no usable message id, time or boolean
+  `resolved` is refused and counted `malformed`). The adapter hands it to
+  `nora/app/summons_inbox.py` (bounded, drops the oldest, counted on
+  `nora_summons_intake_total`) and never to room ingest; with
+  `[social.instagram.summons]` off every card is counted `disabled` and
+  dropped. `nora/app/summons_consumer.py` works one card at a time, retries a
+  live `staged` flush first, backs off on `needs_human`/503, and runs the
+  stale-claim sweep at boot and every step. The poller and Nora's
+  `GET /mentions` read are gone; `poll_seconds` is accepted and read by
+  nothing.
+- **Occasion.** Claimed on the card's `message_id`. `resolved = false` is
+  `unresolved` (no read, no model call). The summoner gate is unchanged
+  (sender igid). Stale is `received_at` against `max_age_minutes`. The
+  comment is FOUND: author igid == sender igid AND the word-bounded
+  `@handle`; of several, the one whose text equals the card's (whitespace
+  normalised), else the newest; none is `unreadable`. Its id is bound to the
+  row once (`comment_id` stays unique, so two cards for one comment get one
+  answer, the second `duplicate`) and is the `reply_to_comment_id` of the
+  one write. Everything from the turn to the flush is unchanged.
+- **Ledger.** `0067_summons_message_key`: `message_id` NOT NULL UNIQUE
+  (pre-existing rows backfilled `legacy:<comment_id>`), `comment_id`
+  nullable and still unique, state `unresolved` added.
+
+### Reading the post's media before the turn (2026-09-26)
+
+Measured on a live dry-run trace: the summons post was a reel, she called
+`media_fetch` once with the signed CDN url as a `code` instead of a `url`,
+it failed, and she answered from the caption. A summons is a tag, and
+shared content is read when she is tagged (#435), so the post's items are
+now read BEFORE the turn and are part of what she reads:
+
+- **The `instagram_read` mechanism, not a second one.** `nora/app/summons.py`
+  `_read_items` runs `readings.read_view` over the items she is shown, each
+  look `media_fetch(url=...)` from the turn's own tool set, through
+  `tools.media_look` (the one label-and-persist wrapper `instagram_read`'s
+  items use too). The caption is not in the view, so it reaches no vision
+  prompt; the per-video length and count caps are 18's.
+- **Bounded.** At most `MAX_ITEMS_SHOWN` = 4 items (one wave of four looks;
+  the rest are counted, never read), one budget of `MEDIA_READ_SECONDS` =
+  150 s for all of them (one look's ceiling: the 82 s reel measured in 18,
+  with headroom). An item that fails, times out or never started renders
+  "could not be read"; the turn runs either way. The ages she reads are
+  measured from when the read ended.
+- **The pre-read stores nothing.** Its url reads keep no bytes and write no
+  `media_objects` row; with `persist` off (the story frame's switch) they
+  write neither content cache. Counted on
+  `nora_media_fetch_total{caller="summons"}`; the stage span
+  `summons.read_items` carries counts and states only. A `media_fetch` she
+  makes herself is an ordinary model read and caches as any does.
+- **Rendered inside the post's `social_post` block**, one reading line
+  under each item: facts only ("could not be read", "not read: longer than
+  one reading window"), with no instruction to her and no pointer to a
+  tool; what she does with an unread item is `public/conduct.md`'s call.
+  `media_fetch` stays granted for anything else.
+- **Each claim its own check.** A summons turn may call `web_search` 8 times
+  (`SUMMONS_WEB_SEARCHES`), not the registry's per-turn 4: `public/conduct.md`
+  v3 asks for one check per claim she judges, and a live post named seven
+  companies. A room tag keeps the registry's value; `x_search` is unchanged.
 
 ## Two things the review of #545 recorded
 

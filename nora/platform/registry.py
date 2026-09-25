@@ -46,6 +46,7 @@ from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 from nora.domain.ports import MediaSource, PlatformAdapter, PlatformIdentity
+from nora.domain.summons import SummonsSink
 from nora.infra.voice.hub import VoiceControllerHub
 from nora.platform.discord.adapter import DiscordAdapter
 from nora.platform.discord.music_manager import MusicPlayerManager
@@ -157,6 +158,7 @@ class AdapterRegistry:
         voice_hub: VoiceControllerHub | None = None,
         voice_guild_ids: frozenset[str] = frozenset(),
         resolve_music_channel: ResolveMusicChannel = no_music_channel,
+        instagram_summons: SummonsSink | None = None,
     ) -> AdapterRegistry:
         """Build+resolve every enabled platform — Signal, Discord, WhatsApp,
         Instagram; each one more `if platforms.<x>.enabled:` block, not a
@@ -194,7 +196,12 @@ class AdapterRegistry:
         — same posture as `music_manager`. The default answers `None` for every
         guild, which is the pre-field behaviour (announce where the session
         started), so a harness that builds a registry without it is
-        unaffected."""
+        unaffected.
+
+        `instagram_summons` (design/instagram-adoption/19) is where the
+        Instagram adapter hands a `summons` SSE event, built by composition
+        (`nora.app.summons_inbox.SummonsInbox`). Threaded, never consulted
+        here — same posture as `music_manager`."""
         adapters: dict[str, PlatformAdapter] = {}
         identities: dict[str, PlatformIdentity] = {}
 
@@ -266,7 +273,9 @@ class AdapterRegistry:
             # M0 — THE ONE BLOCK THAT DOES NOT FAIL FAST. See this module's
             # docstring for why, and `nora.platform.instagram.adapter` for what
             # "degraded" is defined to mean.
-            instagram_adapter = InstagramAdapter(instagram_cfg.base_url)
+            instagram_adapter = InstagramAdapter(
+                instagram_cfg.base_url, summons=instagram_summons,
+            )
             try:
                 instagram_identity = await instagram_adapter.resolve_identity()
             except Exception as exc:  # noqa: BLE001 — degrade, never refuse to start

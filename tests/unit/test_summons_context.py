@@ -9,30 +9,29 @@ of ours does). And what was left out is COUNTED, never silently absent.
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime, timedelta
 
 import pytest
 
 from nora.domain.summons import (
+    MAX_ITEMS_SHOWN,
+    READING_MAX_CHARS,
     Comment,
-    Mention,
+    ItemReading,
     PostItem,
     SummonsPost,
     build_context,
     question_of,
     render_summons,
+    summons_comment,
+    tags_handle,
+    with_readings,
 )
 
 NOW = datetime(2026, 9, 25, 12, 0, tzinfo=UTC)
 SUMMONS_ID = "8c1f6c55-0000-4000-8000-000000000001"
-
-
-def _mention(**kw) -> Mention:
-    return Mention(
-        comment_id=kw.get("comment_id", "105"), media_id="31", shortcode="CmiJBr2LAAB",
-        author_igid="10000001", author_username="miles_example",
-        at=kw.get("at", NOW - timedelta(minutes=5)),
-    )
+SUMMONER_IGID = "10000001"
 
 
 def _post(n_items: int = 3, *, more: bool = False) -> SummonsPost:
@@ -57,6 +56,7 @@ def _comments(n: int = 8, summons_at: int = 5) -> tuple[Comment, ...]:
             author="miles_example" if is_summons else f"user{i}",
             text="@noraexample is this a heron?" if is_summons else f"comment {i}",
             at=NOW - timedelta(minutes=60 - i),
+            author_igid=SUMMONER_IGID if is_summons else f"2000000{i}",
         ))
     # Shuffled: the thread is ordered by time, never by the page's order.
     return tuple(reversed(out))
@@ -64,7 +64,7 @@ def _comments(n: int = 8, summons_at: int = 5) -> tuple[Comment, ...]:
 
 def _context(**kw):
     return build_context(
-        summons_id=SUMMONS_ID, now=NOW, mention=_mention(),
+        summons_id=SUMMONS_ID, now=NOW, comment_id="105", summoner="miles_example",
         summoned_at=NOW - timedelta(minutes=5), handle="noraexample",
         post=kw.get("post", _post()), comments=kw.get("comments", _comments()),
     )
@@ -94,8 +94,9 @@ def test_a_summons_not_on_the_page_builds_no_context():
 def test_items_past_the_cap_are_counted_not_dropped():
     ctx = _context(post=_post(7, more=True))
     assert ctx is not None
-    assert len(ctx.items) == 5
-    assert ctx.elided_items == 3  # two past the cap, plus the bridge's own `more`
+    assert len(ctx.items) == MAX_ITEMS_SHOWN == 4
+    assert ctx.elided_items == 4  # three past the cap, plus the bridge's own `more`
+    assert "(4 more item(s) not listed or read)" in render_summons(ctx)
 
 
 def test_the_render_carries_an_age_on_everything_and_says_which_end_is_newest():
@@ -132,8 +133,208 @@ def test_a_caption_cannot_close_its_block_or_forge_a_line():
 
 
 def test_no_igid_reaches_the_render():
+    # Positive control: the igid IS on the comment the context was built from.
+    assert any(c.author_igid == SUMMONER_IGID for c in _comments())
     text = render_summons(_context())
-    assert "10000001" not in text
+    assert SUMMONER_IGID not in text
+
+
+# ---- what each item shows (read before the turn) -------------------------------
+
+
+def _post_block(text: str) -> str:
+    return text.split('<social_post source="the instagram post"', 1)[1].split(
+        "</social_post>", 1)[0]
+
+
+def test_each_item_carries_its_reading_inside_the_post_block():
+    ctx = with_readings(_context(post=_post(3)), (
+        ItemReading("seen", "a grey heron in reeds"),
+        ItemReading("unreadable"),
+        ItemReading("withheld"),
+    ), now=NOW)
+    text = render_summons(ctx)
+    head = text.partition("<social_post")[0]
+    block = _post_block(text)
+    assert "a grey heron in reeds" not in head
+    assert "  shows: a grey heron in reeds" in block
+    assert "  could not be read\n" in block
+    assert "  not shown: what it shows contains what looks like a phone number or ID" in block
+
+
+@pytest.mark.parametrize("state", ["unreadable", "too_long", "unknown_length", "over_video_cap"])
+def test_a_not_read_line_states_a_fact_and_tells_her_nothing(state):
+    """What she does with an unread item is `public/conduct.md`'s call: the
+    line carries no instruction and no pointer to a tool (her own
+    `media_fetch` is a model read, which caches)."""
+    ctx = with_readings(_context(post=_post(1)), (ItemReading(state),), now=NOW)
+    line = next(
+        row for row in _post_block(render_summons(ctx)).splitlines() if row.startswith("  ")
+    ).strip()
+    assert line.startswith(("could not be read", "not read: "))
+    for instruction in ("say", "don't", "media_fetch", "guess", "you"):
+        assert instruction not in line, line
+
+
+def test_the_ages_are_measured_from_when_the_reading_ended():
+    later = NOW + timedelta(minutes=3)
+    ctx = with_readings(_context(post=_post(1)), (ItemReading("unreadable"),), now=later)
+    text = render_summons(ctx)
+    assert "It is now 2026-09-25 12:03 UTC" in text
+    assert "@miles_example tagged you 8m ago" in text
+
+
+def test_an_item_never_looked_at_says_so_rather_than_nothing():
+    assert "  not read" in _post_block(render_summons(_context(post=_post(1))))
+
+
+def test_a_long_reading_is_clamped_and_its_coverage_sentence_survives():
+    coverage = "(About 2 minutes of this 3-minute clip were watched.)"
+    ctx = with_readings(_context(post=_post(1)), (
+        ItemReading("seen", "frame [0:00] " + "a heron wading " * 400, coverage),
+    ), now=NOW)
+    line = next(
+        row for row in _post_block(render_summons(ctx)).splitlines()
+        if row.strip().startswith("shows:")
+    )
+    assert line.endswith(coverage)
+    assert " … " in line
+    assert len(line) < READING_MAX_CHARS + len(coverage) + 20
+    # A reading cannot forge a media marker, and cannot break the line.
+    assert "[0:00]" not in line and "(0:00)" in line
+
+
+def test_readings_must_be_one_per_item():
+    with pytest.raises(ValueError, match="one per item"):
+        with_readings(_context(post=_post(2)), (ItemReading("unreadable"),), now=NOW)
+
+
+def test_a_reading_carries_text_exactly_when_it_was_seen():
+    with pytest.raises(ValueError):
+        ItemReading("seen")
+    with pytest.raises(ValueError):
+        ItemReading("unreadable", "guessed words")
+    with pytest.raises(ValueError):
+        ItemReading("guessed")  # type: ignore[arg-type]
+
+
+# ---- finding the summoner's comment (the card carries no comment id) ----------
+
+
+def _c(cid: str, text: str, *, igid: str = SUMMONER_IGID, minutes_ago: int | None = 5,
+       author: str = "miles_example") -> Comment:
+    return Comment(
+        id=cid, parent_id=None, author=author, text=text,
+        at=None if minutes_ago is None else NOW - timedelta(minutes=minutes_ago),
+        author_igid=igid,
+    )
+
+
+def test_the_summons_comment_is_the_senders_comment_that_tags_her():
+    comments = (
+        _c("1", "nice pic", minutes_ago=9),
+        _c("2", "@noraexample what bird?", minutes_ago=5),
+        _c("3", "@noraexample what bird?", igid="20000009", author="someone", minutes_ago=1),
+    )
+    found = summons_comment(comments, igid=SUMMONER_IGID, handle="noraexample")
+    assert found is not None and found.id == "2"
+
+
+def test_a_comment_tagging_her_by_anybody_else_is_never_the_summons():
+    """The author-igid match is the guard: a stranger's tag under the same
+    post, newer than anything the summoner wrote, is not the one she answers
+    under. Falsified by dropping the igid condition from `summons_comment`:
+    the stranger's comment is chosen."""
+    comments = (
+        _c("1", "@noraexample what bird?", igid="20000009", author="someone", minutes_ago=1),
+        _c("2", "just a comment", minutes_ago=2),
+    )
+    assert summons_comment(comments, igid=SUMMONER_IGID, handle="noraexample") is None
+    assert summons_comment(comments, igid="", handle="noraexample") is None
+
+
+def test_the_comment_whose_text_equals_the_cards_is_preferred_over_the_newest():
+    """A card shows its comment's own text. Two comments by the summoner tag
+    her; the card is for the OLDER one, so that is the one answered, not the
+    newest. Whitespace is normalised; nothing else is. Falsified by dropping
+    the exact-text preference: the newer comment is chosen."""
+    comments = (
+        _c("1", "@noraexample is this true", minutes_ago=10),
+        _c("2", "@noraexample nvm", minutes_ago=1),
+    )
+    found = summons_comment(
+        comments, igid=SUMMONER_IGID, handle="noraexample",
+        text="  @noraexample   is this true\n",
+    )
+    assert found is not None and found.id == "1"
+
+
+def test_with_no_exact_text_match_the_newest_is_the_summons():
+    comments = (
+        _c("1", "@noraexample is this true", minutes_ago=10),
+        _c("2", "@noraexample nvm", minutes_ago=1),
+    )
+    for text in ("@NoraExample is this true", "something else", ""):
+        found = summons_comment(
+            comments, igid=SUMMONER_IGID, handle="noraexample", text=text,
+        )
+        assert found is not None and found.id == "2", text
+
+
+def test_an_exact_text_match_by_somebody_else_is_never_chosen():
+    comments = (
+        _c("1", "@noraexample is this true", igid="20000009", author="someone"),
+        _c("2", "@noraexample nvm", minutes_ago=1),
+    )
+    found = summons_comment(
+        comments, igid=SUMMONER_IGID, handle="noraexample",
+        text="@noraexample is this true",
+    )
+    assert found is not None and found.id == "2"
+
+
+def test_an_empty_sender_igid_finds_nothing_even_against_an_empty_author_igid():
+    """A card whose sender igid was not decimal parses to "", and a comment
+    whose author igid was not decimal reads as "": the two must never match."""
+    comments = (_c("1", "@noraexample is this true", igid=""),)
+    assert summons_comment(
+        comments, igid="", handle="noraexample", text="@noraexample is this true",
+    ) is None
+
+
+def test_of_several_matching_comments_the_newest_is_the_summons():
+    comments = (
+        _c("1", "@noraexample first", minutes_ago=30),
+        _c("3", "@noraexample third", minutes_ago=1),
+        _c("2", "@noraexample second", minutes_ago=10),
+        _c("4", "@noraexample no time", minutes_ago=None),
+    )
+    found = summons_comment(comments, igid=SUMMONER_IGID, handle="noraexample")
+    assert found is not None and found.id == "3"
+
+
+@pytest.mark.parametrize(("text", "tags"), [
+    ("@noraexample is this true", True),
+    ("is this true @NoraExample.", True),
+    ("(@noraexample)", True),
+    ("@noraexample, and?", True),
+    ("@noraexample2 is this true", False),
+    ("@noraexample.backup is this true", False),
+    ("@noraexample_ hi", False),
+    ("mail me@noraexample", False),
+    ("noraexample is this true", False),
+    # ASCII-only case folding (re.ASCII), as the bridge's: a dotless i
+    # (U+0131) or a dotted capital I (U+0130) never folds into her handle,
+    # and a non-ASCII letter beside it is not a username character.
+    ("@noraruntıme", False),
+    ("ı@noraexample", True),
+    ("@noraexampleı", True),
+    ("@noraruntİme", False),
+])
+def test_the_handle_is_matched_as_a_whole_word(text, tags):
+    assert tags_handle(text, "noraexample") is tags
+    found = summons_comment((_c("1", text),), igid=SUMMONER_IGID, handle="noraexample")
+    assert (found is not None) is tags
 
 
 def test_an_empty_question_means_the_post():
@@ -157,3 +358,14 @@ def test_an_empty_question_means_the_post():
 def test_ages(delta, said):
     from nora.domain.summons import age
     assert age(NOW - delta, NOW) == said
+
+
+def test_an_item_carries_no_code_like_label_and_no_url():
+    """A live dry run (2026-09-26) passed "item 1" to media_fetch as a media
+    code. The post block names items in words and lists no URL: the pre-read
+    has already looked at each one."""
+    block = _post_block(render_summons(_context(post=_post(3))))
+    assert "the post's first image:" in block and "the post's third image:" in block
+    assert not re.search(r"\bitem \d", block)
+    assert "cdninstagram" not in block and "https://" not in block
+

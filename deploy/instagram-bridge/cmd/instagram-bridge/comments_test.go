@@ -1,9 +1,11 @@
 package main
 
-// The summons write end to end: GET /mentions serves a mention and records it,
-// POST /posts/{shortcode}/comments replies to it once, over the wired bridge,
-// its real ledger in the session directory, and a raw-REST fake that records
-// every request (fakeig.REST). Nothing here touches the network.
+// The summons write end to end: a summons card arrives on the socket, the
+// intake refetches its thread, emits the `summons` event and records it, and
+// POST /posts/{shortcode}/comments replies to the commenter's comment once,
+// over the wired bridge, its real ledger in the session directory, and a
+// raw-REST fake that records every request (fakeig.REST). Nothing here
+// touches the network.
 
 import (
 	"context"
@@ -23,6 +25,7 @@ import (
 	"instagram-bridge/internal/gateway/instameow/fakeig"
 	"instagram-bridge/internal/session"
 
+	"go.mau.fi/mautrix-meta/pkg/instameow/slidetypes"
 	"go.mau.fi/mautrix-meta/pkg/messagix/httpclient"
 )
 
@@ -36,21 +39,63 @@ func writesOn() app.CommentPolicy {
 	return app.CommentPolicy{WritesEnabled: true, DailyCap: 10, MinInterval: 0}
 }
 
+// summonsIG is the fake session whose thread refetch returns the summons
+// card with its post's permalink.
+func summonsIG() *fakeIG {
+	return &fakeIG{ThreadMessages: []*slidetypes.Message{
+		fakeig.SummonsCard("https://www.instagram.com/p/" + fakeig.CarouselShortcode + "/"),
+	}}
+}
+
+// summonsREST is the REST fake with the summons comment on the carousel's
+// first comments page.
+func summonsREST() *fakeig.REST {
+	rest := fakeig.NewREST()
+	rest.Answer("GET https://www.instagram.com/api/v1/media/", fakeig.RESTAnswer{Body: fakeig.SummonsCommentsJSON})
+	return rest
+}
+
+// summon delivers the live summons card (no target_url) on the socket and
+// waits for the intake.
+func summon(t *testing.T, b *testBridge) {
+	t.Helper()
+	if err := b.gw.Deliver(t.Context(), &slidetypes.Delta{
+		ThreadIGID: fakeig.ThreadShort, Data: &slidetypes.NewMessageEvent{Message: fakeig.SummonsCard("")},
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func commentsPath(code string) string { return "/posts/" + code + "/comments" }
 
 func replyBody(to, text string) map[string]any {
 	return map[string]any{"text": text, "reply_to_comment_id": to}
 }
 
-// The whole flow: the mention GET /mentions serves is the one comment the
-// bridge may answer, it answers it once (201), and a second attempt is 409
-// with no second request to Instagram.
+// The whole flow: the summons card is resolved and announced, the
+// commenter's comment it vouches for is the one comment the bridge may
+// answer, it answers it once (201), and a second attempt is 409 with no
+// second request to Instagram.
 func TestASummonsIsAnsweredOnceEndToEnd(t *testing.T) {
-	rest := fakeig.NewREST()
-	b := newTestBridgeWithComments(t, &fakeIG{}, writesOn(), withREST(rest))
+	rest := summonsREST()
+	b := newTestBridgeWithComments(t, summonsIG(), writesOn(), withREST(rest))
 
-	if w := request(t, b, http.MethodGet, "/mentions", nil); w.Code != http.StatusOK {
-		t.Fatalf("/mentions answered %d: %s", w.Code, w.Body.String())
+	// Before the card, the comment is not a summons.
+	if w := request(t, b, http.MethodPost, commentsPath(fakeig.CarouselShortcode), replyBody(fakeig.MentionCommentID, "hi")); w.Code != http.StatusForbidden || decodeEnvelope(t, w).Error.Code != "not_a_summons" {
+		t.Fatalf("before the card answered %d: %s", w.Code, w.Body.String())
+	}
+	summon(t, b)
+	var summons map[string]any
+	_, replay, _ := b.hub.Subscribe()
+	for _, raw := range replay {
+		var ev map[string]any
+		_ = json.Unmarshal(raw, &ev)
+		if ev["kind"] == "summons" {
+			summons = ev
+		}
+	}
+	if summons["resolved"] != true || summons["shortcode"] != fakeig.CarouselShortcode || summons["media_id"] != fakeig.CarouselMediaID {
+		t.Fatalf("summons event = %v", summons)
 	}
 	w := request(t, b, http.MethodPost, commentsPath(fakeig.CarouselShortcode), replyBody(fakeig.MentionCommentID, "  no, it isn't.  "))
 	if w.Code != http.StatusCreated {
@@ -88,8 +133,9 @@ func TestASummonsIsAnsweredOnceEndToEnd(t *testing.T) {
 	}
 }
 
-// The served-mention requirement end to end: an id never served, a served id
-// on another post, and a reply with writes off all refuse with zero writes.
+// Guard 3 end to end: a comment not on the page, the summoned post's other
+// commenter, another post, no target, and writes off all refuse with zero
+// writes.
 func TestOnlyAServedSummonsOnItsOwnPostCanBeAnswered(t *testing.T) {
 	for name, tc := range map[string]struct {
 		policy app.CommentPolicy
@@ -99,14 +145,15 @@ func TestOnlyAServedSummonsOnItsOwnPostCanBeAnswered(t *testing.T) {
 		want   string
 	}{
 		"writes off (the default)": {app.DefaultCommentPolicy(), fakeig.CarouselShortcode, fakeig.MentionCommentID, 403, "writes_disabled"},
-		"never served":             {writesOn(), fakeig.CarouselShortcode, "17900000000000999", 403, "not_a_summons"},
+		"not on the page":          {writesOn(), fakeig.CarouselShortcode, "17900000000000999", 403, "not_a_summons"},
+		"another author":           {writesOn(), fakeig.CarouselShortcode, fakeig.CommentTopID, 403, "not_a_summons"},
 		"another post":             {writesOn(), fakeig.ImageShortcode, fakeig.MentionCommentID, 403, "not_a_summons"},
 		"top-level (no target)":    {writesOn(), fakeig.CarouselShortcode, "", 403, "not_a_summons"},
 	} {
 		t.Run(name, func(t *testing.T) {
-			rest := fakeig.NewREST()
-			b := newTestBridgeWithComments(t, &fakeIG{}, tc.policy, withREST(rest))
-			request(t, b, http.MethodGet, "/mentions", nil)
+			rest := summonsREST()
+			b := newTestBridgeWithComments(t, summonsIG(), tc.policy, withREST(rest))
+			summon(t, b)
 			w := request(t, b, http.MethodPost, commentsPath(tc.code), replyBody(tc.to, "hi"))
 			if w.Code != tc.status || decodeEnvelope(t, w).Error.Code != tc.want {
 				t.Fatalf("answered %d %s, want %d %s", w.Code, w.Body.String(), tc.status, tc.want)
@@ -122,16 +169,16 @@ func TestOnlyAServedSummonsOnItsOwnPostCanBeAnswered(t *testing.T) {
 // summons stays answered.
 func TestAnsweredStaysAnsweredAcrossARestart(t *testing.T) {
 	dir := t.TempDir()
-	rest := fakeig.NewREST()
-	b := newTestBridgeWithComments(t, &fakeIG{}, writesOn(), withREST(rest), withStoreDir(dir))
-	request(t, b, http.MethodGet, "/mentions", nil)
+	rest := summonsREST()
+	b := newTestBridgeWithComments(t, summonsIG(), writesOn(), withREST(rest), withStoreDir(dir))
+	summon(t, b)
 	if w := request(t, b, http.MethodPost, commentsPath(fakeig.CarouselShortcode), replyBody(fakeig.MentionCommentID, "hi")); w.Code != http.StatusCreated {
 		t.Fatalf("answered %d: %s", w.Code, w.Body.String())
 	}
 
-	rest2 := fakeig.NewREST()
-	b2 := newTestBridgeWithComments(t, &fakeIG{}, writesOn(), withREST(rest2), withStoreDir(dir))
-	request(t, b2, http.MethodGet, "/mentions", nil)
+	rest2 := summonsREST()
+	b2 := newTestBridgeWithComments(t, summonsIG(), writesOn(), withREST(rest2), withStoreDir(dir))
+	summon(t, b2)
 	w := request(t, b2, http.MethodPost, commentsPath(fakeig.CarouselShortcode), replyBody(fakeig.MentionCommentID, "hi"))
 	if w.Code != http.StatusConflict || decodeEnvelope(t, w).Error.Code != "already_replied" {
 		t.Fatalf("after a restart answered %d: %s", w.Code, w.Body.String())
@@ -145,12 +192,12 @@ func TestAnsweredStaysAnsweredAcrossARestart(t *testing.T) {
 // `checkpointed` on /health), and every later write is refused at the session
 // gate with no request.
 func TestACheckpointOnTheWriteStopsTheSession(t *testing.T) {
-	rest := fakeig.NewREST()
+	rest := summonsREST()
 	rest.Answer("POST https://www.instagram.com/api/v1/web/comments/", fakeig.RESTAnswer{
 		Status: 400, Body: `{"message":"checkpoint_required","checkpoint_url":"https://i.instagram.com/challenge/x","status":"fail"}`,
 	})
-	b := newTestBridgeWithComments(t, &fakeIG{}, writesOn(), withREST(rest))
-	request(t, b, http.MethodGet, "/mentions", nil)
+	b := newTestBridgeWithComments(t, summonsIG(), writesOn(), withREST(rest))
+	summon(t, b)
 	w := request(t, b, http.MethodPost, commentsPath(fakeig.CarouselShortcode), replyBody(fakeig.MentionCommentID, "hi"))
 	if w.Code != http.StatusConflict || decodeEnvelope(t, w).Error.Code != "needs_human" {
 		t.Fatalf("answered %d: %s", w.Code, w.Body.String())
@@ -173,12 +220,12 @@ func TestACheckpointOnTheWriteStopsTheSession(t *testing.T) {
 // refused with no request.
 func TestAnActionBlockLatchesWritesOffEndToEnd(t *testing.T) {
 	dir := t.TempDir()
-	rest := fakeig.NewREST()
+	rest := summonsREST()
 	rest.Answer("POST https://www.instagram.com/api/v1/web/comments/", fakeig.RESTAnswer{
 		Status: 400, Body: `{"message":"feedback_required","spam":true,"feedback_title":"Action Blocked","status":"fail"}`,
 	})
-	b := newTestBridgeWithComments(t, &fakeIG{}, writesOn(), withREST(rest), withStoreDir(dir))
-	request(t, b, http.MethodGet, "/mentions", nil)
+	b := newTestBridgeWithComments(t, summonsIG(), writesOn(), withREST(rest), withStoreDir(dir))
+	summon(t, b)
 	w := request(t, b, http.MethodPost, commentsPath(fakeig.CarouselShortcode), replyBody(fakeig.MentionCommentID, "hi"))
 	if w.Code != http.StatusForbidden || decodeEnvelope(t, w).Error.Code != "writes_blocked" {
 		t.Fatalf("answered %d: %s", w.Code, w.Body.String())
@@ -187,7 +234,7 @@ func TestAnActionBlockLatchesWritesOffEndToEnd(t *testing.T) {
 	if !strings.Contains(string(blob), `"writes_blocked"`) || !strings.Contains(string(blob), `"feedback_required"`) {
 		t.Fatalf("the latch is not on disk: %s", blob)
 	}
-	b2 := newTestBridgeWithComments(t, &fakeIG{}, writesOn(), withREST(rest), withStoreDir(dir))
+	b2 := newTestBridgeWithComments(t, summonsIG(), writesOn(), withREST(rest), withStoreDir(dir))
 	w = request(t, b2, http.MethodPost, commentsPath(fakeig.CarouselShortcode), replyBody("17900000000000999", "hi"))
 	if w.Code != http.StatusForbidden || decodeEnvelope(t, w).Error.Code != "writes_blocked" {
 		t.Errorf("after a restart answered %d: %s", w.Code, w.Body.String())
@@ -247,6 +294,7 @@ func TestCommentRoutesNeverLeakIntoTelemetry(t *testing.T) {
 		fakeig.MentionCommentAuthorIGID, fakeig.MentionCommentAuthorUsername, fakeig.MentionNotificationText,
 		fakeig.CommentTopID, fakeig.CommentAuthorIGID, fakeig.CommentAuthorName, fakeig.CommentText,
 		fakeig.NewCommentID, replyText,
+		fakeig.SummonsMessageID, fakeig.SummonsSenderFBID, "3f9c",
 	}
 	var envelopes strings.Builder
 	expect := func(w *httptest.ResponseRecorder, status int) {
@@ -259,8 +307,9 @@ func TestCommentRoutesNeverLeakIntoTelemetry(t *testing.T) {
 		}
 	}
 
-	rest := fakeig.NewREST()
-	b := withTraceparent(newTestBridgeWithComments(t, &fakeIG{}, writesOn(), withREST(rest)))
+	rest := summonsREST()
+	b := withTraceparent(newTestBridgeWithComments(t, summonsIG(), writesOn(), withREST(rest)))
+	summon(t, b)
 	expect(request(t, b, http.MethodGet, "/mentions", nil), 200)
 	expect(request(t, b, http.MethodGet, commentsPath(fakeig.CarouselShortcode), nil), 200)
 	expect(request(t, b, http.MethodGet, commentsPath(fakeig.CarouselShortcode)+"?reply_to="+fakeig.CommentTopID, nil), 200)
@@ -275,14 +324,22 @@ func TestCommentRoutesNeverLeakIntoTelemetry(t *testing.T) {
 		Err: context.DeadlineExceeded,
 	})
 	for _, answer := range []fakeig.RESTAnswer{{Err: urlErr}, {Status: 400, Body: `{"message":"feedback_required","status":"fail"}`}} {
-		rest := fakeig.NewREST()
+		rest := summonsREST()
 		rest.Answer("POST https://www.instagram.com/api/v1/web/comments/", answer)
-		rest.Answer("GET https://www.instagram.com/api/v1/media/", answer)
-		b := withTraceparent(newTestBridgeWithComments(t, &fakeIG{}, writesOn(), withREST(rest)))
+		b := withTraceparent(newTestBridgeWithComments(t, summonsIG(), writesOn(), withREST(rest)))
+		summon(t, b)
 		expect(request(t, b, http.MethodGet, "/mentions", nil), 200)
 		w := request(t, b, http.MethodPost, commentsPath(fakeig.CarouselShortcode), replyBody(fakeig.MentionCommentID, replyText))
 		if w.Code < 400 {
 			t.Fatalf("a failing write answered %d", w.Code)
+		}
+		envelopes.WriteString(w.Body.String())
+		// The read fails the same way: the comments read, and guard 3(b)'s
+		// read behind a write.
+		rest.Answer("GET https://www.instagram.com/api/v1/media/", answer)
+		w = request(t, b, http.MethodPost, commentsPath(fakeig.CarouselShortcode), replyBody(fakeig.CommentTopID, replyText))
+		if w.Code != http.StatusForbidden {
+			t.Fatalf("a write behind a failing read answered %d", w.Code)
 		}
 		envelopes.WriteString(w.Body.String())
 		w = request(t, b, http.MethodGet, commentsPath(fakeig.CarouselShortcode), nil)

@@ -131,6 +131,10 @@ type IG struct {
 	// a nil check alone cannot express it.
 	ThreadUsersSet bool
 	ThreadErr      error
+	// ThreadMessages is the thread's first page of messages
+	// (`slide_messages`), the page the summons intake refetches a card from.
+	// nil answers a thread with no message page at all.
+	ThreadMessages []*slidetypes.Message
 	// noThread makes GetThread answer 200 with the thread absent — the shape a
 	// GraphQL read takes when it finds nothing, which is NOT an error.
 	NoThread bool
@@ -222,13 +226,21 @@ func (f *IG) GetThread(_ context.Context, req *slidetypes.GetThreadInfoRequest) 
 	if f.ThreadUsersSet {
 		users = f.ThreadUsers
 	}
+	info := &slidetypes.ThreadInfo{
+		ThreadFBID: req.ThreadFBID, ThreadTitle: "the group", IsGroup: true,
+		Users: users,
+	}
+	if f.ThreadMessages != nil {
+		page := &slidetypes.SlideMessages{}
+		for _, m := range f.ThreadMessages {
+			page.Edges = append(page.Edges, slidetypes.Node[*slidetypes.Message]{Node: m})
+		}
+		info.SlideMessages = page
+	}
 	return &slidetypes.ThreadInfoResponse{
 		ThreadInfo: slidetypes.WrappedThreadInfo{
-			ID: longFor(req.ThreadFBID),
-			AsIGDirectThread: &slidetypes.ThreadInfo{
-				ThreadFBID: req.ThreadFBID, ThreadTitle: "the group", IsGroup: true,
-				Users: users,
-			},
+			ID:               longFor(req.ThreadFBID),
+			AsIGDirectThread: info,
 		},
 	}, nil
 }

@@ -1128,14 +1128,17 @@ enabled = false
 # comments, once. Needs [social.instagram] enabled above (refused at load
 # otherwise). Only identity.toml people can summon her, matched by igid.
 #
-# THREE brakes, all off here. `enabled` spawns the poller. `mode` is
+# A summons arrives as the bridge's `summons` SSE event (the tag reaches her
+# as a DM card from the commenter); off, each one is counted and dropped.
+#
+# THREE brakes, all off here. `enabled` spawns the consumer. `mode` is
 # "dry_run" (the whole turn runs and what she would have said is stored in
 # the instagram_summons table, nothing is posted) or "live". And the bridge
 # posts nothing unless its own INSTAGRAM_COMMENT_WRITES=on, which Nora cannot
 # set. A live header for the reason [social.instagram] has one.
 enabled = false
 mode = "dry_run"
-# poll_seconds = 120.0        # floor 60: minutes, not seconds (design 19 rule 3)
+# poll_seconds                # DEPRECATED, read by nothing (the poller is gone)
 # max_age_minutes = 60.0      # an older summons is recorded stale, never answered
 # handle = "noraexample"      # her username, removed from the question
 

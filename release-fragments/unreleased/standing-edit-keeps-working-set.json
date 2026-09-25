@@ -1,0 +1,1 @@
+{"type": "fix", "summary": "The operator's Standing edit script works again on a room that holds a working set; before, every such edit was refused.", "details": ["scripts/standing_edit.py rebuilt the Standing row without `working_set`, so the compare-and-set write refused it. It now changes only the body and the time."], "limitations": []}

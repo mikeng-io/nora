@@ -238,6 +238,7 @@ and `instruments/` (cheap model calls that are not her):
 | `rooms/voice.md` | `kind: identity` — register, Cantonese, humour: the sound to hit and avoid |
 | `rooms/silence.md` | `kind: conduct` — when she speaks at all: called means must-speak, offered means may-speak. Reaches the `tag`, `participation` and `proactive` audiences, not `heartbeat` (a reminder turn is owed to whoever asked) |
 | `rooms/conduct.md` | `kind: conduct` — how she behaves once a turn is under way: when and how she replies |
+| `rooms/pictures.md` | `kind: constraint` — how a room's media placeholders read (a picture, a clip, a voice note) and when to ask for the full reading. The four room audiences, just before `core/constraints.md`; never the public summons |
 | `rooms/participation-conduct.md` | `kind: conduct` — the one thing an offered floor has that a tag never does: several things worth answering at once. `participation` audience only |
 | `public/voice.md`, `public/conduct.md`, `public/constraints.md` | how she sounds and behaves when summoned in public, and the hard rules added there. `summons` audience only |
 | `instruments/participation.md` | `kind: instrument` — NOT hers: the Relevance Gate's whole instruction, on the `relevance_gate` audience no turn of hers reads |
@@ -271,7 +272,7 @@ weeks after she knew five.
 
 `not_here` says what a file must NOT contain and where that lives instead; `change_policy`
 marks the `identity`, `voice` and `constraints` files in every scope folder, `rooms/belonging.md`,
-`instruments/participation.md`, the Dreamer's own `dreamer.md` and every Dreamer objective as
+`rooms/pictures.md`, `instruments/participation.md`, the Dreamer's own `dreamer.md` and every Dreamer objective as
 the operator's alone.
 
 ### Editing the doctrine — no restart required

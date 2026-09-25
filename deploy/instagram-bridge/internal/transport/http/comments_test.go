@@ -22,12 +22,14 @@ const (
 	testSummons = "17900000000000001"
 )
 
+// fakeCommentsPort answers reads with page/err and writes with postErr.
 type fakeCommentsPort struct {
-	page   domain.CommentPage
-	err    error
-	parent *domain.CommentID
-	reads  int
-	posts  int
+	page    domain.CommentPage
+	err     error
+	postErr error
+	parent  *domain.CommentID
+	reads   int
+	posts   int
 }
 
 func (f *fakeCommentsPort) Comments(_ context.Context, _ domain.Shortcode, _ domain.MediaID, parent *domain.CommentID) (domain.CommentPage, error) {
@@ -38,8 +40,8 @@ func (f *fakeCommentsPort) Comments(_ context.Context, _ domain.Shortcode, _ dom
 
 func (f *fakeCommentsPort) PostComment(_ context.Context, _ domain.Shortcode, _ domain.MediaID, to domain.CommentID, _ string) (domain.PostedComment, error) {
 	f.posts++
-	if f.err != nil {
-		return domain.PostedComment{}, f.err
+	if f.postErr != nil {
+		return domain.PostedComment{}, f.postErr
 	}
 	return domain.PostedComment{ID: "18000000000000009", ReplyToCommentID: to.String()}, nil
 }
@@ -69,18 +71,32 @@ func commentsHandler(snap domain.Session, port *fakeCommentsPort, ledger app.Led
 	return New(svc, noEvents{}, time.Now()).Routes()
 }
 
-var readySnap = domain.Session{State: domain.StateAuthenticated, HasClient: true}
+var readySnap = domain.Session{State: domain.StateAuthenticated, HasClient: true, Self: domain.Self{Username: "not_____nora"}}
+
+// testSummoner is the igid of the account whose summons card servedLedger
+// holds and whose comment summonsPort's page carries.
+const testSummoner = "500000000001"
+
+// summonsPort is the port with testSummons on the post's first page, written
+// by testSummoner and mentioning this account.
+func summonsPort() *fakeCommentsPort {
+	return &fakeCommentsPort{page: domain.CommentPage{Items: []domain.Comment{
+		{ID: testSummons, AuthorIGID: testSummoner, Text: "@not_____nora is this true"},
+	}}}
+}
 
 func open() app.CommentPolicy {
 	return app.CommentPolicy{WritesEnabled: true, DailyCap: 10, MinInterval: 0}
 }
 
-// servedLedger holds testSummons as served on testCode's media, now.
+// servedLedger holds a summons card from testSummoner for testCode's media,
+// received now.
 func servedLedger(t *testing.T) *memLedger {
 	t.Helper()
-	id, _ := domain.ParseCommentID(testSummons)
+	media, _ := domain.MediaIDOf(3000000000000000001)
+	sender, _ := domain.ParseIGID(testSummoner)
 	led := domain.NewCommentLedger()
-	led.RecordServed(id, "3000000000000000001", time.Now())
+	led.RecordSummons(domain.Summons{MessageID: "mid.$card", Media: media, Sender: sender, ReceivedAt: time.Now()})
 	return &memLedger{led: led}
 }
 
@@ -94,7 +110,7 @@ func envelopeOf(t *testing.T, rec *httptest.ResponseRecorder) errorBody {
 }
 
 func TestPostCommentSucceedsWith201AndItsShape(t *testing.T) {
-	port := &fakeCommentsPort{}
+	port := summonsPort()
 	h := commentsHandler(readySnap, port, servedLedger(t), open())
 	rec := do(h, http.MethodPost, "/posts/"+testCode+"/comments", `{"text":"no.","reply_to_comment_id":"`+testSummons+`"}`)
 	if rec.Code != http.StatusCreated {
@@ -122,6 +138,7 @@ func TestPostCommentAnswersEachGuardWithItsOwnCode(t *testing.T) {
 		{"writes off", readySnap, servedLedger(t), app.DefaultCommentPolicy(), body, 403, "writes_disabled"},
 		{"session", domain.Session{State: domain.StateCheckpointed}, servedLedger(t), open(), body, 409, "needs_human"},
 		{"not a summons", readySnap, &memLedger{}, open(), body, 403, "not_a_summons"},
+		{"a card but not its sender's comment", readySnap, servedLedger(t), open(), `{"text":"hi","reply_to_comment_id":"17900000000000999"}`, 403, "not_a_summons"},
 		{"no reply target", readySnap, servedLedger(t), open(), `{"text":"hi"}`, 403, "not_a_summons"},
 		{"already replied", readySnap, func() app.Ledger {
 			l := servedLedger(t)
@@ -140,7 +157,7 @@ func TestPostCommentAnswersEachGuardWithItsOwnCode(t *testing.T) {
 		{"ledger", readySnap, &memLedger{refuse: domain.Classify(domain.ErrLedgerUnavailable, errors.New("comments.json does not parse"))}, open(), body, 503, "ledger_unavailable"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			port := &fakeCommentsPort{}
+			port := summonsPort()
 			rec := do(commentsHandler(tc.snap, port, tc.ledger, tc.policy), http.MethodPost, "/posts/"+testCode+"/comments", tc.body)
 			if rec.Code != tc.status {
 				t.Fatalf("status %d, want %d: %s", rec.Code, tc.status, rec.Body.String())
@@ -251,8 +268,9 @@ func TestCommentsRouteMethods(t *testing.T) {
 // or 503 its upstream status would map to, and the next write is refused
 // before the port.
 func TestAnActionBlockOnTheWriteIsNotRetryInviting(t *testing.T) {
-	port := &fakeCommentsPort{err: &domain.ActionBlocked{Reason: domain.BlockRateLimited,
-		Err: domain.Classify(domain.ErrUnavailable, errors.New("comment_add was rate limited"))}}
+	port := summonsPort()
+	port.postErr = &domain.ActionBlocked{Reason: domain.BlockRateLimited,
+		Err: domain.Classify(domain.ErrUnavailable, errors.New("comment_add was rate limited"))}
 	h := commentsHandler(readySnap, port, servedLedger(t), open())
 	rec := do(h, http.MethodPost, "/posts/"+testCode+"/comments", `{"text":"hi","reply_to_comment_id":"`+testSummons+`"}`)
 	if rec.Code != http.StatusForbidden || envelopeOf(t, rec).Code != "writes_blocked" {

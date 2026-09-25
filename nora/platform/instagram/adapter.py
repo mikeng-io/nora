@@ -65,11 +65,13 @@ from ...domain.ports import (
     SendResult,
     TextStyle,
 )
+from ...domain.summons import SummonsSink
 from .listener import InstagramListener
 from .parser import parse_event
 from .react import InstagramReactor
 from .self_id import derive_identity, read_username
 from .send import InstagramSender
+from .summons import SUMMONS_KIND, parse_summons
 
 log = logging.getLogger("nora.instagram.adapter")
 
@@ -77,8 +79,13 @@ log = logging.getLogger("nora.instagram.adapter")
 class InstagramAdapter:
     platform = "instagram"
 
-    def __init__(self, base_url: str) -> None:
+    def __init__(self, base_url: str, *, summons: SummonsSink | None = None) -> None:
+        """`summons` is where a `kind: "summons"` event goes
+        (`nora.app.summons_inbox.SummonsInbox`, which counts and drops it when
+        `[social.instagram.summons]` is off). `None` drops every one: nothing
+        in a room is ever built from a summons event either way."""
         self._base_url = base_url
+        self._summons = summons
         self._listener = InstagramListener(base_url)
         self._sender = InstagramSender(base_url)
         self._reactor = InstagramReactor(base_url)
@@ -176,11 +183,26 @@ class InstagramAdapter:
             return
 
         async def _on_event(raw_event: dict) -> None:
+            # A summons card goes to the summons occasion and NEVER to room
+            # ingest: it is not a room message, and the ordinary message
+            # event the bridge sends beside it is the room's copy.
+            if isinstance(raw_event, dict) and raw_event.get("kind") == SUMMONS_KIND:
+                self._hand_off_summons(raw_event)
+                return
             message = parse_event(raw_event)
             if message is not None:
                 await on_message(message)
 
         await self._listener.listen(_on_event)
+
+    def _hand_off_summons(self, raw_event: dict) -> None:
+        if self._summons is None:
+            return
+        card = parse_summons(raw_event)
+        if card is None:
+            self._summons.malformed()
+            return
+        self._summons.offer(card)
 
     async def send(
         self,

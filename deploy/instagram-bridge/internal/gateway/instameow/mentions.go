@@ -5,6 +5,11 @@ package instameow
 // learn when someone @mentions her in a COMMENT on a post before anything can
 // answer it.
 //
+// SUPERSEDED as the summons intake (design 19, "Intake, re-measured
+// 2026-09-26"): the feed never carried a comment-mention; the mention reaches
+// the account as a DM-thread card instead (summons.go). This route stays as a
+// read and authorizes no write.
+//
 // # What the upstream call really is
 //
 // `POST https://www.instagram.com/api/v1/news/inbox/`, form-encoded, with
@@ -444,31 +449,11 @@ func mentionsAccount(args wireStoryArgs, self domain.Self) bool {
 		containsMentionToken(strings.ToLower(args.RichText), marker)
 }
 
-// containsMentionToken finds marker as a whole @mention, not as a prefix of
-// a longer one: "@nora" must not match inside "@nora_fan". The byte right
-// after a candidate match is checked against Instagram's own username
-// alphabet (domain.ParseUsername's `[A-Za-z0-9._]`) and, if it continues one,
-// the search resumes past that occurrence rather than accepting it.
+// containsMentionToken is domain.ContainsMentionToken, the one word-bounded
+// @mention test the bridge has (the summons card and write guard 3 use it
+// too): "@nora" must not match inside "@nora_fan".
 func containsMentionToken(haystack, marker string) bool {
-	from := 0
-	for {
-		i := strings.Index(haystack[from:], marker)
-		if i < 0 {
-			return false
-		}
-		pos := from + i
-		end := pos + len(marker)
-		startsWord := pos == 0 || !isUsernameByte(haystack[pos-1])
-		endsWord := end >= len(haystack) || !isUsernameByte(haystack[end])
-		if startsWord && endsWord {
-			return true
-		}
-		from = pos + 1
-	}
-}
-
-func isUsernameByte(b byte) bool {
-	return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || (b >= '0' && b <= '9') || b == '.' || b == '_'
+	return domain.ContainsMentionToken(haystack, marker)
 }
 
 // mediaIdentity is the numeric media pk (the `<pk>` half of `<pk>_<owner>`,

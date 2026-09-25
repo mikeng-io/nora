@@ -464,3 +464,57 @@ def test_0065_the_ceiling_check_refuses_an_oversized_working_set(pg_url):
             conn.commit()
     finally:
         engine.dispose()
+
+
+def test_0067_keys_a_pre_existing_summons_row_on_a_legacy_message_id(pg_url):
+    """design/instagram-adoption/19, the 2026-09-26 intake: a row the retired
+    `GET /mentions` poller wrote has no card, so 0067 backfills its new
+    NOT NULL, UNIQUE `message_id` as `'legacy:' || comment_id`, keeps its
+    comment, and a new card's row may carry no comment at all. The round trip
+    deletes that comment-less row on the way down (0066's NOT NULL) and
+    reaches the head again."""
+    from alembic import command as alembic_command
+
+    run_migrations(pg_url)
+    alembic_command.downgrade(alembic_config(pg_url), "0066_instagram_summons")
+    engine = sa.create_engine(sync_url_for(pg_url))
+    try:
+        with engine.connect() as conn:
+            conn.execute(sa.text(
+                "INSERT INTO instagram_summons (id, comment_id, media_id, shortcode, "
+                "author_igid, state, mode) VALUES (:id, '17900000000000001', '31', "
+                "'CmiJBr2LAAB', '', 'stale', 'dry_run')"
+            ), {"id": uuid.uuid4()})
+            conn.commit()
+    finally:
+        engine.dispose()
+
+    run_migrations(pg_url)
+    engine = sa.create_engine(sync_url_for(pg_url))
+    try:
+        with engine.connect() as conn:
+            got = conn.execute(sa.text(
+                "SELECT message_id, comment_id FROM instagram_summons"
+            )).one()
+            conn.execute(sa.text(
+                "INSERT INTO instagram_summons (id, message_id, media_id, shortcode, "
+                "author_igid, state, mode) VALUES (:id, 'mid.$new', '', '', '', "
+                "'unresolved', 'dry_run')"
+            ), {"id": uuid.uuid4()})
+            conn.commit()
+    finally:
+        engine.dispose()
+    assert tuple(got) == ("legacy:17900000000000001", "17900000000000001")
+
+    alembic_command.downgrade(alembic_config(pg_url), "0066_instagram_summons")
+    engine = sa.create_engine(sync_url_for(pg_url))
+    try:
+        with engine.connect() as conn:
+            left = conn.execute(sa.text(
+                "SELECT comment_id FROM instagram_summons"
+            )).scalars().all()
+    finally:
+        engine.dispose()
+    assert left == ["17900000000000001"]
+    run_migrations(pg_url)
+    assert current_revision(pg_url) == head_revision()

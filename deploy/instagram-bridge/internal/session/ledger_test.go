@@ -16,6 +16,20 @@ import (
 
 var t0 = time.Date(2026, 9, 25, 12, 0, 0, 0, time.UTC)
 
+func summons(t *testing.T, mid, media, sender string, at time.Time) domain.Summons {
+	t.Helper()
+	n, err := strconv.ParseUint(media, 10, 64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, _ := domain.MediaIDOf(n)
+	igid, err := domain.ParseIGID(sender)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return domain.Summons{MessageID: mid, Media: m, Sender: igid, ReceivedAt: at}
+}
+
 func cid(t *testing.T, s string) domain.CommentID {
 	t.Helper()
 	id, err := domain.ParseCommentID(s)
@@ -32,7 +46,7 @@ func TestLedgerSurvivesARestart(t *testing.T) {
 	dir := t.TempDir()
 	first := NewLedger(Store{Dir: dir})
 	if err := first.Update(t0, func(l *domain.CommentLedger) error {
-		l.RecordServed(cid(t, "17900000000000001"), "3000000000000000001", t0)
+		l.RecordSummons(summons(t, "mid.$a", "3000000000000000001", "500000000001", t0))
 		l.Claim(cid(t, "17900000000000001"), "3000000000000000001", t0)
 		return nil
 	}); err != nil {
@@ -47,8 +61,8 @@ func TestLedgerSurvivesARestart(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if !got.IsSummons(cid(t, "17900000000000001"), "3000000000000000001", t0.Add(time.Minute)) {
-		t.Error("the served mention did not survive a fresh Store")
+	if !got.SummonsSenders("3000000000000000001", t0.Add(time.Minute))["500000000001"] {
+		t.Error("the summons did not survive a fresh Store")
 	}
 	if !got.Replied(cid(t, "17900000000000001")) {
 		t.Error("the claim did not survive a fresh Store: the summons could be answered twice")
@@ -76,28 +90,51 @@ func TestLedgerRefusalWritesNothing(t *testing.T) {
 	}
 }
 
-// Pruning on write: served mentions older than 7 days go, younger ones stay,
-// and replies are NEVER pruned, however old: a pruned reply key is a summons
-// that could be answered twice.
-func TestLedgerPrunesServedMentionsButNeverReplies(t *testing.T) {
+// A comments.json written before the 2026-09-26 re-measure carries `served`
+// (the mentions GET /mentions served). It loads, its replies and latch are
+// kept, and the old key authorizes nothing and is dropped on the next write.
+func TestAnOldServedKeyLoadsAndIsDropped(t *testing.T) {
+	dir := t.TempDir()
+	old := `{"version":1,"served":{"17900000000000001":{"media_id":"10","served_at":"2026-09-25T12:00:00Z"}},` +
+		`"replies":{"7":{"media_id":"10","state":"published","claimed_at":"2026-09-25T12:00:00Z","updated_at":"2026-09-25T12:00:00Z"}}}`
+	if err := os.WriteFile(Store{Dir: dir}.Path(ledgerFile), []byte(old), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var got *domain.CommentLedger
+	if err := NewLedger(Store{Dir: dir}).Update(t0, func(led *domain.CommentLedger) error { got = led; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if !got.Replied(cid(t, "7")) || len(got.Summonses) != 0 || len(got.SummonsSenders("10", t0)) != 0 {
+		t.Fatalf("ledger = %+v", got)
+	}
+	blob, _ := os.ReadFile(Store{Dir: dir}.Path(ledgerFile))
+	if strings.Contains(string(blob), `"served"`) || !strings.Contains(string(blob), `"summonses"`) {
+		t.Errorf("rewritten file = %s", blob)
+	}
+}
+
+// Pruning on write: summonses older than 7 days go, younger ones stay, and
+// replies are NEVER pruned, however old: a pruned reply key is a summons that
+// could be answered twice.
+func TestLedgerPrunesSummonsesButNeverReplies(t *testing.T) {
 	dir := t.TempDir()
 	l := NewLedger(Store{Dir: dir})
 	now := t0
 	if err := l.Update(now, func(led *domain.CommentLedger) error {
-		led.RecordServed(cid(t, "1"), "10", now.Add(-domain.ServedWindow-time.Second)) // expired
-		led.RecordServed(cid(t, "2"), "10", now.Add(-domain.ServedWindow+time.Hour))   // kept
-		led.Claim(cid(t, "3"), "10", now.Add(-5*365*24*time.Hour))                     // kept: replies are forever
+		led.RecordSummons(summons(t, "1", "10", "500", now.Add(-domain.ServedWindow-time.Second))) // expired
+		led.RecordSummons(summons(t, "2", "10", "500", now.Add(-domain.ServedWindow+time.Hour)))   // kept
+		led.Claim(cid(t, "3"), "10", now.Add(-5*365*24*time.Hour))                                 // kept: replies are forever
 		return nil
 	}); err != nil {
 		t.Fatal(err)
 	}
 	var got *domain.CommentLedger
 	_ = NewLedger(Store{Dir: dir}).Update(now, func(led *domain.CommentLedger) error { got = led; return nil })
-	if _, ok := got.Served["1"]; ok {
-		t.Error("a served mention older than 7 days was kept")
+	if _, ok := got.Summonses["1"]; ok {
+		t.Error("a summons older than 7 days was kept")
 	}
-	if _, ok := got.Served["2"]; !ok {
-		t.Error("a served mention younger than 7 days was pruned")
+	if _, ok := got.Summonses["2"]; !ok {
+		t.Error("a summons younger than 7 days was pruned")
 	}
 	if _, ok := got.Replies["3"]; !ok {
 		t.Error("a five-year-old reply was pruned: that summons could now be answered again")

@@ -3,8 +3,9 @@ package session
 // comments.json: the summons ledger (design/instagram-adoption/19 §Account
 // safety, rule 4), the fifth file in the session directory.
 //
-//	comments.json  every comment mention GET /mentions served (comment id ->
-//	               media pk, first served at), every reply the bridge ever
+//	comments.json  every summons card the bridge received and resolved to a
+//	               post (DM message id -> media pk, the sender's igid, received
+//	               at; pruned at 7 days), every reply the bridge ever
 //	               claimed (reply-to comment id -> media pk, state, times,
 //	               the new comment's id once published; never pruned), and
 //	               `writes_blocked`, the writes-off latch.
@@ -28,8 +29,14 @@ package session
 // must never do is answer one twice. So an unreadable or corrupt file is not
 // treated as empty: every write is refused (fail closed) until an operator
 // looks, and the file is never overwritten while it is unreadable, so the
-// evidence survives. Reads (GET /mentions and the comment read) are
-// unaffected; only the recording of what they served is skipped.
+// evidence survives. Reads are unaffected, and the summons intake still
+// emits its SSE event; only its record is skipped, so a reply to that summons
+// is refused (fail closed).
+//
+// The file used to hold `served`, the comment mentions GET /mentions served,
+// which authorized writes until the 2026-09-26 re-measure (design 19). A file
+// that still carries it loads: the key is ignored and dropped on the next
+// write, and no longer authorizes anything.
 //
 // One mutex serializes every read-modify-write, and each write goes through
 // writeAtomic, so a crash mid-write leaves the old file or the new one. The
@@ -54,10 +61,10 @@ const ledgerFile = "comments.json"
 const ledgerVersion = 1
 
 type ledgerRecord struct {
-	Version       int                     `json:"version"`
-	Served        map[string]servedRecord `json:"served"`
-	Replies       map[string]replyRecord  `json:"replies"`
-	WritesBlocked *blockRecord            `json:"writes_blocked,omitempty"`
+	Version       int                      `json:"version"`
+	Summonses     map[string]summonsRecord `json:"summonses"`
+	Replies       map[string]replyRecord   `json:"replies"`
+	WritesBlocked *blockRecord             `json:"writes_blocked,omitempty"`
 }
 
 type blockRecord struct {
@@ -65,9 +72,10 @@ type blockRecord struct {
 	Reason string    `json:"reason"`
 }
 
-type servedRecord struct {
-	MediaID  string    `json:"media_id"`
-	ServedAt time.Time `json:"served_at"`
+type summonsRecord struct {
+	MediaID    string    `json:"media_id"`
+	SenderIGID string    `json:"sender_igid"`
+	ReceivedAt time.Time `json:"received_at"`
 }
 
 type replyRecord struct {
@@ -141,8 +149,8 @@ func (l *Ledger) load() (*domain.CommentLedger, error) {
 			fmt.Errorf("version %d", rec.Version))
 	}
 	led := domain.NewCommentLedger()
-	for k, s := range rec.Served {
-		led.Served[k] = domain.ServedMention{MediaID: s.MediaID, ServedAt: s.ServedAt}
+	for k, s := range rec.Summonses {
+		led.Summonses[k] = domain.ServedSummons{MediaID: s.MediaID, SenderIGID: s.SenderIGID, ReceivedAt: s.ReceivedAt}
 	}
 	for k, r := range rec.Replies {
 		switch r.State {
@@ -166,12 +174,12 @@ func (l *Ledger) load() (*domain.CommentLedger, error) {
 
 func (l *Ledger) save(led *domain.CommentLedger) error {
 	rec := ledgerRecord{
-		Version: ledgerVersion,
-		Served:  make(map[string]servedRecord, len(led.Served)),
-		Replies: make(map[string]replyRecord, len(led.Replies)),
+		Version:   ledgerVersion,
+		Summonses: make(map[string]summonsRecord, len(led.Summonses)),
+		Replies:   make(map[string]replyRecord, len(led.Replies)),
 	}
-	for k, s := range led.Served {
-		rec.Served[k] = servedRecord{MediaID: s.MediaID, ServedAt: s.ServedAt.UTC()}
+	for k, s := range led.Summonses {
+		rec.Summonses[k] = summonsRecord{MediaID: s.MediaID, SenderIGID: s.SenderIGID, ReceivedAt: s.ReceivedAt.UTC()}
 	}
 	for k, r := range led.Replies {
 		rec.Replies[k] = replyRecord{

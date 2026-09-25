@@ -2,8 +2,9 @@
 of one summons, the ledger port that makes it answered at most once, and the
 ONE rendering of what she reads.
 
-Comprehend once. A mention from the bridge becomes a `Mention`; the post and
-its comments become a frozen `SummonsContext`; `render_summons` is the only
+Comprehend once. A summons card from the bridge's SSE stream becomes a
+`SummonsCard` (the platform adapter parses it, once); the post and its
+comments become a frozen `SummonsContext`; `render_summons` is the only
 thing that turns that context into text, and nothing downstream re-reads a
 bridge body. The context carries what every judgement she is asked to make
 turns on: WHEN (an age on the summons, the post and every comment, and which
@@ -19,7 +20,7 @@ own uuid is the one handle telemetry may carry.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from typing import Literal, Protocol, get_args
 from uuid import UUID
@@ -39,8 +40,12 @@ from nora.domain.blocks import wrap_outside_text
 #:
 #: A `claimed` row older than the claim timeout is swept to `failed`, never
 #: retried (a double public comment is worse than a missing one).
+#:
+#: `unresolved` is final and costs no read and no model call: the bridge could
+#: not find which post the card points at (`resolved = false`), so there is
+#: nothing she could answer under.
 SummonsState = Literal[
-    "claimed", "ignored_summoner", "stale", "unreadable", "silent", "staged",
+    "claimed", "unresolved", "ignored_summoner", "stale", "unreadable", "silent", "staged",
     "flushing", "published", "refused", "capped", "duplicate", "ambiguous", "failed",
 ]
 #: The states `finish` may move a row OUT of.
@@ -59,44 +64,131 @@ SUMMONS_OUTCOMES: tuple[str, ...] = (
     *(s for s in SUMMONS_STATES if s not in ("claimed", "flushing")), ALREADY_CLAIMED,
 )
 
-#: `nora_summons_polls_total`'s `status` label: what one `GET /mentions` came
-#: back as. `needs_human` (the session is checkpointed) and `unavailable` (503,
-#: the bridge is reconnecting) are the two the poller BACKS OFF on; `error` is
-#: every other failure, including no answer at all.
-PollStatus = Literal["ok", "needs_human", "unavailable", "error"]
-POLL_STATUSES: tuple[str, ...] = get_args(PollStatus)
+#: `nora_summons_follow_ups_total`'s `outcome` label: what one follow-up
+#: (`nora.app.summons.UNSENT_REPLY_FOLLOW_UP`) ended in. `replied` is a
+#: `send_reply` that passed the guards and was held (the flush may still
+#: refuse it, and a dry run posts nothing); `silent` is nothing held;
+#: `timed_out` / `failed` is nothing held because the invocation hit its
+#: timeout or raised after the follow-up began.
+FollowUpOutcome = Literal["replied", "silent", "timed_out", "failed"]
+FOLLOW_UP_OUTCOMES: tuple[str, ...] = get_args(FollowUpOutcome)
+
+#: `nora_summons_intake_total`'s `outcome` label: what became of one `summons`
+#: event from the bridge's SSE stream. `queued` reached the consumer's inbox;
+#: `disabled` arrived while `[social.instagram.summons]` is off and was
+#: dropped; `malformed` failed to parse (fail closed: no row, no answer);
+#: `overflow` is an OLDER queued card pushed out of the full inbox by a newer
+#: one. DERIVED, so the help text and the increments cannot disagree.
+IntakeOutcome = Literal["queued", "disabled", "malformed", "overflow"]
+INTAKE_OUTCOMES: tuple[str, ...] = get_args(IntakeOutcome)
 
 #: The longest reply the bridge accepts (its `MaxCommentRunes`, Instagram's
 #: own comment limit). A Python `str`'s length is its code-point count, which
 #: is what the bridge's `utf8.RuneCountInString` counts.
 MAX_COMMENT_CHARS = 2200
 
-#: How many of a post's items are listed by url. A carousel can hold 20; the
-#: rest are counted, never silently dropped.
-MAX_ITEMS_SHOWN = 5
+#: How many of a post's items she is shown, and every one of them is READ
+#: before her turn (`nora.app.summons`: `media_fetch` itself, through the
+#: `instagram_read` mechanism). A carousel can hold 20; the rest are counted,
+#: never silently dropped, and never read: four looks is one wave of
+#: `READ_CONCURRENCY`, so a carousel costs no more wall time than one reel.
+MAX_ITEMS_SHOWN = 4
+
+#: What looking at one item came to (`ItemReading.state`):
+#:
+#: * `seen` — read; `text` says what it shows, and a video's `coverage`
+#:   sentence says how much of it was watched when that was not all of it;
+#: * `withheld` — read, and what it shows carries what looks like a phone
+#:   number or ID, so the words are not passed on (`media_fetch`'s screen);
+#: * `unreadable` — the look failed, ran out of time, or never got to start:
+#:   she is told it could not be read, never left to guess;
+#: * `too_long`, `unknown_length`, `over_video_cap` — a video the reading
+#:   does not open by design (longer than one reading window, a post video
+#:   with no stated length, or past the per-post video cap), said so.
+ItemReadState = Literal[
+    "seen", "withheld", "unreadable", "too_long", "unknown_length", "over_video_cap",
+]
+ITEM_READ_STATES: tuple[str, ...] = get_args(ItemReadState)
+
+#: A reading's own ceiling in the render (`render._READING_MAX_CHARS`, the
+#: same number `instagram_read` keeps): one reel's reading fits, and the
+#: coverage sentence is never the part that is cut.
+READING_MAX_CHARS = 1500
 
 #: How many comments beside the summons are kept, nearest first.
 NEAREST_COMMENTS = 3
 
 
 @dataclass(frozen=True)
-class Mention:
-    """One comment-mention from `GET /mentions`. `at` is `None` when the
-    bridge omitted it, which is "unknown" and never an epoch."""
+class SummonsCard:
+    """One `summons` event from the bridge's SSE stream: somebody's comment
+    (or caption) tagged her, and Instagram told her so as a DM card from the
+    commenter. Parsed ONCE, by `nora.platform.instagram.summons`.
 
-    comment_id: str
-    media_id: str
+    The card does NOT carry the comment's id (measured 2026-09-26): the
+    occasion finds it by reading the post's comments and matching
+    `sender_igid` and her word-bounded `@handle` (`summons_comment`).
+    `resolved` is False when the bridge could not name the post (its thread
+    refetch failed, or carried no `target_url`); then `shortcode` and
+    `media_id` are empty, and the occasion records it and never answers.
+    `sender_igid` is "" when the wire's was not a decimal id, which matches
+    nobody (the summoner gate fails closed). `text` is the comment text as the
+    card showed it, never shown to her: she reads the comment itself.
+    """
+
+    message_id: str
+    room_id: str
+    sender_igid: str
+    sender_username: str
+    text: str
     shortcode: str
-    author_igid: str
-    author_username: str
-    at: datetime | None
+    media_id: str
+    received_at: datetime
+    resolved: bool
+
+
+class SummonsSink(Protocol):
+    """Where the Instagram adapter hands a parsed summons card: the one seam
+    between the platform layer, which reads the SSE stream, and the summons
+    occasion, which is composed above it. The production answer is
+    `nora.app.summons_inbox.SummonsInbox`. Neither method may block or raise:
+    the SSE loop calls them inline."""
+
+    def offer(self, card: SummonsCard) -> None: ...
+
+    def malformed(self) -> None: ...
+
+
+@dataclass(frozen=True)
+class ItemReading:
+    """What one item of the post SHOWS, or why that is not known
+    (`ItemReadState`). `text` is a vision model's words about bytes a
+    stranger posted: untrusted, so it is rendered only inside the post's
+    `social_post` block. It is present exactly when `state` is `seen`."""
+
+    state: ItemReadState
+    text: str | None = None
+    coverage: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.state not in ITEM_READ_STATES:
+            raise ValueError(f"unknown item reading state {self.state!r}")
+        if (self.state == "seen") != bool(self.text and self.text.strip()):
+            raise ValueError("a reading carries text exactly when it was seen")
+        if self.coverage is not None and self.state != "seen":
+            raise ValueError("only a reading that was seen carries a coverage sentence")
 
 
 @dataclass(frozen=True)
 class PostItem:
+    """One image or video of the post. `reading` is `None` until the item has
+    been looked at (`with_readings`); a context built with no reading at all
+    renders each item as not read, never as if it had been."""
+
     kind: str
     url: str
     duration_seconds: float | None = None
+    reading: ItemReading | None = None
 
 
 @dataclass(frozen=True)
@@ -113,14 +205,16 @@ class SummonsPost:
 
 @dataclass(frozen=True)
 class Comment:
-    """One comment. The author's igid is not kept: nothing she reads needs it
-    and a model must never see one (R-18)."""
+    """One comment. `author_igid` is kept for ONE use, finding the summoner's
+    own comment (`summons_comment`); it never reaches a `ThreadRow`, so a
+    model never sees one (R-18). "" when the wire's was not a decimal id."""
 
     id: str
     parent_id: str | None
     author: str | None
     text: str
     at: datetime | None
+    author_igid: str = ""
 
 
 @dataclass(frozen=True)
@@ -141,7 +235,9 @@ class SummonsContext:
     gate's business, not something strangers' thread needs to hear about.
     `thread` is oldest first and keeps the summons plus its nearest
     neighbours; `elided_comments` and `elided_items` count what was left out,
-    so an absence is never silent.
+    so an absence is never silent. Each of `items` carries its `reading` once
+    the occasion has looked at it (`with_readings`), BEFORE the turn: what a
+    post shows is part of what she reads, not something she must go and get.
     """
 
     summons_id: str
@@ -160,10 +256,13 @@ class SummonsContext:
 
 @dataclass(frozen=True)
 class SummonsRow:
-    """One ledger row, as the store reads it back."""
+    """One ledger row, as the store reads it back. `comment_id` is `None`
+    until the summoner's comment is found on the post (`bind_comment`); an
+    `unresolved`, `stale` or `ignored_summoner` row never gets one."""
 
     id: UUID
-    comment_id: str
+    message_id: str
+    comment_id: str | None
     media_id: str
     shortcode: str
     author_igid: str
@@ -182,9 +281,12 @@ class SummonsRow:
 class SummonsLedger(Protocol):
     """One reply per summons, claimed BEFORE the model runs.
 
-    `claim` is the idempotency line: `INSERT ... ON CONFLICT (comment_id) DO
-    NOTHING`, so of two concurrent claims on one comment exactly one gets an
-    id and the other gets `None` and stops.
+    `claim` is the idempotency line: `INSERT ... ON CONFLICT (message_id) DO
+    NOTHING`, keyed on the summons CARD's message id, so of two concurrent
+    claims on one card exactly one gets an id and the other gets `None` and
+    stops. `bind_comment` then records which comment the card resolved to,
+    once, and only if no other row holds that comment (`comment_id` stays
+    UNIQUE): two cards that resolve to one comment get one answer.
 
     `finish` moves a row only out of an `OPEN_STATES` state and answers
     whether it did: a final row is final, so a second writer (an old
@@ -197,9 +299,13 @@ class SummonsLedger(Protocol):
     """
 
     async def claim(
-        self, *, comment_id: str, media_id: str, shortcode: str,
+        self, *, message_id: str, media_id: str, shortcode: str,
         author_igid: str, mention_at: datetime | None, mode: str, now: datetime,
     ) -> UUID | None: ...
+
+    async def bind_comment(
+        self, summons_id: UUID, comment_id: str, *, now: datetime,
+    ) -> bool: ...
 
     async def finish(
         self, summons_id: UUID, state: str, *, now: datetime,
@@ -209,8 +315,6 @@ class SummonsLedger(Protocol):
     ) -> bool: ...
 
     async def take_for_flush(self, summons_id: UUID, *, now: datetime) -> bool: ...
-
-    async def seen(self, comment_ids: tuple[str, ...]) -> frozenset[str]: ...
 
     async def awaiting_flush(self) -> SummonsRow | None: ...
 
@@ -224,12 +328,64 @@ class SummonsLedger(Protocol):
 # ---- building the context -------------------------------------------------------
 
 
+def _handle_pattern(handle: str) -> re.Pattern[str]:
+    """Her `@handle` as a WHOLE word, case-insensitive. Not preceded by a
+    username character (`me@noraexample` is not a tag), and not followed by
+    one either: `@noraexample2` and `@noraexample.x` are somebody else. A
+    trailing `.` that ends a sentence is punctuation, since no username ends
+    in one.
+
+    `re.ASCII` is load-bearing: case folding is ASCII-only, as the bridge's is.
+    Without it, Unicode folding matches a dotless i (U+0131) or a dotted
+    capital I (U+0130) against `i`, and a look-alike of her handle spelled
+    with one (somebody else's) would read as hers."""
+    return re.compile(
+        rf"(?<![A-Za-z0-9._])@{re.escape(handle)}(?![A-Za-z0-9_]|\.[A-Za-z0-9_])",
+        re.IGNORECASE | re.ASCII,
+    )
+
+
+def tags_handle(text: str, handle: str) -> bool:
+    """Whether `text` tags `@handle` as a whole word (`_handle_pattern`)."""
+    return bool(handle) and _handle_pattern(handle).search(text) is not None
+
+
 def question_of(text: str, handle: str) -> str:
     """The summons comment with every `@handle` removed, whitespace collapsed.
     Case-insensitive, and only as a whole handle: `@noraexample2` is somebody
     else."""
-    pattern = re.compile(rf"@{re.escape(handle)}(?![A-Za-z0-9._])", re.IGNORECASE)
-    return " ".join(pattern.sub(" ", text).split())
+    return " ".join(_handle_pattern(handle).sub(" ", text).split())
+
+
+def summons_comment(
+    comments: tuple[Comment, ...], *, igid: str, handle: str, text: str = "",
+) -> Comment | None:
+    """The comment a summons card stands for: written by the card's SENDER
+    (`author_igid == igid`, both non-empty) AND tagging her by `@handle`.
+
+    Of several, the one whose text EQUALS the card's `text` (the card shows
+    the comment's own text; whitespace-normalised, otherwise exact) is
+    preferred, so a card is answered under the comment it was sent for. Only
+    when none equals it is the newest taken (a card is sent for the comment
+    just written); one with no time sorts oldest. `None` when none matches:
+    she does not answer a summons whose comment she cannot find, and she
+    never answers one that somebody else wrote."""
+    if not igid:
+        return None
+    matches = [
+        (i, c) for i, c in enumerate(comments)
+        if c.author_igid == igid and tags_handle(c.text, handle)
+    ]
+    wanted = " ".join(text.split())
+    exact = [pair for pair in matches if wanted and " ".join(pair[1].text.split()) == wanted]
+    pool = exact or matches
+    if not pool:
+        return None
+    return max(
+        pool,
+        key=lambda pair: (pair[1].at is not None,
+                          pair[1].at or datetime.min.replace(tzinfo=UTC), pair[0]),
+    )[1]
 
 
 def nearest_thread(
@@ -261,29 +417,48 @@ def nearest_thread(
 
 
 def build_context(
-    *, summons_id: str, now: datetime, mention: Mention, summoned_at: datetime,
-    handle: str, post: SummonsPost, comments: tuple[Comment, ...],
+    *, summons_id: str, now: datetime, comment_id: str, summoner: str | None,
+    summoned_at: datetime, handle: str, post: SummonsPost,
+    comments: tuple[Comment, ...],
 ) -> SummonsContext | None:
     """Comprehend once. `None` when the summons comment is not among the
     comments read (design 19 rule 6: no reply to what she cannot read).
-    `summoned_at` is the mention's own time, passed separately because a
-    mention with none is stale before this is ever called."""
-    found = nearest_thread(comments, mention.comment_id)
+    `comment_id` is the comment `summons_comment` found; `summoned_at` is the
+    card's own time; `summoner` the card sender's username."""
+    found = nearest_thread(comments, comment_id)
     if found is None:
         return None
     thread, elided = found
-    summons = next(c for c in comments if c.id == mention.comment_id)
+    summons = next(c for c in comments if c.id == comment_id)
     shown = post.items[:MAX_ITEMS_SHOWN]
     return SummonsContext(
         summons_id=summons_id, now=now,
         question=question_of(summons.text, handle),
-        summoner=mention.author_username or summons.author,
+        summoner=summoner or summons.author,
         summoned_at=summoned_at,
         post_author=post.author, caption=post.caption, post_taken_at=post.taken_at,
         items=shown,
         elided_items=len(post.items) - len(shown) + (1 if post.more else 0),
         thread=thread, elided_comments=elided,
     )
+
+
+def with_readings(
+    ctx: SummonsContext, readings: tuple[ItemReading, ...], *, now: datetime,
+) -> SummonsContext:
+    """`ctx` with what each of its items shows, one reading per item in the
+    context's own order, and `now` moved to when the reading ENDED: the read
+    can take minutes, and every age she is shown is measured from `now`. A
+    count that does not match is a wiring bug and raises: a reading pinned to
+    the wrong item is worse than none."""
+    if len(readings) != len(ctx.items):
+        raise ValueError(
+            f"{len(readings)} reading(s) for {len(ctx.items)} item(s): one per item",
+        )
+    return replace(ctx, now=now, items=tuple(
+        replace(item, reading=reading)
+        for item, reading in zip(ctx.items, readings, strict=True)
+    ))
 
 
 # ---- rendering ------------------------------------------------------------------
@@ -319,6 +494,39 @@ def _who(name: str | None) -> str:
     return f"@{name}" if name else "someone"
 
 
+#: What an item line says when there is no reading to show, by state. FACTS
+#: ONLY: no instruction to her and no pointer to a tool. What she does with
+#: an unread item is `public/conduct.md`'s to say, not this render's (a
+#: room's wording here once told her to "say you couldn't see it", which on
+#: a public surface is the doctrine's call, not a data line's).
+_NOT_SEEN: dict[str, str] = {
+    "withheld": "not shown: what it shows contains what looks like a phone number or ID",
+    "unreadable": "could not be read",
+    "too_long": "not read: longer than one reading window",
+    "unknown_length": "not read: a video of unknown length",
+    "over_video_cap": "not read: past the number of videos read per post",
+}
+
+
+def _clip(text: str, limit: int) -> str:
+    """One line, brackets turned round (so it cannot forge a media marker,
+    `render._clean`'s rule), clamped to `limit` and marked when cut."""
+    line = _one_line(text).replace("[", "(").replace("]", ")")
+    return line if len(line) <= limit else line[:limit].rstrip() + " …"
+
+
+def _reading_line(reading: ItemReading | None) -> str:
+    """What an item shows, or why that is not known. A video's coverage
+    sentence is a suffix the clamp never cuts: a partial read that loses its
+    caveat reads as whole (#117)."""
+    if reading is None:
+        return "not read"
+    if reading.state == "seen" and reading.text:
+        suffix = f" {_clip(reading.coverage, 240)}" if reading.coverage else ""
+        return f"shows: {_clip(reading.text, READING_MAX_CHARS)}{suffix}"
+    return _NOT_SEEN.get(reading.state, _NOT_SEEN["unreadable"])
+
+
 def render_summons(ctx: SummonsContext) -> str:
     """The ONE rendering of a summons: what she is reading, then the post, the
     thread and the question, each stranger-written part wrapped as a
@@ -330,18 +538,23 @@ def render_summons(ctx: SummonsContext) -> str:
         "you send is posted once, as a public reply to that comment, where "
         "strangers read it. Saying nothing is a complete answer. It is now "
         f"{now.strftime('%Y-%m-%d %H:%M')} UTC. {_who(ctx.summoner)} tagged "
-        f"you {age(ctx.summoned_at, now)}."
+        f"you {age(ctx.summoned_at, now)}. Under each item of the post is "
+        "what a reading of it before this turn found, or that it was not read."
     )
     post_lines = [
         f"posted by {_who(ctx.post_author)} "
         f"{age(_epoch(ctx.post_taken_at), now)}",
         f"caption: {_one_line(ctx.caption) or '(none)'}",
     ]
+    # No "item N" label and no URL: a live dry run passed "item 1" to
+    # media_fetch as if it were a media code (2026-09-26), and the pre-read
+    # has already looked at each one, so a link invites a second, wrong look.
     for i, item in enumerate(ctx.items, 1):
-        dur = (f", {item.duration_seconds:g}s" if item.duration_seconds is not None else "")
-        post_lines.append(f"item {i}: {item.kind}{dur} {item.url}")
+        dur = (f", {item.duration_seconds:g} seconds" if item.duration_seconds is not None else "")
+        post_lines.append(f"the post's {_ordinal(i)} {item.kind}{dur}:")
+        post_lines.append(f"  {_reading_line(item.reading)}")
     if ctx.elided_items:
-        post_lines.append(f"({ctx.elided_items} more item(s) not listed)")
+        post_lines.append(f"({ctx.elided_items} more item(s) not listed or read)")
     thread_lines = [
         "Oldest first; the last line is the newest.",
     ]
@@ -370,9 +583,18 @@ def render_summons(ctx: SummonsContext) -> str:
 @dataclass(frozen=True)
 class SummonsOutcome:
     """What one run did: the ledger state it left, the bridge code behind it
-    when there was one, and whether the run reached the bridge beyond the
-    mention (so the poller knows whether this tick's one read is spent)."""
+    when there was one, and whether the run called the bridge at all. The
+    consumer backs off on a `needs_human` or 503 answer and clears its backoff
+    only on a run that reached the bridge and was answered: a card filed
+    without a bridge call (unresolved, stale, a stranger) says nothing about
+    the session."""
 
     state: str
     bridge_code: str | None = None
-    spent_tick: bool = False
+    reached_bridge: bool = False
+
+
+def _ordinal(n: int) -> str:
+    """1 -> "first" ... a word, never a number that reads like a code."""
+    words = ("first", "second", "third", "fourth", "fifth", "sixth")
+    return words[n - 1] if 0 < n <= len(words) else f"number {n}"

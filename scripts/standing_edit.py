@@ -61,6 +61,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import dataclasses
 import difflib
 import os
 import sys
@@ -140,15 +141,13 @@ def render_diff(*, before_body: str, new_body: str) -> str:
 
 
 def _build_after(before: Standing, new_body: str, *, now_ms: int) -> Standing:
+    """`before` with the new body and time and NOTHING else changed — a
+    `replace`, not a field-by-field rebuild. The rebuild this replaced named
+    every field but `working_set`, so it wrote an empty working set over
+    whatever the room held, which `write_if_unchanged` refuses: every edit of
+    a room with a working set raised instead of landing (#541)."""
     try:
-        return Standing(
-            platform=before.platform,
-            conversation_id=before.conversation_id,
-            body=new_body,
-            fold_count=before.fold_count,
-            updated_at=now_ms,
-            last_folded_row_id=before.last_folded_row_id,
-        )
+        return dataclasses.replace(before, body=new_body, updated_at=now_ms)
     except ValueError as exc:
         raise EditRefusedError(str(exc)) from exc
 

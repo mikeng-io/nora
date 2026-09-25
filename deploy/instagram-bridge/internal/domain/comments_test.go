@@ -2,6 +2,7 @@ package domain
 
 import (
 	"errors"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -31,25 +32,84 @@ func TestCanonicalMediaID(t *testing.T) {
 	}
 }
 
-// The window's edges: served exactly 7 days ago is still a summons, a moment
-// later it is not, and a serve "in the future" (a clock that went back) is not.
-func TestIsSummonsWindowEdges(t *testing.T) {
-	now := time.Date(2026, 9, 25, 0, 0, 0, 0, time.UTC)
-	id, _ := ParseCommentID("5")
-	l := NewCommentLedger()
-	l.RecordServed(id, "9", now.Add(-ServedWindow))
-	if !l.IsSummons(id, "9", now) {
-		t.Error("exactly at the window edge should still be a summons")
+func summonsOf(t *testing.T, mid, media, sender string, at time.Time) Summons {
+	t.Helper()
+	n, err := strconv.ParseUint(media, 10, 64)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if l.IsSummons(id, "9", now.Add(time.Nanosecond)) {
+	m, ok := MediaIDOf(n)
+	if !ok {
+		t.Fatal("media id zero")
+	}
+	igid, err := ParseIGID(sender)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return Summons{MessageID: mid, Media: m, Sender: igid, ReceivedAt: at}
+}
+
+// The window's edges: received exactly 7 days ago is still a live summons, a
+// moment later it is not, a record dated after now (a clock that went back)
+// is not, and another post's summons names nobody on this one.
+func TestSummonsSendersWindowEdges(t *testing.T) {
+	now := time.Date(2026, 9, 25, 0, 0, 0, 0, time.UTC)
+	l := NewCommentLedger()
+	l.RecordSummons(summonsOf(t, "mid.$a", "9", "0500", now.Add(-ServedWindow)))
+	if got := l.SummonsSenders("9", now); !got["500"] || len(got) != 1 {
+		t.Errorf("exactly at the window edge: senders %v, want the canonical 500", got)
+	}
+	if got := l.SummonsSenders("9", now.Add(time.Nanosecond)); len(got) != 0 {
 		t.Error("past the window is still a summons")
 	}
-	if l.IsSummons(id, "8", now) || l.IsSummons(id, "", now) {
+	if len(l.SummonsSenders("8", now)) != 0 || len(l.SummonsSenders("", now)) != 0 {
 		t.Error("another media is a summons")
 	}
 	l2 := NewCommentLedger()
-	l2.RecordServed(id, "9", now.Add(time.Hour))
-	if l2.IsSummons(id, "9", now) {
-		t.Error("a serve dated after now is a summons")
+	l2.RecordSummons(summonsOf(t, "mid.$a", "9", "500", now.Add(time.Hour)))
+	if len(l2.SummonsSenders("9", now)) != 0 {
+		t.Error("a summons dated after now is live")
+	}
+}
+
+// The first record of a card is kept: a replay of the same card does not
+// move its window or change its sender.
+func TestRecordSummonsKeepsTheFirstRecord(t *testing.T) {
+	now := time.Date(2026, 9, 25, 0, 0, 0, 0, time.UTC)
+	l := NewCommentLedger()
+	if !l.RecordSummons(summonsOf(t, "mid.$a", "9", "500", now)) {
+		t.Fatal("a new card was not recorded")
+	}
+	if l.RecordSummons(summonsOf(t, "mid.$a", "9", "600", now.Add(time.Hour))) {
+		t.Error("a replayed card was recorded again")
+	}
+	if got := l.Summonses["mid.$a"]; got.SenderIGID != "500" || !got.ReceivedAt.Equal(now) {
+		t.Errorf("record = %+v, want the first", got)
+	}
+	l.Prune(now.Add(ServedWindow + time.Second))
+	if len(l.Summonses) != 0 {
+		t.Error("a summons older than the window survived a prune")
+	}
+}
+
+// The one word-bounded @mention test.
+func TestMentionsHandleIsWordBounded(t *testing.T) {
+	for text, want := range map[string]bool{
+		"@noraexample is this true": true,
+		"is this true @NoraExample": true,
+		"(@noraexample)":            true,
+		"@noraexample_fan hi":       false,
+		"@noraexample.x hi":         false,
+		"mail@noraexample hi":       false,
+		"noraexample hi":            false,
+		"":                          false,
+		"@nora @noraexample":        true,
+	} {
+		if got := MentionsHandle(text, "noraexample"); got != want {
+			t.Errorf("MentionsHandle(%q) = %v, want %v", text, got, want)
+		}
+	}
+	if MentionsHandle("@ hi", "") {
+		t.Error("an empty own username matched")
 	}
 }

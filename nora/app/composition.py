@@ -58,6 +58,7 @@ from nora.agent.telemetry import (
 from nora.agent.telemetry import timed as telemetry_timed
 from nora.agent.tools import OriginRoom
 from nora.agent.whereis import Circle, check_disclosure_invariant, circles_from_persons
+from nora.app.summons_inbox import SummonsInbox
 from nora.app.voice_events import VoiceEventConsumer
 from nora.config import Config, DreamBudgetConfig
 from nora.doctrine.loader import Doctrine, DoctrineError, DoctrineStore
@@ -1479,6 +1480,16 @@ async def build_dependencies(
                 "channel will never be announced into",
                 convo.label or convo.primary_id, convo.music_channel, music_guild,
             )
+    # The public Instagram summons' intake (design/instagram-adoption/19, the
+    # 2026-09-26 intake): the Instagram adapter hands every `summons` SSE event
+    # here. ALWAYS built, so a card that arrives while the summons is off is
+    # counted `disabled` rather than silently absent; `enabled` only under BOTH
+    # `[social.instagram] enabled` and `[social.instagram.summons] enabled`,
+    # exactly when the consumer below is spawned to drain it.
+    summons_wired = bool(
+        cfg.social.instagram.enabled and cfg.social.instagram.summons.enabled
+    )
+    summons_inbox = SummonsInbox(enabled=summons_wired, metrics=metrics)
     try:
         registry = await AdapterRegistry.from_config(
             cfg.platforms, metrics=metrics, discord_token=discord_token,
@@ -1487,6 +1498,7 @@ async def build_dependencies(
             voice_hub=voice_hub,
             voice_guild_ids=voice_guild_ids,
             resolve_music_channel=resolve_music_channel,
+            instagram_summons=summons_inbox,
         )
     except AdapterRegistryError as exc:
         raise StartupError(str(exc)) from exc
@@ -1888,9 +1900,6 @@ async def build_dependencies(
     # Its own, not the participation one, because it is wired on its own
     # flags and its reasoning effort is the tag lane's (she was asked).
     # `skills_dir=None`: runtime skills are a tool outside `PUBLIC_GRANT`.
-    summons_wired = bool(
-        cfg.social.instagram.enabled and cfg.social.instagram.summons.enabled
-    )
     summons_runner: LiveAgentRunner | None = None
     if summons_wired:
         summons_runner = LiveAgentRunner(
@@ -3165,16 +3174,21 @@ async def build_dependencies(
         # loop, and `BackgroundTasks` holds the strong reference.
         background.spawn(compute_poller.run())
 
-    # The public Instagram summons poller (design/instagram-adoption/19),
-    # gated on BOTH `[social.instagram] enabled` and its own `summons.enabled`
-    # (the config refuses the second without the first). It needs no
+    # The public Instagram summons consumer (design/instagram-adoption/19,
+    # the 2026-09-26 intake), gated on BOTH `[social.instagram] enabled` and
+    # its own `summons.enabled` (the config refuses the second without the
+    # first) — the same `summons_wired` that enabled the inbox above, so a
+    # queued card always has a consumer. It takes cards off the inbox the
+    # Instagram adapter fills from the bridge's SSE stream, one at a time;
+    # there is no poll (the notification feed never carried these mentions,
+    # measured), so `summons.poll_seconds` is read by nothing. It needs no
     # `fire_path`: a summons speaks into no room. Spawned, never awaited;
     # `cancel_all` stops it at shutdown with every other background loop.
     if summons_wired and summons_runner is not None and social_subjects is not None:
         from datetime import timedelta
 
         from nora.app.summons import SummonsOccasion
-        from nora.app.summons_poller import SummonsPoller
+        from nora.app.summons_consumer import SummonsConsumer
         from nora.infra.social.summons_client import InstagramSummonsClient
         from nora.infra.sql.summons import SqlSummonsLedger
 
@@ -3184,8 +3198,8 @@ async def build_dependencies(
             timeout_seconds=cfg.social.instagram.timeout_seconds,
         )
         summons_ledger = SqlSummonsLedger(engine)
-        summons_poller = SummonsPoller(
-            client=summons_client,
+        summons_consumer = SummonsConsumer(
+            inbox=summons_inbox,
             occasion=SummonsOccasion(
                 client=summons_client, ledger=summons_ledger,
                 summoners=social_subjects, persons=persons,
@@ -3196,14 +3210,19 @@ async def build_dependencies(
                 max_age=timedelta(minutes=summons_cfg.max_age_minutes),
                 limits=limits, timeout_seconds=tier.timeout_seconds, clock=clock,
             ),
-            ledger=summons_ledger, metrics=metrics,
-            poll_seconds=summons_cfg.poll_seconds, clock=clock,
+            ledger=summons_ledger, metrics=metrics, clock=clock,
         )
-        background.spawn(summons_poller.run())
-        log.info(
-            "instagram summons poller wired (mode=%s, every %.0fs)",
-            summons_cfg.mode, summons_cfg.poll_seconds,
-        )
+        background.spawn(summons_consumer.run())
+        log.info("instagram summons consumer wired (mode=%s)", summons_cfg.mode)
+        if "instagram" not in registry:
+            # The cards arrive on the MESSAGING adapter's SSE stream, so a
+            # summons needs `[platforms.instagram]` too. Said loudly rather
+            # than refused at load: the consumer idles harmlessly without it.
+            log.error(
+                "[social.instagram.summons] is enabled but [platforms.instagram] "
+                "is not: summons cards arrive on the Instagram adapter's event "
+                "stream, so no summons will ever be received",
+            )
 
     # The participation occasion (design/dreamer-agent-loop/35): trigger, then
     # dispatcher. Gated on BOTH the flag and a live `fire_path` — the same

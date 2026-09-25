@@ -249,7 +249,14 @@ PINNED: dict[str, tuple[int, str]] = {
     # `self-description` into identity.md on 2026-09-17. Its trigger and
     # not-for became the paragraph's opening scope, and it now ranks where
     # conduct does, below the situation block, where the skill ranked above.
-    "conduct": (32, "02d9ce20e6a76c4717c4c5eb9637c479d610c98471869a55bb99fa43f7088bf9"),
+    # v33 (2026-09-26, design/proposed/32-shared-media-register.md): one
+    # paragraph in «Follow the conversation». Something somebody shows her is
+    # already in front of them, and what she was given on it is for her own
+    # eyes: 16 of 18 tagged answers about shared media in the 14 days before
+    # opened by translating the vision reading back, item by item, to the
+    # person who had sent it. The tool notes were reframed in the same change;
+    # this reaches the answers that read only a transcript placeholder.
+    "conduct": (33, "b1c1de0176fe1f5fe872dab1c66305da8e8c8d37914365dea1c84954a3ea3296"),
     # NOT Nora's: the Relevance Gate's instruction, pinned here like any other
     # authored file so a silent edit to what the gate is told is impossible.
     # v5 (2026-09-10, issue #144): the digest v4 pointed at is not shipped —
@@ -297,18 +304,44 @@ PINNED: dict[str, tuple[int, str]] = {
     # moved the "quick and usually free" claim so that it read onto the UNREAD
     # lookup, which is the operation the file prices separately as always a real
     # look and a real wait. "Quiet is not a question" is back.
-    "constraints": (11, "b7269c4e154a7e06039340f9a7d3a017a121265a8e256cf3977ecedc8db9a49f"),
+    # v12 (2026-09-26): "# What you already know about a picture" moved out,
+    # verbatim, to rooms/pictures.md. It is room-chat mechanics (placeholders,
+    # the transcript, the full reading) and core/ also reaches the public
+    # summons, where a live dry-run trace carried it. Nothing else moved.
+    "constraints": (12, "b5dece41a71da212b0d9e1c47899e769c0efb83f6876fa54da0458e638a8a4ac"),
+    # v1 (2026-09-26): split out of constraints.md v11, see above. Body is
+    # byte-identical to the section it was; loaded for the four room occasions
+    # only, immediately before constraints (order 38).
+    "pictures": (1, "63ccbb4e9b38b54de7952fe455d1c9daf699e52376bd8f77732820b356b5a394"),
     # The public summons files (design/instagram-adoption/19), v1 (2026-09-25):
     # drafted for the operator to rewrite, loaded only on `applies_to="summons"`.
     # identity and constraints gained `summons` in `applies_to` and the public
     # names in their authority fields in the same change; neither is rendered,
     # so neither sha above moved and neither version was bumped.
-    "public-voice": (1, "45841e6dfd7037cd234ce71ed2f1137db96aba609d574a6413ea54e3bfff888b"),
+    # v2 (2026-09-26, operator direction: "it's NOT commenting, it's
+    # reporting"): a comment to the person, a sentence or two, no report
+    # framing, no lists; the language follows the comment.
+    # v3 (2026-09-26, operator: "reply like she always"): her own voice, no
+    # narrated checking, no taglines or punchlines, and never a dash.
+    "public-voice": (3, "0ffb503c7e70266092f85aa994e70bdc28b88c603f15db775c27d078cd327ab5"),
     # public-conduct v2 (2026-09-25, review of #545): "# Drawing something" is
     # deleted. `generate_image` is not in the summons' PUBLIC_GRANT (a comment
     # carries no image, design 19), so a section telling her when to draw
     # described a capability the occasion does not have.
-    "public-conduct": (2, "f27fa98dfa596e7a8ea865fc32c8094a243d5dd82b54b20c3272163b4556fc65"),
+    # v3 (2026-09-26): each claim the post makes gets its own check, and "found
+    # nothing" is only said of something actually looked for. A live dry-run
+    # summons called one named company unverifiable without ever searching it.
+    # v4 (2026-09-26): a citation is a full link a stranger can open or just
+    # the site's name, never a shortened one (a live reply cited a truncated
+    # stock-photo link); and "# What the post shows": the post's media was read
+    # before her turn, and an item marked not read has not been seen.
+    # v5 (2026-09-26): her own reading of a picture never overrules the sources,
+    # a lead's page is opened before she leans on it, and the reply goes to the
+    # person who tagged her. A live dry run called a photo "AI" from pixels
+    # while its own searches had found a named photographer.
+    # v6 (2026-09-26): sources named in words, no links (an Instagram comment
+    # does not make them clickable); not finding a source is not a finding.
+    "public-conduct": (6, "8931609a0af56d90a893ca058767e76ff9a4501be689059ad5134807659a7e12"),
     "public-constraints": (
         1, "88b47c480e3948332c8281cacb0efbdc9094176d16f1704593df8eaa8b735dfa",
     ),

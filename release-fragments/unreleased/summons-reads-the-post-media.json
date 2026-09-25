@@ -1,0 +1,13 @@
+{
+  "type": "fix",
+  "summary": "When someone tags Nora under an Instagram post, she now looks at the post's pictures and videos before she answers, instead of answering from the caption.",
+  "details": [
+    "Up to the first four items are looked at before her turn, the same way instagram_read reads a post's items, and what each shows is in what she reads. More items are counted, not read.",
+    "An item that cannot be read in time is shown to her as not read, so she says so rather than guessing; the answer is still given.",
+    "Nothing from the post is kept: no media, and no stored reading."
+  ],
+  "limitations": [
+    "A video longer than one reading window (90 seconds by default) is not read up front; she can still open it herself.",
+    "Reading a reel adds up to about two and a half minutes before she answers, and one video reading's model cost per video."
+  ]
+}

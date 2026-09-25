@@ -1,0 +1,12 @@
+{
+  "type": "change",
+  "summary": "When Nora is tagged about a picture, clip, reel, post or story somebody shared, she is told that what she has on it is her own notes and that the sender has usually seen it, so she answers with what she makes of it instead of describing it back.",
+  "details": [
+    "The note beside a media_fetch reading, and the Instagram post and story notes beside their shows lines, no longer ask her to report what the media shows; they say it is a vision model's notes for her, so she can see it too, and the hedge that it is how it looks and not fact stays.",
+    "The room doctrine (conduct.md v33) says the same for a picture she reads only from its description in the transcript: it is already in front of whoever sent it, and even asked what is in it, the answer is what she noticed, not the list."
+  ],
+  "limitations": [
+    "Not measured by an eval: the evidence is a read-back of 27 tagged turns about media over 14 days of live traces, recorded in design/proposed/32-shared-media-register.md, and the effect is to be read back live after deploy.",
+    "The vision readings themselves are unchanged, and so is the operator-only pictures.md that frames a transcript placeholder."
+  ]
+}

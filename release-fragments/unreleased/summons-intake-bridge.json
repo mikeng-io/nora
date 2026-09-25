@@ -1,0 +1,1 @@
+{"type": "none", "reason": "The instagram-bridge reports a summons card as its own event and verifies a reply's target comment itself; the summons is in dry run, so no user sees a change.", "details": [], "limitations": []}
