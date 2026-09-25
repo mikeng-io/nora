@@ -273,10 +273,15 @@ def _handle_pattern(handle: str) -> re.Pattern[str]:
     username character (`me@noraexample` is not a tag), and not followed by
     one either: `@noraexample2` and `@noraexample.x` are somebody else. A
     trailing `.` that ends a sentence is punctuation, since no username ends
-    in one."""
+    in one.
+
+    `re.ASCII` is load-bearing: case folding is ASCII-only, as the bridge's is.
+    Without it, Unicode folding matches a dotless i (U+0131) or a dotted
+    capital I (U+0130) against `i`, and a look-alike of her handle spelled
+    with one (somebody else's) would read as hers."""
     return re.compile(
         rf"(?<![A-Za-z0-9._])@{re.escape(handle)}(?![A-Za-z0-9_]|\.[A-Za-z0-9_])",
-        re.IGNORECASE,
+        re.IGNORECASE | re.ASCII,
     )
 
 
@@ -293,24 +298,31 @@ def question_of(text: str, handle: str) -> str:
 
 
 def summons_comment(
-    comments: tuple[Comment, ...], *, igid: str, handle: str,
+    comments: tuple[Comment, ...], *, igid: str, handle: str, text: str = "",
 ) -> Comment | None:
     """The comment a summons card stands for: written by the card's SENDER
-    (`author_igid == igid`, both non-empty) AND tagging her by `@handle`. The
-    newest when several match (a card is sent for the comment just written);
-    one with no time sorts oldest. `None` when none does: she does not answer
-    a summons whose comment she cannot find, and she never answers one that
-    somebody else wrote."""
+    (`author_igid == igid`, both non-empty) AND tagging her by `@handle`.
+
+    Of several, the one whose text EQUALS the card's `text` (the card shows
+    the comment's own text; whitespace-normalised, otherwise exact) is
+    preferred, so a card is answered under the comment it was sent for. Only
+    when none equals it is the newest taken (a card is sent for the comment
+    just written); one with no time sorts oldest. `None` when none matches:
+    she does not answer a summons whose comment she cannot find, and she
+    never answers one that somebody else wrote."""
     if not igid:
         return None
     matches = [
         (i, c) for i, c in enumerate(comments)
         if c.author_igid == igid and tags_handle(c.text, handle)
     ]
-    if not matches:
+    wanted = " ".join(text.split())
+    exact = [pair for pair in matches if wanted and " ".join(pair[1].text.split()) == wanted]
+    pool = exact or matches
+    if not pool:
         return None
     return max(
-        matches,
+        pool,
         key=lambda pair: (pair[1].at is not None,
                           pair[1].at or datetime.min.replace(tzinfo=UTC), pair[0]),
     )[1]

@@ -232,3 +232,34 @@ async def test_the_registry_hands_the_inbox_to_the_instagram_adapter():
     adapter = registry.get("instagram")
     assert isinstance(adapter, InstagramAdapter)
     assert adapter._summons is inbox
+
+
+async def test_a_summons_never_reaches_the_room_parser_even_if_it_would_accept_it(
+    monkeypatch,
+):
+    """The adapter's early return, pinned directly. Today `parse_event`
+    answers None for `kind: "summons"`, so the positive tests above would stay
+    green without the early return. Here the room parser is replaced by one
+    that ACCEPTS every event and records what it was handed: a summons must
+    never be among them, and so never reaches `on_message`. Falsified by
+    removing the early return: the summons is parsed and ingested as a room
+    message."""
+    import nora.platform.instagram.adapter as adapter_module
+
+    real = adapter_module.parse_event
+    handed: list[str] = []
+
+    def accepting(event):
+        handed.append(event.get("kind"))
+        return real(_message())
+
+    monkeypatch.setattr(adapter_module, "parse_event", accepting)
+    inbox = SummonsInbox(enabled=True, metrics=Metrics())
+    adapter = InstagramAdapter("http://unused", summons=inbox)
+    got = await _listen(
+        adapter, [_event(), _message()],
+        until=lambda got: len(got) >= 1 and len(inbox) >= 1,
+    )
+    assert handed == ["message"]
+    assert len(got) == 1
+    assert len(inbox) == 1

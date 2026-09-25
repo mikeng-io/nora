@@ -85,7 +85,7 @@ def _card(**kw: Any) -> SummonsCard:
     return SummonsCard(
         message_id=kw.get("message_id", MESSAGE_ID), room_id="340282366841710300",
         sender_igid=kw.get("igid", SUMMONER_IGID), sender_username="miles_example",
-        text="@noraexample is this really a heron?",
+        text=kw.get("text", "@noraexample is this really a heron?"),
         shortcode=SHORTCODE if resolved else "", media_id=MEDIA_ID if resolved else "",
         received_at=kw.get("at", NOW - timedelta(minutes=5)), resolved=resolved,
     )
@@ -237,17 +237,33 @@ async def test_a_tag_by_somebody_else_is_never_the_comment_she_answers(world):
     assert world.fake.posts() == []
 
 
-async def test_of_several_comments_by_the_summoner_the_newest_is_answered(world):
+async def test_with_no_exact_text_match_the_summoners_newest_tag_is_answered(world):
     newer = "17900000000000020"
     world.fake.comments = (200, {"items": [
         *default_comments(),
         comment_item(newer, "@noraexample and this one?", username="miles_example",
                      igid=SUMMONER_IGID, at="2026-09-25T11:57:00Z"),
     ]})
-    out = await world.occasion(mode="live", turns=_replies(REPLY)).run(_card())
+    out = await world.occasion(mode="live", turns=_replies(REPLY)).run(
+        _card(text="@noraexample (the card showed a truncated text)"),
+    )
     assert out.state == "published"
     assert world.fake.posts() == [{"text": REPLY, "reply_to_comment_id": newer}]
     assert (await world.row()).comment_id == newer
+
+
+async def test_the_comment_the_card_shows_is_answered_not_a_newer_one(world):
+    """The card's text is its comment's text: the summoner's older comment
+    that the card shows is answered, not their newer tag."""
+    newer = "17900000000000020"
+    world.fake.comments = (200, {"items": [
+        *default_comments(),
+        comment_item(newer, "@noraexample nvm", username="miles_example",
+                     igid=SUMMONER_IGID, at="2026-09-25T11:57:00Z"),
+    ]})
+    out = await world.occasion(mode="live", turns=_replies(REPLY)).run(_card())
+    assert out.state == "published"
+    assert world.fake.posts() == [{"text": REPLY, "reply_to_comment_id": SUMMONS_COMMENT}]
 
 
 async def test_a_handle_that_only_starts_with_hers_is_not_a_summons(world):

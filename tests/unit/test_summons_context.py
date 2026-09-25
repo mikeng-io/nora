@@ -168,6 +168,55 @@ def test_a_comment_tagging_her_by_anybody_else_is_never_the_summons():
     assert summons_comment(comments, igid="", handle="noraexample") is None
 
 
+def test_the_comment_whose_text_equals_the_cards_is_preferred_over_the_newest():
+    """A card shows its comment's own text. Two comments by the summoner tag
+    her; the card is for the OLDER one, so that is the one answered, not the
+    newest. Whitespace is normalised; nothing else is. Falsified by dropping
+    the exact-text preference: the newer comment is chosen."""
+    comments = (
+        _c("1", "@noraexample is this true", minutes_ago=10),
+        _c("2", "@noraexample nvm", minutes_ago=1),
+    )
+    found = summons_comment(
+        comments, igid=SUMMONER_IGID, handle="noraexample",
+        text="  @noraexample   is this true\n",
+    )
+    assert found is not None and found.id == "1"
+
+
+def test_with_no_exact_text_match_the_newest_is_the_summons():
+    comments = (
+        _c("1", "@noraexample is this true", minutes_ago=10),
+        _c("2", "@noraexample nvm", minutes_ago=1),
+    )
+    for text in ("@NoraExample is this true", "something else", ""):
+        found = summons_comment(
+            comments, igid=SUMMONER_IGID, handle="noraexample", text=text,
+        )
+        assert found is not None and found.id == "2", text
+
+
+def test_an_exact_text_match_by_somebody_else_is_never_chosen():
+    comments = (
+        _c("1", "@noraexample is this true", igid="20000009", author="someone"),
+        _c("2", "@noraexample nvm", minutes_ago=1),
+    )
+    found = summons_comment(
+        comments, igid=SUMMONER_IGID, handle="noraexample",
+        text="@noraexample is this true",
+    )
+    assert found is not None and found.id == "2"
+
+
+def test_an_empty_sender_igid_finds_nothing_even_against_an_empty_author_igid():
+    """A card whose sender igid was not decimal parses to "", and a comment
+    whose author igid was not decimal reads as "": the two must never match."""
+    comments = (_c("1", "@noraexample is this true", igid=""),)
+    assert summons_comment(
+        comments, igid="", handle="noraexample", text="@noraexample is this true",
+    ) is None
+
+
 def test_of_several_matching_comments_the_newest_is_the_summons():
     comments = (
         _c("1", "@noraexample first", minutes_ago=30),
@@ -189,6 +238,13 @@ def test_of_several_matching_comments_the_newest_is_the_summons():
     ("@noraexample_ hi", False),
     ("mail me@noraexample", False),
     ("noraexample is this true", False),
+    # ASCII-only case folding (re.ASCII), as the bridge's: a dotless i
+    # (U+0131) or a dotted capital I (U+0130) never folds into her handle,
+    # and a non-ASCII letter beside it is not a username character.
+    ("@noraruntıme", False),
+    ("ı@noraexample", True),
+    ("@noraexampleı", True),
+    ("@noraruntİme", False),
 ])
 def test_the_handle_is_matched_as_a_whole_word(text, tags):
     assert tags_handle(text, "noraexample") is tags

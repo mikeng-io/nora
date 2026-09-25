@@ -301,9 +301,12 @@ class SummonsOccasion:
             )
             return SummonsOutcome("unreadable", bridge_code=code, reached_bridge=True)
         # The card carries no comment id. The comment is the one the card's
-        # SENDER wrote that tags her: author igid AND @handle, newest first.
+        # SENDER wrote that tags her: author igid AND @handle; the one whose
+        # text equals the card's first, else the newest.
         # A comment by anybody else is never the one she answers under.
-        found = summons_comment(comments.value, igid=card.sender_igid, handle=self._handle)
+        found = summons_comment(
+            comments.value, igid=card.sender_igid, handle=self._handle, text=card.text,
+        )
         if found is None:
             await self._ledger.finish(
                 summons_id, "unreadable", now=now, person_id=person_id,
