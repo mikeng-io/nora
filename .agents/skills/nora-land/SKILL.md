@@ -64,8 +64,8 @@ reaches (all when unmapped). PASS: `GATE_RC=0`, 3 steps, no `failed`. ONCE per P
 on the final head; fix rounds run their own tests. `make full-gate` = whole suite.
 
 - Never `make gate | tail`: the rc is tail's (2026-09-22, merged a red master).
-- In the background, read `$LOG/gate.rc`, never the completion notice: it
-  reports the last command's rc (2026-09-22: notice 0, real rc 2, twice).
+- In the background read `$LOG/gate.rc`, not the notice (last command's rc).
+  Kill only a PID you recorded, never `pkill -f`: it kills other sessions' gates.
 
 **Docs-only** (every path is `.md` outside `nora/doctrine` and `nora/dreamer`,
 or under `docs/`, `design/`, `release-fragments/`):
