@@ -28,7 +28,7 @@ change_policy: operator-only
 ---
 You are reading, in this order: which room of a group chat this is (`<room>`) and, when it has
 one, what the room has become (`<culture>`); a batch of the room's new messages (`<batch>`);
-today (`<today>`); and the group's **notebook**: every entry still open, one `<open_note>` each,
+today (`<today>`); and the group's **notebook**: every entry still open, one `<candidate_open_note>` each,
 with what it is about, what is undecided, what would settle it, and its body as it was last
 written. A body in the notebook's sections reads as «The body» below describes; one that is not
 carries a `form` saying why. Your job is to notice anything in this batch that belongs in that
@@ -225,7 +225,7 @@ nothing.
   batch; an id outside the batch discards the whole proposal.
 
 An update looks exactly the same, with one more key. If the notebook you were shown lists a
-`<open_note>` whose `title` is `Wedding venue`, and this batch settles the venue:
+`<candidate_open_note>` whose `title` is `Wedding venue`, and this batch settles the venue:
 
 ```json
 {"verdicts": [

@@ -289,7 +289,7 @@ from nora.domain.notes import (
 from nora.domain.ports import CultureReader, DreamSink, Proposal
 from nora.domain.prompt import escape
 from nora.language.culture_render import read_culture, render_culture
-from nora.language.note_render import FORM_LEGACY, FORM_NOT_SHOWN, open_note_block
+from nora.language.note_render import FORM_LEGACY, FORM_NOT_SHOWN, open_note_parts
 from nora.obs.metrics import Metrics
 
 log = logging.getLogger("nora.notes.candidates")
@@ -715,7 +715,7 @@ _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     ("culture", 15, "turn"),
     ("batch", 20, "turn"),
     ("today", 25, "turn"),
-    ("open_note", 30, "turn"),
+    ("candidate_open_note", 30, "turn"),
 )
 
 #: `name -> (order, key)`, derived so no call site restates a row `_BLOCKS`
@@ -723,6 +723,18 @@ _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
 _ROW: dict[str, tuple[int, BlockKey]] = {
     name: (order, key) for name, order, key in _BLOCKS
 }
+
+
+def _candidate_open_note(
+    attrs: tuple[tuple[str, str], ...], body: str,
+) -> ContextBlock:
+    """One notebook entry as THIS pass's own type (design 42 S3): the line
+    renderer is note-merge's, the type is not, so `form` never reaches
+    merge's prompt."""
+    order, key = _ROW["candidate_open_note"]
+    return ContextBlock(
+        name="candidate_open_note", order=order, key=key, attrs=attrs, body=body,
+    )
 
 
 def _room_block(*, room: str, description: str | None) -> str:
@@ -1251,19 +1263,19 @@ class NoteCandidateAdaptor:
                 # A head this read could not reach falls through to the
                 # bodiless form: the title stays on the ballot, and an update
                 # naming it waits rather than restating what nobody read.
-                block = restamp(open_note_block(
+                block = _candidate_open_note(*open_note_parts(
                     note, head, room=room, now=newest, today=today,
                     form=None if in_schema_form(head.body) else FORM_LEGACY,
-                ), _ROW)
+                ))
                 body_ids = cited_ids_in(head.body)
                 if spent + len(block.render()) > NOTEBOOK_BODY_BUDGET_CHARS:
                     block = None
             if block is None:
                 bodiless.add(note.id)
-                block = restamp(open_note_block(
+                block = _candidate_open_note(*open_note_parts(
                     note, head, room=room, now=newest, today=today,
                     form=FORM_NOT_SHOWN, body=False,
-                ), _ROW)
+                ))
             else:
                 spent += len(block.render())
                 carried |= body_ids

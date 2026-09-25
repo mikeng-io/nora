@@ -53,9 +53,6 @@ _SHARED_BUILDER_NAMES = {
     # `nora.language.culture_render` (DEC-207): every occasion that carries a
     # room's account renders it through this one builder.
     "render_culture": "culture",
-    # `nora.language.note_render` (design 42 §8.6): note-merge and
-    # note-candidates render an open note, body and all, through this one.
-    "open_note_block": "open_note",
 }
 
 

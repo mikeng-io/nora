@@ -284,23 +284,25 @@ FORM_LEGACY = (
 FORM_NOT_SHOWN = "body not shown in this pass"
 
 
-def open_note_block(
+def open_note_parts(
     note: Note, head: NoteRevision | None, *, room: str, now: datetime, today: date,
     handle: str | None = None, changed: str | None = None,
     excerpt: int | None = None, form: str | None = None, body: bool = True,
-) -> ContextBlock:
-    """One open note as an `<open_note>` block: what it is about, what is
+) -> tuple[tuple[tuple[str, str], ...], str]:
+    """One open note's attributes and body: what it is about, what is
     undecided, what would settle it, and its body (design 42 §8.6).
 
-    ONE renderer for the two passes that read a note's body, so the type's
-    one description cannot drift between them. note-merge sets `handle` (its
-    `id`), `changed` and `excerpt`; note-candidates sets none of them, because
-    it names a note by title and restates what it reads, so the body is
-    rendered WHOLE. `form` is note-candidates' own field: it says a body is
-    not in the notebook's sections, or was left out of this pass for size
-    (`body=False`), so the input explains what it is showing. Every value is
-    escaped (R-13): titles and bodies are model-authored from what the group
-    typed.
+    ONE line renderer for the two passes that read a note's body, each
+    building its OWN block type from it: note-merge's `open_note`,
+    note-candidates' `candidate_open_note`. The type is not shared because a
+    type's `fields` render on every block of it, and note-candidates' `form`
+    must not change merge's prompt (a deviation from §8.6, recorded in design
+    42). note-merge sets `handle` (its `id`), `changed` and `excerpt`;
+    note-candidates sets none of them, because it names a note by title and
+    restates what it reads, so the body is rendered WHOLE. `form` says a body
+    is not in the notebook's sections, or was left out of this pass for size
+    (`body=False`). Every value is escaped (R-13): titles and bodies are
+    model-authored from what the group typed.
     """
     attrs: tuple[tuple[str, str], ...] = (
         *((("id", handle),) if handle is not None else ()),
@@ -324,12 +326,9 @@ def open_note_block(
         )
     else:
         shown_body = f"\nbody:\n{escape(text)}"
-    return ContextBlock(
-        name="open_note", attrs=attrs,
-        body=(
-            f"about: {escape(note.description)}\n"
-            f"undecided: {escape(note.uncertainty)}\n"
-            f"settled when: {escape(note.closing_condition)}"
-            f"{shown_body}"
-        ),
+    return attrs, (
+        f"about: {escape(note.description)}\n"
+        f"undecided: {escape(note.uncertainty)}\n"
+        f"settled when: {escape(note.closing_condition)}"
+        f"{shown_body}"
     )

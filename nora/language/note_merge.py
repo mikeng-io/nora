@@ -93,7 +93,7 @@ from nora.domain.notes import (
 )
 from nora.domain.ports import Proposal
 from nora.domain.prompt import escape
-from nora.language.note_render import open_note_block
+from nora.language.note_render import open_note_parts
 from nora.obs.metrics import Metrics
 
 log = logging.getLogger("nora.notes.merge")
@@ -628,7 +628,8 @@ def _note_block(
     """One open note, through the renderer note-candidates shares
     (`nora.language.note_render.open_note_block`, design 42 §8.6): this pass
     sets the handle, `changed` and the excerpt, and nothing else."""
-    return open_note_block(
+    attrs, body = open_note_parts(
         note, head, room=room, now=now, today=today, handle=handle,
         changed=changed, excerpt=excerpt,
-    ).render()
+    )
+    return ContextBlock(name="open_note", attrs=attrs, body=body).render()

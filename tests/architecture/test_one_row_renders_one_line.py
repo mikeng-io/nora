@@ -110,7 +110,7 @@ _NOT_A_LINE = {
         "renderer in this same module."
     ),
     (
-        "nora/language/note_render.py", "open_note_block", "escape(text)",
+        "nora/language/note_render.py", "open_note_parts", "escape(text)",
     ): (
         "`<open_note>`: one note's body, whole, inside its own element — a "
         "body is prose that runs to paragraphs, and `merged_body` depends on "
@@ -118,7 +118,7 @@ _NOT_A_LINE = {
         "to forge a row of."
     ),
     (
-        "nora/language/note_render.py", "open_note_block", "escape(text[:excerpt])",
+        "nora/language/note_render.py", "open_note_parts", "escape(text[:excerpt])",
     ): (
         "The same body cut to its first `excerpt` characters, for the same "
         "reason as the whole one above."

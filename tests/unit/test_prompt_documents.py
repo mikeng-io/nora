@@ -498,7 +498,7 @@ SHAPES = {
 <batch description fields>
   <m at from n room>
 <today description>
-<open_note anchor anchor_is description fields form revised room title written>""",
+<candidate_open_note anchor anchor_is description fields form revised room title written>""",
     "note_curator": """
 <today description>
 <note anchor anchor_is description fields id title>

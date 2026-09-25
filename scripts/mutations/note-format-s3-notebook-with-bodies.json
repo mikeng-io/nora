@@ -60,7 +60,7 @@
     "file": "nora/language/note_render.py",
     "old": "            f\"\\nbody (its first {excerpt} characters; it runs longer):\\n\"\n",
     "new": "            f\"\\nbody (first {excerpt} characters):\\n\"\n",
-    "target": "tests/unit/test_note_merge.py::test_merge_renders_an_open_note_byte_identical_but_for_the_shared_fields"
+    "target": "tests/unit/test_note_merge.py::test_merge_renders_an_open_note_byte_identical_to_master"
   },
   {
     "name": "the objective says an update is only what the batch changes",
@@ -75,5 +75,19 @@
     "old": "STORE_CALLS_PER_TICK = 14\n",
     "new": "STORE_CALLS_PER_TICK = 13\n",
     "target": "tests/architecture/test_dream_store_calls_are_declared.py"
+  },
+  {
+    "name": "note-candidates renders its OWN type, not merge's",
+    "file": "nora/language/note_candidates.py",
+    "old": "        name=\"candidate_open_note\", order=order, key=key, attrs=attrs, body=body,\n",
+    "new": "        name=\"open_note\", order=order, key=key, attrs=attrs, body=body,\n",
+    "target": "tests/unit/test_note_candidates.py::test_the_notebook_renders_every_open_note_with_its_body_whole"
+  },
+  {
+    "name": "note-merge keeps its own type",
+    "file": "nora/language/note_merge.py",
+    "old": "    return ContextBlock(name=\"open_note\", attrs=attrs, body=body).render()",
+    "new": "    return ContextBlock(name=\"candidate_open_note\", attrs=attrs, body=body).render()",
+    "target": "tests/unit/test_note_merge.py::test_merge_renders_an_open_note_byte_identical_to_master"
   }
 ]

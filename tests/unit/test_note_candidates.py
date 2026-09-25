@@ -191,7 +191,7 @@ def test_the_registered_blocks_are_exactly_what_this_pass_carries():
     names = {name for name, _order, _key in _BLOCKS}
     # Design 42 S3: the notebook is `today` + one `open_note` per open note,
     # bodies whole, replacing the title-and-summary `notes` index.
-    assert names == {"room", "culture", "batch", "today", "open_note"}
+    assert names == {"room", "culture", "batch", "today", "candidate_open_note"}
 
 
 async def test_inputs_is_blank_for_an_empty_batch():
@@ -249,7 +249,8 @@ async def test_the_notebook_renders_every_open_note_with_its_body_whole():
 
     rendered = await adaptor.inputs(key=SCOPE, batch=(_row(41, "hi", ts=NOW),))
 
-    assert "<today " in rendered and "<open_note " in rendered
+    assert "<today " in rendered and "<candidate_open_note " in rendered
+    assert "<open_note " not in rendered  # merge's type, never this pass's
     assert "<notes " not in rendered
     assert "- corner 199 [7]" in rendered  # never clipped
     assert 'title="Wedding venue"' in rendered
@@ -740,7 +741,7 @@ def test_the_objective_says_what_the_pass_reads_and_that_an_update_is_the_change
         Path(nora.__file__).parent / "dreamer" / "objectives" / "note-candidates.md"
     ).read_text(encoding="utf-8")
     opening = text.split("---", 2)[2].strip().split("\n\n", 1)[0]
-    assert "<open_note>" in opening and "<today>" in opening
+    assert "<candidate_open_note>" in opening and "<today>" in opening
     assert "titles and short summaries" not in text
     assert "**only what this batch changes**" in text
 
