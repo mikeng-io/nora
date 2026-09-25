@@ -8,8 +8,8 @@ description: >
   image generation, no memory or room tools), and a staging deliverer
   publishes exactly one reply to that summons through a threads-bridge
   sidecar that alone holds the token and alone can write. Polling first,
-  webhooks only on evidence. Blocked today: the token has no
-  threads_manage_mentions scope.
+  webhooks only on evidence. Phase 0 passed 2026-09-25: the token carries
+  threads_manage_mentions.
 status: proposed
 governance: operator-directed
 timestamp: '2026-09-25'

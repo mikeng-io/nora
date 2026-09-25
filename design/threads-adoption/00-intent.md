@@ -111,7 +111,7 @@ side, "read the Threads post a room member pasted", is still a
 Each of these holds unless the reading in 20 §"What would reopen it" says
 otherwise.
 
-## What blocks it today
+## What blocked it, and the token now
 
 **The token lacks the mention scope.** `THREAD_API_ACCESS_TOKEN` in norty's
 `.env` answered «API access blocked» (`OAuthException` code 200) on every
@@ -128,12 +128,21 @@ account restored. Read back from norty the same day:
 | `GET /keyword_search`, `GET /profile_lookup` | HTTP 500, empty body |
 | `GET /location_search` | code 10, «Application does not have permission» |
 
-The 500s are the endpoints whose scope the token was not granted.
-**`threads_manage_mentions` is the ingress of this whole design**, so the
-token has to be minted again with it, plus `threads_keyword_search` and
-`threads_profile_discovery` if the fact check is to search Threads itself.
-Phase 0 in 20 passes when `debug_token` lists `threads_manage_mentions` and
-`/mentions` answers 200.
+The 500s are the endpoints whose scope the token was not granted. A token
+from the dashboard's generator carried the same five scopes on a second try,
+so the token was minted again through the OAuth flow (authorize with an
+explicit `scope=` list, redirect `https://nora.67.zone/`, exchange, then
+`th_exchange_token` for 60 days). Read back 2026-09-25:
+
+| call | answer |
+|---|---|
+| `GET /debug_token` | the five above plus **`threads_manage_mentions`**; expires 2026-11-23 |
+| `GET /{uid}/mentions` | HTTP 200, `{"data":[]}` |
+| `GET /keyword_search`, `GET /profile_lookup` | still HTTP 500: both were requested, and neither was granted |
+
+**Phase 0 passes.** The ingress permission is on the token. Keyword search
+and profile discovery are not, and nothing in this design depends on them:
+the fact check uses `web_search`.
 
 **App Review is the second gate, and it is not needed to start.** Without
 Advanced Access, `mentions` returns only mentions by tester accounts, reads
