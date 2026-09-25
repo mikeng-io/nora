@@ -1,7 +1,7 @@
 ---
 type: design
-title: "Study: a Standing fold drops an open, dated plan about one fold in twenty"
-description: "Read-only study of 206 consecutive Standing revisions in production. A fold is not supposed to drop a plan still open and still ahead of it, but 10 did, 5 of them substantive. The same afternoon plan was lost twice, in two rooms, three days apart. The 1200-character budget is not the cause. Every fold rewrites the whole paragraph, including folds whose only new input is the turn's own steps."
+title: "Study: Standing folds drop open, dated plans, at least 10 in 206"
+description: "Read-only study of 206 consecutive Standing revisions in production. A fold is not supposed to drop a plan still open and still ahead of it; at least 10 did, 5 of them substantive, clustered in one room on one day. The same afternoon plan was lost twice, in two rooms, three days apart. The 1200-character budget is not the cause. Most folds whose only new input was the turn's own steps still rewrote the paragraph almost entirely."
 tags: [nora, standing, fold, plans, retention, measurement]
 timestamp: 2026-09-25
 status: measured
@@ -30,7 +30,8 @@ that rule against production folds instead of the corpus.
 ## 1. Method
 
 - **Population.** Every pair of consecutive `standing_revision` rows per room
-  on norty: 214 revisions, 206 pairs, 8 rooms, 2026-09-20 to 09-25. Each pair
+  on norty: 214 revisions, 206 pairs, 8 rooms, 2026-09-20 22:13 to 09-25
+  20:56 HKT (about five days; 104 of the pairs are from 09-22). Each pair
   also carries the messages between the two watermarks (`last_folded_row_id`)
   and the unit's notes that were open at the second write.
 - **The criterion, fixed before any result was read.** A plan counts as
@@ -44,7 +45,7 @@ that rule against production folds instead of the corpus.
   (930 s), and another alias returned a cached copy of Sonnet's answer, so
   neither was used.
 - **No self-attestation.** I read every flag by hand, and also 8 unflagged
-  pairs drawn at random.
+  pairs drawn at random from three rooms.
 
 ## 2. Result
 
@@ -54,7 +55,7 @@ that rule against production folds instead of the corpus.
 | pairs the judge flagged | 18 |
 | confirmed by hand as real drops | **10** (5 substantive, 5 minor) |
 | judge false positives | 8: settled by a message (3), not an upcoming plan (3), still present in NEW or a date NEW corrected (2) |
-| misses in 8 random unflagged pairs | 0 |
+| misses in 8 random unflagged pairs, three rooms | 0 |
 
 The 5 substantive drops, anonymised:
 
@@ -67,38 +68,50 @@ The 5 substantive drops, anonymised:
    the evening in another. Dropped about ten minutes after it was written.
    `friends`, 09-22.
 4. Nora's own open question about whether a relay she sent needed her to wait
-   for a reply and report back. `friends`, 09-22.
+   for a reply and report back that evening. `friends`, 09-22. The weakest of
+   the five: its date is an implied «tonight», and it is her question rather
+   than the room's plan. It counts as substantive because it was an open
+   obligation of hers, and the fold is told to keep those.
 5. The 27th's afternoon meet-up point and the agreed order of stops before
    dinner. `wedding`, 09-25. This is the drop behind `00-intent.md`'s failing
    turn.
 
 **Drops 3 and 5 are the same plan,** lost independently in two rooms three
 days apart: once about ten minutes after it was written, once after the meet-up
-had been carried for two days. Both times, nothing in the room had touched it
-on that turn.
+had been carried for two days. The first time, nothing in the room had touched
+it. The second time, members were talking about buying shirts and shoes, one of
+the stops in the plan, but not about the meet-up point, and the meet-up was
+dropped as well.
 
-**Rate.** About one fold in twenty (10/206) loses an open plan that is still
-ahead of it; about one in forty loses one that mattered. The positive control
-and the random sample support the rate, but it rests on a single hand-labelled
-pass of four and a half days, not on a committed instrument (§4).
+**Rate: a lower bound, and clustered.** 10 of 206 is what the judge found and
+a reader confirmed; it depends on the judge's recall. Zero misses in 8 random
+unflagged pairs still allows a miss rate around 30% over the 188 unflagged
+pairs. The drops cluster: 7 of the 10, and 4 of the 5 substantive ones, fall in
+one room between 16:24 and 19:38 on 09-22, and 5 of the 8 rooms show none. So
+this is not «one fold in twenty» everywhere. It is a failure that happens and
+bunches up in busy stretches, observed over five days by one reader, not a
+committed instrument (§4).
 
 ## 3. What the data rules in and out
 
-- **Not the budget.** Revision bodies: median 344 characters, p90 574, max
+- **Not the budget.** Revision bodies: median 343 characters, p90 574, max
   1032, against a 1200 cap. No fold in the window was near it.
 - **What gets dropped is often what the room said.** Three of the five
   substantive drops (1, 3, 5) are plans members stated; the other two carry
-  something of Nora's own (2, 4), so this is a lean, not a rule. The objective ranks
-  «what the room SAID» last when something has to go, and its anti-recap test
-  («could someone who read the transcript write this sentence too?») reads a
-  member's stated plan as a recap. Both are true within the transcript window.
-  But the tag turn's window is 40 messages, which a busy room fills in under an
-  hour, and after that nothing else holds the plan.
-- **Every fold rewrites everything, even with no new rows.** 11 pairs had no
-  new message rows between them. The rows had already been folded, so the
+  something of Nora's own (2, 4), so this is a lean, not a rule. The mechanism
+  that fits is the objective's anti-recap test («could someone who read the
+  transcript write this sentence too?»), which reads a member's stated plan as
+  a recap. (Its «drop what the room SAID first» order applies only over the
+  character limit, which no fold here reached, so it explains none of these.)
+  The anti-recap reading is true only while the plan is in the transcript
+  window. That window is 40 messages. On the failing wedding turn, 40 messages
+  covered 56 minutes, and after that nothing else holds the plan.
+- **Most folds with no new rows still rewrite nearly everything.** 11 pairs had
+  no new message rows between them. The rows had already been folded, so the
   debrief folded the turn's own `<steps>` against an empty batch (the watermark
-  read, `nora/engagement/stages/debrief.py`). All 11 rewrote the paragraph.
-  Eight came out at a similarity of 0.06 to 0.20 and about half the length.
+  read, `nora/engagement/stages/debrief.py`). Eight of the 11 rewrote it to a
+  similarity of 0.06 to 0.20 and about half the length; three were near-copies
+  (0.94 or more).
   Two of the five substantive drops (1 and 2) are in these 11. The objective's
   «RE-JUDGE the prior position — the whole paragraph, every turn» is doing
   what it says. The cost is that a plan nothing touched can still be lost to a
