@@ -46,7 +46,7 @@ from __future__ import annotations
 
 import datetime as _dt
 import re
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 
 #: The headings, in their only order (§4.1). Spelled exactly; a heading's
@@ -258,6 +258,48 @@ def dropped_citations(head: str, body: str) -> tuple[frozenset[int], ...]:
         if ids and not any(ids <= new for new in new_lines):
             dropped.append(ids)
     return tuple(dropped)
+
+
+#: A citation group as the tag path writes it: positions (`#4`), bare ids,
+#: or both, comma-separated, in square brackets (§4.3, G4).
+_POSITIONAL = re.compile(r"\[(\s*#?[0-9]+(?:\s*,\s*#?[0-9]+)*\s*)\]")
+
+
+def resolve_positions(
+    text: str, *, rows: Sequence[int], carried: frozenset[int],
+) -> str:
+    """The tag path's body with every `[#n]` position mapped to the row id
+    her transcript showed at that position (design 42 §4.3, G4), so a stored
+    body holds only ids.
+
+    `rows` is the transcript's row ids in the order the prefill numbered
+    them, 1..N. A position outside 1..N, or a BARE id the note does not
+    already cite (`carried`), is `unknown_id`: she cites what she sees, and a
+    bare id is one only a body she read can have handed her.
+    """
+    def _one(token: str, group: str) -> str:
+        token = token.strip()
+        if token.startswith("#"):
+            n = int(token[1:])
+            if not 1 <= n <= len(rows):
+                raise NoteBodyError(
+                    "unknown_id",
+                    f"[{group.strip()}] cites #{n}, and the transcript you were "
+                    f"shown runs #1 to #{len(rows)}",
+                )
+            return str(rows[n - 1])
+        if int(token) not in carried:
+            raise NoteBodyError(
+                "unknown_id",
+                f"[{group.strip()}] cites {token}, which is not a transcript "
+                f"position; cite a message as #n",
+            )
+        return token
+
+    def _group(m: re.Match[str]) -> str:
+        return "[" + ", ".join(_one(t, m.group(1)) for t in m.group(1).split(",")) + "]"
+
+    return _POSITIONAL.sub(_group, text)
 
 
 def _canonical_heading(name: str) -> str | None:

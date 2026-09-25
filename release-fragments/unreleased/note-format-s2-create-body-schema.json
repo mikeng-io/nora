@@ -1,11 +1,12 @@
 {
   "type": "change",
-  "summary": "A note Nora writes down from a room's conversation now records it in fixed sections (decided, open, owed, proposed, ruled out), each line citing the messages it came from, and a new note whose record breaks that form is not written.",
+  "summary": "Notes Nora keeps now record an arrangement in fixed sections (decided, open, owed, proposed, ruled out), each line citing the messages it came from, and a note whose record breaks that form is not written.",
   "details": [
-    "Dates in a new note are written as calendar dates, never as «tomorrow» or «this Saturday».",
-    "People are named as the room's messages name them, and each attribution must be the author of a message the line cites."
+    "Dates in a note are written as calendar dates, never as «tomorrow» or «this Saturday».",
+    "People are named as the room's messages name them, and each attribution must be the author of a message the line cites.",
+    "An update rewrites the whole note as it now stands and cannot silently drop the evidence an earlier line rested on."
   ],
   "limitations": [
-    "Only new notes from the background pass are held to the form so far; updates to an existing note, and notes Nora writes during a conversation, keep their current free-text record until later steps of the same design."
+    "Notes written before this change keep their free-text record until the next update rewrites them."
   ]
 }

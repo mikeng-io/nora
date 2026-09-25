@@ -97,6 +97,14 @@ from ..domain.media import (
 from ..domain.media import LABELS as MEDIA_LABELS
 from ..domain.media_join import MediaJoin
 from ..domain.models import PersonRef, TranscriptRow, WeatherObservation
+from ..domain.note_body import (
+    NoteBodyError,
+    Shown,
+    ShownMessage,
+    cited_ids_in,
+    parse_note_body,
+    resolve_positions,
+)
 from ..domain.notes import (
     TAG_PATH_PREFIX,
     Note,
@@ -10456,6 +10464,41 @@ Args:
             "note": "It is saved. Only now may you say 記低咗.",
         }
 
+    def _held_to_schema(tool: str, body: str, *, carried: frozenset[int]) -> str | dict:
+        """The tag path's body held to design 42 §4 (S4b): her `[#n]`
+        positions mapped to the row ids her transcript showed (G4), then
+        parsed against those rows, the roster and the ids the note already
+        cites. The normalised body, or the refusal she reads, naming the
+        rule so she can correct the call (27 §5.3). Unlike note-candidates
+        there is no carry-forward check: `note_update` replaces freely, with
+        a person in the turn, which is where a conflated line comes out."""
+        rows = [r.id for r in bound_window]
+        try:
+            mapped = resolve_positions(body, rows=rows, carried=carried)
+            parsed = parse_note_body(mapped, shown=Shown(
+                rendered=tuple(
+                    ShownMessage(
+                        id=r.id, sender=_speaker(r), person_id=r.person_id,
+                        is_nora=r.is_nora,
+                    )
+                    for r in bound_window
+                ),
+                carried=carried,
+                roster={
+                    ref.name: pid
+                    for pid, ref in getattr(persons, "by_person", {}).items()
+                },
+                nora_names=frozenset({"Nora"}),
+            ))
+        except NoteBodyError as refused:
+            _record(metrics, tool, "refused", reason="schema", rule=refused.rule)
+            return {
+                "status": "refused",
+                "note": f"Nothing was written: the body is not in the note's "
+                        f"form ({refused}). Fix that line and call again.",
+            }
+        return parsed.text
+
     async def note_create(
         title: str, description: str, uncertainty: str, closing_condition: str,
         body: str, anchor_date: int | None = None,
@@ -10486,8 +10529,11 @@ Args:
         is about.
     uncertainty: What exactly is not known yet, in a sentence.
     closing_condition: What would settle it.
-    body: What is actually known so far, arranged so it reads. note_read
-        hands this back.
+    body: What is known so far, in sections: ## Decided and ## Open
+        always, then ## Owed, ## Proposed or ## Ruled out when one has a
+        line. Each line is one "- " item ending in the transcript messages
+        it rests on, as [#n]; a body that breaks this is refused with the
+        rule it broke.
     anchor_date: Optional. The calendar day it is about, as YYYYMMDD.
     anchor_entities: Optional. The people or things it is about, named
         the way this group names them."""
@@ -10507,6 +10553,12 @@ Args:
                 "note": "I don't know who you are well enough to write this down "
                         "under anybody's name. Say you can't, and don't guess.",
             }
+        # THE BODY'S FORM (design 42 S4b): refused before anything is read
+        # or written, so a malformed body never costs a store round trip.
+        held = _held_to_schema("note_create", body, carried=frozenset())
+        if isinstance(held, dict):
+            return held
+        body = held
         # AN OPEN TITLE IS REFUSED (design 41 §7.2). Nothing in the schema
         # stops a second open note with the same title, and one is an
         # amplifier on both write paths: a later `updates` naming it matches
@@ -10570,7 +10622,8 @@ Returns `status`: ok, refused, nothing_found or unavailable, with a
 
 Args:
     title: The note's title, exactly as <notes> shows it.
-    body: The note's full contents after your change."""
+    body: The whole note after your change, in note_create's sections,
+        every line ending in [#n] or in the ids it already cites."""
         book = _notebook()
         if book is None:
             _record(metrics, "note_update", "unavailable")
@@ -10622,6 +10675,22 @@ Args:
                         "it first, because you cannot revise a body you have not "
                         "seen.",
             }
+        # THE BODY'S FORM (design 42 S4b), against the ids the note already
+        # cites: a bare id in her body must be one the head carries, since a
+        # body she read is the only place she could have got one.
+        try:
+            current = await book.read(unit=_unit() or "", note_id=note.id)
+        except Exception:
+            log.exception("note_update could not read the head it revises")
+            _record(metrics, "note_update", "unavailable")
+            return dict(notes_off)
+        held = _held_to_schema(
+            "note_update", body,
+            carried=cited_ids_in(current[1].body) if current is not None else frozenset(),
+        )
+        if isinstance(held, dict):
+            return held
+        body = held
         try:
             revision = await book.append_revision(
                 unit=_unit() or "", note_id=note.id, body=body,

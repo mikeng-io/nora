@@ -249,3 +249,21 @@ def test_dropped_citations_reads_every_head_line_against_the_new_body():
         frozenset({2, 3}),
     )
     assert dropped_citations("Ada wants dinner.", "## Decided\n## Open\n- x [9]") == ()
+
+
+def test_resolve_positions_maps_each_position_to_the_row_it_showed():
+    """G4: `[#n]` is position n of her transcript; a bare id survives only
+    when the note already cites it."""
+    from nora.domain.note_body import NoteBodyError, resolve_positions
+
+    rows = [501, 502, 503]
+    assert resolve_positions(
+        "## Open\n- a [#3, 900]\n- b [#1]", rows=rows, carried=frozenset({900}),
+    ) == "## Open\n- a [503, 900]\n- b [501]"
+    for bad in ("- a [#4]", "- a [#0]", "- a [901]"):
+        try:
+            resolve_positions(bad, rows=rows, carried=frozenset({900}))
+        except NoteBodyError as refused:
+            assert refused.rule == "unknown_id"
+        else:
+            raise AssertionError(bad)
