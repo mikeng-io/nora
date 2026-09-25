@@ -320,5 +320,19 @@
   "old": "        if line.lstrip().startswith(\"|\"):",
   "new": "        if False:",
   "target": "tests/architecture/test_doc_references_resolve.py -k test_a_deprecated_table_row_does_not_exempt_the_live_row_beside_it"
+ },
+ {
+  "name": "standing-compact objective v8 (#445): the derivability test requires usefulness for a finding",
+  "file": "nora/dreamer/objectives/standing-debrief.md",
+  "old": "it is what YOU concluded, committed to, are still holding open, or found, have not yet given the room, and is still useful to someone here.",
+  "new": "it is what YOU concluded, committed to, are still holding open, or found and have not yet given the room.",
+  "target": "tests/unit/test_debrief.py -k test_the_derivability_test_and_closing_line_require_usefulness_for_a_finding"
+ },
+ {
+  "name": "standing-compact objective v8 (#445): the closing line requires usefulness for a finding",
+  "file": "nora/dreamer/objectives/standing-debrief.md",
+  "old": "The recap answers \"what happened\". The position answers \"what I am holding open, committed to, concluding, or found, have not yet given the room, and is still useful to someone here\". Write the second.",
+  "new": "The recap answers \"what happened\". The position answers \"what I am holding open, committed to, concluding, or found and have not yet given the room\". Write the second.",
+  "target": "tests/unit/test_debrief.py -k test_the_derivability_test_and_closing_line_require_usefulness_for_a_finding"
  }
 ]
