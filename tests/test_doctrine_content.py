@@ -56,7 +56,7 @@ EXPECTED = {
 # -audience table this mirrors; this dict only needs to resolve a real path.
 _SCOPE_FOLDER = {
     "identity": "core", "constraints": "core",
-    "voice": "rooms", "conduct": "rooms", "silence": "rooms",
+    "belonging": "rooms", "voice": "rooms", "conduct": "rooms", "silence": "rooms",
     "participation-conduct": "rooms",
     "participation": "instruments", "reaction": "instruments",
 }
