@@ -1,0 +1,6 @@
+{
+  "type": "none",
+  "reason": "Design document only (design/dreamer-agent-loop/42-note-format.md): a proposed schema for note bodies and note-candidates' input. Nothing is built, so no user sees a change.",
+  "details": [],
+  "limitations": []
+}
