@@ -2132,6 +2132,7 @@ async def build_dependencies(
                 max_results=cfg.search.max_results,
                 content_max_chars=cfg.search.content_max_chars,
                 extract_max_chars=cfg.search.extract_max_chars,
+                fetch_max_age_hours=cfg.search.exa.fetch_max_age_hours,
                 timeout_seconds=cfg.search.timeout_seconds,
             )
         elif search_key:

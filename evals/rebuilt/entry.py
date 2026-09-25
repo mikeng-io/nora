@@ -339,6 +339,11 @@ async def dreamer(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
         written=result.written,
         written_reminders=result.written_reminders,
         staged=result.staged,
+        bodies=result.bodies,
+        speakers=result.speakers,
+        roster=result.roster,
+        nora_names=result.nora_names,
+        carried=result.carried,
         # `declined` rides into the token so a `none` verdict says WHY it was
         # none — `unchanged` and `held_quiet` are different facts about the
         # workspace and a report that showed neither would be unreadable.

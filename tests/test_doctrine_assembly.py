@@ -35,7 +35,7 @@ def test_without_a_generated_block_there_is_no_capability_section_at_all():
     state, and the test is the invariant that keeps it that way."""
     doctrine = DoctrineStore(SHIPPED, canary="C", strict=True, metrics=Metrics()).get()
     assert [s.name for s in doctrine.sections] == \
-        ["identity", "voice", "silence", "conduct", "constraints"]
+        ["identity", "belonging", "voice", "silence", "conduct", "constraints"]
 
 
 def test_version_is_not_paid_for_on_every_call():

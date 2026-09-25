@@ -1,0 +1,1 @@
+{"type": "none", "reason": "Bridge routes to read a post's comments and to reply to a comment that summoned Nora. The write ships switched off and nothing calls either route yet, so no user sees a change.", "details": [], "limitations": []}

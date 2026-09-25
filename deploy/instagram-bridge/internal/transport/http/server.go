@@ -88,6 +88,17 @@ func (s *Server) Routes() http.Handler {
 	// shortcode names somebody's post and never becomes a span attribute
 	// value.
 	mux.HandleFunc("GET /posts/{shortcode}", observability.PatternOnlyRoute("GET /posts/{shortcode}", s.handlePost))
+	// The comment-mentions probe (mentions.go). No path variable, but
+	// PatternOnlyRoute anyway: a comment's text and a commenter's identity
+	// must never enter a span, the same guarantee the other content-bearing
+	// routes already get from it.
+	mux.HandleFunc("GET /mentions", observability.PatternOnlyRoute("GET /mentions", s.handleMentions))
+	// A post's comments, and the bridge's ONE public write: a reply under a
+	// summons (comments.go; design 19). PatternOnlyRoute: the shortcode names
+	// somebody's post, and the reply_to query and the body carry comment ids
+	// and people's words, none of which may become a span attribute.
+	mux.HandleFunc("GET /posts/{shortcode}/comments", observability.PatternOnlyRoute("GET /posts/{shortcode}/comments", s.handleComments))
+	mux.HandleFunc("POST /posts/{shortcode}/comments", observability.PatternOnlyRoute("POST /posts/{shortcode}/comments", s.handlePostComment))
 	return observability.TraceHTTP(mux)
 }
 

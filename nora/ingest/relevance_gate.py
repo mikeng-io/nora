@@ -302,7 +302,7 @@ class PromptSource(Protocol):
     def get(self, *, applies_to: str = ...) -> Any: ...
 
 
-#: The audience `nora/doctrine/participation.md` declares. Nothing else uses
+#: The audience `nora/doctrine/instruments/participation.md` declares. Nothing else uses
 #: it, which is the isolation: the gate never receives Nora's doctrine (the
 #: superseded design injected all of it, and the trace that killed that design
 #: showed the determination opening a weather tool), and she never receives

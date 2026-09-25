@@ -183,7 +183,7 @@ sentence (DEC-205, partly superseding DEC-193's placement clause, #499).**
    person" line as "therefore no form" and drew an empty room — the same
    shape of incident `06-implementation-plan.md` §9 already recorded once,
    recurring because that earlier fix lived only in the skill.
-2. *What changed.* `nora/doctrine/identity.md` gained one short, descriptive
+2. *What changed.* `nora/doctrine/core/identity.md` gained one short, descriptive
    sentence (kind: identity, so it describes rather than instructs) naming
    her mascot form and three of the eight anchors. The FULL spec — all eight
    anchors, per-model prompting, the canonical asset's own handle — is

@@ -29,6 +29,7 @@ members:
   - 05-sequencing-and-measurement.md
   - 06-implementation-plan.md
   - 07-room-tools-plan.md
+  - 08-transcript-time.md
 edges:
   - {src: 01-three-layers, dst: 00-overview, rel: realizes, provenance: asserted}
   - {src: 02-presence, dst: 01-three-layers, rel: realizes, provenance: asserted}
@@ -37,6 +38,7 @@ edges:
   - {src: 03-room-tools, dst: 02-presence, rel: depends_on, provenance: asserted}
   - {src: 06-implementation-plan, dst: 02-presence, rel: realizes, provenance: asserted}
   - {src: 07-room-tools-plan, dst: 03-room-tools, rel: realizes, provenance: asserted}
+  - {src: 08-transcript-time, dst: 07-room-tools-plan, rel: extends, provenance: asserted}
 scope:
   v1:
     - "<presence>: generated per-turn block replacing _where_line; this room, this unit's other rooms with transport state, and other units per D1"

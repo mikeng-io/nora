@@ -27,7 +27,7 @@ edges:
 > what a turn that only ASKS about her appearance also paid, and it produced
 > two live failures: "what do you look like?" got no always-loaded answer, and
 > "draw yourself" with no reference read `identity.md`'s "not a person" as
-> "no form". `nora/doctrine/identity.md` now carries ONE short, descriptive
+> "no form". `nora/doctrine/core/identity.md` now carries ONE short, descriptive
 > sentence — not this node's full doctrine-file design, and not a second copy
 > of §Contents below, which stays the skill's alone. See DEC-205.
 

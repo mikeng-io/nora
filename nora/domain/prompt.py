@@ -100,6 +100,25 @@ def age(ts_ms: int, now: datetime) -> str:
     return f"{seconds // 86400}d ago"
 
 
+def stamp(ts_ms: int, now: datetime) -> str:
+    """When something was, as a calendar moment AND an age:
+    «2026-09-24 Thu 21:14 (13h ago)», in `now`'s own zone.
+
+    For a record a model is asked to place in time, not only to judge fresh.
+    `age` answers «is this still current»; «what did we say yesterday» turns on
+    the calendar day, and «13h ago» read at 10:00 is yesterday only after
+    arithmetic across midnight, which a cheap model does badly. The weekday is
+    there for «last Tuesday» on the same grounds (design/self-awareness/08).
+
+    No zone on the line: the clock line every turn carries names it once
+    (`nora.agent.clock.state_time`), and a caller passes `now` already in that
+    zone. The age is `age`'s own wording, so a row read through a tool and the
+    same row in the prefilled transcript agree on it.
+    """
+    moment = datetime.fromtimestamp(ts_ms / 1000, tz=now.tzinfo)
+    return f"{moment:%Y-%m-%d %a %H:%M} ({age(ts_ms, now)})"
+
+
 def one_line(body: object) -> str:
     """One transcript row is one line, whatever the sender typed.
 

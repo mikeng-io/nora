@@ -36,7 +36,7 @@ unchanged: a second copy of what the thing already says is deleted, not
 maintained.
 
 **Why there is no `untrusted`.** It was a token standing in for a description.
-The only text defining it lives in `nora/doctrine/participation.md`, whose
+The only text defining it lives in `nora/doctrine/instruments/participation.md`, whose
 frontmatter is `applies_to: [relevance_gate]` — so five of six audiences
 received it undefined. A description says strictly more, in a sentence, to
 everyone. It also named the wrong axis: a transcript is the most RELIABLE

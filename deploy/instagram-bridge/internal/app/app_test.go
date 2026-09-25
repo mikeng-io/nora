@@ -19,19 +19,23 @@ func (f *fakeSession) Snapshot() domain.Session { return f.snap }
 // about is a failure: a use case that calls something it should not is a
 // test failure, not a silent pass.
 type fakePorts struct {
-	resolved   []string
-	accounts   []string
-	socials    []string
-	stories    []string
-	searches   []string
-	typed      int
-	lookupErr  error
-	unsendOK   bool
-	searchErr  error
-	searchHits []domain.AccountSummary
-	posts      []string
-	reactedID  string
-	unsentID   string
+	resolved        []string
+	accounts        []string
+	socials         []string
+	stories         []string
+	searches        []string
+	typed           int
+	lookupErr       error
+	unsendOK        bool
+	searchErr       error
+	searchHits      []domain.AccountSummary
+	posts           []string
+	reactedID       string
+	unsentID        string
+	mentionsCalls   int
+	mentions        []domain.CommentMention
+	mentionsSkipped map[int]int
+	mentionsErr     error
 }
 
 func (f *fakePorts) ResolveThread(_ context.Context, short domain.ThreadFBID) (domain.ThreadRef, error) {
@@ -99,6 +103,14 @@ func (f *fakePorts) SearchAccounts(_ context.Context, query string) ([]domain.Ac
 func (f *fakePorts) Post(_ context.Context, code domain.Shortcode) (domain.Post, error) {
 	f.posts = append(f.posts, code.String())
 	return domain.Post{Shortcode: code.String(), Items: []domain.PostItem{{Kind: "image"}}}, nil
+}
+
+func (f *fakePorts) Mentions(context.Context) ([]domain.CommentMention, map[int]int, error) {
+	f.mentionsCalls++
+	if f.mentionsErr != nil {
+		return nil, nil, f.mentionsErr
+	}
+	return f.mentions, f.mentionsSkipped, nil
 }
 
 func ready() *fakeSession {
@@ -455,5 +467,39 @@ func TestReadPostWhileRebuildingIsUnavailable(t *testing.T) {
 	}
 	if len(p.posts) != 0 {
 		t.Error("a post read reached the port with no client")
+	}
+}
+
+// ReadMentions passes the port's answer through unchanged, session gate
+// first like every other Instagram-facing use case.
+func TestReadMentionsPassesThePortsAnswerThrough(t *testing.T) {
+	p := &fakePorts{
+		mentions:        []domain.CommentMention{{StoryType: 3, CommentID: "1"}},
+		mentionsSkipped: map[int]int{1: 2},
+	}
+	mentions, skipped, err := service(ready(), p).ReadMentions(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.mentionsCalls != 1 {
+		t.Fatalf("port was called %d time(s), want 1", p.mentionsCalls)
+	}
+	if len(mentions) != 1 || mentions[0].CommentID != "1" {
+		t.Errorf("mentions = %+v, want the port's answer unchanged", mentions)
+	}
+	if skipped[1] != 2 {
+		t.Errorf("skipped = %+v, want the port's answer unchanged", skipped)
+	}
+}
+
+// A checkpointed session refuses before the port is ever called.
+func TestReadMentionsSessionGate(t *testing.T) {
+	p := &fakePorts{}
+	svc := service(&fakeSession{snap: domain.Session{State: domain.StateCheckpointed, Detail: "captcha"}}, p)
+	if _, _, err := svc.ReadMentions(t.Context()); !errors.Is(err, domain.ErrNeedsHuman) {
+		t.Errorf("err = %v, want ErrNeedsHuman", err)
+	}
+	if p.mentionsCalls != 0 {
+		t.Error("a checkpointed session reached the port")
 	}
 }

@@ -62,7 +62,20 @@ from .obtain import (
     obtain,
 )
 from .proactive import ActPass, act, owe
-from .sandbox import Sandboxed, as_knowledge, sandbox_database, sandbox_from_snapshot
+from .sandbox import (
+    Sandboxed,
+    SharedDatabaseMutatedError,
+    SharedDatabaseVersions,
+    SourceRevisionMismatchError,
+    as_knowledge,
+    assert_shared_databases_unchanged,
+    close_private_blank_templates,
+    refuse_if_source_diverges_from_head,
+    sandbox_database,
+    sandbox_from_snapshot,
+    shared_database_versions,
+    sweep_stale_private_blank_templates,
+)
 
 __all__ = [
     "DEFAULT_ROOM",
@@ -75,6 +88,9 @@ __all__ = [
     "ReminderSeed",
     "RoomSeed",
     "Sandboxed",
+    "SharedDatabaseMutatedError",
+    "SharedDatabaseVersions",
+    "SourceRevisionMismatchError",
     "Subject",
     "SubjectSpec",
     "Written",
@@ -82,6 +98,8 @@ __all__ = [
     "adaptor_names",
     "arrive",
     "as_knowledge",
+    "assert_shared_databases_unchanged",
+    "close_private_blank_templates",
     "config_default",
     "deliver",
     "draw_workspace",
@@ -93,9 +111,12 @@ __all__ = [
     "obtain",
     "owe",
     "pending",
+    "refuse_if_source_diverges_from_head",
     "sandbox_database",
     "sandbox_from_snapshot",
     "settle",
+    "shared_database_versions",
     "silent_failures",
     "sweep_stale_draw_workspaces",
+    "sweep_stale_private_blank_templates",
 ]

@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"instagram-bridge/internal/app"
 	"instagram-bridge/internal/domain"
 	gateway "instagram-bridge/internal/gateway/instameow"
 	"instagram-bridge/internal/gateway/instameow/fakeig"
@@ -67,6 +68,13 @@ func withIssuer(i gateway.GraphQLIssuer) bridgeOpt { return func(o *gateway.Opti
 // touches the network: the live account is in use and cannot be probed.
 func newTestBridge(t *testing.T, f *fakeIG, opts ...bridgeOpt) *testBridge {
 	t.Helper()
+	return newTestBridgeWithComments(t, f, app.DefaultCommentPolicy(), opts...)
+}
+
+// newTestBridgeWithComments is newTestBridge with the comment write's policy
+// set (writes are off in newTestBridge, as in production by default).
+func newTestBridgeWithComments(t *testing.T, f *fakeIG, commentPolicy app.CommentPolicy, opts ...bridgeOpt) *testBridge {
+	t.Helper()
 	o := gateway.Options{
 		Store:     session.Store{Dir: t.TempDir()},
 		State:     domain.StateAuthenticated,
@@ -82,7 +90,7 @@ func newTestBridge(t *testing.T, f *fakeIG, opts ...bridgeOpt) *testBridge {
 		opt(&o)
 	}
 	hub := stream.NewHub()
-	gw, h := wire(o, hub, time.Now())
+	gw, h := wire(o, hub, time.Now(), commentPolicy)
 	return &testBridge{gw: gw, hub: hub, h: h}
 }
 

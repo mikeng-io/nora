@@ -209,6 +209,18 @@ class Outcome:
     #: What the pass STAGED, as `(title, anchor_date, message_ids, status)`.
     staged: tuple[tuple[str, int, tuple[int, ...], str], ...] = ()
 
+    #: Every staged candidate's `(status, body)`, in `staged`'s order, and each
+    #: batch row's `(id, the sender name the model was shown)` — what the
+    #: `body_names`/`body_mentions` checks read (`nora.subject.dreaming.Pass`).
+    bodies: tuple[tuple[str, str], ...] = ()
+    speakers: tuple[tuple[int, str], ...] = ()
+    #: What `body_schema` checks a written body against, beside `speakers`
+    #: (`nora.subject.dreaming.Pass`): `(roster name, person_id)`, Nora's
+    #: name, and the ids the notebook already cited before the pass.
+    roster: tuple[tuple[str, str], ...] = ()
+    nora_names: tuple[str, ...] = ()
+    carried: tuple[int, ...] = ()
+
     #: Structural assertions the corpus made and the outcome did not meet.
     #:
     #: SEPARATE from `judged`, which is a model's opinion: these are facts the
