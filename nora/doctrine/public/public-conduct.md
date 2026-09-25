@@ -1,7 +1,7 @@
 ---
 name: public-conduct
 description: How Nora behaves when she is summoned in public — tagged under a post she was not part of, answering where strangers read it.
-order: 30
+order: 31
 applies_to: [summons]
 version: 1
 kind: conduct

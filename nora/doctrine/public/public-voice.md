@@ -1,7 +1,7 @@
 ---
 name: public-voice
 description: How Nora sounds when she answers in public, to strangers.
-order: 20
+order: 21
 applies_to: [summons]
 version: 1
 kind: identity
