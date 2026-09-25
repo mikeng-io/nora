@@ -36,7 +36,7 @@ Framework-free, per `nora/domain/`'s rule: stdlib and dataclasses only.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from xml.sax.saxutils import unescape
 
@@ -736,6 +736,54 @@ def tag_path_progressed_since_wake(
             return True
         current = parent
     return False
+
+
+def proactive_row_forwarded_is_moved(
+    *,
+    duplicate_head: str,
+    duplicate_chain: Mapping[str, tuple[str | None, str]],
+    revision_id: str | None,
+    created_at_ms: int,
+    survivor_chain: Iterable[tuple[int, str]],
+) -> bool:
+    """Whether a proactive row that names a `retired-merged` note — or, from
+    `SqlNoteStore.merge_into`'s side, one ABOUT to become one — has gone
+    stale. `nora.app.proactive_screen.ProactiveScreen._follow_survivor`'s
+    own two-step order, extracted so the merge-time re-point (issue #158
+    residue) cannot silently diverge from the fire-time screen again — a
+    first version of that re-point read only the SECOND step below and
+    missed the first entirely (#520 review round 2).
+
+    1. **The DUPLICATE's own chain.** `revision_id` is a genuine ancestor of
+       `duplicate_head` — that is where the row was linked — so this is an
+       ANCESTRY WALK (`tag_path_progressed_since_wake`), exactly the check
+       an ordinary, never-forwarded row gets. A tag-path edit to the
+       duplicate itself, after the row was linked and before it forwards,
+       is caught here.
+    2. **The SURVIVOR's chain**, only reached if step 1 found nothing.
+       Nothing links this row to any revision of the survivor — it was
+       never about the survivor — so this cannot be an ancestry walk: it is
+       a SCAN, `created_at_ms` (the row's own booking time) against every
+       revision the survivor's chain carries, for the same reason
+       `_follow_survivor`'s own docstring gives (paraphrase-proofing via
+       `is_tag_path_revision`).
+
+    Two different algorithms for two different reasons a row can be stale,
+    and the reason they cannot be swapped, skipped or reordered: step 1
+    answers "did anyone settle the ORIGINAL question, on the note that
+    originally held it" and step 2 answers "did anyone settle the FOLDED
+    question, on the note it now lives in" — both are real premises the row
+    was booked against, and either failing means Nora should not raise it.
+    """
+    if tag_path_progressed_since_wake(
+        head_revision_id=duplicate_head, last_wake_revision_id=revision_id,
+        chain=duplicate_chain,
+    ):
+        return True
+    return any(
+        is_tag_path_revision(established_by) and written_at > created_at_ms
+        for written_at, established_by in survivor_chain
+    )
 
 
 @dataclass(frozen=True, slots=True)

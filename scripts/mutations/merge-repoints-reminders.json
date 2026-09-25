@@ -2,8 +2,8 @@
   {
     "name": "#158 residue: merge_into resolves both notes' open proactive rows",
     "file": "nora/infra/sql/notes.py",
-    "old": "            await self._repoint_proactive_rows(\n                conn, survivor_id=survivor_id, duplicate_id=duplicate_id,\n                revision_id=revision.id, now_ms=now_ms,\n                on_reminder_outcome=on_reminder_outcome,\n            )",
-    "new": "            if False:\n                await self._repoint_proactive_rows(\n                    conn, survivor_id=survivor_id, duplicate_id=duplicate_id,\n                    revision_id=revision.id, now_ms=now_ms,\n                    on_reminder_outcome=on_reminder_outcome,\n                )",
+    "old": "            await self._repoint_proactive_rows(\n                conn, survivor_id=survivor_id, duplicate_id=duplicate_id,\n                duplicate_head=duplicate_head, revision_id=revision.id,\n                now_ms=now_ms, on_reminder_outcome=on_reminder_outcome,\n            )",
+    "new": "            pass",
     "target": "tests/infra/test_note_merge_repoints_reminders.py::test_both_open_rows_resolve_to_one_earliest_due_on_the_survivor"
   },
   {
@@ -16,8 +16,8 @@
   {
     "name": "#520 review: a survivor tag-path write before the fold cancels the row instead of re-pointing it",
     "file": "nora/infra/sql/notes.py",
-    "old": "        linked_ms = int(row.created_at.timestamp() * 1000)\n        moved = any(\n            is_tag_path_revision(r.established_by) and r.written_at > linked_ms\n            for r in chain\n        )",
-    "new": "        linked_ms = int(row.created_at.timestamp() * 1000)\n        moved = False and any(\n            is_tag_path_revision(r.established_by) and r.written_at > linked_ms\n            for r in chain\n        )",
+    "old": "    return any(\n        is_tag_path_revision(established_by) and written_at > created_at_ms\n        for written_at, established_by in survivor_chain\n    )",
+    "new": "    return False",
     "target": "tests/infra/test_note_merge_repoints_reminders.py::test_a_repointed_row_is_cancelled_moved_when_the_survivor_moved_first"
   },
   {
@@ -44,15 +44,43 @@
   {
     "name": "#158 residue: the collision is cancelled BEFORE the keeper is re-pointed, never after",
     "file": "nora/infra/sql/notes.py",
-    "old": "        result = await conn.execute(_cancel_stmt(\n            drop.id, drop.state, CANCELLED_DUPLICATE_NOTE, fired_at,\n        ))\n        _require_row_changed(\n            result, what=f\"cancel reminder {drop.id} (cancelled_duplicate_note)\",\n        )\n        log.info(\n            \"merge_into: reminder %s cancelled cancelled_duplicate_note \"\n            \"\u2014 note %s already had an open reminder\", drop.id, survivor_id,\n        )\n        if keep.id == d_row.id:\n            await SqlNoteStore._resolve_repointed_row(\n                conn, row=keep, survivor_id=survivor_id,\n                revision_id=revision_id, fired_at=fired_at,\n                on_reminder_outcome=on_reminder_outcome, context=\"collision\",\n            )\n        elif on_reminder_outcome is not None:\n            on_reminder_outcome(\"collision_kept_survivor\")",
-    "new": "        # MUTATED (review falsification): repoint the keeper BEFORE\n        # cancelling the loser -- the ordering this method's docstring\n        # says is load-bearing, reversed.\n        if keep.id == d_row.id:\n            await SqlNoteStore._resolve_repointed_row(\n                conn, row=keep, survivor_id=survivor_id,\n                revision_id=revision_id, fired_at=fired_at,\n                on_reminder_outcome=on_reminder_outcome, context=\"collision\",\n            )\n        elif on_reminder_outcome is not None:\n            on_reminder_outcome(\"collision_kept_survivor\")\n        result = await conn.execute(_cancel_stmt(\n            drop.id, drop.state, CANCELLED_DUPLICATE_NOTE, fired_at,\n        ))\n        _require_row_changed(\n            result, what=f\"cancel reminder {drop.id} (cancelled_duplicate_note)\",\n        )\n        log.info(\n            \"merge_into: reminder %s cancelled cancelled_duplicate_note \"\n            \"\u2014 note %s already had an open reminder\", drop.id, survivor_id,\n        )",
+    "old": "        result = await conn.execute(_cancel_stmt(\n            drop.id, drop.state, CANCELLED_DUPLICATE_NOTE, fired_at,\n        ))\n        _require_row_changed(\n            result, what=f\"cancel reminder {drop.id} (cancelled_duplicate_note)\",\n        )",
+    "new": "        if keep.id == d_row.id:\n            await SqlNoteStore._repoint_row(\n                conn, row=keep, survivor_id=survivor_id,\n                revision_id=revision_id, on_reminder_outcome=None,\n                outcome=\"collision_repointed\",\n            )\n        result = await conn.execute(_cancel_stmt(\n            drop.id, drop.state, CANCELLED_DUPLICATE_NOTE, fired_at,\n        ))\n        _require_row_changed(\n            result, what=f\"cancel reminder {drop.id} (cancelled_duplicate_note)\",\n        )",
     "target": "tests/infra/test_note_merge_repoints_reminders.py::test_both_open_rows_resolve_to_one_earliest_due_on_the_survivor"
   },
   {
     "name": "#520 review point 2: the fake models the repoint too, not just the SQL store",
     "file": "nora/testing/note_store.py",
-    "old": "        if reminders is not None:\n            self._repoint_proactive_rows(\n                reminders, survivor_id=survivor_id, duplicate_id=duplicate_id,\n                revision_id=revision.id, now_ms=now_ms,\n                on_reminder_outcome=on_reminder_outcome,\n            )\n        return revision",
-    "new": "        if False and reminders is not None:\n            self._repoint_proactive_rows(\n                reminders, survivor_id=survivor_id, duplicate_id=duplicate_id,\n                revision_id=revision.id, now_ms=now_ms,\n                on_reminder_outcome=on_reminder_outcome,\n            )\n        return revision",
+    "old": "            self._repoint_proactive_rows(\n                reminders, survivor_id=survivor_id, duplicate_id=duplicate_id,\n                duplicate_head=duplicate_head, revision_id=revision.id,\n                now_ms=now_ms, on_reminder_outcome=on_reminder_outcome,\n            )\n",
+    "new": "            (lambda *a, **k: None)(\n                reminders, survivor_id=survivor_id, duplicate_id=duplicate_id,\n                duplicate_head=duplicate_head, revision_id=revision.id,\n                now_ms=now_ms, on_reminder_outcome=on_reminder_outcome,\n            )\n",
     "target": "tests/unit/test_note_merge_repoints_reminders_fake.py::test_only_the_duplicate_has_an_open_row_is_repointed"
+  },
+  {
+    "name": "#520 round 2 (S1): the forwarded check reads the DUPLICATE's own chain first",
+    "file": "nora/domain/notes.py",
+    "old": "    if tag_path_progressed_since_wake(\n        head_revision_id=duplicate_head, last_wake_revision_id=revision_id,\n        chain=duplicate_chain,\n    ):\n        return True\n    return any(",
+    "new": "    return any(",
+    "target": "tests/unit/test_note_merge_reminder_parity.py::test_merge_time_outcome_matches_the_fire_time_baseline"
+  },
+  {
+    "name": "#520 round 2 (S2): the duplicate's row is classified before a keeper is chosen (fake)",
+    "file": "nora/testing/note_store.py",
+    "old": "            if moved:\n                reminders._put(replace(\n                    d_row, state=ReminderState.CANCELLED,\n                    outcome=CANCELLED_NOTE_MOVED, fired_at=fired_at,\n                ))\n                if on_reminder_outcome is not None:\n                    on_reminder_outcome(\"moved\")\n                return",
+    "new": "            if moved and False:\n                return",
+    "target": "tests/unit/test_note_merge_reminder_parity.py::test_merge_time_outcome_matches_the_fire_time_baseline"
+  },
+  {
+    "name": "#520 round 3 (S6): the survivor's own row is classified before a keeper is chosen (fake)",
+    "file": "nora/testing/note_store.py",
+    "old": "        if s_row is not None and s_row.state is not ReminderState.FIRING and (",
+    "new": "        if False and s_row is not None and s_row.state is not ReminderState.FIRING and (",
+    "target": "tests/unit/test_note_merge_reminder_parity.py::test_merge_time_outcome_matches_the_fire_time_baseline"
+  },
+  {
+    "name": "#520 round 3 (S6): the survivor's own row is classified before a keeper is chosen (SQL)",
+    "file": "nora/infra/sql/notes.py",
+    "old": "        if s_row is not None and s_row.state != ReminderState.FIRING.value and (",
+    "new": "        if False and s_row is not None and s_row.state != ReminderState.FIRING.value and (",
+    "target": "tests/infra/test_note_merge_repoints_reminders.py::test_a_stale_survivor_row_does_not_win_the_collision"
   }
 ]

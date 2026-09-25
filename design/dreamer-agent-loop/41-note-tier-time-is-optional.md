@@ -862,14 +862,25 @@ onto the survivor while the un-cancelled firing loser held that same id
 open, which collided with the unique index it was trying to respect): both
 rows are now left alone, keeper included, when both collide firing.
 
-**Proven, 2026-09-25, on norty (Docker was unavailable on the Mac this
-was built on):** `uv run pytest -q tests/infra/
-test_note_merge_repoints_reminders.py tests/unit/
-test_note_merge_repoints_reminders_fake.py` — 16/16 passed (9 against real
-Postgres, 7 against the fake). `uv run python scripts/mutate.py scripts/
-mutations/merge-repoints-reminders.json` — 8/8 entries RED, ALL MUTATIONS
-CAUGHT. `make gate` on the full merged tree — GATE_RC 0, 10627 passed, 0
-failed, 0 errors, 13 skipped, 4 deselected, 3 xfailed, in 677s.
+**Superseded the same day by rounds 2–3; the round-1 proof below it is
+history.** A second review found the eager check was a hand-copy that
+diverged from the fire-time screen twice: it read only the survivor's
+chain (a tag edit on the DUPLICATE after its row was linked let a stale row
+fire), and it chose a keeper before classifying the duplicate's row (a live
+survivor row could be cancelled for a stale one). Round 3 found the mirror
+case: an unclassified STALE survivor row due first won the tie-break over a
+live duplicate row, so nothing fired. Now one shared domain function,
+`proactive_row_forwarded_is_moved` (`nora/domain/notes.py`), is what both
+`ProactiveScreen._follow_survivor` and `merge_into` call, and `merge_into`
+classifies both rows (the duplicate's by that function, the survivor's by
+the ordinary walk) before any keeper is chosen. A `firing` row is never
+classified or cancelled. The invariant is pinned by
+`tests/unit/test_note_merge_reminder_parity.py`: for six scenarios,
+`merge_into`'s outcome equals what the fire-time screen decides for the
+same row left un-re-pointed.
+
+Round-1 proof (history): 16/16 passed, 8/8 mutations RED, `make gate`
+GATE_RC 0 with 10627 passed, on norty.
 
 Related: #118 (the build), #159 (follow-on), #236 (duplicate bound), #101
 (discharge, shipped, off), #103 (proactive adapter). The design lineage is

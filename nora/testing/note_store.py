@@ -78,8 +78,8 @@ from nora.domain.notes import (
     RetiredNoteError,
     StaleNoteHeadError,
     WakeOutcome,
-    is_tag_path_revision,
     note_handle,
+    proactive_row_forwarded_is_moved,
     tag_path_progressed_since_wake,
 )
 from nora.domain.ports import Proposal
@@ -714,15 +714,19 @@ class InMemoryNoteStore:
         transaction as the fold, because two notes that each held one would
         otherwise both forward to the survivor and both fire — see that
         method's docstring, `_repoint_proactive_rows`'s, and
-        `_resolve_repointed_row`'s for the exact rules (both tie-breaks, the
-        moved-check replicated eagerly, the firing-collision exemption).
-        `self.reminders` defaults to `None`, and `None` is a real, named gap
-        rather than papered over: the property is pinned for real against
-        `self.reminders` only, in `tests/infra/
-        test_note_merge_repoints_reminders.py` against real Postgres, and
-        against THIS store's own logic in `tests/unit/test_note_merge.py` —
-        two implementations of the same rule, run by the shared contract
-        suite's parametrization, exactly like the rest of this class."""
+        `_repoint_row`'s for the exact rules (both tie-breaks, the
+        `proactive_row_forwarded_is_moved` classification, the
+        firing-collision exemption). `self.reminders` defaults to `None`,
+        and `None` is a real, named gap rather than papered over: the
+        property is pinned for real against `self.reminders` only.
+        **Not** through `tests/contract/test_note_store_contract.py`'s dual
+        parametrization — that harness never wires a `reminders` collaborator
+        into either store, so it cannot see this behaviour on either side.
+        `tests/infra/test_note_merge_repoints_reminders.py` pins the SQL
+        half against real Postgres; `tests/unit/
+        test_note_merge_repoints_reminders_fake.py` pins THIS store's own
+        logic directly — two files, not two arms of one suite, because
+        nothing here runs them as one."""
         if survivor_id == duplicate_id:
             raise ValueError("a note cannot be folded into itself")
         revision = NoteRevision(
@@ -761,42 +765,95 @@ class InMemoryNoteStore:
         if reminders is not None:
             self._repoint_proactive_rows(
                 reminders, survivor_id=survivor_id, duplicate_id=duplicate_id,
-                revision_id=revision.id, now_ms=now_ms,
-                on_reminder_outcome=on_reminder_outcome,
+                duplicate_head=duplicate_head, revision_id=revision.id,
+                now_ms=now_ms, on_reminder_outcome=on_reminder_outcome,
             )
         return revision
 
+    def _chain_by_id(self, note_id: str) -> dict[str, tuple[str | None, str]]:
+        """One note's whole chain as `tag_path_progressed_since_wake`/
+        `proactive_row_forwarded_is_moved` want it."""
+        return {
+            r.id: (r.parent_revision_id, r.established_by)
+            for r in self.revisions.values() if r.note_id == note_id
+        }
+
+    def _chain_pairs(self, note_id: str) -> list[tuple[int, str]]:
+        """One note's whole chain as `proactive_row_forwarded_is_moved`'s
+        `survivor_chain` wants it — `(written_at, established_by)` pairs."""
+        return [
+            (r.written_at, r.established_by)
+            for r in self.revisions.values() if r.note_id == note_id
+        ]
+
     def _repoint_proactive_rows(
         self, reminders: FakeReminderStore, *, survivor_id: str,
-        duplicate_id: str, revision_id: str, now_ms: int,
-        on_reminder_outcome: Callable[[str], None] | None,
+        duplicate_id: str, duplicate_head: str, revision_id: str,
+        now_ms: int, on_reminder_outcome: Callable[[str], None] | None,
     ) -> None:
         """`SqlNoteStore._repoint_proactive_rows`'s twin over
-        `reminders._rows` — same five branches, same outcome vocabulary. No
-        `FOR UPDATE`/`IntegrityError` translation: nothing here awaits
-        between a read and its matching write (the whole method is
-        synchronous), so there is no window for a concurrent insert to land
-        in the way `SqlNoteStore`'s does. `reminders` is a parameter, not
-        read back off `self` — the caller (`merge_into`) already narrowed
-        `self.reminders is not None`, and re-reading `self.reminders` here
-        would need a second `None` check `mypy`/`ruff`'s `S101` (no bare
-        `assert` outside `tests/`) both refuse to let this module skip."""
+        `reminders._rows` — same order, same `proactive_row_forwarded_
+        is_moved` call, same outcome vocabulary. No `FOR UPDATE`/
+        `IntegrityError` translation: nothing here awaits between a read
+        and its matching write (the whole method is synchronous), so there
+        is no window for a concurrent insert to land in the way
+        `SqlNoteStore`'s does. `reminders` is a parameter, not read back off
+        `self` — the caller (`merge_into`) already narrowed `self.reminders
+        is not None`, and re-reading `self.reminders` here would need a
+        second `None` check `mypy`/`ruff`'s `S101` (no bare `assert`
+        outside `tests/`) both refuse to let this module skip."""
         d_row = _open_proactive_row(reminders, duplicate_id)
         if d_row is None:
             return
         fired_at = datetime.fromtimestamp(now_ms / 1000, tz=UTC)
+        if d_row.state is not ReminderState.FIRING:
+            revision_id_linked = (d_row.payload or {}).get("revision_id")
+            moved = proactive_row_forwarded_is_moved(
+                duplicate_head=duplicate_head,
+                duplicate_chain=self._chain_by_id(duplicate_id),
+                revision_id=revision_id_linked,
+                created_at_ms=int(d_row.created_at.timestamp() * 1000),
+                survivor_chain=self._chain_pairs(survivor_id),
+            )
+            if moved:
+                reminders._put(replace(
+                    d_row, state=ReminderState.CANCELLED,
+                    outcome=CANCELLED_NOTE_MOVED, fired_at=fired_at,
+                ))
+                if on_reminder_outcome is not None:
+                    on_reminder_outcome("moved")
+                return
         s_row = _open_proactive_row(reminders, survivor_id)
+        if s_row is not None and s_row.state is not ReminderState.FIRING and (
+            tag_path_progressed_since_wake(
+                head_revision_id=revision_id,
+                last_wake_revision_id=(s_row.payload or {}).get("revision_id"),
+                chain=self._chain_by_id(survivor_id),
+            )
+        ):
+            # The SURVIVOR's own row is stale — the ordinary fire-time walk
+            # on a live note would cancel it `moved`. Classify it before the
+            # keeper is chosen, or a stale survivor row can win the
+            # tie-break over a live duplicate row (#520 round 3, S6).
+            reminders._put(replace(
+                s_row, state=ReminderState.CANCELLED,
+                outcome=CANCELLED_NOTE_MOVED, fired_at=fired_at,
+            ))
+            if on_reminder_outcome is not None:
+                on_reminder_outcome("moved")
+            s_row = None
         if s_row is None:
-            self._resolve_repointed_reminder(
+            self._repoint_reminder(
                 reminders, d_row, survivor_id=survivor_id,
-                revision_id=revision_id, fired_at=fired_at,
-                on_reminder_outcome=on_reminder_outcome, context="solo",
+                revision_id=revision_id, on_reminder_outcome=on_reminder_outcome,
+                outcome="repointed",
             )
             return
         keep, drop = _keep_open_reminder(d_row, s_row)
         if drop.state is ReminderState.FIRING:
             # Both firing (the only way `_keep_open_reminder` hands back a
-            # firing `drop`): BOTH rows are left alone, keeper included —
+            # firing `drop`, since a live-or-firing `d_row` never returned
+            # above): BOTH rows are left alone, keeper included —
             # `SqlNoteStore._repoint_proactive_rows`'s twin rule. Re-pointing
             # `keep` here would model a note holding two open reminders at
             # once, which is exactly the shape `uq_reminders_proactive_open_
@@ -811,46 +868,30 @@ class InMemoryNoteStore:
             outcome=CANCELLED_DUPLICATE_NOTE, fired_at=fired_at,
         ))
         if keep.id == d_row.id:
-            self._resolve_repointed_reminder(
+            self._repoint_reminder(
                 reminders, keep, survivor_id=survivor_id,
-                revision_id=revision_id, fired_at=fired_at,
-                on_reminder_outcome=on_reminder_outcome, context="collision",
+                revision_id=revision_id, on_reminder_outcome=on_reminder_outcome,
+                outcome="collision_repointed",
             )
         elif on_reminder_outcome is not None:
             on_reminder_outcome("collision_kept_survivor")
 
-    def _resolve_repointed_reminder(
+    def _repoint_reminder(
         self, reminders: FakeReminderStore, row: Reminder, *,
-        survivor_id: str, revision_id: str, fired_at: datetime,
-        on_reminder_outcome: Callable[[str], None] | None, context: str,
+        survivor_id: str, revision_id: str,
+        on_reminder_outcome: Callable[[str], None] | None, outcome: str,
     ) -> None:
-        """`SqlNoteStore._resolve_repointed_row`'s twin: the same eager
-        moved-check against the survivor's chain (`self.revisions`), then
-        either a `cancelled_note_moved` cancel or a re-point that moves BOTH
-        `note_id` and `revision_id` — see that method's docstring for why
-        `revision_id` has to move too."""
-        linked_ms = int(row.created_at.timestamp() * 1000)
-        moved = any(
-            is_tag_path_revision(r.established_by) and r.written_at > linked_ms
-            for r in self.revisions.values()
-            if r.note_id == survivor_id
-        )
-        if moved:
-            reminders._put(replace(
-                row, state=ReminderState.CANCELLED,
-                outcome=CANCELLED_NOTE_MOVED, fired_at=fired_at,
-            ))
-            if on_reminder_outcome is not None:
-                on_reminder_outcome("moved")
-            return
+        """`SqlNoteStore._repoint_row`'s twin: the re-point alone — `row`
+        has already been classified `live` (or is `firing`, never
+        classified) by the caller. Moves BOTH `note_id` and `revision_id`;
+        see `SqlNoteStore._repoint_stmt`'s docstring for why `revision_id`
+        has to move too."""
         payload = dict(row.payload or {})
         payload["note_id"] = survivor_id
         payload["revision_id"] = revision_id
         reminders._put(replace(row, payload=payload))
         if on_reminder_outcome is not None:
-            on_reminder_outcome(
-                "repointed" if context == "solo" else "collision_repointed"
-            )
+            on_reminder_outcome(outcome)
 
     async def record_merge_decision(self, *, decision: NoteMergeDecision) -> None:
         """`SqlNoteStore.record_merge_decision`: append, and refuse a reused id

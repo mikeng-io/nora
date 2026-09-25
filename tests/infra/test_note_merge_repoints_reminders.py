@@ -373,6 +373,50 @@ async def test_a_repointed_row_is_cancelled_moved_when_the_survivor_moved_first(
     assert outcomes == ["moved"]
 
 
+async def test_a_stale_survivor_row_does_not_win_the_collision(stores) -> None:
+    """Round 3 (the parity suite's S6), on Postgres. The SURVIVOR's own row
+    was linked, then a person revised the survivor, then the duplicate's row
+    was linked (after that write, so it is live). The survivor's row is due
+    first, so an unclassified tie-break would keep it and cancel the live
+    duplicate row — and at fire the kept row is cancelled «moved»: nothing
+    fires. The fire-time baseline fires the duplicate's row.
+
+    Falsification: skip classifying the survivor's row before the keeper is
+    chosen and the duplicate's row ends `cancelled_duplicate_note`."""
+    notes, reminders, _engine = stores
+    survivor = await _make_note(notes, title="Saturday dinner")
+    duplicate = await _make_note(notes, title="Neway booking")
+    s_row = _proactive_row(survivor, due_at=T0 + timedelta(hours=1))
+    await reminders.create(s_row)
+    moved = await notes.append_revision(
+        unit=WS, note_id=survivor.id, body="Ada booked it",
+        parent_revision_id=survivor.head_revision_id,
+        established_by="tag:ada", now_ms=NOW_MS + 500,
+    )
+    d_row = _proactive_row(
+        duplicate, due_at=T0 + timedelta(hours=2),
+        created_at=T0 + timedelta(seconds=1),
+    )
+    await reminders.create(d_row)
+    outcomes: list[str] = []
+
+    await _fold(
+        notes, survivor=survivor, duplicate=duplicate,
+        survivor_head=moved.id, now_ms=NOW_MS + 2_000,
+        on_reminder_outcome=outcomes.append,
+    )
+
+    s_after = await reminders.get(s_row.id)
+    d_after = await reminders.get(d_row.id)
+    assert s_after is not None and d_after is not None
+    assert s_after.state is ReminderState.CANCELLED
+    assert s_after.outcome == "cancelled_note_moved"
+    assert d_after.state is ReminderState.PENDING
+    assert d_after.payload is not None
+    assert d_after.payload["note_id"] == survivor.id
+    assert outcomes == ["moved", "repointed"]
+
+
 async def test_merge_rollback_leaves_reminders_untouched(stores) -> None:
     """A head moved under the fold: `merge_into` raises and the whole
     transaction rolls back. Both proactive rows must be exactly as they were
