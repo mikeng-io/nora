@@ -153,17 +153,29 @@ func (b *Bridge) Account(ctx context.Context, igid domain.IGID) (domain.Account,
 
 // SocialProfile is the second, independent read behind an account. It never
 // returns an error: its outcome is carried, so a failure degrades the account
-// read instead of losing it.
+// read instead of losing it. A raw GraphQL call goes through none of the
+// library's own checkpoint detection, so a needs-human answer goes through
+// sessionRejected here, as on Mentions (issue #533).
 func (b *Bridge) SocialProfile(ctx context.Context, igid domain.IGID) domain.SocialRead {
+	issuer, issuerErr := b.rawGraphQL()
+	read := readSocial(ctx, issuer, issuerErr, igid)
+	if read.Sent {
+		b.checkRejected(ctx, read.Err)
+	}
+	return read
+}
+
+// rawGraphQL is the GraphQL issuer a raw document goes through: the injected
+// one in a test, otherwise the live session client's.
+func (b *Bridge) rawGraphQL() (GraphQLIssuer, error) {
 	if b.issuer != nil {
-		return readSocial(ctx, b.issuer, nil, igid)
+		return b.issuer, nil
 	}
 	cli, err := b.client()
 	if err != nil {
-		return domain.SocialRead{Err: err}
+		return nil, err
 	}
-	issuer, err := issuerFor(cli)
-	return readSocial(ctx, issuer, err, igid)
+	return issuerFor(cli)
 }
 
 // Story reads one account's current story. ONE igid, never a batch: a batch
