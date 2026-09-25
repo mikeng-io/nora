@@ -876,10 +876,12 @@ class VideoReadingKey:
     reading_digest: str
 
 
-#: Who asked for a `media_fetch` read: the MODEL, calling the tool itself, or
+#: Who asked for a `media_fetch` read: the MODEL, calling the tool itself,
 #: `instagram_read`, reading each item of a post or story on its own
-#: (design/instagram-adoption/18 §"Typed views, one renderer, and readings").
+#: (design/instagram-adoption/18 §"Typed views, one renderer, and readings"),
+#: or the public `summons`, reading the tagged post's items before its turn
+#: (`nora.app.summons`, design/instagram-adoption/19).
 #: The `caller` label on `nora_media_fetch_total`, so automatic readings never
 #: read as Nora looking; derived here once, read by the code that increments
 #: and by the help text.
-MEDIA_FETCH_CALLERS: tuple[str, ...] = ("model", "instagram_read")
+MEDIA_FETCH_CALLERS: tuple[str, ...] = ("model", "instagram_read", "summons")

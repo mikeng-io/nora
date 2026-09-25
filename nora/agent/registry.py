@@ -798,6 +798,15 @@ class ToolRegistry:
             transit_source=self._transit,
         )
 
+    @property
+    def video_chunk_seconds(self) -> int:
+        """One video reading window, as configured (`[media.describe.video]
+        chunk_seconds`): the longest clip an automatic reading reads, the
+        cutoff `instagram_read`'s items use inside `build_tool_specs`, handed
+        to a reader outside it (the public summons) so both cut at the same
+        place."""
+        return self._video_chunk_seconds
+
     def tool_param_names(self) -> Mapping[str, frozenset[str]]:
         """Each tool's ACCEPTED argument names, read off its own signature —
         never hand-copied — for `ReplyGuard`'s R-99 unknown-argument veto

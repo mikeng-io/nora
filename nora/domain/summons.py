@@ -20,7 +20,7 @@ own uuid is the one handle telemetry may carry.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from typing import Literal, Protocol, get_args
 from uuid import UUID
@@ -78,9 +78,33 @@ INTAKE_OUTCOMES: tuple[str, ...] = get_args(IntakeOutcome)
 #: is what the bridge's `utf8.RuneCountInString` counts.
 MAX_COMMENT_CHARS = 2200
 
-#: How many of a post's items are listed by url. A carousel can hold 20; the
-#: rest are counted, never silently dropped.
-MAX_ITEMS_SHOWN = 5
+#: How many of a post's items she is shown, and every one of them is READ
+#: before her turn (`nora.app.summons`: `media_fetch` itself, through the
+#: `instagram_read` mechanism). A carousel can hold 20; the rest are counted,
+#: never silently dropped, and never read: four looks is one wave of
+#: `READ_CONCURRENCY`, so a carousel costs no more wall time than one reel.
+MAX_ITEMS_SHOWN = 4
+
+#: What looking at one item came to (`ItemReading.state`):
+#:
+#: * `seen` — read; `text` says what it shows, and a video's `coverage`
+#:   sentence says how much of it was watched when that was not all of it;
+#: * `withheld` — read, and what it shows carries what looks like a phone
+#:   number or ID, so the words are not passed on (`media_fetch`'s screen);
+#: * `unreadable` — the look failed, ran out of time, or never got to start:
+#:   she is told it could not be read, never left to guess;
+#: * `too_long`, `unknown_length`, `over_video_cap` — a video the reading
+#:   does not open by design (longer than one reading window, a post video
+#:   with no stated length, or past the per-post video cap), said so.
+ItemReadState = Literal[
+    "seen", "withheld", "unreadable", "too_long", "unknown_length", "over_video_cap",
+]
+ITEM_READ_STATES: tuple[str, ...] = get_args(ItemReadState)
+
+#: A reading's own ceiling in the render (`render._READING_MAX_CHARS`, the
+#: same number `instagram_read` keeps): one reel's reading fits, and the
+#: coverage sentence is never the part that is cut.
+READING_MAX_CHARS = 1500
 
 #: How many comments beside the summons are kept, nearest first.
 NEAREST_COMMENTS = 3
@@ -127,10 +151,35 @@ class SummonsSink(Protocol):
 
 
 @dataclass(frozen=True)
+class ItemReading:
+    """What one item of the post SHOWS, or why that is not known
+    (`ItemReadState`). `text` is a vision model's words about bytes a
+    stranger posted: untrusted, so it is rendered only inside the post's
+    `social_post` block. It is present exactly when `state` is `seen`."""
+
+    state: ItemReadState
+    text: str | None = None
+    coverage: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.state not in ITEM_READ_STATES:
+            raise ValueError(f"unknown item reading state {self.state!r}")
+        if (self.state == "seen") != bool(self.text and self.text.strip()):
+            raise ValueError("a reading carries text exactly when it was seen")
+        if self.coverage is not None and self.state != "seen":
+            raise ValueError("only a reading that was seen carries a coverage sentence")
+
+
+@dataclass(frozen=True)
 class PostItem:
+    """One image or video of the post. `reading` is `None` until the item has
+    been looked at (`with_readings`); a context built with no reading at all
+    renders each item as not read, never as if it had been."""
+
     kind: str
     url: str
     duration_seconds: float | None = None
+    reading: ItemReading | None = None
 
 
 @dataclass(frozen=True)
@@ -177,7 +226,9 @@ class SummonsContext:
     gate's business, not something strangers' thread needs to hear about.
     `thread` is oldest first and keeps the summons plus its nearest
     neighbours; `elided_comments` and `elided_items` count what was left out,
-    so an absence is never silent.
+    so an absence is never silent. Each of `items` carries its `reading` once
+    the occasion has looked at it (`with_readings`), BEFORE the turn: what a
+    post shows is part of what she reads, not something she must go and get.
     """
 
     summons_id: str
@@ -383,6 +434,22 @@ def build_context(
     )
 
 
+def with_readings(
+    ctx: SummonsContext, readings: tuple[ItemReading, ...],
+) -> SummonsContext:
+    """`ctx` with what each of its items shows, one reading per item in the
+    context's own order. A count that does not match is a wiring bug and
+    raises: a reading pinned to the wrong item is worse than none."""
+    if len(readings) != len(ctx.items):
+        raise ValueError(
+            f"{len(readings)} reading(s) for {len(ctx.items)} item(s): one per item",
+        )
+    return replace(ctx, items=tuple(
+        replace(item, reading=reading)
+        for item, reading in zip(ctx.items, readings, strict=True)
+    ))
+
+
 # ---- rendering ------------------------------------------------------------------
 
 
@@ -416,6 +483,44 @@ def _who(name: str | None) -> str:
     return f"@{name}" if name else "someone"
 
 
+#: What an item line says when there is no reading to show, by state. The
+#: wording is `instagram_read`'s (`nora.infra.social.render._NOT_SEEN`),
+#: except that every failure is one sentence here: she cannot act on why.
+_NOT_SEEN: dict[str, str] = {
+    "withheld": "not shown: what it shows has what looks like a phone number or ID in it",
+    "unreadable": "could not be read: say you couldn't see it, don't guess what it shows",
+    "too_long": (
+        "not read: longer than one reading window; "
+        "media_fetch(url=...) on its link reads it"
+    ),
+    "unknown_length": (
+        "not read: a video of unknown length; media_fetch(url=...) on its link reads it"
+    ),
+    "over_video_cap": (
+        "not read: past the videos read per post; media_fetch(url=...) on its link reads it"
+    ),
+}
+
+
+def _clip(text: str, limit: int) -> str:
+    """One line, brackets turned round (so it cannot forge a media marker,
+    `render._clean`'s rule), clamped to `limit` and marked when cut."""
+    line = _one_line(text).replace("[", "(").replace("]", ")")
+    return line if len(line) <= limit else line[:limit].rstrip() + " …"
+
+
+def _reading_line(reading: ItemReading | None) -> str:
+    """What an item shows, or why that is not known. A video's coverage
+    sentence is a suffix the clamp never cuts: a partial read that loses its
+    caveat reads as whole (#117)."""
+    if reading is None:
+        return "not read"
+    if reading.state == "seen" and reading.text:
+        suffix = f" {_clip(reading.coverage, 240)}" if reading.coverage else ""
+        return f"shows: {_clip(reading.text, READING_MAX_CHARS)}{suffix}"
+    return _NOT_SEEN.get(reading.state, _NOT_SEEN["unreadable"])
+
+
 def render_summons(ctx: SummonsContext) -> str:
     """The ONE rendering of a summons: what she is reading, then the post, the
     thread and the question, each stranger-written part wrapped as a
@@ -427,7 +532,9 @@ def render_summons(ctx: SummonsContext) -> str:
         "you send is posted once, as a public reply to that comment, where "
         "strangers read it. Saying nothing is a complete answer. It is now "
         f"{now.strftime('%Y-%m-%d %H:%M')} UTC. {_who(ctx.summoner)} tagged "
-        f"you {age(ctx.summoned_at, now)}."
+        f"you {age(ctx.summoned_at, now)}. Each item of the post was looked "
+        "at for you before this turn: under each one is what it shows, or "
+        "that it could not be read."
     )
     post_lines = [
         f"posted by {_who(ctx.post_author)} "
@@ -437,8 +544,9 @@ def render_summons(ctx: SummonsContext) -> str:
     for i, item in enumerate(ctx.items, 1):
         dur = (f", {item.duration_seconds:g}s" if item.duration_seconds is not None else "")
         post_lines.append(f"item {i}: {item.kind}{dur} {item.url}")
+        post_lines.append(f"  {_reading_line(item.reading)}")
     if ctx.elided_items:
-        post_lines.append(f"({ctx.elided_items} more item(s) not listed)")
+        post_lines.append(f"({ctx.elided_items} more item(s) not listed or read)")
     thread_lines = [
         "Oldest first; the last line is the newest.",
     ]

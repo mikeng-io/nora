@@ -291,6 +291,33 @@ dropped on the next write.
   (pre-existing rows backfilled `legacy:<comment_id>`), `comment_id`
   nullable and still unique, state `unresolved` added.
 
+### Reading the post's media before the turn (2026-09-26)
+
+Measured on a live dry-run trace: the summons post was a reel, she called
+`media_fetch` once with the signed CDN url as a `code` instead of a `url`,
+it failed, and she answered from the caption. A summons is a tag, and
+shared content is read when she is tagged (#435), so the post's items are
+now read BEFORE the turn and are part of what she reads:
+
+- **The `instagram_read` mechanism, not a second one.** `nora/app/summons.py`
+  `_read_items` runs `readings.read_view` over the items she is shown, each
+  look `media_fetch(url=...)` from the turn's own tool set, through
+  `tools.media_look` (the one label-and-persist wrapper `instagram_read`'s
+  items use too). The caption is not in the view, so it reaches no vision
+  prompt; the per-video length and count caps are 18's.
+- **Bounded.** At most `MAX_ITEMS_SHOWN` = 4 items (one wave of four looks;
+  the rest are counted, never read), one budget of `MEDIA_READ_SECONDS` =
+  150 s for all of them (one look's ceiling: the 82 s reel measured in 18,
+  with headroom). An item that fails, times out or never started renders
+  "could not be read"; the turn runs either way.
+- **Nothing is stored.** A url read keeps no bytes and writes no
+  `media_objects` row; with `persist` off (the story frame's switch) it
+  writes neither content cache. Counted on
+  `nora_media_fetch_total{caller="summons"}`; the stage span
+  `summons.read_items` carries counts and states only.
+- **Rendered inside the post's `social_post` block**, one reading line
+  under each item. `media_fetch` stays granted for anything else.
+
 ## Two things the review of #545 recorded
 
 - **The reply tool's own text still speaks of "the room".** `send_reply`'s
