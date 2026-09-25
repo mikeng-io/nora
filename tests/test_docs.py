@@ -4,7 +4,13 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_the_superseded_design_doc_is_gone():
-    assert not (ROOT / "DESIGN.md").exists()
+    # The v1 spec retired in 144ede28. `DESIGN.md` now names the visual system
+    # (#572), so the file may exist; the v1 spec must not come back as it.
+    path = ROOT / "DESIGN.md"
+    if path.exists():
+        text = path.read_text()
+        assert "Ambient Signal Group Agent" not in text
+        assert "max_per_group" not in text          # the v1 config key
 
 
 def test_the_readme_describes_v2_not_v1():
