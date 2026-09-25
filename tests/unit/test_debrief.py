@@ -18,7 +18,7 @@ import json
 import pytest
 
 from nora.domain.models import DeliveryStatus, NormalizedMessage, TranscriptRow
-from nora.domain.standing import Standing
+from nora.domain.standing import Standing, WorkingSetItem
 from nora.domain.tag_trace import TagTrace
 from nora.engagement.stages import debrief
 from nora.obs.metrics import Metrics
@@ -73,14 +73,21 @@ def _ok(body: str) -> debrief.Completion:
     return debrief.Completion(json.dumps({"standing": body}), "stop")
 
 
-def _trace(outcome: str = "send_reply") -> TagTrace:
+def _ok_ws(body: str, working_set: list) -> debrief.Completion:
+    """The fold's answer with a `working_set` array beside `standing`
+    (design/standing-compact/30-working-set.md §3)."""
+    return debrief.Completion(
+        json.dumps({"standing": body, "working_set": working_set}), "stop")
+
+
+def _trace(outcome: str = "send_reply", messages: tuple = ()) -> TagTrace:
     row = TranscriptRow(
         id=1, sender_id="+852111", sender_name="Miles", ts=1_756_000_920_000,
         body="去邊食", is_nora=False, delivery_status=DeliveryStatus.SENT,
         raw_json=None,
     )
     return TagTrace(
-        tag_id="tag-1", conversation_id="g1", messages=(), transcript=(row,),
+        tag_id="tag-1", conversation_id="g1", messages=messages, transcript=(row,),
         outcome=outcome, created_at=1_756_000_930_000,
     )
 
@@ -88,7 +95,8 @@ def _trace(outcome: str = "send_reply") -> TagTrace:
 async def _run(*, store=None, client=None, metrics=None,
                max_chars=1200, timeout_seconds=5.0, store_timeout_seconds=5.0,
                now_ms_override=None, trace=None, record_store=None,
-               fold_batch=200, culture=None) -> tuple:
+               fold_batch=200, culture=None,
+               working_set_max_items=5, working_set_max_chars=600) -> tuple:
     store = store if store is not None else InMemoryStandingStore()
     metrics = metrics if metrics is not None else Metrics()
     await debrief.run(
@@ -102,6 +110,8 @@ async def _run(*, store=None, client=None, metrics=None,
         store_timeout_seconds=store_timeout_seconds,
         now_ms=now_ms_override if now_ms_override is not None else 1_756_000_931_000,
         culture=culture,
+        working_set_max_items=working_set_max_items,
+        working_set_max_chars=working_set_max_chars,
     )
     return store, metrics
 
@@ -144,6 +154,27 @@ async def test_the_fold_reads_the_current_standing_before_writing_the_next():
     # Counted from the prior it read, not from zero.
     row = await store.read(platform="signal", conversation_id="g1")
     assert row.fold_count == 5
+
+
+async def test_the_fold_is_shown_its_own_working_set_prior():
+    """design/standing-compact/30-working-set.md §4: `<standing_working_set_
+    prior>` rides beside `<standing_prior>` in the FOLD's own input — the
+    same always-present contract, so the model can re-judge it rather than
+    re-deriving it from nothing every turn."""
+    store = InMemoryStandingStore()
+    await store.write(standing=Standing(
+        platform="signal", conversation_id="g1", body="a position",
+        fold_count=1, updated_at=1, working_set=(
+            WorkingSetItem(what="an existing option", source="web_search",
+                            found_at=1),
+        ),
+    ))
+    client = _Client(_ok("revised"))
+    await _run(store=store, client=client)
+    prompt = client.prompts[0]
+    assert "<standing_working_set_prior" in prompt
+    assert "an existing option" in prompt
+    assert prompt.index("<standing_prior") < prompt.index("<standing_working_set_prior")
 
 
 async def test_a_first_fold_is_counted_as_absent_rather_than_read():
@@ -1195,6 +1226,32 @@ def test_the_objective_ranks_a_finding_between_a_commitment_and_the_room():
     assert "What you CONCLUDED outranks what the room SAID" not in body
 
 
+# --- the objective, v9 (design/standing-compact/30-working-set.md) --------
+
+
+def test_the_objective_v9_states_the_working_set_schema_and_its_own_sentence():
+    """The objective tells the model what a working-set item IS — one
+    sentence, not a menu of cases (`context-framing-beats-capability-listing`,
+    `judgement-not-a-menu`) — and the JSON schema gains the key beside
+    `standing`."""
+    body = _objective_body()
+    assert (
+        "the rest are a working set — each still worth offering, each with "
+        "what it is, where you found it, and what it's for if you know"
+    ) in body
+    assert '"working_set": [{"what"' in body
+    assert "<standing_working_set_prior>" in body
+
+
+def test_the_objective_v9_does_not_enumerate_working_set_cases():
+    """`judgement-not-a-menu`: no bulleted list of "restaurants found by
+    web_search", "other candidates from place_info", "alternate time
+    slots" — exactly the shape that cost the Relevance Gate accuracy."""
+    body = _objective_body()
+    assert "restaurants found by web_search" not in body
+    assert "other candidates from place_info" not in body
+
+
 async def test_the_fold_reads_the_rooms_account_the_turn_read():
     """DEC-207: the tag-turn fold is handed the account the turn read at its
     start and renders it above the prior — asserted through the PROMPT, for
@@ -1208,3 +1265,193 @@ async def test_the_fold_reads_the_rooms_account_the_turn_read():
     prompt = client.prompts[0]
     assert "<culture" in prompt and "they decide by attrition" in prompt
     assert prompt.index("<culture") < prompt.index("<standing_prior")
+
+
+# --- working_set (design/standing-compact/30-working-set.md, issue #445) ---
+
+_TOOL_STEP = (
+    {"role": "assistant", "content": [
+        {"toolUse": {"name": "web_search", "input": {"q": "chicken hotpot"}}},
+    ]},
+    {"role": "user", "content": [
+        {"toolResult": {"content": [{"text": "three restaurants found"}]}},
+    ]},
+)
+
+
+async def test_found_at_is_stamped_by_the_write_path_not_the_model():
+    """§3: `found_at` is NEVER read off the model's JSON — the model is not
+    even asked for it, and a value it supplies anyway (a rogue or confused
+    answer) is silently ignored in favour of the write path's own clock.
+    `WorkingSetItem`'s own rule: "there is no second clock"."""
+    client = _Client(_ok_ws("a position", [
+        {"what": "a restaurant", "source": "web_search", "found_at": 1},
+    ]))
+    store, _ = await _run(
+        client=client, trace=_trace(messages=_TOOL_STEP),
+        now_ms_override=1_756_000_931_000,
+    )
+    row = await store.read(platform="signal", conversation_id="g1")
+    assert len(row.working_set) == 1
+    assert row.working_set[0].found_at == 1_756_000_931_000
+
+
+async def test_a_carried_forward_item_keeps_its_original_found_at():
+    """The other half of the same rule: an item the model re-states UNCHANGED
+    from its prior (same `what` AND `source`) is a CARRY-FORWARD, not a new
+    find, and keeps the `found_at` it already had — without this, TTL
+    (render-time, §2) would never fire, because every fold would re-stamp
+    every surviving item to the current instant."""
+    store = InMemoryStandingStore()
+    await store.write(standing=Standing(
+        platform="signal", conversation_id="g1", body="prior position",
+        fold_count=1, updated_at=1, working_set=(
+            WorkingSetItem(
+                what="a restaurant", source="web_search", found_at=1_000,
+                bears_on="dinner",
+            ),
+        ),
+    ))
+    client = _Client(_ok_ws("revised", [
+        {"what": "a restaurant", "source": "web_search", "bears_on": "dinner"},
+    ]))
+    await _run(
+        store=store, client=client, trace=_trace(messages=()),
+        now_ms_override=1_756_000_931_000,
+    )
+    row = await store.read(platform="signal", conversation_id="g1")
+    assert len(row.working_set) == 1
+    assert row.working_set[0].found_at == 1_000
+
+
+async def test_an_item_sourced_to_a_tool_the_fold_was_shown_survives():
+    client = _Client(_ok_ws("a position", [
+        {"what": "a restaurant the search returned", "source": "web_search",
+         "bears_on": "dinner"},
+    ]))
+    store, metrics = await _run(client=client, trace=_trace(messages=_TOOL_STEP))
+    row = await store.read(platform="signal", conversation_id="g1")
+    assert len(row.working_set) == 1
+    assert row.working_set[0].what == "a restaurant the search returned"
+    assert _counter(
+        metrics, "nora_standing_working_set_unsourced_dropped_total") == 0
+
+
+async def test_an_item_whose_source_does_not_match_a_shown_step_is_dropped():
+    """§3: `source` is constrained to the SAME `<steps>` the fold was
+    actually shown — never a paraphrase of the room's question. An item
+    naming a tool this turn never called (or naming nothing at all,
+    `"I reasoned it out"`) is dropped rather than written, and counted."""
+    client = _Client(_ok_ws("a position", [
+        {"what": "a restaurant", "source": "I reasoned it out",
+         "bears_on": "dinner"},
+    ]))
+    store, metrics = await _run(client=client, trace=_trace(messages=_TOOL_STEP))
+    row = await store.read(platform="signal", conversation_id="g1")
+    assert row.working_set == ()
+    assert _counter(
+        metrics, "nora_standing_working_set_unsourced_dropped_total") == 1
+
+
+async def test_an_unsourced_item_with_no_tool_calls_this_turn_is_dropped():
+    """The degenerate case: a turn that called no tools at all has no shown
+    step ANY source could match, so every "new" item is dropped — most
+    turns, since most turns call no tools."""
+    client = _Client(_ok_ws("a position", [
+        {"what": "a restaurant", "source": "web_search"},
+    ]))
+    store, metrics = await _run(client=client, trace=_trace(messages=()))
+    row = await store.read(platform="signal", conversation_id="g1")
+    assert row.working_set == ()
+    assert _counter(
+        metrics, "nora_standing_working_set_unsourced_dropped_total") == 1
+
+
+async def test_an_over_budget_working_set_is_refused_and_the_prior_is_kept():
+    """§1: the OPERATING budget, enforced at write — an oversized new working
+    set is refused AS A WHOLE and the PRIOR one is kept unchanged, never a
+    silent truncation, the same "a coherent stale position beats one cut in
+    half" argument §4.0 makes for the body."""
+    store = InMemoryStandingStore()
+    kept_item = WorkingSetItem(
+        what="the prior's own item", source="web_search", found_at=1_000,
+    )
+    await store.write(standing=Standing(
+        platform="signal", conversation_id="g1", body="prior position",
+        fold_count=1, updated_at=1, working_set=(kept_item,),
+    ))
+    # 3 items > working_set_max_items=2, all correctly sourced.
+    client = _Client(_ok_ws("revised", [
+        {"what": f"item {i}", "source": "web_search"} for i in range(3)
+    ]))
+    store, metrics = await _run(
+        store=store, client=client, trace=_trace(messages=_TOOL_STEP),
+        working_set_max_items=2, working_set_max_chars=600,
+    )
+    row = await store.read(platform="signal", conversation_id="g1")
+    assert row.working_set == (kept_item,)
+    assert _counter(
+        metrics, "nora_standing_working_set_overflow_refusals_total") == 1
+    # The paragraph itself still wrote — only the working set was refused.
+    assert row.body == "revised"
+
+
+async def test_a_working_set_within_budget_is_written_whole():
+    """The positive control the refusal test above needs: a working set at
+    or under both caps is written exactly as the model gave it, not
+    refused."""
+    client = _Client(_ok_ws("revised", [
+        {"what": "a restaurant", "source": "web_search", "bears_on": "dinner"},
+    ]))
+    store, metrics = await _run(
+        client=client, trace=_trace(messages=_TOOL_STEP),
+        working_set_max_items=5, working_set_max_chars=600,
+    )
+    row = await store.read(platform="signal", conversation_id="g1")
+    assert len(row.working_set) == 1
+    assert row.working_set[0].what == "a restaurant"
+    assert _counter(
+        metrics, "nora_standing_working_set_overflow_refusals_total") == 0
+
+
+async def test_a_missing_working_set_key_leaves_it_empty():
+    """The ordinary state, per the objective's own words — most turns have
+    nothing to add. Omitting the key entirely must not raise and must not
+    carry anything forward by accident."""
+    store = InMemoryStandingStore()
+    await store.write(standing=Standing(
+        platform="signal", conversation_id="g1", body="prior position",
+        fold_count=1, updated_at=1,
+        working_set=(WorkingSetItem(
+            what="an old item", source="web_search", found_at=1),),
+    ))
+    client = _Client(_ok("revised"))  # no "working_set" key at all
+    store, _ = await _run(store=store, client=client)
+    row = await store.read(platform="signal", conversation_id="g1")
+    assert row.working_set == ()
+
+
+async def test_a_working_set_item_is_screened_like_the_body():
+    """§3/§4.3: screened before the write, item by item, exactly like
+    `body`. An identifier reaching a working-set item does not get a second,
+    unscreened path into the prompt just because it sits in a new field."""
+    client = _Client(_ok_ws("revised", [
+        {"what": "call them at +85290000101", "source": "web_search"},
+    ]))
+    store, metrics = await _run(client=client, trace=_trace(messages=_TOOL_STEP))
+    row = await store.read(platform="signal", conversation_id="g1")
+    assert row.working_set == ()
+    assert _counter(
+        metrics, "nora_dream_screened_total",
+        adaptor="debrief_working_set", reason="identifier") == 1
+
+
+async def test_the_working_set_rule_names_both_caps_in_the_system_prompt():
+    """The operating budget reaches the model as text, the same way
+    `max_chars` does for the body — otherwise the model has no way to
+    self-manage a limit it is never told."""
+    client = _Client(_ok("a position"))
+    await _run(
+        client=client, working_set_max_items=5, working_set_max_chars=600)
+    assert "at most 5 items" in client.prompts[0]
+    assert "600 characters combined" in client.prompts[0]

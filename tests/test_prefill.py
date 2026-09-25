@@ -255,6 +255,24 @@ def _full_prefill_body() -> str:
     )[1]["content"][0]["text"]
 
 
+def test_the_working_set_block_renders_adjacent_to_standing_in_the_prefill():
+    """design/standing-compact/30-working-set.md §4, issue #445: `<standing_
+    working_set>` reaches the model on BOTH the tag turn and the
+    participation turn through this ONE function — `nora.app.fire`'s
+    participation occasion calls the exact same `build_prefill` this test
+    calls, so proving it here proves both, the way `_standing_block`'s own
+    read-order argument already covers both callers of `render_standing`.
+
+    Adjacent, not merely present: the read order is "here is my position,
+    here is what I have not told you, here is what has been said since".
+    """
+    body = _full_prefill_body()
+    assert "<standing_working_set " in body
+    assert "a second restaurant the search returned" in body
+    assert body.index("<standing") < body.index("<standing_working_set")
+    assert body.index("<standing_working_set") < body.index("<group_transcript")
+
+
 def _opening_tag(body: str, name: str) -> str:
     """The opening tag of `name`, attributes included — where the marker and
     the clause both live, and the one position rendered content can never

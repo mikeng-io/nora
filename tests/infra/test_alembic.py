@@ -373,3 +373,94 @@ def test_0064_resolves_open_duplicates_before_it_builds_the_index(pg_url):
     assert after[ids["persons"]] == ("pending", None)
     assert index is not None and "UNIQUE" in index
     assert current_revision(pg_url) == head_revision()
+
+
+def test_0065_working_set_column_defaults_to_an_empty_array(pg_url):
+    """design/standing-compact/30-working-set.md, issue #445: `working_set`
+    is NOT NULL DEFAULT '[]'::jsonb on both `standing` and
+    `standing_revision` — no backfill, migration 0059's own argument one
+    field over: nothing before this column existed could have written
+    anything else."""
+    run_migrations(pg_url)
+    engine = sa.create_engine(sync_url_for(pg_url))
+    try:
+        with engine.connect() as conn:
+            conn.execute(sa.text(
+                "INSERT INTO standing (platform, conversation_id, body, "
+                "fold_count, updated_at) VALUES "
+                "('signal', 'pre-0065', 'a position', 1, 1000)"
+            ))
+            conn.commit()
+            working_set = conn.execute(sa.text(
+                "SELECT working_set FROM standing "
+                "WHERE conversation_id = 'pre-0065'"
+            )).scalar_one()
+    finally:
+        engine.dispose()
+    assert working_set == []
+
+
+def test_0065_downgrade_drops_both_working_set_columns_and_their_checks(pg_url):
+    """The falsification side: downgrading past 0065 removes the column and
+    its CHECK on both tables, and the chain still reaches the same head when
+    re-applied — `test_0062_downgrade_drops_the_source_column_and_its_check`'s
+    own shape, one migration family over."""
+    run_migrations(pg_url)
+    command.downgrade(alembic_config(pg_url), "0064_proactive_open_note")
+
+    engine = sa.create_engine(sync_url_for(pg_url))
+    try:
+        with engine.connect() as conn:
+            standing_columns = conn.execute(sa.text(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_name = 'standing'"
+            )).scalars().all()
+            revision_columns = conn.execute(sa.text(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_name = 'standing_revision'"
+            )).scalars().all()
+    finally:
+        engine.dispose()
+    assert "working_set" not in standing_columns
+    assert "working_set" not in revision_columns
+
+    run_migrations(pg_url)
+    assert current_revision(pg_url) == head_revision()
+
+    engine = sa.create_engine(sync_url_for(pg_url))
+    try:
+        with engine.connect() as conn:
+            checks = conn.execute(sa.text(
+                "SELECT conname FROM pg_constraint "
+                "WHERE conrelid = 'standing'::regclass AND contype = 'c'"
+            )).scalars().all()
+            revision_checks = conn.execute(sa.text(
+                "SELECT conname FROM pg_constraint "
+                "WHERE conrelid = 'standing_revision'::regclass AND contype = 'c'"
+            )).scalars().all()
+    finally:
+        engine.dispose()
+    assert "standing_working_set_fits_the_ceiling_check" in checks
+    assert "standing_revision_working_set_fits_the_ceiling_check" in revision_checks
+
+
+def test_0065_the_ceiling_check_refuses_an_oversized_working_set(pg_url):
+    """The absolute ceiling actually binds in Postgres, not just in
+    `Standing.__post_init__` — the two-layer split `test_the_operating_cap_
+    sits_below_the_database_ceiling` (tests/unit/test_standing.py) asserts
+    only as a relation between constants."""
+    run_migrations(pg_url)
+    engine = sa.create_engine(sync_url_for(pg_url))
+    oversized = json.dumps([{"what": f"x{i}", "source": "s", "found_at": 1}
+                             for i in range(21)])
+    try:
+        with engine.connect() as conn, pytest.raises(Exception, match="check"):
+            conn.execute(sa.text(
+                "INSERT INTO standing (platform, conversation_id, body, "
+                "fold_count, updated_at, working_set) VALUES "
+                "('signal', 'over-0065', 'a position', 1, 1000, "
+                "CAST(:working_set AS jsonb))"
+            ), {"working_set": oversized})
+            conn.commit()
+    finally:
+        engine.dispose()
