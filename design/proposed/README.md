@@ -38,6 +38,7 @@ description.
 | `24-honcho-integration-v2.md` | a second-generation Honcho integration | **partly overtaken** — `nora/infra/honcho/` exists and ADR 0001/0002 settled the questions this argued about. Read the ADRs first. |
 | `30-media-architecture.md` | the media custody and description architecture | **BUILT** — `nora/domain/media.py` plus DEC-45; issues #116/#117 are the live continuation. |
 | `31-recall-query-generation.md` | model-generated queries for recall tools | **BUILT** — landed in PR #92. |
+| `32-shared-media-register.md` | framing a shared picture, clip or Instagram item as her own notes rather than a report to relay: the `media_fetch` and Instagram read notes, and one `conduct.md` paragraph | **built on a branch, not deployed** (2026-09-26); the study is the evidence, a live read-back after deploy confirms or reopens it |
 
 Each carries corrections applied after an adversarial review on the day it was
 written. Read the corrections — several are recorded as struck-through claims
