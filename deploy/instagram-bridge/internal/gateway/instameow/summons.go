@@ -144,16 +144,31 @@ func (b *Bridge) recorder() SummonsRecorder {
 	return b.summonsRecorder
 }
 
-// summonsCardOf reports the card when msg is a summons: an XMA card, sent by
-// somebody who is not this account, whose subtitle, caption or title carries
-// word-bounded "@"+own username. Own identity unknown is never a summons
-// (fail closed: this account cannot tell its own card from anybody's).
+// The measured summons card's two discriminators (design 19, 2026-09-26).
+// Any other XMA is a share, not a summons: a post shared into a group chat
+// whose caption tags her is somebody showing the room a post, and must not
+// cost a thread read or become a summons.
+const (
+	summonsContentType = "MESSAGE_INLINE_SHARE"
+	summonsXMATypename = "SlideMessageLayeredXMA"
+)
+
+// summonsCardOf reports the card when msg is a summons: content_type
+// MESSAGE_INLINE_SHARE carrying a SlideMessageLayeredXMA, sent by somebody
+// who is not this account, whose SUBTITLE (the comment's text) carries
+// word-bounded "@"+own username. The title is the commenter's username and
+// the caption is a shared post's, so neither is read. Own identity unknown
+// is never a summons (fail closed: this account cannot tell its own card
+// from anybody's).
 func summonsCardOf(room string, msg *slidetypes.Message, self domain.Self, ownFBID int64) (summonsCard, bool) {
 	if msg == nil || msg.MessageID == "" || self.Username == "" || ownFBID == 0 {
 		return summonsCard{}, false
 	}
+	if msg.ContentType != summonsContentType {
+		return summonsCard{}, false
+	}
 	content, ok := msg.Content.Content.(*slidetypes.MessageContentXMA)
-	if !ok || content == nil || content.XMA == nil {
+	if !ok || content == nil || content.XMA == nil || content.XMA.Typename != summonsXMATypename {
 		return summonsCard{}, false
 	}
 	sender := senderOf(msg)
@@ -161,9 +176,7 @@ func summonsCardOf(room string, msg *slidetypes.Message, self domain.Self, ownFB
 		return summonsCard{}, false
 	}
 	x := content.XMA
-	if !domain.MentionsHandle(x.SubtitleText, self.Username) &&
-		!domain.MentionsHandle(x.CaptionBodyText, self.Username) &&
-		!domain.MentionsHandle(x.TitleText, self.Username) {
+	if !domain.MentionsHandle(x.SubtitleText, self.Username) {
 		return summonsCard{}, false
 	}
 	if msg.ThreadFBID != "" {
@@ -213,33 +226,40 @@ func (b *Bridge) resolveSummons(ctx context.Context, card summonsCard) {
 	if b.summonsRate == nil || b.summonsRate.allow() {
 		code, media, reason = b.refetchTarget(ctx, card)
 	}
+	// resolved=true is a promise that a reply to this summons can pass
+	// guard 3(a): it is made only once the record is on disk.
 	if reason == "" {
-		ev.Shortcode, ev.MediaID, ev.Resolved = code.String(), media.String(), true
-		b.recordSummons(ctx, card, media)
+		if b.recordSummons(ctx, card, media) {
+			ev.Shortcode, ev.MediaID, ev.Resolved = code.String(), media.String(), true
+		} else {
+			reason = "record_failed"
+		}
 	}
 	slog.InfoContext(ctx, "summons card received", "resolved", ev.Resolved, "reason", reason)
 	b.sink.Emit(ev)
 }
 
-// recordSummons records a resolved summons. A failure is logged with a fixed
-// word and never stops the event: the facts in it are true, and the missing
-// record only means a reply to it is refused.
-func (b *Bridge) recordSummons(ctx context.Context, card summonsCard, media domain.MediaID) {
+// recordSummons records a resolved summons and reports whether it is on
+// disk. A failure is logged with a fixed word; the caller then emits the
+// card unresolved, because a reply to it would be refused.
+func (b *Bridge) recordSummons(ctx context.Context, card summonsCard, media domain.MediaID) bool {
 	rec := b.recorder()
 	if rec == nil {
-		slog.WarnContext(ctx, "summons not recorded: no recorder is wired; replies to it will be refused")
-		return
+		slog.WarnContext(ctx, "summons not recorded: no recorder is wired; emitted unresolved")
+		return false
 	}
 	sender, err := domain.ParseIGID(card.sender.IGID)
 	if err != nil {
-		slog.WarnContext(ctx, "summons not recorded: the card's sender has no igid; replies to it will be refused")
-		return
+		slog.WarnContext(ctx, "summons not recorded: the card's sender has no igid; emitted unresolved")
+		return false
 	}
 	if err := rec.RecordSummons(ctx, domain.Summons{
 		MessageID: card.messageID, Media: media, Sender: sender, ReceivedAt: card.receivedAt,
 	}); err != nil {
-		slog.WarnContext(ctx, "summons not recorded; replies to it will be refused", "code", recordCode(err))
+		slog.WarnContext(ctx, "summons not recorded; emitted unresolved", "code", recordCode(err))
+		return false
 	}
+	return true
 }
 
 func recordCode(err error) string {

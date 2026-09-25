@@ -10,6 +10,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"strings"
 	"sync"
@@ -70,11 +71,16 @@ type fakeRecorder struct {
 	mu   sync.Mutex
 	got  []domain.Summons
 	fail error
+	// onRecord runs INSIDE RecordSummons, before it answers.
+	onRecord func()
 }
 
 func (f *fakeRecorder) RecordSummons(_ context.Context, s domain.Summons) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.onRecord != nil {
+		f.onRecord()
+	}
 	f.got = append(f.got, s)
 	return f.fail
 }
@@ -140,10 +146,10 @@ func summonsEvents(t *testing.T, b *Bridge) []map[string]any {
 func TestSummonsCardDetection(t *testing.T) {
 	self := domain.Self{FBID: "14963523149149302", IGID: "79597894900", Username: "not_____nora"}
 	own := int64(14963523149149302)
-	xma := func(x *slidetypes.XMAContent) *slidetypes.Message {
-		m := xmaMessage(x, "")
-		m.Sender = &slidetypes.MessageSender{IGID: cardSenderIGID}
-		m.Sender.UserDict.Username = cardSenderName
+	// card is the measured card with one thing about its XMA changed.
+	card := func(change func(m *slidetypes.Message, x *slidetypes.XMAContent)) *slidetypes.Message {
+		m := liveCard(t, "is this true")
+		change(m, m.Content.Content.(*slidetypes.MessageContentXMA).XMA)
 		return m
 	}
 	for _, tc := range []struct {
@@ -153,8 +159,18 @@ func TestSummonsCardDetection(t *testing.T) {
 		want bool
 	}{
 		{"measured card", liveCard(t, cardText), own, true},
-		{"handle in the caption", xma(&slidetypes.XMAContent{CaptionBodyText: "look @not_____nora"}), own, true},
-		{"handle in the title", xma(&slidetypes.XMAContent{TitleText: "@Not_____Nora"}), own, true},
+		{"handle only in the caption", card(func(_ *slidetypes.Message, x *slidetypes.XMAContent) {
+			x.CaptionBodyText = "look @not_____nora"
+		}), own, false},
+		{"handle only in the title", card(func(_ *slidetypes.Message, x *slidetypes.XMAContent) {
+			x.TitleText, x.XMATitle = "@not_____nora", "@not_____nora"
+		}), own, false},
+		{"another XMA typename", card(func(_ *slidetypes.Message, x *slidetypes.XMAContent) {
+			x.SubtitleText, x.Typename = cardText, "SlideMessagePortraitXMA"
+		}), own, false},
+		{"another content_type", card(func(m *slidetypes.Message, x *slidetypes.XMAContent) {
+			x.SubtitleText, m.ContentType = cardText, "XMA"
+		}), own, false},
 		{"no handle", liveCard(t, "is this true"), own, false},
 		{"a longer handle", liveCard(t, "@not_____nora_fan is this true"), own, false},
 		{"an email-like prefix", liveCard(t, "me@not_____nora is this true"), own, false},
@@ -197,7 +213,17 @@ func TestASummonsCardResolvesThroughTheRefetch(t *testing.T) {
 				{MessageID: "mid.$another"}, refetched(t, target),
 			}}
 			b, rec := summonsBridge(t, ig)
+			// The record is on disk BEFORE the summons event goes out: when
+			// it is made, the only event emitted is the ordinary message.
+			recordedBeforeEmit := false
+			rec.onRecord = func() {
+				_, buffered, _ := hubOf(b).Stats()
+				recordedBeforeEmit = buffered == 1
+			}
 			deliver(t, b, liveCard(t, cardText))
+			if !recordedBeforeEmit {
+				t.Error("the summons event was emitted before the summons was recorded")
+			}
 
 			all := events(t, b)
 			if len(all) != 2 || all[0]["kind"] != kindMessage || all[1]["kind"] != kindSummons {
@@ -309,16 +335,78 @@ func TestTheSeenSetIsBounded(t *testing.T) {
 	}
 }
 
-// A recorder that fails does not stop the event: the facts are true, and
-// the missing record only means a reply to it will be refused.
-func TestAFailedRecordStillEmitsTheEvent(t *testing.T) {
+// A card whose record failed is emitted UNRESOLVED: resolved=true promises
+// a reply can pass guard 3(a), and without the record none can.
+func TestAFailedRecordIsEmittedUnresolved(t *testing.T) {
 	ig := &fakeIG{ThreadMessages: []*slidetypes.Message{refetched(t, "https://www.instagram.com/p/"+cardCode+"/")}}
 	b, rec := summonsBridge(t, ig)
 	rec.fail = domain.ErrLedgerUnavailable
 	deliver(t, b, liveCard(t, cardText))
 	evs := summonsEvents(t, b)
-	if len(evs) != 1 || evs[0]["resolved"] != true {
-		t.Errorf("events = %v, want one resolved summons", evs)
+	if len(evs) != 1 || evs[0]["resolved"] != false || evs[0]["shortcode"] != "" || evs[0]["media_id"] != "" {
+		t.Errorf("events = %v, want one unresolved summons with empty shortcode and media_id", evs)
+	}
+	if len(rec.calls()) != 1 {
+		t.Errorf("%d record attempt(s), want 1", len(rec.calls()))
+	}
+}
+
+// A shared post whose caption tags her, and a card whose only mention is in
+// its title, cost no thread read and emit no summons.
+func TestASharedPostTaggingHerIsNotASummons(t *testing.T) {
+	shared := liveCard(t, "")
+	x := shared.Content.Content.(*slidetypes.MessageContentXMA).XMA
+	x.Typename, x.CaptionBodyText = "SlideMessagePortraitXMA", "look @not_____nora"
+	titled := liveCard(t, "nice")
+	y := titled.Content.Content.(*slidetypes.MessageContentXMA).XMA
+	y.TitleText, y.XMATitle = "@not_____nora", "@not_____nora"
+	for name, msg := range map[string]*slidetypes.Message{"shared post": shared, "title only": titled} {
+		t.Run(name, func(t *testing.T) {
+			ig := &fakeIG{ThreadMessages: []*slidetypes.Message{refetched(t, "https://www.instagram.com/p/"+cardCode+"/")}}
+			b, rec := summonsBridge(t, ig)
+			deliver(t, b, msg)
+			all := events(t, b) // the replay is drained by reading it: read once
+			if len(ig.GetThreadIDs) != 0 || len(rec.calls()) != 0 {
+				t.Errorf("%d read(s), %d record(s); want none", len(ig.GetThreadIDs), len(rec.calls()))
+			}
+			if len(all) != 1 || all[0]["kind"] != kindMessage {
+				t.Errorf("events = %v, want the ordinary message event only", all)
+			}
+		})
+	}
+}
+
+// The refetch budget at the intake: seven distinct cards inside one window
+// cost exactly six thread reads, and the seventh is emitted unresolved.
+func TestTheRefetchBudgetHoldsAtTheIntake(t *testing.T) {
+	var page []*slidetypes.Message
+	var cards []*slidetypes.Message
+	for i := range summonsRefetchMax + 1 {
+		mid := fmt.Sprintf("mid.$budget%02d", i)
+		live := liveCard(t, cardText)
+		live.MessageID = mid
+		cards = append(cards, live)
+		r := refetched(t, "https://www.instagram.com/p/"+cardCode+"/")
+		r.MessageID = mid
+		page = append(page, r)
+	}
+	ig := &fakeIG{ThreadMessages: page}
+	b, _ := summonsBridge(t, ig)
+	for _, c := range cards {
+		deliver(t, b, c)
+	}
+	if len(ig.GetThreadIDs) != summonsRefetchMax {
+		t.Errorf("%d thread reads, want %d", len(ig.GetThreadIDs), summonsRefetchMax)
+	}
+	evs := summonsEvents(t, b)
+	if len(evs) != summonsRefetchMax+1 {
+		t.Fatalf("%d summons events, want %d", len(evs), summonsRefetchMax+1)
+	}
+	for i, ev := range evs {
+		want := i < summonsRefetchMax
+		if ev["resolved"] != want {
+			t.Errorf("event %d (%v) resolved = %v, want %v", i, ev["message_id"], ev["resolved"], want)
+		}
 	}
 }
 

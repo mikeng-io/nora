@@ -3,7 +3,7 @@ package domain
 import "strings"
 
 // MentionsHandle reports whether text carries "@"+username as a whole
-// @mention, case-insensitively. An empty username matches nothing (fail
+// @mention, ASCII case-insensitively. An empty username matches nothing (fail
 // closed: an account that does not know its own handle cannot tell it was
 // summoned).
 //
@@ -15,7 +15,21 @@ func MentionsHandle(text, username string) bool {
 	if username == "" {
 		return false
 	}
-	return ContainsMentionToken(strings.ToLower(text), "@"+strings.ToLower(username))
+	return ContainsMentionToken(asciiLower(text), "@"+asciiLower(username))
+}
+
+// asciiLower folds A-Z only. The handle alphabet is ASCII, and full Unicode
+// folding would let a non-ASCII letter (the Turkish dotted İ, for one) turn
+// into ASCII-looking bytes and complete a handle nobody typed. Every other
+// byte, a multi-byte rune's included, is left exactly as it was.
+func asciiLower(s string) string {
+	b := []byte(s)
+	for i, c := range b {
+		if c >= 'A' && c <= 'Z' {
+			b[i] = c + ('a' - 'A')
+		}
+	}
+	return string(b)
 }
 
 // ContainsMentionToken finds marker as a whole @mention, not as a prefix of

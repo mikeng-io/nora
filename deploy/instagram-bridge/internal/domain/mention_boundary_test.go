@@ -17,6 +17,13 @@ func TestMentionsHandleBoundaryMatchesNora(t *testing.T) {
 		"x.@noraexample":              false,
 		"(@noraexample)":              true,
 		"@noraexample, is this true?": true,
+		// ASCII-only case folding: a non-ASCII letter never folds into
+		// (or out of) the handle, and is not a username byte.
+		"@noraruntıme":  false,
+		"ı@noraexample": true,
+		"@noraexampleı": true,
+		"@noraruntİme":  false,
+		"@NORAEXAMPLE":  true,
 	} {
 		if got := MentionsHandle(text, "noraexample"); got != want {
 			t.Errorf("MentionsHandle(%q) = %v, want %v", text, got, want)
