@@ -9,6 +9,7 @@ of ours does). And what was left out is COUNTED, never silently absent.
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -357,3 +358,14 @@ def test_an_empty_question_means_the_post():
 def test_ages(delta, said):
     from nora.domain.summons import age
     assert age(NOW - delta, NOW) == said
+
+
+def test_an_item_carries_no_code_like_label_and_no_url():
+    """A live dry run (2026-09-26) passed "item 1" to media_fetch as a media
+    code. The post block names items in words and lists no URL: the pre-read
+    has already looked at each one."""
+    block = _post_block(render_summons(_context(post=_post(3))))
+    assert "the post's first image:" in block and "the post's third image:" in block
+    assert not re.search(r"\bitem \d", block)
+    assert "cdninstagram" not in block and "https://" not in block
+

@@ -433,7 +433,11 @@ cases:
   # --- OPEN PLANS DROPPED BY A FOLD (design/group-situation/10, #555) -------
   # Five real folds that dropped an open plan still ahead of them, with
   # nothing between the two writes settling it. Each was confirmed by hand
-  # in that study. They measure design/standing-compact/40-open-plans.md.
+  # in that study. They were written to measure
+  # design/standing-compact/40-open-plans.md, withdrawn 2026-09-26: a dated
+  # plan is the note tier's to hold (design/dreamer-agent-loop/42), not
+  # Standing's. The case for drop 5 (a dated meet-up the fold let go) was
+  # removed with it; the four left pass on master and stay as carry guards.
   # Drops 1-4 ran on the fold before 7fdb24b4 (2026-09-24), and 1-2 on its
   # deleted rebuild path; the before arm on today's fold decides which still
   # reproduce (a case that passes on master is a regression guard). Case 4
@@ -513,22 +517,3 @@ cases:
       she relayed that evening meant she should wait for the reply and
       report back. This turn is about whether she followed someone on a
       social network. Nobody answered the question; it must still be held.
-
-  - name: carry-an-afternoon-meet-up-and-the-stops-before-dinner
-    entry: standing
-    expect: fold
-    # Study drop 5, the drop behind design/group-situation/00's failing
-    # turn. The meet-up had been carried for two days.
-    snapshot:
-      platform: signal
-      conversation_id: x5hcBMQITtdUfSC0o9AHsqJKU7ywYMrOG5hcBMQITtc=
-      before_ms: 1790333539343
-    metadata:
-      tag_id: 1da436fdb4ca4242a323ae6445c81ddd
-      kind: carry
-    expected_output: |
-      The earlier position holds, for the day of the dinner being planned,
-      an afternoon meet-up point she has not said whether she will go to,
-      and a proposed order of stops before dinner. This turn pushes the
-      dinner forward: time, venue shortlist, an event. It does not settle
-      or cancel the meet-up or the stops; they must still be held.

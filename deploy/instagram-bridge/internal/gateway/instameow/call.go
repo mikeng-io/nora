@@ -86,7 +86,14 @@ func graphql(
 	defer span.End()
 
 	resp, raw, err := issuer.MakeGraphQLRequest(ctx, doc, vars)
-	if err != nil {
+	// The library answers every status >= 400 with an error (ErrUnexpectedError,
+	// http.go's makeRequestOnce) AND the response and its body, the only place
+	// a checkpoint shows up on a raw call (issue #533; restDo reads it the same
+	// way). Such an answer goes to the status branch below, which reads the
+	// body. A typed sentinel the library already found (a redirect to a
+	// challenge or to login) keeps its own classification.
+	answered := resp != nil && resp.StatusCode >= 400
+	if err != nil && (!answered || needsHuman(err) || errors.Is(err, httpclient.ErrAccountSuspended)) {
 		failSpan(span, errorType(err), err)
 		return 0, nil, classify(err)
 	}
@@ -97,6 +104,12 @@ func graphql(
 			// parse failure is why this is a named error rather than one bucket.
 			span.SetAttributes(attribute.String("error.type", "upstream_http"))
 			span.SetStatus(codes.Error, "upstream_http")
+			// A body naming a checkpoint needs a human, whatever the status
+			// (issue #533): the same read restStatusError gives a REST answer.
+			if sentinel := restCheckpointSentinel(raw); sentinel != nil {
+				return resp.StatusCode, nil, domain.Classify(domain.ErrNeedsHuman,
+					fmt.Errorf("%s: %w", label, sentinel))
+			}
 			return resp.StatusCode, nil, domain.Classify(domain.ErrUpstreamRejected,
 				fmt.Errorf("%s returned a non-200: %d", label, resp.StatusCode))
 		}
@@ -105,6 +118,7 @@ func graphql(
 	// `errors` BEFORE `data`. A failed document is still an HTTP 200, with an
 	// `errors` array where `data` would be.
 	var envelope struct {
+		Status string `json:"status"`
 		Errors []struct {
 			Message string `json:"message"`
 			Code    int    `json:"code"`
@@ -118,6 +132,22 @@ func graphql(
 		span.SetStatus(codes.Error, "upstream_rejected")
 		return http.StatusOK, nil, domain.Classify(domain.ErrUpstreamRejected,
 			fmt.Errorf("%s did not return JSON (%d bytes): %w", label, len(raw), err))
+	}
+	if envelope.Status == "fail" || len(envelope.Errors) > 0 {
+		// A checkpoint can also come back as a 200 carrying "status":"fail"
+		// and a checkpoint message: it needs a human, not a retry (#533).
+		if sentinel := restCheckpointSentinel(raw); sentinel != nil {
+			span.SetAttributes(attribute.String("error.type", "needs_human"))
+			span.SetStatus(codes.Error, "needs_human")
+			return http.StatusOK, nil, domain.Classify(domain.ErrNeedsHuman,
+				fmt.Errorf("%s: %w", label, sentinel))
+		}
+	}
+	if envelope.Status == "fail" && len(envelope.Errors) == 0 {
+		span.SetAttributes(attribute.String("error.type", "upstream_rejected"))
+		span.SetStatus(codes.Error, "upstream_rejected")
+		return http.StatusOK, nil, domain.Classify(domain.ErrUpstreamRejected,
+			fmt.Errorf("%s returned status fail", label))
 	}
 	if len(envelope.Errors) > 0 {
 		e := envelope.Errors[0]

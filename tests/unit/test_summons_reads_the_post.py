@@ -264,7 +264,7 @@ def _item_lines(block: str) -> list[tuple[str, str]]:
     lines = block.splitlines()
     return [
         (line, lines[i + 1].strip())
-        for i, line in enumerate(lines) if line.startswith("item ")
+        for i, line in enumerate(lines) if line.startswith("the post's ")
     ]
 
 
@@ -281,7 +281,7 @@ async def test_an_image_post_is_read_and_what_it_shows_is_in_her_context(world):
     assert world.downloads.urls == [_image(0)["url"]]
     assert world.vision.prompts == [""]
     assert _item_lines(world.post_block()) == [
-        (f"item 1: image {_image(0)['url']}",
+        ("the post's first image:",
          "shows: what the vision model saw in image/jpeg"),
     ]
     # Inside the post's wrapper, and nowhere outside one.
@@ -296,7 +296,7 @@ async def test_a_reel_is_read_and_its_reading_is_in_her_context(world):
 
     assert world.downloads.urls == [_reel()["url"]]
     ((line, reading),) = _item_lines(world.post_block())
-    assert line == f"item 1: video, 12.5s {_reel()['url']}"
+    assert line == "the post's first video, 12.5 seconds:"
     assert reading.startswith("shows: ")
     assert "what the vision model saw in video/mp4" in reading
     assert world.vision.prompts == [""]   # one window, one look

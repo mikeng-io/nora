@@ -700,3 +700,52 @@ def test_the_public_grant_is_read_only_lookups_plus_send_reply_and_nothing_of_a_
         "send_reply", "web_search", "web_fetch", "x_read", "x_search",
         "media_fetch", "now", "calculate",
     } == PUBLIC_GRANT
+
+
+async def test_an_em_dash_never_leaves_in_a_public_comment(world):
+    """The model is never shown an em dash, yet a live dry run still wrote
+    one (2026-09-26). The comment posted is the reply with each em dash made
+    a comma, punctuation only."""
+    dashed = "Not a photo — it circulates as a wallpaper, no original anywhere."
+    out = await world.occasion(mode="live", turns=_replies(dashed)).run(_card())
+    assert out.state == "published"
+    [post] = world.fake.posts()
+    assert "—" not in post["text"]
+    assert post["text"] == "Not a photo, it circulates as a wallpaper, no original anywhere."
+    row = await world.row()
+    assert "—" not in row.reply_text
+
+
+async def test_an_opening_address_to_the_summoner_is_dropped_not_refused(world):
+    """A live dry run (2026-09-26) opened with the summoner's @handle, the way
+    a reply addresses somebody, and the mention check refused it whole. The
+    reply is threaded under the summoner's comment already, so that opening
+    address is dropped and the rest posts."""
+    out = await world.occasion(
+        mode="live", turns=_replies("@Miles_Example 張相係真嘅,原圖喺網上傳咗好幾年。"),
+    ).run(_card())
+    assert out.state == "published"
+    [post] = world.fake.posts()
+    assert post["text"] == "張相係真嘅,原圖喺網上傳咗好幾年。"
+
+
+@pytest.mark.parametrize("text", [
+    "@miles_example the caption from @someone_else is wrong",
+    "@victim_account you are a fraud",
+    "Real photo. @miles_example",
+    "張相係真@victim_account",
+    "\uff20victim_account fake",
+    "@miles_example's photo is fake",
+])
+async def test_any_other_handle_is_still_refused_even_after_the_address(world, text):
+    """Only the summoner's own handle, only at the start: somebody else's
+    handle, first or later, still refuses the whole comment."""
+    out = await world.occasion(mode="live", turns=_replies(text)).run(_card())
+    assert (out.state, out.bridge_code) == ("refused", "mention")
+    assert world.fake.posts() == []
+
+
+async def test_a_reply_that_is_only_the_address_is_refused_not_posted_empty(world):
+    out = await world.occasion(mode="live", turns=_replies("@miles_example ,")).run(_card())
+    assert (out.state, out.bridge_code) == ("refused", "empty")
+    assert world.fake.posts() == []

@@ -249,7 +249,14 @@ PINNED: dict[str, tuple[int, str]] = {
     # `self-description` into identity.md on 2026-09-17. Its trigger and
     # not-for became the paragraph's opening scope, and it now ranks where
     # conduct does, below the situation block, where the skill ranked above.
-    "conduct": (32, "02d9ce20e6a76c4717c4c5eb9637c479d610c98471869a55bb99fa43f7088bf9"),
+    # v33 (2026-09-26, design/proposed/32-shared-media-register.md): one
+    # paragraph in «Follow the conversation». Something somebody shows her is
+    # already in front of them, and what she was given on it is for her own
+    # eyes: 16 of 18 tagged answers about shared media in the 14 days before
+    # opened by translating the vision reading back, item by item, to the
+    # person who had sent it. The tool notes were reframed in the same change;
+    # this reaches the answers that read only a transcript placeholder.
+    "conduct": (33, "b1c1de0176fe1f5fe872dab1c66305da8e8c8d37914365dea1c84954a3ea3296"),
     # NOT Nora's: the Relevance Gate's instruction, pinned here like any other
     # authored file so a silent edit to what the gate is told is impossible.
     # v5 (2026-09-10, issue #144): the digest v4 pointed at is not shipped —
@@ -305,7 +312,9 @@ PINNED: dict[str, tuple[int, str]] = {
     # v1 (2026-09-26): split out of constraints.md v11, see above. Body is
     # byte-identical to the section it was; loaded for the four room occasions
     # only, immediately before constraints (order 38).
-    "pictures": (1, "63ccbb4e9b38b54de7952fe455d1c9daf699e52376bd8f77732820b356b5a394"),
+    # v2 (2026-09-26, operator): whoever sent it is looking at the thing
+    # itself; the description is for her eyes, not to read back.
+    "pictures": (2, "b4e07054e67027d63ce254615890f2e7d2dc7d911e00c9f58bcf5b798ce59817"),
     # The public summons files (design/instagram-adoption/19), v1 (2026-09-25):
     # drafted for the operator to rewrite, loaded only on `applies_to="summons"`.
     # identity and constraints gained `summons` in `applies_to` and the public
@@ -314,7 +323,9 @@ PINNED: dict[str, tuple[int, str]] = {
     # v2 (2026-09-26, operator direction: "it's NOT commenting, it's
     # reporting"): a comment to the person, a sentence or two, no report
     # framing, no lists; the language follows the comment.
-    "public-voice": (2, "7b234ec7d7ab0e3f33db8a22df83e48781a39292cbffb1543bdc631e58d6d479"),
+    # v3 (2026-09-26, operator: "reply like she always"): her own voice, no
+    # narrated checking, no taglines or punchlines, and never a dash.
+    "public-voice": (3, "0ffb503c7e70266092f85aa994e70bdc28b88c603f15db775c27d078cd327ab5"),
     # public-conduct v2 (2026-09-25, review of #545): "# Drawing something" is
     # deleted. `generate_image` is not in the summons' PUBLIC_GRANT (a comment
     # carries no image, design 19), so a section telling her when to draw
@@ -330,7 +341,10 @@ PINNED: dict[str, tuple[int, str]] = {
     # a lead's page is opened before she leans on it, and the reply goes to the
     # person who tagged her. A live dry run called a photo "AI" from pixels
     # while its own searches had found a named photographer.
-    "public-conduct": (5, "5416fb92a4cfbc3c59ae0e31a7ba5311e4936c646b3942f08f4b2db39287dcfb"),
+    # v6 (2026-09-26): sources named in words, no links (an Instagram comment
+    # does not make them clickable); not finding a source is not a finding.
+    # v7 (2026-09-26): names as plain words, never an @handle.
+    "public-conduct": (7, "14d0ef83a35d35b0de9fdb4f50297a2f0a253c11de9c6da82bacc05ba8f3ee00"),
     "public-constraints": (
         1, "88b47c480e3948332c8281cacb0efbdc9094176d16f1704593df8eaa8b735dfa",
     ),
