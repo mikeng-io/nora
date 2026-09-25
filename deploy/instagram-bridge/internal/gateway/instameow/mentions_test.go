@@ -421,8 +421,8 @@ func TestReadMentionsReadsACheckpointOutOfA4xxBody(t *testing.T) {
 }
 
 // The request is the web client's own, as captured 2026-09-25: a POST to
-// /api/v1/news/inbox/, form-encoded, carrying jazoest, fb_dtsg and
-// selected_filters=comments, through the no-retry, no-redirect path. Its
+// /api/v1/news/inbox/, form-encoded, carrying jazoest and fb_dtsg only (the
+// "All" tab; no selected_filters), through the no-retry, no-redirect path. Its
 // headers are the library's own set (passed through unchanged) plus what
 // restDo adds: x-requested-with, a bare base_url referer, the sec-fetch-*
 // triple, X-Web-Session-ID, origin/priority for a POST, X-Instagram-AJAX (the
@@ -452,7 +452,7 @@ func TestReadMentionsSendsTheWebClientsRequest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantForm := url.Values{"jazoest": {testJazoest}, "fb_dtsg": {testFBDTSG}, "selected_filters": {"comments"}}
+	wantForm := url.Values{"jazoest": {testJazoest}, "fb_dtsg": {testFBDTSG}}
 	if form.Encode() != wantForm.Encode() {
 		t.Errorf("form = %q, want exactly %q", form.Encode(), wantForm.Encode())
 	}
