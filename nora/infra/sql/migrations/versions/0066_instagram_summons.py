@@ -10,17 +10,12 @@ dry-run `staged` row is never retried as a live one.
 THE VOCABULARY IS WRITTEN OUT rather than read from `nora.domain.summons`,
 following `0053_decision_log`: a migration is a frozen historical statement.
 
-!!! RE-POINT AT MERGE TIME !!!
-This was written against head `0064_proactive_open_note`. `0065_standing_
-working_set` exists on another branch (mikeng-io/standing-working-set). If
-0065 (or anything else) lands on master first, rename this file and its
-`revision` to the next free number and set `down_revision` to the real head,
-or `upgrade head` refuses two heads at boot. `uv run alembic heads` must print
-exactly one line after the merge (AGENTS.md, "Never assume your migration's
-parent is unclaimed").
+Parent: `0065_standing_working_set` (#541), which landed on master first;
+this was re-pointed onto it at merge time. `uv run alembic heads` prints one
+line (AGENTS.md, "Never assume your migration's parent is unclaimed").
 
 Revision ID: 0066_instagram_summons
-Revises: 0064_proactive_open_note
+Revises: 0065_standing_working_set
 Create Date: 2026-09-25
 """
 
@@ -31,8 +26,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql as pg
 
 revision = "0066_instagram_summons"
-# RE-POINT AT MERGE TIME: see the module docstring.
-down_revision = "0064_proactive_open_note"
+down_revision = "0065_standing_working_set"
 branch_labels = None
 depends_on = None
 
