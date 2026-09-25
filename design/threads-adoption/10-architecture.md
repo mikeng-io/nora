@@ -4,7 +4,7 @@ title: "Architecture: the summons occasion, the threads-bridge, and the two axes
 description: "Topology, the SocialSurface port, how a summons is comprehended into a model with ages, the public tool grant, the staging deliverer, image hosting, token custody and refresh, and what each existing guard does on a public surface."
 tags: [nora, threads, architecture, social-surface, deliverer, bridge, token, drop]
 timestamp: 2026-09-25
-status: proposed
+status: parked
 edges:
   - {dst: 00-intent, rel: realizes, provenance: asserted}
   - {dst: ../instagram-adoption/08-social-adapter-architecture.md, rel: extends, provenance: asserted}

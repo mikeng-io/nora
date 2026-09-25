@@ -10,9 +10,14 @@ description: >
   sidecar that alone holds the token and alone can write. Polling first,
   webhooks only on evidence. Phase 0 passed 2026-09-25: the token carries
   threads_manage_mentions.
-status: proposed
+status: parked
 governance: operator-directed
 timestamp: '2026-09-25'
+parked: >
+  Operator 2026-09-25, after the measurements: "never mind, let's park and
+  backlog this, too expensive a requirement... let's transfer the concept to
+  Instagram." The summons needs App Review for advanced access, which needs
+  business verification of a legal entity. See 00-intent §Parked.
 origin: >
   Operator 2026-09-25: "Threads is completely different from all previous
   integrations: it is not a platform adapter, but rather a social adapter.

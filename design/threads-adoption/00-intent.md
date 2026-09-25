@@ -4,7 +4,7 @@ title: "Intent: Nora answers where she is summoned on Threads, in public, from f
 description: "What the operator asked for, why Threads is neither a PlatformAdapter nor a SocialProvider, the decisions this bundle takes, and what blocks it today."
 tags: [nora, threads, meta, social, public-surface, summons, grok]
 timestamp: 2026-09-25
-status: proposed
+status: parked
 edges:
   - {dst: 10-architecture, rel: sequences, provenance: asserted}
   - {dst: 20-plan-and-verification, rel: sequences, provenance: asserted}
@@ -13,6 +13,38 @@ edges:
 ---
 
 # Intent
+
+## Parked (operator, 2026-09-25)
+
+Parked and backlogged: «too expensive a requirement». This bundle is the
+backlog entry, and there is no separate issue. What was measured:
+
+- Reading the post a summons sits under needs **advanced access**. Under
+  standard access, a summons under a non-tester's post arrives with its
+  parent withheld (10 §"What the first mention showed").
+- Advanced access needs **App Review for each permission and business
+  verification** of a legal entity (Meta's access-levels and
+  business-verification pages, cited below). A Hong Kong sole
+  proprietorship's registration certificate is the cheapest candidate.
+  Whether Meta accepts it alone, and whether a single-account bot passes
+  review, are both unknown.
+- Everything else works on the current token: mentions from testers
+  arrive, a tester's own root post and conversation are readable, and a
+  reply container reaches `FINISHED`.
+
+**The concept moves to Instagram.** It is carried over as an occasion
+with no room and no memory, a public-only grant, a staging deliverer that
+publishes once, and an `identity.toml` summoner gate. None of that is
+Threads-specific. 10 §"The occasion" is the part to reuse.
+
+**Reopen when** a registered business exists and the operator wants to
+spend App Review on it, or when a no-review read of the parent post is
+shown to work (a logged-in browser reading the summons's public page was
+proposed and never tested). The token in the Mac worktree `.env`
+(`THREAD_API_AUTH_TOKEN`, 60 days from 2026-09-25) expires 2026-11-23 and
+cannot be refreshed after that. It needs re-minting through the OAuth flow
+in §"What blocked it, and the token now".
+
 
 ## The request (operator, 2026-09-25)
 

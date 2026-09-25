@@ -4,7 +4,7 @@ title: "Plan and verification: six phases, each ending in a read-back"
 description: "The order Threads lands in, what each phase proves live, the tests that must go red, the eval cases, the operator's decisions, and the readings that would reopen the design."
 tags: [nora, threads, plan, verification, evals]
 timestamp: 2026-09-25
-status: proposed
+status: parked
 edges:
   - {dst: 10-architecture, rel: depends_on, provenance: asserted}
   - {dst: 00-intent, rel: realizes, provenance: asserted}
