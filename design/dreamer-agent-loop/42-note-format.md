@@ -914,6 +914,16 @@ not persisted (read from `note_revision`'s columns and the revision arm of
 this node's first draft confirmed both by reading, and its findings are
 folded in.
 
+**2026-09-25 — the operator's decisions on §11.** Accepted as recommended,
+explicitly: G1 (a malformed body is refused, not repaired), G2 (updates
+revise `description` and `closing_condition`, as its own step after the
+deploy step), G3 (the lead-in excludes Nora's own rows in v1), G7 (the
+objective carries the grammar, never a filled sample body) and G10 (legacy
+open notes are not converted). G4, G5, G6, G8 and G9 were put to the
+operator as "taken as recommended" and not objected to. The build starts at
+§10's first two correctness steps: roster names in the Dreamer batch, then
+the `people` block, each deployed on its own.
+
 Related: #118 (the tier's build), #199 (a turn outcome became a room position
 and then a note), #226 (a description read aloud as what happened), #228
 (the update key and append),
