@@ -1,0 +1,13 @@
+{
+  "type": "fix",
+  "summary": "Notes the background pass writes now name people the way Nora does. It used to read each member under their own self-set profile name, so a note could call someone by a name no live turn uses.",
+  "details": [
+    "The pass that notices arrangements worth writing down read the room's messages without the roster, so every message it saw was signed with the sender's self-set platform profile name. Every live turn reads the roster name instead (DEC-80), so a note and the turn that later reads it named the same person two different ways.",
+    "The pass now resolves each sender through the roster before it reads the batch, exactly as a live turn does. A sender the roster does not know keeps their profile name, as before.",
+    "The room-culture pass reads the same messages and is unchanged."
+  ],
+  "limitations": [
+    "Notes already written keep whatever names they were written with; nothing rewrites them.",
+    "Names inside the messages themselves (what the group calls each other) are unchanged; only who SENT each message is resolved."
+  ]
+}
