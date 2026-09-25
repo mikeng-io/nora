@@ -337,6 +337,7 @@ async def dreamer(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
         admitted=None,
         changed=result.changed,
         written=result.written,
+        written_reminders=result.written_reminders,
         staged=result.staged,
         # `declined` rides into the token so a `none` verdict says WHY it was
         # none — `unchanged` and `held_quiet` are different facts about the

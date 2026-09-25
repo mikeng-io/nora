@@ -1,0 +1,6 @@
+{
+  "type": "none",
+  "reason": "Eval-corpus-and-harness-only fix (issue #158): three proactive_decide cases (d01-d03) sat at an instant AFTER production had already decided the exact reminder each case expects, so the decide turn's own <decisions> block showed it pending and a correct decline ('one reminder per thing') read as a FAIL. d01 and d02 are re-anchored before that decision; d03 is parked instead (its note's body is still the pre-repair, unrelated revision at every instant before production's own decisions about it). The old anchors are kept as new expect:none double-booking-guard cases. A new offline check (evals.backbone._refuse_a_remind_case_already_pending, backed by nora.subject.sandbox.Sandboxed.pending_reminder_titles) refuses any remind case anchored where its own note already has a reminder pending, before any model call. d04/d10's parked reasons are corrected: pending reminders ARE carried into the sandbox; only ones that already fired and resolved are not. No production code path (nora/language, nora/app, note/reminder domain behaviour) changed.",
+  "details": [],
+  "limitations": []
+}

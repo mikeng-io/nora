@@ -26,14 +26,19 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
+import sqlalchemy as sa
+from sqlalchemy.ext.asyncio import AsyncEngine
+
 from nora.domain.media import MediaBlob
 from nora.domain.models import NormalizedMessage
+from nora.domain.notes import Note
 from nora.domain.reminders import Reminder, ReminderState
 from nora.domain.standing import Standing
 from nora.infra.sql import create_sql_engine
 from nora.infra.sql.culture import SqlCultureStore
 from nora.infra.sql.notes import SqlNoteStore
 from nora.infra.sql.reminders import SqlReminderStore
+from nora.infra.sql.schema import NOTE, NOTE_REVISION
 from nora.infra.sql.standing import SqlStandingStore
 
 from .obtain import Subject
@@ -118,7 +123,20 @@ class Message:
 
 @dataclass(frozen=True, slots=True)
 class NoteSeed:
-    """One note in her index, as the note tier's own fields."""
+    """One note in her index, as the note tier's own fields.
+
+    `id` is `None` for a hand-authored seed (every existing test fixture) —
+    `know()` then lets `SqlNoteStore.create` assign one, as it always has.
+    A seed built FROM a real snapshot (`nora.subject.sandbox._note_seed`)
+    states its SOURCE id here, and `know()` inserts the row under it
+    instead: a reminder seeded alongside keeps the SAME source `note_id` in
+    its payload (`_reminder_seed` copies `payload` verbatim, unchanged), and
+    `evals.backbone`'s title -> id resolution is built from the source
+    snapshot too — so without this, seeding assigned the note a FRESH id
+    while every reminder and every resolution kept the OLD one, and nothing
+    in the sandbox agreed on what a note's id even was (issue #158, found by
+    review before this ever ran live).
+    """
 
     title: str
     description: str
@@ -126,6 +144,7 @@ class NoteSeed:
     uncertainty: str = "open"
     closing_condition: str = "the room settles it"
     anchor_date: int | None = 20260901
+    id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -551,6 +570,59 @@ async def _write_standing(
         await engine.dispose()
 
 
+async def _seed_note_with_id(
+    engine: AsyncEngine, *, note: Note, body: str, established_by: str, written_at: int,
+) -> None:
+    """Insert ONE note and its first revision under `note.id`, exactly as
+    seeded — a SEED-ONLY primitive, independent of `nora.infra.sql.notes`
+    (owned by another session; not to be changed for this).
+
+    `SqlNoteStore.create` is the production write path and always assigns a
+    fresh `uuid4`; it takes no id parameter, reasonably, since production
+    never has one to give it. A note seeded FROM a real snapshot (`nora.
+    subject.sandbox._note_seed`) already has one — the id every reminder
+    seeded alongside keeps in its payload (`_reminder_seed` copies `payload`
+    verbatim) and the id `evals.backbone`'s title -> id resolution is built
+    from (`nora.subject.sandbox._note_ids_by_title`, over the SAME source
+    snapshot). Assigning a different id here would leave the sandbox
+    internally inconsistent — three readings of "this note's id" that agree
+    with each other but not with what got inserted (issue #158, found by
+    review).
+
+    Same two inserts, same columns, as `SqlNoteStore._create_on_conn` (there
+    is one schema; this does not invent a second one) — kept as an
+    independent statement here rather than a call into that (private)
+    method, so this file's seeding path does not couple to another
+    session's internals.
+
+    `note`'s own `__post_init__` (`nora.domain.notes`) has already run by
+    construction — it is a real `Note`, not a bag of fields — so the same
+    refusals `SqlNoteStore.create` would raise (no anchor, an over-long
+    index entry, a blank closing condition) raise here too, before either
+    insert.
+
+    `note.head_revision_id` is the CALLER's to set (it must, to construct a
+    valid `Note` at all) and is reused verbatim as the revision's own `id` —
+    one value, never generated twice, so the note's pointer and the
+    revision's identity cannot disagree.
+    """
+    async with engine.begin() as conn:
+        await conn.execute(sa.insert(NOTE).values(
+            id=note.id, unit=note.unit, title=note.title,
+            description=note.description, uncertainty=note.uncertainty,
+            closing_condition=note.closing_condition,
+            anchor_date=note.anchor_date,
+            anchor_entity_ids=list(note.anchor_entity_ids),
+            established_in=note.established_in, created_at=note.created_at,
+            head_revision_id=note.head_revision_id, revisit_at=note.revisit_at,
+        ))
+        await conn.execute(sa.insert(NOTE_REVISION).values(
+            id=note.head_revision_id, note_id=note.id, body=body,
+            parent_revision_id=None, written_at=written_at,
+            established_by=established_by, instruction_sha256=None, model=None,
+        ))
+
+
 async def know(
     subject: Subject,
     knowledge: Knowledge,
@@ -706,6 +778,31 @@ async def know(
         if knowledge.notes:
             notes = SqlNoteStore(engine)
             for n, note in enumerate(knowledge.notes):
+                if note.id is not None:
+                    # SOURCE ID PRESERVED (issue #158): `NoteSeed.id`'s own
+                    # docstring. `SqlNoteStore.create` always assigns a FRESH
+                    # uuid4 and has no parameter to override it — reasonably,
+                    # it is not a seeding API — so a note seeded FROM a real
+                    # snapshot goes through `_seed_note_with_id` instead,
+                    # which inserts under the id the caller already resolved
+                    # everything else against.
+                    await _seed_note_with_id(
+                        engine,
+                        note=Note(
+                            id=note.id, unit=subject.unit, title=note.title,
+                            description=note.description,
+                            uncertainty=note.uncertainty,
+                            closing_condition=note.closing_condition,
+                            established_in=conversation_id,
+                            created_at=now_ms + n,
+                            head_revision_id=str(uuid.uuid4()),
+                            anchor_date=note.anchor_date,
+                        ),
+                        body=note.body,
+                        established_by="case-seed",
+                        written_at=now_ms + n,
+                    )
+                    continue
                 await notes.create(
                     # The ROOM'S unit, resolved from its policy entry at
                     # `obtain()` — not `memory.workspace_id`, which is
