@@ -85,19 +85,22 @@ _WEEKDAY_WORDS: frozenset[str] = frozenset(
 _HEADING = re.compile(r"^(#+)\s*(.*?)\s*$")
 _BULLET = re.compile(r"^[-*+] (.*)$")
 _CITED = re.compile(r"^(?P<rest>.*?)\s*\[(?P<ids>[^\[\]]*)\]$")
-_IDS = re.compile(r"^\s*\d+(\s*,\s*\d+)*\s*$")
+_IDS = re.compile(r"^\s*[0-9]+(\s*,\s*[0-9]+)*\s*$")
 _NAMED = re.compile(r"^(?P<content>.+) \((?P<names>[^()]*)\)$")
 _FROM_MEMORY = re.compile(r"^(?P<what>.+) \(as of (?P<date>[^()]+)\)$")
 _FOLDED = re.compile(r"^(?P<title>.+?): (?P<closing>.+) \(folded (?P<date>[^()]+)\)$")
 _OWED_SPLIT = " -> "
 #: A date-shaped run anywhere in the body, loose on purpose so a malformed one
 #: (`2026-9-27`) is found and refused rather than skipped.
-_DATE_LIKE = re.compile(r"(?<!\d)(\d{4})-(\d{1,2})-(\d{1,2})(?!\d)(?:[ ]+([A-Za-z]+))?")
-_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
-_DUE = re.compile(
-    r"^(?P<date>\d{4}-\d{2}-\d{2})(?: (?P<weekday>[A-Za-z]{3}))?(?: (?P<time>\d{2}:\d{2}))?$"
+_DATE_LIKE = re.compile(
+    r"(?<![0-9])([0-9]{4})-([0-9]{1,2})-([0-9]{1,2})(?![0-9])(?:[ ]+([A-Za-z]+))?"
 )
-_TIME = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
+_DATE = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
+_DUE = re.compile(
+    r"^(?P<date>[0-9]{4}-[0-9]{2}-[0-9]{2})(?: (?P<weekday>[A-Za-z]{3}))?"
+    r"(?: (?P<time>[0-9]{2}:[0-9]{2}))?$"
+)
+_TIME = re.compile(r"^([01][0-9]|2[0-3]):[0-5][0-9]$")
 
 
 class NoteBodyError(ValueError):
@@ -187,7 +190,7 @@ class NoteBody:
 
 
 #: `[<ids>]` anywhere in a text, read without the parser (§7).
-_CITATION = re.compile(r"\[\s*(\d+(?:\s*,\s*\d+)*)\s*\]")
+_CITATION = re.compile(r"\[\s*([0-9]+(?:\s*,\s*[0-9]+)*)\s*\]")
 
 
 def cited_ids_in(text: str) -> frozenset[int]:
@@ -245,6 +248,10 @@ def _split(text: str) -> list[tuple[str, list[str]]]:
                 f"{line.strip()!r} is {where}; every line is one `- ` list item under a heading",
             )
         item = bullet.group(1).strip()
+        if _BULLET.match(item):
+            raise NoteBodyError(
+                "not_a_line", f"{line.strip()!r} is a nested list item; one `- ` per line",
+            )
         if not item:
             raise NoteBodyError("not_a_line", f"an empty list item under ## {sections[-1][0]}")
         sections[-1][1].append(item)
@@ -304,6 +311,13 @@ def _check_date(date: str, weekday: str | None, item: str) -> None:
         )
 
 
+def _check_stamp(stamp: str, item: str) -> None:
+    """The date in `(as of <date>)` / `(folded <date>)`: a date as §4.3
+    writes every date, optionally with its weekday."""
+    date, _, weekday = stamp.partition(" ")
+    _check_date(date, weekday or None, item)
+
+
 def _check_dates(item: str) -> None:
     """Every date-shaped run in a line is a real YYYY-MM-DD day, and a
     weekday word right after it is that day's, as three letters."""
@@ -342,7 +356,7 @@ def _line(
             raise NoteBodyError(
                 "not_a_line", f"under ## From memory, {item!r} is not `<what> (as of <date>)`",
             )
-        _check_date(m.group("date").strip(), None, item)
+        _check_stamp(m.group("date").strip(), item)
         return NoteLine(text=item)
     if heading == "Folded":
         m = _FOLDED.match(item)
@@ -351,7 +365,7 @@ def _line(
                 "not_a_line",
                 f"under ## Folded, {item!r} is not `<title>: <closing condition> (folded <date>)`",
             )
-        _check_date(m.group("date").strip(), None, item)
+        _check_stamp(m.group("date").strip(), item)
         return NoteLine(text=item)
 
     rest, ids = _ids(item, heading)
@@ -395,11 +409,16 @@ def _line(
             f"under ## Ruled out, {item!r} is not `<option>: <reason> (<names>) [<ids>]`",
         )
     authors = {rendered[i].sender: rendered[i].person_id for i in ids if i in rendered}
-    # A name is checked only against evidence this write rendered. A line that
-    # also cites a CARRIED id may name that message's author, whom this write
-    # was never shown, so its names are taken as the head carried them.
-    unverifiable = any(i not in rendered for i in ids)
+    # A name is checked against the evidence this write rendered. Only a line
+    # citing CARRIED ids alone may name an author this write was never shown,
+    # taken as the head carried it; one rendered id is enough to check
+    # against. Nora is never an author, carried or not.
+    unverifiable = not authors
     for name in names:
+        if name in shown.nora_names:
+            raise NoteBodyError(
+                "misattributed", f"{item!r} names Nora; a note records what the group said",
+            )
         if name not in authors and not unverifiable:
             raise NoteBodyError(
                 "misattributed",

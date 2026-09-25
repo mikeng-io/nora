@@ -134,6 +134,7 @@ def test_text_outside_a_list_item_is_refused():
     assert _refused("## Decided\nx, as prose (Ada) [4812]\n## Open") == "not_a_line"
     nested = "## Decided\n- x (Ada) [4812]\n  - a nested one [4812]\n## Open"
     assert _refused(nested) == "not_a_line"
+    assert _refused("## Decided\n- - x (Ada) [4812]\n## Open") == "not_a_line"
 
 
 def test_a_line_that_breaks_its_sections_shape_is_refused():
@@ -148,12 +149,14 @@ def test_a_line_with_no_ids_is_refused():
     assert _refused("## Decided\n- x (Ada)\n## Open") == "uncited"
     # A transcript position is mapped to an id before the body is stored.
     assert _refused("## Decided\n## Open\n- y [#4]") == "uncited"
+    # Ids are ASCII digits: `\\d` would read these as 4812.
+    assert _refused("## Decided\n## Open\n- y [\u0664\u0668\u0661\u0662]") == "uncited"
 
 
 def test_the_code_written_sections_carry_no_ids():
     body = (
         "## Decided\n## Open\n- y [4812]\n"
-        "## From memory\n- Ada prefers dim sum (as of 2026-09-20)\n"
+        "## From memory\n- Ada prefers dim sum (as of 2026-09-20 Sun)\n"
         "## Folded\n- Birthday dinner: a place is booked (folded 2026-09-21)"
     )
     assert len(parse_note_body(body, shown=SHOWN).sections) == 4
@@ -175,11 +178,12 @@ def test_a_name_that_wrote_none_of_the_cited_messages_is_refused():
     assert _refused("## Decided\n- x [4815]\n## Open") == "misattributed"
     # Control: the author of the cited message.
     parse_note_body("## Decided\n- x (Ben) [4815]\n## Open", shown=SHOWN)
-    # A name beside a carried id cannot be checked against this write's rows.
-    parse_note_body(
-        "## Decided\n- x (Eve) [4815, 9999]\n## Open",
-        shown=Shown(rendered=SHOWN.rendered, carried=frozenset({9999})),
-    )
+    carried = Shown(rendered=SHOWN.rendered, carried=frozenset({9999}), nora_names=SHOWN.nora_names)
+    # A line citing only a carried id names an author this write never saw.
+    parse_note_body("## Decided\n- x (Eve) [9999]\n## Open", shown=carried)
+    # One rendered id is enough to check against, and Nora is never an author.
+    assert _refused("## Decided\n- x (Eve) [4815, 9999]\n## Open", shown=carried) == "misattributed"
+    assert _refused("## Decided\n- x (Nora) [9999]\n## Open", shown=carried) == "misattributed"
 
 
 def test_an_owed_owner_outside_the_roster_or_nora_is_refused():

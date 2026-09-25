@@ -138,5 +138,19 @@
     "old": "    if m.group(\"time\") is not None and not _TIME.match(m.group(\"time\")):",
     "new": "    if False:",
     "target": "tests/unit/test_note_body.py::test_an_impossible_or_malformed_date_or_a_wrong_weekday_is_refused"
+  },
+  {
+    "name": "misattributed: Nora accepted as the author of a line",
+    "file": "nora/domain/note_body.py",
+    "old": "        if name in shown.nora_names:\n            raise NoteBodyError(\n                \"misattributed\"",
+    "new": "        if False:\n            raise NoteBodyError(\n                \"misattributed\"",
+    "target": "tests/unit/test_note_body.py::test_a_name_that_wrote_none_of_the_cited_messages_is_refused"
+  },
+  {
+    "name": "not_a_line: a nested list item on one line is accepted",
+    "file": "nora/domain/note_body.py",
+    "old": "        if _BULLET.match(item):",
+    "new": "        if False:",
+    "target": "tests/unit/test_note_body.py::test_text_outside_a_list_item_is_refused"
   }
 ]

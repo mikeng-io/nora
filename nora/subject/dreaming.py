@@ -97,9 +97,9 @@ class Pass:
     #: (design 42 §4.5, §10.1), beside `speakers`, which are the rendered
     #: rows: the roster as `(roster name, person_id)` — every person the
     #: deployment's identity knows, a superset of the room's —, the name
-    #: Nora goes by, and every id the unit's standing notes already cited
-    #: before the pass (`carried`: read off their heads with
-    #: `nora.domain.note_body.cited_ids_in`, so a legacy head carries none).
+    #: Nora goes by, and the ids the heads this pass REVISED cited before it
+    #: (`carried`: read with `nora.domain.note_body.cited_ids_in`, so a
+    #: legacy head carries none, and a create carries none at all).
     roster: tuple[tuple[str, str], ...] = ()
     nora_names: tuple[str, ...] = ()
     carried: tuple[int, ...] = ()
@@ -211,19 +211,19 @@ async def _notebook(subject: Subject, workspace: str) -> dict[str, tuple[str, st
         await engine.dispose()
 
 
-async def _carried(subject: Subject, workspace: str) -> tuple[int, ...]:
-    """Every id the workspace's standing notes cite in their HEAD bodies —
-    what a restatement may carry forward without having been shown it
-    (design 42 §4.5, «carried»)."""
+async def _head_citations(subject: Subject, workspace: str) -> dict[str, frozenset[int]]:
+    """`note id -> the ids its HEAD body cites`, for every standing note,
+    read before the pass. Only the heads the pass then REVISES become
+    `Pass.carried` (design 42 §4.5: «the ids the head being revised already
+    cites»); a create carries none."""
     engine = create_sql_engine(subject.database_url)
     try:
         store = SqlNoteStore(engine)
-        ids: set[int] = set()
+        cited: dict[str, frozenset[int]] = {}
         for note in await store.standing(unit=workspace):
             read = await store.read(unit=workspace, note_id=note.id)
-            if read is not None:
-                ids |= cited_ids_in(read[1].body)
-        return tuple(sorted(ids))
+            cited[note.id] = cited_ids_in(read[1].body) if read is not None else frozenset()
+        return cited
     finally:
         await engine.dispose()
 
@@ -311,7 +311,7 @@ async def dream(
     _, conversation_id = room or subject.room
     key = workspace if chosen.key_kind == "unit" else conversation_id
     before = await _notebook(subject, workspace)
-    carried = await _carried(subject, workspace)
+    head_citations = await _head_citations(subject, workspace)
     reminders_before = await _reminder_rows(subject)
     ok_before = _samples(subject, "ok")
     failed_before = _samples(subject, "unavailable")
@@ -395,5 +395,9 @@ async def dream(
             for person_id, ref in sorted(subject.deps.persons.by_person.items())
         ),
         nora_names=(subject.cfg.doctrine.display_name,),
-        carried=carried,
+        carried=tuple(sorted({
+            i for nid, (_title, head) in after.items()
+            if nid in before and before[nid][1] != head
+            for i in head_citations.get(nid, frozenset())
+        })),
     )
