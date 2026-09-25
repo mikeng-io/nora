@@ -166,4 +166,8 @@ def test_the_model_is_told_the_same_ceiling_the_clamp_enforces():
     the model is not told about produces a silently truncated answer it thinks
     is complete."""
     source = (Path(tools.__file__)).read_text()
-    assert f"limit: How many recent messages to fetch (max {LOAD_TRANSCRIPT_MAX})." in source
+    # Twice: `load_transcript` and `room_read` share the clamp. «recent» left
+    # the wording when `before` made the window movable (design/self-awareness/08).
+    assert source.count(
+        f"limit: How many messages to fetch (max {LOAD_TRANSCRIPT_MAX})."
+    ) == 2
