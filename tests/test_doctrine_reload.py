@@ -43,6 +43,47 @@ def test_mtime_reload_does_nothing_when_nothing_changed(doctrine_dir):
     assert store.get() is store.get()
 
 
+def test_mtime_reload_picks_up_an_edit_inside_a_subfolder(doctrine_dir):
+    """The shipped layout is scope folders (`core/`, `rooms/`, `instruments/`),
+    not a flat directory — a hot-reload that only fingerprinted the top level
+    would never notice an operator's edit to `nora/doctrine/rooms/conduct.md`
+    on `norty`, where an edit to `nora/doctrine` IS a deploy. Same shape as
+    `test_mtime_reload_picks_up_an_edit_without_a_restart`, one folder down."""
+    sub = doctrine_dir / "rooms"
+    sub.mkdir()
+    write(sub, "conduct.md", name="conduct", order=30, version=1,
+          kind="conduct", body="Original conduct.")
+    store = DoctrineStore(doctrine_dir, canary="c", reload="mtime", metrics=Metrics())
+    before = store.get()
+    assert "Original conduct." in before.text
+
+    _touch_newer(
+        sub / "conduct.md",
+        (sub / "conduct.md").read_text().replace("Original conduct.", "Edited conduct."),
+    )
+    after = store.get()
+    assert "Edited conduct." in after.text
+    assert after.sha256 != before.sha256
+
+
+def test_a_new_file_in_a_new_subfolder_is_picked_up(doctrine_dir):
+    """A file added under a scope folder that did not exist yet at store
+    construction time — the mtime watcher fingerprints by glob, not by a
+    directory list taken once, so a brand-new `instruments/` subfolder is
+    noticed exactly like a brand-new file at the top level
+    (`test_a_new_file_is_picked_up`)."""
+    store = DoctrineStore(doctrine_dir, canary="c", reload="mtime", metrics=Metrics())
+    store.get()
+    sub = doctrine_dir / "instruments"
+    sub.mkdir()
+    write(sub, "reaction.md", name="reaction", order=6, applies="reaction",
+          kind="instrument", body="New reaction instrument.")
+    # Its own audience ("reaction"), not the default "tag" `get()` — a new
+    # instrument file was never going to reach a tag turn; the reload is what
+    # this test measures, so ask for the one audience that would carry it.
+    assert "New reaction instrument." in store.get(applies_to="reaction").text
+
+
 def test_a_new_file_is_picked_up(doctrine_dir):
     store = DoctrineStore(doctrine_dir, canary="c", reload="mtime", metrics=Metrics())
     store.get()

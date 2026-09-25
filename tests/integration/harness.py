@@ -446,10 +446,10 @@ async def build_handler(
         # started sending the word "silent" to its group.
         runner = FakeAgentRunner([ScriptedTurn(final_text="")], on_call=calls.append)
     elif fault == "leak_guard_trips":
-        # A >=40-char verbatim span of nora/doctrine/constraints.md's body, read live so
+        # A >=40-char verbatim span of nora/doctrine/core/constraints.md's body, read live so
         # this can't drift from the real file. LeakGuard normalizes whitespace before
         # matching, so we do too, to be sure the span really lands inside its haystack.
-        raw_body = (DOCTRINE_DIR / "constraints.md").read_text().split("---", 2)[-1]
+        raw_body = (DOCTRINE_DIR / "core" / "constraints.md").read_text().split("---", 2)[-1]
         leak_span = re.sub(r"\s+", " ", raw_body).strip()[:60]
         runner = FakeAgentRunner([ScriptedTurn(tool_calls=[("send_reply", {"text": leak_span})],
             final_text=leak_span)], on_call=calls.append)
@@ -467,7 +467,7 @@ async def build_handler(
         store = _FailingRecentStore(store)
     elif fault == "doctrine_reload_fails":
         doctrine_store.get(applies_to="tag")     # warm the last-good cache before corrupting
-        (doctrine_copy_dir / "constraints.md").write_text("not valid doctrine content\n")
+        (doctrine_copy_dir / "core" / "constraints.md").write_text("not valid doctrine content\n")
 
     # The participation occasion's runner (design/dreamer-agent-loop/35): built
     # BEFORE the pipeline so it can be threaded into `build_offline_pipeline`,

@@ -27,6 +27,23 @@ package httptransport
 //	503  no session client yet, or the socket is down: retryable, the bridge
 //	     heals itself
 //
+// The comment write adds its guards' refusals (design 19; app/comments.go),
+// each with its OWN code, checked before the table above because two of them
+// refine a kind in it:
+//
+//	403  writes_disabled     INSTAGRAM_COMMENT_WRITES is not `on`
+//	403  writes_blocked      Instagram answered a write with an action block
+//	                         (feedback_required, spam, sentry_block, or a 429):
+//	                         latched off until an operator clears it. NOT a
+//	                         429 or 503, which would invite a retry.
+//	403  not_a_summons       the reply target was not served by GET /mentions
+//	                         on this post in the last 7 days (or is missing)
+//	409  already_replied     this summons already had its one attempt
+//	400  invalid_text        empty, over 2200 characters, or not UTF-8
+//	429  daily_cap           the rolling 24-hour cap is reached
+//	429  too_soon            the minimum interval since the last claim
+//	503  ledger_unavailable  comments.json cannot be read or written
+//
 // Collapsing 409 into 503 would make the adapter hammer a challenged account
 // forever; collapsing 503 into 500 would make it give up on a socket that
 // reconnects in seconds. They are distinct because the consequences are.
@@ -86,7 +103,37 @@ func invalidRequest(w http.ResponseWriter, message string) {
 // error with no kind is 500, never 200 and never 503: 503 is a claim that
 // retrying will work, and making that claim on an unknown failure is how a
 // permanent error turns into an infinite retry loop.
+// refusals is the comment write's guard table: sentinel, status, code. It
+// is consulted FIRST by both functions below, so a refusal that refines a
+// closed-set kind (invalid_text, ledger_unavailable) keeps its own code.
+var refusals = []struct {
+	err    error
+	status int
+	code   string
+}{
+	{domain.ErrWritesDisabled, http.StatusForbidden, "writes_disabled"},
+	{domain.ErrWritesBlocked, http.StatusForbidden, "writes_blocked"},
+	{domain.ErrNotASummons, http.StatusForbidden, "not_a_summons"},
+	{domain.ErrAlreadyReplied, http.StatusConflict, "already_replied"},
+	{domain.ErrInvalidCommentText, http.StatusBadRequest, "invalid_text"},
+	{domain.ErrDailyCap, http.StatusTooManyRequests, "daily_cap"},
+	{domain.ErrTooSoon, http.StatusTooManyRequests, "too_soon"},
+	{domain.ErrLedgerUnavailable, http.StatusServiceUnavailable, "ledger_unavailable"},
+}
+
+func refusalOf(err error) (int, string, bool) {
+	for _, r := range refusals {
+		if errors.Is(err, r.err) {
+			return r.status, r.code, true
+		}
+	}
+	return 0, "", false
+}
+
 func statusForDomainError(err error) int {
+	if status, _, ok := refusalOf(err); ok {
+		return status
+	}
 	switch {
 	case err == nil:
 		return http.StatusOK
@@ -116,6 +163,9 @@ func statusForDomainError(err error) int {
 // mirrors statusForDomainError's classification exactly, so a status and a
 // code can never disagree about what happened.
 func errorCode(err error) string {
+	if _, code, ok := refusalOf(err); ok {
+		return code
+	}
 	switch {
 	case errors.Is(err, domain.ErrInvalidID):
 		return "invalid_id"

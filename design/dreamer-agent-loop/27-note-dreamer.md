@@ -449,7 +449,7 @@ code and now asserts membership in `snapshot()` first. **The tier can now
 distinguish an empty notebook from a broken one**, which is the precondition
 §5.4's fix needs to be judged against.
 
-**§5.4 closed the same day.** `nora/doctrine/conduct.md` gains one section,
+**§5.4 closed the same day.** `nora/doctrine/rooms/conduct.md` gains one section,
 「未有結論嘅嘢」, and `render_notes` is UNCHANGED — the empty index still
 renders nothing. §5.5 argues why that split, and why the empty-state block was
 the wrong surface.
