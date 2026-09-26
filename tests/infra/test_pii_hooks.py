@@ -161,6 +161,19 @@ def test_a_message_committed_around_the_hooks_is_caught_by_pre_push(repo):
     assert out.returncode == 1 and "<commit-message>" in out.stderr
 
 
+def test_git_push_runs_both_checks_through_the_real_hook(repo, tmp_path):
+    remote = tmp_path / "remote.git"
+    assert repo.git("init", "-q", "--bare", str(remote)).returncode == 0
+    repo.git("remote", "add", "origin", str(remote))
+    assert repo.git("push", "-q", "origin", "main").returncode == 0
+    repo.write("tests/rows.py", f"ROWS = [{NAME!r}]\n")
+    assert repo.commit("test: rows", no_verify=True).returncode == 0
+    out = repo.git("push", "-q", "origin", "main")
+    assert out.returncode != 0
+    both = out.stdout + out.stderr
+    assert "checked 1 commit subject(s)" in both and "pii push: FAIL" in both
+
+
 def test_an_appended_non_utf8_byte_is_an_error(repo):
     repo.write("tests/fixtures/rows.py", f"ROWS = {NAME!r}\n".encode() + b"\xff")
     out = repo.commit("test: rows")

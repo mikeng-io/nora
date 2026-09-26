@@ -285,5 +285,33 @@
   "old": "    try:\n        return main(argv)\n    except Exception as exc:  # noqa: BLE001 - the whole point is to catch everything",
   "new": "    try:\n        return main(argv)\n    except ZeroDivisionError as exc:  # noqa: BLE001 - the whole point is to catch everything",
   "target": "tests/unit/test_pii_scan.py::test_a_crash_is_an_error"
+ },
+ {
+  "name": "git push runs the identifier scan",
+  "file": ".githooks/pre-push",
+  "old": "printf '%s\\n' \"$push_lines\" | python3 \"$SCANNER\" push || pii_rc=$?",
+  "new": "true",
+  "target": "tests/infra/test_pii_hooks.py::test_git_push_runs_both_checks_through_the_real_hook"
+ },
+ {
+  "name": "pre-push reads stdin once and feeds both checks",
+  "file": ".githooks/pre-push",
+  "old": "done <<< \"$push_lines\"",
+  "new": "done",
+  "target": "tests/infra/test_pii_hooks.py::test_git_push_runs_both_checks_through_the_real_hook"
+ },
+ {
+  "name": "pre-commit runs the staged scan",
+  "file": ".githooks/pre-commit",
+  "old": "exec python3 \"$SCANNER\" staged",
+  "new": "exit 0",
+  "target": "tests/infra/test_pii_hooks.py::test_a_phone_with_spaces_and_dashes_is_caught"
+ },
+ {
+  "name": "commit-msg runs the message scan",
+  "file": ".githooks/commit-msg",
+  "old": "exec python3 \"$SCANNER\" message \"$1\"",
+  "new": "exit 0",
+  "target": "tests/infra/test_pii_hooks.py::test_payload_in_the_commit_message_is_refused"
  }
 ]
