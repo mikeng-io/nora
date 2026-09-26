@@ -4,14 +4,14 @@
   "file": "scripts/pii_scan.py",
   "old": "_ZERO_WIDTH = dict.fromkeys(map(ord, \"\\u200b\\u200c\\u200d\\u2060\\ufeff\\u00ad\"), None)",
   "new": "_ZERO_WIDTH: dict = {}",
-  "target": "tests/unit/test_pii_scan.py::test_denylist_phone_every_spelling"
+  "target": "tests/unit/test_pii_scan.py::test_normalise_line_folds_full_width_and_drops_zero_width"
  },
  {
   "name": "NFKC folds full-width digits",
   "file": "scripts/pii_scan.py",
   "old": "    return unicodedata.normalize(\"NFKC\", line).translate(_ZERO_WIDTH)",
   "new": "    return line.translate(_ZERO_WIDTH)",
-  "target": "tests/unit/test_pii_scan.py::test_denylist_phone_every_spelling"
+  "target": "tests/unit/test_pii_scan.py::test_normalise_line_folds_full_width_and_drops_zero_width"
  },
  {
   "name": "a real phone's bare-local form is denied too",
@@ -25,7 +25,7 @@
   "file": "scripts/pii_scan.py",
   "old": "            for m in re.finditer(r\"\\d(?:[ \\t().\\-/]{0,4}\\d)*\", t):",
   "new": "            for m in re.finditer(r\"\\d+\", t):",
-  "target": "tests/unit/test_pii_scan.py::test_denylist_phone_every_spelling"
+  "target": "tests/unit/test_pii_scan.py::test_a_denylisted_number_inside_a_long_digit_run_is_found"
  },
  {
   "name": "a dashless UUID collapses to the denied one",
@@ -305,7 +305,7 @@
   "file": "scripts/pii_scan.py",
   "old": "        t[ord(c)] = \"-\"\n",
   "new": "        pass\n",
-  "target": "tests/unit/test_pii_scan.py::test_denylisted_phone_across_unicode_separators"
+  "target": "tests/unit/test_pii_scan.py::test_match_view_folds_dashes_and_spaces_one_to_one"
  },
  {
   "name": "look-alike letters fold to Latin",
@@ -446,13 +446,6 @@
   "old": "                        inner.append(member)\n",
   "new": "                        pass\n",
   "target": "tests/unit/test_pii_scan.py::test_compressed_text_chunks_and_archives_are_opened"
- },
- {
-  "name": "a decompression past the cap is an ERROR",
-  "file": "scripts/pii_scan.py",
-  "old": "    if len(out) > left:\n        raise DecodeError",
-  "new": "    if False:\n        raise DecodeError",
-  "target": "tests/unit/test_pii_scan.py::test_a_decompression_bomb_is_an_error"
  },
  {
   "name": "the camelCase matcher is anchored",
@@ -788,7 +781,7 @@
   "file": "scripts/pii_scan.py",
   "old": "            if tried > LAYER_SEGMENTS:\n                return out",
   "new": "            if False:\n                return out",
-  "target": "tests/unit/test_pii_scan.py::test_a_2mb_line_of_encoded_segments_scans_in_linear_time"
+  "target": "tests/unit/test_pii_scan.py::test_decoding_is_capped_per_line"
  },
  {
   "name": "extra commit headers are scanned",

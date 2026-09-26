@@ -1162,11 +1162,11 @@ def test_extra_commit_headers_are_read_and_signatures_skipped():
         "mergetag object "
         + "c" * 40
         + "\n type commit\n tag v1\n \n released for "
-        + FAMILY
+        + EMAIL_USER
         + "\ngpgsig -----BEGIN PGP SIGNATURE-----\n AAAA\n -----END PGP SIGNATURE-----\n\nmsg\n"
     )
     hdr = P.extra_headers(raw)
-    assert NAME in hdr and FAMILY in hdr and "AAAA" not in hdr and "tree" not in hdr
+    assert NAME in hdr and EMAIL_USER in hdr and "AAAA" not in hdr and "tree" not in hdr
 
 
 def test_an_agent_ack_needs_the_adjudication_record_for_that_tree():
@@ -1260,3 +1260,33 @@ def test_the_answer_is_read_from_structured_output_or_the_last_json():
     prose = "The id format is {id}. Here: " + json.dumps(good)
     assert A.parse_verdicts(prose)["0123456789ab"]["verdict"] == "fake"
     assert A.parse_verdicts("no json {here") == {}
+
+
+# ---- the normalisation contract itself (each layer is also covered by a
+# later, looser one, so the end-to-end tests cannot see a single layer go)
+
+
+def test_normalise_line_folds_full_width_and_drops_zero_width():
+    fw = "".join(chr(ord(c) + 0xFEE0) for c in "0123456789")
+    assert P.normalise_line(fw) == "0123456789"
+    assert P.normalise_line("a\u200bb\u200cc\ufeffd") == "abcd"
+
+
+def test_match_view_folds_dashes_and_spaces_one_to_one():
+    raw = "a\u2013b\u2011c\u2212d\u00a0e\u202ff"
+    out = P.match_view(raw)
+    assert out == "a-b-c-d e f" and len(out) == len(raw)
+
+
+def test_a_denylisted_number_inside_a_long_digit_run_is_found():
+    """Past the spread matcher's 24-digit window, the separator matcher still
+    finds a number embedded in a longer run."""
+    lead = " ".join(str(_R.randint(1000, 9999)) for _ in range(5))
+    assert "denylist:number" in _rules(f"ids {lead} {P.digits_of(PHONE)} {lead}\n")
+
+
+def test_decoding_is_capped_per_line():
+    import base64
+
+    line = " ".join(base64.b64encode(f"plain words {i:06d}".encode()).decode() for i in range(500))
+    assert len(P._b64_texts(line)) == P.LAYER_SEGMENTS

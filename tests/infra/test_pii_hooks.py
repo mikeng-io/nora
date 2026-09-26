@@ -412,10 +412,11 @@ def test_a_hash_line_or_text_past_the_scissors_is_scanned(repo):
 
 
 def test_amend_cannot_let_a_declaration_exempt_its_own_payload(repo):
+    other = SY.phone("44", "spaced")
     allow = (repo.path / ".githooks/pii-allowlist.txt").read_text()
-    repo.write(".githooks/pii-allowlist.txt", allow + "path-exempt secret.txt -- probe\n")
+    repo.write(".githooks/pii-allowlist.txt", allow + f"value {other} -- probe\n")
     assert repo.commit("chore: declare").returncode == 0
-    repo.write("secret.txt", f"{NAME}\n")
+    repo.write("secret.txt", f'P = "{other}"\n')
     repo.git("add", "secret.txt")
     out = repo.git("commit", "-q", "--amend", "-m", "chore: declare")
     assert out.returncode != 0 and "secret.txt" in out.stderr
