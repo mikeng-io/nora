@@ -26,4 +26,15 @@ if [ ! -f "$CHECKER" ]; then
   echo "  are you on a branch without the conventions commit? (see .githooks/README.md)" >&2
   exit 1
 fi
-exec python3 "$CHECKER" "$1"
+python3 "$CHECKER" "$1"
+
+# The message and the author/committer identity are scanned for identifiers
+# (#283): values reach commit messages as easily as files, and a message is
+# published with the history. On PASS this also records every acknowledgement
+# the commit used (NORA_PII_ACK) as a `PII-Ack:` trailer.
+SCANNER="$(git rev-parse --show-toplevel)/scripts/pii_scan.py"
+if [ ! -f "$SCANNER" ]; then
+  echo "commit-msg: identifier scanner not found at $SCANNER - refusing to pass unverified" >&2
+  exit 1
+fi
+exec python3 "$SCANNER" message "$1"

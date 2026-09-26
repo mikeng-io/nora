@@ -1,0 +1,46 @@
+# Declarations for the identifier detector (scripts/pii_scan.py, #283).
+#
+# Read from the PARENT commit only: a line added here takes effect from the
+# next commit, never the one that adds it, so a declaration cannot land in the
+# same change as the payload it would exempt (#283 criterion 3). Commit the
+# declaration on its own, with its reason, then the change it covers.
+#
+# Format: `<kind> <glob-or-value> [sha256=<digest>] -- <reason>`. Every line
+# needs a reason; a malformed line is an ERROR, not a skip.
+#
+#   path-exempt  not scanned at all. Only for a file whose CONTENT is real
+#                values by design; it must be deleted from any published copy.
+#   binary       not text: scanned for embedded strings and media GPS instead
+#                of being refused. Nothing is skipped (#166).
+#   symlink      a link; its target path is scanned.
+#   gitlink      a submodule pointer.
+#   large        over NORA_PII_MAX_BYTES; scanned anyway.
+#   coords       a location table, pinned to the digest of its CONTENT
+#                (scripts/pii_scan.py declare-coords <path>): swapping its
+#                coordinates for others changes the digest and fails (#283
+#                criterion 2).
+#   value        one placeholder value (normalised: digits of a number,
+#                dashless lower-case UUID, lower-case otherwise).
+#   value-re     a regex over the normalised value.
+#
+# A denylist hit (a known real value) is never exempted by `value` or
+# `value-re`; only `path-exempt` reaches it. This file is itself scanned
+# against the denylist; the shape detectors skip it, so a placeholder can be
+# declared here without tripping on its own declaration.
+
+path-exempt scrub/replacements.txt -- the scrub's private join map (scrub/README.md, #167): real values by design, deleted from any published copy with --path scrub/
+
+symlink .claude/skills/* -- Claude Code reads the repo skills through these links to .agents/skills (AGENTS.md, Skills)
+
+binary assets/*.png -- Nora's character art (DESIGN.md)
+binary site/public/* -- the public site's icons and social cards
+binary site/src/assets/art/* -- the public site's art
+binary site/src/fonts/* -- subset web fonts
+binary showreel/public/* -- showreel art, grain frames and fonts
+binary showreel/audio/* -- showreel voice-over renders
+binary voice-lab/models/* -- wake-word model weights and listening samples
+binary voice-lab/tts-cmp/samples/* -- TTS comparison samples
+binary deploy/voice-wake/models/* -- the deployed wake-word model
+binary deploy/voice-wake/selftest/* -- the wake self-test clip
+
+value-re (852)?900001\d\d -- the scrub's pseudonym phone range (scrub/README.md): placeholders that replaced real numbers
