@@ -590,3 +590,11 @@ def test_a_crash_is_an_error(monkeypatch, capsys):
     monkeypatch.setattr(P, "main", boom)
     assert P._main_fail_closed(["pii_scan.py", "staged"]) == P.ERROR
     assert "nothing was judged" in capsys.readouterr().err
+
+
+def test_coords_a_constant_offset_is_still_a_table():
+    """Shifting every point by one delta moves the table; it does not hide it."""
+    base = SY.base_point()
+    dla, dln = _R.uniform(0.01, 0.2), _R.uniform(0.01, 0.2)
+    shifted = [(la + dla, ln + dln) for la, ln in (SY.near(base) for _ in range(4))]
+    assert P.scan_coords(_rows(shifted)).over

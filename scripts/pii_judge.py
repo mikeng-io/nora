@@ -35,6 +35,7 @@ belongs to a real person — an invented name and a member's name read the
 same. The denylist is the ground truth for identity; these layers only widen
 the net for what nobody has listed yet.
 """
+
 from __future__ import annotations
 
 import json
@@ -55,17 +56,21 @@ OLLAMA_URL = "http://127.0.0.1:11434/api/chat"
 # scrub track replaces them with thresholds measured on real labelled history.
 DEFAULT_THRESHOLD = {"laya": 0.3, "jev": 0.4}
 
-STATE = ("Lines being added to files in a software repository (code, tests, fixtures, docs), "
-         "reviewed for personal data before the commit is accepted.")
-QUESTION = ("Does `line` contain personal data about a real private individual: a phone number, "
-            "an email address, a messaging or platform account id, a home or work address, GPS "
-            "coordinates of where a person was, or a person's name together with any of these?")
+STATE = (
+    "Lines being added to files in a software repository (code, tests, fixtures, docs), "
+    "reviewed for personal data before the commit is accepted."
+)
+QUESTION = (
+    "Does `line` contain personal data about a real private individual: a phone number, "
+    "an email address, a messaging or platform account id, a home or work address, GPS "
+    "coordinates of where a person was, or a person's name together with any of these?"
+)
 CRITERIA = {
     "true": "Yes: a realistic personal identifier, contact detail or location of a private person, "
-            "as it would appear in a production database row, log line or message export.",
+    "as it would appear in a production database row, log line or message export.",
     "false": "No: ordinary code, prose or configuration; a public organisation's contact; or an "
-             "obvious placeholder (example.com, 555-01xx numbers, all-zero or sequential ids, "
-             "member_a, John Doe).",
+    "obvious placeholder (example.com, 555-01xx numbers, all-zero or sequential ids, "
+    "member_a, John Doe).",
 }
 
 
@@ -127,11 +132,17 @@ def laya_scores(lines: list, model: str | None = None) -> tuple[list, dict]:
     env = dict(os.environ)
     if os.environ.get("NORA_PII_LAYA_ALLOW_DOWNLOAD") != "1":
         env["HF_HUB_OFFLINE"] = "1"
-    payload = json.dumps({"model": model, "lines": lines, "question": LAYA_QUESTION, "criteria": None})
+    payload = json.dumps(
+        {"model": model, "lines": lines, "question": LAYA_QUESTION, "criteria": None}
+    )
     try:
-        proc = subprocess.run([py, os.path.abspath(__file__), "--laya-worker"], input=payload.encode(),
-                              capture_output=True, timeout=float(os.environ.get("NORA_PII_LAYA_TIMEOUT", "600")),
-                              env=env)
+        proc = subprocess.run(  # noqa: S603 - this file, in the configured interpreter
+            [py, os.path.abspath(__file__), "--laya-worker"],
+            input=payload.encode(),
+            capture_output=True,
+            timeout=float(os.environ.get("NORA_PII_LAYA_TIMEOUT", "600")),
+            env=env,
+        )
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise JudgeError(f"laya worker did not run: {exc}") from exc
     if proc.returncode != 0:
@@ -152,12 +163,16 @@ def _laya_batched(agent, lines: list, q: dict) -> list:
     through the agent's own collate/forward/calibration in batches. Falls back
     to one `predict` per line if the port's internals move."""
     try:
-        import numpy as np  # noqa: PLC0415
-        from laya_mlx.agent import collate_items  # noqa: PLC0415
-        from laya_mlx.common import temp_bucket  # noqa: PLC0415
+        import numpy as np
+        from laya_mlx.agent import collate_items
+        from laya_mlx.common import temp_bucket
     except ImportError:
-        return [float(agent.predict({"file": it["file"], "line": it["line"]}, q)["answers"]["pii"]["noul"])
-                for it in lines]
+        return [
+            float(
+                agent.predict({"file": it["file"], "line": it["line"]}, q)["answers"]["pii"]["noul"]
+            )
+            for it in lines
+        ]
     items = []
     for it in lines:
         prepared, _ = agent.prepare({"file": it["file"], "line": it["line"]}, q)
@@ -165,9 +180,13 @@ def _laya_batched(agent, lines: list, q: dict) -> list:
     out: list = []
     bs = agent.batch_size
     for start in range(0, len(items), bs):
-        chunk = items[start:start + bs]
-        batch = collate_items(chunk, agent.tok.pad_token_id, pad_to_multiple=agent.pad_to_multiple,
-                              max_length=agent.cfg.get("max_len", 512))
+        chunk = items[start : start + bs]
+        batch = collate_items(
+            chunk,
+            agent.tok.pad_token_id,
+            pad_to_multiple=agent.pad_to_multiple,
+            max_length=agent.cfg.get("max_len", 512),
+        )
         logits, _act = agent.forward(batch)
         logits = np.asarray(logits)
         if not np.isfinite(logits).all():
@@ -185,8 +204,8 @@ def _laya_batched(agent, lines: list, q: dict) -> list:
 def _laya_worker() -> int:
     req = json.load(sys.stdin)
     t0 = time.monotonic()
-    import laya_mlx  # noqa: PLC0415 — only this interpreter needs it
-    import mlx.core as mx  # noqa: PLC0415
+    import laya_mlx
+    import mlx.core as mx
 
     t_import = time.monotonic()
     agent = laya_mlx.load(req["model"], batch_size=int(os.environ.get("NORA_PII_LAYA_BATCH", "64")))
@@ -196,16 +215,21 @@ def _laya_worker() -> int:
         q["pii"]["criteria"] = req["criteria"]
     scores = _laya_batched(agent, req["lines"], q)
     t_done = time.monotonic()
-    peak = None
-    try:
-        peak = mx.get_peak_memory() / 2**20
-    except AttributeError:
-        try:
-            peak = mx.metal.get_peak_memory() / 2**20
-        except AttributeError:
-            pass
-    json.dump({"scores": scores, "import_s": t_import - t0, "load_s": t_load - t_import,
-               "infer_s": t_done - t_load, "peak_mib": peak, "model": req["model"]}, sys.stdout)
+    getter = getattr(mx, "get_peak_memory", None) or getattr(
+        getattr(mx, "metal", None), "get_peak_memory", None
+    )
+    peak = getter() / 2**20 if getter else None
+    json.dump(
+        {
+            "scores": scores,
+            "import_s": t_import - t0,
+            "load_s": t_load - t_import,
+            "infer_s": t_done - t_load,
+            "peak_mib": peak,
+            "model": req["model"],
+        },
+        sys.stdout,
+    )
     return 0
 
 
@@ -218,7 +242,8 @@ def _typesafe_key() -> str:
         if os.environ.get(name):
             return os.environ[name].strip()
     try:
-        top = subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True).stdout.strip()
+        argv = ["git", "rev-parse", "--show-toplevel"]
+        top = subprocess.run(argv, capture_output=True, text=True).stdout.strip()  # noqa: S603
         with open(os.path.join(top, ".env"), encoding="utf-8") as fh:
             for line in fh:
                 k, _, v = line.strip().partition("=")
@@ -234,9 +259,13 @@ def _post_json(url: str, body: dict, headers: dict, timeout: float, retries: int
     delay = 1.0
     last = ""
     for _attempt in range(retries):
-        req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json", **headers})
+        if not url.startswith(("https://", "http://127.0.0.1", "http://localhost")):
+            raise JudgeError(f"refusing to post to {url!r}: https or a local ollama only")
+        req = urllib.request.Request(  # noqa: S310 - scheme checked above
+            url, data=data, headers={"Content-Type": "application/json", **headers}
+        )
         try:
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310
                 return json.loads(resp.read())
         except urllib.error.HTTPError as exc:
             last = f"HTTP {exc.code}: {exc.read()[:200].decode(errors='replace')}"
@@ -260,15 +289,21 @@ def jev_scores(lines: list) -> tuple[list, dict]:
     usage = {"input_tokens": 0, "requests": 0}
     batch = int(os.environ.get("NORA_PII_JEV_BATCH", "50"))
     for start in range(0, len(lines), batch):
-        chunk = lines[start:start + batch]
+        chunk = lines[start : start + batch]
         questions = {
-            f"l{i}": {"type": "noul",
-                      "instructions": {"file": it["file"], "line": it["line"], "question": QUESTION},
-                      "criteria": CRITERIA}
+            f"l{i}": {
+                "type": "noul",
+                "instructions": {"file": it["file"], "line": it["line"], "question": QUESTION},
+                "criteria": CRITERIA,
+            }
             for i, it in enumerate(chunk)
         }
-        resp = _post_json(JEV_URL, {"state": STATE, "model": JEV_MODEL, "questions": questions},
-                          {"Authorization": f"Bearer {key}"}, timeout=60)
+        resp = _post_json(
+            JEV_URL,
+            {"state": STATE, "model": JEV_MODEL, "questions": questions},
+            {"Authorization": f"Bearer {key}"},
+            timeout=60,
+        )
         try:
             answers = resp["answers"]
             scores += [float(answers[f"l{i}"]["noul"]) for i in range(len(chunk))]
@@ -294,7 +329,8 @@ LLM_SYSTEM = (
     "organisation's published contact, or not personal data at all.\n"
     "- unsure: you cannot tell.\n"
     "You cannot look anyone up; a realistic name alone does not make a line real. "
-    "Answer with JSON: {\"verdict\": \"real\"|\"fake\"|\"unsure\"}.")
+    'Answer with JSON: {"verdict": "real"|"fake"|"unsure"}.'
+)
 
 
 def llm_rejudge(tag: str, items: list) -> list:
@@ -303,18 +339,28 @@ def llm_rejudge(tag: str, items: list) -> list:
     out = []
     for rule, line, ctx in items:
         body = {
-            "model": tag, "stream": False, "think": False, "keep_alive": "15m",
+            "model": tag,
+            "stream": False,
+            "think": False,
+            "keep_alive": "15m",
             "options": {"temperature": 0, "num_predict": 32},
-            "format": {"type": "object", "properties": {"verdict": {"type": "string",
-                                                                     "enum": ["real", "fake", "unsure"]}},
-                       "required": ["verdict"]},
+            "format": {
+                "type": "object",
+                "properties": {"verdict": {"type": "string", "enum": ["real", "fake", "unsure"]}},
+                "required": ["verdict"],
+            },
             "messages": [
                 {"role": "system", "content": LLM_SYSTEM},
-                {"role": "user", "content": f"Detector rule: {rule}\nFlagged line:\n{line}\n\n"
-                                            f"Surrounding lines:\n{ctx}"},
+                {
+                    "role": "user",
+                    "content": f"Detector rule: {rule}\nFlagged line:\n{line}\n\n"
+                    f"Surrounding lines:\n{ctx}",
+                },
             ],
         }
-        resp = _post_json(url, body, {}, timeout=float(os.environ.get("NORA_PII_LLM_TIMEOUT", "120")), retries=2)
+        resp = _post_json(
+            url, body, {}, timeout=float(os.environ.get("NORA_PII_LLM_TIMEOUT", "120")), retries=2
+        )
         try:
             v = json.loads(resp["message"]["content"])["verdict"]
         except (KeyError, TypeError, ValueError):

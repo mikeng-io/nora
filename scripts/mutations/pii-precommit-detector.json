@@ -16,7 +16,7 @@
  {
   "name": "a real phone's bare-local form is denied too",
   "file": "scripts/pii_scan.py",
-  "old": "        forms.append(digits[-max(8, len(digits) - 3):])",
+  "old": "        forms.append(digits[-max(8, len(digits) - 3) :])",
   "new": "        pass",
   "target": "tests/unit/test_pii_scan.py::test_denylist_phone_every_spelling"
  },
@@ -58,8 +58,8 @@
  {
   "name": "project identity is never denied",
   "file": "scripts/pii_scan.py",
-  "old": " or _tokens_of(value) in _PROJECT_TOKENS:",
-  "new": ":",
+  "old": "            or _tokens_of(value) in _PROJECT_TOKENS\n",
+  "new": "            or False\n",
   "target": "tests/unit/test_pii_scan.py::test_project_identity_is_never_denied"
  },
  {
@@ -135,7 +135,7 @@
  {
   "name": "DMS rows are fields",
   "file": "scripts/pii_scan.py",
-  "old": "        for la, ln in zip(lat_dms, lng_dms):\n            points.append((n, la, ln))",
+  "old": "        for la, ln in zip(lat_dms, lng_dms, strict=False):\n            points.append((n, la, ln))",
   "new": "        pass",
   "target": "tests/unit/test_pii_scan.py::test_coords_dms_and_plus_codes_fail"
  },
@@ -205,22 +205,22 @@
  {
   "name": "a missing denylist is an error",
   "file": "scripts/pii_scan.py",
-  "old": "        if absent_reason:\n            return Denylist(source=\"<absent>\")",
-  "new": "        if True:\n            return Denylist(source=\"<absent>\")",
+  "old": "        if absent_reason:\n            return (\n                Denylist(source=\"<absent>\"),",
+  "new": "        if True:\n            return (\n                Denylist(source=\"<absent>\"),",
   "target": "tests/unit/test_pii_scan.py::test_missing_denylist_is_an_error_unless_acknowledged"
  },
  {
   "name": "a denylist hit cannot be acknowledged",
   "file": "scripts/pii_scan.py",
-  "old": "                                    finding_id(path, lines[ln - 1]), ackable=False, key=key,",
-  "new": "                                    finding_id(path, lines[ln - 1]), ackable=True, key=key,",
+  "old": "                    finding_id(path, lines[ln - 1]),\n                    ackable=False,\n                    key=key,",
+  "new": "                    finding_id(path, lines[ln - 1]),\n                    ackable=True,\n                    key=key,",
   "target": "tests/unit/test_pii_scan.py::test_ack_clears_a_shape_but_never_a_denylist_hit"
  },
  {
   "name": "a denylist hit is printed masked",
   "file": "scripts/pii_scan.py",
-  "old": "            findings.append(Finding(\"FAIL\", f\"denylist:{kind}\", path, ln, mask(key, full=True),",
-  "new": "            findings.append(Finding(\"FAIL\", f\"denylist:{kind}\", path, ln, key,",
+  "old": "                    ln,\n                    mask(key, full=True),\n                    finding_id(path, lines[ln - 1]),",
+  "new": "                    ln,\n                    key,\n                    finding_id(path, lines[ln - 1]),",
   "target": "tests/unit/test_pii_scan.py::test_output_never_prints_a_value"
  },
  {
@@ -233,7 +233,7 @@
  {
   "name": "a judge that does not answer is an ERROR",
   "file": "scripts/pii_scan.py",
-  "old": "            rep.findings.append(Finding(\"ERROR\", f\"judge:{backend}\", \"<judge>\", 0, \"\", \"\", ackable=False,\n                                        note=str(exc)))\n            return",
+  "old": "            rep.findings.append(\n                Finding(\n                    \"ERROR\", f\"judge:{backend}\", \"<judge>\", 0, \"\", \"\", ackable=False, note=str(exc)\n                )\n            )\n            return",
   "new": "            return",
   "target": "tests/unit/test_pii_scan.py::test_judge_that_does_not_answer_is_an_error"
  },
@@ -275,8 +275,8 @@
  {
   "name": "a push range is diffed commit-first (the other order reverses every diff)",
   "file": "scripts/pii_scan.py",
-  "old": "              input_bytes=\"\".join(f\"{c} {p}\\n\" for _, (p, c) in real).encode())",
-  "new": "              input_bytes=\"\".join(f\"{p} {c}\\n\" for _, (p, c) in real).encode())",
+  "old": "        input_bytes=\"\".join(f\"{c} {p}\\n\" for _, (p, c) in real).encode(),",
+  "new": "        input_bytes=\"\".join(f\"{p} {c}\\n\" for _, (p, c) in real).encode(),",
   "target": "tests/infra/test_pii_hooks.py::test_add_then_rm_is_caught_by_pre_push"
  },
  {
@@ -313,5 +313,12 @@
   "old": "exec python3 \"$SCANNER\" message \"$1\"",
   "new": "exit 0",
   "target": "tests/infra/test_pii_hooks.py::test_payload_in_the_commit_message_is_refused"
+ },
+ {
+  "name": "a constant offset does not hide a table",
+  "file": "scripts/pii_scan.py",
+  "old": "MAX_CLUSTER_ROWS = 2  #",
+  "new": "MAX_CLUSTER_ROWS = 60  #",
+  "target": "tests/unit/test_pii_scan.py::test_coords_a_constant_offset_is_still_a_table"
  }
 ]

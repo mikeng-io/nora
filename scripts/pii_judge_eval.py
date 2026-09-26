@@ -18,13 +18,14 @@ test" is not evidence that it is fake.
 
     python3 scripts/pii_judge_eval.py cases                # print the set
     python3 scripts/pii_judge_eval.py run laya --runs 3 --out results.json
-    python3 scripts/pii_judge_eval.py run jev --runs 3 --out results.json      # sends the SYNTHETIC lines to TypeSafe
+    python3 scripts/pii_judge_eval.py run jev --runs 3 --out r.json  # SYNTHETIC lines to TypeSafe
     python3 scripts/pii_judge_eval.py run llm:<ollama tag> --runs 3 --out results.json
     python3 scripts/pii_judge_eval.py bench laya --sizes 50,500,5000 --out bench.json
 
 `laya` runs through `NORA_PII_LAYA_PYTHON` (an interpreter with laya-mlx) and
 `NORA_PII_LAYA_MODEL`, exactly as the hook does.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -38,24 +39,77 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-FIRST = ["Priya", "Kenji", "Aisha", "Mateo", "Ingrid", "Tomasz", "Nadia", "Oluwaseun", "Sofia", "Rahul",
-         "Chloe", "Diego", "Hana", "Lars", "Amara", "Yusuf", "Elena", "Marcus", "Leilani", "Viktor"]
-LAST = ["Raman", "Sato", "Khan", "Alvarez", "Lindgren", "Kowalski", "Haddad", "Adeyemi", "Moretti",
-        "Iyer", "Dubois", "Castillo", "Kimura", "Nyberg", "Okafor", "Demir", "Petrova", "Whitfield"]
+FIRST = [
+    "Priya",
+    "Kenji",
+    "Aisha",
+    "Mateo",
+    "Ingrid",
+    "Tomasz",
+    "Nadia",
+    "Oluwaseun",
+    "Sofia",
+    "Rahul",
+    "Chloe",
+    "Diego",
+    "Hana",
+    "Lars",
+    "Amara",
+    "Yusuf",
+    "Elena",
+    "Marcus",
+    "Leilani",
+    "Viktor",
+]
+LAST = [
+    "Raman",
+    "Sato",
+    "Khan",
+    "Alvarez",
+    "Lindgren",
+    "Kowalski",
+    "Haddad",
+    "Adeyemi",
+    "Moretti",
+    "Iyer",
+    "Dubois",
+    "Castillo",
+    "Kimura",
+    "Nyberg",
+    "Okafor",
+    "Demir",
+    "Petrova",
+    "Whitfield",
+]
 CJK_SURNAME = "陳林黃張李王吳劉蔡楊許鄭謝郭"
 CJK_GIVEN = "嘉欣偉明詠詩志豪家俊美玲子朗曉峰慧敏凱琳浩然"
 DOMAINS = ["gmail.com", "outlook.com", "yahoo.co.uk", "icloud.com", "proton.me", "hotmail.com"]
-STREETS = ["Hskyhlu Road", "Nathan Road", "Maple Avenue", "Queen Street", "Lakeside Drive", "Rue Lepic"]
+STREETS = [
+    "Hskyhlu Road",
+    "Nathan Road",
+    "Maple Avenue",
+    "Queen Street",
+    "Lakeside Drive",
+    "Rue Lepic",
+]
 # (country code, national significant number length, leading mobile digits)
-PHONE_PLANS = [("852", 8, "5679"), ("44", 10, "7"), ("81", 10, "789"), ("1", 10, "2345678"),
-               ("65", 8, "89"), ("61", 9, "4"), ("49", 11, "1"), ("91", 10, "6789")]
+PHONE_PLANS = [
+    ("852", 8, "5679"),
+    ("44", 10, "7"),
+    ("81", 10, "789"),
+    ("1", 10, "2345678"),
+    ("65", 8, "89"),
+    ("61", 9, "4"),
+    ("49", 11, "1"),
+    ("91", 10, "6789"),
+]
 
 
 class Synth:
     """Seeded, realistic-looking, invented values."""
 
     def __init__(self, seed: int = 283):
-        self.r = random.Random(seed)
+        self.r = random.Random(seed)  # noqa: S311 - reproducible fixtures, not secrets
 
     def _digits(self, n: int) -> str:
         while True:
@@ -103,7 +157,11 @@ class Synth:
         alphabet = string.ascii_letters + string.digits + "+/"
         while True:
             s = "".join(self.r.choice(alphabet) for _ in range(43))
-            if any(c.isupper() for c in s) and any(c.islower() for c in s) and any(c.isdigit() for c in s):
+            if (
+                any(c.isupper() for c in s)
+                and any(c.islower() for c in s)
+                and any(c.isdigit() for c in s)
+            ):
                 return s + "="
 
     def base_point(self) -> tuple[float, float]:
@@ -114,11 +172,14 @@ class Synth:
         return round(p[0] + self.r.uniform(-d, d), 6), round(p[1] + self.r.uniform(-d, d), 6)
 
     def address(self) -> str:
-        return f"Flat {self.r.randint(2, 30)}{self.r.choice('ABCDEFG')}, {self.r.randint(3, 280)} {self.r.choice(STREETS)}"
+        flat = f"{self.r.randint(2, 30)}{self.r.choice('ABCDEFG')}"
+        return f"Flat {flat}, {self.r.randint(3, 280)} {self.r.choice(STREETS)}"
 
     def ts(self) -> str:
-        return (f"2026-0{self.r.randint(1, 9)}-{self.r.randint(10, 28)}T"
-                f"{self.r.randint(10, 23)}:{self.r.randint(10, 59)}:{self.r.randint(10, 59)}Z")
+        return (
+            f"2026-0{self.r.randint(1, 9)}-{self.r.randint(10, 28)}T"
+            f"{self.r.randint(10, 23)}:{self.r.randint(10, 59)}:{self.r.randint(10, 59)}Z"
+        )
 
 
 def cases(seed: int = 283) -> list[dict]:
@@ -126,52 +187,155 @@ def cases(seed: int = 283) -> list[dict]:
     c: list[dict] = []
 
     def add(label: int, kind: str, file: str, line: str, lang: str = "en") -> None:
-        c.append({"id": f"c{len(c):02d}", "label": label, "kind": kind, "file": file, "line": line, "lang": lang})
+        c.append(
+            {
+                "id": f"c{len(c):02d}",
+                "label": label,
+                "kind": kind,
+                "file": file,
+                "line": line,
+                "lang": lang,
+            }
+        )
 
     # ---- positives: production-row-like
     for _ in range(3):
         n = s.name()
-        add(1, "production", "tests/fixtures/export_rows.py",
-            f'    ({s.r.randint(1000, 9999)}, "{n}", "{s.phone(style="spaced")}", "{s.ts()}"),')
+        add(
+            1,
+            "production",
+            "tests/fixtures/export_rows.py",
+            f'    ({s.r.randint(1000, 9999)}, "{n}", "{s.phone(style="spaced")}", "{s.ts()}"),',
+        )
     n = s.name()
-    add(1, "production", "logs/sample.log",
-        f"{s.ts()} INFO signal inbound source={s.phone()} sourceName=\"{n}\" room=family")
-    add(1, "production", "tests/fixtures/wa_event.json",
-        f'  "key": {{"remoteJid": "{s.phone("852", "jid")}", "fromMe": false}}, "pushName": "{s.name()}",')
-    add(1, "production", "tests/fixtures/discord_event.json",
-        f'  "author": {{"id": "{s.snowflake()}", "username": "{s.name().split()[0].lower()}{s.r.randint(10, 99)}"}},')
+    add(
+        1,
+        "production",
+        "logs/sample.log",
+        f'{s.ts()} INFO signal inbound source={s.phone()} sourceName="{n}" room=family',
+    )
+    add(
+        1,
+        "production",
+        "tests/fixtures/wa_event.json",
+        f'  "key": {{"remoteJid": "{s.phone("852", "jid")}", "fromMe": false}}, '
+        f'"pushName": "{s.name()}",',
+    )
+    add(
+        1,
+        "production",
+        "tests/fixtures/discord_event.json",
+        f'  "author": {{"id": "{s.snowflake()}", '
+        f'"username": "{s.name().split()[0].lower()}{s.r.randint(10, 99)}"}},',
+    )
     n = s.name()
     add(1, "production", "data/members.csv", f"{n},{s.email(n)},{s.phone('44', 'dashed')}")
     p = s.base_point()
     for _ in range(2):
         q = s.near(p)
-        add(1, "production", "tests/fixtures/presence_rows.py",
-            f'    ("{s.name().split()[0].lower()}", {q[0]}, {q[1]}, "{s.ts()}", 12.0),')
-    add(1, "production", "docs/notes.md", f"{s.name()} lives at {s.address()}, call {s.phone('65', 'spaced')}.")
-    add(1, "production", "tests/fixtures/life360.json",
-        f'  {{"id": "{s.uuid()}", "firstName": "{s.name().split()[0]}", "latitude": "{s.base_point()[0]}", '
-        f'"longitude": "{s.base_point()[1]}"}},')
-    add(1, "production", "tests/fixtures/signal_group.json",
-        f'  "groupInfo": {{"groupId": "{s.signal_group()}", "members": ["{s.phone()}", "{s.phone()}"]}}')
+        add(
+            1,
+            "production",
+            "tests/fixtures/presence_rows.py",
+            f'    ("{s.name().split()[0].lower()}", {q[0]}, {q[1]}, "{s.ts()}", 12.0),',
+        )
+    add(
+        1,
+        "production",
+        "docs/notes.md",
+        f"{s.name()} lives at {s.address()}, call {s.phone('65', 'spaced')}.",
+    )
+    add(
+        1,
+        "production",
+        "tests/fixtures/life360.json",
+        f'  {{"id": "{s.uuid()}", "firstName": "{s.name().split()[0]}", '
+        f'"latitude": "{s.base_point()[0]}", '
+        f'"longitude": "{s.base_point()[1]}"}},',
+    )
+    add(
+        1,
+        "production",
+        "tests/fixtures/signal_group.json",
+        f'  "groupInfo": {{"groupId": "{s.signal_group()}", '
+        f'"members": ["{s.phone()}", "{s.phone()}"]}}',
+    )
     # CJK
-    add(1, "production", "tests/fixtures/zh_rows.py", f'    ("{s.cjk_name()}", "{s.phone("852", "spaced")}"),', "zh")
-    add(1, "production", "logs/zh.log", f"{s.ts()} 收到 {s.cjk_name()} 嘅訊息 電話 {s.phone('852', 'local')}", "zh")
-    add(1, "production", "docs/zh-notes.md", f"{s.cjk_name()}住喺{s.r.randint(3, 88)}號{s.r.choice(['海景道', '彌敦道', '皇后大道'])}", "zh")
-    add(1, "production", "tests/fixtures/zh_presence.py",
-        f'    ("{s.cjk_name()}", {s.near(p)[0]}, {s.near(p)[1]}),', "zh")
+    add(
+        1,
+        "production",
+        "tests/fixtures/zh_rows.py",
+        f'    ("{s.cjk_name()}", "{s.phone("852", "spaced")}"),',
+        "zh",
+    )
+    add(
+        1,
+        "production",
+        "logs/zh.log",
+        f"{s.ts()} 收到 {s.cjk_name()} 嘅訊息 電話 {s.phone('852', 'local')}",
+        "zh",
+    )
+    add(
+        1,
+        "production",
+        "docs/zh-notes.md",
+        f"{s.cjk_name()}住喺{s.r.randint(3, 88)}號{s.r.choice(['海景道', '彌敦道', '皇后大道'])}",
+        "zh",
+    )
+    add(
+        1,
+        "production",
+        "tests/fixtures/zh_presence.py",
+        f'    ("{s.cjk_name()}", {s.near(p)[0]}, {s.near(p)[1]}),',
+        "zh",
+    )
     # ---- positives: realistic values in fixture context
     n = s.name()
-    add(1, "fixture", "tests/unit/test_contacts.py", f'    person = make_person(name="{n}", phone="{s.phone("44", "spaced")}")')
+    add(
+        1,
+        "fixture",
+        "tests/unit/test_contacts.py",
+        f'    person = make_person(name="{n}", phone="{s.phone("44", "spaced")}")',
+    )
     add(1, "fixture", "tests/unit/test_mail.py", f'    assert parse_sender(raw) == "{s.email()}"')
-    add(1, "fixture", "tests/unit/test_ids.py", f'MEMBER_DISCORD_ID = {s.snowflake()}  # {s.name()}')
+    add(
+        1, "fixture", "tests/unit/test_ids.py", f"MEMBER_DISCORD_ID = {s.snowflake()}  # {s.name()}"
+    )
     add(1, "fixture", "tests/unit/test_wa.py", f'SENDER = "{s.phone("91", "jid")}"')
-    add(1, "fixture", "tests/unit/test_geo.py", f'HOME = ({s.base_point()[0]}, {s.base_point()[1]})  # {s.name()}\'s flat')
-    add(1, "fixture", "tests/unit/test_zh.py", f'    member = Person(name="{s.cjk_name()}", phone="{s.phone("852")}")', "zh")
-    add(1, "fixture", "tests/unit/test_contacts.py", f'    ("{s.name()}", "{s.phone("1", "dashed")}"),')
+    add(
+        1,
+        "fixture",
+        "tests/unit/test_geo.py",
+        f"HOME = ({s.base_point()[0]}, {s.base_point()[1]})  # {s.name()}'s flat",
+    )
+    add(
+        1,
+        "fixture",
+        "tests/unit/test_zh.py",
+        f'    member = Person(name="{s.cjk_name()}", phone="{s.phone("852")}")',
+        "zh",
+    )
+    add(
+        1,
+        "fixture",
+        "tests/unit/test_contacts.py",
+        f'    ("{s.name()}", "{s.phone("1", "dashed")}"),',
+    )
     add(1, "fixture", "tests/unit/test_mail.py", f'    to = "{s.name()} <{s.email()}>"')
     # commit-message lines
-    add(1, "message", "<commit-message>", f"The fix came from {s.name()}'s report; she texted from {s.phone('61', 'spaced')}.")
-    add(1, "message", "<commit-message>", f"Reproduced with the fix at {s.base_point()[0]}, {s.base_point()[1]} (where Amara sleeps).")
+    add(
+        1,
+        "message",
+        "<commit-message>",
+        f"The fix came from {s.name()}'s report; she texted from {s.phone('61', 'spaced')}.",
+    )
+    add(
+        1,
+        "message",
+        "<commit-message>",
+        f"Reproduced with the fix at {s.base_point()[0]}, {s.base_point()[1]} "
+        "(where Amara sleeps).",
+    )
 
     # ---- negatives: code, prose, config
     for line in [
@@ -180,7 +344,7 @@ def cases(seed: int = 283) -> list[dict]:
         '    logger.info("tag handled", extra={"tag_id": tag.id, "ms": elapsed_ms})',
         "timeout_s = 30",
         "The relevance gate reads the transcript with an age per row.",
-        "    assert result.status == \"nothing_found\"",
+        '    assert result.status == "nothing_found"',
         "import asyncio",
         "| DEC-12 | The gate fails closed on an unknown speaker | tests/unit/test_gate.py |",
         '    version = "2.4.13"',
@@ -190,8 +354,8 @@ def cases(seed: int = 283) -> list[dict]:
         "ports: 127.0.0.1:3100 -> langfuse",
     ]:
         add(0, "code", "nora/module.py" if not line.startswith(("The", "|")) else "docs/x.md", line)
-    add(0, "code", "docs/zh.md", "今日天氣好好，我哋去飲茶啦。", "zh")
-    add(0, "code", "nora/doctrine/voice.md", "佢講嘢好直接，唔會兜圈。", "zh")
+    add(0, "code", "docs/zh.md", "今日天氣好好，我哋去飲茶啦。", "zh")  # noqa: RUF001 - Cantonese prose
+    add(0, "code", "nora/doctrine/voice.md", "佢講嘢好直接，唔會兜圈。", "zh")  # noqa: RUF001
     # ---- negatives: placeholders and public organisations
     for line in [
         '    phone = "+1 555 0100"  # NANP fiction range',
@@ -202,14 +366,24 @@ def cases(seed: int = 283) -> list[dict]:
         "For billing questions write to support@stripe.com.",
         "In an emergency in Hong Kong dial 999.",
         '    phone = "+85212345678"  # identity.example.toml',
-        '    snowflake = 100000000000000001',
+        "    snowflake = 100000000000000001",
         "    lat, lng = 0.0, 0.0",
         '    group_id = "Qk9YMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAw"',
     ]:
         add(0, "placeholder", "tests/unit/test_placeholders.py", line)
     add(0, "placeholder", "tests/unit/test_zh.py", '    name = "小明"  # 例子', "zh")
-    add(0, "message", "<commit-message>", "fix(gate): the relevance gate reads each row's age (#283)")
-    add(0, "message", "<commit-message>", "Measured over 40 labelled cases: 3 errors before, 1 after.")
+    add(
+        0,
+        "message",
+        "<commit-message>",
+        "fix(gate): the relevance gate reads each row's age (#283)",
+    )
+    add(
+        0,
+        "message",
+        "<commit-message>",
+        "Measured over 40 labelled cases: 3 errors before, 1 after.",
+    )
     return c
 
 
@@ -218,21 +392,21 @@ def cases(seed: int = 283) -> list[dict]:
 
 
 def _score(backend: str, lines: list[dict]) -> tuple[list, dict]:
-    import pii_judge as J  # noqa: PLC0415
+    import pii_judge as judge
 
     items = [(x["file"], 0, x["line"], x["line"]) for x in lines]
     if backend.startswith("llm:"):
         t0 = time.monotonic()
-        verdicts = J.llm_rejudge(backend[4:], [("line", x["line"], x["line"]) for x in lines])
+        verdicts = judge.llm_rejudge(backend[4:], [("line", x["line"], x["line"]) for x in lines])
         mapping = {"real": 1.0, "unsure": 0.5, "fake": 0.0}
         return [mapping[v] for v in verdicts], {"seconds": time.monotonic() - t0}
-    v = J.score_lines(backend, items)
+    v = judge.score_lines(backend, items)
     return v.scores, {**v.detail, "seconds": v.seconds}
 
 
 def evaluate(scores: list, labels: list, thr: float) -> dict:
-    fp = sum(1 for s, y in zip(scores, labels) if s >= thr and y == 0)
-    fn = sum(1 for s, y in zip(scores, labels) if s < thr and y == 1)
+    fp = sum(1 for s, y in zip(scores, labels, strict=True) if s >= thr and y == 0)
+    fn = sum(1 for s, y in zip(scores, labels, strict=True) if s < thr and y == 1)
     return {"threshold": thr, "fp": fp, "fn": fn, "errors": fp + fn}
 
 
@@ -240,15 +414,20 @@ def refuse_denylisted(cs: list[dict]) -> None:
     """A generated line that happens to spell a real value is never sent to
     any model: the synthetic set is checked against the private denylist
     first, and the run stops on a hit."""
-    import pii_scan as P  # noqa: PLC0415
+    import pii_scan as scan
 
-    deny, err, _ = P.load_denylist()
+    deny, err, _ = scan.load_denylist()
     if err is not None or deny is None:
-        raise SystemExit(f"refusing to run without the denylist check: {err.rule if err else 'no denylist'}")
-    sc = P.Scanner(deny, P.Allowlist(), set())
-    hits = [x["id"] for x in cs if sc.denylist_hits(P.normalise_text(x["line"]))]
+        raise SystemExit(
+            f"refusing to run without the denylist check: {err.rule if err else 'no denylist'}"
+        )
+    sc = scan.Scanner(deny, scan.Allowlist(), set())
+    hits = [x["id"] for x in cs if sc.denylist_hits(scan.normalise_text(x["line"]))]
     if hits:
-        raise SystemExit(f"refusing to run: generated case(s) {hits} match a denylisted real value; change the seed")
+        raise SystemExit(
+            f"refusing to run: generated case(s) {hits} match a denylisted real value; "
+            "change the seed"
+        )
 
 
 def cmd_run(a) -> int:
@@ -265,31 +444,75 @@ def cmd_run(a) -> int:
     for thr in thresholds:
         per_run = [evaluate(r["scores"], labels, thr) for r in runs]
         errs = [x["errors"] for x in per_run]
-        table.append({"threshold": thr, "errors": errs, "fp": [x["fp"] for x in per_run],
-                      "fn": [x["fn"] for x in per_run], "mean_errors": statistics.mean(errs)})
+        table.append(
+            {
+                "threshold": thr,
+                "errors": errs,
+                "fp": [x["fp"] for x in per_run],
+                "fn": [x["fn"] for x in per_run],
+                "mean_errors": statistics.mean(errs),
+            }
+        )
     best = min(table, key=lambda r: (r["mean_errors"], max(r["fn"]), r["threshold"]))
     identical = all(r["scores"] == runs[0]["scores"] for r in runs[1:])
     by_kind: dict[str, dict] = {}
     for k in sorted({x["kind"] for x in cs}):
         idx = [i for i, x in enumerate(cs) if x["kind"] == k]
-        by_kind[k] = {"n": len(idx), "errors_at_best": [
-            sum(1 for i in idx if (r["scores"][i] >= best["threshold"]) != bool(labels[i])) for r in runs]}
+        by_kind[k] = {
+            "n": len(idx),
+            "errors_at_best": [
+                sum(1 for i in idx if (r["scores"][i] >= best["threshold"]) != bool(labels[i]))
+                for r in runs
+            ],
+        }
     zh_idx = [i for i, x in enumerate(cs) if x["lang"] == "zh"]
     out = {
-        "backend": a.backend, "model": os.environ.get("NORA_PII_LAYA_MODEL", ""), "n": len(cs),
-        "positives": sum(labels), "runs": a.runs, "deterministic": identical, "best": best,
+        "backend": a.backend,
+        "model": os.environ.get("NORA_PII_LAYA_MODEL", ""),
+        "n": len(cs),
+        "positives": sum(labels),
+        "runs": a.runs,
+        "deterministic": identical,
+        "best": best,
         "by_kind": by_kind,
-        "zh_errors_at_best": [sum(1 for i in zh_idx if (r["scores"][i] >= best["threshold"]) != bool(labels[i]))
-                              for r in runs],
+        "zh_errors_at_best": [
+            sum(1 for i in zh_idx if (r["scores"][i] >= best["threshold"]) != bool(labels[i]))
+            for r in runs
+        ],
         "table": table,
-        "per_case": [{"id": x["id"], "label": x["label"], "kind": x["kind"], "lang": x["lang"],
-                      "scores": [r["scores"][i] for r in runs]} for i, x in enumerate(cs)],
+        "per_case": [
+            {
+                "id": x["id"],
+                "label": x["label"],
+                "kind": x["kind"],
+                "lang": x["lang"],
+                "scores": [r["scores"][i] for r in runs],
+            }
+            for i, x in enumerate(cs)
+        ],
         "details": [r["detail"] for r in runs],
     }
     with open(a.out, "w") as fh:
         json.dump(out, fh, indent=1, ensure_ascii=False)
-    print(json.dumps({k: out[k] for k in ("backend", "model", "n", "positives", "runs", "deterministic",
-                                          "best", "by_kind", "zh_errors_at_best")}, ensure_ascii=False))
+    print(
+        json.dumps(
+            {
+                k: out[k]
+                for k in (
+                    "backend",
+                    "model",
+                    "n",
+                    "positives",
+                    "runs",
+                    "deterministic",
+                    "best",
+                    "by_kind",
+                    "zh_errors_at_best",
+                )
+            },
+            ensure_ascii=False,
+        )
+    )
     return 0
 
 
@@ -297,19 +520,26 @@ def synthetic_commit(n_lines: int, seed: int = 7) -> list[dict]:
     """Code-like added lines with a sprinkle of fixture values, for timing."""
     s = Synth(seed)
     templates = [
-        lambda: f"    result = await store.fetch(room_id=room_{s.r.randint(1, 99)}, limit={s.r.randint(5, 50)})",
-        lambda: f"    assert out.status == \"ok\", out.note  # case {s.r.randint(1, 999)}",
+        lambda: (
+            f"    result = await store.fetch(room_id=room_{s.r.randint(1, 99)}, "
+            f"limit={s.r.randint(5, 50)})"
+        ),
+        lambda: f'    assert out.status == "ok", out.note  # case {s.r.randint(1, 999)}',
         lambda: "def handle(event: Event) -> Reply | None:",
-        lambda: f"        # {s.r.choice(['retry', 'bounded', 'fail closed', 'render age'])} per row",
-        lambda: f"    person = make_person(name=\"{s.name()}\")",
+        lambda: (
+            f"        # {s.r.choice(['retry', 'bounded', 'fail closed', 'render age'])} per row"
+        ),
+        lambda: f'    person = make_person(name="{s.name()}")',
         lambda: "",
         lambda: f"    timeout_s: float = {s.r.randint(1, 60)}.0",
     ]
-    return [{"file": f"nora/mod_{i // 200}.py", "line": s.r.choice(templates)()} for i in range(n_lines)]
+    return [
+        {"file": f"nora/mod_{i // 200}.py", "line": s.r.choice(templates)()} for i in range(n_lines)
+    ]
 
 
 def cmd_bench(a) -> int:
-    import pii_judge as J  # noqa: PLC0415
+    import pii_judge as judge
 
     res = []
     for n in [int(x) for x in a.sizes.split(",")]:
@@ -318,14 +548,19 @@ def cmd_bench(a) -> int:
         for rep in range(a.reps):
             t0 = time.monotonic()
             if a.backend == "laya":
-                scores, detail = J.laya_scores(lines)
+                _scores, detail = judge.laya_scores(lines)
             else:
                 items = [("line", x["line"], x["line"]) for x in lines]
-                verdicts = J.llm_rejudge(a.backend[4:], items)
-                scores, detail = verdicts, {}
+                judge.llm_rejudge(a.backend[4:], items)
+                detail = {}
             wall = time.monotonic() - t0
-            row = {"added_lines": n, "judged": len(lines), "rep": rep, "wall_s": round(wall, 3),
-                   **{k: (round(v, 3) if isinstance(v, float) else v) for k, v in detail.items()}}
+            row = {
+                "added_lines": n,
+                "judged": len(lines),
+                "rep": rep,
+                "wall_s": round(wall, 3),
+                **{k: (round(v, 3) if isinstance(v, float) else v) for k, v in detail.items()},
+            }
             if "infer_s" in detail and lines:
                 row["ms_per_line_warm"] = round(1000 * detail["infer_s"] / len(lines), 2)
             res.append(row)
@@ -336,7 +571,9 @@ def cmd_bench(a) -> int:
 
 
 def main(argv: list[str]) -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     sub = ap.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("cases")
     p.add_argument("--seed", type=int, default=283)

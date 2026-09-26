@@ -28,6 +28,7 @@ stay by operator decision), and single-word names shorter than
 is a substring-word in every licence header). Full names and person ids
 keep them covered.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -40,7 +41,9 @@ import time
 
 NON_IDENTIFYING_KEYS = {"label"}
 PROJECT_IDENTITY = {"miles novak", "mikeng-io", "pinegrove", "mikeng.io", "iam@mikeng.io"}
-UUID_RE = re.compile(r"[0-9a-fA-F]{8}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{12}")
+UUID_RE = re.compile(
+    r"[0-9a-fA-F]{8}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{12}"
+)
 
 
 def classify(value: str, key: str = "") -> str | None:
@@ -54,8 +57,16 @@ def classify(value: str, key: str = "") -> str | None:
         return "phone" if v.startswith("+") or key == "phone" else "number"
     if re.fullmatch(r"[0-9a-f]{8}", v):
         return "hex"
-    if len(v) >= 16 and " " not in v and re.search(r"[+/=_-]", v) and re.search(r"[A-Z]", v) \
-            and re.search(r"[a-z]", v) and re.search(r"\d", v) and "@" not in v and "." not in v:
+    if (
+        len(v) >= 16
+        and " " not in v
+        and re.search(r"[+/=_-]", v)
+        and re.search(r"[A-Z]", v)
+        and re.search(r"[a-z]", v)
+        and re.search(r"\d", v)
+        and "@" not in v
+        and "." not in v
+    ):
         return "b64"
     return "text"
 
@@ -91,7 +102,7 @@ def from_map(text: str) -> list[tuple[str, str]]:
             continue
         lhs = line.split("==>", 1)[0]
         if lhs.startswith("regex:"):
-            body = _LOOKAROUND.sub("", lhs[len("regex:"):])
+            body = _LOOKAROUND.sub("", lhs[len("regex:") :])
             lit = re.match(r"[^\\\[\](){}.*+?|^$]*", body)
             value = lit.group(0) if lit else ""
             if not value:
@@ -142,11 +153,18 @@ def build(sources: list[tuple[str, str]], exempt: set[str], min_token: int):
 
 
 def main(argv: list[str]) -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("--identity", action="append", default=[], help="an identity.toml (repeatable)")
-    ap.add_argument("--map", action="append", default=[], help="a scrub replacement map (repeatable)")
+    ap.add_argument(
+        "--map", action="append", default=[], help="a scrub replacement map (repeatable)"
+    )
     ap.add_argument("--exempt", help="private file: one value per line to leave out")
-    ap.add_argument("--out", default=os.path.expanduser(os.path.join("~", ".config", "nora", "pii-denylist.txt")))
+    ap.add_argument(
+        "--out",
+        default=os.path.expanduser(os.path.join("~", ".config", "nora", "pii-denylist.txt")),
+    )
     ap.add_argument("--min-token", type=int, default=5)
     a = ap.parse_args(argv)
     if not a.identity and not a.map:
@@ -156,7 +174,9 @@ def main(argv: list[str]) -> int:
     for path in a.identity + a.map:
         with open(path, encoding="utf-8") as fh:
             text = fh.read()
-        provenance.append(f"{os.path.basename(path)} sha256:{hashlib.sha256(text.encode()).hexdigest()[:12]}")
+        provenance.append(
+            f"{os.path.basename(path)} sha256:{hashlib.sha256(text.encode()).hexdigest()[:12]}"
+        )
         sources += from_identity(text) if path in a.identity else from_map(text)
     exempt: set[str] = set()
     if a.exempt:

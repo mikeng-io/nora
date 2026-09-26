@@ -123,7 +123,7 @@ ground truth for identity. Calibration: `scripts/pii_judge_eval.py` (a
 generated 55-line set; nothing in it is real).
 
 **What it does not catch.** A headerless integer-microdegree table in a file
-that never names coordinates, geohashes, a constant coordinate offset, a
+that never names coordinates, geohashes, a
 number split across string concatenation, and anything an author disguises
 on purpose. It stops a corpus pasted as it came out of a database — how the
 one real incident happened — and it is not what decides a public release

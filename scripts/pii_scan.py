@@ -59,12 +59,12 @@ acknowledges that line and nothing else.
 Output names the path, the line and the RULE, and masks the value: hook output
 lands in terminals and agent transcripts.
 """
+
 from __future__ import annotations
 
 import bisect
 import fnmatch
 import hashlib
-import json
 import os
 import re
 import subprocess
@@ -120,7 +120,9 @@ class Finding:
 
 
 def finding_id(path: str, line_text: str) -> str:
-    return hashlib.sha256(f"{path}\0{line_text.rstrip()}".encode("utf-8", "surrogateescape")).hexdigest()[:12]
+    return hashlib.sha256(
+        f"{path}\0{line_text.rstrip()}".encode("utf-8", "surrogateescape")
+    ).hexdigest()[:12]
 
 
 def mask(value: str, *, full: bool = False) -> str:
@@ -204,7 +206,7 @@ def phone_forms(digits: str) -> list[str]:
     which every national spelling of the number contains."""
     forms = [digits]
     if len(digits) >= 10:
-        forms.append(digits[-max(8, len(digits) - 3):])
+        forms.append(digits[-max(8, len(digits) - 3) :])
     return forms
 
 
@@ -221,7 +223,11 @@ def parse_denylist(text: str, source: str = "") -> Denylist:
         value = normalise_line(value.strip())
         if kind not in KINDS:
             raise DenylistError(f"{source}:{n}: unknown kind {kind!r}")
-        if not value or value.casefold() in PROJECT_IDENTITY or _tokens_of(value) in _PROJECT_TOKENS:
+        if (
+            not value
+            or value.casefold() in PROJECT_IDENTITY
+            or _tokens_of(value) in _PROJECT_TOKENS
+        ):
             continue
         d.count += 1
         if kind == "text":
@@ -271,22 +277,54 @@ def load_denylist() -> tuple[Denylist | None, Finding | None, str]:
     absent_reason = os.environ.get("NORA_PII_DENYLIST_ABSENT", "").strip()
     if not os.path.exists(path):
         if absent_reason:
-            return Denylist(source="<absent>"), None, (
-                f"pii: NO DENYLIST on this machine ({path}); acknowledged by "
-                f"NORA_PII_DENYLIST_ABSENT={absent_reason!r}. Shape rules only: known real "
-                "values that do not look like a phone/uuid/... will pass.")
-        return None, Finding("ERROR", "denylist-missing", path, 0, "", "", ackable=False,
-                             note="generate it with scripts/pii_denylist_build.py, or set "
-                                  "NORA_PII_DENYLIST_ABSENT=<reason> on a machine that has none"), ""
+            return (
+                Denylist(source="<absent>"),
+                None,
+                (
+                    f"pii: NO DENYLIST on this machine ({path}); acknowledged by "
+                    f"NORA_PII_DENYLIST_ABSENT={absent_reason!r}. Shape rules only: known real "
+                    "values that do not look like a phone/uuid/... will pass."
+                ),
+            )
+        return (
+            None,
+            Finding(
+                "ERROR",
+                "denylist-missing",
+                path,
+                0,
+                "",
+                "",
+                ackable=False,
+                note="generate it with scripts/pii_denylist_build.py, or set "
+                "NORA_PII_DENYLIST_ABSENT=<reason> on a machine that has none",
+            ),
+            "",
+        )
     try:
         with open(path, encoding="utf-8") as fh:
             d = parse_denylist(fh.read(), path)
     except (OSError, UnicodeDecodeError, DenylistError) as exc:
-        return None, Finding("ERROR", "denylist-unreadable", path, 0, "", "", ackable=False,
-                             note=str(exc)), ""
+        return (
+            None,
+            Finding("ERROR", "denylist-unreadable", path, 0, "", "", ackable=False, note=str(exc)),
+            "",
+        )
     if d.empty:
-        return None, Finding("ERROR", "denylist-empty", path, 0, "", "", ackable=False,
-                             note="0 entries: a broken generation, not a clean machine"), ""
+        return (
+            None,
+            Finding(
+                "ERROR",
+                "denylist-empty",
+                path,
+                0,
+                "",
+                "",
+                ackable=False,
+                note="0 entries: a broken generation, not a clean machine",
+            ),
+            "",
+        )
     notice = ""
     try:
         if os.stat(path).st_mode & 0o077:
@@ -304,7 +342,16 @@ class AllowlistError(Exception):
     pass
 
 
-ALLOW_KINDS = ("path-exempt", "binary", "symlink", "gitlink", "large", "coords", "value", "value-re")
+ALLOW_KINDS = (
+    "path-exempt",
+    "binary",
+    "symlink",
+    "gitlink",
+    "large",
+    "coords",
+    "value",
+    "value-re",
+)
 
 
 @dataclass
@@ -334,16 +381,20 @@ def parse_allowlist(text: str) -> Allowlist:
         body, reason = line.split(" -- ", 1)
         parts = body.split()
         if len(parts) < 2 or parts[0] not in ALLOW_KINDS or not reason.strip():
-            raise AllowlistError(f"{ALLOWLIST_PATH}:{n}: expected `<kind> <pattern> -- <reason>`, "
-                                 f"kind one of {', '.join(ALLOW_KINDS)}")
+            raise AllowlistError(
+                f"{ALLOWLIST_PATH}:{n}: expected `<kind> <pattern> -- <reason>`, "
+                f"kind one of {', '.join(ALLOW_KINDS)}"
+            )
         kind, pattern = parts[0], parts[1]
         if kind == "value":
             pattern = body.split(None, 1)[1].strip()  # a value may hold spaces: `+44 7700 ...`
         extra = ""
         if kind == "coords":
             if len(parts) != 3 or not re.fullmatch(r"sha256=[0-9a-f]{16}", parts[2]):
-                raise AllowlistError(f"{ALLOWLIST_PATH}:{n}: coords needs `sha256=<16 hex>` "
-                                     "(scripts/pii_scan.py declare-coords <path>)")
+                raise AllowlistError(
+                    f"{ALLOWLIST_PATH}:{n}: coords needs `sha256=<16 hex>` "
+                    "(scripts/pii_scan.py declare-coords <path>)"
+                )
             extra = parts[2].split("=", 1)[1]
         if kind == "value":
             a.values.add(normalise_key(pattern))
@@ -360,7 +411,9 @@ def normalise_key(value: str) -> str:
     v = normalise_line(value).strip()
     if re.fullmatch(r"[+()\d \-.]+", v) and len(digits_of(v)) >= 6:
         return digits_of(v)
-    if re.fullmatch(r"[0-9a-fA-F]{8}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{12}", v):
+    if re.fullmatch(
+        r"[0-9a-fA-F]{8}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{12}", v
+    ):
         return v.replace("-", "").lower()
     return v.lower()
 
@@ -387,7 +440,8 @@ def placeholder_digits(d: str) -> bool:
 
 _KNOWN_PUBLIC_UUIDS = {
     # uuid.NAMESPACE_DNS/URL/OID/X500 (RFC 4122 appendix C)
-    f"6ba7b81{i}9dad11d180b400c04fd430c8" for i in range(5)
+    f"6ba7b81{i}9dad11d180b400c04fd430c8"
+    for i in range(5)
 }
 
 
@@ -404,9 +458,40 @@ _JID_DOMAINS_SET = frozenset({"s.whatsapp.net", "c.us", "g.us", "lid"})
 _PLACEHOLDER_DOMAINS = ("example.com", "example.org", "example.net", "users.noreply.github.com")
 _PLACEHOLDER_TLDS = (".example", ".test", ".invalid", ".localhost", ".local", ".internal")
 _ROLE_LOCALS = frozenset(
-    "noreply no-reply donotreply support sales info admin hello contact security privacy abuse "
-    "postmaster team help billing press notifications git root webmaster hostmaster user test "
-    "you me someone name first.last jane.doe john.doe".split())
+    [
+        "noreply",
+        "no-reply",
+        "donotreply",
+        "support",
+        "sales",
+        "info",
+        "admin",
+        "hello",
+        "contact",
+        "security",
+        "privacy",
+        "abuse",
+        "postmaster",
+        "team",
+        "help",
+        "billing",
+        "press",
+        "notifications",
+        "git",
+        "root",
+        "webmaster",
+        "hostmaster",
+        "user",
+        "test",
+        "you",
+        "me",
+        "someone",
+        "name",
+        "first.last",
+        "jane.doe",
+        "john.doe",
+    ]
+)
 
 
 def placeholder_email(addr: str) -> bool:
@@ -426,22 +511,51 @@ def placeholder_email(addr: str) -> bool:
 
 _PHONE_WORDS = re.compile(
     r"(?i)phone|\btel\b|mobile|\bcell|whatsapp|signal|\bsms\b|msisdn|e164|\bcontact|\bjid\b|"
-    r"電話|手機|手机|號碼|号码")
-_GEO_WORDS = re.compile(r"(?i)\blat(?:itude)?(?:_?e[67])?\b|\blng|\blon(?:g|gitude)?\b|\bcoord|\bgeo|\bgps\b|"
-                        r"microdeg|\bwgs84\b")
+    r"電話|手機|手机|號碼|号码"
+)
+_GEO_WORDS = re.compile(
+    r"(?i)\blat(?:itude)?(?:_?e[67])?\b|\blng|\blon(?:g|gitude)?\b|\bcoord|\bgeo|\bgps\b|"
+    r"microdeg|\bwgs84\b"
+)
 
 # (rule, regex, group) in priority order: an earlier rule's span suppresses a
 # later rule's overlapping span, so a JID is not also a phone and a snowflake.
 _SHAPES: list[tuple[str, re.Pattern, int]] = [
     ("whatsapp-jid", re.compile(r"(?<![\w.])(\d{6,20})@(?:s\.whatsapp\.net|c\.us|g\.us|lid)\b"), 0),
-    ("email", re.compile(r"(?<![\w.+%-])[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}(?![\w-])"), 0),
-    ("uuid", re.compile(r"(?<![0-9A-Za-z])[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}(?![0-9A-Za-z])"), 0),
+    (
+        "email",
+        re.compile(
+            r"(?<![\w.+%-])[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}(?![\w-])"
+        ),
+        0,
+    ),
+    (
+        "uuid",
+        re.compile(
+            r"(?<![0-9A-Za-z])[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}(?![0-9A-Za-z])"
+        ),
+        0,
+    ),
     # `h1:` is a Go module checksum, not a group
-    ("signal-group", re.compile(r"(?<![A-Za-z0-9+/_-])(?<!h1:)[A-Za-z0-9+/]{43}=(?![A-Za-z0-9+/=])"), 0),
+    (
+        "signal-group",
+        re.compile(r"(?<![A-Za-z0-9+/_-])(?<!h1:)[A-Za-z0-9+/]{43}=(?![A-Za-z0-9+/=])"),
+        0,
+    ),
     ("tailscale", re.compile(r"(?i)(?<![\w.-])[a-z0-9-]+(?:\.[a-z0-9-]+)*\.ts\.net\b"), 0),
-    ("tailscale-ip", re.compile(r"(?<![\d.])100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d{1,3}\.\d{1,3}(?![\d.])"), 0),
+    (
+        "tailscale-ip",
+        re.compile(r"(?<![\d.])100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d{1,3}\.\d{1,3}(?![\d.])"),
+        0,
+    ),
     ("phone", re.compile(r"(?<![\w+])\+\(?\d(?:[ \-.()]{0,2}\d){6,14}(?!\d)"), 0),
-    ("phone", re.compile(r"(?<![\w.+\-/:])\(?\d{2,4}\)?[ \-.]\d{3,4}[ \-.]\d{3,4}(?![\w\-/:]|\.\d|[ \-.]\d)"), 0),
+    (
+        "phone",
+        re.compile(
+            r"(?<![\w.+\-/:])\(?\d{2,4}\)?[ \-.]\d{3,4}[ \-.]\d{3,4}(?![\w\-/:]|\.\d|[ \-.]\d)"
+        ),
+        0,
+    ),
     ("phone", re.compile(r"(?<![\w.+\-/:])\d{4}[ \-]\d{4}(?![\w\-/:]|\.\d|[ \-]\d)"), 0),
     ("snowflake", re.compile(r"(?<![\w.])\d{17,20}(?![\w.])"), 0),
 ]
@@ -450,7 +564,9 @@ _PHONE_BARE = re.compile(r"(?<![\w.+])\d(?:[ \-.]?\d){7,14}(?![\w.])")
 _SIGNAL_URLSAFE = re.compile(r"(?<![A-Za-z0-9+/_-])[A-Za-z0-9_-]{43}(?![A-Za-z0-9+/_=-])")
 
 
-_DATEISH = re.compile(r"\d{4}[-./]\d{1,2}[-./]\d{1,2}|\d{1,2}[-./]\d{1,2}[-./]\d{2,4}|\d{1,3}(?:\.\d{1,3}){3}")
+_DATEISH = re.compile(
+    r"\d{4}[-./]\d{1,2}[-./]\d{1,2}|\d{1,2}[-./]\d{1,2}[-./]\d{2,4}|\d{1,3}(?:\.\d{1,3}){3}"
+)
 _JID_DOMAINS = ("s.whatsapp.net", "c.us", "g.us", "lid")
 
 
@@ -473,7 +589,8 @@ def _shape_placeholder(rule: str, value: str, ctx_line: str) -> bool:
     if rule == "signal-group":
         body = value.rstrip("=")
         return bool(re.search(r"(.)\1{4,}", body)) or not (
-            re.search(r"[A-Z]", body) and re.search(r"[a-z]", body) and re.search(r"\d", body))
+            re.search(r"[A-Z]", body) and re.search(r"[a-z]", body) and re.search(r"\d", body)
+        )
     if rule == "tailscale":
         v = value.lower()
         return any(w in v for w in ("example", "your-tailnet", "tailnet-name", "<", "xxxx"))
@@ -488,7 +605,9 @@ def _shape_placeholder(rule: str, value: str, ctx_line: str) -> bool:
 # Not after `.` (the tail of a version), not after `d:` (the seconds of a
 # clock time), not before `.d` (the head of a version or an IPv4 address).
 _NUM_TOKEN = re.compile(r"(?<![\w.])(?<!\d:)([-+]?)(\d+)(?:\.(\d+))?(?!\w|\.\d)")
-_DMS = re.compile(r"(\d{1,3})\s*°\s*(\d{1,2})\s*['′]\s*(\d{1,2}(?:\.\d+)?)\s*(?:[\"″]|'')?\s*([NSEW])")
+_DMS = re.compile(
+    r"(\d{1,3})\s*°\s*(\d{1,2})\s*['′]\s*(\d{1,2}(?:\.\d+)?)\s*(?:[\"″]|'')?\s*([NSEW])"  # noqa: RUF001 - the prime marks ARE the DMS syntax
+)
 _ISO6709 = re.compile(r"(?<![\w.])([+-]\d{2}(?:\.\d{3,})?)([+-]\d{3}(?:\.\d{3,})?)")
 _PLUS = re.compile(r"(?<![\w+])([23456789CFGHJMPQRVWX]{8})\+([23456789CFGHJMPQRVWX]{2,3})(?![\w])")
 _OLC_ALPHA = "23456789CFGHJMPQRVWX"
@@ -528,9 +647,13 @@ def _line_candidates(line: str, geo: bool) -> list[tuple[int, str, float]]:
         # split integer / fraction columns, or a comma decimal
         if len(ip) <= 3 and i + 1 < len(toks):
             nxt = toks[i + 1]
-            gap = line[m.end():nxt.start()]
-            if (nxt.group(3) is None and nxt.group(1) == "" and 4 <= len(nxt.group(2)) <= 7
-                    and re.fullmatch(r" ?[,;\t|] ?", gap)):
+            gap = line[m.end() : nxt.start()]
+            if (
+                nxt.group(3) is None
+                and nxt.group(1) == ""
+                and 4 <= len(nxt.group(2)) <= 7
+                and re.fullmatch(r" ?[,;\t|] ?", gap)
+            ):
                 out.append((m.start(), "split", sign * float(f"{ip}.{nxt.group(2)}")))
                 skip.add(i + 1)
                 continue
@@ -540,8 +663,11 @@ def _line_candidates(line: str, geo: bool) -> list[tuple[int, str, float]]:
             # holds coordinates: otherwise every id, size and epoch second
             # pairs with its neighbour. A quoted integer is an id, and
             # YYYYMMDD is a date.
-            if not geo or line[m.start() - 1:m.start()] in ("\"", "'") or re.fullmatch(
-                    r"(19|20)\d\d(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])", ip):
+            if (
+                not geo
+                or line[m.start() - 1 : m.start()] in ('"', "'")
+                or re.fullmatch(r"(19|20)\d\d(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])", ip)
+            ):
                 continue
             out.append((m.start(), "e6", sign * v / 1e6))
             out.append((m.start(), "e7", sign * v / 1e7))
@@ -614,11 +740,13 @@ def scan_coords(lines: list[str], geo: bool | None = None) -> CoordResult:
     for n, line in enumerate(lines, 1):
         for m in _ISO6709.finditer(line):
             points.append((n, float(m.group(1)), float(m.group(2))))
-        dms = [(m.group(4), float(m.group(1)) + float(m.group(2)) / 60 + float(m.group(3)) / 3600)
-               for m in _DMS.finditer(line)]
+        dms = [
+            (m.group(4), float(m.group(1)) + float(m.group(2)) / 60 + float(m.group(3)) / 3600)
+            for m in _DMS.finditer(line)
+        ]
         lat_dms = [(-v if h == "S" else v) for h, v in dms if h in "NS"]
         lng_dms = [(-v if h == "W" else v) for h, v in dms if h in "EW"]
-        for la, ln in zip(lat_dms, lng_dms):
+        for la, ln in zip(lat_dms, lng_dms, strict=False):
             points.append((n, la, ln))
         for m in _PLUS.finditer(line):
             la, ln = _plus_decode(m.group(1))
@@ -682,20 +810,20 @@ def extract_strings(data: bytes) -> str:
 
 def _tiff_has_gps(buf: bytes, base: int) -> bool:
     try:
-        endian = buf[base:base + 2]
+        endian = buf[base : base + 2]
         if endian not in (b"II", b"MM"):
             return False
         bo = "little" if endian == b"II" else "big"
-        off = int.from_bytes(buf[base + 4:base + 8], bo)
-        count = int.from_bytes(buf[base + off:base + off + 2], bo)
+        off = int.from_bytes(buf[base + 4 : base + 8], bo)
+        count = int.from_bytes(buf[base + off : base + off + 2], bo)
         for i in range(min(count, 512)):
             e = base + off + 2 + i * 12
-            if int.from_bytes(buf[e:e + 2], bo) == 0x8825:
-                gps_off = int.from_bytes(buf[e + 8:e + 12], bo)
-                gcount = int.from_bytes(buf[base + gps_off:base + gps_off + 2], bo)
+            if int.from_bytes(buf[e : e + 2], bo) == 0x8825:
+                gps_off = int.from_bytes(buf[e + 8 : e + 12], bo)
+                gcount = int.from_bytes(buf[base + gps_off : base + gps_off + 2], bo)
                 for j in range(min(gcount, 64)):
                     g = base + gps_off + 2 + j * 12
-                    if int.from_bytes(buf[g:g + 2], bo) in (2, 4):  # GPSLatitude / GPSLongitude
+                    if int.from_bytes(buf[g : g + 2], bo) in (2, 4):  # GPSLatitude / GPSLongitude
                         return True
     except (IndexError, ValueError):
         return False
@@ -705,7 +833,7 @@ def _tiff_has_gps(buf: bytes, base: int) -> bool:
 def media_has_gps(data: bytes) -> bool:
     """EXIF GPS in a JPEG/PNG/TIFF, or an ISO 6709 location atom in a
     QuickTime/MP4 (`©xyz`). A single photo taken at home is a residence."""
-    for m in re.finditer(rb"Exif\x00\x00", data[:1 << 20]):
+    for m in re.finditer(rb"Exif\x00\x00", data[: 1 << 20]):
         if _tiff_has_gps(data, m.end()):
             return True
     if data[:4] in (b"II*\x00", b"MM\x00*") and _tiff_has_gps(data, 0):
@@ -743,7 +871,7 @@ class Spans:
 
     def free(self, s: int, e: int) -> bool:
         i = bisect.bisect_left(self.items, (s, e))
-        for a, b in self.items[max(0, i - 8):i + 8]:
+        for a, b in self.items[max(0, i - 8) : i + 8]:
             if not (e <= a or s >= b):
                 return False
         # a long earlier span may still cover s
@@ -770,7 +898,7 @@ class Scanner:
             t = re.sub(r"\\[ntr]", "  ", text)
             toks = [(m.start(), m.end(), m.group().lower()) for m in _ALNUM_TOKEN.finditer(t)]
             # camelCase splits too: `givenFamily` is two tokens as well as one
-            for i, (s, e, tok) in enumerate(toks):
+            for i, (s, _e, tok) in enumerate(toks):
                 for cand in d.token_index.get(tok, ()):
                     k = len(cand)
                     if i + k > len(toks):
@@ -780,17 +908,19 @@ class Scanner:
                         if toks[i + j][2] != cand[j]:
                             ok = False
                             break
-                        gap = t[toks[i + j - 1][1]:toks[i + j][0]]
+                        gap = t[toks[i + j - 1][1] : toks[i + j][0]]
                         if len(gap) > 16 or not re.fullmatch(r"[\s_\-.@/:#*'\"+,]*", gap):
                             ok = False
                             break
                     if ok:
                         hits.append((s, toks[i + k - 1][1], "text", " ".join(cand)))
             for m in re.finditer(r"[a-z][a-z0-9]*[A-Z][A-Za-z0-9]*", t):
-                parts = [p.lower() for p in re.findall(r"[A-Z]?[a-z0-9]+|[A-Z]+(?![a-z])", m.group())]
+                parts = [
+                    p.lower() for p in re.findall(r"[A-Z]?[a-z0-9]+|[A-Z]+(?![a-z])", m.group())
+                ]
                 for i, p in enumerate(parts):
                     for cand in d.token_index.get(p, ()):
-                        if tuple(parts[i:i + len(cand)]) == cand:
+                        if tuple(parts[i : i + len(cand)]) == cand:
                             hits.append((m.start(), m.end(), "text", " ".join(cand)))
         if d.nonascii:
             low = text.casefold()
@@ -808,7 +938,9 @@ class Scanner:
                 if mm:
                     hits.append((m.start(), m.end(), "number", mm.group()))
         if d.uuids or d.hexes:
-            for m in re.finditer(r"(?<![0-9A-Za-z])[0-9a-fA-F][0-9a-fA-F-]{6,40}[0-9a-fA-F](?![0-9A-Za-z])", text):
+            for m in re.finditer(
+                r"(?<![0-9A-Za-z])[0-9a-fA-F][0-9a-fA-F-]{6,40}[0-9a-fA-F](?![0-9A-Za-z])", text
+            ):
                 h = m.group().replace("-", "").lower()
                 if h in d.uuids or h[:8] in d.hexes or h in d.hexes:
                     hits.append((m.start(), m.end(), "uuid", h))
@@ -822,7 +954,9 @@ class Scanner:
         return hits
 
     # shapes -------------------------------------------------------------------
-    def shape_hits(self, text: str, taken: list[tuple[int, int]]) -> list[tuple[int, int, str, str]]:
+    def shape_hits(
+        self, text: str, taken: list[tuple[int, int]]
+    ) -> list[tuple[int, int, str, str]]:
         out: list[tuple[int, int, str, str]] = []
         spans = Spans(taken)
         free = spans.free
@@ -870,7 +1004,9 @@ class Scanner:
                         out.append((s, e, "signal-group", b64_canonical(m.group())))
         return out
 
-    def scan_text(self, text: str, path: str, *, shapes: bool = True, coords: bool = True) -> TextScan:
+    def scan_text(
+        self, text: str, path: str, *, shapes: bool = True, coords: bool = True
+    ) -> TextScan:
         text = normalise_text(text)
         lines = text.split("\n")
         idx = LineIndex(text)
@@ -878,15 +1014,35 @@ class Scanner:
         deny = sorted(set(self.denylist_hits(text)))
         for s, _e, kind, key in deny:
             ln = idx.line(s)
-            findings.append(Finding("FAIL", f"denylist:{kind}", path, ln, mask(key, full=True),
-                                    finding_id(path, lines[ln - 1]), ackable=False, key=key,
-                                    text=lines[ln - 1]))
+            findings.append(
+                Finding(
+                    "FAIL",
+                    f"denylist:{kind}",
+                    path,
+                    ln,
+                    mask(key, full=True),
+                    finding_id(path, lines[ln - 1]),
+                    ackable=False,
+                    key=key,
+                    text=lines[ln - 1],
+                )
+            )
         cres = None
         if shapes:
             for s, e, rule, key in self.shape_hits(text, [(a, b) for a, b, _, _ in deny]):
                 ln = idx.line(s)
-                findings.append(Finding("FAIL", rule, path, ln, mask(text[s:e]),
-                                        finding_id(path, lines[ln - 1]), key=key, text=lines[ln - 1]))
+                findings.append(
+                    Finding(
+                        "FAIL",
+                        rule,
+                        path,
+                        ln,
+                        mask(text[s:e]),
+                        finding_id(path, lines[ln - 1]),
+                        key=key,
+                        text=lines[ln - 1],
+                    )
+                )
             if coords:
                 cres = scan_coords(lines)
         return TextScan(findings, cres)
@@ -897,7 +1053,7 @@ class Scanner:
 
 
 def git(*args: str, input_bytes: bytes | None = None, check: bool = True) -> bytes:
-    proc = subprocess.run(["git", *args], input=input_bytes, capture_output=True)
+    proc = subprocess.run(["git", *args], input=input_bytes, capture_output=True)  # noqa: S603, S607 - git by name, fixed argv
     if check and proc.returncode != 0:
         raise GitError(f"git {' '.join(args)}: {proc.stderr.decode(errors='replace').strip()}")
     return proc.stdout
@@ -913,7 +1069,11 @@ def read_objects(names: list[str]) -> dict[str, bytes | None]:
     uniq = [n for n in dict.fromkeys(names) if n]
     if not uniq:
         return out
-    raw = git("cat-file", "--batch", input_bytes=("\n".join(uniq) + "\n").encode("utf-8", "surrogateescape"))
+    raw = git(
+        "cat-file",
+        "--batch",
+        input_bytes=("\n".join(uniq) + "\n").encode("utf-8", "surrogateescape"),
+    )
     pos = 0
     for name in uniq:
         nl = raw.index(b"\n", pos)
@@ -923,13 +1083,14 @@ def read_objects(names: list[str]) -> dict[str, bytes | None]:
             out[name] = None
             continue
         size = int(header.rsplit(" ", 1)[1])
-        out[name] = raw[pos:pos + size]
+        out[name] = raw[pos : pos + size]
         pos += size + 1
     return out
 
 
 def rev_exists(rev: str) -> str | None:
-    p = subprocess.run(["git", "rev-parse", "-q", "--verify", f"{rev}^{{commit}}"], capture_output=True)
+    argv = ["git", "rev-parse", "-q", "--verify", f"{rev}^{{commit}}"]
+    p = subprocess.run(argv, capture_output=True)  # noqa: S603 - git by name, fixed argv
     if p.returncode != 0:
         return None
     return p.stdout.decode().strip() or None
@@ -985,7 +1146,7 @@ class Report:
     scanned: int = 0
     added_lines: list = field(default_factory=list)  # (path, line_no, text, context) for the judges
 
-    def extend(self, other: "Report") -> None:
+    def extend(self, other: Report) -> None:
         self.findings += other.findings
         self.notices += other.notices
         self.scanned += other.scanned
@@ -1028,8 +1189,9 @@ def _line_diff(new: list[str], old: list[str]) -> tuple[set[int], list[str]]:
     return added, removed
 
 
-def _coords_findings(path: str, text: str, raw_olds: list, added: set[int], geo: bool,
-                     allow: Allowlist) -> list[Finding]:
+def _coords_findings(
+    path: str, text: str, raw_olds: list, added: set[int], geo: bool, allow: Allowlist
+) -> list[Finding]:
     """The whole file's location table, against every parent's: a finding
     when it is over the dwell limit, it gained a point, and its content is
     not the declared digest (#283 criterion 2)."""
@@ -1040,8 +1202,10 @@ def _coords_findings(path: str, text: str, raw_olds: list, added: set[int], geo:
     for o in raw_olds:
         if o is None:
             continue
-        pts = Counter((round(la, 5), round(ln, 5))
-                      for _, la, ln in scan_coords([normalise_line(x) for x in o], geo=geo).points)
+        pts = Counter(
+            (round(la, 5), round(ln, 5))
+            for _, la, ln in scan_coords([normalise_line(x) for x in o], geo=geo).points
+        )
         base_pts |= pts
     now = Counter((round(la, 5), round(ln, 5)) for _, la, ln in cres.points)
     if not (now - base_pts):
@@ -1050,12 +1214,19 @@ def _coords_findings(path: str, text: str, raw_olds: list, added: set[int], geo:
     if digest in allow.coords_digest(path):
         return []
     first = min((n for n, _, _ in cres.points if n in added), default=cres.points[0][0])
-    return [Finding(
-        "FAIL", "coords", path, first,
-        f"rows={cres.rows} clusters={cres.clusters} max-in-one-place={cres.max_rows} score={cres.score}",
-        finding_id(path, f"<coords {digest}>"),
-        note=f"a location table; declare it as `coords {path} sha256={digest}` in a PRIOR commit, "
-             "or generate the fixture")]
+    return [
+        Finding(
+            "FAIL",
+            "coords",
+            path,
+            first,
+            f"rows={cres.rows} clusters={cres.clusters} max-in-one-place={cres.max_rows} "
+            f"score={cres.score}",
+            finding_id(path, f"<coords {digest}>"),
+            note=f"a location table; declare it as `coords {path} sha256={digest}` in a PRIOR "
+            "commit, or generate the fixture",
+        )
+    ]
 
 
 def judge_blob(job: BlobJob, sc: Scanner, allow: Allowlist, acks: set[str]) -> Report:
@@ -1064,34 +1235,79 @@ def judge_blob(job: BlobJob, sc: Scanner, allow: Allowlist, acks: set[str]) -> R
     if allow.path_has("path-exempt", path):
         rep.notices.append(f"pii: {path}: declared path-exempt, not scanned")
         return rep
-    blob_id = hashlib.sha256((job.new or b"")).hexdigest()
+    blob_id = hashlib.sha256(job.new or b"").hexdigest()
     file_fid = finding_id(path, f"<blob {blob_id}>")
     fallback = file_fid in acks  # an acknowledged structural error is scanned the fallback way
 
     if job.mode == "160000":
         if not (allow.path_has("gitlink", path) or fallback):
-            rep.findings.append(Finding("ERROR", "gitlink", path, 0, "submodule pointer", file_fid,
-                                        note="declare it (`gitlink`) in the parent's allowlist"))
+            rep.findings.append(
+                Finding(
+                    "ERROR",
+                    "gitlink",
+                    path,
+                    0,
+                    "submodule pointer",
+                    file_fid,
+                    note="declare it (`gitlink`) in the parent's allowlist",
+                )
+            )
         return rep
     data = job.new or b""
     if job.mode == "120000" and not (allow.path_has("symlink", path) or fallback):
-        rep.findings.append(Finding("ERROR", "symlink", path, 0, "symlink", file_fid,
-                                    note="a link is not the content it points at; declare it (`symlink`)"))
+        rep.findings.append(
+            Finding(
+                "ERROR",
+                "symlink",
+                path,
+                0,
+                "symlink",
+                file_fid,
+                note="a link is not the content it points at; declare it (`symlink`)",
+            )
+        )
         return rep
     if len(data) > MAX_BYTES and not (allow.path_has("large", path) or fallback):
-        rep.findings.append(Finding("ERROR", "too-large", path, 0, f"{len(data)} bytes", file_fid,
-                                    note=f"over NORA_PII_MAX_BYTES={MAX_BYTES}; declare it (`large`)"))
+        rep.findings.append(
+            Finding(
+                "ERROR",
+                "too-large",
+                path,
+                0,
+                f"{len(data)} bytes",
+                file_fid,
+                note=f"over NORA_PII_MAX_BYTES={MAX_BYTES}; declare it (`large`)",
+            )
+        )
         return rep
     text, why = _decode(data)
     binary = text is None
     if binary:
         if media_has_gps(data):
-            rep.findings.append(Finding("FAIL", "media-gps", path, 0, "location metadata", file_fid,
-                                        note="strip EXIF / ©xyz before committing"))
+            rep.findings.append(
+                Finding(
+                    "FAIL",
+                    "media-gps",
+                    path,
+                    0,
+                    "location metadata",
+                    file_fid,
+                    note="strip EXIF / ©xyz before committing",
+                )
+            )
         if not (allow.path_has("binary", path) or fallback):
-            rep.findings.append(Finding("ERROR", why, path, 0, f"{len(data)} bytes", file_fid,
-                                        note="could not read it as text; declare it (`binary`) and it is "
-                                             "scanned for embedded strings"))
+            rep.findings.append(
+                Finding(
+                    "ERROR",
+                    why,
+                    path,
+                    0,
+                    f"{len(data)} bytes",
+                    file_fid,
+                    note="could not read it as text; declare it (`binary`) and it is "
+                    "scanned for embedded strings",
+                )
+            )
             return rep
         text = extract_strings(data)
     is_allowlist = path == ALLOWLIST_PATH
@@ -1107,7 +1323,9 @@ def judge_blob(job: BlobJob, sc: Scanner, allow: Allowlist, acks: set[str]) -> R
     # Only the lines a change adds are read closely: a value is new when it
     # sits on an added line more often than on the lines the change removed,
     # against EVERY parent (a merge adds only what no parent had).
-    diffs = [_line_diff(raw_new, o or []) for o in raw_olds] or [(set(range(1, len(raw_new) + 1)), [])]
+    diffs = [_line_diff(raw_new, o or []) for o in raw_olds] or [
+        (set(range(1, len(raw_new) + 1)), [])
+    ]
     added = set.intersection(*[a for a, _ in diffs])
     union = sorted(set().union(*[a for a, _ in diffs]))
     scan = sc.scan_text("\n".join(raw_new[n - 1] for n in union), path, shapes=shapes, coords=False)
@@ -1119,7 +1337,11 @@ def judge_blob(job: BlobJob, sc: Scanner, allow: Allowlist, acks: set[str]) -> R
 
     new_keys: Counter | None = None
     for added_p, removed_p in diffs:
-        gone = sc.scan_text("\n".join(removed_p), path, shapes=shapes, coords=False).findings if removed_p else []
+        gone = (
+            sc.scan_text("\n".join(removed_p), path, shapes=shapes, coords=False).findings
+            if removed_p
+            else []
+        )
         net = keys(scan.findings, added_p) - keys(gone)
         new_keys = net if new_keys is None else (new_keys & net)
     new_keys = new_keys or Counter()
@@ -1141,7 +1363,7 @@ def judge_blob(job: BlobJob, sc: Scanner, allow: Allowlist, acks: set[str]) -> R
             line = normalise_line(raw_new[n - 1])
             if len(line.strip()) < 4 or not re.search(r"\w", line):
                 continue
-            ctx = "\n".join(normalise_line(x) for x in raw_new[max(0, n - 3):n + 2])
+            ctx = "\n".join(normalise_line(x) for x in raw_new[max(0, n - 3) : n + 2])
             rep.added_lines.append((path, n, line, ctx))
     return rep
 
@@ -1155,7 +1377,9 @@ def load_context(parent: str | None) -> tuple[Allowlist, set[str], list[Finding]
     if not parent:
         return Allowlist(), set(), errs
     objs = read_objects([f"{parent}:{ALLOWLIST_PATH}", f"{parent}:{PLACEHOLDER_SOURCE}"])
-    return _context_from(objs.get(f"{parent}:{ALLOWLIST_PATH}"), objs.get(f"{parent}:{PLACEHOLDER_SOURCE}"))
+    return _context_from(
+        objs.get(f"{parent}:{ALLOWLIST_PATH}"), objs.get(f"{parent}:{PLACEHOLDER_SOURCE}")
+    )
 
 
 def _context_from(raw: bytes | None, ph: bytes | None) -> tuple[Allowlist, set[str], list[Finding]]:
@@ -1165,8 +1389,18 @@ def _context_from(raw: bytes | None, ph: bytes | None) -> tuple[Allowlist, set[s
         try:
             allow = parse_allowlist(raw.decode("utf-8"))
         except (UnicodeDecodeError, AllowlistError) as exc:
-            errs.append(Finding("ERROR", "allowlist-invalid", ALLOWLIST_PATH, 0, "", "", ackable=False,
-                                note=str(exc)))
+            errs.append(
+                Finding(
+                    "ERROR",
+                    "allowlist-invalid",
+                    ALLOWLIST_PATH,
+                    0,
+                    "",
+                    "",
+                    ackable=False,
+                    note=str(exc),
+                )
+            )
     placeholders = placeholder_values(ph.decode("utf-8", "replace")) if ph else set()
     return allow, placeholders, errs
 
@@ -1185,24 +1419,26 @@ def trailer_acks(message: str) -> set[str]:
 
 def mode_staged(deny: Denylist) -> Report:
     head = rev_exists("HEAD")
-    parents = [head] if head else []
     merge_heads = []
     gitdir = git("rev-parse", "--git-dir").decode().strip()
     mh = os.path.join(gitdir, "MERGE_HEAD")
     if os.path.exists(mh):
-        merge_heads = [x.strip() for x in open(mh).read().split() if x.strip()]
+        with open(mh) as fh:
+            merge_heads = [x.strip() for x in fh.read().split() if x.strip()]
     allow, placeholders, errs = load_context(head)
     rep = Report(findings=errs)
     raw = git("diff-index", "--cached", "-z", "-M", "--raw", "--no-abbrev", head or EMPTY_TREE)
     entries = parse_raw_z(raw)
     names: list[str] = []
     jobs_meta = []
-    for om, nm, osha, nsha, status, src, dst in entries:
+    for _om, nm, osha, nsha, status, _src, dst in entries:
         if status.startswith("D") or nm == "000000":
             continue
         if dst == ALLOWLIST_PATH:
-            rep.notices.append(f"pii: {ALLOWLIST_PATH} changed; declarations take effect from the NEXT "
-                               "commit, never this one")
+            rep.notices.append(
+                f"pii: {ALLOWLIST_PATH} changed; declarations take effect from the NEXT "
+                "commit, never this one"
+            )
         olds = [osha if not set(osha) <= {"0"} else None]
         olds += [f"{m}:{dst}" for m in merge_heads]
         if nm != "160000":
@@ -1213,19 +1449,35 @@ def mode_staged(deny: Denylist) -> Report:
     sc = Scanner(deny, allow, placeholders)
     acks = env_acks()
     for dst, nm, nsha, olds in jobs_meta:
-        job = BlobJob(dst, nm, objs.get(nsha) if nm != "160000" else None, [objs.get(o) if o else None for o in olds])
+        job = BlobJob(
+            dst,
+            nm,
+            objs.get(nsha) if nm != "160000" else None,
+            [objs.get(o) if o else None for o in olds],
+        )
         rep.extend(judge_blob(job, sc, allow, acks))
     return rep
 
 
 def _ident_findings(sc: Scanner, label: str, ident: str) -> list[Finding]:
     out = []
-    for s, _e, kind, key in sc.denylist_hits(normalise_line(ident)):
-        out.append(Finding("FAIL", f"denylist:{kind}", label, 0, mask(key, full=True),
-                           finding_id(label, ident), ackable=False))
+    for _s, _e, kind, key in sc.denylist_hits(normalise_line(ident)):
+        out.append(
+            Finding(
+                "FAIL",
+                f"denylist:{kind}",
+                label,
+                0,
+                mask(key, full=True),
+                finding_id(label, ident),
+                ackable=False,
+            )
+        )
     for m in EMAIL_RX.finditer(ident):
         if not placeholder_email(m.group()):
-            out.append(Finding("FAIL", "email", label, 0, mask(m.group()), finding_id(label, ident)))
+            out.append(
+                Finding("FAIL", "email", label, 0, mask(m.group()), finding_id(label, ident))
+            )
     return out
 
 
@@ -1244,9 +1496,16 @@ def message_findings(sc: Scanner, body: str) -> list[Finding]:
     scan = sc.scan_text(body, "<commit-message>")
     out = list(scan.findings)
     if scan.coords is not None and scan.coords.over:
-        out.append(Finding("FAIL", "coords", "<commit-message>", scan.coords.points[0][0],
-                           f"rows={scan.coords.rows} clusters={scan.coords.clusters}",
-                           finding_id("<commit-message>", f"<coords {scan.coords.digest()}>")))
+        out.append(
+            Finding(
+                "FAIL",
+                "coords",
+                "<commit-message>",
+                scan.coords.points[0][0],
+                f"rows={scan.coords.rows} clusters={scan.coords.clusters}",
+                finding_id("<commit-message>", f"<coords {scan.coords.digest()}>"),
+            )
+        )
     return out
 
 
@@ -1267,8 +1526,14 @@ def mode_message(deny: Denylist, msg_path: str) -> Report:
         rep.findings += _ident_findings(sc, label, ident)
     lines = body.split("\n")
     for n, line in enumerate(lines, 1):
-        if len(line.strip()) >= 4 and re.search(r"\w", line) and not line.startswith(f"{ACK_TRAILER}:"):
-            rep.added_lines.append(("<commit-message>", n, line, "\n".join(lines[max(0, n - 3):n + 2])))
+        if (
+            len(line.strip()) >= 4
+            and re.search(r"\w", line)
+            and not line.startswith(f"{ACK_TRAILER}:")
+        ):
+            rep.added_lines.append(
+                ("<commit-message>", n, line, "\n".join(lines[max(0, n - 3) : n + 2]))
+            )
     return rep
 
 
@@ -1282,14 +1547,27 @@ def _batch_diffs(pairs: list[tuple[str, str]]) -> list[list[tuple]]:
     out: list[list[tuple]] = []
     for parent, commit in pairs:
         if parent == EMPTY_TREE:
-            out.append(parse_raw_z(git("diff-tree", "-r", "-z", "--raw", "-M", "--no-abbrev", EMPTY_TREE, commit)))
+            out.append(
+                parse_raw_z(
+                    git("diff-tree", "-r", "-z", "--raw", "-M", "--no-abbrev", EMPTY_TREE, commit)
+                )
+            )
         else:
             out.append([])  # filled below
     real = [(i, pc) for i, pc in enumerate(pairs) if pc[0] != EMPTY_TREE]
     if not real:
         return out
-    raw = git("diff-tree", "--stdin", "--always", "-r", "-z", "--raw", "-M", "--no-abbrev",
-              input_bytes="".join(f"{c} {p}\n" for _, (p, c) in real).encode())
+    raw = git(
+        "diff-tree",
+        "--stdin",
+        "--always",
+        "-r",
+        "-z",
+        "--raw",
+        "-M",
+        "--no-abbrev",
+        input_bytes="".join(f"{c} {p}\n" for _, (p, c) in real).encode(),
+    )
     toks = raw.split(b"\0")
     i = 0
     for slot, _pair in real:
@@ -1336,10 +1614,24 @@ def mode_push(deny: Denylist, stdin_lines: list[str]) -> Report:
         parts = line.split()
         if len(parts) < 4 or parts[1] == zero:
             continue
-        found = git("rev-list", f"--max-count={PUSH_MAX + 1}", parts[1], "--not", "--remotes").decode().split()
+        found = (
+            git("rev-list", f"--max-count={PUSH_MAX + 1}", parts[1], "--not", "--remotes")
+            .decode()
+            .split()
+        )
         if len(found) > PUSH_MAX:
-            rep.findings.append(Finding("ERROR", "push-too-long", parts[0], 0, f">{PUSH_MAX} new commits", "",
-                                        ackable=False, note="raise NORA_PII_PUSH_MAX to look at all of them"))
+            rep.findings.append(
+                Finding(
+                    "ERROR",
+                    "push-too-long",
+                    parts[0],
+                    0,
+                    f">{PUSH_MAX} new commits",
+                    "",
+                    ackable=False,
+                    note="raise NORA_PII_PUSH_MAX to look at all of them",
+                )
+            )
             found = found[:PUSH_MAX]
         shas += [s for s in found if s not in shas]
     return scan_commits(deny, shas, rep)
@@ -1350,7 +1642,9 @@ def scan_commits(deny: Denylist, shas: list[str], rep: Report | None = None) -> 
     if not shas:
         return rep
     fmt = "%H%x00%P%x00%an <%ae>%x00%cn <%ce>%x00%B%x00%x01"
-    raw = git("log", "--no-walk=unsorted", f"--format={fmt}", *shas).decode("utf-8", "surrogateescape")
+    raw = git("log", "--no-walk=unsorted", f"--format={fmt}", *shas).decode(
+        "utf-8", "surrogateescape"
+    )
     meta = {}
     for rec in raw.split("\x01"):
         rec = rec.lstrip("\n")
@@ -1368,7 +1662,7 @@ def scan_commits(deny: Denylist, shas: list[str], rep: Report | None = None) -> 
             owner.append(sha)
     diffs = _batch_diffs(pairs)
     by_commit: dict[str, list] = {}
-    for sha, entries in zip(owner, diffs):
+    for sha, entries in zip(owner, diffs, strict=True):
         by_commit.setdefault(sha, []).append(entries)
     changes = {sha: _changes_from(by_commit[sha]) for sha in shas}
     firsts = sorted({meta[sha][0][0] for sha in shas if meta[sha][0]})
@@ -1378,7 +1672,9 @@ def scan_commits(deny: Denylist, shas: list[str], rep: Report | None = None) -> 
     objs = read_objects(names)
     ctx_cache: dict[str, tuple] = {"": (Allowlist(), set(), [])}
     for p in firsts:
-        ctx_cache[p] = _context_from(objs.get(f"{p}:{ALLOWLIST_PATH}"), objs.get(f"{p}:{PLACEHOLDER_SOURCE}"))
+        ctx_cache[p] = _context_from(
+            objs.get(f"{p}:{ALLOWLIST_PATH}"), objs.get(f"{p}:{PLACEHOLDER_SOURCE}")
+        )
     for sha in shas:
         parents, author, committer, body = meta[sha]
         allow, placeholders, errs = ctx_cache[parents[0] if parents else ""]
@@ -1386,11 +1682,17 @@ def scan_commits(deny: Denylist, shas: list[str], rep: Report | None = None) -> 
         acks = trailer_acks(body)
         sub = Report(findings=list(errs))
         for dst, nm, nsha, olds in changes[sha]:
-            job = BlobJob(dst, nm, objs.get(nsha) if nm != "160000" else None,
-                          [objs.get(o) if o else None for o in olds])
+            job = BlobJob(
+                dst,
+                nm,
+                objs.get(nsha) if nm != "160000" else None,
+                [objs.get(o) if o else None for o in olds],
+            )
             sub.extend(judge_blob(job, sc, allow, acks))
         sub.findings += message_findings(sc, body)
-        sub.findings += _ident_findings(sc, "<author>", author) + _ident_findings(sc, "<committer>", committer)
+        sub.findings += _ident_findings(sc, "<author>", author) + _ident_findings(
+            sc, "<committer>", committer
+        )
         for f in sub.findings:
             f.path = f"{sha[:10]} {f.path}"
         apply_acks(sub.findings, acks)
@@ -1406,11 +1708,15 @@ def mode_tree(deny: Denylist, rev: str, allow_from_worktree: bool) -> Report:
     if allow_from_worktree:
         top = git("rev-parse", "--show-toplevel").decode().strip()
         try:
-            allow = parse_allowlist(open(os.path.join(top, ALLOWLIST_PATH), encoding="utf-8").read())
+            with open(os.path.join(top, ALLOWLIST_PATH), encoding="utf-8") as fh:
+                allow = parse_allowlist(fh.read())
         except FileNotFoundError:
             allow = Allowlist()
         ex = os.path.join(top, PLACEHOLDER_SOURCE)
-        placeholders = placeholder_values(open(ex, encoding="utf-8").read()) if os.path.exists(ex) else set()
+        placeholders: set[str] = set()
+        if os.path.exists(ex):
+            with open(ex, encoding="utf-8") as fh:
+                placeholders = placeholder_values(fh.read())
         errs: list[Finding] = []
     else:
         allow, placeholders, errs = load_context(commit)
@@ -1435,15 +1741,22 @@ def mode_tree(deny: Denylist, rev: str, allow_from_worktree: bool) -> Report:
 
 def mode_declare_coords(path: str) -> int:
     staged = read_objects([f":{path}"]).get(f":{path}")
-    data = staged if staged is not None else open(path, "rb").read()
+    if staged is not None:
+        data = staged
+    else:
+        with open(path, "rb") as fh:
+            data = fh.read()
     text, _ = _decode(data)
     if text is None:
         print(f"pii: {path} is not text", file=sys.stderr)
         return ERROR
     res = scan_coords(normalise_text(text).split("\n"))
     print(f"coords {path} sha256={res.digest()} -- <reason: why this table is generated / safe>")
-    print(f"# rows={res.rows} clusters={res.clusters} max-in-one-place={res.max_rows} score={res.score}",
-          file=sys.stderr)
+    print(
+        f"# rows={res.rows} clusters={res.clusters} max-in-one-place={res.max_rows} "
+        f"score={res.score}",
+        file=sys.stderr,
+    )
     return PASS
 
 
@@ -1469,7 +1782,7 @@ def run_judges(rep: Report) -> None:
     if (not backend or backend == "off") and (not llm or llm == "off"):
         return
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    import pii_judge  # noqa: E402  (lazy: the deterministic layer never needs it)
+    import pii_judge
 
     denied = {(f.path, f.line) for f in rep.findings if f.rule.startswith("denylist:")}
     flagged = {(f.path, f.line) for f in rep.findings}
@@ -1478,32 +1791,57 @@ def run_judges(rep: Report) -> None:
         try:
             verdicts = pii_judge.score_lines(backend, items)
         except pii_judge.JudgeError as exc:
-            rep.findings.append(Finding("ERROR", f"judge:{backend}", "<judge>", 0, "", "", ackable=False,
-                                        note=str(exc)))
+            rep.findings.append(
+                Finding(
+                    "ERROR", f"judge:{backend}", "<judge>", 0, "", "", ackable=False, note=str(exc)
+                )
+            )
             return
-        rep.notices.append(f"pii: judge {backend} scored {len(items)} added line(s) "
-                           f"(threshold {verdicts.threshold:.2f}, {verdicts.seconds:.1f}s)")
-        for (path, n, line, _ctx), p in zip(items, verdicts.scores):
+        rep.notices.append(
+            f"pii: judge {backend} scored {len(items)} added line(s) "
+            f"(threshold {verdicts.threshold:.2f}, {verdicts.seconds:.1f}s)"
+        )
+        for (path, n, line, _ctx), p in zip(items, verdicts.scores, strict=True):
             if p >= verdicts.threshold and (path, n) not in flagged:
-                rep.findings.append(Finding("FAIL", f"judge:{backend}", path, n, mask(line.strip()),
-                                            finding_id(path, line), note=f"p={p:.2f}", text=line))
+                rep.findings.append(
+                    Finding(
+                        "FAIL",
+                        f"judge:{backend}",
+                        path,
+                        n,
+                        mask(line.strip()),
+                        finding_id(path, line),
+                        note=f"p={p:.2f}",
+                        text=line,
+                    )
+                )
     if llm and llm != "off":
         ctx = {(p, n): c for p, n, _l, c in rep.added_lines}
-        todo = [f for f in rep.findings if f.status == "FAIL" and f.ackable and not f.state and f.text
-                and not f.rule.startswith("denylist:")]
+        todo = [
+            f
+            for f in rep.findings
+            if f.status == "FAIL"
+            and f.ackable
+            and not f.state
+            and f.text
+            and not f.rule.startswith("denylist:")
+        ]
         if not todo:
             return
         try:
-            verdicts = pii_judge.llm_rejudge(llm, [(f.rule, f.text, ctx.get((f.path, f.line), f.text))
-                                                   for f in todo])
+            verdicts = pii_judge.llm_rejudge(
+                llm, [(f.rule, f.text, ctx.get((f.path, f.line), f.text)) for f in todo]
+            )
         except pii_judge.JudgeError as exc:
-            rep.findings.append(Finding("ERROR", "judge:llm", "<judge>", 0, "", "", ackable=False, note=str(exc)))
+            rep.findings.append(
+                Finding("ERROR", "judge:llm", "<judge>", 0, "", "", ackable=False, note=str(exc))
+            )
             return
         # Advisory unless NORA_PII_LLM_CLEARS=1: on the synthetic set the
         # working default (gemma4:e2b-mlx) called 9 of 26 real-looking lines
         # "fake", so letting it clear would pass a third of the true positives.
         clears = os.environ.get("NORA_PII_LLM_CLEARS", "") == "1"
-        for f, v in zip(todo, verdicts):
+        for f, v in zip(todo, verdicts, strict=True):
             f.note = (f.note + "; " if f.note else "") + f"llm={v}"
             if v == "fake" and clears:
                 f.state = "CLEARED"
@@ -1526,13 +1864,20 @@ def emit(rep: Report, label: str, elapsed: float) -> int:
     if rep.findings:
         for f in sorted(rep.findings, key=lambda f: (f.path, f.line, f.rule)):
             print(f.render(), file=sys.stderr)
-    print(f"pii {label}: {word} — {rep.scanned} blob(s)/message(s), "
-          f"{sum(1 for f in rep.findings if not f.state)} open finding(s), {elapsed:.2f}s", file=sys.stderr)
+    print(
+        f"pii {label}: {word} — {rep.scanned} blob(s)/message(s), "
+        f"{sum(1 for f in rep.findings if not f.state)} open finding(s), {elapsed:.2f}s",
+        file=sys.stderr,
+    )
     if code != PASS:
-        print("  Values are masked. A denylist hit is a real value: remove it. For any other finding you have\n"
-              "  looked at and judged harmless: NORA_PII_ACK=<id>[,<id>] git commit ... (the commit-msg hook\n"
-              f"  records each as a `{ACK_TRAILER}:` trailer). Declarations: {ALLOWLIST_PATH}, honoured from\n"
-              "  the parent commit only. See .githooks/README.md.", file=sys.stderr)
+        print(
+            "  Values are masked. A denylist hit is a real value: remove it. For any other\n"
+            "  finding you have looked at and judged harmless:\n"
+            "  NORA_PII_ACK=<id>[,<id>] git commit ... (the commit-msg hook records each as a\n"
+            f"  `{ACK_TRAILER}:` trailer). Declarations: {ALLOWLIST_PATH}, honoured from the\n"
+            "  parent commit only. See .githooks/README.md.",
+            file=sys.stderr,
+        )
     return code
 
 
@@ -1545,8 +1890,11 @@ def _record_used_acks(used: set[str]) -> None:
 def main(argv: list[str]) -> int:
     if len(argv) < 2 or argv[1] in ("-h", "--help"):
         print(__doc__)
-        print("usage: pii_scan.py staged | message <file> | push (stdin) | commits <sha>... | "
-              "tree [<rev>] [--allowlist-from-worktree] [--inventory <out.tsv>] | declare-coords <path>")
+        print(
+            "usage: pii_scan.py staged | message <file> | push (stdin) | commits <sha>... | "
+            "tree [<rev>] [--allowlist-from-worktree] [--inventory <out.tsv>] | "
+            "declare-coords <path>"
+        )
         return ERROR
     mode = argv[1]
     t0 = time.monotonic()
@@ -1558,7 +1906,8 @@ def main(argv: list[str]) -> int:
     if err is not None:
         rep = Report(findings=[err])
         return emit(rep, mode, time.monotonic() - t0)
-    assert deny is not None
+    if deny is None:  # load_denylist returns one or the other
+        return ERROR
     try:
         if mode == "staged":
             rep = mode_staged(deny)
@@ -1574,8 +1923,13 @@ def main(argv: list[str]) -> int:
         elif mode == "push":
             rep = mode_push(deny, sys.stdin.read().splitlines())
         elif mode == "commits":
-            rep = scan_commits(deny, [git("rev-parse", "--verify", f"{c}^{{commit}}").decode().strip()
-                                      for c in argv[2:]])
+            rep = scan_commits(
+                deny,
+                [
+                    git("rev-parse", "--verify", f"{c}^{{commit}}").decode().strip()
+                    for c in argv[2:]
+                ],
+            )
         elif mode == "tree":
             args, rev, inventory = argv[2:], "HEAD", None
             i = 0
@@ -1590,14 +1944,19 @@ def main(argv: list[str]) -> int:
             rep = mode_tree(deny, rev, "--allowlist-from-worktree" in args)
             if inventory:
                 write_inventory(rep, inventory, rev)
-                print(f"pii tree: inventory written ({len(rep.findings)} findings)", file=sys.stderr)
+                print(
+                    f"pii tree: inventory written ({len(rep.findings)} findings)", file=sys.stderr
+                )
                 return verdict(rep)
         else:
             print(f"pii: unknown mode {mode!r}", file=sys.stderr)
             return ERROR
     except (GitError, OSError, AllowlistError) as exc:
-        rep = Report(findings=[Finding("ERROR", "scanner", "<pii_scan>", 0, "", "", ackable=False,
-                                       note=str(exc))])
+        rep = Report(
+            findings=[
+                Finding("ERROR", "scanner", "<pii_scan>", 0, "", "", ackable=False, note=str(exc))
+            ]
+        )
     return emit(rep, mode, time.monotonic() - t0)
 
 
@@ -1608,7 +1967,8 @@ def _write_ack_trailers(msg_path: str, rep: Report) -> None:
     used = {f.fid for f in rep.findings if f.state == "ACKED"}
     side = os.path.join(gitdir, "nora-pii-acks")
     if os.path.exists(side):
-        used |= {x.strip() for x in open(side).read().split() if x.strip()}
+        with open(side) as fh:
+            used |= {x.strip() for x in fh.read().split() if x.strip()}
         os.remove(side)
     if not used:
         return
@@ -1637,7 +1997,11 @@ def write_inventory(rep: Report, out: str, rev: str) -> None:
             fh.write(f"{r}\t{n}\n")
         fh.write("\n## per file (total, then per rule)\n")
         for p, rules in sorted(by_file.items(), key=lambda x: -sum(x[1].values())):
-            fh.write(f"{sum(rules.values())}\t{p}\t" + ", ".join(f"{r}={n}" for r, n in sorted(rules.items())) + "\n")
+            fh.write(
+                f"{sum(rules.values())}\t{p}\t"
+                + ", ".join(f"{r}={n}" for r, n in sorted(rules.items()))
+                + "\n"
+            )
 
 
 def _main_fail_closed(argv: list[str]) -> int:
@@ -1646,8 +2010,10 @@ def _main_fail_closed(argv: list[str]) -> int:
     try:
         return main(argv)
     except Exception as exc:  # noqa: BLE001 - the whole point is to catch everything
-        print(f"pii: ERROR — the scanner crashed ({type(exc).__name__}: {exc}); nothing was judged",
-              file=sys.stderr)
+        print(
+            f"pii: ERROR — the scanner crashed ({type(exc).__name__}: {exc}); nothing was judged",
+            file=sys.stderr,
+        )
         return ERROR
 
 
