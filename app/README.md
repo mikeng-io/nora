@@ -7,8 +7,11 @@ people in `identity.toml`. An installable PWA for phones and desktops.
 
 The public page at `/` and `/en/` is a different thing: `site/`. They share
 the hostname; the site owns exactly `/`, `/en/`, `/_astro/`, `/_site/`,
-`/favicon.ico` and `/robots.txt` (site/README.md, "Going live"), so no portal
-page lives at a bare locale root.
+`/favicon.ico`, `/robots.txt`, `/sitemap.xml` and `/llms.txt` (site/README.md,
+"Going live"), so no portal page lives at a bare locale root, and the portal's
+own files sit under paths the site does not claim (`/sw.js`,
+`/manifest.webmanifest`, `/offline.html`, `/icons/`, `/vendor/`,
+`/screenshots/`).
 
 ## What is where
 
