@@ -951,6 +951,8 @@ operator as "taken as recommended" and not objected to. The build starts at
 §10's first two correctness steps: roster names in the Dreamer batch, then
 the `people` block, each deployed on its own.
 
+**2026-09-26 — S2–S4b shipped (#583, 9ce7f955), with the new-evidence guard (#590); DEC-213, ADR 0018.** The stack eval: negatives 43/52 → 54/56 correct; every written body conforms; updates not worse (p11 3/8 → 4/8, with a sibling rewrite as the main failure, which #590 then refused when it rests on old evidence); creates p3/p3b 5/8 → 2/6 on small n, to watch. Found while measuring: p5/p6 were graded against one of several notes the operator's triage had merged as one arrangement, so their "0/16" was mostly a grading artifact; both now grade against the group, and p11 is the real sibling case. Objective v10 fixed two contradictions (legacy restatement, update fields). S1b (#552) and S5a (#592, recall 0/5 → 0/5) are held.
+
 Related: #118 (the tier's build), #199 (a turn outcome became a room position
 and then a note), #226 (a description read aloud as what happened), #228
 (the update key and append),
