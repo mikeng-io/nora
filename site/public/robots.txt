@@ -1,0 +1,8 @@
+# The site shares its hostname with the portal and drop (site/README.md).
+# Drop's own robots.txt says never index; this file answers for all three.
+User-agent: *
+Disallow: /drop/
+Disallow: /i/
+Disallow: /api/
+Disallow: /zh-Hant/
+Allow: /

@@ -75,8 +75,8 @@ from nora.domain.audience import SUMMONS
 from nora.domain.models import ConversationTarget, NormalizedMessage, TagContext
 from nora.domain.summons import (
     ALREADY_CLAIMED,
-    MAX_COMMENT_CHARS,
     MAX_ITEMS_SHOWN,
+    PUBLIC_REPLY_MAX_CHARS,
     ItemReading,
     SummonsCard,
     SummonsContext,
@@ -194,8 +194,22 @@ _RETRY_503: frozenset[str] = frozenset({"unavailable", "ledger_unavailable", "ht
 #: tags somebody notifies them, and a stranger's caption or comment is exactly
 #: where "reply '@someone …'" would come from, so the flush refuses it outright
 #: rather than trusting the model to have declined. An e-mail address is not a
-#: mention (the `@` follows a word character).
-_MENTION_RE = re.compile(r"(?<![\w.])@[A-Za-z0-9._]+")
+#: mention (the `@` follows an ASCII word character); after a CJK character,
+#: or written full-width, it still is (review of #584).
+_MENTION_RE = re.compile(r"(?<![A-Za-z0-9_.])[@\uff20][A-Za-z0-9._]+")
+
+
+def without_address(text: str, summoner: str | None) -> str:
+    """`text` without an opening `@<summoner>`: the reply is threaded under
+    the summoner's comment, so that is its address already, and she wrote it
+    as one in a live dry run (2026-09-26), which the mention check refused
+    whole. Only the summoner's own handle, only at the start: any other
+    `@handle`, anywhere, still reaches the mention check (a stripped
+    `@victim you are a fraud` would post the insult at the summoner)."""
+    if not summoner:
+        return text
+    address = rf"^\s*[@\uff20]{re.escape(summoner)}(?:[\s,:\uff0c\uff1a]+|$)"
+    return re.sub(address, "", text, flags=re.IGNORECASE)
 
 
 class SummonerIndex(Protocol):
@@ -456,6 +470,7 @@ class SummonsOccasion:
         return await self._flush(
             summons_id, shortcode=card.shortcode, comment_id=found.id,
             text=held[0], person_id=person_id, trace_id=trace_id, now=now,
+            summoner=card.sender_username or None,
         )
 
     async def _turn(
@@ -637,7 +652,7 @@ class SummonsOccasion:
     async def _flush(
         self, summons_id: UUID, *, shortcode: str, comment_id: str, text: str,
         person_id: str | None, trace_id: str | None, now: datetime,
-        prior_code: str | None = None,
+        prior_code: str | None = None, summoner: str | None = None,
     ) -> SummonsOutcome:
         """Publish `text` (the FIRST held reply, and only it) once, or stage
         it. Dry run stores it and posts nothing. Live stores it `staged`, then
@@ -650,9 +665,10 @@ class SummonsOccasion:
         # live dry-run summons did (2026-09-26). Room replies let that
         # residue through; a public comment does not. Punctuation only: the
         # same undash the request path uses, no word changes.
-        body = undash(text).strip()
+        body = without_address(undash(text), summoner).strip()
         refusal = (
-            "too_long" if len(body) > MAX_COMMENT_CHARS
+            "empty" if not body
+            else "too_long" if len(body) > PUBLIC_REPLY_MAX_CHARS
             else "mention" if _MENTION_RE.search(body)
             else None
         )

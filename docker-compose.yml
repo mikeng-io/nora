@@ -155,6 +155,13 @@ services:
       # spans to Jaeger (and to Langfuse when a trace carries a model call).
       - OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://host.docker.internal:4318/v1/traces
       - OTEL_SERVICE_NAME=instagram-bridge
+      # The summons comment write, the bridge's only public write (design
+      # instagram-adoption/19; the guards and the latch are documented in
+      # deploy/instagram-bridge/compose.fragment.yml). Off unless the host's
+      # .env says exactly `on`: the switch is operator config, not code.
+      - INSTAGRAM_COMMENT_WRITES=${INSTAGRAM_COMMENT_WRITES:-off}
+      - INSTAGRAM_COMMENT_DAILY_CAP=${INSTAGRAM_COMMENT_DAILY_CAP:-10}
+      - INSTAGRAM_COMMENT_MIN_INTERVAL=${INSTAGRAM_COMMENT_MIN_INTERVAL:-90s}
     command: ["--port", "18082", "--session", "/session"]
     healthcheck:
       # Proves the bridge's HTTP layer serves. It CANNOT prove the Instagram
@@ -466,6 +473,23 @@ services:
       # portal's whitelist can never drift from Nora's own roster because it
       # reads the identical bytes.
       - ./identity.toml:/app/identity.toml:ro
+
+  # site — Nora's public site (site/, Astro, static). Loopback-only like
+  # `app`; it answers `/`, `/en/`, `/_astro/*`, `/_site/*`, `/favicon.ico`
+  # and `/robots.txt` on the portal's own hostname once the tunnel routes
+  # those paths here (site/README.md, "Going live"). Behind a profile until
+  # then, so `docker compose up -d` does not start it:
+  #   docker compose --profile site build site && docker compose --profile site up -d site
+  site:
+    build:
+      context: .
+      dockerfile: site/Dockerfile
+      network: host
+    image: nora-site:latest
+    container_name: nora-site
+    profiles: [site]
+    restart: unless-stopped
+    ports: ["127.0.0.1:3401:8080"]
 
   # presence — the Life360 presence collector (design/19 §4). Same image as
   # nora, a DIFFERENT command and a SEPARATE process: `python -m nora.presence`

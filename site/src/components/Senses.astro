@@ -1,0 +1,104 @@
+---
+import { LOCALES, type Locale } from "../i18n";
+import Icon from "./Icon.astro";
+
+interface Props {
+  locale: Locale;
+}
+
+const { locale } = Astro.props;
+const t = LOCALES[locale].dict.senses;
+---
+
+<section id="senses" class="section" aria-labelledby="senses-title">
+  <div class="container grid">
+    <div class="section-head">
+      <h2 id="senses-title" class="section-title">
+        {t.title}
+      </h2>
+      <p class="lede">{t.lede}</p>
+    </div>
+
+    <div>
+      <dl class="rows">
+        {t.rows.map((r) => (
+          <div class="row">
+            <dt>
+              <Icon name={r.icon} size={20} />
+              <span>{r.title}</span>
+            </dt>
+            <dd>{r.body}</dd>
+          </div>
+        ))}
+      </dl>
+      <p class="note">{t.note}</p>
+    </div>
+  </div>
+</section>
+
+<style>
+  .grid {
+    display: grid;
+    gap: 8px;
+  }
+
+  .rows {
+    border-top: 1px solid var(--hairline);
+  }
+
+  .row {
+    display: grid;
+    gap: 4px;
+    padding-block: 18px;
+    border-bottom: 1px solid var(--hairline);
+  }
+
+  dt {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-weight: 600;
+  }
+
+  dt :global(svg) {
+    color: var(--ink-muted);
+  }
+
+  dd {
+    color: var(--ink-soft);
+    padding-left: 32px;
+  }
+
+  .note {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    margin-top: 24px;
+    color: var(--ink-soft);
+  }
+
+  @media (min-width: 720px) {
+    .row {
+      grid-template-columns: 220px minmax(0, 1fr);
+      gap: 24px;
+      align-items: baseline;
+    }
+
+    dd {
+      padding-left: 0;
+    }
+  }
+
+  @media (min-width: 1024px) {
+    .grid {
+      grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+      gap: 64px;
+      align-items: start;
+    }
+
+    .section-head {
+      position: sticky;
+      top: 112px;
+    }
+  }
+</style>
