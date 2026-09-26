@@ -1114,8 +1114,14 @@ def test_the_self_account_says_who_can_reach_the_web_view_and_who_cannot(
     # The over-correction, gone.
     assert "their own accounts" not in self_account
 
-    gate = (ROOT / "app" / "src" / "lib" / "require-session.ts").read_text()
-    allowlist = (ROOT / "app" / "src" / "lib" / "allowlist.ts").read_text()
+    # RE-POINTED 2026-09-27 (the portal rebuild): the gate moved from
+    # app/src/lib/{require-session,allowlist}.ts to app/src/server/, the same
+    # lines in the same shape. The rebuild's development sign-in mints a
+    # discordId from dev/identity.dev.toml under `next dev` only
+    # (app/src/auth.ts, DEV_LOGIN_ENABLED); a production build has Discord
+    # alone, so the account kind that decides admission is still one.
+    gate = (ROOT / "app" / "src" / "server" / "session.ts").read_text()
+    allowlist = (ROOT / "app" / "src" / "server" / "allowlist.ts").read_text()
     assert "resolveDiscordPerson" in gate
     assert "IDENTITY_TOML_PATH" in gate
     # EVERY person, not one: the resolver walks the whole roster and matches any

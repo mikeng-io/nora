@@ -65,7 +65,8 @@ service `site`, profile `site`). It owns only these paths:
 ```
 
 Nothing there collides with the portal (`/_next/`, `/api/`, `/zh-Hant/…`,
-`/en/…`, `/manifest.json`, `/sw.js`), so the site can share the portal's
+`/en/…`, `/manifest.webmanifest`, `/sw.js`, `/offline.html`, `/icons/`,
+`/vendor/`, `/screenshots/`; app/README.md), so the site can share the portal's
 hostname: the tunnel sends those paths to `:3401` and everything else to the
 portal, as it already does for `/i/` and `/drop/`. Owning `/robots.txt` means
 answering for drop too: `src/pages/robots.txt.ts` keeps drop's "never index"
