@@ -143,10 +143,13 @@ export type NamedRef = z.infer<typeof NamedRefSchema>;
 
 const CountedRefSchema = NamedRefSchema.extend({ count: z.number() });
 
+// `causeZhHant` is absent or null for a game Pulse has no Chinese names for
+// (read back live 2026-09-27: every death cause on a Soulmask player), and
+// one missing translation must never blank a player's page.
 const DeathCauseSchema = z.object({
   cause: z.string(),
   count: z.number(),
-  causeZhHant: z.string(),
+  causeZhHant: z.string().nullish(),
 });
 export type DeathCause = z.infer<typeof DeathCauseSchema>;
 
@@ -413,7 +416,11 @@ export type BigWalkWorld = z.infer<typeof BigWalkWorldSchema>;
 
 export type AnyWorldState =
   | { kind: "abiotic-factor"; world: WorldState }
-  | { kind: "big-walk"; world: BigWalkWorld };
+  | { kind: "big-walk"; world: BigWalkWorld }
+  // A game whose save the portal has no view for yet (read back live
+  // 2026-09-27: Soulmask). Shown as "no view for this game", which is true,
+  // rather than "couldn't check", which would not be.
+  | { kind: "unknown"; game: string | null };
 
 export const GameProgressSchema = z.object({
   game: z.literal("big-walk"),
@@ -545,7 +552,7 @@ export const fetchServerGraph = (id: string, hours: number, signal?: AbortSignal
 export const fetchServerWeekly = (id: string, signal?: AbortSignal) =>
   apiGet(`${srv(id)}/weekly`, WeeklySummarySchema, { signal });
 
-const AnyWorldSchema = z.unknown().transform((body, ctx): AnyWorldState => {
+const AnyWorldSchema = z.unknown().transform((body): AnyWorldState => {
   if (isRecord(body) && body.game === "big-walk") {
     const r = BigWalkWorldSchema.safeParse(body);
     if (r.success) return { kind: "big-walk", world: r.data };
@@ -553,8 +560,7 @@ const AnyWorldSchema = z.unknown().transform((body, ctx): AnyWorldState => {
     const r = WorldStateSchema.safeParse(body);
     if (r.success) return { kind: "abiotic-factor", world: r.data };
   }
-  ctx.addIssue({ code: "custom", message: "world state" });
-  return z.NEVER;
+  return { kind: "unknown", game: isRecord(body) && typeof body.game === "string" ? body.game : null };
 });
 
 export const fetchServerWorld = (id: string, signal?: AbortSignal) =>

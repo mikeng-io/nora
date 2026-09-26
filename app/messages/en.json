@@ -683,6 +683,8 @@
     "lowerIsBetter": "lower is better",
     "vitalsOverTime": "Over time",
     "equipment": "Equipment",
-    "durability": "Durability"
+    "durability": "Durability",
+    "noWorldViewTitle": "No view of this world yet",
+    "noWorldView": "The server saves its world, but the portal doesn't know how to read this game's save yet."
   }
 }

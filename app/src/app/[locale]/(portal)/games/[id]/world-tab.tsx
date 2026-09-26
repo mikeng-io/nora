@@ -28,7 +28,11 @@ export function WorldTab({ id }: { id: string }) {
   if (world.isError && !world.data) return <UnavailableState onRetry={() => world.refetch()} />;
   if (world.data.kind === "abiotic-factor") return <AbioticWorld world={world.data.world} />;
   if (world.data.kind === "big-walk") return <BigWalkWorldView world={world.data.world} />;
-  return <EmptyState compact>{t("noWorld")}</EmptyState>;
+  return (
+    <EmptyState art="quiet" title={t("noWorldViewTitle")}>
+      {t("noWorldView")}
+    </EmptyState>
+  );
 }
 
 function Unknown({ children, known }: { children: string; known: boolean }) {

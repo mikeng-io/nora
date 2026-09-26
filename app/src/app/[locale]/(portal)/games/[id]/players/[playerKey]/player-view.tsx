@@ -228,7 +228,7 @@ function PlayerDetailView({ id, p }: { id: string; p: PlayerDetail }) {
                     label: (
                       <span className="flex items-center gap-2">
                         <Skull className="size-3.5 shrink-0 text-ink-muted" aria-hidden="true" />
-                        {localized(c.cause, c.causeZhHant, locale)}
+                        {localized(c.cause, c.causeZhHant ?? undefined, locale)}
                       </span>
                     ),
                     value: c.count,

@@ -117,7 +117,7 @@ export function InsightsTab({ id }: { id: string }) {
                 label={t("deathCauses")}
                 data={d.deathCauses.slice(0, 8).map((c) => ({
                   key: c.cause,
-                  label: localized(c.cause, c.causeZhHant, locale),
+                  label: localized(c.cause, c.causeZhHant ?? undefined, locale),
                   value: c.count,
                   display: formatNumber(c.count, locale),
                 }))}

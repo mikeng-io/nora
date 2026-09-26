@@ -6,7 +6,6 @@ import { useState, type ReactNode } from "react";
 import { useTranslations } from "next-intl";
 import { Check, ChevronsUpDown, Download, LogOut, Monitor, Moon, Share, Sun, UserRound } from "lucide-react";
 import { Link } from "@/i18n/routing";
-import { cn } from "@/lib/cn";
 import { PersonAvatar } from "@/components/ui/avatar";
 import { Segmented } from "@/components/ui/tabs";
 import { useInstall } from "@/hooks/use-install";
@@ -180,13 +179,12 @@ export function AccountSheet({ trigger }: { trigger: ReactNode }) {
               </div>
             ) : null}
 
+            <div className="mt-1 border-t border-hairline pt-1" />
             <button
               type="button"
               disabled={pending}
               onClick={signOut}
-              className={cn(
-                "mt-1 flex h-12 w-full items-center gap-3 rounded-control border-t border-hairline px-1 text-left text-[0.9375rem] font-medium text-danger active:bg-hoodie",
-              )}
+              className="flex h-12 w-full items-center gap-3 rounded-control px-1 text-left text-[0.9375rem] font-medium text-danger active:bg-hoodie"
             >
               <LogOut className="size-5" aria-hidden="true" />
               {t("signOut")}

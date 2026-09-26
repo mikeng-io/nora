@@ -683,6 +683,8 @@
     "lowerIsBetter": "越低越好",
     "vitalsOverTime": "變化",
     "equipment": "裝備",
-    "durability": "耐用度"
+    "durability": "耐用度",
+    "noWorldViewTitle": "未有呢個世界嘅畫面",
+    "noWorldView": "伺服器有儲存個世界，不過入口仲未識讀呢隻遊戲嘅存檔。"
   }
 }
