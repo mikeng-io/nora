@@ -1500,6 +1500,52 @@ async def test_a_restatement_that_carries_every_lines_evidence_lands():
     assert metrics.get("nora_note_candidate_gate_total", action="updated") == 1
 
 
+async def _update_citing(ts: int) -> tuple[int, Metrics, InMemoryNoteStore]:
+    """A note last changed at NOW; this tick shows message 7 at `ts`, and an
+    update of the note cites only message 7."""
+    metrics = Metrics()
+    adaptor, store = _adaptor(metrics=metrics)
+    await store.create(
+        unit=WS, title="Drill for the 27th", description="d",
+        uncertainty="u", closing_condition="c", established_in="conv-1",
+        body="## Decided\n## Open\n- who brings the drill [5]",
+        established_by="tag:miles", now_ms=NOW, anchor_date=20260927,
+    )
+    await adaptor.inputs(key=SCOPE, batch=(_row(7, "the drill", ts=ts),))
+    written = await adaptor.commit(
+        key=SCOPE,
+        proposals=(_proposal(_CreateCandidate(
+            title="Drill for the 27th", description="d2",
+            body="## Decided\n## Open\n- who brings the drill [5, 7]",
+            closing_condition="c", anchor_date=20260927,
+            anchor_entity_ids=(), message_ids=(7,),
+            updates="Drill for the 27th",
+        )),),
+        now_ms=NOW + 10_000,
+    )
+    return written, metrics, store
+
+
+async def test_an_update_resting_only_on_older_messages_is_refused():
+    """2026-09-26, the p11 eval case: an untouched same-day sibling note was
+    rewritten from its own old evidence. When every message the body cites
+    that this tick showed predates the note's last change, it is not news:
+    refused, nothing written."""
+    written, metrics, store = await _update_citing(ts=NOW - 1)
+    assert written == 0
+    assert metrics.get("nora_note_candidate_gate_total", action="no_new_evidence") == 1
+    [row] = store.create_candidates.values()
+    assert row.status == "refused"
+
+
+async def test_an_update_citing_a_newer_message_lands():
+    """The positive control: the same update, its message said after the
+    note's last change, is written."""
+    written, metrics, _ = await _update_citing(ts=NOW + 1)
+    assert written == 1
+    assert metrics.get("nora_note_candidate_gate_total", action="updated") == 1
+
+
 async def test_a_restatement_that_says_what_the_head_says_is_a_duplicate():
     """The duplicate check under restatement: the same body, whitespace
     aside, is refused and settled, and nothing is written."""
