@@ -5,6 +5,7 @@ import { LOCALES, LOCALE_ORDER, type Locale } from "../i18n";
 import cjkFont from "../fonts/noto-sans-hk-subset.woff2?url";
 import Header from "../components/Header.astro";
 import Footer from "../components/Footer.astro";
+import { structuredData } from "../seo";
 
 interface Props {
   locale: Locale;
@@ -24,6 +25,9 @@ const site = Astro.site!;
 const canonical = new URL(info.path, site).href;
 const ogImage = new URL(info.og, site).href;
 const isZh = locale === "zh-Hant";
+const ogLocale = (l: Locale) => (l === "zh-Hant" ? "zh_HK" : "en_GB");
+// `<` escaped so no copy can close the script element early.
+const jsonLd = JSON.stringify(structuredData(locale, site)).replace(/</g, "\\u003c");
 
 // The CJK face is declared on the Chinese page only: the English page's one
 // Chinese glyph (the language switch) is not worth 121 KB, and falls back to
@@ -89,6 +93,7 @@ const cjkFace = `@font-face{font-family:"Noto Sans HK";src:url(${cjkFont}) forma
           <link rel="alternate" hreflang={LOCALES[l].lang} href={new URL(LOCALES[l].path, site).href} />
         ))}
         <link rel="alternate" hreflang="x-default" href={new URL("/", site).href} />
+        <script type="application/ld+json" set:html={jsonLd} />
       </>
     )}
 
@@ -101,7 +106,11 @@ const cjkFace = `@font-face{font-family:"Noto Sans HK";src:url(${cjkFont}) forma
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
     <meta property="og:image:alt" content={t.meta.ogAlt} />
-    <meta property="og:locale" content={isZh ? "zh_HK" : "en_GB"} />
+    <meta property="og:locale" content={ogLocale(locale)} />
+    {index &&
+      LOCALE_ORDER.filter((l) => l !== locale).map((l) => (
+        <meta property="og:locale:alternate" content={ogLocale(l)} />
+      ))}
     <meta name="twitter:card" content="summary_large_image" />
 
     <link rel="icon" href="/favicon.ico" sizes="32x32" />
