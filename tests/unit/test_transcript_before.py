@@ -228,3 +228,38 @@ async def test_leaving_before_out_reads_the_newest_rows_as_it_always_did(persons
     out = await _call(tool)
     assert [m["body"] for m in out["messages"]] == [f"line {i}" for i in range(5)]
     assert "note" not in out
+
+
+# ---------------------------------------------------------------------------
+# design/dreamer-agent-loop/43 §3: what a Dreamer pass LOADED is citable
+# ---------------------------------------------------------------------------
+
+
+def _loader_with_rows(persons, store, on_rows):
+    room = Room(platform="signal", conversation_id=CONV, roster_source=None, persons=persons)
+    tools = build_tools(
+        store=store, conversation_id=CONV, conversation_type="group",
+        persons=persons, honcho=FakeMemoryStore(), deliverer=SinkSender(),
+        metrics=Metrics(), room=room, transit_source=_UNREACHABLE_TRANSIT,
+        question="", context_window=40, clock=lambda: NOW, on_rows=on_rows,
+    )
+    return {t.tool_name: t for t in tools}["load_transcript"]
+
+
+async def test_a_dreamer_load_carries_each_rows_id_and_reports_the_rows(persons):
+    """A note body cites a message by its id; a row read through a tool with no
+    id could never be cited, and a row the runtime never heard of could never
+    be admitted as shown. Both halves, on one read."""
+    store = await _store((_at(24, 21, 0), "dinner saturday?"), (_at(24, 21, 5), "sure"))
+    seen: list = []
+    result = await _call(_loader_with_rows(persons, store, seen.extend))
+    ids = [m.get("n") for m in result["messages"]]
+    assert all(isinstance(i, int) for i in ids), result["messages"]
+    assert [r.id for r in seen] == ids, "the rows reported are the rows returned"
+
+
+async def test_a_tag_turn_load_carries_no_id(persons):
+    """`on_rows` unset — every tag turn — is the unchanged result (R-18)."""
+    store = await _store((_at(24, 21, 0), "dinner saturday?"))
+    result = await _call(_load_transcript(persons, store))
+    assert all("n" not in m for m in result["messages"])

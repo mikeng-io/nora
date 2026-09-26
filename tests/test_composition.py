@@ -1402,9 +1402,18 @@ async def test_all_three_gates_on_builds_note_candidates(cfg):
     # watermark the same way `fact-candidates` does.
     assert candidates.key_kind == "scope"
     assert candidates.uses_watermark is True
-    assert candidates.tools == frozenset(), (
-        "the create path proposes; it never gets a write tool"
+    # A RESEARCH LOOP (design 43 §2): every read verb the registry admits,
+    # DERIVED off its ceiling, less only the named withholdings — and never an
+    # act verb, because the ceiling it is derived from holds none.
+    from nora.agent.registry import ToolRegistry
+    from nora.language.note_candidates import WITHHELD_TOOLS
+
+    ceiling = ToolRegistry.read_only_tools(None)  # type: ignore[arg-type]
+    assert candidates.tools == ceiling - frozenset(WITHHELD_TOOLS), (
+        "the pass holds every allowed read verb, derived, not a hand list"
     )
+    assert candidates.tools <= ceiling, "the create path never gets a write tool"
+    assert {"load_transcript", "ask_memory", "note_read"} <= candidates.tools
     schedule = deps.dream_schedules["note-candidates"]
     assert schedule.min_interval_seconds == 3600, "hourly (design 33 §5)"
 

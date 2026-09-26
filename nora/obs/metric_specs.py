@@ -1289,11 +1289,16 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     #                          alongside `nora_dream_stop_reason_total
     #                          {reason="limit_turns"}` and a `run_total`
     #                          `unavailable` for the same adaptor.
+    #   rule="pass-budget"   — the pass made its whole `max_tool_calls` over
+    #                          every verb together and asked again (design
+    #                          43 §4). `memory-budget`'s reading, one ration
+    #                          wider: a sustained rate says the cap binds.
     _CounterSpec(
         "nora_dream_guard_vetoes_total",
         "Tool calls refused by DreamGuard, by adaptor and rule: R-7 is a tool "
         "never granted, tool-budget is that tool's own per-pass ceiling spent, "
-        "memory-budget is the pass's memory ration spent.",
+        "memory-budget is the pass's memory ration spent, pass-budget is the "
+        "pass's whole tool-call ration spent.",
         ("adaptor", "rule"),
     ),
     _CounterSpec(

@@ -36,9 +36,21 @@ messages.
 
 | pass | keyed on | handed by code (the trigger and its minimum) | may pull (read-only tools) |
 |---|---|---|---|
-| note-candidates | the room | the new messages; the notebook index (titles, summaries, dates) | `load_transcript` (this room, earlier); `ask_memory` (this room's people); `note_read` (a note's body) |
-| note-curation | the unit | the notes due for a verdict (passed anchor, due revisit), with their bodies | `note_evidence` (a note's own origin room, around its date); `ask_memory` scoped the same way |
-| note-merge | the unit | the unit's open notes with their bodies | `note_read`; `note_evidence` for a candidate pair |
+| note-candidates | the room | the new messages; the notebook (S3: every open note with its body) | every read tool the runtime allows a scope-keyed adaptor: `read_only_tools()`, derived, less the withheld ones below |
+| note-curation | the unit | the notes due for a verdict (passed anchor, due revisit), with their bodies | all of `UNIT_SAFE_TOOLS`, plus the note-scoped `note_evidence` (a note's own origin room, around its date) |
+| note-merge | the unit | the unit's open notes with their bodies | all of `UNIT_SAFE_TOOLS`, plus `note_evidence` for a candidate pair |
+
+**The budget is the control, not the list** (operator, 2026-09-26). A pass is
+granted every read verb the runtime admits for its key kind, DERIVED from the
+registry so a new read tool is picked up without an edit, and a verb is
+withheld only when the runtime refuses it or it has a real cost or side
+effect, each named with its reason in code (`WITHHELD_TOOLS`,
+`nora/language/note_candidates.py`). Step 1 withholds `media_fetch` (every
+call is a vision-model call) and the six social reads, `instagram_*`,
+`linkedin_*` and `x_*` (they spend the social bridge's logged-in session, and
+unprompted lookup in a Dreamer pass is an open operator decision,
+design/instagram-adoption/18). The objective describes what the pass may READ
+in general terms, never a per-tool menu.
 
 note-candidates is room-keyed, so the room tools it needs already pass
 `tool_subset_faults` (`nora/agent/dreamer.py:548`, design 33 §4.1). The two
@@ -74,9 +86,14 @@ only `expired` when the read that would have held it was made.
 
 ## 4. Budgets and cost
 
-Each pass gets a tool-call cap and the existing loop budget (`[dreamer.budgets.*]`):
+Each pass gets a tool-call cap over EVERY verb together
+(`[dreamer.budgets.<pass>] max_tool_calls`, enforced by `DreamGuard`, answered
+R-27 `unavailable` past it and counted as `rule="pass-budget"`) and the
+existing loop budget. The memory ration (`max_memory_calls`) is raised to the
+same number, or it binds first and the pass cap is decoration:
 
-- note-candidates: at most 3 tool calls per fire. Most batches are chatter and
+- note-candidates: at most 5 tool calls per fire (3 in the first draft; 5
+  once the grant widened to every read tool). Most batches are chatter and
   should call none.
 - note-curation: at most 2 per note judged, capped per tick
   (`max_revisits_per_tick` already bounds the notes).

@@ -2531,7 +2531,7 @@ def _busiest_sentence(listed: Sequence[Mapping[str, object]]) -> str:
 
 
 def _transcript_messages(
-    rows: Sequence[TranscriptRow], *, now: datetime,
+    rows: Sequence[TranscriptRow], *, now: datetime, with_ids: bool = False,
 ) -> tuple[list[dict], int]:
     """Stored rows as the model reads them in a tool result, and how many were
     threaded. ONE renderer for `load_transcript` and `room_read`: two tools
@@ -2564,6 +2564,10 @@ def _transcript_messages(
         item: dict[str, Any] = {
             "sender": _speaker(r), "body": r.body, "when": stamp(r.ts, now),
         }
+        if with_ids:
+            # A Dreamer pass's citation handle (design 43 §3): the same number
+            # its batch lines carry as `n`. Never on a tag turn (R-18).
+            item = {"n": r.id, **item}
         if r.edit is not None:
             item["edited"] = stamp(r.edit.ts, now)
             item["was"] = r.edit.was
@@ -3785,6 +3789,15 @@ def build_tool_specs(
     # the home-room behaviour — the honest, unchanged default.
     origin_rooms: Mapping[str, OriginRoom] | None = None,
     shelf: ToolShelf | None = None,
+    # WHAT A DREAMER PASS LOADED (design/dreamer-agent-loop/43 §3). Called
+    # with the rows `load_transcript` and `room_read` return, so the pass's
+    # grounding (`Shown`) can admit a citation of a row the model read through
+    # a tool, not only one rendered in its prompt. Set only by
+    # `RegistryToolSource.build` for an adaptor that asks for it, and then the
+    # two tools also carry each row's id (`n`), the number a batch line
+    # carries, so a loaded row can be cited at all. `None` — every tag turn —
+    # is the unchanged result: no ids, nothing recorded.
+    on_rows: Callable[[Sequence[TranscriptRow]], None] | None = None,
     # The room tools' one collaborator (design/self-awareness/07): the
     # presence reader, seen through `RoomDirectory`. `None` (offline, eval,
     # every test that does not care) makes `room_list` and `room_read` answer
@@ -4161,7 +4174,11 @@ def build_tool_specs(
         # `_speaker` (shared with `who_said`), `reply_to` and the edit keys in
         # ONE renderer, because a second tool handing back transcript lines is
         # exactly how DEC-80's three-disagreeing-renderers bug gets a fourth.
-        out, threaded = _transcript_messages(rows, now=now)
+        out, threaded = _transcript_messages(
+            rows, now=now, with_ids=on_rows is not None,
+        )
+        if on_rows is not None:
+            on_rows(rows)
         # `rows=0` is an ordinary `ok` — a conversation with nothing older in
         # it — so the count is the discriminator, not the status. Bodies are
         # never logged: this is the group's transcript.
@@ -4380,7 +4397,11 @@ def build_tool_specs(
             # `LOAD_TRANSCRIPT_MAX` rows), and this is the same class, read by
             # the same renderer. A second label would split one class in two.
             rows = list(await media_join.enrich(rows, path="load_transcript"))
-        out, threaded = _transcript_messages(rows, now=now)
+        out, threaded = _transcript_messages(
+            rows, now=now, with_ids=on_rows is not None,
+        )
+        if on_rows is not None:
+            on_rows(rows)
         # Bodies are never logged: this is a group's transcript.
         _record(metrics, "room_read", "ok", limit=asked, rows=len(out),
                 threaded=threaded, before=before_ts is not None, older=older)
@@ -11472,6 +11493,7 @@ def build_tools(
     online_scope: Callable[[], Awaitable[tuple[PersonRef, ...]]] | None = None,
     rooms: RoomDirectory | None = None,
     clock: Callable[[], datetime] | None = None,
+    on_rows: Callable[[Sequence[TranscriptRow]], None] | None = None,
 ) -> list:
     """The Strands-ready form of `build_tool_specs` — `adapt()` each spec so
     the docstrings above become the tool's model-facing description/schema
@@ -11507,6 +11529,7 @@ def build_tools(
         online_source=online_source, voice_source=voice_source,
         presence=presence,
         online_scope=online_scope,
+        on_rows=on_rows,
         # FORWARDED, and three of these were not. `build_tools` declares every
         # parameter `build_tool_specs` does and hands them on by name, so one
         # accepted and dropped here is a caller configuring something that
