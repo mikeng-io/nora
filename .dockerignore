@@ -16,3 +16,4 @@ design/
 .env.*
 config.toml
 identity.toml
+showreel/
