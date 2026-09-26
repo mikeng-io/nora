@@ -104,7 +104,7 @@ def test_denylist_name_needs_every_token():
         f"(0{NSN[:4]}) {NSN[4:]}",
         f"44{NSN}@s.whatsapp.net",
         _fullwidth(PHONE),
-        PHONE[:6] + "​" + PHONE[6:],
+        PHONE[:6] + "\u200b" + PHONE[6:],
     ],
 )
 def test_denylist_phone_every_spelling(form):

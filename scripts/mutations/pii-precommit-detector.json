@@ -1,0 +1,268 @@
+[
+ {
+  "name": "zero-width characters are dropped before matching",
+  "file": "scripts/pii_scan.py",
+  "old": "_ZERO_WIDTH = dict.fromkeys(map(ord, \"\\u200b\\u200c\\u200d\\u2060\\ufeff\\u00ad\"), None)",
+  "new": "_ZERO_WIDTH: dict = {}",
+  "target": "tests/unit/test_pii_scan.py::test_denylist_phone_every_spelling"
+ },
+ {
+  "name": "NFKC folds full-width digits",
+  "file": "scripts/pii_scan.py",
+  "old": "    return unicodedata.normalize(\"NFKC\", line).translate(_ZERO_WIDTH)",
+  "new": "    return line.translate(_ZERO_WIDTH)",
+  "target": "tests/unit/test_pii_scan.py::test_denylist_phone_every_spelling"
+ },
+ {
+  "name": "a real phone's bare-local form is denied too",
+  "file": "scripts/pii_scan.py",
+  "old": "        forms.append(digits[-max(8, len(digits) - 3):])",
+  "new": "        pass",
+  "target": "tests/unit/test_pii_scan.py::test_denylist_phone_every_spelling"
+ },
+ {
+  "name": "separator-formatted numbers collapse before the denylist",
+  "file": "scripts/pii_scan.py",
+  "old": "            for m in re.finditer(r\"\\d(?:[ \\t().\\-/]{0,2}\\d)*\", text):",
+  "new": "            for m in re.finditer(r\"\\d+\", text):",
+  "target": "tests/unit/test_pii_scan.py::test_denylist_phone_every_spelling"
+ },
+ {
+  "name": "a dashless UUID collapses to the denied one",
+  "file": "scripts/pii_scan.py",
+  "old": "                h = m.group().replace(\"-\", \"\").lower()\n                if h in d.uuids",
+  "new": "                h = m.group()\n                if h in d.uuids",
+  "target": "tests/unit/test_pii_scan.py::test_denylist_uuid_dashless_upper_and_prefix"
+ },
+ {
+  "name": "base64 standard, url-safe and percent forms are one value",
+  "file": "scripts/pii_scan.py",
+  "old": "    return s.replace(\"+\", \"-\").replace(\"/\", \"_\").rstrip(\"=\")",
+  "new": "    return s.rstrip(\"=\")",
+  "target": "tests/unit/test_pii_scan.py::test_denylist_signal_group_every_encoding"
+ },
+ {
+  "name": "a JSON escape letter does not hide the name after it",
+  "file": "scripts/pii_scan.py",
+  "old": "            t = re.sub(r\"\\\\[ntr]\", \"  \", text)",
+  "new": "            t = text",
+  "target": "tests/unit/test_pii_scan.py::test_denylist_name_every_spelling"
+ },
+ {
+  "name": "a two-word name is also denied joined",
+  "file": "scripts/pii_scan.py",
+  "old": "                if len(toks) > 1:\n                    joined = (\"\".join(toks),)",
+  "new": "                if False:\n                    joined = (\"\".join(toks),)",
+  "target": "tests/unit/test_pii_scan.py::test_denylist_name_every_spelling"
+ },
+ {
+  "name": "project identity is never denied",
+  "file": "scripts/pii_scan.py",
+  "old": " or _tokens_of(value) in _PROJECT_TOKENS:",
+  "new": ":",
+  "target": "tests/unit/test_pii_scan.py::test_project_identity_is_never_denied"
+ },
+ {
+  "name": "phones in any country, not one prefix (#166 degradation 1)",
+  "file": "scripts/pii_scan.py",
+  "old": "    (\"phone\", re.compile(r\"(?<![\\w+])\\+\\(?\\d(?:[ \\-.()]{0,2}\\d){6,14}(?!\\d)\"), 0),",
+  "new": "    (\"phone\", re.compile(r\"(?<![\\w+])\\+852\\d{8}(?!\\d)\"), 0),",
+  "target": "tests/unit/test_pii_scan.py::test_phone_shape_any_country"
+ },
+ {
+  "name": "dates, times and addresses are not phones",
+  "file": "scripts/pii_scan.py",
+  "old": "    if rule == \"phone\" and not value.startswith(\"+\") and _DATEISH.match(value.strip()):",
+  "new": "    if False:",
+  "target": "tests/unit/test_pii_scan.py::test_phone_shape_skips_dates_times_years_placeholders"
+ },
+ {
+  "name": "a run of five equal digits is a placeholder",
+  "file": "scripts/pii_scan.py",
+  "old": "    if re.search(r\"(\\d)\\1{4,}\", d):",
+  "new": "    if False:",
+  "target": "tests/unit/test_pii_scan.py::test_placeholder_ids_pass"
+ },
+ {
+  "name": "a Go module checksum is not a Signal group",
+  "file": "scripts/pii_scan.py",
+  "old": "(?<![A-Za-z0-9+/_-])(?<!h1:)[A-Za-z0-9+/]{43}=",
+  "new": "(?<![A-Za-z0-9+/_-])[A-Za-z0-9+/]{43}=",
+  "target": "tests/unit/test_pii_scan.py::test_placeholder_ids_pass"
+ },
+ {
+  "name": "three fixes in one place fail (#166 degradation 2: raise the limit)",
+  "file": "scripts/pii_scan.py",
+  "old": "MAX_CLUSTER_ROWS = 2  #",
+  "new": "MAX_CLUSTER_ROWS = 60  #",
+  "target": "tests/unit/test_pii_scan.py::test_coords_three_fixes_in_one_place_fail"
+ },
+ {
+  "name": "dwell score catches 2000 rows in 2 places",
+  "file": "scripts/pii_scan.py",
+  "old": "MAX_SCORE = 11  #",
+  "new": "MAX_SCORE = 10**9  #",
+  "target": "tests/unit/test_pii_scan.py::test_coords_2000_rows_two_places_fail"
+ },
+ {
+  "name": "split int/fraction columns and comma decimals are fields",
+  "file": "scripts/pii_scan.py",
+  "old": "                out.append((m.start(), \"split\", sign * float(f\"{ip}.{nxt.group(2)}\")))\n                skip.add(i + 1)\n                continue",
+  "new": "                pass",
+  "target": "tests/unit/test_pii_scan.py::test_coords_comma_decimal_and_split_columns_fail"
+ },
+ {
+  "name": "integer microdegrees are fields",
+  "file": "scripts/pii_scan.py",
+  "old": "            out.append((m.start(), \"e6\", sign * v / 1e6))",
+  "new": "            pass",
+  "target": "tests/unit/test_pii_scan.py::test_coords_int_microdegrees_fail"
+ },
+ {
+  "name": "a lat and a lng on neighbouring lines pair",
+  "file": "scripts/pii_scan.py",
+  "old": "        if pending and left and n - pending[0] <= 2:",
+  "new": "        if False:",
+  "target": "tests/unit/test_pii_scan.py::test_coords_json_with_a_key_between_and_across_lines_fail"
+ },
+ {
+  "name": "float-arithmetic series are not coordinates",
+  "file": "scripts/pii_scan.py",
+  "old": "MAX_DECIMALS = 10  #",
+  "new": "MAX_DECIMALS = 99  #",
+  "target": "tests/unit/test_pii_scan.py::test_coords_versions_metrics_and_clock_times_pass"
+ },
+ {
+  "name": "DMS rows are fields",
+  "file": "scripts/pii_scan.py",
+  "old": "        for la, ln in zip(lat_dms, lng_dms):\n            points.append((n, la, ln))",
+  "new": "        pass",
+  "target": "tests/unit/test_pii_scan.py::test_coords_dms_and_plus_codes_fail"
+ },
+ {
+  "name": "a value already in the parent is not new",
+  "file": "scripts/pii_scan.py",
+  "old": "        extra = new_c[k] - base_c.get(k, 0)",
+  "new": "        extra = new_c[k]",
+  "target": "tests/unit/test_pii_scan.py::test_existing_value_is_not_new_and_an_added_one_is"
+ },
+ {
+  "name": "a merge is new only against every parent",
+  "file": "scripts/pii_scan.py",
+  "old": "            base_c[k] = max(base_c.get(k, 0), v)",
+  "new": "            base_c[k] = min(base_c.get(k, 10**9), v)",
+  "target": "tests/unit/test_pii_scan.py::test_a_merge_adds_only_what_no_parent_had"
+ },
+ {
+  "name": "a declared table is pinned to its content digest (#283 c2)",
+  "file": "scripts/pii_scan.py",
+  "old": "        if grew and digest not in allow.coords_digest(path):",
+  "new": "        if grew and not allow.path_has(\"coords\", path):",
+  "target": "tests/unit/test_pii_scan.py::test_swapped_coordinates_fail_where_a_size_pin_would_not"
+ },
+ {
+  "name": "undecodable bytes are an error, not a skip (#166)",
+  "file": "scripts/pii_scan.py",
+  "old": "    except UnicodeDecodeError:\n        return None, \"undecodable\"",
+  "new": "    except UnicodeDecodeError:\n        return data.decode(\"utf-8\", \"replace\"), \"\"",
+  "target": "tests/unit/test_pii_scan.py::test_utf16_and_a_trailing_non_utf8_byte_are_errors_not_skips"
+ },
+ {
+  "name": "UTF-16 is an error, not a skip (#166)",
+  "file": "scripts/pii_scan.py",
+  "old": "    if data[:2] in (b\"\\xff\\xfe\", b\"\\xfe\\xff\"):\n        return None, \"utf16\"",
+  "new": "    if False:\n        return None, \"utf16\"",
+  "target": "tests/unit/test_pii_scan.py::test_utf16_and_a_trailing_non_utf8_byte_are_errors_not_skips"
+ },
+ {
+  "name": "a symlink is an error unless declared (#166)",
+  "file": "scripts/pii_scan.py",
+  "old": "    if job.mode == \"120000\" and not (allow.path_has(\"symlink\", path) or fallback):",
+  "new": "    if False:",
+  "target": "tests/unit/test_pii_scan.py::test_symlink_gitlink_and_oversize_are_errors_unless_declared"
+ },
+ {
+  "name": "a declared binary is scanned for strings, never skipped",
+  "file": "scripts/pii_scan.py",
+  "old": "        text = extract_strings(data)\n    is_allowlist",
+  "new": "        return rep\n    is_allowlist",
+  "target": "tests/unit/test_pii_scan.py::test_declared_binary_is_scanned_for_strings_and_media_gps"
+ },
+ {
+  "name": "GPS in media metadata fails",
+  "file": "scripts/pii_scan.py",
+  "old": "        if media_has_gps(data):",
+  "new": "        if False:",
+  "target": "tests/unit/test_pii_scan.py::test_declared_binary_is_scanned_for_strings_and_media_gps"
+ },
+ {
+  "name": "declarations are read from the parent, not the index (#283 c3)",
+  "file": "scripts/pii_scan.py",
+  "old": "    objs = read_objects([f\"{parent}:{ALLOWLIST_PATH}\", f\"{parent}:{PLACEHOLDER_SOURCE}\"])",
+  "new": "    objs = read_objects([f\":{ALLOWLIST_PATH}\", f\":{PLACEHOLDER_SOURCE}\"])",
+  "target": "tests/infra/test_pii_hooks.py::test_a_declaration_beside_its_payload_does_not_exempt_it"
+ },
+ {
+  "name": "a missing denylist is an error",
+  "file": "scripts/pii_scan.py",
+  "old": "        if absent_reason:\n            return Denylist(source=\"<absent>\")",
+  "new": "        if True:\n            return Denylist(source=\"<absent>\")",
+  "target": "tests/unit/test_pii_scan.py::test_missing_denylist_is_an_error_unless_acknowledged"
+ },
+ {
+  "name": "a denylist hit cannot be acknowledged",
+  "file": "scripts/pii_scan.py",
+  "old": "                                    finding_id(path, lines[ln - 1]), ackable=False, key=key,",
+  "new": "                                    finding_id(path, lines[ln - 1]), ackable=True, key=key,",
+  "target": "tests/unit/test_pii_scan.py::test_ack_clears_a_shape_but_never_a_denylist_hit"
+ },
+ {
+  "name": "a denylist hit is printed masked",
+  "file": "scripts/pii_scan.py",
+  "old": "            findings.append(Finding(\"FAIL\", f\"denylist:{kind}\", path, ln, mask(key, full=True),",
+  "new": "            findings.append(Finding(\"FAIL\", f\"denylist:{kind}\", path, ln, key,",
+  "target": "tests/unit/test_pii_scan.py::test_output_never_prints_a_value"
+ },
+ {
+  "name": "a denylisted line is never sent to a judge",
+  "file": "scripts/pii_scan.py",
+  "old": "        items = [it for it in rep.added_lines if (it[0], it[1]) not in denied]",
+  "new": "        items = list(rep.added_lines)",
+  "target": "tests/unit/test_pii_scan.py::test_judge_flags_lines_and_never_sees_a_denylisted_line"
+ },
+ {
+  "name": "a judge that does not answer is an ERROR",
+  "file": "scripts/pii_scan.py",
+  "old": "            rep.findings.append(Finding(\"ERROR\", f\"judge:{backend}\", \"<judge>\", 0, \"\", \"\", ackable=False,\n                                        note=str(exc)))\n            return",
+  "new": "            return",
+  "target": "tests/unit/test_pii_scan.py::test_judge_that_does_not_answer_is_an_error"
+ },
+ {
+  "name": "pre-push reads commit messages",
+  "file": "scripts/pii_scan.py",
+  "old": "        sub.findings += message_findings(sc, body)",
+  "new": "        pass",
+  "target": "tests/infra/test_pii_hooks.py::test_a_message_committed_around_the_hooks_is_caught_by_pre_push"
+ },
+ {
+  "name": "pre-push honours only acknowledgements recorded as trailers",
+  "file": "scripts/pii_scan.py",
+  "old": "        acks = trailer_acks(body)",
+  "new": "        acks = set()",
+  "target": "tests/infra/test_pii_hooks.py::test_an_acknowledged_finding_is_recorded_and_pre_push_honours_it"
+ },
+ {
+  "name": "commit-msg scans the author identity",
+  "file": "scripts/pii_scan.py",
+  "old": "        rep.findings += _ident_findings(sc, label, ident)",
+  "new": "        pass",
+  "target": "tests/infra/test_pii_hooks.py::test_a_denylisted_author_is_refused"
+ },
+ {
+  "name": "pre-commit judges only what the change adds",
+  "file": "scripts/pii_scan.py",
+  "old": "    added = _added_line_numbers(new_lines, old_line_sets) if not binary else set()",
+  "new": "    added = set(range(1, len(new_lines) + 1)) if not binary else set()",
+  "target": "tests/infra/test_pii_hooks.py::test_residue_already_in_a_file_does_not_block_an_unrelated_edit"
+ }
+]

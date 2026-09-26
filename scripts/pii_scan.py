@@ -131,7 +131,7 @@ def mask(value: str, *, full: bool = False) -> str:
 # --------------------------------------------------------------------------
 # Normalisation
 
-_ZERO_WIDTH = dict.fromkeys(map(ord, "​‌‍⁠﻿­"), None)
+_ZERO_WIDTH = dict.fromkeys(map(ord, "\u200b\u200c\u200d\u2060\ufeff\u00ad"), None)
 
 
 def normalise_line(line: str) -> str:
