@@ -133,7 +133,7 @@ counting a module's responsibilities to counting its lines.
     zero-width characters are folded before matching. UTF-16, undecodable
     bytes, symlinks and gitlinks stay ERRORs with a declared allowlist, and a
     declared binary is scanned for embedded strings, never skipped. Every
-    rule is guarded by a named test, shown by a 41-entry mutation table
+    rule is guarded by a named test, shown by a 45-entry mutation table
     (`scripts/mutations/pii-precommit-detector.json`). It is still not a
     control against a motivated author, and not what decides a public
     release (#167).
