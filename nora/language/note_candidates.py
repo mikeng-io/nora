@@ -367,7 +367,10 @@ _MIN_ANCHOR_DATE = 10_000_000
 #:
 #: 13 -> 14 on 2026-09-26 (design 42 S3): `read` in `inputs`, once per open
 #: note, for the head body the notebook now renders whole.
-STORE_CALLS_PER_TICK = 14
+#:
+#: 14 -> 15 on 2026-09-26: `_update`'s new-evidence refusal settles the row
+#: (`set_create_candidate_status`) on its own branch.
+STORE_CALLS_PER_TICK = 15
 
 #: Every value `nora_note_candidate_gate_total{action}` may carry, DERIVED
 #: rather than hand-copied into the metric's help text (`nora.obs.
