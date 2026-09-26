@@ -1,0 +1,100 @@
+// The allowlist of Nora API reads the browser may make, and how each one
+// reaches her :9100 API. One table instead of one route file per endpoint:
+// the old portal had thirty near-identical proxies, and the two that had to
+// differ (memory, events: scoped to the viewer) were each argued for in a
+// comment in their own file. Here the difference is a column.
+//
+// Rules the table enforces, each tested in upstream.test.ts:
+//   - GET only; a path not in the table is a 404, never forwarded.
+//   - Only the query parameters a route names are forwarded; anything else
+//     the browser sends is dropped.
+//   - `scope: "self"` routes get `personId` from the SESSION, and a
+//     `personId` the browser sends is ignored: memory is the viewer's own,
+//     and events are the ones the viewer created or answered
+//     (nora/web/memory.py, nora/web/gatherings.py).
+//   - A path parameter must look like an id (no slashes, no dots-only, a
+//     bounded charset) and is re-encoded before it reaches the upstream URL.
+
+export interface RouteSpec {
+  /** Segments after /api/v1/; ":name" matches one id-shaped segment. */
+  pattern: string[];
+  query?: string[];
+  scope?: "self";
+}
+
+export const ROUTES: RouteSpec[] = [
+  { pattern: ["status"] },
+  { pattern: ["skills"] },
+  { pattern: ["tools"] },
+  { pattern: ["doctrine"] },
+  { pattern: ["memory"], scope: "self" },
+  { pattern: ["persons"] },
+  { pattern: ["persons", ":personId"] },
+  { pattern: ["events"], scope: "self" },
+  { pattern: ["events", ":id"], scope: "self" },
+  { pattern: ["presence"] },
+  { pattern: ["presence", "places"] },
+  { pattern: ["presence", "analytics", "places"] },
+  { pattern: ["presence", "analytics", "rhythm"], query: ["subjectId", "days"] },
+  { pattern: ["presence", "analytics", "routes"], query: ["subjectId", "days"] },
+  { pattern: ["presence", ":personId", "history"], query: ["hours"] },
+  { pattern: ["games", "servers"] },
+  { pattern: ["games", "servers", ":id", "status"] },
+  { pattern: ["games", "servers", ":id", "graph"], query: ["hours"] },
+  { pattern: ["games", "servers", ":id", "weekly"] },
+  { pattern: ["games", "servers", ":id", "world"] },
+  { pattern: ["games", "servers", ":id", "progress"] },
+  { pattern: ["games", "servers", ":id", "save-history"], query: ["hours"] },
+  { pattern: ["games", "servers", ":id", "insights"], query: ["days"] },
+  { pattern: ["games", "servers", ":id", "players"], query: ["page", "pageSize", "online"] },
+  { pattern: ["games", "servers", ":id", "players", ":playerKey"] },
+  { pattern: ["games", "servers", ":id", "activity"], query: ["page", "pageSize"] },
+  { pattern: ["games", "servers", ":id", "sessions"], query: ["page", "pageSize", "playerKey"] },
+];
+
+const ID_SEGMENT = /^[A-Za-z0-9_\-:.@]{1,128}$/;
+const QUERY_VALUE = /^[A-Za-z0-9_\-:.@]{0,128}$/;
+
+function matches(spec: RouteSpec, segments: string[]): boolean {
+  if (spec.pattern.length !== segments.length) return false;
+  return spec.pattern.every((p, i) => {
+    const seg = segments[i];
+    if (!p.startsWith(":")) return p === seg;
+    return ID_SEGMENT.test(seg) && !/^\.+$/.test(seg);
+  });
+}
+
+/** Literal segments beat parameters, so `presence/analytics/places` can never
+ * be read as a person called "analytics". */
+function specificity(spec: RouteSpec): number {
+  return spec.pattern.filter((p) => !p.startsWith(":")).length;
+}
+
+export type Resolution =
+  | { ok: true; upstreamPath: string; spec: RouteSpec }
+  | { ok: false; status: 404 | 400 };
+
+export function resolveUpstream(
+  segments: string[],
+  search: URLSearchParams,
+  viewerPersonId: string,
+): Resolution {
+  const candidates = ROUTES.filter((spec) => matches(spec, segments)).sort(
+    (a, b) => specificity(b) - specificity(a),
+  );
+  const spec = candidates[0];
+  if (!spec) return { ok: false, status: 404 };
+
+  const params = new URLSearchParams();
+  for (const name of spec.query ?? []) {
+    const value = search.get(name);
+    if (value === null) continue;
+    if (!QUERY_VALUE.test(value)) return { ok: false, status: 400 };
+    params.set(name, value);
+  }
+  if (spec.scope === "self") params.set("personId", viewerPersonId);
+
+  const path = segments.map((s) => encodeURIComponent(s)).join("/");
+  const qs = params.toString();
+  return { ok: true, spec, upstreamPath: `/app/v1/${path}${qs ? `?${qs}` : ""}` };
+}

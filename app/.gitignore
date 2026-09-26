@@ -3,3 +3,6 @@ node_modules
 dist
 *.tsbuildinfo
 .env*.local
+public/vendor/
+test-results/
+playwright-report/

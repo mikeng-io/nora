@@ -1,0 +1,18 @@
+{
+  "type": "feature",
+  "summary": "The portal is rebuilt from the ground up as an installable app in Nora's own look, with a new front page, a live map, people's patterns, plans, games and Nora's own pages.",
+  "details": [
+    "Today, the new front page: whether Nora is listening, who is around and where, who is playing, what is coming up, a line from her notes about you, and the circle.",
+    "The map shows everyone live in their own colour on a warm-grey map in both lightings; pick someone for their details and a route over the last hour to week. On a phone the list is a sheet you drag over the map.",
+    "Each person has a page: their last day on a map, plans you share, the games that know them, the places Nora has worked out for them, a usual week hour by hour with the current hour marked, and their routes grouped into regular ones.",
+    "Plans are grouped by week, and a plan can be added to your calendar, opened in a maps app or shared.",
+    "Games show who is on now; each server has players, activity, a leaderboard, busy hours, who plays together and its world; each player has their character, body, gear and playtime per day.",
+    "Nora's own pages: how she is, the reminders she holds (time and platform only), what she remembers about you (only you can see it), her doctrine as a reader, and every tool and skill she has.",
+    "It installs to a phone's home screen, works offline with what it last saw (and says so), and search (⌘K or /) finds any person, server, plan, doctrine section or tool.",
+    "Studio and late-night lighting and the language choice carry over from Nora's public page; Chinese dates read in Cantonese (聽日, 而家)."
+  ],
+  "limitations": [
+    "The portal only reads: plans are still made and answered in the group chat, and there is no chat with Nora on the web.",
+    "Old portal links (status, memory, doctrine, tools, events) redirect to where their content lives now; bookmarks keep working, but an app installed from the old portal should be reinstalled to pick up the new icon and name."
+  ]
+}

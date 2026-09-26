@@ -1,0 +1,43 @@
+import "server-only";
+import fs from "node:fs";
+import { auth } from "@/auth";
+import { resolveDiscordPerson, type Person } from "./allowlist";
+
+// identity.toml is bind-mounted read-only into this container
+// (docker-compose.yml's `app` service): the SAME bytes Nora's own process
+// reads, so the portal's allowlist can never drift from her roster.
+export const IDENTITY_TOML_PATH = process.env.IDENTITY_TOML_PATH ?? "/app/identity.toml";
+
+export type SessionCheck =
+  | ({ status: "ok"; discordId: string; image: string | null } & Person)
+  | { status: "no-session" }
+  | { status: "denied"; name: string | null; image: string | null };
+
+let cached: { mtimeMs: number; text: string } | null = null;
+
+/** Re-read only when the file changes: the check runs on every page and
+ * every API read, and a person added to the roster should get in without
+ * a restart. */
+export function readIdentityToml(): string {
+  // A runtime path (a bind mount), not a project file: the ignore comments
+  // keep the build from tracing the whole project into the server bundle.
+  const { mtimeMs } = fs.statSync(/*turbopackIgnore: true*/ IDENTITY_TOML_PATH);
+  if (!cached || cached.mtimeMs !== mtimeMs) {
+    cached = { mtimeMs, text: fs.readFileSync(/*turbopackIgnore: true*/ IDENTITY_TOML_PATH, "utf-8") };
+  }
+  return cached.text;
+}
+
+// The ONE place session + allowlist logic lives. The (portal) layout (the
+// page gate) and every /api/v1 read call it: a page gate alone never
+// protected the routes the pages fetch from (the original portal shipped
+// GET /api/memory open to any request until a review caught it).
+export async function checkSession(): Promise<SessionCheck> {
+  const session = await auth();
+  const discordId = session?.user?.discordId;
+  if (!discordId) return { status: "no-session" };
+  const image = session.user?.image ?? null;
+  const person = resolveDiscordPerson(readIdentityToml(), discordId);
+  if (!person) return { status: "denied", name: session.user?.name ?? null, image };
+  return { status: "ok", discordId, image, ...person };
+}
