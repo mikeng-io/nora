@@ -970,6 +970,40 @@ def _resolve_updates(
     return tuple(n for n in standing if note_handle(n.title) == wanted)
 
 
+#: The read verbs the runtime WOULD admit for this scope-keyed pass and it is
+#: not handed, each with why (design/dreamer-agent-loop/43 §2). The operator's
+#: rule (2026-09-26): every allowed read tool, less only one the runtime
+#: refuses or one with a real cost or side effect; the budget, not the list,
+#: is the control. A read verb added to the registry tomorrow is granted by
+#: omission from this map.
+WITHHELD_TOOLS: Mapping[str, str] = {
+    # COST: every call is a vision-model call (thousands of reasoning tokens
+    # per read, measured on video), and the batch already renders each media
+    # item as a placeholder with its id.
+    "media_fetch": "each call is a separate vision-model call",
+    # SIDE EFFECT: these read through the social bridge
+    # (`nora/infra/social/router.py`): Instagram through the session its
+    # MESSAGING shares, X through OpenCLI's headed browser. An unprompted
+    # background lookup spends that session's standing on a pass nobody asked
+    # for, and whether Nora may look people up unprompted in a Dreamer pass is
+    # an open operator decision (design/instagram-adoption/18).
+    "instagram_read": "reads through the social bridge's session; unprompted lookup undecided",
+    "instagram_search": "reads through the social bridge's session; unprompted lookup undecided",
+    "linkedin_read": "reads through the social bridge's session; unprompted lookup undecided",
+    "linkedin_search": "reads through the social bridge's session; unprompted lookup undecided",
+    "x_read": "reads through the social bridge's session; unprompted lookup undecided",
+    "x_search": "reads through the social bridge's session; unprompted lookup undecided",
+}
+
+
+def granted_tools(read_only: frozenset[str]) -> frozenset[str]:
+    """What this pass holds: the registry's read-only ceiling (every verb the
+    runtime admits for a scope-keyed adaptor, `tool_subset_faults`) less
+    `WITHHELD_TOOLS`. Derived, never listed, so a new read verb reaches the
+    pass without an edit here."""
+    return frozenset(read_only) - frozenset(WITHHELD_TOOLS)
+
+
 class NoteCandidateAdaptor:
     """Phase A of the note tier's create path — see the module docstring."""
 
@@ -978,11 +1012,13 @@ class NoteCandidateAdaptor:
     uses_watermark = True
     objective = "note-candidates"
     envelope_key = "candidates"
-    #: TOOL-FREE (design 33 §4.1): read-only awareness would be permitted for
-    #: a scope-keyed adaptor, but this one's design keeps it tool-free anyway,
-    #: the cost split every extractor-shaped pass makes — one cheap call
-    #: decides what is worth carrying forward, and a
-    #: tool call per candidate is a cost nobody asked for here.
+    #: A RESEARCH LOOP since design/dreamer-agent-loop/43 (reversing 37 §6's
+    #: tool-free judge): the model decides what to read, code decides what may
+    #: be written. The class default is the tool-free pass; the composition
+    #: root hands the instance `granted_tools(registry.read_only_tools())` —
+    #: every read verb the runtime admits for a scope-keyed adaptor, less
+    #: `WITHHELD_TOOLS` — and `[dreamer.budgets.note-candidates]
+    #: max_tool_calls` is the control, not the list.
     tools: frozenset[str] = frozenset()
     #: `DreamAdaptor.store_calls_per_tick` — see `STORE_CALLS_PER_TICK` above.
     store_calls_per_tick = STORE_CALLS_PER_TICK
@@ -1049,7 +1085,13 @@ class NoteCandidateAdaptor:
         resolve_names: (
             Callable[[Sequence[TranscriptRow], str], Sequence[TranscriptRow]] | None
         ) = None,
+        # The read verbs this pass holds (design 43 §2): `granted_tools` over
+        # the registry's read-only ceiling, computed at the composition root
+        # because this layer may not import the registry. Empty is the
+        # tool-free pass every caller that says nothing still gets.
+        tools: frozenset[str] = frozenset(),
     ) -> None:
+        self.tools = frozenset(tools)
         self._notes = notes
         self._culture = culture
         self._candidates = candidates
@@ -1265,6 +1307,45 @@ class NoteCandidateAdaptor:
         ]
 
     # -- accept -----------------------------------------------------------
+
+    def saw(self, *, key: str, rows: Sequence[TranscriptRow]) -> None:
+        """The rows this pass READ through its tools join what it was shown
+        (design/dreamer-agent-loop/43 §3), so a body may cite, and
+        `message_ids` may name, a message the model loaded rather than only
+        one `inputs` rendered. Called by the runtime after the samples and
+        before `accept`.
+
+        Only the SHOWN SET grows; every guard that reads it is unchanged — the
+        body validator, carry-forward, and the new-evidence rule (#590), which
+        dates a loaded row like a rendered one, so an update citing only rows
+        older than the note's last change is still refused. No `inputs` for
+        this key means nothing was shown, and a load cannot stand in for it.
+        """
+        shown = self._shown.get(key)
+        if shown is None:
+            return
+        known = {m.id for m in shown.rendered}
+        fresh: dict[int, TranscriptRow] = {}
+        for row in rows:
+            if row.id not in known:
+                fresh.setdefault(row.id, row)
+        if not fresh:
+            return
+        loaded = _shown_by(tuple(fresh.values()))
+        self._shown[key] = replace(
+            shown,
+            rendered=shown.rendered + loaded.rendered,
+            # The batch's own senders win a name clash: they are what the
+            # model read first, and `_shown_by` keys the roster by name.
+            roster={**loaded.roster, **shown.roster},
+        )
+        self._message_ids[key] = (
+            self._message_ids.get(key, frozenset()) | frozenset(fresh)
+        )
+        self._message_ts[key] = {
+            **{row.id: row.ts for row in fresh.values()},
+            **self._message_ts.get(key, {}),
+        }
 
     async def accept(
         self, *, key: str, items: Sequence[Mapping[str, object]]

@@ -2934,6 +2934,11 @@ class DreamBudgetConfig(BaseModel):
     #: removing it from the subset, where it is visible.
     tool_calls: dict[str, int] = Field(default_factory=dict)
 
+    #: One pass's tool calls over EVERY verb together (design/dreamer-agent-
+    #: loop/43 §4) -> `AdaptorBudget.max_tool_calls`. Unset is no pass-wide
+    #: ceiling, which is every adaptor's behaviour before this field existed.
+    max_tool_calls: int | None = Field(default=None, ge=1)
+
     @field_validator("tool_calls")
     @classmethod
     def _positive_tool_calls(cls, value: dict[str, int]) -> dict[str, int]:

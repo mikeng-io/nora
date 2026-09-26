@@ -144,7 +144,7 @@ from nora.ingest.stickers import StickerReader
 from nora.instructions.dreamer import DreamerInstructions
 from nora.instructions.frontmatter import InstructionError
 from nora.language.culture import CULTURE_ADAPTOR_NAME, CultureAdaptor
-from nora.language.note_candidates import NoteCandidateAdaptor
+from nora.language.note_candidates import NoteCandidateAdaptor, granted_tools
 from nora.language.note_curator import NoteCuratorAdaptor
 from nora.language.note_merge import NoteMergeAdaptor
 from nora.language.proactive import (
@@ -407,6 +407,7 @@ def _adaptor_budget(b: DreamBudgetConfig) -> AdaptorBudget:
         # field is not, and an `AdaptorBudget` handed the same object would
         # share it with the config tree for the process's life.
         tool_calls=dict(b.tool_calls),
+        max_tool_calls=b.max_tool_calls,
     )
 
 
@@ -3636,6 +3637,12 @@ async def build_dependencies(
                         lambda rows, platform:
                             persons.name_transcript(rows, platform=platform)
                     ),
+                    # A RESEARCH LOOP (design/dreamer-agent-loop/43 §2): every
+                    # read verb the runtime admits for a scope-keyed adaptor,
+                    # DERIVED off the registry's ceiling, less the verbs
+                    # `WITHHELD_TOOLS` names with a reason. The per-fire cap
+                    # (`max_tool_calls`) is the control, not this list.
+                    tools=granted_tools(tool_registry.read_only_tools()),
                 ),
             )
         # NOTE-MERGE (design/dreamer-agent-loop/41 §7, DEC-202): the back-stop
@@ -4059,6 +4066,11 @@ async def build_dependencies(
             # adaptor that is not wired is never read, and `[culture] enabled
             # = false` is what keeps the adaptor out of `dream_adaptors`.
             CULTURE_ADAPTOR_NAME: culture_grant(),
+            # NOTE-CANDIDATES' own room, and no act verb, for culture's
+            # reason (design 43 §2): scope-keyed, so the grant is an identity,
+            # and without it every room-scoped read it holds answers off the
+            # empty `Room`: a declared tool set, not a reachable one.
+            NoteCandidateAdaptor.name: culture_grant(),
         }
         # `DreamBudgetConfig` -> `AdaptorBudget`, through the ONE named
         # converter (`_adaptor_budget` above): the same five numbers across the

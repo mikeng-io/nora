@@ -257,6 +257,14 @@ class AdaptorBudget:
     #: Empty by omission, so an adaptor that says nothing runs on exactly the
     #: ceilings it ran on before this field existed.
     tool_calls: Mapping[str, int] = field(default_factory=dict)
+    #: **How many tool calls one pass may make, over EVERY verb together**
+    #: (design/dreamer-agent-loop/43 §4). `max_memory_calls`' shape and grain
+    #: (per sample, enforced by `DreamGuard`, answered `unavailable` past it)
+    #: over the whole grant rather than the memory cluster: an adaptor granted
+    #: every read verb is bounded by how much it reads, not by which verbs.
+    #: `None`, the default, is no pass-wide ceiling: every adaptor that says
+    #: nothing runs on exactly the per-tool and memory ceilings it had.
+    max_tool_calls: int | None = None
 
 
 @dataclass(frozen=True)
@@ -527,6 +535,7 @@ class DreamToolSource(Protocol):
     def build(
         self, *, key: str, names: frozenset[str], unit: str | None = None,
         adaptor: str = "", grant: AdaptorGrant | None = None,
+        on_rows: Callable[[Sequence[TranscriptRow]], None] | None = None,
     ) -> list[Any]: ...
 
     # R-99 (design/social-per-network/30-link-owner-registry.md, added on
@@ -1037,6 +1046,7 @@ class RegistryToolSource:
     def build(
         self, *, key: str, names: frozenset[str], unit: str | None = None,
         adaptor: str = "", grant: AdaptorGrant | None = None,
+        on_rows: Callable[[Sequence[TranscriptRow]], None] | None = None,
     ) -> list[Any]:
         from .room import Room
 
@@ -1177,6 +1187,9 @@ class RegistryToolSource:
             # conversation ids -> OriginRoom, threaded to `remind` so a
             # note-linked proactive row is stamped into the note's own room.
             origin_rooms=self._origin_rooms,
+            # The rows the transcript reads return, for an adaptor that
+            # grounds on what it loaded (design 43 §3); `None` otherwise.
+            on_rows=on_rows,
         ).tools
 
 
@@ -1500,6 +1513,13 @@ class DreamerRuntime:
                 return self._finish(
                     adaptor, "nothing_found", written, sha, None, started,
                 )
+            # WHAT THE PASS LOADED (design/dreamer-agent-loop/43 §3): the
+            # transcript rows its tools returned, across every sample, handed
+            # to the adaptor before `accept` so a citation of a loaded row is
+            # a citation of a row the pass SAW. Optional on the protocol: an
+            # adaptor with no `saw` grounds on its prompt alone, as before.
+            saw = getattr(adaptor, "saw", None)
+            loaded: list[TranscriptRow] = []
             tools = self._tools.build(
                 key=key, names=frozenset(adaptor.tools),
                 # A unit-keyed adaptor's key IS the unit (32 §3.4):
@@ -1509,6 +1529,9 @@ class DreamerRuntime:
                 # tools resolve through the room, unchanged.
                 unit=key if adaptor.key_kind == "unit" else None,
                 adaptor=adaptor.name, grant=grant,
+                # Only for an adaptor that grounds on what it loaded
+                # (`saw`, design 43 §3): every other build is unchanged.
+                **({"on_rows": loaded.extend} if saw is not None else {}),
             )
             # The BUDGETS, not the guard. A `DreamGuard` owns a
             # `CallLedger`, and a ledger is SPENT STATE — build one per run
@@ -1627,6 +1650,8 @@ class DreamerRuntime:
             )
 
         try:
+            if saw is not None and loaded:
+                saw(key=key, rows=tuple(loaded))
             payloads = await adaptor.accept(key=key, items=kept)
             now_ms = int(time.time() * 1000)
             proposals = tuple(
@@ -1721,6 +1746,7 @@ class DreamerRuntime:
             result_caps=_TOOL_RESULT_CAPS,
             memory_tools=MEMORY_TOOLS,
             memory_budget=budget.max_memory_calls,
+            pass_budget=budget.max_tool_calls,
             # R-99 (design/social-per-network/30-link-owner-registry.md):
             # the same table `deliver.build`'s callers thread into
             # `ReplyGuard`, read off the SAME `DreamToolSource` this method
