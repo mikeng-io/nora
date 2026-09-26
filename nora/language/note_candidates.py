@@ -31,12 +31,16 @@ which the model is asked about:
    `NoteCreationProposal`, written through `DreamSink.propose` exactly as the
    tag path's future create tool would. A match: the candidate becomes a
    `NoteRevisionProposal` against the matched note's own head whose body is
-   the head's text with the candidate's **appended** (`_appended`) — never
-   the candidate's alone — and only if it adds something the existing head
-   lacks (`_adds_information`); otherwise it is refused as a duplicate, or as
-   `full` when the appended body would pass `BODY_MAX_CHARS`. Either way the
-   candidate row is advanced to a TERMINAL status (`created`/`refused`) so a
-   re-observation of the same occasion never relitigates a settled decision.
+   the candidate's, a **restatement** of the whole entry (design 42 S4a, §7),
+   and only if every line of the head keeps its citations
+   (`dropped_citations`; otherwise `dropped_citation`, left pending) and it
+   differs from the head after whitespace (otherwise refused as a
+   duplicate). Until 2026-09-26 the candidate's body was APPENDED to the head
+   (`_appended`, #228), and an append was what made a wrong `updates` cost a
+   conflation rather than an erasure; the carry-forward check and the
+   revision chain now carry that ground. A decided candidate row is advanced
+   to a TERMINAL status (`created`/`refused`) so a re-observation of the
+   same occasion never relitigates a settled decision.
 
 **Why scope-keyed and watermarked, unlike the curator or the revisitor.** A
 note's arrangement spans days of conversation, not one turn — the operator's
@@ -49,13 +53,15 @@ mechanism is watermark-bound, and this is now the only adaptor that is
 both scope-keyed AND watermarked (the knowledge tier's extractor was the
 first, and is gone).
 
-**Why it reads the note index too.** Unlike a claim extractor — new claims,
+**Why it reads the notebook too.** Unlike a claim extractor — new claims,
 with dedupe left to adjudication — a note proposal must not duplicate a note
-that already exists in the unit's standing notebook. `inputs` renders
-`render_notes`' own projection (`nora.language.note_render`, the SAME one the
-tag path's `<notes>` block gets: title + description only, never a body) so
-the model can be told: *if this arrangement is already written down, propose
-an update or nothing, not a duplicate create.*
+that already exists in the unit's standing notebook, so the model can be
+told: *if this arrangement is already written down, propose an update or
+nothing, not a duplicate create.* Until design 42 S3 (2026-09-26) it read the
+tag path's `<notes>` index (title + description, never a body); since then it
+reads `<today>` and one `<open_note>` per open note WITH its body
+(`_notebook`), because an update can only say what a batch changes in a body
+it was shown.
 
 **And since 2026-09-13 the gate READS the answer to that question instead of
 throwing it away (#228).** The model was already asked which standing note a
@@ -246,7 +252,7 @@ from __future__ import annotations
 import datetime as _dt
 import logging
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import ClassVar, Protocol
 
 from nora.domain.blocks import (
@@ -257,6 +263,17 @@ from nora.domain.blocks import (
     speaker_name,
 )
 from nora.domain.models import TranscriptRow
+from nora.domain.note_body import (
+    CODE_WRITTEN,
+    RULES,
+    NoteBodyError,
+    Shown,
+    ShownMessage,
+    cited_ids_in,
+    dropped_citations,
+    in_schema_form,
+    parse_note_body,
+)
 from nora.domain.notes import (
     BODY_MAX_CHARS,
     CANDIDATE_CREATED,
@@ -277,7 +294,7 @@ from nora.domain.notes import (
 from nora.domain.ports import CultureReader, DreamSink, Proposal
 from nora.domain.prompt import escape
 from nora.language.culture_render import read_culture, render_culture
-from nora.language.note_render import render_notes
+from nora.language.note_render import FORM_LEGACY, FORM_NOT_SHOWN, open_note_parts
 from nora.obs.metrics import Metrics
 
 log = logging.getLogger("nora.notes.candidates")
@@ -307,6 +324,12 @@ MAX_ENTITIES_PER_CANDIDATE = 10
 #: is past anything `escape` can produce from sixty characters, and still
 #: short enough that a model pasting a sentence instead of a title is refused.
 MAX_UPDATES_CHARS = TITLE_MAX_CHARS * 6
+#: The notebook's size bound (design 42 §8.6), over the rendered `<open_note>`
+#: blocks. An ESTIMATE, not a measurement: 13 open notes at 500 to 1500
+#: characters a body is about 6.5k to 20k, and this is over twice the upper
+#: figure. A cap is not a reservation, so unused room costs nothing; sizing it
+#: tight off one unit is how a live limit got cut on n=1 before.
+NOTEBOOK_BODY_BUDGET_CHARS = 48_000
 #: How many rows of one batch `inputs` renders before switching to a summary
 #: line. 500 is the number the knowledge tier's extractor used for the same
 #: shape of batch (a room's message window), kept rather than re-derived
@@ -341,7 +364,13 @@ _MIN_ANCHOR_DATE = 10_000_000
 #:
 #: 12 -> 13 on 2026-09-25 (DEC-207): the room's `<culture>` head, one
 #: `self._culture.head` per tick, bounded by `read_culture`.
-STORE_CALLS_PER_TICK = 13
+#:
+#: 13 -> 14 on 2026-09-26 (design 42 S3): `read` in `inputs`, once per open
+#: note, for the head body the notebook now renders whole.
+#:
+#: 14 -> 15 on 2026-09-26: `_update`'s new-evidence refusal settles the row
+#: (`set_create_candidate_status`) on its own branch.
+STORE_CALLS_PER_TICK = 15
 
 #: Every value `nora_note_candidate_gate_total{action}` may carry, DERIVED
 #: rather than hand-copied into the metric's help text (`nora.obs.
@@ -354,8 +383,9 @@ STORE_CALLS_PER_TICK = 13
 #: closed 2026-09-11 and `make typecheck` names this package explicitly.)
 GATE_ACTIONS: frozenset[str] = frozenset({
     "created",          # materialized as a brand new note
-    "updated",          # materialized as a revision APPENDED to the standing
-                        # note the model NAMED in `updates`. Carried
+    "updated",          # materialized as a revision of the standing note the
+                        # model NAMED in `updates`: APPENDED until design 42
+                        # S4a (2026-09-26), a checked restatement since. Carried
                         # «unreachable today» until 2026-09-13, which was
                         # false by then: it had fired twice in production, and
                         # both times it took a note the model never named and
@@ -377,10 +407,21 @@ GATE_ACTIONS: frozenset[str] = frozenset({
                         # unmeasurable. Same invariant as `ambiguous`: one
                         # action per settled candidate.
     "refused",          # a duplicate with nothing new, or malformed
-    "full",             # the appended body would pass BODY_MAX_CHARS — the
-                        # revision is refused rather than truncated, and a
-                        # rate here says the curator is not retiring
     "deferred",         # a transient failure; left pending, retried next tick
+    "dropped_citation", # a restated update whose body leaves some line of the
+                        # head with none of its citations carried (design 42
+                        # §7's carry-forward check). Left pending, nothing
+                        # written: provenance never silently leaves a note.
+    "no_new_evidence",  # an update whose body cites only messages OLDER than
+                        # the note's last change (2026-09-26): a restatement
+                        # of what the note already rests on, not news. Refused:
+                        # the p11 eval case caught an untouched same-day sibling
+                        # rewritten from its own old evidence.
+    "not_shown",        # named a note this pass rendered WITHOUT its body
+                        # (design 42 §8.6: the notebook's budget bound, or
+                        # its head could not be read). Left pending, nothing
+                        # written: an update is written against a body the
+                        # model read. A rate here says the budget binds.
 })
 
 #: Every value `nora_note_candidate_staging_total{outcome}` may carry, derived
@@ -426,6 +467,44 @@ STAGING_OUTCOMES: frozenset[str] = frozenset({
                         # to fail in, and a re-widening of the key must not
                         # land silent.
 })
+
+#: Every value `nora_note_candidate_body_refused_total{rule}` may carry: the
+#: validator's own closed vocabulary (`nora.domain.note_body.RULES`), taken
+#: from it rather than copied, for `GATE_ACTIONS`' reason. A body a create
+#: carries is held to design 42 §4 in `accept()`, and one that breaks it is
+#: REFUSED, whole, before anything is staged (G1, §4.5): the rule it broke is
+#: the reading, one sample per refused candidate.
+BODY_REFUSAL_RULES: frozenset[str] = RULES
+
+#: Every value `nora_note_candidate_parse_dropped_total{field}` may carry: the
+#: first envelope field `_parse_candidate` could not read. A dropped item never
+#: reaches the gate or staging, so until 2026-09-26 it was indistinguishable
+#: from an empty answer, in production and in the eval's reasons (#583
+#: investigation: an update missing `description` read as «no update»).
+PARSE_DROP_FIELDS: frozenset[str] = frozenset({
+    "title", "description", "body", "closing_condition", "anchor_date",
+    "anchor_entity_ids", "other",
+})
+
+
+def _parse_drop_field(item: Mapping[str, object]) -> str:
+    """Which field made `_parse_candidate` return `None` — for the counter
+    and the log only; the parse itself is unchanged."""
+    for name, limit in (
+        ("title", TITLE_MAX_CHARS), ("description", DESCRIPTION_MAX_CHARS),
+        ("body", BODY_MAX_CHARS), ("closing_condition", MAX_CLOSING_CONDITION_CHARS),
+    ):
+        if _text(item.get(name), limit=limit) is None:
+            return name
+    anchor_date = item.get("anchor_date")
+    if (
+        isinstance(anchor_date, bool) or not isinstance(anchor_date, int)
+        or anchor_date < _MIN_ANCHOR_DATE
+    ):
+        return "anchor_date"
+    if _parse_entities(item.get("anchor_entity_ids")) is None:
+        return "anchor_entity_ids"
+    return "other"
 
 #: **What this series does NOT see, stated because a loss counter that reads
 #: as total is worse than none.** It only fires on a SETTLED row. A different
@@ -680,7 +759,8 @@ _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     ("room", 10, "turn"),
     ("culture", 15, "turn"),
     ("batch", 20, "turn"),
-    ("notes", 30, "turn"),
+    ("today", 25, "turn"),
+    ("candidate_open_note", 30, "turn"),
 )
 
 #: `name -> (order, key)`, derived so no call site restates a row `_BLOCKS`
@@ -688,6 +768,18 @@ _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
 _ROW: dict[str, tuple[int, BlockKey]] = {
     name: (order, key) for name, order, key in _BLOCKS
 }
+
+
+def _candidate_open_note(
+    attrs: tuple[tuple[str, str], ...], body: str,
+) -> ContextBlock:
+    """One notebook entry as THIS pass's own type (design 42 S3): the line
+    renderer is note-merge's, the type is not, so `form` never reaches
+    merge's prompt."""
+    order, key = _ROW["candidate_open_note"]
+    return ContextBlock(
+        name="candidate_open_note", order=order, key=key, attrs=attrs, body=body,
+    )
 
 
 def _room_block(*, room: str, description: str | None) -> str:
@@ -818,6 +910,35 @@ def _render_line(row: TranscriptRow, *, room: str, tz: _dt.tzinfo) -> str:
     )
 
 
+def _shown_by(rendered: Sequence[TranscriptRow]) -> Shown:
+    """What `accept` holds a create's body against (design 42 §4.5): each
+    RENDERED row by the `from` its line carried (`_render_line`'s own
+    `speaker_name`, after the roster projection), and the roster.
+
+    **The roster is the batch's own senders** until the `people` block
+    (§8.3a, S1b) puts the room's roster in front of the model: an `## Owed`
+    owner has to be a name the model was shown, and this batch's `from`
+    names are the only ones it is shown today. A member who owes and wrote
+    nothing here is therefore refused as `unknown_owner`, and the objective
+    says to write that under `## Open` instead. Nora's own rows are shown as
+    hers (`cites_nora`) and are never a roster name. `nora_names` stays empty:
+    her name reaches no line of this batch as a `from`, so a line naming her
+    is `unknown_owner` or `misattributed` without it."""
+    shown = tuple(
+        ShownMessage(
+            id=row.id, sender=speaker_name(row.person_name, row.sender_name),
+            person_id=row.person_id, is_nora=row.is_nora,
+        )
+        for row in rendered
+    )
+    return Shown(
+        rendered=shown,
+        # `person_id` is what code attaches for an owner (§4.3); an unmapped
+        # sender has none, and nothing stores it before G5's column exists.
+        roster={m.sender: m.person_id or "" for m in shown if not m.is_nora},
+    )
+
+
 def _resolve_updates(
     *, updates: str | None, standing: Sequence[Note],
 ) -> tuple[Note, ...]:
@@ -849,85 +970,6 @@ def _resolve_updates(
     return tuple(n for n in standing if note_handle(n.title) == wanted)
 
 
-def _adds_information(new_body: str, existing_body: str) -> bool:
-    """Whether a candidate's body would tell the existing note something its
-    head does not already say — the operational reading of design 33 §4's
-    "only if the new proposal adds information the existing note lacks".
-
-    **Syntactic, not semantic — a stated limitation, not an oversight.** A
-    body is judged to add information when it is NOT already a substring of
-    the existing head, case-insensitively with whitespace collapsed. That
-    catches the common, cheap case this adaptor's own watermark makes
-    likely — the same arrangement re-stated near-verbatim across several
-    ticks of one room's conversation — without attempting to reconcile two
-    DIFFERENTLY WORDED accounts of one fact, which is exactly the judgement
-    `nora.language.note_curator`'s merge objective exists for and this
-    tool-free, model-proposes-code-disposes adaptor has no model call left to
-    spend on. A paraphrase of the same arrangement will be misread as "new"
-    and appended as a revision; a literal restatement is the case this check
-    actually catches. *The reading that would reopen this*: a measured rate
-    of paraphrase-triggered spurious revisions worth spending a model call to
-    avoid.
-    """
-    def _norm(text: str) -> str:
-        return " ".join(text.split()).casefold()
-
-    return _norm(new_body) not in _norm(existing_body)
-
-
-def _appended(existing_body: str, new_body: str) -> str:
-    """The head a revision of `existing_body` by `new_body` should carry: the
-    existing text, then the new text, as one body.
-
-    **The verb was always APPEND, and the code did the opposite.** Both this
-    module's docstring ("two arrangements on one day become one note with an
-    appended body rather than two notes") and `NoteRevisionProposal`'s ("a
-    revision to append") say what a revision from this path is, and
-    `_adds_information` above describes its own miss as a paraphrase
-    "appended as a revision". `_update` nonetheless handed the candidate's
-    body to the proposal on its own, which REPLACES the head — so a match
-    made on the date alone did not widen a note, it overwrote one.
-
-    Measured in production, 2026-09-13 (issue #228). The update arm had fired
-    exactly twice since the tier shipped, and both times it destroyed an
-    unrelated body:
-
-    - one note about a sign-up deadline lost the half of its body recording
-      that somebody HAD answered, to a summary of a games thread from the
-      same evening that shared nothing with it but the calendar day. The note
-      then carried one subject's title and description over another's body
-      for two days, until a proactive fire turn read it, found nothing about
-      the deadline in the body, fell back to the index description and told
-      the room something false about who had answered. That message is how
-      the tier came to be looked at at all.
-    - one gathering note was created from one room's pass and overwritten
-      forty minutes later by another room's, on an unrelated subject. Notes
-      are unit-keyed, so under the date key every room in a unit
-      wrote onto whichever note shared the date.
-
-    Appending keeps a collision non-destructive: the note is a conflation of
-    two arrangements, but nothing that was written down is lost and the
-    reader downstream sees both threads instead of one.
-
-    **That property is now load-bearing rather than consoling.** The key
-    itself narrowed in the second half of #228 — the model names the note it
-    updates and the date stops being identity — and the argument for letting
-    the model decide at all is exactly this function: with an appended body a
-    wrong judgement costs a conflation, not an erasure, so the
-    self-attestation bar that kept the decision in code no longer applies.
-    Reverting `_appended` would not just reintroduce the old data loss; it
-    would remove the ground the gate above it now stands on.
-
-    The separator is a blank line rather than a marker: a body is prose a
-    model reads, and the one other writer of these bodies (the tag path's
-    `note_update`) hands back whole paragraphs. The caller — never this
-    function — decides what to do when the result exceeds `BODY_MAX_CHARS`;
-    truncating here is the silent loss `nora.domain.notes` moved into its
-    constructors to be rid of.
-    """
-    return f"{existing_body.rstrip()}\n\n{new_body.strip()}"
-
-
 class NoteCandidateAdaptor:
     """Phase A of the note tier's create path — see the module docstring."""
 
@@ -948,6 +990,8 @@ class NoteCandidateAdaptor:
     _VOCABULARIES: ClassVar[dict[str, tuple[str, frozenset[str]]]] = {
         "nora_note_candidate_gate_total": ("action", GATE_ACTIONS),
         "nora_note_candidate_staging_total": ("outcome", STAGING_OUTCOMES),
+        "nora_note_candidate_body_refused_total": ("rule", BODY_REFUSAL_RULES),
+        "nora_note_candidate_parse_dropped_total": ("field", PARSE_DROP_FIELDS),
     }
 
     def __init__(
@@ -1021,6 +1065,18 @@ class NoteCandidateAdaptor:
         # Keyed by `key`, not a bare attribute, because
         # `dream_loop` dispatches each scope as its own task.
         self._message_ids: dict[str, frozenset[int]] = {}
+        #: Each shown message's timestamp, by scope, for `_update`'s
+        #: new-evidence check (the gate sees only a staged row's ids).
+        self._message_ts: dict[str, dict[int, int]] = {}
+        # Per key, the same channel: what the model was SHOWN, as the body
+        # validator takes it (design 42 §4.5, «rendered»). Only the rows
+        # `inputs` actually rendered, named as it rendered them.
+        self._shown: dict[str, Shown] = {}
+        # Per key, from `_notebook`: the open notes rendered WITHOUT a body
+        # (the budget bound, or the head could not be read), which an update
+        # may not name (`not_shown`); and every id the rendered bodies cite.
+        self._bodiless: dict[str, frozenset[str]] = {}
+        self._carried: dict[str, frozenset[int]] = {}
 
     def _inc(self, name: str, value: float = 1.0, **labels: object) -> None:
         vocab = self._VOCABULARIES.get(name)
@@ -1057,6 +1113,8 @@ class NoteCandidateAdaptor:
         blank-prompt fire condition, restated because it is load-bearing here.
         """
         self._message_ids[key] = frozenset(row.id for row in batch)
+        self._message_ts[key] = {row.id: row.ts for row in batch}
+        self._shown[key] = Shown()
         if not batch:
             return ""
         # RESOLVE NAMES (issue #200), the same projection the tag path
@@ -1080,10 +1138,9 @@ class NoteCandidateAdaptor:
         # a fallback for a room the operator left unlabelled, and the
         # conversation id NEVER — see `UNNAMED_ROOM`.
         room = self._label_for(key) or unit or UNNAMED_ROOM
-        lines = [
-            _render_line(row, room=room, tz=self._tz)
-            for row in batch[:MAX_RENDERED_MESSAGES]
-        ]
+        rendered = batch[:MAX_RENDERED_MESSAGES]
+        lines = [_render_line(row, room=room, tz=self._tz) for row in rendered]
+        self._shown[key] = _shown_by(rendered)
         if len(batch) > MAX_RENDERED_MESSAGES:
             omitted = batch[MAX_RENDERED_MESSAGES:]
             lines.append(
@@ -1128,38 +1185,84 @@ class NoteCandidateAdaptor:
             ).render(),
         ]
         if unit is not None:
-            # THE INDEX IS THE BALLOT. Since 2026-09-13 the gate resolves the
-            # TITLE the model names in `updates` (#228), so every title it may
-            # legitimately name is a line of this block and nowhere else — a
-            # note missing here is a note the model cannot update, and it will
-            # write a duplicate instead. That is the same argument
-            # `note_render` makes for the index being uncapped, arriving from
-            # the other direction.
-            #
-            # WITH TODAY, still: the day is what separates two notes whose
-            # titles read alike, and the block's own hedge («one still listed
-            # here may already have settled») is unanswerable without it.
-            #
-            # (The duplicate copy of this comment that sat here until
-            # 2026-09-13 said the gate compares the date alone. It said it
-            # twice, and by then it was false once.)
+            # THE NOTEBOOK, WITH BODIES (design 42 S3, §8.6). It replaced the
+            # title-and-summary index: an update restates what it reads, and
+            # the model cannot restate, or even tell what a batch changes in,
+            # a body it was never shown. Every open note is still here, so
+            # every title the gate may resolve is still on the ballot (#228's
+            # argument for the uncapped index, unchanged); only a body can be
+            # left out, when the budget binds, and then it says so.
             #
             # Today comes from the NEWEST row of the batch in the room's own
-            # zone, not from a wall clock — the same basis the objective's
-            # relative-date resolution reads from, so «today» in the index and
-            # «today» in the transcript cannot disagree.
-            index = render_notes(
-                await self._notes.standing(unit=unit),
-                today=_batch_day(batch, tz=self._tz),
-            )
-            if index is not None:
-                # `.render()` — the block builds its own tag now, and this pass
-                # assembles a flat prompt rather than a `build_prefill` one.
-                # RESTAMPED: `render_notes` is shared with the tag path and
-                # builds an unstamped block — where it sits in THIS prompt is
-                # this occasion's fact.
-                parts.append(restamp(index, _ROW).render())
+            # zone, not from a wall clock, so «today» here and in the
+            # transcript cannot disagree.
+            parts += await self._notebook(key=key, unit=unit, batch=batch)
         return "\n\n".join(parts)
+
+    async def _notebook(
+        self, *, key: str, unit: str, batch: Sequence[TranscriptRow],
+    ) -> list[str]:
+        """`<today>`, then one `<open_note>` per open note of the unit, each
+        with its head body WHOLE (never clipped: a restatement of a prefix
+        drops the rest), under `NOTEBOOK_BODY_BUDGET_CHARS`.
+
+        When the budget binds, notes born in this room come first, then the
+        most recently revised; those that fit render whole, the rest render
+        with no body and `form` saying so, and an update naming one of them
+        is left pending at the gate (`not_shown`). Never clipped, never
+        dropped: a note missing from the list is one the model writes again.
+        """
+        newest = _dt.datetime.fromtimestamp(batch[-1].ts / 1000, tz=self._tz)
+        today = newest.date()
+        heads: list[tuple[Note, NoteRevision | None]] = []
+        for note in await self._notes.standing(unit=unit):
+            current = await self._notes.read(unit=unit, note_id=note.id)
+            heads.append((note, None if current is None else current[1]))
+        heads.sort(key=lambda nh: (
+            nh[0].established_in != key,
+            -(nh[1].written_at if nh[1] is not None else 0),
+        ))
+        blocks: list[str] = []
+        bodiless: set[str] = set()
+        carried: set[int] = set()
+        spent = 0
+        for note, head in heads:
+            room = self._label_for(note.established_in) or UNNAMED_ROOM
+            block = None
+            body_ids: frozenset[int] = frozenset()
+            if head is not None:
+                # A head this read could not reach falls through to the
+                # bodiless form: the title stays on the ballot, and an update
+                # naming it waits rather than restating what nobody read.
+                block = _candidate_open_note(*open_note_parts(
+                    note, head, room=room, now=newest, today=today,
+                    form=None if in_schema_form(head.body) else FORM_LEGACY,
+                ))
+                body_ids = cited_ids_in(head.body)
+                if spent + len(block.render()) > NOTEBOOK_BODY_BUDGET_CHARS:
+                    block = None
+            if block is None:
+                bodiless.add(note.id)
+                block = _candidate_open_note(*open_note_parts(
+                    note, head, room=room, now=newest, today=today,
+                    form=FORM_NOT_SHOWN, body=False,
+                ))
+            else:
+                spent += len(block.render())
+                carried |= body_ids
+            blocks.append(block.render())
+        self._bodiless[key] = frozenset(bodiless)
+        self._carried[key] = frozenset(carried)
+        if not blocks:
+            return []
+        today_order, today_key = _ROW["today"]
+        return [
+            ContextBlock(
+                name="today", order=today_order, key=today_key,
+                body=escape(f"{today:%Y-%m-%d %a}"),
+            ).render(),
+            *blocks,
+        ]
 
     # -- accept -----------------------------------------------------------
 
@@ -1170,12 +1273,36 @@ class NoteCandidateAdaptor:
         silently (`DreamAdaptor.accept`'s own contract) and dropping any item
         naming a `message_ids` entry outside this run's batch —
         because an invented id is fabricated provenance, worse than a missing entry.
+
+        **A CREATE's body is held to the schema here** (design 42 S2, §4.5):
+        a candidate naming no `updates` is refused whole when its body does
+        not parse, counted on `nora_note_candidate_body_refused_total{rule}`,
+        and otherwise carries the NORMALISED body (whitespace, bullets and
+        heading case, the only repairs, G1). Here and not at the gate: a
+        staged row the gate settles is settled for good on its key, so a body
+        refused after staging would make every corrected re-proposal of that
+        title and anchor a no-op.
+
+        What it does not hold, stated rather than discovered: an UPDATE's
+        body (S3/S4 change that arm, one variable at a time), including one
+        whose `updates` title the gate later resolves to no note, or to
+        several, and so writes as a create (`unresolved`, `ambiguous`).
         """
         seen = self._message_ids.get(key)
+        # No `inputs` for this key: nothing was shown, so nothing can be
+        # cited, and a create's body is refused rather than taken on trust.
+        shown = self._shown.get(key, Shown())
         parsed: list[object] = []
         for item in items:
             candidate = _parse_candidate(item)
             if candidate is None:
+                field = _parse_drop_field(item)
+                log.warning(
+                    "note-candidates dropped a malformed item: %s missing, "
+                    "empty or over its limit (updates=%r, scope=%s)",
+                    field, item.get("updates"), key,
+                )
+                self._inc("nora_note_candidate_parse_dropped_total", field=field)
                 continue
             if seen is not None and not set(candidate.message_ids) <= seen:
                 log.warning(
@@ -1184,8 +1311,50 @@ class NoteCandidateAdaptor:
                     sorted(set(candidate.message_ids) - seen), key,
                 )
                 continue
+            # Every body is held to the schema: a create's with at least one
+            # `## Open` line (the objective's rule for a new entry); an
+            # update's, since design 42 S4a a RESTATEMENT of the whole entry,
+            # against the rows shown plus every id the bodies it was shown
+            # already cite, which a restatement carries forward (§8.4).
+            is_create = candidate.updates is None
+            body = self._held_to_schema(
+                candidate.body,
+                shown=shown if is_create else replace(
+                    shown, carried=self._carried.get(key, frozenset()),
+                ),
+                key=key, require_open=is_create,
+            )
+            if body is None:
+                continue
+            candidate = replace(candidate, body=body)
             parsed.append(candidate)
         return tuple(parsed)
+
+    def _held_to_schema(
+        self, body: str, *, shown: Shown, key: str, require_open: bool,
+    ) -> str | None:
+        """A body, normalised, or `None` when it is refused: the rule it broke
+        is counted and logged, never the line, which is the room's own text
+        and does not belong in a log."""
+        try:
+            parsed = parse_note_body(body, shown=shown, require_open=require_open)
+            written = CODE_WRITTEN & {s.heading for s in parsed.sections}
+            if written:
+                # The validator cannot tell who wrote a section; the writer
+                # can (`nora.domain.note_body`'s docstring). This pass is a
+                # model's, and `## From memory`/`## Folded` are code's alone.
+                raise NoteBodyError(
+                    "unknown_section",
+                    f"## {sorted(written)[0]} is written by code, never by a model",
+                )
+        except NoteBodyError as refused:
+            self._inc("nora_note_candidate_body_refused_total", rule=refused.rule)
+            log.warning(
+                "note-candidates refused a candidate: its body broke %s (scope=%s)",
+                refused.rule, key,
+            )
+            return None
+        return parsed.text
 
     # -- commit -----------------------------------------------------------
 
@@ -1306,6 +1475,20 @@ class NoteCandidateAdaptor:
                     "%r (unit=%s)", candidate.updates, survivor.title, unit,
                 )
                 matches = (survivor,)
+        if len(matches) == 1 and matches[0].id in self._bodiless.get(
+            established_in, frozenset(),
+        ):
+            # NAMED A NOTE WHOSE BODY THIS PASS DID NOT SHOW (design 42
+            # §8.6): the notebook's budget bound, or its head could not be
+            # read. The model cannot say what a batch changes in a body it
+            # never saw, so the candidate is left PENDING, nothing written,
+            # and counted apart: a rate here says the budget binds.
+            log.info(
+                "note-candidates: %r names a note shown without its body; "
+                "left pending (unit=%s)", candidate.updates, unit,
+            )
+            self._inc("nora_note_candidate_gate_total", action="not_shown")
+            return 0
         if len(matches) == 1:
             return await self._update(
                 unit=unit, row=row, match=matches[0],
@@ -1442,34 +1625,55 @@ class NoteCandidateAdaptor:
             self._inc("nora_note_candidate_gate_total", action="deferred")
             return 0
         _, head = current
-        # Two refusals, ONE store-call site: `STORE_CALLS_PER_TICK` counts
-        # sites off this module's AST, so a second `set_create_candidate_status`
-        # here would have to be declared even though only one of the two can
-        # run. They keep separate metric actions because they are separate
-        # diagnoses — `refused` is the healthy one (this occasion is already
-        # written down), `full` says a note has accumulated
-        # `BODY_MAX_CHARS` without the curator retiring it.
-        composed = _appended(head.body, row.body)
-        action = (
-            "refused" if not _adds_information(row.body, head.body)
-            else "full" if len(composed) > BODY_MAX_CHARS
-            else None
-        )
-        if action is not None:
-            if action == "full":
-                log.warning(
-                    "note-candidates: note %s is at the body ceiling; the "
-                    "revision was refused rather than truncated (unit=%s)",
-                    match.id, unit,
-                )
+        # A RESTATEMENT, checked (design 42 S4a, §7). The candidate's body IS
+        # the proposed head; append is gone. What replaces the ground #228's
+        # gate stood on (an append costs a conflation, never an erasure):
+        # every earlier head stays a revision row, and no line of the head
+        # may lose its evidence. A body that drops a line's citations is
+        # left PENDING, nothing written (`dropped_citation`); one that says
+        # what the head already says, after whitespace, is a duplicate
+        # (`refused`). The paraphrased re-sighting `_adds_information` used
+        # to catch is now a new revision: revisions per note per day reads it.
+        dropped = dropped_citations(head.body, row.body)
+        if dropped:
+            log.info(
+                "note-candidates: a restatement of note %s dropped the evidence "
+                "of %d line(s); left pending (unit=%s)",
+                match.id, len(dropped), unit,
+            )
+            self._inc("nora_note_candidate_gate_total", action="dropped_citation")
+            return 0
+        # NEW EVIDENCE (2026-09-26). An update has to rest on something said
+        # since the note last changed: when every message its body cites that
+        # this adaptor was shown is older than the head, the restatement is
+        # the note's own old evidence, not news, and is refused. Ids this
+        # adaptor has not seen (a pending row retried on a later tick) cannot
+        # be dated here, so they neither pass nor fail the check.
+        cited = cited_ids_in(row.body)
+        dated = [
+            ts for shown in self._message_ts.values()
+            for mid, ts in shown.items() if mid in cited
+        ]
+        if dated and all(ts < head.written_at for ts in dated):
+            log.info(
+                "note-candidates: an update of note %s cites only messages "
+                "older than its last change; refused (unit=%s)", match.id, unit,
+            )
             await self._candidates.set_create_candidate_status(
                 unit=unit, candidate_id=row.id,
                 status=CANDIDATE_REFUSED, now_ms=now_ms,
             )
-            self._inc("nora_note_candidate_gate_total", action=action)
+            self._inc("nora_note_candidate_gate_total", action="no_new_evidence")
+            return 0
+        if " ".join(row.body.split()) == " ".join(head.body.split()):
+            await self._candidates.set_create_candidate_status(
+                unit=unit, candidate_id=row.id,
+                status=CANDIDATE_REFUSED, now_ms=now_ms,
+            )
+            self._inc("nora_note_candidate_gate_total", action="refused")
             return 0
         payload = NoteRevisionProposal(
-            note_id=match.id, body=composed,
+            note_id=match.id, body=row.body,
             parent_revision_id=match.head_revision_id,
             entity_ids=row.anchor_entity_ids,
         )

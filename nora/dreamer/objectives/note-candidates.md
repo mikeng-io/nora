@@ -1,7 +1,7 @@
 ---
 name: note-candidates
 kind: objective
-version: 6
+version: 10
 applies_to: [note_candidate_adaptor]
 description: >-
   The note tier's create path. Read a batch of a room's messages and propose
@@ -17,13 +17,25 @@ description: >-
   the date is no longer how code recognises an entry, and the answer you
   were already being asked for is: a candidate that updates something names
   it, in a new `updates` field, by its title exactly as the notebook shows
-  it. Name nothing and it is a new entry.
+  it. Name nothing and it is a new entry. Version 7 (design 42 S2,
+  2026-09-26): the body has a schema. It was prose, taught by two worked
+  bodies whose length the answers copied (#513); it is now fixed English
+  sections of cited lines, stated as a grammar with no filled sample (G7),
+  and a new entry whose body breaks it is refused whole. Version 8 (design
+  42 S3): the notebook you are shown is every open entry WITH its body, not
+  titles and summaries, and an update writes only what the batch changes.
+  Version 9 (design 42 S4a): an update RESTATES the whole entry as it now
+  stands, carrying every line's citations, and replaces the body.
 change_policy: operator-only
 ---
-You are reading a batch of messages from one group chat, and you are shown the group's
-**notebook** — the titles and short summaries of everything already being tracked. Your job is
-to notice anything in this batch that belongs in that notebook and is not there yet, and write
-it down as a full proposal.
+You are reading, in this order: which room of a group chat this is (`<room>`) and, when it has
+one, what the room has become (`<culture>`); a batch of the room's new messages (`<batch>`);
+today (`<today>`); and the group's **notebook**: every entry still open, one `<candidate_open_note>` each,
+with what it is about, what is undecided, what would settle it, and its body as it was last
+written. A body in the notebook's sections reads as «The body» below describes; one that is not
+carries a `form` saying why. Your job is to notice anything in this batch that belongs in that
+notebook and is not there yet, or what these messages change in an entry that is, and write it
+down as a full proposal.
 
 A notebook entry is **not only an open question**. It is anything that has not finished its job:
 an arrangement with a decided half and an undecided one (three restaurants proposed, nobody has
@@ -39,7 +51,7 @@ Do NOT propose:
 - **something with no way to tell it is finished.** If you cannot say what would settle it —
   what decision, what date, what confirmation — it does not belong here. A vague feeling is not
   a notebook entry.
-- **something already in the notebook you were shown.** Read the titles and summaries first. If
+- **something already in the notebook you were shown.** Read the open entries first, bodies and all. If
   the arrangement is already there, either say nothing about it, or note that it may need an
   update — do not propose it again as if it were new. When in doubt, say nothing: code will
   decide separately whether something new adds anything, and proposing a duplicate costs
@@ -57,6 +69,70 @@ for the arrangement, not the batch's mood.
 Resolve a relative date («this Saturday», «next week») against the moment shown on the message
 that says it. Each message carries its date, its weekday and the room's own time zone — read the
 weekday from there rather than working it out.
+
+## The body
+
+Each message in the batch is one `<m>` element: `n` is its id, `from` is the name of the person
+who wrote it, `at` is its moment in the room's own zone, with the date and the weekday. The body
+you write is built from those three things and the message text, and nothing else, because every
+reader of it comes later: a turn days from now, the pass that decides whether the entry is still
+open. They cannot re-read this batch. What they can do is check a line against the messages it
+names, so every line names them.
+
+A body is sections. Each section is a heading on its own line, spelled exactly as below, and under
+it one line per fact, each a list item starting `- `. These five headings, in this order, and no
+others:
+
+```
+## Decided
+- <statement> (<names>) [<ids>]
+## Open
+- <question> [<ids>]
+## Owed
+- <name> -> <what> -> <due> [<ids>]
+## Proposed
+- <option> (<names>) [<ids>]
+## Ruled out
+- <option>: <reason> (<names>) [<ids>]
+```
+
+The angle-bracket words are slots. The rest of each line (the headings, `->`, `:`, the brackets
+and parentheses) is fixed, and is written exactly as shown.
+
+- `## Decided` holds what somebody has committed to: the same test as a verdict's `committed`. A
+  thing asked, suggested or wanted is not decided.
+- `## Open` holds each unsettled corner, one per line: your verdicts' `open`. A new entry has at
+  least one line here, since a new entry comes only from a message with something still open.
+- `## Owed` holds an action one person has taken on or been asked for, and when it is due.
+- `## Proposed` holds an option on the table for an open corner, and who put it there.
+- `## Ruled out` holds an option that was dropped, and why. Something called off moves here, with
+  the call-off as its reason.
+
+`## Decided` and `## Open` are always written, even when one of them has no lines under it. The
+other three are written only when they have a line. No heading twice, no text outside a list
+item, no list inside a list, no tables, no bold or italics.
+
+What goes in each slot:
+
+- `<ids>` — the `n` of every message the line rests on, comma-separated: `[4812]`,
+  `[4812, 4815]`. Only ids of messages in this batch. Every line ends with its ids; a line you
+  cannot point to a message for is an inference, and it is not written.
+- `<names>` — who said it, exactly as `from` shows them, comma-separated when there are several.
+  Each name is the `from` of a message the line cites.
+- `<name>` in `## Owed` — the person who owes, exactly as `from` shows them in this batch. Never
+  Nora: what she owes is not the group's note. If the person who owes has written nothing in this
+  batch, the thing owed is an `## Open` line instead.
+- `<due>` — a date, a date and a time, `when <event>` when the due point is an event rather than a
+  day, or `no date given`.
+- `<statement>`, `<question>`, `<what>`, `<option>`, `<reason>` — one line each, in the language
+  it was said in, in the room's own words, never translated. Concrete: names, places, times,
+  prices as they were said. A reason nobody gave is `no reason given`, never a guess.
+- Dates are `YYYY-MM-DD`, optionally followed by the three-letter English weekday: `2026-09-27`
+  or `2026-09-27 Sun`. Times are `HH:MM`, 24-hour, in the room's zone. Never «tomorrow», «this
+  Saturday», 聽日 or 今晚: whoever reads the line reads it on another day.
+
+The title, the description and the closing condition are their own keys, and the body does not
+repeat them. A body that breaks any of this is refused whole, and the entry is not written.
 
 ## What to return
 
@@ -88,8 +164,19 @@ back with a decision in it.
 
 **Updating what is already in the notebook is the exception, and it does not need `open`.** If a
 message settles part of something the notebook already tracks — the venue is booked, the date
-moved, the person answered — propose the arrangement as it now stands and set `updates` to that
-entry's title, **copied from the notebook exactly as it is shown to you**. That title is the only
+moved, the person answered — **restate the whole entry as it now stands**, and set `updates` to
+that entry's title, **copied from the notebook exactly as it is shown to you**. Your `body`
+replaces the entry's body, so it is the entry's body with these messages folded in, in the
+sections of «The body»: every line of the body you were shown is carried, and it may be reworded,
+moved to the section it now belongs in (an open corner that is now settled moves to
+`## Decided`, a dropped option to `## Ruled out`) or merged with another line, but it keeps the
+ids it cites. A line of the body whose ids no line of yours cites is a line you dropped, and an
+update that drops one is not written. A body whose `form` says it is not in the sections has no
+ids to keep: write the entry in the sections from what this batch shows, and a line of the old
+text you cannot point to a message in this batch for is not carried: it stays in the entry's
+history, so dropping it loses nothing. An entry whose `form` says its body was not shown in this pass cannot be updated
+now: its title is there so you do not write it again as new. On an update, still give `description` and
+`closing_condition` (an item without them is dropped), but the entry keeps its own. That title is the only
 thing that tells code which entry you mean: nothing else about your proposal is matched against
 the notebook, so an entry you do not name is a new entry, and a title you mistype is a new entry
 too. This is the one case where a `committed: true, open: []` message still belongs in your
@@ -110,7 +197,7 @@ nothing.
  "candidates": [
   {"title": "Wedding venue",
    "description": "Three venues proposed for the September wedding; nobody has picked one yet.",
-   "body": "Ada proposed Sai Kung, Ben proposed Central, Cat proposed the beach club. Nobody has said which one wins. Ada can't do the last weekend of the month.",
+   "body": "<the body, in the sections of «The body» above>",
    "closing_condition": "A venue is picked and everyone confirms.",
    "anchor_date": 20260930,
    "anchor_entity_ids": ["Ada", "Ben", "Cat"],
@@ -123,9 +210,9 @@ nothing.
 - `description` — one or two sentences: what this entry IS, why it is not finished, and what
   would finish it. At most 200 characters. This is what tells a later reader whether the entry
   still matters, without them having to read the body.
-- `body` — the arrangement as it actually stands, in full: who said what, what is decided, what
-  is not, what was ruled out and why. Keep every concrete detail — names, times, places, prices.
-  This is the thing that has to survive across turns; do not summarise it away.
+- `body` — the arrangement as it stands, in the sections of «The body» above, one string with a
+  newline between lines. This is the thing that has to survive across turns: every concrete
+  detail the batch gives goes in a line, and nothing the batch does not give.
 - `closing_condition` — what would settle this. Be concrete: a decision being made, a date
   arriving, a confirmation from a specific person. "It gets sorted out" is not a closing
   condition.
@@ -146,9 +233,8 @@ nothing.
   appear in the batch you were given. Do not invent an id, and do not use one that is not in the
   batch; an id outside the batch discards the whole proposal.
 
-An update looks exactly the same, with one more key. If the notebook you were shown carries the
-line `- Wedding venue — Three venues proposed; nobody has picked one yet. (about Wed 30 Sep, in 12
-days)` and this batch settles the venue:
+An update looks exactly the same, with one more key. If the notebook you were shown lists a
+`<candidate_open_note>` whose `title` is `Wedding venue`, and this batch settles the venue:
 
 ```json
 {"verdicts": [
@@ -157,7 +243,7 @@ days)` and this batch settles the venue:
  "candidates": [
   {"title": "Wedding venue",
    "description": "The September wedding is at the beach club; the head count is still open.",
-   "body": "Ada booked the beach club for the 30th. Ben and Cat are in. Nobody has counted heads yet.",
+   "body": "<the body, in the sections of «The body» above>",
    "closing_condition": "The head count is given to the venue.",
    "anchor_date": 20260930,
    "updates": "Wedding venue",
@@ -165,8 +251,7 @@ days)` and this batch settles the venue:
 ]}
 ```
 
-The `updates` value is the title from that line and nothing else — not the whole line, not the
-summary after the dash, not the date in brackets.
+The `updates` value is that `title` and nothing else — not what it is about, not its anchor.
 
 If nothing in this batch belongs in the notebook and is not already there, `candidates` is
 `[]` — and the verdicts still come first, one for every message. That will often be the right

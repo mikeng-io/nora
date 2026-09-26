@@ -1533,13 +1533,16 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "nora_note_candidate_gate_total",
         "The note-candidates adaptor's deterministic gate, by outcome: "
         "created (the model named no standing note, so a brand new one was "
-        "written), updated (APPENDED as a revision to the standing note the "
-        "model NAMED in its updates field — resolved by title since "
-        "2026-09-13, the anchor date having been the key from 2026-09-08 "
-        "until it merged two unrelated occasions twice out of two firings, "
-        "and appending rather than replacing since the same day, issue "
-        "#228), unresolved (the model named a title NO standing note answers "
-        "to — mistyped or invented — so a new note was written; its own "
+        "written), updated (a revision of the standing note the model NAMED "
+        "in its updates field — resolved by title since 2026-09-13, the "
+        "anchor date having been the key from 2026-09-08 until it merged two "
+        "unrelated occasions twice out of two firings; appended from that "
+        "day, issue #228, and a restatement of the whole body since design "
+        "42 S4a, 2026-09-26), dropped_citation (a restatement that left some "
+        "line of the head with none of its citations carried — left PENDING, "
+        "nothing written, design 42 §7), unresolved (the model named a "
+        "title NO standing note answers to — mistyped or invented — so a "
+        "new note was written; its own "
         "action rather than part of created because this is the rate the "
         "whole design rests on being low, and it was invisible inside "
         "created, with no log either, until 2026-09-13), ambiguous (the "
@@ -1551,12 +1554,17 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "read «nothing MERGES the duplicate afterwards» before that, and "
         "issue #236 carries the bound), refused (a "
         "duplicate with nothing new, or a malformed proposal the domain type "
-        "itself rejected), full (the appended body would pass the note body "
-        "ceiling, so the revision was refused rather than truncated — a rate "
-        "here reads as the curator not retiring, never as a model fault), "
-        "or deferred (a transient failure — a raced CAS, a store exception, "
+        "itself rejected; until design 42 S4a an appended body past the "
+        "ceiling was counted as full, which a restatement can no longer "
+        "reach), deferred (a transient failure — a raced CAS, a store exception, "
         "or a note that moved or retired between the read and the write — "
-        "left PENDING for the next tick to retry, never a decision). A "
+        "left PENDING for the next tick to retry, never a decision), or "
+        "not_shown (the model named a note the pass rendered WITHOUT its "
+        "body, because the notebook's budget bound or its head could not be "
+        "read — left PENDING, nothing written, design 42 §8.6), or "
+        "no_new_evidence (an update whose body cites only messages older "
+        "than the note's last change: its own old evidence, not news; "
+        "refused, 2026-09-26). A "
         "candidate handed back a row an EARLIER tick already settled reaches "
         "no action here at all; nora_note_candidate_staging_total is where "
         "that is counted.",
@@ -1600,6 +1608,41 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "key no longer separates two arrangements on one day; reobserved is "
         "the ordinary steady-state value here.",
         ("outcome",),
+    ),
+    # Design 42 S2 (§4.5): a note-candidates CREATE whose body does not hold
+    # to the schema is refused in `accept()`, before anything is staged, so
+    # it reaches neither series above. Without this one a refusal would be
+    # silence: the proposal simply never arrives. Its own series rather than
+    # a gate action because nothing was staged and nothing was decided; the
+    # rule vocabulary is `nora.domain.note_body.RULES`, enforced at runtime by
+    # the adaptor's `_VOCABULARIES` and named in full below.
+    _CounterSpec(
+        "nora_note_candidate_body_refused_total",
+        "A note-candidates create refused before staging because its body "
+        "broke the note-body schema (design 42 §4.5), by the rule it broke: "
+        "unknown_section (a heading that is not one of the schema's, or one "
+        "only code writes), section_order (a heading repeated or out of "
+        "order), missing_section (## Decided or ## Open absent, both empty, "
+        "or ## Open empty on a new note), not_a_line (text outside a list "
+        "item, a nested list, a line not in its section's grammar), uncited "
+        "(a line with no [ids]), unknown_id (an id the pass did not show), "
+        "cites_nora (an id of one of Nora's own messages), misattributed (a "
+        "name that wrote none of the ids its line cites), unknown_owner (an "
+        "## Owed owner the pass did not show as a sender, or Nora), bad_date "
+        "(a malformed or impossible date, or the wrong weekday). One sample "
+        "per refused candidate; the candidate is not written. An update's body "
+        "is checked here too since design 42 S4a, as a restatement.",
+        ("rule",),
+    ),
+    _CounterSpec(
+        "nora_note_candidate_parse_dropped_total",
+        "A note-candidates envelope item dropped before the gate because a "
+        "field could not be read, by the first such field: title, "
+        "description, body, closing_condition (missing, empty or over its "
+        "limit), anchor_date (missing, not an integer date), "
+        "anchor_entity_ids (malformed), other. A dropped item is never "
+        "staged, so without this it reads as an empty answer.",
+        ("field",),
     ),
     # A DELIBERATE second series over calls already counted, on
     # `_record_created`'s precedent (`nora.agent.tools`) rather than against

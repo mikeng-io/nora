@@ -848,6 +848,19 @@ def test_body_sections_counts_only_a_body_that_holds_to_the_schema():
     ) == ["body_sections: no written body holds to the schema"]
 
 
+def test_updates_named_accepts_any_one_of_a_listed_group():
+    """p6 grades against a group of equally correct notes: revising exactly
+    one passes, a note outside the group is a wrong note, two is too many."""
+    group = ["A dinner", "A dinner, place open"]
+    assert backbone._updates_named(group, ["A dinner, place open"]) == []
+    assert backbone._updates_named(group, ["Lunch"])[0].startswith(
+        "updates_named: wrong note")
+    assert backbone._updates_named(group, [])[0].startswith(
+        "updates_named: no update")
+    assert backbone._updates_named(group, group)[0].startswith(
+        "updates_named: also revised")
+
+
 def test_updates_named_separates_a_wrong_note_from_no_update():
     """Design 42 §10.1: #513 could only report in prose that every update
     failure revised a DIFFERENT, similarly titled note."""
@@ -874,7 +887,7 @@ async def test_drive_carries_the_written_body_lengths(monkeypatch, one_path):
         return Outcome(
             admitted=None, changed=(("create", "Dinner"),), written=1,
             bodies=(("created", "Ada: Friday."), ("refused", "x" * 50)),
-            speakers=((7, "Ada"),),
+            speakers=((7, "Ada"),), body_refused=("uncited",),
         )
 
     async def fake_sandbox(_subject: object, **kwargs: Any) -> Sandboxed:
@@ -890,6 +903,8 @@ async def test_drive_carries_the_written_body_lengths(monkeypatch, one_path):
     data = EvaluationData(input="x", actual_environment_state=result["environment_state"])
     assert tuple(state_of(data, backbone.NORA_BODY_CHARS)) == (len("Ada: Friday."),)
     assert tuple(state_of(data, backbone.NORA_BODY_SCHEMA)) == ("not_a_line",)
+    # A body refused before staging is never written, so only this carries it.
+    assert tuple(state_of(data, backbone.NORA_BODY_REFUSED)) == ("uncited",)
     assert tuple(state_of(data, NORA_CHECKS_FAILED)) == (
         "body_mentions: none of ['saturday']",
     )
@@ -1451,3 +1466,37 @@ def test_remind_match_two_notes_sharing_a_title_resolves_by_id_not_title():
         backbone._remind_match(
             case, outcome, {"拎抽包畀 Yat Ho": ("note-1", "note-2")},
         )
+
+
+def test_date_split_passes_either_correct_answer_and_fails_the_misdating():
+    """The wedding-room defect (design/standing-compact/40 §7): a batch
+    holding a booking on one day and a plan on another. A create dated the
+    plan's day passes, and so does an update of the note already dated it;
+    nothing on that day fails; and a note dated the OTHER day carrying the
+    plan's rows fails, whether the rows are cited in its body or staged."""
+    from types import SimpleNamespace
+
+    spec = {"anchor": 20260927, "not_anchor": 20261017, "rows": [7026, 7028]}
+    rows = {7026: 26, 7028: 28, 7010: 10}
+
+    def out(dated=(), staged=()):
+        return SimpleNamespace(changed_dated=tuple(dated), staged=tuple(staged))
+
+    assert backbone._date_split(spec, out([("create", 20260927, (26, 28))]), rows) == []
+    assert backbone._date_split(spec, out([("update", 20260927, (26,))]), rows) == []
+    assert backbone._date_split(spec, out(), rows) == [
+        "date_split: nothing dated 20260927 was created or revised",
+    ]
+    merged = out([("create", 20261017, (10, 26))])
+    assert backbone._date_split(spec, merged, rows) == [
+        "date_split: nothing dated 20260927 was created or revised",
+        "date_split: a note dated 20261017 carries the 20260927 plan's rows [26]",
+    ]
+    staged_only = out(
+        [("create", 20260927, ()), ("create", 20261017, ())],
+        [("t", 20261017, (10, 28), "created")],
+    )
+    assert backbone._date_split(spec, staged_only, rows) == [
+        "date_split: a note dated 20261017 carries the 20260927 plan's rows [28]",
+    ]
+    assert backbone._date_split(None, out(), rows) == []

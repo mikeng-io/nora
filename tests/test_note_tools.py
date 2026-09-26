@@ -13,11 +13,13 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from nora.agent.guards import ReplyGuard
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
 from nora.agent.tools import NATIVE_TOOLS
-from nora.domain.models import PersonRef
+from nora.domain.models import DeliveryStatus, PersonRef, TranscriptRow
 from nora.obs.metrics import Metrics
 from nora.testing import FakeMemoryStore, FakeRosterSource
 from nora.testing.note_store import InMemoryNoteStore
@@ -72,8 +74,31 @@ def _tools(
         persons=_FakePersons(MILES), honcho=FakeMemoryStore(), deliverer=SinkSender(),
         metrics=metrics or Metrics(),
         room=_room(tagger=tagger, conversation_id=conversation_id),
+        transcript=_WINDOW,
     )
     return {spec.name: spec.call for spec in specs}
+
+
+#: The transcript the tools' turn rendered: `#1` is row 501, Miles's. Design 42
+#: S4b: a body's `[#n]` is mapped to the row id at that position.
+_WINDOW = (
+    TranscriptRow(
+        id=501, sender_id="+85200000001", sender_name="miles", ts=NOW - 60_000,
+        body="dinner on the 9th?", is_nora=False,
+        delivery_status=DeliveryStatus.SENT, raw_json=None,
+        person_name="Miles Novak", person_id="miles",
+    ),
+)
+
+
+def _b(text: str) -> str:
+    """A tag-path body in the note's form, citing `#1`."""
+    return f"## Decided\n## Open\n- {text} [#1]"
+
+
+def _stored(text: str) -> str:
+    """`_b(text)` as stored: the position mapped to its row id."""
+    return f"## Decided\n## Open\n- {text} [501]"
 
 
 async def _seed(
@@ -116,9 +141,9 @@ async def test_every_note_tool_answers_unavailable_when_no_store_is_wired():
         ("note_search", {"query": "hotel"}),
         ("note_create", {
             "title": "T", "description": "d", "uncertainty": "u",
-            "closing_condition": "c", "body": "b", "anchor_date": 20261011,
+            "closing_condition": "c", "body": _b("b"), "anchor_date": 20261011,
         }),
-        ("note_update", {"title": "Dinner", "body": "b"}),
+        ("note_update", {"title": "Dinner", "body": _b("b")}),
     )
     for name, kwargs in calls:
         assert (await tools[name](**kwargs))["status"] == "unavailable", name
@@ -194,7 +219,7 @@ async def test_note_create_refuses_an_open_title():
 
     out = await tools["note_create"](
         title="  saturday DINNER ", description="d", uncertainty="u",
-        closing_condition="c", body="b", anchor_date=20261011,
+        closing_condition="c", body=_b("b"), anchor_date=20261011,
     )
 
     assert out["status"] == "refused"
@@ -327,7 +352,7 @@ async def test_note_create_writes_the_note_and_its_first_revision():
         title="Grant's wedding", description="Nobody knows the venue",
         uncertainty="which venue, and who is going",
         closing_condition="Grant says where it is",
-        body="Ada thinks it might be in Sai Kung.",
+        body=_b("Ada thinks it might be in Sai Kung."),
         anchor_date=20261011, anchor_entities=["grant"],
     )
 
@@ -338,7 +363,7 @@ async def test_note_create_writes_the_note_and_its_first_revision():
     assert note.anchor_entity_ids == ("grant",)
     assert note.established_in == GROUP
     assert store.revisions[note.head_revision_id].body == (
-        "Ada thinks it might be in Sai Kung."
+        _stored("Ada thinks it might be in Sai Kung.")
     )
     assert store.revisions[note.head_revision_id].established_by == "tag:miles"
 
@@ -353,14 +378,14 @@ async def test_note_create_surfaces_the_domain_refusal_instead_of_swallowing_it(
 
     no_anchor = await tools["note_create"](
         title="We should hang out", description="d", uncertainty="u",
-        closing_condition="c", body="b",
+        closing_condition="c", body=_b("b"),
     )
     assert no_anchor["status"] == "refused"
     assert "anchor" in no_anchor["note"]
 
     long_title = await tools["note_create"](
         title="x" * 61, description="d", uncertainty="u",
-        closing_condition="c", body="b", anchor_date=20261011,
+        closing_condition="c", body=_b("b"), anchor_date=20261011,
     )
     assert long_title["status"] == "refused"
     assert "60 characters" in long_title["note"]
@@ -375,7 +400,7 @@ async def test_note_create_refuses_when_it_does_not_know_who_is_asking():
     tools = _tools(notes=InMemoryNoteStore(), tagger=None)
     out = await tools["note_create"](
         title="T", description="d", uncertainty="u", closing_condition="c",
-        body="b", anchor_date=20261011,
+        body=_b("b"), anchor_date=20261011,
     )
     assert out["status"] == "refused"
 
@@ -389,13 +414,13 @@ async def test_note_update_appends_a_revision_and_moves_the_head():
     await tools["note_read"](title="Dinner, 9 Sept")
 
     out = await tools["note_update"](
-        title="Dinner, 9 Sept", body="Nobody has booked. Ada says 8pm.",
+        title="Dinner, 9 Sept", body=_b("Nobody has booked. Ada says 8pm."),
     )
 
     assert out["status"] == "ok"
     head = store.notes[note.id].head_revision_id
     assert head != note.head_revision_id
-    assert store.revisions[head].body == "Nobody has booked. Ada says 8pm."
+    assert store.revisions[head].body == _stored("Nobody has booked. Ada says 8pm.")
     assert store.revisions[head].parent_revision_id == note.head_revision_id
     # Append-only: the revision she read is still there (§6.1).
     assert store.revisions[note.head_revision_id].body == "Nobody has booked."
@@ -409,7 +434,7 @@ async def test_note_update_refuses_when_this_turn_never_read_that_note():
     await _seed(store, title="Dinner, 9 Sept", body="Nobody has booked.")
     tools = _tools(notes=store)
 
-    out = await tools["note_update"](title="Dinner, 9 Sept", body="Ada says 8pm.")
+    out = await tools["note_update"](title="Dinner, 9 Sept", body=_b("Ada says 8pm."))
 
     assert out["status"] == "refused"
     assert "note_read" in out["note"]
@@ -432,7 +457,7 @@ async def test_a_head_that_moved_under_her_is_unavailable_never_applied_on_top()
         now_ms=NOW + 1,
     )
 
-    out = await tools["note_update"](title="Dinner, 9 Sept", body="Nobody has booked.")
+    out = await tools["note_update"](title="Dinner, 9 Sept", body=_b("Nobody has booked."))
 
     assert out["status"] == "unavailable"
     assert "read it again" in out["note"]
@@ -447,15 +472,15 @@ async def test_a_second_update_in_one_turn_writes_against_what_she_just_wrote():
     note = await _seed(store, title="Dinner, 9 Sept", body="Nobody has booked.")
     tools = _tools(notes=store)
     await tools["note_read"](title="Dinner, 9 Sept")
-    await tools["note_update"](title="Dinner, 9 Sept", body="Ada says 8pm.")
+    await tools["note_update"](title="Dinner, 9 Sept", body=_b("Ada says 8pm."))
 
     out = await tools["note_update"](
-        title="Dinner, 9 Sept", body="Ada says 8pm, Sai Kung.",
+        title="Dinner, 9 Sept", body=_b("Ada says 8pm, Sai Kung."),
     )
 
     assert out["status"] == "ok"
     assert store.revisions[store.notes[note.id].head_revision_id].body == (
-        "Ada says 8pm, Sai Kung."
+        _stored("Ada says 8pm, Sai Kung.")
     )
 
 
@@ -466,7 +491,7 @@ async def test_a_read_that_found_nothing_licenses_no_revision_at_the_tool_layer(
     read = await tools["note_read"](title="Grant's wedding")
     assert read["status"] == "nothing_found"
 
-    out = await tools["note_update"](title="Dinner, 9 Sept", body="Ada says 8pm.")
+    out = await tools["note_update"](title="Dinner, 9 Sept", body=_b("Ada says 8pm."))
     assert out["status"] == "refused"
 
 
@@ -493,7 +518,7 @@ async def test_a_stale_head_is_counted_as_a_refusal_with_its_own_reason():
         now_ms=NOW + 1,
     )
 
-    out = await tools["note_update"](title="Dinner, 9 Sept", body="Nobody has booked.")
+    out = await tools["note_update"](title="Dinner, 9 Sept", body=_b("Nobody has booked."))
 
     assert out["status"] == "unavailable"
     assert metrics.get("nora_note_update_refused_total", reason="stale_head") == 1
@@ -514,7 +539,7 @@ async def test_a_title_that_resolved_to_another_note_is_counted_as_title_moved()
     tools = _tools(notes=store, metrics=metrics)
     assert (await tools["note_read"](title="Grant's wedding"))["status"] == "nothing_found"
 
-    out = await tools["note_update"](title="Dinner, 9 Sept", body="Ada says 8pm.")
+    out = await tools["note_update"](title="Dinner, 9 Sept", body=_b("Ada says 8pm."))
 
     assert out["status"] == "refused"
     assert metrics.get("nora_note_update_refused_total", reason="title_moved") == 1
@@ -528,7 +553,7 @@ async def test_an_update_that_lands_counts_no_refusal():
     tools = _tools(notes=store, metrics=metrics)
     await tools["note_read"](title="Dinner, 9 Sept")
 
-    out = await tools["note_update"](title="Dinner, 9 Sept", body="Ada says 8pm.")
+    out = await tools["note_update"](title="Dinner, 9 Sept", body=_b("Ada says 8pm."))
 
     assert out["status"] == "ok"
     assert metrics.get("nora_note_update_refused_total") == 0
@@ -762,7 +787,7 @@ async def test_every_non_ok_note_status_carries_a_note():
     )
     create = {
         "title": "T", "description": "d", "uncertainty": "u",
-        "closing_condition": "c", "body": "b", "anchor_date": 20261011,
+        "closing_condition": "c", "body": _b("b"), "anchor_date": 20261011,
     }
     cases = {
         "unavailable/read_no_store": (_tools(notes=None)["note_read"], {"title": "x"}),
@@ -778,15 +803,15 @@ async def test_every_non_ok_note_status_carries_a_note():
         ),
         "refused/update_no_tagger": (
             _tools(notes=store, tagger=None)["note_update"],
-            {"title": "Dinner, 9 Sept", "body": "b"},
+            {"title": "Dinner, 9 Sept", "body": _b("b")},
         ),
         "refused/update_not_read": (
-            tools["note_update"], {"title": "Dinner, 9 Sept", "body": "b"},
+            tools["note_update"], {"title": "Dinner, 9 Sept", "body": _b("b")},
         ),
-        "refused/update_ambiguous": (tools["note_update"], {"title": "Wedding", "body": "b"}),
-        "nothing_found/update": (tools["note_update"], {"title": "Nope", "body": "b"}),
+        "refused/update_ambiguous": (tools["note_update"], {"title": "Wedding", "body": _b("b")}),
+        "nothing_found/update": (tools["note_update"], {"title": "Nope", "body": _b("b")}),
         "unavailable/update_stale": (
-            stale_tools["note_update"], {"title": "Dinner, 9 Sept", "body": "b"},
+            stale_tools["note_update"], {"title": "Dinner, 9 Sept", "body": _b("b")},
         ),
     }
     exempt = {"refused/create_domain"}
@@ -806,3 +831,91 @@ async def test_a_missing_title_note_says_to_check_the_index_not_to_guess_variant
     out = await _tools(notes=store)["note_read"](title="Grant's wedding")
     assert out["status"] == "nothing_found"
     assert "<notes>" in out["note"] and "variations" in out["note"]
+
+
+# ── the body's form (design 42 S4b) ─────────────────────────────────────────
+
+
+async def test_note_create_maps_positions_to_row_ids_and_stores_the_normalised_body():
+    """G4: she cites what she sees (`#1`), the store keeps ids (501)."""
+    store = InMemoryNoteStore()
+    tools = _tools(notes=store)
+
+    out = await tools["note_create"](
+        title="Dinner", description="where is open", uncertainty="where",
+        closing_condition="a place is booked",
+        body=(
+            "## decided\n* dinner is on 2026-10-09 Fri (Miles Novak) [#1]\n\n## Open\n"
+            "- where [#1]\n## Owed\n- Miles Novak -> book a table -> no date given [#1]"
+        ),
+        anchor_date=20261009,
+    )
+
+    assert out["status"] == "ok"
+    [note] = await store.standing(unit=UNIT)
+    assert store.revisions[note.head_revision_id].body == (
+        "## Decided\n- dinner is on 2026-10-09 Fri (Miles Novak) [501]\n## Open\n- where [501]"
+        "\n## Owed\n- Miles Novak -> book a table -> no date given [501]"
+    )
+
+
+@pytest.mark.parametrize(("rule", "body"), [
+    ("not_a_line", "Miles wants dinner on the 9th."),
+    ("unknown_id", "## Decided\n## Open\n- where [#2]"),
+    ("unknown_id", "## Decided\n## Open\n- where [501]"),
+    ("misattributed", "## Decided\n- dinner (Ada) [#1]\n## Open\n- where [#1]"),
+    ("unknown_owner",
+     "## Decided\n## Open\n- where [#1]\n## Owed\n- Nora -> book -> no date given [#1]"),
+    ("bad_date", "## Decided\n- on 2026-10-09 Sat (Miles Novak) [#1]\n## Open\n- where [#1]"),
+], ids=["prose", "position_out_of_range", "bare_id_not_carried", "misattributed",
+        "nora_owes", "bad_date"])
+async def test_note_create_refuses_a_body_out_of_form_and_names_the_rule(rule, body):
+    """Refused, not repaired (G1), with the rule in the note so she can fix
+    the call (27 §5.3); nothing is written."""
+    store = InMemoryNoteStore()
+    tools = _tools(notes=store)
+
+    out = await tools["note_create"](
+        title="Dinner", description="where is open", uncertainty="where",
+        closing_condition="a place is booked", body=body, anchor_date=20261009,
+    )
+
+    assert out["status"] == "refused"
+    assert rule in out["note"]
+    assert await store.standing(unit=UNIT) == ()
+
+
+async def test_note_update_may_keep_a_bare_id_the_head_already_cites():
+    """A restatement carries the head's own ids forward as bare ids; any
+    other bare id is one she could only have invented."""
+    store = InMemoryNoteStore()
+    note = await _seed(store, title="Dinner, 9 Sept", body="## Decided\n## Open\n- where [777]")
+    tools = _tools(notes=store)
+    await tools["note_read"](title="Dinner, 9 Sept")
+
+    kept = await tools["note_update"](
+        title="Dinner, 9 Sept",
+        body="## Decided\n- Miles booked it (Miles Novak) [#1, 777]\n## Open",
+    )
+    assert kept["status"] == "ok"
+    head = store.notes[note.id].head_revision_id
+    assert store.revisions[head].body == (
+        "## Decided\n- Miles booked it (Miles Novak) [501, 777]\n## Open"
+    )
+
+    invented = await tools["note_update"](
+        title="Dinner, 9 Sept", body="## Decided\n- booked (Miles Novak) [#1, 778]\n## Open",
+    )
+    assert invented["status"] == "refused" and "unknown_id" in invented["note"]
+    assert store.notes[note.id].head_revision_id == head
+
+
+def test_the_body_argument_names_the_grammar():
+    """§7: she learns the form from the `body` argument, in two sentences,
+    and from the refusal; nothing else teaches it on the tag path."""
+    tools = _tools(notes=InMemoryNoteStore())
+    create = tools["note_create"].__doc__ or ""
+    update = tools["note_update"].__doc__ or ""
+    create_body = create[create.index("    body:"):]
+    assert "## Decided and ## Open" in create_body and "[#n]" in create_body
+    assert "[#n]" in update[update.index("    body:"):]

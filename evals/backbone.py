@@ -227,6 +227,11 @@ NORA_BODY_CHARS = "nora.body_chars"
 #: schema in the objective, and a verdict here would fail every create case
 #: before then. A case opts into it as a check with `body_schema: true`.
 NORA_BODY_SCHEMA = "nora.body_schema"
+#: The rule of each create the pass REFUSED for its body before staging
+#: (design 42 S2), printed as `body_refused=[...]`. A refused body is never
+#: written, so `body_schema` cannot see it: conformance is `ok` over written
+#: plus refused, and this is the second half.
+NORA_BODY_REFUSED = "nora.body_refused"
 #: The standing corpus (`design/standing-compact/20-verification.md` §1).
 #: `NORA_POSITION` is the position a fold wrote (`Outcome.position`), what
 #: `MeetsGrader` needs for `expect: fold`. `NORA_SHOWN` is what the subject's
@@ -1099,13 +1104,31 @@ def _check_the_body(
     return failed
 
 
-def _updates_named(named: str | None, updates: Sequence[str]) -> list[str]:
+def _updates_named(
+    named: str | Sequence[str] | None, updates: Sequence[str],
+) -> list[str]:
     """`updates_named` (design 42 §10.1): the revision landed on the note the
     case names and on no other. Three failures, each its own words, so a
     tally separates «wrong note» from «no update», which #513 could report
     only in prose: a similarly titled sibling revised INSTEAD, nothing
-    revised, or the named note revised ALONG WITH another."""
+    revised, or the named note revised ALONG WITH another.
+
+    `named` may be a LIST of equally correct notes: a unit holding several
+    open restatements of one arrangement (p6: ten, merged later) has no one
+    right target, and grading one of them made the case a coin the model
+    called the same way every draw. Revising exactly one of the list passes."""
     if not named:
+        return []
+    if not isinstance(named, str):
+        accepted = {str(t) for t in named}
+        hit = [t for t in updates if t in accepted]
+        rest = [t for t in updates if t not in accepted]
+        if not hit and rest:
+            return [f"updates_named: wrong note: revised {rest}, not one of {sorted(accepted)}"]
+        if not hit:
+            return [f"updates_named: no update: none of {sorted(accepted)} was revised"]
+        if rest or len(hit) > 1:
+            return [f"updates_named: also revised {rest or hit[1:]} beside {hit[0]!r}"]
         return []
     others = [t for t in updates if t != named]
     hits = len(updates) - len(others)
@@ -1116,6 +1139,45 @@ def _updates_named(named: str | None, updates: Sequence[str]) -> list[str]:
     if others or hits > 1:
         return [f"updates_named: also revised {others or [named]} beside {named!r}"]
     return []
+
+
+def _date_split(spec: Any, outcome: Any, rows: Mapping[Any, int]) -> list[str]:
+    """`date_split` — a batch that mixes two dates (design 42 S2-S4's
+    production defect: a booking on one day and a dinner on another, merged
+    into one note under the wrong date). A mapping of:
+
+    - `anchor`: the day the plan is on. PASS needs a note dated it that this
+      pass CREATED, or one it REVISED (the unit may already hold it; either
+      is a correct answer, which `expect: create` could not say and
+      `either` could not grade);
+    - `not_anchor`: the other day in the batch;
+    - `rows`: the row LABELS (real ids) that state the plan. FAIL on any note
+      dated `not_anchor` that this pass created or revised carrying one of
+      them, cited in its head body or in a staged candidate's
+      `message_ids`, which is the misdating itself.
+    """
+    if not spec:
+        return []
+    want, wrong = int(spec["anchor"]), int(spec["not_anchor"])
+    plan = {rows[label] for label in spec.get("rows") or () if label in rows}
+    if len(plan) != len(spec.get("rows") or ()):
+        return [f"date_split names a row the snapshot did not seed: {spec.get('rows')}"]
+    dated = list(getattr(outcome, "changed_dated", ()))
+    failed: list[str] = []
+    if not any(anchor == want for _kind, anchor, _ids in dated):
+        failed.append(f"date_split: nothing dated {want} was created or revised")
+    carried = {
+        i for _kind, anchor, ids in dated if anchor == wrong for i in ids
+    } | {
+        i for _t, anchor, message_ids, status in outcome.staged
+        if anchor == wrong and status == "created" for i in message_ids
+    }
+    if plan & carried:
+        failed.append(
+            f"date_split: a note dated {wrong} carries the {want} plan's rows "
+            f"{sorted(plan & carried)}"
+        )
+    return failed
 
 
 def _check_the_corpus_assertions(
@@ -1180,6 +1242,7 @@ def _check_the_corpus_assertions(
             elif not negate and absent:
                 failed.append(f"{key}: the reply does not contain {absent}")
     failed += _check_the_body(meta, outcome, rows, require_open=case.expect == "create")
+    failed += _date_split(meta.get("date_split"), outcome, rows)
 
     return dataclasses.replace(outcome, checks_failed=tuple(failed))
 
@@ -1672,6 +1735,10 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
                             )
                         ),
                     ),
+                    EnvironmentState(
+                        name=NORA_BODY_REFUSED,
+                        state=tuple(getattr(outcome, "body_refused", ())),
+                    ),
                     EnvironmentState(name=NORA_TOOLS, state=tools_called),
                     EnvironmentState(name=NORA_TOOL_RESULTS, state=tool_results),
                     EnvironmentState(name=NORA_TOOL_INPUTS, state=tool_inputs),
@@ -2091,6 +2158,9 @@ class MeetsGrader(Evaluator):
         schema = state_of(data, NORA_BODY_SCHEMA)
         if schema:
             why += f" — body_schema={list(schema)}"
+        refused = state_of(data, NORA_BODY_REFUSED)
+        if refused:
+            why += f" — body_refused={list(refused)}"
         failed = outcome.checks_failed
         if failed:
             why += f" — checks: {list(failed)}"

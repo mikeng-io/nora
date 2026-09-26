@@ -1,0 +1,93 @@
+[
+  {
+    "name": "an update naming a note shown without its body is left pending (not_shown)",
+    "file": "nora/language/note_candidates.py",
+    "old": "        if len(matches) == 1 and matches[0].id in self._bodiless.get(",
+    "new": "        if False and matches[0].id in self._bodiless.get(",
+    "target": "tests/unit/test_note_candidates.py::test_an_update_naming_a_note_shown_without_its_body_is_left_pending"
+  },
+  {
+    "name": "the notebook records which notes it showed without a body",
+    "file": "nora/language/note_candidates.py",
+    "old": "        self._bodiless[key] = frozenset(bodiless)\n",
+    "new": "        self._bodiless[key] = frozenset()\n",
+    "target": "tests/unit/test_note_candidates.py::test_an_update_naming_a_note_shown_without_its_body_is_left_pending"
+  },
+  {
+    "name": "the budget binds",
+    "file": "nora/language/note_candidates.py",
+    "old": "                if spent + len(block.render()) > NOTEBOOK_BODY_BUDGET_CHARS:\n",
+    "new": "                if False:\n",
+    "target": "tests/unit/test_note_candidates.py::test_when_the_budget_binds_this_room_then_the_newest_keep_their_bodies"
+  },
+  {
+    "name": "notes born in this room keep their bodies first",
+    "file": "nora/language/note_candidates.py",
+    "old": "            nh[0].established_in != key,\n",
+    "new": "            nh[0].established_in == key,\n",
+    "target": "tests/unit/test_note_candidates.py::test_when_the_budget_binds_this_room_then_the_newest_keep_their_bodies"
+  },
+  {
+    "name": "then the most recently revised",
+    "file": "nora/language/note_candidates.py",
+    "old": "            -(nh[1].written_at if nh[1] is not None else 0),\n",
+    "new": "            (nh[1].written_at if nh[1] is not None else 0),\n",
+    "target": "tests/unit/test_note_candidates.py::test_when_the_budget_binds_this_room_then_the_newest_keep_their_bodies"
+  },
+  {
+    "name": "a legacy body is labelled with its form",
+    "file": "nora/language/note_candidates.py",
+    "old": "                    form=None if in_schema_form(head.body) else FORM_LEGACY,\n",
+    "new": "                    form=None,\n",
+    "target": "tests/unit/test_note_candidates.py::test_a_legacy_body_is_labelled_as_not_in_the_sections"
+  },
+  {
+    "name": "in_schema_form reads form rules only",
+    "file": "nora/domain/note_body.py",
+    "old": "        return broke.rule not in FORM_RULES\n",
+    "new": "        return True\n",
+    "target": "tests/unit/test_note_body.py::test_in_schema_form_reads_form_not_evidence"
+  },
+  {
+    "name": "note-candidates renders a body whole, never an excerpt",
+    "file": "nora/language/note_render.py",
+    "old": "    elif excerpt is not None and len(text) > excerpt:\n",
+    "new": "    elif len(text) > (excerpt := excerpt or 600):\n",
+    "target": "tests/unit/test_note_candidates.py::test_the_notebook_renders_every_open_note_with_its_body_whole"
+  },
+  {
+    "name": "merge's open_note stays byte-identical",
+    "file": "nora/language/note_render.py",
+    "old": "            f\"\\nbody (its first {excerpt} characters; it runs longer):\\n\"\n",
+    "new": "            f\"\\nbody (first {excerpt} characters):\\n\"\n",
+    "target": "tests/unit/test_note_merge.py::test_merge_renders_an_open_note_byte_identical_to_master"
+  },
+  {
+    "name": "the objective's update rule (S3's «only what changes», re-pointed to S4a's restatement)",
+    "file": "nora/dreamer/objectives/note-candidates.md",
+    "old": "**restate the whole entry as it now stands**",
+    "new": "the arrangement as it now stands",
+    "target": "tests/unit/test_note_candidates.py::test_the_objective_says_what_the_pass_reads_and_that_an_update_restates"
+  },
+  {
+    "name": "the notebook's head reads are declared",
+    "file": "nora/language/note_candidates.py",
+    "old": "STORE_CALLS_PER_TICK = 14\n",
+    "new": "STORE_CALLS_PER_TICK = 13\n",
+    "target": "tests/architecture/test_dream_store_calls_are_declared.py"
+  },
+  {
+    "name": "note-candidates renders its OWN type, not merge's",
+    "file": "nora/language/note_candidates.py",
+    "old": "        name=\"candidate_open_note\", order=order, key=key, attrs=attrs, body=body,\n",
+    "new": "        name=\"open_note\", order=order, key=key, attrs=attrs, body=body,\n",
+    "target": "tests/unit/test_note_candidates.py::test_the_notebook_renders_every_open_note_with_its_body_whole"
+  },
+  {
+    "name": "note-merge keeps its own type",
+    "file": "nora/language/note_merge.py",
+    "old": "    return ContextBlock(name=\"open_note\", attrs=attrs, body=body).render()",
+    "new": "    return ContextBlock(name=\"candidate_open_note\", attrs=attrs, body=body).render()",
+    "target": "tests/unit/test_note_merge.py::test_merge_renders_an_open_note_byte_identical_to_master"
+  }
+]

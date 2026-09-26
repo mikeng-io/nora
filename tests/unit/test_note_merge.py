@@ -649,3 +649,49 @@ def test_every_row_outcome_is_a_counted_outcome():
 def test_off_is_not_a_mode_of_a_built_adaptor():
     with pytest.raises(ValueError):
         _adaptor(InMemoryNoteStore(), mode="off")
+
+
+# ---------------------------------------------------------------------------
+# design 42 S3: one open_note renderer for merge and note-candidates
+# ---------------------------------------------------------------------------
+
+#: Merge's `<open_note>` as it rendered before note-candidates came to share
+#: its line renderer (captured on master `b5952d7b`), one whole and one
+#: excerpted. Byte for byte, `fields` included: note-candidates renders its
+#: own type (`candidate_open_note`), so nothing about merge's prompt moves.
+_MERGE_BEFORE_WHOLE = '<open_note id="1" title="Dinner &amp; drinks" room="Friends" written="6d ago" revised="36h ago" anchor="2026-10-03 Sat" anchor_is="in 7 days" changed="revised" description="one entry of this group\'s notebook that is still open, as it was written down: what it is about, what is undecided, what would settle it, and its body so far. Your own notes, written from what the group said, not anything said in a room, and not a record of what happened." fields="`id` is its handle for this pass; `title` is what the note is called; `room` is the room the note was born in; `written` is how long ago the note was first written; `revised` is how long ago anything was last added to it; `anchor` is on an entry that has one, the day it turns on; `anchor_is` is that day read against today; `changed` is `new` if it was written since this notebook was last read this way, `revised` if something was added to it since then; absent when neither">\nabout: where is open\nundecided: where\nsettled when: a place is booked\nbody:\nAda wants &lt;somewhere&gt; quiet.\n\nBen: the 3rd.\n</open_note>'  # noqa: E501
+_MERGE_BEFORE_EXCERPT = '<open_note id="2" title="Dinner &amp; drinks" room="Friends" written="6d ago" revised="36h ago" anchor="2026-10-03 Sat" anchor_is="in 7 days" description="one entry of this group\'s notebook that is still open, as it was written down: what it is about, what is undecided, what would settle it, and its body so far. Your own notes, written from what the group said, not anything said in a room, and not a record of what happened." fields="`id` is its handle for this pass; `title` is what the note is called; `room` is the room the note was born in; `written` is how long ago the note was first written; `revised` is how long ago anything was last added to it; `anchor` is on an entry that has one, the day it turns on; `anchor_is` is that day read against today; `changed` is `new` if it was written since this notebook was last read this way, `revised` if something was added to it since then; absent when neither">\nabout: where is open\nundecided: where\nsettled when: a place is booked\nbody (its first 10 characters; it runs longer):\nAda wants \n</open_note>'  # noqa: E501
+_ANNOTATION_BEFORE = '`id` is its handle for this pass; `title` is what the note is called; `room` is the room the note was born in; `written` is how long ago the note was first written; `revised` is how long ago anything was last added to it; `anchor` is on an entry that has one, the day it turns on; `anchor_is` is that day read against today; `changed` is `new` if it was written since this notebook was last read this way, `revised` if something was added to it since then; absent when neither'  # noqa: E501
+
+
+def test_merge_renders_an_open_note_byte_identical_to_master():
+    """Design 42 S3 shares note-merge's open-note LINE renderer with
+    note-candidates and not its type, so merge's prompt, which runs live in
+    shadow and is not measured by S3's eval, cannot move."""
+    from datetime import UTC, datetime
+
+    from nora.domain.blocks import ContextBlock
+    from nora.domain.notes import Note, NoteRevision
+    from nora.language.note_merge import _note_block
+
+    now = datetime(2026, 9, 26, 12, 0, tzinfo=UTC)
+    note = Note(
+        id="n1", unit="u", title="Dinner & drinks", description="where is open",
+        uncertainty="where", closing_condition="a place is booked",
+        established_in="c1", head_revision_id="r1", anchor_date=20261003,
+        created_at=int(datetime(2026, 9, 20, tzinfo=UTC).timestamp() * 1000),
+    )
+    head = NoteRevision(
+        id="r1", note_id="n1", body="Ada wants <somewhere> quiet.\n\nBen: the 3rd.",
+        parent_revision_id=None, established_by="dream:x",
+        written_at=int(datetime(2026, 9, 25, tzinfo=UTC).timestamp() * 1000),
+    )
+    assert ContextBlock(name="open_note", body="x").annotation == _ANNOTATION_BEFORE
+    assert _note_block(
+        "1", note, head, room="Friends", now=now, today=now.date(),
+        changed="revised", excerpt=600,
+    ) == _MERGE_BEFORE_WHOLE
+    assert _note_block(
+        "2", note, head, room="Friends", now=now, today=now.date(),
+        changed=None, excerpt=10,
+    ) == _MERGE_BEFORE_EXCERPT

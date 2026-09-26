@@ -222,8 +222,21 @@ cases:
       platform: signal
       conversation_id: MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08=
       before_ms: 1789737522305
+    # 2026-09-26: graded against the triaged group (see p6): 5/8 stack draws
+    # revised a note the operator's 09-24 triage merged INTO this one.
     metadata:
-      updates: 今晚 backroom 行動
+      updates:
+        - 今晚 backroom 行動
+        - Grant 未講元朗邊間、幾點
+        - 元朗宵夜地點時間未定，陀螺盤交收綁死今晚
+        - 今晚宵夜團地點同時間未定
+        - 宵夜元朗邊度、幾點未定
+        - 宵夜團地點時間未定，陀螺盤交收卡住
+        - 宵夜團地點時間未定，交收卡住
+        - 今晚宵夜地點時間未定，陀螺盤交收卡住
+        - 今晚宵夜地點時間未定
+        - 今晚宵夜團地點時間未定
+        - 今晚宵夜地點同時間未定
 
   - name: n1_settled_fact_nothing_open
     entry: dreamer
@@ -298,12 +311,47 @@ cases:
     # open notes, 10 of them near-restatements of this one's subject, so a
     # revision landing on a similarly titled sibling is the failure it
     # catches, and `updates_named` reports it as a wrong note.
+    # 2026-09-26: graded against the WHOLE group. The operator's 09-24 triage
+    # folded all of these into one note (retired-merged, one survivor), so
+    # they are one arrangement; grading one of them made the case a coin the
+    # model called the same way in 12 of 12 draws on both arms (#583
+    # investigation). Revising exactly one of them passes; a revision to a
+    # note outside the group is still a wrong note.
     snapshot:
       platform: signal
       conversation_id: MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08=
       before_ms: 1789721126208
     metadata:
-      updates: 元朗宵夜地點時間未定，陀螺盤交收綁死今晚
+      updates:
+        - 元朗宵夜地點時間未定，陀螺盤交收綁死今晚
+        - Grant 未講元朗邊間、幾點
+        - 今晚宵夜團地點同時間未定
+        - 宵夜元朗邊度、幾點未定
+        - 宵夜團地點時間未定，陀螺盤交收卡住
+        - 宵夜團地點時間未定，交收卡住
+        - 今晚宵夜地點時間未定，陀螺盤交收卡住
+        - 今晚宵夜地點時間未定
+        - 今晚宵夜團地點時間未定
+        - 今晚宵夜地點同時間未定
+        - 今晚 backroom 行動
+
+  - name: p11_update_lands_on_its_own_arrangement_among_same_day_siblings
+    entry: dreamer
+    category: note-candidates
+    expect: update
+    # REAL: the evening's venue question is settled (a booked restaurant and
+    # time). At this instant the unit held four open notes about the same
+    # day, each a DIFFERENT question: the venue, the car, the headcount, and
+    # an item to bring. Production appended the booking to the venue note
+    # (revision at before_ms). A revision on any sibling is a wrong note: the
+    # case design 42 §10.1 asked for and p5/p6 could not be (their siblings
+    # were one arrangement).
+    snapshot:
+      platform: signal
+      conversation_id: MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08=
+      before_ms: 1790339087957
+    metadata:
+      updates: 27號晚坐低食定掃街未定
 
   - name: p7_cantonese_only_solo_plan
     entry: dreamer
@@ -476,3 +524,26 @@ cases:
         A real room fixes two unrelated arrangements for the same date
         within one Dreamer batch, so a `snapshot:` at its last row carries
         both and `must_cite` can name both rows.
+
+  - name: p10_two_dates_in_one_batch_the_plan_keeps_its_own_day
+    entry: dreamer
+    category: note-candidates
+    expect: either
+    # REAL: a production defect (design/standing-compact/40 §7). One batch
+    # carries a fitting booked for one day and, rows later, a dinner planned
+    # for another, with its schedule (7026, 7028, 7034, 7035). The production
+    # Dreamer wrote ONE note dated the fitting's day (20261017) carrying the
+    # dinner's schedule. At this instant the unit already held open notes
+    # dated the dinner's day (20260927), so a correct pass either creates a
+    # note dated 20260927 or revises one already dated it; `date_split`
+    # grades that compound answer, and fails any note dated 20261017 this
+    # pass wrote that carries the schedule rows.
+    snapshot:
+      platform: signal
+      conversation_id: x5hcBMQITtdUfSC0o9AHsqJKU7ywYMrOG5hcBMQITtc=
+      before_ms: 1790258095552
+    metadata:
+      date_split:
+        anchor: 20260927
+        not_anchor: 20261017
+        rows: [7026, 7028, 7034, 7035]

@@ -1,0 +1,93 @@
+[
+  {
+    "name": "accept() holds a create's body to the schema at all",
+    "file": "nora/language/note_candidates.py",
+    "old": "            body = self._held_to_schema(\n                candidate.body,\n",
+    "new": "            body = candidate.body if True else self._held_to_schema(\n                candidate.body,\n",
+    "target": "tests/unit/test_note_candidates.py::test_accept_refuses_a_create_whose_body_breaks_the_schema tests/unit/test_note_candidates.py::test_accept_passes_a_conformant_create_body_through_normalised"
+  },
+  {
+    "name": "a create carries the NORMALISED body, not the raw one",
+    "file": "nora/language/note_candidates.py",
+    "old": "            candidate = replace(candidate, body=body)\n",
+    "new": "            candidate = replace(candidate, body=candidate.body)\n",
+    "target": "tests/unit/test_note_candidates.py::test_accept_passes_a_conformant_create_body_through_normalised"
+  },
+  {
+    "name": "a create's ## Open must hold a line (require_open)",
+    "file": "nora/language/note_candidates.py",
+    "old": "                key=key, require_open=is_create,\n",
+    "new": "                key=key, require_open=False,\n",
+    "target": "tests/unit/test_note_candidates.py::test_accept_refuses_a_create_whose_body_breaks_the_schema[missing_section]"
+  },
+  {
+    "name": "a model writing a code-only section is refused at the writer",
+    "file": "nora/language/note_candidates.py",
+    "old": "            if written:\n",
+    "new": "            if False:\n",
+    "target": "tests/unit/test_note_candidates.py::test_accept_refuses_a_create_whose_body_breaks_the_schema[unknown_section-code_written]"
+  },
+  {
+    "name": "every refusal is counted by its rule",
+    "file": "nora/language/note_candidates.py",
+    "old": "            self._inc(\"nora_note_candidate_body_refused_total\", rule=refused.rule)\n",
+    "new": "            pass\n",
+    "target": "tests/unit/test_note_candidates.py::test_accept_refuses_a_create_whose_body_breaks_the_schema tests/unit/test_note_candidates.py::test_accept_refuses_a_create_body_when_nothing_was_shown"
+  },
+  {
+    "name": "the shown set names a row by the roster-projected from it rendered",
+    "file": "nora/language/note_candidates.py",
+    "old": "            id=row.id, sender=speaker_name(row.person_name, row.sender_name),",
+    "new": "            id=row.id, sender=speaker_name(None, row.sender_name),",
+    "target": "tests/unit/test_note_candidates.py::test_accept_names_the_body_by_the_roster_name_it_rendered"
+  },
+  {
+    "name": "Nora's own rows are shown as hers",
+    "file": "nora/language/note_candidates.py",
+    "old": "            person_id=row.person_id, is_nora=row.is_nora,",
+    "new": "            person_id=row.person_id, is_nora=False,",
+    "target": "tests/unit/test_note_candidates.py::test_accept_refuses_a_create_whose_body_breaks_the_schema[cites_nora]"
+  },
+  {
+    "name": "Nora is never a roster name, so never an ## Owed owner",
+    "file": "nora/language/note_candidates.py",
+    "old": "        roster={m.sender: m.person_id or \"\" for m in shown if not m.is_nora},",
+    "new": "        roster={m.sender: m.person_id or \"\" for m in shown},",
+    "target": "tests/unit/test_note_candidates.py::test_accept_refuses_a_create_whose_body_breaks_the_schema[unknown_owner-nora]"
+  },
+  {
+    "name": "with no inputs for the key, nothing was shown (fail-closed)",
+    "file": "nora/language/note_candidates.py",
+    "old": "        shown = self._shown.get(key, Shown())\n",
+    "new": "        shown = self._shown.get(key, Shown(carried=frozenset(range(100))))\n",
+    "target": "tests/unit/test_note_candidates.py::test_accept_refuses_a_create_body_when_nothing_was_shown"
+  },
+  {
+    "name": "the refusal counter's vocabulary is enforced at runtime",
+    "file": "nora/language/note_candidates.py",
+    "old": "        \"nora_note_candidate_body_refused_total\": (\"rule\", BODY_REFUSAL_RULES),\n",
+    "new": "",
+    "target": "tests/unit/test_note_candidates.py::test_both_label_vocabularies_are_enforced_at_runtime_not_only_in_a_test"
+  },
+  {
+    "name": "the refusal counter's help text names every rule",
+    "file": "nora/obs/metric_specs.py",
+    "old": "\"## Owed owner the pass did not show as a sender, or Nora), bad_date \"",
+    "new": "\"## Owed owner the pass did not show as a sender, or Nora), \"",
+    "target": "tests/unit/test_note_candidates.py::test_body_refusal_rules_match_the_metric_help_text"
+  },
+  {
+    "name": "the objective shows no filled sample body (G7)",
+    "file": "nora/dreamer/objectives/note-candidates.md",
+    "old": "   \"body\": \"<the body, in the sections of «The body» above>\",\n   \"closing_condition\": \"A venue is picked and everyone confirms.\",",
+    "new": "   \"body\": \"## Decided\\n- the wedding is on 2026-09-30 (Ada) [4812]\\n## Open\\n- which venue [4812]\",\n   \"closing_condition\": \"A venue is picked and everyone confirms.\",",
+    "target": "tests/unit/test_note_candidates.py::test_the_objective_states_the_grammar_and_shows_no_filled_body"
+  },
+  {
+    "name": "the objective's grammar names every model-written section",
+    "file": "nora/dreamer/objectives/note-candidates.md",
+    "old": "## Owed\n- <name> -> <what> -> <due> [<ids>]\n",
+    "new": "",
+    "target": "tests/unit/test_note_candidates.py::test_the_objective_states_the_grammar_and_shows_no_filled_body"
+  }
+]

@@ -1,0 +1,79 @@
+[
+  {
+    "name": "an update's body is held to the schema at all",
+    "file": "nora/language/note_candidates.py",
+    "old": "            is_create = candidate.updates is None\n",
+    "new": "            if candidate.updates is not None:\n                parsed.append(candidate)\n                continue\n            is_create = candidate.updates is None\n",
+    "target": "tests/unit/test_note_candidates.py::test_accept_holds_an_update_body_to_the_schema_as_a_restatement"
+  },
+  {
+    "name": "an update may cite what the rendered bodies carry",
+    "file": "nora/language/note_candidates.py",
+    "old": "                    shown, carried=self._carried.get(key, frozenset()),\n",
+    "new": "                    shown, carried=frozenset(),\n",
+    "target": "tests/unit/test_note_candidates.py::test_accept_holds_an_update_body_to_the_schema_as_a_restatement"
+  },
+  {
+    "name": "the notebook collects the rendered bodies' ids",
+    "file": "nora/language/note_candidates.py",
+    "old": "                carried |= body_ids\n",
+    "new": "                pass\n",
+    "target": "tests/unit/test_note_candidates.py::test_accept_holds_an_update_body_to_the_schema_as_a_restatement"
+  },
+  {
+    "name": "an update may not cite an id nothing carries",
+    "file": "nora/language/note_candidates.py",
+    "old": "                    shown, carried=self._carried.get(key, frozenset()),\n",
+    "new": "                    shown, carried=frozenset(range(1000)),\n",
+    "target": "tests/unit/test_note_candidates.py::test_an_update_may_not_cite_an_id_no_rendered_body_carries"
+  },
+  {
+    "name": "an update's ## Open may be empty (require_open only on creates)",
+    "file": "nora/language/note_candidates.py",
+    "old": "                key=key, require_open=is_create,\n",
+    "new": "                key=key, require_open=True,\n",
+    "target": "tests/unit/test_note_candidates.py::test_accept_holds_an_update_body_to_the_schema_as_a_restatement"
+  },
+  {
+    "name": "the carry-forward check refuses a dropped line (dropped_citation)",
+    "file": "nora/language/note_candidates.py",
+    "old": "        if dropped:\n",
+    "new": "        if False:\n",
+    "target": "tests/unit/test_note_candidates.py::test_a_restatement_that_drops_a_lines_evidence_is_left_pending"
+  },
+  {
+    "name": "carry-forward means ALL of a line's ids, not some",
+    "file": "nora/domain/note_body.py",
+    "old": "        if ids and not any(ids <= new for new in new_lines):\n",
+    "new": "        if ids and not any(ids & new for new in new_lines):\n",
+    "target": "tests/unit/test_note_body.py::test_dropped_citations_reads_every_head_line_against_the_new_body"
+  },
+  {
+    "name": "a restatement identical to the head is a duplicate",
+    "file": "nora/language/note_candidates.py",
+    "old": "        if \" \".join(row.body.split()) == \" \".join(head.body.split()):\n",
+    "new": "        if False:\n",
+    "target": "tests/unit/test_note_candidates.py::test_a_restatement_that_says_what_the_head_says_is_a_duplicate"
+  },
+  {
+    "name": "the revision IS the restated body, not an append",
+    "file": "nora/language/note_candidates.py",
+    "old": "            note_id=match.id, body=row.body,\n",
+    "new": "            note_id=match.id, body=head.body + \"\\n\\n\" + row.body,\n",
+    "target": "tests/unit/test_note_candidates.py::test_commit_updates_the_standing_note_the_model_named tests/unit/test_note_candidates.py::test_a_restatement_that_carries_every_lines_evidence_lands"
+  },
+  {
+    "name": "the objective says an update restates, keeping ids",
+    "file": "nora/dreamer/objectives/note-candidates.md",
+    "old": "**restate the whole entry as it now stands**",
+    "new": "**propose only what this batch changes**",
+    "target": "tests/unit/test_note_candidates.py::test_the_objective_says_what_the_pass_reads_and_that_an_update_restates"
+  },
+  {
+    "name": "dropped_citation is named in the gate's help text",
+    "file": "nora/obs/metric_specs.py",
+    "old": "\"42 S4a, 2026-09-26), dropped_citation (a restatement that left some \"",
+    "new": "\"42 S4a, 2026-09-26), (a restatement that left some \"",
+    "target": "tests/unit/test_note_candidates.py::test_gate_actions_vocabulary_matches_the_metric_help_text"
+  }
+]
