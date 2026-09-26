@@ -1,9 +1,11 @@
 # Declarations for the identifier detector (scripts/pii_scan.py, #283).
 #
-# Read from the PARENT commit only: a line added here takes effect from the
-# next commit, never the one that adds it, so a declaration cannot land in the
-# same change as the payload it would exempt (#283 criterion 3). Commit the
-# declaration on its own, with its reason, then the change it covers.
+# Read from the newest ancestor the remote ALREADY HAS: a line added here
+# takes effect once the commit that adds it has been pushed, never in that
+# commit, an amend of it, or the same push, so a declaration cannot land in
+# the same change as the payload it would exempt (#283 criterion 3). Commit
+# the declaration on its own, with its reason, push it, then commit the
+# change it covers.
 #
 # Format: `<kind> <glob-or-value> [sha256=<digest>] -- <reason>`. Every line
 # needs a reason; a malformed line is an ERROR, not a skip.

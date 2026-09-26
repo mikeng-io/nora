@@ -23,8 +23,8 @@
  {
   "name": "separator-formatted numbers collapse before the denylist",
   "file": "scripts/pii_scan.py",
-  "old": "            for m in re.finditer(r\"\\d(?:[ \\t().\\-/]{0,2}\\d)*\", text):",
-  "new": "            for m in re.finditer(r\"\\d+\", text):",
+  "old": "            for m in re.finditer(r\"\\d(?:[ \\t().\\-/]{0,4}\\d)*\", t):",
+  "new": "            for m in re.finditer(r\"\\d+\", t):",
   "target": "tests/unit/test_pii_scan.py::test_denylist_phone_every_spelling"
  },
  {
@@ -44,8 +44,8 @@
  {
   "name": "a JSON escape letter does not hide the name after it",
   "file": "scripts/pii_scan.py",
-  "old": "            t = re.sub(r\"\\\\[ntr]\", \"  \", text)",
-  "new": "            t = text",
+  "old": "            tt = re.sub(r\"\\\\[ntr]\", \"  \", t)",
+  "new": "            tt = t",
   "target": "tests/unit/test_pii_scan.py::test_denylist_name_every_spelling"
  },
  {
@@ -100,8 +100,8 @@
  {
   "name": "the dwell score catches two fixes at each of three places",
   "file": "scripts/pii_scan.py",
-  "old": "MAX_SCORE = 11  #",
-  "new": "MAX_SCORE = 10**9  #",
+  "old": "MAX_SCORE = 7\n",
+  "new": "MAX_SCORE = 10**9\n",
   "target": "tests/unit/test_pii_scan.py::test_coords_two_fixes_at_three_places_fail"
  },
  {
@@ -184,15 +184,15 @@
  {
   "name": "a declared binary is scanned for strings, never skipped",
   "file": "scripts/pii_scan.py",
-  "old": "        text = extract_strings(data)\n    is_allowlist",
-  "new": "        return rep\n    is_allowlist",
+  "old": "        text = \"\\n\".join(inner_texts)",
+  "new": "        return rep",
   "target": "tests/unit/test_pii_scan.py::test_declared_binary_is_scanned_for_strings_and_media_gps"
  },
  {
   "name": "GPS in media metadata fails",
   "file": "scripts/pii_scan.py",
-  "old": "        if media_has_gps(data):",
-  "new": "        if False:",
+  "old": "        if gps:\n",
+  "new": "        if False:\n",
   "target": "tests/unit/test_pii_scan.py::test_declared_binary_is_scanned_for_strings_and_media_gps"
  },
  {
@@ -226,8 +226,8 @@
  {
   "name": "a denylisted line is never sent to a judge",
   "file": "scripts/pii_scan.py",
-  "old": "        items = [it for it in rep.added_lines if (it[0], it[1]) not in denied]",
-  "new": "        items = list(rep.added_lines)",
+  "old": "        items = [\n            (p, n, line, safe_ctx(ctx)) for p, n, line, ctx in rep.added_lines if not withheld(line)\n        ]\n",
+  "new": "        items = [(p, n, line, ctx) for p, n, line, ctx in rep.added_lines]\n",
   "target": "tests/unit/test_pii_scan.py::test_judge_flags_lines_and_never_sees_a_denylisted_line"
  },
  {
@@ -289,7 +289,7 @@
  {
   "name": "git push runs the identifier scan",
   "file": ".githooks/pre-push",
-  "old": "printf '%s\\n' \"$push_lines\" | python3 \"$SCANNER\" push || pii_rc=$?",
+  "old": "printf '%s\\n' \"$push_lines\" | python3 \"$SCANNER\" push \"$1\" \"$2\" || pii_rc=$?",
   "new": "true",
   "target": "tests/infra/test_pii_hooks.py::test_git_push_runs_both_checks_through_the_real_hook"
  },
@@ -320,5 +320,229 @@
   "old": "MAX_CLUSTER_ROWS = 2  #",
   "new": "MAX_CLUSTER_ROWS = 60  #",
   "target": "tests/unit/test_pii_scan.py::test_coords_a_constant_offset_is_still_a_table"
+ },
+ {
+  "name": "unicode dashes and spaces fold to separators",
+  "file": "scripts/pii_scan.py",
+  "old": "        t[ord(c)] = \"-\"\n",
+  "new": "        pass\n",
+  "target": "tests/unit/test_pii_scan.py::test_denylisted_phone_across_unicode_separators"
+ },
+ {
+  "name": "look-alike letters fold to Latin",
+  "file": "scripts/pii_scan.py",
+  "old": "        t[ord(k)] = v\n",
+  "new": "        pass\n",
+  "target": "tests/unit/test_pii_scan.py::test_denylisted_name_in_every_encoding"
+ },
+ {
+  "name": "Traditional folds to Simplified",
+  "file": "scripts/pii_scan.py",
+  "old": "    t.update(FOLD)\n",
+  "new": "    pass\n",
+  "target": "tests/unit/test_pii_scan.py::test_cjk_name_simplified_and_spaced"
+ },
+ {
+  "name": "spaces inside a CJK name are ignored",
+  "file": "scripts/pii_scan.py",
+  "old": "                    keep = [k for k, ch in enumerate(line) if not ch.isspace()]",
+  "new": "                    keep = list(range(len(line)))",
+  "target": "tests/unit/test_pii_scan.py::test_cjk_name_simplified_and_spaced"
+ },
+ {
+  "name": "each line is decoded and matched again",
+  "file": "scripts/pii_scan.py",
+  "old": "                for layer in decoded_layers(line):",
+  "new": "                for layer in []:",
+  "target": "tests/unit/test_pii_scan.py::test_denylisted_name_in_every_encoding"
+ },
+ {
+  "name": "JSON escapes decode",
+  "file": "scripts/pii_scan.py",
+  "old": "            if \"\\\\u\" in cur:\n                cands.append(_json_unescape(cur))",
+  "new": "            if False:\n                cands.append(_json_unescape(cur))",
+  "target": "tests/unit/test_pii_scan.py::test_denylisted_name_in_every_encoding"
+ },
+ {
+  "name": "URL encoding decodes",
+  "file": "scripts/pii_scan.py",
+  "old": "                cands.append(urllib.parse.unquote_plus(cur, errors=\"replace\"))",
+  "new": "                pass",
+  "target": "tests/unit/test_pii_scan.py::test_denylisted_name_in_every_encoding"
+ },
+ {
+  "name": "HTML entities decode",
+  "file": "scripts/pii_scan.py",
+  "old": "                cands.append(html.unescape(cur))",
+  "new": "                pass",
+  "target": "tests/unit/test_pii_scan.py::test_denylisted_name_in_every_encoding"
+ },
+ {
+  "name": "base64 segments decode",
+  "file": "scripts/pii_scan.py",
+  "old": "            cands += _b64_texts(cur)",
+  "new": "            pass",
+  "target": "tests/unit/test_pii_scan.py::test_denylisted_name_in_every_encoding"
+ },
+ {
+  "name": "Family, Given order is a spelling of the name",
+  "file": "scripts/pii_scan.py",
+  "old": "                    variants.add((toks[-1], *toks[:-1]))",
+  "new": "                    pass",
+  "target": "tests/unit/test_pii_scan.py::test_denylisted_name_in_every_encoding"
+ },
+ {
+  "name": "a middle initial is skipped",
+  "file": "scripts/pii_scan.py",
+  "old": "        if nxt < len(toks) and toks[nxt][2] != cand[j] and len(toks[nxt][2]) == 1:",
+  "new": "        if False:",
+  "target": "tests/unit/test_pii_scan.py::test_denylisted_name_in_every_encoding"
+ },
+ {
+  "name": "a shape inside a denylisted number is that number",
+  "file": "scripts/pii_scan.py",
+  "old": "                if rule in (\"phone\", \"snowflake\", \"whatsapp-jid\") and self.denied_digits(dg):",
+  "new": "                if False:",
+  "target": "tests/unit/test_pii_scan.py::test_a_shape_inside_a_denylisted_number_is_not_acknowledgeable"
+ },
+ {
+  "name": "a swapped denylist line's value is masked",
+  "file": "scripts/pii_scan.py",
+  "old": "            raise DenylistError(f\"{source}:{n}: unknown kind {mask(kind, full=True)}\")",
+  "new": "            raise DenylistError(f\"{source}:{n}: unknown kind {kind!r}\")",
+  "target": "tests/unit/test_pii_scan.py::test_a_malformed_denylist_line_does_not_echo_its_value"
+ },
+ {
+  "name": "wa.me and tel: links carry a phone",
+  "file": "scripts/pii_scan.py",
+  "old": "            r\"(?i)(?:wa\\.me/|api\\.whatsapp\\.com/send\\?phone=|\\btel:|\\bsms:)\\+?\\d{7,15}(?!\\d)\"",
+  "new": "            r\"(?!x)x\"",
+  "target": "tests/unit/test_pii_scan.py::test_phone_links_bare_e164_and_worded_local_numbers"
+ },
+ {
+  "name": "a dashless uuid on an id line is a uuid",
+  "file": "scripts/pii_scan.py",
+  "old": "            for m in _UUID_NODASH.finditer(line):",
+  "new": "            for m in []:",
+  "target": "tests/unit/test_pii_scan.py::test_a_dashless_uuid_needs_an_id_word"
+ },
+ {
+  "name": "one fix labelled home is a table",
+  "file": "scripts/pii_scan.py",
+  "old": "            res.labelled += 1",
+  "new": "            pass",
+  "target": "tests/unit/test_pii_scan.py::test_coords_one_fix_labelled_home_fails"
+ },
+ {
+  "name": "home x2 + work x2 fails the dwell score",
+  "file": "scripts/pii_scan.py",
+  "old": "MAX_SCORE = 7\n",
+  "new": "MAX_SCORE = 8\n",
+  "target": "tests/unit/test_pii_scan.py::test_coords_two_fixes_at_home_and_two_at_work_fail"
+ },
+ {
+  "name": "a merged table is judged against each parent",
+  "file": "scripts/pii_scan.py",
+  "old": "        if not (now - pts):\n            return []",
+  "new": "        if False:\n            return []",
+  "target": "tests/unit/test_pii_scan.py::test_a_merge_that_assembles_a_table_fails"
+ },
+ {
+  "name": "a PNG eXIf chunk carries GPS",
+  "file": "scripts/pii_scan.py",
+  "old": "            if typ == b\"eXIf\" and (_tiff_has_gps(body, 0) or _tiff_has_gps(body, 6)):",
+  "new": "            if False:",
+  "target": "tests/unit/test_pii_scan.py::test_png_exif_chunk_gps"
+ },
+ {
+  "name": "an ISO 6709 point anywhere is GPS",
+  "file": "scripts/pii_scan.py",
+  "old": "    return bool(_ISO6709_BYTES.search(data))",
+  "new": "    return False",
+  "target": "tests/unit/test_pii_scan.py::test_quicktime_location_key"
+ },
+ {
+  "name": "zip members are opened",
+  "file": "scripts/pii_scan.py",
+  "old": "                        inner.append(zf.read(i))",
+  "new": "                        pass",
+  "target": "tests/unit/test_pii_scan.py::test_compressed_text_chunks_and_archives_are_opened"
+ },
+ {
+  "name": "a decompression past the cap is an ERROR",
+  "file": "scripts/pii_scan.py",
+  "old": "    if len(out) > DECODE_MAX:\n        raise DecodeError",
+  "new": "    if False:\n        raise DecodeError",
+  "target": "tests/unit/test_pii_scan.py::test_a_decompression_bomb_is_an_error"
+ },
+ {
+  "name": "no guard means nothing is sent",
+  "file": "scripts/pii_scan.py",
+  "old": "    guard = rep.guard if callable(rep.guard) else (lambda _t: True)  # unset: send nothing",
+  "new": "    guard = rep.guard if callable(rep.guard) else (lambda _t: False)",
+  "target": "tests/unit/test_pii_scan.py::test_with_no_guard_nothing_is_sent"
+ },
+ {
+  "name": "the camelCase matcher is anchored",
+  "file": "scripts/pii_scan.py",
+  "old": "            for m in re.finditer(r\"(?<![A-Za-z0-9])[a-z][a-z0-9]*[A-Z][A-Za-z0-9]*\", tt):",
+  "new": "            for m in re.finditer(r\"[a-z][a-z0-9]*[A-Z][A-Za-z0-9]*\", tt):",
+  "target": "tests/unit/test_pii_scan.py::test_a_100k_character_line_scans_in_linear_time"
+ },
+ {
+  "name": "a bad setting is an ERROR",
+  "file": "scripts/pii_scan.py",
+  "old": "    if not re.fullmatch(r\"[0-9]+\", raw) or int(raw) <= 0:\n        raise ConfigError",
+  "new": "    if False:\n        raise ConfigError",
+  "target": "tests/unit/test_pii_scan.py::test_bad_configuration_is_an_error_not_a_fail"
+ },
+ {
+  "name": "the whole message file is scanned",
+  "file": "scripts/pii_scan.py",
+  "old": "    with open(msg_path, encoding=\"utf-8\", errors=\"surrogateescape\") as fh:\n        body = fh.read()",
+  "new": "    with open(msg_path, encoding=\"utf-8\", errors=\"surrogateescape\") as fh:\n        body = \"\\n\".join(x for x in fh.read().split(\"\\n\") if not x.startswith(\"#\"))",
+  "target": "tests/unit/test_pii_scan.py::test_the_whole_message_file_is_scanned_comments_and_scissors_included"
+ },
+ {
+  "name": "declarations come from what the remote has",
+  "file": "scripts/pii_scan.py",
+  "old": "    allow, placeholders, errs = load_context(published_base(head))\n    rep = Report(findings=errs)",
+  "new": "    allow, placeholders, errs = load_context(head)\n    rep = Report(findings=errs)",
+  "target": "tests/infra/test_pii_hooks.py::test_amend_cannot_let_a_declaration_exempt_its_own_payload"
+ },
+ {
+  "name": "the push asks the target remote",
+  "file": "scripts/pii_scan.py",
+  "old": "        exclude = set(published)",
+  "new": "        exclude = set(git(\"rev-parse\", \"--remotes\").decode().split())",
+  "target": "tests/infra/test_pii_hooks.py::test_a_forged_remote_tracking_ref_is_not_trusted"
+ },
+ {
+  "name": "an unreachable remote is an ERROR",
+  "file": "scripts/pii_scan.py",
+  "old": "        published = remote_has(remote)\n    except GitError as exc:",
+  "new": "        published = remote_has(remote)\n    except ZeroDivisionError as exc:",
+  "target": "tests/infra/test_pii_hooks.py::test_an_unreachable_remote_is_an_error"
+ },
+ {
+  "name": "tag messages and taggers are scanned",
+  "file": "scripts/pii_scan.py",
+  "old": "            fs = message_findings(sc, message) + _ident_findings(sc, \"<tagger>\", tagger)",
+  "new": "            fs = []",
+  "target": "tests/infra/test_pii_hooks.py::test_an_annotated_tag_message_and_its_tagger_are_scanned"
+ },
+ {
+  "name": "a tag on a blob or tree is scanned",
+  "file": "scripts/pii_scan.py",
+  "old": "        if typ in (\"blob\", \"tree\"):",
+  "new": "        if False:",
+  "target": "tests/infra/test_pii_hooks.py::test_a_lightweight_tag_on_a_blob_or_a_tree_is_scanned"
+ },
+ {
+  "name": "a push range's declarations come from outside the range",
+  "file": "scripts/pii_scan.py",
+  "old": "        allow, placeholders, errs = ctx_cache[bases[sha]]",
+  "new": "        allow, placeholders, errs = ctx_cache[meta[sha][0][0] if meta[sha][0] else \"\"]",
+  "target": "tests/infra/test_pii_hooks.py::test_a_declaration_beside_its_payload_does_not_exempt_it"
  }
 ]

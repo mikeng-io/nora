@@ -89,17 +89,22 @@ done <<< "$push_lines"
 
 echo "pre-push: checked $checked commit subject(s)"
 
-# Identifier backstop (#283): every blob, message and author identity the push
-# introduces, with the same `--not --remotes` range. This is what catches a
-# commit made with --no-verify, before the hooks were installed, or one whose
-# payload a LATER commit `git rm`-ed: the object is still in the push.
+# Identifier backstop (#283): every blob, message and author identity, and
+# every tag message and tagger, that the push gives the TARGET remote. The
+# scanner asks that remote what it already has (`git ls-remote "$2"`) instead
+# of trusting local remote-tracking refs, which go stale, can be forged, and
+# describe a different remote when pushing elsewhere; unreachable is an ERROR.
+# This is what catches a commit made with --no-verify on commit, before the
+# hooks were installed, or one whose payload a LATER commit `git rm`-ed: the
+# object is still in the push. `git push --no-verify` skips this too, and
+# nothing server-side repeats it (.githooks/README.md).
 SCANNER="$TOPLEVEL/scripts/pii_scan.py"
 if [ ! -f "$SCANNER" ]; then
   echo "pre-push: identifier scanner not found at $SCANNER - refusing to pass unverified" >&2
   exit 1
 fi
 pii_rc=0
-printf '%s\n' "$push_lines" | python3 "$SCANNER" push || pii_rc=$?
+printf '%s\n' "$push_lines" | python3 "$SCANNER" push "$1" "$2" || pii_rc=$?
 if [ "$pii_rc" -ne 0 ]; then
   failed=1
 fi

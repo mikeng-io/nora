@@ -269,7 +269,7 @@ def _post_json(url: str, body: dict, headers: dict, timeout: float, retries: int
                 return json.loads(resp.read())
         except urllib.error.HTTPError as exc:
             last = f"HTTP {exc.code}: {exc.read()[:200].decode(errors='replace')}"
-            if exc.code not in (429, 500, 502, 503, 504, 529):
+            if exc.code not in (429, 500, 502, 503, 504, 520, 522, 524, 529):
                 break
             retry_after = exc.headers.get("retry-after") if exc.headers else None
             time.sleep(float(retry_after) if retry_after and retry_after.isdigit() else delay)

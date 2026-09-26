@@ -66,10 +66,14 @@ class Repo:
     def head(self) -> str:
         return self.git("rev-parse", "HEAD").stdout.strip()
 
-    def push_scan(self) -> subprocess.CompletedProcess:
-        line = f"refs/heads/main {self.head()} refs/heads/main {'0' * 40}\n"
-        return subprocess.run(
-            [sys.executable, "scripts/pii_scan.py", "push"],
+    def push_scan(self, remote: str = "origin") -> subprocess.CompletedProcess:
+        """The scanner exactly as pre-push runs it: ref lines on stdin, the
+        remote's name and url as arguments."""
+        url = self.git("remote", "get-url", remote).stdout.strip()
+        have = self.git("ls-remote", url, "refs/heads/main").stdout.split()
+        line = f"refs/heads/main {self.head()} refs/heads/main {have[0] if have else '0' * 40}\n"
+        return subprocess.run(  # noqa: S603 - this repo's own script
+            [sys.executable, "scripts/pii_scan.py", "push", remote, url],
             cwd=self.path,
             env=self.env,
             capture_output=True,
@@ -104,6 +108,7 @@ def repo(tmp_path: Path) -> Repo:
     for rel in (
         "scripts/pii_scan.py",
         "scripts/pii_judge.py",
+        "scripts/pii_cjk_fold.py",
         "scripts/check_commit_subject.py",
         ".githooks/pre-commit",
         ".githooks/commit-msg",
@@ -115,6 +120,10 @@ def repo(tmp_path: Path) -> Repo:
     r.git("config", "core.hooksPath", ".githooks")
     out = r.commit("chore: scaffold the hooks")
     assert out.returncode == 0, out.stderr
+    remote = tmp_path / "remote.git"
+    r.git("init", "-q", "--bare", "-b", "main", str(remote))
+    r.git("remote", "add", "origin", str(remote))
+    assert r.git("-c", "core.hooksPath=/dev/null", "push", "-q", "origin", "main").returncode == 0
     return r
 
 
@@ -162,10 +171,6 @@ def test_a_message_committed_around_the_hooks_is_caught_by_pre_push(repo):
 
 
 def test_git_push_runs_both_checks_through_the_real_hook(repo, tmp_path):
-    remote = tmp_path / "remote.git"
-    assert repo.git("init", "-q", "--bare", str(remote)).returncode == 0
-    repo.git("remote", "add", "origin", str(remote))
-    assert repo.git("push", "-q", "origin", "main").returncode == 0
     repo.write("tests/rows.py", f"ROWS = [{NAME!r}]\n")
     assert repo.commit("test: rows", no_verify=True).returncode == 0
     out = repo.git("push", "-q", "origin", "main")
@@ -205,9 +210,12 @@ def test_a_declaration_beside_its_payload_does_not_exempt_it(repo):
     repo.write("tests/fixtures/p.py", f'P = "{other}"\n')
     out = repo.commit("test: p")
     assert out.returncode != 0 and "phone" in out.stderr
-    # the same declaration committed FIRST is honoured by the next commit
+    # committed first and PUSHED, it is honoured by the next commit
     repo.git("reset", "-q")
     assert repo.commit("chore: declare p", ".githooks/pii-allowlist.txt").returncode == 0
+    out = repo.commit("test: p", "tests/fixtures/p.py")
+    assert out.returncode != 0, "a declaration nobody has pushed yet exempts nothing"
+    assert repo.git("push", "-q", "origin", "main").returncode == 0
     out = repo.commit("test: p", "tests/fixtures/p.py")
     assert out.returncode == 0, out.stderr
 
@@ -301,3 +309,132 @@ def test_a_merge_does_not_re_judge_what_a_parent_already_had(repo):
     out = repo.git("merge", "--no-ff", "-q", "side", "-m", "merge: side into main")
     assert out.returncode == 0, out.stderr
     assert repo.push_scan().returncode == 0
+
+
+# ---- review of #591 (finding 1): what the push gives the TARGET remote
+
+
+def _push(repo, *args):
+    out = repo.git("push", "-q", *args)
+    return out.returncode, out.stdout + out.stderr
+
+
+def test_an_annotated_tag_message_and_its_tagger_are_scanned(repo):
+    assert repo.git("tag", "-a", "v1", "-m", f"release for {NAME}").returncode == 0
+    rc, out = _push(repo, "origin", "v1")
+    assert rc != 0 and "denylist:text" in out and "<commit-message>" in out
+    repo.git("tag", "-a", "v2", "-m", "release", env={"GIT_COMMITTER_NAME": NAME})
+    rc, out = _push(repo, "origin", "v2")
+    assert rc != 0 and "<tagger>" in out
+
+
+def test_a_lightweight_tag_on_a_blob_or_a_tree_is_scanned(repo, tmp_path):
+    f = tmp_path / "x.txt"
+    f.write_text(f"{NAME}\n")
+    blob = repo.git("hash-object", "-w", str(f)).stdout.strip()
+    repo.git("tag", "t-blob", blob)
+    rc, out = _push(repo, "origin", "t-blob")
+    assert rc != 0 and "denylist:text" in out
+    repo.write("leak.txt", f"{NAME}\n")
+    repo.git("add", "leak.txt")
+    tree = repo.git("write-tree").stdout.strip()
+    repo.git("reset", "-q")
+    repo.git("tag", "t-tree", tree)
+    rc, out = _push(repo, "origin", "t-tree")
+    assert rc != 0 and "leak.txt" in out
+
+
+def test_a_stale_remote_tracking_ref_is_not_trusted(repo, tmp_path):
+    repo.git("checkout", "-q", "-b", "leak")
+    repo.write("leak.txt", f"{NAME}\n")
+    assert repo.commit("test: leak", no_verify=True).returncode == 0
+    assert repo.git("push", "-q", "--no-verify", "origin", "leak").returncode == 0
+    subprocess.run(
+        ["git", "branch", "-D", "leak"],
+        cwd=tmp_path / "remote.git",
+        capture_output=True,
+    )
+    assert "origin/leak" in repo.git("branch", "-r").stdout  # still there locally
+    repo.git("checkout", "-q", "main")
+    repo.git("merge", "-q", "--no-ff", "--no-verify", "origin/leak", "-m", "merge: leak")
+    rc, out = _push(repo, "origin", "main")
+    assert rc != 0 and "leak.txt" in out
+
+
+def test_a_forged_remote_tracking_ref_is_not_trusted(repo):
+    repo.write("leak.txt", f"{NAME}\n")
+    assert repo.commit("test: leak", no_verify=True).returncode == 0
+    repo.git("update-ref", "refs/remotes/origin/wip", "HEAD")
+    rc, out = _push(repo, "origin", "main")
+    assert rc != 0 and "leak.txt" in out
+
+
+def test_pushing_to_another_remote_asks_that_remote(repo, tmp_path):
+    second = tmp_path / "second.git"
+    repo.git("init", "-q", "--bare", "-b", "main", str(second))
+    repo.git("remote", "add", "second", str(second))
+    repo.write("leak.txt", f"{NAME}\n")
+    assert repo.commit("test: leak", no_verify=True).returncode == 0
+    assert repo.git("push", "-q", "--no-verify", "origin", "main").returncode == 0
+    rc, out = _push(repo, "second", "main")
+    assert rc != 0 and "leak.txt" in out
+
+
+def test_an_unreachable_remote_is_an_error(repo, tmp_path):
+    repo.git("remote", "add", "gone", str(tmp_path / "nowhere.git"))
+    out = subprocess.run(  # noqa: S603
+        [sys.executable, "scripts/pii_scan.py", "push", "gone", str(tmp_path / "nowhere.git")],
+        cwd=repo.path,
+        env=repo.env,
+        capture_output=True,
+        text=True,
+        input=f"refs/heads/main {repo.head()} refs/heads/main {'0' * 40}\n",
+    )
+    assert out.returncode == 2 and "remote-unreachable" in out.stderr
+
+
+# ---- findings 8, 9, 6
+
+
+def test_a_hash_line_or_text_past_the_scissors_is_scanned(repo):
+    repo.write("a.txt", "a\n")
+    repo.git("add", "a.txt")
+    out = repo.git("commit", "-q", "--cleanup=verbatim", "-m", "chore: a", "-m", f"# {NAME}")
+    assert out.returncode != 0 and "<commit-message>" in out.stderr
+    scissors = "# " + "-" * 24 + " >8 " + "-" * 24
+    out = repo.git(
+        "commit", "-q", "--cleanup=verbatim", "-m", "chore: a", "-m", f"{scissors}\n{PHONE}"
+    )
+    assert out.returncode != 0 and "denylist:number" in out.stderr
+
+
+def test_amend_cannot_let_a_declaration_exempt_its_own_payload(repo):
+    allow = (repo.path / ".githooks/pii-allowlist.txt").read_text()
+    repo.write(".githooks/pii-allowlist.txt", allow + "path-exempt secret.txt -- probe\n")
+    assert repo.commit("chore: declare").returncode == 0
+    repo.write("secret.txt", f"{NAME}\n")
+    repo.git("add", "secret.txt")
+    out = repo.git("commit", "-q", "--amend", "-m", "chore: declare")
+    assert out.returncode != 0 and "secret.txt" in out.stderr
+
+
+def test_a_merge_that_assembles_a_coordinate_table_is_caught_at_push(repo):
+    base = SY.base_point()
+    repo.write("fixes.csv", "lat,lng\n")
+    assert repo.commit("test: base").returncode == 0
+    rows = [f"{la:.6f},{ln:.6f}\n" for la, ln in (SY.near(base) for _ in range(4))]
+    repo.git("checkout", "-q", "-b", "b1")
+    repo.write("fixes.csv", "lat,lng\n" + "".join(rows[:2]))
+    assert repo.commit("test: two").returncode == 0
+    repo.git("checkout", "-q", "main")
+    repo.git("checkout", "-q", "-b", "b2")
+    repo.write("fixes.csv", "lat,lng\n" + "".join(rows[2:]))
+    assert repo.commit("test: two more").returncode == 0
+    repo.git("checkout", "-q", "main")
+    repo.git("merge", "-q", "--no-ff", "--no-verify", "b1", "-m", "merge: b1")
+    if repo.git("merge", "-q", "--no-ff", "--no-verify", "b2", "-m", "merge: b2").returncode != 0:
+        repo.write("fixes.csv", "lat,lng\n" + "".join(rows))
+        repo.git("add", "fixes.csv")
+        assert repo.git("commit", "-q", "--no-verify", "--no-edit").returncode == 0
+    rc, out = _push(repo, "origin", "main")
+    assert rc != 0 and "coords" in out

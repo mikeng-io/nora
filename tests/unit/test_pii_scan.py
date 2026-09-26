@@ -10,6 +10,7 @@ it must catch AND on the look-alike it must not.
 from __future__ import annotations
 
 import importlib.util
+import json
 import random
 import sys
 import types
@@ -489,10 +490,17 @@ def test_malformed_declaration_is_an_error(line):
         P.parse_allowlist(line + "\n")
 
 
-def test_commit_message_comments_and_scissors_are_not_the_message():
+def test_the_whole_message_file_is_scanned_comments_and_scissors_included(tmp_path, monkeypatch):
+    """`git commit -m` and --cleanup=verbatim keep `#` lines and text past the
+    scissors, so neither may be skipped (review of #591 finding 8)."""
     scissors = "# " + "-" * 24 + " >8 " + "-" * 24
-    body = P.message_body(f"feat: x\n\nbody\n# {NAME}\n{scissors}\n{NAME}\n")
-    assert NAME not in body and "body" in body
+    for body in (f"feat: x\n\n# {NAME}\n", f"feat: x\n\n{scissors}\n{NAME}\n"):
+        msg = tmp_path / "MSG"
+        msg.write_text(body)
+        monkeypatch.setattr(P, "rev_exists", lambda _r: None)
+        monkeypatch.setattr(P, "git", lambda *a, **k: b"")
+        rep = P.mode_message(_deny(), str(msg))
+        assert "denylist:text" in [f.rule for f in rep.findings], body
 
 
 # ---- the optional judges (a fake backend: no model here)
@@ -522,8 +530,10 @@ def _with_fake_judge(monkeypatch, scores, llm=None, error=None):
     return sent
 
 
-def _judged_report(text: str):
-    rep = P.judge_blob(_job(text.encode()), _scanner(), P.Allowlist(), set())
+def _judged_report(text: str, old: str | None = None):
+    sc = _scanner()
+    rep = P.judge_blob(_job(text.encode(), old.encode() if old else None), sc, P.Allowlist(), set())
+    rep.guard = sc.contains_denylisted
     return rep
 
 
@@ -543,8 +553,8 @@ def test_only_added_lines_go_to_the_judge(monkeypatch):
     monkeypatch.setenv("NORA_PII_JUDGE", "laya")
     monkeypatch.delenv("NORA_PII_LLM", raising=False)
     sent = _with_fake_judge(monkeypatch, lambda line: 0.0)
-    old = b"first = 1\nsecond = 2\n"
-    rep = P.judge_blob(_job(old + b"third = 3\n", old), _scanner(), P.Allowlist(), set())
+    old = "first = 1\nsecond = 2\n"
+    rep = _judged_report(old + "third = 3\n", old)
     P.run_judges(rep)
     assert [(it[1], it[2]) for it in sent["items"]] == [(3, "third = 3")]
 
@@ -598,3 +608,235 @@ def test_coords_a_constant_offset_is_still_a_table():
     dla, dln = _R.uniform(0.01, 0.2), _R.uniform(0.01, 0.2)
     shifted = [(la + dla, ln + dln) for la, ln in (SY.near(base) for _ in range(4))]
     assert P.scan_coords(_rows(shifted)).over
+
+
+# ---- review of #591: spellings the first version missed (finding 2)
+
+
+def _pct(s: str) -> str:
+    return "".join(f"%{b:02X}" for b in s.encode())
+
+
+def _b64url(s: str) -> str:
+    import base64
+
+    return base64.urlsafe_b64encode(s.encode()).decode().rstrip("=")
+
+
+@pytest.mark.parametrize(
+    "form",
+    [
+        "".join(f"\\u{ord(c):04x}" for c in NAME),  # JSON escapes
+        f"q?n={GIVEN}%20{FAMILY}",  # URL-encoded space
+        f"q?n={_pct(NAME)}",  # every byte percent-encoded
+        "".join(f"&#{ord(c)};" for c in NAME),  # HTML numeric entities
+        f"token: {_b64url('{')}.{_b64url(json.dumps({'n': NAME}))}.sig",  # a JWT payload
+        f"{FAMILY}, {GIVEN}",  # family name first
+        f"{GIVEN} Q. {FAMILY}",  # a middle initial
+        f"{GIVEN} {FAMILY}".replace("o", "\u043e").replace("a", "\u0430"),  # Cyrillic look-alikes
+    ],
+)
+def test_denylisted_name_in_every_encoding(form):
+    assert "denylist:text" in _rules(f'x = "{form}"\n'), form
+
+
+def _fold_name() -> tuple[str, str]:
+    """An invented three-character name whose characters all have a
+    different Simplified form: (traditional, simplified)."""
+    sys.path.insert(0, str(ROOT / "scripts"))
+    from pii_cjk_fold import FOLD
+
+    pool = sorted(k for k, v in FOLD.items() if 0x4E00 <= k <= 0x9FFF and len(v) == 1)
+    trad = "".join(chr(_R.choice(pool)) for _ in range(3))
+    return trad, trad.translate(FOLD)
+
+
+def test_cjk_name_simplified_and_spaced():
+    trad, simp = _fold_name()
+    sc = P.Scanner(P.parse_denylist(f"text\t{trad}\n", "t"), P.Allowlist(), set())
+    assert trad != simp
+    for form in (
+        trad,
+        simp,
+        f"{trad[0]} {trad[1:]}",
+        f"{simp[0]}　{simp[1:]}",
+        _pct(trad),
+        "".join(f"\\u{ord(c):04x}" for c in trad),
+    ):
+        assert "denylist:text" in _rules(f'"name": "{form}"\n', sc), form
+
+
+@pytest.mark.parametrize("sep", ["–", "‑", "−", " ", " - ", " "])
+def test_denylisted_phone_across_unicode_separators(sep):
+    assert "denylist:number" in _rules(f"call +44 {NSN[:4]}{sep}{NSN[4:]}\n")
+
+
+def test_a_shape_inside_a_denylisted_number_is_not_acknowledgeable():
+    """Finding 3: part of a real number, written so the denylist's own
+    matcher does not bridge it, must not become an ack-able phone shape."""
+    part = "+" + P.digits_of(PHONE)[:9]
+    fs = _scanner().scan_text(f"call {part} please\n", "f.py").findings
+    assert [(f.rule, f.ackable) for f in fs] == [("denylist:number", False)]
+
+
+def test_a_malformed_denylist_line_does_not_echo_its_value():
+    with pytest.raises(P.DenylistError) as exc:
+        P.parse_denylist(f"{NAME}\ttext\n", "t")
+    assert NAME not in str(exc.value) and GIVEN not in str(exc.value)
+
+
+# ---- cheap phone and id shapes (finding 13)
+
+
+def test_phone_links_bare_e164_and_worded_local_numbers():
+    hk = SY.phone("852")[1:]
+    assert _rules(f"https://wa.me/{hk}\n") == ["phone"]
+    assert _rules(f"from {hk} today\n") == ["phone"]
+    assert _rules(f"reach her on {SY.phone('852', 'local')} after 6\n") == ["phone"]
+
+
+def test_a_dashless_uuid_needs_an_id_word():
+    h = SY.uuid().replace("-", "")
+    assert _rules(f"member id {h}\n") == ["uuid"]
+    assert _rules(f"md5 {h}\n") == []
+
+
+# ---- coordinates the first version passed (finding 6 and probes)
+
+
+def test_coords_one_fix_labelled_home_fails():
+    la, ln = SY.base_point()
+    assert P.scan_coords(["[home]", f"lat = {la:.6f}", f"lng = {ln:.6f}"]).over
+
+
+def test_coords_two_fixes_at_home_and_two_at_work_fail():
+    a, b = SY.base_point(), SY.base_point()
+    rows = [f"{la:.6f},{ln:.6f}" for la, ln in (SY.near(a), SY.near(a), SY.near(b), SY.near(b))]
+    assert P.scan_coords(["lat,lng", *rows]).over
+
+
+def test_a_merge_that_assembles_a_table_fails():
+    base = SY.base_point()
+    head = "lat,lng\n"
+    b1 = head + "".join(f"{la:.6f},{ln:.6f}\n" for la, ln in (SY.near(base), SY.near(base)))
+    b2 = head + "".join(f"{la:.6f},{ln:.6f}\n" for la, ln in (SY.near(base), SY.near(base)))
+    merged = b1 + b2[len(head) :]
+    fs = _judge(_job(merged.encode(), b1.encode(), b2.encode()))
+    assert [f.rule for f in fs] == ["coords"]
+
+
+# ---- binaries (finding 5)
+
+
+def _png(*chunks: tuple[bytes, bytes]) -> bytes:
+    import struct
+    import zlib
+
+    def chunk(t: bytes, d: bytes) -> bytes:
+        return struct.pack(">I", len(d)) + t + d + struct.pack(">I", zlib.crc32(t + d) & 0xFFFFFFFF)
+
+    body = b"".join(chunk(t, d) for t, d in chunks)
+    return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", b"\0" * 13) + body + chunk(b"IEND", b"")
+
+
+def _tiff_gps() -> bytes:
+    return _jpeg_with_gps(True)[4 + 2 + 6 : -2]  # the TIFF inside the synthetic JPEG's APP1
+
+
+def test_png_exif_chunk_gps():
+    assert P.media_has_gps(_png((b"eXIf", _tiff_gps())))
+    assert not P.media_has_gps(_png((b"tEXt", b"Software\0x")))
+
+
+def test_quicktime_location_key():
+    la, ln = SY.base_point()
+    key = b"com.apple.quicktime.location.ISO6709"
+    assert P.media_has_gps(
+        b"\0\0\0\x20ftypqt  " + key + f"\0\0{la:+08.4f}{ln:+09.4f}+010.000/".encode()
+    )
+
+
+def test_compressed_text_chunks_and_archives_are_opened():
+    import gzip
+    import io
+    import zipfile
+    import zlib
+
+    allow = P.parse_allowlist("binary art/* -- test\n")
+    ztxt = _png((b"zTXt", b"Author\0\0" + zlib.compress(NAME.encode())))
+    itxt = _png((b"iTXt", b"Author\0\x01\0\0\0" + zlib.compress(NAME.encode())))
+    gz = gzip.compress(f"owner: {NAME}\n".encode())
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("xl/sharedStrings.xml", f"<si><t>{NAME}</t></si>")
+    for blob in (ztxt, itxt, gz, buf.getvalue()):
+        rules = [f.rule for f in _judge(_job(blob, path="art/a.bin"), allow)]
+        assert "denylist:text" in rules, blob[:8]
+
+
+def test_a_decompression_bomb_is_an_error(monkeypatch):
+    import gzip
+
+    monkeypatch.setattr(P, "DECODE_MAX", 1000)
+    allow = P.parse_allowlist("binary art/* -- test\n")
+    fs = _judge(_job(gzip.compress(b"a" * 5000), path="art/a.gz"), allow)
+    assert [(f.status, f.rule) for f in fs] == [("ERROR", "undecodable-container")]
+
+
+# ---- no model sees a denylisted line, new OR already there (finding 4)
+
+
+def test_a_line_that_already_held_a_denylisted_value_is_never_sent(monkeypatch):
+    monkeypatch.setenv("NORA_PII_JUDGE", "laya")
+    sent = _with_fake_judge(monkeypatch, lambda line: 0.0)
+    old = f"a = 1\nowner = {NAME!r}  # old\nb = 2\n"
+    new = f"a = 1\nowner = {NAME!r}  # new\nb = 3\n"
+    rep = _judged_report(new, old)
+    P.run_judges(rep)
+    blob = repr(sent)
+    assert "b = 3" in blob and NAME not in blob and GIVEN not in blob
+
+
+def test_with_no_guard_nothing_is_sent(monkeypatch):
+    monkeypatch.setenv("NORA_PII_JUDGE", "laya")
+    sent = _with_fake_judge(monkeypatch, lambda line: 0.0)
+    rep = P.judge_blob(_job(b"x = 1\n"), _scanner(), P.Allowlist(), set())
+    P.run_judges(rep)
+    assert sent.get("items") in (None, [])
+
+
+# ---- the scanner itself (findings 7, 11)
+
+
+@pytest.mark.parametrize(
+    "unit", ["a", "ab1f", "aB", "1", "a.", "1 ", "+1", "a@", "%4", "&#1", "\\u00"]
+)
+def test_a_100k_character_line_scans_in_linear_time(unit):
+    import time
+
+    line = (unit * (100_000 // len(unit)))[:100_000]
+    t0 = time.monotonic()
+    _scanner().scan_text(f"x = '{line}'\n", "f.py")
+    assert time.monotonic() - t0 < 3.0, unit
+
+
+@pytest.mark.parametrize(
+    "env",
+    [{"NORA_PII_MAX_BYTES": "8M"}, {"NORA_PII_PUSH_MAX": "abc"}, {"NORA_PII_DECODE_MAX": "-1"}],
+)
+def test_bad_configuration_is_an_error_not_a_fail(env, tmp_path):
+    import os
+    import subprocess
+
+    deny = tmp_path / "d.txt"
+    deny.write_text(f"text\t{NAME}\n")
+    e = {k: v for k, v in os.environ.items() if not k.startswith("NORA_PII_")}
+    e.update(env, NORA_PII_DENYLIST=str(deny))
+    p = subprocess.run(  # noqa: S603 - this repo's own script
+        [sys.executable, str(ROOT / "scripts" / "pii_scan.py"), "staged"],
+        cwd=tmp_path,
+        env=e,
+        capture_output=True,
+        text=True,
+    )
+    assert p.returncode == P.ERROR and "config" in p.stderr

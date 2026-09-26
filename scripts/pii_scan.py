@@ -46,9 +46,10 @@ for different ones a FAIL, where the old gate's size pin stayed green
 (#283 criterion 2).
 
 Declarations (`.githooks/pii-allowlist.txt`) and the placeholder source
-(`identity.example.toml`) are read from the PARENT commit, never from the
-change being judged: a declaration added beside the payload it would exempt
-does not exempt it (#283 criterion 3).
+(`identity.example.toml`) are read from the newest ancestor the remote
+already has, never from HEAD or from the range being pushed: a declaration
+added beside, amended into, or pushed with the payload it would exempt does
+not exempt it (#283 criterion 3).
 
 A finding the author has looked at and judged harmless is acknowledged by its
 id — `NORA_PII_ACK=<id>[,<id>]` — and the commit-msg hook writes a
@@ -62,17 +63,30 @@ lands in terminals and agent transcripts.
 
 from __future__ import annotations
 
+import base64
 import bisect
+import bz2
 import fnmatch
 import hashlib
+import html
+import io
+import lzma
 import os
 import re
 import subprocess
 import sys
 import time
 import unicodedata
+import urllib.parse
+import zipfile
+import zlib
 from collections import Counter
 from dataclasses import dataclass, field
+
+# A hook must not leave files behind: importing the fold table or the judge
+# module would otherwise write scripts/__pycache__/ into the worktree, where
+# `git add -A` picks it up.
+sys.dont_write_bytecode = True
 
 PASS, FAIL, ERROR = 0, 1, 2
 
@@ -80,8 +94,35 @@ EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 ALLOWLIST_PATH = ".githooks/pii-allowlist.txt"
 PLACEHOLDER_SOURCE = "identity.example.toml"
 DEFAULT_DENYLIST = os.path.join("~", ".config", "nora", "pii-denylist.txt")
-MAX_BYTES = int(os.environ.get("NORA_PII_MAX_BYTES", str(8 * 1024 * 1024)))
-PUSH_MAX = int(os.environ.get("NORA_PII_PUSH_MAX", "1000"))
+
+
+class ConfigError(Exception):
+    pass
+
+
+def _env_int(name: str, default: int) -> int:
+    """A positive integer from the environment. A malformed value is a
+    ConfigError, which main() turns into an ERROR (exit 2): read at import
+    time, a bad value used to crash with a traceback and exit 1, a FAIL."""
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    if not re.fullmatch(r"[0-9]+", raw) or int(raw) <= 0:
+        raise ConfigError(f"{name}={raw!r} is not a positive integer")
+    return int(raw)
+
+
+MAX_BYTES = 8 * 1024 * 1024  # replaced by configure() from NORA_PII_MAX_BYTES
+PUSH_MAX = 1000  # replaced by configure() from NORA_PII_PUSH_MAX
+DECODE_MAX = 32 * 1024 * 1024  # replaced by configure() from NORA_PII_DECODE_MAX
+
+
+def configure() -> None:
+    global MAX_BYTES, PUSH_MAX, DECODE_MAX
+    MAX_BYTES = _env_int("NORA_PII_MAX_BYTES", 8 * 1024 * 1024)
+    PUSH_MAX = _env_int("NORA_PII_PUSH_MAX", 1000)
+    DECODE_MAX = _env_int("NORA_PII_DECODE_MAX", 32 * 1024 * 1024)
+
 
 # Project identity stays; application identity goes (operator decision
 # 2026-09-10, scrub/README.md). These are the project: the commit author, the
@@ -147,6 +188,107 @@ def normalise_line(line: str) -> str:
 
 def normalise_text(text: str) -> str:
     return "\n".join(normalise_line(x) for x in text.split("\n"))
+
+
+def _match_fold_table() -> dict[int, str]:
+    """One character to one character, so offsets survive: every dash-like
+    code point to `-`, every space-like and control character to a space,
+    Cyrillic and Greek letters that are drawn like Latin ones to that Latin
+    letter, and Traditional Chinese to Simplified. Used only to MATCH the
+    denylist; nothing else reads the folded text."""
+    t: dict[int, str] = {}
+    for c in "\u2010\u2011\u2012\u2013\u2014\u2015\u2212\ufe58\ufe63\uff0d\u2043":
+        t[ord(c)] = "-"
+    for cp in (0x00A0, 0x1680, *range(0x2000, 0x200B), 0x202F, 0x205F, 0x3000):
+        t[cp] = " "
+    for cp in [*range(0x00, 0x09), 0x0B, 0x0C, 0x0D, *range(0x0E, 0x20), 0x7F]:
+        t[cp] = " "
+    # Cyrillic and Greek letters drawn like Latin ones: (look-alike, Latin) pairs
+    confusable = (
+        "\u0430a\u0435e\u043eo\u0440p\u0441c\u0443y\u0445x\u0456i"
+        "\u0458j\u0455s\u0501d\u051bq\u051dw\u04bbh\u04cfl\u0451e"
+        "\u0410A\u0412B\u0415E\u041aK\u041cM\u041dH\u041eO\u0420P"
+        "\u0421C\u0422T\u0425X\u0406I\u0408J\u0405S\u0423Y\u0391A"
+        "\u0392B\u0395E\u0396Z\u0397H\u0399I\u039aK\u039cM\u039dN"
+        "\u039fO\u03a1P\u03a4T\u03a5Y\u03a7X\u03bfo\u03b9i\u03bak"
+        "\u03bdv\u03c1p\u03c5u\u03c4t\u03b1a"
+    )
+    for k, v in zip(confusable[::2], confusable[1::2], strict=True):
+        t[ord(k)] = v
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from pii_cjk_fold import FOLD
+
+    t.update(FOLD)
+    return t
+
+
+_MATCH_FOLD: dict[int, str] | None = None
+
+
+def match_view(text: str) -> str:
+    global _MATCH_FOLD
+    if _MATCH_FOLD is None:
+        _MATCH_FOLD = _match_fold_table()
+    return text.translate(_MATCH_FOLD)
+
+
+def _json_unescape(s: str) -> str:
+    out = re.sub(r"\\u([0-9a-fA-F]{4})", lambda m: chr(int(m.group(1), 16)), s)
+    try:
+        return out.encode("utf-16", "surrogatepass").decode("utf-16")
+    except UnicodeError:
+        return out
+
+
+_B64_TOKEN = re.compile(r"[A-Za-z0-9+/_-]{16,}={0,2}")
+
+
+def _b64_texts(s: str) -> list[str]:
+    """Readable text inside base64 / base64url segments (a JWT's payload,
+    a data: URI, an opaque-looking config value)."""
+    out = []
+    for m in _B64_TOKEN.finditer(s):
+        for seg in m.group().split("."):
+            seg = seg.rstrip("=")
+            if len(seg) < 12:
+                continue
+            raw = seg.replace("-", "+").replace("_", "/")
+            try:
+                data = base64.b64decode(raw + "=" * (-len(raw) % 4), validate=True)
+                txt = data.decode("utf-8")
+            except (ValueError, UnicodeDecodeError):
+                continue
+            if txt and sum(ch.isprintable() or ch in "\t\n\r" for ch in txt) >= 0.9 * len(txt):
+                out.append(txt)
+    return out
+
+
+def decoded_layers(line: str, depth: int = 2) -> list[str]:
+    """Every spelling of `line` an encoding would hide: JSON `\\uXXXX`
+    escapes, URL percent-encoding, HTML entities, base64/base64url segments.
+    Layers are decoded again up to `depth` (base64 of a URL-encoded value)."""
+    layers: list[str] = []
+    todo = [line]
+    for _ in range(depth):
+        nxt = []
+        for cur in todo:
+            cands = []
+            if "\\u" in cur:
+                cands.append(_json_unescape(cur))
+            if "%" in cur:
+                cands.append(urllib.parse.unquote_plus(cur, errors="replace"))
+            if "&" in cur and ";" in cur:
+                cands.append(html.unescape(cur))
+            cands += _b64_texts(cur)
+            for c in cands:
+                c = normalise_line(c.replace("\n", " "))
+                if c != cur and c not in layers and c != line:
+                    layers.append(c)
+                    nxt.append(c)
+        todo = nxt
+        if not todo:
+            break
+    return layers
 
 
 def digits_of(s: str) -> str:
@@ -220,9 +362,10 @@ def parse_denylist(text: str, source: str = "") -> Denylist:
         if "\t" not in line:
             raise DenylistError(f"{source}:{n}: expected `kind<TAB>value`")
         kind, value = line.split("\t", 1)
-        value = normalise_line(value.strip())
+        value = match_view(normalise_line(value.strip()))
         if kind not in KINDS:
-            raise DenylistError(f"{source}:{n}: unknown kind {kind!r}")
+            # the "kind" of a swapped line is the value: never echo it
+            raise DenylistError(f"{source}:{n}: unknown kind {mask(kind, full=True)}")
         if (
             not value
             or value.casefold() in PROJECT_IDENTITY
@@ -235,14 +378,21 @@ def parse_denylist(text: str, source: str = "") -> Denylist:
                 # CJK and mixed-script values are matched as substrings only:
                 # their ASCII fragments (a romanised given name inside a
                 # Cantonese nickname) are not identifiers on their own.
-                d.nonascii.append(value.casefold())
+                # Whitespace is not part of a CJK name (`陳 大文`).
+                d.nonascii.append(re.sub(r"\s+", "", value.casefold()))
                 continue
             toks = _tokens_of(value)
             if len(toks) == 1 and len(toks[0]) < 4:
                 d.count -= 1
                 continue
             if toks:
-                d.token_index.setdefault(toks[0], set()).add(toks)
+                variants = {toks}
+                if len(toks) in (2, 3):
+                    # `Family, Given` and `Family, Given Middle`
+                    variants.add((toks[-1], *toks[:-1]))
+                    variants.add(tuple(reversed(toks)))
+                for v in variants:
+                    d.token_index.setdefault(v[0], set()).add(v)
                 if len(toks) > 1:
                     joined = ("".join(toks),)
                     d.token_index.setdefault(joined[0], set()).add(joined)
@@ -335,7 +485,7 @@ def load_denylist() -> tuple[Denylist | None, Finding | None, str]:
 
 
 # --------------------------------------------------------------------------
-# Allowlist (declarations, read from the parent commit)
+# Allowlist (declarations, read from what the remote already has)
 
 
 class AllowlistError(Exception):
@@ -511,7 +661,12 @@ def placeholder_email(addr: str) -> bool:
 
 _PHONE_WORDS = re.compile(
     r"(?i)phone|\btel\b|mobile|\bcell|whatsapp|signal|\bsms\b|msisdn|e164|\bcontact|\bjid\b|"
-    r"電話|手機|手机|號碼|号码"
+    r"\breach\b|\bcall\b|\bring\b|\bdial\b|\btext (?:me|her|him|them)\b|\bnumber\b|"
+    r"電話|手機|手机|號碼|号码|打俾|搵"
+)
+_PLACE_WORDS = re.compile(
+    r"(?i)(?<![a-z])(?:home|work(?:place)?|office|residence|lives?|flat|apartment|dorm|school)(?![a-z])|"
+    r"住|屋企|公司|返工|學校|学校"
 )
 _GEO_WORDS = re.compile(
     r"(?i)\blat(?:itude)?(?:_?e[67])?\b|\blng|\blon(?:g|gitude)?\b|\bcoord|\bgeo|\bgps\b|"
@@ -557,10 +712,36 @@ _SHAPES: list[tuple[str, re.Pattern, int]] = [
         0,
     ),
     ("phone", re.compile(r"(?<![\w.+\-/:])\d{4}[ \-]\d{4}(?![\w\-/:]|\.\d|[ \-]\d)"), 0),
+    # links and URIs that carry a number: wa.me/<E.164 digits>, tel:, sms:
+    (
+        "phone",
+        re.compile(
+            r"(?i)(?:wa\.me/|api\.whatsapp\.com/send\?phone=|\btel:|\bsms:)\+?\d{7,15}(?!\d)"
+        ),
+        0,
+    ),
+    # E.164 written without its `+` in prose, for the numbering plans whose
+    # mobile ranges make an 11-13 digit run unmistakable (HK, Macau, SG, TW,
+    # mainland CN); other countries need the `+` or a phone word
+    (
+        "phone",
+        re.compile(
+            r"(?<![\w.+])(?:85[23][5679]\d{7}|65[89]\d{7}|8869\d{8}|861[3-9]\d{9})(?![\w.])"
+        ),
+        0,
+    ),
     ("snowflake", re.compile(r"(?<![\w.])\d{17,20}(?![\w.])"), 0),
 ]
 EMAIL_RX = _SHAPES[1][1]
 _PHONE_BARE = re.compile(r"(?<![\w.+])\d(?:[ \-.]?\d){7,14}(?![\w.])")
+# A dashless RFC 4122 UUID (version nibble 1-8, variant 8-b) on a line that
+# calls it an id; a bare 32-hex run is usually an MD5.
+_UUID_NODASH = re.compile(
+    r"(?<![0-9A-Za-z])[0-9a-fA-F]{12}[1-8][0-9a-fA-F]{3}[89abAB][0-9a-fA-F]{15}(?![0-9A-Za-z])"
+)
+_ID_WORDS = re.compile(
+    r"(?i)(?<![a-z])(?:u?u?id|guid|user|member|account|device|install)s?(?![a-z])"
+)
 _SIGNAL_URLSAFE = re.compile(r"(?<![A-Za-z0-9+/_-])[A-Za-z0-9_-]{43}(?![A-Za-z0-9+/_=-])")
 
 
@@ -614,7 +795,9 @@ _OLC_ALPHA = "23456789CFGHJMPQRVWX"
 
 CELL_DEG = 0.002  # ~220 m: one dwell place
 MAX_CLUSTER_ROWS = 2  # three fixes in one place is a residence (#283)
-MAX_SCORE = 11  # dwell rows x dwell places: 3 places x 2 fixes = 18 fails, 2 x 2 = 8 passes
+# dwell rows x dwell places: home x2 + work x2 = 8 fails (review of #591);
+# one place x2 = 2 passes
+MAX_SCORE = 7
 MAX_DECIMALS = 10  # a written-out coordinate; 15+ digits is float arithmetic (a metric series)
 
 
@@ -714,6 +897,7 @@ class CoordResult:
     max_rows: int = 0
     dwell_rows: int = 0  # rows in a place visited at least twice
     dwell_clusters: int = 0
+    labelled: int = 0  # points on or just under a line naming a person's place (home, work)
 
     @property
     def score(self) -> int:
@@ -721,7 +905,7 @@ class CoordResult:
 
     @property
     def over(self) -> bool:
-        return self.max_rows > MAX_CLUSTER_ROWS or self.score > MAX_SCORE
+        return self.max_rows > MAX_CLUSTER_ROWS or self.score > MAX_SCORE or self.labelled > 0
 
     def digest(self) -> str:
         return coords_digest([(la, ln) for _, la, ln in self.points])
@@ -765,6 +949,11 @@ def scan_coords(lines: list[str], geo: bool | None = None) -> CoordResult:
         elif pts or (pending and n - pending[0] > 2):
             pending = None
     res = CoordResult(points=points, rows=len(points))
+    # One fix labelled `home` is a residence already (review of #591: a
+    # two-line `[home] lat = ... lng = ...` passed on count).
+    for n in {n for n, _, _ in points}:
+        if any(_PLACE_WORDS.search(lines[k]) for k in range(max(0, n - 3), n)):
+            res.labelled += 1
     if not points:
         return res
     cells: dict[tuple[int, int], int] = {}
@@ -830,15 +1019,117 @@ def _tiff_has_gps(buf: bytes, base: int) -> bool:
     return False
 
 
+# An ISO 6709 point as QuickTime writes it, in `©xyz` or in the
+# `com.apple.quicktime.location.ISO6709` metadata key: `+22.2831+114.1588/`.
+_ISO6709_BYTES = re.compile(rb"[+-]\d{2}\.\d{2,}[+-]\d{3}\.\d{2,}(?:[+-]\d+(?:\.\d+)?)?/")
+
+
+def _png_chunks(data: bytes):
+    pos = 8
+    while pos + 8 <= len(data):
+        n = int.from_bytes(data[pos : pos + 4], "big")
+        typ = data[pos + 4 : pos + 8]
+        yield typ, data[pos + 8 : pos + 8 + n]
+        pos += 12 + n
+        if typ == b"IEND":
+            return
+
+
 def media_has_gps(data: bytes) -> bool:
-    """EXIF GPS in a JPEG/PNG/TIFF, or an ISO 6709 location atom in a
-    QuickTime/MP4 (`©xyz`). A single photo taken at home is a residence."""
+    """EXIF GPS in a JPEG/TIFF or a PNG `eXIf` chunk, or an ISO 6709 point
+    anywhere in the file (QuickTime `©xyz` or `mdta` location keys). A single
+    photo taken at home is a residence."""
     for m in re.finditer(rb"Exif\x00\x00", data[: 1 << 20]):
         if _tiff_has_gps(data, m.end()):
             return True
     if data[:4] in (b"II*\x00", b"MM\x00*") and _tiff_has_gps(data, 0):
         return True
-    return bool(re.search(rb"\xa9xyz.{0,8}[+-]\d{2}\.\d+[+-]\d{3}\.\d+", data))
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        for typ, body in _png_chunks(data):
+            if typ == b"eXIf" and (_tiff_has_gps(body, 0) or _tiff_has_gps(body, 6)):
+                return True
+    return bool(_ISO6709_BYTES.search(data))
+
+
+class DecodeError(Exception):
+    pass
+
+
+def _bounded(dec, data: bytes) -> bytes:
+    """Decompress with a ceiling: past NORA_PII_DECODE_MAX it is an ERROR,
+    not a truncated look (a decompression bomb is still a blob we could not
+    read)."""
+    out = dec.decompress(data, DECODE_MAX + 1)
+    if len(out) > DECODE_MAX:
+        raise DecodeError(f"decompresses past NORA_PII_DECODE_MAX={DECODE_MAX}")
+    return out
+
+
+def expand_binary(data: bytes, depth: int = 0) -> tuple[list[str], bool]:
+    """(texts, gps) inside a binary: its printable strings; the text chunks of
+    a PNG (tEXt, zTXt and iTXt, decompressed, UTF-8); the members of a zip
+    (xlsx, docx, jar) and the payload of gzip, bzip2 and xz, each decoded or
+    expanded again. Raises DecodeError when a container is corrupt or too
+    big to open: that is an ERROR, never a skip."""
+    texts = [extract_strings(data)]
+    gps = media_has_gps(data)
+    inner: list[bytes] = []
+    try:
+        if data[:8] == b"\x89PNG\r\n\x1a\n":
+            for typ, body in _png_chunks(data):
+                if typ == b"tEXt":
+                    texts.append(body.replace(b"\x00", b" ").decode("latin-1"))
+                elif typ == b"zTXt":
+                    k, _, rest = body.partition(b"\x00")
+                    z = _bounded(zlib.decompressobj(), rest[1:])
+                    texts.append(k.decode("latin-1") + " " + z.decode("latin-1"))
+                elif typ == b"iTXt":
+                    k, _, rest = body.partition(b"\x00")
+                    comp, rest = rest[0], rest[2:]
+                    _lang, _, rest = rest.partition(b"\x00")
+                    _tk, _, txt = rest.partition(b"\x00")
+                    if comp:
+                        txt = _bounded(zlib.decompressobj(), txt)
+                    texts.append(k.decode("latin-1") + " " + txt.decode("utf-8", "replace"))
+        elif data[:2] == b"\x1f\x8b":
+            inner.append(_bounded(zlib.decompressobj(16 + zlib.MAX_WBITS), data))
+        elif data[:3] == b"BZh":
+            inner.append(_bounded(bz2.BZ2Decompressor(), data))
+        elif data[:6] == b"\xfd7zXZ\x00":
+            inner.append(_bounded(lzma.LZMADecompressor(), data))
+        elif data[:4] == b"PK\x03\x04":
+            with zipfile.ZipFile(io.BytesIO(data)) as zf:
+                infos = zf.infolist()
+                if sum(i.file_size for i in infos) > DECODE_MAX:
+                    raise DecodeError(f"archive holds more than NORA_PII_DECODE_MAX={DECODE_MAX}")
+                for i in infos:
+                    if not i.is_dir():
+                        texts.append(i.filename)
+                        inner.append(zf.read(i))
+    except (
+        OSError,
+        EOFError,
+        ValueError,
+        zlib.error,
+        lzma.LZMAError,
+        zipfile.BadZipFile,
+        IndexError,
+        RuntimeError,
+        NotImplementedError,
+    ) as exc:
+        raise DecodeError(f"container could not be opened: {type(exc).__name__}") from exc
+    for blob in inner:
+        t, _ = _decode(blob)
+        if t is not None:
+            texts.append(t)
+            gps = gps or bool(_ISO6709_BYTES.search(blob))
+        elif depth < 2:
+            sub, sub_gps = expand_binary(blob, depth + 1)
+            texts += sub
+            gps = gps or sub_gps
+        else:
+            raise DecodeError("containers nested more than two deep")
+    return texts, gps
 
 
 # --------------------------------------------------------------------------
@@ -881,6 +1172,29 @@ class Spans:
         bisect.insort(self.items, (s, e))
 
 
+_GAP = re.compile(r"[\s_\-.@/:#*'\"+,]*")
+
+
+def _match_tokens(t: str, toks: list, i: int, cand: tuple) -> int | None:
+    """End offset when `cand` starts at token i: consecutive tokens, short
+    punctuation-only gaps, and one single-letter token (a middle initial,
+    `Given Q. Family`) may be skipped per gap."""
+    p = i
+    for j in range(1, len(cand)):
+        nxt = p + 1
+        if nxt < len(toks) and toks[nxt][2] != cand[j] and len(toks[nxt][2]) == 1:
+            nxt += 1
+        if nxt >= len(toks) or toks[nxt][2] != cand[j]:
+            return None
+        gap = t[toks[p][1] : toks[nxt][0]]
+        if len(gap) > 20 or not _GAP.fullmatch(
+            re.sub(r"(?<![A-Za-z])[A-Za-z](?![A-Za-z])", "", gap)
+        ):
+            return None
+        p = nxt
+    return toks[p][1]
+
+
 class Scanner:
     def __init__(self, deny: Denylist, allow: Allowlist, placeholders: set[str]):
         self.deny = deny
@@ -889,32 +1203,38 @@ class Scanner:
 
     # denylist ---------------------------------------------------------------
     def denylist_hits(self, text: str) -> list[tuple[int, int, str, str]]:
-        """(start, end, kind, key) of every denylisted value, normalised."""
+        """(start, end, kind, key) of every denylisted value, in every
+        spelling: the text as written (folded: dashes, spaces, look-alike
+        letters, Traditional/Simplified), and each encoded layer of each line
+        decoded (JSON escapes, URL and HTML encoding, base64). A hit in a
+        decoded layer is reported on its line."""
+        hits = self._direct_hits(match_view(text))
+        pos = 0
+        for line in text.split("\n"):
+            if len(line) >= 6:
+                for layer in decoded_layers(line):
+                    for _s, _e, kind, key in self._direct_hits(match_view(layer)):
+                        hits.append((pos, pos + len(line), kind, key))
+            pos += len(line) + 1
+        return hits
+
+    def _direct_hits(self, t: str) -> list[tuple[int, int, str, str]]:
         d = self.deny
         hits: list[tuple[int, int, str, str]] = []
         if d.token_index:
             # `\nName` inside a JSON string: the escape's letter would glue to
             # the name, so blank the escape first (same length, same offsets).
-            t = re.sub(r"\\[ntr]", "  ", text)
-            toks = [(m.start(), m.end(), m.group().lower()) for m in _ALNUM_TOKEN.finditer(t)]
-            # camelCase splits too: `givenFamily` is two tokens as well as one
+            tt = re.sub(r"\\[ntr]", "  ", t)
+            toks = [(m.start(), m.end(), m.group().lower()) for m in _ALNUM_TOKEN.finditer(tt)]
             for i, (s, _e, tok) in enumerate(toks):
                 for cand in d.token_index.get(tok, ()):
-                    k = len(cand)
-                    if i + k > len(toks):
-                        continue
-                    ok = True
-                    for j in range(1, k):
-                        if toks[i + j][2] != cand[j]:
-                            ok = False
-                            break
-                        gap = t[toks[i + j - 1][1] : toks[i + j][0]]
-                        if len(gap) > 16 or not re.fullmatch(r"[\s_\-.@/:#*'\"+,]*", gap):
-                            ok = False
-                            break
-                    if ok:
-                        hits.append((s, toks[i + k - 1][1], "text", " ".join(cand)))
-            for m in re.finditer(r"[a-z][a-z0-9]*[A-Z][A-Za-z0-9]*", t):
+                    end = _match_tokens(tt, toks, i, cand)
+                    if end is not None:
+                        hits.append((s, end, "text", " ".join(cand)))
+            # camelCase splits too: `givenFamily` is two tokens as well as one.
+            # Anchored: unanchored, every lower-case start rescans to the end
+            # of the run, and a 100k-character hex line took 26 s.
+            for m in re.finditer(r"(?<![A-Za-z0-9])[a-z][a-z0-9]*[A-Z][A-Za-z0-9]*", tt):
                 parts = [
                     p.lower() for p in re.findall(r"[A-Z]?[a-z0-9]+|[A-Z]+(?![a-z])", m.group())
                 ]
@@ -923,14 +1243,21 @@ class Scanner:
                         if tuple(parts[i : i + len(cand)]) == cand:
                             hits.append((m.start(), m.end(), "text", " ".join(cand)))
         if d.nonascii:
-            low = text.casefold()
-            for v in d.nonascii:
-                start = low.find(v)
-                while start != -1:
-                    hits.append((start, start + len(v), "text", v))
-                    start = low.find(v, start + 1)
+            pos = 0
+            for line in t.split("\n"):
+                if not line.isascii():
+                    keep = [k for k, ch in enumerate(line) if not ch.isspace()]
+                    compact = "".join(line[k] for k in keep).casefold()
+                    for v in d.nonascii:
+                        start = compact.find(v)
+                        while start != -1:
+                            a, b = keep[start], keep[start + len(v) - 1] + 1
+                            hits.append((pos + a, pos + b, "text", v))
+                            start = compact.find(v, start + 1)
+                pos += len(line) + 1
         if d.number_rx is not None:
-            for m in re.finditer(r"\d(?:[ \t().\-/]{0,2}\d)*", text):
+            # up to four separator characters between digits: `+<cc> NNNN - NNNN`
+            for m in re.finditer(r"\d(?:[ \t().\-/]{0,4}\d)*", t):
                 dg = digits_of(m.group())
                 if len(dg) < 7:
                     continue
@@ -939,19 +1266,33 @@ class Scanner:
                     hits.append((m.start(), m.end(), "number", mm.group()))
         if d.uuids or d.hexes:
             for m in re.finditer(
-                r"(?<![0-9A-Za-z])[0-9a-fA-F][0-9a-fA-F-]{6,40}[0-9a-fA-F](?![0-9A-Za-z])", text
+                r"(?<![0-9A-Za-z])[0-9a-fA-F][0-9a-fA-F-]{6,40}[0-9a-fA-F](?![0-9A-Za-z])", t
             ):
                 h = m.group().replace("-", "").lower()
                 if h in d.uuids or h[:8] in d.hexes or h in d.hexes:
                     hits.append((m.start(), m.end(), "uuid", h))
         if d.b64:
-            for m in re.finditer(r"[A-Za-z0-9+/_%-]{20,}={0,2}", text):
+            for m in re.finditer(r"[A-Za-z0-9+/_%-]{20,}={0,2}", t):
                 c = b64_canonical(m.group())
                 for p in d.b64:
                     if p in c:
                         hits.append((m.start(), m.end(), "b64", p))
                         break
         return hits
+
+    def contains_denylisted(self, text: str) -> bool:
+        """True when any spelling of any denylisted value is in `text`: the
+        test every line must pass before a model may see it."""
+        return bool(self.denylist_hits(normalise_text(text)))
+
+    def denied_digits(self, digits: str) -> bool:
+        """A shape's digits that contain, or sit inside, a denylisted number."""
+        d = self.deny
+        if len(digits) < 7 or not d.numbers:
+            return False
+        return bool(d.number_rx and d.number_rx.search(digits)) or any(
+            digits in x for x in d.numbers
+        )
 
     # shapes -------------------------------------------------------------------
     def shape_hits(
@@ -996,6 +1337,17 @@ class Scanner:
                 if placeholder_digits(d) or d in self.placeholders or self.allow.value_allowed(d):
                     continue
                 out.append((s, e, "phone", d))
+        for n, line in enumerate(lines):
+            if not _ID_WORDS.search(line):
+                continue
+            for m in _UUID_NODASH.finditer(line):
+                s, e = offsets[n] + m.start(), offsets[n] + m.end()
+                if free(s, e) and not placeholder_hex(m.group()):
+                    spans.add(s, e)
+                    key = m.group().lower()
+                    if key not in self.placeholders and not self.allow.value_allowed(key):
+                        out.append((s, e, "uuid", key))
+        for n, line in enumerate(lines):
             if "group" in line.lower():
                 for m in _SIGNAL_URLSAFE.finditer(line):
                     s, e = offsets[n] + m.start(), offsets[n] + m.end()
@@ -1031,6 +1383,25 @@ class Scanner:
         if shapes:
             for s, e, rule, key in self.shape_hits(text, [(a, b) for a, b, _, _ in deny]):
                 ln = idx.line(s)
+                dg = digits_of(text[s:e])
+                if rule in ("phone", "snowflake", "whatsapp-jid") and self.denied_digits(dg):
+                    # a shape that overlaps a real number IS that number: a
+                    # separator the denylist matcher did not bridge must not
+                    # turn it into something an ack can clear
+                    findings.append(
+                        Finding(
+                            "FAIL",
+                            "denylist:number",
+                            path,
+                            ln,
+                            mask(dg, full=True),
+                            finding_id(path, lines[ln - 1]),
+                            ackable=False,
+                            key=dg,
+                            text=lines[ln - 1],
+                        )
+                    )
+                    continue
                 findings.append(
                     Finding(
                         "FAIL",
@@ -1145,6 +1516,9 @@ class Report:
     notices: list = field(default_factory=list)
     scanned: int = 0
     added_lines: list = field(default_factory=list)  # (path, line_no, text, context) for the judges
+    # True when a text holds any denylisted value in any spelling; nothing
+    # for which it is True (or for which it is unset) ever reaches a model
+    guard: object = None
 
     def extend(self, other: Report) -> None:
         self.findings += other.findings
@@ -1198,18 +1572,18 @@ def _coords_findings(
     cres = scan_coords(normalise_text(text).split("\n"), geo=geo)
     if not cres.over:
         return []
-    base_pts: Counter = Counter()
+    now = Counter((round(la, 5), round(ln, 5)) for _, la, ln in cres.points)
+    # The RESULTING table is judged against each parent on its own: a merge
+    # of two branches that each added two fixes in one place assembles a
+    # table neither parent had, so it is new unless some parent already held
+    # all of it (the union of the parents would call it old).
     for o in raw_olds:
-        if o is None:
-            continue
         pts = Counter(
             (round(la, 5), round(ln, 5))
-            for _, la, ln in scan_coords([normalise_line(x) for x in o], geo=geo).points
+            for _, la, ln in scan_coords([normalise_line(x) for x in (o or [])], geo=geo).points
         )
-        base_pts |= pts
-    now = Counter((round(la, 5), round(ln, 5)) for _, la, ln in cres.points)
-    if not (now - base_pts):
-        return []
+        if not (now - pts):
+            return []
     digest = cres.digest()
     if digest in allow.coords_digest(path):
         return []
@@ -1223,7 +1597,7 @@ def _coords_findings(
             f"rows={cres.rows} clusters={cres.clusters} max-in-one-place={cres.max_rows} "
             f"score={cres.score}",
             finding_id(path, f"<coords {digest}>"),
-            note=f"a location table; declare it as `coords {path} sha256={digest}` in a PRIOR "
+            note=f"a location table; declare it as `coords {path} sha256={digest}` in a PUSHED "
             "commit, or generate the fixture",
         )
     ]
@@ -1283,7 +1657,22 @@ def judge_blob(job: BlobJob, sc: Scanner, allow: Allowlist, acks: set[str]) -> R
     text, why = _decode(data)
     binary = text is None
     if binary:
-        if media_has_gps(data):
+        try:
+            inner_texts, gps = expand_binary(data)
+        except DecodeError as exc:
+            inner_texts, gps = [], media_has_gps(data)
+            rep.findings.append(
+                Finding(
+                    "ERROR",
+                    "undecodable-container",
+                    path,
+                    0,
+                    f"{len(data)} bytes",
+                    file_fid,
+                    note=str(exc),
+                )
+            )
+        if gps:
             rep.findings.append(
                 Finding(
                     "FAIL",
@@ -1309,7 +1698,7 @@ def judge_blob(job: BlobJob, sc: Scanner, allow: Allowlist, acks: set[str]) -> R
                 )
             )
             return rep
-        text = extract_strings(data)
+        text = "\n".join(inner_texts)
     is_allowlist = path == ALLOWLIST_PATH
     shapes = not is_allowlist
     raw_new = text.split("\n")
@@ -1319,7 +1708,12 @@ def judge_blob(job: BlobJob, sc: Scanner, allow: Allowlist, acks: set[str]) -> R
             raw_olds.append(None)
             continue
         ot, _ = _decode(old)
-        raw_olds.append((ot if ot is not None else extract_strings(old)).split("\n"))
+        if ot is None:
+            try:
+                ot = "\n".join(expand_binary(old)[0])
+            except DecodeError:
+                ot = extract_strings(old)
+        raw_olds.append(ot.split("\n"))
     # Only the lines a change adds are read closely: a value is new when it
     # sits on an added line more often than on the lines the change removed,
     # against EVERY parent (a merge adds only what no parent had).
@@ -1405,6 +1799,23 @@ def _context_from(raw: bytes | None, ph: bytes | None) -> tuple[Allowlist, set[s
     return allow, placeholders, errs
 
 
+def published_base(head: str | None) -> str | None:
+    """The newest first-parent ancestor of `head` that a remote already has,
+    by the local remote-tracking refs (pre-commit has no network; pre-push,
+    the backstop, asks the target remote). Declarations are read from here
+    and not from HEAD: `git commit --amend` would otherwise let a commit's
+    own declaration exempt the payload amended into it (review of #591)."""
+    if not head:
+        return None
+    unpublished = set(git("rev-list", head, "--not", "--remotes").decode().split())
+    if not unpublished:
+        return head
+    for c in git("rev-list", "--first-parent", head).decode().split():
+        if c not in unpublished:
+            return c
+    return None
+
+
 def env_acks() -> set[str]:
     return {x.strip() for x in re.split(r"[,\s]+", os.environ.get("NORA_PII_ACK", "")) if x.strip()}
 
@@ -1425,7 +1836,7 @@ def mode_staged(deny: Denylist) -> Report:
     if os.path.exists(mh):
         with open(mh) as fh:
             merge_heads = [x.strip() for x in fh.read().split() if x.strip()]
-    allow, placeholders, errs = load_context(head)
+    allow, placeholders, errs = load_context(published_base(head))
     rep = Report(findings=errs)
     raw = git("diff-index", "--cached", "-z", "-M", "--raw", "--no-abbrev", head or EMPTY_TREE)
     entries = parse_raw_z(raw)
@@ -1436,8 +1847,8 @@ def mode_staged(deny: Denylist) -> Report:
             continue
         if dst == ALLOWLIST_PATH:
             rep.notices.append(
-                f"pii: {ALLOWLIST_PATH} changed; declarations take effect from the NEXT "
-                "commit, never this one"
+                f"pii: {ALLOWLIST_PATH} changed; declarations take effect once this commit is "
+                "PUSHED, never in it (push it on its own, then commit what it covers)"
             )
         olds = [osha if not set(osha) <= {"0"} else None]
         olds += [f"{m}:{dst}" for m in merge_heads]
@@ -1447,6 +1858,7 @@ def mode_staged(deny: Denylist) -> Report:
         jobs_meta.append((dst, nm, nsha, olds))
     objs = read_objects(names)
     sc = Scanner(deny, allow, placeholders)
+    rep.guard = sc.contains_denylisted
     acks = env_acks()
     for dst, nm, nsha, olds in jobs_meta:
         job = BlobJob(
@@ -1481,17 +1893,6 @@ def _ident_findings(sc: Scanner, label: str, ident: str) -> list[Finding]:
     return out
 
 
-def message_body(raw: str, comment_char: str = "#") -> str:
-    lines = []
-    for line in raw.split("\n"):
-        if re.match(r"^. -{24} >8 -{24}$", line):
-            break
-        if line.startswith(comment_char):
-            continue
-        lines.append(line)
-    return "\n".join(lines)
-
-
 def message_findings(sc: Scanner, body: str) -> list[Finding]:
     scan = sc.scan_text(body, "<commit-message>")
     out = list(scan.findings)
@@ -1511,14 +1912,16 @@ def message_findings(sc: Scanner, body: str) -> list[Finding]:
 
 def mode_message(deny: Denylist, msg_path: str) -> Report:
     head = rev_exists("HEAD")
-    allow, placeholders, errs = load_context(head)
+    allow, placeholders, errs = load_context(published_base(head))
     rep = Report(findings=errs, scanned=1)
-    cc = git("config", "--get", "core.commentChar", check=False).decode().strip() or "#"
-    if cc == "auto":
-        cc = "#"
+    # The WHOLE file: `git commit -m` and --cleanup=verbatim keep `#` lines
+    # and text past the scissors, so stripping them first skipped text that
+    # lands in the commit. Over-strict on git's own comment template is the
+    # price (review of #591).
     with open(msg_path, encoding="utf-8", errors="surrogateescape") as fh:
-        body = message_body(fh.read(), cc)
+        body = fh.read()
     sc = Scanner(deny, allow, placeholders)
+    rep.guard = sc.contains_denylisted
     rep.findings += message_findings(sc, body)
     for label, var in (("<author>", "GIT_AUTHOR_IDENT"), ("<committer>", "GIT_COMMITTER_IDENT")):
         ident = git("var", var, check=False).decode("utf-8", "replace").strip()
@@ -1606,16 +2009,128 @@ def _changes_from(per_parent_entries: list[list[tuple]]) -> list[tuple[str, str,
     return out
 
 
-def mode_push(deny: Denylist, stdin_lines: list[str]) -> Report:
+def remote_has(remote: str) -> set[str]:
+    """Every object id the TARGET remote advertises that exists here too.
+    Asked of the remote itself (`git ls-remote`), never read off local
+    remote-tracking refs: those go stale (a branch deleted on the remote),
+    can be written by anyone (`git update-ref refs/remotes/...`) and belong
+    to a different remote when pushing somewhere else (review of #591).
+    Unreachable is a GitError: an ERROR, never an assumption."""
+    raw = git("ls-remote", remote).decode()
+    ids = {ln.split("\t", 1)[0] for ln in raw.splitlines() if "\t" in ln}
+    if not ids:
+        return set()
+    probe = git("cat-file", "--batch-check", input_bytes=("\n".join(sorted(ids)) + "\n").encode())
+    return {
+        ln.split(" ", 1)[0] for ln in probe.decode().splitlines() if not ln.endswith(" missing")
+    }
+
+
+def _tag_chain(sha: str) -> tuple[list[tuple[str, str, str]], str, str]:
+    """Peel an annotated tag: ([(tag sha, tagger, message)], target sha,
+    target type)."""
+    tags = []
+    typ = git("cat-file", "-t", sha).decode().strip()
+    while typ == "tag":
+        raw = git("cat-file", "tag", sha).decode("utf-8", "surrogateescape")
+        head, _, message = raw.partition("\n\n")
+        fields = dict(ln.split(" ", 1) for ln in head.splitlines() if " " in ln)
+        tagger = re.sub(r"\s+\d+\s+[+-]\d{4}$", "", fields.get("tagger", ""))
+        tags.append((sha, tagger, message))
+        sha, typ = fields["object"], fields["type"]
+    return tags, sha, typ
+
+
+def mode_push(deny: Denylist, stdin_lines: list[str], remote: str | None) -> Report:
     rep = Report()
     zero = "0" * 40
+    if not remote:
+        rep.findings.append(
+            Finding(
+                "ERROR",
+                "push-remote",
+                "<push>",
+                0,
+                "",
+                "",
+                ackable=False,
+                note="the pre-push hook passes the remote; run from it",
+            )
+        )
+        return rep
+    try:
+        published = remote_has(remote)
+    except GitError as exc:
+        rep.findings.append(
+            Finding(
+                "ERROR",
+                "remote-unreachable",
+                remote,
+                0,
+                "",
+                "",
+                ackable=False,
+                note=f"could not ask the remote what it already has: {exc}",
+            )
+        )
+        return rep
     shas: list[str] = []
     for line in stdin_lines:
         parts = line.split()
         if len(parts) < 4 or parts[1] == zero:
             continue
+        local_ref, local_sha, _remote_ref, remote_sha = parts[:4]
+        if local_sha == remote_sha:
+            continue
+        exclude = set(published)
+        if remote_sha != zero and remote_sha in published:
+            exclude.add(remote_sha)
+        tags, target, typ = _tag_chain(local_sha)
+        allow, placeholders, _errs = load_context(None)
+        sc = Scanner(deny, allow, placeholders)
+        for tsha, tagger, message in tags:
+            fs = message_findings(sc, message) + _ident_findings(sc, "<tagger>", tagger)
+            for f in fs:
+                f.path = f"{local_ref} ({tsha[:10]}) {f.path}"
+            rep.findings += fs
+            rep.scanned += 1
+        if typ in ("blob", "tree"):
+            # A tag on a bare blob or tree: every object in it the remote
+            # does not already reach.
+            listing = git(
+                "rev-list",
+                "--objects",
+                "--stdin",
+                input_bytes=(
+                    "\n".join([target] + [f"^{x}" for x in sorted(exclude)]) + "\n"
+                ).encode(),
+            ).decode()
+            objs = [ln.split(" ", 1) for ln in listing.splitlines()]
+            if typ == "blob":
+                objs = [[target, "<blob>"]]
+            blobs = read_objects([o[0] for o in objs])
+            for o in objs:
+                data = blobs.get(o[0])
+                if data is None or git("cat-file", "-t", o[0]).decode().strip() != "blob":
+                    continue
+                path = o[1] if len(o) > 1 else "<blob>"
+                sub = judge_blob(BlobJob(path, "100644", data, [None]), sc, allow, set())
+                for f in sub.findings:
+                    f.path = f"{local_ref} {f.path}"
+                sub.added_lines = []
+                rep.extend(sub)
+            continue
+        if typ != "commit":
+            continue
         found = (
-            git("rev-list", f"--max-count={PUSH_MAX + 1}", parts[1], "--not", "--remotes")
+            git(
+                "rev-list",
+                f"--max-count={PUSH_MAX + 1}",
+                "--stdin",
+                input_bytes=(
+                    "\n".join([target] + [f"^{x}" for x in sorted(exclude)]) + "\n"
+                ).encode(),
+            )
             .decode()
             .split()
         )
@@ -1624,16 +2139,16 @@ def mode_push(deny: Denylist, stdin_lines: list[str]) -> Report:
                 Finding(
                     "ERROR",
                     "push-too-long",
-                    parts[0],
+                    local_ref,
                     0,
-                    f">{PUSH_MAX} new commits",
+                    f">{PUSH_MAX} commits the remote does not have",
                     "",
                     ackable=False,
                     note="raise NORA_PII_PUSH_MAX to look at all of them",
                 )
             )
             found = found[:PUSH_MAX]
-        shas += [s for s in found if s not in shas]
+        shas += [x for x in found if x not in shas]
     return scan_commits(deny, shas, rep)
 
 
@@ -1665,7 +2180,22 @@ def scan_commits(deny: Denylist, shas: list[str], rep: Report | None = None) -> 
     for sha, entries in zip(owner, diffs, strict=True):
         by_commit.setdefault(sha, []).append(entries)
     changes = {sha: _changes_from(by_commit[sha]) for sha in shas}
-    firsts = sorted({meta[sha][0][0] for sha in shas if meta[sha][0]})
+    # Declarations come from the newest first-parent ancestor OUTSIDE the
+    # range (what the remote already has), not from each commit's parent: a
+    # declaration pushed in the same range as its payload exempts nothing.
+    in_range = set(shas)
+
+    def base_of(sha: str) -> str:
+        c = sha
+        while c in in_range:
+            ps = meta[c][0]
+            if not ps:
+                return ""
+            c = ps[0]
+        return c
+
+    bases = {sha: base_of(sha) for sha in shas}
+    firsts = sorted({b for b in bases.values() if b})
     names = [c[2] for sha in shas for c in changes[sha] if c[1] != "160000"]
     names += [o for sha in shas for c in changes[sha] for o in c[3] if o]
     names += [f"{p}:{x}" for p in firsts for x in (ALLOWLIST_PATH, PLACEHOLDER_SOURCE)]
@@ -1677,7 +2207,7 @@ def scan_commits(deny: Denylist, shas: list[str], rep: Report | None = None) -> 
         )
     for sha in shas:
         parents, author, committer, body = meta[sha]
-        allow, placeholders, errs = ctx_cache[parents[0] if parents else ""]
+        allow, placeholders, errs = ctx_cache[bases[sha]]
         sc = Scanner(deny, allow, placeholders)
         acks = trailer_acks(body)
         sub = Report(findings=list(errs))
@@ -1784,10 +2314,26 @@ def run_judges(rep: Report) -> None:
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     import pii_judge
 
-    denied = {(f.path, f.line) for f in rep.findings if f.rule.startswith("denylist:")}
+    guard = rep.guard if callable(rep.guard) else (lambda _t: True)  # unset: send nothing
+
+    def withheld(text: str) -> bool:
+        return bool(guard(text))
+
+    def safe_ctx(ctx: str) -> str:
+        return "\n".join("[withheld]" if withheld(x) else x for x in ctx.split("\n"))
+
     flagged = {(f.path, f.line) for f in rep.findings}
     if backend and backend != "off":
-        items = [it for it in rep.added_lines if (it[0], it[1]) not in denied]
+        # No line holding a denylisted value -- new OR already in the file --
+        # is ever sent, and no such line rides along as context.
+        items = [
+            (p, n, line, safe_ctx(ctx)) for p, n, line, ctx in rep.added_lines if not withheld(line)
+        ]
+        held = len(rep.added_lines) - len(items)
+        if held:
+            rep.notices.append(
+                f"pii: {held} line(s) holding a denylisted value were not sent to the judge"
+            )
         try:
             verdicts = pii_judge.score_lines(backend, items)
         except pii_judge.JudgeError as exc:
@@ -1825,12 +2371,13 @@ def run_judges(rep: Report) -> None:
             and not f.state
             and f.text
             and not f.rule.startswith("denylist:")
+            and not withheld(f.text)
         ]
         if not todo:
             return
         try:
             verdicts = pii_judge.llm_rejudge(
-                llm, [(f.rule, f.text, ctx.get((f.path, f.line), f.text)) for f in todo]
+                llm, [(f.rule, f.text, safe_ctx(ctx.get((f.path, f.line), f.text))) for f in todo]
             )
         except pii_judge.JudgeError as exc:
             rep.findings.append(
@@ -1874,8 +2421,8 @@ def emit(rep: Report, label: str, elapsed: float) -> int:
             "  Values are masked. A denylist hit is a real value: remove it. For any other\n"
             "  finding you have looked at and judged harmless:\n"
             "  NORA_PII_ACK=<id>[,<id>] git commit ... (the commit-msg hook records each as a\n"
-            f"  `{ACK_TRAILER}:` trailer). Declarations: {ALLOWLIST_PATH}, honoured from the\n"
-            "  parent commit only. See .githooks/README.md.",
+            f"  `{ACK_TRAILER}:` trailer). Declarations: {ALLOWLIST_PATH}, honoured once\n"
+            "  PUSHED, never in the change they cover. See .githooks/README.md.",
             file=sys.stderr,
         )
     return code
@@ -1898,6 +2445,13 @@ def main(argv: list[str]) -> int:
         return ERROR
     mode = argv[1]
     t0 = time.monotonic()
+    try:
+        configure()
+    except ConfigError as exc:
+        rep = Report(
+            findings=[Finding("ERROR", "config", "<env>", 0, "", "", ackable=False, note=str(exc))]
+        )
+        return emit(rep, mode, time.monotonic() - t0)
     if mode == "declare-coords":
         return mode_declare_coords(argv[2])
     deny, err, notice = load_denylist()
@@ -1921,7 +2475,12 @@ def main(argv: list[str]) -> int:
             if verdict(rep) == PASS:
                 _write_ack_trailers(argv[2], rep)
         elif mode == "push":
-            rep = mode_push(deny, sys.stdin.read().splitlines())
+            # pre-push passes <remote name> <remote url>; the url is asked
+            rep = mode_push(
+                deny,
+                sys.stdin.read().splitlines(),
+                argv[3] if len(argv) > 3 else (argv[2] if len(argv) > 2 else None),
+            )
         elif mode == "commits":
             rep = scan_commits(
                 deny,

@@ -109,10 +109,12 @@ you bypass, name the reason in the commit body.
 
 The same hooks, with a `pre-commit`, also refuse a change that ADDS a real
 identifier (#283): the message, the author identity and the staged blobs at
-commit time, every object in the range at push time, so `--no-verify` moves
-the refusal to `git push` rather than removing it. Setup (a private denylist
-outside the repo), acknowledgement (`NORA_PII_ACK=<id>`, recorded as a
-`PII-Ack:` trailer) and declarations are in `.githooks/README.md`.
+commit time, every object and tag the target remote does not have at push
+time. `git commit --no-verify` moves the refusal to `git push`; `git push
+--no-verify` removes it, and there is no server-side or CI check behind it.
+Setup (a private denylist outside the repo), acknowledgement
+(`NORA_PII_ACK=<id>`, recorded as a `PII-Ack:` trailer) and declarations are
+in `.githooks/README.md`.
 
 ## Merge strategy
 

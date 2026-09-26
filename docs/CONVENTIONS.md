@@ -128,9 +128,11 @@ counting a module's responsibilities to counting its lines.
     gate left are the new one's design: coordinates are read as FIELDS and
     scored on dwell (rows x places), not literal count; a declared table is
     pinned to its CONTENT digest, not its size; declarations and placeholders
-    are read from the PARENT commit, so a declaration cannot land beside its
-    payload; phones are detected in every country, and full-width digits and
-    zero-width characters are folded before matching. UTF-16, undecodable
+    are read from the newest ancestor the remote already has, so a
+    declaration cannot land beside, be amended into, or be pushed with its
+    payload; phones written with a `+` are detected in every country, and the
+    denylist is matched through separators, look-alike letters, Traditional
+    and Simplified Chinese, and decoded JSON, URL, HTML and base64 layers. UTF-16, undecodable
     bytes, symlinks and gitlinks stay ERRORs with a declared allowlist, and a
     declared binary is scanned for embedded strings, never skipped. Every
     rule is guarded by a named test, shown by a 46-entry mutation table
