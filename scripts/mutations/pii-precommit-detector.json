@@ -543,6 +543,6 @@
   "file": "scripts/pii_scan.py",
   "old": "        allow, placeholders, errs = ctx_cache[bases[sha]]",
   "new": "        allow, placeholders, errs = ctx_cache[meta[sha][0][0] if meta[sha][0] else \"\"]",
-  "target": "tests/infra/test_pii_hooks.py::test_a_declaration_beside_its_payload_does_not_exempt_it"
+  "target": "tests/infra/test_pii_hooks.py::test_a_declaration_pushed_together_with_its_payload_exempts_nothing"
  }
 ]
