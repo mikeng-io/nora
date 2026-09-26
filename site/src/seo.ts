@@ -38,16 +38,18 @@ export function structuredData(locale: Locale, site: URL): object {
         primaryImageOfPage: at(info.og),
       },
       {
-        // An AI agent that lives in group chats. Not offered to the public
-        // (only the circle she lives with can use her), so no `offers`.
-        "@type": "SoftwareApplication",
+        // An AI agent that lives in group chats. Typed CreativeWork, with
+        // SoftwareApplication as its additionalType: Google validates a bare
+        // SoftwareApplication as a rich result that must carry `offers` and a
+        // rating, and nobody can buy or sign up for her.
+        "@type": "CreativeWork",
+        additionalType: "https://schema.org/SoftwareApplication",
         "@id": ids.nora,
         name: "Nora",
         url: at("/"),
         description: t.meta.description,
-        applicationCategory: "CommunicationApplication",
-        applicationSubCategory: "AI agent",
-        operatingSystem: PLATFORMS.join(", "),
+        genre: "AI agent",
+        keywords: ["AI agent", "group chat", ...PLATFORMS].join(", "),
         image: at(info.og),
         creator: { "@id": ids.author },
       },
@@ -76,7 +78,9 @@ export function sitemap(site: URL): string {
 }
 
 /** /llms.txt (llmstxt.org): the page's claims as plain Markdown, English
-    first, for a model that reads the site instead of rendering it. */
+    first, for a model that reads the site instead of rendering it. The spec
+    keeps H2 for link lists, so the claims sit before the first H2 under the
+    page's own section titles in bold. */
 export function llmsTxt(site: URL): string {
   const t = LOCALES.en.dict;
   const zh = LOCALES["zh-Hant"].dict;
@@ -88,35 +92,33 @@ export function llmsTxt(site: URL): string {
     ``,
     `> ${t.meta.description}`,
     ``,
-    `Nora is private: she lives with one circle of friends and is not a product anyone can sign up for. ${t.portal.body}`,
+    t.hero.lede,
     ``,
-    `## How she works`,
+    `**${t.loop.title}** ${t.loop.lede}`,
     ``,
     `- **${t.loop.tagTitle}.** ${t.loop.tagBody}`,
     `- **${t.loop.ambientTitle}.** ${t.loop.ambientBody} ${t.loop.stages.map((s) => `${s.title}: ${s.body}`).join(" ")}`,
     `- ${t.loop.closing}`,
     ``,
-    `## Memory`,
-    ``,
-    t.memory.lede,
+    `**${t.memory.title}** ${t.memory.lede}`,
     ``,
     ...list(t.memory.tiers.map((m) => `**${m.title}** (${m.scale}): ${m.body}`)),
     ``,
     t.memory.note,
     ``,
-    `## Where she is, and what she can see`,
+    `**${t.senses.title}** ${t.senses.lede}`,
     ``,
     ...list(t.senses.rows.map((r) => `**${r.title}:** ${r.body}`)),
     ``,
     t.senses.note,
     ``,
-    `## What she won't do`,
+    `**${t.manners.title}**`,
     ``,
     ...list(t.manners.items.map((m) => `**${m.title}** ${m.body}`)),
     ``,
-    `## Her form`,
+    `**${t.form.title}** ${t.form.body.join(" ")}`,
     ``,
-    t.form.body.join("\n\n"),
+    `**${t.portal.title}** ${t.portal.body}`,
     ``,
     `## Pages`,
     ``,

@@ -81,7 +81,9 @@ for `/drop/` and `/i/`. In order:
    loop.
 
 Live since 2026-09-26: the tunnel rule is in `~/workspace/cloudflared/terraform/tunnel.tf`
-on norty, just before the portal's catch-all.
+on norty, just before the portal's catch-all. `/sitemap.xml` and `/llms.txt`
+joined it on 2026-09-27; a path added to the list above is unreachable until
+it is added there too.
 
 If the portal ever gets a hostname of its own, build with
 `PUBLIC_PORTAL_ORIGIN=https://<portal host>` so the sign-in links follow it,
