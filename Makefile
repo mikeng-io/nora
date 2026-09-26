@@ -20,11 +20,12 @@
 setup:
 	uv sync --extra evals
 
-# --- hooks (CONTRIBUTING.md §Commit messages: the commit-msg/pre-push check) ---
+# --- hooks (CONTRIBUTING.md §Commit messages: the commit-msg/pre-push check; .githooks/README.md: the identifier scan) ---
 
 hooks:
 	git config core.hooksPath .githooks
 	@echo "core.hooksPath -> $$(git config core.hooksPath) (repo-level: one run per clone covers all worktrees; a hook fires only where the branch carries .githooks/)"
+	@if [ -f "$${NORA_PII_DENYLIST:-$$HOME/.config/nora/pii-denylist.txt}" ]; then echo "pii denylist: present"; else echo "pii denylist: MISSING - every commit is an ERROR until you run scripts/pii_denylist_build.py (see .githooks/README.md)"; fi
 
 # --- gate (AGENTS.md: `make gate` once per PR, on the final head, before
 # claiming it done; `make test-affected` or the tests you touched while

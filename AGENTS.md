@@ -435,10 +435,12 @@ the same commit.
   reproduce the property under test, that is a finding about the property.
   Deleting a file does not delete its object: a fixture of real GPS fixes stayed
   reachable from `master` for three weeks after its removal
-  (`docs/CONVENTIONS.md` has the story). **No machine check enforces this
-  today**: the identifier gate left the suite 2026-09-16 and the pre-commit
-  detector meant to replace it was never built (#283), so the rule is yours to
-  keep until that lands.
+  (`docs/CONVENTIONS.md` has the story). **The `pre-commit`, `commit-msg` and
+  `pre-push` hooks enforce it** (#283, `.githooks/README.md`): a known real
+  value, a phone/id/email shape or a coordinate table that a change ADDS is
+  refused, fail-closed, against a private denylist outside the repo. It needs
+  `make hooks` and the denylist on your machine; it stops a pasted corpus, not
+  a disguised one, so the rule stays yours too.
 - **Never read an instrument's output as evidence without first checking it can
   measure the thing** — state what a positive result would look like before
   concluding from a null one.

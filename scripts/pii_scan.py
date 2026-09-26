@@ -33,7 +33,8 @@ What it knows, in the order it is applied:
 2. **Shape detectors** for what the denylist does not know: phone numbers (any
    country), emails, platform snowflakes, UUIDs, WhatsApp JIDs, Signal group
    ids, Tailscale names and addresses, GPS in media metadata, and COORDINATE
-   TABLES scored on rows x distinct clusters (#283 criterion 1).
+   TABLES read as number fields and scored on dwell — fixes per place, and
+   dwell rows x dwell places — not on a literal count (#283 criterion 1).
 3. **Optional judges** (`NORA_PII_JUDGE=laya|jev`, `NORA_PII_LLM=<ollama tag>`;
    both off by default) — see `scripts/pii_judge.py`.
 
