@@ -61,13 +61,14 @@ service `site`, profile `site`). It owns only these paths:
 
 ```text
 ^/$  ^/en/?$  ^/_astro/  ^/_site/  ^/favicon\.ico$  ^/robots\.txt$
+^/sitemap\.xml$  ^/llms\.txt$
 ```
 
 Nothing there collides with the portal (`/_next/`, `/api/`, `/zh-Hant/…`,
 `/en/…`, `/manifest.json`, `/sw.js`), so the site can share the portal's
 hostname: the tunnel sends those paths to `:3401` and everything else to the
 portal, as it already does for `/i/` and `/drop/`. Owning `/robots.txt` means
-answering for drop too: `site/public/robots.txt` keeps drop's "never index"
+answering for drop too: `src/pages/robots.txt.ts` keeps drop's "never index"
 for `/drop/` and `/i/`. In order:
 
 1. `docker compose --profile site build site && docker compose --profile site up -d site`
@@ -80,7 +81,9 @@ for `/drop/` and `/i/`. In order:
    loop.
 
 Live since 2026-09-26: the tunnel rule is in `~/workspace/cloudflared/terraform/tunnel.tf`
-on norty, just before the portal's catch-all.
+on norty, just before the portal's catch-all. `/sitemap.xml` and `/llms.txt`
+joined it on 2026-09-27; a path added to the list above is unreachable until
+it is added there too.
 
 If the portal ever gets a hostname of its own, build with
 `PUBLIC_PORTAL_ORIGIN=https://<portal host>` so the sign-in links follow it,

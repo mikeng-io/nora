@@ -475,10 +475,11 @@ services:
       - ./identity.toml:/app/identity.toml:ro
 
   # site — Nora's public site (site/, Astro, static). Loopback-only like
-  # `app`; it answers `/`, `/en/`, `/_astro/*`, `/_site/*`, `/favicon.ico`
-  # and `/robots.txt` on the portal's own hostname once the tunnel routes
-  # those paths here (site/README.md, "Going live"). Behind a profile until
-  # then, so `docker compose up -d` does not start it:
+  # `app`; it answers `/`, `/en/`, `/_astro/*`, `/_site/*`, `/favicon.ico`,
+  # `/robots.txt`, `/sitemap.xml` and `/llms.txt` on the portal's own
+  # hostname once the tunnel routes those paths here (site/README.md, "Going
+  # live"). Behind a profile until then, so `docker compose up -d` does not
+  # start it:
   #   docker compose --profile site build site && docker compose --profile site up -d site
   site:
     build:
