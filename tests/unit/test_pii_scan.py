@@ -1282,7 +1282,8 @@ def test_a_denylisted_number_inside_a_long_digit_run_is_found():
     """Past the spread matcher's 24-digit window, the separator matcher still
     finds a number embedded in a longer run."""
     lead = " ".join(str(_R.randint(1000, 9999)) for _ in range(5))
-    assert "denylist:number" in _rules(f"ids {lead} {P.digits_of(PHONE)} {lead}\n")
+    spaced = f"44 {NSN[:4]} {NSN[4:]}"  # no `+`: no shape rule helps here
+    assert "denylist:number" in _rules(f"ids {lead} {spaced} {lead}\n")
 
 
 def test_decoding_is_capped_per_line():
