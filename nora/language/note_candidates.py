@@ -1651,7 +1651,7 @@ class NoteCandidateAdaptor:
             ts for shown in self._message_ts.values()
             for mid, ts in shown.items() if mid in cited
         ]
-        if dated and all(ts <= head.written_at for ts in dated):
+        if dated and all(ts < head.written_at for ts in dated):
             log.info(
                 "note-candidates: an update of note %s cites only messages "
                 "older than its last change; refused (unit=%s)", match.id, unit,
