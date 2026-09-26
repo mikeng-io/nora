@@ -222,8 +222,21 @@ cases:
       platform: signal
       conversation_id: MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08=
       before_ms: 1789737522305
+    # 2026-09-26: graded against the triaged group (see p6): 5/8 stack draws
+    # revised a note the operator's 09-24 triage merged INTO this one.
     metadata:
-      updates: 今晚 backroom 行動
+      updates:
+        - 今晚 backroom 行動
+        - Grant 未講元朗邊間、幾點
+        - 元朗宵夜地點時間未定，陀螺盤交收綁死今晚
+        - 今晚宵夜團地點同時間未定
+        - 宵夜元朗邊度、幾點未定
+        - 宵夜團地點時間未定，陀螺盤交收卡住
+        - 宵夜團地點時間未定，交收卡住
+        - 今晚宵夜地點時間未定，陀螺盤交收卡住
+        - 今晚宵夜地點時間未定
+        - 今晚宵夜團地點時間未定
+        - 今晚宵夜地點同時間未定
 
   - name: n1_settled_fact_nothing_open
     entry: dreamer
@@ -321,6 +334,24 @@ cases:
         - 今晚宵夜團地點時間未定
         - 今晚宵夜地點同時間未定
         - 今晚 backroom 行動
+
+  - name: p11_update_lands_on_its_own_arrangement_among_same_day_siblings
+    entry: dreamer
+    category: note-candidates
+    expect: update
+    # REAL: the evening's venue question is settled (a booked restaurant and
+    # time). At this instant the unit held four open notes about the same
+    # day, each a DIFFERENT question: the venue, the car, the headcount, and
+    # an item to bring. Production appended the booking to the venue note
+    # (revision at before_ms). A revision on any sibling is a wrong note: the
+    # case design 42 §10.1 asked for and p5/p6 could not be (their siblings
+    # were one arrangement).
+    snapshot:
+      platform: signal
+      conversation_id: MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08=
+      before_ms: 1790339087957
+    metadata:
+      updates: 27號晚坐低食定掃街未定
 
   - name: p7_cantonese_only_solo_plan
     entry: dreamer
