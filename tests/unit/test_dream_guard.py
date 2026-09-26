@@ -294,11 +294,17 @@ def test_the_guard_has_no_terminal_verb_and_nothing_that_could_end_a_turn():
     ration is spent still runs until the model stops asking for tools —
     `tests/unit/test_dream_memory_budget.py` asserts exactly that, because «a
     budget that ends the turn» is the failure mode this negative is about.
+
+    `pass_budget` (design/dreamer-agent-loop/43 §4) is the same ceiling over
+    every verb rather than the memory cluster, argued on the same terms: it
+    refuses a call and rewrites its result, and the pass runs on until the
+    model stops asking (`test_the_configured_pass_ceiling_binds_through_the_
+    real_loop` finishes `ok` past the cap).
     """
     params = inspect.signature(DreamGuard.__init__).parameters
     assert set(params) == {
         "self", "adaptor", "budgets", "metrics", "result_caps",
-        "memory_tools", "memory_budget", "param_names",
+        "memory_tools", "memory_budget", "param_names", "pass_budget",
     }
     assert all(
         p.kind is inspect.Parameter.KEYWORD_ONLY
