@@ -5,7 +5,7 @@ import type { Dict } from "./types";
 // scripted example with invented people; it says so on the page.
 export const en = {
   meta: {
-    title: "Nora · the quiet one in the group chat",
+    title: "Nora · the quiet AI in the group chat",
     description:
       "Nora is an AI who lives in one circle of friends’ group chats on Signal, WhatsApp, Discord and Instagram. She listens, remembers what matters, and answers when someone tags her.",
     ogAlt:

@@ -5,7 +5,7 @@ import type { Dict } from "./types";
 // en.ts, sentence for sentence; `astro check` enforces the same keys.
 export const zhHant = {
   meta: {
-    title: "Nora · 群組入面最靜嗰個",
+    title: "Nora · 群組入面最靜嗰個 AI",
     description:
       "Nora 係一個 AI，住喺一班朋友嘅 Signal、WhatsApp、Discord 同 Instagram 群組入面。佢聽住、記住重要嘅嘢，有人 tag 佢就會應。",
     ogAlt: "Nora，一個著灰色 hoodie、戴住白色有線耳筒嘅細細 3D 角色，旁邊寫住「群組入面，最靜嗰個。」",

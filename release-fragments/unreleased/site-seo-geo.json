@@ -1,0 +1,13 @@
+{
+  "type": "change",
+  "summary": "Nora's public site now tells search engines and AI answer engines what it is: a sitemap, structured data on both home pages, an llms.txt and page titles that say she is an AI.",
+  "details": [
+    "Both home pages carry a schema.org graph (the site, the page, Nora as an AI agent, and who built her) and name each other as og:locale alternates.",
+    "/sitemap.xml lists the two home pages with their language alternates, and robots.txt points to it.",
+    "/llms.txt gives a model reading the site the page's own claims as plain Markdown, generated from the same copy, so it cannot drift from the page.",
+    "robots.txt no longer lets crawlers into the portal's signed-in pages under /en/, as it already did for /zh-Hant/."
+  ],
+  "limitations": [
+    "Cloudflare blocks AI training crawlers (GPTBot, ClaudeBot, CCBot and others) for the whole zone; AI search and answer agents such as OAI-SearchBot, ChatGPT-User, Claude-SearchBot and PerplexityBot are let through."
+  ]
+}
