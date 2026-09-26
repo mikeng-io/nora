@@ -2216,3 +2216,65 @@ async def test_a_dream_pass_publishes_its_own_deadline_to_its_tools(monkeypatch)
 
     assert seen and seen[0] is not None, seen
     assert BUDGET.timeout_seconds - 1.0 < seen[0] <= BUDGET.timeout_seconds
+
+
+# ---------------------------------------------------------------------------
+# design/dreamer-agent-loop/43 §3: the rows a pass loaded reach its grounding
+# ---------------------------------------------------------------------------
+
+
+class _LoadingToolSource(_ToolSource):
+    """Stands in for `load_transcript` running inside the loop: the build
+    receives the runtime's `on_rows` and the "tool" reports two rows to it."""
+
+    def __init__(self, rows: Sequence[Any]) -> None:
+        super().__init__()
+        self._rows = tuple(rows)
+        self.on_rows_given: list[bool] = []
+
+    def build(  # type: ignore[override]
+        self, *, key: str, names: frozenset[str], unit: str | None = None,
+        adaptor: str = "", grant: Any = None, on_rows: Any = None,
+    ) -> list[Any]:
+        self.on_rows_given.append(on_rows is not None)
+        if on_rows is not None:
+            on_rows(self._rows)
+        return super().build(
+            key=key, names=names, unit=unit, adaptor=adaptor, grant=grant,
+        )
+
+
+class _SawAdaptor(_Adaptor):
+    def __init__(self, *, sink: _Sink) -> None:
+        super().__init__(sink=sink)
+        self.saw_calls: list[tuple[str, tuple[Any, ...], int]] = []
+
+    def saw(self, *, key: str, rows: Sequence[Any]) -> None:
+        # `len(self.accepted)` pins the ORDER: grounding grows before accept.
+        self.saw_calls.append((key, tuple(rows), len(self.accepted)))
+
+
+async def test_rows_a_tool_loaded_reach_the_adaptor_before_accept(monkeypatch):
+    rows = ("row-7", "row-8")
+    tools = _LoadingToolSource(rows)
+    runtime, _ = _runtime(
+        monkeypatch, raw='{"observations": [{"term": "a"}]}', tools=tools,
+    )
+    adaptor = _SawAdaptor(sink=_Sink())
+
+    outcome = await runtime.run(adaptor=adaptor, key="g1", batch=())
+
+    assert outcome.status == "ok"
+    assert tools.on_rows_given == [True]
+    assert adaptor.saw_calls == [("g1", rows, 0)]
+
+
+async def test_an_adaptor_with_no_saw_gets_the_unchanged_build(monkeypatch):
+    """No `saw`: the build is not handed `on_rows`, so every other adaptor's
+    tools are exactly what they were (no ids on a transcript read)."""
+    tools = _LoadingToolSource(("row-7",))
+    runtime, _ = _runtime(
+        monkeypatch, raw='{"observations": [{"term": "a"}]}', tools=tools,
+    )
+    await runtime.run(adaptor=_Adaptor(sink=_Sink()), key="g1", batch=())
+    assert tools.on_rows_given == [False]

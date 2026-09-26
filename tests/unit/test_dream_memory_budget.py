@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import AsyncIterable, Sequence
+from dataclasses import replace
 from typing import Any, ClassVar
 
 from strands.models.model import Model
@@ -30,6 +31,7 @@ from nora.agent import factory
 from nora.agent.dream_guard import (
     GUARD_RULES,
     MEMORY_BUDGET_REASON,
+    TOOL_BUDGET_REASON,
     DreamGuard,
 )
 from nora.agent.dreamer import (
@@ -629,19 +631,23 @@ def test_the_guard_rule_labels_come_from_one_vocabulary():
     see that function's docstring rather than a second copy of the reasoning
     here.
     """
-    assert set(GUARD_RULES) == {"R-7", "memory-budget", "tool-budget", "R-99"}
+    assert set(GUARD_RULES) == {
+        "R-7", "memory-budget", "tool-budget", "R-99", "pass-budget",
+    }
 
     m = Metrics()
     guard = DreamGuard(
         adaptor="proactive", budgets={"about": 1}, metrics=m,
         memory_tools=MEMORY_TOOLS, memory_budget=1,
         param_names={"about": frozenset({"query"})},
+        pass_budget=1,
     )
     assert guard.evaluate("write_fact", {}) is not None       # R-7
     assert guard.evaluate("about", {"bogus": "x"}) is not None  # R-99
     _run(guard, "about", "t1")
     assert guard.evaluate("about", {}) is not None            # tool-budget
     assert guard.memory_refusal("about") is not None          # memory-budget
+    assert guard.pass_refusal("about") is not None            # pass-budget
 
     emitted = {
         dict(labels)["rule"]
@@ -690,6 +696,8 @@ def test_the_configured_memory_ceiling_reaches_the_runtime():
         # the second defaulted field on both sides, so it inherits exactly
         # `max_memory_calls`' silence.
         tool_calls={"note_read": 8},
+        # The third (design 43 §4), silent the same way.
+        max_tool_calls=4,
     )
     budget = _adaptor_budget(configured)
 
@@ -771,3 +779,62 @@ def test_note_read_is_not_a_memory_verb():
     """
     assert "note_read" not in MEMORY_TOOLS
     assert "note_read" in PROACTIVE_TOOLS
+
+
+# ---------------------------------------------------------------------------
+# design/dreamer-agent-loop/43 §4: the pass-wide tool ceiling
+# ---------------------------------------------------------------------------
+
+
+def test_the_pass_tool_ceiling_binds_over_every_verb_together():
+    """Three DIFFERENT verbs, each well under its own per-tool ceiling and none
+    of them a memory verb: only a ceiling over the whole pass can refuse the
+    third. The refusal is R-27 `unavailable` with the constant reason, and the
+    call is not charged."""
+    m = Metrics()
+    guard = DreamGuard(
+        adaptor="note-candidates",
+        budgets={"load_transcript": 4, "note_read": 3, "web_search": 4},
+        metrics=m, pass_budget=2,
+    )
+    assert _run(guard, "load_transcript", "t1").cancel_tool is None
+    assert _run(guard, "note_read", "t2").cancel_tool is None
+    third = _run(guard, "web_search", "t3")
+    assert third.cancel_tool is not None
+    assert TOOL_BUDGET_REASON in third.cancel_tool
+    assert json.loads(third.cancel_tool)["status"] == "unavailable"
+    assert guard.evaluate("web_search", {}) is None, (
+        "the per-tool ceiling did not bind: the pass ceiling did"
+    )
+
+
+def test_a_guard_with_no_pass_budget_refuses_nothing_on_it():
+    guard = DreamGuard(
+        adaptor="proactive", budgets={"note_read": 9}, metrics=Metrics(),
+    )
+    for i in range(6):
+        assert _run(guard, "note_read", f"t{i}").cancel_tool is None
+
+
+async def test_the_configured_pass_ceiling_binds_through_the_real_loop():
+    """`AdaptorBudget.max_tool_calls` reaches the guard the runtime builds.
+    Three NON-memory verbs, each its own first call, so neither the memory
+    ration nor any per-tool ceiling can refuse the third: only the pass cap
+    of 2 does, and the pass still finishes."""
+    model = _ScriptedModel(["note_read", "now", "web_search", None])
+    tools = _Tools(["note_read", "now", "web_search"])
+    runtime, metrics = _runtime(
+        model, tools, budget=replace(BUDGET, max_tool_calls=2),
+    )
+
+    outcome = await runtime.run(
+        adaptor=_Adaptor(frozenset(tools.read_only())), key="f", batch=(),
+    )
+
+    assert tools.ran == ["note_read", "now"]
+    body = json.loads(_tool_results(model)[2]["content"][0]["text"])
+    assert TOOL_BUDGET_REASON in body["note"]
+    assert outcome.status == "ok"
+    assert metrics.get(
+        "nora_dream_guard_vetoes_total", adaptor="proactive", rule="pass-budget",
+    ) == 1

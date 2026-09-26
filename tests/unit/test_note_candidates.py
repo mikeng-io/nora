@@ -2060,3 +2060,34 @@ async def test_an_update_that_loses_a_race_to_a_merge_follows_the_survivor():
     assert head is not None and head[1].body.endswith("8pm at the usual place")
     assert metrics.get("nora_note_candidate_gate_total", action="updated") == 1
 
+
+
+# ---------------------------------------------------------------------------
+# design/dreamer-agent-loop/43 §3: a row the pass LOADED is a row it saw
+# ---------------------------------------------------------------------------
+
+
+async def test_a_loaded_row_may_be_cited_once_the_runtime_reports_it():
+    """The batch is message 1; the arrangement's unsettled corner is message
+    7, which the pass read through `load_transcript`. Before `saw` it is
+    neither in the batch nor rendered, so the candidate is dropped; after, the
+    same candidate is accepted with both its `message_ids` and its body
+    citing the loaded row."""
+    adaptor, _ = _adaptor()
+    item = _item(
+        body="## Decided\n## Open\n- which of the two venues [7]",
+        message_ids=[7],
+    )
+    await adaptor.inputs(key="scope-a", batch=[_row(1, "hello")])
+    assert await adaptor.accept(key="scope-a", items=[item]) == ()
+
+    adaptor.saw(key="scope-a", rows=(_row(7, "venue A or B?", ts=500),))
+    accepted = await adaptor.accept(key="scope-a", items=[item])
+    assert len(accepted) == 1
+
+
+async def test_a_load_with_no_inputs_for_the_key_admits_nothing():
+    """Nothing rendered for this key: a load cannot stand in for `inputs`."""
+    adaptor, _ = _adaptor()
+    adaptor.saw(key="scope-b", rows=(_row(7, "venue A or B?"),))
+    assert await adaptor.accept(key="scope-b", items=[_item(message_ids=[7])]) == ()

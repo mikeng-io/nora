@@ -97,3 +97,13 @@ def test_body_refusals_are_read_off_production_s_own_counter_by_rule():
     metrics.inc("nora_note_candidate_body_refused_total", rule="bad_date")
     metrics.inc("nora_note_candidate_gate_total", action="created")
     assert _body_refusals(subject) == {"uncited": 2, "bad_date": 1}  # type: ignore[arg-type]
+
+
+def test_batch_after_keeps_only_rows_after_the_watermark_instant():
+    """design 42 plan item 5: a case can pin production's own batch window."""
+    from nora.subject.dreaming import batch_after
+
+    rows = [_row(i, sender_id="s", person_id=None) for i in (1, 2, 3)]
+    # ts is 1_000 + id
+    assert [r.id for r in batch_after(rows, 1_002)] == [3]
+    assert [r.id for r in batch_after(rows, None)] == [1, 2, 3]

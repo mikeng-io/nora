@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import inspect
 import logging
-from collections.abc import Awaitable, Callable, Container, Iterable, Mapping
+from collections.abc import Awaitable, Callable, Container, Iterable, Mapping, Sequence
 from datetime import datetime
 from types import SimpleNamespace
 from typing import Any
@@ -898,6 +898,7 @@ class ToolRegistry:
         online_scope: Callable[[], Awaitable[tuple[PersonRef, ...]]] | None = None,
         origin_rooms: Mapping[str, OriginRoom] | None = None,
         shelf: ToolShelf | None = None,
+        on_rows: Callable[[Sequence[TranscriptRow]], None] | None = None,
     ) -> tuple[ToolSpec, ...]:
         """The registered tools as plain `ToolSpec`s, closed over this tag's
         dependencies — before any Strands adaptation.
@@ -1006,6 +1007,7 @@ class ToolRegistry:
             media_store=self._media_store,
             origin_rooms=origin_rooms,
             shelf=shelf,
+            on_rows=on_rows,
         )
 
     def build(
@@ -1030,6 +1032,7 @@ class ToolRegistry:
         dream_adaptor: str = "",
         online_scope: Callable[[], Awaitable[tuple[PersonRef, ...]]] | None = None,
         origin_rooms: Mapping[str, OriginRoom] | None = None,
+        on_rows: Callable[[Sequence[TranscriptRow]], None] | None = None,
     ) -> list[Any]:
         """`surface(...).tools`, for a caller that wants only the list.
 
@@ -1047,6 +1050,7 @@ class ToolRegistry:
             location_trusted=location_trusted, links=links,
             supplied_unit=supplied_unit, dream_adaptor=dream_adaptor,
             online_scope=online_scope, origin_rooms=origin_rooms,
+            on_rows=on_rows,
         ).tools
 
     def surface(
@@ -1072,6 +1076,7 @@ class ToolRegistry:
         online_scope: Callable[[], Awaitable[tuple[PersonRef, ...]]] | None = None,
         origin_rooms: Mapping[str, OriginRoom] | None = None,
         grant: frozenset[str] | None = None,
+        on_rows: Callable[[Sequence[TranscriptRow]], None] | None = None,
         defer: bool = False,
     ) -> ToolSurface:
         """The ONE builder every loop takes its tools from.
@@ -1109,7 +1114,7 @@ class ToolRegistry:
             fire_turn=fire_turn, location_trusted=location_trusted, links=links,
             supplied_unit=supplied_unit, dream_adaptor=dream_adaptor,
             online_scope=online_scope, origin_rooms=origin_rooms,
-            shelf=shelf,
+            shelf=shelf, on_rows=on_rows,
         )
         loader = next(spec for spec in specs if spec.name == LOADER_TOOL)
         admitted = [

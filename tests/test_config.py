@@ -1177,15 +1177,19 @@ def test_every_budget_block_the_template_declares_is_pinned_with_its_reasoning(
     # pass that makes one model call) are a tag turn's numbers on a job that
     # is not one.
     #
-    # `turns`/`timeout_seconds` are deliberately absent: this adaptor holds no
-    # tools, so it cannot spend a turn researching and the defaults bound it.
+    # A RESEARCH LOOP since design 43 §4 (2026-09-26): it holds read verbs, so
+    # `turns`/`timeout_seconds` bound its research, and `max_tool_calls` is
+    # the per-pass control. `max_memory_calls` equals it so the memory ration
+    # cannot bind first and make the pass cap decoration. UNMEASURED starting
+    # points; the first live read-back sizes them (43 §4).
     candidates = budgets["note-candidates"]
-    assert (candidates.total_tokens, candidates.output_tokens) == (200_000, 36_000)
-    assert candidates.turns == DreamBudgetConfig().turns
-    assert candidates.timeout_seconds == DreamBudgetConfig().timeout_seconds
-    assert candidates.tool_calls == {}, (
-        "a tool-free adaptor with a per-tool ceiling would refuse the boot"
+    assert (candidates.total_tokens, candidates.output_tokens) == (400_000, 36_000)
+    assert (candidates.turns, candidates.timeout_seconds) == (8, 240.0)
+    assert candidates.max_tool_calls == 5
+    assert candidates.max_memory_calls >= candidates.max_tool_calls, (
+        "a memory ration below the pass cap binds first and the cap is decoration"
     )
+    assert candidates.tool_calls == {}
 
 
 def test_a_zero_budget_field_is_a_startup_failure(toml_path):

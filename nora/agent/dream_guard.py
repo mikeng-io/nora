@@ -68,13 +68,19 @@ from .guards import _list_tool_names, unknown_arguments_veto
 
 log = logging.getLogger("nora.dream_guard")
 
-__all__ = ["GUARD_RULES", "MEMORY_BUDGET_REASON", "DreamGuard", "GuardRule"]
+__all__ = [
+    "GUARD_RULES", "MEMORY_BUDGET_REASON", "TOOL_BUDGET_REASON", "DreamGuard",
+    "GuardRule",
+]
 
 #: The pass-wide ledger's ONE key. It is not a tool name and cannot collide
 #: with one: the memory ledger is a second `CallLedger` INSTANCE whose only
 #: entry this is, so the per-tool ledger never sees it and it never sees a
 #: per-tool count.
 _PASS_MEMORY = "<memory reads this pass>"  # noqa: S105 — a ledger key, not a secret
+#: The pass-wide TOOL ledger's one key (design/dreamer-agent-loop/43 §4): every
+#: tool call of one pass, whatever the verb, on a third `CallLedger` instance.
+_PASS_TOOLS = "<tool calls this pass>"  # noqa: S105 — a ledger key, not a secret
 
 #: The `rule` label vocabulary on `nora_dream_guard_vetoes_total`, DERIVED off
 #: a `Literal` rather than written as a bare string at each call site
@@ -109,13 +115,20 @@ _PASS_MEMORY = "<memory reads this pass>"  # noqa: S105 — a ledger key, not a 
 #: total` carries `adaptor`, `nora_guard_vetoes_total` does not), but the RULE
 #: is the same decision-index row, and `unknown_arguments_veto` (`nora.agent.
 #: guards`) is the one function both guards call, so the two cannot drift.
-GuardRule = Literal["R-7", "memory-budget", "tool-budget", "R-99"]
+#:
+#: **`pass-budget` is the fifth** (design/dreamer-agent-loop/43 §4): the pass
+#: made as many tool calls, over every verb together, as one pass may. It is
+#: `memory-budget`'s shape over the whole grant rather than the memory cluster,
+#: and it is its own label because «this pass researched as much as it may» is
+#: the reading that sizes `[dreamer.budgets.<adaptor>] max_tool_calls`.
+GuardRule = Literal["R-7", "memory-budget", "tool-budget", "R-99", "pass-budget"]
 GUARD_RULES: frozenset[str] = frozenset(get_args(GuardRule))
 
 _R7_RULE: GuardRule = "R-7"
 _MEMORY_RULE: GuardRule = "memory-budget"
 _TOOL_BUDGET_RULE: GuardRule = "tool-budget"
 _BAD_ARGUMENTS_RULE: GuardRule = "R-99"
+_PASS_RULE: GuardRule = "pass-budget"  # noqa: S105 — a label, not a secret
 
 #: What a memory verb refused by the per-pass ceiling says, verbatim. A
 #: CONSTANT because two readers depend on the exact words — the model, which
@@ -123,6 +136,10 @@ _BAD_ARGUMENTS_RULE: GuardRule = "R-99"
 #: `tests/unit/test_dream_memory_budget.py`, which is the only thing that can
 #: say the sentence still reaches the model at all.
 MEMORY_BUDGET_REASON = "memory budget for this pass is spent"
+
+#: What ANY tool refused by the per-pass tool ceiling says, verbatim, for
+#: `MEMORY_BUDGET_REASON`'s reason.
+TOOL_BUDGET_REASON = "tool budget for this pass is spent"
 
 #: Strands' `ToolResult.status` vocabulary — `"success" | "error"` — which is
 #: the TRANSPORT's word for «this call completed», and is a different axis from
@@ -158,6 +175,7 @@ class DreamGuard(HookProvider):
         memory_tools: frozenset[str] = frozenset(),
         memory_budget: int | None = None,
         param_names: Mapping[str, frozenset[str]] | None = None,
+        pass_budget: int | None = None,
     ) -> None:
         self._adaptor = adaptor
         self._metrics = metrics
@@ -210,6 +228,13 @@ class DreamGuard(HookProvider):
         # guard lives ONE sample, so the worst case is bounded by that sample's
         # `turns` x batch size — a few dozen short strings — which is why this
         # is a dict rather than a cache with an eviction policy.
+        # Every tool call of the pass, whatever the verb (design 43 §4).
+        # `None` is no pass-wide ceiling, which is every adaptor that does
+        # not set `max_tool_calls`: the per-tool and memory ceilings alone.
+        self._pass: CallLedger | None = (
+            CallLedger({_PASS_TOOLS: pass_budget})
+            if pass_budget is not None else None
+        )
         self._budget_refusals: dict[str, str] = {}
 
     def _veto(self, rule: GuardRule, message: str) -> str:
@@ -307,6 +332,33 @@ class DreamGuard(HookProvider):
             ),
         }
 
+    def pass_refusal(self, tool_name: str) -> dict[str, str] | None:
+        """The R-27 body ANY call gets because the pass's tool ceiling is
+        spent, or None to let it through. `memory_refusal`'s shape and its
+        reasons (`unavailable`, a note naming what to do instead, no way out
+        offered), over every verb rather than the memory cluster."""
+        if self._pass is None or not self._pass.at_ceiling(_PASS_TOOLS):
+            return None
+        spent = self._pass.spent(_PASS_TOOLS)
+        self._metrics.inc(
+            "nora_dream_guard_vetoes_total",
+            adaptor=self._adaptor, rule=_PASS_RULE,
+        )
+        log.info(
+            "dream tool budget spent (adaptor=%s tool=%s calls=%d): "
+            "answering unavailable", self._adaptor, tool_name, spent,
+        )
+        return {
+            "status": "unavailable",
+            "note": (
+                f"{TOOL_BUDGET_REASON} — {spent} tool call(s) is the whole "
+                "pass's ration and you have made them. Nothing is broken and "
+                "there is nothing to retry: every further tool call will "
+                "answer exactly this. Finish from what your prompt and the "
+                "reads you already made carry, and return your answer now."
+            ),
+        }
+
     def register_hooks(self, registry: HookRegistry, **kwargs: Any) -> None:
         """Tool hooks ONLY — see the module docstring. Registering
         `BeforeModelCallEvent` here would hand this guard the power to end a
@@ -327,7 +379,7 @@ class DreamGuard(HookProvider):
             if message:
                 event.cancel_tool = message
                 return
-            refusal = self.memory_refusal(name)
+            refusal = self.pass_refusal(name) or self.memory_refusal(name)
             if refusal is not None:
                 # REFUSED, not vetoed. `cancel_tool` is the only way to stop a
                 # call from running, and the SDK turns it into an ERROR
@@ -427,6 +479,9 @@ class DreamGuard(HookProvider):
                 # and it is worse here because there the name at least told the
                 # two calls apart.
                 self._memory.release(_PASS_MEMORY, ref=ref)
+            if self._pass is not None and ref:
+                # `and ref` for the memory ledger's reason just above.
+                self._pass.release(_PASS_TOOLS, ref=ref)
             body = self._budget_refusals.pop(ref, None) if ref else None
             if body is not None:
                 # OUR refusal. Replace the SDK's error result with R-27's third
@@ -445,6 +500,8 @@ class DreamGuard(HookProvider):
             self._ledger.record(name)
             if self._memory is not None and name in self._memory_tools:
                 self._memory.record(_PASS_MEMORY)
+            if self._pass is not None:
+                self._pass.record(_PASS_TOOLS)
             cap = self._result_caps.get(name)
             if cap is not None:
                 self._clamp_result(event, name, cap)

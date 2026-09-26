@@ -1966,13 +1966,24 @@ max_tokens = 6000
 # total / 4,000 output, sized for a pass that makes one model call) are a tag
 # turn's numbers on a job that is not a tag turn.
 #
-# `turns` and `timeout_seconds` are deliberately absent: this adaptor holds no
-# tools, so it cannot spend a turn researching and the field defaults bound it
-# correctly. A partial block fills its missing fields from those defaults
-# rather than zeroing them.
+# A RESEARCH LOOP since design/dreamer-agent-loop/43 §4: the pass holds every
+# read verb the runtime admits for it, so it CAN spend turns researching, and
+# the block now bounds that. `max_tool_calls` is the control: one pass's tool
+# calls over every verb together, answered `unavailable` past it
+# (`nora_dream_guard_vetoes_total{rule="pass-budget"}` says when it binds).
+# `max_memory_calls` is raised to the same 5 so the memory ration (default 2)
+# does not bind first and make the pass cap decoration. `turns` 8 is five tool
+# rounds plus the answer with room to spare; `total_tokens` doubles because
+# every turn re-sends the batch, the notebook and the tool schemas; 240 s is
+# the proactive pass's measured wall clock for a tool-using run. UNMEASURED
+# starting points, sized again from the first live read-back (43 §4).
 [dreamer.budgets.note-candidates]
-total_tokens = 200000
+total_tokens = 400000
 output_tokens = 36000
+turns = 8
+timeout_seconds = 240.0
+max_tool_calls = 5
+max_memory_calls = 5
 
 [dreamer.budgets.proactive]
 turns = 24

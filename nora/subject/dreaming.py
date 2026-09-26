@@ -382,12 +382,25 @@ async def _reminder_rows(subject: Subject) -> dict[Any, tuple[str | None, int]]:
 #: schedule — which is itself worth noticing rather than papering over.
 _FALLBACK_BATCH = 64
 
+def batch_after(batch: Sequence[Any], after_ms: int | None) -> list[Any]:
+    """The rows a production fire whose watermark stood at `after_ms` would
+    have read: those strictly after it. `None` keeps the whole window. An
+    eval case states `after_ms` (`metadata.batch_after_ms`) when the newest
+    `limit` rows at its anchor are wider than the batch production actually
+    judged (design 42 plan item 5: p5's sandbox showed 59 rows where
+    production's fire saw about 32, which pulled updates onto other notes)."""
+    if after_ms is None:
+        return list(batch)
+    return [row for row in batch if row.ts > after_ms]
+
+
 async def dream(
     subject: Subject,
     *,
     adaptor: str,
     room: tuple[str, str] | None = None,
     limit: int | None = None,
+    after_ms: int | None = None,
 ) -> Pass:
     """One adaptor, one room, one pass. Raises `LookupError` for an unknown
     adaptor rather than running nothing and reporting `nothing_found`."""
@@ -453,6 +466,7 @@ async def dream(
             after_id=(newest[0].id - 1) if newest else 0,
             limit=limit,
         )
+        batch = batch_after(batch, after_ms)
         batch = with_roster_senders(batch, persons=subject.deps.persons, platform=platform)
     # Joined ONCE here rather than inside the adaptor, which is where
     # `_run_adaptor` does it and for the reason issue #116 gives: every

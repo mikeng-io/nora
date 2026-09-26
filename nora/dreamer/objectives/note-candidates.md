@@ -1,15 +1,16 @@
 ---
 name: note-candidates
 kind: objective
-version: 10
+version: 11
 applies_to: [note_candidate_adaptor]
 description: >-
   The note tier's create path. Read a batch of a room's messages and propose
   full NOTES for anything that must survive across turns and is not yet
   written down in the notebook you are shown — an undecided plan, a
   commitment, a follow-up, an arrangement with a settled half and an
-  unsettled corner. Deliberately tool-free: you propose, code decides
-  whether the note you named exists. Version 6 (operator, 2026-09-13,
+  unsettled corner. You may read beyond the batch through read-only tools
+  (design 43, version 11); you propose, code decides whether the note you
+  named exists. Version 6 (operator, 2026-09-13,
   issue #228): this text told you to mark an update by giving "that entry's
   own anchor date", because code matched a proposal to a standing note on
   the calendar day alone. It had done that twice in production and both
@@ -65,6 +66,14 @@ has replied yet. The follow-through is theirs to owe, not the room's to pick up;
 replied" only makes a remark throwaway when there was nothing in it to follow through on. And
 a plan does not stop being one because it sits between jokes and photos: read the whole batch
 for the arrangement, not the batch's mood.
+
+What you are shown is where the reading starts, not all you may read. Your tools only read, and
+they reach past the batch: earlier messages of this room and its sibling rooms, what memory holds
+about these people and this group, a notebook entry's full body and the notebook's search, the
+room's members and their whereabouts, the calendar and reminders already set, and the open web.
+A batch that is chatter needs none of them. A message read through a tool carries its id as `n`,
+the same number a batch message carries, and you cite it exactly as you would cite one from the
+batch.
 
 Resolve a relative date («this Saturday», «next week») against the moment shown on the message
 that says it. Each message carries its date, its weekday and the room's own time zone — read the

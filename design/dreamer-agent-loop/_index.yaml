@@ -95,6 +95,7 @@ members:
   # never listed (the same stale-membership finding as the block above).
   - 41-note-tier-time-is-optional.md
   - 42-note-format.md
+  - 43-note-dreamers-are-research-loops.md
 edges:
   - {src: 00-overview, dst: 01-live-state, rel: motivated_by, provenance: asserted}
   - {src: 00-overview, dst: 02-instrument-blindness, rel: motivated_by, provenance: asserted}
@@ -188,6 +189,8 @@ edges:
   - {src: 41-note-tier-time-is-optional, dst: 37-note-candidates-v2, rel: extends, provenance: asserted}
   - {src: 42-note-format, dst: 37-note-candidates-v2, rel: extends, provenance: asserted}
   - {src: 42-note-format, dst: 41-note-tier-time-is-optional, rel: revises, provenance: asserted}
+  - {src: 43-note-dreamers-are-research-loops, dst: 37-note-candidates-v2, rel: revises, provenance: asserted}
+  - {src: 43-note-dreamers-are-research-loops, dst: 42-note-format, rel: revises, provenance: asserted}
   - {src: 42-note-format, dst: 27-note-dreamer, rel: revises, provenance: asserted}
   - {src: 42-note-format, dst: 33-note-dreamer-schedule, rel: revises, provenance: asserted}
   - {src: 03-no-agent-loop, dst: 17-failure-classes, rel: relates_to, provenance: asserted}
