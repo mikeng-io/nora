@@ -690,7 +690,8 @@ def test_a_malformed_denylist_line_does_not_echo_its_value():
 
 def test_phone_links_bare_e164_and_worded_local_numbers():
     hk = SY.phone("852")[1:]
-    assert _rules(f"https://wa.me/{hk}\n") == ["phone"]
+    assert _rules(f"https://wa.me/{SY.phone('44')[1:]}\n") == ["phone"]
+    assert _rules(f"tel:{SY.phone('81')[1:]}\n") == ["phone"]
     assert _rules(f"from {hk} today\n") == ["phone"]
     assert _rules(f"reach her on {SY.phone('852', 'local')} after 6\n") == ["phone"]
 
@@ -713,6 +714,15 @@ def test_coords_two_fixes_at_home_and_two_at_work_fail():
     a, b = SY.base_point(), SY.base_point()
     rows = [f"{la:.6f},{ln:.6f}" for la, ln in (SY.near(a), SY.near(a), SY.near(b), SY.near(b))]
     assert P.scan_coords(["lat,lng", *rows]).over
+
+
+def test_a_table_one_parent_already_had_is_not_new():
+    base = SY.base_point()
+    table = "lat,lng\n" + "".join(
+        f"{la:.6f},{ln:.6f}\n" for la, ln in (SY.near(base) for _ in range(4))
+    )
+    assert _judge(_job((table + "x = 1\n").encode(), table.encode())) == []
+    assert _judge(_job(table.encode(), table.encode(), b"other = 1\n")) == []
 
 
 def test_a_merge_that_assembles_a_table_fails():

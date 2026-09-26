@@ -387,8 +387,8 @@
  {
   "name": "Family, Given order is a spelling of the name",
   "file": "scripts/pii_scan.py",
-  "old": "                    variants.add((toks[-1], *toks[:-1]))",
-  "new": "                    pass",
+  "old": "                    variants.add((toks[-1], *toks[:-1]))\n                    variants.add(tuple(reversed(toks)))\n",
+  "new": "",
   "target": "tests/unit/test_pii_scan.py::test_denylisted_name_in_every_encoding"
  },
  {
@@ -445,7 +445,7 @@
   "file": "scripts/pii_scan.py",
   "old": "        if not (now - pts):\n            return []",
   "new": "        if False:\n            return []",
-  "target": "tests/unit/test_pii_scan.py::test_a_merge_that_assembles_a_table_fails"
+  "target": "tests/unit/test_pii_scan.py::test_a_merge_that_assembles_a_table_fails tests/unit/test_pii_scan.py::test_a_table_one_parent_already_had_is_not_new"
  },
  {
   "name": "a PNG eXIf chunk carries GPS",

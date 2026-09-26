@@ -438,3 +438,14 @@ def test_a_merge_that_assembles_a_coordinate_table_is_caught_at_push(repo):
         assert repo.git("commit", "-q", "--no-verify", "--no-edit").returncode == 0
     rc, out = _push(repo, "origin", "main")
     assert rc != 0 and "coords" in out
+
+
+def test_a_declaration_pushed_together_with_its_payload_exempts_nothing(repo):
+    other = SY.phone("44", "spaced")
+    allow = (repo.path / ".githooks/pii-allowlist.txt").read_text()
+    repo.write(".githooks/pii-allowlist.txt", allow + f"value {other} -- test placeholder\n")
+    assert repo.commit("chore: declare p", ".githooks/pii-allowlist.txt").returncode == 0
+    repo.write("tests/fixtures/p.py", f'P = "{other}"\n')
+    assert repo.commit("test: p", "tests/fixtures/p.py", no_verify=True).returncode == 0
+    rc, out = _push(repo, "origin", "main")
+    assert rc != 0 and "phone" in out
