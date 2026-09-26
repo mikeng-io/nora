@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import AsyncIterable, Sequence
+from dataclasses import replace
 from typing import Any, ClassVar
 
 from strands.models.model import Model
@@ -813,3 +814,27 @@ def test_a_guard_with_no_pass_budget_refuses_nothing_on_it():
     )
     for i in range(6):
         assert _run(guard, "note_read", f"t{i}").cancel_tool is None
+
+
+async def test_the_configured_pass_ceiling_binds_through_the_real_loop():
+    """`AdaptorBudget.max_tool_calls` reaches the guard the runtime builds.
+    Three NON-memory verbs, each its own first call, so neither the memory
+    ration nor any per-tool ceiling can refuse the third: only the pass cap
+    of 2 does, and the pass still finishes."""
+    model = _ScriptedModel(["note_read", "now", "web_search", None])
+    tools = _Tools(["note_read", "now", "web_search"])
+    runtime, metrics = _runtime(
+        model, tools, budget=replace(BUDGET, max_tool_calls=2),
+    )
+
+    outcome = await runtime.run(
+        adaptor=_Adaptor(frozenset(tools.read_only())), key="f", batch=(),
+    )
+
+    assert tools.ran == ["note_read", "now"]
+    body = json.loads(_tool_results(model)[2]["content"][0]["text"])
+    assert TOOL_BUDGET_REASON in body["note"]
+    assert outcome.status == "ok"
+    assert metrics.get(
+        "nora_dream_guard_vetoes_total", adaptor="proactive", rule="pass-budget",
+    ) == 1
