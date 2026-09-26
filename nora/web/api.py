@@ -65,7 +65,8 @@ log = logging.getLogger("nora.web.api")
 _GAMES_UNAVAILABLE_BODY = {"error": "games backend unavailable"}
 
 # Default matches the previous REST proxy's `?hours=24` default
-# (app/src/app/api/games/servers/[id]/graph/route.ts) — kept here so an
+# (the portal's first per-route proxy; the portal forwards `hours` as given
+# since its 2026-09-27 rebuild, app/src/server/upstream.ts) — kept here so an
 # absent query param behaves identically to before, even though the
 # endpoint itself is unavailable today (nora/web/games.py's module
 # docstring).

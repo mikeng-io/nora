@@ -109,7 +109,7 @@ _REQUIRED = ("name", "description")
 # `nora/web/skills.py::build_skills_payload` is the only place that reads a
 # skill's parsed metadata at all, and its payload carries `name`,
 # `description` and `instructions` only — no `change_policy`, and the portal
-# route it feeds (`app/src/app/api/skills/route.ts`) is GET-only with no
+# read it feeds (`app/src/server/upstream.ts`'s `skills` row) is GET-only with no
 # skill-editing surface for a policy to gate in the first place. No script or
 # git hook reads it either. So a skill's `change_policy` is exactly as
 # unenforced as its `authority_above`/`authority_below` were, and stays in

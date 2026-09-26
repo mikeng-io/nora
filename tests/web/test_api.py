@@ -181,8 +181,8 @@ async def test_person_route_is_404_for_an_unrecognized_person(client):
 
 
 async def test_games_servers_route_is_503_when_pulse_is_not_wired(client):
-    """Matches app/src/lib/games-schema.ts's fetchServers(): a non-2xx makes
-    it throw BEFORE `.parse()` ever runs, so a 503 needs no schema-shaped
+    """Matches app/src/lib/api/client.ts's apiGet(): a non-2xx makes
+    it throw BEFORE the schema is ever applied, so a 503 needs no schema-shaped
     body — nora/web/games.py's module docstring explains why this is the
     honest state today."""
     resp = await client.get("/app/v1/games/servers")
