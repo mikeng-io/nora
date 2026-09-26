@@ -121,7 +121,12 @@ def repo(tmp_path: Path) -> Repo:
         (work / rel).parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(ROOT / rel, work / rel)
     r.git("config", "core.hooksPath", ".githooks")
-    out = r.commit("chore: scaffold the hooks")
+    # the scaffold is committed around the hooks: fifty fixtures each running
+    # every hook over the scanner's own source is CPU the rest of the suite
+    # needs (it starved a 5 s timeout in tests/test_vision.py under -n 8).
+    # test_the_hook_scripts_pass_their_own_scan checks that source once.
+    r.git("add", "-A")
+    out = r.git("-c", "core.hooksPath=/dev/null", "commit", "-q", "-m", "chore: scaffold the hooks")
     assert out.returncode == 0, out.stderr
     remote = tmp_path / "remote.git"
     r.git("init", "-q", "--bare", "-b", "main", str(remote))
@@ -132,6 +137,17 @@ def repo(tmp_path: Path) -> Repo:
 
 def _ids(out: subprocess.CompletedProcess) -> list[str]:
     return re.findall(r"id=([0-9a-f]{12})", out.stderr)
+
+
+def test_the_hook_scripts_pass_their_own_scan(repo):
+    out = subprocess.run(
+        [sys.executable, "scripts/pii_scan.py", "commits", "HEAD"],
+        cwd=repo.path,
+        env=repo.env,
+        capture_output=True,
+        text=True,
+    )
+    assert out.returncode == 0, out.stderr
 
 
 def test_clean_commit_passes(repo):

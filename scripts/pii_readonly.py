@@ -30,7 +30,9 @@ import re
 import subprocess
 import sys
 
-sys.dont_write_bytecode = True
+# bytecode is cached outside the worktree, never in scripts/__pycache__
+if not sys.pycache_prefix:
+    sys.pycache_prefix = os.path.join(os.environ.get("TMPDIR") or "/tmp", "nora-pii-pycache")  # noqa: S108
 
 MAX_LINES = 400
 MAX_BYTES = 2 * 1024 * 1024

@@ -57,7 +57,9 @@ import sys
 import tempfile
 import time
 
-sys.dont_write_bytecode = True
+# bytecode is cached outside the worktree, never in scripts/__pycache__
+if not sys.pycache_prefix:
+    sys.pycache_prefix = os.path.join(os.environ.get("TMPDIR") or "/tmp", "nora-pii-pycache")  # noqa: S108
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 

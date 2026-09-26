@@ -48,7 +48,9 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
 
-sys.dont_write_bytecode = True
+# bytecode is cached outside the worktree, never in scripts/__pycache__
+if not sys.pycache_prefix:
+    sys.pycache_prefix = os.path.join(os.environ.get("TMPDIR") or "/tmp", "nora-pii-pycache")  # noqa: S108
 
 JEV_URL = "https://api.typesafe.ai/v1/systemone"
 JEV_MODEL = "jev-1.13.0"  # pinned: `jev-latest` would move the threshold under us

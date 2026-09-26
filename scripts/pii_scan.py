@@ -93,8 +93,9 @@ from dataclasses import dataclass, field
 
 # A hook must not leave files behind: importing the fold table or the judge
 # module would otherwise write scripts/__pycache__/ into the worktree, where
-# `git add -A` picks it up.
-sys.dont_write_bytecode = True
+# `git add -A` picks it up. Their bytecode is cached outside it instead.
+if not sys.pycache_prefix:
+    sys.pycache_prefix = os.path.join(os.environ.get("TMPDIR") or "/tmp", "nora-pii-pycache")  # noqa: S108
 
 PASS, FAIL, ERROR = 0, 1, 2
 
