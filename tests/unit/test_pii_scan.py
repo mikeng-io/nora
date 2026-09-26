@@ -526,8 +526,20 @@ def test_judge_that_does_not_answer_is_an_error(monkeypatch):
     assert P.verdict(rep) == P.ERROR
 
 
+def test_llm_verdict_is_advisory_by_default(monkeypatch):
+    monkeypatch.delenv("NORA_PII_JUDGE", raising=False)
+    monkeypatch.delenv("NORA_PII_LLM_CLEARS", raising=False)
+    monkeypatch.setenv("NORA_PII_LLM", "some-model")
+    _with_fake_judge(monkeypatch, lambda line: 0.0, llm=lambda line: "fake")
+    rep = _judged_report(f'a = "{SY.phone("44")}"\n')
+    P.run_judges(rep)
+    assert [(f.state, f.note) for f in rep.findings] == [("", "llm=fake")]
+    assert P.verdict(rep) == P.FAIL
+
+
 def test_llm_clears_only_what_it_calls_fake_and_never_a_denylist_hit(monkeypatch):
     monkeypatch.delenv("NORA_PII_JUDGE", raising=False)
+    monkeypatch.setenv("NORA_PII_LLM_CLEARS", "1")
     monkeypatch.setenv("NORA_PII_LLM", "some-model")
     fake_phone, real_phone = SY.phone("44"), SY.phone("81")
     sent = _with_fake_judge(

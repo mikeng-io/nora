@@ -1444,9 +1444,13 @@ def run_judges(rep: Report) -> None:
         except pii_judge.JudgeError as exc:
             rep.findings.append(Finding("ERROR", "judge:llm", "<judge>", 0, "", "", ackable=False, note=str(exc)))
             return
+        # Advisory unless NORA_PII_LLM_CLEARS=1: on the synthetic set the
+        # working default (gemma4:e2b-mlx) called 9 of 26 real-looking lines
+        # "fake", so letting it clear would pass a third of the true positives.
+        clears = os.environ.get("NORA_PII_LLM_CLEARS", "") == "1"
         for f, v in zip(todo, verdicts):
             f.note = (f.note + "; " if f.note else "") + f"llm={v}"
-            if v == "fake":
+            if v == "fake" and clears:
                 f.state = "CLEARED"
 
 

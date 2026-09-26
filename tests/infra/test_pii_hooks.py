@@ -154,6 +154,13 @@ def test_add_then_rm_is_caught_by_pre_push(repo):
     assert f"{bad[:10]} tests/fixtures/rows.py" in out.stderr
 
 
+def test_a_message_committed_around_the_hooks_is_caught_by_pre_push(repo):
+    repo.write("nora/a.py", "x = 1\n")
+    assert repo.commit(f"fix: as {NAME} asked", no_verify=True).returncode == 0
+    out = repo.push_scan()
+    assert out.returncode == 1 and "<commit-message>" in out.stderr
+
+
 def test_an_appended_non_utf8_byte_is_an_error(repo):
     repo.write("tests/fixtures/rows.py", f"ROWS = {NAME!r}\n".encode() + b"\xff")
     out = repo.commit("test: rows")

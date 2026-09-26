@@ -25,7 +25,9 @@ would be the disclosure the detector exists to stop.
 2. **An LLM re-judge** (`NORA_PII_LLM=<ollama tag>`): for each finding a shape
    rule or the line judge raised, a local ollama model reads the line with two
    lines either side and answers real / fake / unsure. Only `fake` clears a
-   finding, and the clearing is printed. Unreachable ollama is an ERROR.
+   finding, and only with NORA_PII_LLM_CLEARS=1; by default the verdict is
+   printed beside the finding for the human who decides. Unreachable ollama
+   is an ERROR.
 
 What a model can and cannot decide: whether a line LOOKS like personal data
 copied from real records, from its shape and context. Not whether a name
