@@ -156,8 +156,8 @@
  {
   "name": "a declared table is pinned to its content digest (#283 c2)",
   "file": "scripts/pii_scan.py",
-  "old": "    if digest in allow.coords_digest(path):\n        return []",
-  "new": "    if allow.path_has(\"coords\", path):\n        return []",
+  "old": "    if digest in allow.coords_digest(raw_path or path):\n        return []",
+  "new": "    if allow.path_has(\"coords\", raw_path or path):\n        return []",
   "target": "tests/unit/test_pii_scan.py::test_swapped_coordinates_fail_where_a_size_pin_would_not"
  },
  {
@@ -177,7 +177,7 @@
  {
   "name": "a symlink is an error unless declared (#166)",
   "file": "scripts/pii_scan.py",
-  "old": "    if job.mode == \"120000\" and not (allow.path_has(\"symlink\", path) or fallback):",
+  "old": "    if job.mode == \"120000\" and not (allow.path_has(\"symlink\", raw_path) or fallback):",
   "new": "    if False:",
   "target": "tests/unit/test_pii_scan.py::test_symlink_gitlink_and_oversize_are_errors_unless_declared"
  },
@@ -233,8 +233,8 @@
  {
   "name": "pre-push honours only acknowledgements recorded as trailers",
   "file": "scripts/pii_scan.py",
-  "old": "        acks = trailer_acks(body)",
-  "new": "        acks = set()",
+  "old": "        acks, unverified = verified_acks(body, tree, adjudications)",
+  "new": "        acks, unverified = set(), set()",
   "target": "tests/infra/test_pii_hooks.py::test_an_acknowledged_finding_is_recorded_and_pre_push_honours_it"
  },
  {
@@ -324,8 +324,8 @@
  {
   "name": "spaces inside a CJK name are ignored",
   "file": "scripts/pii_scan.py",
-  "old": "                    keep = [k for k, ch in enumerate(line) if not ch.isspace()]",
-  "new": "                    keep = list(range(len(line)))",
+  "old": "                        if not ch.isspace() and ch not in \"\\u00b7\\u30fb\\u2027\\u2022\\uff65\"",
+  "new": "                        if ch not in \"\\u00b7\\u30fb\\u2027\\u2022\\uff65\"",
   "target": "tests/unit/test_pii_scan.py::test_cjk_name_simplified_and_spaced"
  },
  {
@@ -443,14 +443,14 @@
  {
   "name": "zip members are opened",
   "file": "scripts/pii_scan.py",
-  "old": "                        inner.append(zf.read(i))",
-  "new": "                        pass",
+  "old": "                        inner.append(member)\n",
+  "new": "                        pass\n",
   "target": "tests/unit/test_pii_scan.py::test_compressed_text_chunks_and_archives_are_opened"
  },
  {
   "name": "a decompression past the cap is an ERROR",
   "file": "scripts/pii_scan.py",
-  "old": "    if len(out) > DECODE_MAX:\n        raise DecodeError",
+  "old": "    if len(out) > left:\n        raise DecodeError",
   "new": "    if False:\n        raise DecodeError",
   "target": "tests/unit/test_pii_scan.py::test_a_decompression_bomb_is_an_error"
  },
@@ -478,8 +478,8 @@
  {
   "name": "declarations come from what the remote has",
   "file": "scripts/pii_scan.py",
-  "old": "    allow, placeholders, errs = load_context(published_base(head))\n    rep = Report(findings=errs)",
-  "new": "    allow, placeholders, errs = load_context(head)\n    rep = Report(findings=errs)",
+  "old": "    declared = _mode_staged(deny, load_context(base), head)",
+  "new": "    declared = _mode_staged(deny, load_context(head), head)",
   "target": "tests/infra/test_pii_hooks.py::test_amend_cannot_let_a_declaration_exempt_its_own_payload"
  },
  {
@@ -492,8 +492,8 @@
  {
   "name": "an unreachable remote is an ERROR",
   "file": "scripts/pii_scan.py",
-  "old": "        published = remote_has(remote)\n    except GitError as exc:",
-  "new": "        published = remote_has(remote)\n    except ZeroDivisionError as exc:",
+  "old": "    except GitError as exc:\n        rep.findings.append(\n            Finding(\n                \"ERROR\",\n                \"remote-unreachable\",",
+  "new": "    except ZeroDivisionError as exc:\n        rep.findings.append(\n            Finding(\n                \"ERROR\",\n                \"remote-unreachable\",",
   "target": "tests/infra/test_pii_hooks.py::test_an_unreachable_remote_is_an_error"
  },
  {
@@ -520,15 +520,15 @@
  {
   "name": "a line holding a denylisted value is withheld from the judge",
   "file": "scripts/pii_scan.py",
-  "old": "        if guard(t):\n            held += 1\n            return \"[withheld]\"",
-  "new": "        if False:\n            held += 1\n            return \"[withheld]\"",
+  "old": "        idx = guard_lines(lines) if guard_lines else set(range(len(lines)))\n        held += len(idx)",
+  "new": "        idx = set() if guard_lines else set(range(len(lines)))\n        held += len(idx)",
   "target": "tests/unit/test_pii_scan.py::test_a_line_that_already_held_a_denylisted_value_is_never_sent"
  },
  {
   "name": "with no guard every line is withheld",
   "file": "scripts/pii_scan.py",
-  "old": "    guard = rep.guard if callable(rep.guard) else (lambda _t: True)",
-  "new": "    guard = rep.guard if callable(rep.guard) else (lambda _t: False)",
+  "old": "    guard_lines = rep.guard_lines if callable(rep.guard_lines) else None",
+  "new": "    guard_lines = rep.guard_lines if callable(rep.guard_lines) else (lambda _l: set())",
   "target": "tests/unit/test_pii_scan.py::test_with_no_guard_every_line_is_withheld"
  },
  {
@@ -604,8 +604,8 @@
  {
   "name": "only a fake verdict acknowledges",
   "file": "scripts/pii_scan.py",
-  "old": "v.get(\"verdict\") == \"fake\"",
-  "new": "v.get(\"verdict\") in (\"fake\", \"unsure\")",
+  "old": "            and v.get(\"verdict\") == \"fake\"\n            and re.fullmatch(r\"[0-9a-f]{12}\", fid)",
+  "new": "            and v.get(\"verdict\") in (\"fake\", \"unsure\")\n            and re.fullmatch(r\"[0-9a-f]{12}\", fid)",
   "target": "tests/unit/test_pii_scan.py::test_only_a_fake_verdict_for_the_current_tree_acknowledges"
  },
  {
@@ -658,10 +658,241 @@
   "target": "tests/infra/test_pii_hooks.py::test_a_fake_verdict_becomes_a_trailer_and_the_push_honours_it"
  },
  {
-  "name": "the agent's Bash is git-read-only",
+  "name": "a new path is scanned",
+  "file": "scripts/pii_scan.py",
+  "old": "    if job.new_path:\n        rep.findings += pf",
+  "new": "    if False:\n        rep.findings += pf",
+  "target": "tests/unit/test_pii_scan.py::test_a_new_path_is_scanned_and_never_printed"
+ },
+ {
+  "name": "a matched path is printed masked",
+  "file": "scripts/pii_scan.py",
+  "old": "    return f\"<path {hashlib.sha256(path.encode('utf-8', 'surrogateescape')).hexdigest()[:10]}>\"",
+  "new": "    return path",
+  "target": "tests/unit/test_pii_scan.py::test_a_new_path_is_scanned_and_never_printed"
+ },
+ {
+  "name": "an added file's path is new",
+  "file": "scripts/pii_scan.py",
+  "old": "        jobs_meta.append((dst, nm, nsha, olds, status[0] in \"ARC\"))",
+  "new": "        jobs_meta.append((dst, nm, nsha, olds, False))",
+  "target": "tests/infra/test_pii_hooks.py::test_a_denylisted_name_in_a_new_directory_is_refused_and_not_printed"
+ },
+ {
+  "name": "a bare wildcard under a top-level dir is too broad",
+  "file": "scripts/pii_scan.py",
+  "old": "    return bare and lead < 2",
+  "new": "    return False",
+  "target": "tests/unit/test_pii_scan.py::test_declaration_breadth"
+ },
+ {
+  "name": "a leading wildcard is too broad",
+  "file": "scripts/pii_scan.py",
+  "old": "    if lead == 0:\n        return True",
+  "new": "    if lead == 0:\n        return False",
+  "target": "tests/unit/test_pii_scan.py::test_declaration_breadth"
+ },
+ {
+  "name": "a declaration over 200 files is an ERROR",
+  "file": "scripts/pii_scan.py",
+  "old": "            if n > MAX_DECL_FILES:",
+  "new": "            if False:",
+  "target": "tests/infra/test_pii_hooks.py::test_a_declaration_matching_too_many_files_is_an_error"
+ },
+ {
+  "name": "path-exempt never lifts the denylist",
+  "file": "scripts/pii_scan.py",
+  "old": "    shapes = not (is_allowlist or exempt)",
+  "new": "    shapes = not (is_allowlist or exempt)\n    if exempt:\n        return rep",
+  "target": "tests/unit/test_pii_scan.py::test_path_exempt_never_exempts_a_denylist_hit"
+ },
+ {
+  "name": "an id belongs to one finding",
+  "file": "scripts/pii_scan.py",
+  "old": "                        finding_id(path, lines[ln - 1], rule, key),",
+  "new": "                        finding_id(path, lines[ln - 1]),",
+  "target": "tests/unit/test_pii_scan.py::test_each_finding_on_a_line_has_its_own_id"
+ },
+ {
+  "name": "html entities without a semicolon decode",
+  "file": "scripts/pii_scan.py",
+  "old": "            if \"&\" in cur:\n                cands.append(html.unescape(cur))",
+  "new": "            if \"&\" in cur and \";\" in cur:\n                cands.append(html.unescape(cur))",
+  "target": "tests/unit/test_pii_scan.py::test_more_encodings_of_a_name"
+ },
+ {
+  "name": "hex runs decode",
+  "file": "scripts/pii_scan.py",
+  "old": "            cands += _hex_texts(cur)",
+  "new": "            pass",
+  "target": "tests/unit/test_pii_scan.py::test_more_encodings_of_a_name"
+ },
+ {
+  "name": "combining accents are stripped",
+  "file": "scripts/pii_scan.py",
+  "old": "                cands.append(_strip_marks(cur))",
+  "new": "                pass",
+  "target": "tests/unit/test_pii_scan.py::test_more_encodings_of_a_name"
+ },
+ {
+  "name": "a spelled-out address decodes",
+  "file": "scripts/pii_scan.py",
+  "old": "                cands.append(_SPELLED_DOT.sub(\".\", _SPELLED_AT.sub(\"@\", cur)))",
+  "new": "                pass",
+  "target": "tests/unit/test_pii_scan.py::test_cjk_name_with_middle_dots_and_a_spelled_out_email"
+ },
+ {
+  "name": "middle dots are not part of a CJK name",
+  "file": "scripts/pii_scan.py",
+  "old": "if not ch.isspace() and ch not in \"\\u00b7\\u30fb\\u2027\\u2022\\uff65\"",
+  "new": "if not ch.isspace()",
+  "target": "tests/unit/test_pii_scan.py::test_cjk_name_with_middle_dots_and_a_spelled_out_email"
+ },
+ {
+  "name": "a number spread over many separators",
+  "file": "scripts/pii_scan.py",
+  "old": "                if 7 <= len(dg) <= 24:\n                    mm = d.number_rx.search(dg)",
+  "new": "                if False:\n                    mm = d.number_rx.search(dg)",
+  "target": "tests/unit/test_pii_scan.py::test_a_denylisted_number_spread_out_with_many_separators"
+ },
+ {
+  "name": "the judge's mask reads lines together",
+  "file": "scripts/pii_scan.py",
+  "old": "        text = normalise_text(\"\\n\".join(lines))\n        idx = LineIndex(text)\n        out: set[int] = set()",
+  "new": "        return {i for i, x in enumerate(lines) if self.denylist_hits(normalise_text(x))}\n        text = normalise_text(\"\\n\".join(lines))\n        idx = LineIndex(text)\n        out: set[int] = set()",
+  "target": "tests/unit/test_pii_scan.py::test_the_judge_is_shown_neither_a_name_split_across_lines_nor_a_bad_path"
+ },
+ {
+  "name": "zip member count is capped",
+  "file": "scripts/pii_scan.py",
+  "old": "                if _BUDGET[\"members\"] < 0:",
+  "new": "                if False:",
+  "target": "tests/unit/test_pii_scan.py::test_a_zip_with_too_many_members_is_an_error"
+ },
+ {
+  "name": "the expansion budget is shared",
+  "file": "scripts/pii_scan.py",
+  "old": "    b[\"bytes\"] -= nbytes",
+  "new": "    pass",
+  "target": "tests/unit/test_pii_scan.py::test_the_expansion_budget_is_shared_across_members"
+ },
+ {
+  "name": "expansion is time-boxed",
+  "file": "scripts/pii_scan.py",
+  "old": "    if time.monotonic() > b[\"deadline\"]:",
+  "new": "    if False:",
+  "target": "tests/unit/test_pii_scan.py::test_expansion_is_time_boxed"
+ },
+ {
+  "name": "decoded layers are deduped in a set and capped",
+  "file": "scripts/pii_scan.py",
+  "old": "            if tried > LAYER_SEGMENTS:\n                return out",
+  "new": "            if False:\n                return out",
+  "target": "tests/unit/test_pii_scan.py::test_a_2mb_line_of_encoded_segments_scans_in_linear_time"
+ },
+ {
+  "name": "extra commit headers are scanned",
+  "file": "scripts/pii_scan.py",
+  "old": "        sub.findings += message_findings(sc, extra_headers(raw_commit), \"<commit-header>\")",
+  "new": "        pass",
+  "target": "tests/infra/test_pii_hooks.py::test_an_extra_commit_header_is_scanned"
+ },
+ {
+  "name": "a mergetag's tag message is kept",
+  "file": "scripts/pii_scan.py",
+  "old": "        if line.startswith(\" \"):\n            if not skip:",
+  "new": "        if line.startswith(\" \"):\n            if False:",
+  "target": "tests/unit/test_pii_scan.py::test_extra_commit_headers_are_read_and_signatures_skipped"
+ },
+ {
+  "name": "an agent ack needs its adjudication record",
+  "file": "scripts/pii_scan.py",
+  "old": "        if re.match(r\"\\(agent\\b\", rest.strip()) and (tree, fid) not in log:",
+  "new": "        if False:",
+  "target": "tests/unit/test_pii_scan.py::test_an_agent_ack_needs_the_adjudication_record_for_that_tree"
+ },
+ {
+  "name": "a human ack is recorded as human",
+  "file": "scripts/pii_scan.py",
+  "old": "(f\" ({note})\" if note else \" (human)\")",
+  "new": "(f\" ({note})\" if note else \"\")",
+  "target": "tests/infra/test_pii_hooks.py::test_a_human_ack_is_recorded_as_human"
+ },
+ {
+  "name": "a cutover baseline is used",
+  "file": "scripts/pii_scan.py",
+  "old": "        published |= baseline(rep)",
+  "new": "        pass",
+  "target": "tests/infra/test_pii_hooks.py::test_a_cutover_to_an_empty_remote_needs_a_baseline_manifest"
+ },
+ {
+  "name": "a malformed baseline is an ERROR",
+  "file": "scripts/pii_scan.py",
+  "old": "    if not lines or not lines[0].startswith(\"# nora-pii-baseline v1\"):",
+  "new": "    if False:",
+  "target": "tests/unit/test_pii_scan.py::test_a_cutover_baseline_must_be_a_manifest"
+ },
+ {
+  "name": "ls-remote is time-boxed",
+  "file": "scripts/pii_scan.py",
+  "old": "    except subprocess.TimeoutExpired as exc:\n        raise GitError(f\"git ls-remote timed out",
+  "new": "    except ZeroDivisionError as exc:\n        raise GitError(f\"git ls-remote timed out",
+  "target": "tests/unit/test_pii_scan.py::test_ls_remote_never_waits_for_a_prompt"
+ },
+ {
+  "name": "pre-commit confirms declarations with the remote",
+  "file": "scripts/pii_scan.py",
+  "old": "    if confirmed:\n        return declared",
+  "new": "    if True:\n        return declared",
+  "target": "tests/infra/test_pii_hooks.py::test_pre_commit_does_not_trust_a_forged_tracking_ref_for_declarations"
+ },
+ {
+  "name": "the adjudicator's evidence is the published clone",
   "file": "scripts/pii_adjudicate.py",
-  "old": "        *[f\"Bash(git {s}:*)\" for s in GIT_READ],",
-  "new": "        \"Bash(*)\",",
+  "old": "        answer, meta = run_agent(claude_argv(a.model, prompt, tool), clone, a.timeout)",
+  "new": "        answer, meta = run_agent(claude_argv(a.model, prompt, tool), top, a.timeout)",
+  "target": "tests/infra/test_pii_hooks.py::test_the_adjudicator_works_on_what_is_published_not_on_the_change"
+ },
+ {
+  "name": "the agent's only tool is the read-only wrapper",
+  "file": "scripts/pii_adjudicate.py",
+  "old": "        f\"Bash(python3 {tool}:*)\",\n",
+  "new": "        \"Bash(git log:*)\",\n        f\"Bash(python3 {tool}:*)\",\n",
   "target": "tests/infra/test_pii_hooks.py::test_a_fake_verdict_becomes_a_trailer_and_the_push_honours_it"
+ },
+ {
+  "name": "a missing agent is exit 2",
+  "file": "scripts/pii_adjudicate.py",
+  "old": "    except FileNotFoundError as exc:\n        raise Stop(f\"the agent CLI is not installed ({argv[0]})\") from exc",
+  "new": "    except ZeroDivisionError as exc:\n        raise Stop(f\"the agent CLI is not installed ({argv[0]})\") from exc",
+  "target": "tests/infra/test_pii_hooks.py::test_the_adjudicator_without_its_agent_is_rc_2"
+ },
+ {
+  "name": "the answer is the last JSON holding verdicts",
+  "file": "scripts/pii_adjudicate.py",
+  "old": "        for m in reversed(list(re.finditer(r\"\\{\", text))):",
+  "new": "        for m in list(re.finditer(r\"\\{\", text))[:1]:",
+  "target": "tests/unit/test_pii_scan.py::test_the_answer_is_read_from_structured_output_or_the_last_json"
+ },
+ {
+  "name": "the read-only tool stays inside the repository",
+  "file": "scripts/pii_readonly.py",
+  "old": "    if full != root() and not full.startswith(root() + os.sep):\n        raise Refused(\"outside the repository\")",
+  "new": "    if False:\n        raise Refused(\"outside the repository\")",
+  "target": "tests/unit/test_pii_scan.py::test_the_read_only_tool_refuses"
+ },
+ {
+  "name": "the read-only tool masks denylisted lines",
+  "file": "scripts/pii_readonly.py",
+  "old": "        \"[withheld: holds a denylisted value]\" if i in held else ln for i, ln in enumerate(lines)",
+  "new": "        ln for i, ln in enumerate(lines)",
+  "target": "tests/unit/test_pii_scan.py::test_the_read_only_tool_masks_denylisted_lines"
+ },
+ {
+  "name": "a public keep term is dropped, siblings stay",
+  "file": "scripts/pii_denylist_build.py",
+  "old": "        if _words(v) in keep_words:",
+  "new": "        if False:",
+  "target": "tests/unit/test_pii_scan.py::test_a_kept_public_term_is_dropped_but_its_longer_siblings_stay"
  }
 ]

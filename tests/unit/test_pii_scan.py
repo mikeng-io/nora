@@ -385,12 +385,12 @@ def test_utf16_and_a_trailing_non_utf8_byte_are_errors_not_skips():
 
 
 def test_declared_binary_is_scanned_for_strings_and_media_gps():
-    allow = P.parse_allowlist("binary assets/* -- test\n")
+    allow = P.parse_allowlist("binary media/art/* -- test\n")
     fs = _judge(
-        _job(b"\x00\x01PNG" + f"Author: {NAME} ".encode() + b"\x00", path="assets/a.png"), allow
+        _job(b"\x00\x01PNG" + f"Author: {NAME} ".encode() + b"\x00", path="media/art/a.png"), allow
     )
     assert "denylist:text" in [f.rule for f in fs]
-    fs = _judge(_job(_jpeg_with_gps(True), path="assets/b.jpg"), allow)
+    fs = _judge(_job(_jpeg_with_gps(True), path="media/art/b.jpg"), allow)
     assert [f.rule for f in fs] == ["media-gps"]
 
 
@@ -526,6 +526,7 @@ def _judged_report(text: str, old: str | None = None):
     sc = _scanner()
     rep = P.judge_blob(_job(text.encode(), old.encode() if old else None), sc, P.Allowlist(), set())
     rep.guard = sc.contains_denylisted
+    rep.guard_lines = sc.withheld_lines
     return rep
 
 
@@ -536,7 +537,7 @@ def _view_text(view) -> str:
 def _commit(monkeypatch, staged_text, message="feat: x", old=None):
     """A message report plus a staged report, as commit-msg builds them."""
     staged = _judged_report(staged_text, old)
-    rep = P.Report(guard=staged.guard)
+    rep = P.Report(guard=staged.guard, guard_lines=staged.guard_lines)
     rep.message_lines = [(n, x) for n, x in enumerate(message.split("\n"), 1) if P._judgeable(x)]
     return rep, staged
 
@@ -609,8 +610,8 @@ def test_lockfiles_are_not_shown_to_the_judge(monkeypatch):
     seen = _capture_judge(monkeypatch)
     sc = _scanner()
     staged = P.judge_blob(_job(b"name = pkg-one\n", path="uv.lock"), sc, P.Allowlist(), set())
-    staged.guard = sc.contains_denylisted
-    P.run_judges(P.Report(guard=sc.contains_denylisted), staged)
+    staged.guard, staged.guard_lines = sc.contains_denylisted, sc.withheld_lines
+    P.run_judges(P.Report(guard=sc.contains_denylisted, guard_lines=sc.withheld_lines), staged)
     assert seen["view"].skipped == ["uv.lock"] and seen["view"].files == []
 
 
@@ -663,7 +664,7 @@ def test_the_laya_worker_protocol_and_its_failure(monkeypatch, tmp_path):
     assert J.laya_commit(view)[:2] == (0.7, ["L1"])
     # a worker that dies after printing something readable is still a failure
     fake.write_text(
-        "#!/bin/sh\ncat > /dev/null\necho '{\"score\": 0.0, \"ranked\": []}'\n"
+        '#!/bin/sh\ncat > /dev/null\necho \'{"score": 0.0, "ranked": []}\'\n'
         "echo 'No module named laya_mlx' >&2\nexit 1\n"
     )
     with pytest.raises(J.JudgeError):
@@ -904,7 +905,7 @@ def test_compressed_text_chunks_and_archives_are_opened():
     import zipfile
     import zlib
 
-    allow = P.parse_allowlist("binary art/* -- test\n")
+    allow = P.parse_allowlist("binary media/art/* -- test\n")
     ztxt = _png((b"zTXt", b"Author\0\0" + zlib.compress(NAME.encode())))
     itxt = _png((b"iTXt", b"Author\0\x01\0\0\0" + zlib.compress(NAME.encode())))
     gz = gzip.compress(f"owner: {NAME}\n".encode())
@@ -912,7 +913,7 @@ def test_compressed_text_chunks_and_archives_are_opened():
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
         z.writestr("xl/sharedStrings.xml", f"<si><t>{NAME}</t></si>")
     for blob in (ztxt, itxt, gz, buf.getvalue()):
-        rules = [f.rule for f in _judge(_job(blob, path="art/a.bin"), allow)]
+        rules = [f.rule for f in _judge(_job(blob, path="media/art/a.bin"), allow)]
         assert "denylist:text" in rules, blob[:8]
 
 
@@ -920,8 +921,8 @@ def test_a_decompression_bomb_is_an_error(monkeypatch):
     import gzip
 
     monkeypatch.setattr(P, "DECODE_MAX", 1000)
-    allow = P.parse_allowlist("binary art/* -- test\n")
-    fs = _judge(_job(gzip.compress(b"a" * 5000), path="art/a.gz"), allow)
+    allow = P.parse_allowlist("binary media/art/* -- test\n")
+    fs = _judge(_job(gzip.compress(b"a" * 5000), path="media/art/a.gz"), allow)
     assert [(f.status, f.rule) for f in fs] == [("ERROR", "undecodable-container")]
 
 
@@ -960,3 +961,302 @@ def test_bad_configuration_is_an_error_not_a_fail(env, tmp_path):
         text=True,
     )
     assert p.returncode == P.ERROR and "config" in p.stderr
+
+
+# ---- second review of #591
+
+
+EMAIL_USER = _invented_word().lower() + "77"
+EMAIL = f"{EMAIL_USER}@proton.me"
+
+
+def _deny2():
+    return P.Scanner(
+        P.parse_denylist(f"text\t{NAME}\nphone\t{PHONE}\ntext\t{CJK}\ntext\t{EMAIL}\n", "t"),
+        P.Allowlist(),
+        set(),
+    )
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        f"people/{NAME}/notes.md",
+        f"people/{GIVEN.lower()}_{FAMILY.lower()}.md",
+        f"people/{EMAIL}.txt",
+        f"contacts/{PHONE}.vcf",
+        f"contacts/+44 {NSN[:4]} {NSN[4:]}.vcf",
+    ],
+)
+def test_a_new_path_is_scanned_and_never_printed(path, capsys):
+    """r2 finding 1: names, emails and numbers in directory and file names."""
+    fs = P.judge_blob(
+        P.BlobJob(path, "100644", b"hello\n", [None], True), _deny2(), P.Allowlist(), set()
+    ).findings
+    assert any(f.rule.startswith("denylist:") for f in fs), path
+    P.emit(P.Report(findings=fs), "staged", 0.0)
+    err = capsys.readouterr().err
+    assert GIVEN not in err and EMAIL_USER not in err and NSN[4:] not in err
+
+
+def test_an_existing_path_is_masked_but_not_reported_again():
+    path = f"people/{NAME}/notes.md"
+    rep = P.judge_blob(
+        P.BlobJob(path, "100644", b"a = 1\nb = 2\n", [b"a = 1\n"], False),
+        _deny2(),
+        P.Allowlist(),
+        set(),
+    )
+    assert rep.findings == [] and rep.views and GIVEN not in rep.views[0][0]
+
+
+@pytest.mark.parametrize(
+    "pattern,broad",
+    [
+        ("*", True),
+        ("**", True),
+        ("*/x.txt", True),
+        ("d/*", True),
+        ("vendor/*", True),
+        ("a/**/b", True),
+        ("site/public/*", False),
+        ("assets/*.png", False),
+        ("scrub/map.txt", False),
+        (".claude/skills/*", False),
+        ("uv.lock", False),
+    ],
+)
+def test_declaration_breadth(pattern, broad):
+    assert P.too_broad(pattern) is broad
+    if broad:
+        with pytest.raises(P.AllowlistError):
+            P.parse_allowlist(f"path-exempt {pattern} -- test\n")
+
+
+def test_path_exempt_never_exempts_a_denylist_hit():
+    allow = P.parse_allowlist("path-exempt vendor/lib/data.txt -- test\n")
+    text = f'{NAME}\nphone = "{SY.phone("81")}"\n'.encode()
+    fs = P.judge_blob(
+        P.BlobJob("vendor/lib/data.txt", "100644", text, [None], True),
+        P.Scanner(_deny(), allow, set()),
+        allow,
+        set(),
+    ).findings
+    assert [f.rule for f in fs] == ["denylist:text"]
+
+
+def test_each_finding_on_a_line_has_its_own_id():
+    line = f"demo {SY.email()} real {SY.email()} {SY.phone('852', 'spaced')}\n"
+    fs = _scanner().scan_text(line, "c.txt").findings
+    assert len(fs) == 3 and len({f.fid for f in fs}) == 3
+    P.apply_acks(fs, {fs[0].fid})
+    assert [f.state for f in fs] == ["ACKED", "", ""]
+
+
+@pytest.mark.parametrize(
+    "form",
+    [
+        "".join(f"&#x{ord(c):x}" for c in NAME),  # hex entities, no semicolons
+        "blob " + NAME.encode().hex(),  # hex bytes
+        "".join(c + "́" if c in "aeiou" else c for c in NAME),  # combining accents
+    ],
+)
+def test_more_encodings_of_a_name(form):
+    assert "denylist:text" in _rules(f"{form}\n")
+
+
+def test_cjk_name_with_middle_dots_and_a_spelled_out_email():
+    sc = _deny2()
+    assert "denylist:text" in _rules("·".join(CJK) + "\n", sc)
+    host = EMAIL.split("@")[1].replace(".", " dot ")
+    assert "denylist:text" in _rules(f"write to {EMAIL_USER} at {host}\n", sc)
+
+
+def test_a_denylisted_number_spread_out_with_many_separators():
+    assert "denylist:number" in _rules(f"contact +44 {NSN[:4]} ----- {NSN[4:]}\n")
+
+
+def test_a_long_numeric_line_does_not_assemble_a_number_by_chance():
+    digits = P.digits_of(PHONE)
+    noise = ", ".join(str(_R.randint(0, 9)) for _ in range(4000))
+    assert "denylist:number" not in _rules(f"weights = [{noise}]\n") or digits in noise.replace(
+        ", ", ""
+    )
+
+
+def test_the_judge_is_shown_neither_a_name_split_across_lines_nor_a_bad_path(monkeypatch):
+    """r2 finding 8: the mask reads lines together, as the scanner does."""
+    monkeypatch.setenv("NORA_PII_JUDGE", "laya")
+    seen = _capture_judge(monkeypatch)
+    sc = _deny2()
+    path = f"people/{NAME}/r.txt"
+    old = f"owner: {GIVEN}\n{FAMILY} (lead)\nx = 1\n"
+    new = f"owner: {GIVEN}\n{FAMILY} (lead) edited\nx = 2\n"
+    staged = P.judge_blob(
+        P.BlobJob(path, "100644", new.encode(), [old.encode()], False), sc, P.Allowlist(), set()
+    )
+    rep = P.Report(guard=sc.contains_denylisted, guard_lines=sc.withheld_lines)
+    P.run_judges(rep, staged)
+    text = _view_text(seen["view"]) + repr([f["path"] for f in seen["view"].files])
+    assert "x = 2" in text and GIVEN not in text and FAMILY not in text
+
+
+def test_a_zip_with_too_many_members_is_an_error(monkeypatch):
+    import io
+    import zipfile
+
+    monkeypatch.setattr(P, "MAX_MEMBERS", 10)
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        for i in range(20):
+            z.writestr(f"m{i}.txt", "x")
+    allow = P.parse_allowlist("binary media/art/* -- test\n")
+    fs = _judge(_job(buf.getvalue(), path="media/art/a.zip"), allow)
+    assert [(f.status, f.rule) for f in fs] == [("ERROR", "undecodable-container")]
+
+
+def test_the_expansion_budget_is_shared_across_members(monkeypatch):
+    """r2 finding 9: members each under the cap, together over it."""
+    import bz2
+    import io
+    import zipfile
+
+    monkeypatch.setattr(P, "DECODE_MAX", 50_000)
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        for i in range(4):
+            z.writestr(f"m{i}.bz2", bz2.compress(b"a" * 20_000))
+    allow = P.parse_allowlist("binary media/art/* -- test\n")
+    fs = _judge(_job(buf.getvalue(), path="media/art/a.zip"), allow)
+    assert [(f.status, f.rule) for f in fs] == [("ERROR", "undecodable-container")]
+
+
+def test_expansion_is_time_boxed(monkeypatch):
+    import gzip
+
+    monkeypatch.setattr(P, "DECODE_SECONDS", -1.0)
+    allow = P.parse_allowlist("binary media/art/* -- test\n")
+    fs = _judge(_job(gzip.compress(b"x" * 100), path="media/art/a.gz"), allow)
+    assert [(f.status, f.rule) for f in fs] == [("ERROR", "undecodable-container")]
+
+
+def test_a_2mb_line_of_encoded_segments_scans_in_linear_time():
+    """r2 finding 10: 28 s before the layer caps."""
+    import base64
+    import time
+
+    segs = [
+        base64.b64encode(f"plain words number {i:06d} %41 &amp; \\u0041".encode()).decode()
+        for i in range(20000)
+    ]
+    line = ("x = '" + " %41 &amp; \\u0041 ".join(segs) + "'")[:2_000_000]
+    t0 = time.monotonic()
+    _scanner().scan_text(line + "\n", "f.py")
+    assert time.monotonic() - t0 < 2.0
+
+
+def test_extra_commit_headers_are_read_and_signatures_skipped():
+    raw = (
+        "tree " + "a" * 40 + "\nparent " + "b" * 40 + "\nauthor A <a@example.com> 1 +0000\n"
+        "committer A <a@example.com> 1 +0000\nx-owner " + NAME + "\n"
+        "mergetag object "
+        + "c" * 40
+        + "\n type commit\n tag v1\n \n released for "
+        + FAMILY
+        + "\ngpgsig -----BEGIN PGP SIGNATURE-----\n AAAA\n -----END PGP SIGNATURE-----\n\nmsg\n"
+    )
+    hdr = P.extra_headers(raw)
+    assert NAME in hdr and FAMILY in hdr and "AAAA" not in hdr and "tree" not in hdr
+
+
+def test_an_agent_ack_needs_the_adjudication_record_for_that_tree():
+    body = "x\n\nPII-Ack: 0123456789ab (agent sonnet: fake, r)\nPII-Ack: ba9876543210 (human)\n"
+    ok, refused = P.verified_acks(body, "t1", {})
+    assert ok == {"ba9876543210"} and refused == {"0123456789ab"}
+    ok, refused = P.verified_acks(body, "t1", {("t1", "0123456789ab"): "sonnet"})
+    assert ok == {"0123456789ab", "ba9876543210"} and not refused
+    assert P.verified_acks(body, "t2", {("t1", "0123456789ab"): "sonnet"})[1] == {"0123456789ab"}
+
+
+def test_a_cutover_baseline_must_be_a_manifest(monkeypatch, tmp_path):
+    f = tmp_path / "m.txt"
+    for body in ("", "abc\n", "# nora-pii-baseline v1\nnot-an-id\n"):
+        f.write_text(body)
+        monkeypatch.setenv("NORA_PII_PUSH_BASELINE", str(f))
+        with pytest.raises(P.ConfigError):
+            P.baseline(P.Report())
+
+
+def test_ls_remote_never_waits_for_a_prompt(monkeypatch):
+    import subprocess
+
+    def slow(*a, **k):
+        assert k["env"]["GIT_TERMINAL_PROMPT"] == "0" and k["stdin"] == subprocess.DEVNULL
+        raise subprocess.TimeoutExpired(a[0], k["timeout"])
+
+    monkeypatch.setattr(P.subprocess, "run", slow)
+    with pytest.raises(P.GitError):
+        P.ls_remote("https://example.invalid/x.git")
+
+
+# ---- the denylist builder's public keep-list (owner decision 2026-09-27)
+
+
+B = _load("pii_denylist_build")
+
+
+def test_a_kept_public_term_is_dropped_but_its_longer_siblings_stay():
+    term = _invented_word().lower()
+    src = [
+        (term, "hostname"),
+        (term.upper(), "hostname"),
+        (f"{term}-dev", "author"),
+        (f"{term}.tail{SY.uuid()[:6]}.ts.net", "hostname"),
+        (f"/home/{term}/", "path"),
+    ]
+    kept, dropped = B.build(src, set(), 5, {term, f"/home/{term}/"})
+    values = {v for _k, v in kept}
+    assert term not in values and term.upper() not in values and f"/home/{term}/" not in values
+    assert f"{term}-dev" in values and any(v.endswith(".ts.net") for v in values)
+    assert dropped["public-keep"] == 3
+
+
+# ---- the adjudicator's read-only tool and answer parsing (r2 findings 4, 12)
+
+
+RO = _load("pii_readonly")
+A = _load("pii_adjudicate")
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["cat", "../outside.txt"],
+        ["cat", "/etc/hosts"],
+        ["cat", ".git/config"],
+        ["grep", "x", "--open-files-in-pager=touch pwned"],
+        ["show", "--output=x"],
+        ["log-S", "x", "../"],
+        ["frobnicate"],
+    ],
+)
+def test_the_read_only_tool_refuses(argv, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises((RO.Refused, ValueError)):
+        RO.cmd(argv)
+
+
+def test_the_read_only_tool_masks_denylisted_lines(tmp_path, monkeypatch):
+    deny = tmp_path / "d.txt"
+    deny.write_text(f"text\t{NAME}\n")
+    monkeypatch.setenv("NORA_PII_DENYLIST", str(deny))
+    out = RO.masked(f"a = 1\nowner: {GIVEN}\n{FAMILY}\nb = 2")
+    assert "a = 1" in out and "b = 2" in out and GIVEN not in out and FAMILY not in out
+
+
+def test_the_answer_is_read_from_structured_output_or_the_last_json():
+    good = {"verdicts": [{"id": "0123456789ab", "verdict": "fake", "reason": "r"}]}
+    assert A.parse_verdicts(good)["0123456789ab"]["verdict"] == "fake"
+    prose = "The id format is {id}. Here: " + json.dumps(good)
+    assert A.parse_verdicts(prose)["0123456789ab"]["verdict"] == "fake"
+    assert A.parse_verdicts("no json {here") == {}

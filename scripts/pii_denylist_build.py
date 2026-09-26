@@ -19,7 +19,8 @@ It reads them at run time and contains no values itself. Output: one
     python3 scripts/pii_denylist_build.py \\
         --identity <path/to/identity.toml> [--identity ...] \\
         --map <path/to/replacements.txt> [--map ...] \\
-        [--exempt <private file of values to drop>] [--out ~/.config/nora/pii-denylist.txt]
+        [--exempt <private file of values to drop>] [--keep <public term>] [--keep-file <file>]
+        [--out ~/.config/nora/pii-denylist.txt]
 
 Dropped on purpose, and counted: account `label`s (personal/business/live are
 not identifiers), project identity (the author, the org, the domain — they
@@ -41,6 +42,21 @@ import time
 
 NON_IDENTIFYING_KEYS = {"label"}
 PROJECT_IDENTITY = {"miles novak", "mikeng-io", "pinegrove", "mikeng.io", "iam@mikeng.io"}
+
+# Terms the owner has declared PUBLIC: an ordinary name that stays out of the
+# denylist even though a private source lists it. Owner decision 2026-09-27:
+# the deploy host's short name (and its home directory) is an ordinary server
+# name. Matched on the whole value's words, so a longer sibling that is still
+# sensitive -- `<term>-dev`, a tailnet name, an address -- stays denylisted.
+# Add more with --keep / --keep-file (a private file when the term is not
+# itself public).
+PUBLIC_KEEP = {"norty", "/home/norty/"}
+
+
+def _words(value: str) -> tuple[str, ...]:
+    return tuple(w.lower() for w in re.findall(r"[A-Za-z0-9]+", value))
+
+
 UUID_RE = re.compile(
     r"[0-9a-fA-F]{8}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{12}"
 )
@@ -119,9 +135,19 @@ def from_map(text: str) -> list[tuple[str, str]]:
     return out
 
 
-def build(sources: list[tuple[str, str]], exempt: set[str], min_token: int):
+def build(
+    sources: list[tuple[str, str]], exempt: set[str], min_token: int, keep: set[str] | None = None
+):
     kept: dict[tuple[str, str], None] = {}
-    dropped = {"project-identity": 0, "short-word": 0, "exempt": 0, "too-short": 0, "empty": 0}
+    dropped = {
+        "project-identity": 0,
+        "short-word": 0,
+        "exempt": 0,
+        "too-short": 0,
+        "empty": 0,
+        "public-keep": 0,
+    }
+    keep_words = {_words(k) for k in (PUBLIC_KEEP | (keep or set()))} - {()}
     for value, key in sources:
         v = value.strip()
         if not v:
@@ -129,6 +155,9 @@ def build(sources: list[tuple[str, str]], exempt: set[str], min_token: int):
             continue
         if v.casefold() in PROJECT_IDENTITY:
             dropped["project-identity"] += 1
+            continue
+        if _words(v) in keep_words:
+            dropped["public-keep"] += 1
             continue
         if v.casefold() in exempt:
             dropped["exempt"] += 1
@@ -162,6 +191,13 @@ def main(argv: list[str]) -> int:
     )
     ap.add_argument("--exempt", help="private file: one value per line to leave out")
     ap.add_argument(
+        "--keep",
+        action="append",
+        default=[],
+        help="a public term to keep out of the denylist (whole-value words; repeatable)",
+    )
+    ap.add_argument("--keep-file", help="private file: one public term per line")
+    ap.add_argument(
         "--out",
         default=os.path.expanduser(os.path.join("~", ".config", "nora", "pii-denylist.txt")),
     )
@@ -182,7 +218,11 @@ def main(argv: list[str]) -> int:
     if a.exempt:
         with open(a.exempt, encoding="utf-8") as fh:
             exempt = {x.strip().casefold() for x in fh if x.strip() and not x.startswith("#")}
-    entries, dropped = build(sources, exempt, a.min_token)
+    keep = set(a.keep)
+    if a.keep_file:
+        with open(a.keep_file, encoding="utf-8") as fh:
+            keep |= {x.strip() for x in fh if x.strip() and not x.startswith("#")}
+    entries, dropped = build(sources, exempt, a.min_token, keep)
     counts: dict[str, int] = {}
     for kind, _ in entries:
         counts[kind] = counts.get(kind, 0) + 1
