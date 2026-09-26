@@ -167,6 +167,7 @@ def test_denylist_rejects_unknown_kind():
 def test_phone_shape_any_country(cc):
     assert _rules(f'contact = "{SY.phone(cc, "spaced")}"\n') == ["phone"]
     assert _rules(f'contact = "{SY.phone(cc, "dashed")}"\n') == ["phone"]
+    assert _rules(f'contact = "{SY.phone(cc)}"\n') == ["phone"]
 
 
 @pytest.mark.parametrize(
@@ -213,6 +214,7 @@ def test_placeholder_ids_pass():
     zero_uuid = "-".join(["a1000001", "0000", "4000", "8000", "000000000001"])
     assert _rules(f"uid {zero_uuid}\n") == []
     assert _rules(f"id {'1' + '0' * 16 + '1'}\n") == []
+    assert _rules(f"id {SY.snowflake()[:6] + '0' * 5 + SY.snowflake()[:7]}\n") == []
     assert _rules("h1:" + SY.signal_group() + "\n") == []  # a Go checksum, not a group
 
 
@@ -253,6 +255,16 @@ def test_coords_2000_rows_two_places_fail():
     a, b = SY.base_point(), SY.base_point()
     res = P.scan_coords(_rows([SY.near(a if i % 2 else b) for i in range(2000)]))
     assert res.over and res.clusters == 2 and res.rows == 2000
+
+
+def test_coords_two_fixes_at_three_places_fail():
+    """No single place reaches three fixes; the dwell score still adds up."""
+    pts = []
+    for _ in range(3):
+        base = SY.base_point()
+        pts += [SY.near(base), SY.near(base)]
+    res = P.scan_coords(_rows(pts))
+    assert res.max_rows == 2 and res.over
 
 
 def test_coords_int_microdegrees_fail():
@@ -302,7 +314,8 @@ def test_coords_dms_and_plus_codes_fail():
 
 def test_coords_versions_metrics_and_clock_times_pass():
     lines = [f'"node": "^{_R.randint(10, 30)}.{_R.randint(10, 20)}.0"' for _ in range(40)]
-    lines += ["[" + ", ".join(f"{_R.uniform(10, 50):.15f}" for _ in range(40)) + "]"]
+    level = _R.uniform(10, 50)  # a converging metric: neighbouring values sit together
+    lines += ["[" + ", ".join(f"{level + _R.uniform(0, 1e-5):.15f}" for _ in range(40)) + "]"]
     lines += [
         f"at 12:{_R.randint(10, 59)}:{_R.randint(10, 59)}.{_R.randint(100, 999)} ok"
         for _ in range(40)
@@ -358,6 +371,8 @@ def test_existing_value_is_not_new_and_an_added_one_is():
 def test_utf16_and_a_trailing_non_utf8_byte_are_errors_not_skips():
     payload = f"x = {NAME!r}\n"
     fs = _judge(_job(payload.encode("utf-16")))
+    assert [(f.status, f.rule) for f in fs] == [("ERROR", "utf16")]
+    fs = _judge(_job(f"{CJK}\n".encode("utf-16")))
     assert [(f.status, f.rule) for f in fs] == [("ERROR", "utf16")]
     fs = _judge(_job(payload.encode() + b"\xff"))
     assert [(f.status, f.rule) for f in fs] == [("ERROR", "undecodable")]
@@ -516,6 +531,16 @@ def test_judge_flags_lines_and_never_sees_a_denylisted_line(monkeypatch):
     assert [(f.rule, f.line) for f in rep.findings if f.rule.startswith("judge")] == [
         ("judge:laya", 3)
     ]
+
+
+def test_only_added_lines_go_to_the_judge(monkeypatch):
+    monkeypatch.setenv("NORA_PII_JUDGE", "laya")
+    monkeypatch.delenv("NORA_PII_LLM", raising=False)
+    sent = _with_fake_judge(monkeypatch, lambda line: 0.0)
+    old = b"first = 1\nsecond = 2\n"
+    rep = P.judge_blob(_job(old + b"third = 3\n", old), _scanner(), P.Allowlist(), set())
+    P.run_judges(rep)
+    assert [(it[1], it[2]) for it in sent["items"]] == [(3, "third = 3")]
 
 
 def test_judge_that_does_not_answer_is_an_error(monkeypatch):

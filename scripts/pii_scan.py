@@ -453,8 +453,6 @@ _JID_DOMAINS = ("s.whatsapp.net", "c.us", "g.us", "lid")
 
 
 def _shape_placeholder(rule: str, value: str, ctx_line: str) -> bool:
-    if rule == "phone" and not value.startswith("+") and _DATEISH.match(value.strip()):
-        return True  # a date, a timestamp or an IPv4 address
     if rule in ("phone", "snowflake"):
         d = digits_of(value)
         if rule == "phone":

@@ -70,10 +70,10 @@
   "target": "tests/unit/test_pii_scan.py::test_phone_shape_any_country"
  },
  {
-  "name": "dates, times and addresses are not phones",
+  "name": "a date on a line that says signal is not a phone",
   "file": "scripts/pii_scan.py",
-  "old": "    if rule == \"phone\" and not value.startswith(\"+\") and _DATEISH.match(value.strip()):",
-  "new": "    if False:",
+  "old": "                if _DATEISH.match(m.group()):\n                    continue\n",
+  "new": "",
   "target": "tests/unit/test_pii_scan.py::test_phone_shape_skips_dates_times_years_placeholders"
  },
  {
@@ -98,11 +98,11 @@
   "target": "tests/unit/test_pii_scan.py::test_coords_three_fixes_in_one_place_fail"
  },
  {
-  "name": "dwell score catches 2000 rows in 2 places",
+  "name": "the dwell score catches two fixes at each of three places",
   "file": "scripts/pii_scan.py",
   "old": "MAX_SCORE = 11  #",
   "new": "MAX_SCORE = 10**9  #",
-  "target": "tests/unit/test_pii_scan.py::test_coords_2000_rows_two_places_fail"
+  "target": "tests/unit/test_pii_scan.py::test_coords_two_fixes_at_three_places_fail"
  },
  {
   "name": "split int/fraction columns and comma decimals are fields",
@@ -114,7 +114,7 @@
  {
   "name": "integer microdegrees are fields",
   "file": "scripts/pii_scan.py",
-  "old": "            out.append((m.start(), \"e6\", sign * v / 1e6))",
+  "old": "            out.append((m.start(), \"e6\", sign * v / 1e6))\n            out.append((m.start(), \"e7\", sign * v / 1e7))",
   "new": "            pass",
   "target": "tests/unit/test_pii_scan.py::test_coords_int_microdegrees_fail"
  },
@@ -149,8 +149,8 @@
  {
   "name": "a merge is new only against every parent",
   "file": "scripts/pii_scan.py",
-  "old": "            base_c[k] = max(base_c.get(k, 0), v)",
-  "new": "            base_c[k] = min(base_c.get(k, 10**9), v)",
+  "old": "    for s in old_scans:\n        for k, v in counts(s).items():",
+  "new": "    for s in old_scans[:1]:\n        for k, v in counts(s).items():",
   "target": "tests/unit/test_pii_scan.py::test_a_merge_adds_only_what_no_parent_had"
  },
  {
@@ -259,10 +259,10 @@
   "target": "tests/infra/test_pii_hooks.py::test_a_denylisted_author_is_refused"
  },
  {
-  "name": "pre-commit judges only what the change adds",
+  "name": "only the lines a change adds go to the judge",
   "file": "scripts/pii_scan.py",
   "old": "    added = _added_line_numbers(new_lines, old_line_sets) if not binary else set()",
   "new": "    added = set(range(1, len(new_lines) + 1)) if not binary else set()",
-  "target": "tests/infra/test_pii_hooks.py::test_residue_already_in_a_file_does_not_block_an_unrelated_edit"
+  "target": "tests/unit/test_pii_scan.py::test_only_added_lines_go_to_the_judge"
  }
 ]
