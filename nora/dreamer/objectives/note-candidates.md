@@ -1,7 +1,7 @@
 ---
 name: note-candidates
 kind: objective
-version: 9
+version: 10
 applies_to: [note_candidate_adaptor]
 description: >-
   The note tier's create path. Read a batch of a room's messages and propose
@@ -172,10 +172,11 @@ moved to the section it now belongs in (an open corner that is now settled moves
 `## Decided`, a dropped option to `## Ruled out`) or merged with another line, but it keeps the
 ids it cites. A line of the body whose ids no line of yours cites is a line you dropped, and an
 update that drops one is not written. A body whose `form` says it is not in the sections has no
-ids to keep: restate what it says, in the sections, citing the messages it rests on where you
-were shown them. An entry whose `form` says its body was not shown in this pass cannot be updated
-now: its title is there so you do not write it again as new. On an update, `description` and
-`closing_condition` are not used: the entry keeps its own. That title is the only
+ids to keep: write the entry in the sections from what this batch shows, and a line of the old
+text you cannot point to a message in this batch for is not carried: it stays in the entry's
+history, so dropping it loses nothing. An entry whose `form` says its body was not shown in this pass cannot be updated
+now: its title is there so you do not write it again as new. On an update, still give `description` and
+`closing_condition` (an item without them is dropped), but the entry keeps its own. That title is the only
 thing that tells code which entry you mean: nothing else about your proposal is matched against
 the notebook, so an entry you do not name is a new entry, and a title you mistype is a new entry
 too. This is the one case where a `committed: true, open: []` message still belongs in your

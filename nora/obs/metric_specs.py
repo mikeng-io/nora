@@ -1631,6 +1631,16 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "is checked here too since design 42 S4a, as a restatement.",
         ("rule",),
     ),
+    _CounterSpec(
+        "nora_note_candidate_parse_dropped_total",
+        "A note-candidates envelope item dropped before the gate because a "
+        "field could not be read, by the first such field: title, "
+        "description, body, closing_condition (missing, empty or over its "
+        "limit), anchor_date (missing, not an integer date), "
+        "anchor_entity_ids (malformed), other. A dropped item is never "
+        "staged, so without this it reads as an empty answer.",
+        ("field",),
+    ),
     # A DELIBERATE second series over calls already counted, on
     # `_record_created`'s precedent (`nora.agent.tools`) rather than against
     # `_record_room`'s rule — and the difference is that the REASON is the

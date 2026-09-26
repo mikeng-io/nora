@@ -848,6 +848,19 @@ def test_body_sections_counts_only_a_body_that_holds_to_the_schema():
     ) == ["body_sections: no written body holds to the schema"]
 
 
+def test_updates_named_accepts_any_one_of_a_listed_group():
+    """p6 grades against a group of equally correct notes: revising exactly
+    one passes, a note outside the group is a wrong note, two is too many."""
+    group = ["A dinner", "A dinner, place open"]
+    assert backbone._updates_named(group, ["A dinner, place open"]) == []
+    assert backbone._updates_named(group, ["Lunch"])[0].startswith(
+        "updates_named: wrong note")
+    assert backbone._updates_named(group, [])[0].startswith(
+        "updates_named: no update")
+    assert backbone._updates_named(group, group)[0].startswith(
+        "updates_named: also revised")
+
+
 def test_updates_named_separates_a_wrong_note_from_no_update():
     """Design 42 §10.1: #513 could only report in prose that every update
     failure revised a DIFFERENT, similarly titled note."""

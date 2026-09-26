@@ -22,6 +22,7 @@ from nora.language.note_candidates import (
     _BLOCKS,
     BODY_REFUSAL_RULES,
     GATE_ACTIONS,
+    PARSE_DROP_FIELDS,
     STAGING_OUTCOMES,
     UNNAMED_ROOM,
     NoteCandidateAdaptor,
@@ -1649,12 +1650,40 @@ def test_both_label_vocabularies_are_enforced_at_runtime_not_only_in_a_test():
         ("nora_note_candidate_gate_total", "action", GATE_ACTIONS),
         ("nora_note_candidate_staging_total", "outcome", STAGING_OUTCOMES),
         ("nora_note_candidate_body_refused_total", "rule", BODY_REFUSAL_RULES),
+        ("nora_note_candidate_parse_dropped_total", "field", PARSE_DROP_FIELDS),
     ):
         for legitimate in vocabulary:
             adaptor._inc(name, **{label: legitimate})
 
         with pytest.raises(ValueError, match="vocabulary"):
             adaptor._inc(name, **{label: "reobsevred"})  # a plausible typo
+
+
+@pytest.mark.parametrize("field", ["description", "closing_condition", "title"])
+async def test_a_malformed_item_is_counted_by_the_field_that_dropped_it(field):
+    """#583 investigation: an item `_parse_candidate` cannot read was dropped
+    with no log and no metric, so an update missing `description` read as
+    «no update». It is now counted by the first unreadable field."""
+    metrics = Metrics()
+    adaptor, _ = _adaptor(metrics=metrics)
+    item = _item()
+    del item[field]
+    accepted = await adaptor.accept(key=SCOPE, items=[item])
+    assert tuple(accepted) == ()
+    assert metrics.get(
+        "nora_note_candidate_parse_dropped_total", field=field) == 1
+
+
+def test_parse_drop_fields_match_the_metric_help_text():
+    import re
+
+    from nora.obs.metric_specs import _COUNTERS
+
+    spec = next(
+        c for c in _COUNTERS if c.name == "nora_note_candidate_parse_dropped_total"
+    )
+    for field in PARSE_DROP_FIELDS:
+        assert re.search(rf"\b{re.escape(field)}\b", spec.help_text), field
 
 
 def test_body_refusal_rules_match_the_metric_help_text():

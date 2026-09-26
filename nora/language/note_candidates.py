@@ -468,6 +468,36 @@ STAGING_OUTCOMES: frozenset[str] = frozenset({
 #: the reading, one sample per refused candidate.
 BODY_REFUSAL_RULES: frozenset[str] = RULES
 
+#: Every value `nora_note_candidate_parse_dropped_total{field}` may carry: the
+#: first envelope field `_parse_candidate` could not read. A dropped item never
+#: reaches the gate or staging, so until 2026-09-26 it was indistinguishable
+#: from an empty answer, in production and in the eval's reasons (#583
+#: investigation: an update missing `description` read as «no update»).
+PARSE_DROP_FIELDS: frozenset[str] = frozenset({
+    "title", "description", "body", "closing_condition", "anchor_date",
+    "anchor_entity_ids", "other",
+})
+
+
+def _parse_drop_field(item: Mapping[str, object]) -> str:
+    """Which field made `_parse_candidate` return `None` — for the counter
+    and the log only; the parse itself is unchanged."""
+    for name, limit in (
+        ("title", TITLE_MAX_CHARS), ("description", DESCRIPTION_MAX_CHARS),
+        ("body", BODY_MAX_CHARS), ("closing_condition", MAX_CLOSING_CONDITION_CHARS),
+    ):
+        if _text(item.get(name), limit=limit) is None:
+            return name
+    anchor_date = item.get("anchor_date")
+    if (
+        isinstance(anchor_date, bool) or not isinstance(anchor_date, int)
+        or anchor_date < _MIN_ANCHOR_DATE
+    ):
+        return "anchor_date"
+    if _parse_entities(item.get("anchor_entity_ids")) is None:
+        return "anchor_entity_ids"
+    return "other"
+
 #: **What this series does NOT see, stated because a loss counter that reads
 #: as total is worse than none.** It only fires on a SETTLED row. A different
 #: arrangement landing on a key whose row is still `pending` — left that way
@@ -953,6 +983,7 @@ class NoteCandidateAdaptor:
         "nora_note_candidate_gate_total": ("action", GATE_ACTIONS),
         "nora_note_candidate_staging_total": ("outcome", STAGING_OUTCOMES),
         "nora_note_candidate_body_refused_total": ("rule", BODY_REFUSAL_RULES),
+        "nora_note_candidate_parse_dropped_total": ("field", PARSE_DROP_FIELDS),
     }
 
     def __init__(
@@ -1253,6 +1284,13 @@ class NoteCandidateAdaptor:
         for item in items:
             candidate = _parse_candidate(item)
             if candidate is None:
+                field = _parse_drop_field(item)
+                log.warning(
+                    "note-candidates dropped a malformed item: %s missing, "
+                    "empty or over its limit (updates=%r, scope=%s)",
+                    field, item.get("updates"), key,
+                )
+                self._inc("nora_note_candidate_parse_dropped_total", field=field)
                 continue
             if seen is not None and not set(candidate.message_ids) <= seen:
                 log.warning(

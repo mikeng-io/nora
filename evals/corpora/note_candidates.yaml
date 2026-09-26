@@ -298,12 +298,29 @@ cases:
     # open notes, 10 of them near-restatements of this one's subject, so a
     # revision landing on a similarly titled sibling is the failure it
     # catches, and `updates_named` reports it as a wrong note.
+    # 2026-09-26: graded against the WHOLE group. The operator's 09-24 triage
+    # folded all of these into one note (retired-merged, one survivor), so
+    # they are one arrangement; grading one of them made the case a coin the
+    # model called the same way in 12 of 12 draws on both arms (#583
+    # investigation). Revising exactly one of them passes; a revision to a
+    # note outside the group is still a wrong note.
     snapshot:
       platform: signal
       conversation_id: MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08=
       before_ms: 1789721126208
     metadata:
-      updates: 元朗宵夜地點時間未定，陀螺盤交收綁死今晚
+      updates:
+        - 元朗宵夜地點時間未定，陀螺盤交收綁死今晚
+        - Grant 未講元朗邊間、幾點
+        - 今晚宵夜團地點同時間未定
+        - 宵夜元朗邊度、幾點未定
+        - 宵夜團地點時間未定，陀螺盤交收卡住
+        - 宵夜團地點時間未定，交收卡住
+        - 今晚宵夜地點時間未定，陀螺盤交收卡住
+        - 今晚宵夜地點時間未定
+        - 今晚宵夜團地點時間未定
+        - 今晚宵夜地點同時間未定
+        - 今晚 backroom 行動
 
   - name: p7_cantonese_only_solo_plan
     entry: dreamer

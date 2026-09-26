@@ -1104,13 +1104,31 @@ def _check_the_body(
     return failed
 
 
-def _updates_named(named: str | None, updates: Sequence[str]) -> list[str]:
+def _updates_named(
+    named: str | Sequence[str] | None, updates: Sequence[str],
+) -> list[str]:
     """`updates_named` (design 42 §10.1): the revision landed on the note the
     case names and on no other. Three failures, each its own words, so a
     tally separates «wrong note» from «no update», which #513 could report
     only in prose: a similarly titled sibling revised INSTEAD, nothing
-    revised, or the named note revised ALONG WITH another."""
+    revised, or the named note revised ALONG WITH another.
+
+    `named` may be a LIST of equally correct notes: a unit holding several
+    open restatements of one arrangement (p6: ten, merged later) has no one
+    right target, and grading one of them made the case a coin the model
+    called the same way every draw. Revising exactly one of the list passes."""
     if not named:
+        return []
+    if not isinstance(named, str):
+        accepted = {str(t) for t in named}
+        hit = [t for t in updates if t in accepted]
+        rest = [t for t in updates if t not in accepted]
+        if not hit and rest:
+            return [f"updates_named: wrong note: revised {rest}, not one of {sorted(accepted)}"]
+        if not hit:
+            return [f"updates_named: no update: none of {sorted(accepted)} was revised"]
+        if rest or len(hit) > 1:
+            return [f"updates_named: also revised {rest or hit[1:]} beside {hit[0]!r}"]
         return []
     others = [t for t in updates if t != named]
     hits = len(updates) - len(others)
