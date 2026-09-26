@@ -661,7 +661,11 @@ def test_the_laya_worker_protocol_and_its_failure(monkeypatch, tmp_path):
         message=[("M1", "feat: x")], files=[{"path": "a", "rows": [("L1", "+", "x")]}]
     )
     assert J.laya_commit(view)[:2] == (0.7, ["L1"])
-    fake.write_text("#!/bin/sh\necho 'No module named laya_mlx' >&2\nexit 1\n")
+    # a worker that dies after printing something readable is still a failure
+    fake.write_text(
+        "#!/bin/sh\ncat > /dev/null\necho '{\"score\": 0.0, \"ranked\": []}'\n"
+        "echo 'No module named laya_mlx' >&2\nexit 1\n"
+    )
     with pytest.raises(J.JudgeError):
         J.laya_commit(view)
 
