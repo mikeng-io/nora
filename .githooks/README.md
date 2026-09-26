@@ -150,31 +150,68 @@ being pushed: commit the declaration, push it, then commit what it covers. A
 declaration in the same commit as its payload, amended into it, or pushed in
 the same push, exempts nothing (#283 criterion 3).
 
-**Acknowledging a finding.** For a shape or judge finding you have looked at
-and judged harmless, re-run the commit with its id:
+**Deciding a finding that is not a denylist hit.** A shape or judge finding
+blocks the commit until someone decides it. Two ways, both recorded:
 
-```bash
-NORA_PII_ACK=1a2b3c4d5e6f,0f9e8d7c6b5a git commit ...
-```
+- **The adjudicator** (the default route, and the one a coding agent takes):
+
+  ```bash
+  python3 scripts/pii_adjudicate.py      # then re-run the SAME git commit
+  ```
+
+  A headless Claude Code agent (`claude -p`, Sonnet unless
+  `NORA_PII_ADJUDICATOR_MODEL` says otherwise) reads the staged change and
+  the repository's history -- read-only: `--restricted --safe-mode`, no MCP
+  servers, Read/Grep/Glob and Bash for read-only `git` subcommands only,
+  every other permission denied -- and answers per finding `real`, `fake`
+  or `unsure` with a one-line reason and the evidence it looked at. The
+  verdicts are bound to the staged tree (`$GIT_DIR/nora-pii-adjudication.json`):
+  only `fake` becomes an acknowledgement, written as `PII-Ack: <id> (agent
+  <model>: fake, <reason>)`; `real` and `unsure` stay blocked; staging
+  anything else voids them. It refuses to run while a denylist hit or an
+  ERROR is open, and a reason or trailer that quotes an identifier-like value
+  is withheld. The agent reads the repository as any coding agent here does;
+  it is never given a denylisted value. Measured on 24 synthetic cases x 3
+  runs (agent-judge spike, 2026-09-26): Sonnet 92% correct, 0 real values
+  cleared as fake, median 20 s per case; Haiku 83% with 2 leaks; local models
+  38-67%.
+- **By hand**, for a finding you have looked at yourself:
+
+  ```bash
+  NORA_PII_ACK=1a2b3c4d5e6f,0f9e8d7c6b5a git commit ...
+  ```
 
 The `commit-msg` hook writes a `PII-Ack: <id>` trailer for each, so the
 decision is in the history, and pre-push honours exactly those trailers. The
 id hashes the path and the line: it acknowledges that line and nothing else.
 
-**Optional model layers**, off by default (`scripts/pii_judge.py`):
+**The optional commit judge** (`NORA_PII_JUDGE=laya|jev`, off by default;
+`scripts/pii_judge.py`) runs at `commit-msg`, where the message and the staged
+change are both known, and reads the COMMIT: the message lines and each file's
+added lines with two lines of context, every line holding a denylisted value
+replaced by `[withheld]`, lockfiles and generated files left out. It can RAISE
+a finding (at the line it points to), never clear one; an unreachable or
+failing model is an ERROR.
 
 | env | what it does |
 |---|---|
-| `NORA_PII_JUDGE=laya` | scores every added line and commit-message line with Laya on Apple Silicon (`laya-mlx` in the interpreter `NORA_PII_LAYA_PYTHON`; checkpoint `NORA_PII_LAYA_MODEL`, default the English one). Local; a line at or above 0.3 is a finding to acknowledge or fix. |
-| `NORA_PII_JUDGE=jev` | the same through TypeSafe's hosted `jev-1.13.0`. **Every judged line leaves the machine**: not for real repo content until TypeSafe's zero data retention is confirmed. |
-| `NORA_PII_LLM=<ollama tag>` | a local ollama model re-reads each flagged line with its context and answers real/fake/unsure, printed beside the finding. It clears a finding only with `NORA_PII_LLM_CLEARS=1`. |
-| `NORA_PII_JUDGE_THRESHOLD` | overrides the judge's threshold. |
+| `NORA_PII_JUDGE=laya` | Laya's typed-decisions checkpoint on Apple Silicon (`laya-mlx` in the interpreter `NORA_PII_LAYA_PYTHON`; `NORA_PII_LAYA_MODEL`/`NORA_PII_LAYA_SUBFOLDER` to point elsewhere, offline unless `NORA_PII_LAYA_ALLOW_DOWNLOAD=1`). The commit is cut into windows that fit its budget; one yes/no per window, a Choice to point at a line. Local. Threshold 0.29. |
+| `NORA_PII_JUDGE=jev` | TypeSafe's hosted `jev-1.13.0`: one request per file (message + that file), an `exists` yes/no decides, a `where` Choice points. **Every rendered line leaves the machine**: not for real repo content until TypeSafe's zero data retention is confirmed. Threshold 0.57. |
+| `NORA_PII_JUDGE_THRESHOLD` | overrides the threshold. |
 
-An unreachable or failing model is an ERROR, never a PASS. What a model can
-decide is whether a line LOOKS like personal data copied from real records;
-it cannot know whether a name belongs to a real person. The denylist is the
-ground truth for identity. Calibration: `scripts/pii_judge_eval.py` (a
-generated 55-line set; nothing in it is real).
+What the numbers are worth. Both thresholds come from the commit-judge spike's
+synthetic dev split (66 generated commits): Jev made 0 errors in 3 runs on dev
+and held-out (0 in 22 held-out still allows about 14%); Laya made 4 errors in
+22 held-out and missed personal data in commit messages and in Cantonese. On
+this repo's 55-case set (`scripts/pii_judge_eval.py`, each line in a small
+commit) Laya at 0.29 made 13 errors (6 false positives, all on placeholders;
+7 misses). Laya's score is a max over windows, so it rises with commit size:
+synthetic code-only commits of 500 and 5,000 lines scored 0.34 and 0.43 and
+were flagged. Cost on an M-series Mac with Laya on: a 50-line commit 1.1 s
+(0.4 s off), 500 lines 2.1 s, 5,000 lines 12.9 s; load 0.1-0.3 s, peak
+1.6-1.8 GB. A model can say whether a commit LOOKS like it adds personal data
+copied from real records; it cannot know whether a name belongs to a real
+person. The denylist is the ground truth for identity.
 
 **What it does not catch.** A headerless integer-microdegree table in a file
 that never names coordinates; geohashes; two-decimal coordinates in a file

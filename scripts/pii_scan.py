@@ -35,8 +35,15 @@ What it knows, in the order it is applied:
    ids, Tailscale names and addresses, GPS in media metadata, and COORDINATE
    TABLES read as number fields and scored on dwell — fixes per place, and
    dwell rows x dwell places — not on a literal count (#283 criterion 1).
-3. **Optional judges** (`NORA_PII_JUDGE=laya|jev`, `NORA_PII_LLM=<ollama tag>`;
-   both off by default) — see `scripts/pii_judge.py`.
+3. **An optional commit judge** (`NORA_PII_JUDGE=laya|jev`, off by default;
+   `scripts/pii_judge.py`): it reads the whole commit at commit-msg time and
+   can RAISE a finding, never clear one.
+
+A finding that is not a denylist hit and not an ERROR can be decided by
+`scripts/pii_adjudicate.py`: a read-only coding agent reads the staged change
+and the repository's history and answers real / fake / unsure per finding.
+Only `fake` becomes an acknowledgement, recorded as a `PII-Ack:` trailer with
+the agent's reason; `real` and `unsure` stay blocked.
 
 Only what a change ADDS is judged: a value already present in the parent's copy
 of the file, as often, is not new. That is what lets the ~2,000 residue hits
@@ -70,6 +77,7 @@ import fnmatch
 import hashlib
 import html
 import io
+import json
 import lzma
 import os
 import re
@@ -1515,7 +1523,10 @@ class Report:
     findings: list = field(default_factory=list)
     notices: list = field(default_factory=list)
     scanned: int = 0
-    added_lines: list = field(default_factory=list)  # (path, line_no, text, context) for the judges
+    # for the commit judge: per file, the added lines and two lines of context
+    # either side, [(path, [(line_no, "+" | " ", text)])]; and the message lines
+    views: list = field(default_factory=list)
+    message_lines: list = field(default_factory=list)
     # True when a text holds any denylisted value in any spelling; nothing
     # for which it is True (or for which it is unset) ever reaches a model
     guard: object = None
@@ -1524,7 +1535,7 @@ class Report:
         self.findings += other.findings
         self.notices += other.notices
         self.scanned += other.scanned
-        self.added_lines += other.added_lines
+        self.views += other.views
 
 
 def _decode(data: bytes) -> tuple[str | None, str]:
@@ -1753,13 +1764,25 @@ def judge_blob(job: BlobJob, sc: Scanner, allow: Allowlist, acks: set[str]) -> R
         if probe.points:
             rep.findings += _coords_findings(path, text, raw_olds, added, geo, allow)
     if not binary:
-        for n in sorted(added):
-            line = normalise_line(raw_new[n - 1])
-            if len(line.strip()) < 4 or not re.search(r"\w", line):
-                continue
-            ctx = "\n".join(normalise_line(x) for x in raw_new[max(0, n - 3) : n + 2])
-            rep.added_lines.append((path, n, line, ctx))
+        judged = {n for n in added if _judgeable(raw_new[n - 1])}
+        shown = sorted(
+            {k for n in judged for k in range(max(1, n - 2), min(len(raw_new), n + 2) + 1)}
+        )
+        if judged:
+            rep.views.append(
+                (
+                    path,
+                    [
+                        (k, "+" if k in judged else " ", normalise_line(raw_new[k - 1]))
+                        for k in shown
+                    ],
+                )
+            )
     return rep
+
+
+def _judgeable(line: str) -> bool:
+    return len(line.strip()) >= 4 and bool(re.search(r"\w", line))
 
 
 # --------------------------------------------------------------------------
@@ -1821,7 +1844,7 @@ def env_acks() -> set[str]:
 
 
 def trailer_acks(message: str) -> set[str]:
-    return set(re.findall(rf"(?mi)^{ACK_TRAILER}:\s*([0-9a-f]{{12}})\s*$", message))
+    return set(re.findall(rf"(?mi)^{ACK_TRAILER}:[ \t]*([0-9a-f]{{12}})(?:[ \t].*)?$", message))
 
 
 # --------------------------------------------------------------------------
@@ -1927,16 +1950,11 @@ def mode_message(deny: Denylist, msg_path: str) -> Report:
         ident = git("var", var, check=False).decode("utf-8", "replace").strip()
         ident = re.sub(r"\s+\d+\s+[+-]\d{4}$", "", ident)
         rep.findings += _ident_findings(sc, label, ident)
-    lines = body.split("\n")
-    for n, line in enumerate(lines, 1):
-        if (
-            len(line.strip()) >= 4
-            and re.search(r"\w", line)
-            and not line.startswith(f"{ACK_TRAILER}:")
-        ):
-            rep.added_lines.append(
-                ("<commit-message>", n, line, "\n".join(lines[max(0, n - 3) : n + 2]))
-            )
+    rep.message_lines = [
+        (n, normalise_line(line))
+        for n, line in enumerate(body.split("\n"), 1)
+        if _judgeable(line) and not line.startswith(f"{ACK_TRAILER}:") and not line.startswith("#")
+    ]
     return rep
 
 
@@ -2117,7 +2135,7 @@ def mode_push(deny: Denylist, stdin_lines: list[str], remote: str | None) -> Rep
                 sub = judge_blob(BlobJob(path, "100644", data, [None]), sc, allow, set())
                 for f in sub.findings:
                     f.path = f"{local_ref} {f.path}"
-                sub.added_lines = []
+                sub.views = []
                 rep.extend(sub)
             continue
         if typ != "commit":
@@ -2226,7 +2244,7 @@ def scan_commits(deny: Denylist, shas: list[str], rep: Report | None = None) -> 
         for f in sub.findings:
             f.path = f"{sha[:10]} {f.path}"
         apply_acks(sub.findings, acks)
-        sub.added_lines = []
+        sub.views = []
         rep.extend(sub)
     return rep
 
@@ -2264,7 +2282,7 @@ def mode_tree(deny: Denylist, rev: str, allow_from_worktree: bool) -> Report:
     for path, mode, sha in items:
         job = BlobJob(path, mode, objs.get(sha) if mode != "160000" else None, [None])
         sub = judge_blob(job, sc, allow, set())
-        sub.added_lines = []
+        sub.views = []
         rep.extend(sub)
     return rep
 
@@ -2303,95 +2321,115 @@ def apply_acks(findings: list[Finding], acks: set[str]) -> set[str]:
     return used
 
 
-def run_judges(rep: Report) -> None:
-    """Optional model layers. Denylist-hit lines are never sent to a model."""
+def _judge_backend() -> str:
     backend = os.environ.get("NORA_PII_JUDGE", "").strip().lower()
     if not backend and os.environ.get("NORA_PII_JEV", "").strip().lower() == "on":
         backend = "jev"
-    llm = os.environ.get("NORA_PII_LLM", "").strip()
-    if (not backend or backend == "off") and (not llm or llm == "off"):
+    return "" if backend in ("", "off") else backend
+
+
+def build_view(pii_judge, rep: Report, staged: Report | None):
+    """The commit as a model may read it: message lines `M<n>`, then each
+    file's added lines `L<k>` with their context. Any line holding a
+    denylisted value -- added OR context, new OR already in the file -- is
+    `[withheld]`; with no guard set, every line is."""
+    guard = rep.guard if callable(rep.guard) else (lambda _t: True)
+    view = pii_judge.CommitView()
+    texts: dict = {}
+    held = 0
+
+    def safe(t: str) -> str:
+        nonlocal held
+        if guard(t):
+            held += 1
+            return "[withheld]"
+        return t
+
+    for n, line in rep.message_lines:
+        mid = f"M{n}"
+        view.message.append((mid, safe(line)))
+        view.where[mid] = ("<commit-message>", n)
+        texts[mid] = line
+    view.subject = view.message[0][1] if view.message else ""
+    k = 0
+    for path, rows in staged.views if staged else []:
+        if pii_judge.SKIP_PATH.search(path):
+            view.skipped.append(path)
+            continue
+        out = []
+        for n, op, text in rows:
+            rid = None
+            if op == "+":
+                k += 1
+                rid = f"L{k}"
+                view.where[rid] = (path, n)
+                texts[rid] = text
+            out.append((rid, op, safe(text)))
+        view.files.append({"path": path, "rows": out})
+    return view, texts, held
+
+
+def run_judges(rep: Report, staged: Report | None = None) -> None:
+    """The optional commit judge (scripts/pii_judge.py): it can RAISE a
+    finding, never clear one. Runs at commit-msg, where the message and the
+    staged change are both known."""
+    backend = _judge_backend()
+    if not backend:
         return
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     import pii_judge
 
-    guard = rep.guard if callable(rep.guard) else (lambda _t: True)  # unset: send nothing
-
-    def withheld(text: str) -> bool:
-        return bool(guard(text))
-
-    def safe_ctx(ctx: str) -> str:
-        return "\n".join("[withheld]" if withheld(x) else x for x in ctx.split("\n"))
-
-    flagged = {(f.path, f.line) for f in rep.findings}
-    if backend and backend != "off":
-        # No line holding a denylisted value -- new OR already in the file --
-        # is ever sent, and no such line rides along as context.
-        items = [
-            (p, n, line, safe_ctx(ctx)) for p, n, line, ctx in rep.added_lines if not withheld(line)
-        ]
-        held = len(rep.added_lines) - len(items)
-        if held:
-            rep.notices.append(
-                f"pii: {held} line(s) holding a denylisted value were not sent to the judge"
-            )
-        try:
-            verdicts = pii_judge.score_lines(backend, items)
-        except pii_judge.JudgeError as exc:
-            rep.findings.append(
-                Finding(
-                    "ERROR", f"judge:{backend}", "<judge>", 0, "", "", ackable=False, note=str(exc)
-                )
-            )
-            return
+    view, texts, held = build_view(pii_judge, rep, staged)
+    if held:
         rep.notices.append(
-            f"pii: judge {backend} scored {len(items)} added line(s) "
-            f"(threshold {verdicts.threshold:.2f}, {verdicts.seconds:.1f}s)"
+            f"pii: {held} line(s) holding a denylisted value were withheld from the judge"
         )
-        for (path, n, line, _ctx), p in zip(items, verdicts.scores, strict=True):
-            if p >= verdicts.threshold and (path, n) not in flagged:
-                rep.findings.append(
-                    Finding(
-                        "FAIL",
-                        f"judge:{backend}",
-                        path,
-                        n,
-                        mask(line.strip()),
-                        finding_id(path, line),
-                        note=f"p={p:.2f}",
-                        text=line,
-                    )
-                )
-    if llm and llm != "off":
-        ctx = {(p, n): c for p, n, _l, c in rep.added_lines}
-        todo = [
-            f
-            for f in rep.findings
-            if f.status == "FAIL"
-            and f.ackable
-            and not f.state
-            and f.text
-            and not f.rule.startswith("denylist:")
-            and not withheld(f.text)
-        ]
-        if not todo:
-            return
-        try:
-            verdicts = pii_judge.llm_rejudge(
-                llm, [(f.rule, f.text, safe_ctx(ctx.get((f.path, f.line), f.text))) for f in todo]
+    try:
+        v = pii_judge.judge_commit(backend, view)
+    except pii_judge.JudgeError as exc:
+        rep.findings.append(
+            Finding("ERROR", f"judge:{backend}", "<judge>", 0, "", "", ackable=False, note=str(exc))
+        )
+        return
+    rep.notices.append(
+        f"pii: judge {backend} read the commit: p={v.score:.2f} (threshold {v.threshold:.2f}, "
+        f"{v.seconds:.1f}s)"
+    )
+    if v.score < v.threshold:
+        return
+    target = next((i for i in v.ranked if i in view.where), None)
+    if target is None:
+        body = "\n".join(texts.values())
+        rep.findings.append(
+            Finding(
+                "FAIL",
+                f"judge:{backend}",
+                "<commit>",
+                0,
+                "the commit as a whole",
+                finding_id("<commit>", hashlib.sha256(body.encode()).hexdigest()),
+                note=f"p={v.score:.2f}",
             )
-        except pii_judge.JudgeError as exc:
-            rep.findings.append(
-                Finding("ERROR", "judge:llm", "<judge>", 0, "", "", ackable=False, note=str(exc))
-            )
-            return
-        # Advisory unless NORA_PII_LLM_CLEARS=1: on the synthetic set the
-        # working default (gemma4:e2b-mlx) called 9 of 26 real-looking lines
-        # "fake", so letting it clear would pass a third of the true positives.
-        clears = os.environ.get("NORA_PII_LLM_CLEARS", "") == "1"
-        for f, v in zip(todo, verdicts, strict=True):
-            f.note = (f.note + "; " if f.note else "") + f"llm={v}"
-            if v == "fake" and clears:
-                f.state = "CLEARED"
+        )
+        return
+    path, n = view.where[target]
+    line = texts[target]
+    if any(
+        f.path == path and f.line == n for f in rep.findings + (staged.findings if staged else [])
+    ):
+        return
+    rep.findings.append(
+        Finding(
+            "FAIL",
+            f"judge:{backend}",
+            path,
+            n,
+            mask(line.strip()),
+            finding_id(path, line),
+            note=f"p={v.score:.2f}; the judge's pick for the likeliest line",
+            text=line,
+        )
+    )
 
 
 def verdict(rep: Report) -> int:
@@ -2417,21 +2455,107 @@ def emit(rep: Report, label: str, elapsed: float) -> int:
         file=sys.stderr,
     )
     if code != PASS:
+        live = [f for f in rep.findings if not f.state]
+        denied = any(f.rule.startswith("denylist:") for f in live)
+        errors = any(f.status == "ERROR" for f in live)
         print(
-            "  Values are masked. A denylist hit is a real value: remove it. For any other\n"
-            "  finding you have looked at and judged harmless:\n"
-            "  NORA_PII_ACK=<id>[,<id>] git commit ... (the commit-msg hook records each as a\n"
-            f"  `{ACK_TRAILER}:` trailer). Declarations: {ALLOWLIST_PATH}, honoured once\n"
-            "  PUSHED, never in the change they cover. See .githooks/README.md.",
+            "  Values are masked. A denylist hit is a real value: remove it; it cannot be\n"
+            "  acknowledged. An ERROR means the hook could not look: fix what it names.",
+            file=sys.stderr,
+        )
+        if not denied and not errors and label in ("staged", "message"):
+            print(
+                "  Every open finding can be adjudicated. Run\n"
+                "      python3 scripts/pii_adjudicate.py\n"
+                "  (a read-only agent reads the change and the history and answers real/fake/\n"
+                "  unsure per finding), then re-run the SAME git commit: `fake` verdicts become\n"
+                f"  `{ACK_TRAILER}:` trailers with the agent's reason; real/unsure stay blocked.\n"
+                "  IF YOU ARE A CODING AGENT MAKING THIS COMMIT: run it yourself; do not ask.\n"
+                "  A human who has looked may instead acknowledge by id:\n"
+                "      NORA_PII_ACK=<id>[,<id>] git commit ...",
+                file=sys.stderr,
+            )
+        print(
+            f"  Declarations: {ALLOWLIST_PATH}, honoured once PUSHED, never in the change they\n"
+            "  cover. See .githooks/README.md.",
             file=sys.stderr,
         )
     return code
 
 
-def _record_used_acks(used: set[str]) -> None:
-    gitdir = git("rev-parse", "--git-dir").decode().strip()
-    with open(os.path.join(gitdir, "nora-pii-acks"), "w") as fh:
-        fh.write("".join(f"{x}\n" for x in sorted(used)))
+FINDINGS_FILE = "nora-pii-findings.json"
+ADJUDICATION_FILE = "nora-pii-adjudication.json"
+
+
+def _gitdir() -> str:
+    return git("rev-parse", "--git-dir").decode().strip()
+
+
+def index_tree() -> str | None:
+    """The staged tree: what an adjudication was about. A verdict counts only
+    while the index still holds exactly that tree."""
+    p = subprocess.run(["git", "write-tree"], capture_output=True)  # noqa: S607
+    return p.stdout.decode().strip() or None if p.returncode == 0 else None
+
+
+def adjudicated_fakes(tree: str | None) -> dict[str, str]:
+    """{finding id: note} for every `fake` verdict of an adjudication of THIS
+    staged tree (scripts/pii_adjudicate.py). A stale or unreadable file counts
+    for nothing."""
+    path = os.path.join(_gitdir(), ADJUDICATION_FILE)
+    if not tree or not os.path.exists(path):
+        return {}
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, ValueError):
+        return {}
+    if data.get("tree") != tree:
+        return {}
+    out = {}
+    for fid, v in (data.get("verdicts") or {}).items():
+        if (
+            isinstance(v, dict)
+            and v.get("verdict") == "fake"
+            and re.fullmatch(r"[0-9a-f]{12}", fid)
+        ):
+            out[fid] = f"agent {data.get('model', '?')}: fake, {v.get('reason', '')}"
+    return out
+
+
+def apply_adjudication(rep: Report, fakes: dict[str, str]) -> None:
+    for f in rep.findings:
+        if f.ackable and not f.state and f.fid in fakes:
+            f.state = "ACKED"
+            f.note = (f.note + "; " if f.note else "") + fakes[f.fid][:160]
+
+
+def record_findings(rep: Report, part: str, tree: str | None) -> None:
+    """Leave the open, acknowledgeable findings (masked, with ids) where the
+    adjudicator reads them. Never a value: the path, line, rule and mask only."""
+    path = os.path.join(_gitdir(), FINDINGS_FILE)
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, ValueError):
+        data = {}
+    if data.get("tree") != tree:
+        data = {"tree": tree}
+    live = [f for f in rep.findings if not f.state]
+    data[part] = [
+        {"id": f.fid, "rule": f.rule, "path": f.path, "line": f.line, "masked": f.masked}
+        for f in live
+        if f.ackable and f.status == "FAIL"
+    ]
+    data[f"{part}_blocked_otherwise"] = sum(1 for f in live if not f.ackable or f.status == "ERROR")
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(data, fh, indent=1)
+
+
+def _record_used_acks(rep: Report) -> None:
+    with open(os.path.join(_gitdir(), "nora-pii-acks"), "w") as fh:
+        for f in sorted((f for f in rep.findings if f.state == "ACKED"), key=lambda f: f.fid):
+            fh.write(f"{f.fid}\t{f.note}\n")
 
 
 def main(argv: list[str]) -> int:
@@ -2465,13 +2589,19 @@ def main(argv: list[str]) -> int:
     try:
         if mode == "staged":
             rep = mode_staged(deny)
+            tree = index_tree()
             apply_acks(rep.findings, env_acks())
-            run_judges(rep)
-            _record_used_acks({f.fid for f in rep.findings if f.state == "ACKED"})
+            apply_adjudication(rep, adjudicated_fakes(tree))
+            _record_used_acks(rep)
+            record_findings(rep, "staged", tree)
         elif mode == "message":
             rep = mode_message(deny, argv[2])
+            tree = index_tree()
+            staged = mode_staged(deny) if _judge_backend() else None
+            run_judges(rep, staged)
             apply_acks(rep.findings, env_acks())
-            run_judges(rep)
+            apply_adjudication(rep, adjudicated_fakes(tree))
+            record_findings(rep, "message", tree)
             if verdict(rep) == PASS:
                 _write_ack_trailers(argv[2], rep)
         elif mode == "push":
@@ -2520,22 +2650,33 @@ def main(argv: list[str]) -> int:
 
 
 def _write_ack_trailers(msg_path: str, rep: Report) -> None:
-    """Record every acknowledgement used by this commit (pre-commit's, from
-    the per-worktree git dir, and the message's own) as trailers."""
-    gitdir = git("rev-parse", "--git-dir").decode().strip()
-    used = {f.fid for f in rep.findings if f.state == "ACKED"}
-    side = os.path.join(gitdir, "nora-pii-acks")
+    """Record every acknowledgement this commit used -- pre-commit's (from the
+    per-worktree git dir) and the message's own -- as `PII-Ack: <id>`
+    trailers, with the adjudicator's reason when an agent decided it. A
+    reason is scanned first and dropped if it quotes anything identifier-like:
+    the trailer is published with the history."""
+    used: dict[str, str] = {f.fid: f.note for f in rep.findings if f.state == "ACKED"}
+    side = os.path.join(_gitdir(), "nora-pii-acks")
     if os.path.exists(side):
-        with open(side) as fh:
-            used |= {x.strip() for x in fh.read().split() if x.strip()}
+        with open(side, encoding="utf-8") as fh:
+            for line in fh:
+                fid, _, note = line.rstrip("\n").partition("\t")
+                if fid.strip():
+                    used.setdefault(fid.strip(), note)
         os.remove(side)
     if not used:
         return
     with open(msg_path, encoding="utf-8", errors="surrogateescape") as fh:
         have = trailer_acks(fh.read())
+    deny, _err, _ = load_denylist()
+    sc = Scanner(deny or Denylist(), Allowlist(), set())
     args = []
-    for fid in sorted(used - have):
-        args += ["--trailer", f"{ACK_TRAILER}: {fid}"]
+    for fid in sorted(set(used) - have):
+        note = next((x.strip() for x in used[fid].split(";") if x.strip().startswith("agent ")), "")
+        note = re.sub(r"\s+", " ", note)[:160]
+        if note and sc.scan_text(note, "<trailer>").findings:
+            note = "agent: fake (reason withheld: it quoted an identifier-like value)"
+        args += ["--trailer", f"{ACK_TRAILER}: {fid}" + (f" ({note})" if note else "")]
     if args:
         git("interpret-trailers", "--in-place", *args, msg_path)
 

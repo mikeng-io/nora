@@ -13,7 +13,6 @@ import importlib.util
 import json
 import random
 import sys
-import types
 from pathlib import Path
 
 import pytest
@@ -503,31 +502,24 @@ def test_the_whole_message_file_is_scanned_comments_and_scissors_included(tmp_pa
         assert "denylist:text" in [f.rule for f in rep.findings], body
 
 
-# ---- the optional judges (a fake backend: no model here)
+# ---- the commit judge (a fake backend: no model here)
+
+J = _load("pii_judge")
 
 
-def _with_fake_judge(monkeypatch, scores, llm=None, error=None):
-    sent = {}
-    fake = types.ModuleType("pii_judge")
+def _capture_judge(monkeypatch, score=0.0, ranked=(), error=None):
+    """The real pii_judge module with judge_commit replaced by a recorder."""
+    seen: dict = {}
 
-    class JudgeError(Exception):
-        pass
-
-    def score_lines(backend, items):
+    def judge_commit(backend, view):
+        seen["view"] = view
         if error:
-            raise JudgeError(error)
-        sent["items"] = items
-        return types.SimpleNamespace(
-            scores=[scores(it[2]) for it in items], threshold=0.5, seconds=0.0
-        )
+            raise J.JudgeError(error)
+        return J.CommitVerdict(score, 0.5, list(ranked), 0.0, {})
 
-    def llm_rejudge(tag, items):
-        sent["llm"] = items
-        return [llm(it[1]) for it in items]
-
-    fake.JudgeError, fake.score_lines, fake.llm_rejudge = JudgeError, score_lines, llm_rejudge
-    monkeypatch.setitem(sys.modules, "pii_judge", fake)
-    return sent
+    monkeypatch.setattr(J, "judge_commit", judge_commit)
+    monkeypatch.setitem(sys.modules, "pii_judge", J)
+    return seen
 
 
 def _judged_report(text: str, old: str | None = None):
@@ -537,60 +529,196 @@ def _judged_report(text: str, old: str | None = None):
     return rep
 
 
-def test_judge_flags_lines_and_never_sees_a_denylisted_line(monkeypatch):
+def _view_text(view) -> str:
+    return repr(view.message) + repr(view.files)
+
+
+def _commit(monkeypatch, staged_text, message="feat: x", old=None):
+    """A message report plus a staged report, as commit-msg builds them."""
+    staged = _judged_report(staged_text, old)
+    rep = P.Report(guard=staged.guard)
+    rep.message_lines = [(n, x) for n, x in enumerate(message.split("\n"), 1) if P._judgeable(x)]
+    return rep, staged
+
+
+def test_the_judge_reads_message_and_added_lines_and_raises_at_its_pick(monkeypatch):
     monkeypatch.setenv("NORA_PII_JUDGE", "laya")
-    monkeypatch.delenv("NORA_PII_LLM", raising=False)
-    sent = _with_fake_judge(monkeypatch, lambda line: 0.9 if "lives at" in line else 0.1)
-    rep = _judged_report(f"x = 1\nwho = {NAME!r}\nShe lives at {SY.address()}\n")
-    P.run_judges(rep)
-    assert all(NAME not in it[2] for it in sent["items"])
-    assert [(f.rule, f.line) for f in rep.findings if f.rule.startswith("judge")] == [
-        ("judge:laya", 3)
+    seen = _capture_judge(monkeypatch, score=0.9, ranked=["L2"])
+    rep, staged = _commit(
+        monkeypatch,
+        "keep = 1\nfirst = 2\nShe lives at somewhere\n",
+        "feat: add rows",
+        old="keep = 1\n",
+    )
+    P.run_judges(rep, staged)
+    view = seen["view"]
+    assert view.message == [("M1", "feat: add rows")]
+    assert [r for r in view.files[0]["rows"] if r[1] == "+"] == [
+        ("L1", "+", "first = 2"),
+        ("L2", "+", "She lives at somewhere"),
+    ]
+    assert [(f.rule, f.path, f.line, f.ackable) for f in rep.findings] == [
+        ("judge:laya", "tests/fixtures/x.py", 3, True)
     ]
 
 
-def test_only_added_lines_go_to_the_judge(monkeypatch):
+def test_the_judge_never_clears_a_finding(monkeypatch):
     monkeypatch.setenv("NORA_PII_JUDGE", "laya")
-    monkeypatch.delenv("NORA_PII_LLM", raising=False)
-    sent = _with_fake_judge(monkeypatch, lambda line: 0.0)
-    old = "first = 1\nsecond = 2\n"
-    rep = _judged_report(old + "third = 3\n", old)
-    P.run_judges(rep)
-    assert [(it[1], it[2]) for it in sent["items"]] == [(3, "third = 3")]
+    _capture_judge(monkeypatch, score=0.0)
+    rep, staged = _commit(monkeypatch, f'a = "{SY.phone("44")}"\n')
+    P.run_judges(rep, staged)
+    assert [f.rule for f in staged.findings] == ["phone"] and not staged.findings[0].state
+    assert rep.findings == []
 
 
-def test_judge_that_does_not_answer_is_an_error(monkeypatch):
+def test_a_judge_that_does_not_answer_is_an_error(monkeypatch):
     monkeypatch.setenv("NORA_PII_JUDGE", "jev")
-    _with_fake_judge(monkeypatch, lambda line: 0.0, error="HTTP 529")
-    rep = _judged_report("x = 1\n")
-    P.run_judges(rep)
+    _capture_judge(monkeypatch, error="HTTP 529")
+    rep, staged = _commit(monkeypatch, "x = 1\n")
+    P.run_judges(rep, staged)
     assert P.verdict(rep) == P.ERROR
 
 
-def test_llm_verdict_is_advisory_by_default(monkeypatch):
-    monkeypatch.delenv("NORA_PII_JUDGE", raising=False)
-    monkeypatch.delenv("NORA_PII_LLM_CLEARS", raising=False)
-    monkeypatch.setenv("NORA_PII_LLM", "some-model")
-    _with_fake_judge(monkeypatch, lambda line: 0.0, llm=lambda line: "fake")
-    rep = _judged_report(f'a = "{SY.phone("44")}"\n')
-    P.run_judges(rep)
-    assert [(f.state, f.note) for f in rep.findings] == [("", "llm=fake")]
-    assert P.verdict(rep) == P.FAIL
+def test_a_line_that_already_held_a_denylisted_value_is_never_sent(monkeypatch):
+    """Review of #591 finding 4: an edit to a line holding a real value, and
+    that line as context, reach no model."""
+    monkeypatch.setenv("NORA_PII_JUDGE", "laya")
+    seen = _capture_judge(monkeypatch)
+    old = f"a = 1\nowner = {NAME!r}  # old\nb = 2\n"
+    new = f"a = 1\nowner = {NAME!r}  # new\nb = 3\n"
+    rep, staged = _commit(monkeypatch, new, f"fix: as {GIVEN} {FAMILY} asked", old=old)
+    P.run_judges(rep, staged)
+    text = _view_text(seen["view"])
+    assert "b = 3" in text and "[withheld]" in text
+    assert NAME not in text and GIVEN not in text and FAMILY not in text
 
 
-def test_llm_clears_only_what_it_calls_fake_and_never_a_denylist_hit(monkeypatch):
-    monkeypatch.delenv("NORA_PII_JUDGE", raising=False)
-    monkeypatch.setenv("NORA_PII_LLM_CLEARS", "1")
-    monkeypatch.setenv("NORA_PII_LLM", "some-model")
-    fake_phone, real_phone = SY.phone("44"), SY.phone("81")
-    sent = _with_fake_judge(
-        monkeypatch, lambda line: 0.0, llm=lambda line: "fake" if fake_phone in line else "real"
+def test_with_no_guard_every_line_is_withheld(monkeypatch):
+    monkeypatch.setenv("NORA_PII_JUDGE", "laya")
+    seen = _capture_judge(monkeypatch)
+    staged = P.judge_blob(_job(b"x = 1\n"), _scanner(), P.Allowlist(), set())
+    P.run_judges(P.Report(message_lines=[(1, "feat: x")]), staged)
+    rows = [t for f in seen["view"].files for _i, _o, t in f["rows"]] + [
+        t for _m, t in seen["view"].message
+    ]
+    assert rows and set(rows) == {"[withheld]"}
+
+
+def test_lockfiles_are_not_shown_to_the_judge(monkeypatch):
+    monkeypatch.setenv("NORA_PII_JUDGE", "laya")
+    seen = _capture_judge(monkeypatch)
+    sc = _scanner()
+    staged = P.judge_blob(_job(b"name = pkg-one\n", path="uv.lock"), sc, P.Allowlist(), set())
+    staged.guard = sc.contains_denylisted
+    P.run_judges(P.Report(guard=sc.contains_denylisted), staged)
+    assert seen["view"].skipped == ["uv.lock"] and seen["view"].files == []
+
+
+def test_jev_sends_one_request_per_file_with_the_message_and_withheld_lines(monkeypatch):
+    bodies = []
+
+    def post(url, body, headers, timeout, retries=5):
+        bodies.append(body)
+        ids = list(body["questions"]["where"]["criteria"])
+        return {
+            "answers": {
+                "exists": {"noul": 0.1 * len(bodies)},
+                "where": {"probabilities": {i: 1.0 / len(ids) for i in ids}},
+            },
+            "usage": {"input_tokens": 10},
+            "model": "jev-1.13.0",
+        }
+
+    monkeypatch.setattr(J, "_post_json", post)
+    monkeypatch.setenv("TYPESAFE_API_KEY", "test-key")
+    view = J.CommitView(subject="feat: x", message=[("M1", "feat: x")])
+    view.files = [
+        {"path": "a.py", "rows": [("L1", "+", "x = 1"), (None, " ", "[withheld]")]},
+        {"path": "b.py", "rows": [("L2", "+", "y = 2")]},
+    ]
+    score, _ranked, detail = J.jev_commit(view)
+    assert len(bodies) == 2 and detail["requests"] == 2
+    for b, path, lid in zip(bodies, ("a.py", "b.py"), ("L1", "L2"), strict=True):
+        assert b["model"] == "jev-1.13.0" and b["state"]["commit_message"] == {"M1": "feat: x"}
+        assert [f["path"] for f in b["state"]["files"]] == [path]
+        assert set(b["questions"]) == {"exists", "where"}
+        assert set(b["questions"]["where"]["criteria"]) == {"M1", lid, "none"}
+    assert "[withheld]" in json.dumps(bodies[0]) and score == pytest.approx(0.2)
+
+
+def test_jev_retries_the_cdn_errors():
+    assert {520, 522, 524, 429, 529} <= set(J.RETRY_STATUS)
+
+
+def test_the_laya_worker_protocol_and_its_failure(monkeypatch, tmp_path):
+    fake = tmp_path / "py"
+    fake.write_text(
+        '#!/bin/sh\ncat > /dev/null\necho \'{"score": 0.7, "ranked": ["L1"], "windows": 1}\'\n'
     )
-    rep = _judged_report(f'a = "{fake_phone}"\nb = "{real_phone}"\nc = {NAME!r}\n')
-    P.run_judges(rep)
-    states = {f.line: (f.rule, f.state) for f in rep.findings}
-    assert states == {1: ("phone", "CLEARED"), 2: ("phone", ""), 3: ("denylist:text", "")}
-    assert all(NAME not in it[1] for it in sent["llm"])
+    fake.chmod(0o755)
+    monkeypatch.setenv("NORA_PII_LAYA_PYTHON", str(fake))
+    view = J.CommitView(
+        message=[("M1", "feat: x")], files=[{"path": "a", "rows": [("L1", "+", "x")]}]
+    )
+    assert J.laya_commit(view)[:2] == (0.7, ["L1"])
+    fake.write_text("#!/bin/sh\necho 'No module named laya_mlx' >&2\nexit 1\n")
+    with pytest.raises(J.JudgeError):
+        J.laya_commit(view)
+
+
+# ---- the adjudicator's plumbing (the agent itself is faked in tests/infra)
+
+
+def test_only_a_fake_verdict_for_the_current_tree_acknowledges(monkeypatch, tmp_path):
+    monkeypatch.setattr(P, "_gitdir", lambda: str(tmp_path))
+    fs = (
+        _scanner()
+        .scan_text(f'p = "{SY.phone("44")}"\nq = "{SY.phone("81")}"\nr = {NAME!r}\n', "f.py")
+        .findings
+    )
+    ids = {f.rule + str(f.line): f.fid for f in fs}
+    (tmp_path / P.ADJUDICATION_FILE).write_text(
+        json.dumps(
+            {
+                "tree": "t1",
+                "model": "sonnet",
+                "verdicts": {
+                    ids["phone1"]: {"verdict": "fake", "reason": "generated in conftest"},
+                    ids["phone2"]: {"verdict": "unsure", "reason": "no history"},
+                    ids["denylist:text3"]: {"verdict": "fake", "reason": "forged"},
+                },
+            }
+        )
+    )
+    assert P.adjudicated_fakes("t2") == {}
+    rep = P.Report(findings=fs)
+    P.apply_adjudication(rep, P.adjudicated_fakes("t1"))
+    assert {f.rule + str(f.line): f.state for f in fs} == {
+        "phone1": "ACKED",
+        "phone2": "",
+        "denylist:text3": "",
+    }
+    assert "agent sonnet: fake, generated in conftest" in fs[[f.line for f in fs].index(1)].note
+
+
+def test_recorded_findings_hold_masks_not_values(monkeypatch, tmp_path):
+    monkeypatch.setattr(P, "_gitdir", lambda: str(tmp_path))
+    phone = SY.phone("44")
+    rep = P.Report(findings=_scanner().scan_text(f'p = "{phone}"\nr = {NAME!r}\n', "f.py").findings)
+    P.record_findings(rep, "staged", "t1")
+    raw = (tmp_path / P.FINDINGS_FILE).read_text()
+    data = json.loads(raw)
+    assert [f["rule"] for f in data["staged"]] == ["phone"] and data[
+        "staged_blocked_otherwise"
+    ] == 1
+    assert phone not in raw and P.digits_of(phone) not in raw and NAME not in raw
+
+
+def test_trailer_acks_read_the_id_with_or_without_a_reason():
+    msg = (
+        "feat: x\n\nPII-Ack: 0123456789ab\nPII-Ack: ba9876543210 (agent sonnet: fake, generated)\n"
+    )
+    assert P.trailer_acks(msg) == {"0123456789ab", "ba9876543210"}
 
 
 def test_a_crash_is_an_error(monkeypatch, capsys):
@@ -791,28 +919,6 @@ def test_a_decompression_bomb_is_an_error(monkeypatch):
     allow = P.parse_allowlist("binary art/* -- test\n")
     fs = _judge(_job(gzip.compress(b"a" * 5000), path="art/a.gz"), allow)
     assert [(f.status, f.rule) for f in fs] == [("ERROR", "undecodable-container")]
-
-
-# ---- no model sees a denylisted line, new OR already there (finding 4)
-
-
-def test_a_line_that_already_held_a_denylisted_value_is_never_sent(monkeypatch):
-    monkeypatch.setenv("NORA_PII_JUDGE", "laya")
-    sent = _with_fake_judge(monkeypatch, lambda line: 0.0)
-    old = f"a = 1\nowner = {NAME!r}  # old\nb = 2\n"
-    new = f"a = 1\nowner = {NAME!r}  # new\nb = 3\n"
-    rep = _judged_report(new, old)
-    P.run_judges(rep)
-    blob = repr(sent)
-    assert "b = 3" in blob and NAME not in blob and GIVEN not in blob
-
-
-def test_with_no_guard_nothing_is_sent(monkeypatch):
-    monkeypatch.setenv("NORA_PII_JUDGE", "laya")
-    sent = _with_fake_judge(monkeypatch, lambda line: 0.0)
-    rep = P.judge_blob(_job(b"x = 1\n"), _scanner(), P.Allowlist(), set())
-    P.run_judges(rep)
-    assert sent.get("items") in (None, [])
 
 
 # ---- the scanner itself (findings 7, 11)

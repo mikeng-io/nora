@@ -224,20 +224,6 @@
   "target": "tests/unit/test_pii_scan.py::test_output_never_prints_a_value"
  },
  {
-  "name": "a denylisted line is never sent to a judge",
-  "file": "scripts/pii_scan.py",
-  "old": "        items = [\n            (p, n, line, safe_ctx(ctx)) for p, n, line, ctx in rep.added_lines if not withheld(line)\n        ]\n",
-  "new": "        items = [(p, n, line, ctx) for p, n, line, ctx in rep.added_lines]\n",
-  "target": "tests/unit/test_pii_scan.py::test_judge_flags_lines_and_never_sees_a_denylisted_line"
- },
- {
-  "name": "a judge that does not answer is an ERROR",
-  "file": "scripts/pii_scan.py",
-  "old": "            rep.findings.append(\n                Finding(\n                    \"ERROR\", f\"judge:{backend}\", \"<judge>\", 0, \"\", \"\", ackable=False, note=str(exc)\n                )\n            )\n            return",
-  "new": "            return",
-  "target": "tests/unit/test_pii_scan.py::test_judge_that_does_not_answer_is_an_error"
- },
- {
   "name": "pre-push reads commit messages",
   "file": "scripts/pii_scan.py",
   "old": "        sub.findings += message_findings(sc, body)",
@@ -257,13 +243,6 @@
   "old": "        rep.findings += _ident_findings(sc, label, ident)",
   "new": "        pass",
   "target": "tests/infra/test_pii_hooks.py::test_a_denylisted_author_is_refused"
- },
- {
-  "name": "only the lines a change adds go to the judge",
-  "file": "scripts/pii_scan.py",
-  "old": "        for n in sorted(added):\n            line = normalise_line(raw_new[n - 1])",
-  "new": "        for n in range(1, len(raw_new) + 1):\n            line = normalise_line(raw_new[n - 1])",
-  "target": "tests/unit/test_pii_scan.py::test_only_added_lines_go_to_the_judge"
  },
  {
   "name": "a line already in the parent is not added",
@@ -476,13 +455,6 @@
   "target": "tests/unit/test_pii_scan.py::test_a_decompression_bomb_is_an_error"
  },
  {
-  "name": "no guard means nothing is sent",
-  "file": "scripts/pii_scan.py",
-  "old": "    guard = rep.guard if callable(rep.guard) else (lambda _t: True)  # unset: send nothing",
-  "new": "    guard = rep.guard if callable(rep.guard) else (lambda _t: False)",
-  "target": "tests/unit/test_pii_scan.py::test_with_no_guard_nothing_is_sent"
- },
- {
   "name": "the camelCase matcher is anchored",
   "file": "scripts/pii_scan.py",
   "old": "            for m in re.finditer(r\"(?<![A-Za-z0-9])[a-z][a-z0-9]*[A-Z][A-Za-z0-9]*\", tt):",
@@ -544,5 +516,152 @@
   "old": "        allow, placeholders, errs = ctx_cache[bases[sha]]",
   "new": "        allow, placeholders, errs = ctx_cache[meta[sha][0][0] if meta[sha][0] else \"\"]",
   "target": "tests/infra/test_pii_hooks.py::test_a_declaration_pushed_together_with_its_payload_exempts_nothing"
+ },
+ {
+  "name": "a line holding a denylisted value is withheld from the judge",
+  "file": "scripts/pii_scan.py",
+  "old": "        if guard(t):\n            held += 1\n            return \"[withheld]\"",
+  "new": "        if False:\n            held += 1\n            return \"[withheld]\"",
+  "target": "tests/unit/test_pii_scan.py::test_a_line_that_already_held_a_denylisted_value_is_never_sent"
+ },
+ {
+  "name": "with no guard every line is withheld",
+  "file": "scripts/pii_scan.py",
+  "old": "    guard = rep.guard if callable(rep.guard) else (lambda _t: True)",
+  "new": "    guard = rep.guard if callable(rep.guard) else (lambda _t: False)",
+  "target": "tests/unit/test_pii_scan.py::test_with_no_guard_every_line_is_withheld"
+ },
+ {
+  "name": "a judge that does not answer is an ERROR",
+  "file": "scripts/pii_scan.py",
+  "old": "        rep.findings.append(\n            Finding(\"ERROR\", f\"judge:{backend}\", \"<judge>\", 0, \"\", \"\", ackable=False, note=str(exc))\n        )\n",
+  "new": "",
+  "target": "tests/unit/test_pii_scan.py::test_a_judge_that_does_not_answer_is_an_error"
+ },
+ {
+  "name": "only added lines get ids",
+  "file": "scripts/pii_scan.py",
+  "old": "            if op == \"+\":\n                k += 1",
+  "new": "            if True:\n                k += 1",
+  "target": "tests/unit/test_pii_scan.py::test_the_judge_reads_message_and_added_lines_and_raises_at_its_pick"
+ },
+ {
+  "name": "the judge raises at its pick",
+  "file": "scripts/pii_scan.py",
+  "old": "    target = next((i for i in v.ranked if i in view.where), None)",
+  "new": "    target = None",
+  "target": "tests/unit/test_pii_scan.py::test_the_judge_reads_message_and_added_lines_and_raises_at_its_pick"
+ },
+ {
+  "name": "a score over the threshold raises a finding",
+  "file": "scripts/pii_scan.py",
+  "old": "    if v.score < v.threshold:\n        return",
+  "new": "    if True:\n        return",
+  "target": "tests/unit/test_pii_scan.py::test_the_judge_reads_message_and_added_lines_and_raises_at_its_pick"
+ },
+ {
+  "name": "lockfiles are not shown to the judge",
+  "file": "scripts/pii_scan.py",
+  "old": "        if pii_judge.SKIP_PATH.search(path):",
+  "new": "        if False:",
+  "target": "tests/unit/test_pii_scan.py::test_lockfiles_are_not_shown_to_the_judge"
+ },
+ {
+  "name": "the judge reads the staged change at commit-msg",
+  "file": "scripts/pii_scan.py",
+  "old": "            staged = mode_staged(deny) if _judge_backend() else None",
+  "new": "            staged = None",
+  "target": "tests/infra/test_pii_hooks.py::test_the_commit_judge_runs_at_commit_msg_and_raises_at_its_pick"
+ },
+ {
+  "name": "jev: one request per file",
+  "file": "scripts/pii_judge.py",
+  "old": "    return groups or [[]]",
+  "new": "    return [[f for g in groups for f in g]] if groups else [[]]",
+  "target": "tests/unit/test_pii_scan.py::test_jev_sends_one_request_per_file_with_the_message_and_withheld_lines"
+ },
+ {
+  "name": "jev: the message rides in every request",
+  "file": "scripts/pii_judge.py",
+  "old": "        \"commit_message\": dict(view.message),",
+  "new": "        \"commit_message\": {},",
+  "target": "tests/unit/test_pii_scan.py::test_jev_sends_one_request_per_file_with_the_message_and_withheld_lines"
+ },
+ {
+  "name": "jev retries the CDN's 52x",
+  "file": "scripts/pii_judge.py",
+  "old": "RETRY_STATUS = (429, 500, 502, 503, 504, 520, 522, 524, 529)",
+  "new": "RETRY_STATUS = (429, 500, 502, 503, 504, 529)",
+  "target": "tests/unit/test_pii_scan.py::test_jev_retries_the_cdn_errors"
+ },
+ {
+  "name": "a laya worker that fails is an ERROR",
+  "file": "scripts/pii_judge.py",
+  "old": "    if proc.returncode != 0:\n        tail",
+  "new": "    if False:\n        tail",
+  "target": "tests/unit/test_pii_scan.py::test_the_laya_worker_protocol_and_its_failure"
+ },
+ {
+  "name": "only a fake verdict acknowledges",
+  "file": "scripts/pii_scan.py",
+  "old": "v.get(\"verdict\") == \"fake\"",
+  "new": "v.get(\"verdict\") in (\"fake\", \"unsure\")",
+  "target": "tests/unit/test_pii_scan.py::test_only_a_fake_verdict_for_the_current_tree_acknowledges"
+ },
+ {
+  "name": "a verdict is bound to the staged tree",
+  "file": "scripts/pii_scan.py",
+  "old": "    if data.get(\"tree\") != tree:\n        return {}",
+  "new": "    if False:\n        return {}",
+  "target": "tests/unit/test_pii_scan.py::test_only_a_fake_verdict_for_the_current_tree_acknowledges"
+ },
+ {
+  "name": "an agent verdict never clears a denylist hit",
+  "file": "scripts/pii_scan.py",
+  "old": "        if f.ackable and not f.state and f.fid in fakes:",
+  "new": "        if not f.state and f.fid in fakes:",
+  "target": "tests/unit/test_pii_scan.py::test_only_a_fake_verdict_for_the_current_tree_acknowledges"
+ },
+ {
+  "name": "recorded findings hold masks, not lines",
+  "file": "scripts/pii_scan.py",
+  "old": "\"masked\": f.masked}",
+  "new": "\"masked\": f.text}",
+  "target": "tests/unit/test_pii_scan.py::test_recorded_findings_hold_masks_not_values"
+ },
+ {
+  "name": "the adjudicator refuses while a denylist hit is open",
+  "file": "scripts/pii_adjudicate.py",
+  "old": "    if data.get(\"staged_blocked_otherwise\") or data.get(\"message_blocked_otherwise\"):",
+  "new": "    if False:",
+  "target": "tests/infra/test_pii_hooks.py::test_the_adjudicator_refuses_while_a_denylist_hit_is_open"
+ },
+ {
+  "name": "the adjudicator drops a reason that quotes a value",
+  "file": "scripts/pii_adjudicate.py",
+  "old": "        v[\"reason\"] = clean(v[\"reason\"])",
+  "new": "        pass",
+  "target": "tests/infra/test_pii_hooks.py::test_a_reason_that_quotes_a_value_is_withheld"
+ },
+ {
+  "name": "a trailer reason is scanned",
+  "file": "scripts/pii_scan.py",
+  "old": "        if note and sc.scan_text(note, \"<trailer>\").findings:",
+  "new": "        if False:",
+  "target": "tests/infra/test_pii_hooks.py::test_a_trailer_reason_is_scanned_even_if_the_verdict_file_was_written_by_hand"
+ },
+ {
+  "name": "the agent runs restricted",
+  "file": "scripts/pii_adjudicate.py",
+  "old": "        \"--restricted\",\n",
+  "new": "",
+  "target": "tests/infra/test_pii_hooks.py::test_a_fake_verdict_becomes_a_trailer_and_the_push_honours_it"
+ },
+ {
+  "name": "the agent's Bash is git-read-only",
+  "file": "scripts/pii_adjudicate.py",
+  "old": "        *[f\"Bash(git {s}:*)\" for s in GIT_READ],",
+  "new": "        \"Bash(*)\",",
+  "target": "tests/infra/test_pii_hooks.py::test_a_fake_verdict_becomes_a_trailer_and_the_push_honours_it"
  }
 ]

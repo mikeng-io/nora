@@ -440,7 +440,10 @@ the same commit.
   value, a phone/id/email shape or a coordinate table that a change ADDS is
   refused, fail-closed, against a private denylist outside the repo. It needs
   `make hooks` and the denylist on your machine; it stops a pasted corpus, not
-  a disguised one, so the rule stays yours too.
+  a disguised one, so the rule stays yours too. When it blocks on a finding
+  that is not a denylist hit, run `python3 scripts/pii_adjudicate.py` (a
+  read-only agent decides real/fake/unsure from the repo's evidence) and re-run
+  the same commit; never `NORA_PII_ACK` a value you have not checked.
 - **Never read an instrument's output as evidence without first checking it can
   measure the thing** — state what a positive result would look like before
   concluding from a null one.

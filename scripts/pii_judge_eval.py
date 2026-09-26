@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Synthetic calibration for the identifier detector's model layers.
+"""Synthetic calibration for the identifier detector's commit judge.
 
 Everything here is GENERATED from a seed: names are drawn from generic pools,
 numbers and ids from a seeded RNG, coordinates around random points. Nothing
@@ -7,19 +7,21 @@ is copied from a real record, and the source holds no identifier-shaped
 literal (the detector scans this file like any other). The same generator
 gives the unit tests their neutral fixtures.
 
-The labelled set is LINES, because that is what the line judge sees: a line
-added to a file, or a commit-message line. Label 1 = the line carries personal
-data of a private individual (a realistic contact, account id, address or
-location, with or without a name); 0 = it does not (code, prose, config,
-public organisations, obvious placeholders). A realistic value inside a TEST
-FIXTURE is labelled 1 on purpose: the incident this detector exists for was
-production rows pasted into a fixture (docs/CONVENTIONS.md), so "it is in a
-test" is not evidence that it is fake.
+Each labelled case is one LINE placed in a small COMMIT (the judge reads
+commits): the line added to its file between two lines of ordinary code, or,
+for a message case, the line as the commit message. Label 1 = the line carries
+personal data of a private individual (a realistic contact, account id,
+address or location, with or without a name); 0 = it does not (code, prose,
+config, public organisations, obvious placeholders). A realistic value inside
+a TEST FIXTURE is labelled 1 on purpose: the incident this detector exists for
+was production rows pasted into a fixture (docs/CONVENTIONS.md), so "it is in
+a test" is not evidence that it is fake. The larger commit-level study (66
+commits, dev/held-out split) is the commit-judge spike of 2026-09-26; its
+thresholds are the ones scripts/pii_judge.py ships.
 
     python3 scripts/pii_judge_eval.py cases                # print the set
-    python3 scripts/pii_judge_eval.py run laya --runs 3 --out results.json
-    python3 scripts/pii_judge_eval.py run jev --runs 3 --out r.json  # SYNTHETIC lines to TypeSafe
-    python3 scripts/pii_judge_eval.py run llm:<ollama tag> --runs 3 --out results.json
+    python3 scripts/pii_judge_eval.py run laya --runs 1 --out results.json
+    python3 scripts/pii_judge_eval.py run jev --runs 3 --out r.json  # SYNTHETIC commits to TypeSafe
     python3 scripts/pii_judge_eval.py bench laya --sizes 50,500,5000 --out bench.json
 
 `laya` runs through `NORA_PII_LAYA_PYTHON` (an interpreter with laya-mlx) and
@@ -391,17 +393,35 @@ def cases(seed: int = 283) -> list[dict]:
 # Running a backend over the set
 
 
-def _score(backend: str, lines: list[dict]) -> tuple[list, dict]:
+def case_view(judge, case: dict):
+    """One case as the commit the judge reads."""
+    v = judge.CommitView()
+    if case["kind"] == "message":
+        v.message = [("M1", case["line"])]
+        v.files = [{"path": "nora/module.py", "rows": [("L1", "+", "x = compute(y)")]}]
+    else:
+        v.message = [("M1", f"chore: update {case['file']}")]
+        v.files = [
+            {
+                "path": case["file"],
+                "rows": [
+                    (None, " ", "def build():"),
+                    ("L1", "+", case["line"]),
+                    (None, " ", "    return rows"),
+                ],
+            }
+        ]
+    v.subject = v.message[0][1]
+    return v
+
+
+def _score(backend: str, cases_: list[dict]) -> tuple[list, dict]:
     import pii_judge as judge
 
-    items = [(x["file"], 0, x["line"], x["line"]) for x in lines]
-    if backend.startswith("llm:"):
-        t0 = time.monotonic()
-        verdicts = judge.llm_rejudge(backend[4:], [("line", x["line"], x["line"]) for x in lines])
-        mapping = {"real": 1.0, "unsure": 0.5, "fake": 0.0}
-        return [mapping[v] for v in verdicts], {"seconds": time.monotonic() - t0}
-    v = judge.score_lines(backend, items)
-    return v.scores, {**v.detail, "seconds": v.seconds}
+    scores, t0 = [], time.monotonic()
+    for c in cases_:
+        scores.append(judge.judge_commit(backend, case_view(judge, c)).score)
+    return scores, {"seconds": time.monotonic() - t0}
 
 
 def evaluate(scores: list, labels: list, thr: float) -> dict:
@@ -538,31 +558,40 @@ def synthetic_commit(n_lines: int, seed: int = 7) -> list[dict]:
     ]
 
 
+def bench_view(judge, n: int):
+    """A synthetic commit of n added lines over files of 200 lines."""
+    v = judge.CommitView(
+        subject="feat: synthetic bench commit", message=[("M1", "feat: synthetic bench commit")]
+    )
+    k = 0
+    by_file: dict[str, list] = {}
+    for x in synthetic_commit(n):
+        if not x["line"].strip():
+            continue
+        k += 1
+        by_file.setdefault(x["file"], []).append((f"L{k}", "+", x["line"]))
+    v.files = [{"path": p, "rows": rows} for p, rows in by_file.items()]
+    return v, k
+
+
 def cmd_bench(a) -> int:
     import pii_judge as judge
 
     res = []
     for n in [int(x) for x in a.sizes.split(",")]:
-        lines = [x for x in synthetic_commit(n) if len(x["line"].strip()) >= 4]
-        refuse_denylisted(lines)
+        refuse_denylisted(synthetic_commit(n))
+        view, judged = bench_view(judge, n)
         for rep in range(a.reps):
             t0 = time.monotonic()
-            if a.backend == "laya":
-                _scores, detail = judge.laya_scores(lines)
-            else:
-                items = [("line", x["line"], x["line"]) for x in lines]
-                judge.llm_rejudge(a.backend[4:], items)
-                detail = {}
-            wall = time.monotonic() - t0
+            v = judge.judge_commit(a.backend, view)
             row = {
                 "added_lines": n,
-                "judged": len(lines),
+                "judged": judged,
                 "rep": rep,
-                "wall_s": round(wall, 3),
-                **{k: (round(v, 3) if isinstance(v, float) else v) for k, v in detail.items()},
+                "wall_s": round(time.monotonic() - t0, 3),
+                "score": round(v.score, 3),
+                **{k: (round(x, 3) if isinstance(x, float) else x) for k, x in v.detail.items()},
             }
-            if "infer_s" in detail and lines:
-                row["ms_per_line_warm"] = round(1000 * detail["infer_s"] / len(lines), 2)
             res.append(row)
             print(json.dumps(row), file=sys.stderr)
     with open(a.out, "w") as fh:
