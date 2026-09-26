@@ -1,7 +1,8 @@
 // Nora's public site. Static output, no adapter, no client framework: every
-// page is HTML + CSS plus three small vanilla scripts (the chat demo, the
-// lighting and language choices, the character-sheet viewer), each
-// progressive: the page reads in full without them.
+// page is HTML + CSS plus small vanilla scripts (the chat demo, the lighting
+// and language choices, the character-sheet viewer, her notebook, the loop's
+// signal, sound, and Nora herself in src/scripts/nora/), each progressive:
+// the page reads in full without them.
 import { defineConfig, fontProviders } from "astro/config";
 import { cjkCoverage } from "./scripts/cjk-coverage.mjs";
 

@@ -1,8 +1,10 @@
 # Site art: provenance
 
-Six renders of Mini Nora made for the public site on 2026-09-26, with the
-image-generation tool of Codex CLI (`codex-cli 0.157.0`, `codex exec`). Each
-was given the same two references, `assets/nora-canonical-self.png` and
+Renders of Mini Nora made for the public site with the image-generation tool
+of Codex CLI (`codex-cli 0.157.0`, `codex exec`): six on 2026-09-26, and on
+2026-09-27 two more poses and a prop for her live presence
+(`src/scripts/nora/`, `src/assets/rig/README.md`). Each pose was given the
+same two references, `assets/nora-canonical-self.png` and
 `assets/nora-character-reference-sheet.png`, the shared brief below, and its
 own prompt. None is a `role: self` asset: none is ingested, and
 `assets/nora-canonical-self.png` stays her one canonical image
@@ -20,10 +22,19 @@ alpha bounds plus a 4% margin. Astro re-encodes each at build time.
 |---|---|---|
 | `night-portrait.webp` | hero and the form plate, dark theme: the canonical portrait's late-night twin, same pose | opaque |
 | `group-chat.webp` | the chat demo (she sits on the window), link-preview images | transparent |
-| `notebook.webp` | memory | transparent |
+| `ledge.webp` | memory: she sits on her stool, writing (2026-09-27) | transparent |
+| `stool.webp` | memory: the stool she sits on, which stays when she is elsewhere (2026-09-27) | transparent |
+| `hop.webp` | never shown still: the pose she is in while she hops between places (2026-09-27) | transparent |
 | `quiet.webp` | what she won't do | transparent |
 | `wave.webp` | the portal panel | transparent |
 | `lost.webp` | 404 | transparent |
+
+`notebook.webp` (her on a stool, writing, one render) was the memory art until
+2026-09-27. It went because she now moves between places and the stool does
+not: a stool that arrives and leaves with her reads as wrong. `ledge.webp`
+(her, sitting on nothing) on `stool.webp` (the stool alone, generated from
+`notebook.webp` so it matches the one she used to sit on) replaced it; the two
+are placed in `components/Memory.astro`, measured on both renders.
 
 ## Shared brief
 
@@ -50,12 +61,49 @@ Generate ONE image, square 1:1, on a TRANSPARENT background (PNG with alpha; if 
 - Full body in frame with some margin. No other props.
 ```
 
-## `notebook`
+## `notebook` (retired 2026-09-27)
 
 ```text
 Generate ONE image, square 1:1, on a TRANSPARENT background (PNG with alpha; if transparency is impossible, a flat plain #F4F2F2 background with no shadow).
 - Nora sitting on a small plain wooden stool, a small open paper notebook on her lap, writing in it with a pencil, looking down at the page; earphones in, cable visible. Three-quarter view. Calm, focused.
 - Full body in frame with some margin. Only the stool, notebook and pencil as props.
+```
+
+## `ledge` (2026-09-27)
+
+Her eyes look at the viewer in this render; the live figure draws them looking
+down at the page (`src/assets/rig/rig.json`, `gaze`).
+
+```text
+Generate ONE image, square 1:1, on a TRANSPARENT background (PNG with alpha).
+- PROPORTIONS ARE THE PRIORITY: exactly the chibi proportions of the first reference: 2.5 to 3 heads tall, the head as wide as her shoulders plus arms, compact torso, short legs, small feet.
+- Nora sitting on the very edge of a flat ledge that is NOT drawn at all: her bottom rests on an invisible horizontal line, and her short legs hang down in front of it, relaxed, sneakers dangling a little apart. A small open paper notebook rests on her lap; she writes in it with a short pencil, looking down at the page; earphones in, cable visible. Three-quarter view from the front. Calm, focused.
+- Full body in frame with some margin. Only the notebook and the pencil as props. Do not draw the ledge, a bench, a stool, a floor or any shadow: everything around her is transparent.
+```
+
+## `hop` (2026-09-27)
+
+```text
+Generate ONE image, portrait 4:5, on a TRANSPARENT background (PNG with alpha).
+- PROPORTIONS ARE THE PRIORITY: exactly the chibi proportions of the first reference: 2.5 to 3 heads tall, the head as wide as her shoulders plus arms, compact torso, short legs, small feet. She must not look taller or more adult than the reference.
+- Nora in the middle of a small, low hop: both sneakers just off the ground, knees a little bent and tucked, both hands out of her pockets and held slightly out from her sides for balance, palms open; the open hoodie flares a little; the bun and the loose strands lift with the jump; the earphone cable swings up in a soft arc but both earbuds stay in her ears. Her face stays calm and deadpan (eyes open, tiny flat mouth), as if hopping is no big deal. Front view, turned very slightly to three-quarter.
+- Full body in frame with some margin. No motion lines, no shadow, no ground, no props.
+```
+
+## `stool` (2026-09-27)
+
+A prop, not a pose, so not the shared brief: its references were
+`notebook.webp` (the stool to copy) and `ledge.webp` (who sits on it).
+Trimmed to its alpha bounds plus 12 px.
+
+```text
+The first attached image shows a character sitting on a small plain wooden stool. I need THAT STOOL ALONE, with the character removed, as a separate prop in exactly the same render style, material, lighting and camera angle (soft 3D, warm natural wood, gentle soft studio light, three-quarter view from the front, camera at the same slightly-above height).
+Generate ONE image, portrait 3:4, on a TRANSPARENT background (PNG with alpha).
+- A small, plain, round-seated wooden stool with three simple straight legs and one thin rung, exactly like the stool in the first image: same proportions, same wood tone, same simple shapes.
+- Nobody on it and nothing on it. No notebook, no pencil, no character, no hands.
+- The whole stool in frame with a small margin, seat seen slightly from above so its top surface is visible.
+- No floor, no shadow, no background: everything around the stool is transparent. No text, no watermark.
+The second attached image is the character who will be composited sitting on it later; the stool seat must be wide enough for her (about the width of her hips) and low enough that her short legs dangle in front of it.
 ```
 
 ## `quiet`

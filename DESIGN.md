@@ -331,7 +331,36 @@ Motion confirms that something happened. It is never ambient.
 ### Named rules
 **The No-Ambience Rule.** No drifting blobs, aurora washes, spinning borders,
 parallax or marquees, on any page, including login. Nora is quiet; her surfaces
-are still until something happens.
+are still until something happens. The one thing that moves on its own is
+Nora herself, on the public site (Presence, below): she is not a surface.
+
+### Presence (the public site only)
+
+On the public site (`site/`) Nora herself is live state, as her speaking
+indicator is in the portal: she is in the page, not pictured on it. She
+breathes, blinks, looks where the visitor points, listens to her music when
+left alone and dozes off when left longer, reacts when poked, and is in one
+place at a time, hopping to whichever of her places the visitor is reading;
+the place she left stands empty. Her motion is her character's (05): small,
+calm, deadpan, never over-acted, and every expression she makes is one of her
+character sheet's. Operator request, 2026-09-27. What this does not change:
+
+- **Only she moves on her own.** The interface still only confirms: no reveal
+  on scroll, no parallax, nothing drifting. A diagram may show a signal
+  travelling along its cable when the travelling is what it explains (the
+  loop section), and only while it is on screen.
+- **Her timings are a body's, not a control's**, so the 320ms ceiling does
+  not bind them: a breath about 4.4 s, a blink a quarter of a second, a hop
+  between places 0.4–0.8 s. The interface around her keeps the durations
+  above.
+- **Sound is asked for.** Nothing is heard until the visitor puts the
+  header's earphones in; her recorded voice plays only when its own button is
+  pressed, and its words are always written beside it.
+- **She is never required.** Reduced motion, no script, a data saver or no
+  WebGL2: every place she can be keeps her static render, exactly as before.
+
+`site/src/scripts/nora/` is the implementation and
+`site/src/assets/rig/README.md` says what she is drawn from.
 
 ## 7. Components
 
@@ -409,6 +438,10 @@ the provider's default blue-black), so person hues keep their contrast.
   against the eight anchors before use, and kept with their brief and prompt
   beside them. One that drifts (the site's first wave came back four heads
   tall) is re-rendered, not used.
+- **Her live form on the site** (§6, Presence) is those renders, not a new
+  drawing of her: bent a little on a mesh, with her eyes and mouth, the two
+  simplest shapes she has, drawn live so they can move. It adds no feature
+  the eight anchors do not have and removes none.
 - **A colour that continues a photograph** (the backdrop behind a render, as
   on the site's character plate) is sampled from that image, not taken from
   the tokens: it has to match the picture, not the theme. It is the one place

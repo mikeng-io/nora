@@ -5,6 +5,7 @@ import { Image } from "astro:assets";
 import Base from "../layouts/Base.astro";
 import { art } from "../assets/art";
 import { LOCALES } from "../i18n";
+import NoraRig from "../components/NoraRig.astro";
 
 const zh = LOCALES["zh-Hant"].dict.notFound;
 const en = LOCALES.en.dict.notFound;
@@ -12,7 +13,16 @@ const en = LOCALES.en.dict.notFound;
 
 <Base locale="zh-Hant" title={`${zh.title} · Nora`} index={false}>
   <section class="container lost">
-    <Image src={art.lost} alt={zh.imageAlt} widths={[220, 320, 440]} sizes="220px" loading="eager" />
+    <div class="her" data-nora-slot="lost" data-nora-figure data-kind="lost" data-pose="lost">
+      <Image
+        class="nora-static"
+        src={art.lost}
+        alt={zh.imageAlt}
+        widths={[220, 320, 440]}
+        sizes="220px"
+        loading="eager"
+      />
+    </div>
     <div class="copy">
       <h1 class="section-title">{zh.title}</h1>
       <p class="soft">{zh.body}</p>
@@ -29,6 +39,7 @@ const en = LOCALES.en.dict.notFound;
       </div>
     </div>
   </section>
+  <NoraRig locale="zh-Hant" />
 </Base>
 
 <style>
@@ -40,8 +51,12 @@ const en = LOCALES.en.dict.notFound;
     padding-block: clamp(48px, 10vw, 120px);
   }
 
-  .lost :global(img) {
+  .her {
     width: 220px;
+  }
+
+  .her :global(img) {
+    width: 100%;
     height: auto;
   }
 

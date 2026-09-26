@@ -9,6 +9,16 @@ interface Props {
 
 const { locale } = Astro.props;
 const t = LOCALES[locale].dict.memory;
+const chat = LOCALES[locale].dict.chat;
+const k = t.kept;
+
+// Under each tier, what she would be keeping from the chat demo above it:
+// before anything is asked, the room's own messages (scripts/memory.ts
+// rewrites the fast three as the demo is played; the slow two stay put,
+// which is the point).
+const last = chat.seed[chat.seed.length - 1];
+const seedWords = `${last.time} · ${chat.people[last.who]}: ${last.text}`;
+const keptData = JSON.stringify({ standing: k.standing, open: k.open });
 ---
 
 <section id="memory" class="section" aria-labelledby="memory-title">
@@ -20,23 +30,61 @@ const t = LOCALES[locale].dict.memory;
         </h2>
         <p class="lede">{t.lede}</p>
       </div>
-      <Image
-        class="art"
-        src={art.notebook}
-        alt={t.imageAlt}
-        widths={[180, 260, 360, 520]}
-        sizes="(min-width: 900px) 260px, 180px"
-        loading="lazy"
-      />
+      <!-- Her stool stays where it is; she sits on it when she is here
+           (src/scripts/nora/). Both renders: art/README.md. -->
+      <div class="art" data-nora-slot="memory" data-kind="ledge" data-pose="ledge">
+        <Image
+          class="stool"
+          src={art.stool}
+          alt=""
+          widths={[120, 180, 300]}
+          sizes="(min-width: 900px) 160px, 110px"
+          loading="lazy"
+        />
+        <div class="her" data-nora-figure>
+          <Image
+            class="nora-static"
+            src={art.ledge}
+            alt={t.imageAlt}
+            widths={[180, 260, 360, 520]}
+            sizes="(min-width: 900px) 260px, 180px"
+            loading="lazy"
+          />
+        </div>
+      </div>
     </div>
 
+    <p class="kept-intro">{k.intro}</p>
+
     <!-- A timescale drawn as one cable: fastest on the left, slowest on the right. -->
-    <ol class="scale">
-      {t.tiers.map((tier) => (
+    <ol class="scale" data-kept={keptData}>
+      {t.tiers.map((tier, i) => (
         <li>
           <span class="when mono">{tier.scale}</span>
           <h3 class="title">{tier.title}</h3>
           <p class="soft">{tier.body}</p>
+          <p class="kept mono" data-kept-tier={i}>
+            <span class="visually-hidden">{k.label}: </span>
+            {i === 0 && <span data-kept-text>{seedWords}</span>}
+            {i === 1 && <span data-kept-text>{k.standing.seed}</span>}
+            {i === 2 && (
+              <span data-kept-text>
+                <span class="item" data-open="table">
+                  {k.open.table}
+                </span>
+              </span>
+            )}
+            {i === 3 && (
+              <span data-kept-text>
+                {k.culture} <span class="stamp">{k.cultureWhen}</span>
+              </span>
+            )}
+            {i === 4 && (
+              <span data-kept-text>
+                {k.people} <span class="stamp">{k.peopleWhen}</span>
+              </span>
+            )}
+          </p>
         </li>
       ))}
     </ol>
@@ -44,6 +92,10 @@ const t = LOCALES[locale].dict.memory;
     <p class="note">{t.note}</p>
   </div>
 </section>
+
+<script>
+  import "../scripts/memory.ts";
+</script>
 
 <style>
   .head {
@@ -56,17 +108,39 @@ const t = LOCALES[locale].dict.memory;
     margin-bottom: 0;
   }
 
-  .head :global(.art) {
+  /* She sits on her stool: her seat line (82% down her render) on its seat,
+     its legs reaching past her dangling feet to the floor. Measured on the
+     two renders (scripts/make_rig.py's ledge pose, art/stool.webp). */
+  .art {
+    position: relative;
     width: 180px;
-    height: auto;
+    aspect-ratio: 1 / 1.975;
     justify-self: end;
     margin-right: 8px;
+  }
+
+  .her {
+    position: absolute;
+    inset: 0 0 auto;
+  }
+
+  .her :global(img) {
+    width: 100%;
+    height: auto;
+  }
+
+  .art :global(.stool) {
+    position: absolute;
+    left: 23%;
+    top: 68.1%;
+    width: 58%;
+    height: auto;
   }
 
   .scale {
     position: relative;
     display: grid;
-    margin-top: 40px;
+    margin-top: 24px;
   }
 
   .scale::before {
@@ -108,6 +182,78 @@ const t = LOCALES[locale].dict.memory;
     max-width: 28rem;
   }
 
+  .kept-intro {
+    margin-top: 32px;
+    font-size: 0.875rem;
+    color: var(--ink-muted);
+  }
+
+  /* What she keeps, hanging off each tier on a thin cable, like the line
+     under her answers in the chat (the Cable Rule). */
+  .kept {
+    position: relative;
+    margin-top: 10px;
+    padding-left: 18px;
+    font-size: 0.75rem;
+    line-height: 1.5;
+    color: var(--ink-muted);
+    max-width: 28rem;
+  }
+
+  .kept::before {
+    content: "";
+    position: absolute;
+    left: 6px;
+    top: -4px;
+    width: 8px;
+    height: 12px;
+    border-left: 1px solid var(--seam);
+    border-bottom: 1px solid var(--seam);
+    border-bottom-left-radius: 6px;
+  }
+
+  /* global: scripts/memory.ts writes these, without Astro's scoping */
+  .kept :global(.item) {
+    display: block;
+  }
+
+  .kept :global(.item.retired) {
+    text-decoration: line-through;
+    text-decoration-color: var(--seam);
+  }
+
+  .kept .stamp {
+    white-space: nowrap;
+    opacity: 0.8;
+  }
+
+  .kept .stamp::before {
+    content: "· ";
+  }
+
+  /* Just written by her: a blush mark, gone after a moment. */
+  .kept:global(.fresh)::after {
+    content: "";
+    position: absolute;
+    left: 3px;
+    top: 0.55em;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--blush);
+    animation: fresh 2.6s var(--ease) forwards;
+  }
+
+  @keyframes fresh {
+    0%,
+    70% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0;
+    }
+  }
+
   .note {
     padding-top: 24px;
     border-top: 1px solid var(--hairline);
@@ -121,15 +267,15 @@ const t = LOCALES[locale].dict.memory;
       gap: 48px;
     }
 
-    .head :global(.art) {
-      width: 260px;
+    .art {
+      width: 250px;
       margin: 0 24px -8px 0;
     }
 
     .scale {
       grid-template-columns: repeat(5, minmax(0, 1fr));
       column-gap: 28px;
-      margin-top: 56px;
+      margin-top: 48px;
       padding-bottom: 56px;
     }
 

@@ -19,7 +19,10 @@ export type IconName =
   | "replay"
   | "expand"
   | "close"
-  | "clock";
+  | "clock"
+  | "earphones"
+  | "play"
+  | "stop";
 
 interface Props {
   name: IconName;
@@ -50,6 +53,11 @@ const paths: Record<IconName, string> = {
   expand: '<path d="M14 4h6v6M10 20H4v-6M20 4l-6.5 6.5M4 20l6.5-6.5"/>',
   close: '<path d="M6 6l12 12M18 6 6 18"/>',
   clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  // hers: two buds, the cable meeting under them, the little remote
+  earphones:
+    '<circle cx="7" cy="6.5" r="2.4"/><circle cx="17" cy="6.5" r="2.4"/><path d="M7 8.9c0 3.4 5 3.6 5 7.1M17 8.9c0 3.4-5 3.6-5 7.1v5"/><rect x="10.9" y="16.4" width="2.2" height="3.6" rx="1.1"/>',
+  play: '<path d="M8.5 5.8v12.4l9.8-6.2z"/>',
+  stop: '<rect x="7" y="7" width="10" height="10" rx="2"/>',
 };
 ---
 

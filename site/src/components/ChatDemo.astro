@@ -60,8 +60,16 @@ const PLATFORMS = ["Signal", "WhatsApp", "Discord", "Instagram"] as const;
 
     <div class="demo">
       <div class="window-wrap">
-        <div class="perch" aria-hidden="true">
+        <div
+          class="perch"
+          aria-hidden="true"
+          data-nora-slot="room"
+          data-nora-figure
+          data-kind="perch"
+          data-pose="perch"
+        >
           <Image
+            class="nora-static"
             src={art.groupChat}
             alt=""
             widths={[140, 280, 420]}

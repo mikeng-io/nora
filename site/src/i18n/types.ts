@@ -58,6 +58,26 @@ export interface Dict {
     studio: string;
     night: string;
     language: string;
+    /** The earphones button: sound, off until pressed (scripts/sound.ts). */
+    sound: string;
+  };
+  /** What she is doing, as the header says it beside her name (src/scripts/nora/). */
+  presence: {
+    listening: string;
+    music: string;
+    reading: string;
+    thinking: string;
+    writing: string;
+    quiet: string;
+    posing: string;
+    waving: string;
+    dozing: string;
+    annoyed: string;
+    speaking: string;
+    searching: string;
+    moving: string;
+    /** The hero's caption while she is somewhere else on the page. */
+    away: string;
   };
   hero: {
     status: string;
@@ -69,6 +89,8 @@ export interface Dict {
     alt: string;
     nightAlt: string;
     caption: string;
+    /** The hour where she lives, beside her caption; `{time}` is HH:MM in Hong Kong. */
+    clock: string;
     lights: string;
   };
   chat: {
@@ -110,12 +132,29 @@ export interface Dict {
     tiers: Tier[];
     note: string;
     imageAlt: string;
+    /** What she would be keeping from the chat demo, under each tier (scripts/memory.ts). */
+    kept: {
+      intro: string;
+      /** Where the room stands: before anything is asked, then rewritten after each exchange (by id). */
+      standing: { seed: string } & Record<string, string>;
+      /** What is still open. */
+      open: { table: string; reminder: string; retired: string };
+      /** The slow two, which the demo never changes. */
+      culture: string;
+      cultureWhen: string;
+      people: string;
+      peopleWhen: string;
+      /** Label for the line under each tier, for assistive technology. */
+      label: string;
+    };
   };
   senses: {
     title: string;
     lede: string;
     rows: Row[];
     note: string;
+    /** Her voice, under the voice row: a clip made with her own voice settings. */
+    voice: { play: string; transcript: string; about: string };
   };
   manners: {
     title: string;
