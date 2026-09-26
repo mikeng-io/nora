@@ -225,6 +225,9 @@ cases:
     # 2026-09-26: graded against the triaged group (see p6): 5/8 stack draws
     # revised a note the operator's 09-24 triage merged INTO this one.
     metadata:
+      # production's previous note-candidates fire in this room (17:35 HKT):
+      # its batch was the rows after it, not the newest 80 at the anchor.
+      batch_after_ms: 1789724102671
       updates:
         - 今晚 backroom 行動
         - Grant 未講元朗邊間、幾點

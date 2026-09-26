@@ -285,7 +285,11 @@ async def dreamer(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
         )
     adaptor = case.category or "note-candidates"
     try:
-        result = await dream(subject, adaptor=adaptor)
+        after = case.metadata.get("batch_after_ms")
+        result = await dream(
+            subject, adaptor=adaptor,
+            after_ms=int(after) if after is not None else None,
+        )
     except LookupError as exc:
         return Outcome(admitted=None, source="fail_closed", error=str(exc))
 
