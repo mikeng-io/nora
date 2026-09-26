@@ -27,6 +27,7 @@ export function weekdayLabels(locale: string, style: "short" | "narrow" = "short
 // time). The hour it is now is outlined, so "is this usual?" has an answer.
 export function RhythmPanel({ subjectId, name }: { subjectId: string; name: string }) {
   const t = useTranslations("patterns");
+  const tApp = useTranslations("app");
   const locale = useLocale();
   const now = useNow();
   const [days, setDays] = useState<(typeof WINDOWS)[number]>(30);
@@ -87,6 +88,8 @@ export function RhythmPanel({ subjectId, name }: { subjectId: string; name: stri
               className="w-fit"
             />
             <WeekHeatmap
+              tableLabel={tApp("showTable")}
+              hideTableLabel={tApp("hideTable")}
               cells={cells}
               dayLabels={labels}
               formatValue={fmt}

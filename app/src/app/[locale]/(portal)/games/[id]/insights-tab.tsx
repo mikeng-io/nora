@@ -20,6 +20,7 @@ const WINDOWS = [7, 30, 90] as const;
 // names as text: identity is the label, never the bar's colour.
 export function InsightsTab({ id }: { id: string }) {
   const t = useTranslations("games");
+  const tApp = useTranslations("app");
   const locale = useLocale();
   const [days, setDays] = useState<(typeof WINDOWS)[number]>(30);
   const insights = useInsights(id, days);
@@ -79,6 +80,8 @@ export function InsightsTab({ id }: { id: string }) {
           <PanelBody>
             {d.heatmap.some((c) => c.playerHours > 0) ? (
               <WeekHeatmap
+                tableLabel={tApp("showTable")}
+                hideTableLabel={tApp("hideTable")}
                 cells={d.heatmap.map((c) => ({ day: sundayFirstToMondayFirst(c.weekday), hour: c.hour, value: c.playerHours }))}
                 dayLabels={labels}
                 formatValue={(v) => formatHours(v * 3_600_000, locale)}

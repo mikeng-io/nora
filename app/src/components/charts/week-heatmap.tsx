@@ -24,6 +24,8 @@ export function WeekHeatmap({
   label,
   now,
   className,
+  tableLabel,
+  hideTableLabel,
 }: {
   cells: HeatCell[];
   dayLabels: string[];
@@ -31,8 +33,12 @@ export function WeekHeatmap({
   label: string;
   now?: { day: number; hour: number } | null;
   className?: string;
+  /** "Show as a table" / "Hide the table": every chart has a table view. */
+  tableLabel?: string;
+  hideTableLabel?: string;
 }) {
   const [active, setActive] = useState<HeatCell | null>(null);
+  const [table, setTable] = useState(false);
   const grid = useMemo(() => {
     const g: number[][] = Array.from({ length: 7 }, () => Array(24).fill(0));
     for (const c of cells) if (c.day >= 0 && c.day < 7 && c.hour >= 0 && c.hour < 24) g[c.day][c.hour] += c.value;
@@ -82,16 +88,59 @@ export function WeekHeatmap({
           </div>
         </div>
       </div>
+      {table ? (
+        <div className="scroll-thin overflow-x-auto rounded-control border border-hairline">
+          <table className="w-full border-collapse font-mono text-[0.6875rem] text-ink tnum">
+            <caption className="sr-only">{label}</caption>
+            <thead>
+              <tr>
+                <th scope="col" className="sticky left-0 bg-hoodie px-2 py-1.5 text-left font-medium text-ink-muted" />
+                {Array.from({ length: 24 }, (_, h) => (
+                  <th key={h} scope="col" className="bg-hoodie px-1.5 py-1.5 font-medium text-ink-muted">
+                    {String(h).padStart(2, "0")}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {grid.map((row, day) => (
+                <tr key={day} className="border-t border-hairline">
+                  <th scope="row" className="sticky left-0 bg-surface px-2 py-1 text-left font-sans font-medium text-ink-soft">
+                    {dayLabels[day]}
+                  </th>
+                  {row.map((v, hour) => (
+                    <td key={hour} className="px-1.5 py-1 text-right whitespace-nowrap">
+                      {v > 0 ? formatValue(v) : ""}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
       <div className="flex min-h-5 flex-wrap items-center justify-between gap-3 text-label text-ink-muted">
         <span aria-live="polite" className="font-mono tnum">
           {active
             ? `${dayLabels[active.day]} ${String(active.hour).padStart(2, "0")}:00 · ${formatValue(active.value)}`
             : " "}
         </span>
-        <span className="flex items-center gap-1" aria-hidden="true">
-          {Array.from({ length: STEPS + 1 }, (_, s) => (
-            <span key={s} className="size-2.5 rounded-[2px]" style={{ background: fill(s) }} />
-          ))}
+        <span className="flex items-center gap-3">
+          {tableLabel ? (
+            <button
+              type="button"
+              onClick={() => setTable((t) => !t)}
+              aria-expanded={table}
+              className="rounded-control px-1.5 py-1 font-sans text-label font-semibold text-denim hover:bg-hoodie"
+            >
+              {table ? (hideTableLabel ?? tableLabel) : tableLabel}
+            </button>
+          ) : null}
+          <span className="flex items-center gap-1" aria-hidden="true">
+            {Array.from({ length: STEPS + 1 }, (_, s) => (
+              <span key={s} className="size-2.5 rounded-[2px]" style={{ background: fill(s) }} />
+            ))}
+          </span>
         </span>
       </div>
     </div>

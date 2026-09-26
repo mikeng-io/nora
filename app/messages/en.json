@@ -23,7 +23,9 @@
     "showLess": "Show less",
     "seeAll": "See all",
     "copied": "Copied",
-    "shared": "Shared"
+    "shared": "Shared",
+    "showTable": "Show as a table",
+    "hideTable": "Hide the table"
   },
   "nav": {
     "home": "Nora, today",
@@ -609,7 +611,6 @@
     "learners": "Fastest learners",
     "xp": "{xp} XP",
     "noLearners": "No experience tracked yet.",
-    "noWorld": "No world save yet.",
     "worldTitle": "The world",
     "savedAt": "Saved {when}",
     "day": "Day",

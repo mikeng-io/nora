@@ -23,7 +23,9 @@
     "showLess": "收埋",
     "seeAll": "睇晒",
     "copied": "複製咗",
-    "shared": "分享咗"
+    "shared": "分享咗",
+    "showTable": "用表格顯示",
+    "hideTable": "收埋表格"
   },
   "nav": {
     "home": "Nora，今日",
@@ -609,7 +611,6 @@
     "learners": "學得最快",
     "xp": "{xp} XP",
     "noLearners": "未有經驗紀錄。",
-    "noWorld": "未有世界存檔。",
     "worldTitle": "個世界",
     "savedAt": "{when}儲存",
     "day": "日數",
