@@ -367,7 +367,10 @@ _MIN_ANCHOR_DATE = 10_000_000
 #:
 #: 13 -> 14 on 2026-09-26 (design 42 S3): `read` in `inputs`, once per open
 #: note, for the head body the notebook now renders whole.
-STORE_CALLS_PER_TICK = 14
+#:
+#: 14 -> 15 on 2026-09-26: `_update`'s new-evidence refusal settles the row
+#: (`set_create_candidate_status`) on its own branch.
+STORE_CALLS_PER_TICK = 15
 
 #: Every value `nora_note_candidate_gate_total{action}` may carry, DERIVED
 #: rather than hand-copied into the metric's help text (`nora.obs.
@@ -409,6 +412,11 @@ GATE_ACTIONS: frozenset[str] = frozenset({
                         # head with none of its citations carried (design 42
                         # §7's carry-forward check). Left pending, nothing
                         # written: provenance never silently leaves a note.
+    "no_new_evidence",  # an update whose body cites only messages OLDER than
+                        # the note's last change (2026-09-26): a restatement
+                        # of what the note already rests on, not news. Refused:
+                        # the p11 eval case caught an untouched same-day sibling
+                        # rewritten from its own old evidence.
     "not_shown",        # named a note this pass rendered WITHOUT its body
                         # (design 42 §8.6: the notebook's budget bound, or
                         # its head could not be read). Left pending, nothing
@@ -1057,6 +1065,9 @@ class NoteCandidateAdaptor:
         # Keyed by `key`, not a bare attribute, because
         # `dream_loop` dispatches each scope as its own task.
         self._message_ids: dict[str, frozenset[int]] = {}
+        #: Each shown message's timestamp, by scope, for `_update`'s
+        #: new-evidence check (the gate sees only a staged row's ids).
+        self._message_ts: dict[str, dict[int, int]] = {}
         # Per key, the same channel: what the model was SHOWN, as the body
         # validator takes it (design 42 §4.5, «rendered»). Only the rows
         # `inputs` actually rendered, named as it rendered them.
@@ -1102,6 +1113,7 @@ class NoteCandidateAdaptor:
         blank-prompt fire condition, restated because it is load-bearing here.
         """
         self._message_ids[key] = frozenset(row.id for row in batch)
+        self._message_ts[key] = {row.id: row.ts for row in batch}
         self._shown[key] = Shown()
         if not batch:
             return ""
@@ -1630,6 +1642,28 @@ class NoteCandidateAdaptor:
                 match.id, len(dropped), unit,
             )
             self._inc("nora_note_candidate_gate_total", action="dropped_citation")
+            return 0
+        # NEW EVIDENCE (2026-09-26). An update has to rest on something said
+        # since the note last changed: when every message its body cites that
+        # this adaptor was shown is older than the head, the restatement is
+        # the note's own old evidence, not news, and is refused. Ids this
+        # adaptor has not seen (a pending row retried on a later tick) cannot
+        # be dated here, so they neither pass nor fail the check.
+        cited = cited_ids_in(row.body)
+        dated = [
+            ts for shown in self._message_ts.values()
+            for mid, ts in shown.items() if mid in cited
+        ]
+        if dated and all(ts < head.written_at for ts in dated):
+            log.info(
+                "note-candidates: an update of note %s cites only messages "
+                "older than its last change; refused (unit=%s)", match.id, unit,
+            )
+            await self._candidates.set_create_candidate_status(
+                unit=unit, candidate_id=row.id,
+                status=CANDIDATE_REFUSED, now_ms=now_ms,
+            )
+            self._inc("nora_note_candidate_gate_total", action="no_new_evidence")
             return 0
         if " ".join(row.body.split()) == " ".join(head.body.split()):
             await self._candidates.set_create_candidate_status(

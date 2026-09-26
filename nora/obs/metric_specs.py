@@ -1561,7 +1561,10 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "left PENDING for the next tick to retry, never a decision), or "
         "not_shown (the model named a note the pass rendered WITHOUT its "
         "body, because the notebook's budget bound or its head could not be "
-        "read — left PENDING, nothing written, design 42 §8.6). A "
+        "read — left PENDING, nothing written, design 42 §8.6), or "
+        "no_new_evidence (an update whose body cites only messages older "
+        "than the note's last change: its own old evidence, not news; "
+        "refused, 2026-09-26). A "
         "candidate handed back a row an EARLIER tick already settled reaches "
         "no action here at all; nora_note_candidate_staging_total is where "
         "that is counted.",
