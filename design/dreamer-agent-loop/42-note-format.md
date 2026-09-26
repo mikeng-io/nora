@@ -748,6 +748,18 @@ with the excerpt and `id` parameters merge sets and this pass does not, and a
 test pinning merge's rendered prompt byte-identical until S6 changes it on
 purpose.
 
+**Amendment, 2026-09-26 (S3, operator): the line renderer is shared, the type
+is not.** A block type's field annotations render on every block of that type,
+so adding `form` to `open_note`, and rewording `revised`, would have changed
+note-merge's prompt while merge runs live in shadow and is outside S3's eval.
+Note-candidates therefore renders its own type, `candidate_open_note`, with
+`open_note`'s description, the fields listed above and the reworded `revised`.
+Both passes build their blocks from one line renderer
+(`nora.language.note_render.open_note_parts`). Merge's `open_note` stays as it
+is on master, pinned byte-identical with its `fields` attribute included. This
+deviates from «reuse open_note» above, and it follows the precedent of #552's
+`room_people`.
+
 **`updates` still names a title.** The `title` attribute is what the model
 copies into `updates`, resolved through `note_handle` as today. Switching to
 the `id` handle merge uses would be a second variable in the same step; G9

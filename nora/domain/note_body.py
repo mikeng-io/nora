@@ -9,9 +9,10 @@ language: only the headings and the fixed tokens (`->`, `:`, `(as of …)`,
 `(folded …)`, `no reason given`, `no date given`, `when`, the weekday
 abbreviation) are keys, and code parses keys (§5).
 
-**Nothing calls `parse_note_body` yet.** Design 42's S0 lands it as a pure
-function beside its tests; S2 calls it from note-candidates' `accept()`, S4b
-from the tag path's `note_create`/`note_update`, S6 from note-merge's fold.
+**One writer calls `parse_note_body` so far**: note-candidates' `accept()`,
+on a CREATE's body (design 42 S2, `nora.language.note_candidates`). S4a adds
+that pass's update arm, S4b the tag path's `note_create`/`note_update`, S6
+note-merge's fold.
 It is called by each WRITER and never by `NoteRevision.__post_init__`: rows
 written before the schema must still read back (§9).
 
@@ -45,7 +46,7 @@ from __future__ import annotations
 
 import datetime as _dt
 import re
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 
 #: The headings, in their only order (§4.1). Spelled exactly; a heading's
@@ -205,6 +206,100 @@ def cited_ids_in(text: str) -> frozenset[int]:
     return frozenset(
         int(i) for m in _CITATION.finditer(text) for i in m.group(1).split(",")
     )
+
+
+#: The rules that are about a body's FORM, as against its evidence: what
+#: `in_schema_form` holds a stored body to. The rest (`unknown_id`,
+#: `cites_nora`, `misattributed`, `unknown_owner`) need the rows the writer was
+#: shown, which a reader of a stored body does not have.
+FORM_RULES: frozenset[str] = frozenset({
+    "unknown_section", "section_order", "missing_section", "not_a_line",
+    "uncited", "bad_date",
+})
+
+
+class _AnyName(dict[str, str]):
+    """A roster every name is on: `in_schema_form` reads form, not owners."""
+
+    def get(self, key: str, default: str | None = None) -> str:  # type: ignore[override]
+        return ""
+
+
+def in_schema_form(text: str) -> bool:
+    """Whether a STORED body is in the notebook's sections (design 42 §8.6's
+    `form`): it parses under §4 when every id it cites counts as carried and
+    every owner as a roster name. A legacy prose body is not; a schema body is,
+    whoever wrote it. Never a refusal: this is what a reader is told it is
+    looking at, and the validator runs on write, never on read (§9)."""
+    shown = Shown(carried=cited_ids_in(text), roster=_AnyName())
+    try:
+        parse_note_body(text, shown=shown)
+    except NoteBodyError as broke:
+        return broke.rule not in FORM_RULES
+    return True
+
+
+def dropped_citations(head: str, body: str) -> tuple[frozenset[int], ...]:
+    """§7's carry-forward check: the citation sets of the HEAD's lines that
+    no line of the new `body` cites in full, in the head's order. Empty means
+    every line's evidence survives the restatement.
+
+    A restatement may rewrite a line, move it between sections or merge two
+    lines into one citing both; it may not make a line's evidence vanish.
+    Both sides are read LINE BY LINE WITH A PATTERN, never the parser, so the
+    check binds to any `[<ids>]` a head carries, parsed or not (§9): a legacy
+    head with no citations makes it vacuous, and that one revision is held to
+    form only.
+    """
+    new_lines = [cited_ids_in(line) for line in body.splitlines()]
+    dropped: list[frozenset[int]] = []
+    for line in head.splitlines():
+        ids = cited_ids_in(line)
+        if ids and not any(ids <= new for new in new_lines):
+            dropped.append(ids)
+    return tuple(dropped)
+
+
+#: A citation group as the tag path writes it: positions (`#4`), bare ids,
+#: or both, comma-separated, in square brackets (§4.3, G4).
+_POSITIONAL = re.compile(r"\[(\s*#?[0-9]+(?:\s*,\s*#?[0-9]+)*\s*)\]")
+
+
+def resolve_positions(
+    text: str, *, rows: Sequence[int], carried: frozenset[int],
+) -> str:
+    """The tag path's body with every `[#n]` position mapped to the row id
+    her transcript showed at that position (design 42 §4.3, G4), so a stored
+    body holds only ids.
+
+    `rows` is the transcript's row ids in the order the prefill numbered
+    them, 1..N. A position outside 1..N, or a BARE id the note does not
+    already cite (`carried`), is `unknown_id`: she cites what she sees, and a
+    bare id is one only a body she read can have handed her.
+    """
+    def _one(token: str, group: str) -> str:
+        token = token.strip()
+        if token.startswith("#"):
+            n = int(token[1:])
+            if not 1 <= n <= len(rows):
+                raise NoteBodyError(
+                    "unknown_id",
+                    f"[{group.strip()}] cites #{n}, and the transcript you were "
+                    f"shown runs #1 to #{len(rows)}",
+                )
+            return str(rows[n - 1])
+        if int(token) not in carried:
+            raise NoteBodyError(
+                "unknown_id",
+                f"[{group.strip()}] cites {token}, which is not a transcript "
+                f"position; cite a message as #n",
+            )
+        return token
+
+    def _group(m: re.Match[str]) -> str:
+        return "[" + ", ".join(_one(t, m.group(1)) for t in m.group(1).split(",")) + "]"
+
+    return _POSITIONAL.sub(_group, text)
 
 
 def _canonical_heading(name: str) -> str | None:

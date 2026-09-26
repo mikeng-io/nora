@@ -92,7 +92,8 @@ from nora.domain.notes import (
     merged_body,
 )
 from nora.domain.ports import Proposal
-from nora.domain.prompt import age, escape
+from nora.domain.prompt import escape
+from nora.language.note_render import open_note_parts
 from nora.obs.metrics import Metrics
 
 log = logging.getLogger("nora.notes.merge")
@@ -616,64 +617,19 @@ def _room_names(
     return out
 
 
-def _as_date(yyyymmdd: int) -> date | None:
-    try:
-        return date(yyyymmdd // 10000, (yyyymmdd // 100) % 100, yyyymmdd % 100)
-    except ValueError:
-        return None
-
-
 def _today_block(today: date) -> str:
     return ContextBlock(name="today", body=escape(f"{today:%Y-%m-%d %a}")).render()
-
-
-def _anchor_attrs(anchor_date: int | None, today: date) -> tuple[tuple[str, str], ...]:
-    if anchor_date is None:
-        return ()
-    day = _as_date(anchor_date)
-    if day is None:
-        return (("anchor", str(anchor_date)),)
-    delta = (day - today).days
-    reading = (
-        "today" if delta == 0
-        else "tomorrow" if delta == 1
-        else "yesterday" if delta == -1
-        else f"in {delta} days" if delta > 0
-        else f"{-delta} days ago"
-    )
-    return (("anchor", f"{day:%Y-%m-%d %a}"), ("anchor_is", reading))
 
 
 def _note_block(
     handle: str, note: Note, head: NoteRevision, *, room: str, now: datetime,
     today: date, changed: str | None, excerpt: int,
 ) -> str:
-    """One open note. Every value is escaped (R-13): titles and bodies are
-    model-authored from what the group typed."""
-    attrs: tuple[tuple[str, str], ...] = (
-        ("id", handle),
-        ("title", note.title),
-        ("room", room),
-        ("written", age(note.created_at, now)),
-        ("revised", age(head.written_at, now)),
-        *_anchor_attrs(note.anchor_date, today),
+    """One open note, through the renderer note-candidates shares
+    (`nora.language.note_render.open_note_block`, design 42 §8.6): this pass
+    sets the handle, `changed` and the excerpt, and nothing else."""
+    attrs, body = open_note_parts(
+        note, head, room=room, now=now, today=today, handle=handle,
+        changed=changed, excerpt=excerpt,
     )
-    if changed is not None:
-        attrs += (("changed", changed),)
-    body = head.body.strip()
-    if len(body) > excerpt:
-        shown_body = (
-            f"body (its first {excerpt} characters; it runs longer):\n"
-            f"{escape(body[:excerpt])}"
-        )
-    else:
-        shown_body = f"body:\n{escape(body)}"
-    return ContextBlock(
-        name="open_note", attrs=attrs,
-        body=(
-            f"about: {escape(note.description)}\n"
-            f"undecided: {escape(note.uncertainty)}\n"
-            f"settled when: {escape(note.closing_condition)}\n"
-            f"{shown_body}"
-        ),
-    ).render()
+    return ContextBlock(name="open_note", attrs=attrs, body=body).render()

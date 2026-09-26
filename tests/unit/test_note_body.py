@@ -221,3 +221,49 @@ def test_every_rule_is_asserted_by_a_test_here():
     source = Path(__file__).read_text(encoding="utf-8")
     asserted = set(re.findall(r'== "([a-z_]+)"', source))
     assert set(RULES) <= asserted, sorted(set(RULES) - asserted)
+
+
+def test_in_schema_form_reads_form_not_evidence():
+    """Design 42 §8.6's `form`: a stored body is in the sections when it
+    parses with every cited id carried and every owner a roster name. A
+    legacy prose body is not; nor is one that breaks a FORM rule."""
+    from nora.domain.note_body import in_schema_form
+
+    assert in_schema_form(
+        "## Decided\n## Open\n- where [1]\n## Owed\n- X -> y -> no date given [2]"
+    )
+    assert not in_schema_form("Ada wants dinner on Saturday.")
+    assert not in_schema_form("## Decided\n## Open\n- where")  # uncited
+    assert not in_schema_form("## Decided\n- on 2026-10-03 Fri (Ada) [1]\n## Open")  # bad_date
+
+
+def test_dropped_citations_reads_every_head_line_against_the_new_body():
+    """§7's carry-forward check: a line may be rewritten, moved or merged,
+    as long as some new line cites ALL of its ids; a legacy head with no
+    citations makes it vacuous."""
+    from nora.domain.note_body import dropped_citations
+
+    head = "## Decided\n- a (Ada) [1]\n## Open\n- b [2, 3]\n- c [4]"
+    assert dropped_citations(head, "## Decided\n- a and b (Ada) [1, 2, 3]\n## Open\n- c [4]") == ()
+    assert dropped_citations(head, "## Decided\n- a (Ada) [1]\n## Open\n- b [2]\n- c [4]") == (
+        frozenset({2, 3}),
+    )
+    assert dropped_citations("Ada wants dinner.", "## Decided\n## Open\n- x [9]") == ()
+
+
+def test_resolve_positions_maps_each_position_to_the_row_it_showed():
+    """G4: `[#n]` is position n of her transcript; a bare id survives only
+    when the note already cites it."""
+    from nora.domain.note_body import NoteBodyError, resolve_positions
+
+    rows = [501, 502, 503]
+    assert resolve_positions(
+        "## Open\n- a [#3, 900]\n- b [#1]", rows=rows, carried=frozenset({900}),
+    ) == "## Open\n- a [503, 900]\n- b [501]"
+    for bad in ("- a [#4]", "- a [#0]", "- a [901]"):
+        try:
+            resolve_positions(bad, rows=rows, carried=frozenset({900}))
+        except NoteBodyError as refused:
+            assert refused.rule == "unknown_id"
+        else:
+            raise AssertionError(bad)

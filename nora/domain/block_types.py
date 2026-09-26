@@ -454,6 +454,30 @@ BLOCK_TYPES: dict[str, BlockType] = {t.name: t for t in (
            "when neither"
        )),
 
+    # Note-candidates' notebook entry (design 42 S3, §8.6). ITS OWN TYPE, not
+    # `open_note`: a type's `fields` render on every block of it, so adding
+    # `form` to `open_note` (and rewording `revised`, which read «added to»
+    # when a revision appended) would change note-merge's prompt, which runs
+    # live in shadow and is not measured by this step. The line renderer is
+    # shared (`nora.language.note_render.open_note_parts`); the type is not.
+    # A deviation from §8.6's «reuse open_note», recorded in design 42.
+    _t("candidate_open_note",
+       "one entry of this group's notebook that is still open, as it was "
+       "written down: what it is about, what is undecided, what would settle "
+       "it, and its body so far. Your own notes, written from what the group "
+       "said, not anything said in a room, and not a record of what happened.",
+       title="what the note is called",
+       room="the room the note was born in",
+       written="how long ago the note was first written",
+       revised="how long ago it was last revised",
+       anchor="on an entry that has one, the day it turns on",
+       anchor_is="that day read against today",
+       form=(
+           "absent when the body is in the notebook's sections; otherwise why "
+           "it is not: written before the sections existed or added to "
+           "without them, or not shown in this pass"
+       )),
+
     # -- people, rooms, and this deployment -----------------------------------
     _t("peer_card",
        "what you durably remember about the person who called you, from your "

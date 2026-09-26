@@ -107,6 +107,20 @@ class Pass:
     nora_names: tuple[str, ...] = ()
     carried: tuple[int, ...] = ()
 
+    #: The rule of every create this pass REFUSED for its body (design 42 S2),
+    #: one per refusal, from `nora_note_candidate_body_refused_total{rule}`,
+    #: production's own counter. A refused body is never staged, so neither
+    #: `bodies` nor `body_schema` can see it: without this, conformance on
+    #: the written bodies is 100% by construction and the refusals are silence.
+    body_refused: tuple[str, ...] = ()
+
+    #: Every note the pass created or revised, as `(kind, the note's anchor
+    #: date, the ids its NEW head body cites)`, in `changed`'s order. What a
+    #: case graded on WHICH DAY a note landed on reads (the note-candidates
+    #: corpus's `date_split`): `staged` carries the candidate's own anchor,
+    #: which on an update is not the anchor of the note it revised.
+    changed_dated: tuple[tuple[str, int | None, tuple[int, ...]], ...] = ()
+
     #: Why the pass declined BEFORE any model call, from
     #: `nora_proactive_pass_total{reason}` — production's own counter.
     #:
@@ -204,6 +218,16 @@ def _declined(subject: Subject) -> str:
     return ""
 
 
+def _body_refusals(subject: Subject) -> dict[str, int]:
+    """`nora_note_candidate_body_refused_total` by rule, as it stands."""
+    out: dict[str, int] = {}
+    for key, value in subject.deps.metrics.snapshot().items():
+        if key and key[0] == "nora_note_candidate_body_refused_total" and value:
+            rule = dict(key[1] or ()).get("rule", "")
+            out[rule] = out.get(rule, 0) + int(value)
+    return out
+
+
 def _samples(subject: Subject, status: str) -> int:
     """`nora_dream_sample_total{status=...}`, summed over adaptors."""
     return int(sum(
@@ -270,6 +294,25 @@ async def _notebook(subject: Subject, workspace: str) -> dict[str, tuple[str, st
     try:
         notes = await SqlNoteStore(engine).standing(unit=workspace)
         return {n.id: (n.title, n.head_revision_id) for n in notes}
+    finally:
+        await engine.dispose()
+
+
+async def _dated(
+    subject: Subject, workspace: str, changed: Sequence[tuple[str, str]],
+) -> tuple[tuple[str, int | None, tuple[int, ...]], ...]:
+    """`(kind, anchor_date, head citations)` per changed note id, read after
+    the pass; see `Pass.changed_dated`."""
+    engine = create_sql_engine(subject.database_url)
+    try:
+        store = SqlNoteStore(engine)
+        out: list[tuple[str, int | None, tuple[int, ...]]] = []
+        for kind, note_id in changed:
+            got = await store.read(unit=workspace, note_id=note_id)
+            if got is not None:
+                note, head = got
+                out.append((kind, note.anchor_date, tuple(sorted(cited_ids_in(head.body)))))
+        return tuple(out)
     finally:
         await engine.dispose()
 
@@ -377,6 +420,7 @@ async def dream(
     head_citations = await _head_citations(subject, workspace)
     reminders_before = await _reminder_rows(subject)
     ok_before = _samples(subject, "ok")
+    refused_before = _body_refusals(subject)
     failed_before = _samples(subject, "unavailable")
 
     # The production order, verbatim: read the batch, join media, run.
@@ -435,6 +479,11 @@ async def dream(
         ("update", title) for nid, (title, head) in after.items()
         if nid in before and before[nid][1] != head
     ]
+    changed_dated = await _dated(subject, workspace, [
+        ("create" if nid not in before else "update", nid)
+        for nid, (_title, head) in after.items()
+        if nid not in before or before[nid][1] != head
+    ])
     reminders_after = await _reminder_rows(subject)
     written_reminders = tuple(
         v for rid, v in reminders_after.items() if rid not in reminders_before
@@ -446,6 +495,10 @@ async def dream(
         written=outcome.written,
         samples_ok=_samples(subject, "ok") - ok_before,
         samples_failed=_samples(subject, "unavailable") - failed_before,
+        body_refused=tuple(sorted(
+            rule for rule, n in _body_refusals(subject).items()
+            for _ in range(n - refused_before.get(rule, 0))
+        )),
         declined=_declined(subject),
         staged=staged,
         written_reminders=written_reminders,
@@ -456,6 +509,7 @@ async def dream(
             for person_id, ref in sorted(subject.deps.persons.by_person.items())
         ),
         nora_names=(subject.cfg.doctrine.display_name,),
+        changed_dated=changed_dated,
         carried=tuple(sorted({
             i for nid, (_title, head) in after.items()
             if nid in before and before[nid][1] != head
