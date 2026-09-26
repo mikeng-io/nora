@@ -11,7 +11,7 @@ instead, because `PULSE_API_TOKEN` was believed not to exist for Nora; it
 was in `.env` the whole time. Confirmed live (2026-08-18) via
 `curl -H "Authorization: Bearer $PULSE_API_TOKEN" .../pulse/api/v1/servers`
 that the REST API returns the full container-metrics shape
-(`app/src/lib/games-schema.ts`'s `ContainerMetricsSchema`) — cgroup memory
+(`app/src/lib/api/games.ts`'s `ContainerMetricsSchema`) — cgroup memory
 limit, network/block I/O, pids, restart count — that the MCP surface's
 `pulse_server_status` tool never exposed.
 

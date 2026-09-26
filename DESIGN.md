@@ -247,8 +247,12 @@ icon and a word, and blush never does the job of either.
 emphasis is not added; importance is carried by weight, size and position.
 
 **The Person-Hue Rule.** People in the portal keep their stable per-person hue
-(`app/src/lib/person-color.ts`), drawn at a fixed saturation and lightness so
-none of them reads as denim, blush or a semantic colour.
+(`app/src/lib/person.ts`), an OKLCH hue drawn at one fixed lightness and
+chroma per lighting, at least 25° from denim, blush and the semantic colours
+so none of them reads as any of those. Equal lightness is also what
+colour-vision deficiency cannot separate (measured 2026-09-27 with the
+dataviz palette validator), so a person's colour always travels with their
+initials or name; it is never the only thing that says who.
 
 **The No-Raw Rule.** No `#000`, no `#fff`, no Tailwind slate. Surfaces are warm
 greys; text is ink.
@@ -467,29 +471,20 @@ the provider's default blue-black), so person hues keep their contrast.
   to a flat logo.
 - **Don't** nest cards.
 
-## 10. The portal today, and the refactor it owes
+## 10. The portal
 
-The portal predates this file. Measured against it on 2026-09-26
-(`app/src/app/globals.css`, `app/src/app/[locale]/page.tsx`,
-`app/public/manifest.json`):
+The portal (`app/`) was rebuilt on this file on 2026-09-27 and owes it
+nothing from the 2026-09-26 measurement that used to stand here: the tokens
+are `app/src/styles/globals.css` one for one in both lightings, there are no
+aurora blobs or spinning borders, controls are `10px` and panels `16px`, Nora
+appears as §7 describes (her cut-out bare beside the wordmark and as the app
+icon, on a blush-wash disc among other people, her words on blush wash), the
+PWA icons are cut from `assets/nora-mini-icon.png`, and `Noto Sans HK` is in
+the font stack. `app/README.md` describes the portal; this file still governs
+how it looks.
 
-- **Palette:** light theme is Tailwind slate (`#f8fafc`, `#0f172a`) with a blue
-  accent `#3d5a80`; dark theme is trustless's achromatic tokens verbatim. Both
-  become the tokens above; the `@theme` mapping in `globals.css` is already the
-  right mechanism and only its values change.
-- **Motion:** the login and landing pages use drifting aurora blobs and a
-  spinning `border-glow`; both violate the No-Ambience Rule and go. The map's
-  `marker-pulse` is live state and stays.
-- **Radius:** `rounded-md` (6px) controls become `10px`; panels `16px`.
-- **Nora's presence:** nothing in the portal shows her yet (no avatar, no
-  blush); §7 "Nora in the UI" is new work.
-- **PWA icons:** `app/public/manifest.json` names `/icon-192.png` and
-  `/icon-512.png`, neither of which exists in `app/public/`; they are to be
-  cut from `assets/nora-mini-icon.png`, bare (§7), and the manifest's
-  `theme_color` / `background_color` set to studio and ink.
-- **Fonts:** the CJK fallback is absent from `--font-sans`.
-
-The public landing page is no longer the portal's to fix: `site/` replaced
-it on 2026-09-26 (site/README.md, "Going live"), built on this file from the
-start, and `app/src/app/[locale]/page.tsx` now only redirects to the login.
-The login page still owes the list above.
+Two things the portal adds that this file did not define, kept in its
+character: the map's basemap, a warm-grey vector style in both lightings
+(`app/src/components/map/map-style.ts`), and a larger greeting on its front
+page (1.875 to 2.625rem, 650, the same tracking rule as the site's display
+register).

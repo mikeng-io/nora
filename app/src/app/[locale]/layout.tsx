@@ -1,27 +1,14 @@
-import { NextIntlClientProvider } from "next-intl";
-import { getMessages, getTranslations } from "next-intl/server";
+import type { Metadata, Viewport } from "next";
+import type { ReactNode } from "react";
 import { notFound } from "next/navigation";
-import { Inter, Space_Grotesk } from "next/font/google";
-import type { Metadata } from "next";
+import { hasLocale, NextIntlClientProvider } from "next-intl";
+import { getTranslations } from "next-intl/server";
 import { routing } from "@/i18n/routing";
-import "../globals.css";
-import { RegisterServiceWorker } from "../register-sw";
-
-// Self-hosted at build time (next/font/google fetches once during `next
-// build`, never at request time) — no runtime request to Google, no CLS
-// from a late-loading web font. `variable` feeds `--font-sans` in
-// globals.css's @theme block rather than a className on <body>, so
-// Tailwind's `font-sans` utility (and the plain `body` rule) resolve to it
-// everywhere, not just wherever this className happens to be applied.
-const inter = Inter({ subsets: ["latin"], variable: "--font-sans-inter" });
-
-// Display face for the "Nora" wordmark — Space Grotesk, geometric-modern
-// with a slight tech edge, kept to the name itself so the rest of the UI
-// stays in Inter. Same self-hosted-at-build mechanism as Inter.
-const spaceGrotesk = Space_Grotesk({
-  subsets: ["latin"],
-  variable: "--font-space-grotesk",
-});
+import { inter, jetbrains, spaceGrotesk } from "@/lib/fonts";
+import { THEME_BOOT_SCRIPT, THEME_COLOR } from "@/lib/theme";
+import { ServiceWorkerRegistration } from "@/components/providers/sw-register";
+import { Toaster } from "@/components/providers/toaster";
+import "@/styles/globals.css";
 
 export function generateStaticParams() {
   return routing.locales.map((locale) => ({ locale }));
@@ -33,35 +20,61 @@ export async function generateMetadata({
   params: Promise<{ locale: string }>;
 }): Promise<Metadata> {
   const { locale } = await params;
-  const t = await getTranslations({ locale, namespace: "metadata" });
+  const t = await getTranslations({ locale, namespace: "meta" });
   return {
-    title: t("title"),
+    title: { default: t("title"), template: `%s · Nora` },
     description: t("description"),
-    manifest: "/manifest.json",
+    applicationName: "Nora",
+    manifest: "/manifest.webmanifest",
+    robots: { index: false, follow: false },
+    appleWebApp: { capable: true, title: "Nora", statusBarStyle: "default" },
+    formatDetection: { telephone: false, address: false, email: false },
+    icons: {
+      icon: [
+        { url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
+        { url: "/icons/icon-512.png", sizes: "512x512", type: "image/png" },
+      ],
+      apple: [{ url: "/icons/apple-touch-icon.png", sizes: "180x180" }],
+    },
   };
 }
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  colorScheme: "light dark",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: THEME_COLOR.light },
+    { media: "(prefers-color-scheme: dark)", color: THEME_COLOR.dark },
+  ],
+};
 
 export default async function LocaleLayout({
   children,
   params,
 }: {
-  children: React.ReactNode;
+  children: ReactNode;
   params: Promise<{ locale: string }>;
 }) {
   const { locale } = await params;
-  if (!routing.locales.includes(locale as (typeof routing.locales)[number])) {
-    notFound();
-  }
-
-  const messages = await getMessages();
+  if (!hasLocale(routing.locales, locale)) notFound();
 
   return (
-    <html lang={locale} className={`${inter.variable} ${spaceGrotesk.variable}`}>
+    <html
+      lang={locale === "zh-Hant" ? "zh-Hant-HK" : "en"}
+      className={`${inter.variable} ${jetbrains.variable} ${spaceGrotesk.variable}`}
+      suppressHydrationWarning
+    >
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_BOOT_SCRIPT }} />
+      </head>
       <body>
-        <NextIntlClientProvider messages={messages} locale={locale}>
+        <NextIntlClientProvider>
           {children}
+          <Toaster />
+          <ServiceWorkerRegistration />
         </NextIntlClientProvider>
-        <RegisterServiceWorker />
       </body>
     </html>
   );

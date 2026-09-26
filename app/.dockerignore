@@ -3,3 +3,8 @@ node_modules
 .git
 **/*.test.ts
 .env*
+dev
+e2e
+test-results
+playwright-report
+public/vendor
