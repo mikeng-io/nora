@@ -368,6 +368,12 @@ def test_existing_value_is_not_new_and_an_added_one_is():
     assert [(f.rule, f.line) for f in fs] == [("email", 2)]
 
 
+def test_editing_a_line_that_already_held_a_value_is_not_new():
+    addr = SY.email()
+    old = f'a = "{addr}"  # first\n'.encode()
+    assert _judge(_job(f'a = "{addr}"  # edited\n'.encode(), old)) == []
+
+
 def test_utf16_and_a_trailing_non_utf8_byte_are_errors_not_skips():
     payload = f"x = {NAME!r}\n"
     fs = _judge(_job(payload.encode("utf-16")))
@@ -575,3 +581,12 @@ def test_llm_clears_only_what_it_calls_fake_and_never_a_denylist_hit(monkeypatch
     states = {f.line: (f.rule, f.state) for f in rep.findings}
     assert states == {1: ("phone", "CLEARED"), 2: ("phone", ""), 3: ("denylist:text", "")}
     assert all(NAME not in it[1] for it in sent["llm"])
+
+
+def test_a_crash_is_an_error(monkeypatch, capsys):
+    def boom(*_a, **_k):
+        raise RuntimeError("synthetic")
+
+    monkeypatch.setattr(P, "main", boom)
+    assert P._main_fail_closed(["pii_scan.py", "staged"]) == P.ERROR
+    assert "nothing was judged" in capsys.readouterr().err

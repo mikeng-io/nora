@@ -70,6 +70,7 @@ import subprocess
 import sys
 import time
 import unicodedata
+from collections import Counter
 from dataclasses import dataclass, field
 
 PASS, FAIL, ERROR = 0, 1, 2
@@ -604,8 +605,9 @@ def coords_digest(points) -> str:
     return hashlib.sha256(body.encode()).hexdigest()[:16]
 
 
-def scan_coords(lines: list[str]) -> CoordResult:
-    geo = any(_GEO_WORDS.search(x) for x in lines)
+def scan_coords(lines: list[str], geo: bool | None = None) -> CoordResult:
+    if geo is None:
+        geo = any(_GEO_WORDS.search(x) for x in lines)
     points: list[tuple[int, float, float]] = []
     pending: tuple[int, list] | None = None  # a lone field waiting for its partner on a later line
     for n, line in enumerate(lines, 1):
@@ -1004,26 +1006,55 @@ def _decode(data: bytes) -> tuple[str | None, str]:
         return None, "undecodable"
 
 
-def _added_line_numbers(new_lines: list[str], old_texts: list[list[str]]) -> set[int]:
-    """Line numbers whose content occurs more often than in EVERY parent
-    (a merge adds only what no parent had)."""
-    counts_new: dict[str, int] = {}
-    for x in new_lines:
-        counts_new[x] = counts_new.get(x, 0) + 1
-    base: dict[str, int] = {}
-    for old in old_texts:
-        c: dict[str, int] = {}
-        for x in old:
-            c[x] = c.get(x, 0) + 1
-        for k in counts_new:
-            base[k] = max(base.get(k, 0), c.get(k, 0))
-    seen: dict[str, int] = {}
+def _line_diff(new: list[str], old: list[str]) -> tuple[set[int], list[str]]:
+    """(numbers of the new lines that occur more often than in `old`, the old
+    lines that occur more often than in `new`). A multiset diff: a moved
+    line is neither added nor removed, an edited line is both."""
+    c_old = Counter(old)
+    seen: Counter = Counter()
     added = set()
-    for n, x in enumerate(new_lines, 1):
-        seen[x] = seen.get(x, 0) + 1
-        if seen[x] > base.get(x, 0):
+    for n, x in enumerate(new, 1):
+        seen[x] += 1
+        if seen[x] > c_old[x]:
             added.add(n)
-    return added
+    c_new = Counter(new)
+    seen = Counter()
+    removed = []
+    for x in old:
+        seen[x] += 1
+        if seen[x] > c_new[x]:
+            removed.append(x)
+    return added, removed
+
+
+def _coords_findings(path: str, text: str, raw_olds: list, added: set[int], geo: bool,
+                     allow: Allowlist) -> list[Finding]:
+    """The whole file's location table, against every parent's: a finding
+    when it is over the dwell limit, it gained a point, and its content is
+    not the declared digest (#283 criterion 2)."""
+    cres = scan_coords(normalise_text(text).split("\n"), geo=geo)
+    if not cres.over:
+        return []
+    base_pts: Counter = Counter()
+    for o in raw_olds:
+        if o is None:
+            continue
+        pts = Counter((round(la, 5), round(ln, 5))
+                      for _, la, ln in scan_coords([normalise_line(x) for x in o], geo=geo).points)
+        base_pts |= pts
+    now = Counter((round(la, 5), round(ln, 5)) for _, la, ln in cres.points)
+    if not (now - base_pts):
+        return []
+    digest = cres.digest()
+    if digest in allow.coords_digest(path):
+        return []
+    first = min((n for n, _, _ in cres.points if n in added), default=cres.points[0][0])
+    return [Finding(
+        "FAIL", "coords", path, first,
+        f"rows={cres.rows} clusters={cres.clusters} max-in-one-place={cres.max_rows} score={cres.score}",
+        finding_id(path, f"<coords {digest}>"),
+        note=f"a location table; declare it as `coords {path} sha256={digest}` in a PRIOR commit, "
+             "or generate the fixture")]
 
 
 def judge_blob(job: BlobJob, sc: Scanner, allow: Allowlist, acks: set[str]) -> Report:
@@ -1063,80 +1094,53 @@ def judge_blob(job: BlobJob, sc: Scanner, allow: Allowlist, acks: set[str]) -> R
             return rep
         text = extract_strings(data)
     is_allowlist = path == ALLOWLIST_PATH
-    new_scan = sc.scan_text(text, path, shapes=not is_allowlist, coords=not binary and not is_allowlist)
-    old_scans = []
-    old_line_sets = []
+    shapes = not is_allowlist
+    raw_new = text.split("\n")
+    raw_olds: list[list[str] | None] = []
     for old in job.olds:
         if old is None:
-            old_scans.append(None)
-            old_line_sets.append([])
+            raw_olds.append(None)
             continue
         ot, _ = _decode(old)
-        if ot is None:
-            ot = extract_strings(old)
-        old_scans.append(sc.scan_text(ot, path, shapes=not is_allowlist, coords=not binary and not is_allowlist))
-        old_line_sets.append(normalise_text(ot).split("\n"))
-    new_lines = normalise_text(text).split("\n")
-    added = _added_line_numbers(new_lines, old_line_sets) if not binary else set()
+        raw_olds.append((ot if ot is not None else extract_strings(old)).split("\n"))
+    # Only the lines a change adds are read closely: a value is new when it
+    # sits on an added line more often than on the lines the change removed,
+    # against EVERY parent (a merge adds only what no parent had).
+    diffs = [_line_diff(raw_new, o or []) for o in raw_olds] or [(set(range(1, len(raw_new) + 1)), [])]
+    added = set.intersection(*[a for a, _ in diffs])
+    union = sorted(set().union(*[a for a, _ in diffs]))
+    scan = sc.scan_text("\n".join(raw_new[n - 1] for n in union), path, shapes=shapes, coords=False)
+    for f in scan.findings:
+        f.line = union[f.line - 1]
 
-    # count-diff: a (rule, key) is new when it occurs more often than in every parent
-    def counts(scan: TextScan | None) -> dict[tuple[str, str], int]:
-        c: dict[tuple[str, str], int] = {}
-        if scan is None:
-            return c
-        for f in scan.findings:
-            c[(f.rule, f.key)] = c.get((f.rule, f.key), 0) + 1
-        return c
+    def keys(findings, lines: set[int] | None = None) -> Counter:
+        return Counter((f.rule, f.key) for f in findings if lines is None or f.line in lines)
 
-    new_c = counts(new_scan)
-    base_c: dict[tuple[str, str], int] = {}
-    for s in old_scans:
-        for k, v in counts(s).items():
-            base_c[k] = max(base_c.get(k, 0), v)
-    grouped: dict[tuple[str, str], list[Finding]] = {}
-    for f in new_scan.findings:
-        grouped.setdefault((f.rule, f.key), []).append(f)
-    for k, fs in grouped.items():
-        extra = new_c[k] - base_c.get(k, 0)
-        if extra <= 0:
-            continue
-        on_added = [f for f in fs if f.line in added] or fs
-        for f in on_added:
+    new_keys: Counter | None = None
+    for added_p, removed_p in diffs:
+        gone = sc.scan_text("\n".join(removed_p), path, shapes=shapes, coords=False).findings if removed_p else []
+        net = keys(scan.findings, added_p) - keys(gone)
+        new_keys = net if new_keys is None else (new_keys & net)
+    new_keys = new_keys or Counter()
+    for k in new_keys:
+        fs = [f for f in scan.findings if (f.rule, f.key) == k]
+        for f in [f for f in fs if f.line in added] or fs:
             if binary:
                 f.line = 0
                 f.fid = finding_id(path, f"<blob {blob_id}> {f.rule} {f.key}")
             rep.findings.append(f)
 
-    cres = new_scan.coords
-    if cres is not None and cres.over:
-        base_pts: dict[tuple[float, float], int] = {}
-        for s in old_scans:
-            c: dict[tuple[float, float], int] = {}
-            for _, la, ln in (s.coords.points if s and s.coords else []):
-                kk = (round(la, 5), round(ln, 5))
-                c[kk] = c.get(kk, 0) + 1
-            for kk, v in c.items():
-                base_pts[kk] = max(base_pts.get(kk, 0), v)
-        now: dict[tuple[float, float], int] = {}
-        for _, la, ln in cres.points:
-            kk = (round(la, 5), round(ln, 5))
-            now[kk] = now.get(kk, 0) + 1
-        grew = any(v > base_pts.get(kk, 0) for kk, v in now.items())
-        digest = cres.digest()
-        if grew and digest not in allow.coords_digest(path):
-            first = min((n for n, _, _ in cres.points if n in added), default=cres.points[0][0])
-            rep.findings.append(Finding(
-                "FAIL", "coords", path, first,
-                f"rows={cres.rows} clusters={cres.clusters} max-in-one-place={cres.max_rows} "
-                f"score={cres.score}", finding_id(path, f"<coords {digest}>"),
-                note=f"a location table; declare it as `coords {path} sha256={digest}` in a "
-                     "PRIOR commit, or generate the fixture"))
+    if not binary and not is_allowlist and union:
+        geo = bool(_GEO_WORDS.search(text))
+        probe = scan_coords([normalise_line(raw_new[n - 1]) for n in union], geo=geo)
+        if probe.points:
+            rep.findings += _coords_findings(path, text, raw_olds, added, geo, allow)
     if not binary:
         for n in sorted(added):
-            line = new_lines[n - 1]
+            line = normalise_line(raw_new[n - 1])
             if len(line.strip()) < 4 or not re.search(r"\w", line):
                 continue
-            ctx = "\n".join(new_lines[max(0, n - 3):n + 2])
+            ctx = "\n".join(normalise_line(x) for x in raw_new[max(0, n - 3):n + 2])
             rep.added_lines.append((path, n, line, ctx))
     return rep
 
@@ -1150,15 +1154,18 @@ def load_context(parent: str | None) -> tuple[Allowlist, set[str], list[Finding]
     if not parent:
         return Allowlist(), set(), errs
     objs = read_objects([f"{parent}:{ALLOWLIST_PATH}", f"{parent}:{PLACEHOLDER_SOURCE}"])
+    return _context_from(objs.get(f"{parent}:{ALLOWLIST_PATH}"), objs.get(f"{parent}:{PLACEHOLDER_SOURCE}"))
+
+
+def _context_from(raw: bytes | None, ph: bytes | None) -> tuple[Allowlist, set[str], list[Finding]]:
+    errs: list[Finding] = []
     allow = Allowlist()
-    raw = objs.get(f"{parent}:{ALLOWLIST_PATH}")
     if raw is not None:
         try:
             allow = parse_allowlist(raw.decode("utf-8"))
         except (UnicodeDecodeError, AllowlistError) as exc:
             errs.append(Finding("ERROR", "allowlist-invalid", ALLOWLIST_PATH, 0, "", "", ackable=False,
                                 note=str(exc)))
-    ph = objs.get(f"{parent}:{PLACEHOLDER_SOURCE}")
     placeholders = placeholder_values(ph.decode("utf-8", "replace")) if ph else set()
     return allow, placeholders, errs
 
@@ -1264,25 +1271,59 @@ def mode_message(deny: Denylist, msg_path: str) -> Report:
     return rep
 
 
-def _commit_changes(sha: str, parents: list[str]) -> list[tuple[str, str, str, list]]:
-    """(dst, new_mode, new_sha, olds-per-parent) for every path the commit
-    changed relative to at least one parent."""
-    per_parent: list[dict[str, tuple]] = []
-    for p in parents or [EMPTY_TREE]:
-        raw = git("diff-tree", "-r", "-z", "--raw", "--no-abbrev", "-M", p, sha)
-        per_parent.append({e[6]: e for e in parse_raw_z(raw)})
+def _batch_diffs(pairs: list[tuple[str, str]]) -> list[list[tuple]]:
+    """One `git diff-tree --stdin` for every (parent, commit) pair. Its input
+    line is `<commit> <parent>` (commit FIRST: the other order silently
+    diffs backwards, turning every addition into a deletion); --always makes
+    each pair print its header even when the diff is empty, so the output
+    splits back into pairs by order. A root commit (parent = the empty tree)
+    gets its own call."""
+    out: list[list[tuple]] = []
+    for parent, commit in pairs:
+        if parent == EMPTY_TREE:
+            out.append(parse_raw_z(git("diff-tree", "-r", "-z", "--raw", "-M", "--no-abbrev", EMPTY_TREE, commit)))
+        else:
+            out.append([])  # filled below
+    real = [(i, pc) for i, pc in enumerate(pairs) if pc[0] != EMPTY_TREE]
+    if not real:
+        return out
+    raw = git("diff-tree", "--stdin", "--always", "-r", "-z", "--raw", "-M", "--no-abbrev",
+              input_bytes="".join(f"{c} {p}\n" for _, (p, c) in real).encode())
+    toks = raw.split(b"\0")
+    i = 0
+    for slot, _pair in real:
+        while i < len(toks) and not toks[i]:
+            i += 1
+        i += 1  # the header
+        entries = []
+        while i < len(toks) and toks[i].startswith(b":"):
+            om, nm, osha, nsha, status = toks[i][1:].decode().split(" ")
+            src = toks[i + 1].decode("utf-8", "surrogateescape")
+            if status[0] in "RC":
+                dst = toks[i + 2].decode("utf-8", "surrogateescape")
+                i += 3
+            else:
+                dst = src
+                i += 2
+            entries.append((om, nm, osha, nsha, status, src, dst))
+        out[slot] = entries
+    return out
+
+
+def _changes_from(per_parent_entries: list[list[tuple]]) -> list[tuple[str, str, str, list]]:
+    """(dst, new_mode, new_sha, olds-per-parent) for every path a commit
+    changed; for a merge, only paths that differ from EVERY parent."""
+    per_parent = [{e[6]: e for e in entries} for entries in per_parent_entries]
     paths = set()
     for d in per_parent:
         paths |= {k for k, e in d.items() if not e[4].startswith("D") and e[1] != "000000"}
-    # A merge adds a path's content only where it differs from EVERY parent.
     if len(per_parent) > 1:
         paths = {p for p in paths if all(p in d for d in per_parent)}
     out = []
     for p in sorted(paths):
         es = [d[p] for d in per_parent]
-        nm, nsha = es[0][1], es[0][3]
         olds = [e[2] if not set(e[2]) <= {"0"} else None for e in es]
-        out.append((p, nm, nsha, olds))
+        out.append((p, es[0][1], es[0][3], olds))
     return out
 
 
@@ -1316,21 +1357,36 @@ def scan_commits(deny: Denylist, shas: list[str], rep: Report | None = None) -> 
             continue
         sha, parents, author, committer, body, _ = rec.split("\x00")
         meta[sha] = (parents.split(), author, committer, body)
-    ctx_cache: dict[str, tuple] = {}
+    # Every diff in one diff-tree, every object and every parent's
+    # declarations in one cat-file: a 200-commit push is two processes, not
+    # four hundred.
+    pairs, owner = [], []
+    for sha in shas:
+        for p in meta[sha][0] or [EMPTY_TREE]:
+            pairs.append((p, sha))
+            owner.append(sha)
+    diffs = _batch_diffs(pairs)
+    by_commit: dict[str, list] = {}
+    for sha, entries in zip(owner, diffs):
+        by_commit.setdefault(sha, []).append(entries)
+    changes = {sha: _changes_from(by_commit[sha]) for sha in shas}
+    firsts = sorted({meta[sha][0][0] for sha in shas if meta[sha][0]})
+    names = [c[2] for sha in shas for c in changes[sha] if c[1] != "160000"]
+    names += [o for sha in shas for c in changes[sha] for o in c[3] if o]
+    names += [f"{p}:{x}" for p in firsts for x in (ALLOWLIST_PATH, PLACEHOLDER_SOURCE)]
+    objs = read_objects(names)
+    ctx_cache: dict[str, tuple] = {"": (Allowlist(), set(), [])}
+    for p in firsts:
+        ctx_cache[p] = _context_from(objs.get(f"{p}:{ALLOWLIST_PATH}"), objs.get(f"{p}:{PLACEHOLDER_SOURCE}"))
     for sha in shas:
         parents, author, committer, body = meta[sha]
-        first = parents[0] if parents else None
-        if first not in ctx_cache:
-            ctx_cache[first or ""] = load_context(first)
-        allow, placeholders, errs = ctx_cache[first or ""]
+        allow, placeholders, errs = ctx_cache[parents[0] if parents else ""]
         sc = Scanner(deny, allow, placeholders)
         acks = trailer_acks(body)
         sub = Report(findings=list(errs))
-        changes = _commit_changes(sha, parents)
-        names = [c[2] for c in changes if c[1] != "160000"] + [o for c in changes for o in c[3] if o]
-        objs = read_objects(names)
-        for dst, nm, nsha, olds in changes:
-            job = BlobJob(dst, nm, objs.get(nsha) if nm != "160000" else None, [objs.get(o) if o else None for o in olds])
+        for dst, nm, nsha, olds in changes[sha]:
+            job = BlobJob(dst, nm, objs.get(nsha) if nm != "160000" else None,
+                          [objs.get(o) if o else None for o in olds])
             sub.extend(judge_blob(job, sc, allow, acks))
         sub.findings += message_findings(sc, body)
         sub.findings += _ident_findings(sc, "<author>", author) + _ident_findings(sc, "<committer>", committer)
@@ -1517,7 +1573,8 @@ def main(argv: list[str]) -> int:
         elif mode == "push":
             rep = mode_push(deny, sys.stdin.read().splitlines())
         elif mode == "commits":
-            rep = scan_commits(deny, argv[2:])
+            rep = scan_commits(deny, [git("rev-parse", "--verify", f"{c}^{{commit}}").decode().strip()
+                                      for c in argv[2:]])
         elif mode == "tree":
             args, rev, inventory = argv[2:], "HEAD", None
             i = 0
@@ -1582,5 +1639,16 @@ def write_inventory(rep: Report, out: str, rev: str) -> None:
             fh.write(f"{sum(rules.values())}\t{p}\t" + ", ".join(f"{r}={n}" for r, n in sorted(rules.items())) + "\n")
 
 
+def _main_fail_closed(argv: list[str]) -> int:
+    """An exception is an ERROR (2), never the FAIL (1) a bare traceback
+    would exit with, and never a PASS."""
+    try:
+        return main(argv)
+    except Exception as exc:  # noqa: BLE001 - the whole point is to catch everything
+        print(f"pii: ERROR — the scanner crashed ({type(exc).__name__}: {exc}); nothing was judged",
+              file=sys.stderr)
+        return ERROR
+
+
 if __name__ == "__main__":
-    sys.exit(main(sys.argv))
+    sys.exit(_main_fail_closed(sys.argv))

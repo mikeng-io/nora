@@ -140,24 +140,24 @@
   "target": "tests/unit/test_pii_scan.py::test_coords_dms_and_plus_codes_fail"
  },
  {
-  "name": "a value already in the parent is not new",
+  "name": "a value on a line the change removed is not new",
   "file": "scripts/pii_scan.py",
-  "old": "        extra = new_c[k] - base_c.get(k, 0)",
-  "new": "        extra = new_c[k]",
-  "target": "tests/unit/test_pii_scan.py::test_existing_value_is_not_new_and_an_added_one_is"
+  "old": "        net = keys(scan.findings, added_p) - keys(gone)",
+  "new": "        net = keys(scan.findings, added_p)",
+  "target": "tests/unit/test_pii_scan.py::test_editing_a_line_that_already_held_a_value_is_not_new"
  },
  {
   "name": "a merge is new only against every parent",
   "file": "scripts/pii_scan.py",
-  "old": "    for s in old_scans:\n        for k, v in counts(s).items():",
-  "new": "    for s in old_scans[:1]:\n        for k, v in counts(s).items():",
+  "old": "        new_keys = net if new_keys is None else (new_keys & net)",
+  "new": "        new_keys = net if new_keys is None else (new_keys | net)",
   "target": "tests/unit/test_pii_scan.py::test_a_merge_adds_only_what_no_parent_had"
  },
  {
   "name": "a declared table is pinned to its content digest (#283 c2)",
   "file": "scripts/pii_scan.py",
-  "old": "        if grew and digest not in allow.coords_digest(path):",
-  "new": "        if grew and not allow.path_has(\"coords\", path):",
+  "old": "    if digest in allow.coords_digest(path):\n        return []",
+  "new": "    if allow.path_has(\"coords\", path):\n        return []",
   "target": "tests/unit/test_pii_scan.py::test_swapped_coordinates_fail_where_a_size_pin_would_not"
  },
  {
@@ -261,8 +261,29 @@
  {
   "name": "only the lines a change adds go to the judge",
   "file": "scripts/pii_scan.py",
-  "old": "    added = _added_line_numbers(new_lines, old_line_sets) if not binary else set()",
-  "new": "    added = set(range(1, len(new_lines) + 1)) if not binary else set()",
+  "old": "        for n in sorted(added):\n            line = normalise_line(raw_new[n - 1])",
+  "new": "        for n in range(1, len(raw_new) + 1):\n            line = normalise_line(raw_new[n - 1])",
   "target": "tests/unit/test_pii_scan.py::test_only_added_lines_go_to_the_judge"
+ },
+ {
+  "name": "a line already in the parent is not added",
+  "file": "scripts/pii_scan.py",
+  "old": "        if seen[x] > c_old[x]:\n            added.add(n)",
+  "new": "        added.add(n)",
+  "target": "tests/unit/test_pii_scan.py::test_existing_value_is_not_new_and_an_added_one_is"
+ },
+ {
+  "name": "a push range is diffed commit-first (the other order reverses every diff)",
+  "file": "scripts/pii_scan.py",
+  "old": "              input_bytes=\"\".join(f\"{c} {p}\\n\" for _, (p, c) in real).encode())",
+  "new": "              input_bytes=\"\".join(f\"{p} {c}\\n\" for _, (p, c) in real).encode())",
+  "target": "tests/infra/test_pii_hooks.py::test_add_then_rm_is_caught_by_pre_push"
+ },
+ {
+  "name": "the scanner crashing is an ERROR, not a FAIL",
+  "file": "scripts/pii_scan.py",
+  "old": "    try:\n        return main(argv)\n    except Exception as exc:  # noqa: BLE001 - the whole point is to catch everything",
+  "new": "    try:\n        return main(argv)\n    except ZeroDivisionError as exc:  # noqa: BLE001 - the whole point is to catch everything",
+  "target": "tests/unit/test_pii_scan.py::test_a_crash_is_an_error"
  }
 ]
