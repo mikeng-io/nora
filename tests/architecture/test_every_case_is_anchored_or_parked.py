@@ -223,9 +223,11 @@ def test_the_whole_corpus_is_accounted_for() -> None:
     dated meet-up case removed when design 40 was withdrawn (2026-09-26: a
     dated plan is the note tier's to hold), plus `note_candidates`' p10, the
     two-dates-in-one-batch production defect graded by `date_split`
-    (2026-09-26, design 40 §7); a change to it
+    (2026-09-26, design 40 §7), plus its p11, an update among same-day
+    sibling arrangements (2026-09-26, design 42 §10.1: the wrong-note case
+    p5/p6 could not be, their siblings being one arrangement); a change to it
     is a change to what the suite claims to measure and belongs in a commit that
     says so. Recomputed with `census()` at each merge, never summed."""
     totals = [census(n) for n in CORPORA]
-    assert sum(c.total for c in totals) == 239
-    assert sum(c.active + c.parked for c in totals) == 239
+    assert sum(c.total for c in totals) == 240
+    assert sum(c.active + c.parked for c in totals) == 240
