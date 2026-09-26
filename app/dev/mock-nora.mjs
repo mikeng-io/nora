@@ -1670,6 +1670,10 @@ get("/app/v1/events/:id", (params, sp, now) => {
   if (!personId || !ROSTER_BY_ID.has(personId)) {
     return { status: 400, body: { error: "personId required" } };
   }
+  // Like nora/web/api.py events_detail: an id that is not a UUID is a 400.
+  if (!/^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{32})$/i.test(params.id)) {
+    return { status: 400, body: { status: "refused", note: "bad id" } };
+  }
   const body = buildEventDetail(now, personId, params.id);
   if (body === null) return { status: 404, body: ERR_NOT_FOUND };
   return { status: 200, body };

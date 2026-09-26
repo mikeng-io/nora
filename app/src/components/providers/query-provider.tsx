@@ -6,6 +6,7 @@ import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client
 import { createAsyncStoragePersister } from "@tanstack/query-async-storage-persister";
 import { del, get, set } from "idb-keyval";
 import { ApiError, isNotFound, isSignedOut } from "@/lib/api/client";
+import { deviceWritesStopped, resumeDeviceWrites } from "@/lib/device-data";
 
 // Bumped when a schema changes shape, so a device never restores a cache
 // this build cannot read.
@@ -25,7 +26,10 @@ export function QueryProvider({ personId, children }: { personId: string; childr
   // Start from what the device says, so an app opened offline shows what it
   // kept instead of firing reads that can only fail.
   useState(() => {
-    if (typeof navigator !== "undefined") onlineManager.setOnline(navigator.onLine);
+    if (typeof navigator !== "undefined") {
+      onlineManager.setOnline(navigator.onLine);
+      resumeDeviceWrites();
+    }
     return null;
   });
   const [client] = useState(
@@ -56,7 +60,8 @@ export function QueryProvider({ personId, children }: { personId: string; childr
       key: cacheKey(personId),
       storage: {
         getItem: (k) => get<string>(k).then((v) => v ?? null),
-        setItem: (k, v) => set(k, v),
+        // Nothing is kept once the device is being forgotten (sign-out).
+        setItem: (k, v) => (deviceWritesStopped() ? Promise.resolve() : set(k, v)),
         removeItem: (k) => del(k),
       },
       throttleTime: 2000,

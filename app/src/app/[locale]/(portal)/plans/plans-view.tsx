@@ -94,9 +94,9 @@ export function PlansView() {
         </EmptyState>
       ) : (
         <div className="grid gap-8" key={view}>
-          {groups.map((g) => (
-            <section key={g.key} aria-labelledby={`g-${g.key}`} className="page-enter">
-              <h2 id={`g-${g.key}`} className="mb-3 text-label font-medium text-ink-muted">
+          {groups.map((g, i) => (
+            <section key={g.key} aria-labelledby={`plans-group-${i}`} className="page-enter">
+              <h2 id={`plans-group-${i}`} className="mb-3 text-label font-medium text-ink-muted">
                 {g.title}
               </h2>
               <ol className="relative grid gap-2.5">

@@ -72,12 +72,17 @@ export function useTheme() {
       // Storage can be missing (a private window); the choice still applies
       // for this page.
     }
-    // A 240ms cross-fade when the lighting changes, as on the site.
+    // A 240ms cross-fade when the lighting changes, as on the site. Readers
+    // are told only once the new lighting is on the page: the transition
+    // applies it a frame later, and a reader told earlier keeps the old one.
+    const apply = () => {
+      applyTheme(next);
+      listeners.forEach((l) => l());
+    };
     const doc = document as Document & { startViewTransition?: (cb: () => void) => unknown };
     const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (doc.startViewTransition && !reduce) doc.startViewTransition(() => applyTheme(next));
-    else applyTheme(next);
-    listeners.forEach((l) => l());
+    if (doc.startViewTransition && !reduce) doc.startViewTransition(apply);
+    else apply();
   }, []);
   return { choice, resolved, setChoice };
 }

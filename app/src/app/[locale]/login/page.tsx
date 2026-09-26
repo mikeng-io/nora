@@ -9,6 +9,7 @@ import { NoraMark, Wordmark } from "@/components/ui/avatar";
 import { discordPeople } from "@/server/allowlist";
 import { checkSession, readIdentityToml } from "@/server/session";
 import { signInAsDev, signInWithDiscord, signOutAction } from "@/server/actions";
+import { ForgetDevice } from "./forget-device";
 import { LoginControls } from "./login-controls";
 import { SubmitButton } from "./submit-button";
 
@@ -52,6 +53,7 @@ export default async function LoginPage({
 
   return (
     <div className="min-h-dvh bg-studio">
+      <ForgetDevice />
       <div className="mx-auto grid min-h-dvh w-full max-w-[1180px] grid-rows-[auto_1fr_auto] px-4 sm:px-6 lg:px-10">
         <header className="safe-top flex h-16 items-center gap-2">
           <a href={siteHome} className="flex items-center gap-2 rounded-full pr-2" aria-label={t("toSite")}>

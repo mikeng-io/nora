@@ -12,12 +12,13 @@ import { Badge, Dot } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState, UnavailableState } from "@/components/ui/states";
 import { PresenceIcon, PresenceMeta, usePresenceWords } from "@/components/presence/presence-text";
-import { useDerivedPlaces, usePresence, useRoster, useSavedPlaces } from "@/lib/queries";
+import { useDerivedPlaces, useRoster, useSavedPlaces } from "@/lib/queries";
 import type { PresenceEntry } from "@/lib/api/presence";
 import type { PersonSummary } from "@/lib/api/people";
 import { isLive, kindRank, presenceKind } from "@/lib/presence";
 import { personStyle } from "@/lib/person";
 import { cn } from "@/lib/cn";
+import { usePresenceNow } from "@/hooks/use-presence";
 
 // Everyone Nora knows (identity.toml's roster), each with where they are
 // if they share it. The viewer first, then whoever is around, then the
@@ -26,7 +27,7 @@ export function PeopleView() {
   const t = useTranslations("people");
   const viewer = useViewer();
   const roster = useRoster();
-  const presence = usePresence();
+  const presence = usePresenceNow();
 
   const people = useMemo(() => {
     const byId = new Map((presence.data ?? []).map((p) => [p.personId, p]));

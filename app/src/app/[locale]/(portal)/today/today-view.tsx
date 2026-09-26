@@ -12,6 +12,7 @@ import { NoraAvatar, PersonAvatar } from "@/components/ui/avatar";
 import { Badge, Dot } from "@/components/ui/badge";
 import { Panel, PanelHeader, Rows } from "@/components/ui/panel";
 import { Skeleton } from "@/components/ui/skeleton";
+import { RefreshNote } from "@/components/ui/refresh-note";
 import { EmptyState, UnavailableState } from "@/components/ui/states";
 import { PresenceIcon, PresenceMeta, usePresenceWords } from "@/components/presence/presence-text";
 import { PlanDate } from "@/components/plans/plan-date";
@@ -19,7 +20,6 @@ import {
   useDerivedPlaces,
   useMemory,
   usePlans,
-  usePresence,
   useRoster,
   useSavedPlaces,
   useServers,
@@ -32,6 +32,7 @@ import { upcomingPlans } from "@/lib/plans";
 import { episodeOfTheDay } from "@/lib/memory";
 import { personStyle } from "@/lib/person";
 import { cn } from "@/lib/cn";
+import { usePresenceNow } from "@/hooks/use-presence";
 import { useNow } from "@/hooks/use-now";
 
 // Today: the portal's front page, and the one new thing the first portal
@@ -130,7 +131,7 @@ function NoraStrip() {
 
 function AroundNow() {
   const t = useTranslations("today.around");
-  const presence = usePresence();
+  const presence = usePresenceNow();
   const saved = useSavedPlaces();
   const derived = useDerivedPlaces();
 
@@ -144,9 +145,12 @@ function AroundNow() {
         id="around-title"
         title={t("title")}
         description={
-          presence.data && presence.data.length > 0
-            ? t("sharing", { live: live.length, total: entries.length })
-            : undefined
+          presence.data && presence.data.length > 0 ? (
+            <span className="flex flex-wrap gap-x-2">
+              <span>{t("sharing", { live: live.length, total: entries.length })}</span>
+              <RefreshNote query={presence} />
+            </span>
+          ) : undefined
         }
         action={
           <Link

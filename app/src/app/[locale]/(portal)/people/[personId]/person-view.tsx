@@ -1,5 +1,6 @@
 "use client";
 
+import { usePresenceNow } from "@/hooks/use-presence";
 import dynamic from "next/dynamic";
 import { useMemo } from "react";
 import { useQueries } from "@tanstack/react-query";
@@ -24,7 +25,7 @@ import { PlanDate } from "@/components/plans/plan-date";
 import { isNotFound } from "@/lib/api/client";
 import { fetchPlan } from "@/lib/api/people";
 import type { PresenceEntry } from "@/lib/api/presence";
-import { qk, useDerivedPlaces, useHistory, usePerson, usePlans, usePresence, useSavedPlaces } from "@/lib/queries";
+import { qk, useDerivedPlaces, useHistory, usePerson, usePlans, useSavedPlaces } from "@/lib/queries";
 import { upcomingPlans } from "@/lib/plans";
 import { formatHours, formatTime } from "@/lib/format";
 import { hasPosition, isLive, presenceKind as presenceKindOf } from "@/lib/presence";
@@ -47,7 +48,7 @@ export function PersonView({ personId }: { personId: string }) {
   const tp = useTranslations("patterns");
   const viewer = useViewer();
   const person = usePerson(personId);
-  const presence = usePresence();
+  const presence = usePresenceNow();
   const self = personId === viewer.personId;
   const entry = presence.data?.find((p) => p.personId === personId) ?? null;
   const inCircle = entry !== null;

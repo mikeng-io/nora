@@ -3,11 +3,11 @@
 import { useTransition } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { useSearchParams } from "next/navigation";
-import { clear as clearIdb } from "idb-keyval";
 import { useQueryClient } from "@tanstack/react-query";
 import { usePathname, useRouter, type Locale } from "@/i18n/routing";
 import { signOutAction } from "@/server/actions";
 import { useTheme, type ThemeChoice } from "@/lib/theme";
+import { forgetDevice } from "@/lib/device-data";
 
 export const LANGS: Array<{ locale: Locale; short: string; name: string }> = [
   { locale: "zh-Hant", short: "繁", name: "繁體中文" },
@@ -44,13 +44,11 @@ export function useSignOut() {
   const [pending, start] = useTransition();
   const signOut = () =>
     start(async () => {
+      // Stop reads first, so nothing refetches (and gets persisted again)
+      // between clearing the cache and leaving the page.
+      await client.cancelQueries();
+      await forgetDevice();
       client.clear();
-      await clearIdb().catch(() => {});
-      if ("caches" in window) {
-        const keys = await caches.keys().catch(() => [] as string[]);
-        await Promise.all(keys.map((k) => caches.delete(k)));
-      }
-      navigator.serviceWorker?.controller?.postMessage("clear-caches");
       await signOutAction(locale);
     });
   return { signOut, pending };

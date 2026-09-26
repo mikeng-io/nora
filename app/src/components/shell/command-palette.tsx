@@ -72,11 +72,13 @@ export function CommandPaletteProvider({ children }: { children: ReactNode }) {
       if (e.key === "/") {
         e.preventDefault();
         setOpen(true);
-      } else if (e.key === "g") {
-        pendingG.current = Date.now();
       } else if (Date.now() - pendingG.current < 1200 && JUMPS[e.key]) {
+        // The second key of a jump first, so "g g" reaches Games rather than
+        // starting another jump.
         pendingG.current = 0;
         router.push(JUMPS[e.key]);
+      } else if (e.key === "g") {
+        pendingG.current = Date.now();
       }
     };
     window.addEventListener("keydown", onKey);

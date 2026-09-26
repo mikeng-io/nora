@@ -14,9 +14,13 @@ export function ServiceWorkerRegistration() {
     if (!("serviceWorker" in navigator)) return;
     if (process.env.NODE_ENV !== "production" && process.env.NEXT_PUBLIC_SW_DEV !== "1") return;
 
+    // Reload only for an update the viewer asked for. The very first install
+    // also fires controllerchange (the worker claims the page), and reloading
+    // then would interrupt a first visit, a Discord sign-in included.
+    let requested = false;
     let reloading = false;
     const onController = () => {
-      if (reloading) return;
+      if (!requested || reloading) return;
       reloading = true;
       location.reload();
     };
@@ -25,7 +29,13 @@ export function ServiceWorkerRegistration() {
     const offer = (worker: ServiceWorker) => {
       toast(t("updateReady"), {
         duration: Infinity,
-        action: { label: t("updateReload"), onClick: () => worker.postMessage("skip-waiting") },
+        action: {
+          label: t("updateReload"),
+          onClick: () => {
+            requested = true;
+            worker.postMessage("skip-waiting");
+          },
+        },
       });
     };
 

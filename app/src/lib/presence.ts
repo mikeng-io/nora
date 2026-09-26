@@ -17,11 +17,17 @@ export type PresenceKind =
 
 export const LOW_BATTERY = 20;
 
+/** A newest fix older than this has stopped meaning "now": one missed
+ * Life360 heartbeat (~30 min for a still phone). The same edge Nora herself
+ * uses, nora/agent/whereis.py STALE_AFTER_MS, measured 2026-09-24. */
+export const STALE_AFTER_SECONDS = 45 * 60;
+
 export function presenceKind(entry: Pick<PresenceEntry, "current">): PresenceKind {
   const fix = entry.current;
   if (!fix) return "none";
   switch (fix.wireState) {
     case "live":
+      if (fix.ageSeconds > STALE_AFTER_SECONDS) return "stale";
       if (fix.isDriving) return fix.ageSeconds > STALE_DRIVING_SECONDS ? "driving-stale" : "driving";
       return "live";
     case "stale":
@@ -29,6 +35,16 @@ export function presenceKind(entry: Pick<PresenceEntry, "current">): PresenceKin
     default:
       return fix.wireState;
   }
+}
+
+/** Ages each fix by the time since the read that carried it. `ageSeconds`
+ * is worked out by the server when it answers; a read shown from the
+ * device's store, or kept on screen while Nora is unreachable, is older
+ * than it says, and a "now" from an hour ago must not read as now. */
+export function agePresence<T extends PresenceEntry>(entries: T[], fetchedAt: number, now: number): T[] {
+  const extra = Math.max(0, Math.floor((now - fetchedAt) / 1000));
+  if (extra === 0) return entries;
+  return entries.map((e) => (e.current ? { ...e, current: { ...e.current, ageSeconds: e.current.ageSeconds + extra } } : e));
 }
 
 /** Current enough to put on the map as "here now" and to pulse. */

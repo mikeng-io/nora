@@ -187,9 +187,14 @@ describe("events", () => {
     expect(body).toEqual({ error: "not found" });
   });
 
-  it("GET /events/<unknown-id>?personId=miles is a 404", () => {
-    const { status } = call("/app/v1/events/not-a-real-id", { personId: "miles" });
+  it("GET /events/<unknown uuid>?personId=miles is a 404", () => {
+    const { status } = call("/app/v1/events/00000000-0000-4000-8000-000000000000", { personId: "miles" });
     expect(status).toBe(404);
+  });
+
+  it("GET /events/<not a uuid> is a 400, as the real backend answers", () => {
+    const { status } = call("/app/v1/events/not-a-real-id", { personId: "miles" });
+    expect(status).toBe(400);
   });
 });
 

@@ -7,6 +7,7 @@ import { useLocale, useTranslations } from "next-intl";
 import { ArrowLeft, ChevronRight, Expand, Minus, Plus, Route, UserRound } from "lucide-react";
 import { Link } from "@/i18n/routing";
 import { cn } from "@/lib/cn";
+import { usePresenceNow } from "@/hooks/use-presence";
 import { useIsDesktop } from "@/hooks/use-media";
 import { useRegisterTitle } from "@/components/shell/page-title";
 import { PersonAvatar } from "@/components/ui/avatar";
@@ -15,10 +16,11 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Segmented } from "@/components/ui/tabs";
 import { EmptyState, UnavailableState } from "@/components/ui/states";
 import { Ago } from "@/components/ui/ago";
+import { RefreshNote } from "@/components/ui/refresh-note";
 import { MapSheet, type Snap } from "@/components/map/map-sheet";
 import type { MapPadding, NoraMapHandle } from "@/components/map/nora-map";
 import { PresenceIcon, PresenceMeta, usePresenceWords } from "@/components/presence/presence-text";
-import { useDerivedPlaces, useHistory, usePresence, useSavedPlaces } from "@/lib/queries";
+import { useDerivedPlaces, useHistory, useSavedPlaces } from "@/lib/queries";
 import type { DerivedPlace, PresenceEntry, SavedPlace } from "@/lib/api/presence";
 import { hasPosition, haversineM, isLive, presenceKind, sortPresence } from "@/lib/presence";
 import { formatDistance, formatTime } from "@/lib/format";
@@ -55,7 +57,7 @@ function useMapParams() {
 export function MapView() {
   const t = useTranslations("map");
   const desktop = useIsDesktop();
-  const presence = usePresence();
+  const presence = usePresenceNow();
   const saved = useSavedPlaces();
   const derived = useDerivedPlaces();
   const { person: selectedId, trail, set } = useMapParams();
@@ -113,9 +115,19 @@ export function MapView() {
     ? { top: 24, bottom: 24, left: 392, right: 72 }
     : { top: 12, bottom: covered, left: 12, right: 12 };
 
-  // Frame once when the people first arrive, and when a trail loads.
-  const frameKey = presence.data ? (trailCoords.length > 1 ? `trail-${selectedId}-${trail}` : "people") : undefined;
-  const fitTo = trailCoords.length > 1 ? trailCoords : undefined;
+  // Frame everyone when the people first arrive; a chosen person on their
+  // own while their route loads; then the route, once it is theirs.
+  const selectedPoint: Array<[number, number]> | undefined = selected?.current
+    ? [[selected.current.lng, selected.current.lat]]
+    : undefined;
+  const frameKey = !presence.data
+    ? undefined
+    : trailCoords.length > 1
+      ? `trail-${selectedId}-${trail}`
+      : selected
+        ? `person-${selectedId}`
+        : "people";
+  const fitTo = trailCoords.length > 1 ? trailCoords : selected ? selectedPoint : undefined;
   const liveCount = people.filter((p) => p.live).length;
 
   const list = (
@@ -149,13 +161,19 @@ export function MapView() {
       </h1>
       <p className="text-meta text-ink-muted tnum">
         {presence.data ? t("hereNow", { count: liveCount }) : " "}
-        {presence.dataUpdatedAt ? (
+        {presence.dataUpdatedAt && !presence.isError ? (
           <>
             {" · "}
             <Ago ts={presence.dataUpdatedAt} style="narrow" />
           </>
         ) : null}
       </p>
+    </div>
+  );
+  const headerFull = (
+    <div className="grid gap-1">
+      {header}
+      <RefreshNote query={presence} />
     </div>
   );
 
@@ -189,7 +207,7 @@ export function MapView() {
           aria-label={t("panelLabel")}
           className="absolute top-4 bottom-4 left-4 z-20 flex w-[360px] flex-col overflow-hidden rounded-sheet border border-hairline bg-surface/95 shadow-float backdrop-blur-xl"
         >
-          <div className="shrink-0 border-b border-hairline px-5 pt-5 pb-4">{header}</div>
+          <div className="shrink-0 border-b border-hairline px-5 pt-5 pb-4">{headerFull}</div>
           <div className="scroll-thin min-h-0 flex-1 overflow-y-auto">
             <div key={selected?.personId ?? "list"} className="page-enter">
               {detail ?? list}
@@ -204,7 +222,7 @@ export function MapView() {
           expandLabel={t("expand")}
           collapseLabel={t("collapse")}
           onCovered={setCovered}
-          header={header}
+          header={headerFull}
         >
           <div key={selected?.personId ?? "list"} className="animate-fade">
             {detail ?? list}

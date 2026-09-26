@@ -25,7 +25,8 @@
     "copied": "Copied",
     "shared": "Shared",
     "showTable": "Show as a table",
-    "hideTable": "Hide the table"
+    "hideTable": "Hide the table",
+    "asOf": "Couldn't refresh. As of {time}."
   },
   "nav": {
     "home": "Nora, today",
@@ -363,7 +364,8 @@
       "filtered": "Showing",
       "tripList": "Trips",
       "showingCorridor": "On the chosen regular route only.",
-      "unmatched": "One-off"
+      "unmatched": "One-off",
+      "pathTooOld": "too far back to draw: only the most recent positions are kept"
     }
   },
   "memory": {
@@ -686,6 +688,8 @@
     "equipment": "Equipment",
     "durability": "Durability",
     "noWorldViewTitle": "No view of this world yet",
-    "noWorldView": "The server saves its world, but the portal doesn't know how to read this game's save yet."
+    "noWorldView": "The server saves its world, but the portal doesn't know how to read this game's save yet.",
+    "sparkNobody": "Nobody on in the last 24 hours",
+    "statusUnavailable": "Couldn't check this one just now."
   }
 }

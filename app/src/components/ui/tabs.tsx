@@ -1,7 +1,7 @@
 "use client";
 
 import * as RadixTabs from "@radix-ui/react-tabs";
-import { useCallback, type ReactNode } from "react";
+import { useCallback, useRef, type ReactNode } from "react";
 import { useSearchParams } from "next/navigation";
 import { cn } from "@/lib/cn";
 
@@ -91,8 +91,16 @@ export function Segmented<T extends string | number>({
   className?: string;
   size?: "sm" | "md";
 }) {
+  const group = useRef<HTMLDivElement>(null);
+  // Arrow keys choose and move focus together (the radio-group pattern);
+  // focus left on the old choice would leave the next Tab starting there.
+  const choose = (index: number) => {
+    onChange(options[index].value);
+    group.current?.querySelectorAll<HTMLButtonElement>('[role="radio"]')[index]?.focus();
+  };
   return (
     <div
+      ref={group}
       role="radiogroup"
       aria-label={label}
       className={cn("inline-flex max-w-full shrink-0 rounded-full bg-hoodie p-[3px]", className)}
@@ -100,10 +108,10 @@ export function Segmented<T extends string | number>({
         const i = options.findIndex((o) => o.value === value);
         if (e.key === "ArrowRight" || e.key === "ArrowDown") {
           e.preventDefault();
-          onChange(options[(i + 1) % options.length].value);
+          choose((i + 1) % options.length);
         } else if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
           e.preventDefault();
-          onChange(options[(i - 1 + options.length) % options.length].value);
+          choose((i - 1 + options.length) % options.length);
         }
       }}
     >

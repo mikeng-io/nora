@@ -1,6 +1,6 @@
 "use client";
 
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import * as games from "./api/games";
 import * as nora from "./api/nora";
 import * as people from "./api/people";
@@ -13,6 +13,16 @@ import * as presence from "./api/presence";
 // shows what it last knew, with that time on it.
 const S = 1000;
 const M = 60 * S;
+
+/** Keep showing the last answer while a new one loads, but only for the
+ * same subject (another window or page of it): never one person's route or
+ * week drawn under another person's name while theirs arrives, never one
+ * server's players under another's. `at` is the key position naming the
+ * subject; every subject-keyed read below puts it at 1. */
+export function keepFor(subject: string, at = 1) {
+  return <T,>(previous: T | undefined, previousQuery?: { queryKey: readonly unknown[] }): T | undefined =>
+    previousQuery?.queryKey[at] === subject ? previous : undefined;
+}
 
 export const qk = {
   status: ["status"] as const,
@@ -139,7 +149,7 @@ export const useHistory = (id: string | null, hours: number) =>
     enabled: Boolean(id),
     // A short window follows someone who is moving; a long one barely changes.
     refetchInterval: hours <= 6 ? 20 * S : 2 * M,
-    placeholderData: keepPreviousData,
+    placeholderData: keepFor(id ?? ""),
   });
 
 export const useDerivedPlaces = () =>
@@ -154,7 +164,7 @@ export const useRhythm = (id: string, days: number) =>
     queryKey: qk.rhythm(id, days),
     queryFn: ({ signal }) => presence.fetchRhythm(id, days, signal),
     staleTime: 10 * M,
-    placeholderData: keepPreviousData,
+    placeholderData: keepFor(id),
   });
 
 export const useRoutes = (id: string, days: number) =>
@@ -162,7 +172,7 @@ export const useRoutes = (id: string, days: number) =>
     queryKey: qk.routes(id, days),
     queryFn: ({ signal }) => presence.fetchRoutes(id, days, signal),
     staleTime: 10 * M,
-    placeholderData: keepPreviousData,
+    placeholderData: keepFor(id),
   });
 
 // ----------------------------------------------------------------- games
@@ -186,7 +196,7 @@ export const useServerGraph = (id: string, hours: number, enabled = true) =>
     queryKey: qk.graph(id, hours),
     queryFn: ({ signal }) => games.fetchServerGraph(id, hours, signal),
     refetchInterval: 2 * M,
-    placeholderData: keepPreviousData,
+    placeholderData: keepFor(id),
     enabled,
   });
 
@@ -218,7 +228,7 @@ export const useSaveHistory = (id: string, hours: number, enabled = true) =>
     queryKey: qk.saveHistory(id, hours),
     queryFn: ({ signal }) => games.fetchServerSaveHistory(id, hours, signal),
     staleTime: 5 * M,
-    placeholderData: keepPreviousData,
+    placeholderData: keepFor(id),
     enabled,
   });
 
@@ -227,7 +237,7 @@ export const useInsights = (id: string, days: number) =>
     queryKey: qk.insights(id, days),
     queryFn: ({ signal }) => games.fetchServerInsights(id, days, signal),
     staleTime: 5 * M,
-    placeholderData: keepPreviousData,
+    placeholderData: keepFor(id),
   });
 
 export const usePlayers = (id: string, page: number, online?: boolean) =>
@@ -235,7 +245,7 @@ export const usePlayers = (id: string, page: number, online?: boolean) =>
     queryKey: qk.players(id, page, online),
     queryFn: ({ signal }) => games.fetchServerPlayers(id, { page, pageSize: 24, online }, signal),
     refetchInterval: 30 * S,
-    placeholderData: keepPreviousData,
+    placeholderData: keepFor(id),
   });
 
 export const usePlayer = (id: string, key: string) =>
@@ -250,7 +260,7 @@ export const useActivity = (id: string, page: number) =>
     queryKey: qk.activity(id, page),
     queryFn: ({ signal }) => games.fetchServerActivity(id, { page, pageSize: 30 }, signal),
     refetchInterval: page === 1 ? 30 * S : false,
-    placeholderData: keepPreviousData,
+    placeholderData: keepFor(id),
   });
 
 export const useSessions = (id: string, page: number, playerKey?: string) =>
@@ -259,5 +269,5 @@ export const useSessions = (id: string, page: number, playerKey?: string) =>
     queryFn: ({ signal }) =>
       games.fetchServerSessions(id, { page, pageSize: 20, playerKey }, signal),
     staleTime: 30 * S,
-    placeholderData: keepPreviousData,
+    placeholderData: keepFor(id),
   });

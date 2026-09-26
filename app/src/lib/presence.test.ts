@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Fix } from "./api/presence";
-import { haversineM, namePlace, presenceKind, sortPresence } from "./presence";
+import { agePresence, haversineM, namePlace, presenceKind, sortPresence, STALE_AFTER_SECONDS } from "./presence";
 
 const fix = (over: Partial<Fix>): Fix => ({
   lat: 22.3,
@@ -22,6 +22,22 @@ describe("presenceKind", () => {
     expect(presenceKind({ current: fix({ wireState: "unavailable" }) })).toBe("unavailable");
     expect(presenceKind({ current: null })).toBe("none");
     expect(presenceKind({ current: fix({ wireState: "sharing_off" }) })).toBe("sharing_off");
+  });
+});
+
+describe("ageing", () => {
+  it("stops calling a live fix live past Nora's own 45-minute edge", () => {
+    expect(presenceKind({ current: fix({ ageSeconds: 30 * 60 }) })).toBe("live");
+    expect(presenceKind({ current: fix({ ageSeconds: STALE_AFTER_SECONDS + 1 }) })).toBe("stale");
+  });
+
+  it("adds the time since the read, so a stored 'now' is not shown as now", () => {
+    const entries = [{ personId: "a", displayName: "A", current: fix({ ageSeconds: 5 }) }];
+    const fetchedAt = 1_000_000;
+    const aged = agePresence(entries, fetchedAt, fetchedAt + 2 * 3600_000);
+    expect(aged[0].current!.ageSeconds).toBe(5 + 7200);
+    expect(presenceKind(aged[0])).toBe("stale");
+    expect(agePresence(entries, fetchedAt, fetchedAt)).toBe(entries);
   });
 });
 

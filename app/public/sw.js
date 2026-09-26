@@ -25,9 +25,20 @@
  * reload (src/components/providers/sw-register.tsx), which posts
  * "skip-waiting". Activation then deletes every cache of an older VERSION.
  * TILES_VERSION is separate so an app update keeps the map tiles.
+ *
+ * No navigation preload, on purpose. With preload on, every navigation
+ * this worker lets pass (the /api/auth/callback/discord redirect among
+ * them) reaches the server twice: the preload, then the browser's own
+ * request when no response is given. Discord's one-time code does not
+ * survive a second use, so sign-in would fail at random.
+ *
+ * Whose pages: a stored page carries the person it was rendered for. The
+ * login page wipes every cache (src/app/[locale]/login/forget-device.tsx),
+ * and every path to a new session passes through it, so nobody signs in
+ * on a device and is handed the last person's pages.
  */
 
-const VERSION = "v2-2026-09-27";
+const VERSION = "v2-2026-09-27b";
 const TILES_VERSION = "t1";
 
 const PAGES = `nora-pages-${VERSION}`;
@@ -63,7 +74,9 @@ self.addEventListener("activate", (event) => {
     (async () => {
       const keys = await caches.keys();
       await Promise.all(keys.filter((k) => k.startsWith("nora-") && !OWNED.includes(k)).map((k) => caches.delete(k)));
-      if (self.registration.navigationPreload) await self.registration.navigationPreload.enable();
+      // Off, and turned off if an earlier build ever turned it on (the header
+      // says why): the setting outlives the worker that set it.
+      if (self.registration.navigationPreload) await self.registration.navigationPreload.disable();
       await self.clients.claim();
     })(),
   );
@@ -145,8 +158,7 @@ async function navigate(event, url) {
   const { request } = event;
   const cache = await caches.open(PAGES);
   const network = (async () => {
-    const preloaded = await event.preloadResponse;
-    const response = preloaded || (await fetch(request));
+    const response = await fetch(request);
     if (keepable(response) && !isLogin(url.pathname)) {
       await cache.put(request, response.clone());
       trim(PAGES);

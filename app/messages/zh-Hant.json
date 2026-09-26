@@ -25,7 +25,8 @@
     "copied": "複製咗",
     "shared": "分享咗",
     "showTable": "用表格顯示",
-    "hideTable": "收埋表格"
+    "hideTable": "收埋表格",
+    "asOf": "更新唔到。資料截至 {time}。"
   },
   "nav": {
     "home": "Nora，今日",
@@ -363,7 +364,8 @@
       "filtered": "顯示緊",
       "tripList": "行程",
       "showingCorridor": "淨係顯示所揀嘅常行路線。",
-      "unmatched": "一次性"
+      "unmatched": "一次性",
+      "pathTooOld": "太耐之前，畫唔到：淨係保留最近嘅位置"
     }
   },
   "memory": {
@@ -686,6 +688,8 @@
     "equipment": "裝備",
     "durability": "耐用度",
     "noWorldViewTitle": "未有呢個世界嘅畫面",
-    "noWorldView": "伺服器有儲存個世界，不過入口仲未識讀呢隻遊戲嘅存檔。"
+    "noWorldView": "伺服器有儲存個世界，不過入口仲未識讀呢隻遊戲嘅存檔。",
+    "sparkNobody": "過去 24 小時冇人上過",
+    "statusUnavailable": "啱啱查唔到呢個。"
   }
 }

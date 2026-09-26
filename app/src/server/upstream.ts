@@ -20,7 +20,15 @@ export interface RouteSpec {
   pattern: string[];
   query?: string[];
   scope?: "self";
+  /** A stricter shape for a named segment. A segment that fails it is a 404
+   * here, the same answer the upstream gives for an id that exists and is
+   * not the viewer's, rather than the upstream's 400. */
+  params?: Record<string, RegExp>;
 }
+
+// An event id is a UUID (nora/web/api.py events_detail parses it with
+// Python's UUID and answers 400 otherwise); anything else cannot be a plan.
+const UUID = /^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|[0-9a-fA-F]{32})$/;
 
 export const ROUTES: RouteSpec[] = [
   { pattern: ["status"] },
@@ -31,7 +39,7 @@ export const ROUTES: RouteSpec[] = [
   { pattern: ["persons"] },
   { pattern: ["persons", ":personId"] },
   { pattern: ["events"], scope: "self" },
-  { pattern: ["events", ":id"], scope: "self" },
+  { pattern: ["events", ":id"], scope: "self", params: { id: UUID } },
   { pattern: ["presence"] },
   { pattern: ["presence", "places"] },
   { pattern: ["presence", "analytics", "places"] },
@@ -60,7 +68,8 @@ function matches(spec: RouteSpec, segments: string[]): boolean {
   return spec.pattern.every((p, i) => {
     const seg = segments[i];
     if (!p.startsWith(":")) return p === seg;
-    return ID_SEGMENT.test(seg) && !/^\.+$/.test(seg);
+    const strict = spec.params?.[p.slice(1)];
+    return ID_SEGMENT.test(seg) && !/^\.+$/.test(seg) && (!strict || strict.test(seg));
   });
 }
 

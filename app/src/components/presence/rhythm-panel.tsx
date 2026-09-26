@@ -47,10 +47,20 @@ export function RhythmPanel({ subjectId, name }: { subjectId: string; name: stri
   const fmt = (v: number) => (metric === "dwell" ? formatHours(v, locale) : t("rhythm.stays", { count: v }));
   const peak = cells.reduce<(typeof cells)[number] | null>((a, c) => (!a || c.value > a.value ? c : a), null);
   const nowParts = now ? zonedParts(now) : null;
-  const nowCell = nowParts ? cells.find((c) => c.day === nowParts.weekday && c.hour === nowParts.hour) : null;
+  // An hour with no stays has no bin at all, and that is the "rare" answer,
+  // not a missing one.
+  const nowValue = nowParts
+    ? (cells.find((c) => c.day === nowParts.weekday && c.hour === nowParts.hour)?.value ?? 0)
+    : null;
   const total = cells.reduce((s, c) => s + c.value, 0);
   const typicalNow =
-    nowCell && peak && peak.value > 0 ? (nowCell.value / peak.value >= 0.5 ? "usual" : nowCell.value > 0 ? "sometimes" : "rare") : null;
+    nowValue !== null && peak && peak.value > 0
+      ? nowValue / peak.value >= 0.5
+        ? "usual"
+        : nowValue > 0
+          ? "sometimes"
+          : "rare"
+      : null;
 
   return (
     <Panel>

@@ -148,8 +148,13 @@ export function TimeChart({
           ) : null}
         </g>
       </svg>
+      {/* What the crosshair shows, read out as it moves by keyboard. */}
+      <span className="sr-only" aria-live="polite">
+        {hp ? `${formatTime(hp.t)}: ${formatValue(hp.v)}` : ""}
+      </span>
       {hp ? (
         <div
+          aria-hidden="true"
           className="pointer-events-none absolute top-0 z-10 rounded-control border border-hairline bg-surface px-2.5 py-1.5 shadow-float"
           style={{
             left: Math.min(Math.max(pad.left + x(hp.t) - 60, 0), Math.max(0, width - 124)),

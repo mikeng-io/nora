@@ -17,9 +17,17 @@ describe("resolveUpstream", () => {
   });
 
   it("scopes memory and events to the session's person, ignoring the browser's", () => {
+    const id = "9c48dbf1-7c25-4467-84b3-ac9d8d61a584";
     expect(ok(["memory"], "personId=ken")).toBe("/app/v1/memory?personId=miles");
     expect(ok(["events"], "personId=ken", "jo")).toBe("/app/v1/events?personId=jo");
-    expect(ok(["events", "e1"], "personId=ken", "jo")).toBe("/app/v1/events/e1?personId=jo");
+    expect(ok(["events", id], "personId=ken", "jo")).toBe(`/app/v1/events/${id}?personId=jo`);
+  });
+
+  it("answers a plan id that cannot be one as not found, before asking Nora", () => {
+    // Nora answers a non-UUID id with 400, which the portal would show as
+    // "couldn't check"; there is nothing to check.
+    expect(resolveUpstream(["events", "not-a-real-plan"], q(), "miles")).toEqual({ ok: false, status: 404 });
+    expect(resolveUpstream(["events", "9c48dbf17c25446784b3ac9d8d61a584"], q(), "miles").ok).toBe(true);
   });
 
   it("forwards only the query parameters a route names", () => {

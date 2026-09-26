@@ -81,6 +81,14 @@ export function RoutesPanel({ subjectId, name }: { subjectId: string; name: stri
     [trip, history.data],
   );
 
+  // The history read returns at most the newest 5,000 positions and 30 days
+  // (nora/web/presence.py); a trip older than the oldest one returned cannot
+  // be drawn, which is not the same as nothing having been recorded.
+  const oldestKept = history.data?.points[0]?.ts;
+  const pathBeyondHistory = Boolean(
+    trip && ((oldestKept !== undefined && oldestKept > trip.endedTs) || hoursBack >= 720),
+  );
+
   const all = routes.data?.trips ?? [];
   const totalDistance = all.reduce((s, tr) => s + tr.distanceM, 0);
   const linked = all.filter((tr) => tr.corridorId !== null).length;
@@ -183,7 +191,9 @@ export function RoutesPanel({ subjectId, name }: { subjectId: string; name: stri
                   {formatDistance(trip.distanceM, locale)} · {formatDuration(trip.endedTs - trip.startedTs, locale)} ·{" "}
                   {formatNumber(trip.avgSpeedKmh, locale)} km/h
                   {history.isFetching && tripPath.length < 2 ? ` · ${t("routes.loadingPath")}` : ""}
-                  {!history.isFetching && tripPath.length < 2 ? ` · ${t("routes.noPath")}` : ""}
+                  {!history.isFetching && tripPath.length < 2
+                    ? ` · ${t(pathBeyondHistory ? "routes.pathTooOld" : "routes.noPath")}`
+                    : ""}
                 </p>
               </div>
             ) : null}

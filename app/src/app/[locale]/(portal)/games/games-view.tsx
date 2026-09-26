@@ -77,7 +77,9 @@ function ServerCard({ server: s }: { server: Server }) {
   const count = s.current?.playerCount ?? 0;
 
   const spark = graph.data?.data ?? [];
-  const max = Math.max(1, ...spark.map((p) => p.playerMax));
+  const peak = Math.max(0, ...spark.map((p) => p.playerMax));
+  // The line's scale only: a day with nobody on draws flat, and says so.
+  const max = Math.max(1, peak);
 
   return (
     <li>
@@ -120,7 +122,9 @@ function ServerCard({ server: s }: { server: Server }) {
                     strokeLinejoin="round"
                   />
                 </svg>
-                <span className="text-label text-ink-muted">{t("sparkLabel", { peak: formatNumber(max, locale) })}</span>
+                <span className="text-label text-ink-muted">
+                  {peak > 0 ? t("sparkLabel", { peak: formatNumber(peak, locale) }) : t("sparkNobody")}
+                </span>
               </span>
             ) : null}
           </span>
@@ -135,6 +139,8 @@ function ServerCard({ server: s }: { server: Server }) {
               <span className="text-ink-muted">{t("totalPlaytime", { time: formatDuration(local.totalPlaytimeSeconds * 1000, locale) })}</span>
             ) : null}
           </span>
+        ) : status.isError ? (
+          <span className="text-meta text-ink-muted">{t("statusUnavailable")}</span>
         ) : (
           <Skeleton className="h-10" />
         )}
