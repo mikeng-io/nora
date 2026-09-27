@@ -1360,6 +1360,18 @@ class AnalyticsConfig(BaseModel):
     min_nights: int = Field(default=3, ge=1)
     min_weekdays: int = Field(default=3, ge=1)
     label_freshness_days: int = Field(default=45, ge=1)
+    # DEC-190 (design/27 §3.7): how close a Life360 saved place must be to
+    # claim a stay or a cluster. Its own knob, never `cluster_eps_m` —
+    # measured match band 7.0-49.3 m, nearest non-match 636 m, so safe in
+    # 100-500 m and unsafe at 50 (hence the floor).
+    place_match_radius_m: float = Field(default=150.0, ge=100.0, le=500.0)
+    # How far a non-driving fix may sit from an established stay's centre and
+    # still extend it (time only, never position) — `segment_stays`. Measured
+    # 2026-09-28: one real stop's resting fixes spread to 388 m; over 15 days
+    # of 8 subjects, 400 took phantom trips 40 -> 24 and same-place split
+    # stays 100 -> 75 against no wander, and 600 moved neither beyond noise
+    # (scripts/replay_presence_corpus.py).
+    stay_wander_radius_m: float = Field(default=400.0, gt=0)
     # Tier 3 (design/27 §4, issue #6, DEC-119): robust_z_score's own
     # fail-closed floor — fewer than this many prior stays at a place and
     # no anomaly claim is made, ever (nora.domain.mobility.robust_z_score's

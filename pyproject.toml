@@ -218,7 +218,7 @@ type = "forbidden"
 # `nora.analytics -> nora.config -> nora.agent.tools -> ... -> nora.doctrine.loader`
 # even though nora.analytics never writes that import itself. This contract is
 # only about nora.analytics's/nora.domain.mobility's own direct imports.
-source_modules = ["nora.analytics", "nora.domain.mobility"]
+source_modules = ["nora.analytics", "nora.domain.mobility", "nora.domain.mobility_forecast"]
 forbidden_modules = [
     "nora.agent", "nora.app", "nora.platform", "nora.tag",
     "nora.doctrine", "nora.ingest", "nora.engagement", "nora.skills",

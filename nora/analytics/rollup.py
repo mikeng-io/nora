@@ -17,6 +17,7 @@ since `last_cluster_id` (the dirty-set marker, the expensive speed).
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 from dataclasses import dataclass
 from datetime import datetime
@@ -27,24 +28,26 @@ from zoneinfo import ZoneInfo
 from nora.domain.mobility import (
     CHUNK_GAP_MS,
     DWELL_CAP_MS,
-    LabelResult,
+    DerivedPlace,
+    PlannedPlace,
     RawFix,
     Stay,
+    TaggedPlace,
     Trip,
     circular_mean_minute,
-    cluster_places,
     cluster_trips,
+    collapse_duplicate_fixes,
     extract_trips,
     hour_of_week,
     hour_of_week_bins,
     label_place,
     mode_address,
-    robust_z_score,
+    plan_places,
     segment_stays,
     trailing_fix_is_settled,
 )
+from nora.domain.mobility_forecast import detect_stay_anomalies
 from nora.domain.ports import GeocodeCacheStore
-from nora.domain.presence import haversine_distance_m
 
 log = logging.getLogger("nora.analytics.rollup")
 
@@ -57,9 +60,6 @@ class MobilityStore(Protocol):
     ) -> list[RawFix]: ...
     async def write_stays(self, stays: list[Stay]) -> None: ...
     async def stays_for_subject(self, *, subject_id: str) -> list[Stay]: ...
-    async def set_place_ids(
-        self, *, subject_id: str, started_ts_in: list[int], place_id: int
-    ) -> None: ...
     async def write_trips(self, trips: list[Trip]) -> None: ...
     async def trips_for_subject(self, *, subject_id: str) -> list[Trip]: ...
     async def unclustered_named_trips_for_subject(
@@ -82,22 +82,23 @@ class MobilityStore(Protocol):
         self, *, subject_id: str, corridor_id: int, hour_of_week: int,
         p50_kmh: float, p90_kmh: float, sample_count: int, now_ms: int,
     ) -> None: ...
-    async def existing_place(
-        self, *, subject_id: str, kind: str
-    ) -> tuple[int, float, float, float, LabelResult, str | None] | None: ...
-    async def upsert_place(
-        self, *, subject_id: str, circle_id: str, kind: str, lat: float,
-        lng: float, radius_m: float, result: LabelResult, now_ms: int,
-        label: str | None = None,
+    async def places_for_subject(self, *, subject_id: str) -> list[DerivedPlace]: ...
+    async def save_place(
+        self, *, subject_id: str, circle_id: str, place_id: int | None,
+        lat: float, lng: float, radius_m: float,
+        kind: str, confidence: float, label: str | None,
+        saved_place_id: str | None, first_seen_ts: int, last_seen_ts: int,
+    ) -> int: ...
+    async def delete_places(self, *, subject_id: str, place_ids: list[int]) -> None: ...
+    async def relink_stays(
+        self, *, subject_id: str, links: dict[int, int | None],
     ) -> None: ...
+    async def tagged_places(self) -> list[TaggedPlace]: ...
     async def advance_fix_watermark(self, *, subject_id: str, fix_id: int) -> None: ...
     async def advance_cluster_watermark(self, *, subject_id: str, fix_id: int) -> None: ...
-    async def record_occupancy(
+    async def replace_occupancy(
         self, *, subject_id: str, place_id: int, bins: dict[int, int], now_ms: int
     ) -> None: ...
-    async def stay_durations_for_place(
-        self, *, subject_id: str, place_id: int
-    ) -> list[int]: ...
     async def upsert_rhythm(
         self, *, subject_id: str, place_id: int, mean_arrival_minute: float,
         mean_departure_minute: float, duration_median_ms: int,
@@ -130,6 +131,16 @@ class RollupConfig:
     corridor_cluster_batch_limit: int = 500
     min_trip_fixes: int = 2
     max_trip_duration_seconds: float = 10800.0
+    # DEC-190's match radius (design/27 §3.7): a tagged place claims a stay
+    # or a cluster this close. Its OWN constant, never `cluster_eps_m` —
+    # measured match band 7.0-49.3 m against a nearest non-match at 636 m, so
+    # safe anywhere in 100-500 m and unsafe at 50.
+    place_match_radius_m: float = 150.0
+    # How far a NON-driving fix may sit from a stay's centre and still be
+    # part of it (time only, never position) — `segment_stays`' docstring.
+    # Measured 2026-09-28: one real two-hour stop's resting fixes spread to
+    # 388 m; 400 sits just above. `None` disables it.
+    stay_wander_radius_m: float | None = 400.0
 
 
 class MobilityRollup:
@@ -203,345 +214,42 @@ class MobilityRollup:
             # settlement mechanism below to its `settled_seconds` fallback —
             # a wiring gap that no test in `tests/unit/test_mobility.py`
             # could see, because those call `extract_trips` directly.
-            raw = [
-                RawFix(
-                    id=f.id, ts=f.ts, lat=f.lat, lng=f.lng, address=f.address,
-                    is_driving=f.is_driving,
+            # THE BATCH-STALL FIX (audit 2026-09-27). A hold (an undecided
+            # trip, or an open stay) that starts at the FIRST fix of a batch
+            # leaves the watermark exactly where it was — and when the batch
+            # was cut at `batch_limit`, the next tick reads the SAME fixes and
+            # decides the same way, forever. 400 fixes at the 5 s moving
+            # cadence is a 33-minute drive: any longer drive froze the
+            # subject's derivation until `backfill_threshold` (4,000) fixes of
+            # backlog had piled up, which at resting cadence is a day or
+            # more, and every stay and trip after the drive — an evening out,
+            # dinner, the way home — was simply not derived in the meantime.
+            # Reproduced tick by tick in `tests/unit/test_analytics_rollup.py::
+            # test_a_drive_longer_than_one_batch_does_not_freeze_the_evening`.
+            # The fix widens THIS cycle's batch (the probe already read up to
+            # `backfill_batch_limit` fixes) until the hold resolves or the
+            # probe is exhausted; nothing is written until the batch is final.
+            limit = len(fixes)
+            max_limit = min(len(lag_probe), self._cfg.backfill_batch_limit)
+            while True:
+                fixes = lag_probe[:limit]
+                new_stays, new_trips, trip_hold_id, stay_hold_id = self._segment_batch(
+                    fixes, subject_id=subject_id, person_ids=person_ids,
+                    circle_id=circle_id, now_ms=now_ms,
                 )
-                for f in fixes
-            ]
-            min_dwell_ms = int(self._cfg.stay_min_dwell_seconds * 1000)
-            # `segment_stays` is purely spatial (its own docstring): fixes at
-            # (near-)identical coordinates never break its radius test, no
-            # matter how large the time gap between them — so a subject who
-            # returns to the same place night after night would otherwise
-            # merge every visit into ONE pathologically long "stay" spanning
-            # the away-time between them too. That merged stay's
-            # `ended_ts - started_ts` (its recorded dwell, per `Stay`'s own
-            # invariant) then includes all that dead time, which dilutes
-            # `label_place`'s TIME-WEIGHTED night/work share below any
-            # threshold — a subject who is unambiguously home every night
-            # would never label as `home`. Splitting the batch first,
-            # wherever the gap between two consecutive fixes exceeds
-            # `DWELL_CAP_MS` (the same still-ceiling `dwell_ms` itself caps
-            # against), and segmenting each chunk independently, is what
-            # turns a genuine day-to-day return into the SEPARATE stays
-            # `label_place` and `cluster_places` are both written and tested
-            # against (see `tests/unit/test_mobility.py`'s label/cluster
-            # fixtures, which construct discrete per-day `Stay` objects
-            # directly rather than deriving them from a raw fix stream).
-            # The lowest fix id `extract_trips` refused to finalize this
-            # cycle — the watermark stops one short of it below so the
-            # undecided group is re-read whole next cycle instead of being
-            # consumed as a fragment.
-            trip_hold_id: int | None = None
-            chunks = _chunk_by_gap(raw, CHUNK_GAP_MS)
-            last_open_stay: Stay | None = None
-            for i, chunk in enumerate(chunks):
-                seg = segment_stays(
-                    chunk, subject_id=subject_id,
-                    person_id=person_ids[-1],  # most-recently-supplied id, for provenance
-                    circle_id=circle_id,
-                    radius_m=self._cfg.stay_radius_m,
-                    min_dwell_ms=min_dwell_ms,
-                )
-                new_stays.extend(seg.closed)
-                # Tier 5 (design/27 §4): the SAME chunks the stay
-                # segmentation just walked — trips are the complement of
-                # stays over one identical partition of the batch, so
-                # re-chunking here could only produce a different answer,
-                # never a better one.
-                chunk_closed = list(seg.closed)
-                open_started: int | None = None
-                is_final_chunk = i == len(chunks) - 1
-                # THE trip-settlement fix (2026-08-20 design §2.2/§2.3).
-                #
-                # `segment_stays` ALWAYS returns a trailing `open_stay` for a
-                # non-empty window — read its own final paragraph: whatever
-                # remains in `group` is the open stay, unconditionally, even
-                # when that "group" is one fix taken at 90 km/h. So the
-                # branch below used to fire on EVERY final chunk, handing
-                # `extract_trips` a cut point that, mid-drive, sits at the
-                # newest fix. Every tick therefore flushed "everything except
-                # the newest fix" as a finished trip, and a continuous drive
-                # came out as one trip per tick — the live fragmentation the
-                # design's §0 evidence is made of. Task 2's settlement check
-                # is gated on `open_stay_started_ts is None`, so without this
-                # guard it could never have fired from here at all.
-                #
-                # The discriminator is `trailing_fix_is_settled` — the SAME
-                # predicate, on the SAME fix (`chunk[-1]` is `extract_trips`'
-                # own `buffer[-1]` for the final chunk), that `extract_trips`
-                # uses to decide whether to finalize. Sharing it is not
-                # tidiness: if these two ever disagreed, the same fixes would
-                # be held back as candidate TRIP fixes here and written as a
-                # STAY below, landing in both tables.
-                #
-                # Unsettled means there is no stay-in-progress to cut at and
-                # the trailing group's fate is genuinely undetermined — which
-                # is precisely the state `open_stay_started_ts=None` means.
-                # `last_open_stay` is deliberately left unset in that case
-                # too, for the same reason: a group being held back must not
-                # also be closable as a stay by the `settled_seconds` block
-                # below (`test_a_gridlocked_drive_writes_one_stay_once`).
-                #
-                # All three readings matter, and `None` is NOT a synonym for
-                # `False` here. `True` (still driving) never settles. `False`
-                # is a real arrival — the parked tail IS a stay-in-progress,
-                # and calling it movement would swallow every stay this
-                # substrate exists to find
-                # (`test_a_parked_tail_with_is_driving_false_is_still_an_
-                # open_stay`). `None` is no reading at all — the real state
-                # of every historical fix and anything Life360 omits the flag
-                # on — and falls back to `settled_seconds`, the same
-                # quiet-boundary clock Tier 1 already uses for a stay's
-                # arrival (design §2, bullet 2). Treating `None` as settled
-                # left the original fragmentation bug fully intact for
-                # exactly the fixes that have no signal to fix it with.
-                tail_settled = trailing_fix_is_settled(
-                    chunk[-1], now_ms=now_ms,
-                    settled_seconds=self._cfg.settled_seconds,
-                )
-                # `tail_dwelled` is the SECOND gate. The clock alone is not
-                # enough: at a RESTING cadence (Life360 emits every ~10 min
-                # when still) the trailing fix is never older than
-                # `settled_seconds`, so a subject sitting at home all day
-                # would have their whole day held back as "undecided
-                # movement" — and when it finally flushed, their stationary
-                # fixes came out as 0 km/h, 0 m trips instead of a stay.
-                # Measured on
-                # `test_a_repeating_commute_actually_grows_corridors_over_
-                # days`: 41 such phantom trips, and 7 stays where the fixture
-                # documents zero.
-                #
-                # The discriminator is the trailing group's own DWELL. A
-                # resting tail is one spatially-coherent group whose span
-                # passes `min_dwell_ms` — the same bar `_close` uses to call
-                # something a stay. A driving tail is a fix that just broke
-                # the radius, so its group's span is ~0. So: no signal, but
-                # the tail has already dwelled like a stay -> treat it as the
-                # stay-in-progress it looks like.
-                #
-                # Originally this gate applied ONLY to `is_driving is None`
-                # — "when Life360 actually says `is_driving`, that reading
-                # wins over the spatial proxy" (gridlock is a real drive
-                # whose tail looks spatially like a stay). Production
-                # evidence (issue #80) overturned that: Life360's flag is
-                # NOISY AT REST — people sitting at home produce
-                # `is_driving=True` fixes (66-100 such fixes per person at
-                # their home coordinates, verified 2026-08-29). With the
-                # flag winning over the spatial proxy, a genuine home stay
-                # whose tail fix happens to read `is_driving=True` is never
-                # settled, never closed, and its fixes are watermark-consumed
-                # forever — stays generation halted for 10 days after the
-                # 2026-08-20 trip-settlement fix wired the flag through.
-                # The spatial proxy is now the discriminator for `True` too:
-                # a tail that has already dwelled past `min_dwell_ms` is the
-                # stay-in-progress it looks like, whatever the flag says.
-                # The gridlock false-positive this admits (a real drive
-                # stuck in traffic whose tail dwells past the bar) is the
-                # accepted trade — it writes ONE stay, once, and the
-                # watermark advances past it; the flag-noise false-negative
-                # it fixes loses every stay a subject actually had.
-                tail_dwelled = (
-                    seg.open_stay is not None
-                    and seg.open_stay.ended_ts - seg.open_stay.started_ts
-                    >= min_dwell_ms
-                )
-                tail_is_movement = (
-                    is_final_chunk and not tail_settled and not tail_dwelled
-                )
-                if seg.open_stay is not None and not tail_is_movement:
-                    if is_final_chunk:
-                        # Only the FINAL chunk's trailing group is genuinely
-                        # open — nothing has been observed yet to say the
-                        # subject left; that is `settled_seconds`' job below.
-                        # `extract_trips` must therefore stop at its first
-                        # fix rather than call the tail a trip.
-                        last_open_stay = seg.open_stay
-                        open_started = seg.open_stay.started_ts
-                    elif seg.open_stay.ended_ts - seg.open_stay.started_ts >= min_dwell_ms:
-                        # A non-final chunk's trailing group ended because the
-                        # NEXT chunk's first fix was far enough away in time —
-                        # an observed gap, not a guess — so it closes now,
-                        # subject to the same min-dwell gate `segment_stays`'
-                        # own `_close` applies.
-                        new_stays.append(seg.open_stay)
-                        # ...and it is a CLOSED stay for this chunk's trip
-                        # extraction too. `seg.closed` alone would omit it,
-                        # and `extract_trips` would then read a genuine
-                        # stay's own fixes as movement and write them as a
-                        # ~0 km/h "trip" — the brief's own sketch had this
-                        # bug; the sub-min-dwell case correctly stays out,
-                        # since `segment_stays` discarded that group too.
-                        chunk_closed.append(seg.open_stay)
-                # Only the FINAL chunk gets the settlement args. A non-final
-                # chunk's trailing group ended because an OBSERVED gap
-                # followed it, so its fate is already decided and there is
-                # nothing to settle; `now_ms=None` is what reproduces the
-                # original always-flush behaviour for it (extract_trips'
-                # own docstring).
-                chunk_trips, held_back = extract_trips(
-                    chunk, chunk_closed, subject_id=subject_id,
-                    person_id=person_ids[-1], circle_id=circle_id,
-                    min_trip_fixes=self._cfg.min_trip_fixes,
-                    open_stay_started_ts=open_started,
-                    now_ms=now_ms if is_final_chunk else None,
-                    settled_seconds=(
-                        self._cfg.settled_seconds if is_final_chunk else None
-                    ),
-                    max_trip_duration_seconds=(
-                        self._cfg.max_trip_duration_seconds
-                        if is_final_chunk else None
-                    ),
-                )
-                new_trips.extend(chunk_trips)
-                if held_back:
-                    trip_hold_id = min(f.id for f in held_back)
-            # An open stay closes THIS cycle only once settled_seconds has
-            # elapsed since its last fix (spec §3.2/§4) — a wall-clock
-            # decision run_once makes, not segment_stays itself.
-            #
-            # If it does NOT close this cycle, its fixes must stay readable:
-            # the watermark advancing past them would mean the next cycle
-            # re-segments only the NEW fixes, the open stay's true arrival
-            # time is lost, and when the subject finally leaves, the radius
-            # break that would close the home group never fires (the home
-            # fixes are no longer in the batch) — the stay is silently
-            # dropped. That is the production mechanism behind issue #80:
-            # stays generation halted for 10 days because every overnight
-            # home session was consumed fix-by-fix and never closed. This is
-            # the stay-side counterpart of the trip hold below: hold the
-            # watermark to the fix immediately before the open stay's first
-            # fix, so the whole group is re-read next cycle until its fate
-            # is decided (radius break closes it, or the clock settles it).
-            stay_hold_id: int | None = None
-            if last_open_stay is not None:
-                elapsed_s = (now_ms - last_open_stay.ended_ts) / 1000
-                span_ms = last_open_stay.ended_ts - last_open_stay.started_ts
-                if (
-                    elapsed_s >= DWELL_CAP_MS / 1000
-                    and span_ms >= min_dwell_ms
-                ):
-                    # The close clock is DWELL_CAP_MS (31.7 min), NOT
-                    # `settled_seconds` (15 min), and it is deliberately the
-                    # SAME clock the hold branch below uses. `settled_seconds`
-                    # here was the 2026-09-17 production defect: measured over
-                    # 26,047 inter-fix gaps across 14 live days, the p90 gap is
-                    # 30.1 min and the p99 is 30.2 — so 15 min of silence is
-                    # what a resting subject looks like BETWEEN two fixes of
-                    # one stay, not evidence the stay ended. Two fixes clear
-                    # `min_dwell_ms` (10 min), so this gate fired between every
-                    # pair, closed the group at 2 fixes, and the next fix
-                    # started a fresh one: 3,130 stays in `presence_stays`
-                    # where a clean re-derive of the same fixes at the same
-                    # parameters gives 1,399, median duration 30.1 min against
-                    # 65.2, and 42% of rows pinned in a 29-32.5 min band that
-                    # is the cadence rather than behaviour. It also fed Tier 3
-                    # a degenerate anomaly baseline — `presence_place_rhythm`
-                    # MADs of 500-5,000 ms against a ~1,804,000 ms median, so
-                    # |z| >= 3 tripped on a ~4-second deviation.
-                    #
-                    # The hold branch below already carried this reasoning
-                    # ("settled_seconds (15 min) is too short for this job")
-                    # when issue #82 raised the HOLD ceiling to DWELL_CAP_MS —
-                    # but the close gate above it was left on the old clock, so
-                    # it fired first and the hold was unreachable for any group
-                    # past min-dwell. One clock, read in both places, is the
-                    # fix. 31.7 min sits above the p99 gap with ~1.5 min of
-                    # headroom, so a stay now closes by the clock only on the
-                    # 0.265% of gaps that are genuinely unusual; every ordinary
-                    # one keeps the group open until a radius break closes it.
-                    #
-                    # `settled_seconds` keeps its other job untouched — it is
-                    # still the trip-settlement clock `trailing_fix_is_settled`
-                    # and `extract_trips` read above.
-                    new_stays.append(last_open_stay)
-                elif elapsed_s < DWELL_CAP_MS / 1000:
-                    # Hold ANY open stay that has not yet settled — whether it
-                    # is sub-min-dwell (sparse arrival, issue #82) or past
-                    # min-dwell but not yet settled (issue #80). The old gate
-                    # held only when span >= min_dwell, which is exactly the
-                    # sparse-arrival shape that broke production: Life360's
-                    # resting cadence is one fix every 10-55 min, so each
-                    # tick sees a single new fix, the group's span stays
-                    # below min_dwell_ms, and the watermark advanced past
-                    # every fix — the group never grew, and a real overnight
-                    # home stay was consumed fix-by-fix and never written.
-                    #
-                    # The hold ceiling is DWELL_CAP_MS, NOT settled_seconds.
-                    # It is the same clock the close gate above now reads, so
-                    # the two branches partition the elapsed axis at one point
-                    # instead of two. DWELL_CAP_MS is the resting-cadence
-                    # ceiling: 31.7 min, measured against a live p99 inter-fix
-                    # gap of 30.2 min, so a fix arriving later than that is a
-                    # genuine break in observation rather than the ordinary
-                    # silence between two fixes of one stay, and holding past
-                    # it would only stall the watermark on a group whose fate
-                    # is already decided. (This once read "`_chunk_by_gap`
-                    # splits the batch wherever the gap exceeds DWELL_CAP_MS";
-                    # that stopped being true on 2026-09-05 when CHUNK_GAP_MS
-                    # became 12h, and the ceiling's justification is the
-                    # cadence measurement above, not the chunk split.)
-                    # settled_seconds (15 min) is
-                    # too short for this job: at a resting cadence of one
-                    # fix every 10-55 min, the clock runs past the group
-                    # between fixes, the watermark advances, and the next
-                    # fix starts a fresh one-fix group that can never reach
-                    # min_dwell — the issue #82 production shape. DWELL_CAP
-                    # (31.7 min) covers the longest inter-fix gap that can
-                    # still belong to one group, so holding to it keeps the
-                    # group readable until either the clock settles it
-                    # (span >= min_dwell AND elapsed >= settled_seconds
-                    # closes it above) or a radius break closes it.
-                    #
-                    # The cost is bounded: a subject who passes through and
-                    # never returns holds the watermark at most DWELL_CAP_MS
-                    # before the branch below advances it and the group is
-                    # dropped (span < min_dwell), so a lone drive-by fix
-                    # cannot stall the pipeline.
-                    stay_hold_id = next(
-                        (
-                            f.id for f in fixes
-                            if f.ts >= last_open_stay.started_ts
-                        ),
-                        fixes[0].id,
-                    )
-                # else: elapsed >= DWELL_CAP_MS/1000 but span < min_dwell_ms —
-                # the group is not a stay (never reached the dwell bar) and
-                # any future fix would start a new chunk anyway; advance the
-                # watermark and let the group go. This is the pre-#82
-                # behaviour for sub-min-dwell groups and it is correct: a
-                # lone drive-by fix must not stall the pipeline.
+                watermark_target = fixes[-1].id
+                if trip_hold_id is not None:
+                    watermark_target = min(watermark_target, trip_hold_id - 1)
+                if stay_hold_id is not None:
+                    watermark_target = min(watermark_target, stay_hold_id - 1)
+                if watermark_target > last_fix_id or limit >= max_limit:
+                    break
+                limit = min(max_limit, limit * 2)
             if new_stays:
+                # Place linking, occupancy, rhythm and anomaly scoring for
+                # these stays happen in Speed 3's reconcile below, which the
+                # `or new_stays` gate guarantees runs this cycle.
                 await self._store.write_stays(new_stays)
-                for closed_stay in new_stays:
-                    try:
-                        await self._record_rhythm(
-                            subject_id=subject_id, stay=closed_stay, now_ms=now_ms,
-                        )
-                    except Exception:
-                        # A Tier 3 derivation failure must NEVER block the Tier
-                        # 1/2 watermark contract. `write_stays` has already
-                        # durably committed these stays; if the exception
-                        # escaped, `advance_fix_watermark` below would be
-                        # skipped, the next tick would re-read the identical
-                        # fixes, re-segment the identical stays and call
-                        # `write_stays` again — and `presence_stays` has no
-                        # unique constraint on (subject_id, started_ts), so
-                        # that duplicates rows forever at tick cadence,
-                        # poisoning `label_place`'s time-weighted shares and
-                        # `cluster_places`' centroids. The realistic trigger is
-                        # the analytics image deploying ahead of migration 0017
-                        # (every occupancy/rhythm call raises UndefinedTable).
-                        # Rhythm is derived and recoverable; the stay is not.
-                        # Found by the final whole-branch review (Critical #1).
-                        log.exception(
-                            "rhythm recording failed for a closed stay — the "
-                            "stay is already written and the watermark still "
-                            "advances; rhythm is derived and recoverable, the "
-                            "stay is not"
-                        )
             if new_trips:
                 # Tier 5's half of Tier 3's Critical #1 (commit 9616af3):
                 # a derivation failure must NEVER strand the watermark, or
@@ -621,11 +329,6 @@ class MobilityRollup:
             # `trip_hold_id - 1 >= last_fix_id`. The degenerate case — the
             # WHOLE batch is one undecided group, so the target equals the
             # current watermark — is a no-op write, not a special case.
-            watermark_target = fixes[-1].id
-            if trip_hold_id is not None:
-                watermark_target = min(watermark_target, trip_hold_id - 1)
-            if stay_hold_id is not None:
-                watermark_target = min(watermark_target, stay_hold_id - 1)
             await self._store.advance_fix_watermark(
                 subject_id=subject_id, fix_id=watermark_target
             )
@@ -637,50 +340,43 @@ class MobilityRollup:
         # Speed 2 (cheap): the label recheck. Runs on EVERY call this
         # function is given, independent of whether clustering ran this
         # cycle — this is what lets max_age_seconds (the caller's fire
-        # condition) actually do something at lag == 0 (spec §4.2).
+        # condition) actually do something at lag == 0 (spec §4.2). Each
+        # stored place is relabelled from the stays LINKED to it — never from
+        # a radius test around its stored point, and never written back at
+        # any coordinate but its own (the old recheck wrote the subject's
+        # chronologically first stay's lat/lng onto a flipped row, a second
+        # path to a place kilometres from its stays; issue #339).
         all_stays = await self._store.stays_for_subject(subject_id=subject_id)
-        if all_stays:
-            for existing_kind in ("home", "work"):
-                existing = await self._store.existing_place(
-                    subject_id=subject_id, kind=existing_kind
-                )
-                if existing is None:
-                    continue
-                _, place_lat, place_lng, _place_radius_m, _stored, _label = existing
-                cluster_stays = [
-                    s for s in all_stays
-                    if _within(s, place_lat, place_lng, self._cfg.cluster_eps_m)
-                ]
-                recheck = label_place(
-                    cluster_stays, now_ms=now_ms, tz_name=self._cfg.tz_name,
-                    min_nights=self._cfg.min_nights,
-                    min_weekdays=self._cfg.min_weekdays,
-                    label_freshness_days=self._cfg.label_freshness_days,
-                )
-                if recheck.kind != existing_kind:
-                    # `kind=existing_kind`, not `recheck.kind` — this write
-                    # is scoped to the ONE slot being rechecked (e.g. a
-                    # `home` recheck must never delete an unrelated,
-                    # still-valid `work` row just because it downgrades to
-                    # `unlabeled`).
-                    label = await self._label_for(
-                        lat=all_stays[0].lat, lng=all_stays[0].lng,
-                    )
-                    await self._store.upsert_place(
-                        subject_id=subject_id, circle_id=circle_id,
-                        kind=existing_kind,
-                        lat=all_stays[0].lat, lng=all_stays[0].lng,
-                        radius_m=self._cfg.cluster_eps_m, result=recheck,
-                        now_ms=now_ms, label=label,
-                    )
-                    if self._metrics is not None and recheck.kind == "unlabeled":
-                        self._metrics.inc(
-                            "nora_analytics_unlabeled_total", subject=subject_id,
-                        )
+        for place in await self._store.places_for_subject(subject_id=subject_id):
+            linked = [s for s in all_stays if s.place_id == place.id]
+            if not linked:
+                continue
+            recheck = label_place(
+                linked, now_ms=now_ms, tz_name=self._cfg.tz_name,
+                min_nights=self._cfg.min_nights,
+                min_weekdays=self._cfg.min_weekdays,
+                label_freshness_days=self._cfg.label_freshness_days,
+            )
+            if recheck.kind == place.kind and recheck.confidence == place.confidence:
+                continue
+            await self._store.save_place(
+                subject_id=subject_id, circle_id=place.circle_id,
+                place_id=place.id, lat=place.lat, lng=place.lng,
+                radius_m=place.radius_m, kind=recheck.kind,
+                confidence=recheck.confidence, label=place.label,
+                saved_place_id=place.saved_place_id,
+                first_seen_ts=min(s.started_ts for s in linked),
+                last_seen_ts=max(s.ended_ts for s in linked),
+            )
+            if (
+                self._metrics is not None
+                and recheck.kind == "unlabeled" and place.kind != "unlabeled"
+            ):
+                self._metrics.inc("nora_analytics_unlabeled_total", subject=subject_id)
 
-        # Speed 3 (expensive, dirty-set gated): full re-clustering. Only
-        # when segmentation closed a stay since last_cluster_id — clustering
-        # is idempotent on unchanged input, so a clock-driven re-run is pure
+        # Speed 3 (expensive, dirty-set gated): the place reconcile. Only
+        # when fixes or stays arrived since last_cluster_id — it is
+        # idempotent on unchanged input, so a clock-driven re-run is pure
         # waste (spec §4.2).
         if fixes:
             new_last_cluster = fixes[-1].id
@@ -688,127 +384,578 @@ class MobilityRollup:
                 # `or new_stays`: a stay closed purely by the clock (issue
                 # #80 stay-hold cycle — the batch is the SAME held fixes the
                 # previous cycle already clustered at, so the id gate alone
-                # is false) still needs clustering/labeling now, not on some
-                # unrelated future fix. Clustering is idempotent on
-                # unchanged input, so the extra run is cheap and safe.
-                clusters = cluster_places(
-                    all_stays, eps_m=self._cfg.cluster_eps_m,
-                    min_samples=self._cfg.cluster_min_samples,
-                )
-                # Issue #10 option 1: the addresses `segment_stays` computed
-                # into this cycle's stays exist ONLY in memory — the store's
-                # re-read builds them from `presence_stays`, which has no
-                # address column, so `cluster`'s members carry `address=None`
-                # (SqlMobilityStore) even though they are those same stays.
-                # Keyed by `started_ts` (unique per subject: consecutive
-                # stay groups start at the fix that broke the previous
-                # group's radius test). Only THIS cycle's addresses resolve;
-                # older stays contribute None, which `mode_address` skips.
-                new_address_by_started_ts = {
-                    s.started_ts: s.address for s in new_stays
-                }
-                for cluster in clusters:
-                    total_dwell = sum(s.ended_ts - s.started_ts for s in cluster) or 1
-                    lat = sum(
-                        s.lat * (s.ended_ts - s.started_ts) for s in cluster
-                    ) / total_dwell
-                    lng = sum(
-                        s.lng * (s.ended_ts - s.started_ts) for s in cluster
-                    ) / total_dwell
-                    result = label_place(
-                        cluster, now_ms=now_ms, tz_name=self._cfg.tz_name,
-                        min_nights=self._cfg.min_nights,
-                        min_weekdays=self._cfg.min_weekdays,
-                        label_freshness_days=self._cfg.label_freshness_days,
+                # is false) still needs linking now, not on some unrelated
+                # future fix.
+                try:
+                    await self._reconcile_places(
+                        subject_id=subject_id, circle_id=circle_id,
+                        all_stays=all_stays, new_stays=new_stays, now_ms=now_ms,
                     )
-                    if result.kind != "unlabeled":
-                        # kind=result.kind: a freshly-clustered place writes
-                        # into its OWN kind's slot, scoped the same way the
-                        # recheck above is.
-                        existing_before = await self._store.existing_place(
-                            subject_id=subject_id, kind=result.kind
-                        )
-                        label = await self._label_for(lat=lat, lng=lng)
-                        # Issue #10 option 1 — the Life360 mode-address
-                        # FALLBACK. A cached Google label stays canonical
-                        # (the design decision: 2026-08-19 "Google-cache-only
-                        # labelling" relaxed, not replaced); Life360's own
-                        # free address string fills the gap when there is no
-                        # cached hit — zero new network calls, zero billing
-                        # exposure, this is a pure read of what segmentation
-                        # already built.
-                        if label is None:
-                            # Prefer the stay's own carried address, fall
-                            # back to this cycle's segmentation output for
-                            # the DB roundtrip (see the new_address_by_
-                            # started_ts note above). Fail-closed: no
-                            # addresses → no label.
-                            fallback = mode_address(
-                                s.address
-                                if s.address is not None
-                                else new_address_by_started_ts.get(s.started_ts)
-                                for s in cluster
-                            )
-                            if fallback is not None:
-                                label = fallback
-                            else:
-                                prior_label = (
-                                    existing_before[5]
-                                    if existing_before is not None
-                                    else None
-                                )
-                                if prior_label is not None:
-                                    # Sticky keep, not a recomputation: the
-                                    # upsert's UPDATE overwrites `label`
-                                    # unconditionally, and Speed 3 re-runs
-                                    # on EVERY batch of new fixes (even pure
-                                    # driving days and cycles where this
-                                    # cluster's new stays carry no address).
-                                    # Absence of NEW evidence is not
-                                    # evidence of no address — letting a
-                                    # None overwrite a label a previous
-                                    # cycle wrote would flip a labelled
-                                    # place back to unlabelled at tick
-                                    # cadence. Google-cache labels never
-                                    # hit this branch (the cache decides
-                                    # above), so the sticky value is only
-                                    # ever a previous fallback label.
-                                    label = prior_label
-                        await self._store.upsert_place(
-                            subject_id=subject_id, circle_id=circle_id,
-                            kind=result.kind,
-                            lat=lat, lng=lng, radius_m=self._cfg.cluster_eps_m,
-                            result=result, now_ms=now_ms, label=label,
-                        )
-                        if self._metrics is not None:
-                            self._metrics.inc(
-                                "nora_analytics_places_total",
-                                subject=subject_id, kind=result.kind,
-                            )
-                        if existing_before is None:
-                            # First time THIS kind has ever existed for this
-                            # subject — backfill past stays that predate it
-                            # (Tier 3, design/27 §4): they closed before
-                            # there was a place to attach rhythm/occupancy
-                            # to, so they never went through `_record_rhythm`.
-                            refreshed = await self._store.existing_place(
-                                subject_id=subject_id, kind=result.kind
-                            )
-                            if refreshed is not None:
-                                new_place_id = refreshed[0]
-                                unlinked = [
-                                    s for s in all_stays
-                                    if s.place_id is None
-                                    and _within(s, lat, lng, self._cfg.cluster_eps_m)
-                                ]
-                                for s in unlinked:
-                                    await self._apply_rhythm(
-                                        subject_id=subject_id, place_id=new_place_id,
-                                        stay=s, now_ms=now_ms,
-                                    )
-                await self._store.advance_cluster_watermark(
-                    subject_id=subject_id, fix_id=new_last_cluster
+                except Exception:
+                    # The fix watermark has already advanced above, so the
+                    # stays are safe (Tier 3's Critical #1 contract). The
+                    # CLUSTER watermark deliberately does not advance: the
+                    # reconcile is idempotent and re-runs next cycle, which
+                    # is what makes a place-side failure recoverable rather
+                    # than a permanently unlinked batch.
+                    log.exception(
+                        "place reconcile failed — stays are written and the "
+                        "fix watermark advanced; the reconcile retries next cycle"
+                    )
+                else:
+                    await self._store.advance_cluster_watermark(
+                        subject_id=subject_id, fix_id=new_last_cluster
+                    )
+
+    def _segment_batch(
+        self, fixes: list[Any], *, subject_id: str, person_ids: list[str],
+        circle_id: str, now_ms: int,
+    ) -> tuple[list[Stay], list[Trip], int | None, int | None]:
+        """Speed 1 over one batch: `(new_stays, new_trips, trip_hold_id,
+        stay_hold_id)`. Pure with respect to the store — `run_once` may call
+        it more than once on growing batches before it writes anything (the
+        batch-stall fix below)."""
+        new_stays: list[Stay] = []
+        new_trips: list[Trip] = []
+        raw = collapse_duplicate_fixes([
+            RawFix(
+                id=f.id, ts=f.ts, lat=f.lat, lng=f.lng, address=f.address,
+                is_driving=f.is_driving,
+            )
+            for f in fixes
+        ])
+        min_dwell_ms = int(self._cfg.stay_min_dwell_seconds * 1000)
+        # `segment_stays` is purely spatial (its own docstring): fixes at
+        # (near-)identical coordinates never break its radius test, no
+        # matter how large the time gap between them — so a subject who
+        # returns to the same place night after night would otherwise
+        # merge every visit into ONE pathologically long "stay" spanning
+        # the away-time between them too. That merged stay's
+        # `ended_ts - started_ts` (its recorded dwell, per `Stay`'s own
+        # invariant) then includes all that dead time, which dilutes
+        # `label_place`'s TIME-WEIGHTED night/work share below any
+        # threshold — a subject who is unambiguously home every night
+        # would never label as `home`. Splitting the batch first,
+        # wherever the gap between two consecutive fixes exceeds
+        # `DWELL_CAP_MS` (the same still-ceiling `dwell_ms` itself caps
+        # against), and segmenting each chunk independently, is what
+        # turns a genuine day-to-day return into the SEPARATE stays
+        # `label_place` and `cluster_places` are both written and tested
+        # against (see `tests/unit/test_mobility.py`'s label/cluster
+        # fixtures, which construct discrete per-day `Stay` objects
+        # directly rather than deriving them from a raw fix stream).
+        # The lowest fix id `extract_trips` refused to finalize this
+        # cycle — the watermark stops one short of it below so the
+        # undecided group is re-read whole next cycle instead of being
+        # consumed as a fragment.
+        trip_hold_id: int | None = None
+        chunks = _chunk_by_gap(raw, CHUNK_GAP_MS)
+        last_open_stay: Stay | None = None
+        for i, chunk in enumerate(chunks):
+            seg = segment_stays(
+                chunk, subject_id=subject_id,
+                person_id=person_ids[-1],  # most-recently-supplied id, for provenance
+                circle_id=circle_id,
+                radius_m=self._cfg.stay_radius_m,
+                min_dwell_ms=min_dwell_ms,
+                wander_radius_m=self._cfg.stay_wander_radius_m,
+            )
+            new_stays.extend(seg.closed)
+            # Tier 5 (design/27 §4): the SAME chunks the stay
+            # segmentation just walked — trips are the complement of
+            # stays over one identical partition of the batch, so
+            # re-chunking here could only produce a different answer,
+            # never a better one.
+            chunk_closed = list(seg.closed)
+            open_started: int | None = None
+            is_final_chunk = i == len(chunks) - 1
+            # THE trip-settlement fix (2026-08-20 design §2.2/§2.3).
+            #
+            # `segment_stays` ALWAYS returns a trailing `open_stay` for a
+            # non-empty window — read its own final paragraph: whatever
+            # remains in `group` is the open stay, unconditionally, even
+            # when that "group" is one fix taken at 90 km/h. So the
+            # branch below used to fire on EVERY final chunk, handing
+            # `extract_trips` a cut point that, mid-drive, sits at the
+            # newest fix. Every tick therefore flushed "everything except
+            # the newest fix" as a finished trip, and a continuous drive
+            # came out as one trip per tick — the live fragmentation the
+            # design's §0 evidence is made of. Task 2's settlement check
+            # is gated on `open_stay_started_ts is None`, so without this
+            # guard it could never have fired from here at all.
+            #
+            # The discriminator is `trailing_fix_is_settled` — the SAME
+            # predicate, on the SAME fix (`chunk[-1]` is `extract_trips`'
+            # own `buffer[-1]` for the final chunk), that `extract_trips`
+            # uses to decide whether to finalize. Sharing it is not
+            # tidiness: if these two ever disagreed, the same fixes would
+            # be held back as candidate TRIP fixes here and written as a
+            # STAY below, landing in both tables.
+            #
+            # Unsettled means there is no stay-in-progress to cut at and
+            # the trailing group's fate is genuinely undetermined — which
+            # is precisely the state `open_stay_started_ts=None` means.
+            # `last_open_stay` is deliberately left unset in that case
+            # too, for the same reason: a group being held back must not
+            # also be closable as a stay by the `settled_seconds` block
+            # below (`test_a_gridlocked_drive_writes_one_stay_once`).
+            #
+            # All three readings matter, and `None` is NOT a synonym for
+            # `False` here. `True` (still driving) never settles. `False`
+            # is a real arrival — the parked tail IS a stay-in-progress,
+            # and calling it movement would swallow every stay this
+            # substrate exists to find
+            # (`test_a_parked_tail_with_is_driving_false_is_still_an_
+            # open_stay`). `None` is no reading at all — the real state
+            # of every historical fix and anything Life360 omits the flag
+            # on — and falls back to `settled_seconds`, the same
+            # quiet-boundary clock Tier 1 already uses for a stay's
+            # arrival (design §2, bullet 2). Treating `None` as settled
+            # left the original fragmentation bug fully intact for
+            # exactly the fixes that have no signal to fix it with.
+            tail_settled = trailing_fix_is_settled(
+                chunk[-1], now_ms=now_ms,
+                settled_seconds=self._cfg.settled_seconds,
+            )
+            # `tail_dwelled` is the SECOND gate. The clock alone is not
+            # enough: at a RESTING cadence (Life360 emits every ~10 min
+            # when still) the trailing fix is never older than
+            # `settled_seconds`, so a subject sitting at home all day
+            # would have their whole day held back as "undecided
+            # movement" — and when it finally flushed, their stationary
+            # fixes came out as 0 km/h, 0 m trips instead of a stay.
+            # Measured on
+            # `test_a_repeating_commute_actually_grows_corridors_over_
+            # days`: 41 such phantom trips, and 7 stays where the fixture
+            # documents zero.
+            #
+            # The discriminator is the trailing group's own DWELL. A
+            # resting tail is one spatially-coherent group whose span
+            # passes `min_dwell_ms` — the same bar `_close` uses to call
+            # something a stay. A driving tail is a fix that just broke
+            # the radius, so its group's span is ~0. So: no signal, but
+            # the tail has already dwelled like a stay -> treat it as the
+            # stay-in-progress it looks like.
+            #
+            # Originally this gate applied ONLY to `is_driving is None`
+            # — "when Life360 actually says `is_driving`, that reading
+            # wins over the spatial proxy" (gridlock is a real drive
+            # whose tail looks spatially like a stay). Production
+            # evidence (issue #80) overturned that: Life360's flag is
+            # NOISY AT REST — people sitting at home produce
+            # `is_driving=True` fixes (66-100 such fixes per person at
+            # their home coordinates, verified 2026-08-29). With the
+            # flag winning over the spatial proxy, a genuine home stay
+            # whose tail fix happens to read `is_driving=True` is never
+            # settled, never closed, and its fixes are watermark-consumed
+            # forever — stays generation halted for 10 days after the
+            # 2026-08-20 trip-settlement fix wired the flag through.
+            # The spatial proxy is now the discriminator for `True` too:
+            # a tail that has already dwelled past `min_dwell_ms` is the
+            # stay-in-progress it looks like, whatever the flag says.
+            # The gridlock false-positive this admits (a real drive
+            # stuck in traffic whose tail dwells past the bar) is the
+            # accepted trade — it writes ONE stay, once, and the
+            # watermark advances past it; the flag-noise false-negative
+            # it fixes loses every stay a subject actually had.
+            tail_dwelled = (
+                seg.open_stay is not None
+                and seg.open_stay.ended_ts - seg.open_stay.started_ts
+                >= min_dwell_ms
+            )
+            tail_is_movement = (
+                is_final_chunk and not tail_settled and not tail_dwelled
+            )
+            if seg.open_stay is not None and not tail_is_movement:
+                if is_final_chunk:
+                    # Only the FINAL chunk's trailing group is genuinely
+                    # open — nothing has been observed yet to say the
+                    # subject left; that is `settled_seconds`' job below.
+                    # `extract_trips` must therefore stop at its first
+                    # fix rather than call the tail a trip.
+                    last_open_stay = seg.open_stay
+                    open_started = seg.open_stay.started_ts
+                elif seg.open_stay.ended_ts - seg.open_stay.started_ts >= min_dwell_ms:
+                    # A non-final chunk's trailing group ended because the
+                    # NEXT chunk's first fix was far enough away in time —
+                    # an observed gap, not a guess — so it closes now,
+                    # subject to the same min-dwell gate `segment_stays`'
+                    # own `_close` applies.
+                    new_stays.append(seg.open_stay)
+                    # ...and it is a CLOSED stay for this chunk's trip
+                    # extraction too. `seg.closed` alone would omit it,
+                    # and `extract_trips` would then read a genuine
+                    # stay's own fixes as movement and write them as a
+                    # ~0 km/h "trip" — the brief's own sketch had this
+                    # bug; the sub-min-dwell case correctly stays out,
+                    # since `segment_stays` discarded that group too.
+                    chunk_closed.append(seg.open_stay)
+            # Only the FINAL chunk gets the settlement args. A non-final
+            # chunk's trailing group ended because an OBSERVED gap
+            # followed it, so its fate is already decided and there is
+            # nothing to settle; `now_ms=None` is what reproduces the
+            # original always-flush behaviour for it (extract_trips'
+            # own docstring).
+            chunk_trips, held_back = extract_trips(
+                chunk, chunk_closed, subject_id=subject_id,
+                person_id=person_ids[-1], circle_id=circle_id,
+                min_trip_fixes=self._cfg.min_trip_fixes,
+                open_stay_started_ts=open_started,
+                now_ms=now_ms if is_final_chunk else None,
+                settled_seconds=(
+                    self._cfg.settled_seconds if is_final_chunk else None
+                ),
+                max_trip_duration_seconds=(
+                    self._cfg.max_trip_duration_seconds
+                    if is_final_chunk else None
+                ),
+            )
+            # An ARRIVAL RACE (audit 2026-09-27): the trip was cut at the start of a
+            # trailing group that has not yet dwelled `min_dwell_ms` — a PROVISIONAL
+            # stop. The next fix often jitters it apart, the stay then starts a few
+            # fixes later, and the fixes between the already-written trip and the
+            # real stay came out as a second, orphan "trip" of a few hundred metres
+            # at walking pace — one phantom per arrival. While the stop is
+            # unconfirmed (and still inside the resting-cadence clock), hold the trip
+            # that runs into it as well; it is cut for good once the stop confirms,
+            # or rejoins the movement if the stop dissolves.
+            if (
+                open_started is not None and chunk_trips
+                and seg.open_stay is not None
+                and seg.open_stay.ended_ts - seg.open_stay.started_ts < min_dwell_ms
+                and (now_ms - chunk[-1].ts) / 1000 < DWELL_CAP_MS / 1000
+                and not any(c.started_ts > chunk_trips[-1].ended_ts for c in chunk_closed)
+            ):
+                provisional = chunk_trips.pop()
+                held_back = held_back or [
+                    f for f in chunk if f.ts >= provisional.started_ts
+                ]
+            new_trips.extend(chunk_trips)
+            if held_back:
+                trip_hold_id = min(f.id for f in held_back)
+        # An open stay closes THIS cycle only once settled_seconds has
+        # elapsed since its last fix (spec §3.2/§4) — a wall-clock
+        # decision run_once makes, not segment_stays itself.
+        #
+        # If it does NOT close this cycle, its fixes must stay readable:
+        # the watermark advancing past them would mean the next cycle
+        # re-segments only the NEW fixes, the open stay's true arrival
+        # time is lost, and when the subject finally leaves, the radius
+        # break that would close the home group never fires (the home
+        # fixes are no longer in the batch) — the stay is silently
+        # dropped. That is the production mechanism behind issue #80:
+        # stays generation halted for 10 days because every overnight
+        # home session was consumed fix-by-fix and never closed. This is
+        # the stay-side counterpart of the trip hold below: hold the
+        # watermark to the fix immediately before the open stay's first
+        # fix, so the whole group is re-read next cycle until its fate
+        # is decided (radius break closes it, or the clock settles it).
+        stay_hold_id: int | None = None
+        if last_open_stay is not None:
+            elapsed_s = (now_ms - last_open_stay.ended_ts) / 1000
+            span_ms = last_open_stay.ended_ts - last_open_stay.started_ts
+            if (
+                elapsed_s >= DWELL_CAP_MS / 1000
+                and span_ms >= min_dwell_ms
+            ):
+                # The close clock is DWELL_CAP_MS (31.7 min), NOT
+                # `settled_seconds` (15 min), and it is deliberately the
+                # SAME clock the hold branch below uses. `settled_seconds`
+                # here was the 2026-09-17 production defect: measured over
+                # 26,047 inter-fix gaps across 14 live days, the p90 gap is
+                # 30.1 min and the p99 is 30.2 — so 15 min of silence is
+                # what a resting subject looks like BETWEEN two fixes of
+                # one stay, not evidence the stay ended. Two fixes clear
+                # `min_dwell_ms` (10 min), so this gate fired between every
+                # pair, closed the group at 2 fixes, and the next fix
+                # started a fresh one: 3,130 stays in `presence_stays`
+                # where a clean re-derive of the same fixes at the same
+                # parameters gives 1,399, median duration 30.1 min against
+                # 65.2, and 42% of rows pinned in a 29-32.5 min band that
+                # is the cadence rather than behaviour. It also fed Tier 3
+                # a degenerate anomaly baseline — `presence_place_rhythm`
+                # MADs of 500-5,000 ms against a ~1,804,000 ms median, so
+                # |z| >= 3 tripped on a ~4-second deviation.
+                #
+                # The hold branch below already carried this reasoning
+                # ("settled_seconds (15 min) is too short for this job")
+                # when issue #82 raised the HOLD ceiling to DWELL_CAP_MS —
+                # but the close gate above it was left on the old clock, so
+                # it fired first and the hold was unreachable for any group
+                # past min-dwell. One clock, read in both places, is the
+                # fix. 31.7 min sits above the p99 gap with ~1.5 min of
+                # headroom, so a stay now closes by the clock only on the
+                # 0.265% of gaps that are genuinely unusual; every ordinary
+                # one keeps the group open until a radius break closes it.
+                #
+                # `settled_seconds` keeps its other job untouched — it is
+                # still the trip-settlement clock `trailing_fix_is_settled`
+                # and `extract_trips` read above.
+                new_stays.append(last_open_stay)
+            if elapsed_s >= DWELL_CAP_MS / 1000:
+                # Resolved by the clock (closed above, or dropped as
+                # sub-min-dwell). If `segment_stays` left the group open
+                # because its LAST fix broke the radius, that undecided fix
+                # sits after the group's end and belongs to neither the stay
+                # nor a trip. Consuming it here dropped the first fix of the
+                # next place, so an arrival at resting cadence was recorded
+                # one fix gap late (independent review 2026-09-28: 180 min
+                # instead of 150). Hold the watermark AT it, so the next
+                # cycle starts the next group from it.
+                undecided = [f.id for f in fixes if f.ts > last_open_stay.ended_ts]
+                if undecided:
+                    stay_hold_id = min(undecided)
+            elif elapsed_s < DWELL_CAP_MS / 1000:
+                # Hold ANY open stay that has not yet settled — whether it
+                # is sub-min-dwell (sparse arrival, issue #82) or past
+                # min-dwell but not yet settled (issue #80). The old gate
+                # held only when span >= min_dwell, which is exactly the
+                # sparse-arrival shape that broke production: Life360's
+                # resting cadence is one fix every 10-55 min, so each
+                # tick sees a single new fix, the group's span stays
+                # below min_dwell_ms, and the watermark advanced past
+                # every fix — the group never grew, and a real overnight
+                # home stay was consumed fix-by-fix and never written.
+                #
+                # The hold ceiling is DWELL_CAP_MS, NOT settled_seconds.
+                # It is the same clock the close gate above now reads, so
+                # the two branches partition the elapsed axis at one point
+                # instead of two. DWELL_CAP_MS is the resting-cadence
+                # ceiling: 31.7 min, measured against a live p99 inter-fix
+                # gap of 30.2 min, so a fix arriving later than that is a
+                # genuine break in observation rather than the ordinary
+                # silence between two fixes of one stay, and holding past
+                # it would only stall the watermark on a group whose fate
+                # is already decided. (This once read "`_chunk_by_gap`
+                # splits the batch wherever the gap exceeds DWELL_CAP_MS";
+                # that stopped being true on 2026-09-05 when CHUNK_GAP_MS
+                # became 12h, and the ceiling's justification is the
+                # cadence measurement above, not the chunk split.)
+                # settled_seconds (15 min) is
+                # too short for this job: at a resting cadence of one
+                # fix every 10-55 min, the clock runs past the group
+                # between fixes, the watermark advances, and the next
+                # fix starts a fresh one-fix group that can never reach
+                # min_dwell — the issue #82 production shape. DWELL_CAP
+                # (31.7 min) covers the longest inter-fix gap that can
+                # still belong to one group, so holding to it keeps the
+                # group readable until either the clock settles it
+                # (span >= min_dwell AND elapsed >= settled_seconds
+                # closes it above) or a radius break closes it.
+                #
+                # The cost is bounded: a subject who passes through and
+                # never returns holds the watermark at most DWELL_CAP_MS
+                # before the branch below advances it and the group is
+                # dropped (span < min_dwell), so a lone drive-by fix
+                # cannot stall the pipeline.
+                stay_hold_id = next(
+                    (
+                        f.id for f in fixes
+                        if f.ts >= last_open_stay.started_ts
+                    ),
+                    fixes[0].id,
                 )
+            # else: elapsed >= DWELL_CAP_MS/1000 but span < min_dwell_ms —
+            # the group is not a stay (never reached the dwell bar) and
+            # any future fix would start a new chunk anyway; advance the
+            # watermark and let the group go. This is the pre-#82
+            # behaviour for sub-min-dwell groups and it is correct: a
+            # lone drive-by fix must not stall the pipeline.
+        return new_stays, new_trips, trip_hold_id, stay_hold_id
+
+    async def _place_label(
+        self, planned: PlannedPlace, *, prior: DerivedPlace | None,
+        new_address_by_started_ts: dict[int, str | None],
+    ) -> str | None:
+        """The display name for a planned place, in DEC-190's order: the
+        household's own tag name; else a cached Google label (2026-08-19
+        "Google-cache-only labelling"); else the Life360 mode address of its
+        stays (issue #10 option 1); else the name a previous cycle wrote.
+
+        The last step is a sticky keep, not a recomputation: only THIS
+        cycle's stays carry an address in memory (`presence_stays` has no
+        address column), so an address-less cycle is absence of new
+        evidence, never evidence of no name."""
+        if planned.tag_name is not None:
+            return planned.tag_name
+        label = await self._label_for(lat=planned.lat, lng=planned.lng)
+        if label is not None:
+            return label
+        fallback = mode_address(
+            s.address if s.address is not None
+            else new_address_by_started_ts.get(s.started_ts)
+            for s in planned.stays
+        )
+        if fallback is not None:
+            return fallback
+        # A tag that no longer claims the place must not leave its name on it.
+        if prior is not None and prior.saved_place_id is None:
+            return prior.label
+        return None
+
+    async def _reconcile_places(
+        self, *, subject_id: str, circle_id: str, all_stays: list[Stay],
+        new_stays: list[Stay], now_ms: int,
+    ) -> None:
+        """DEC-190 (design/27 §3.7, ADR 0014, issue #339): recompute the
+        subject's whole place picture with `plan_places`, then make the store
+        match it — save each planned place under the id it keeps, relink
+        every stay whose link changed (overwriting, so a link can never
+        outlive the place it pointed at), drop places nothing resolves to,
+        and rebuild occupancy and rhythm for every place whose stay set
+        changed.
+
+        Writes are DIFFED against what is stored, so a steady-state cycle
+        (same stays, same plan) writes nothing — the reconcile runs on every
+        cycle that brings fixes, and must not rewrite the table each time."""
+        existing = await self._store.places_for_subject(subject_id=subject_id)
+        existing_by_id = {p.id: p for p in existing}
+        tagged = await self._store.tagged_places()
+        plan = plan_places(
+            all_stays, existing=existing, tagged=tagged, now_ms=now_ms,
+            tz_name=self._cfg.tz_name, cluster_eps_m=self._cfg.cluster_eps_m,
+            cluster_min_samples=self._cfg.cluster_min_samples,
+            match_radius_m=self._cfg.place_match_radius_m,
+            min_nights=self._cfg.min_nights, min_weekdays=self._cfg.min_weekdays,
+            label_freshness_days=self._cfg.label_freshness_days,
+        )
+        new_address_by_started_ts = {s.started_ts: s.address for s in new_stays}
+        links: dict[int, int | None] = {}
+        kept: set[int] = set()
+        created: set[int] = set()
+        for planned in plan:
+            prior = (
+                existing_by_id.get(planned.existing_id)
+                if planned.existing_id is not None else None
+            )
+            label = await self._place_label(
+                planned, prior=prior,
+                new_address_by_started_ts=new_address_by_started_ts,
+            )
+            first_seen = min(s.started_ts for s in planned.stays)
+            last_seen = max(s.ended_ts for s in planned.stays)
+            unchanged = prior is not None and (
+                prior.lat, prior.lng, prior.radius_m, prior.kind,
+                prior.confidence, prior.label, prior.saved_place_id,
+                prior.first_seen_ts, prior.last_seen_ts,
+            ) == (
+                planned.lat, planned.lng, planned.radius_m, planned.label.kind,
+                planned.label.confidence, label, planned.saved_place_id,
+                first_seen, last_seen,
+            )
+            if unchanged and planned.existing_id is not None:
+                place_id = planned.existing_id
+            else:
+                place_id = await self._store.save_place(
+                    subject_id=subject_id, circle_id=circle_id,
+                    place_id=planned.existing_id,
+                    lat=planned.lat, lng=planned.lng, radius_m=planned.radius_m,
+                    kind=planned.label.kind, confidence=planned.label.confidence,
+                    label=label, saved_place_id=planned.saved_place_id,
+                    first_seen_ts=first_seen, last_seen_ts=last_seen,
+                )
+                if self._metrics is not None:
+                    self._metrics.inc(
+                        "nora_analytics_places_total",
+                        subject=subject_id, kind=planned.label.kind,
+                    )
+            if planned.existing_id is None:
+                created.add(place_id)
+            kept.add(place_id)
+            for s in planned.stays:
+                links[s.started_ts] = place_id
+
+        changed_links: dict[int, int | None] = {}
+        dirty: set[int] = set(created)
+        for s in all_stays:
+            target = links.get(s.started_ts)
+            if target != s.place_id:
+                changed_links[s.started_ts] = target
+                if target is not None:
+                    dirty.add(target)
+                if s.place_id is not None:
+                    dirty.add(s.place_id)
+        await self._store.relink_stays(subject_id=subject_id, links=changed_links)
+        await self._store.delete_places(
+            subject_id=subject_id,
+            place_ids=sorted(pid for pid in existing_by_id if pid not in kept),
+        )
+        members: dict[int, list[Stay]] = {}
+        for s in all_stays:
+            target = links.get(s.started_ts)
+            if target is not None:
+                members.setdefault(target, []).append(s)
+        for place_id in sorted(dirty & kept):
+            await self._rebuild_rhythm(
+                subject_id=subject_id, place_id=place_id,
+                stays=members.get(place_id, []), now_ms=now_ms,
+            )
+        if new_stays and self._metrics is not None:
+            # Anomalies are a pure function of the stays and their links, so
+            # they are computed on read (`detect_stay_anomalies`), never
+            # stored — a stored copy would go stale on every relink. The
+            # rollup only COUNTS the ones this cycle's stays carry, scored
+            # against the links it just wrote.
+            linked = [
+                dataclasses.replace(s, place_id=links.get(s.started_ts))
+                for s in all_stays
+            ]
+            by_start = {s.started_ts: s for s in linked}
+            for new in new_stays:
+                stay = by_start.get(new.started_ts)
+                if stay is None:
+                    continue
+                for anomaly in detect_stay_anomalies(
+                    stay, history=linked, tz_name=self._cfg.tz_name,
+                    min_samples=self._cfg.anomaly_min_samples,
+                    z_threshold=self._cfg.anomaly_z_threshold,
+                    novelty_radius_m=self._cfg.cluster_eps_m,
+                ):
+                    self._metrics.inc(
+                        "nora_analytics_anomalies_total",
+                        subject=subject_id, kind=anomaly.kind,
+                    )
+
+    async def _rebuild_rhythm(
+        self, *, subject_id: str, place_id: int, stays: list[Stay], now_ms: int,
+    ) -> None:
+        """Tier 3 (design/27 §4, issue #6) for ONE place, recomputed wholesale
+        from the stays linked to it: occupancy (dwell per local hour-of-week)
+        and rhythm (circular mean arrival/departure, duration median/MAD).
+        Full recompute rather than accumulation, so it is idempotent and
+        follows a relink — accumulation is what left dwell on a place after
+        its stays had moved."""
+        bins: dict[int, int] = {}
+        for s in stays:
+            for how, dwell in hour_of_week_bins(
+                s.started_ts, s.ended_ts, self._cfg.tz_name,
+            ).items():
+                bins[how] = bins.get(how, 0) + dwell
+        await self._store.replace_occupancy(
+            subject_id=subject_id, place_id=place_id, bins=bins, now_ms=now_ms,
+        )
+        if self._metrics is not None:
+            self._metrics.inc(
+                "nora_analytics_occupancy_bins_total",
+                value=len(bins), subject=subject_id,
+            )
+        if not stays:
+            return
+        tz = ZoneInfo(self._cfg.tz_name)
+        durations = sorted(float(s.ended_ts - s.started_ts) for s in stays)
+        median_ms = _median(durations)
+        mad_ms = _median(sorted(abs(d - median_ms) for d in durations))
+        await self._store.upsert_rhythm(
+            subject_id=subject_id, place_id=place_id,
+            mean_arrival_minute=circular_mean_minute(
+                [_local_minute_of_day(s.started_ts, tz) for s in stays]
+            ),
+            mean_departure_minute=circular_mean_minute(
+                [_local_minute_of_day(s.ended_ts, tz) for s in stays]
+            ),
+            duration_median_ms=int(median_ms), duration_mad_ms=int(mad_ms),
+            sample_count=len(stays), now_ms=now_ms,
+        )
 
     async def _record_corridors(self, *, subject_id: str, now_ms: int) -> None:
         """Tier 5 (design/27 §4, issue #6): cluster this subject's
@@ -1031,7 +1178,7 @@ class MobilityRollup:
     ) -> None:
         """Per-hour-of-week p50/p90 over EVERY trip ever linked to this
         corridor — a full recompute from the whole sample set, never an
-        incremental update, the same posture `_apply_rhythm` takes."""
+        incremental update, the same posture `_rebuild_rhythm` takes."""
         samples = await self._store.trip_speeds_for_corridor(
             subject_id=subject_id, corridor_id=corridor_id,
         )
@@ -1056,117 +1203,9 @@ class MobilityRollup:
                 sample_count=len(ordered), now_ms=now_ms,
             )
 
-    async def _record_rhythm(self, *, subject_id: str, stay: Stay, now_ms: int) -> None:
-        """Tier 3 (design/27 §4, issue #6): occupancy + rhythm + anomaly
-        for ONE closed stay, only when it falls inside an existing
-        home/work place — an unlabelled cluster is never persisted (Tier
-        2's own rule), so rhythm has nothing to attach to until then."""
-        place_id: int | None = None
-        for kind in ("home", "work"):
-            existing = await self._store.existing_place(subject_id=subject_id, kind=kind)
-            if existing is None:
-                continue
-            pid, place_lat, place_lng, _radius, _result, _label = existing
-            if _within(stay, place_lat, place_lng, self._cfg.cluster_eps_m):
-                place_id = pid
-                break
-        if place_id is None:
-            return
-        await self._apply_rhythm(
-            subject_id=subject_id, place_id=place_id, stay=stay, now_ms=now_ms,
-        )
-
-    async def _apply_rhythm(
-        self, *, subject_id: str, place_id: int, stay: Stay, now_ms: int,
-    ) -> None:
-        all_stays = await self._store.stays_for_subject(subject_id=subject_id)
-        current = next(
-            (s for s in all_stays if s.started_ts == stay.started_ts), None,
-        )
-        if current is not None and current.place_id is not None and current.place_id != place_id:
-            # Already linked to a DIFFERENT place — a same-cycle race between
-            # two first-place backfills reading the same stale snapshot, or a
-            # stay `_record_rhythm` already handled this cycle. set_place_ids
-            # would no-op; attributing this stay's dwell to `place_id` anyway
-            # would double-count it across two places' occupancy/rhythm.
-            # Found by Task 10's review, Critical #2.
-            return
-
-        already_linked = current is not None and current.place_id == place_id
-        if not already_linked:
-            # The ONLY branch that may record occupancy or score an anomaly:
-            # this is the first time the stay is being attributed to
-            # `place_id`. `record_occupancy` ACCUMULATES dwell
-            # (`dwell_ms = dwell_ms + excluded.dwell_ms`) — correct for many
-            # distinct stays, catastrophic if the SAME stay is replayed, and
-            # nothing else guards that. A re-fired first-place backfill, or a
-            # caller retry after the `_record_rhythm` guard in `run_once`
-            # swallowed an exception, both re-enter here for an
-            # already-linked stay; without this gate each replay would re-add
-            # the stay's dwell to `presence_occupancy` and re-score it for
-            # anomaly. Found by the final whole-branch review (Important #2).
-            duration_ms = stay.ended_ts - stay.started_ts
-            # Baseline read BEFORE this stay is linked, so it is never
-            # anomalous relative to itself.
-            history = await self._store.stay_durations_for_place(
-                subject_id=subject_id, place_id=place_id,
-            )
-            z = robust_z_score(
-                float(duration_ms), [float(d) for d in history],
-                min_samples=self._cfg.anomaly_min_samples,
-            )
-            if (
-                z is not None
-                and abs(z) >= self._cfg.anomaly_z_threshold
-                and self._metrics is not None
-            ):
-                self._metrics.inc("nora_analytics_anomalies_total", subject=subject_id)
-
-            await self._store.set_place_ids(
-                subject_id=subject_id, started_ts_in=[stay.started_ts],
-                place_id=place_id,
-            )
-            bins = hour_of_week_bins(stay.started_ts, stay.ended_ts, self._cfg.tz_name)
-            await self._store.record_occupancy(
-                subject_id=subject_id, place_id=place_id, bins=bins, now_ms=now_ms,
-            )
-            if self._metrics is not None:
-                self._metrics.inc(
-                    "nora_analytics_occupancy_bins_total",
-                    value=len(bins), subject=subject_id,
-                )
-
-        # Rhythm recomputes from EVERY stay now linked to this place — re-read
-        # fresh (set_place_ids may have just landed). Unlike occupancy this is
-        # a FULL recompute, not an accumulation, so it is idempotent and runs
-        # unconditionally — including as a harmless redundant call for an
-        # already-linked stay. `linked` is guaranteed non-empty: either
-        # `current` already belonged to `place_id` (the early-return above
-        # would have caught any mismatch), or set_place_ids just linked it, so
-        # the re-read below will show it.
-        all_stays = await self._store.stays_for_subject(subject_id=subject_id)
-        linked = [s for s in all_stays if s.place_id == place_id]
-        tz = ZoneInfo(self._cfg.tz_name)
-        arrivals = [_local_minute_of_day(s.started_ts, tz) for s in linked]
-        departures = [_local_minute_of_day(s.ended_ts, tz) for s in linked]
-        durations = [float(s.ended_ts - s.started_ts) for s in linked]
-        sorted_d = sorted(durations)
-        n = len(sorted_d)
-        median_ms = int(
-            sorted_d[n // 2] if n % 2 else (sorted_d[n // 2 - 1] + sorted_d[n // 2]) / 2
-        )
-        sorted_dev = sorted(abs(d - median_ms) for d in durations)
-        mad_ms = int(
-            sorted_dev[n // 2] if n % 2
-            else (sorted_dev[n // 2 - 1] + sorted_dev[n // 2]) / 2
-        )
-        await self._store.upsert_rhythm(
-            subject_id=subject_id, place_id=place_id,
-            mean_arrival_minute=circular_mean_minute(arrivals),
-            mean_departure_minute=circular_mean_minute(departures),
-            duration_median_ms=median_ms, duration_mad_ms=mad_ms,
-            sample_count=len(linked), now_ms=now_ms,
-        )
+def _median(ordered: list[float]) -> float:
+    n = len(ordered)
+    return ordered[n // 2] if n % 2 else (ordered[n // 2 - 1] + ordered[n // 2]) / 2
 
 
 def _percentile(ordered: list[float], q: float) -> float:
@@ -1195,10 +1234,6 @@ def _percentile(ordered: list[float], q: float) -> float:
 def _local_minute_of_day(ts_ms: int, tz: ZoneInfo) -> float:
     local = datetime.fromtimestamp(ts_ms / 1000, tz=tz)
     return local.hour * 60.0 + local.minute + local.second / 60.0
-
-
-def _within(stay: Stay, place_lat: float, place_lng: float, eps_m: float) -> bool:
-    return haversine_distance_m(stay.lat, stay.lng, place_lat, place_lng) <= eps_m
 
 
 def _chunk_by_gap(fixes: list[RawFix], gap_ms: int) -> list[list[RawFix]]:

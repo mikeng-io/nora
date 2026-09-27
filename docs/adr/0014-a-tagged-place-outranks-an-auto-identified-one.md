@@ -1,6 +1,6 @@
 # 0014 — A tagged place outranks an auto-identified one
 
-- **Status:** proposed
+- **Status:** accepted — built 2026-09-27 (design/27 §1.4)
 - **Date:** 2026-09-17
 - **Reverses, in part:** DEC-115 point (4) — "Life360's saved labels are a
   naming HINT and never the authority". Reversed for **identity and name**,
@@ -8,7 +8,7 @@
   unchanged; it now labels a place that already exists rather than deciding
   whether one exists.
 - **Index:** DEC-190. Argument: `design/proposed/27-presence-analytics.md` §3.7.
-  Nothing built yet — this records the decision, not a landing.
+  Built 2026-09-27; the regressions below are in `tests/unit/test_place_identity.py`.
 
 ## Context
 

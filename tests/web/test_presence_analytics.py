@@ -41,6 +41,7 @@ class FakeAnalyticsStore:
             {
                 "kind": "home",
                 "label": "Tin Sgak Path",
+                "saved": False,
                 "lat": 22.410,
                 "lng": 114.1245,
                 "radius_m": 120.0,
@@ -123,6 +124,7 @@ async def test_analytics_endpoints_return_the_spec_shapes(aiohttp_client):
                     {
                         "kind": "home",
                         "label": "Tin Sgak Path",
+                        "saved": False,
                         "lat": 22.410,
                         "lng": 114.1245,
                         "radiusM": 120.0,
