@@ -66,9 +66,13 @@ verb, before it commits:
 2. **Citations point down** and **Nora's own rows ground nothing** they may
    not ground ([10](10-tiers.md) §2).
 3. **The kind's schema holds** ([12](12-schemas.md)): fixed sections, cited
-   lines, refused never repaired.
-4. **Provenance is stamped**: session id, trace id, model, doctrine hash.
-5. **History is kept**: every derived row is a revision chain; nothing is
+   lines, absolute dates only (a relative time word in a date field is
+   refused), refused never repaired.
+4. **No re-recording**: a Register or Character line that only restates one
+   Record row is refused; the Record is already searchable
+   ([80](80-prior-art.md) §4).
+5. **Provenance is stamped**: session id, trace id, model, doctrine hash.
+6. **History is kept**: every derived row is a revision chain; nothing is
    overwritten, so a wrong inference is one revision away from right.
 
 A refused write is answered to the model with its reason (R-27

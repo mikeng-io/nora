@@ -70,6 +70,11 @@ And one word names a process, never a store:
    (unit, subject, span). Register: by unit, with the origin room kept.
    Character: by (unit, entity). Standing: by (unit, subject). A person in two
    units has two Characters, each from that unit's evidence.
+7. **Withdrawal cascades.** When a Record item is withdrawn (a message
+   deleted, the PII scrub, a face label removed, a person leaving a unit),
+   every derived row whose citation chain reaches it is marked `unsupported`,
+   stops rendering, and goes on the next agenda for re-derivation
+   ([80](80-prior-art.md) §4).
 
 ## 3. What every derived row carries
 
@@ -82,7 +87,8 @@ Standing row:
 | **lineage** | the set of source kinds its citations reach down to: `message:<room>`, `presence`, `social`, `play`, `face` | code, from the citation chain; never the model |
 | **exclude_persons** | people this row must never be shown to (a surprise) | the write verb |
 | **as_of** | when its newest evidence was observed | code |
-| **valid_from / valid_to** | when what it says was true in the world, not when it was written | the write verb for Register; code for Rollup |
+| **valid_from / valid_to** | when what it says was true in the world, not when it was written — **Rollup episodes and Register rows only** | code for Rollup; the write verb for Register |
+| **last_supported_at / support_count** | the newest Record time its citations reach, and how many independent citations support it — **Character and Standing lines** | code, from the citations |
 
 **Lineage decides who may see a row.** Every block and read tool renders a row
 into a room only if every source kind in its lineage is one that room may be
@@ -93,8 +99,9 @@ whole: prose cannot be masked field by field.
 
 ## 4. Reasoning modes
 
-Named after Honcho's own reasoning levels, so the two systems use one
-vocabulary:
+`told`, `deduced` and `induced` are Honcho's `explicit`, `deductive` and
+`inductive` levels under Nora's names; `abduced` and `computed` are Nora's own
+(Honcho's code has no abductive level, [80](80-prior-art.md) §1):
 
 | mode | meaning | allowed in | rule |
 |---|---|---|---|
@@ -117,7 +124,7 @@ survives as the word for the Character of a collective; the existing
 |---|---|---|
 | **Record** | the observed tier | a database row in general |
 | **Rollup** | the computed tier | a model's summary |
-| **episode** | a Rollup row for one bounded happening, with a start, an end and participants | a raw ingested item; a Graphiti "episode" |
+| **episode** | a Rollup row for one bounded happening, with a start, an end and participants | a raw ingested item (Graphiti's episode); an interaction exemplar (LangMem's) |
 | **aggregate** | a Rollup row of counts or patterns over a window | a Character line |
 | **Register** | the unit's affairs: note, memo, event | the voice register of `nora/doctrine` (always "voice register" there) |
 | **note** | an open thing the unit must not drop; it closes | a jotting, an idea |
@@ -131,6 +138,8 @@ survives as the word for the Character of a collective; the existing
 | **reasoning** | the mode a derived row was reached by (§4) | the model's chain of thought |
 | **lineage** | the source kinds a derived row rests on (§3) | a citation list |
 | **memory** | Honcho | any store of ours |
+| **conclusion** | a derived row in Honcho | a Record item (Honcho calls its conclusions "observations"; Nora never does) |
+| **session** | one cognition run for one unit | a Honcho session (a conversation thread; always written "Honcho session") |
 | **cognition** | the loop | a tier |
 | **perception** | a model's reading of a Record item (vision, face match), stored on that item with its confidence | an interpretation of what it means |
 | **play** | the stream of who is in which game or voice channel, with whom | a game's own match data (that is a source feeding it) |
@@ -139,7 +148,8 @@ Retired: **idea** (a proposal is a `## Proposed` line of a note, DEC-213);
 **stance** (it is Standing); **knowledge** and **fact** (the deleted tier,
 #115, not reused); **storage tier**; **mart** and **trace** (the operator's
 metaphors; "trace" is Langfuse's in this repo); **inferred** (replaced by the
-three inference modes).
+three inference modes); **community** (Graphiti's clustered group; rooms and
+units are configured); **reflection** as a process name (it is cognition).
 
 ## 7. Where today's stores land
 

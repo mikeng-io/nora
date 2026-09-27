@@ -74,6 +74,9 @@ An account nobody sees cannot be corrected, so:
   `Unsure` ([12](12-schemas.md) §8).
 - **Induction needs instances**: a line about what someone reliably does cites
   a Rollup aggregate ([10](10-tiers.md) §2 rule 5).
+- **Contradiction is kept, not resolved on write**: two cited claims that
+  conflict stay side by side, marked, until a later revision's evidence
+  settles one (Honcho's `contradiction` level, [80](80-prior-art.md) §4).
 
 ## 5. Disclosure
 

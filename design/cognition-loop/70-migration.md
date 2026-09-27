@@ -81,6 +81,7 @@ Steps 5–6 are Observe and independent of 1–4; they may run in parallel.
 | a `delegate` verb for long work | the first backfill that needs it (faces, step 6) |
 | posts, reels and follows endpoints on the bridge | each built and measured with the bridge |
 | strands-agents 1.50.2 → 1.57.1 | its own PR, measured before and after |
+| Honcho: one scope per unit inside the one workspace; told conclusions only in the prompt once Character ships ([80](80-prior-art.md) §6) | the Honcho version on norty (≥ 3.1.0), then the operator |
 | retention of the Record (`[store] prune_enabled`) | prune only rows no live derived row cites, or leave a tombstone the citation resolves to |
 | game-specific sources (CS2, Valorant, Apex) | after step 5; each a source feeding play samples |
 | DEC numbers | taken at merge (`nora-decision`) |
