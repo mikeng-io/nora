@@ -1,0 +1,11 @@
+{
+  "type": "fix",
+  "summary": "On an iPhone the public site's whole page could be swiped sideways, as if floating; it now stays put.",
+  "details": [
+    "Nora's box in the air, while she hops between her places, was wider than a phone's screen, and iOS Safari let it widen the page for a moment in the middle of a scroll. She now hops inside a layer the size of the screen that clips her to it.",
+    "The page as a whole also refuses to scroll sideways, so no later overhang can bring it back."
+  ],
+  "limitations": [
+    "Desktop Chrome and WebKit never scroll sideways, before or after, so no automated check can see this; an iPhone is the only place it shows."
+  ]
+}

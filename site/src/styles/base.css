@@ -17,6 +17,16 @@ html {
   hanging-punctuation: first allow-end last;
 }
 
+/* Nothing on this page is meant to be reached sideways. A decorative
+   overhang (her canvas reaches a little past her figure so a tilted head is
+   not cut off) must never make a phone's page swipeable: `clip`, not
+   `hidden`, so no scroll container is made and the sticky header still
+   sticks. */
+html,
+body {
+  overflow-x: clip;
+}
+
 @media (prefers-reduced-motion: no-preference) {
   html {
     scroll-behavior: smooth;
@@ -366,15 +376,26 @@ button {
   height: 100%;
 }
 
-/* In the air between two places, above the page, under the header. */
-.nora-flight {
+/* In the air between two places, above the page, under the header. Her
+   box in the air is often wider than a phone's screen (a hop from the hero
+   is ~430px on a 414px iPhone), and iOS Safari lets a fixed box that
+   reaches past the screen widen the page, so the whole page could be
+   swiped sideways. She flies inside a layer the size of the screen that
+   clips her there. */
+.nora-sky {
   position: fixed;
   z-index: 30;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.nora-flight {
+  position: absolute;
   left: 0;
   top: 0;
   width: 0;
   height: 0;
-  pointer-events: none;
   transform-origin: 50% 100%;
   will-change: transform;
 }

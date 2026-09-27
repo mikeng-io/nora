@@ -51,6 +51,8 @@ export class Stage {
   private last = 0;
   private onScreen = true;
   private flightBox: HTMLElement;
+  /** The screen-sized, clipping layer she flies in (see base.css `.nora-sky`). */
+  private sky: HTMLElement;
   private arriveListeners: Listener[] = [];
   private lastScroll = { y: scrollY, t: 0, v: 0 };
   private dark = false;
@@ -85,10 +87,13 @@ export class Stage {
         host,
       };
     });
+    this.sky = document.createElement("div");
+    this.sky.className = "nora-sky";
+    this.sky.setAttribute("aria-hidden", "true");
     this.flightBox = document.createElement("div");
     this.flightBox.className = "nora-flight";
-    this.flightBox.setAttribute("aria-hidden", "true");
-    document.body.append(this.flightBox);
+    this.sky.append(this.flightBox);
+    document.body.append(this.sky);
     this.io = new IntersectionObserver(
       (entries) => {
         for (const e of entries) {
@@ -219,7 +224,7 @@ export class Stage {
     this.near?.disconnect();
     this.r.dispose();
     this.r.canvas.remove();
-    this.flightBox.remove();
+    this.sky.remove();
     for (const s of this.slots) {
       s.host.remove();
       delete s.el.dataset.state;
