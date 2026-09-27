@@ -94,6 +94,6 @@ Record, which the next session observes like anything else.
 | writer | Record | Register | Character | Standing | memory | doctrine |
 |---|---|---|---|---|---|---|
 | ingestion (code) | **yes** | — | — | — | feed | — |
-| cognition | — | **yes** | **yes** | **yes** | — | proposes only ([55](55-self.md) §3) |
+| cognition | — | **yes** | **yes** | **yes** | — | **never** ([55](55-self.md) §3) |
 | tag turn | — | **yes** | — | room, via debrief | `remember` | — |
 | operator | — | via Nora | — | — | — | **yes** |

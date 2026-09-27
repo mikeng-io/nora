@@ -12,6 +12,10 @@ edges:
 
 # 10 · Tiers
 
+**This node is the canonical definition.** Every other node, the GLOSSARY and
+every objective or skill uses these words with exactly these meanings; a new
+word for any of these things is a defect.
+
 ## 1. The rule the tiers are cut by
 
 **Each tier answers one question, and no question is answered by two tiers.**

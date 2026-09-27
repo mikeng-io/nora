@@ -35,7 +35,7 @@ Each step ships alone, behind a flag that defaults off, and is read back live
 
 | # | step | ships | the reading that gates the next |
 |---|---|---|---|
-| 0 | **Tiers and words** | a DEC for [10](10-tiers.md) and [15](15-map.md); GLOSSARY rewritten to it | — |
+| 0 | **Tiers, words, schemas** | a DEC for [10](10-tiers.md), [12](12-schemas.md), [15](15-map.md); GLOSSARY's Dreamer section rewritten to them, in their words only | — |
 | 1 | **Signals, shadow** | the ingest signal stage, cues, the pending set, wake metrics; the clocks still run everything | a week of wake reasons; defaults sized from it |
 | 2 | **Events unit-wide** | unit key, the lifecycle statuses, revision history with `told`/`inferred`, the event write verbs; the tag path's event tools on the new shape | existing gathering tests and the tag path's event cases green |
 | 3 | **Cognition, shadow** | the session, agenda, verbs in dry-run (would-write rows recorded, nothing committed), skills from the objectives | the dinner case passes; over a shadow week every clocked-adaptor write is matched or deliberately closed |
@@ -43,7 +43,7 @@ Each step ships alone, behind a flag that defaults off, and is read back live
 | 5 | **Social ingestion** | the story poller and its perception; the story rule and its test rewritten; posts, reels and follows as the bridge gains each endpoint | poll outcomes and item counts read back; the bridge session unharmed for a week |
 | 6 | **Faces** | detector, embedder, templates from reference photos; portal and chat tagging; unknown clusters | precision on the held-out labelled set ([60](60-faces.md) §5) |
 | 7 | **Memos** | the memo table, `memo_write`/`memo_read`, `<memos>`, the «記低» routing | `tool_selection` before and after |
-| 8 | **Character and Standing** | person, unit and Nora Character; unit and person Standing; the `self` block ([55](55-self.md)) | a labelled set of accounts judged against the Record they cite |
+| 8 | **Character and Standing** | person, unit and Nora Character; unit and person Standing; the `self` block; tension rows and their portal page ([55](55-self.md)) | a labelled set of accounts judged against the Record they cite |
 
 Steps 5–6 are Observe and independent of 1–4; they may run in parallel.
 
@@ -65,7 +65,7 @@ Steps 5–6 are Observe and independent of 1–4; they may run in parallel.
 
 | position | what would decide it |
 |---|---|
-| the proposed level of self-change ([55](55-self.md) §3): how a doctrine proposal reaches the operator | the operator, before step 8 |
+| latitude in `core/identity.md`, `voice.md`, `belonging.md` ([55](55-self.md) §3) | the operator, before step 8 |
 | one agent on the runtime model (a cheap model) holding a busy unit's day | step 3's shadow: agenda items closed per session, refusals per verb, context size |
 | the unit as the read boundary for transcripts of all its rooms | the operator's 2026-09-09 ruling covers proactive; confirmed for cognition at step 0 |
 | participation as a wake of the same loop | session latency measured after step 4 |
@@ -79,5 +79,7 @@ Steps 5–6 are Observe and independent of 1–4; they may run in parallel.
 **2026-09-28 — proposed.** Operator confirmed: one agent for orient, decide and
 act; events unit-wide and derived, cognition may revise, confirm and cancel;
 no new statuses; stories, posts, reels and the social graph ingested; faces
-now; passwords may be kept in memos; culture is the Character of a collective.
+now; passwords may be kept in memos; culture is the Character of a collective;
+doctrine is law she never proposes to change, tension shown to the operator;
+every derived row is schema'd Markdown.
 Nothing is built.

@@ -61,8 +61,8 @@ verb, before it commits:
    shown set).
 2. **Citations point down** and **Nora's own rows ground nothing** they may
    not ground ([10](10-tiers.md) §2).
-3. **The tier's own schema holds**: a note body in its sections (DEC-213), an
-   event's fields, a Character account's form.
+3. **The kind's schema holds** ([12](12-schemas.md)): fixed sections, cited
+   lines, refused never repaired.
 4. **Provenance is stamped**: session id, trace id, model, doctrine hash.
 5. **History is kept**: every derived row is a revision chain; nothing is
    overwritten, so a wrong inference is one revision away from right.

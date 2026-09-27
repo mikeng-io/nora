@@ -18,8 +18,9 @@ description: >
   memo, event), CHARACTER (what an entity is like), STANDING (where Nora
   stands). Cognition is the process plus what it has built, never a store; her identity
   is the slice of all state about her (doctrine given, Record done, Character
-  digested, Standing held), and she grows by revising it, proposing doctrine
-  changes the operator approves. The Dreamer runtime is
+  digested, Standing held), and she grows by revising it inside doctrine she
+  never changes, with any tension shown to the operator. Every derived row is
+  structured Markdown with a fixed schema. The Dreamer runtime is
   kept and its scheduling half replaced; the proactive adaptor becomes the
   loop's act step.
 status: proposed
@@ -45,6 +46,7 @@ origin: >
 members:
   - 00-intent.md
   - 10-tiers.md
+  - 12-schemas.md
   - 15-map.md
   - 20-observe.md
   - 30-cognition.md
@@ -59,6 +61,7 @@ edges:
   - {src: 20-observe, dst: 30-cognition, rel: sequences, provenance: asserted}
   - {src: 30-cognition, dst: 40-register, rel: depends_on, provenance: asserted}
   - {src: 30-cognition, dst: 50-character-and-standing, rel: depends_on, provenance: asserted}
+  - {src: 10-tiers, dst: 12-schemas, rel: extends, provenance: asserted}
   - {src: 10-tiers, dst: 15-map, rel: extends, provenance: asserted}
   - {src: 15-map, dst: 55-self, rel: sequences, provenance: asserted}
   - {src: 55-self, dst: 50-character-and-standing, rel: extends, provenance: asserted}
