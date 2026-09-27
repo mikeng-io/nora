@@ -57,7 +57,7 @@ And one word names a process, never a store:
    entity). A person in two units has two Characters, each from that unit's
    evidence: same person, different evidence, and units never share.
 
-## 3. Culture is Character, and this is where the draft departs from the operator's sentence
+## 3. Culture is Character
 
 The operator's sentence put **culture** with Standing, notes and memos, and
 Character apart as "pure character representation". This draft puts culture
@@ -68,7 +68,9 @@ unit instead of a person. Standing, notes and memos answer different questions
 word for the character of a collective: the room's culture, the unit's
 culture. The existing `culture` store becomes the room case of Character.
 
-**This is the one terminology decision the operator must confirm.**
+**Confirmed by the operator 2026-09-28.** The full map of every store and
+context block is [15](15-map.md); what her identity is built from is
+[55](55-self.md).
 
 ## 4. The words
 
