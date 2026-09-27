@@ -1,0 +1,17 @@
+{
+  "type": "fix",
+  "summary": "Where-people-have-been analytics are more accurate: drives longer than about half an hour no longer freeze the rest of the day, each drive is one trip, a person can have several places (two homes included) with each stay linked to the right one, and the substrate can now forecast where someone usually is at a given hour and flag unusual stays.",
+  "details": [
+    "A drive longer than one 400-fix batch (about 33 minutes at the moving cadence) used to stop every later stay and trip for that person from being derived until 4,000 fixes of backlog had built up; the rollup now widens the batch until the drive resolves.",
+    "An arrival no longer splits one drive into a trip plus a short walking-pace fragment: the trip into a stop is written once the stop is confirmed.",
+    "A single scattered GPS fix no longer splits a stay into two with a hole between them.",
+    "Places follow DEC-190: a subject may hold any number of places, a Life360 saved place names the place its stays fall in, the stays themselves decide its position, unlabelled places are kept, and stays linked to a place that had moved kilometres away are relinked on the first cycle after deploy.",
+    "The dashboard's weekly rhythm splits each stay across the hours it covers instead of crediting all of it to the hour it began, and place totals count the stays actually linked to each place.",
+    "New pure functions forecast where someone usually is across a span of hours (with how many weeks support it and which fallback answered) and detect unusual stays (duration, arrival, departure, a never-visited place, or not being where they usually are at that hour); a rolling-origin backtest is committed as the instrument for measuring the forecast."
+  ],
+  "limitations": [
+    "Nora has no tool for the forecast or the anomalies yet, so she cannot answer «where will he be on Wednesday night» until one is added and its routing measured.",
+    "Anomalies are computed on read and counted in nora_analytics_anomalies_total by kind; nothing speaks about them unprompted.",
+    "No forecast accuracy figure is claimed: the backtest exists, but it has not been run against the deployment."
+  ]
+}

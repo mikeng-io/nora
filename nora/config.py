@@ -1360,6 +1360,11 @@ class AnalyticsConfig(BaseModel):
     min_nights: int = Field(default=3, ge=1)
     min_weekdays: int = Field(default=3, ge=1)
     label_freshness_days: int = Field(default=45, ge=1)
+    # DEC-190 (design/27 §3.7): how close a Life360 saved place must be to
+    # claim a stay or a cluster. Its own knob, never `cluster_eps_m` —
+    # measured match band 7.0-49.3 m, nearest non-match 636 m, so safe in
+    # 100-500 m and unsafe at 50 (hence the floor).
+    place_match_radius_m: float = Field(default=150.0, ge=100.0, le=500.0)
     # Tier 3 (design/27 §4, issue #6, DEC-119): robust_z_score's own
     # fail-closed floor — fewer than this many prior stays at a place and
     # no anomaly claim is made, ever (nora.domain.mobility.robust_z_score's

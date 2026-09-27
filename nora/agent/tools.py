@@ -5557,7 +5557,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 places = [
                     {
                         k: row[k] for k in (
-                            "kind", "label", "confidence", "first_seen_ts",
+                            "kind", "label", "saved", "confidence", "first_seen_ts",
                             "last_seen_ts", "stay_count", "total_dwell_ms",
                         )
                     } | {
@@ -5686,10 +5686,16 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                     pl.get("kind") == "unlabeled"
                     for p in people for pl in p.get("places", ())
                 ):
+                    # DEC-190: a place can now carry a household name (its
+                    # Life360 saved place, `saved`) and still be unlabeled —
+                    # «no pattern yet» would be confidently wrong about a
+                    # named place with hundreds of hours of dwell.
                     note += (
-                        " A place of kind unlabeled means there is no pattern "
-                        "there yet: say that plainly, and do not name a place "
-                        "for it."
+                        " A place of kind unlabeled has no home or work pattern: "
+                        "never call it their home or their work. If it has a "
+                        "label, that is its name and you may use it; if not, "
+                        "say it is a place they go that has no name, and do "
+                        "not invent one."
                     )
                 return note
             return (

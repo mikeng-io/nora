@@ -147,6 +147,7 @@ def build_rollup(cfg: Config) -> AnalyticsDependencies:
         cluster_min_samples=analytics.cluster_min_samples,
         min_nights=analytics.min_nights, min_weekdays=analytics.min_weekdays,
         label_freshness_days=analytics.label_freshness_days,
+        place_match_radius_m=analytics.place_match_radius_m,
         tz_name=analytics.tz_name,
         anomaly_min_samples=analytics.anomaly_min_samples,
         anomaly_z_threshold=analytics.anomaly_z_threshold,

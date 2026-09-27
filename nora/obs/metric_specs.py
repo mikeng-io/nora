@@ -696,9 +696,11 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     # the anomaly detector doing its job (design/27 §4, issue #6).
     _CounterSpec(
         "nora_analytics_anomalies_total",
-        "Stay durations scoring |z| above anomaly_z_threshold against the "
-        "subject's own history at that place, by subject.",
-        ("subject",),
+        "Newly closed stays that are unusual against the subject's own history "
+        "(duration/arrival/departure robust |z| above anomaly_z_threshold at "
+        "that place, a never-visited place, or somewhere other than where the "
+        "hour-of-week forecast put them), by subject and kind.",
+        ("subject", "kind"),
     ),
     _CounterSpec(
         "nora_analytics_trips_total",

@@ -19,14 +19,14 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.domain.mobility import (
-    LabelResult,
+    DerivedPlace,
     RawFix,
     Stay,
+    TaggedPlace,
     Trip,
     best_corridor_match,
-    hour_of_week,
+    hour_of_week_bins,
 )
-from nora.domain.presence import haversine_distance_m
 from nora.infra.sql.schema import (
     ANALYTICS_WATERMARK,
     PRESENCE_CORRIDOR_SPEED,
@@ -35,6 +35,7 @@ from nora.infra.sql.schema import (
     PRESENCE_FIXES,
     PRESENCE_OCCUPANCY,
     PRESENCE_PLACE_RHYTHM,
+    PRESENCE_PLACES,
     PRESENCE_STAYS,
     PRESENCE_TRIPS,
 )
@@ -74,11 +75,15 @@ class SqlMobilityStore:
         self._metrics = metrics
 
     async def places_with_aggregates(self, *, subject_id: str) -> list[dict[str, Any]]:
-        """Read derived places and bounded stay aggregates for one subject.
+        """Read derived places and their stay aggregates for one subject.
 
-        Containment is intentionally decided with the domain's haversine
-        function, the same `_within` rule the rollup uses.  Both statements
-        are SELECT-only; the web consumer never re-runs or mutates derivation.
+        Aggregates follow `presence_stays.place_id` — the link the rollup
+        wrote — not a second containment test. The old read re-derived
+        membership as «any stay within `radius_m` of the stored point» over
+        the newest 5,000 stays, which disagreed with the rollup's own links
+        (a stay near two places counted at both; a place whose row had moved
+        counted stays it never linked) and silently truncated history (audit
+        2026-09-27). SELECT-only; the web consumer never re-runs derivation.
         """
         places_stmt = (
             sa.select(PRESENCE_DERIVED_PLACES)
@@ -86,56 +91,70 @@ class SqlMobilityStore:
             .order_by(PRESENCE_DERIVED_PLACES.c.id.asc())
             .limit(_MAX_ANALYTICS_PLACES)
         )
-        stays_stmt = (
+        agg_stmt = (
             sa.select(
-                PRESENCE_STAYS.c.lat, PRESENCE_STAYS.c.lng,
-                PRESENCE_STAYS.c.started_ts, PRESENCE_STAYS.c.ended_ts,
+                PRESENCE_STAYS.c.place_id,
+                sa.func.count().label("stay_count"),
+                sa.func.coalesce(
+                    sa.func.sum(
+                        sa.func.greatest(
+                            PRESENCE_STAYS.c.ended_ts - PRESENCE_STAYS.c.started_ts, 0,
+                        )
+                    ),
+                    0,
+                ).label("total_dwell_ms"),
             )
-            .where(PRESENCE_STAYS.c.subject_id == subject_id)
-            .order_by(PRESENCE_STAYS.c.started_ts.desc())
-            .limit(_MAX_ANALYTICS_POINTS)
+            .where(
+                PRESENCE_STAYS.c.subject_id == subject_id,
+                PRESENCE_STAYS.c.place_id.is_not(None),
+            )
+            .group_by(PRESENCE_STAYS.c.place_id)
         )
         async with self._engine.connect() as conn:
             places = (await conn.execute(places_stmt)).all()
-            stays = (await conn.execute(stays_stmt)).all()
+            aggs = {r.place_id: r for r in (await conn.execute(agg_stmt)).all()}
 
         out: list[dict[str, Any]] = []
         for place in places:
-            matching = [
-                stay for stay in stays
-                if haversine_distance_m(
-                    stay.lat, stay.lng, place.lat, place.lng,
-                ) <= place.radius_m
-            ]
+            agg = aggs.get(place.id)
             out.append(
                 {
                     "kind": place.kind,
                     "label": place.label,
+                    "saved": place.saved_place_id is not None,
                     "lat": place.lat,
                     "lng": place.lng,
                     "radius_m": place.radius_m,
                     "confidence": place.confidence,
                     "first_seen_ts": place.first_seen_ts,
                     "last_seen_ts": place.last_seen_ts,
-                    "stay_count": len(matching),
-                    "total_dwell_ms": sum(
-                        max(0, stay.ended_ts - stay.started_ts) for stay in matching
-                    ),
+                    "stay_count": int(agg.stay_count) if agg is not None else 0,
+                    "total_dwell_ms": int(agg.total_dwell_ms) if agg is not None else 0,
                 }
             )
         return out
 
     async def rhythm_bins(self, *, subject_id: str, window_ms: int) -> list[dict[str, int]]:
-        """Read bounded stays and group them by the substrate's local hour key."""
+        """Stays inside a trailing window, dwell SPLIT across the local
+        hours-of-week each one covers.
+
+        It used to credit a stay's WHOLE dwell to the hour it started in, so a
+        10-hour overnight stay beginning Monday 22:00 put all ten hours on
+        «Monday 22:00» and none on the small hours — the heatmap showed
+        people as absent exactly when they were most reliably somewhere
+        (audit 2026-09-27). `hour_of_week_bins` is the same split Tier 3's
+        occupancy uses, clipped to the window; `stay_count` counts the stays
+        that touch a bin."""
         window_ms = min(max(window_ms, 0), _MAX_ANALYTICS_WINDOW_MS)
         if window_ms == 0:
             return []
-        cutoff_ms = int(time.time() * 1000) - window_ms
+        now_ms = int(time.time() * 1000)
+        cutoff_ms = now_ms - window_ms
         stmt = (
             sa.select(PRESENCE_STAYS.c.started_ts, PRESENCE_STAYS.c.ended_ts)
             .where(
                 PRESENCE_STAYS.c.subject_id == subject_id,
-                PRESENCE_STAYS.c.started_ts >= cutoff_ms,
+                PRESENCE_STAYS.c.ended_ts >= cutoff_ms,
             )
             .order_by(PRESENCE_STAYS.c.started_ts.desc())
             .limit(_MAX_ANALYTICS_POINTS)
@@ -145,10 +164,14 @@ class SqlMobilityStore:
 
         bins: dict[int, dict[str, int]] = {}
         for row in rows:
-            how = hour_of_week(row.started_ts, _ANALYTICS_TZ_NAME)
-            bucket = bins.setdefault(how, {"stay_count": 0, "total_dwell_ms": 0})
-            bucket["stay_count"] += 1
-            bucket["total_dwell_ms"] += max(0, row.ended_ts - row.started_ts)
+            split = hour_of_week_bins(
+                max(row.started_ts, cutoff_ms), min(row.ended_ts, now_ms),
+                _ANALYTICS_TZ_NAME,
+            )
+            for how, dwell in split.items():
+                bucket = bins.setdefault(how, {"stay_count": 0, "total_dwell_ms": 0})
+                bucket["stay_count"] += 1
+                bucket["total_dwell_ms"] += dwell
         return [
             {
                 "hour_of_week": how,
@@ -358,26 +381,6 @@ class SqlMobilityStore:
             for r in rows
         ]
 
-    async def set_place_ids(
-        self, *, subject_id: str, started_ts_in: list[int], place_id: int
-    ) -> None:
-        """Fills `place_id` ONLY where it is currently NULL — a stay's link
-        to a place, once set, is never silently reassigned by a later,
-        different cluster touching the same coordinate (Task 10's own
-        docstring on why this can only ever be additive)."""
-        if not started_ts_in:
-            return
-        async with self._engine.begin() as conn:
-            await conn.execute(
-                sa.update(PRESENCE_STAYS)
-                .where(
-                    PRESENCE_STAYS.c.subject_id == subject_id,
-                    PRESENCE_STAYS.c.started_ts.in_(started_ts_in),
-                    PRESENCE_STAYS.c.place_id.is_(None),
-                )
-                .values(place_id=place_id)
-            )
-
     async def write_trips(self, trips: list[Trip]) -> None:
         if not trips:
             return
@@ -583,139 +586,151 @@ class SqlMobilityStore:
         async with self._engine.begin() as conn:
             await conn.execute(stmt)
 
-    async def existing_place(
-        self, *, subject_id: str, kind: str
-    ) -> tuple[int, float, float, float, LabelResult, str | None] | None:
-        stmt = sa.select(PRESENCE_DERIVED_PLACES).where(
-            PRESENCE_DERIVED_PLACES.c.subject_id == subject_id,
-            PRESENCE_DERIVED_PLACES.c.kind == kind,
-        )
-        async with self._engine.connect() as conn:
-            row = (await conn.execute(stmt)).first()
-        if row is None:
-            return None
-        return (
-            row.id, row.lat, row.lng, row.radius_m,
-            LabelResult(
-                kind=row.kind, confidence=row.confidence,
-                most_recent_support_ts=None,  # not persisted; recomputed each cycle
-            ),
-            row.label,
-        )
-
-    async def upsert_place(
-        self, *, subject_id: str, circle_id: str, kind: str, lat: float,
-        lng: float, radius_m: float, result: LabelResult, now_ms: int,
-        label: str | None = None,
-    ) -> None:
-        """Delete-then-insert ONLY for a genuine kind reassignment or an
-        unlabeled downgrade. The common case — `kind == result.kind`, Speed 3
-        reconfirming the SAME physical place every re-cluster cycle — UPDATEs
-        the existing row in place instead, preserving its `id`. Found by
-        Task 10's review: `presence_stays.place_id` / `presence_occupancy` /
-        `presence_place_rhythm` all key off this id, and churning it every
-        cycle orphaned all of Tier 3's data and left the anomaly baseline
-        permanently empty in production. See this method's git history for
-        the original delete-then-insert-always docstring/rationale, which is
-        still correct for the reassignment/downgrade branches below.
-
-        `kind` is the slot being RE-EVALUATED — independent of
-        `result.kind`, the classification the recheck actually produced.
-        The delete clears rows matching EITHER `kind` (the slot being
-        re-evaluated) OR `result.kind` (the kind about to be written, when
-        it is a real kind and differs from `kind`) — never just one or the
-        other, and never `IN ('home', 'work')` unconditionally. Two
-        distinct bugs live on either side of that: deleting only `kind`
-        would leave a stale row behind under `result.kind` if a subject
-        already held one there from a DIFFERENT cluster (a `home` recheck
-        that resolves straight to `work`, with an existing unrelated `work`
-        place already on file, would otherwise leave two `kind='work'`
-        rows — `presence_derived_places` has no unique constraint on
-        `(subject_id, kind)`, only an index, so `existing_place`'s
-        `.first()` read would become non-deterministic from that point);
-        deleting unconditionally over BOTH `home` and `work` regresses to
-        the original bug this store was built to avoid (a `home` recheck
-        must never delete an unrelated, still-valid `work` row it never
-        touched).
-
-        A downgrade to `unlabeled` deletes the row entirely rather than
-        storing a row with kind='unlabeled' — `existing_place` for a kind
-        that no longer holds correctly returns None (Step 1's
-        `test_a_stale_place_can_be_downgraded_to_unlabeled_in_place`)."""
-        if kind == result.kind and result.kind != "unlabeled":
-            async with self._engine.begin() as conn:
-                existing = (await conn.execute(
-                    sa.select(PRESENCE_DERIVED_PLACES.c.id).where(
-                        PRESENCE_DERIVED_PLACES.c.subject_id == subject_id,
-                        PRESENCE_DERIVED_PLACES.c.kind == result.kind,
-                    )
-                )).first()
-                if existing is not None:
-                    await conn.execute(
-                        sa.update(PRESENCE_DERIVED_PLACES).where(
-                            PRESENCE_DERIVED_PLACES.c.id == existing.id,
-                        ).values(
-                            lat=lat, lng=lng, radius_m=radius_m,
-                            confidence=result.confidence, label=label,
-                            last_seen_ts=now_ms,
-                        )
-                    )
-                    return
-        delete_kinds = {kind}
-        if result.kind != "unlabeled":
-            delete_kinds.add(result.kind)
-        async with self._engine.begin() as conn:
-            await conn.execute(
-                sa.delete(PRESENCE_DERIVED_PLACES).where(
-                    PRESENCE_DERIVED_PLACES.c.subject_id == subject_id,
-                    PRESENCE_DERIVED_PLACES.c.kind.in_(delete_kinds),
-                )
-            )
-            if result.kind != "unlabeled":
-                await conn.execute(
-                    sa.insert(PRESENCE_DERIVED_PLACES),
-                    {
-                        "subject_id": subject_id, "circle_id": circle_id,
-                        "lat": lat, "lng": lng, "radius_m": radius_m,
-                        "kind": result.kind, "confidence": result.confidence,
-                        "label": label, "saved_place_id": None,
-                        "first_seen_ts": now_ms, "last_seen_ts": now_ms,
-                    },
-                )
-
-    async def record_occupancy(
-        self, *, subject_id: str, place_id: int, bins: dict[int, int], now_ms: int
-    ) -> None:
-        if not bins:
-            return
-        async with self._engine.begin() as conn:
-            for hour_of_week, dwell_ms in bins.items():
-                stmt = pg_insert(PRESENCE_OCCUPANCY).values(
-                    subject_id=subject_id, place_id=place_id,
-                    hour_of_week=hour_of_week, dwell_ms=dwell_ms, updated_ts=now_ms,
-                )
-                stmt = stmt.on_conflict_do_update(
-                    index_elements=[
-                        PRESENCE_OCCUPANCY.c.subject_id, PRESENCE_OCCUPANCY.c.place_id,
-                        PRESENCE_OCCUPANCY.c.hour_of_week,
-                    ],
-                    set_={
-                        "dwell_ms": PRESENCE_OCCUPANCY.c.dwell_ms + stmt.excluded.dwell_ms,
-                        "updated_ts": stmt.excluded.updated_ts,
-                    },
-                )
-                await conn.execute(stmt)
-
-    async def stay_durations_for_place(
-        self, *, subject_id: str, place_id: int
-    ) -> list[int]:
-        stmt = sa.select(PRESENCE_STAYS.c.started_ts, PRESENCE_STAYS.c.ended_ts).where(
-            PRESENCE_STAYS.c.subject_id == subject_id,
-            PRESENCE_STAYS.c.place_id == place_id,
+    async def places_for_subject(self, *, subject_id: str) -> list[DerivedPlace]:
+        """Every stored place for the subject, id-ascending — any number of
+        them, two homes included (DEC-190 lifted the one-row-per-kind
+        ceiling this store used to hold)."""
+        stmt = (
+            sa.select(PRESENCE_DERIVED_PLACES)
+            .where(PRESENCE_DERIVED_PLACES.c.subject_id == subject_id)
+            .order_by(PRESENCE_DERIVED_PLACES.c.id.asc())
         )
         async with self._engine.connect() as conn:
             rows = (await conn.execute(stmt)).all()
-        return [r.ended_ts - r.started_ts for r in rows]
+        return [
+            DerivedPlace(
+                id=r.id, subject_id=r.subject_id, circle_id=r.circle_id,
+                lat=r.lat, lng=r.lng, radius_m=r.radius_m, kind=r.kind,
+                confidence=r.confidence, label=r.label,
+                saved_place_id=r.saved_place_id,
+            )
+            for r in rows
+        ]
+
+    async def save_place(
+        self, *, subject_id: str, circle_id: str, place_id: int | None,
+        lat: float, lng: float, radius_m: float,
+        kind: str, confidence: float, label: str | None,
+        saved_place_id: str | None, first_seen_ts: int, last_seen_ts: int,
+    ) -> int:
+        """UPDATE in place when `place_id` is given — the id is what
+        `presence_stays.place_id`, `presence_occupancy` and
+        `presence_place_rhythm` key off, so it is never churned — else INSERT.
+        `kind='unlabeled'` is a stored value, never a deletion (DEC-190 rule
+        4): the place is still where the person goes."""
+        values = {
+            "lat": lat, "lng": lng, "radius_m": radius_m, "kind": kind,
+            "confidence": confidence, "label": label,
+            "saved_place_id": saved_place_id,
+            "first_seen_ts": first_seen_ts, "last_seen_ts": last_seen_ts,
+        }
+        async with self._engine.begin() as conn:
+            if place_id is not None:
+                await conn.execute(
+                    sa.update(PRESENCE_DERIVED_PLACES)
+                    .where(
+                        PRESENCE_DERIVED_PLACES.c.id == place_id,
+                        PRESENCE_DERIVED_PLACES.c.subject_id == subject_id,
+                    )
+                    .values(**values)
+                )
+                return place_id
+            result = await conn.execute(
+                sa.insert(PRESENCE_DERIVED_PLACES)
+                .values(subject_id=subject_id, circle_id=circle_id, **values)
+                .returning(PRESENCE_DERIVED_PLACES.c.id)
+            )
+            return int(result.scalar_one())
+
+    async def delete_places(self, *, subject_id: str, place_ids: list[int]) -> None:
+        """Drop places no stay resolves to any more, WITH their occupancy and
+        rhythm rows — a Tier 3 row keyed on a vanished place is a ghost no
+        consumer can resolve. The caller unlinks the stays first."""
+        if not place_ids:
+            return
+        async with self._engine.begin() as conn:
+            for table in (PRESENCE_OCCUPANCY, PRESENCE_PLACE_RHYTHM):
+                await conn.execute(
+                    sa.delete(table).where(
+                        table.c.subject_id == subject_id,
+                        table.c.place_id.in_(place_ids),
+                    )
+                )
+            await conn.execute(
+                sa.delete(PRESENCE_DERIVED_PLACES).where(
+                    PRESENCE_DERIVED_PLACES.c.subject_id == subject_id,
+                    PRESENCE_DERIVED_PLACES.c.id.in_(place_ids),
+                )
+            )
+
+    async def relink_stays(
+        self, *, subject_id: str, links: dict[int, int | None],
+    ) -> None:
+        """Set each stay's `place_id` (keyed by `started_ts`) to EXACTLY the
+        given value, overwriting what is there. This replaces the fill-NULL-
+        only `set_place_ids`, whose additivity is what let 88 stays stay
+        linked to rows that had moved 3.8-12.1 km away (issue #339): a link
+        must follow the place picture the reconcile computed, not whichever
+        writer got there first."""
+        if not links:
+            return
+        by_place: dict[int | None, list[int]] = {}
+        for started_ts, place_id in links.items():
+            by_place.setdefault(place_id, []).append(started_ts)
+        async with self._engine.begin() as conn:
+            for place_id, started in by_place.items():
+                await conn.execute(
+                    sa.update(PRESENCE_STAYS)
+                    .where(
+                        PRESENCE_STAYS.c.subject_id == subject_id,
+                        PRESENCE_STAYS.c.started_ts.in_(started),
+                    )
+                    .values(place_id=place_id)
+                )
+
+    async def tagged_places(self) -> list[TaggedPlace]:
+        """Every Life360 saved place, EVERY circle — duplicate tags merge
+        across circles (design/27 §3.7), so the read cannot be circle-scoped."""
+        stmt = sa.select(PRESENCE_PLACES).order_by(
+            PRESENCE_PLACES.c.circle_id, PRESENCE_PLACES.c.place_id,
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+        return [
+            TaggedPlace(
+                circle_id=r.circle_id, place_id=r.place_id, name=r.name,
+                lat=r.lat, lng=r.lng, radius_m=r.radius_m,
+            )
+            for r in rows
+        ]
+
+    async def replace_occupancy(
+        self, *, subject_id: str, place_id: int, bins: dict[int, int], now_ms: int,
+    ) -> None:
+        """Occupancy for one place, recomputed WHOLESALE from its linked
+        stays. It used to ACCUMULATE per closed stay, which made it wrong the
+        moment a link changed (the dwell stayed on the old place) and double
+        counted any replay; a full replace is idempotent and follows the
+        links."""
+        async with self._engine.begin() as conn:
+            await conn.execute(
+                sa.delete(PRESENCE_OCCUPANCY).where(
+                    PRESENCE_OCCUPANCY.c.subject_id == subject_id,
+                    PRESENCE_OCCUPANCY.c.place_id == place_id,
+                )
+            )
+            if bins:
+                await conn.execute(
+                    sa.insert(PRESENCE_OCCUPANCY),
+                    [
+                        {
+                            "subject_id": subject_id, "place_id": place_id,
+                            "hour_of_week": how, "dwell_ms": dwell,
+                            "updated_ts": now_ms,
+                        }
+                        for how, dwell in sorted(bins.items())
+                    ],
+                )
 
     async def upsert_rhythm(
         self, *, subject_id: str, place_id: int, mean_arrival_minute: float,
@@ -799,6 +814,16 @@ class SqlMobilityStore:
         against BOTH implementations without importing PresenceStore."""
         async with self._engine.begin() as conn:
             await conn.execute(sa.insert(PRESENCE_FIXES), {"circle_id": "c1", **kw})
+
+    async def _seed_tagged_place_for_test(self, tag: TaggedPlace) -> None:
+        """Contract-suite seeding ONLY — `presence_places` is written by the
+        presence collector in production, never by this store."""
+        async with self._engine.begin() as conn:
+            await conn.execute(sa.insert(PRESENCE_PLACES), {
+                "circle_id": tag.circle_id, "place_id": tag.place_id,
+                "name": tag.name, "lat": tag.lat, "lng": tag.lng,
+                "radius_m": tag.radius_m, "updated_ms": 0,
+            })
 
     async def aclose(self) -> None:
         await self._engine.dispose()

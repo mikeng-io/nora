@@ -955,6 +955,7 @@ enabled = false
 # min_nights = 3
 # min_weekdays = 3
 # label_freshness_days = 45
+# place_match_radius_m = 150  # DEC-190 — a Life360 saved place claims stays/clusters this close (100-500)
 # anomaly_min_samples = 5     # Tier 3 — fewer prior stays and no anomaly claim (fail-closed)
 # anomaly_z_threshold = 3.0   # Tier 3 — |z| above this counts nora_analytics_anomalies_total
 # corridor_max_edit_distance = 2   # Tier 5 — corridor identity tolerance

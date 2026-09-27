@@ -140,6 +140,7 @@ def _place_payload(place: dict[str, Any]) -> dict[str, Any]:
     return {
         "kind": place["kind"],
         "label": place["label"],
+        "saved": place["saved"],
         "lat": place["lat"],
         "lng": place["lng"],
         "radiusM": place["radius_m"],

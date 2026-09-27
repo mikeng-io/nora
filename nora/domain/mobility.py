@@ -27,10 +27,14 @@ from nora.domain.presence import haversine_distance_m
 __all__ = [
     "CHUNK_GAP_MS",
     "DWELL_CAP_MS",
+    "TAG_MERGE_RADIUS_M",
+    "DerivedPlace",
     "LabelResult",
+    "PlannedPlace",
     "RawFix",
     "SegmentationResult",
     "Stay",
+    "TaggedPlace",
     "Trip",
     "best_corridor_match",
     "circular_mean_minute",
@@ -38,12 +42,14 @@ __all__ = [
     "cluster_trips",
     "derive_speed_kmh",
     "dwell_ms",
+    "dwell_weighted_centroid",
     "edit_distance",
     "extract_trips",
     "hour_of_week",
     "hour_of_week_bins",
     "label_place",
     "mode_address",
+    "plan_places",
     "robust_z_score",
     "segment_stays",
     "trailing_fix_is_settled",
@@ -111,7 +117,8 @@ _MAD_CONSISTENCY_CONSTANT = 1.4826
 
 
 def robust_z_score(
-    value: float, history: list[float], *, min_samples: int
+    value: float, history: list[float], *, min_samples: int,
+    min_mad: float = 0.0,
 ) -> float | None:
     """How anomalous `value` is against `history`'s median/MAD — Tier 3's
     anomaly signal (design/27 §4, issue #6: "still at work at 23:00, p99
@@ -121,7 +128,15 @@ def robust_z_score(
     `None` — never `0.0` — below `min_samples` or when every historical
     value is identical (MAD == 0): fail-closed, matching `label_place`'s
     own posture that missing evidence is a missing claim, not a defaulted
-    one."""
+    one.
+
+    `min_mad` floors the MAD (design/27 §1.3): a baseline whose values
+    happen to agree to within seconds is not evidence that a deviation of
+    seconds is abnormal. Without a floor, `presence_place_rhythm` MADs of
+    500-5,000 ms against ~30-minute medians tripped |z| >= 3 on a two-second
+    deviation, and the counter reported the sampler rather than behaviour.
+    Pass the smallest deviation that could MEAN something at the quantity's
+    own resolution."""
     if len(history) < min_samples:
         return None
     sorted_h = sorted(history)
@@ -135,6 +150,7 @@ def robust_z_score(
         deviations[n // 2] if n % 2
         else (deviations[n // 2 - 1] + deviations[n // 2]) / 2
     )
+    mad = max(mad, min_mad)
     if mad == 0:
         return None
     return (value - median) / (_MAD_CONSISTENCY_CONSTANT * mad)
@@ -294,7 +310,7 @@ class Stay:
     address: str | None = None
     # Tier 3 (design/27 §4, issue #6): set once this stay's centroid is
     # found inside an existing home/work `presence_derived_places` row —
-    # `MobilityRollup._record_rhythm` (Task 10) is the only writer. `None`
+    # `MobilityRollup._reconcile_places` (DEC-190) is the only writer. `None`
     # means either "not yet checked" or "outside every labelled place" —
     # the two are indistinguishable here on purpose, since a stay that is
     # outside every place today may fall inside one created LATER (Task 10's
@@ -716,14 +732,52 @@ def segment_stays(
     group: list[RawFix] = [fixes[0]]
     dwells: list[int] = []
 
-    for i in range(1, len(fixes)):
+    def _fits(members: list[RawFix], member_dwells: list[int]) -> bool:
+        c_lat, c_lng = _dwell_weighted_centroid(members, [*member_dwells, 0])
+        return _max_radius_m(members, c_lat, c_lng) <= radius_m
+
+    i = 1
+    while i < len(fixes):
         candidate = fixes[i]
         dwells.append(dwell_ms(group[-1].ts, candidate.ts))
-        trial = [*group, candidate]
-        lat, lng = _dwell_weighted_centroid(trial, [*dwells, 0])
-        if _max_radius_m(trial, lat, lng) <= radius_m:
+        if _fits([*group, candidate], dwells):
             group.append(candidate)
+            i += 1
             continue
+        # A SINGLE-FIX SPIKE does not end a stay (audit 2026-09-27). At the
+        # measured 50 m median / 100 m admitted accuracy, one scattered fix
+        # lands outside a 120 m radius routinely — `revalidate_stay_params`
+        # found `max_radius_seen` pinned to the candidate radius at every
+        # radius tried, i.e. scatter fills the bound. Before this, one such
+        # fix closed the stay, the spike became a one-fix group dropped by
+        # `min_dwell_ms`, and the next fix opened a SECOND stay at the same
+        # place: one evening at home became two stays with a hole between
+        # them, and every duration/arrival statistic above it read the hole.
+        # A spike is a candidate outside the radius whose NEXT fix is back
+        # inside it; it is skipped (not merged into the centroid) and the
+        # group continues. Two consecutive outside fixes are a departure, and
+        # so is a return that comes after more than `DWELL_CAP_MS` of
+        # silence: the bridge only spans a gap the resting cadence itself
+        # could produce (§1.1's p99 within-stay gap is 30.5 min), never an
+        # unobserved absence of hours.
+        if i + 1 < len(fixes):
+            after = fixes[i + 1]
+            spike_dwells = [*dwells[:-1], dwell_ms(group[-1].ts, after.ts)]
+            if after.ts - group[-1].ts <= DWELL_CAP_MS and _fits(
+                [*group, after], spike_dwells,
+            ):
+                dwells = spike_dwells
+                group.append(after)
+                i += 2
+                continue
+        elif len(group) > 1 or group[-1].ts - group[0].ts > 0:
+            # The breaking fix is the LAST one in the window, so whether it
+            # is a spike or a departure is not yet observable. Leave the
+            # group OPEN (the rollup holds its fixes readable) rather than
+            # closing it on a fix the next window may show to be noise; the
+            # undecided fix is covered by no stay this window.
+            dwells.pop()
+            break
         # `candidate` breaks the radius test — close what came before it
         # (if it reached min_dwell_ms) and start a new group at `candidate`.
         # `dwells[:-1]` is the group's own internal transitions only — the
@@ -737,6 +791,7 @@ def segment_stays(
             closed.append(stay)
         group = [candidate]
         dwells = []
+        i += 1
 
     # Whatever remains in `group` never saw a breaking fix within this
     # window — it is the open stay, not a closed one (rollup, Task 7,
@@ -1117,3 +1172,237 @@ def label_place(
         confidence=confidence,
         most_recent_support_ts=support,
     )
+
+
+# ---------------------------------------------------------------------------
+# Place identity — DEC-190 (design/27 §3.7, ADR 0014, issue #339).
+# ---------------------------------------------------------------------------
+
+# Two Life360 saved places closer than this describe one place (design/27
+# §3.7: a measured duplicate pair sits 50.3 m apart, in two different circles,
+# and splits one residence's history near-evenly). The merge is deliberately
+# NOT scoped per circle.
+TAG_MERGE_RADIUS_M = 100.0
+
+
+@dataclass(frozen=True)
+class TaggedPlace:
+    """One Life360 saved place (`presence_places`) — a HUMAN-named, stable-id
+    registry entry. Trusted for identity and name, never for geometry: a pin
+    in the measured corpus sits 636 m from the cluster it names."""
+
+    circle_id: str
+    place_id: str
+    name: str
+    lat: float
+    lng: float
+    radius_m: float | None
+
+
+@dataclass(frozen=True)
+class DerivedPlace:
+    """One stored `presence_derived_places` row. `kind` is an ATTRIBUTE of a
+    place (DEC-190), not its key: `unlabeled` is a stored value, and a subject
+    may hold any number of places, two homes included."""
+
+    id: int
+    subject_id: str
+    circle_id: str
+    lat: float
+    lng: float
+    radius_m: float
+    kind: Literal["home", "work", "unlabeled"]
+    confidence: float
+    label: str | None
+    saved_place_id: str | None
+
+
+@dataclass(frozen=True)
+class PlannedPlace:
+    """One place the reconcile says should exist. `existing_id` is the stored
+    row it keeps the identity of (`None` = insert a new row). `stays` is every
+    stay that resolves to it — the ONLY source of its geometry (a tagged place
+    never takes the pin's coordinates)."""
+
+    existing_id: int | None
+    lat: float
+    lng: float
+    radius_m: float
+    label: LabelResult
+    saved_place_id: str | None
+    tag_name: str | None
+    stays: tuple[Stay, ...]
+
+
+def _stay_dwell(stay: Stay) -> int:
+    return max(0, stay.ended_ts - stay.started_ts)
+
+
+def dwell_weighted_centroid(stays: Iterable[Stay]) -> tuple[float, float]:
+    """The dwell-weighted centroid of a set of stays (equal weights when none
+    carries dwell). One function for every caller that places a place, so a
+    place's stored coordinates and the distance its stays are checked against
+    can never be computed two ways."""
+    members = list(stays)
+    weights = [_stay_dwell(s) for s in members]
+    if not any(weights):
+        weights = [1] * len(members)
+    total = sum(weights)
+    lat = sum(s.lat * w for s, w in zip(members, weights, strict=True)) / total
+    lng = sum(s.lng * w for s, w in zip(members, weights, strict=True)) / total
+    return lat, lng
+
+
+def _merge_tags(tagged: Iterable[TaggedPlace]) -> list[list[TaggedPlace]]:
+    """Single-linkage groups of tags within `TAG_MERGE_RADIUS_M`, across
+    circles. Each group's FIRST member (sorted by `(circle_id, place_id)`) is
+    its representative — a deterministic choice, so the identity a merged
+    group keeps does not depend on the order Life360 or Postgres returned
+    rows in."""
+    ordered = sorted(tagged, key=lambda t: (t.circle_id, t.place_id))
+    groups: list[list[TaggedPlace]] = []
+    for tag in ordered:
+        joined = [
+            g for g in groups
+            if any(
+                haversine_distance_m(tag.lat, tag.lng, m.lat, m.lng)
+                <= TAG_MERGE_RADIUS_M
+                for m in g
+            )
+        ]
+        merged = [tag]
+        for g in joined:
+            merged.extend(g)
+            groups.remove(g)
+        groups.append(sorted(merged, key=lambda t: (t.circle_id, t.place_id)))
+    groups.sort(key=lambda g: (g[0].circle_id, g[0].place_id))
+    return groups
+
+
+def _nearest_tag_group(
+    lat: float, lng: float, groups: list[list[TaggedPlace]], *,
+    match_radius_m: float, use_tag_radius: bool,
+) -> int | None:
+    best: tuple[float, int] | None = None
+    for gi, group in enumerate(groups):
+        for tag in group:
+            d = haversine_distance_m(lat, lng, tag.lat, tag.lng)
+            limit = match_radius_m
+            if use_tag_radius and tag.radius_m is not None:
+                limit = max(limit, tag.radius_m)
+            if d <= limit and (best is None or (d, gi) < best):
+                best = (d, gi)
+    return None if best is None else best[1]
+
+
+def plan_places(
+    stays: list[Stay], *, existing: list[DerivedPlace],
+    tagged: list[TaggedPlace], now_ms: int, tz_name: str,
+    cluster_eps_m: float, cluster_min_samples: int, match_radius_m: float,
+    min_nights: int, min_weekdays: int, label_freshness_days: int,
+) -> list[PlannedPlace]:
+    """The whole place picture for ONE subject, recomputed from its stays —
+    DEC-190's four rules in order (design/27 §3.7):
+
+    1. a stay within `max(tag radius, match_radius_m)` of a tagged place
+       resolves to it;
+    2. a tagged place is a place as soon as one stay resolves to it — no
+       clustering, no `min_nights`;
+    3. a DBSCAN cluster of the remaining stays whose centroid is within
+       `match_radius_m` of a tagged place joins it rather than rivalling it;
+    4. otherwise the cluster is its own place — unbounded per subject, with
+       `home`/`work`/`unlabeled` as a label computed from its own stays.
+
+    **Identity survives by stay OVERLAP, not by stored coordinates.** Each
+    planned place keeps the id of the stored row its stays are currently
+    linked to (dwell-weighted, greedy, one row per place), with a matching
+    `saved_place_id` outranking overlap and proximity within
+    `match_radius_m` as the last resort. Coordinates cannot be the key: the
+    single-slot writer this replaces moved rows onto other clusters, so a
+    stored row's position is exactly what cannot be trusted (issue #339's
+    88 mislinked stays). Overlap hands the id to the cluster that owns the
+    links and gives the displaced cluster a fresh row — which is the repair.
+
+    Stays in no planned place are noise (DBSCAN's own definition) and the
+    caller unlinks them. Pure: no store, no clock beyond `now_ms`."""
+    tag_groups = _merge_tags(tagged)
+    by_tag: dict[int, list[Stay]] = {}
+    untagged: list[Stay] = []
+    for stay in stays:
+        gi = _nearest_tag_group(
+            stay.lat, stay.lng, tag_groups,
+            match_radius_m=match_radius_m, use_tag_radius=True,
+        )
+        if gi is None:
+            untagged.append(stay)
+        else:
+            by_tag.setdefault(gi, []).append(stay)
+
+    derived_clusters: list[list[Stay]] = []
+    for cluster in cluster_places(
+        untagged, eps_m=cluster_eps_m, min_samples=cluster_min_samples,
+    ):
+        c_lat, c_lng = dwell_weighted_centroid(cluster)
+        gi = _nearest_tag_group(
+            c_lat, c_lng, tag_groups,
+            match_radius_m=match_radius_m, use_tag_radius=False,
+        )
+        if gi is None:
+            derived_clusters.append(cluster)
+        else:
+            by_tag.setdefault(gi, []).extend(cluster)
+
+    drafts: list[tuple[list[Stay], TaggedPlace | None]] = [
+        (sorted(members, key=lambda s: s.started_ts), tag_groups[gi][0])
+        for gi, members in sorted(by_tag.items())
+    ]
+    drafts.extend(
+        (sorted(c, key=lambda s: s.started_ts), None) for c in derived_clusters
+    )
+
+    # Identity: greedy over (saved-id match, linked dwell, -distance).
+    existing_by_id = {p.id: p for p in existing}
+    candidates: list[tuple[tuple[int, int, float], int, int]] = []
+    centroids = [dwell_weighted_centroid(members) for members, _ in drafts]
+    for di, (members, tag) in enumerate(drafts):
+        overlap: dict[int, int] = {}
+        for s in members:
+            if s.place_id is not None and s.place_id in existing_by_id:
+                overlap[s.place_id] = overlap.get(s.place_id, 0) + max(1, _stay_dwell(s))
+        for place in existing:
+            saved = int(tag is not None and place.saved_place_id == tag.place_id)
+            linked = overlap.get(place.id, 0)
+            dist = haversine_distance_m(
+                centroids[di][0], centroids[di][1], place.lat, place.lng,
+            )
+            if saved or linked or dist <= match_radius_m:
+                candidates.append(((saved, linked, -dist), di, place.id))
+    candidates.sort(key=lambda c: (c[0], -c[1], -c[2]), reverse=True)
+    assigned_draft: dict[int, int] = {}
+    used: set[int] = set()
+    for _score, di, pid in candidates:
+        if di in assigned_draft or pid in used:
+            continue
+        assigned_draft[di] = pid
+        used.add(pid)
+
+    planned: list[PlannedPlace] = []
+    for di, (members, tag) in enumerate(drafts):
+        lat, lng = centroids[di]
+        radius = max(
+            [cluster_eps_m]
+            + [haversine_distance_m(lat, lng, s.lat, s.lng) for s in members]
+        )
+        planned.append(PlannedPlace(
+            existing_id=assigned_draft.get(di),
+            lat=lat, lng=lng, radius_m=radius,
+            label=label_place(
+                members, now_ms=now_ms, tz_name=tz_name, min_nights=min_nights,
+                min_weekdays=min_weekdays,
+                label_freshness_days=label_freshness_days,
+            ),
+            saved_place_id=None if tag is None else tag.place_id,
+            tag_name=None if tag is None else tag.name,
+            stays=tuple(members),
+        ))
+    return planned

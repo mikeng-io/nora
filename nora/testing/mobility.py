@@ -7,9 +7,10 @@ from dataclasses import dataclass
 from typing import Any
 
 from nora.domain.mobility import (
-    LabelResult,
+    DerivedPlace,
     RawFix,
     Stay,
+    TaggedPlace,
     Trip,
     best_corridor_match,
 )
@@ -34,9 +35,9 @@ class FakeMobilityStore:
         self._fixes: list[_SeededFix] = []
         self._stays: list[Stay] = []
         self._trips: list[Trip] = []
-        self._places: dict[
-            tuple[str, str], tuple[int, float, float, float, LabelResult, str | None]
-        ] = {}
+        self._places: dict[int, DerivedPlace] = {}
+        self._place_seen: dict[int, tuple[int, int]] = {}  # id -> (first, last)
+        self._tagged: list[TaggedPlace] = []
         self._watermarks: dict[str, tuple[int, int]] = {}
         self._next_place_id = 1
         self._occupancy: dict[tuple[str, int, int], int] = {}  # (subject, place, how) -> dwell_ms
@@ -88,18 +89,6 @@ class FakeMobilityStore:
             (s for s in self._stays if s.subject_id == subject_id),
             key=lambda s: s.started_ts,
         )
-
-    async def set_place_ids(
-        self, *, subject_id: str, started_ts_in: list[int], place_id: int
-    ) -> None:
-        targets = set(started_ts_in)
-        for i, s in enumerate(self._stays):
-            if (
-                s.subject_id == subject_id
-                and s.started_ts in targets
-                and s.place_id is None
-            ):
-                self._stays[i] = dataclasses.replace(s, place_id=place_id)
 
     async def write_trips(self, trips: list[Trip]) -> None:
         self._trips.extend(trips)
@@ -199,65 +188,70 @@ class FakeMobilityStore:
             "p50_kmh": p50_kmh, "p90_kmh": p90_kmh, "sample_count": sample_count,
         }
 
-    async def existing_place(
-        self, *, subject_id: str, kind: str
-    ) -> tuple[int, float, float, float, LabelResult, str | None] | None:
-        return self._places.get((subject_id, kind))
+    async def places_for_subject(self, *, subject_id: str) -> list[DerivedPlace]:
+        return [p for pid, p in sorted(self._places.items()) if p.subject_id == subject_id]
 
-    async def upsert_place(
-        self, *, subject_id: str, circle_id: str, kind: str, lat: float,
-        lng: float, radius_m: float, result: LabelResult, now_ms: int,
-        label: str | None = None,
-    ) -> None:
-        # `kind == result.kind` (steady-state reconfirm — Speed 3 re-labels
-        # the SAME physical place every cycle) UPDATEs in place, preserving
-        # `place_id` — see SqlMobilityStore.upsert_place's docstring
-        # (behavioral twin, per this project's contract-suite convention;
-        # Task 10 review, Critical #1: churning the id every cycle orphaned
-        # stay/occupancy/rhythm links keyed off it).
-        if kind == result.kind and result.kind != "unlabeled":
-            existing = self._places.get((subject_id, result.kind))
-            if existing is not None:
-                place_id = existing[0]
-                self._places[(subject_id, result.kind)] = (
-                    place_id, lat, lng, radius_m, result, label,
-                )
-                return
-        # `kind` is the slot being re-evaluated, independent of
-        # `result.kind` — see SqlMobilityStore.upsert_place's docstring.
-        # The delete clears EITHER `kind` OR `result.kind` (when it is a
-        # real kind and differs from `kind`) — never just one, never both
-        # `home`/`work` unconditionally. Without also clearing `result.kind`,
-        # a recheck of `home` that resolves straight to `work` would leave
-        # a stale row behind under an already-existing, unrelated `work`
-        # place from a different cluster.
-        delete_kinds = {kind}
-        if result.kind != "unlabeled":
-            delete_kinds.add(result.kind)
-        for delete_kind in delete_kinds:
-            self._places.pop((subject_id, delete_kind), None)
-        if result.kind == "unlabeled":
-            return
-        place_id = self._next_place_id
-        self._next_place_id += 1
-        self._places[(subject_id, result.kind)] = (
-            place_id, lat, lng, radius_m, result, label,
+    async def save_place(
+        self, *, subject_id: str, circle_id: str, place_id: int | None,
+        lat: float, lng: float, radius_m: float,
+        kind: str, confidence: float, label: str | None,
+        saved_place_id: str | None, first_seen_ts: int, last_seen_ts: int,
+    ) -> int:
+        # Behavioral twin of `SqlMobilityStore.save_place`: an id given is an
+        # UPDATE that keeps it; `unlabeled` is stored, never a deletion.
+        if place_id is None:
+            place_id = self._next_place_id
+            self._next_place_id += 1
+        elif place_id not in self._places:
+            return place_id
+        else:
+            circle_id = self._places[place_id].circle_id
+        self._places[place_id] = DerivedPlace(
+            id=place_id, subject_id=subject_id, circle_id=circle_id,
+            lat=lat, lng=lng, radius_m=radius_m,
+            kind=kind,  # type: ignore[arg-type]
+            confidence=confidence, label=label, saved_place_id=saved_place_id,
         )
+        self._place_seen[place_id] = (first_seen_ts, last_seen_ts)
+        return place_id
 
-    async def record_occupancy(
-        self, *, subject_id: str, place_id: int, bins: dict[int, int], now_ms: int
+    async def delete_places(self, *, subject_id: str, place_ids: list[int]) -> None:
+        doomed = set(place_ids)
+        for pid in doomed:
+            if pid in self._places and self._places[pid].subject_id == subject_id:
+                del self._places[pid]
+                self._place_seen.pop(pid, None)
+        self._occupancy = {
+            k: v for k, v in self._occupancy.items()
+            if not (k[0] == subject_id and k[1] in doomed)
+        }
+        self._rhythm = {
+            k: v for k, v in self._rhythm.items()
+            if not (k[0] == subject_id and k[1] in doomed)
+        }
+
+    async def relink_stays(
+        self, *, subject_id: str, links: dict[int, int | None],
     ) -> None:
-        for how, dwell_ms in bins.items():
-            key = (subject_id, place_id, how)
-            self._occupancy[key] = self._occupancy.get(key, 0) + dwell_ms
+        for i, s in enumerate(self._stays):
+            if s.subject_id == subject_id and s.started_ts in links:
+                self._stays[i] = dataclasses.replace(s, place_id=links[s.started_ts])
 
-    async def stay_durations_for_place(
-        self, *, subject_id: str, place_id: int
-    ) -> list[int]:
-        return [
-            s.ended_ts - s.started_ts for s in self._stays
-            if s.subject_id == subject_id and s.place_id == place_id
-        ]
+    async def tagged_places(self) -> list[TaggedPlace]:
+        return sorted(self._tagged, key=lambda t: (t.circle_id, t.place_id))
+
+    async def replace_occupancy(
+        self, *, subject_id: str, place_id: int, bins: dict[int, int], now_ms: int,
+    ) -> None:
+        self._occupancy = {
+            k: v for k, v in self._occupancy.items()
+            if not (k[0] == subject_id and k[1] == place_id)
+        }
+        for how, dwell_ms in bins.items():
+            self._occupancy[(subject_id, place_id, how)] = dwell_ms
+
+    async def _seed_tagged_place_for_test(self, tag: TaggedPlace) -> None:
+        self._tagged.append(tag)
 
     async def upsert_rhythm(
         self, *, subject_id: str, place_id: int, mean_arrival_minute: float,

@@ -63,22 +63,39 @@ async def test_rhythm_bins_uses_the_substrate_local_hour_of_week(monkeypatch):
                      "stay_count": 1, "total_dwell_ms": 30 * 60_000}]
 
 
+async def test_rhythm_bins_splits_an_overnight_stay_across_the_hours_it_covers(monkeypatch):
+    # Audit 2026-09-27: the whole 9-hour stay used to land on its START hour
+    # (Monday 22:00), leaving the small hours looking empty.
+    start = _ts(2026, 8, 17, 22)  # Monday 22:00 HKT
+    end = start + 9 * 3_600_000   # Tuesday 07:00
+    engine = _Engine([_Result([SimpleNamespace(started_ts=start, ended_ts=end)])])
+    monkeypatch.setattr(mobility_sql.time, "time", lambda: (end + 3_600_000) / 1000)
+
+    bins = await SqlMobilityStore(engine).rhythm_bins(
+        subject_id="miles", window_ms=2 * 86_400_000,
+    )
+
+    assert [b["hour_of_week"] for b in bins] == [22, 23, *range(24, 31)]
+    assert all(b["total_dwell_ms"] == 3_600_000 and b["stay_count"] == 1 for b in bins)
+
+
 async def test_places_and_routes_reads_are_select_only_and_capped():
     engine = _Engine([
         _Result([
             SimpleNamespace(
                 id=1, kind="home", label=None, lat=22.3, lng=114.2,
                 radius_m=120.0, confidence=0.5, first_seen_ts=1, last_seen_ts=2,
-            ),
-        ]),
-        _Result([
-            SimpleNamespace(
-                lat=22.3005, lng=114.2, started_ts=1_000, ended_ts=61_000,
+                saved_place_id=None,
             ),
             SimpleNamespace(
-                lat=23.3, lng=114.2, started_ts=2_000, ended_ts=62_000,
+                id=2, kind="unlabeled", label="Gym", lat=22.4, lng=114.2,
+                radius_m=100.0, confidence=0.0, first_seen_ts=3, last_seen_ts=4,
+                saved_place_id="l360-gym",
             ),
         ]),
+        # Aggregates come from the rollup's LINKS (place_id), not a second
+        # radius test: place 2 has no linked stay yet and reads as zero.
+        _Result([SimpleNamespace(place_id=1, stay_count=1, total_dwell_ms=60_000)]),
         _Result([]),
         _Result([]),
     ])
@@ -86,10 +103,16 @@ async def test_places_and_routes_reads_are_select_only_and_capped():
 
     assert await store.places_with_aggregates(subject_id="miles") == [
         {
-            "kind": "home", "label": None, "lat": 22.3, "lng": 114.2,
+            "kind": "home", "label": None, "saved": False, "lat": 22.3, "lng": 114.2,
             "radius_m": 120.0, "confidence": 0.5,
             "first_seen_ts": 1, "last_seen_ts": 2,
             "stay_count": 1, "total_dwell_ms": 60_000,
+        },
+        {
+            "kind": "unlabeled", "label": "Gym", "saved": True, "lat": 22.4,
+            "lng": 114.2, "radius_m": 100.0, "confidence": 0.0,
+            "first_seen_ts": 3, "last_seen_ts": 4,
+            "stay_count": 0, "total_dwell_ms": 0,
         },
     ]
     await store.rhythm_bins(subject_id="miles", window_ms=10**30)
@@ -98,8 +121,8 @@ async def test_places_and_routes_reads_are_select_only_and_capped():
     for statement in engine.connection.statements:
         assert str(statement).lstrip().upper().startswith("SELECT")
     assert engine.connection.statements[0]._limit_clause.value == 100
-    assert engine.connection.statements[1]._limit_clause.value == 5_000
     assert engine.connection.statements[2]._limit_clause.value == 5_000
+    assert engine.connection.statements[3]._limit_clause.value == 5_000
 
 
 async def test_stays_for_subject_window_is_select_only_capped_and_carries_latlng(monkeypatch):
