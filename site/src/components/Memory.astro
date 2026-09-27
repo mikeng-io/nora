@@ -124,6 +124,11 @@ const keptData = JSON.stringify({ standing: k.standing, open: k.open });
     inset: 0 0 auto;
   }
 
+  /* right-aligned at the gutter: less room past her on the outer side */
+  .her :global(.nora-host) {
+    inset: -10% -10% -10% -14%;
+  }
+
   .her :global(img) {
     width: 100%;
     height: auto;

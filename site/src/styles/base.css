@@ -330,8 +330,10 @@ button {
  * `data-state` is only ever set by that script, so without it (no script,
  * reduced motion, no WebGL2) every static render stays exactly as it was.
  */
+/* opacity, not visibility: the render stays in the accessibility tree, so
+   its description is still read wherever she is (the canvas is aria-hidden) */
 [data-nora-slot][data-state] .nora-static {
-  visibility: hidden;
+  opacity: 0;
 }
 
 :where([data-nora-figure]) {
@@ -343,8 +345,14 @@ button {
 .nora-host {
   position: absolute;
   z-index: 1;
-  inset: -10% -18%;
+  inset: -10% -14%;
   pointer-events: none;
+}
+
+/* only the place she is in has room made for her; an empty host past the
+   edge of a narrow screen would still widen the page */
+[data-nora-slot]:not([data-state="live"]) .nora-host {
+  display: none;
 }
 
 [data-framed] > .nora-host {

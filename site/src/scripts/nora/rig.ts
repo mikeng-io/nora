@@ -80,7 +80,7 @@ void main() {
 
   // a weight shift leans her about the ground, feet planted
   vec2 g = vec2(u_hips.x * u_aspect, u_ground);
-  p = rot(p, g, u_sway * smoothstep(u_ground, u_hips.y, p0.y));
+  p = rot(p, g, u_sway * (1.0 - smoothstep(u_hips.y, u_ground, p0.y)));
   p = g + (p - g) * u_squash;
 
   v_uv = a_uv;
@@ -111,7 +111,13 @@ uniform vec3 u_mouthColour;
 uniform float u_mouthO;
 uniform float u_smile;
 uniform float u_blush;
+uniform vec4 u_featBox;
 out vec4 o;
+
+// Antialiasing widths come from the size of a pixel in texture space, taken
+// once in main(): the face is only shaded near the face, and a derivative
+// taken inside that branch would be undefined where a pixel quad straddles it.
+float px;
 
 // One eye, premultiplied. Its lids are edges that sweep across it: the upper
 // one curved like the lash line of her closed eyes (so fully closed leaves
@@ -128,7 +134,7 @@ vec4 eye(vec4 e, float rotE, vec3 core, vec3 rim, float outer, vec2 q) {
   // her eyes are a touch squarer than an ellipse: a superellipse, p = 2.4
   vec2 an = abs(n) + 1e-5;
   float r = pow(pow(an.x, 2.4) + pow(an.y, 2.4), 1.0 / 2.4);
-  float fr = max(fwidth(r), 1e-4);
+  float fr = max(px * length(n / vec2(rx, ry)) / max(r, 1e-3), 1e-4);
   float inside = 1.0 - smoothstep(1.0 - fr, 1.0 + fr, r);
 
   // a closing lid starts nearly straight and curls into the crescent
@@ -136,7 +142,7 @@ vec4 eye(vec4 e, float rotE, vec3 core, vec3 rim, float outer, vec2 q) {
   float curved = top - 0.55 * pow(u_lid, 1.6) * n.x * n.x;
   float flatLid = top + tan(u_tilt) * outer * n.x * (rx / ry);
   float edge = mix(curved, flatLid, u_flat);
-  float fy = max(fwidth(n.y), 1e-4);
+  float fy = max(px / ry, 1e-4);
   float below = smoothstep(edge - fy, edge + fy, n.y);
   float lowEdge = mix(1.1, -0.55, u_low) + 0.55 * n.x * n.x;
   float above = 1.0 - smoothstep(lowEdge - fy, lowEdge + fy, n.y);
@@ -167,7 +173,7 @@ vec4 mouth(vec2 q) {
   float ow = h * (1.0 + 0.45 * u_mouthO), oh = h * (0.6 + 1.6 * u_mouthO);
   float oval = (length(d / vec2(ow, oh)) - 1.0) * min(ow, oh);
   float dist = mix(line, oval, smoothstep(0.05, 0.4, u_mouthO));
-  float f = max(fwidth(dist), 1e-5);
+  float f = max(px, 1e-5);
   float a = 1.0 - smoothstep(-f, f, dist);
   vec3 col = mix(u_mouthColour, u_mouthColour * vec3(1.12, 0.86, 0.84), smoothstep(0.2, 1.0, u_mouthO));
   return vec4(col * a, a);
@@ -176,6 +182,12 @@ vec4 mouth(vec2 q) {
 void main() {
   vec4 base = texture(u_tex, v_uv);
   vec2 q = vec2(v_uv.x * u_aspect, v_uv.y);
+  px = max(length(dFdx(q)), length(dFdy(q)));
+  // everything below is her face; most of the canvas is not
+  if (any(lessThan(q, u_featBox.xy)) || any(greaterThan(q, u_featBox.zw))) {
+    o = base * u_alpha;
+    return;
+  }
   if (u_blush > 0.0 && u_eyes > 0) {
     float g = 0.0;
     for (int i = 0; i < 2; i++) {
@@ -220,6 +232,7 @@ export class Renderer {
   private poses = new Map<PoseId, Loaded>();
   private pending = new Map<PoseId, Promise<void>>();
   private dpr = 1;
+  private onContextLost: (e: Event) => void;
   lost = false;
 
   constructor(onLost: () => void) {
@@ -236,11 +249,12 @@ export class Renderer {
     });
     if (!gl) throw new Error("no webgl2");
     this.gl = gl;
-    this.canvas.addEventListener("webglcontextlost", (e) => {
+    this.onContextLost = (e: Event) => {
       e.preventDefault();
       this.lost = true;
       onLost();
-    });
+    };
+    this.canvas.addEventListener("webglcontextlost", this.onContextLost);
     this.prog = this.program(VERT, FRAG);
     const cols = 40;
     const rows = 64;
@@ -293,6 +307,13 @@ export class Renderer {
     return this.u.get(name)!;
   }
 
+  /** Lets the GPU context go, without reporting it as lost. */
+  dispose(): void {
+    this.canvas.removeEventListener("webglcontextlost", this.onContextLost);
+    this.lost = true;
+    this.gl.getExtension("WEBGL_lose_context")?.loseContext();
+  }
+
   has(pose: PoseId): boolean {
     return this.poses.has(pose);
   }
@@ -312,7 +333,9 @@ export class Renderer {
       let source: TexImageSource;
       let premultiplied = false;
       if ("createImageBitmap" in window) {
-        const blob = await (await fetch(url)).blob();
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`texture ${pose}: HTTP ${res.status}`);
+        const blob = await res.blob();
         source = await createImageBitmap(blob, { premultiplyAlpha: "premultiply" });
         premultiplied = true;
       } else {
@@ -338,6 +361,35 @@ export class Renderer {
     this.pending.set(pose, job);
     job.catch(() => this.pending.delete(pose));
     return job;
+  }
+
+  private boxes = new Map<PoseId, [number, number, number, number]>();
+
+  /** Where her face can reach in texture space (aspect-corrected x): both eyes
+      with room for a look, a widened close and the lash line, the cheeks her
+      blush reaches, and the mouth open. Outside it the shader does nothing. */
+  private faceBox(pose: PoseId, r: PoseRig): [number, number, number, number] {
+    const known = this.boxes.get(pose);
+    if (known) return known;
+    const a = r.size[0] / r.size[1];
+    let x0 = Infinity;
+    let y0 = Infinity;
+    let x1 = -Infinity;
+    let y1 = -Infinity;
+    for (const e of r.eyes) {
+      x0 = Math.min(x0, e.cx * a - e.rx * 2.4);
+      x1 = Math.max(x1, e.cx * a + e.rx * 2.4);
+      y0 = Math.min(y0, e.cy - e.ry * 1.8);
+      y1 = Math.max(y1, e.cy + e.ry * 3.6);
+    }
+    const m = r.mouth;
+    x0 = Math.min(x0, m.cx * a - m.w - m.h * 2);
+    x1 = Math.max(x1, m.cx * a + m.w + m.h * 2);
+    y0 = Math.min(y0, m.cy - m.h * 5);
+    y1 = Math.max(y1, m.cy + m.h * 5);
+    const box: [number, number, number, number] = [x0, y0, x1, y1];
+    this.boxes.set(pose, box);
+    return box;
   }
 
   /** Sizes the drawing buffer to the canvas's CSS box; cheap when unchanged. */
@@ -429,6 +481,8 @@ export class Renderer {
     u1("u_smile", f.smile);
     u1("u_blush", f.blush);
     u1("u_alpha", alpha);
+    const box = this.faceBox(pose, r);
+    u4("u_featBox", box[0], box[1], box[2], box[3]);
     gl.drawArrays(gl.TRIANGLES, 0, this.count);
   }
 }

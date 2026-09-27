@@ -123,6 +123,8 @@ function room(stage: Stage): () => void {
     const d = (e as CustomEvent<RoomEvent>).detail;
     const t = now();
     if (d.kind === "think") brain.setThinking(Boolean(d.thinking));
+    // "Start over" can land mid-thought; the thought goes with the thread
+    if (d.kind === "reset") brain.setThinking(false);
     if (stage.slot?.id !== "room") return;
     if ((d.kind === "ask" || d.kind === "reply") && d.el) {
       const c = centre(d.el.querySelector(".body") ?? d.el);
@@ -221,6 +223,7 @@ function plate(stage: Stage): () => void {
   return () => {
     timers.forEach(clearTimeout);
     handlers.forEach((h) => h());
+    labels.forEach((_, i) => light(i, false));
   };
 }
 

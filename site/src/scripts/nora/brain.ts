@@ -142,6 +142,7 @@ export class Brain {
   private mode: "awake" | "music" | "doze" = "awake";
   private started = -1;
   private nodAt = -1;
+  private yawnAt = -1;
 
   // springs, one per channel
   private gaze = new Spring2(34, 1);
@@ -211,9 +212,13 @@ export class Brain {
     this.speaking = level;
   }
 
-  /** The lighting changed: she blinks with it; late night makes her drowsy. */
+  /** The lighting changed: she blinks with it; late night makes her drowsy,
+      and the lamp going down gets one small yawn. */
   setLight(dark: boolean, now: number): void {
-    if (dark !== this.dark) this.blink(now, 0.26);
+    if (dark !== this.dark && this.started >= 0) {
+      this.blink(now, 0.26);
+      if (dark) this.yawnAt = now + 0.55;
+    }
     this.dark = dark;
   }
 
@@ -544,6 +549,13 @@ export class Brain {
     if (r?.kind === "startle") mouthT = 0.35;
     if (this.speaking > 0.02) mouthT = clamp(this.speaking, 0, 1) * 0.85;
     if (doze && Math.sin(now * 0.35) > 0.96) mouthT = Math.max(mouthT, 0.5); // the occasional yawn
+    const yawn = this.yawnAt > 0 ? (now - this.yawnAt) / 1.5 : -1;
+    if (yawn >= 0 && yawn <= 1) {
+      const y = Math.sin(Math.PI * yawn);
+      mouthT = Math.max(mouthT, 0.6 * y);
+      lidT = Math.max(lidT, 0.6 * y);
+      flatT = Math.max(flatT, 0.8);
+    } else if (yawn > 1) this.yawnAt = -1;
 
     const eLid = this.lidExpr.step(lidT, dt);
     const eFlat = this.flat.step(flatT, dt);

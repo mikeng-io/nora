@@ -34,12 +34,21 @@ async function boot(): Promise<void> {
   const el = document.getElementById("nora-rig");
   if (!el?.textContent) return;
   const data = JSON.parse(el.textContent) as Data;
+  // `mine` is this boot's stage: anything that stops it (reduced motion
+  // switched on, a lost GPU context) while it is still starting makes it
+  // stale, and a stale boot must not connect, or undo what `fail()` restored.
+  let mine: Stage | null = null;
   try {
-    stage = new Stage(rigData as unknown as Record<string, PoseRig>, data.urls, fail);
-    await stage.start();
+    mine = new Stage(rigData as unknown as Record<string, PoseRig>, data.urls, () => {
+      if (stage === mine) fail();
+    });
+    stage = mine;
+    await mine.start();
+    if (stage !== mine) return;
     root.dataset.nora = "live";
-    disconnect = connect(stage, data.presence);
+    disconnect = connect(mine, data.presence);
   } catch (err) {
+    if (stage !== mine) return;
     console.warn("nora: staying still", err);
     fail();
   }

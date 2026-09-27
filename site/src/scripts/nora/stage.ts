@@ -60,6 +60,8 @@ export class Stage {
   private near: IntersectionObserver | null = null;
   /** Every listener the stage adds, removed together when it stops. */
   private listening = new AbortController();
+  /** Textures that failed to load, and when: not asked for again every frame. */
+  private failed = new Map<PoseId, { at: number; n: number }>();
   frame: Frame | null = null;
 
   constructor(rigs: Record<string, PoseRig>, urls: Record<string, string>, onFail: () => void) {
@@ -103,8 +105,10 @@ export class Stage {
     for (const s of this.slots) this.io.observe(s.figure);
   }
 
+  /** Calls `fn` whenever she arrives somewhere, and now, for where she already is. */
   onArrive(fn: Listener): void {
     this.arriveListeners.push(fn);
+    if (this.current) fn(this.current.id);
   }
 
   get slot(): SlotInfo | null {
@@ -117,7 +121,9 @@ export class Stage {
     // the swap is inside a view transition: draw the new lighting now, so the
     // new snapshot already has it
     if (this.current?.poseDark) {
-      void this.ensure(this.poseOf(this.current)).then(() => this.render(performance.now() / 1000));
+      void this.ensure(this.poseOf(this.current))
+        .then(() => this.render(performance.now() / 1000))
+        .catch(() => undefined);
     }
   }
 
@@ -137,15 +143,23 @@ export class Stage {
       waiting for, so its arrival is a reason to look again. */
   ensure(pose: PoseId): Promise<void> {
     const known = this.r.has(pose);
+    // a texture that failed waits before it is tried again, longer each time
+    const f = this.failed.get(pose);
+    const t = performance.now() / 1000;
+    if (!known && f && t - f.at < Math.min(60, 8 * 2 ** (f.n - 1))) return Promise.reject(new Error("backing off"));
     const job = this.r.load(pose, this.urls[pose], this.rigs[pose], () => this.quiet());
     if (!known) {
       void job
         .then(() => {
+          this.failed.delete(pose);
           if (this.destroyed) return;
           this.consider(performance.now() / 1000);
           this.wake();
         })
-        .catch(() => undefined);
+        .catch(() => {
+          const was = this.failed.get(pose);
+          this.failed.set(pose, { at: performance.now() / 1000, n: (was?.n ?? 0) + 1 });
+        });
     }
     return job;
   }
@@ -163,9 +177,16 @@ export class Stage {
   }
 
   async start(): Promise<void> {
+    // the lighting before anything is loaded or drawn, so a late-night page
+    // does not start her in daylight
+    const root = document.documentElement;
+    this.dark = root.dataset.theme ? root.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
     const first = this.pick(true);
     if (!first) throw new Error("no slot");
     await this.ensure(this.poseOf(first));
+    // stopped while that loaded (reduced motion turned on, a lost context):
+    // touch nothing, the static page is already back
+    if (this.destroyed) throw new Error("stopped");
     this.place(first);
     for (const s of this.slots) if (s !== first) s.el.dataset.state = "away";
     this.bind();
@@ -196,6 +217,7 @@ export class Stage {
     cancelAnimationFrame(this.raf);
     this.io.disconnect();
     this.near?.disconnect();
+    this.r.dispose();
     this.r.canvas.remove();
     this.flightBox.remove();
     for (const s of this.slots) {
@@ -258,9 +280,9 @@ export class Stage {
     if (this.current && this.current !== s) this.current.el.dataset.state = "away";
     this.current = s;
     s.host.append(this.r.canvas);
-    // draw her before the static render goes, so there is no empty frame
-    this.render(performance.now() / 1000);
     s.el.dataset.state = "live";
+    // drawn in the same task as the static render goes, so no frame is empty
+    this.render(performance.now() / 1000);
     this.onScreen = this.visibleSlots.has(s) || this.visibility(s) > 0;
     for (const fn of this.arriveListeners) fn(s.id);
   }
@@ -273,7 +295,8 @@ export class Stage {
       return;
     }
     if (!this.r.has(this.drawable(best))) {
-      void this.ensure(this.poseOf(best));
+      // a texture that fails to arrive leaves her where she is
+      void this.ensure(this.poseOf(best)).catch(() => undefined);
       return;
     }
     if (!this.candidate || this.candidate.slot !== best) this.candidate = { slot: best, since: now };
@@ -311,6 +334,8 @@ export class Stage {
     this.flight = { from, to, start: now, dur, fromRect: start, dir: Math.sign(b.x - start.x) || 1, dropIn };
     this.brain.hopStart(now, dur, this.flight.dir);
     this.onScreen = true;
+    // her first frame in the air now, so the box never shows at its last place
+    this.render(now);
     this.wake();
   }
 
@@ -330,20 +355,19 @@ export class Stage {
       { passive: true, signal },
     );
     document.documentElement.addEventListener("pointerleave", () => this.brain.pointerLeave(), { signal });
+    addEventListener("pointerdown", () => this.brain.input(now()), { passive: true, signal });
+    // a poke is a click on her: a tap, never the start of a pan on a touch screen
     addEventListener(
-      "pointerdown",
+      "click",
       (e) => {
         const t = e.target as Element;
         if (t.closest("a, button, input, textarea, select, label, [role=button], dialog")) return;
-        if (!this.hit(e.clientX, e.clientY)) {
-          this.brain.input(now());
-          return;
-        }
+        if (!this.hit(e.clientX, e.clientY)) return;
         const face = this.faceScreen();
         this.brain.poke(e.clientX, e.clientY, now(), face?.x ?? e.clientX);
         this.wake();
       },
-      { passive: true, signal },
+      { signal },
     );
     addEventListener(
       "scroll",
@@ -433,9 +457,13 @@ export class Stage {
     const dt = this.last ? now - this.last : 1 / 60;
     this.last = now;
     this.consider(now);
-    this.render(now, dt);
-    const busy = this.flight || (this.current && (this.onScreen || this.visibility(this.current) > 0));
-    if (busy) this.wake();
+    // drawn only when she can be seen or is in the air; a pointer moving
+    // while she is off screen wakes the loop to look, not to draw
+    const busy = Boolean(this.flight || (this.current && (this.onScreen || this.visibility(this.current) > 0)));
+    if (busy) {
+      this.render(now, dt);
+      this.wake();
+    }
   }
 
   private render(now: number, dt = 0): void {
@@ -504,6 +532,8 @@ export class Stage {
     if (t >= 1) {
       this.flight = null;
       this.flightBox.style.transform = "";
+      this.flightBox.style.width = "0px";
+      this.flightBox.style.height = "0px";
       this.place(fl.to);
       this.brain.hopLand(now);
     }

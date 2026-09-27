@@ -164,33 +164,40 @@ function voice(root: HTMLElement): void {
   let el: HTMLAudioElement | null = null;
   let analyser: AnalyserNode | null = null;
   let raf = 0;
+  // a press while the last one is still starting is ignored, so two quick
+  // presses never start two meters
+  let starting = false;
   const levels = new Uint8Array(256);
+  const tell = (level: number) => document.dispatchEvent(new CustomEvent("nora:voice", { detail: { level } }));
   const stop = () => {
     el?.pause();
     if (el) el.currentTime = 0;
     root.classList.remove("playing");
     btn.setAttribute("aria-pressed", "false");
     cancelAnimationFrame(raf);
+    raf = 0;
     speaking = 0;
-    document.dispatchEvent(new CustomEvent("nora:voice", { detail: { level: 0 } }));
+    tell(0);
   };
   const meter = () => {
     if (analyser) {
       analyser.getByteTimeDomainData(levels);
       let sum = 0;
       for (const v of levels) sum += ((v - 128) / 128) ** 2;
-      const rms = Math.sqrt(sum / levels.length);
-      speaking = Math.min(1, rms * 5.5);
-      document.dispatchEvent(new CustomEvent("nora:voice", { detail: { level: speaking } }));
+      speaking = Math.min(1, Math.sqrt(sum / levels.length) * 5.5);
+      tell(speaking);
     }
     raf = requestAnimationFrame(meter);
   };
   btn.addEventListener("click", async () => {
+    if (starting) return;
     if (root.classList.contains("playing")) return stop();
     if (!el) {
       el = new Audio(src);
       el.preload = "auto";
       el.addEventListener("ended", stop);
+      // a clip that fails partway (the network drops) stops everything with it
+      el.addEventListener("error", stop);
       const c = audio();
       if (c && master) {
         try {
@@ -204,14 +211,18 @@ function voice(root: HTMLElement): void {
         }
       }
     }
-    if (ctx?.state === "suspended") await ctx.resume();
-    root.classList.add("playing");
-    btn.setAttribute("aria-pressed", "true");
+    starting = true;
     try {
+      if (ctx?.state === "suspended") await ctx.resume();
+      root.classList.add("playing");
+      btn.setAttribute("aria-pressed", "true");
       await el.play();
+      cancelAnimationFrame(raf);
       meter();
     } catch {
       stop();
+    } finally {
+      starting = false;
     }
   });
 }
