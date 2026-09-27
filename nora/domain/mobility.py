@@ -40,6 +40,7 @@ __all__ = [
     "circular_mean_minute",
     "cluster_places",
     "cluster_trips",
+    "collapse_duplicate_fixes",
     "derive_speed_kmh",
     "dwell_ms",
     "dwell_weighted_centroid",
@@ -670,6 +671,7 @@ def mode_address(values: Iterable[str | None]) -> str | None:
 def _close(
     group: list[RawFix], dwells: list[int], *,
     subject_id: str, person_id: str, circle_id: str, min_dwell_ms: int,
+    wander: list[RawFix] | None = None,
 ) -> Stay | None:
     """Turn a candidate group into a `Stay`, or None if it never reached
     `min_dwell_ms` — a span under the threshold is dropped entirely, not
@@ -693,15 +695,17 @@ def _close(
     within this group's own boundary."""
     if not group:
         return None
-    total_dwell = group[-1].ts - group[0].ts
+    wander = wander or []
+    ended_ts = max([group[-1].ts, *(f.ts for f in wander)])
+    total_dwell = ended_ts - group[0].ts
     if total_dwell < min_dwell_ms:
         return None
     lat, lng = _dwell_weighted_centroid(group, [*dwells, 0])
     return Stay(
         subject_id=subject_id, person_id=person_id, circle_id=circle_id,
-        started_ts=group[0].ts, ended_ts=group[-1].ts,
+        started_ts=group[0].ts, ended_ts=ended_ts,
         lat=lat, lng=lng, radius_m=_max_radius_m(group, lat, lng),
-        fix_count=len(group),
+        fix_count=len(group) + len(wander),
         # Issue #10 option 1: the group's mode Life360 address rides on the
         # stay. The fixes that produced it are behind the stay-side
         # watermark once this stay commits, so segmentation is the only
@@ -710,9 +714,39 @@ def _close(
     )
 
 
+def collapse_duplicate_fixes(fixes: list[RawFix]) -> list[RawFix]:
+    """One fix per `(ts, lat, lng)`, keeping the LOWEST id, in input order.
+
+    A person in two Life360 circles is recorded once per circle: the same
+    reading, same timestamp, same position, two `presence_fixes` rows (the
+    store's key is `(circle, member, ts)`). Measured 2026-09-28 on one
+    subject's 27 Sep: 1,290 rows, 821 distinct readings. The copies carry no
+    information, and they defeat `segment_stays`' spike rule outright — a
+    GPS spike is always followed by its own copy, so «the next fix is back
+    inside the radius» is never true and every spike ended the stay. They
+    also double `fix_count` and inflate `extract_trips`' fix counts.
+
+    The lowest id is kept so a caller's watermark hold, computed from the
+    kept fixes' ids, still re-reads every copy."""
+    kept: dict[tuple[int, float, float], RawFix] = {}
+    for f in fixes:
+        key = (f.ts, f.lat, f.lng)
+        if key not in kept or f.id < kept[key].id:
+            kept[key] = f
+    seen: set[tuple[int, float, float]] = set()
+    out: list[RawFix] = []
+    for f in fixes:
+        key = (f.ts, f.lat, f.lng)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(kept[key])
+    return out
+
+
 def segment_stays(
     fixes: list[RawFix], *, subject_id: str, person_id: str, circle_id: str,
-    radius_m: float, min_dwell_ms: int,
+    radius_m: float, min_dwell_ms: int, wander_radius_m: float | None = None,
 ) -> SegmentationResult:
     """Stay-point detection (spec §3.2): roll consecutive fixes into a
     running group while every fix seen so far stays within `radius_m` of the
@@ -724,6 +758,16 @@ def segment_stays(
     `fixes` must already be ts-ascending and pre-filtered (accuracy_m <=
     100, wire_state == 'live' — the store's job, Task 6); this function does
     not re-filter, per "interpret once."
+
+    `wander_radius_m` (audit 2026-09-28, measured on live fixes): a fix
+    outside `radius_m` but within `wander_radius_m` of the group's centroid,
+    and not reporting `is_driving=True`, is WANDERING — it extends the stay
+    in time but never moves its position or radius. Resting fixes at one real
+    stop spread up to 388 m from its centre (Life360 reports `accuracy_m=50`
+    for all of them, so the accuracy gate filters none): with only the 120 m
+    test, a two-hour stop at a restaurant district never became a stay, and
+    its minutes were written as a string of 10-30 m "trips". `None` keeps
+    the plain radius test.
     """
     if not fixes:
         return SegmentationResult(closed=(), open_stay=None)
@@ -731,6 +775,20 @@ def segment_stays(
     closed: list[Stay] = []
     group: list[RawFix] = [fixes[0]]
     dwells: list[int] = []
+    wander: list[RawFix] = []
+
+    def _wanders(candidate: RawFix, group_dwells: list[int]) -> bool:
+        # Only an ESTABLISHED stop can be wandered from: two core fixes, the
+        # first not a driving reading. Otherwise one arrival fix — or the
+        # last fix of a drive — becomes a stop's centre and the next fix
+        # within `wander_radius_m` pins a stay on the road.
+        if (
+            wander_radius_m is None or candidate.is_driving is True
+            or len(group) < 2 or group[0].is_driving is True
+        ):
+            return False
+        c_lat, c_lng = _dwell_weighted_centroid(group, [*group_dwells, 0])
+        return haversine_distance_m(c_lat, c_lng, candidate.lat, candidate.lng) <= wander_radius_m
 
     def _fits(members: list[RawFix], member_dwells: list[int]) -> bool:
         c_lat, c_lng = _dwell_weighted_centroid(members, [*member_dwells, 0])
@@ -742,6 +800,11 @@ def segment_stays(
         dwells.append(dwell_ms(group[-1].ts, candidate.ts))
         if _fits([*group, candidate], dwells):
             group.append(candidate)
+            i += 1
+            continue
+        if _wanders(candidate, dwells[:-1]):
+            dwells.pop()
+            wander.append(candidate)
             i += 1
             continue
         # A SINGLE-FIX SPIKE does not end a stay (audit 2026-09-27). At the
@@ -785,12 +848,13 @@ def segment_stays(
         # `candidate`, which does not belong to `group`.
         stay = _close(
             group, dwells[:-1], subject_id=subject_id, person_id=person_id,
-            circle_id=circle_id, min_dwell_ms=min_dwell_ms,
+            circle_id=circle_id, min_dwell_ms=min_dwell_ms, wander=wander,
         )
         if stay is not None:
             closed.append(stay)
         group = [candidate]
         dwells = []
+        wander = []
         i += 1
 
     # Whatever remains in `group` never saw a breaking fix within this
@@ -799,10 +863,11 @@ def segment_stays(
     open_lat, open_lng = _dwell_weighted_centroid(group, [*dwells, 0])
     open_stay = Stay(
         subject_id=subject_id, person_id=person_id, circle_id=circle_id,
-        started_ts=group[0].ts, ended_ts=group[-1].ts,
+        started_ts=group[0].ts,
+        ended_ts=max([group[-1].ts, *(f.ts for f in wander)]),
         lat=open_lat, lng=open_lng,
         radius_m=_max_radius_m(group, open_lat, open_lng),
-        fix_count=len(group),
+        fix_count=len(group) + len(wander),
         # Same as `_close`: an open stay closes later by radius break (the
         # non-final-chunk path) or by the wall clock (`run_once`'s issue #80
         # stay-hold path) — both land it in `new_stays`, and the place-label

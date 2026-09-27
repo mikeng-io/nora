@@ -36,6 +36,7 @@ from nora.domain.mobility import (
     Trip,
     circular_mean_minute,
     cluster_trips,
+    collapse_duplicate_fixes,
     extract_trips,
     hour_of_week,
     hour_of_week_bins,
@@ -135,6 +136,11 @@ class RollupConfig:
     # measured match band 7.0-49.3 m against a nearest non-match at 636 m, so
     # safe anywhere in 100-500 m and unsafe at 50.
     place_match_radius_m: float = 150.0
+    # How far a NON-driving fix may sit from a stay's centre and still be
+    # part of it (time only, never position) — `segment_stays`' docstring.
+    # Measured 2026-09-28: one real two-hour stop's resting fixes spread to
+    # 388 m; 400 sits just above. `None` disables it.
+    stay_wander_radius_m: float | None = 400.0
 
 
 class MobilityRollup:
@@ -411,13 +417,13 @@ class MobilityRollup:
         batch-stall fix below)."""
         new_stays: list[Stay] = []
         new_trips: list[Trip] = []
-        raw = [
+        raw = collapse_duplicate_fixes([
             RawFix(
                 id=f.id, ts=f.ts, lat=f.lat, lng=f.lng, address=f.address,
                 is_driving=f.is_driving,
             )
             for f in fixes
-        ]
+        ])
         min_dwell_ms = int(self._cfg.stay_min_dwell_seconds * 1000)
         # `segment_stays` is purely spatial (its own docstring): fixes at
         # (near-)identical coordinates never break its radius test, no
@@ -452,6 +458,7 @@ class MobilityRollup:
                 circle_id=circle_id,
                 radius_m=self._cfg.stay_radius_m,
                 min_dwell_ms=min_dwell_ms,
+                wander_radius_m=self._cfg.stay_wander_radius_m,
             )
             new_stays.extend(seg.closed)
             # Tier 5 (design/27 §4): the SAME chunks the stay
