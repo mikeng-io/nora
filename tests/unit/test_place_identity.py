@@ -316,3 +316,22 @@ async def test_a_steady_state_cycle_writes_no_place():
         subject_id="s", circle_id="c1", all_stays=stays, new_stays=[], now_ms=NOW,
     )
     assert writes == []
+
+
+async def test_last_seen_follows_the_stays_even_when_nothing_else_changes():
+    # Independent review 2026-09-28: the steady-state diff left first/last
+    # seen out, so a place whose geometry and label never moved kept a
+    # last_seen from its second day while its stays ran on.
+    store = FakeMobilityStore()
+    rollup = MobilityRollup(store=store, config=CFG)
+    fid = 1
+    for day in range(6):
+        fid = await _seed_nights(store, OFFICE, [day], fid, hour=19)
+        await rollup.run_once(
+            subject_id="s", person_ids=["s"], circle_id="c1",
+            now_ms=_T0 + (day + 1) * _DAY,
+        )
+    [place] = await store.places_for_subject(subject_id="s")
+    stays = await store.stays_for_subject(subject_id="s")
+    assert place.last_seen_ts == max(s.ended_ts for s in stays if s.place_id == place.id)
+    assert place.first_seen_ts == min(s.started_ts for s in stays if s.place_id == place.id)

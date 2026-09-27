@@ -36,7 +36,6 @@ class FakeMobilityStore:
         self._stays: list[Stay] = []
         self._trips: list[Trip] = []
         self._places: dict[int, DerivedPlace] = {}
-        self._place_seen: dict[int, tuple[int, int]] = {}  # id -> (first, last)
         self._tagged: list[TaggedPlace] = []
         self._watermarks: dict[str, tuple[int, int]] = {}
         self._next_place_id = 1
@@ -202,8 +201,11 @@ class FakeMobilityStore:
         if place_id is None:
             place_id = self._next_place_id
             self._next_place_id += 1
-        elif place_id not in self._places:
-            return place_id
+        elif (
+            place_id not in self._places
+            or self._places[place_id].subject_id != subject_id
+        ):
+            return place_id  # the SQL UPDATE is scoped by subject: no row, no write
         else:
             circle_id = self._places[place_id].circle_id
         self._places[place_id] = DerivedPlace(
@@ -211,8 +213,8 @@ class FakeMobilityStore:
             lat=lat, lng=lng, radius_m=radius_m,
             kind=kind,  # type: ignore[arg-type]
             confidence=confidence, label=label, saved_place_id=saved_place_id,
+            first_seen_ts=first_seen_ts, last_seen_ts=last_seen_ts,
         )
-        self._place_seen[place_id] = (first_seen_ts, last_seen_ts)
         return place_id
 
     async def delete_places(self, *, subject_id: str, place_ids: list[int]) -> None:
@@ -220,7 +222,6 @@ class FakeMobilityStore:
         for pid in doomed:
             if pid in self._places and self._places[pid].subject_id == subject_id:
                 del self._places[pid]
-                self._place_seen.pop(pid, None)
         self._occupancy = {
             k: v for k, v in self._occupancy.items()
             if not (k[0] == subject_id and k[1] in doomed)

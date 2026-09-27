@@ -692,6 +692,19 @@ class MobilityRollup:
                 # still the trip-settlement clock `trailing_fix_is_settled`
                 # and `extract_trips` read above.
                 new_stays.append(last_open_stay)
+            if elapsed_s >= DWELL_CAP_MS / 1000:
+                # Resolved by the clock (closed above, or dropped as
+                # sub-min-dwell). If `segment_stays` left the group open
+                # because its LAST fix broke the radius, that undecided fix
+                # sits after the group's end and belongs to neither the stay
+                # nor a trip. Consuming it here dropped the first fix of the
+                # next place, so an arrival at resting cadence was recorded
+                # one fix gap late (independent review 2026-09-28: 180 min
+                # instead of 150). Hold the watermark AT it, so the next
+                # cycle starts the next group from it.
+                undecided = [f.id for f in fixes if f.ts > last_open_stay.ended_ts]
+                if undecided:
+                    stay_hold_id = min(undecided)
             elif elapsed_s < DWELL_CAP_MS / 1000:
                 # Hold ANY open stay that has not yet settled — whether it
                 # is sub-min-dwell (sparse arrival, issue #82) or past
@@ -824,9 +837,11 @@ class MobilityRollup:
             unchanged = prior is not None and (
                 prior.lat, prior.lng, prior.radius_m, prior.kind,
                 prior.confidence, prior.label, prior.saved_place_id,
+                prior.first_seen_ts, prior.last_seen_ts,
             ) == (
                 planned.lat, planned.lng, planned.radius_m, planned.label.kind,
                 planned.label.confidence, label, planned.saved_place_id,
+                first_seen, last_seen,
             )
             if unchanged and planned.existing_id is not None:
                 place_id = planned.existing_id

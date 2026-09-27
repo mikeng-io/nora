@@ -826,14 +826,20 @@ def segment_stays(
         if i + 1 < len(fixes):
             after = fixes[i + 1]
             spike_dwells = [*dwells[:-1], dwell_ms(group[-1].ts, after.ts)]
-            if after.ts - group[-1].ts <= DWELL_CAP_MS and _fits(
-                [*group, after], spike_dwells,
+            # Each gap bounded on its own (independent review 2026-09-28):
+            # bounding the two together by one DWELL_CAP_MS made the rule
+            # dead at any resting cadence slower than ~16 min, i.e. at rest,
+            # exactly where spikes are.
+            if (
+                candidate.ts - fixes[i - 1].ts <= DWELL_CAP_MS
+                and after.ts - candidate.ts <= DWELL_CAP_MS
+                and _fits([*group, after], spike_dwells)
             ):
                 dwells = spike_dwells
                 group.append(after)
                 i += 2
                 continue
-        elif len(group) > 1 or group[-1].ts - group[0].ts > 0:
+        elif len(group) > 1:
             # The breaking fix is the LAST one in the window, so whether it
             # is a spike or a departure is not yet observable. Leave the
             # group OPEN (the rollup holds its fixes readable) rather than
@@ -1280,6 +1286,8 @@ class DerivedPlace:
     confidence: float
     label: str | None
     saved_place_id: str | None
+    first_seen_ts: int = 0
+    last_seen_ts: int = 0
 
 
 @dataclass(frozen=True)

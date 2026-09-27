@@ -85,10 +85,16 @@ class SqlMobilityStore:
         counted stays it never linked) and silently truncated history (audit
         2026-09-27). SELECT-only; the web consumer never re-runs derivation.
         """
+        # The cap keeps the most RECENTLY seen places: before DEC-190 a
+        # subject held at most two rows and the cap was unreachable; places
+        # are unbounded now, and an id-ascending cut would drop the newest.
         places_stmt = (
             sa.select(PRESENCE_DERIVED_PLACES)
             .where(PRESENCE_DERIVED_PLACES.c.subject_id == subject_id)
-            .order_by(PRESENCE_DERIVED_PLACES.c.id.asc())
+            .order_by(
+                PRESENCE_DERIVED_PLACES.c.last_seen_ts.desc(),
+                PRESENCE_DERIVED_PLACES.c.id.asc(),
+            )
             .limit(_MAX_ANALYTICS_PLACES)
         )
         agg_stmt = (
@@ -115,7 +121,7 @@ class SqlMobilityStore:
             aggs = {r.place_id: r for r in (await conn.execute(agg_stmt)).all()}
 
         out: list[dict[str, Any]] = []
-        for place in places:
+        for place in sorted(places, key=lambda p: p.id):
             agg = aggs.get(place.id)
             out.append(
                 {
@@ -603,6 +609,7 @@ class SqlMobilityStore:
                 lat=r.lat, lng=r.lng, radius_m=r.radius_m, kind=r.kind,
                 confidence=r.confidence, label=r.label,
                 saved_place_id=r.saved_place_id,
+                first_seen_ts=r.first_seen_ts, last_seen_ts=r.last_seen_ts,
             )
             for r in rows
         ]
