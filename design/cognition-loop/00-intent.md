@@ -19,7 +19,7 @@ through a human. The parts that run it today:
 | step | who does it today | when |
 |---|---|---|
 | observe | ingest (`nora/ingest/pipeline.py`), the presence collector (`nora/presence/collector.py`), memory feed | per message / per fix |
-| orient | note-candidates, note-curation, note-merge, culture (Dreamer adaptors); the Standing debrief and the Standing event fold | each on its own clock or batch |
+| orient | note-candidates, note-curation, note-merge, culture (Dreamer adaptors); the Standing debrief and the ingest-triggered Standing fold (code: `standing.event_fold`) | each on its own clock or batch |
 | decide | participation's gate and turn; the proactive adaptor's decide turn | quiescence window; hourly |
 | act | the fire path (`nora/app/fire.py`) via a reminder the proactive pass set; the participation turn | when a row comes due |
 
@@ -30,9 +30,9 @@ real only as a diagram.
 
 ## 2. What that produces: a passive Nora
 
-The operator's case, 2026-09-27: a group changed restaurants several times in
+The operator's case, 2026-09-27: a unit's members changed restaurants several times in
 one afternoon in untagged chat, and asked Nora only to look places up. Her
-record kept the first restaurant.
+`Gathering` kept the first restaurant.
 
 From the code, not from a live read-back:
 
@@ -42,7 +42,7 @@ From the code, not from a live read-back:
   and nothing carries a change from a note to the gathering it links.
 - Presence knows where people were at dinner time; nothing asks.
 
-**Every record is written only when someone tells her, at the moment they
+**A gathering is written only when someone tells her, at the moment they
 tell her.** Being told everything is not a reasonable demand of people, and it
 is not what an agent is for.
 
@@ -77,7 +77,7 @@ The objections the first draft raised, and where each is answered now:
 | objection | answered by |
 |---|---|
 | a model does not convict itself (the Standing verdict read 21/21 grounded) | writes are **tool calls code validates** (citations resolve, schema holds, provenance stamped), not a verdict the model grades; an **assess** pass reads finished sessions afterwards (design/dreamer-agent-loop/17-failure-classes.md §2) |
-| room vs unit disclosure (R-31) | the unit is the session's read boundary (the operator's 2026-09-09 ruling for proactive: all permissions of its unit); anything leaving for a room passes the same egress screens a reply does |
+| room vs unit disclosure (R-31) | the unit as the session's read boundary: the 2026-09-09 ruling covers proactive; for cognition it is open until step 0 ([70](70-migration.md) §4); anything leaving for a room passes the same egress screens a reply does |
 | a model told of a cap declines the work | caps stay in code, never in words; an agenda item not closed stays pending for the next session instead of being dropped |
 | one large prompt dilutes a cheap model | each kind of work is a **skill** loaded when the agenda holds that kind of item (ADR 0016's mechanism), not text in the base prompt |
 | per-pass eval suites exist | their cases become agenda-item cases; the verdicts they grade are the same rows |

@@ -1,22 +1,23 @@
 kind: design_index
-title: "The Cognition Loop — one agent that observes, orients, decides and acts"
+title: "The Cognition Loop — one agent that orients, decides and acts on what code observes"
 description: >
   Nora's ambient loop (DEC-176) exists as a name, not as a shape: its orient
-  and act steps are scattered over five clocked Dreamer adaptors, two Standing
-  folds, a participation gate and the proactive adaptor, each re-reading the
-  same messages on its own clock and none able to see what the others just
-  concluded. The symptom is a passive Nora: a plan moves from one restaurant
-  to another in untagged chat and her record still says the first, because
-  every record is written only when someone tells her. This bundle makes the
+  and act steps are scattered over four clocked Dreamer adaptors, two Standing
+  folds, a participation gate and the proactive adaptor (the fifth Dreamer
+  adaptor), each re-reading the same messages on its own clock and none able
+  to see what the others just concluded. The symptom is a passive Nora: a plan
+  moves from one restaurant to another in untagged chat and her gathering
+  still says the first, because a gathering is written only when someone
+  tells her. This bundle makes the
   loop one thing. OBSERVE is code: ingestion of messages, presence, the social
   graph (stories, posts, follows, tags) and perception (what a photo shows,
   whose face it is), stored as the RECORD and raising wake signals. ORIENT,
   DECIDE and ACT are ONE agent session per unit per wake, holding every read
   tool, typed write verbs whose every call code validates, and act verbs that
   leave through the fire path. It fixes the tiers and their words so nothing
-  overlaps: RECORD (what was observed), REGISTER (the group's affairs: note,
+  overlaps: RECORD (what was observed), REGISTER (the unit's affairs: note,
   memo, event), CHARACTER (what an entity is like), STANDING (where Nora
-  stands). Cognition is the process plus what it has built, never a store; her identity
+  stands). Cognition is the loop, never a store; her identity
   is the slice of all state about her (doctrine given, Record done, Character
   digested, Standing held), and she grows by revising it inside doctrine she
   never changes, with any tension shown to the operator. Every derived row is

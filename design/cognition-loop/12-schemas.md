@@ -35,8 +35,8 @@ held by one parser per kind, each called by the write verb before commit:
 2. **Content in the room's own language.** Only headings and fixed tokens are
    English; code parses keys, never content.
 3. **Every claim cites.** A Register line ends in the Record ids it rests on.
-   An account paragraph (Character, Standing) ends in its ids. Ids must be
-   ones this session was shown or fetched.
+   A Character or Standing paragraph ends in its ids. Ids must be
+   ones this session or turn was shown or fetched.
 4. **Names are names the input showed; dates are absolute.**
 5. **Some sections are code-written** (history, folds, ages) and a model never
    writes them.
@@ -67,19 +67,19 @@ field. Body:
 
 | section | required | holds |
 |---|---|---|
-| `Plan` | yes | what, when, where, who — one line each, `told` or `inferred`, cited |
-| `Open` | no | what is not settled, each line linking the note that tracks it |
+| `Plan` | yes | the evidence for each column value, one line per field (what, when, where, who), cited; the value is the column and `told`/`inferred` is its `derivation` column |
+| `Open` | no | what is not settled, each line naming the note that tracks it by id (a link, not a citation) |
 | `Happened` | after | time range, place, who was there, what they did — cited to presence, social, perception |
 | `Changes` | code | every revision: field, from, to, why, when |
 
 ## 4. Character
 
 Paragraphs, not lists: an account says *what it is and why*, and the culture
-tier's measured lesson is that a list turns an account into a record
+store's measured lesson is that a list turns an account into a log of what happened
 (`nora/dreamer/objectives/culture.md`, "an account, not a record"). The
 sections fix **what** is said; each paragraph stays prose and cites.
 
-| entity | sections (all optional but one; `Unsure` always last) |
+| entity | sections (all optional; at least one besides `Unsure`; `Unsure` always last) |
 |---|---|
 | **person** | `How they talk`, `What they care about`, `How they decide`, `What they reliably do`, `Who they are close to`, `Unsure` |
 | **room** (culture) | `How they talk`, `How things get decided`, `Names and where they came from`, `What they do together`, `Unsure` |

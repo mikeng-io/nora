@@ -1,7 +1,7 @@
 ---
 type: design
-title: "Faces — detect, embed, match; labels by reference photos and by tagging, effective immediately"
-description: "How face recognition works without training (templates, nearest neighbour), the two ways labels arrive (reference photos; tagging a detected face in a photo, in the portal or in chat), unknown faces, what is stored, and where it runs."
+title: "Faces — detect, embed, match; labels by reference photos and by labelling a face, effective immediately"
+description: "How face recognition works without training (templates, nearest neighbour), the two ways labels arrive (reference photos; labelling a detected face in a photo, in the portal or in chat), unknown faces, what is stored, and where it runs."
 tags: [nora, perception, faces, recognition, labelling, portal, instagram]
 timestamp: '2026-09-28'
 edges:
@@ -34,8 +34,8 @@ what makes real-time labelling possible.
 | way | how | when |
 |---|---|---|
 | **reference photos** | the operator supplies a few photos per person (a folder keyed by person id, beside `identity.toml`); each detected face becomes a template | bootstrap |
-| **tagging in the portal** | upload a photo; the detector draws a box per face; tap a box, pick a person. The operator's "yellow circle is one person, blue circle is another" is exactly this, with the circles drawn by the detector | any time |
-| **tagging in chat** | Nora replies with the detected faces numbered on the image; "1 is X, 2 is Y" labels them | any time |
+| **labelling in the portal** | upload a photo; the detector draws a box per face; tap a box, pick a person. The operator's "yellow circle is one person, blue circle is another" is exactly this, with the circles drawn by the detector | any time |
+| **labelling in chat** | Nora replies with the detected faces numbered on the image; "1 is X, 2 is Y" labels them | any time |
 | **cognition asks** | an unknown face that recurs across items is clustered; the act step may `ask` a member who it is, once, with the crop | after a cluster reaches a size |
 
 A label given in any of these ways is the same row: `(person_id, template,

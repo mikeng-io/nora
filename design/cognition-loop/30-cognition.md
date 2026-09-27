@@ -41,13 +41,15 @@ adaptor keeps today.
 | class | verbs | leaves the session how |
 |---|---|---|
 | **read** | every read tool the registry admits (`read_only_tools()`): transcripts, presence (`where_is`, `where_been`), `route`, places, memory (`about`, `ask_memory`), the Register reads, web, `media_fetch`, the social reads | returns into context |
-| **write** | one family per tier: Register (`note_create`, `note_update`, `memo_write`, `memo_withdraw`, `event_propose`, `event_revise`, `event_set_status`), Character (`character_revise`), Standing (`standing_revise`) | code validates, then commits ([§3](#3-code-keeps-every-write-honest)) |
-| **act** | `remind` (a reminder at a chosen time), `speak` (a message into a room of the unit now), `ask` (a question to a person, e.g. who is in a photo, [60](60-faces.md)) | a fire occasion through `FirePath.speak` in `nora/app/fire.py` — the one path that sends (R-1b), with its egress screens, rate cap and attribution |
+| **write** | one family per tier: Register (`note_create`, `note_update`, `memo_write`, `memo_withdraw`, `event_propose` (status `staged` or `proposed`), `event_revise`, `event_set_status`), Character (`character_revise`), Standing (`standing_revise`) | code validates, then commits ([§3](#3-code-keeps-every-write-honest)) |
+| **act** | `remind` (a reminder at a chosen time), `speak` (a message into a room of the unit now), `ask` (a question to a person, in a room of the unit, e.g. who is in a photo, [60](60-faces.md)) | a fire occasion through `FirePath.speak` in `nora/app/fire.py` — the fire path, one of the two senders (R-1b), with its egress screens, rate cap and attribution |
 | **close** | `close(item, outcome)` | ends one agenda item; the session ends when every item is closed or the budget is spent |
 
-Write verbs reuse the tag path's where they exist (`note_create`,
-`note_update`), so a note written by cognition and one written on a tag turn
-pass the same validator. The act step is the proactive adaptor's decide and act
+Write verbs are shared with the tag path: `note_create`/`note_update` as
+today, and the tag path's event tools (`create_event`, `update_event`,
+`cancel_event`) are renamed to the event verbs above at step 2, so a note or
+event written by cognition and one written on a tag turn pass the same
+validator. The act step is the proactive adaptor's decide and act
 turns made one: deciding *whether and when* to speak happens in the same
 context that just revised the event it would speak about.
 
@@ -56,9 +58,9 @@ context that just revised the event it would speak about.
 The session is one agent; judging its writes is not left to it. Every write
 verb, before it commits:
 
-1. **Citations resolve** to Record ids this session was shown or fetched by a
-   tool (design/dreamer-agent-loop/43-note-dreamers-are-research-loops.md §3's
-   shown set).
+1. **Citations resolve** to ids this session was shown or fetched: Record
+   ids, plus lower-tier rows where [10](10-tiers.md) §2 rule 1 allows them. At
+   least one is a Record id (rule 2).
 2. **Citations point down** and **Nora's own rows ground nothing** they may
    not ground ([10](10-tiers.md) §2).
 3. **The kind's schema holds** ([12](12-schemas.md)): fixed sections, cited
@@ -76,8 +78,10 @@ The base prompt is the Dreamer doctrine (what the runtime is), the situation
 and the agenda. What each kind of work asks for — how to judge a note, when
 a plan has moved, what a culture account is — lives in a **skill** the session
 loads when its agenda holds that kind of item (ADR 0016's mechanism). The
-current objectives under `nora/dreamer/objectives/` become those skills. A
-session that only sees chatter never loads the note skill's 280 lines.
+adaptors' objectives (`note-candidates.md`, `note-curation.md`,
+`note-merge.md`, `culture.md`, `proactive.md`) become those skills;
+`standing-debrief.md` stays the debrief's. A session that only sees chatter
+never loads the note skill's 280 lines.
 
 ## 5. Budgets
 
@@ -103,7 +107,7 @@ Judging an act belongs outside it (design/dreamer-agent-loop/17-failure-classes.
 
 - **The tag path** — the reflex. It answers when called, reads what cognition
   wrote, writes through the same verbs, and its debrief keeps revising the
-  room's Standing inside the reply slot.
+  room's Standing inside the reply slot, through `standing_revise`.
 - **Participation** — deciding within seconds whether a quiet window is hers
   is too fast for a unit session. It stays as it is (off by default); a later
   step may make it a small-agenda wake of the same loop once session latency
@@ -114,8 +118,9 @@ Judging an act belongs outside it (design/dreamer-agent-loop/17-failure-classes.
 
 ## 8. Why no Strands multi-agent primitive
 
-The session is one Strands `Agent` (`create_dream_agent` in
-`nora/agent/factory.py`). `Swarm`, `Graph` and `Agent.as_tool()` all pass text
+The session is one Strands `Agent` from `create_dream_agent` in
+`nora/agent/factory.py`, which gains a `skills_dir` for §4's skills (it has
+none today, by design). `Swarm`, `Graph` and `Agent.as_tool()` all pass text
 one model wrote into another model's prompt (read from strands-agents 1.50.2
 and 1.57.1), which is the context boundary this design removes. Perception
 models (vision, faces) are called as tools that return typed results, not as

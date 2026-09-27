@@ -27,8 +27,9 @@ everything its sources give it and says what changed.
 **On scheduling** (operator: "should it be scheduled?"): a source that cannot
 push is polled — stories disappear in 24 hours, so the social poller runs at
 least every 12 hours, and the presence collector already polls. That is
-ingestion's clock, not cognition's. Cognition never runs on a clock; it is
-woken by what ingestion found (§3), plus one daily time signal (§3).
+ingestion's clock, not cognition's. Cognition has no schedule of its own: it
+runs only when signals wake it (§3), and `time` signals are the only ones a
+clock raises.
 
 ## 2. The social stream
 
@@ -62,16 +63,18 @@ Instagram presence entirely.
 
 ## 3. Signals
 
-Every ingested item raises a **signal**: `(unit, kind, ref, cues, at)`.
+Every ingested item, and every `time` trigger, raises a **signal**:
+`(unit, kind, ref, cues, at)`.
 
 - **kind**: `message`, `presence` (an arrival or departure), `social` (a new
   item or edge), `time` (an anchor passed, a revisit due, an event's date
   reached, the daily floor at HK 00:00).
 - **cues** (deterministic, never a model): a date or time expression; an
-  amount or a split; a keep instruction («記低», "note that"); an RSVP word; a
-  reply to, edit of or delete of a message a Register row cites; a place name
-  or a place link; an arrival at a place an open event names.
-- A signal whose author is Nora raises nothing.
+  amount or a split; a keep instruction («記低», "keep that", "write that
+  down"); an RSVP word; a reply to, edit of or delete of a message a Register
+  row cites; a place name or a place link; an arrival at a place an open
+  event names.
+- An item whose author is Nora raises no signal.
 
 A unit's signals collect until the first of: the unit's rooms quiet for
 `quiet_seconds`; `batch_max` signals pending; a strong cue plus

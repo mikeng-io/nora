@@ -16,16 +16,16 @@ shape so the loop's verbs and keys are right from the start.
 ## 1. Character: one shape, four kinds of entity
 
 An **account** per `(unit, entity)`: what the entity is like and how it
-behaves, in prose, with cited evidence, revised by `character_revise` as an
-append-only chain — the shape the culture tier already has
-(design/culture-tier/).
+behaves, in prose under the fixed sections of [12](12-schemas.md) §4, with
+cited evidence, revised by `character_revise` as an append-only chain (the
+revision chain the culture store already has, design/culture-tier/).
 
 | entity | the account holds | evidence it reads |
 |---|---|---|
 | **person** | how they talk, what they care about, how they decide, whom they are close to, what they reliably do (organise, cancel, turn up late) | the Record (their messages, presence patterns, social items and edges), the Register (events attended, commitments kept), memory |
 | **room** (its culture) | how the room talks and decides, what it calls itself | the room's Record, the Register, its members' Characters |
-| **unit** (its culture) | what the circle is, across its rooms | the rooms' cultures, the Register |
-| **Nora** | what she is like in this circle, as the circle has met her | her Record rows **paired with the responses to them**; never her rows alone |
+| **unit** (its culture) | what the unit is, across its rooms | the rooms' cultures, the Register |
+| **Nora** | what she is like in this unit, as its people have met her | her Record rows **paired with the responses to them**; never her rows alone |
 
 **Why not memory.** Honcho's model of a person was measured on 2026-08-06 as
 about 88% events and 12% traits (GLOSSARY, **representation**): it records
@@ -39,13 +39,13 @@ read beside the doctrine, never over it.
 
 ## 2. Standing: from room to unit and person
 
-Standing keeps its meaning (GLOSSARY: her held position, a *stance*) and gains
+Standing keeps its meaning (her held position toward a subject) and gains
 two subjects:
 
 | subject | exists | holds |
 |---|---|---|
 | room | yes (design/standing-compact/) | where the room's conversation stands for her, plus the working set |
-| **unit** | new | where she stands in the circle: what she is following, what she owes, what she thinks is going on |
+| **unit** | new | where she stands in the unit: what she is following, what she owes, what she thinks is going on |
 | **person** | new | her position toward one person: what is between them, what she owes them, how they receive her |
 
 Standing may cite every tier below it, including Character ("they tend to
@@ -53,10 +53,12 @@ change plans late, so I hold this one loosely").
 
 ## 3. The echo rule
 
-A stance built from her own words drifts: each pass agrees a little more with
+A position built from her own words drifts: each pass agrees a little more with
 the last. So her own rows ground her Standing only as *what I said*, and her
-own Character only together with how people responded. A revision of either
-whose only evidence is Nora is refused ([10](10-tiers.md) §2, rule 4).
+own Character only together with how people responded. A revision of her
+Character whose only evidence is Nora is refused; a Standing line resting
+only on her rows may say only what she said (`I owe`, `I hold open`), never
+what is so.
 
 ## 4. Disclosure
 

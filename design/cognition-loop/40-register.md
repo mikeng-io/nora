@@ -19,8 +19,8 @@ edges:
 | **event** | agreed or on its way | yes, when it happens or is called off | dinner Saturday 20:00 at a restaurant |
 
 ```
-Record ──cites── NOTE ──becomes when a what+when is agreed──▶ EVENT ──reminder──▶ fire path
-                   │           (Note.event_id links them)       │
+Record ──cites── NOTE ──links (Note.event_id) once a what+when is proposed──▶ EVENT ──reminder──▶ fire path
+                   │                                                            │
                    └──closes on a settled answer──▶ MEMO ◀──leaves behind (booking, split)──┘
 ```
 
@@ -29,15 +29,16 @@ event holds the dated thing. A memo can also come straight from the Record.
 Reminders belong to events and to cognition's act step, never to memos.
 
 **The routing rule** every writer applies: settled and about the speaker
-alone → `remember` (memory); settled and about the group, someone else or
+alone → `remember` (memory); settled and about the unit, someone else or
 the world → memo; not settled and must not be dropped → note; dated and
 attended → event; should happen at a time → a reminder.
 
 ## 2. Memo
 
-Title, text (restated whole on revision, as DEC-213 does for a note body),
-cited Record ids, origin room, unit. No anchor, no closing condition, no
-revisit. Retired only when the group says it no longer holds. Anything the
+Title, body (the [12](12-schemas.md) §3 memo schema, restated whole on
+revision as DEC-213 does for a note body), cited Record ids, origin room,
+unit. No anchor, no closing condition, no revisit. Withdrawn
+(`memo_withdraw`) only when the unit's people say it no longer holds. Anything the
 room settled may be kept, a password included (operator 2026-09-28: it is in
 the transcript and memory already). Written on the tag path by `memo_write`
 («記低» about anything but the speaker; about the speaker it stays
@@ -55,11 +56,13 @@ origin room kept, so a plan made on Signal is the same event on Discord.
 
 ```
 staged ─▶ proposed ─▶ confirmed ─▶ happened
-   │          │           ├─▶ (revised: place, time, people — same event, history kept)
    │          │           └─▶ cancelled
    │          └─▶ lapsed    (the date passed with nothing agreed)
    └─▶ evicted              (it was never an event: a misread, a joke)
 ```
+
+Any status before `happened` may be revised (place, time, people — same
+event, history kept).
 
 No further statuses for now (operator 2026-09-28).
 
@@ -68,16 +71,16 @@ propose, **revise any event's place, time and people** whoever created it,
 **confirm**, **cancel**, mark **happened** or **lapsed**, and evict its own
 misreads. Every change cites its evidence and keeps the previous revision.
 
-**The newest human evidence outranks the older record.** A message after the
+**The newest human evidence outranks the event's older revision.** A message after the
 event was set, a presence arrival at another place at the event's time, a
 story posted from another place: each outranks the place the event was
 created with.
 
 ## 4. An inference is shown as one
 
-Every revision carries **how it was derived**: `told` (someone said it to
-Nora or in the room, in words), `inferred` (from chat not addressed to the
-record, presence, or social), with its citations and a confidence. The
+Every revision carries **how it was derived**: `told` (a person stated it to
+Nora, in words), `inferred` (concluded from room chat not addressed to her,
+from presence, or from social items), with its citations and a confidence. The
 `<events>` block a tag turn reads renders it: *place: C — inferred 18:40 from
 chat, 20:05 from presence*. She can then say "you ended up at C, right?"
 instead of asserting it. Wrong sometimes is acceptable. Stale is the failure
