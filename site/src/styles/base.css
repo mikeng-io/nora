@@ -322,6 +322,63 @@ button {
   margin-bottom: clamp(40px, 6vw, 72px);
 }
 
+/* ---------------------------------------------------------- her presence */
+
+/*
+ * src/scripts/nora/: once she is live, each place she can be hides its static
+ * render; she is drawn into the place she is in, and the others stand empty.
+ * `data-state` is only ever set by that script, so without it (no script,
+ * reduced motion, no WebGL2) every static render stays exactly as it was.
+ */
+/* opacity, not visibility: the render stays in the accessibility tree, so
+   its description is still read wherever she is (the canvas is aria-hidden) */
+[data-nora-slot][data-state] .nora-static {
+  opacity: 0;
+}
+
+:where([data-nora-figure]) {
+  position: relative;
+}
+
+/* Her canvas reaches past her figure box, so a tilt of the head or a strand
+   of hair is not cut at its edge; in a frame, the frame clips instead. */
+.nora-host {
+  position: absolute;
+  z-index: 1;
+  inset: -10% -14%;
+  pointer-events: none;
+}
+
+/* only the place she is in has room made for her; an empty host past the
+   edge of a narrow screen would still widen the page */
+[data-nora-slot]:not([data-state="live"]) .nora-host {
+  display: none;
+}
+
+[data-framed] > .nora-host {
+  inset: 0;
+}
+
+.nora-host > canvas,
+.nora-flight > canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* In the air between two places, above the page, under the header. */
+.nora-flight {
+  position: fixed;
+  z-index: 30;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+  transform-origin: 50% 100%;
+  will-change: transform;
+}
+
 /* ------------------------------------------------------------- transitions */
 
 @view-transition {

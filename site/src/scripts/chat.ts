@@ -9,6 +9,20 @@
 const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 const reduce = matchMedia("(prefers-reduced-motion: reduce)");
 
+/** What happened in the room, for whoever is listening: her figure on the
+    window (scripts/nora/wire.ts), her notebook (scripts/memory.ts), the sound. */
+export interface RoomEvent {
+  kind: "ask" | "think" | "reply" | "skin" | "reset";
+  id?: string;
+  el?: HTMLElement;
+  own?: boolean;
+  thinking?: boolean;
+}
+
+function tell(detail: RoomEvent): void {
+  document.dispatchEvent(new CustomEvent<RoomEvent>("nora:room", { detail }));
+}
+
 function clock(minutes: number): string {
   const h = Math.floor(minutes / 60) % 24;
   const m = minutes % 60;
@@ -73,6 +87,7 @@ function init(root: HTMLElement): void {
     busy = false;
     refresh();
     log!.scrollTo({ top: log!.scrollHeight });
+    tell({ kind: "reset" });
   }
 
   async function play(button: HTMLButtonElement): Promise<void> {
@@ -94,6 +109,7 @@ function init(root: HTMLElement): void {
       }
     }
     reveal(first);
+    if (!skip) tell({ kind: "ask", id, el: first });
     await wait(skip ? 700 : 450);
     if (mine !== generation) return;
     if (!skip) {
@@ -102,11 +118,14 @@ function init(root: HTMLElement): void {
       void typing!.offsetWidth;
       typing!.classList.add("enter");
       toEnd();
+      tell({ kind: "think", id, el: typing!, thinking: true });
       await wait(reduce.matches ? 700 : 1200);
       if (mine !== generation) return;
       typing!.hidden = true;
+      tell({ kind: "think", id, thinking: false });
     }
     reveal(reply);
+    tell({ kind: "reply", id, el: reply, own: skip });
     used.add(id);
     busy = false;
     refresh();
@@ -129,6 +148,7 @@ function init(root: HTMLElement): void {
       for (const l of labels) l.hidden = l.dataset.on !== skin;
       log.classList.remove("switching");
       log.scrollTo({ top: log.scrollHeight });
+      tell({ kind: "skin", id: skin });
     });
   }
 
@@ -138,5 +158,3 @@ function init(root: HTMLElement): void {
 
 const root = document.querySelector<HTMLElement>("[data-chat]");
 if (root) init(root);
-
-export {};

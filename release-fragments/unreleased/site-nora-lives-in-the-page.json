@@ -1,0 +1,17 @@
+{
+  "type": "feature",
+  "summary": "Nora lives in her public site now instead of being pictured on it: she breathes, blinks, looks where you point, and moves through the page with you, one of her in one place at a time.",
+  "details": [
+    "Her renders are drawn live: she breathes, blinks, glances at your pointer and gets bored of it, listens to her music when left alone and dozes off when left longer, and gives you a look if you keep poking her. Her eyes and mouth are drawn as the shapes they are, so every expression she makes is one from her character sheet.",
+    "She is in one place at a time and hops to whichever you are reading: the hero's studio (which stands empty when she steps out), the edge of the chat window, her stool in the memory section, the manners column, the photo plate, the portal panel, and the 404 page, where she is looking for the page.",
+    "The header shows what she is doing, the way a chat app shows the line under a name: listening, reading the room, thinking, writing it down, dozing off, not amused.",
+    "In the chat demo she looks up at what you asked, thinks, and holds perfectly still while the room changes platform around her. Under each memory tier, her notebook keeps what she would from that demo: the fast tiers rewrite as you play it and the slow two do not.",
+    "On the photo plate she glances at each of her eight defining features as it is pointed out; the loop diagram shows a signal travelling its cable, passing 'Act' almost every time without lighting it.",
+    "A 'Hear her' button plays her voice as it sounds in the voice channel (MiniMax, her own voice settings), with the words written beside it. The header's earphones turn on quiet interface sounds; sound is off until then.",
+    "The hero's caption shows the time in Hong Kong, where she lives; late at night there she is drowsier."
+  ],
+  "limitations": [
+    "Reduced motion, no JavaScript, a data saver or a browser without WebGL2 get the static renders, exactly as before.",
+    "Her textures (about 100 KB per pose) load as each of her places comes near the screen, after the page has loaded; she never delays the first paint."
+  ]
+}

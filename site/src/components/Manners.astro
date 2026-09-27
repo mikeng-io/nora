@@ -17,14 +17,16 @@ const t = LOCALES[locale].dict.manners;
       <h2 id="manners-title" class="section-title">
         {t.title}
       </h2>
-      <Image
-        class="art"
-        src={art.quiet}
-        alt={t.imageAlt}
-        widths={[200, 300, 420, 600]}
-        sizes="(min-width: 1024px) 300px, 200px"
-        loading="lazy"
-      />
+      <div class="art" data-nora-slot="manners" data-nora-figure data-kind="quiet" data-pose="quiet">
+        <Image
+          class="nora-static"
+          src={art.quiet}
+          alt={t.imageAlt}
+          widths={[200, 300, 420, 600]}
+          sizes="(min-width: 1024px) 300px, 200px"
+          loading="lazy"
+        />
+      </div>
     </div>
 
     <ol class="list">
@@ -51,8 +53,12 @@ const t = LOCALES[locale].dict.manners;
     align-content: start;
   }
 
-  .side :global(.art) {
+  .art {
     width: 200px;
+  }
+
+  .art :global(img) {
+    width: 100%;
     height: auto;
   }
 
@@ -103,7 +109,7 @@ const t = LOCALES[locale].dict.manners;
       align-self: start;
     }
 
-    .side :global(.art) {
+    .art {
       width: 300px;
     }
   }

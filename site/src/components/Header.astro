@@ -22,8 +22,17 @@ const links = [
   <div class="container inner">
     <a class="brand" href={home} aria-label={t.nav.home}>
       <NoraMark size={36} />
-      <span class="wordmark" aria-hidden="true">
-        Nora
+      <span class="name">
+        <span class="wordmark" aria-hidden="true">
+          Nora
+        </span>
+        <!-- What she is doing right now, like the line under a name in a chat
+             app. Filled in by src/scripts/nora/ once she is live; decorative,
+             so hidden from assistive technology (the page says it all). -->
+        <span class="doing" data-nora-status hidden aria-hidden="true">
+          <span class="presence"></span>
+          <span class="doing-text" data-nora-status-text></span>
+        </span>
       </span>
     </a>
 
@@ -48,6 +57,11 @@ const links = [
           </a>
         ))}
       </nav>
+
+      <!-- Sound, off until pressed; shown only once scripts/sound.ts runs. -->
+      <button class="theme sound" type="button" data-sound-toggle aria-pressed="false" aria-label={t.nav.sound} hidden>
+        <Icon name="earphones" size={18} />
+      </button>
 
       <button
         class="theme"
@@ -90,8 +104,14 @@ const links = [
     display: inline-flex;
     align-items: center;
     gap: 10px;
+    min-width: 0;
     border-radius: 9999px;
     padding-right: 4px;
+  }
+
+  .name {
+    display: grid;
+    min-width: 0;
   }
 
   .wordmark {
@@ -101,6 +121,39 @@ const links = [
     letter-spacing: -0.02em;
     line-height: 1;
     color: var(--bun);
+  }
+
+  .doing {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    margin-top: 2px;
+    font-size: 0.75rem;
+    line-height: 1.2;
+    color: var(--ink-muted);
+  }
+
+  .doing .presence {
+    width: 6px;
+    height: 6px;
+  }
+
+  .doing-text {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  /* a change of activity is a small cross-fade, not a flicker */
+  .doing:global(.changed) .doing-text {
+    animation: doing-in var(--dur-sheet) var(--ease);
+  }
+
+  @keyframes doing-in {
+    from {
+      opacity: 0;
+    }
   }
 
   .links {
@@ -182,6 +235,12 @@ const links = [
 
   .theme :global(svg) {
     grid-area: 1 / 1;
+  }
+
+  /* Earphones in: the one control that is on, in denim like any selection. */
+  .sound[aria-pressed="true"] {
+    color: var(--denim);
+    background: var(--hoodie);
   }
 
   /* Show the lighting you would switch TO. */

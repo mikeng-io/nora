@@ -23,9 +23,10 @@ const t = LOCALES[locale].dict.loop;
         <h3 class="path-title">{t.tagTitle}</h3>
         <p class="soft">{t.tagBody}</p>
         <!-- A straight cable: in, through, out. The last stop is her speaking, so it is blush. -->
-        <ol class="cable straight">
+        <ol class="cable straight" data-signal>
           {t.tagSteps.map((s, i) => (
             <li class:list={{ her: i === t.tagSteps.length - 1 }}>
+              {i < t.tagSteps.length - 1 && <span class="seg" aria-hidden="true" />}
               <span class="n mono">{String(i + 1).padStart(2, "0")}</span>
               <span class="step">{s}</span>
             </li>
@@ -38,7 +39,7 @@ const t = LOCALES[locale].dict.loop;
         <p class="soft">{t.ambientBody}</p>
         <!-- The same cable, closed into a loop through the people: the line on
              the left carries it from the last stop back to the first. -->
-        <ol class="cable loop">
+        <ol class="cable loop" data-heartbeat>
           {t.stages.map((s, i) => (
             <li class:list={{ her: i === t.stages.length - 1 }}>
               <span class="n mono">{String(i + 1).padStart(2, "0")}</span>
@@ -57,6 +58,10 @@ const t = LOCALES[locale].dict.loop;
     </div>
   </div>
 </section>
+
+<script>
+  import "../scripts/loop.ts";
+</script>
 
 <style>
   .paths {
@@ -127,6 +132,52 @@ const t = LOCALES[locale].dict.loop;
   .cable li.her::before {
     background: var(--blush);
     box-shadow: 0 0 0 4px var(--studio);
+  }
+
+  /* A signal on the cable (scripts/loop.ts): a stop it has reached fills,
+     and the stretch of cable behind it darkens, the same one line, never a
+     second one. The last stop is her speaking, so it lights in blush. */
+  .cable li::before {
+    transition:
+      background-color var(--dur-sheet) var(--ease),
+      transform var(--dur-sheet) var(--ease);
+  }
+
+  .cable li:global(.on)::before {
+    background: var(--ink-soft);
+    box-shadow: 0 0 0 4px var(--studio);
+  }
+
+  .cable li.her:global(.on)::before {
+    background: var(--blush);
+    transform: scale(1.25);
+  }
+
+  .seg {
+    position: absolute;
+    z-index: 1;
+    left: 7px;
+    top: var(--c);
+    width: 1px;
+    height: 100%;
+    background: var(--ink-soft);
+    transform: scaleY(0);
+    transform-origin: top;
+    transition: transform var(--dur-route) var(--ease);
+  }
+
+  .cable li:global(.run) .seg {
+    transform: scaleY(1);
+  }
+
+  /* the loop's resting stops dim while it is being walked, so the one it is
+     at reads as the one it is at */
+  .loop:global(.beating) li::before {
+    opacity: 0.55;
+  }
+
+  .loop:global(.beating) li:global(.on)::before {
+    opacity: 1;
   }
 
   .n {

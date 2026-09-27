@@ -4,6 +4,8 @@ import { art } from "../assets/art";
 import { LOCALES, type Locale } from "../i18n";
 import Icon from "./Icon.astro";
 import LitPatch from "./LitPatch.astro";
+import plateStudio from "../assets/rig/plate-studio.webp";
+import plateNight from "../assets/rig/plate-night.webp";
 
 interface Props {
   locale: Locale;
@@ -55,6 +57,11 @@ const plate = {
   nightWebp: await set(art.nightPortrait, "webp"),
   fallback: (await getImage({ src: art.canonical, width: 720, format: "webp", quality: 80 })).src,
 };
+
+// Her studio without her (scripts/make_rig.py), behind her once she is live,
+// so the plate can stand empty until she walks onto her mark.
+const empty = async (src: ImageMetadata) => (await getImage({ src, width: 1024, format: "webp", quality: 80 })).src;
+const plates = `--plate-studio:url(${await empty(plateStudio)});--plate-night:url(${await empty(plateNight)})`;
 ---
 
 <section id="form" class="section" aria-labelledby="form-title">
@@ -75,34 +82,45 @@ const plate = {
         <h3 class="title">{t.anchorsTitle}</h3>
       </figcaption>
       <div class="stage">
-        <picture data-lit>
-          <source
-            data-scheme="dark"
-            media="(prefers-color-scheme: dark)"
-            type="image/avif"
-            srcset={plate.nightAvif}
-            sizes={sizes}
-          />
-          <source
-            data-scheme="dark"
-            media="(prefers-color-scheme: dark)"
-            type="image/webp"
-            srcset={plate.nightWebp}
-            sizes={sizes}
-          />
-          <source type="image/avif" srcset={plate.studioAvif} sizes={sizes} />
-          <source type="image/webp" srcset={plate.studioWebp} sizes={sizes} />
-          <LitPatch />
-          <img
-            class="portrait"
-            src={plate.fallback}
-            alt={t.figureAlt}
-            width={art.canonical.width}
-            height={art.canonical.height}
-            loading="lazy"
-            decoding="async"
-          />
-        </picture>
+        <div
+          class="portrait-box"
+          style={plates}
+          data-nora-slot="form"
+          data-nora-figure
+          data-kind="stand"
+          data-pose="stand"
+          data-pose-dark="stand-night"
+          data-framed
+        >
+          <picture data-lit class="nora-static">
+            <source
+              data-scheme="dark"
+              media="(prefers-color-scheme: dark)"
+              type="image/avif"
+              srcset={plate.nightAvif}
+              sizes={sizes}
+            />
+            <source
+              data-scheme="dark"
+              media="(prefers-color-scheme: dark)"
+              type="image/webp"
+              srcset={plate.nightWebp}
+              sizes={sizes}
+            />
+            <source type="image/avif" srcset={plate.studioAvif} sizes={sizes} />
+            <source type="image/webp" srcset={plate.studioWebp} sizes={sizes} />
+            <LitPatch />
+            <img
+              class="portrait"
+              src={plate.fallback}
+              alt={t.figureAlt}
+              width={art.canonical.width}
+              height={art.canonical.height}
+              loading="lazy"
+              decoding="async"
+            />
+          </picture>
+        </div>
         <svg class="lines" viewBox="0 0 100 75" preserveAspectRatio="none" aria-hidden="true">
           <g vector-effect="non-scaling-stroke">
             {/* the ruler: top of the bun to the soles, head height ticked */}
@@ -111,14 +129,14 @@ const plate = {
             <line x1="19.4" y1={0.413 * 75} x2="20.6" y2={0.413 * 75} />
             <line x1="19.4" y1={0.741 * 75} x2="20.6" y2={0.741 * 75} />
             <line x1="19" y1={0.905 * 75} x2="21" y2={0.905 * 75} />
-            {PINS.map((p) => {
+            {PINS.map((p, i) => {
               if (!p) return null;
               const x = px(p.x);
               const y = (py(p.y) * 75) / 100;
               const ly = (py(p.ly ?? p.y) * 75) / 100;
               const edge = p.side === "l" ? LABEL_L + 1.5 : LABEL_R - 1.5;
               const elbow = p.side === "l" ? Math.min(x - 3, 30) : Math.max(x + 3, 70);
-              return <polyline points={`${edge},${ly} ${elbow},${ly} ${x},${y}`} />;
+              return <polyline points={`${edge},${ly} ${elbow},${ly} ${x},${y}`} data-anchor={i} />;
             })}
           </g>
         </svg>
@@ -282,6 +300,25 @@ const plate = {
     height: auto;
   }
 
+  .portrait-box {
+    aspect-ratio: 2 / 3;
+  }
+
+  /* Live: the empty studio behind her, for the moments she is not on her mark. */
+  .portrait-box[data-state] {
+    background: var(--plate-studio) center / cover no-repeat;
+  }
+
+  :global(:root[data-theme="dark"]) .portrait-box[data-state] {
+    background-image: var(--plate-night);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :global(:root:not([data-theme="light"])) .portrait-box[data-state] {
+      background-image: var(--plate-night);
+    }
+  }
+
   .lines,
   .pin {
     display: none;
@@ -307,6 +344,12 @@ const plate = {
 
   .label-item .n {
     opacity: 0.72;
+    transition: color var(--dur) var(--ease);
+  }
+
+  .label-item.lit .n {
+    color: var(--blush);
+    opacity: 1;
   }
 
   .plate figcaption {
@@ -324,15 +367,21 @@ const plate = {
       aspect-ratio: 4 / 3;
     }
 
-    .stage :global(.portrait) {
+    .portrait-box {
       position: absolute;
       left: 25%;
       top: 0;
       width: 50%;
       height: 100%;
-      object-fit: cover;
+      aspect-ratio: auto;
       -webkit-mask-image: linear-gradient(to right, transparent, #000 24%, #000 76%, transparent);
       mask-image: linear-gradient(to right, transparent, #000 24%, #000 76%, transparent);
+    }
+
+    .stage :global(.portrait) {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
     }
 
     .lines {
@@ -362,6 +411,23 @@ const plate = {
       border-radius: 50%;
       background: currentColor;
       box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 22%, transparent);
+      transition:
+        transform var(--dur) var(--ease),
+        background-color var(--dur) var(--ease);
+    }
+
+    /* The part of her being pointed at: blush, because it is her. */
+    .pin.lit {
+      background: var(--blush);
+      transform: scale(1.45);
+    }
+
+    .lines :global(polyline) {
+      transition: stroke-opacity var(--dur) var(--ease);
+    }
+
+    .lines :global(polyline.lit) {
+      stroke-opacity: 1;
     }
 
     .labels {
