@@ -1,0 +1,62 @@
+kind: design_index
+title: "The Cognition Loop — one agent that observes, orients, decides and acts"
+description: >
+  Nora's ambient loop (DEC-176) exists as a name, not as a shape: its orient
+  and act steps are scattered over five clocked Dreamer adaptors, two Standing
+  folds, a participation gate and the proactive adaptor, each re-reading the
+  same messages on its own clock and none able to see what the others just
+  concluded. The symptom is a passive Nora: a plan moves from one restaurant
+  to another in untagged chat and her record still says the first, because
+  every record is written only when someone tells her. This bundle makes the
+  loop one thing. OBSERVE is code: ingestion of messages, presence, the social
+  graph (stories, posts, follows, tags) and perception (what a photo shows,
+  whose face it is), stored as the RECORD and raising wake signals. ORIENT,
+  DECIDE and ACT are ONE agent session per unit per wake, holding every read
+  tool, typed write verbs whose every call code validates, and act verbs that
+  leave through the fire path. It fixes the tiers and their words so nothing
+  overlaps: RECORD (what was observed), REGISTER (the group's affairs: note,
+  memo, event), CHARACTER (what an entity is like), STANDING (where Nora
+  stands). Cognition is the process, never a store. The Dreamer runtime is
+  kept and its scheduling half replaced; the proactive adaptor becomes the
+  loop's act step.
+status: proposed
+governance: operator-directed
+timestamp: '2026-09-28'
+origin: >
+  Operator 2026-09-27/28, one session. "We will end up with 9 or 10 dreamers …
+  centralise this into one dynamic, adaptive, deep reasoning agent loop … not
+  on a schedule: event-driven, adaptive, message-sensitive." "The current note
+  is more like an idea … a note should be a real note." "Events should be
+  derivable … we changed restaurants several times today … Nora will still
+  assume we're going to the originally planned restaurant … She is supposed to
+  be an AI agent." "The dreamer conductor will become the real proactive layer
+  … the real cognition or decision engine … it will actually act." "Should it
+  be a single agent to do the orient … within the same agent … there won't be
+  any context lost." "I need an extremely clean separation between
+  characters … whether we call it the cognition tier, the storage tier, or the
+  memory tier, it has to be extremely clear." Stories, posts, reels and the
+  social graph are ingested; face recognition is in scope now. Strands Agents
+  SDK throughout. Supersedes the same session's first draft
+  (design/dream-conductor, commit 0e060cf: a conductor planning separate
+  specialist agents), which the operator's single-agent argument replaced.
+members:
+  - 00-intent.md
+  - 10-tiers.md
+  - 20-observe.md
+  - 30-cognition.md
+  - 40-register.md
+  - 50-character-and-standing.md
+  - 60-faces.md
+  - 70-migration.md
+edges:
+  - {src: 00-intent, dst: 10-tiers, rel: sequences, provenance: asserted}
+  - {src: 10-tiers, dst: 20-observe, rel: sequences, provenance: asserted}
+  - {src: 20-observe, dst: 30-cognition, rel: sequences, provenance: asserted}
+  - {src: 30-cognition, dst: 40-register, rel: depends_on, provenance: asserted}
+  - {src: 30-cognition, dst: 50-character-and-standing, rel: depends_on, provenance: asserted}
+  - {src: 20-observe, dst: 60-faces, rel: extends, provenance: asserted}
+  - {src: 70-migration, dst: 00-intent, rel: realizes, provenance: asserted}
+  - {src: 00-intent, dst: ../ambient-loop/00-overview.md, rel: realizes, provenance: asserted}
+  - {src: 20-observe, dst: ../dreamer-agent-loop/06-trigger.md, rel: realizes, provenance: asserted}
+  - {src: 30-cognition, dst: ../dreamer-agent-loop/43-note-dreamers-are-research-loops.md, rel: extends, provenance: asserted}
+  - {src: 30-cognition, dst: ../dreamer-agent-loop/39-proactive-ooda-loop.md, rel: supersedes, provenance: asserted}
