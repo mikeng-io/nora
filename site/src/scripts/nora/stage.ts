@@ -361,19 +361,19 @@ export class Stage {
     );
     document.documentElement.addEventListener("pointerleave", () => this.brain.pointerLeave(), { signal });
     addEventListener("pointerdown", () => this.brain.input(now()), { passive: true, signal });
-    // a poke is a click on her: a tap, never the start of a pan on a touch screen
-    addEventListener(
-      "click",
-      (e) => {
-        const t = e.target as Element;
-        if (t.closest("a, button, input, textarea, select, label, [role=button], dialog")) return;
-        if (!this.hit(e.clientX, e.clientY)) return;
-        const face = this.faceScreen();
-        this.brain.poke(e.clientX, e.clientY, now(), face?.x ?? e.clientX);
-        this.wake();
-      },
-      { signal },
-    );
+    // A poke is a click on her: a tap, never the start of a pan on a touch
+    // screen. Listened for on each of her places, not on the window: iOS
+    // Safari only turns a tap on a plain element into a click when that
+    // element (or an ancestor below body) is listening for one.
+    const poke = (e: MouseEvent) => {
+      const t = e.target as Element;
+      if (t.closest("a, button, input, textarea, select, label, [role=button], dialog")) return;
+      if (!this.hit(e.clientX, e.clientY)) return;
+      const face = this.faceScreen();
+      this.brain.poke(e.clientX, e.clientY, now(), face?.x ?? e.clientX);
+      this.wake();
+    };
+    for (const s of this.slots) s.el.addEventListener("click", poke, { signal });
     addEventListener(
       "scroll",
       () => {
