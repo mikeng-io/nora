@@ -17,6 +17,21 @@ html {
   hanging-punctuation: first allow-end last;
 }
 
+/* Nothing on this page is meant to be reached sideways. On an iPhone the
+   whole page could be swiped left and right (2026-09-27, after her live
+   presence shipped); no desktop engine reproduced it, so the overhang that
+   caused it was never found, and this is what stops it: on body, `clip`
+   takes any sideways overflow out of the layout, whatever makes it (a
+   page-level `hidden` alone is not reliably honoured by iOS Safari for
+   scrolling). `clip`, not `hidden`, so no scroll container is made and the
+   sticky header still sticks. A new overhang is cut off at the screen's
+   edge instead of making the page swipeable, so look for one by removing
+   this rule, not by reading scrollWidth, which it pins. */
+html,
+body {
+  overflow-x: clip;
+}
+
 @media (prefers-reduced-motion: no-preference) {
   html {
     scroll-behavior: smooth;
@@ -340,6 +355,15 @@ button {
   position: relative;
 }
 
+/* Poking her is tapping her, often twice in quick succession, and a double
+   tap on iOS zooms the page (after which it can be panned in every
+   direction). Pinch zoom stays; the double tap is hers. No grey tap flash
+   either: she answers a poke herself. */
+[data-nora-slot][data-state] {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
 /* Her canvas reaches past her figure box, so a tilt of the head or a strand
    of hair is not cut at its edge; in a frame, the frame clips instead. */
 .nora-host {
@@ -366,15 +390,26 @@ button {
   height: 100%;
 }
 
-/* In the air between two places, above the page, under the header. */
-.nora-flight {
+/* In the air between two places, above the page, under the header. Her
+   box in the air is often wider than a phone's screen (a hop from the hero
+   is ~430px on a 414px iPhone). WebKit and Blink do not count a fixed box
+   in the page's width, so this was not the cause of the sideways swipe
+   above; the layer is kept so her box stays inside the screen whatever a
+   browser does with it. */
+.nora-sky {
   position: fixed;
   z-index: 30;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.nora-flight {
+  position: absolute;
   left: 0;
   top: 0;
   width: 0;
   height: 0;
-  pointer-events: none;
   transform-origin: 50% 100%;
   will-change: transform;
 }
