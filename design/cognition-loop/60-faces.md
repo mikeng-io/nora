@@ -36,18 +36,17 @@ what makes real-time labelling possible.
 | **reference photos** | the operator supplies a few photos per person (a folder keyed by person id, beside `identity.toml`); each detected face becomes a template | bootstrap |
 | **labelling in the portal** | upload a photo; the detector draws a box per face; tap a box, pick a person. The operator's "yellow circle is one person, blue circle is another" is exactly this, with the circles drawn by the detector | any time |
 | **labelling in chat** | Nora replies with the detected faces numbered on the image; "1 is X, 2 is Y" labels them | any time |
-| **cognition asks** | an unknown face that recurs across items is clustered; the act step may `ask` a member who it is, once, with the crop | after a cluster reaches a size |
+| **cognition asks** | the act step may `ask` a member who a *member-matched but low-confidence* face is, once, with the crop | when a match is near the threshold |
 
 A label given in any of these ways is the same row: `(person_id, template,
 source item, labelled_by, at)`.
 
 ## 3. Unknown faces
 
-A face with no template within the threshold is `unknown`. Unknowns are
-clustered so the same stranger across ten stories is one cluster. A cluster is
-kept only while it recurs; one that has not recurred in 30 days is deleted
-with its vectors. A cluster is named only by a label (§2), never by inference
-from who else was there.
+A face with no template within the threshold is `unknown`, and that is all
+that is kept: **no vector, no crop, no clustering** of faces that are not
+members' (operator 2026-09-28, members only). An unknown face is never named
+by inference from who else was there.
 
 ## 4. Where it runs and what it costs
 

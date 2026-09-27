@@ -48,6 +48,12 @@ is not what an agent is for.
 
 ## 3. The decision
 
+**What Nora is, in one sentence** (operator 2026-09-28): *a member of the
+circle who keeps a working model of its people, places and plans, and acts on
+it unasked, within what each room may be told.* Not an assistant: README
+calls her "a persistent member of one circle of friends, not a bot in their
+chat", and this bundle keeps that.
+
 **Observe is code. Orient, decide and act are one agent session per unit per
 wake.**
 
@@ -95,8 +101,9 @@ The objections the first draft raised, and where each is answered now:
 
 - **The dinner case.** A recorded afternoon in which the plan moves twice in
   untagged chat and presence puts people at the last place: the event must
-  end at the last place, citing the messages and the presence stays, within
-  one session of the last change. Today it stays at the first place forever.
+  end at the last place, citing the messages and the co-location episode,
+  within one session of the last change, and render in no room without the
+  location flag. Today it stays at the first place forever.
 - **Nothing lost in the switch.** For a shadow week, every row the clocked
   adaptors wrote is also written, or deliberately closed as not needed, by a
   cognition session on the same messages.

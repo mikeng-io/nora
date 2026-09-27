@@ -22,13 +22,15 @@ Built once per session, in code, before any model call:
 
 - **The situation.** The Record items that raised the pending signals, each
   with its author, its room, **its age**, its cues and its perception (what a
-  photo shows, whose faces, with confidence); the index lines of the Register
-  rows those items touch; the unit's clock in HK time; how long since the
-  last session. Index lines, not bodies: the session reads a body when it
-  needs one.
+  photo shows, whose faces, with confidence); the Rollup rows that raised
+  signals (a co-location started, a deviation); the index lines of the
+  Register rows those items touch; the unit's clock in HK time; how long
+  since the last session. Index lines, not bodies: Character, Standing and
+  Register bodies are pulled with read tools when the session needs them,
+  never pushed ([15](15-map.md) §3–4).
 - **The agenda.** One item per thing that needs attention, computed by code
   from the signals: *room R has 23 new messages*; *event E's place is named
-  in 3 messages since it was set*; *person P arrived at a place at 19:52*;
+  in 3 messages since it was set*; *a co-location of 3 members began at a place at 20:05*; *P's week deviates from their rhythm*;
   *note N's anchor passed*; *4 new story frames from 2 members*; *the unit's
   culture was last revised 6 days ago*. An item states **what happened**,
   never what to conclude from it, and never a menu of possible actions.
@@ -40,7 +42,7 @@ adaptor keeps today.
 
 | class | verbs | leaves the session how |
 |---|---|---|
-| **read** | every read tool the registry admits (`read_only_tools()`): transcripts, presence (`where_is`, `where_been`), `route`, places, memory (`about`, `ask_memory`), the Register reads, web, `media_fetch`, the social reads | returns into context |
+| **read** | every read tool the registry admits (`read_only_tools()`), plus the warehouse queries of [15](15-map.md) §4: `record_query`, `rollup_read`, `event_search`, `memo_read`, `character_read`, `standing_read`, `social_items`; presence, `route`, places, memory, web, `media_fetch` | returns into context |
 | **write** | one family per tier: Register (`note_create`, `note_update`, `memo_write`, `memo_withdraw`, `event_propose` (status `staged` or `proposed`), `event_revise`, `event_set_status`), Character (`character_revise`), Standing (`standing_revise`) | code validates, then commits ([§3](#3-code-keeps-every-write-honest)) |
 | **act** | `remind` (a reminder at a chosen time), `speak` (a message into a room of the unit now), `ask` (a question to a person, in a room of the unit, e.g. who is in a photo, [60](60-faces.md)) | a fire occasion through `FirePath.speak` in `nora/app/fire.py` — the fire path, one of the two senders (R-1b), with its egress screens, rate cap and attribution |
 | **close** | `close(item, outcome)` | ends one agenda item; the session ends when every item is closed or the budget is spent |
@@ -102,6 +104,17 @@ Judging an act belongs outside it (design/dreamer-agent-loop/17-failure-classes.
   (`nora_cognition_corrected_total{tier}`).
 - **A cheap reader** samples finished sessions for writes whose citations do
   not say what the write claims. It reports; it never edits.
+- **Data-quality checks, nightly, in code** (the analogue of warehouse tests):
+  citations that no longer resolve; one happening recorded as two events
+  across rooms; a Rollup row a rebuild computes differently; a happened
+  event whose place differs from its outing's; sections past their age
+  horizon; an induced line citing no aggregate. Each a counter
+  (`nora_dq_failures_total{check}`).
+- **Rebuild, not only fold.** Every Character account is periodically
+  rebuilt from the Rollup and a cited window of the Record, and the rebuild
+  is diffed against the folded chain; the difference is the drift metric.
+  Folding alone was measured to drop what it should keep (Standing dropped
+  open plans, #565).
 
 ## 7. What stays outside the loop
 

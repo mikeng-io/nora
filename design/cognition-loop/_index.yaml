@@ -10,14 +10,20 @@ description: >
   still says the first, because a gathering is written only when someone
   tells her. This bundle makes the
   loop one thing. OBSERVE is code: ingestion of messages, presence, the social
-  graph (stories, posts, follows, tags) and perception (what a photo shows,
-  whose face it is), stored as the RECORD and raising wake signals. ORIENT,
+  graph (stories, posts, follows, tags, members only), play (Steam, Discord)
+  and perception (what a photo shows, whose face it is), stored as the RECORD
+  and raising wake signals; code then computes the ROLLUP (episodes such as
+  co-location, outing, daybook; aggregates such as rhythm and tie), the
+  deterministic layer design 27 began for presence. ORIENT,
   DECIDE and ACT are ONE agent session per unit per wake, holding every read
   tool, typed write verbs whose every call code validates, and act verbs that
   leave through the fire path. It fixes the tiers and their words so nothing
-  overlaps: RECORD (what was observed), REGISTER (the unit's affairs: note,
-  memo, event), CHARACTER (what an entity is like), STANDING (where Nora
-  stands). Cognition is the loop, never a store; her identity
+  overlaps: RECORD (what was observed), ROLLUP (what it adds up to,
+  computed), REGISTER (the unit's affairs: note, memo, event), CHARACTER (what
+  an entity is like), STANDING (where Nora stands). Every derived row carries
+  its reasoning mode (computed, told, deduced, induced, abduced), its lineage
+  (which decides the rooms it may reach) and its age; small indices are pushed
+  into prompts and everything else is queried. Cognition is the loop, never a store; her identity
   is the slice of all state about her (doctrine given, Record done, Character
   digested, Standing held), and she grows by revising it inside doctrine she
   never changes, with any tension shown to the operator. Every derived row is
@@ -50,6 +56,7 @@ members:
   - 12-schemas.md
   - 15-map.md
   - 20-observe.md
+  - 25-rollup.md
   - 30-cognition.md
   - 40-register.md
   - 50-character-and-standing.md
@@ -59,6 +66,8 @@ members:
 edges:
   - {src: 00-intent, dst: 10-tiers, rel: sequences, provenance: asserted}
   - {src: 10-tiers, dst: 20-observe, rel: sequences, provenance: asserted}
+  - {src: 20-observe, dst: 25-rollup, rel: sequences, provenance: asserted}
+  - {src: 25-rollup, dst: ../proposed/27-presence-analytics.md, rel: generalises, provenance: asserted}
   - {src: 20-observe, dst: 30-cognition, rel: sequences, provenance: asserted}
   - {src: 30-cognition, dst: 40-register, rel: depends_on, provenance: asserted}
   - {src: 30-cognition, dst: 50-character-and-standing, rel: depends_on, provenance: asserted}

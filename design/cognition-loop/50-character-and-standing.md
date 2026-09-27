@@ -60,10 +60,26 @@ Character whose only evidence is Nora is refused; a Standing line resting
 only on her rows may say only what she said (`I owe`, `I hold open`), never
 what is so.
 
-## 4. Disclosure
+## 4. Correction
+
+An account nobody sees cannot be corrected, so:
+
+- **The portal shows each unit's accounts** with the evidence behind every
+  line, to the people of that unit, under lineage.
+- **A dispute from chat**: a person may say a line about them is wrong; the
+  tag turn records a `character_dispute` against that line, the next session
+  must re-evidence or remove it, and a disputed line never renders until it
+  has.
+- **Lines decay**: a line not re-evidenced within its kind's horizon moves to
+  `Unsure` ([12](12-schemas.md) §8).
+- **Induction needs instances**: a line about what someone reliably does cites
+  a Rollup aggregate ([10](10-tiers.md) §2 rule 5).
+
+## 5. Disclosure
 
 Character and Standing are per unit and render only in that unit's rooms. A
-person in two units has two accounts, and neither reads the other. What a
-room is shown about a person's Character is decided by the same egress
-screens a reply passes; an account is an input to her judgement, never text
+person in two units has two accounts, and neither reads the other. Within a
+unit, **lineage** decides per room ([10](10-tiers.md) §3): a paragraph resting
+on presence renders only where members' locations may be shown, and is
+otherwise dropped whole. An account is an input to her judgement, never text
 she recites.

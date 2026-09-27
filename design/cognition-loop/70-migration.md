@@ -40,13 +40,14 @@ Each step ships alone, behind a flag that defaults off, and is read back live
 |---|---|---|---|
 | 0 | **Tiers, words, schemas** | a DEC for [10](10-tiers.md), [12](12-schemas.md), [15](15-map.md); GLOSSARY's Dreamer section rewritten to them, in their words only | — |
 | 1 | **Signals, shadow** | the ingest signal stage, cues, the pending set, wake metrics; the clocks still run everything | a week of wake reasons; defaults sized from it |
-| 2 | **Events unit-wide** | unit key, the lifecycle statuses, revision history with `told`/`inferred`, the event write verbs; the tag path's event tools on the new shape | existing gathering tests and the tag path's event cases green |
+| 2 | **Rollup and lineage** | co-location, outing, daybook, tie from existing presence and messages ([25](25-rollup.md)); stable citation keys; the `reasoning`, `lineage`, `exclude_persons`, `as_of` columns and the per-room lineage filter; `rollup_read`, `record_query` | each rollup recomputes identically from the Record; lineage refuses a presence-derived row in a room without the location flag |
+| 2b | **Events unit-wide** | unit key, the lifecycle statuses, revision history with its reasoning mode, the event write verbs; the tag path's event tools on the new shape; `event_search` | existing gathering tests and the tag path's event cases green |
 | 3 | **Cognition, shadow** | the session, agenda, the note, event and room-Character (`character_revise`, room case) verbs in dry-run (would-write rows recorded, nothing committed), skills from the objectives | the dinner case passes; over a shadow week every clocked-adaptor write is matched or deliberately closed |
 | 4 | **Cut over** | cognition commits; clocks and the four orient adaptors retired; proactive is the act step; room culture is written by `character_revise` from here | the re-pointed adaptor eval suites green master vs branch; the latency falsifier ([00](00-intent.md) §6) |
-| 5 | **Social ingestion** | the story poller and its perception; the story rule and its test rewritten; posts, reels and follows as the bridge gains each endpoint | poll outcomes and item counts read back; the bridge session unharmed for a week |
+| 5 | **Social and play ingestion** | the story poller for members only, and its perception; the story rule and its test rewritten; posts, reels and follows as the bridge gains each endpoint; Steam and Discord play samples, play session and play profile rollups | poll outcomes and item counts read back; the bridge session unharmed for a week |
 | 6 | **Faces** | detector, embedder, templates from reference photos; labelling in the portal and in chat | precision on the held-out labelled set ([60](60-faces.md) §5) |
 | 7 | **Memos** | the memo table, `memo_write`/`memo_withdraw`/`memo_read`, `<memos>`, the «記低» routing | `tool_selection` before and after |
-| 8 | **Character and Standing** | person, unit and Nora Character; unit and person Standing; the `self` block; tension rows and their portal page ([55](55-self.md)) | a labelled set of accounts judged against the Record they cite |
+| 8 | **Character and Standing** | person, unit and Nora Character; unit and person Standing; `character_read`, `standing_read`; the `self` block; the correction portal and `character_dispute` ([50](50-character-and-standing.md) §4); tension rows and their page ([55](55-self.md)); the nightly data-quality checks and the rebuild-drift metric ([30](30-cognition.md) §6) | a labelled set of accounts judged against the Record they cite |
 
 Steps 5–6 are Observe and independent of 1–4; they may run in parallel.
 
@@ -59,6 +60,10 @@ Steps 5–6 are Observe and independent of 1–4; they may run in parallel.
 - **Design 43**: extended from three note passes to the whole loop, and its
   `WITHHELD_TOOLS` list (`nora/language/note_candidates.py`) retired: every
   read tool is granted and the budget is the control.
+- **Design 27 §7.4** (the Dreamer never reads `where_been`) and its 90-day
+  cap, for cognition only: cognition reads presence through `rollup_read`,
+  under lineage ([25](25-rollup.md) §5).
+- **Design 27 Tier 6** (co-location, speculative): built as a Rollup.
 - **This session's first draft** (commit 0e060cf, a conductor over specialist
   agents).
 - **Kept**: R-1b (two senders: the tag path and the fire path), the note
@@ -76,6 +81,8 @@ Steps 5–6 are Observe and independent of 1–4; they may run in parallel.
 | a `delegate` verb for long work | the first backfill that needs it (faces, step 6) |
 | posts, reels and follows endpoints on the bridge | each built and measured with the bridge |
 | strands-agents 1.50.2 → 1.57.1 | its own PR, measured before and after |
+| retention of the Record (`[store] prune_enabled`) | prune only rows no live derived row cites, or leave a tombstone the citation resolves to |
+| game-specific sources (CS2, Valorant, Apex) | after step 5; each a source feeding play samples |
 | DEC numbers | taken at merge (`nora-decision`) |
 
 ## Status / Checkpoint

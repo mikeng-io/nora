@@ -1,7 +1,7 @@
 ---
 type: design
 title: "Register — note, memo, event; and events that are derived, not reported"
-description: "The three Register kinds and how they relate, the memo, the unit-wide event and its lifecycle, what cognition may do to an event on inferred evidence, inference shown as inference, and the dinner case worked through."
+description: "The three Register kinds and how they relate, the memo, the unit-wide event and its lifecycle, what cognition may do to an event on evidence nobody stated, each revision's reasoning mode shown, and the dinner case worked through."
 tags: [nora, register, note, memo, event, gathering, derivable, lifecycle]
 timestamp: '2026-09-28'
 edges:
@@ -66,24 +66,26 @@ event, history kept).
 
 No further statuses for now (operator 2026-09-28).
 
-**What cognition may do, from inferred evidence** (operator 2026-09-28): stage,
+**What cognition may do, from evidence nobody stated** (operator 2026-09-28): stage,
 propose, **revise any event's place, time and people** whoever created it,
 **confirm**, **cancel**, mark **happened** or **lapsed**, and evict its own
 misreads. Every change cites its evidence and keeps the previous revision.
 
 **The newest human evidence outranks the event's older revision.** A message after the
-event was set, a presence arrival at another place at the event's time, a
-story posted from another place: each outranks the place the event was
-created with.
+event was set, a co-location episode at another place at the event's time
+([25](25-rollup.md)), a story posted from another place: each outranks the
+place the event was created with.
 
-## 4. An inference is shown as one
+## 4. How it was reached is shown
 
-Every revision carries **how it was derived**: `told` (a person stated it to
-Nora, in words), `inferred` (concluded from room chat not addressed to her,
-from presence, or from social items), with its citations and a confidence. The
-`<events>` block a tag turn reads renders it: *place: C — inferred 18:40 from
-chat, 20:05 from presence*. She can then say "you ended up at C, right?"
-instead of asserting it. Wrong sometimes is acceptable. Stale is the failure
+Every revision carries its **reasoning** ([10](10-tiers.md) §4): `told` (a
+person stated it to Nora, in words), `deduced` (follows from rows already
+held: the event is at C and a co-location puts P there, so P attended), or
+`abduced` (the best explanation of incomplete evidence: chat not addressed to
+her, a route request, a story), with its citations, a confidence and
+`as_of`. The `<events>` block renders it: *place: C — abduced 18:40 from chat;
+deduced 20:05 from co-location*. An abduced value is said as a guess ("you
+ended up at C, right?"), and a "yeah" to her own guess leaves it abduced. Wrong sometimes is acceptable. Stale is the failure
 this bundle exists to end.
 
 ## 5. The dinner case
@@ -96,9 +98,19 @@ shows three members at C; at 21:30 three stories are posted from C.
 | signal | session outcome |
 |---|---|
 | 14:10 messages (date cue) | event **proposed**: dinner today, A, citing 14:10 |
-| 16:30–16:50 messages | event **revised** place → B, inferred, citing the messages |
-| 18:40 message + 19:05 route request to C | **revised** place → C, inferred, citing both |
-| 20:05 presence arrivals at C | **confirmed**, people = those present, citing the stays |
-| 21:30 stories + perceptions | **happened**, with time range, place, people (faces, [60](60-faces.md)), and what the stories show; a memo if anything will be asked again |
+| 16:30–16:50 messages | event **revised** place → B, abduced, citing the messages |
+| 18:40 message + 19:05 route request to C | **revised** place → C, abduced, citing both |
+| 20:05 co-location episode at C (Rollup signal) | **confirmed**, place deduced, people = the members in the co-location, citing it |
+| 21:30 stories + perceptions; the outing episode closes | **happened**: the `Happened` section cites the outing (time range, place, who) and the stories (what they show); a memo if anything will be asked again |
 
 This case, recorded, is the bundle's first eval case ([70](70-migration.md)).
+
+**Who sees it.** The confirmed row's lineage now includes `presence`, so it
+renders only in rooms allowed to see members' locations ([10](10-tiers.md)
+§3); elsewhere the event shows without the lines that rest on presence.
+
+## 6. Surprises
+
+An event or memo may name `exclude_persons`: a birthday plan is never shown to
+the person it is for, in any room, by any block or tool. Set by the write
+verb when the evidence says so ("don't tell her").

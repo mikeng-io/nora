@@ -45,14 +45,16 @@ held by one parser per kind, each called by the write verb before commit:
    model so it can rewrite.
 
 **Typed columns vs body.** What code must compute on is a column, not prose:
-ids, unit, entity, status, dates, `derivation` (`told` / `inferred`),
-confidence, revision links. What a model must understand is the body. Nothing
+ids, unit, entity, status, dates, `reasoning`, `lineage`, `exclude_persons`,
+`as_of`, `valid_from`/`valid_to`, confidence, revision links ([10](10-tiers.md) §3). What a model must understand is the body. Nothing
 is in both.
 
 ## 3. Register
 
 **note** — unchanged: `Decided`, `Open`, `Owed`, `Proposed`, `Ruled out`,
-plus code-written `From memory` and `Folded` (DEC-213).
+plus code-written `From memory` and `Folded` (DEC-213). `Owed` holds what
+members owe each other; what Nora owes is Standing's `I owe`, so no question
+has two homes.
 
 **memo**
 
@@ -62,14 +64,14 @@ plus code-written `From memory` and `Folded` (DEC-213).
 | `Conditions` | no | when it holds, exceptions ("only on weekdays") |
 | `Superseded` | code | earlier versions, with when they changed |
 
-**event** — columns: what, start, end, place, people, status, derivation per
-field. Body:
+**event** — columns: what, start, end, place, people, status, and a
+`reasoning` per field. Body:
 
 | section | required | holds |
 |---|---|---|
-| `Plan` | yes | the evidence for each column value, one line per field (what, when, where, who), cited; the value is the column and `told`/`inferred` is its `derivation` column |
+| `Plan` | yes | the evidence for each column value, one line per field (what, when, where, who), cited; the value is the column and its mode is its `reasoning` column |
 | `Open` | no | what is not settled, each line naming the note that tracks it by id (a link, not a citation) |
-| `Happened` | after | time range, place, who was there, what they did — cited to presence, social, perception |
+| `Happened` | after | what they did, cited to social items and perception; who was there and when cite the outing episode ([25](25-rollup.md)) and are not restated |
 | `Changes` | code | every revision: field, from, to, why, when |
 
 ## 4. Character
@@ -115,3 +117,17 @@ Room Standing is a paragraph plus a JSON `working_set` today
 Rows written before a schema still read back and are never rewritten in place;
 the next revision is written to the schema (the rule note bodies follow,
 design 42 §9).
+
+## 7. Rollup is typed, not Markdown
+
+Rollup rows are typed columns only ([25](25-rollup.md)): code writes them and
+code reads them, and a model sees them rendered by one renderer, the way
+design 27's substrate is read today. No body, no prose.
+
+## 8. Age on every section
+
+Every Character and Standing section carries its own `as_of` (the newest
+evidence under it), rendered beside the heading. A section whose `as_of` is
+older than its kind's horizon (Character 60 days, Standing 14 days, both to be
+sized from the first month) renders with its age and moves to `Unsure` on the
+next revision unless re-evidenced.

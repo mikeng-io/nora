@@ -1,8 +1,8 @@
 ---
 type: design
 title: "Observe — ingestion fills the Record and raises signals; only sources that cannot push are polled"
-description: "The four streams (messages, presence, social, perception), what each records, which are pushed and which must be polled, the social graph, the wake signals and their bounds."
-tags: [nora, observe, ingestion, social-graph, instagram, presence, signals]
+description: "The five streams (messages, presence, social, play, perception), what each records, which are pushed and which must be polled, the social graph within members only, the wake signals and their bounds."
+tags: [nora, observe, ingestion, social-graph, instagram, presence, play, steam, discord, signals]
 timestamp: '2026-09-28'
 edges:
   - {dst: 30-cognition, rel: sequences, provenance: asserted}
@@ -15,13 +15,14 @@ edges:
 Observe is **code**. It never asks a model what is worth recording; it records
 everything its sources give it and says what changed.
 
-## 1. The four streams
+## 1. The five streams
 
 | stream | records | arrives by | exists today |
 |---|---|---|---|
 | **messages** | every row of every room, edits, deletes, reactions | push (the platform adapters) | yes, `nora/ingest/pipeline.py` |
-| **presence** | fixes, stays, arrivals and departures at places | poll (the collector) | yes, `nora/presence/collector.py` |
+| **presence** | fixes (stays and arrivals are Rollup, [25](25-rollup.md)) | poll (the collector) | yes, `nora/presence/collector.py` |
 | **social** | members' stories, posts and reels; follows between known accounts; tags and mentions; comments on members' posts | **poll** (Instagram does not push these) | reads only on request today |
+| **play** | who is in which game, who is in which voice channel with whom | poll (Steam) and push (Discord voice and activity) | live Steam reads only (`nora/infra/steam.py`); [25](25-rollup.md) §6 |
 | **perception** | what a media item shows, and whose faces are in it, stored on that item with a confidence | follows each new media item | `media_fetch` on request; faces: [60](60-faces.md) |
 
 **On scheduling** (operator: "should it be scheduled?"): a source that cannot
@@ -41,8 +42,10 @@ known people, as observed:
 - **edges**: follows between known accounts (the bridge already reads
   `following`), co-tags, mentions, comments — each an observation with a time,
   never a conclusion ("A and B are close" is Character, [50](50-character-and-standing.md));
-- **reach**: only accounts the identity file maps to a known person, plus the
-  accounts those people tag. Nothing is crawled beyond one hop.
+- **reach: members only** (operator 2026-09-28): accounts the identity file
+  maps to a known person of the unit. An account a member tags is recorded as
+  a handle on that member's item and is never itself read. Nothing is
+  crawled.
 
 Each new item is perceived once (§1) — a vision reading and a face match — and
 the perception is stored on the item, so cognition reads a described story,
@@ -52,7 +55,8 @@ This reverses the operator's 2026-09-24 rule that a story is opened only when
 a person asks (design/instagram-adoption/18-instagram-read-and-search.md, the
 section of that name) and rewrites its test,
 `test_a_story_is_never_opened_in_a_turn_nobody_asked_for`, to pin the new
-rule: stories are read by the ingestion poller, within the reach above.
+rule: stories are read by the ingestion poller, for members only. R-98 (a
+story is read only for a Tier 0 person) is kept: members are Tier 0.
 
 **What it needs from the bridge.** Stories by account exist
 (`/accounts/{igid}/story`). Posts and reels have no mechanism yet (design
@@ -63,12 +67,16 @@ Instagram presence entirely.
 
 ## 3. Signals
 
-Every ingested item, and every `time` trigger, raises a **signal**:
+Every ingested item, every Rollup change of §3's kinds, and every `time`
+trigger raises a **signal**:
 `(unit, kind, ref, cues, at)`.
 
-- **kind**: `message`, `presence` (an arrival or departure), `social` (a new
-  item or edge), `time` (an anchor passed, a revisit due, an event's date
-  reached, the daily floor at HK 00:00).
+- **kind**: `message`, `social` (a new item or edge), `play` (a sample),
+  `rollup` (a co-location starts, a play session together starts, a
+  **deviation** — a person's pattern broke, [25](25-rollup.md) §4), `time` (an
+  anchor passed, a revisit due, an event's date reached, the daily floor at
+  HK 00:00). Presence raises its signals through the Rollup: a raw fix is too
+  fine-grained to wake anything.
 - **cues** (deterministic, never a model): a date or time expression; an
   amount or a split; a keep instruction («記低», "keep that", "write that
   down"); an RSVP word; a reply to, edit of or delete of a message a Register
@@ -84,11 +92,13 @@ sized from a shadow week of measured wake reasons, never from one sample.
 
 **Bounds**: one session per unit at a time; at most `max_concurrent_sessions`
 across units (design/dreamer-agent-loop/06-trigger.md §6 required a global
-bound; the current `dream_loop` has none); per-unit backoff after a failed
+bound; the current `dream_loop` has none); **a daily token budget per unit**
+(a chatty unit cannot spend without limit); per-unit backoff after a failed
 session, where "nothing to do" is its own outcome and never resets backoff.
 
 ## 4. Metrics
 
 `nora_signal_total{kind,cue}`, `nora_cognition_wake_total{reason}`,
 `nora_signal_pending_age_seconds`, `nora_social_items_total{kind}`,
-`nora_social_poll_total{outcome}`.
+`nora_social_poll_total{outcome}`, `nora_play_samples_total{source}`,
+`nora_cognition_unit_tokens_total{unit}`.
