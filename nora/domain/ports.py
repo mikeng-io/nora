@@ -887,11 +887,30 @@ class RecordStore(Protocol):
 
 @runtime_checkable
 class MemoryStore(Protocol):
-    """`ensure_*` methods are idempotent under concurrency — see module docstring."""
+    """`ensure_*` methods are idempotent under concurrency — see module docstring.
+
+    **Every call names WHERE it is for** (DEC-214): the room
+    (`conversation_id`) or the unit (`unit`) whose memory it reads or writes.
+    Either resolves to the same thing — the unit — and the unit to its Nora
+    workspace's HONCHO workspace and its own named scope inside it. A caller
+    never names a Honcho workspace itself: a `workspace_id` parameter used to
+    be here, and a unit name passed through it addressed a Honcho workspace
+    that did not exist (`NoteCurator._discharge`, 2026-09-19). On the peer
+    verbs (`ensure_peer`, `conclude`, `peer_card`, `representation`, `chat`)
+    the key ROUTES only; it never narrows a read to one session. `peer_card`
+    and `representation` also take `workspace` — a NORA workspace name — for
+    a person's model across every unit of it, unscoped (the portal). On `feed`
+    and `search` a `conversation_id` also names the room's own session, as it
+    always has. A call whose key the deployment cannot route (a room or unit
+    `policy.toml` does not place in any workspace) fails closed: a read is
+    `unavailable`, a write is `False`, never a read of another workspace."""
 
     async def ensure_workspace(self) -> None: ...
 
-    async def ensure_peer(self, *, peer_id: str) -> None: ...
+    async def ensure_peer(
+        self, *, peer_id: str, conversation_id: str | None = None,
+        unit: str | None = None,
+    ) -> None: ...
 
     # `conversation_id` (Honcho v2, design/24): the message is fed under
     # `peer_id` into that CONVERSATION's session — a multi-peer session, so a
@@ -911,23 +930,27 @@ class MemoryStore(Protocol):
     # fact about `target`, stored as `(observer=peer_id, observed=target)` —
     # the exact pair `representation` reads back, so what is written is
     # readable the moment the write lands, with no second scope in between.
-    # No conversation/session key on purpose: the read lane is workspace-wide
-    # by design (see `representation`), so the write is too, and disclosure
-    # stays the room roster's job at the tool layer. Bare best-effort `bool`
+    # No SESSION key on purpose: the read lane is unit-wide by design (see
+    # `representation`), so the write is too, and disclosure stays the room
+    # roster's job at the tool layer. `conversation_id`/`unit` ROUTE it to
+    # the unit's workspace and scope (see the class docstring). Bare best-effort `bool`
     # like `feed` — never load-bearing, never retried (see the module
     # docstring on `feed`'s asymmetry with `SendResult`).
     async def conclude(
         self, *, peer_id: str, content: str, target: str,
-        workspace_id: str | None = None,
+        conversation_id: str | None = None, unit: str | None = None,
     ) -> bool: ...
 
-    async def peer_card(self, *, peer_id: str) -> list[str]: ...
+    async def peer_card(
+        self, *, peer_id: str, conversation_id: str | None = None,
+        unit: str | None = None, workspace: str | None = None,
+    ) -> list[str]: ...
 
     # `peer_id` is the OBSERVER, `target` the OBSERVED (design/24 §4). With
     # `target` set the recall is `(observer=peer_id, observed=target)` — Nora's
-    # model of a person, not the person's self-model. Workspace-wide (no session
-    # scope): knowledge blends across every conversation Nora shares with them;
-    # the room roster gates disclosure at the tool layer.
+    # model of a person, not the person's self-model. Unit-wide (no session
+    # scope): knowledge blends across every room of the unit Nora shares with
+    # them (DEC-214); the room roster gates disclosure at the tool layer.
     async def representation(
         self,
         *,
@@ -935,6 +958,9 @@ class MemoryStore(Protocol):
         search_query: str,
         max_conclusions: int = 5,
         target: str | None = None,
+        conversation_id: str | None = None,
+        unit: str | None = None,
+        workspace: str | None = None,
     ) -> Recollection: ...
 
     # The DIALECTIC verb: Honcho REASONS over the (observer, observed) model to
@@ -948,6 +974,8 @@ class MemoryStore(Protocol):
         query: str,
         reasoning_level: str = "low",
         target: str | None = None,
+        conversation_id: str | None = None,
+        unit: str | None = None,
     ) -> str | None: ...
 
     # Semantic search over the raw MESSAGES (not conclusions) — the verb behind
@@ -957,7 +985,7 @@ class MemoryStore(Protocol):
     # The caller still filters to the room roster and screens identifiers.
     async def search(
         self, *, query: str, conversation_id: str | None = None, limit: int = 8,
-        workspace_id: str | None = None,
+        unit: str | None = None,
     ) -> MessageHits: ...
 
     async def health(self) -> MemoryHealth: ...

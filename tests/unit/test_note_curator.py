@@ -2103,12 +2103,13 @@ class _FakeConclusionSink:
         self._ok = ok
         self._fail = fail
 
-    async def conclude(self, *, peer_id, content, target, workspace_id=None):
+    async def conclude(self, *, peer_id, content, target, conversation_id=None,
+                       unit=None):
         if self._fail:
             raise RuntimeError("honcho unavailable")
         self.calls.append({
             "peer_id": peer_id, "content": content, "target": target,
-            "workspace_id": workspace_id,
+            "conversation_id": conversation_id, "unit": unit,
         })
         return self._ok
 
@@ -2198,9 +2199,10 @@ async def test_discharge_person_claim_reaches_the_honcho_integration_point():
         "self-report, per the module docstring's grounding section"
     )
     assert call["content"] == "Miles likes Yardbird for the jazz"
-    assert call["workspace_id"] is None, (
-        "a discharge writes into the ONE Honcho workspace, never one named "
-        "after the unit — see the call site"
+    assert call["unit"] == note.unit and call["conversation_id"] is None, (
+        "a discharge is ROUTED by the note's unit (DEC-214) — the port "
+        "resolves it to the unit's Honcho workspace and scope, where the "
+        "unit's reads look; it never names a Honcho workspace itself"
     )
     assert metrics.get(
         "nora_note_discharge_total", kind="person_claim", outcome="written") == 1

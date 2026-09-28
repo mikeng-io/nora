@@ -15,7 +15,7 @@ other two contract legs.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
@@ -111,13 +111,31 @@ class _FakeMobility:
         return list(self.stays) if window_ms > 0 else []
 
 
+class _FakeMobilityWithHistory(_FakeMobility):
+    """Adds the full-history reads the `day` arm's `unusual` flags use
+    (design/27 §4.3). The plain fake lacks them on purpose: that is the
+    fail-soft path, and the day must still be answered."""
+
+    def __init__(self, *, history, derived_places, **kw):
+        super().__init__(**kw)
+        self.history = history
+        self.derived_places = derived_places
+
+    async def stays_for_subject(self, *, subject_id):
+        self.calls.append(("history", subject_id))
+        return list(self.history)
+
+    async def places_for_subject(self, *, subject_id):
+        return list(self.derived_places)
+
+
 MILES_PLACE = {
-    "kind": "home", "label": "Home", "lat": 22.31, "lng": 114.16,
+    "kind": "home", "label": "Home", "saved": True, "lat": 22.31, "lng": 114.16,
     "radius_m": 50.0, "confidence": 0.9, "first_seen_ts": NOW_MS - DAY_MS,
     "last_seen_ts": NOW_MS, "stay_count": 12, "total_dwell_ms": 400_000_000,
 }
 UNLABELED_PLACE = {
-    "kind": "unlabeled", "label": None, "lat": 22.44, "lng": 114.02,
+    "kind": "unlabeled", "label": None, "saved": False, "lat": 22.44, "lng": 114.02,
     "radius_m": 80.0, "confidence": 0.42, "first_seen_ts": NOW_MS - DAY_MS,
     "last_seen_ts": NOW_MS, "stay_count": 3, "total_dwell_ms": 40_000_000,
 }
@@ -737,3 +755,79 @@ async def test_a_past_day_the_record_covers_is_not_stopped(persons):
     out = await tool("day", name="Miles", date="2026-09-04")
     assert out["status"] == "ok"
     assert "recording_stopped" not in out
+
+
+# ---- the day arm's `unusual` flags (design/27 §4.3) -------------------------
+
+
+def _office_history():
+    from nora.domain.mobility import Stay
+
+    rows = []
+    for d in range(1, 11):  # ten ordinary office days, 09:00-18:00, before the day asked
+        day = datetime(2026, 8, 20, tzinfo=HK) + timedelta(days=d)
+        rows.append(Stay(
+            subject_id="miles_novak", person_id="miles_novak", circle_id="c",
+            started_ts=int((day + timedelta(hours=9)).timestamp() * 1000),
+            ended_ts=int((day + timedelta(hours=18)).timestamp() * 1000),
+            lat=22.28, lng=114.18, radius_m=30.0, fix_count=9, place_id=3,
+        ))
+    return rows
+
+
+async def test_the_day_arm_flags_a_stay_unusual_against_their_own_past(persons):
+    """Still at the office at 23:00 when they always leave at 18:00: the day's
+    stay carries the comparison, and the note says how to say it."""
+    from nora.domain.mobility import DerivedPlace, Stay
+
+    late_start = int(datetime(2026, 9, 4, 9, 0, tzinfo=HK).timestamp() * 1000)
+    late = Stay(
+        subject_id="miles_novak", person_id="miles_novak", circle_id="c",
+        started_ts=late_start, ended_ts=late_start + 14 * 3_600_000,
+        lat=22.28, lng=114.18, radius_m=30.0, fix_count=12, place_id=3,
+    )
+    mobility = _FakeMobilityWithHistory(
+        history=[*_office_history(), late],
+        derived_places=[DerivedPlace(3, "miles_novak", "c", 22.28, 114.18, 100.0,
+                                     "work", 1.0, "Office", None)],
+        stays=[{"started_ts": late.started_ts, "ended_ts": late.ended_ts,
+                "lat": 22.28, "lng": 114.18, "place_kind": "work",
+                "place_label": "Office"}],
+    )
+    tool = _where_been(persons, mobility, members=(MILES,))
+    out = await tool("day", name="Miles", date="2026-09-04")
+    assert out["status"] == "ok"
+    [stay] = out["people"][0]["stays"]
+    kinds = {f["kind"]: f for f in stay["unusual"]}
+    assert kinds["departure"] == {"kind": "departure", "at": "23:00", "usually": "18:00"}
+    assert kinds["duration"]["minutes"] == 14 * 60 and kinds["duration"]["usual_minutes"] == 9 * 60
+    assert "never as a judgement" in out["note"]
+
+
+async def test_an_ordinary_day_carries_no_unusual_key(persons):
+    from nora.domain.mobility import DerivedPlace
+
+    history = _office_history()
+    ordinary = history[-1]
+    mobility = _FakeMobilityWithHistory(
+        history=history,
+        derived_places=[DerivedPlace(3, "miles_novak", "c", 22.28, 114.18, 100.0,
+                                     "work", 1.0, "Office", None)],
+        stays=[{"started_ts": ordinary.started_ts, "ended_ts": ordinary.ended_ts,
+                "lat": 22.28, "lng": 114.18, "place_kind": "work",
+                "place_label": "Office"}],
+    )
+    day = datetime.fromtimestamp(ordinary.started_ts / 1000, tz=HK).date().isoformat()
+    out = await _where_been(persons, mobility, members=(MILES,))("day", name="Miles", date=day)
+    [stay] = out["people"][0]["stays"]
+    assert "unusual" not in stay
+    assert "never as a judgement" not in out["note"]
+
+
+async def test_the_day_is_answered_when_the_flags_cannot_be_computed(persons):
+    """Fail-soft: the plain fake has no history read; the day still answers."""
+    mobility = _FakeMobility(stays=list(DAY_STAYS), trips=DAY_TRIPS)
+    tool = _where_been(persons, mobility, members=(MILES,))
+    out = await tool("day", name="Miles", date="2026-09-04")
+    assert out["status"] == "ok"
+    assert all("unusual" not in s for s in out["people"][0]["stays"])

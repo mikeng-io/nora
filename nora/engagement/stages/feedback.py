@@ -47,7 +47,7 @@ async def run(
 ) -> None:
     """Feed each of Nora's sent messages under the Nora aiPeer into the
     conversation's session. Best-effort; each feed counts on the shared series."""
-    await memory.ensure_peer(peer_id=ai_peer)
+    await memory.ensure_peer(peer_id=ai_peer, conversation_id=conversation_id)
     for text in sent_texts:
         ok = await memory.feed(
             peer_id=ai_peer, text=text, conversation_id=conversation_id,

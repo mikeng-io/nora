@@ -13,6 +13,7 @@ spec's deployment section (§6) explicitly rules out.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -140,6 +141,7 @@ def _place_payload(place: dict[str, Any]) -> dict[str, Any]:
     return {
         "kind": place["kind"],
         "label": place["label"],
+        "saved": place["saved"],
         "lat": place["lat"],
         "lng": place["lng"],
         "radiusM": place["radius_m"],
@@ -185,8 +187,10 @@ def register_web_routes(
     presence: PresenceReader | None, presence_circles: tuple[Circle, ...],
     skills_dir: Path, events: GatheringService, doctrine_store: DoctrineStore,
     mobility: SqlMobilityStore | None = None,
+    workspaces_of: Callable[[str], tuple[str, ...]] | None = None,
 ) -> None:
     app["web_store"] = store
+    app["web_workspaces_of"] = workspaces_of
     app["web_honcho"] = honcho
     app["web_reminders"] = reminders
     app["web_persons"] = persons
@@ -213,6 +217,7 @@ def register_web_routes(
         body = await build_memory_payload(
             honcho=a["web_honcho"], persons=a["web_persons"], ai_peer=a["web_ai_peer"],
             person_id=request.query.get("personId"),
+            workspaces_of=a["web_workspaces_of"],
         )
         return web.json_response(body)
 

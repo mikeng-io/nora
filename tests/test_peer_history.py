@@ -47,7 +47,7 @@ class _Memory:
         self.targets: list[str | None] = []
         self.queries: list[str] = []
 
-    async def peer_card(self, *, peer_id: str) -> list[str]:
+    async def peer_card(self, *, peer_id: str, **_route: str | None) -> list[str]:
         if self._delay:
             await asyncio.sleep(self._delay)
         if self._card_raises:

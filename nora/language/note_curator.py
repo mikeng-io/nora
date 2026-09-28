@@ -456,7 +456,7 @@ class _ConclusionSink(Protocol):
 
     async def conclude(
         self, *, peer_id: str, content: str, target: str,
-        workspace_id: str | None = None,
+        conversation_id: str | None = None, unit: str | None = None,
     ) -> bool: ...
 
 
@@ -1713,17 +1713,17 @@ class NoteCuratorAdaptor:
             )
             return
         try:
-            # NO `workspace_id`. `conclude`'s is HONCHO's workspace, and a
-            # unit is not one: passing `note.unit` addressed a Honcho
-            # workspace named after the unit — on this deployment `friends`
-            # and `wedding`, which do not exist, and `ridgeline`, which exists
-            # and belongs to something else entirely. Either way recall never
-            # reads there: `representation`/`chat` take the default. One Nora
-            # is one Honcho workspace (operator, 2026-09-19); the unit scopes
-            # the NOTE tier, and nothing else.
+            # `unit=`, never a workspace. `conclude` used to take a HONCHO
+            # workspace id, and passing `note.unit` through it addressed a
+            # Honcho workspace named after the unit (2026-09-19). Since
+            # DEC-214 the port takes the UNIT and resolves it itself — to the
+            # Honcho workspace its Nora workspace is bound to and to the
+            # unit's named scope, which is exactly where the unit's reads
+            # look — so the claim lands where recall for this unit will find
+            # it, and nowhere another workspace can.
             written = await self._conclusions.conclude(
                 peer_id=self._ai_peer, target=cited_row.person_id,
-                content=claim.content,
+                content=claim.content, unit=note.unit,
             )
         except Exception:
             # Belt-and-braces only, `remember`'s own shape: `conclude`'s

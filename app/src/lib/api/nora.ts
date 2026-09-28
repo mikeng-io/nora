@@ -21,10 +21,12 @@ export const StatusSchema = z.object({
 });
 export type Status = z.infer<typeof StatusSchema>;
 
-// nora/web/memory.py::build_memory_payload: the caller's own entry only (a
-// list of at most one). `identity` (who they are) and `episodes` (what
-// happened) are two distinct reads and never collapse into one list.
+// nora/web/memory.py::build_memory_payload: the caller's own entries only,
+// one per Nora workspace they belong to (DEC-214), each labelled
+// `workspace`. `identity` (who they are) and `episodes` (what happened) are
+// two distinct reads and never collapse into one list.
 export const MemoryEntrySchema = z.object({
+  workspace: z.string().optional(),
   person_id: z.string(),
   display_name: z.string(),
   reachable: z.boolean(),

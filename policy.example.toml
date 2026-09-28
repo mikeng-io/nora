@@ -47,8 +47,9 @@ persons = ["miles"]        # [] means Nora accepts no DMs at all.
 #    may never cross: "tell the Signal lot" from Discord resolves to the
 #    Signal room of THIS unit and nothing else. A unit holds at
 #    most one room per platform, which is what makes naming the platform a
-#    usable address; two would refuse rather than guess. Defaults to "nora",
-#    so a single-group deployment needs nothing here.
+#    usable address; two REFUSE TO START (enforced since DEC-214). Defaults
+#    to "nora", so a single-group deployment needs nothing here. Units belong
+#    to WORKSPACES — see section 3 at the end of this file.
 
 [[conversations]]
 platform  = "signal"
@@ -229,3 +230,26 @@ persons  = "*"               # anyone in this chat, including someone Nora
 # platform lookup on the path that must not stall the SSE reader, and granting
 # by membership hands authorisation to whoever can promote an admin, so this
 # file would stop being a complete description of who has access.
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 3. UNITS -> WORKSPACES (DEC-214) — the hierarchy is workspace > unit > room.
+#
+#    A Nora WORKSPACE holds one or more units; a unit holds one or more rooms
+#    (at most one per platform). Units in one workspace share one Honcho
+#    workspace — one person is one person-model across all of them — and each
+#    unit is its own named scope inside it, so what Nora recalls for a unit
+#    comes from that unit's rooms. Different workspaces are separate person
+#    models entirely: use one when a group's people must not share memory
+#    with another's.
+#
+#    OPTIONAL. With no [units] table at all, every unit is in one implicit
+#    workspace bound to config.toml's `memory.workspace_id` — exactly how a
+#    deployment worked before this existed. Once the table is present it must
+#    name EVERY unit a room uses, and name no unit that has no room.
+#
+#    Which HONCHO workspace a Nora workspace's person models live in is NOT
+#    written here: it is an external id, and it goes in identity.toml's
+#    [workspaces.<name>]. A workspace with no binding there uses its own name.
+#
+# [units.family]
+# workspace = "home"
