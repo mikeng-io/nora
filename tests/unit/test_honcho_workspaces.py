@@ -70,7 +70,10 @@ async def test_two_workspaces_route_apart_and_each_room_is_in_its_units_scope(ho
     assert honcho.scopes[("nora", "wedding")] == set()
 
 
-async def test_session_create_carries_the_unit_scope_and_joins_it_once(honcho):
+async def test_a_new_session_is_created_bare_and_joined_to_its_unit_once(honcho):
+    """The create carries NO `scopes`: get-or-create on an existing session
+    with messages would enqueue a paid backfill on every restart. The join
+    lists the scope first and adds the (empty, new) session once."""
     sent: list[tuple[str, dict]] = []
     real = HonchoClient._post
 
@@ -86,9 +89,11 @@ async def test_session_create_carries_the_unit_scope_and_joins_it_once(honcho):
     await client.feed(peer_id="jordan", text="two", conversation_id="g-wedding")
 
     creates = [p for u, p in sent if u.endswith("/v3/workspaces/nora/sessions")]
-    assert creates == [{"id": _session("g-wedding"), "scopes": ["wedding"]}]
+    assert creates == [{"id": _session("g-wedding")}]
     joins = [r for r in honcho.requests if r[1].endswith("/scopes/wedding/sessions")]
     assert len(joins) == 1, "membership asserted once per process, not per message"
+    assert honcho.scopes[("nora", "wedding")] == {_session("g-wedding")}
+    assert honcho.scope_backfills == [], "joined while empty: nothing to backfill"
 
 
 async def test_peers_are_configured_per_workspace_not_per_id(honcho):
@@ -399,8 +404,10 @@ async def test_the_startup_joins_run_concurrently(aiohttp_server):
             return web.json_response({"items": [
                 {"id": w, "metadata": {"nora_owner": "nora"}} for w in ("nora", "ridgeline")
             ], "pages": 1})
+        if request.path.endswith("/sessions/list") and "/scopes/" in request.path:
+            await asyncio.sleep(0.3)        # the member list is the slow read
+            return web.json_response({"items": [], "pages": 0})
         if request.path.endswith("/sessions") and "/scopes/" in request.path:
-            await asyncio.sleep(0.3)
             return web.Response(status=204)
         return web.json_response({"id": "x"})
 
@@ -412,3 +419,67 @@ async def test_the_startup_joins_run_concurrently(aiohttp_server):
     await client.ensure_workspace()
     assert time.monotonic() - started < 0.8, "three rooms' joins ran one after another"
     assert len(client._scoped_sessions) == 3
+
+
+# ── a join never re-adds a member (Honcho re-enqueues a paid backfill) ───────
+
+
+async def _room_with_history(honcho: FakeHoncho, cid: str) -> None:
+    """A room that already spoke: its session exists and holds a message."""
+    client = _client(honcho.url)
+    await client.ensure_workspace()
+    assert await client.feed(peer_id="jordan", text="hi", conversation_id=cid)
+
+
+async def test_a_second_startup_adds_nothing_and_backfills_nothing(honcho):
+    """Measured live 2026-09-28: every restart re-added every known room, and
+    honcho v3.1.2 enqueues a `scope_backfill` (and so an omni dream per
+    touched collection) for every named session with messages, members
+    included. After the first start, a restart must add no session."""
+    await _room_with_history(honcho, "g-friends")
+    honcho.scope_backfills.clear()
+    honcho.requests.clear()
+
+    restarted = _client(honcho.url)
+    await restarted.ensure_workspace()
+    assert await restarted.feed(peer_id="jordan", text="again", conversation_id="g-friends")
+
+    # No re-add of the member. (Rooms with no session yet are still offered to
+    # their scopes and refused 404 by Honcho — that enqueues nothing.)
+    adds = [r for r in honcho.requests
+            if r[0] == "POST" and r[1].endswith("/scopes/friends/sessions")]
+    assert adds == [], adds
+    assert honcho.scope_backfills == []
+    assert _session("g-friends") in honcho.scopes[("nora", "friends")]
+    lists = [r for r in honcho.requests if r[1].endswith("/scopes/friends/sessions/list")]
+    assert len(lists) == 1, "membership is listed once per scope per process"
+
+
+async def test_a_session_that_is_not_a_member_is_added(honcho):
+    """The positive control: a room with history that is NOT in its unit's
+    scope (a session from before scopes) is added — once — and that is the
+    one backfill it should cost."""
+    await _room_with_history(honcho, "g-friends")
+    honcho.scopes[("nora", "friends")].clear()
+    honcho.scope_backfills.clear()
+
+    restarted = _client(honcho.url)
+    await restarted.ensure_workspace()
+    await restarted.feed(peer_id="jordan", text="again", conversation_id="g-friends")
+    assert honcho.scope_backfills == [("nora", "friends", _session("g-friends"))]
+
+
+async def test_an_unreadable_member_list_skips_the_join_instead_of_adding_blind(honcho):
+    await _room_with_history(honcho, "g-friends")
+    honcho.scopes[("nora", "friends")].clear()
+    honcho.scope_backfills.clear()
+    honcho.fail_member_lists = True
+
+    restarted = _client(honcho.url)
+    await restarted.ensure_workspace()
+    assert honcho.scope_backfills == []
+    assert _session("g-friends") not in honcho.scopes[("nora", "friends")]
+
+    honcho.fail_member_lists = False       # a later call lists again, then joins
+    await restarted.feed(peer_id="jordan", text="again", conversation_id="g-friends")
+    assert _session("g-friends") in honcho.scopes[("nora", "friends")]

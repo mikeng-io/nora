@@ -453,6 +453,9 @@ class HonchoClient:
         # answers are cached; an unreachable Honcho is asked again.
         self._ownership: dict[str, bool] = {}
         self._scoped_sessions: set[tuple[str, str, str]] = set()
+        # (honcho workspace, scope) -> its member session ids, listed once
+        # per process (`_scope_members`) so a join never re-adds a member.
+        self._members: dict[tuple[str, str], set[str]] = {}
         # One asyncio.Lock per peer id, not one global lock — different peers must
         # still proceed concurrently. Shared between ensure_peer and ensure_session:
         # both are check-then-act over per-peer state, and person-centric identity
@@ -812,21 +815,37 @@ class HonchoClient:
     async def _join_scope(
         self, route: HonchoRoute, session_id: str, *, missing_ok: bool = False,
     ) -> None:
-        """Put an EXISTING session in the unit's scope, once per process.
+        """Put a session in the unit's scope — ONLY IF IT IS NOT ALREADY A
+        MEMBER — once per process.
 
-        `POST /scopes/{scope}/sessions` — idempotent: re-adding a member is a
-        no-op, and a session that already holds messages gets an asynchronous
-        backfill-by-copy of its explicit conclusions into the scope
-        (scopes.mdx, «Membership Changes Copy»; idempotent on Honcho's side
-        too, `src/deriver/scope_backfill.py`). Done separately from the
-        `scopes` field on session create, which in v3.1.2 would do the same,
-        for one reason: this route 404s on a Honcho that has no scopes, so a
-        server that silently ignored the unknown `scopes` field would still
-        be caught here, in the log, rather than never scoping anything."""
+        `POST /scopes/{scope}/sessions` is NOT free to repeat, whatever the
+        docs call it: honcho v3.1.2's `crud.add_sessions_to_scope`
+        (`src/crud/scope.py`) enqueues a `scope_backfill` for EVERY named
+        session that has messages, members included, and each backfill
+        enqueues an omni dream per touched collection
+        (`src/deriver/scope_backfill.py`) — model spend. Measured live
+        2026-09-28: every Nora restart (2-3 a day) re-added every known room
+        and paid for it. So the scope's current membership is LISTED first
+        (`POST /scopes/{scope}/sessions/list`, paged, once per scope per
+        process) and only a session missing from it is added. A list that
+        fails means the join is SKIPPED, logged, and tried again on a later
+        call — never an add made blind. This route also 404s on a Honcho with
+        no scopes, so a server that ignored scopes entirely still shows here."""
         if route.scope is None:
             return
         key = (route.workspace, route.scope, session_id)
         if key in self._scoped_sessions:
+            return
+        members = await self._scope_members(route.workspace, route.scope)
+        if members is None:
+            log.warning(
+                "could not list the members of scope %r in %r; not joining %s "
+                "this time rather than re-adding it blind",
+                route.scope, route.workspace, session_id,
+            )
+            return
+        if session_id in members:
+            self._scoped_sessions.add(key)
             return
         # 204 with no body on success; `_post` would read that as a failure,
         # so this call parses its own status.
@@ -846,7 +865,41 @@ class HonchoClient:
         except Exception as e:  # noqa: BLE001 — Honcho is never load-bearing
             log.warning("honcho POST %s failed: %s", url, e)
             return
+        members.add(session_id)
         self._scoped_sessions.add(key)
+
+    async def _scope_members(self, workspace: str, scope: str) -> set[str] | None:
+        """The scope's member session ids, listed once per process and then
+        kept current by `_join_scope`'s own adds; `None` when unreadable (not
+        cached, so a later call lists again)."""
+        key = (workspace, scope)
+        lock = self._peer_lock(f"scope-members:{workspace}:{scope}")
+        async with lock:
+            cached = self._members.get(key)
+            if cached is not None:
+                return cached
+            found: set[str] = set()
+            page = 1
+            while True:
+                body = await self._post(
+                    self._url(
+                        f"/scopes/{scope}/sessions/list?page={page}&size=100",
+                        workspace=workspace,
+                    ),
+                    {}, self._feed_timeout,
+                )
+                items = (body or {}).get("items")
+                if not isinstance(items, list):
+                    return None
+                found.update(
+                    str(i["id"]) for i in items if isinstance(i, dict) and "id" in i
+                )
+                pages = (body or {}).get("pages")
+                if not isinstance(pages, int) or page >= pages or not items:
+                    break
+                page += 1
+            self._members[key] = found
+            return found
 
     async def ensure_session(self, conversation_id: str) -> str | None:
         """The CONVERSATION's session id, created on first use (Honcho v2,
@@ -866,13 +919,16 @@ class HonchoClient:
         it survives a restart without state; the cache only saves a round trip.
 
         **In the conversation's own Honcho workspace, inside its unit's named
-        scope** (DEC-214). The session is created with `scopes=[<unit scope>]`
-        (`SessionCreate.scopes`, honcho v3.1.2), so a room is in its unit's
-        scope from its first message and every later message reaches the
-        scope through the deriver's normal fan-out; `_join_scope` then asserts
-        the membership once per process, which is what brings a session that
-        existed BEFORE scopes into its unit. `None` when the conversation has
-        no route: nothing is created anywhere.
+        scope** (DEC-214). The create does NOT carry `scopes`: `POST
+        /sessions` is get-or-create, and on an EXISTING session with messages
+        honcho v3.1.2 enqueues a `scope_backfill` per listed scope whether or
+        not it is already a member (`crud.get_or_create_session`) — model
+        spend on the first message after every restart. Membership is
+        `_join_scope`'s, which lists the scope first and adds only a
+        non-member; for a session created here that is an empty session,
+        joined before its first message, so nothing is backfilled and every
+        message reaches the scope through the deriver's fan-out. `None` when
+        the conversation has no route: nothing is created anywhere.
         """
         route = await self._route(conversation_id=conversation_id)
         if route is None:
@@ -902,8 +958,6 @@ class HonchoClient:
                 return cached
             session_id = f"nora-conv-{_safe_conversation_key(conversation_id)}"
             body: dict[str, object] = {"id": session_id}
-            if route.scope is not None:
-                body["scopes"] = [route.scope]
             result = await self._post(
                 self._url("/sessions", workspace=ws), body, self._feed_timeout
             )
