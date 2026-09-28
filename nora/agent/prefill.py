@@ -706,8 +706,14 @@ def _room_members_block(ctx: TagContext) -> ContextBlock | None:
     nobody identity maps, which is also a `persons = "*"` room."""
     if not ctx.room_members:
         return None
+    def one_line(text: str) -> str:
+        # A newline in a name or alias would render as a member line of its
+        # own; operator-authored, but the block's shape is one line each.
+        return " ".join(text.split())
+
     lines = [
-        f"{ref.name}: {', '.join(ref.aliases)}" if ref.aliases else ref.name
+        f"{one_line(ref.name)}: {', '.join(one_line(a) for a in ref.aliases)}"
+        if ref.aliases else one_line(ref.name)
         for ref in ctx.room_members
     ]
     return _block("room_members", body=escape("\n".join(lines)))

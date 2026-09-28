@@ -242,7 +242,10 @@ class Persons:
             return ()
         return tuple(sorted(
             (self.by_person[pid] for pid in listed if pid in self.by_person),
-            key=lambda ref: ref.name,
+            # The id breaks a tie between two people of one name: a frozenset
+            # walks in hash order, which changes per process, and the block is
+            # a cached, snapshot-compared prefix (review 2026-09-28).
+            key=lambda ref: (ref.name, ref.person_id),
         ))
 
 

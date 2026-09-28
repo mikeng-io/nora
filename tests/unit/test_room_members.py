@@ -92,3 +92,56 @@ def test_the_tag_path_and_the_fire_path_give_the_same_members(tmp_path):
     assert TranscriptInjection._room_members(  # type: ignore[arg-type]
         SimpleNamespace(_policy=None, _persons=persons), _msg("g1"),
     ) == ()
+
+
+def test_two_members_of_one_name_keep_one_order_in_every_process():
+    """A frozenset walks in hash order, which changes per process
+    (PYTHONHASHSEED); the block is a cached, snapshot-compared prefix, so a
+    tie must break the same way in every process (review 2026-09-28)."""
+    import os
+    import subprocess
+    import sys
+
+    code = (
+        "from nora.domain.models import PersonRef\n"
+        "from nora.persons import Persons\n"
+        "ids = ['p_c', 'p_a', 'p_b']\n"
+        "refs = {i: PersonRef(i, 'Chris', i) for i in ids}\n"
+        "p = Persons(by_person=refs, index={})\n"
+        "print(','.join(m.person_id for m in p.room_members(frozenset(ids))))\n"
+    )
+    seen = set()
+    for seed in range(6):
+        out = subprocess.run(  # noqa: S603 - sys.executable with a fixed script
+            [sys.executable, "-c", code], capture_output=True, text=True, check=True,
+            env={**os.environ, "PYTHONHASHSEED": str(seed)},
+        ).stdout.strip()
+        seen.add(out)
+    assert seen == {"p_a,p_b,p_c"}
+
+
+async def test_the_fire_path_fills_room_members_through_build_context(tmp_path):
+    """The wiring, not only the helper: a reminder fired into a listed room
+    carries that room's members (review 2026-09-28: dropping the fire wiring
+    survived)."""
+    from datetime import UTC, datetime
+
+    from nora.app.fire import FirePath, reminder_occasion
+    from nora.obs.metrics import Metrics
+    from nora.testing import FakeMemoryStore, FakeRecordStore
+    from tests.unit.test_fire_path import _reminder
+
+    persons, _ = _load(tmp_path)
+    (tmp_path / "p2.toml").write_text(
+        'default = "deny"\n[[conversations]]\nplatform = "signal"\nid = "conv-1"\n'
+        'label = "c"\npersons = ["miles_novak"]\nunit = "u"\n')
+    path = FirePath(
+        persons=persons, records=FakeRecordStore(), memory=FakeMemoryStore(),
+        doctrine_store=None, metrics=Metrics(),  # type: ignore[arg-type]
+        runner=None, adapters={}, registry=None,  # type: ignore[arg-type]
+        canary="c", display_name="Nora", ai_peer="nora", context_window=40,
+        limits={}, timeout_seconds=120.0, clock=lambda: datetime(2026, 9, 28, tzinfo=UTC),
+        policy=load_policy(tmp_path / "p2.toml"),
+    )
+    ctx = await path.build_context(reminder_occasion([_reminder(requester_person_id="miles_novak")]))
+    assert [m.name for m in ctx.room_members] == ["Miles Novak"]
