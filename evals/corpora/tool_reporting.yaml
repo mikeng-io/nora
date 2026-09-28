@@ -93,7 +93,8 @@ cases:
 
   # routine_read (design/27 §4.3): whatever it returns (in the sandbox,
   # `unavailable`: no presence feed), the reply reports exactly that, and an
-  # answer is said as «usually», never «will».
+  # answer is said as a friend would say a forecast («should be», «probably»,
+  # «maybe»), never «will» and never a rate.
   - name: report_routine_read_future
     entry: tag
     expect: reply

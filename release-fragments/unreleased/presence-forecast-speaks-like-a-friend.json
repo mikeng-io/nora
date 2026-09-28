@@ -1,0 +1,12 @@
+{
+  "type": "change",
+  "summary": "Nora says where someone will usually be, or when they usually get home, the way a friend would, instead of quoting percentages.",
+  "details": [
+    "«Where will he be tomorrow morning?» now reads «he should be home», «probably at the gym», or «maybe home, maybe at his other place», and «when is she back tonight?» reads «probably around 7:30, though some nights not till midnight».",
+    "Asked how sure she is, she gives what the past weeks actually were (for example, home on every one of the last seven Tuesday mornings): a count of what happened, not a confidence figure.",
+    "Answers about the past (where someone went today) are unchanged: those are facts and she still gives them exactly."
+  ],
+  "limitations": [
+    "There is no measured confidence figure behind a forecast yet; she will not give one."
+  ]
+}

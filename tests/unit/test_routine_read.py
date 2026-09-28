@@ -10,6 +10,7 @@ coordinate (R-28); and a weak basis said inside the routine as «roughly».
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -132,14 +133,12 @@ async def test_where_will_grant_be_on_wednesday_night(persons):
     }
     [grant] = out["people"]
     assert grant["person"] == "Grant Carver"
-    # Comprehended, not reported (design/27 §4.3, amended 2026-09-28): the
-    # routine arrives worked out; the numbers are evidence.
-    assert grant["routine"] == "Wednesdays 22:00-06:00: almost always at Carver Home"
-    assert (grant["usually_at"], grant["how_often"]) == ("Carver Home", "almost always")
-    assert grant["evidence"]["weeks"] == 6 and grant["evidence"]["basis"] == "hour"
-    assert grant["evidence"]["shares"][0]["percent"] >= 95
-    assert sum(x["percent"] for x in grant["evidence"]["shares"]) == 100
-    assert "habit" in out["note"]
+    # A forecast said the way a friend would (design/27 §4.3, amended
+    # 2026-09-28): the hedge is in the words, and no number reaches her.
+    assert grant["routine"] == "Wednesdays 22:00-06:00: should be at Carver Home"
+    assert grant["usually_at"] == "Carver Home"
+    assert set(grant) == {"person", "routine", "usually_at", "also"}
+    assert "forecast" in out["note"]
     for word in ("will be", "can't", "cannot", "not where"):
         assert word not in out["note"]  # nothing that reads as a reason to disclaim
     assert _no_coordinates(out)  # R-28: nothing here can be read aloud as a position
@@ -150,15 +149,16 @@ async def test_tuesday_night_is_the_second_home_said_as_one_even_unnamed(persons
     out = await tool("2026-09-08", 23, 5, name="Chi")
     person = out["people"][0]
     assert person["usually_at"] == "a home of theirs"
-    assert person["evidence"]["shares"][0]["kind"] == "home"
 
 
 async def test_thin_history_is_said_inside_the_routine_as_rough(persons):
     tool = _tool(persons, _FakeMobility(stays=_history(1)))
     out = await tool(WEDNESDAY, 22, 6, name="Chi")
+    # One week of history, read roughly from other hours: said one step less
+    # surely, and the reason is not recited.
     assert out["status"] == "ok"
-    assert out["people"][0]["evidence"]["basis"] != "hour"
-    assert "roughly" in out["people"][0]["routine"]
+    assert out["people"][0]["routine"] == (
+        "Wednesdays 22:00-06:00: maybe at Carver Home, maybe at a home of theirs")
 
 
 async def test_no_history_is_nothing_found_with_its_window(persons):
@@ -263,17 +263,15 @@ async def test_a_person_known_only_to_a_later_circle_is_still_answered(persons):
 
 
 async def test_a_mostly_unobserved_window_says_the_record_is_patchy(persons):
-    """Six Wednesdays that only observed 22:00-23:00 of an 8-hour window: the
-    shares are of that hour, and the note says what observed_share means."""
+    """Wednesdays that only observed 22:00-23:00 of an 8-hour window: always
+    home in that hour, but a patchy record says it one step less surely."""
     stays = [
         _stay(datetime(2026, 8, 5, tzinfo=HK) + timedelta(weeks=w), 22, 23, HOME)
         for w in range(4)
     ]
     out = await _tool(persons, _FakeMobility(stays=stays))(WEDNESDAY, 22, 6, name="Chi")
     [grant] = out["people"]
-    assert grant["evidence"]["record"] == "patchy"
-    assert "percent" not in str({k: v for k, v in grant["evidence"].items() if k != "shares"})
-    assert "on a patchy record" in grant["routine"]
+    assert grant["routine"] == "Wednesdays 22:00-06:00: probably at Carver Home"
 
 
 async def test_non_ambiguous_answers_carry_no_could_be(persons):
@@ -283,8 +281,10 @@ async def test_non_ambiguous_answers_carry_no_could_be(persons):
 
 async def test_a_second_place_is_sometimes_never_no_usual_place(persons):
     out = await _tool(persons, _FakeMobility(stays=_history(6)))("2026-09-09", 19, 22, name="Chi")
-    also = out["people"][0]["also"]
-    assert also and all(a["how_often"] != "no single usual place" for a in also)
+    person = out["people"][0]
+    # Gym 19-21 then home: the gym is the probable one, home is named too.
+    assert person["routine"] == "Wednesdays 19:00-22:00: probably at a place they go"
+    assert person["also"] == ["Carver Home"]
 
 
 # ---- independent review of the reshaping, 2026-09-28 ------------------------
@@ -304,19 +304,23 @@ async def test_with_no_usual_place_the_most_frequent_is_still_named(persons):
     stays = _wednesdays([(19, 20, GYM), (20, 21, HOME), (21, 22, SECOND)])
     out = await _tool(persons, _FakeMobility(stays=stays))(WEDNESDAY, 19, 22, name="Chi")
     [p] = out["people"]
-    assert (p["usually_at"], p["how_often"]) == (None, "no single usual place")
-    assert "no single usual place" in p["routine"]
-    assert {a["place"] for a in p["also"]} == {"Carver Home", "a home of theirs", "a place they go"}
-    assert sum(x["percent"] for x in p["evidence"]["shares"]) == 100
-    assert all(x["kind"] != "elsewhere" for x in p["evidence"]["shares"])  # none invented
+    assert p["usually_at"] is None
+    assert p["routine"].startswith("Wednesdays 19:00-22:00: hard to say; sometimes ")
+    for name in ("Carver Home", "a home of theirs", "a place they go"):
+        assert name in p["routine"]
 
 
-async def test_shares_sum_to_100_when_rounding_would_give_101(persons):
-    stays = _wednesdays([
-        (19, 19 + 42 / 60, GYM), (20, 20 + 42 / 60, HOME), (21, 21 + 41 / 60, SECOND),
-    ])
-    out = await _tool(persons, _FakeMobility(stays=stays))(WEDNESDAY, 19, 22, name="Chi")
-    assert sum(x["percent"] for x in out["people"][0]["evidence"]["shares"]) == 100
+async def test_no_number_reaches_her(persons):
+    """A percent, share, week or day count in her input came out in her
+    reply (live, 2026-09-28: «過去七個禮拜 100%»). None is in the result."""
+    for window in ((WEDNESDAY, 22, 6), (WEDNESDAY, 19, 22), ("2026-09-08", 19, 23)):
+        out = await _tool(persons, _FakeMobility(stays=_history(6)))(*window, name="Chi")
+        for person in out["people"]:
+            assert not re.search(r"\d+ ?%|percent|share|week|\bdays?\b", str(person))
+    arrival = await _tool(persons, _FakeMobility(stays=_history(6)))(
+        WEDNESDAY, 16, 4, name="Chi", what="arrival")
+    assert not re.search(r"\d+ of \d+|percent|\bdays\b|habits|evidence",
+                         str(arrival["people"]))
 
 
 async def test_their_own_small_places_are_pooled_and_never_the_answer(persons):
@@ -334,18 +338,18 @@ async def test_their_own_small_places_are_pooled_and_never_the_answer(persons):
     out = await _tool(persons, _FakeMobility(stays=_wednesdays(segments),
                                              places=PLACES + small))(WEDNESDAY, 19, 23, name="Chi")
     [p] = out["people"]
-    kinds = {x["kind"]: x for x in p["evidence"]["shares"]}
-    assert "elsewhere" not in kinds  # every stop was at one of their places
-    assert kinds["other"]["place"] == "other places of theirs"
-    assert p["usually_at"] in (None, "Carver Home")  # the pool is never the answer
+    # The pool of small places is never the answer, and never named.
+    assert p["usually_at"] in (None, "Carver Home")
+    assert "other places of theirs" not in str(p)
+    assert "not one of their places" not in str(p)  # every stop was one of theirs
 
 
-async def test_the_ladder_reads_usually_between_60_and_85(persons):
+async def test_the_ladder_reads_probably_between_60_and_85(persons):
     stays = _wednesdays([(19, 21.1, HOME), (21.1, 22, GYM)])  # 70% home
     out = await _tool(persons, _FakeMobility(stays=stays))(WEDNESDAY, 19, 22, name="Chi")
     [p] = out["people"]
-    assert (p["usually_at"], p["how_often"]) == ("Carver Home", "usually")
-    assert p["also"] == [{"place": "a place they go", "how_often": "sometimes"}]
+    assert p["routine"] == "Wednesdays 19:00-22:00: probably at Carver Home"
+    assert (p["usually_at"], p["also"]) == ("Carver Home", ["a place they go"])
 
 
 # ---- the movement model's views (design/27 §4.4 M1, M3, M4) ---------------
@@ -384,9 +388,8 @@ async def test_when_is_he_usually_back_home_on_wednesday_night(persons):
     # instead of borrowing one home's name for both (review 2026-09-28).
     assert (p["what"], p["place"]) == ("arrival", "one of their homes")
     # Wednesdays in the fixture: gym 19-21, home from 21:30, every week.
-    assert p["routine"] == "Wednesdays: gets to one of their homes around 21:30 on 6 of 6"
+    assert p["routine"] == "Wednesdays: should get to one of their homes around 21:30"
     assert p["places"] == ["a home of theirs", "Carver Home"]
-    assert p["evidence"]["basis"] == "weekday"
 
 
 async def test_a_named_place_is_that_place(persons):
@@ -394,7 +397,7 @@ async def test_a_named_place_is_that_place(persons):
         WEDNESDAY, 16, 4, name="Chi", what="arrival", place="Carver Home")
     [p] = out["people"]
     assert p["place"] == "Carver Home" and "place_ref" not in p
-    assert p["routine"] == "Wednesdays: gets to Carver Home around 21:30 on 6 of 6"
+    assert p["routine"] == "Wednesdays: should get to Carver Home around 21:30"
 
 
 async def test_a_window_from_midnight_reads_the_whole_day(persons):
@@ -402,7 +405,7 @@ async def test_a_window_from_midnight_reads_the_whole_day(persons):
     out = await _tool(persons, _FakeMobility(stays=_history(6)))(
         WEDNESDAY, 0, 23, name="Chi", what="arrival", place="Carver Home")
     assert out["status"] == "ok"
-    assert "around 21:30 on 6 of 6" in out["people"][0]["routine"]
+    assert "should get to Carver Home around 21:30" in out["people"][0]["routine"]
 
 
 async def test_when_does_he_leave_a_named_place(persons):
@@ -460,9 +463,7 @@ async def test_two_unnamed_homes_of_one_person_read_as_two_places(persons):
     out = await _tool(persons, _FakeMobility(stays=stays, places=unnamed))(
         WEDNESDAY, 19, 23, name="Chi")
     [p] = out["people"]
-    assert {x["place"] for x in p["evidence"]["shares"]} == {
-        "a home of theirs", "a home of theirs (2)"}
-    assert p["usually_at"] == "a home of theirs"
+    assert (p["usually_at"], p["also"]) == ("a home of theirs", ["a home of theirs (2)"])
 
 
 async def test_tonight_is_still_tonight_after_midnight(persons):
@@ -471,3 +472,158 @@ async def test_tonight_is_still_tonight_after_midnight(persons):
     out = await _tool_live(persons, _FakeMobility(stays=_history(6)), _FakeFixes(_AT[GYM]))(
         "2026-09-04", 20, 14, name="Chi")
     assert out["people"][0]["today"].startswith("now a place they go")
+
+
+# ---- evidence on request (operator 2026-09-28) -------------------------------
+
+
+async def test_evidence_only_when_asked_and_as_counts_of_the_past(persons):
+    """«How sure are you?» gets what the past weeks were; the first answer
+    carries no number at all."""
+    tool = _tool(persons, _FakeMobility(stays=_history(6)))
+    plain = await tool(WEDNESDAY, 22, 6, name="Chi")
+    assert "evidence" not in plain["people"][0] and "evidence" not in plain["note"]
+    asked = await tool(WEDNESDAY, 22, 6, name="Chi", detail="evidence")
+    [p] = asked["people"]
+    assert p["routine"] == plain["people"][0]["routine"]
+    assert p["evidence"].startswith("Over the last 6 Wednesdays at 22:00-06:00")
+    assert "Carver Home" in p["evidence"] and "%" in p["evidence"]
+    assert "not a confidence figure" in asked["note"]
+    assert "confiden" not in p["evidence"]  # a count of the past, never a confidence
+
+
+async def test_arrival_evidence_counts_the_days(persons):
+    out = await _tool(persons, _FakeMobility(stays=_history(6)))(
+        WEDNESDAY, 16, 4, name="Chi", what="arrival", place="Carver Home",
+        detail="evidence")
+    assert out["people"][0]["evidence"] == (
+        "Of the last 6 Wednesdays they were seen: got there around 21:30 on 6.")
+
+
+async def test_two_kinds_of_night_are_said_as_probably_though_some_nights(persons):
+    stays = []
+    first = datetime(2026, 8, 26, tzinfo=HK) - timedelta(weeks=5)
+    for w in range(6):
+        wed = first + timedelta(weeks=w)
+        stays.append(_stay(wed, 9, 18, GYM))
+        stays.append(_stay(wed, 23.75, 31, HOME) if w in (1, 3) else _stay(wed, 19.5, 31, HOME))
+    out = await _tool(persons, _FakeMobility(stays=stays))(
+        WEDNESDAY, 16, 4, name="Chi", what="arrival", place="Carver Home")
+    assert out["people"][0]["routine"] == (
+        "Wednesdays: probably gets to Carver Home around 19:30, "
+        "though some nights not till around 23:45")
+
+
+# ---- the hedge ladder, at its edges (review 2026-09-28) ----------------------
+
+
+def _minutes(*parts):
+    """Wednesdays 19:00-22:00 split into consecutive (minutes, place) parts."""
+    segs, t = [], 19.0
+    for minutes, pid in parts:
+        segs.append((t, t + minutes / 60, pid))
+        t += minutes / 60
+    return _wednesdays(segs)
+
+
+async def _line(persons, stays, **kw):
+    out = await _tool(persons, _FakeMobility(stays=stays))(WEDNESDAY, 19, 22, name="Chi", **kw)
+    return out["people"][0]
+
+
+@pytest.mark.parametrize(("home_minutes", "starts"), [
+    (153, "should be at Carver Home"),       # 85%
+    (152, "probably at Carver Home"),        # 84%
+    (108, "probably at Carver Home"),        # 60%
+    (107, "maybe at Carver Home, maybe at a place they go"),  # 59%
+])
+async def test_the_hedge_steps_at_85_and_60(persons, home_minutes, starts):
+    p = await _line(persons, _minutes((home_minutes, HOME), (180 - home_minutes, GYM)))
+    assert p["routine"] == f"Wednesdays 19:00-22:00: {starts}"
+    assert (p["usually_at"] is None) == starts.startswith("maybe")
+
+
+async def test_below_35_is_hard_to_say(persons):
+    at_35 = await _line(persons, _minutes((64, HOME), (58, GYM), (58, SECOND)))
+    assert at_35["routine"].startswith("Wednesdays 19:00-22:00: maybe at Carver Home")
+    below = await _line(persons, _minutes((61, HOME), (60, GYM), (59, SECOND)))
+    assert below["routine"].startswith("Wednesdays 19:00-22:00: hard to say; sometimes ")
+
+
+async def test_also_names_places_from_ten_percent_and_never_one_already_said(persons):
+    p = await _line(persons, _minutes((150, HOME), (18, GYM), (12, SECOND)))  # 83 / 10 / 7
+    assert p["also"] == ["a place they go"]
+    maybe = await _line(persons, _minutes((100, HOME), (80, GYM)))
+    assert "a place they go" in maybe["routine"] and maybe["also"] == []
+
+
+async def test_an_unknown_detail_is_refused_as_bad_input(persons):
+    out = await _tool(persons, _FakeMobility(stays=_history(6)))(
+        WEDNESDAY, 22, 6, name="Chi", detail="everything")
+    assert out["status"] == "unavailable"
+
+
+async def test_evidence_says_the_record_in_words_not_a_second_percent(persons):
+    """A second percent beside the shares was read as one of them (2 of 8
+    replay draws): how much is on record is words."""
+    out = await _tool(persons, _FakeMobility(stays=_history(6)))(
+        WEDNESDAY, 22, 6, name="Chi", detail="evidence")
+    evidence = out["people"][0]["evidence"]
+    assert "on record." in evidence and evidence.count("%") == 1
+
+
+def _arrivals(weeks):
+    """Per week, the hour they got home that Wednesday evening, or None for
+    a night spent at the gym."""
+    first = datetime(2026, 8, 26, tzinfo=HK) - timedelta(weeks=len(weeks) - 1)
+    stays = []
+    for w, hour in enumerate(weeks):
+        wed = first + timedelta(weeks=w)
+        stays.append(_stay(wed, 9, 18, SECOND))
+        stays.append(_stay(wed, 19, 31, GYM) if hour is None else _stay(wed, hour, 31, HOME))
+    return stays
+
+
+async def _arrival(persons, stays):
+    out = await _tool(persons, _FakeMobility(stays=stays))(
+        WEDNESDAY, 18, 4, name="Chi", what="arrival", place="Carver Home")
+    return out["people"][0]["routine"]
+
+
+async def test_arrival_hedges_at_75_and_says_missing_nights_plainly(persons):
+    assert await _arrival(persons, _arrivals([19.5] * 6 + [23.75] * 2)) == (
+        "Wednesdays: should get to Carver Home around 19:30, "
+        "though some nights not till around 23:45")
+    assert await _arrival(persons, _arrivals([19.5] * 5 + [23.75] * 2)) == (
+        "Wednesdays: probably gets to Carver Home around 19:30, "
+        "though some nights not till around 23:45")
+    assert await _arrival(persons, _arrivals([19.5] * 4 + [None])) == (
+        "Wednesdays: should get to Carver Home around 19:30, "
+        "and some nights not in these hours")
+
+
+async def test_when_most_nights_have_no_arrival_it_leads_with_that(persons):
+    """Home on 3 of 7 nights read «probably … and some nights not at all»."""
+    assert await _arrival(persons, _arrivals([19.5] * 3 + [None] * 4)) == (
+        "Wednesdays: most nights not in these hours; on the others, "
+        "gets to Carver Home around 19:30")
+
+
+async def test_a_day_they_never_went_is_not_a_day_they_stayed_late(persons):
+    """Office on 4 of 6 Wednesdays, home all day on 2: no invented reason."""
+    first = datetime(2026, 8, 26, tzinfo=HK) - timedelta(weeks=5)
+    stays = []
+    for w in range(6):
+        wed = first + timedelta(weeks=w)
+        if w < 4:
+            stays += [_stay(wed, 9, 18, GYM), _stay(wed, 18.75, 31, HOME)]
+        else:
+            stays += [_stay(wed, 0, 31, HOME)]
+    office = DerivedPlace(GYM, "grant_carver", "c", *_AT[GYM], 100.0, "work", 1.0,
+                          "Office", None)
+    places = [p for p in PLACES if p.id != GYM] + [office]
+    out = await _tool(persons, _FakeMobility(stays=stays, places=places))(
+        WEDNESDAY, 10, 20, name="Chi", what="departure", place="Office")
+    line = out["people"][0]["routine"]
+    assert "stay past" not in line
+    assert line.endswith("and some days not in these hours")
