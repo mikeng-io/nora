@@ -35,8 +35,8 @@ class InMemoryStimulusStore:
 
     async def append(self, *, stimulus: NewStimulus, recorded_at_ms: int) -> int | None:
         self._check()
-        if stimulus.kind == "time" and any(
-            s.kind == "time" and s.unit == stimulus.unit and s.ref == stimulus.ref
+        if stimulus.kind in ("time", "rollup") and any(
+            s.kind == stimulus.kind and s.unit == stimulus.unit and s.ref == stimulus.ref
             for s in self.stimuli
         ):
             return None

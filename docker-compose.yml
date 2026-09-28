@@ -576,6 +576,10 @@ services:
     volumes:
       - ./config.toml:/app/config.toml:ro
       - ./identity.toml:/app/identity.toml:ro
+      # The unit rollups (step 2, design/cognition-loop/25-rollup.md §3) read
+      # which rooms make up each unit and who its members are. Without it the
+      # presence Rollup still runs and the unit rollups compute nothing.
+      - ./policy.toml:/app/policy.toml:ro
     # Same override as `presence`'s below — the image's baked-in HEALTHCHECK
     # targets the main agent's :9100/health, which this entrypoint never
     # serves (confirmed live: it sat "unhealthy" forever on a genuinely

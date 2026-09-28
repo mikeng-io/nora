@@ -123,13 +123,15 @@ class SqlStimulusStore:
             "due_ms": stimulus.due_ms, "recorded_at": _at(recorded_at_ms),
         }
         stmt: Any = pg_insert(STIMULUS).values(**values)
-        if stimulus.kind == "time":
-            # The partial unique index `uq_stimulus_time_ref`: a floor raised on
-            # every tick is written once. The conflict target must restate
-            # the index's predicate for Postgres to infer it.
+        if stimulus.kind in ("time", "rollup"):
+            # The partial unique indexes `uq_stimulus_time_ref` and
+            # `uq_stimulus_rollup_ref` (0071): a floor raised on every tick,
+            # or a Rollup stimulus raised again by a later run or a rebuild,
+            # is written once. The conflict target must restate the index's
+            # predicate for Postgres to infer it.
             stmt = stmt.on_conflict_do_nothing(
                 index_elements=[STIMULUS.c.unit, STIMULUS.c.ref],
-                index_where=STIMULUS.c.kind == "time",
+                index_where=STIMULUS.c.kind == stimulus.kind,
             )
         stmt = stmt.returning(STIMULUS.c.id)
         async with self._engine.begin() as conn:

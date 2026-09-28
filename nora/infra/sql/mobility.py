@@ -3,7 +3,7 @@
 §2, §4). A SECOND store in the SAME `nora` database as `PresenceStore`.
 
 **Builds.** Every presence Rollup row carries the build that computed it
-(`build_id`, migration 0070). An instance is either BOUND to one build
+(`build_id`, migration 0071). An instance is either BOUND to one build
 (`scoped(build_id)`: the analytics process writes and reads its own build
 through it) or UNBOUND (`build_id=None`: every read resolves the CURRENT build
 through `rollup_build`'s one `current` row, the pointer). Every reader the

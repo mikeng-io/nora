@@ -31,7 +31,7 @@ WHAT THIS ADDS, all additive (no table dropped, no column dropped):
    existing rows are backfilled into `row_history` at this migration (their
    earlier versions were overwritten and are not recoverable), dated at this
    migration, `presence_places` at its own `updated_ms`.
-5. `uq_signal_rollup_ref`: a Rollup stimulus is unique on `(unit, ref)`, as
+5. `uq_stimulus_rollup_ref`: a Rollup stimulus is unique on `(unit, ref)`, as
    a `time` one already is, so a stimulus raised again by a later run (or by
    a rebuild recomputing the same row) is written once.
 
@@ -44,14 +44,14 @@ Every covered table is LOCKed while it is backfilled and its trigger
 attached: the presence collector and the analytics process keep writing
 while `nora` restarts, and a write in between would be in no history.
 
->>> RE-POINT AT MERGE TIME. <<< `down_revision` is master's head when this
-branch was cut (`0069_cognition_signal`). Step 2b (lineage filter and
+>>> RE-POINT AT MERGE TIME. <<< Cut on `0069_cognition_signal`, re-parented
+onto `0070_stimulus_rename` (#617) when that merged first. Step 2b (lineage filter and
 `record_query`) adds a migration on another branch; whichever merges second
 re-points onto the other. `uv run alembic heads` must then print exactly ONE
 line (AGENTS.md, "Never assume your migration's parent is unclaimed").
 
-Revision ID: 0070_rollup_builds
-Revises: 0069_cognition_signal
+Revision ID: 0071_rollup_builds
+Revises: 0070_stimulus_rename
 Create Date: 2026-09-29
 """
 
@@ -63,8 +63,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql as pg
 
-revision = "0070_rollup_builds"
-down_revision = "0069_cognition_signal"
+revision = "0071_rollup_builds"
+down_revision = "0070_stimulus_rename"
 branch_labels = None
 depends_on = None
 
@@ -184,7 +184,7 @@ def upgrade() -> None:
     op.execute(
         "INSERT INTO rollup_build (code_version, params_sha256, status, switched_at, detail) "
         "VALUES ('legacy', '', 'current', clock_timestamp(), "
-        "'{\"note\": \"rows derived before migration 0070, by the wall-clock rollup\"}'::jsonb)"
+        "'{\"note\": \"rows derived before migration 0071, by the wall-clock rollup\"}'::jsonb)"
     )
     legacy = "(SELECT id FROM rollup_build WHERE code_version = 'legacy')"
 
@@ -344,7 +344,7 @@ def upgrade() -> None:
 
     # 5. a Rollup stimulus is written once per (unit, ref)
     op.create_index(
-        "uq_signal_rollup_ref", "signal", ["unit", "ref"], unique=True,
+        "uq_stimulus_rollup_ref", "stimulus", ["unit", "ref"], unique=True,
         postgresql_where=sa.text("kind = 'rollup'"),
     )
 
@@ -352,7 +352,7 @@ def upgrade() -> None:
 def downgrade() -> None:
     # LOSSY, and said so: every build but the rows' own is dropped with its
     # tables, and the history of every write since this migration with them.
-    op.drop_index("uq_signal_rollup_ref", table_name="signal")
+    op.drop_index("uq_stimulus_rollup_ref", table_name="stimulus")
     for table in _HISTORY_TABLES:
         op.execute(f'DROP TRIGGER IF EXISTS nora_row_history ON "{table}"')
         op.execute(f'DROP TRIGGER IF EXISTS nora_row_history_truncate ON "{table}"')

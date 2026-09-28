@@ -395,9 +395,9 @@ PRESENCE_STAYS = sa.Table(
     sa.Column("place_id", sa.Integer, nullable=True),
     # The mode Life360 address of the stay's fixes (`Stay.address`), kept so a
     # place's name is a function of its stays, not of the one cycle that saw
-    # their fixes (migration 0070).
+    # their fixes (migration 0071).
     sa.Column("address", sa.Text, nullable=True),
-    # Step 2 (migration 0070, design/cognition-loop/25-rollup.md §2): the
+    # Step 2 (migration 0071, design/cognition-loop/25-rollup.md §2): the
     # build that computed this row, the lineage it rests on (10-tiers.md §3:
     # one person's fixes, `[["presence", <subject>, null]]`) and system time.
     sa.Column("build_id", sa.BigInteger, nullable=False),
@@ -429,7 +429,7 @@ PRESENCE_DERIVED_PLACES = sa.Table(
     sa.Column("saved_place_id", sa.Text, nullable=True),
     sa.Column("first_seen_ts", sa.BigInteger, nullable=False),
     sa.Column("last_seen_ts", sa.BigInteger, nullable=False),
-    # Step 2 (migration 0070): build, lineage, system time — see
+    # Step 2 (migration 0071): build, lineage, system time — see
     # `presence_stays`.
     sa.Column("build_id", sa.BigInteger, nullable=False),
     sa.Column("lineage", pg.JSONB, nullable=False),
@@ -463,7 +463,7 @@ PRESENCE_OCCUPANCY = sa.Table(
     sa.Column("hour_of_week", sa.Integer, nullable=False),
     sa.Column("dwell_ms", sa.BigInteger, nullable=False, server_default=sa.text("0")),
     sa.Column("updated_ts", sa.BigInteger, nullable=False),
-    # Step 2 (migration 0070): build, lineage, system time — see
+    # Step 2 (migration 0071): build, lineage, system time — see
     # `presence_stays`.
     sa.Column("build_id", sa.BigInteger, nullable=False),
     sa.Column("lineage", pg.JSONB, nullable=False),
@@ -495,7 +495,7 @@ PRESENCE_PLACE_RHYTHM = sa.Table(
     sa.Column("duration_mad_ms", sa.BigInteger, nullable=True),
     sa.Column("sample_count", sa.Integer, nullable=False, server_default=sa.text("0")),
     sa.Column("updated_ts", sa.BigInteger, nullable=False),
-    # Step 2 (migration 0070): build, lineage, system time — see
+    # Step 2 (migration 0071): build, lineage, system time — see
     # `presence_stays`.
     sa.Column("build_id", sa.BigInteger, nullable=False),
     sa.Column("lineage", pg.JSONB, nullable=False),
@@ -540,7 +540,7 @@ PRESENCE_TRIPS = sa.Table(
     # used for the same purpose there (the first-place backfill's own
     # "which stays predate this place" query).
     sa.Column("corridor_id", sa.Integer, nullable=True),
-    # Step 2 (migration 0070): build, lineage, system time — see
+    # Step 2 (migration 0071): build, lineage, system time — see
     # `presence_stays`.
     sa.Column("build_id", sa.BigInteger, nullable=False),
     sa.Column("lineage", pg.JSONB, nullable=False),
@@ -568,7 +568,7 @@ PRESENCE_CORRIDORS = sa.Table(
     sa.Column("sample_count", sa.Integer, nullable=False, server_default=sa.text("0")),
     sa.Column("first_seen_ts", sa.BigInteger, nullable=False),
     sa.Column("last_seen_ts", sa.BigInteger, nullable=False),
-    # Step 2 (migration 0070): build, lineage, system time — see
+    # Step 2 (migration 0071): build, lineage, system time — see
     # `presence_stays`.
     sa.Column("build_id", sa.BigInteger, nullable=False),
     sa.Column("lineage", pg.JSONB, nullable=False),
@@ -641,7 +641,7 @@ ANALYTICS_WATERMARK = sa.Table(
 )
 
 # --- the Rollup as versioned builds (design/cognition-loop/25-rollup.md §2,
-# migration 0070) ------------------------------------------------------------
+# migration 0071) ------------------------------------------------------------
 
 #: One row per build of the whole Rollup: a code version and its parameters,
 #: computed from the Record up to `through_ms`. Exactly one is `current`
@@ -3432,11 +3432,11 @@ UQ_STIMULUS_TIME_REF = sa.Index(
     unique=True, postgresql_where=STIMULUS.c.kind == "time",
 )
 
-#: A Rollup stimulus is raised once per row it names (migration 0070): a later
+#: A Rollup stimulus is raised once per row it names (migration 0071): a later
 #: run, or a rebuild recomputing the same row, finds it on record.
-UQ_SIGNAL_ROLLUP_REF = sa.Index(
-    "uq_signal_rollup_ref", SIGNAL.c.unit, SIGNAL.c.ref,
-    unique=True, postgresql_where=SIGNAL.c.kind == "rollup",
+UQ_STIMULUS_ROLLUP_REF = sa.Index(
+    "uq_stimulus_rollup_ref", STIMULUS.c.unit, STIMULUS.c.ref,
+    unique=True, postgresql_where=STIMULUS.c.kind == "rollup",
 )
 
 # `cognition_wake`: every wake, one row each — in step 1 every row is a SHADOW

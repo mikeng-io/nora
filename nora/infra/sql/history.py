@@ -99,7 +99,7 @@ HISTORY_TABLES: dict[str, tuple[str, ...]] = {
     # `messages`, `message_edit`'s case exactly.
     "message_reaction": ("id",),
     "message_delete": ("id",),
-    # Step 2 (0070): the Rollup as versioned builds. A build's rows are
+    # Step 2 (0071): the Rollup as versioned builds. A build's rows are
     # written by its fold and changed in place by later runs of the same
     # build (a relink, a place's label, an occupancy bin, a unit rollup
     # recomputed and diffed); a superseded build is never touched again. The

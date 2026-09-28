@@ -22,7 +22,7 @@ def minimal_config(example_config_path):
 
 def test_disabled_analytics_builds_nothing(minimal_config):
     deps = build_rollup(minimal_config)
-    assert deps.rollup is None
+    assert deps.runner is None
     assert deps.persons is None
     assert deps.subjects == ()
     assert deps.metrics_port == minimal_config.analytics.metrics_port
@@ -60,10 +60,10 @@ def test_a_renamed_persons_fixes_merge_under_one_subject_with_both_ids(tmp_path)
     subjects = _subjects_from_identity(persons)
 
     assert len(subjects) == 1
-    subject_id, person_ids, circle_id = subjects[0]
-    assert subject_id == "clara_lawson"
-    assert set(person_ids) == {"clara_lawson", "clara_yates"}
-    assert circle_id == "cir1"
+    [subject] = subjects
+    assert subject.subject_id == "clara_lawson"
+    assert set(subject.person_ids) == {"clara_lawson", "clara_yates"}
+    assert subject.circle_ids == ("cir1",)
 
 
 def test_a_life360_membership_without_a_circle_id_refuses_to_start(tmp_path):
