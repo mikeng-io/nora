@@ -20,7 +20,7 @@ or when pg_trgm's word similarity finds them inside it at
 is one token to full-text search, and plain `similarity` scored the true
 in-sentence match 0.18, under its own default. Containment ranks first, then
 word similarity, then the newest; a hit that does not contain the words is
-marked `near`. `idx_messages_body_trgm` (migration `0070_lineage`) serves both
+marked `near`. `idx_messages_body_trgm` (migration `0071_lineage`) serves both
 operators.
 
 `__init__(self, engine)` and nothing else, the house shape for a store.

@@ -68,13 +68,14 @@ their lineage is derived from their own bodies, so it holds for them at any
 T. Every table written here is LOCKed first, for 0068's reason: the presence
 collector and the analytics process keep writing while `nora` restarts.
 
->>> RE-POINT AT MERGE TIME. <<< Cut on `0069_cognition_signal`. Step 2a
-(the Rollup engine) adds a migration off the same head; whichever merges
-second re-parents and renumbers. `uv run alembic heads` must print exactly ONE
+>>> RE-POINTED AT MERGE. <<< Cut on `0069_cognition_signal` as `0070_lineage`;
+`0070_stimulus_rename` merged first, so this is re-parented onto it and
+renumbered 0071. Step 2a (the Rollup engine) adds a migration off the same
+head; whichever merges second re-parents and renumbers again. `uv run alembic heads` must print exactly ONE
 line (AGENTS.md, "Never assume your migration's parent is unclaimed").
 
-Revision ID: 0070_lineage
-Revises: 0069_cognition_signal
+Revision ID: 0071_lineage
+Revises: 0070_stimulus_rename
 Create Date: 2026-09-29
 """
 
@@ -84,8 +85,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql as pg
 
-revision = "0070_lineage"
-down_revision = "0069_cognition_signal"
+revision = "0071_lineage"
+down_revision = "0070_stimulus_rename"
 branch_labels = None
 depends_on = None
 

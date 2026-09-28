@@ -1968,19 +1968,19 @@ async def test_the_summons_consumer_is_spawned_with_both_flags_on_and_no_poller_
         await deps.background.cancel_all()
 
 
-async def test_cognition_off_builds_no_signal_stage_and_no_evaluator(cfg):
+async def test_cognition_off_builds_no_stimulus_stage_and_no_evaluator(cfg):
     """`[cognition] mode = "off"` is the shipped default: nothing is written
-    to `signal`, no evaluator is spawned. Adapter health is recorded anyway —
+    to `stimulus`, no evaluator is spawned. Adapter health is recorded anyway —
     it is Record, not a subsystem that acts (20-observe.md §1)."""
     deps = await build_dependencies(cfg)
     assert deps.wake_evaluator is None
-    assert deps.ingest._signal_wiring is None
+    assert deps.ingest._stimulus_wiring is None
     assert deps.health_recorder is not None
 
 
 async def test_cognition_shadow_adds_the_evaluator_and_leaves_the_clocks_alone(cfg):
     """Migration step 1: «the wake evaluator in shadow ... the clocks still run
-    everything». Turning shadow on adds a signal stage and an evaluator and
+    everything». Turning shadow on adds a stimulus stage and an evaluator and
     changes nothing the Dreamer's clock schedules."""
     clocks = {"dreamer.enabled": True, "notes.enabled": True,
               "notes.curator_enabled": True, "notes.candidates_enabled": True}
@@ -1989,7 +1989,7 @@ async def test_cognition_shadow_adds_the_evaluator_and_leaves_the_clocks_alone(c
     shadow = await build_dependencies(shadow_on)
     baseline = await build_dependencies(clocks_only)
     assert shadow.wake_evaluator is not None
-    assert shadow.ingest._signal_wiring is not None
+    assert shadow.ingest._stimulus_wiring is not None
     assert baseline.dream_adaptors, "positive control: the clock schedules something"
     assert [a.name for a in shadow.dream_adaptors] == [a.name for a in baseline.dream_adaptors]
     assert set(shadow.dream_schedules) == set(baseline.dream_schedules)

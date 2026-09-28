@@ -5,7 +5,7 @@ The evaluator records would-wakes. For it to START anything — a Cognition
 session, a Dreamer adaptor, a turn, a send — it would first have to import
 something that can: the fire path, an adapter, the agent, the Dreamer
 runtime, the engagement pipeline. So the module's `nora` imports are pinned
-to the two it needs: the signal port and the pure wake policy. Adding any
+to the two it needs: the stimulus port and the pure wake policy. Adding any
 other is a design change that must come with the step (3/4) that makes the
 evaluator live, and this test is where that change is noticed.
 
@@ -30,4 +30,4 @@ def test_the_evaluator_imports_nothing_that_acts():
         elif isinstance(node, ast.ImportFrom) and node.module:
             imported.add(node.module)
     nora_imports = {m for m in imported if m.startswith("nora")}
-    assert nora_imports == {"nora.domain.ports", "nora.domain.signals"}, nora_imports
+    assert nora_imports == {"nora.domain.ports", "nora.domain.stimuli"}, nora_imports

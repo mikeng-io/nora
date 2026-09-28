@@ -80,7 +80,7 @@ And the words that name processes, never stores:
 3. **One write path per tier.** Code writes the Record and the Rollup; the
    two recording verbs of §1 write Record items authored by a person. Only
    write verbs write Register, Character, Lessons and Standing, and each verb
-   belongs to exactly one tier (the pace verbs write the signal table, no
+   belongs to exactly one tier (the pace verbs write the stimulus table, no
    tier). The exceptions are `character_revise` and `lesson_write`, which
    may also write a tension row.
 4. **Nora's own words are Record, and ground almost nothing.** Her rows
@@ -169,7 +169,7 @@ Memory has no lineage kind: it is never cited, so nothing derived rests on it.
   from everything a row cites, and across links between Register rows (a
   note and its event through `Note.event_id`; a note and the memo it closes
   into), re-checking on every link write.
-- **As built (step 2, lineage half, DEC-234; 2026-09-29).** The column is
+- **As built (step 2, lineage half, DEC-235; 2026-09-29).** The column is
   JSONB, section to a list of `{kind, subject, origin}`: a note has one
   section, `row`; a Standing row has `body` and `working_set`, the two
   sections today's schema has; a culture row has `body` (it is prose until
@@ -230,7 +230,7 @@ survives as the word for the Character of a collective; the existing
 | **Register** | the unit's affairs: note, memo, event | the voice register of `nora/doctrine` (always "voice register" there) |
 | **note** | an open thing the unit must not drop; it closes | a jotting, an idea |
 | **memo** | a settled thing the unit wants kept; it does not close | a thing about the speaker alone (that is `remember`) |
-| **event** | a dated thing people attend (code: `Gathering`) | a fire-turn occasion (code: `Event`, DEC-139), a wake signal, an episode |
+| **event** | a dated thing people attend (code: `Gathering`) | a fire-turn occasion (code: `Event`, DEC-139), a wake stimulus, an episode |
 | **Character** | what an entity is like and how it behaves | a person's attributes (Honcho), a persona (DEC-29) |
 | **account** | the body of one Character row | a platform account (a login: always "platform account") |
 | **culture** | the Character of a room or the unit | `<room>`, the operator's statement of what a room is FOR |
@@ -246,13 +246,13 @@ survives as the word for the Character of a collective; the existing
 | **fold** | a model call that rewrites a row from its last version plus new evidence (the Standing fold; a note's `Folded`) | a Rollup; a revision chain |
 | **memory** | Honcho | any store of ours |
 | **conclusion** | a derived row in Honcho | a Record item (Honcho calls its conclusions "observations"; Nora never does) |
-| **signal** | what ingestion, the Rollup or the clock raises to wake cognition | an event |
-| **agenda** | the items code computes from a unit's pending signals for one session, each bound to a room | a plan the model writes; a menu of actions |
+| **stimulus** | what ingestion, the Rollup or the clock raises to wake cognition | the Signal platform; a Python/OS signal; an event |
+| **agenda** | the items code computes from a unit's pending stimuli for one session, each bound to a room | a plan the model writes; a menu of actions |
 | **cue** | a deterministic feature of an item that makes it matter (a date, an amount, a keep instruction, a surprise) | a model's judgement |
-| **wake** | the moment a unit's pending signals start a session | a clock tick |
+| **wake** | the moment a unit's pending stimuli start a session | a clock tick |
 | **strike** | one session that ended with an agenda item still open, or closed `waiting`; at `max_strikes` code closes the item | a note's strike (a raise nobody answered), though it is the same idea; a self-wake's miss |
 | **miss** | a self-wake whose session wrote nothing and acted on nothing; at `self_wake_misses` her self-wakes for that subject are refused for a day ([20](20-observe.md) §3) | a strike |
-| **deviation** | a Rollup signal: a person's pattern broke, raised only on healthy sources | a rule that triggers an act |
+| **deviation** | a Rollup stimulus: a person's pattern broke, raised only on healthy sources | a rule that triggers an act |
 | **co-location** | the Rollup episode of members at one place at one time | an event |
 | **outing** | the Rollup episode of co-located members away from every member's home | an event |
 | **tie** | the Rollup aggregate of how much two people interact, per week | a Character line about closeness |
@@ -271,9 +271,9 @@ survives as the word for the Character of a collective; the existing
 | **adaptor** | one job the Dreamer runtime hosts, with its own key, wake rule and write verbs | a unit; a platform adapter |
 | **reflection** | the slow adaptors' work: inducing Character and Lessons | cognition; a process name for the whole loop |
 | **Dreamer** | the runtime hosting the four adaptors | a tier; a background pass that never acts |
-| **write verb** | a tool that writes one tier's row, validated by code before commit; the pace verbs (`wake_at`, `wake_move`, `wake_cancel`) write the signal table instead | an act |
+| **write verb** | a tool that writes one tier's row, validated by code before commit; the pace verbs (`wake_at`, `wake_move`, `wake_cancel`) write the stimulus table instead | an act |
 | **act verb** | `remind`: the one tool whose row leaves through the fire path; plus `remind_move`/`remind_cancel` on her own reminder rows, which change a reminder and send nothing | a send; a self-wake |
-| **self-wake** | a `self` signal Cognition writes with `wake_at`, due when it forecasts the subject next needs a look; inward, nothing leaves ([20](20-observe.md) §3) | a reminder (outward, to a room) |
+| **self-wake** | a `self` stimulus Cognition writes with `wake_at`, due when it forecasts the subject next needs a look; inward, nothing leaves ([20](20-observe.md) §3) | a reminder (outward, to a room) |
 | **reminder** | a row holding what is to be done in a room and when; every act is one | a note |
 | **brief** | what a reminder cognition writes carries: an intent (`tell` or `ask`) and the subject rows, never prose | the words she will say |
 | **subconscious** | the operator's name (潛意識) for the Dreamer's adaptors, always running underneath ([55](55-self.md) §6); not a code name | a tier; memory |
@@ -331,7 +331,7 @@ append-only in **system time**: each row carries `recorded_at`, and a revision
 carries `superseded_at` and `superseded_by` on the row it replaces. This
 holds for the Record, Rollup builds, Register, Character, Lessons, Standing,
 tension rows, face labels and templates, perceptions (versioned by model and
-prompt), signals and self-wakes, sessions and their agenda close reasons,
+prompt), stimuli and self-wakes, sessions and their agenda close reasons,
 assess reports, reminders and every state transition of one, the decision
 log, and the `citation` edge table.
 Lineage and `exclude_persons` are columns of the versioned rows, so they are

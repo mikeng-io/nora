@@ -95,7 +95,7 @@ from nora.domain.ports import (
 )
 from nora.domain.quote_window import QuoteWindow
 from nora.domain.reminders import ReminderCaps, ReminderStore
-from nora.domain.signals import WakePolicy
+from nora.domain.stimuli import WakePolicy
 from nora.domain.tool_call_log import ToolCallLogStore
 from nora.engagement.pipeline import EngagementPipeline
 from nora.engagement.self_presence import PresenceReader
@@ -127,9 +127,9 @@ from nora.infra.sql.reasoning_strip import SqlReasoningStripStore
 from nora.infra.sql.record_query import SqlRecordQuery
 from nora.infra.sql.reminders import SqlReminderStore
 from nora.infra.sql.revisions import SqlRevisionStore
-from nora.infra.sql.signals import SqlSignalStore
 from nora.infra.sql.source_health import SqlSourceHealthLog
 from nora.infra.sql.standing import SqlStandingStore
+from nora.infra.sql.stimuli import SqlStimulusStore
 from nora.infra.sql.tag_debounce import SqlTagDebounceStore
 from nora.infra.sql.tag_traces import SqlTagTraceStore
 from nora.infra.sql.tool_call_log import SqlToolCallLogStore
@@ -152,8 +152,8 @@ from nora.ingest.policy import (
 )
 from nora.ingest.relevance_gate import Completion as GateCompletion
 from nora.ingest.relevance_gate import RelevanceGate
-from nora.ingest.stages import signal as signal_stage
 from nora.ingest.stages import standing_event
+from nora.ingest.stages import stimulus as stimulus_stage
 from nora.ingest.stickers import StickerReader
 from nora.instructions.dreamer import DreamerInstructions
 from nora.instructions.frontmatter import InstructionError
@@ -2200,24 +2200,24 @@ async def build_dependencies(
                 else None
             ),
         )
-    # The cognition loop's signals (design/cognition-loop/20-observe.md §3,
+    # The cognition loop's stimuli (design/cognition-loop/20-observe.md §3,
     # migration step 1): OFF under `[cognition] mode = "off"`, the shipped
-    # default. On (`shadow`), the ingest pipeline appends one signal per
+    # default. On (`shadow`), the ingest pipeline appends one stimulus per
     # recorded person-authored item, and the evaluator below reads them and
     # records would-wakes, firing nothing.
-    signal_wiring: signal_stage.Wiring | None = None
+    stimulus_wiring: stimulus_stage.Wiring | None = None
     wake_evaluator: WakeEvaluator | None = None
     if cfg.cognition.mode != "off":
-        signal_store = SqlSignalStore(engine)
-        signal_wiring = signal_stage.Wiring(
-            store=signal_store,
+        stimulus_store = SqlStimulusStore(engine)
+        stimulus_wiring = stimulus_stage.Wiring(
+            store=stimulus_store,
             unit_of=_note_unit_of(allowlist),
             self_ids=registry.self_aliases(),
             reply_quiet_seconds=cfg.cognition.reply_quiet_seconds,
             timeout_seconds=cfg.cognition.store_timeout_seconds,
         )
         wake_evaluator = WakeEvaluator(
-            store=signal_store,
+            store=stimulus_store,
             units=unit_scopes,
             policy=WakePolicy(
                 quiet_seconds=cfg.cognition.quiet_seconds,
@@ -2245,7 +2245,7 @@ async def build_dependencies(
         comprehension=comprehension,
         language=cfg.speech.stt.language,
         standing_event_wiring=standing_event_wiring,
-        signal_wiring=signal_wiring,
+        stimulus_wiring=stimulus_wiring,
     )
     # `web_search`/`web_fetch` (DEC-73/DEC-116) are wired ONLY when `[search]
     # enabled` AND the SELECTED backend's key is present — the `route`-keyless

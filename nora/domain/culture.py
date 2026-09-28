@@ -256,7 +256,7 @@ class CultureRevision:
     instruction_sha256: str | None = None
     model: str | None = None
     # WHERE IT MAY BE SHOWN (design/cognition-loop/10-tiers.md §3, migration
-    # `0070_lineage`): the `(kind, subject, origin room)` set its citations
+    # `0071_lineage`): the `(kind, subject, origin room)` set its citations
     # reach, and the people it is never shown to. Written by the store from
     # the row's own citations, never by a model; read at render by
     # `nora.agent.lineage`. `compare=False`: equality stays about content, and

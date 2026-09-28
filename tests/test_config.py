@@ -9,6 +9,7 @@ from pydantic import ValidationError
 
 from nora.config import (
     AnalyticsConfig,
+    CognitionConfig,
     Config,
     ConfigError,
     DreamBudgetConfig,
@@ -1870,15 +1871,27 @@ def test_no_sidecars_loads_and_fails_closed(toml_path):
 
 
 def test_cognition_ships_off_with_20s_starting_values(toml_path):
-    """A new subsystem does not switch itself on; the numbers are 20 §3's."""
+    """A new subsystem does not switch itself on; the numbers are 20 §3's.
+
+    `quiet_seconds` (settled) is 1800 by operator decision (2026-09-29, was
+    600); the other starting values are unchanged.
+    """
     c = load(toml_path).cognition
     assert c.mode == "off"
     assert (c.quiet_seconds, c.cue_quiet_seconds, c.rollup_delay_seconds,
             c.batch_max, c.max_age_seconds, c.cooldown_seconds,
             c.max_concurrent_sessions, c.reply_quiet_seconds) == (
-        600, 120, 60, 80, 3600, 300, 2, 600,
+        1800, 120, 60, 80, 3600, 300, 2, 600,
     )
     assert c.time_floors == ["07:00", "00:00"] and c.timezone == "Asia/Hong_Kong"
+
+
+def test_cognition_config_bare_default_is_1800():
+    """The class default, unmediated by the example file: the two are
+    independent sources of truth for the same number, and a test reading
+    only through `load(toml_path)` never re-checks THIS one — it would stay
+    green if the field default alone regressed to 600."""
+    assert CognitionConfig().quiet_seconds == 1800.0
 
 
 def test_the_cognition_section_is_optional(toml_path):

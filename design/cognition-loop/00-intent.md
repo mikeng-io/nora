@@ -64,8 +64,8 @@ runtime is kept (`DreamerRuntime`, `DreamGuard`, grants, budgets,
 
 ```
 code jobs (no model)                         Dreamer runtime (kept): the subconscious
-  ingestion ──────────▶ RECORD ─┐              ┌─ Cognition adaptor   fast, per unit, on signals
-    messages, presence,         ├─ signals ───▶│    writes Register, Standing; acts only by remind()
+  ingestion ──────────▶ RECORD ─┐              ┌─ Cognition adaptor   fast, per unit, on stimuli
+    messages, presence,         ├─ stimuli ───▶│    writes Register, Standing; acts only by remind()
     social, play, perception    │              ├─ Character adaptor   slow, per (unit, entity)
   Rollup builder ──────▶ ROLLUP ┘              │    sole writer of Character
                                                ├─ Lessons adaptor     slow, per unit
@@ -73,7 +73,7 @@ the conscious: the turns that speak            │    sole writer of Lessons
   tag turn + debrief (the reflex)              └─ Assess adaptor      after each session, nightly
     writes Register, room Standing                  reports and metrics only, never a tier
   fire turn ◀── remind(): the one bridge from the subconscious
-  (Cognition also writes wake_at() into the signals: the subconscious scheduling itself)
+  (Cognition also writes wake_at() into the stimuli: the subconscious scheduling itself)
 ```
 
 The subconscious drives the conscious (through the pushed blocks and
@@ -82,7 +82,7 @@ state, never as a command ([55](55-self.md) §6).
 
 | adaptor | timescale | wakes on ([20](20-observe.md) §3) | writes | why its own |
 |---|---|---|---|---|
-| **Cognition** ([30](30-cognition.md)) | minutes, per unit | signals: settled, strong cue, Rollup signal, batch, max age, time, and its own self-wakes | Register and Standing (beside the tag path and its debrief); acts only through `remind` | orient, decide and act must share one context, or a conclusion is lost before the act |
+| **Cognition** ([30](30-cognition.md)) | minutes, per unit | stimuli: settled, strong cue, Rollup stimulus, batch, max age, time, and its own self-wakes | Register and Standing (beside the tag path and its debrief); acts only through `remind` | orient, decide and act must share one context, or a conclusion is lost before the act |
 | **Character** ([50](50-character-and-standing.md) §6) | days, per (unit, entity) | evidence for that entity past a threshold, or staleness | Character, alone | an account is induced from many instances; judging it per message would re-write it from noise |
 | **Lessons** ([50](50-character-and-standing.md) §6) | days, per unit | outcomes of her acts past a threshold, or staleness | Lessons, alone | a lesson is induced from the outcomes of many acts, which exist only after the acts |
 | **Assess** ([30](30-cognition.md) §6) | after each finished session, and nightly | a finished session; the nightly clock | reports and metrics only, never a tier | judging an act belongs outside it |
@@ -90,10 +90,10 @@ state, never as a command ([55](55-self.md) §6).
 - **Observe** ([20](20-observe.md)): every source is ingested into the
   RECORD by code — messages, presence, the social stream, play, and
   perception of media (what a picture shows, whose face is in it). The
-  Rollup builder computes the ROLLUP. Both raise wake signals into a durable
+  Rollup builder computes the ROLLUP. Both raise wake stimuli into a durable
   table. No model decides what is recorded.
 - **Cognition** ([30](30-cognition.md)): one Strands session per unit per
-  wake, with an **agenda** code computes from the signals (each item bound to
+  wake, with an **agenda** code computes from the stimuli (each item bound to
   one room), the read tools that room permits, typed **write verbs** into the
   REGISTER and STANDING tiers ([10](10-tiers.md)), and one **act verb**,
   `remind`: every act is a reminder row whose words the fire path composes
@@ -157,10 +157,16 @@ The objections the first draft raised, and where each is answered now:
 - **Nothing lost in the switch.** For a shadow week, every row the clocked
   adaptors wrote is also written, or deliberately closed as not needed, by a
   cognition session on the same messages.
-- **Latency.** Median time from a settling message to the row that records it
-  under ten minutes; today up to an hour, and never for events.
-  (`[dreamer] quiet_seconds` is 1800 today; cognition's wake keys are its
-  own, [20](20-observe.md) §3.)
+- **Latency.** For a change carrying a strong cue (a date or time, a keep
+  instruction, an RSVP, or a place link — [20](20-observe.md) §3's list):
+  median time from a settling message to the row that records it stays
+  under ten minutes via the 120 s cue-quiet wake. A cue-free change (a plan
+  moved by naming a venue, today, carries no cue — the dinner case above)
+  instead waits 1800 s of quiet at minimum, and up to `max_age_seconds`
+  (3600 s) in a room that keeps talking (operator 2026-09-29, was 600 s) —
+  no faster than today's clocked adaptors, and still never for events.
+  (`[dreamer] quiet_seconds` is also 1800 today, independently configured;
+  cognition's wake keys are its own, [20](20-observe.md) §3.)
 
 ## Status / Checkpoint
 
@@ -175,7 +181,7 @@ decisions of 2026-09-28, binding:
 - **D2** `told` means any person stated it in words, including members
   agreeing among themselves; `abduced` means concluded from evidence nobody
   stated; her own words are the sixth mode, `said`, Standing only.
-- **D3** Deviation is a signal, not a rule; the only act guards are the
+- **D3** Deviation is a stimulus, not a rule; the only act guards are the
   general ones; deviation is raised only on sources proven healthy.
 - **D4** Step 8 stays whole.
 - **D5** Memo bodies are exempt from `dream_screen`'s key-shape check and
@@ -192,9 +198,9 @@ decisions of 2026-09-28, binding:
   Cognition (fast, writes Register and Standing, acts only by `remind`),
   Character (slow, the culture adaptor generalised, sole writer of
   Character), Lessons (slow, sole writer of Lessons), Assess (reports only).
-- **D10** The wake policy of [20](20-observe.md) §3: code appends a signal
+- **D10** The wake policy of [20](20-observe.md) §3: code appends a stimulus
   per message and nothing else; a code evaluator wakes Cognition on the
-  first of settled, strong cue, Rollup signal, batch, max age, time or a
+  first of settled, strong cue, Rollup stimulus, batch, max age, time or a
   self-wake, behind a watermark and brakes; values sized from a shadow week.
 - **D11** Cognition may request, move and cancel its own next wakes
   (`wake_at`, `wake_move`, `wake_cancel`); code surfaces a pending self-wake
