@@ -266,7 +266,7 @@ async def test_two_peoples_places_with_the_same_label_stay_apart(persons):
             self.by_id = {p.id: p for p in self.homes.values()}
 
     routes = _Routes()
-    read, route = _turn(persons, routes, _Labelled())
+    read, _ = _turn(persons, routes, _Labelled())
     out = await read(TUESDAY, 19, 23)
     names = sorted(p["usually_at"] for p in out["people"])
     assert names[0] == "Home" and names[1] in ("Home (Grant)", "Home (Miles)")
