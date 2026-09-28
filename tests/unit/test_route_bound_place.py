@@ -63,9 +63,9 @@ def _turn(persons, routes, mobility, *, circles=None, members=(MILES, GRANT)):
 async def test_a_place_the_routine_named_is_routable_by_that_name(persons):
     routes = _Routes()
     read, route = _turn(persons, routes, _Mobility())
-    shares = (await read(TUESDAY, 19, 23, name="Chi"))["people"][0]["evidence"]["shares"]
-    assert "a home of theirs" in {x["place"] for x in shares}
-    assert all(set(x) == {"place", "kind", "percent"} for x in shares)  # no handle
+    person = (await read(TUESDAY, 19, 23, name="Chi"))["people"][0]
+    assert person["usually_at"] == "a home of theirs"
+    assert "ref" not in str(person) and "place:" not in str(person)  # no handle
     out = await route(origin="a home of theirs", destination="Olympian City")
     assert out["status"] == "ok"
     [call] = routes.calls
