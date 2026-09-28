@@ -5448,6 +5448,111 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             .isoformat(timespec="seconds")
         )
 
+    async def _presence_audience(
+        circle: Any, asked: str | None, *, tool: str, anyone: str,
+        people_phrase: str,
+    ) -> tuple[tuple[Any, ...], dict | None]:
+        """Who a DERIVED-presence answer may be about, or why not: `(refs,
+        None)` when the guard passes, `((), refusal)` otherwise. ONE copy for
+        `where_been` and `routine_read` (design/27 §4.3) so the two cannot
+        drift; `anyone` and `people_phrase` only word the notes.
+
+        THE SAME three-way fail-closed `Whereis.locate` runs
+        (nora/agent/whereis.py), composed directly against `DisclosureGuard`
+        so the failure matrix cannot drift from `where_is`'s: available →
+        check; degraded → `unavailable` (an ERROR, never a policy answer);
+        unnamed or room ⊄ circle → `refused` — unless the room is
+        location-trusted (DEC-79), which waives exactly what it waives there
+        and is COUNTED when it does."""
+        view = await room.scope()
+        if not view.available:
+            return (), {
+                "status": "unavailable",
+                "note": "I can't work out who is in this group right now, so "
+                        f"I can't say {anyone}. Say so rather than guessing.",
+            }
+        room_person_ids = frozenset(p.person_id for p in view.people)
+        subset_ok = (
+            location_trusted or DisclosureGuard(circle).permits(room_person_ids)
+        )
+        unnamed_blocks = view.unnamed > 0 and not location_trusted
+        if view.degraded:
+            if metrics is not None:
+                metrics.inc(
+                    "nora_presence_disclosure_refusals_total", reason="degraded",
+                )
+            log.warning(
+                "%s could not verify the room (degraded): circle=%s "
+                "location_trusted=%s", tool, circle.circle_id, location_trusted,
+            )
+            return (), {
+                "status": "unavailable",
+                "note": "I can't confirm who is in this group right now, so I "
+                        f"can't say {anyone}. Say you couldn't check, without "
+                        "guessing or blaming anyone's sharing settings.",
+            }
+        if unnamed_blocks or not subset_ok:
+            # WHICH condition fired, so a refusal is diagnosable from the
+            # metric instead of inferred — the same labels `locate` uses.
+            reason = "unnamed" if unnamed_blocks else "not_subset"
+            if metrics is not None:
+                metrics.inc(
+                    "nora_presence_disclosure_refusals_total", reason=reason,
+                )
+            log.warning(
+                "%s refused (%s): circle=%s unnamed=%d subset_ok=%s "
+                "location_trusted=%s",
+                tool, reason, circle.circle_id, view.unnamed, subset_ok,
+                location_trusted,
+            )
+            return (), {
+                "status": "refused",
+                "note": f"I can't share {people_phrase} in this conversation: "
+                        "someone here is outside the location-sharing circle, "
+                        "or I can't confirm who is here. Say so in one clause "
+                        "and do not hint at the pattern.",
+            }
+        # A WAIVED guard is counted, not silent — the same DEC-79 rule
+        # `Whereis.locate` runs one branch below its own guard.
+        if view.unnamed > 0 and location_trusted:
+            if metrics is not None:
+                metrics.inc(
+                    "nora_presence_disclosure_waived_total", reason="unnamed",
+                )
+            log.warning(
+                "%s disclosed into a location-trusted room holding %d "
+                "unmapped account(s) (DEC-79 waiver): circle=%s",
+                tool, view.unnamed, circle.circle_id,
+            )
+        # R-47: who may be ASKED ABOUT resolves against the CIRCLE unioned
+        # with the room — the audience gate has already been cleared above.
+        # No name (or 「大家」) means the room's own people: the group asking
+        # about the group.
+        if not asked or asked.casefold() in _been_everyone:
+            refs = _dedupe(view.people)
+            if not refs:
+                return (), {
+                    "status": "nothing_found",
+                    "note": "I can't see who is in this conversation, so there "
+                            "is no derived pattern to report. Say so, and do "
+                            "not guess.",
+                }
+            return tuple(refs), None
+        matches = _dedupe(find_by_name(circle.people, asked) + view.find(asked))
+        if not matches:
+            return (), {
+                "status": "not_found",
+                "note": "Nobody in this conversation goes by that. Say "
+                        "you're not sure who they mean, and do not guess.",
+            }
+        if len(matches) > 1:
+            return (), {
+                "status": "ambiguous",
+                "could_be": [p.name for p in matches],
+                "note": "More than one person here goes by that. Ask which one.",
+            }
+        return (matches[0],), None
+
     async def where_been(
         what: Literal["day", "places", "rhythm", "routes"],
         name: str | None = None, days: int = 7, date: str | None = None,
@@ -5705,105 +5810,16 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             )
 
         async def _been_through(circle) -> dict:
-            """THE SAME three-way fail-closed `Whereis.locate` runs
-            (nora/agent/whereis.py), composed directly against
-            `DisclosureGuard` so the failure matrix cannot drift from
-            `where_is`'s: available → check; degraded → `unavailable` (an
-            ERROR, never a policy answer); unnamed or room ⊄ circle →
-            `refused` — unless the room is location-trusted (DEC-79), which
-            waives exactly what it waives there and is COUNTED when it does."""
-            view = await room.scope()
-            if not view.available:
-                return {
-                    "status": "unavailable",
-                    "note": "I can't work out who is in this group right now, so "
-                            "I can't say where anyone has been. Say so rather "
-                            "than guessing.",
-                }
-            room_person_ids = frozenset(p.person_id for p in view.people)
-            subset_ok = (
-                location_trusted or DisclosureGuard(circle).permits(room_person_ids)
-            )
-            unnamed_blocks = view.unnamed > 0 and not location_trusted
-            if view.degraded:
-                if metrics is not None:
-                    metrics.inc(
-                        "nora_presence_disclosure_refusals_total", reason="degraded",
-                    )
-                log.warning(
-                    "where_been could not verify the room (degraded): circle=%s "
-                    "location_trusted=%s", circle.circle_id, location_trusted,
-                )
-                return {
-                    "status": "unavailable",
-                    "note": "I can't confirm who is in this group right now, so I "
-                            "can't say where anyone has been. Say you couldn't "
-                            "check, without guessing or blaming anyone's sharing "
-                            "settings.",
-                }
-            if unnamed_blocks or not subset_ok:
-                # WHICH condition fired, so a refusal is diagnosable from the
-                # metric instead of inferred — the same labels `locate` uses.
-                reason = "unnamed" if unnamed_blocks else "not_subset"
-                if metrics is not None:
-                    metrics.inc(
-                        "nora_presence_disclosure_refusals_total", reason=reason,
-                    )
-                log.warning(
-                    "where_been refused (%s): circle=%s unnamed=%d subset_ok=%s "
-                    "location_trusted=%s",
-                    reason, circle.circle_id, view.unnamed, subset_ok,
-                    location_trusted,
-                )
-                return {
-                    "status": "refused",
-                    "note": "I can't share where people have been in this "
-                            "conversation: someone here is outside the "
-                            "location-sharing circle, or I can't confirm who is "
-                            "here. Say so in one clause and do not hint at the "
-                            "pattern.",
-                }
-            # A WAIVED guard is counted, not silent — the same DEC-79 rule
-            # `Whereis.locate` runs one branch below its own guard.
-            if view.unnamed > 0 and location_trusted:
-                if metrics is not None:
-                    metrics.inc(
-                        "nora_presence_disclosure_waived_total", reason="unnamed",
-                    )
-                log.warning(
-                    "where_been disclosed into a location-trusted room holding %d "
-                    "unmapped account(s) (DEC-79 waiver): circle=%s",
-                    view.unnamed, circle.circle_id,
-                )
-            # R-47: who may be ASKED ABOUT resolves against the CIRCLE unioned
-            # with the room — the audience gate has already been cleared above.
-            # No name (or 「大家」) means the room's own people: the group asking
-            # about the group.
+            """`where_been`'s read for one circle, behind `_presence_audience`
+            (the guard it shares with `routine_read`, design/27 §4.3)."""
             asked = None if name is None else str(name).strip()
-            if not asked or asked.casefold() in _been_everyone:
-                refs = _dedupe(view.people)
-                if not refs:
-                    return {
-                        "status": "nothing_found",
-                        "note": "I can't see who is in this conversation, so there "
-                                "is no derived pattern to report. Say so, and do "
-                                "not guess.",
-                    }
-            else:
-                matches = _dedupe(find_by_name(circle.people, asked) + view.find(asked))
-                if not matches:
-                    return {
-                        "status": "not_found",
-                        "note": "Nobody in this conversation goes by that. Say "
-                                "you're not sure who they mean, and do not guess.",
-                    }
-                if len(matches) > 1:
-                    return {
-                        "status": "ambiguous",
-                        "could_be": [p.name for p in matches],
-                        "note": "More than one person here goes by that. Ask which one.",
-                    }
-                refs = (matches[0],)
+            refs, refusal = await _presence_audience(
+                circle, asked, tool="where_been",
+                anyone="where anyone has been",
+                people_phrase="where people have been",
+            )
+            if refusal is not None:
+                return refusal
             # The reads — AFTER the guard passes, and only through the store.
             # The record's EDGE (`STALE_AFTER_MS`, 2026-09-24): the derived facts
             # stop where the raw fixes stop. Without it, a collector that lost
