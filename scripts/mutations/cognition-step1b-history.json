@@ -65,8 +65,8 @@
   {
     "name": "a failed deploy write at start is not retried",
     "file": "nora/app/revisions.py",
-    "old": "                self._deploy_pending = False\n",
-    "new": "                pass\n",
+    "old": "retried next tick\n                self._failed(\"deploy\")",
+    "new": "retried next tick\n                self._deploy_pending = False\n                self._failed(\"deploy\")",
     "target": "tests/infra/test_revision_recorder.py::test_each_load_is_recorded_and_in_force_answers_by_time"
   },
   {
@@ -89,5 +89,12 @@
     "old": "        except (OSError, UnicodeDecodeError):\n            # The scan succeeded",
     "new": "        except (OSError, UnicodeDecodeError) as exc:\n            self._on_failure(exc)\n            return\n            # The scan succeeded",
     "target": "tests/unit/test_instructions_reload.py::test_a_file_vanishing_beside_a_good_scan_is_not_a_failure"
+  },
+  {
+    "name": "a recorded deploy is written again on every tick",
+    "file": "nora/app/revisions.py",
+    "old": "                self._deploy_pending = False\n",
+    "new": "                pass\n",
+    "target": "tests/infra/test_revision_recorder.py::test_each_load_is_recorded_and_in_force_answers_by_time"
   }
 ]

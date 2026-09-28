@@ -86,9 +86,11 @@ async def test_each_load_is_recorded_and_in_force_answers_by_time(
         counts = dict((await conn.execute(sa.text(
             "SELECT corpus, count(*) FROM doctrine_revision GROUP BY corpus"
         ))).all())
+        deploys = (await conn.execute(sa.text("SELECT count(*) FROM deploy_revision"))).scalar_one()
         then = await in_force(conn, first)
         now = await in_force(conn, second)
     assert counts == {"doctrine": 1, "dreamer": 2}
+    assert deploys == 1  # written once on the retry, and not again on later ticks
     assert then.doctrine is not None and then.dreamer is not None
     assert then.doctrine.assembled_sha256 == doctrine.get(applies_to="tag").sha256
     assert now.dreamer is not None and now.dreamer.content_sha256 != then.dreamer.content_sha256
