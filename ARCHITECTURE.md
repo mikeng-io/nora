@@ -369,9 +369,10 @@ literally said, is authoritative, and is the only thing R-2/A9 guarantee.
 workspace (`policy.toml` `[units]`) groups units; each workspace is bound to
 ONE Honcho workspace (`identity.toml` `[workspaces]`, or `memory.workspace_id`
 when there is no `[units]`), so a person is one Honcho peer across a
-workspace's units and a separate one in every other workspace; and each unit
-is a Honcho named scope, so every memory read for a room or unit sees only
-that unit's rooms. `nora.app.memory_routing` resolves it once at startup and
+workspace's units and a separate one in every other workspace; and, once
+`[units]` is declared, each unit is a Honcho named scope, so every memory read
+for a room or unit sees only that unit's rooms (without `[units]` reads stay
+unscoped, as before). `nora.app.memory_routing` resolves it once at startup and
 `HonchoClient` routes every call through it; a room the policy places in no
 workspace is refused, never widened.
 

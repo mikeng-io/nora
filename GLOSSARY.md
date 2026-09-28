@@ -163,8 +163,8 @@ The most-used words in this repo, and none of them was here until 2026-09-08.
   MOST ONE room per platform — refused at startup since DEC-214.
 
   The hierarchy is **workspace > unit > room** (DEC-214): every unit belongs
-  to one **workspace**, and inside that workspace's **Honcho workspace** each
-  unit is a Honcho *named scope* — its rooms' sessions are the scope's
+  to one **workspace**, and — once `policy.toml` declares `[units]` — inside
+  that workspace's **Honcho workspace** each unit is a Honcho *named scope* — its rooms' sessions are the scope's
   members, and every memory read made for the unit passes the scope, so what
   Nora recalls for a unit comes from that unit's rooms. The note discharge
   that once addressed a Honcho workspace named after a unit (2026-09-19) is

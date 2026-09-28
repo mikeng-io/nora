@@ -13,6 +13,7 @@ import logging
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any, cast
 
 import aiohttp
@@ -113,6 +114,12 @@ def _safe_conversation_key(conversation_id: str) -> str:
     if candidate and _SESSION_ID_OK.match(candidate):
         return candidate
     return hashlib.sha256(conversation_id.encode()).hexdigest()
+
+
+def conversation_session_id(conversation_id: str) -> str:
+    """The Honcho session id a conversation's messages are fed into — the
+    same in every Honcho workspace, derived with no state (`ensure_session`)."""
+    return f"nora-conv-{_safe_conversation_key(conversation_id)}"
 
 
 def _conclusions(representation: Any) -> tuple[str, ...]:
@@ -332,10 +339,19 @@ class WorkspaceRouter:
         return self._conversation_units.get(conversation_id)
 
     def for_unit(self, unit: str) -> HonchoRoute | None:
+        """The unit's Honcho workspace and — only once `policy.toml` declares
+        `[units]` — its named scope. Without `[units]` every route is UNSCOPED,
+        exactly as before DEC-214: scoping a deployment's reads the moment the
+        image changes, with no config change, would read empty scopes (nothing
+        has joined them yet) and silently empty every recall."""
         workspace = self._unit_workspaces.get(unit)
         if workspace is None:
             return None if self._strict else HonchoRoute(self._default)
-        return HonchoRoute(workspace, unit_scope(unit))
+        return HonchoRoute(workspace, unit_scope(unit) if self._strict else None)
+
+    def conversations(self) -> tuple[tuple[str, str], ...]:
+        """Every (conversation id, unit) this router was built with."""
+        return tuple(sorted(self._conversation_units.items()))
 
     def for_conversation(self, conversation_id: str) -> HonchoRoute | None:
         unit = self._conversation_units.get(conversation_id)
@@ -483,7 +499,9 @@ class HonchoClient:
             if route is None:
                 log.warning("honcho call names workspace %r, which is not bound", workspace)
                 return None
-            return route if await self._owned(route.workspace, claim=claim) else None
+            # A whole-workspace read is a PAGE VIEW (the portal) or an
+            # operator's read: it never creates or marks a workspace.
+            return route if await self._owned(route.workspace, claim=False) else None
         if unit is not None:
             route = self._router.for_unit(unit)
             if conversation_id is not None and route != self._router.for_conversation(
@@ -522,24 +540,25 @@ class HonchoClient:
         a session-name heuristic would have to know every name another
         application might choose, and the live `nora` workspace already
         holds probe sessions no rule of ours would call Nora-shaped."""
-        found: dict[str, Any] | None = None
-        page = 1
-        while found is None:
-            body = await self._post(
-                f"{self._base}/v3/workspaces/list?page={page}&size=100", {},
-                self._card_timeout,
+        # `filters={"id": ...}`: the workspace list's filter maps `id` to the
+        # workspace's name (`src/utils/filter.py`, applied by
+        # `crud.get_all_workspaces`), so this is one row, not every tenant.
+        body = await self._post(
+            f"{self._base}/v3/workspaces/list?page=1&size=10",
+            {"filters": {"id": workspace}}, self._card_timeout,
+        )
+        items = (body or {}).get("items")
+        if not isinstance(items, list):
+            log.warning(
+                "could not tell who Honcho workspace %r belongs to: the workspace "
+                "list was unreadable", workspace,
             )
-            items = (body or {}).get("items")
-            if not isinstance(items, list):
-                return None
-            for item in items:
-                if isinstance(item, dict) and item.get("id") == workspace:
-                    found = item
-                    break
-            pages = (body or {}).get("pages")
-            if found is None and (not isinstance(pages, int) or page >= pages):
-                return "absent"
-            page += 1
+            return None
+        found = next(
+            (i for i in items if isinstance(i, dict) and i.get("id") == workspace), None,
+        )
+        if found is None:
+            return "absent"
         metadata = found.get("metadata")
         owner = metadata.get(OWNER_KEY) if isinstance(metadata, dict) else None
         if owner == self._ai_peer:
@@ -550,6 +569,10 @@ class HonchoClient:
         )
         total = (sessions or {}).get("total")
         if not isinstance(total, int):
+            log.warning(
+                "could not tell who Honcho workspace %r belongs to: its session "
+                "list was unreadable", workspace,
+            )
             return None
         if owner is None and total == 0:
             return "empty"
@@ -601,14 +624,29 @@ class HonchoClient:
         self._ownership[workspace] = True
         return True
 
+    def _marked(self, workspace: dict[str, Any] | None) -> bool:
+        metadata = (workspace or {}).get("metadata")
+        return isinstance(metadata, dict) and metadata.get(OWNER_KEY) == self._ai_peer
+
     async def _claim(self, workspace: str, *, exists: bool) -> bool:
+        """Create or mark the workspace, and believe it only from Honcho's own
+        answer: get-or-create on a workspace somebody else created a moment
+        ago returns THEIRS, unmarked and with our metadata ignored, and that
+        must not be cached as ours."""
         marker = {OWNER_KEY: self._ai_peer}
         if not exists:
             result = await self._post(
                 f"{self._base}/v3/workspaces", {"id": workspace, "metadata": marker},
                 self._card_timeout,
             )
-            return result is not None
+            if not self._marked(result):
+                log.warning(
+                    "Honcho workspace %r was not created with Nora's marker (it may "
+                    "have been created by someone else meanwhile); not claimed",
+                    workspace,
+                )
+                return False
+            return True
         # It exists and is empty: mark it, keeping whatever metadata it had.
         body = await self._post(
             f"{self._base}/v3/workspaces", {"id": workspace}, self._card_timeout,
@@ -626,8 +664,12 @@ class HonchoClient:
                 if r.status >= 400:
                     log.warning("honcho PUT %s -> %s", url, r.status)
                     return False
+                answer = await r.json()
         except Exception as e:  # noqa: BLE001 — Honcho is never load-bearing
             log.warning("honcho PUT %s failed: %s", url, e)
+            return False
+        if not self._marked(answer if isinstance(answer, dict) else None):
+            log.warning("Honcho workspace %r did not keep Nora's marker; not claimed", workspace)
             return False
         return True
 
@@ -701,6 +743,25 @@ class HonchoClient:
         for _unit, route in self._router.scoped_units():
             if route.workspace in self._workspaces_ready:
                 await self._ensure_scope(route)
+        # Every room the policy knows, into its unit's scope — at STARTUP, not
+        # on its next message. A room that is quiet after the cutover would
+        # otherwise never join, and its unit's scope would be empty of it (and
+        # of the explicit conclusions Honcho's backfill copies on joining)
+        # for as long as nobody spoke there. Session ids are deterministic, so
+        # this needs no state; a room with no session yet in this workspace is
+        # skipped (a 404), and `_join_scope` is idempotent on both sides.
+        if self._router.strict:
+            for cid, _unit in self._router.conversations():
+                room = self._router.for_conversation(cid)
+                if (
+                    room is not None and room.scope is not None
+                    and room.workspace in self._workspaces_ready
+                    and (room.workspace, room.scope) in self._known_scopes
+                ):
+                    await self._join_scope(
+                        room, f"nora-conv-{_safe_conversation_key(cid)}",
+                        missing_ok=True,
+                    )
 
     async def _ensure_peer_in(self, workspace: str, peer_id: str) -> None:
         # Check-then-act without this lock creates two peers for one id when
@@ -745,7 +806,9 @@ class HonchoClient:
         self._known_scopes.add(key)
         return True
 
-    async def _join_scope(self, route: HonchoRoute, session_id: str) -> None:
+    async def _join_scope(
+        self, route: HonchoRoute, session_id: str, *, missing_ok: bool = False,
+    ) -> None:
         """Put an EXISTING session in the unit's scope, once per process.
 
         `POST /scopes/{scope}/sessions` — idempotent: re-adding a member is a
@@ -772,6 +835,8 @@ class HonchoClient:
                 ) as session,
                 session.post(url, json={"session_ids": [session_id]}) as r,
             ):
+                if r.status == 404 and missing_ok:
+                    return          # no such session in this workspace yet
                 if r.status >= 400:
                     log.warning("honcho POST %s -> %s", url, r.status)
                     return
@@ -883,11 +948,19 @@ class HonchoClient:
         text: str,
         conversation_id: str,
         metadata: dict[str, object] | None = None,
+        created_at_ms: int | None = None,
     ) -> bool:
         """Feed one message under its speaker's `peer_id` into the conversation's
         session (design/24 §3). Best-effort: False on any failure, the caller
         counts it and moves on. `metadata` rides on the message for the deriver
-        (never the text itself)."""
+        (never the text itself).
+
+        `created_at_ms` is for a REPLAY only (`nora memory backfill`): the
+        message's own epoch-ms time, sent as `MessageCreate.created_at` (honcho
+        v3.1.2), so a replayed message is dated when it was said rather than
+        when it was replayed — the deriver stamps its conclusions with it.
+        Live ingestion never passes it (not on the `MemoryStore` port): a live
+        message is said now."""
         session_id = await self.ensure_session(conversation_id)
         if session_id is None:
             return False
@@ -906,6 +979,10 @@ class HonchoClient:
         message: dict[str, object] = {"content": text, "peer_id": peer_id}
         if metadata:
             message["metadata"] = metadata
+        if created_at_ms is not None:
+            message["created_at"] = datetime.fromtimestamp(
+                created_at_ms / 1000, UTC,
+            ).isoformat()
         result = await self._post(
             self._url(f"/sessions/{session_id}/messages", workspace=ws),
             {"messages": [message]},
@@ -1368,8 +1445,9 @@ class HonchoClient:
         self, *, workspace: str, observer: str, page_size: int = 100,
     ) -> list[dict[str, Any]] | None:
         """Every conclusion `observer` holds in a NORA workspace's Honcho
-        workspace, as `{"observed_id", "content", "session_id", "level"}`
-        dicts — or `None` when that could not be read. Read-only.
+        workspace, as `{"id", "observed_id", "content", "session_id", "level",
+        "created_at"}` dicts — or `None` when that could not be read.
+        Read-only.
 
         NOT on the `MemoryStore` port: its one caller is the operator's
         `nora memory carry-conclusions`. `POST /conclusions/list`, paged,
@@ -1394,10 +1472,12 @@ class HonchoClient:
                 return None
             out.extend(
                 {
+                    "id": item.get("id"),
                     "observed_id": item.get("observed_id"),
                     "content": item.get("content"),
                     "session_id": item.get("session_id"),
                     "level": item.get("level", "explicit"),
+                    "created_at": item.get("created_at"),
                 }
                 for item in items if isinstance(item, dict)
             )
@@ -1406,31 +1486,198 @@ class HonchoClient:
                 return out
             page += 1
 
-    async def carry_to_scope(
-        self, *, unit: str, rows: list[tuple[str, str]],
+    async def list_scopes(self, *, workspace: str) -> list[str] | None:
+        """Every named scope in a NORA workspace's Honcho workspace
+        (`POST /scopes/list`, paged), or `None` when unreadable. Read-only."""
+        route = await self._route(workspace=workspace)
+        if route is None:
+            return None
+        out: list[str] = []
+        page = 1
+        while True:
+            body = await self._post(
+                self._url(f"/scopes/list?page={page}&size=100", workspace=route.workspace),
+                {}, self._card_timeout,
+            )
+            items = (body or {}).get("items")
+            if not isinstance(items, list):
+                return None
+            out.extend(str(i["id"]) for i in items if isinstance(i, dict) and "id" in i)
+            pages = (body or {}).get("pages")
+            if not isinstance(pages, int) or page >= pages or not items:
+                return out
+            page += 1
+
+    async def carry_to_scopes(
+        self, *, units: list[str], rows: list[tuple[str, str]],
     ) -> bool:
-        """Write `(observed, content)` rows as the UNIT'S scope conclusions —
-        observer `scope.<unit>`, no session — the rows a named-scope read of
-        that unit serves (see `conclude`). Batches of 100, Honcho's cap; False
-        at the first batch that does not land. Operator-only
+        """Write each `(observed, content)` row as a conclusion of EVERY
+        unit's scope — observer `scope.<unit>`, no session — the rows a
+        named-scope read of those units serves (see `conclude`).
+
+        A row is never split across two requests: each request carries whole
+        rows (all their units), at most 100 conclusions, Honcho's cap, and one
+        request is one transaction on Honcho's side
+        (`crud.create_observations` commits once). So a failure leaves every
+        row in all the scopes or in none. False at the first request that does
+        not land. The units must share one Honcho workspace. Operator-only
         (`nora memory carry-conclusions`)."""
-        route = await self._route(unit=unit)
-        if route is None or route.scope is None:
+        routes = [await self._route(unit=unit) for unit in units]
+        if any(r is None or r.scope is None for r in routes) or not routes:
             return False
-        if not await self._ensure_scope(route):
+        workspaces = {r.workspace for r in routes if r is not None}
+        if len(workspaces) != 1:
             return False
-        observer = f"{SCOPE_PEER_PREFIX}{route.scope}"
-        for start in range(0, len(rows), 100):
+        workspace = workspaces.pop()
+        observers: list[str] = []
+        for route in routes:
+            if route is None or not await self._ensure_scope(route):
+                return False
+            observers.append(f"{SCOPE_PEER_PREFIX}{route.scope}")
+        per_request = max(1, 100 // len(observers))
+        for start in range(0, len(rows), per_request):
             batch = [
                 {"content": content, "observer_id": observer, "observed_id": observed}
-                for observed, content in rows[start:start + 100]
+                for observed, content in rows[start:start + per_request]
+                for observer in observers
             ]
             result = await self._post(
-                self._url("/conclusions", workspace=route.workspace),
+                self._url("/conclusions", workspace=workspace),
                 {"conclusions": batch}, self._feed_timeout,
             )
             if result is None:
                 return False
+        return True
+
+    # ── operator-only, EXPLICIT Honcho workspace (`nora memory detach-unit`) ──
+    #
+    # These name a Honcho workspace outright instead of routing, because
+    # their subject is the workspace a unit LEFT, which no route reaches any
+    # more. Each refuses a workspace that is not Nora's (the default, or one
+    # carrying her marker) before touching it.
+
+    async def _nora_s(self, workspace: str) -> bool:
+        return workspace == self._router.default or (
+            await self.inspect_workspace(workspace) == "owned"
+        )
+
+    async def session_holds_messages_in(
+        self, *, workspace: str, conversation_id: str,
+    ) -> bool | None:
+        """Whether the conversation's session in THIS Honcho workspace holds
+        at least one message; `None` when that could not be read or the
+        workspace is someone else's. Read-only: an absent workspace holds
+        nothing, and is not created."""
+        if not await self._owned(workspace, claim=False):
+            return None
+        sid = f"nora-conv-{_safe_conversation_key(conversation_id)}"
+        url = self._url(f"/sessions/{sid}/messages/list?page=1&size=1", workspace=workspace)
+        try:
+            async with (
+                aiohttp.ClientSession(
+                    timeout=aiohttp.ClientTimeout(total=self._representation_timeout)
+                ) as session,
+                session.post(url, json={}) as r,
+            ):
+                if r.status == 404:
+                    return False
+                if r.status >= 400:
+                    log.warning("honcho POST %s -> %s", url, r.status)
+                    return None
+                body = await r.json()
+        except Exception as e:  # noqa: BLE001 — Honcho is never load-bearing
+            log.warning("honcho message list failed: %s", e)
+            return None
+        total = body.get("total") if isinstance(body, dict) else None
+        return total > 0 if isinstance(total, int) else None
+
+    async def session_peer_ids_in(
+        self, *, workspace: str, session_id: str,
+    ) -> list[str] | None:
+        """The peers of one session in THIS Honcho workspace (scope peers
+        left out); `[]` for a session that does not exist, `None` unreadable
+        or someone else's. Read-only."""
+        if not await self._owned(workspace, claim=False):
+            return None
+        url = self._url(f"/sessions/{session_id}/peers?page=1&size=100", workspace=workspace)
+        try:
+            async with (
+                aiohttp.ClientSession(
+                    timeout=aiohttp.ClientTimeout(total=self._card_timeout)
+                ) as session,
+                session.get(url) as r,
+            ):
+                if r.status == 404:
+                    return []
+                if r.status >= 400:
+                    log.warning("honcho GET %s -> %s", url, r.status)
+                    return None
+                body = await r.json()
+        except Exception as e:  # noqa: BLE001 — Honcho is never load-bearing
+            log.warning("honcho session peers failed: %s", e)
+            return None
+        items = body.get("items") if isinstance(body, dict) else None
+        if not isinstance(items, list):
+            return None
+        return sorted({
+            str(i["id"]) for i in items
+            if isinstance(i, dict) and isinstance(i.get("id"), str)
+            and not i["id"].startswith(SCOPE_PEER_PREFIX)
+        })
+
+    async def delete_session_in(self, *, workspace: str, session_id: str) -> bool:
+        """`DELETE /sessions/{id}` in THIS Honcho workspace: 202, the session
+        inactive at once and its messages AND every document stored under it
+        deleted by Honcho's queue (`src/crud/session.py::delete_session`,
+        honcho v3.1.2 — documents are selected by `session_name`). A session
+        already gone (404) is success. What it does NOT reach: conclusions
+        with no session that a dream reasoned from those messages."""
+        if not await self._nora_s(workspace):
+            return False
+        url = self._url(f"/sessions/{session_id}", workspace=workspace)
+        try:
+            async with (
+                aiohttp.ClientSession(
+                    timeout=aiohttp.ClientTimeout(total=self._card_timeout)
+                ) as session,
+                session.delete(url) as r,
+            ):
+                if r.status == 404:
+                    return True
+                if r.status >= 400:
+                    log.warning("honcho DELETE %s -> %s", url, r.status)
+                    return False
+        except Exception as e:  # noqa: BLE001 — Honcho is never load-bearing
+            log.warning("honcho DELETE %s failed: %s", url, e)
+            return False
+        return True
+
+    async def refresh_card_in(self, *, workspace: str, observer: str, observed: str) -> bool:
+        """Schedule a `card_refresh` dream with `rebuild=True` for one
+        (observer, observed) pair in THIS Honcho workspace — the card rebuilt
+        only from the observations still in the collection, the form Honcho
+        documents for use after removals (`ScheduleDreamRequest.rebuild`,
+        `POST /workspaces/{id}/schedule_dream`, 204)."""
+        if not await self._nora_s(workspace):
+            return False
+        url = self._url("/schedule_dream", workspace=workspace)
+        body = {
+            "observer": observer, "observed": observed,
+            "dream_type": "card_refresh", "rebuild": True,
+        }
+        try:
+            async with (
+                aiohttp.ClientSession(
+                    timeout=aiohttp.ClientTimeout(total=self._card_timeout)
+                ) as session,
+                session.post(url, json=body) as r,
+            ):
+                if r.status >= 400:
+                    log.warning("honcho POST %s -> %s", url, r.status)
+                    return False
+        except Exception as e:  # noqa: BLE001 — Honcho is never load-bearing
+            log.warning("honcho POST %s failed: %s", url, e)
+            return False
         return True
 
     async def health(self) -> MemoryHealth:

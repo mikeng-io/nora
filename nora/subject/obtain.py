@@ -505,30 +505,44 @@ def _pin_memory_to_the_eval_workspace(workdir: Path, workspace: str, deployment:
     live workspaces. Composed as written, a subject would feed eval speech
     into `nora` itself with nothing raising.
 
-    So the copies in `workdir` are rewritten to the one form that has a
-    single Honcho workspace: `[units]` dropped from the policy and
-    `[workspaces]` from the identity, which puts every unit in the implicit
-    workspace, bound to `memory.workspace_id` (already the eval namespace's).
-    Every room and unit survives, and so does each unit's named scope — the
-    divergence from production is that two Nora workspaces' people share
-    this ONE throwaway workspace's peers. Then the router production itself
-    builds from these files is asked where it can reach, and anything
-    outside the eval namespace refuses the subject. That check is the
-    guarantee; the rewrite is only what makes it pass.
+    So the copies in `workdir` are rewritten to ONE workspace. A policy that
+    declares `[units]` keeps it — the subject stays strict and scoped, the
+    way production reads — but every unit is put in one workspace, `eval`,
+    and `identity.toml`'s `[workspaces]` becomes that one binding, to
+    `memory.workspace_id` (already the eval namespace's). A policy without
+    `[units]` loses any `[workspaces]` table and stays implicit. Every room,
+    unit and scope survives; the divergence from production is that two Nora
+    workspaces' people share this ONE throwaway workspace's peers. Then the
+    router production itself builds from these files is asked where it can
+    reach, and anything outside the eval namespace refuses the subject. That
+    check is the guarantee; the rewrite is only what makes it pass.
     """
-    for name, table in (("policy.toml", "units"), ("identity.toml", "workspaces")):
-        path = workdir / name
-        doc = tomlkit.parse(path.read_text(encoding="utf-8"))
-        if table in doc:
-            del doc[table]
-            path.write_text(tomlkit.dumps(doc), encoding="utf-8")
+    policy_path, identity_path = workdir / "policy.toml", workdir / "identity.toml"
+    policy_doc = tomlkit.parse(policy_path.read_text(encoding="utf-8"))
+    identity_doc = tomlkit.parse(identity_path.read_text(encoding="utf-8"))
+    strict = "units" in policy_doc
+    if strict:
+        for unit in policy_doc["units"].values():  # type: ignore[union-attr]
+            unit["workspace"] = _EVAL_WORKSPACE
+        policy_path.write_text(tomlkit.dumps(policy_doc), encoding="utf-8")
+    if "workspaces" in identity_doc:
+        del identity_doc["workspaces"]
+    if strict:
+        binding = tomlkit.table()
+        binding.add(_EVAL_WORKSPACE, {"honcho_workspace": workspace})
+        identity_doc["workspaces"] = binding
+    identity_path.write_text(tomlkit.dumps(identity_doc), encoding="utf-8")
     router = build_workspace_router(
-        policy=load_policy(workdir / "policy.toml"),
-        bindings=load_persons(workdir / "identity.toml").honcho_workspaces,
+        policy=load_policy(policy_path),
+        bindings=load_persons(identity_path).honcho_workspaces,
         default_workspace=workspace,
     )
     for reachable in router.workspaces():
         _refuse_a_workspace_outside_the_eval_namespace(reachable, deployment)
+
+
+#: The one Nora workspace an eval subject's units are put in.
+_EVAL_WORKSPACE = "eval"
 
 
 def _conversation_for(spec: SubjectSpec) -> Conversation:

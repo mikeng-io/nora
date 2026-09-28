@@ -80,6 +80,7 @@ async def test_session_create_carries_the_unit_scope_and_joins_it_once(honcho):
 
     client = _client(honcho.url)
     await client.ensure_workspace()
+    honcho.requests.clear()        # startup's own join attempt is pinned below
     client._post = _spy.__get__(client)  # type: ignore[method-assign]
     await client.feed(peer_id="jordan", text="one", conversation_id="g-wedding")
     await client.feed(peer_id="jordan", text="two", conversation_id="g-wedding")
@@ -320,3 +321,41 @@ async def test_a_workspace_read_is_unscoped_in_that_workspace(recorder):
     assert not (await client.representation(
         peer_id="nora", search_query="", workspace="unbound",
     )).reachable
+
+
+async def test_startup_joins_every_known_room_that_has_a_session(honcho):
+    """A room that is quiet after the cutover still joins its unit's scope —
+    at startup, not on its next message. A room with no session in the
+    workspace yet is skipped, not created."""
+    client = _client(honcho.url)
+    await client.ensure_workspace()                # creates the workspaces
+    honcho.sessions["nora"][_session("g-friends")] = {
+        "id": _session("g-friends"), "is_active": True, "workspace_id": "nora",
+    }
+    restarted = _client(honcho.url)
+    await restarted.ensure_workspace()
+    assert honcho.scopes[("nora", "friends")] == {_session("g-friends")}
+    assert honcho.scopes[("nora", "wedding")] == set()
+    assert _session("g-wedding") not in honcho.sessions["nora"]
+
+
+async def test_without_units_startup_joins_nothing_and_reads_unscoped(recorder):
+    client = _client(recorder.url, strict=False)
+    await client.ensure_workspace()
+    assert not [p for (_m, p, _b) in recorder.bodies if "/scopes" in p]
+    await client.representation(peer_id="nora", search_query="q", conversation_id="g-friends")
+    assert "scope" not in recorder.body("/v3/workspaces/nora/peers/nora/representation")
+
+
+async def test_a_page_view_never_creates_or_marks_a_workspace(honcho):
+    """The portal reads by WORKSPACE, read-only: a workspace that does not
+    exist yet is not created by somebody opening a page."""
+    client = HonchoClient(honcho.url, "nora", workspace_router=WorkspaceRouter(
+        "nora", unit_workspaces=_UNITS, conversation_units=_ROOMS,
+        workspace_routes={"67": "nora", "ridgeline": "ridgeline"}, strict=True,
+    ))
+    await client.representation(
+        peer_id="nora", target="jordan", search_query="", workspace="ridgeline",
+    )
+    await client.peer_card(peer_id="jordan", workspace="ridgeline")
+    assert "ridgeline" not in honcho.workspaces

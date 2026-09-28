@@ -18,7 +18,9 @@ id (the person's current `person_id`), the same observer configuration (Nora
 observes, the human is observable) and the same scope membership as the live
 path (`nora.ingest.stages.memory_feed`). The metadata is the live path's too:
 `{"ts": <ts>}`, and an edited row is fed as its first version followed by the
-edit, framed by the same `edit_text` the live edit path uses. The TEXT is the
+edit, framed by the same `edit_text` the live edit path uses. One thing is
+NOT the live path's: each message is sent with its own `created_at` (the
+row's `ts`, the edit's for an edit), so Honcho dates it when it was said. The TEXT is the
 row joined through the process's `MediaJoin`, as lazy adoption joins it
 (`nora.app.adoption`, the other replay into memory): live ingestion fed a
 photo's marker and, later and separately, its comprehension; a replay has
@@ -26,9 +28,10 @@ only the row, so the comprehension rides in it or it does not reach memory.
 
 WHAT IS SKIPPED, exactly as the live feed skips it: Nora's own rows (`since`
 excludes `is_nora` in the query — her replies reach Honcho through the reply
-path, not ingest), and rows whose sender mapped to nobody (`person_id` NULL:
-D6, never fed). Also skipped, and counted: a row with no text at all, and a
-person_id `identity.toml` no longer knows. The transcript store keeps at
+path, not ingest — so in the new workspace a message that answered her
+arrives without the reply it answered), and rows whose sender mapped to
+nobody (`person_id` NULL: D6, never fed). Also skipped, and counted: a row
+with no text at all, and a person_id `identity.toml` no longer knows. The transcript store keeps at
 most `store.max_per_conversation` rows per conversation, so «history» here is
 what it still holds.
 
@@ -50,12 +53,14 @@ implicit default's, which already holds this history, so a replay there
 would feed every message a second time.
 
 IT DELETES NOTHING, anywhere, and in particular nothing from the Honcho
-workspace the unit left. It does not need to: every read for a unit is made
-through that unit's NAMED SCOPE (`HonchoClient.representation`/`chat`/
-`search`), and the rooms of the unit that left are not members of any scope
-of the units that stayed, so what was derived from them in the old workspace
-is not in what those units' reads see. It is still in the peers' unscoped
-representation there, which nothing Nora runs reads.
+workspace the unit left. Every room or unit read for the units that stayed is
+made through their NAMED SCOPES, and the rooms of the unit that left are
+members of none of them, so what was derived from those rooms is not in
+those reads. It IS still in the old workspace's UNSCOPED reads, and two of
+Nora's reads are unscoped: the peer card (its endpoint takes no scope) and
+the portal's own-memory page (a whole-workspace read). Removing it from
+there is `nora memory detach-unit` (`nora.app.memory_detach`), run after
+this has landed.
 """
 
 from __future__ import annotations
@@ -94,7 +99,10 @@ class _Memory(Protocol):
     async def feed(
         self, *, peer_id: str, text: str, conversation_id: str,
         metadata: dict[str, object] | None = None,
+        created_at_ms: int | None = None,
     ) -> bool: ...
+
+    async def ensure_workspace(self) -> None: ...
 
     async def session_messages(
         self, *, conversation_id: str,
@@ -131,7 +139,7 @@ class BackfillReport:
         return sum(room.failed for room in self.rooms)
 
 
-def _items(row: TranscriptRow) -> list[tuple[str, dict[str, object]]]:
+def _items(row: TranscriptRow) -> list[tuple[str, dict[str, object], int]]:
     """What the live path fed for this row: the message, and — when it was
     edited — the edit as a second message framed as a correction
     (`nora.ingest.stages.memory_feed.run`). Only the LATEST edit survives in
@@ -139,15 +147,16 @@ def _items(row: TranscriptRow) -> list[tuple[str, dict[str, object]]]:
     its last."""
     body = (row.body or "").strip()
     if row.edit is None:
-        return [(body, {"ts": row.ts})] if body else []
+        return [(body, {"ts": row.ts}, row.ts)] if body else []
     first = (row.edit.was or "").strip()
-    out: list[tuple[str, dict[str, object]]] = []
+    out: list[tuple[str, dict[str, object], int]] = []
     if first:
-        out.append((first, {"ts": row.ts}))
+        out.append((first, {"ts": row.ts}, row.ts))
     if body:
         out.append((
             edit_text(body=body, first_body=row.edit.was),
             {"ts": row.edit.ts, "edit_of_ts": row.ts},
+            row.edit.ts,
         ))
     return out
 
@@ -253,6 +262,10 @@ async def backfill_unit(
                 "--resume to skip what it holds and feed the rest."
             )
 
+    # Only now, past every refusal and the read-only pre-pass: provision the
+    # workspace (Nora's peer, the unit scopes, the rooms joined to them).
+    if apply:
+        await memory.ensure_workspace()
     for cid, label in targets:
         counts = RoomCounts(conversation_id=cid, label=label, held_before=len(held[cid]))
         report.rooms.append(counts)
@@ -269,7 +282,7 @@ async def backfill_unit(
             if not items:
                 counts.empty += 1
                 continue
-            for text, metadata in items:
+            for text, metadata, said_at in items:
                 key = _held_key(person.honcho_peer_id, metadata)
                 if key in held[cid]:
                     counts.held += 1
@@ -280,7 +293,7 @@ async def backfill_unit(
                 await memory.ensure_peer(peer_id=person.honcho_peer_id, conversation_id=cid)
                 if not await memory.feed(
                     peer_id=person.honcho_peer_id, text=text, conversation_id=cid,
-                    metadata=metadata,
+                    metadata=metadata, created_at_ms=said_at,
                 ):
                     counts.failed += 1
                     break

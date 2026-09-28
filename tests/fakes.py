@@ -160,6 +160,8 @@ class FakeHoncho:
         self.scopes: dict[tuple[str, str], set[str]] = {}
         # workspace -> its conclusions, as Honcho lists them.
         self.conclusions: dict[str, list[dict]] = {}
+        self.deleted_sessions: list[tuple[str, str]] = []
+        self.dreams: list[tuple[str, dict]] = []
         self.fail_messages_after: int | None = None
         self._message_posts = 0
         self._server: TestServer | None = None
@@ -219,7 +221,11 @@ class FakeHoncho:
             return web.json_response(self.workspaces[workspace])
         if parts[2:] == ["list"] and method == "POST":
             self.requests.append((method, path, None))
-            return self._page(list(self.workspaces.values()), request)
+            wanted = ((body or {}).get("filters") or {}).get("id")
+            return self._page(
+                [w for w in self.workspaces.values() if wanted is None or w["id"] == wanted],
+                request,
+            )
 
         workspace, rest = parts[2], parts[3:]
         self.requests.append((method, path, workspace))
@@ -247,6 +253,7 @@ class FakeHoncho:
                     "observer_id": row.get("observer_id"),
                     "observed_id": row.get("observed_id"),
                     "session_id": row.get("session_id"), "level": "explicit",
+                    "created_at": datetime.now(UTC).isoformat(),
                 })
             return web.json_response(held[-len(rows):], status=201)
         if rest == ["conclusions", "list"] and method == "POST":
@@ -301,6 +308,7 @@ class FakeHoncho:
                     "id": f"m{len(held) + 1}", "content": m.get("content", ""),
                     "peer_id": m.get("peer_id"), "session_id": rest[1],
                     "metadata": m.get("metadata") or {},
+                    "created_at": m.get("created_at") or datetime.now(UTC).isoformat(),
                 })
             return web.json_response(held[-len((body or {}).get("messages", [])):] or [])
         if (
@@ -316,7 +324,27 @@ class FakeHoncho:
             if rest[1] not in sessions:
                 return web.json_response({"detail": "session not found"}, status=404)
             sessions[rest[1]]["is_active"] = False
+            # Honcho's queued cascade (`crud.delete_session`), applied at once:
+            # the session's messages and every document stored under it.
+            self.deleted_sessions.append((workspace, rest[1]))
+            self.messages.pop((workspace, rest[1]), None)
+            self.conclusions[workspace] = [
+                c for c in self.conclusions.get(workspace, [])
+                if c.get("session_id") != rest[1]
+            ]
             return web.json_response({}, status=202)
+        if len(rest) == 3 and rest[0] == "sessions" and rest[2] == "peers" and method == "GET":
+            if rest[1] not in sessions:
+                return web.json_response({"detail": "session not found"}, status=404)
+            spoke = {m["peer_id"] for m in self.messages.get((workspace, rest[1]), [])}
+            return self._page([{"id": p} for p in sorted(spoke)], request)
+        if rest == ["schedule_dream"] and method == "POST":
+            self.dreams.append((workspace, dict(body or {})))
+            return web.Response(status=204)
+        if rest == ["scopes", "list"] and method == "POST":
+            return self._page(
+                [{"id": s} for (w, s) in sorted(self.scopes) if w == workspace], request,
+            )
 
         # Every other verb the subject's client uses, recorded against THIS
         # workspace and answered in the real shape.

@@ -3,8 +3,8 @@
 the config write surface (`nora config set/get/unset/validate` — see
 `nora.app.config_cli`). This module's own commands only READ the record
 store; three write elsewhere, each named where it is registered: `xai-login`
-(the host `.env`), and `memory backfill --apply` and `memory
-carry-conclusions --apply` (Honcho, DEC-214).
+(the host `.env`), and `memory backfill`, `memory carry-conclusions` and
+`memory detach-unit`, each only with `--apply` (Honcho, DEC-214).
 
 design/10 §6, plan Task 6. This answers the operator's original complaint —
 *"I CANNOT identify that group ID belongs to which group ... there is NO
@@ -56,6 +56,8 @@ from nora.app.memory_backfill import BackfillRefusedError, backfill_unit
 from nora.app.memory_backfill import render as render_backfill
 from nora.app.memory_carry import CarryRefusedError, carry_conclusions
 from nora.app.memory_carry import render as render_carry
+from nora.app.memory_detach import DetachRefusedError, detach_unit
+from nora.app.memory_detach import render as render_detach
 from nora.app.memory_routing import MemoryRoutingError, build_workspace_router
 from nora.app.participation_measures import gather as gather_measures
 from nora.app.participation_measures import measure as compute_measures
@@ -227,8 +229,25 @@ def add_subcommands(
         "--workspace", required=True,
         help="the NORA workspace (policy.toml [units]); `default` without [units]",
     )
+    carry.add_argument(
+        "--before", required=True,
+        help="the cutover instant, ISO 8601 with a timezone (e.g. "
+             "2026-09-29T10:00:00+08:00): only conclusions created before it are copied",
+    )
     carry.add_argument("--apply", action="store_true", help="write; without it nothing is copied")
     carry.set_defaults(func=cmd_memory_carry)
+    detach = memory_sub.add_parser(
+        "detach-unit", parents=[parent],
+        help="delete a unit's rooms from the Honcho workspace it left, after its "
+             "backfill landed (a dry run unless --apply; irreversible)",
+    )
+    detach.add_argument("--unit", required=True, help="the unit that moved")
+    detach.add_argument(
+        "--from-honcho-workspace", required=True,
+        help="the HONCHO workspace id it left (e.g. nora)",
+    )
+    detach.add_argument("--apply", action="store_true", help="delete; without it nothing is")
+    detach.set_defaults(func=cmd_memory_detach)
 
     # `config` — the operator's safe config mutation surface (deploy
     # convention §4.5). See config_cli.py for the atomic-write and
@@ -483,6 +502,35 @@ def _memory_client(cfg: Config) -> tuple[Policy, Persons, WorkspaceRouter, Honch
     return policy, persons, router, memory
 
 
+async def cmd_memory_detach(args: argparse.Namespace) -> int:
+    """`nora memory detach-unit` (DEC-214); see `nora.app.memory_detach`."""
+    cfg = _config(args)
+    policy, _, router, memory = _memory_client(cfg)
+    try:
+        result = await detach_unit(
+            unit=args.unit, from_honcho_workspace=args.from_honcho_workspace,
+            policy=policy, router=router, memory=memory, ai_peer=cfg.memory.ai_peer,
+            apply=bool(args.apply),
+        )
+    except DetachRefusedError as exc:
+        raise CliError(str(exc)) from exc
+    finally:
+        await memory.aclose()
+    for line in render_detach(result):
+        print(line)
+    return 1 if result.failed else 0
+
+
+def _cutover(text: str) -> datetime:
+    try:
+        stamp = datetime.fromisoformat(text)
+    except ValueError as exc:
+        raise CliError(f"--before must be ISO 8601; got {text!r}") from exc
+    if stamp.tzinfo is None:
+        raise CliError(f"--before needs a timezone (e.g. +08:00); got {text!r}")
+    return stamp
+
+
 async def cmd_memory_carry(args: argparse.Namespace) -> int:
     """`nora memory carry-conclusions --workspace <w> [--apply]` (DEC-214).
     Touches Honcho only, and writes only under `--apply`; see
@@ -492,7 +540,8 @@ async def cmd_memory_carry(args: argparse.Namespace) -> int:
     try:
         result = await carry_conclusions(
             workspace=args.workspace, policy=policy, router=router, memory=memory,
-            ai_peer=cfg.memory.ai_peer, apply=bool(args.apply),
+            ai_peer=cfg.memory.ai_peer, before=_cutover(args.before),
+            apply=bool(args.apply),
         )
     except CarryRefusedError as exc:
         raise CliError(str(exc)) from exc
@@ -523,8 +572,6 @@ async def cmd_memory_backfill(args: argparse.Namespace) -> int:
         timeout_seconds=cfg.media.join_timeout_seconds,
     )
     try:
-        if args.apply:
-            await memory.ensure_workspace()
         result = await backfill_unit(
             unit=args.unit, policy=policy, persons=persons, router=router,
             records=store, memory=memory, default_workspace=cfg.memory.workspace_id,

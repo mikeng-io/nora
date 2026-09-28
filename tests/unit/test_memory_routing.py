@@ -89,14 +89,18 @@ def test_the_live_mapping_routes_two_workspaces_apart(tmp_path):
     assert router.for_workspace("67") == HonchoRoute("nora")
 
 
-def test_without_units_everything_is_the_default_workspace_scoped_per_unit(tmp_path):
+def test_without_units_everything_is_the_default_workspace_unscoped(tmp_path):
+    """BACK-COMPAT: deploying the image with no `[units]` changes no read.
+    Scoped routes here would read empty scopes (nothing has joined them) and
+    silently empty every recall on the day of the deploy."""
     body = 'default = "deny"\n' + _room("signal", "a", "one") + _room("signal", "b", "two")
     router = build_workspace_router(
         policy=_policy(tmp_path, body), bindings={}, default_workspace="nora",
     )
     assert router.strict is False
-    assert router.for_conversation("a") == HonchoRoute("nora", "one")
-    assert router.for_conversation("b") == HonchoRoute("nora", "two")
+    assert router.for_conversation("a") == HonchoRoute("nora")
+    assert router.for_conversation("b") == HonchoRoute("nora")
+    assert router.for_unit("one") == HonchoRoute("nora")
     # A harness's synthetic room: the default, UNSCOPED — the pre-hierarchy path.
     assert router.for_conversation("synthetic") == HonchoRoute("nora")
     assert router.workspaces() == ("nora",)
@@ -161,3 +165,11 @@ def test_a_person_belongs_to_the_workspaces_whose_rooms_name_them(tmp_path):
     assert workspaces_of_person(policy, "jordan") == ("67", "ridgeline")
     assert workspaces_of_person(policy, "blair") == ("67",)
     assert workspaces_of_person(policy, "nobody") == ()
+
+
+def test_without_units_everyone_is_in_the_one_implicit_workspace(tmp_path):
+    """The portal's back-compat: no `[units]`, so every person — including one
+    who is only in `persons = "*"` rooms — reads the one workspace, as the
+    page did before DEC-214."""
+    body = 'default = "deny"\n' + _room("signal", "a", "one")
+    assert workspaces_of_person(_policy(tmp_path, body), "anyone") == ("default",)

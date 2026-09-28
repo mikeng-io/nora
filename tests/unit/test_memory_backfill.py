@@ -113,8 +113,6 @@ async def _records() -> FakeRecordStore:
 async def _run(world, honcho, records, **kw):
     policy, persons, router = world
     memory = HonchoClient(honcho.url, "nora", workspace_router=router)
-    if kw.get("apply"):
-        await memory.ensure_workspace()
     return await backfill_unit(
         unit=kw.pop("unit", "ridgeline"), policy=policy, persons=persons, router=router,
         records=records, memory=memory, default_workspace="nora", **kw,
@@ -145,6 +143,9 @@ async def test_apply_replays_human_rows_in_timestamp_order_the_live_way(world, h
     ]
     assert [m["metadata"] for m in held][:1] == [{"ts": 1000}]
     assert held[-1]["metadata"] == {"ts": 4100, "edit_of_ts": 4000}
+    # Dated when it was SAID, not when it was replayed: `MessageCreate.created_at`.
+    assert held[0]["created_at"] == "1970-01-01T00:00:01+00:00"
+    assert held[-1]["created_at"] == "1970-01-01T00:00:04.100000+00:00"
     # The retired id's rows go to ITS OWN session, as live ingestion fed them.
     assert [m["content"] for m in honcho.messages[("ridgeline", "nora-conv-g-ridgeline-old")]] == [
         "from the old id",
@@ -221,3 +222,11 @@ async def test_it_refuses_a_honcho_workspace_another_application_uses(world, hon
 async def test_a_dry_run_creates_no_workspace(world, honcho):
     await _run(world, honcho, await _records())
     assert "ridgeline" not in honcho.workspaces
+
+
+async def test_a_refusal_provisions_nothing(world, honcho):
+    """`--apply` sets the workspace up only after every refusal has passed:
+    refused for holding history already, nothing may have been created."""
+    with pytest.raises(BackfillRefusedError, match="twice"):
+        await _run(world, honcho, await _records(), unit="friends", apply=True)
+    assert honcho.workspaces == {}

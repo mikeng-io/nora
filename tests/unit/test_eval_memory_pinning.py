@@ -88,7 +88,9 @@ def test_a_subject_reaches_only_the_eval_workspace_across_every_binding(
         default_workspace=eval_workspace,
     )
     assert router.workspaces() == (eval_workspace,)
-    # Every room still routes, each to its own unit's scope, inside it.
+    # Still STRICT, as production reads with `[units]`: every room routes to
+    # its own unit's scope, inside the one eval workspace.
+    assert router.strict is True
     assert router.for_conversation("g-friends").workspace == eval_workspace
     assert router.for_conversation("g-ridgeline").scope == "ridgeline"
 

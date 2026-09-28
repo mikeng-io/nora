@@ -54,8 +54,10 @@ def test_workspace_router_maps_conversations_and_falls_back_to_the_default():
         "nora", unit_workspaces={"work": "acme"},
         conversation_units={"g-work": "work"},
     )
-    assert r.for_conversation("g-work") == HonchoRoute("acme", "work")
-    assert r.for_unit("work") == HonchoRoute("acme", "work")
+    # Not strict (no `[units]`): the unit's workspace, but NO scope — reads
+    # stay exactly as unscoped as before DEC-214 until `[units]` is written.
+    assert r.for_conversation("g-work") == HonchoRoute("acme")
+    assert r.for_unit("work") == HonchoRoute("acme")
     assert r.for_conversation("g-unmapped") == HonchoRoute("nora")
     assert r.unrouted() == HonchoRoute("nora")
 
@@ -95,7 +97,7 @@ async def test_feed_routes_every_call_to_the_conversations_workspace(server_fact
     client = HonchoClient(
         base, "nora", workspace_router=WorkspaceRouter(
             "nora", unit_workspaces={"work": "acme"},
-            conversation_units={"g-work": "work"},
+            conversation_units={"g-work": "work"}, strict=True,
         ),
     )
     assert await client.feed(peer_id="miles", text="hi", conversation_id="g-work") is True
@@ -105,8 +107,9 @@ async def test_feed_routes_every_call_to_the_conversations_workspace(server_fact
 
 async def test_an_unmapped_conversation_and_a_unit_recall_route_apart(server_factory):
     """The behaviour-preserving half: an unmapped room (no `[units]`) goes to
-    the single default workspace, exactly as before the hierarchy. And a
-    recall naming a UNIT goes to that unit's workspace, scoped to it."""
+    the single default workspace, exactly as before the hierarchy. And, once
+    `[units]` exists, a recall naming a UNIT goes to that unit's workspace,
+    scoped to it."""
     paths: list[str] = []
     bodies: dict[str, dict] = {}
 
@@ -123,15 +126,21 @@ async def test_an_unmapped_conversation_and_a_unit_recall_route_apart(server_fac
         return web.json_response({"ok": True})
 
     base = await server_factory(handler)
-    client = HonchoClient(
+    implicit = HonchoClient(
         base, "nora", workspace_router=WorkspaceRouter(
             "nora", unit_workspaces={"work": "acme"},
             conversation_units={"g-work": "work"},
         ),
     )
-    await client.feed(peer_id="miles", text="hi", conversation_id="g-other")   # unmapped
+    await implicit.feed(peer_id="miles", text="hi", conversation_id="g-other")   # unmapped
     assert all("/workspaces/nora/" in p for p in paths) and paths
     paths.clear()
+    client = HonchoClient(
+        base, "nora", workspace_router=WorkspaceRouter(
+            "nora", unit_workspaces={"work": "acme"},
+            conversation_units={"g-work": "work"}, strict=True,
+        ),
+    )
     await client.representation(
         peer_id="nora", target="miles", search_query="q", unit="work",
     )
