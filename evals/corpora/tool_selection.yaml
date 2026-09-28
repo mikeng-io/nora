@@ -40,7 +40,7 @@ cases:
     expect: reply
     mention: true
     input: 阿Miles而家喺邊？
-    metadata: {tools: [where_is], not_tools: [where_been]}
+    metadata: {tools: [where_is], not_tools: [where_been, routine_read]}
     snapshot: &room_a
       platform: signal
       conversation_id: "MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08="
@@ -51,7 +51,44 @@ cases:
     expect: reply
     mention: true
     input: Miles今日去過邊度？
-    metadata: {tools: [where_been], not_tools: [where_is]}
+    metadata: {tools: [where_been], not_tools: [where_is, routine_read]}
+    snapshot: *room_a
+
+  # routine_read (design/27 §4.3): a question about LATER is neither where_is
+  # (now) nor where_been (the past). The third case is the overlap the design
+  # names: «usually on Tuesday nights» is a routine, not a history of hours.
+  - name: route_routine_read_future
+    entry: tag
+    expect: reply
+    mention: true
+    input: Miles星期三晚會喺邊？
+    metadata: {tools: [routine_read], not_tools: [where_is, where_been]}
+    snapshot: *room_a
+
+  - name: route_routine_read_english
+    entry: tag
+    expect: reply
+    mention: true
+    input: where will Miles be tomorrow morning?
+    metadata: {tools: [routine_read], not_tools: [where_is, where_been]}
+    snapshot: *room_a
+
+  - name: route_routine_read_usually
+    entry: tag
+    expect: reply
+    mention: true
+    input: Miles逢星期二夜晚通常喺邊？
+    metadata: {tools: [routine_read], not_tools: [where_is, where_been]}
+    snapshot: *room_a
+
+  # note_create's opening lost a clause restating its first sentence (the
+  # catalogue ceiling, design/27 §4.3); its routing had no case until now.
+  - name: route_note_create_open_question
+    entry: tag
+    expect: reply
+    mention: true
+    input: 聖誕去邊度旅行仲未傾掂，你幫手跟住件事，唔好唔記得
+    metadata: {tools: [note_create], not_tools: [remind]}
     snapshot: *room_a
 
   - name: route_find_parking_near

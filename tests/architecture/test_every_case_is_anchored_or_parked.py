@@ -225,9 +225,14 @@ def test_the_whole_corpus_is_accounted_for() -> None:
     two-dates-in-one-batch production defect graded by `date_split`
     (2026-09-26, design 40 §7), plus its p11, an update among same-day
     sibling arrangements (2026-09-26, design 42 §10.1: the wrong-note case
-    p5/p6 could not be, their siblings being one arrangement); a change to it
+    p5/p6 could not be, their siblings being one arrangement), plus
+    `tool_selection`'s 3 `routine_read` cases and its first `note_create`
+    case and `tool_reporting`'s `routine_read` case (2026-09-28,
+    design/proposed/27-presence-analytics.md §4.3: a question about later is
+    neither where_is nor where_been; note_create's trimmed opening had no
+    routing case at all); a change to it
     is a change to what the suite claims to measure and belongs in a commit that
     says so. Recomputed with `census()` at each merge, never summed."""
     totals = [census(n) for n in CORPORA]
-    assert sum(c.total for c in totals) == 240
-    assert sum(c.active + c.parked for c in totals) == 240
+    assert sum(c.total for c in totals) == 245
+    assert sum(c.active + c.parked for c in totals) == 245
