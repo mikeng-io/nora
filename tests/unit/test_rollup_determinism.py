@@ -223,6 +223,15 @@ async def test_every_schedule_folds_the_record_into_the_same_rollup(seed, shuffl
         assert len(rebuild[subject]["trips"]) >= 2 * (_DAYS - 1)
         assert rebuild[subject]["places"] and rebuild[subject]["occupancy"]
         assert rebuild[subject]["corridors"]
+    # Agreement is not correctness — a defect in the fold is on every
+    # schedule alike — so the rows must also be sane: one person is in one
+    # stay or one trip at a time, never two.
+    for subject in ("a", "b"):
+        spans = sorted(
+            [(s.started_ts, s.ended_ts) for s in rebuild[subject]["stays"]]
+            + [(t.started_ts, t.ended_ts) for t, _ in rebuild[subject]["trips"]]
+        )
+        assert all(a[1] < b[0] for a, b in zip(spans, spans[1:], strict=False)), subject
     assert rebuild["a"]["fold"].late_fixes == 1  # the straggler was seen and dropped
     assert any(p[6] == "tag-home-a" for p in rebuild["a"]["places"])
     for name in ("every_tick", "ragged"):

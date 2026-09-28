@@ -96,5 +96,12 @@
     "old": "            polls_healthy(rows, scope=circle, start_ms=deviation.start_ms,",
     "new": "            True or polls_healthy(rows, scope=circle, start_ms=deviation.start_ms,",
     "target": "tests/integration/test_rollup_builds.py::test_a_deviation_is_raised_only_on_healthy_sources"
+  },
+  {
+    "name": "the window is kept by position in time from the earliest held fix, not by id",
+    "file": "nora/analytics/rollup.py",
+    "old": "        position = {f.id: i for i, f in enumerate(ordered)}\n        holds = [position[h] for h in (trip_hold_id, stay_hold_id) if h is not None]\n        kept = ordered[min(holds):] if holds else []",
+    "new": "        target = max(f.id for f in window)\n        for h in (trip_hold_id, stay_hold_id):\n            if h is not None:\n                target = min(target, h - 1)\n        kept = [f for f in window if f.id > target]",
+    "target": "tests/unit/test_rollup_determinism.py::test_every_schedule_folds_the_record_into_the_same_rollup"
   }
 ]
