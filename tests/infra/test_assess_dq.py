@@ -304,7 +304,7 @@ async def test_a_raising_check_errors_without_dropping_the_others(engine, monkey
     `unresolved_citations` — the first check `run_deterministic_checks` runs
     — to raise, and asserts every OTHER check still ran to its own verdict."""
 
-    async def _raises(conn):  # noqa: ANN001 - matches the patched signature
+    async def _raises(conn):
         raise RuntimeError("boom: citation query exploded")
 
     monkeypatch.setattr(assess_dq, "unresolved_citations", _raises)
@@ -336,7 +336,7 @@ async def test_a_raising_check_still_gets_a_recorded_report(engine, monkeypatch)
     raises, and the run still reaches `--record` with the FULL report — the
     checks that ran clean are not lost because one check blew up."""
 
-    async def _raises(conn):  # noqa: ANN001 - matches the patched signature
+    async def _raises(conn):
         raise ValueError("rollup connection dropped")
 
     monkeypatch.setattr(assess_dq, "happened_place_mismatch", _raises)

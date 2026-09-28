@@ -21,7 +21,9 @@ class _FakeEngine:
 
 
 async def _run(monkeypatch, results: tuple[DqCheckResult, ...]) -> int:
-    monkeypatch.setattr(cli, "_config", lambda args: SimpleNamespace(assess=SimpleNamespace(mode="on")))
+    monkeypatch.setattr(
+        cli, "_config", lambda args: SimpleNamespace(assess=SimpleNamespace(mode="on")),
+    )
     monkeypatch.setattr(cli, "_database_url", lambda cfg: "postgresql://unused")
     monkeypatch.setattr(cli, "create_sql_engine", lambda url: _FakeEngine())
 
