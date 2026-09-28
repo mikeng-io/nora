@@ -119,4 +119,4 @@ class InMemorySourceHealthLog:
         return [r.outcome for r in self.rows if r.source == source]
 
 
-__all__ = ["HealthRow", "InMemoryStimulusStore", "InMemorySourceHealthLog"]
+__all__ = ["HealthRow", "InMemorySourceHealthLog", "InMemoryStimulusStore"]

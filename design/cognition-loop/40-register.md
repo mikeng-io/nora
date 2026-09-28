@@ -112,12 +112,12 @@ says A is full; B is suggested and the others agree; at 18:40 someone says "C
 instead, closer"; at 19:05 Nora is asked for the route to C; at 20:05 presence
 shows three members at C; at 21:30 three stories are posted from C.
 
-| signal | session outcome |
+| stimulus | session outcome |
 |---|---|
 | 14:10 messages (date cue) | event **proposed**: dinner today, place A, told, citing 14:10 |
 | 16:30–16:50 messages | **revised** place → B, told (the members agreed among themselves), citing the messages |
 | 18:40 message + 19:05 route request to C | **revised** place → C, told at 18:40; the route request cited beside it |
-| 20:05 co-location episode at C (Rollup signal) | **confirmed**; people = the three co-located members; status and people deduced on fresh fixes (abduced if the fixes are stale), citing the episode |
+| 20:05 co-location episode at C (Rollup stimulus) | **confirmed**; people = the three co-located members; status and people deduced on fresh fixes (abduced if the fixes are stale), citing the episode |
 | 21:30 stories + perceptions; the outing episode closes | **happened**: the `Happened` section cites the outing (interval, place, who) and the stories (what they show); a memo if anything will be asked again |
 
 Had nobody named C and only the route request pointed there, place → C would

@@ -3280,21 +3280,21 @@ class DreamerConfig(BaseModel):
 
 
 class CognitionConfig(BaseModel):
-    """The cognition loop's signals and wake evaluator
+    """The cognition loop's stimuli and wake evaluator
     (design/cognition-loop/20-observe.md §3, migration step 1).
 
     **Ships OFF** (`mode = "off"`): a new subsystem does not switch itself on,
     the `[dreamer]`/`[analytics]` shape. Off, the ingest pipeline builds no
-    signal stage and no evaluator is spawned; nothing is written to `signal`
-    or `cognition_wake`.
+    stimulus stage and no evaluator is spawned; nothing is written to
+    `stimulus` or `cognition_wake`.
 
     **`mode = "shadow"`** is migration step 1: every recorded person-authored
-    item appends a signal with its cues, and the evaluator ticks every
+    item appends a stimulus with its cues, and the evaluator ticks every
     `tick_seconds`, applying 20 §3's wake table and brakes exactly as it
     would to start a session — and FIRES NOTHING. Each would-wake is recorded
-    with its reason and the signal range it would consume; the clocked Dreamer
-    adaptors keep running as before. A `live` mode arrives with the Cognition
-    adaptor (step 3/4), not here.
+    with its reason and the stimulus range it would consume; the clocked
+    Dreamer adaptors keep running as before. A `live` mode arrives with the
+    Cognition adaptor (step 3/4), not here.
 
     The wake numbers are 20 §3's STARTING values, every one a guess the
     shadow week sizes. `quiet_seconds` and `max_age_seconds` reuse
@@ -3673,8 +3673,8 @@ class Config(BaseModel):
     # (`enabled = false`): off, no `DreamerRuntime` is constructed and the
     # existing consolidators keep running unchanged.
     dreamer: DreamerConfig = DreamerConfig()
-    # Optional and defaulted — see `CognitionConfig`. Ships OFF: no signal is
-    # written and no wake evaluator runs until the operator sets `mode`.
+    # Optional and defaulted — see `CognitionConfig`. Ships OFF: no stimulus
+    # is written and no wake evaluator runs until the operator sets `mode`.
     cognition: CognitionConfig = CognitionConfig()
     identity_file: Path
     policy_file: Path

@@ -224,8 +224,8 @@ from nora.domain.models import (
     WeatherObservation,
 )
 from nora.domain.parking import StreetParking as StreetParking
-from nora.domain.stimuli import NewStimulus, NewWake, UnitView
 from nora.domain.standing import Standing as Standing
+from nora.domain.stimuli import NewStimulus, NewWake, UnitView
 from nora.domain.utf16 import utf16_len
 
 # `PlatformIdentity` is re-exported, not declared here — it moved next to

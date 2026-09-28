@@ -1,7 +1,7 @@
 ---
 type: design
 title: "Rollup — what the Record adds up to, computed by code"
-description: "The tier between the Record and everything a model writes: episodes and aggregates as a pure, replayable projection of the Record up to a logical watermark, generalising the presence analytics substrate (design 27) from presence to every stream. The rollups, their keys and inputs, versioned builds, citation by overlap, the deviation signal, and why no model writes here."
+description: "The tier between the Record and everything a model writes: episodes and aggregates as a pure, replayable projection of the Record up to a logical watermark, generalising the presence analytics substrate (design 27) from presence to every stream. The rollups, their keys and inputs, versioned builds, citation by overlap, the deviation stimulus, and why no model writes here."
 tags: [nora, rollup, episode, aggregate, presence-analytics, co-location, outing, daybook, tie, play]
 timestamp: '2026-09-28'
 edges:
@@ -31,7 +31,7 @@ prose, fully deterministic. This node generalises it to every stream.
 - **No model writes a Rollup row.** A model-extracted claim is how the
   knowledge tier died (#115: 5 rows in 11 days,
   design/dreamer-agent-loop/20-knowledge-tier.md §0). A code aggregate over
-  structured signals is what has worked here (design 27).
+  structured stimuli is what has worked here (design 27).
 - **A function of the Record and a logical watermark.** Every row is what one
   function computes from the Record up to a watermark (the newest Record
   item it has read), so the incremental path and a batch rebuild are the same
@@ -91,7 +91,7 @@ by person and shared across that person's units ([10](10-tiers.md) §2 rule
 alone, and are rebuilt as a new build when each further input arrives
 (reactions at step 1, social and play at step 5, faces at step 6).
 
-## 4. Signals the Rollup raises
+## 4. Stimuli the Rollup raises
 
 A Rollup row is observed state changing, so it can wake cognition
 ([20](20-observe.md) §3):
@@ -103,7 +103,7 @@ A Rollup row is observed state changing, so it can wake cognition
 - **deviation** — a person's pattern broke: a rhythm anomaly, or a daybook
   silent in every room and at home for N days. It is the only way *absence*
   wakes the loop, and it is raised only when every source it rests on is
-  proven healthy for the interval ([20](20-observe.md) §3). It is a signal,
+  proven healthy for the interval ([20](20-observe.md) §3). It is a stimulus,
   not a rule: what to make of it is her judgement ([30](30-cognition.md) §3).
 
 ## 5. How it is read

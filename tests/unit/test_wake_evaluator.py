@@ -1,16 +1,16 @@
-"""The wake policy (`nora.domain.signals.decide`) and the SHADOW evaluator
+"""The wake policy (`nora.domain.stimuli.decide`) and the SHADOW evaluator
 (`nora.app.wake.WakeEvaluator`) — design/cognition-loop/20-observe.md §3,
 migration step 1.
 
 Pinned here: each trigger of the wake table, in the table's order; a `waits`
-signal never wakes a unit alone; watermark consumption (a would-wake consumes
-through the id it read, later signals stay pending, and one due later stays
+stimulus never wakes a unit alone; watermark consumption (a would-wake consumes
+through the id it read, later stimuli stay pending, and one due later stays
 pending past it); single-flight; the cooldown and the one strong cue that may
 cut it; the cross-unit concurrency bound; the daily floors; and that the
 evaluator writes a would-wake and NOTHING ELSE — the positive control of «it
 fires nothing».
 
-On `InMemorySignalStore`, which `tests/contract/test_signal_store_contract.py`
+On `InMemoryStimulusStore`, which `tests/contract/test_stimulus_store_contract.py`
 binds to the SQL store's consumption rule.
 """
 
@@ -20,9 +20,9 @@ import datetime as dt
 from zoneinfo import ZoneInfo
 
 from nora.app.wake import Floor, WakeEvaluator
-from nora.domain.signals import NewSignal, WakePolicy
+from nora.domain.stimuli import NewStimulus, WakePolicy
 from nora.obs.metrics import Metrics
-from nora.testing.signals import InMemorySignalStore
+from nora.testing.stimuli import InMemoryStimulusStore
 
 HK = ZoneInfo("Asia/Hong_Kong")
 # 2026-09-28 15:00 HK — no floor within the default grace.
@@ -47,7 +47,7 @@ class Clock:
 
 
 def _setup(*, units=("nora",), policy=POLICY, floors=(), start=T, settle=0.0):
-    store = InMemorySignalStore()
+    store = InMemoryStimulusStore()
     clock = Clock(start)
     metrics = Metrics()
     ev = WakeEvaluator(
@@ -59,9 +59,9 @@ def _setup(*, units=("nora",), policy=POLICY, floors=(), start=T, settle=0.0):
 
 async def _say(store, clock, *, unit="nora", cues=(), waits=False, kind="message",
                due_ms=None, ref=None):
-    return await store.append(signal=NewSignal(
+    return await store.append(stimulus=NewStimulus(
         unit=unit, kind=kind, item=kind if kind != "message" else "message",
-        ref=ref or f"messages:{len(store.signals) + 1}", at_ms=clock.ms,
+        ref=ref or f"messages:{len(store.stimuli) + 1}", at_ms=clock.ms,
         conversation_id="g1" if kind == "message" else None,
         cues=tuple(cues), waits=waits, due_ms=due_ms,
     ), recorded_at_ms=clock.ms)
@@ -118,7 +118,7 @@ async def test_batch_fires_on_batch_max_pending_in_a_live_room():
         clock.advance(10)
     await ev.tick()
     assert [w.reason for w in store.wakes] == ["batch"]
-    assert store.wakes[0].signal_count == 5
+    assert store.wakes[0].stimulus_count == 5
 
 
 async def test_max_age_fires_in_a_room_that_never_goes_quiet():
@@ -132,7 +132,7 @@ async def test_max_age_fires_in_a_room_that_never_goes_quiet():
     assert [w.reason for w in store.wakes] == ["max_age"]
 
 
-async def test_a_rollup_signal_fires_after_its_delay_generically():
+async def test_a_rollup_stimulus_fires_after_its_delay_generically():
     """No producer until step 2; the evaluator handles the kind already."""
     ev, store, clock, _ = _setup()
     await _say(store, clock)                                  # the room is live
@@ -144,7 +144,7 @@ async def test_a_rollup_signal_fires_after_its_delay_generically():
     assert [w.reason for w in store.wakes] == ["rollup"]
 
 
-async def test_a_self_signal_is_pending_only_from_its_due_time():
+async def test_a_self_stimulus_is_pending_only_from_its_due_time():
     """No producer until step 3's `wake_at`; handled generically, and it
     does not hold the queue open before it is due (20 §3)."""
     ev, store, clock, _ = _setup()
@@ -166,7 +166,7 @@ async def test_a_reply_to_nora_never_wakes_a_unit_by_itself():
     clock.advance(1800)
     await ev.tick()
     assert len(store.wakes) == 1
-    assert (store.wakes[0].signal_count, store.wakes[0].eligible_count) == (2, 1)
+    assert (store.wakes[0].stimulus_count, store.wakes[0].eligible_count) == (2, 1)
     assert store.wakes[0].detail["waits"] == 1
 
 
@@ -179,13 +179,13 @@ async def test_a_would_wake_consumes_through_the_id_it_read():
     clock.advance(1800)
     await ev.tick()
     w = store.wakes[0]
-    assert (w.from_signal_id, w.through_signal_id) == (0, a)
+    assert (w.from_stimulus_id, w.through_stimulus_id) == (0, a)
     clock.advance(400)                        # past session + cooldown
     b = await _say(store, clock)
     clock.advance(1800)
     await ev.tick()
-    assert (store.wakes[1].from_signal_id, store.wakes[1].through_signal_id) == (a, b)
-    assert store.wakes[1].signal_count == 1   # `a` was consumed, not re-read
+    assert (store.wakes[1].from_stimulus_id, store.wakes[1].through_stimulus_id) == (a, b)
+    assert store.wakes[1].stimulus_count == 1   # `a` was consumed, not re-read
 
 
 async def test_the_watermark_survives_a_restart():
@@ -275,7 +275,7 @@ async def test_the_daily_floors_are_raised_once_and_wake_as_time():
     await ev.tick()
     clock.advance(30)
     await ev.tick()
-    floors = [s for s in store.signals if s.kind == "time"]
+    floors = [s for s in store.stimuli if s.kind == "time"]
     assert [s.ref for s in floors] == ["floor:07:00@2026-09-28"]
     assert [w.reason for w in store.wakes] == ["time"]
 
@@ -284,7 +284,7 @@ async def test_a_floor_past_its_grace_is_not_raised():
     """A deploy at 15:00 does not raise that morning's 07:00 as due now."""
     ev, store, _, _ = _setup(floors=(Floor.parse("07:00"),))
     await ev.tick()
-    assert store.signals == [] and store.wakes == []
+    assert store.stimuli == [] and store.wakes == []
 
 
 # ── shadow fires nothing ─────────────────────────────────────────────────────
@@ -292,24 +292,24 @@ async def test_a_floor_past_its_grace_is_not_raised():
 
 async def test_a_shadow_tick_writes_a_would_wake_and_nothing_else():
     """The positive control of «it fires nothing»: the ONE row a would-wake
-    produces is a shadow wake row; the signal table is untouched (append-only,
+    produces is a shadow wake row; the stimulus table is untouched (append-only,
     nothing marked consumed) and nothing else is written."""
     ev, store, clock, _ = _setup()
     await _say(store, clock, cues=("datetime",))
-    before = list(store.signals)
+    before = list(store.stimuli)
     clock.advance(600)
     written = await ev.tick()
     assert len(written) == 1 and len(store.wakes) == 1
     assert store.wakes[0].mode == "shadow"
-    assert store.signals == before
+    assert store.stimuli == before
 
 
 
-# ── the two ways a watermark could lose a signal ─────────────────────────────
+# ── the two ways a watermark could lose a stimulus ─────────────────────────────
 
 
-async def test_a_due_later_wake_does_not_resurrect_signals_already_consumed():
-    """A `self` signal appended first (id 1) and due later is consumed by a
+async def test_a_due_later_wake_does_not_resurrect_stimuli_already_consumed():
+    """A `self` stimulus appended first (id 1) and due later is consumed by a
     wake AFTER ids 2-3 were consumed; its wake must not set the watermark
     back to id 1 and re-open them."""
     ev, store, clock, _ = _setup(policy=WakePolicy(quiet_seconds=0, cooldown_seconds=0,
@@ -318,12 +318,12 @@ async def test_a_due_later_wake_does_not_resurrect_signals_already_consumed():
     await _say(store, clock)
     await _say(store, clock)
     await ev.tick()
-    assert [(w.reason, w.through_signal_id, w.signal_count) for w in store.wakes] == [
+    assert [(w.reason, w.through_stimulus_id, w.stimulus_count) for w in store.wakes] == [
         ("settled", 3, 2)]
     clock.advance(3600)
     await ev.tick()
     assert store.wakes[-1].reason == "self"
-    assert store.wakes[-1].through_signal_id == 3
+    assert store.wakes[-1].through_stimulus_id == 3
     clock.advance(600)
     assert await ev.tick() == [], "ids 2-3 came back as pending"
 
@@ -339,7 +339,7 @@ async def test_an_id_committed_after_a_higher_one_is_not_consumed_unseen():
     clock.advance(2)
     await lost_ev.tick()                         # sees only id 2
     lost.uncommitted.clear()                     # id 1 commits
-    assert lost.wakes[0].signal_count == 1
+    assert lost.wakes[0].stimulus_count == 1
     view = await lost.view(unit="nora", mode="shadow", now_ms=clock.ms + 10**6, limit=100)
     assert first not in [s.id for s in view.pending], "control: the race loses id 1"
 
@@ -353,5 +353,5 @@ async def test_an_id_committed_after_a_higher_one_is_not_consumed_unseen():
     store.uncommitted.clear()                     # id 1 commits within the margin
     clock.advance(4)
     await ev.tick()
-    assert [w.signal_count for w in store.wakes] == [2]
+    assert [w.stimulus_count for w in store.wakes] == [2]
     assert store.wakes[0].at_ms == clock.ms - 5 * S   # the cutoff is the time bound

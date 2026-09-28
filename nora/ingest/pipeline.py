@@ -60,8 +60,8 @@ from .stages import media as media_stage
 from .stages import memory_feed as memory_feed_stage
 from .stages import quote_target as quote_target_stage
 from .stages import scope as scope_stage
-from .stages import stimulus as stimulus_stage
 from .stages import standing_event as standing_event_stage
+from .stages import stimulus as stimulus_stage
 from .stages import touch as touch_stage
 
 log = logging.getLogger("nora.ingest.pipeline")

@@ -2,7 +2,7 @@
 (design/cognition-loop/20-observe.md §3, `10-tiers.md` §6 «cue»).
 
 **Code, never a model.** A cue is computed once, at ingest, from the item's
-own text, and stored on its signal. Nothing downstream re-reads the text to
+own text, and stored on its stimulus. Nothing downstream re-reads the text to
 decide whether it mattered; the wake evaluator and, later, Cognition's agenda
 compute on the cue names (comprehend once).
 
@@ -10,7 +10,7 @@ compute on the cue names (comprehend once).
 mean a plan exists; it means the item carries a date expression, which is why
 it wakes the loop sooner (a strong cue, 20 §3's table). A false positive costs
 one earlier session; a false negative costs nothing but lateness, because every
-pending signal is still consumed by the next wake (settled, batch, max age).
+pending stimulus is still consumed by the next wake (settled, batch, max age).
 So the vocabularies below lean towards recall on the phrases people in these
 rooms actually type, in English and in Cantonese, and are deliberately NOT a
 parser: they never extract WHICH date.
@@ -40,7 +40,7 @@ import re
 import unicodedata
 from typing import Literal, get_args
 
-#: Every cue a signal can carry, in the order they are stored. The label
+#: Every cue a stimulus can carry, in the order they are stored. The label
 #: vocabulary of `nora_stimulus_total{cue}` is this plus `none`, DERIVED here.
 Cue = Literal["datetime", "amount", "keep", "rsvp", "place_link", "surprise"]
 CUES: tuple[str, ...] = get_args(Cue)
@@ -48,7 +48,7 @@ CUES: tuple[str, ...] = get_args(Cue)
 #: The cues that trip 20 §3's `strong cue` trigger. `amount` and `surprise`
 #: matter to a session (a split to record; a surprise makes `exclude_persons`
 #: mandatory on the write that cites it) but do not by themselves say a plan is
-#: moving, so they wait for a settled room like any other signal.
+#: moving, so they wait for a settled room like any other stimulus.
 STRONG_CUES: frozenset[str] = frozenset({"datetime", "keep", "rsvp", "place_link"})
 
 _WEEKDAYS_EN = (

@@ -126,9 +126,9 @@ from nora.infra.sql.presence import PresenceStore
 from nora.infra.sql.reasoning_strip import SqlReasoningStripStore
 from nora.infra.sql.reminders import SqlReminderStore
 from nora.infra.sql.revisions import SqlRevisionStore
-from nora.infra.sql.stimuli import SqlStimulusStore
 from nora.infra.sql.source_health import SqlSourceHealthLog
 from nora.infra.sql.standing import SqlStandingStore
+from nora.infra.sql.stimuli import SqlStimulusStore
 from nora.infra.sql.tag_debounce import SqlTagDebounceStore
 from nora.infra.sql.tag_traces import SqlTagTraceStore
 from nora.infra.sql.tool_call_log import SqlToolCallLogStore
@@ -151,8 +151,8 @@ from nora.ingest.policy import (
 )
 from nora.ingest.relevance_gate import Completion as GateCompletion
 from nora.ingest.relevance_gate import RelevanceGate
-from nora.ingest.stages import stimulus as stimulus_stage
 from nora.ingest.stages import standing_event
+from nora.ingest.stages import stimulus as stimulus_stage
 from nora.ingest.stickers import StickerReader
 from nora.instructions.dreamer import DreamerInstructions
 from nora.instructions.frontmatter import InstructionError
