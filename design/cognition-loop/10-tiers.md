@@ -66,7 +66,9 @@ And one word names a process, never a store:
 5. **Counts and routines live in the Rollup.** A Character or Standing line
    about frequency, regularity or closeness ("usually", "often", "closest")
    cites a Rollup aggregate and never states a count or a time itself.
-6. **Keys are fixed.** Record: by room, by person, by account. Rollup: by
+6. **Keys are fixed.** The unit is the key of everything derived, inside
+   DEC-214's hierarchy (workspace > unit > room; one room per platform per
+   unit). Record: by room, by person, by account. Rollup: by
    (unit, subject, span). Register: by unit, with the origin room kept.
    Character: by (unit, entity). Standing: by (unit, subject). A person in two
    units has two Characters, each from that unit's evidence.

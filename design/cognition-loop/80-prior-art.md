@@ -127,15 +127,14 @@ cannot read presence, social items or perceptions, or model a room.
 | **Honcho** | what a person said about themselves: `explicit` conclusions, the peer card, `remember`. In Nora's terms, *told* evidence about one person |
 | **Nora** | everything induced, multi-source, collective or about Nora: Character (all four entities), Standing, Register, Rollup |
 
-1. **Scope Honcho reads to the unit, inside the one workspace.** Every
-   conversation goes to one Honcho workspace (`WorkspaceRouter` in
-   `nora/infra/honcho/client.py`), so a person's representation mixes units,
-   which breaks [10](10-tiers.md) §2 rule 6. A workspace per unit was rejected
-   on 2026-09-19 (it splits one person into N person-models); that decision
-   stands. A Honcho **scope** (v3.1.0) is different: it bounds recall to a set
-   of Honcho sessions inside the one workspace and keeps one peer per person.
-   One scope per unit, its rooms as members, passed on every read. Needs
-   Honcho ≥ 3.1.0; the version on norty is unchecked.
+1. **Scoped per unit — done, DEC-214 (#603, #605, live 2026-09-28).** Nora's
+   hierarchy is workspace > unit > room: each Nora workspace binds one Honcho
+   workspace (the person-model boundary), each unit is one Honcho named scope
+   inside it, and room and unit reads pass that scope. Live: workspace 67
+   (friends, wedding) on Honcho `nora`; ridgeline on `nora-ridgeline`. The peer
+   card stays unscoped inside its workspace (Honcho v3.1.2's card endpoint
+   takes no scope), so it can mix the units of one workspace, never two
+   workspaces.
 2. **Push only told conclusions and the peer card**, filtered client-side to
    `explicit`. Once Character · person and Character · Nora ship, Honcho's
    deductive and inductive conclusions and the self card leave the prompt.
