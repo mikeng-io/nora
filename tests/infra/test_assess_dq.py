@@ -1,0 +1,290 @@
+"""The Assess adaptor's nightly data-quality checks (design/cognition-loop/
+30-cognition.md §6, DEC-240; `nora.app.assess_dq`). Module-scoped database per
+`tests/infra/test_withdrawal.py`'s pattern. Every check is proved BOTH ways:
+`ok` on a clean fixture, `fail` once the fixture is broken the way the check
+names — the gate's own "cover the negative too" rule.
+"""
+
+from __future__ import annotations
+
+from collections.abc import AsyncIterator, Iterator
+from datetime import UTC, datetime
+from typing import Any
+from uuid import uuid4
+
+import psycopg
+import pytest
+import sqlalchemy as sa
+
+from nora.app.assess_dq import (
+    cross_room_duplicate_events,
+    empty_lineage_rows,
+    happened_place_mismatch,
+    induced_line_no_aggregate,
+    rollup_rebuild_divergence,
+    sections_past_age_horizon,
+    unresolved_citations,
+)
+from nora.domain.gatherings import Gathering, GatheringStatus
+from nora.domain.models import NormalizedMessage
+from nora.infra.sql.audit import SqlRecordStore
+from nora.infra.sql.engine import create_sql_engine
+from nora.infra.sql.gatherings import SqlGatheringStore
+from nora.infra.sql.migrations_runner import run_migrations
+from nora.infra.sql.notes import SqlNoteStore
+from nora.infra.sql.schema import MESSAGES, ROLLUP_BUILD, ROLLUP_OUTING
+
+pytestmark = pytest.mark.asyncio
+
+_TRUNCATE = (
+    "citation", "note_revision", "note", "event_revision", "events",
+    "rollup_outing", "rollup_build", "presence_stays", "messages",
+    "row_history",
+)
+
+
+@pytest.fixture(scope="module")
+def _db(pg_admin: Any) -> Iterator[str]:
+    dbname = "t_assess_dq_" + uuid4().hex
+    with psycopg.connect(pg_admin.dsn(pg_admin.maintenance_db), autocommit=True) as conn:
+        conn.execute(f'CREATE DATABASE "{dbname}"')
+    url = (
+        f"postgresql+asyncpg://{pg_admin.user}:{pg_admin.password}"
+        f"@{pg_admin.host}:{pg_admin.port}/{dbname}"
+    )
+    run_migrations(url)
+    try:
+        yield url
+    finally:
+        with psycopg.connect(pg_admin.dsn(pg_admin.maintenance_db), autocommit=True) as conn:
+            conn.execute(
+                "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                "WHERE datname = %s AND pid <> pg_backend_pid()",
+                (dbname,),
+            )
+            conn.execute(f'DROP DATABASE IF EXISTS "{dbname}"')
+
+
+@pytest.fixture
+async def engine(_db: str) -> AsyncIterator[Any]:
+    eng = create_sql_engine(_db)
+    try:
+        yield eng
+    finally:
+        async with eng.begin() as conn:
+            await conn.execute(sa.text("SET LOCAL nora.row_history = 'off'"))
+            for table in _TRUNCATE:
+                await conn.execute(sa.text(f'TRUNCATE "{table}" CASCADE'))
+        await eng.dispose()
+
+
+async def _message(engine: Any, *, conversation_id: str = "g1", ts: int = 1000) -> int:
+    store = SqlRecordStore(engine)
+    return await store.append(
+        message=NormalizedMessage(
+            "signal", conversation_id, "group", "+1", "Miles", ts, "hi", {},
+        ),
+        person_id="miles",
+    )
+
+
+def _event(
+    *, conversation_id: str, unit_id: str, status: GatheringStatus,
+    venue_place_id: str | None, when: datetime, end: datetime | None = None,
+    people: tuple[str, ...] = (),
+) -> Gathering:
+    return Gathering(
+        id=uuid4(), conversation_id=conversation_id, title="dinner",
+        created_by="miles", when=when, venue_text=None,
+        venue_place_id=venue_place_id, venue_name=venue_place_id,
+        venue_address=None, venue_rating=None, venue_price_level="",
+        venue_maps_url=None, venue_resolved_at=None, status=status,
+        reminder_id=None, created_at=when, unit_id=unit_id, end=end,
+        people=people,
+    )
+
+
+# ---------------------------------------------------------------- citations
+
+
+async def test_unresolved_citations_ok_when_every_citation_resolves(engine):
+    mid = await _message(engine)
+    notes = SqlNoteStore(engine)
+    await notes.create(
+        unit="u", title="t", description="d", uncertainty="open",
+        closing_condition="c", established_in="signal:g1",
+        body=f"a claim [{mid}]", established_by="test", now_ms=1000,
+        anchor_date=20260901,
+    )
+    async with engine.connect() as conn:
+        result = await unresolved_citations(conn)
+    assert result.status == "ok"
+    assert result.failing == 0
+
+
+async def test_unresolved_citations_fails_when_the_hide_never_cascaded(engine):
+    """A message hidden by a path that never called `nora.app.withdrawal` —
+    the exact gap this check exists to catch."""
+    mid = await _message(engine)
+    notes = SqlNoteStore(engine)
+    note = await notes.create(
+        unit="u", title="t", description="d", uncertainty="open",
+        closing_condition="c", established_in="signal:g1",
+        body=f"a claim [{mid}]", established_by="test", now_ms=1000,
+        anchor_date=20260901,
+    )
+    async with engine.begin() as conn:
+        await conn.execute(
+            sa.update(MESSAGES).where(MESSAGES.c.id == mid).values(hidden_at=2000)
+        )
+    async with engine.connect() as conn:
+        result = await unresolved_citations(conn)
+    assert result.status == "fail"
+    assert result.failing == 1
+    assert f"note:{note.id}" in result.sample
+
+
+async def test_unresolved_citations_excludes_a_note_the_cascade_already_marked(engine):
+    """A note already `unsupported_at` (the withdrawal cascade already ran,
+    `nora.app.withdrawal`) is NOT counted again — the gap this check exists
+    for is a hide that never cascaded, not a hide that already did."""
+    from nora.app.withdrawal import withdraw_message
+
+    mid = await _message(engine)
+    notes = SqlNoteStore(engine)
+    note = await notes.create(
+        unit="u", title="t", description="d", uncertainty="open",
+        closing_condition="c", established_in="signal:g1",
+        body=f"a claim [{mid}]", established_by="test", now_ms=1000,
+        anchor_date=20260901,
+    )
+    async with engine.begin() as conn:
+        await conn.execute(
+            sa.update(MESSAGES).where(MESSAGES.c.id == mid).values(hidden_at=2000)
+        )
+        report = await withdraw_message(conn, message_id=mid, now_ms=2000)
+    assert set(report.marked["note"]) == {note.id}
+    async with engine.connect() as conn:
+        result = await unresolved_citations(conn)
+    assert result.status == "ok"
+    assert result.failing == 0
+
+
+# -------------------------------------------------------------------- events
+
+
+async def test_cross_room_duplicate_events_ok_for_distinct_venues(engine):
+    gatherings = SqlGatheringStore(engine)
+    when = datetime(2026, 9, 29, 19, 0, tzinfo=UTC)
+    await gatherings.create(_event(
+        conversation_id="g1", unit_id="u", status=GatheringStatus.CONFIRMED,
+        venue_place_id="place-a", when=when,
+    ))
+    await gatherings.create(_event(
+        conversation_id="g2", unit_id="u", status=GatheringStatus.CONFIRMED,
+        venue_place_id="place-b", when=when,
+    ))
+    async with engine.connect() as conn:
+        result = await cross_room_duplicate_events(conn)
+    assert result.status == "ok"
+
+
+async def test_cross_room_duplicate_events_fails_on_overlap_same_venue(engine):
+    gatherings = SqlGatheringStore(engine)
+    when = datetime(2026, 9, 29, 19, 0, tzinfo=UTC)
+    end = datetime(2026, 9, 29, 21, 0, tzinfo=UTC)
+    a = await gatherings.create(_event(
+        conversation_id="g1", unit_id="u", status=GatheringStatus.CONFIRMED,
+        venue_place_id="place-c", when=when, end=end,
+    ))
+    b = await gatherings.create(_event(
+        conversation_id="g2", unit_id="u", status=GatheringStatus.CONFIRMED,
+        venue_place_id="place-c", when=when, end=end,
+    ))
+    async with engine.connect() as conn:
+        result = await cross_room_duplicate_events(conn)
+    assert result.status == "fail"
+    assert result.failing == 1
+    ids = {str(a.id), str(b.id)}
+    assert any(all(i in s for i in ids) for s in result.sample)
+
+
+async def test_empty_lineage_rows_fails_before_any_writer_states_one(engine):
+    gatherings = SqlGatheringStore(engine)
+    when = datetime(2026, 9, 29, 14, 10, tzinfo=UTC)
+    event = await gatherings.create(_event(
+        conversation_id="g1", unit_id="u", status=GatheringStatus.PROPOSED,
+        venue_place_id=None, when=when,
+    ))
+    async with engine.connect() as conn:
+        result = await empty_lineage_rows(conn)
+    assert result.status == "fail"
+    assert str(event.id) in result.sample
+
+
+async def test_happened_place_mismatch_fails_when_place_disagrees_with_the_outing(engine):
+    gatherings = SqlGatheringStore(engine)
+    when = datetime(2026, 9, 29, 20, 0, tzinfo=UTC)
+    end = datetime(2026, 9, 29, 22, 0, tzinfo=UTC)
+    event = await gatherings.create(_event(
+        conversation_id="g1", unit_id="u", status=GatheringStatus.HAPPENED,
+        venue_place_id="place-told", when=when, end=end, people=("miles", "ann"),
+    ))
+    async with engine.begin() as conn:
+        await conn.execute(sa.insert(ROLLUP_BUILD).values(
+            code_version="test", params_sha256="x", status="current", through_ms=0,
+        ))
+        build_id = (await conn.execute(
+            sa.select(ROLLUP_BUILD.c.id).order_by(ROLLUP_BUILD.c.id.desc()).limit(1)
+        )).scalar_one()
+        await conn.execute(sa.insert(ROLLUP_OUTING).values(
+            build_id=build_id, unit="u", lineage={}, valid_from_ms=0,
+            valid_to_ms=9_999_999_999_999, as_of_ms=0,
+            persons=["miles", "ann"], lat=1.0, lng=1.0,
+            saved_place_id="place-seen", open=0,
+        ))
+    async with engine.connect() as conn:
+        result = await happened_place_mismatch(conn)
+    assert result.status == "fail"
+    assert str(event.id) in result.sample
+
+
+# --------------------------------------------------------------------- other
+
+
+async def test_rollup_rebuild_divergence_is_not_applicable_with_no_second_build(engine):
+    async with engine.connect() as conn:
+        result = await rollup_rebuild_divergence(
+            conn, build_a=None, build_b=None, since_ms=0, through_ms=1,
+        )
+    assert result.status == "not_applicable"
+    assert result.failing == 0
+
+
+async def test_rollup_rebuild_divergence_ok_when_two_builds_agree(engine):
+    async with engine.begin() as conn:
+        for _ in range(2):
+            await conn.execute(sa.insert(ROLLUP_BUILD).values(
+                code_version="test", params_sha256="x", status="superseded",
+                through_ms=0,
+            ))
+        ids = list((await conn.execute(
+            sa.select(ROLLUP_BUILD.c.id).order_by(ROLLUP_BUILD.c.id)
+        )).scalars())
+    async with engine.connect() as conn:
+        result = await rollup_rebuild_divergence(
+            conn, build_a=ids[-2], build_b=ids[-1], since_ms=0, through_ms=10_000,
+        )
+    assert result.status == "ok"
+
+
+async def test_sections_past_age_horizon_is_not_applicable_before_step_8(engine):
+    async with engine.connect() as conn:
+        result = await sections_past_age_horizon(conn)
+    assert result.status == "not_applicable"
+
+
+async def test_induced_line_no_aggregate_is_not_applicable_before_step_8(engine):
+    async with engine.connect() as conn:
+        result = await induced_line_no_aggregate(conn)
+    assert result.status == "not_applicable"

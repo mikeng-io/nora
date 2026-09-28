@@ -156,6 +156,10 @@ APPEND_ONLY: dict[str, str] = {
     # ROW IT CITES is marked `unsupported` instead — so it is its own
     # history, same as `event_rsvps`.
     "citation": "recorded_at",
+    # Step 3 (0076_assess_report): the Assess adaptor's one store. One row
+    # per run, never rewritten — the next run is the next row
+    # (`nora.domain.assess.AssessReport`).
+    "assess_report": "recorded_at",
 }
 
 #: Changes in place today and migrates at a later step (70 §5). Not

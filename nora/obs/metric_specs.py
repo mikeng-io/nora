@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from typing import NamedTuple
 
+from nora.domain.assess import DQ_CHECKS
 from nora.domain.cues import CUES
 from nora.domain.media import MEDIA_FETCH_CALLERS
 from nora.domain.media_join import JOIN_PATHS
@@ -2319,6 +2320,22 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         + "). Counted once per unit per ~30s tick while it holds, so it "
         "measures how long brakes hold, not how many wakes they stopped.",
         ("brake",),
+    ),
+    # The Assess adaptor's nightly data-quality checks (design/cognition-loop/
+    # 30-cognition.md §6, 70-migration.md §10, migration step 3). ONE
+    # INCREMENT PER (run, check) when a check's status is `fail` — never per
+    # offending row, so this counts how many nightly runs found a check red,
+    # not how many rows it found. `nora.domain.assess.DQ_CHECKS` is the label
+    # vocabulary; `not_applicable` never increments this (a check that could
+    # not run is not a failure).
+    _CounterSpec(
+        "nora_dq_failures_total",
+        "Nightly data-quality check runs (nora.app.assess_run) whose check "
+        "came back status=fail, by check ("
+        + " / ".join(DQ_CHECKS)
+        + "). status=not_applicable (the tier the check reads has not "
+        "shipped yet) never increments this.",
+        ("check",),
     ),
 )
 

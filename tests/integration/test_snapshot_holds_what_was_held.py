@@ -342,6 +342,11 @@ APPEND: dict[str, Callable[[int], dict[str, Any]]] = {
         "citing_store": "note", "citing_key": _uuid("note", n),
         "cited_store": "message", "cited_id": f"{n}",
     },
+    # Step 3 (0076_assess_report): the Assess adaptor's one store.
+    "assess_report": lambda n: {
+        "kind": "nightly_dq", "run_at_ms": MS0 + n,
+        "results": [{"check": "unresolved_citations", "status": "ok"}],
+    },
 }
 
 
