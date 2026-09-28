@@ -231,7 +231,7 @@ async def test_a_saved_place_wins_over_a_bound_name_of_the_same_words(persons):
             return None
 
     labelled = DerivedPlace(SECOND, "grant_carver", "c", *_AT[SECOND], 100.0, "home",
-                            1.0, "Home", None)
+                            1.0, "Home", "l360-home")
     routes = _Routes()
     specs = build_tool_specs(
         store=None, conversation_id="g", conversation_type="group",
@@ -260,7 +260,7 @@ async def test_two_peoples_places_with_the_same_label_stay_apart(persons):
             super().__init__()
             self.homes = {
                 k: DerivedPlace(p.id, p.subject_id, p.circle_id, p.lat, p.lng, p.radius_m,
-                                p.kind, p.confidence, "Home", None)
+                                p.kind, p.confidence, "Home", f"l360-{p.id}")
                 for k, p in self.homes.items()
             }
             self.by_id = {p.id: p for p in self.homes.values()}

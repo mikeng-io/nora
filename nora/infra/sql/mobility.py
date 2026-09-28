@@ -214,6 +214,7 @@ class SqlMobilityStore:
                 PRESENCE_STAYS.c.lat, PRESENCE_STAYS.c.lng,
                 PRESENCE_DERIVED_PLACES.c.kind.label("place_kind"),
                 PRESENCE_DERIVED_PLACES.c.label.label("place_label"),
+                PRESENCE_DERIVED_PLACES.c.saved_place_id.label("place_saved_id"),
             )
             .select_from(
                 PRESENCE_STAYS.outerjoin(
@@ -238,6 +239,9 @@ class SqlMobilityStore:
                 "lng": row.lng,
                 "place_kind": row.place_kind,
                 "place_label": row.place_label,
+                # Whether the label is a household name (Life360 saved) or
+                # only the geocoded street of the spot (design/27 §4.3).
+                "place_saved": row.place_saved_id is not None,
             }
             for row in rows
         ]
