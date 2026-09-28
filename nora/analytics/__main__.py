@@ -1,10 +1,15 @@
 """Entry point: python -m nora.analytics
 
-The mobility rollup daemon — the same codebase as `python -m nora`, a
-DIFFERENT command and a SEPARATE process. Mirrors `nora.presence.__main__`
-exactly: load config, build the object graph through
-`nora.analytics.composition.build_rollup`, serve a metrics/health endpoint,
-loop forever evaluating fire conditions per subject.
+The Rollup daemon — the same codebase as `python -m nora`, a DIFFERENT
+command and a SEPARATE process. Mirrors `nora.presence.__main__`: load
+config, build the object graph through `nora.analytics.composition.
+build_rollup`, serve a metrics/health endpoint, and every tick run the whole
+Rollup on the current build to the watermark `now - grace_seconds`
+(design/cognition-loop/25-rollup.md §2). On start, and whenever the pointer
+names a build of other code or parameters, it rebuilds first.
+
+`python -m nora.analytics rebuild` builds the Rollup again from the Record
+into a new build, switches the pointer to it, and exits.
 
 When analytics is disabled (the inert default) this exits 0 after serving
 nothing.
@@ -31,18 +36,14 @@ log = logging.getLogger("nora.analytics.__main__")
 
 __all__ = ["build_parser", "main"]
 
-# Per-subject state the loop needs across ticks, held in-process (not
-# persisted — a restart simply re-evaluates every subject on its first
-# tick, which is always correct because the fire conditions are themselves
-# watermark-derived, not based on this dict).
-_LastRunAt = dict[str, float]
-# When a subject's `run_once` last completed WITHOUT raising, and when a
-# subject was first seen (i.e. this process's first tick that reached it).
-# Both hold wall-clock seconds and back `nora_analytics_rollup_age_seconds`
-# — the same shape `nora.presence.collector`'s `_last_success_ms` /
-# `_first_seen_ms` pair uses (`_publish_liveness`'s docstring): a subject
-# that has never yet succeeded still emits a CLIMBING age from when it was
-# first attempted, rather than no series at all.
+# When a subject's fold last completed WITHOUT raising, and when a subject was
+# first seen (this process's first tick that reached it). Both hold wall-clock
+# seconds and back `nora_analytics_rollup_age_seconds` — the same shape
+# `nora.presence.collector`'s `_last_success_ms` / `_first_seen_ms` pair uses
+# (`_publish_liveness`'s docstring): a subject that has never yet succeeded
+# still emits a CLIMBING age from when it was first attempted, rather than no
+# series at all. The wall clock here is for liveness only; it never enters a
+# Rollup row.
 _LastSuccessAt = dict[str, float]
 
 
@@ -59,7 +60,8 @@ def _metrics_app(deps: AnalyticsDependencies) -> web.Application:
         return web.json_response({
             "status": "ok",
             "subjects": len(deps.subjects),
-            "enabled": deps.rollup is not None,
+            "units": len(deps.units),
+            "enabled": deps.runner is not None,
         })
 
     app.router.add_get("/metrics", metrics_endpoint)
@@ -68,79 +70,74 @@ def _metrics_app(deps: AnalyticsDependencies) -> web.Application:
 
 
 async def _tick(
-    deps: AnalyticsDependencies, last_run: _LastRunAt,
-    last_success: _LastSuccessAt, first_seen: _LastSuccessAt,
+    deps: AnalyticsDependencies, last_success: _LastSuccessAt,
+    first_seen: _LastSuccessAt,
 ) -> None:
-    """One tick: for every subject, evaluate the three fire conditions and
-    call `MobilityRollup.run_once` if any holds. `run_once` itself is cheap
-    to call speculatively (it reads a watermark and does nothing further if
-    there is truly nothing to do), so the safety_lag/settled_seconds checks
-    here are an optimization — never processing when there is nothing new —
-    not a correctness requirement `run_once` depends on.
+    """One tick: run the whole Rollup on the current build to the watermark
+    `now - grace_seconds` (`RollupRunner.run`). The wall clock chooses WHICH
+    watermark to build to, never what is computed at it: the grace keeps a
+    row whose transaction committed a moment late inside the watermark
+    rather than behind it forever.
+
+    `ensure_build` first: a rebuild started elsewhere (`python -m
+    nora.analytics rebuild`) may have switched the pointer, and a build of
+    other code or parameters is rebuilt, not extended.
 
     Spec §5's isolation requirement: one subject's failure neither aborts
-    the sweep nor advances THAT subject's watermark (the store only
-    advances a watermark on a write `run_once` itself performs before
-    returning normally), so it retries next tick — every other subject
-    still gets processed this tick, and the daemon (and its `/metrics`
-    endpoint) stays up."""
-    rollup = deps.rollup
-    if rollup is None:
-        return  # `_run` only loops here once it has confirmed rollup is set
-    now_ms = int(time.time() * 1000)
-    now_s = now_ms / 1000
-    for subject_id, person_ids, circle_id in deps.subjects:
-        first_seen.setdefault(subject_id, now_s)
-        _, _ = await rollup.watermark(subject_id=subject_id)
-        age_s = now_s - last_run.get(subject_id, 0)
-        # max_age_seconds ALWAYS eventually fires, at lag == 0 or otherwise
-        # (spec §4) — it is the condition that guarantees no subject is
-        # skipped forever even if the other two never trigger.
-        if age_s >= deps.tick_seconds:
-            last_run[subject_id] = now_s
-            try:
-                await rollup.run_once(
-                    subject_id=subject_id, person_ids=person_ids, circle_id=circle_id,
-                    now_ms=now_ms,
-                )
-            except Exception:
-                log.exception(
-                    "analytics rollup failed for subject %s — isolated, "
-                    "other subjects still processed this tick, this one "
-                    "retries next tick",
-                    subject_id,
-                )
-            else:
-                last_success[subject_id] = now_s
-        # Computed fresh every tick, success or failure or skip — never
-        # hardcoded to 0.0, or the gauge could never climb to reveal «up but
-        # not deriving» (the one thing it exists to catch). Baseline is the
-        # last SUCCESS, falling back to first-seen for a subject that has
-        # never yet succeeded.
-        baseline = last_success.get(subject_id, first_seen[subject_id])
+    the sweep nor advances THAT subject's fold (its commit never happened),
+    so it retries next tick — every other subject still gets processed, and
+    the daemon (and its `/metrics` endpoint) stays up."""
+    runner = deps.runner
+    if runner is None:
+        return  # `_run` only loops here once it has confirmed the runner is set
+    now_s = time.time()
+    through_ms = int((now_s - deps.grace_seconds) * 1000)
+    failed: set[str] = {s.subject_id for s in deps.subjects}
+    try:
+        build_id = await runner.ensure_build(through_ms=through_ms)
+        report = await runner.run(build_id=build_id, through_ms=through_ms)
+        failed = set(report.failed)
+    except Exception:
+        log.exception("analytics rollup run failed — retried next tick")
+    for subject in deps.subjects:
+        sid = subject.subject_id
+        first_seen.setdefault(sid, now_s)
+        if sid not in failed:
+            last_success[sid] = now_s
+        # Computed fresh every tick, success or failure — never hardcoded to
+        # 0.0, or the gauge could never climb to reveal «up but not
+        # deriving». Baseline is the last SUCCESS, falling back to
+        # first-seen for a subject that has never yet succeeded.
+        baseline = last_success.get(sid, first_seen[sid])
         deps.metrics.gauge(
-            "nora_analytics_rollup_age_seconds", max(0.0, now_s - baseline),
-            subject=subject_id,
+            "nora_analytics_rollup_age_seconds", max(0.0, now_s - baseline), subject=sid,
         )
 
 
-async def _run(config_path: Path) -> None:
+async def _run(config_path: Path, *, rebuild: bool = False) -> None:
     cfg = config.load(config_path, require_secrets=False)
     setup_logging(
         level=cfg.obs.logging.level,
         format=cfg.obs.logging.format, secrets=[],
     )
     deps = build_rollup(cfg)
+    if rebuild:
+        if deps.runner is None:
+            log.info("analytics disabled — nothing to rebuild")
+            return
+        through_ms = int((time.time() - deps.grace_seconds) * 1000)
+        build_id = await deps.runner.rebuild(through_ms=through_ms)
+        log.info("rebuilt the Rollup as build %d to %d and switched to it", build_id, through_ms)
+        return
     runner = await serve(_metrics_app(deps), deps.metrics_port)
     try:
-        if deps.rollup is None:
+        if deps.runner is None:
             log.info("analytics disabled — nothing to derive; exiting")
             return
-        last_run: _LastRunAt = {}
         last_success: _LastSuccessAt = {}
         first_seen: _LastSuccessAt = {}
         while True:
-            await _tick(deps, last_run, last_success, first_seen)
+            await _tick(deps, last_success, first_seen)
             await asyncio.sleep(deps.tick_seconds)
     finally:
         await runner.cleanup()
@@ -149,13 +146,18 @@ async def _run(config_path: Path) -> None:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="nora.analytics")
     parser.add_argument("--config", default="config.toml")
+    parser.add_argument(
+        "command", nargs="?", choices=("run", "rebuild"), default="run",
+        help="run: the daemon (default); rebuild: build the Rollup again from "
+        "the Record into a new build, switch to it, and exit",
+    )
     return parser
 
 
 def main() -> int:
     args = build_parser().parse_args()
     try:
-        asyncio.run(_run(Path(args.config)))
+        asyncio.run(_run(Path(args.config), rebuild=args.command == "rebuild"))
     except (ConfigError, AnalyticsStartupError) as exc:
         print(f"analytics startup failed: {exc}", file=sys.stderr)
         return 1

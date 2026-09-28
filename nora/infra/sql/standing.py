@@ -53,7 +53,7 @@ SECTIONS: tuple[str, ...] = (BODY, WORKING_SET)
 
 def _derived(standing: Standing) -> dict[str, Any]:
     """The columns every derived row carries (design/cognition-loop/
-    10-tiers.md §3, migration `0071_lineage`), computed by code from the row:
+    10-tiers.md §3, migration `0072_lineage`), computed by code from the row:
     the fold reads its own room, and is shown a prompt it does not cite
     (`own_room_lineage`); `as_of` is the time of the newest message it read
     (`last_folded_row_id`), else the fold's own instant."""
@@ -235,7 +235,7 @@ class SqlStandingStore:
                 # omitted key here would silently keep whatever the row held
                 # instead of the decision the caller made.
                 "working_set": stmt.excluded.working_set,
-                # The derived-row columns (`0071_lineage`), recomputed by
+                # The derived-row columns (`0072_lineage`), recomputed by
                 # `_derived` on every write and never kept from the old row.
                 "lineage": stmt.excluded.lineage,
                 "exclude_persons": stmt.excluded.exclude_persons,

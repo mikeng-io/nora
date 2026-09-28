@@ -15,13 +15,18 @@ import logging
 import os
 from dataclasses import dataclass
 
-from nora.analytics.rollup import MobilityRollup, RollupConfig
+from nora.analytics.rollup import RollupConfig
+from nora.analytics.runner import RollupRunner, Subject
+from nora.analytics.units import PersonScope, UnitConfig, UnitRollups
 from nora.config import Config
 from nora.infra.sql import create_sql_engine, run_migrations
 from nora.infra.sql.geocode_cache import SqlGeocodeCacheStore
 from nora.infra.sql.mobility import SqlMobilityStore
+from nora.infra.sql.rollups import SqlRollupStore, UnitRooms
+from nora.infra.sql.stimuli import SqlStimulusStore
 from nora.obs.metrics import Metrics
 from nora.persons import Persons, PersonsError, load_persons
+from nora.policy import Policy, PolicyError, load_policy
 
 log = logging.getLogger("nora.analytics.composition")
 
@@ -33,18 +38,22 @@ class AnalyticsStartupError(Exception):
 
 @dataclass(frozen=True)
 class AnalyticsDependencies:
-    rollup: MobilityRollup | None
+    runner: RollupRunner | None
     persons: Persons | None
-    subjects: tuple[tuple[str, list[str], str], ...]  # (subject_id, person_ids, circle_id)
+    subjects: tuple[Subject, ...]
     metrics: Metrics
     metrics_port: int
     tick_seconds: float
+    #: How far behind the wall clock a run's watermark sits, so a row whose
+    #: transaction committed a moment late is still inside it.
+    grace_seconds: float = 60.0
+    units: tuple[UnitRooms, ...] = ()
 
 
-def _subjects_from_identity(persons: Persons) -> tuple[tuple[str, list[str], str], ...]:
-    """Every (subject_id, [observed person_ids], circle_id) this deployment
-    should derive for — built from identity.toml's life360 memberships
-    (`CircleSpec`'s own source).
+def _subjects_from_identity(persons: Persons) -> tuple[Subject, ...]:
+    """Every subject this deployment should derive for, with every person id
+    its fixes were recorded under and every circle it is polled in — built
+    from identity.toml's life360 memberships (`CircleSpec`'s own source).
 
     `former_ids_for` (Task 5's reverse lookup) folds in every RETIRED
     person_id that once resolved to this subject, so a renamed person's
@@ -57,15 +66,18 @@ def _subjects_from_identity(persons: Persons) -> tuple[tuple[str, list[str], str
     sees a former id to resolve), and `former_ids_for` is the only way to
     recover the retired ids at all.
 
+    A person in two circles is polled in both; the fold reads the polls of
+    every one of them as its clock (`circle_ids`), and writes its rows under
+    the first.
+
     Fail-closed (R-5), matching `nora.presence.composition
     ._circles_from_identity`'s own precedent over the identical source
     data: a life360 membership with no `circle_id` cannot be placed, and
-    silently writing `""` into a NOT NULL `circle_id` column (`presence_stays`/
-    `presence_derived_places` carry no CHECK constraint to catch it) would
-    corrupt every row derived for that subject — refuse to start instead of
+    silently writing `""` into a NOT NULL `circle_id` column would corrupt
+    every row derived for that subject — refuse to start instead of
     guessing."""
     by_current: dict[str, list[str]] = {}
-    circle_for: dict[str, str] = {}
+    circles_for: dict[str, list[str]] = {}
     unplaced: list[str] = []
     for membership in persons.life360:
         subject = persons.subject_id_for(membership.person_id)
@@ -73,7 +85,9 @@ def _subjects_from_identity(persons: Persons) -> tuple[tuple[str, list[str], str
         if membership.circle_id is None:
             unplaced.append(f"{membership.member_id} (person_id={membership.person_id!r})")
             continue
-        circle_for[subject] = membership.circle_id
+        circles_for.setdefault(subject, [])
+        if membership.circle_id not in circles_for[subject]:
+            circles_for[subject].append(membership.circle_id)
     if unplaced:
         raise AnalyticsStartupError(
             f"Life360 member id(s) {unplaced} have a [[persons.<id>.life360]] "
@@ -82,13 +96,43 @@ def _subjects_from_identity(persons: Persons) -> tuple[tuple[str, list[str], str
             "subject; add circle_id or remove the block (design/19 §3)"
         )
     return tuple(
-        (
-            subject,
-            list(dict.fromkeys([*person_ids, *persons.former_ids_for(subject)])),
-            circle_for[subject],
+        Subject(
+            subject_id=subject,
+            person_ids=tuple(dict.fromkeys([*person_ids, *persons.former_ids_for(subject)])),
+            circle_ids=tuple(circles_for[subject]),
         )
         for subject, person_ids in by_current.items()
     )
+
+
+def _units_from_policy(policy: Policy, persons: Persons) -> tuple[UnitRooms, ...]:
+    """Each unit's rooms (every id form a room is matched under) and members
+    (the persons its rooms LIST, by subject; a room open to everyone lists
+    nobody, so it adds no member — a unit's membership is never guessed),
+    and how a platform account resolves to a member for mentions."""
+    rooms: dict[str, list[tuple[str, str]]] = {}
+    members: dict[str, set[str]] = {}
+    for convo in policy.conversations:
+        rooms.setdefault(convo.unit, []).extend(
+            (convo.platform, cid) for cid in sorted(convo.ids)
+        )
+        members.setdefault(convo.unit, set()).update(
+            persons.subject_id_for(p) for p in (convo.persons or ())
+        )
+    out: list[UnitRooms] = []
+    for unit in sorted(rooms):
+        platforms = sorted({p for p, _ in rooms[unit]})
+        accounts = {
+            (platform, account): subject
+            for subject in sorted(members[unit])
+            for platform in platforms
+            for account in sorted(persons.platform_ids(platform, subject))
+        }
+        out.append(UnitRooms(
+            unit=unit, rooms=tuple(rooms[unit]), members=tuple(sorted(members[unit])),
+            accounts=accounts,
+        ))
+    return tuple(out)
 
 
 def build_rollup(cfg: Config) -> AnalyticsDependencies:
@@ -97,8 +141,9 @@ def build_rollup(cfg: Config) -> AnalyticsDependencies:
     if not analytics.enabled:
         log.info("analytics is disabled (analytics.enabled = false) — rollup inert")
         return AnalyticsDependencies(
-            rollup=None, persons=None, subjects=(), metrics=metrics,
+            runner=None, persons=None, subjects=(), metrics=metrics,
             metrics_port=analytics.metrics_port, tick_seconds=analytics.tick_seconds,
+            grace_seconds=analytics.grace_seconds,
         )
 
     try:
@@ -112,6 +157,14 @@ def build_rollup(cfg: Config) -> AnalyticsDependencies:
             "block exists in identity.toml — there is nothing to derive; "
             "refusing to start"
         )
+    # The unit rollups need the rooms and their units (policy.toml). Without
+    # it the presence Rollup still runs and the unit rollups compute nothing:
+    # a unit's membership is never guessed.
+    try:
+        units = _units_from_policy(load_policy(cfg.policy_file), persons)
+    except PolicyError as exc:
+        log.warning("policy.toml unreadable (%s) — the unit rollups compute nothing", exc)
+        units = ()
 
     database_url = os.environ.get(cfg.store.database_url_env, "")
     if not database_url:
@@ -127,7 +180,7 @@ def build_rollup(cfg: Config) -> AnalyticsDependencies:
         raise AnalyticsStartupError(f"migration error: {exc}") from exc
 
     engine = create_sql_engine(database_url)
-    store = SqlMobilityStore(engine, metrics=metrics)
+    mobility = SqlMobilityStore(engine, metrics=metrics)
     # Google-cache-only labelling (2026-08-19 follow-up, design/27 §3.5):
     # this process READS `geocode_cache` only — it never calls a geocoder
     # itself. REUSES `engine` for the same reason `nora.app.composition`
@@ -158,14 +211,38 @@ def build_rollup(cfg: Config) -> AnalyticsDependencies:
         min_trip_fixes=analytics.min_trip_fixes,
         max_trip_duration_seconds=analytics.max_trip_duration_seconds,
     )
-    rollup = MobilityRollup(
-        store=store, config=rollup_config, metrics=metrics, geocode_cache=geocode_cache,
+    unit_config = UnitConfig(
+        colocation_radius_m=analytics.colocation_radius_m,
+        colocation_min_overlap_seconds=analytics.colocation_min_overlap_seconds,
+        response_window_seconds=analytics.response_window_seconds,
+        stimulus_horizon_seconds=analytics.stimulus_horizon_seconds,
+        deviation_silence_days=analytics.deviation_silence_days,
+        health_max_poll_gap_seconds=analytics.health_max_poll_gap_seconds,
+        tz_name=analytics.tz_name,
+    )
+    rollups = SqlRollupStore(engine)
+    people = {
+        s.subject_id: PersonScope(
+            subject=s.subject_id, circles=s.circle_ids,
+            former_ids=tuple(p for p in s.person_ids if p != s.subject_id),
+        )
+        for s in subjects
+    }
+    unit_rollups = UnitRollups(
+        store=rollups, config=unit_config, units=units, people=people,
+        stimuli=SqlStimulusStore(engine), metrics=metrics,
+    )
+    runner = RollupRunner(
+        mobility=mobility, rollups=rollups, config=rollup_config,
+        unit_rollups=unit_rollups, subjects=subjects, unit_config=unit_config,
+        metrics=metrics, geocode_cache=geocode_cache,
     )
     log.info(
-        "analytics rollup wired: %d subject(s), tick %.0fs",
-        len(subjects), analytics.tick_seconds,
+        "analytics rollup wired: %d subject(s), %d unit(s), tick %.0fs",
+        len(subjects), len(units), analytics.tick_seconds,
     )
     return AnalyticsDependencies(
-        rollup=rollup, persons=persons, subjects=subjects, metrics=metrics,
+        runner=runner, persons=persons, subjects=subjects, metrics=metrics,
         metrics_port=analytics.metrics_port, tick_seconds=analytics.tick_seconds,
+        grace_seconds=analytics.grace_seconds, units=units,
     )

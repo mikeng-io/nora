@@ -13,7 +13,7 @@ spec's deployment section (§6) explicitly rules out.
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -25,6 +25,7 @@ from nora.app.gatherings import GatheringService
 from nora.doctrine.loader import DoctrineStore
 from nora.domain.ports import MemoryStore, RecordStore
 from nora.domain.reminders import ReminderStore
+from nora.domain.rollup import NoRollupBuildError
 from nora.infra.sql.mobility import SqlMobilityStore
 from nora.persons import Persons
 from nora.web.doctrine import build_doctrine_payload
@@ -87,6 +88,26 @@ _DEFAULT_INSIGHTS_DAYS = 30
 _DEFAULT_ANALYTICS_DAYS = 30
 _MAX_ANALYTICS_DAYS = 90
 _DAY_MS = 24 * 60 * 60 * 1000
+
+
+def _needs_a_build(
+    handler: Callable[[web.Request], Awaitable[web.Response]],
+) -> Callable[[web.Request], Awaitable[web.Response]]:
+    """The derived-presence endpoints read the CURRENT Rollup build. With none
+    yet (a fresh database, before the analytics process's first rebuild
+    switches one in) the answer is 503 «no build yet» — R-27's
+    `unavailable` — never an empty 200, which would say the person has no
+    places, no rhythm and no routes (design/cognition-loop/25-rollup.md §2)."""
+
+    async def wrapped(request: web.Request) -> web.Response:
+        try:
+            return await handler(request)
+        except NoRollupBuildError:
+            return web.json_response(
+                {"error": "unavailable", "reason": "no Rollup build yet"}, status=503,
+            )
+
+    return wrapped
 
 
 class _BadQueryError(Exception):
@@ -606,13 +627,13 @@ def register_web_routes(
     app.router.add_get("/app/v1/presence", presence_positions)
     app.router.add_get("/app/v1/presence/places", presence_places)
     app.router.add_get(
-        "/app/v1/presence/analytics/places", presence_analytics_places,
+        "/app/v1/presence/analytics/places", _needs_a_build(presence_analytics_places),
     )
     app.router.add_get(
-        "/app/v1/presence/analytics/rhythm", presence_analytics_rhythm,
+        "/app/v1/presence/analytics/rhythm", _needs_a_build(presence_analytics_rhythm),
     )
     app.router.add_get(
-        "/app/v1/presence/analytics/routes", presence_analytics_routes,
+        "/app/v1/presence/analytics/routes", _needs_a_build(presence_analytics_routes),
     )
     app.router.add_get("/app/v1/presence/{person_id}/history", presence_history)
     app.router.add_get("/app/v1/events", events_list)

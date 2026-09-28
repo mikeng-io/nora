@@ -204,10 +204,17 @@ async def _seed_nights(store, at, days, fid, *, hour=1):
         for i in range(4):
             await store._seed_fix_for_test(
                 id=fid, person_id="s", ts=base + i * 600_000, lat=at[0], lng=at[1],
-                accuracy_m=40.0, wire_state="live", recorded_at=0,
+                accuracy_m=40.0, wire_state="live", recorded_at=base + i * 600_000,
             )
             fid += 1
     return fid
+
+
+async def _tick(rollup, store, now_ms):
+    """A daemon tick at `now_ms`: the collector's poll is on the Record (the
+    fold's evidence that the time passed), then the fold runs to it."""
+    await store._seed_poll_for_test(at_ms=now_ms)
+    await rollup.run_once(subject_id="s", person_ids=["s"], circle_id="c1", through_ms=now_ms)
 
 
 async def test_the_rollup_links_every_stay_to_its_own_residence():
@@ -215,7 +222,7 @@ async def test_the_rollup_links_every_stay_to_its_own_residence():
     fid = await _seed_nights(store, HOME_A, range(0, 12, 2), 1)
     await _seed_nights(store, HOME_B, range(1, 12, 2), fid)
     rollup = MobilityRollup(store=store, config=CFG)
-    await rollup.run_once(subject_id="s", person_ids=["s"], circle_id="c1", now_ms=NOW)
+    await _tick(rollup, store, NOW)
     places = {p.id: p for p in await store.places_for_subject(subject_id="s")}
     assert sorted(p.kind for p in places.values()) == ["home", "home"]
     stays = await store.stays_for_subject(subject_id="s")
@@ -232,7 +239,7 @@ async def test_the_rollup_repairs_a_mislinked_stay_set():
     fid = await _seed_nights(store, HOME_A, range(0, 12, 2), 1)
     await _seed_nights(store, HOME_B, range(1, 12, 2), fid)
     rollup = MobilityRollup(store=store, config=CFG)
-    await rollup.run_once(subject_id="s", person_ids=["s"], circle_id="c1", now_ms=NOW)
+    await _tick(rollup, store, NOW)
     # Corrupt it: collapse to ONE row at HOME_B holding HOME_A's links, and
     # HOME_B's stays linked to it too (the 12.1 km case).
     stays = await store.stays_for_subject(subject_id="s")
@@ -245,14 +252,15 @@ async def test_the_rollup_repairs_a_mislinked_stay_set():
         saved_place_id=None, first_seen_ts=0, last_seen_ts=0,
     )
     await store.relink_stays(subject_id="s", links={s.started_ts: keep for s in stays})
-    # One new fix re-opens the dirty gate, as any live fix would.
+    # A re-plan repairs it: the fold clears its plan key whenever stays,
+    # trips or saved places change; here that is forced, and one more event
+    # is on the Record for the run to consume.
+    await store.mark_derived(subject_id="s", tags_sha256="stale")
     await store._seed_fix_for_test(
         id=10_000, person_id="s", ts=NOW - 3_600_000, lat=HOME_A[0], lng=HOME_A[1],
-        accuracy_m=40.0, wire_state="live", recorded_at=0,
+        accuracy_m=40.0, wire_state="live", recorded_at=NOW + 1,
     )
-    await rollup.run_once(
-        subject_id="s", person_ids=["s"], circle_id="c1", now_ms=NOW + 60_000,
-    )
+    await _tick(rollup, store, NOW + 60_000)
     places = {p.id: p for p in await store.places_for_subject(subject_id="s")}
     assert len(places) == 2
     for s in await store.stays_for_subject(subject_id="s"):
@@ -260,11 +268,14 @@ async def test_the_rollup_repairs_a_mislinked_stay_set():
         assert haversine_distance_m(s.lat, s.lng, place.lat, place.lng) <= place.radius_m
     # Occupancy followed the relink: no hour-of-week dwell is left on a place
     # none of whose stays covers that hour, and the two places split it.
-    per_place = dict.fromkeys(places, 0)
-    for (subj, pid, _how), dwell in store._occupancy.items():
-        assert subj == "s" and pid in places
-        per_place[pid] += dwell
+    per_place = {
+        pid: sum(store.occupancy_for(subject_id="s", place_id=pid).values())
+        for pid in places
+    }
     assert all(v > 0 for v in per_place.values())
+    assert set(store._t.occupancy) == {
+        k for k in store._t.occupancy if k[2] in places
+    }  # no bin left on a deleted place
 
 
 async def test_a_tagged_place_names_the_derived_place_and_keeps_its_id():
@@ -274,7 +285,7 @@ async def test_a_tagged_place_names_the_derived_place_and_keeps_its_id():
     )
     await _seed_nights(store, HOME_A, range(0, 8), 1)
     rollup = MobilityRollup(store=store, config=CFG)
-    await rollup.run_once(subject_id="s", person_ids=["s"], circle_id="c1", now_ms=NOW)
+    await _tick(rollup, store, NOW)
     [place] = await store.places_for_subject(subject_id="s")
     assert (place.label, place.saved_place_id, place.kind) == (
         "Fung & Clara Home", "l360-home", "home",
@@ -288,11 +299,9 @@ async def test_the_label_recheck_never_moves_a_place():
     fid = await _seed_nights(store, OFFICE, [0], 1, hour=14)   # first-ever stay, elsewhere
     await _seed_nights(store, HOME_A, range(1, 8), fid)
     rollup = MobilityRollup(store=store, config=CFG)
-    await rollup.run_once(subject_id="s", person_ids=["s"], circle_id="c1", now_ms=NOW)
+    await _tick(rollup, store, NOW)
     home = next(p for p in await store.places_for_subject(subject_id="s") if p.kind == "home")
-    await rollup.run_once(
-        subject_id="s", person_ids=["s"], circle_id="c1", now_ms=NOW + 90 * _DAY,
-    )
+    await _tick(rollup, store, NOW + 90 * _DAY)
     after = next(p for p in await store.places_for_subject(subject_id="s") if p.id == home.id)
     assert after.kind == "unlabeled"
     assert (after.lat, after.lng) == (home.lat, home.lng)
@@ -302,7 +311,7 @@ async def test_a_steady_state_cycle_writes_no_place():
     store = FakeMobilityStore()
     await _seed_nights(store, HOME_A, range(0, 8), 1)
     rollup = MobilityRollup(store=store, config=CFG)
-    await rollup.run_once(subject_id="s", person_ids=["s"], circle_id="c1", now_ms=NOW)
+    await _tick(rollup, store, NOW)
     writes: list[int | None] = []
     original = store.save_place
 
@@ -313,7 +322,8 @@ async def test_a_steady_state_cycle_writes_no_place():
     store.save_place = counting  # type: ignore[method-assign]
     stays = await store.stays_for_subject(subject_id="s")
     await rollup._reconcile_places(
-        subject_id="s", circle_id="c1", all_stays=stays, new_stays=[], now_ms=NOW,
+        subject_id="s", circle_id="c1", all_stays=stays, new_stays=[], tags=[],
+        now_ms=NOW,
     )
     assert writes == []
 
@@ -327,9 +337,7 @@ async def test_last_seen_follows_the_stays_even_when_nothing_else_changes():
     fid = 1
     for day in range(6):
         fid = await _seed_nights(store, OFFICE, [day], fid, hour=19)
-        await rollup.run_once(
-            subject_id="s", person_ids=["s"], circle_id="c1",
-            now_ms=_T0 + (day + 1) * _DAY,
+        await _tick(rollup, store, _T0 + (day + 1) * _DAY,
         )
     [place] = await store.places_for_subject(subject_id="s")
     stays = await store.stays_for_subject(subject_id="s")

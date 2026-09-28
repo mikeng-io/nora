@@ -64,7 +64,7 @@ section only where its lineage passes for the room ([10](10-tiers.md) §3).
 | `self_card` | memory | Nora | tag, fire; until step 8 | as today |
 | `peer_card`, `peer_history`, `people_in_window` | memory | a person; the people in the window | tag, fire | as today |
 
-**As built (step 2, lineage half, DEC-235).** The pushed blocks that render
+**As built (step 2, lineage half, DEC-236).** The pushed blocks that render
 derived rows today are `notes` (per row), `standing` and
 `standing_working_set` (Standing's two sections) and `culture` (one section);
 every other block is authored, live, this room's Record or memory. They
@@ -88,7 +88,7 @@ backfilled rows render byte-for-byte as before in that room.
 | `social_items(person, interval)` | Record · social | ingested stories, posts, reels with their perceptions | **new**; the live `instagram_*`, `x_*`, `linkedin_*` reads stay on the tag path and are withheld from cognition ([20](20-observe.md) §2) |
 | `about`, `ask_memory`, `search_memory`, `search_memory_workspace` | memory | Honcho | exist |
 
-**`record_query` as built (step 2, DEC-235).** `record_query(start, end?,
+**`record_query` as built (step 2, DEC-236).** `record_query(start, end?,
 scope, author?, text?)`: `from`/`to` are `start`/`end` (Hong Kong time, a
 date meaning that day), `scope` is `this_room` or `all_rooms`, and `all_rooms`
 reads only the unit's rooms whose `message` lineage passes for the turn's

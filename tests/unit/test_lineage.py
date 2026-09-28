@@ -272,7 +272,7 @@ def _body(ctx: TagContext) -> str:
     return content if isinstance(content, str) else "".join(c["text"] for c in content)
 
 
-# Backfilled rows, as `0071_lineage` writes them for a room's own data.
+# Backfilled rows, as `0072_lineage` writes them for a room's own data.
 NOTE_A = _note("0191f2c4-0000-7000-8000-0000000000a1", "raised here", "a",
                Lineage.of({ROW: [message("a")]}))
 NOTE_B = _note("0191f2c4-0000-7000-8000-0000000000a2", "raised in the smaller room", "b",

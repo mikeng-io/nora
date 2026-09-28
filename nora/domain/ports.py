@@ -920,10 +920,12 @@ class StimulusStore(Protocol):
     """
 
     async def append(self, *, stimulus: NewStimulus, recorded_at_ms: int) -> int | None:
-        """Append one stimulus and return its id. A `time` stimulus is unique
-        on `(unit, ref)`: appending one already on record returns None and
-        writes nothing, which is what lets the evaluator raise a daily floor
-        on every tick without counting it twice."""
+        """Append one stimulus and return its id. A `time` or `rollup`
+        stimulus is unique on `(unit, ref)`: appending one already on record
+        returns None and writes nothing, which is what lets the evaluator
+        raise a daily floor on every tick, and the Rollup raise a co-location
+        start on every run it is still starting (or a rebuild recompute it),
+        without counting either twice."""
         ...
 
     async def view(

@@ -169,7 +169,7 @@ Memory has no lineage kind: it is never cited, so nothing derived rests on it.
   from everything a row cites, and across links between Register rows (a
   note and its event through `Note.event_id`; a note and the memo it closes
   into), re-checking on every link write.
-- **As built (step 2, lineage half, DEC-235; 2026-09-29).** The column is
+- **As built (step 2, lineage half, DEC-236; 2026-09-29).** The column is
   JSONB, section to a list of `{kind, subject, origin}`: a note has one
   section, `row`; a Standing row has `body` and `working_set`, the two
   sections today's schema has; a culture row has `body` (it is prose until

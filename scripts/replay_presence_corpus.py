@@ -1,6 +1,6 @@
-"""Replay the LIVE presence corpus through the CURRENT rollup code, tick by
-tick, and print proxy accuracy metrics per subject — the instrument behind
-design/27 §1.4's before/after table.
+"""Replay the LIVE presence corpus through the CURRENT rollup code and print
+proxy accuracy metrics per subject — the instrument behind design/27 §1.4's
+before/after table.
 
 Read-only: it reads `presence_fixes` and derives into an in-memory store; it
 writes nothing to the database. Run it on the deploy host (or with a tunnel),
@@ -8,16 +8,18 @@ once on the code you want to compare against and once on the change:
 
     uv run python scripts/replay_presence_corpus.py [--days 15] [--wander 400|none]
 
-The tick is the daemon's own (120 s), and a fix becomes visible only once its
-`recorded_at` clears the grace window, exactly as `fixes_since` serves it: a
-batch replay (seed everything, tick once) passes on bugs the tick path has
-(design/27 §1.3). Metrics, all proxies because nothing here is labelled:
+Since step 2 (design/cognition-loop/25-rollup.md §2) the rollup is a fold
+over the Record — each person's fixes and the collector's successful polls,
+one event at a time, on the Record's own clock — so how the replay is cut
+into ticks cannot change what it computes (`tests/unit/test_rollup_
+determinism.py` is the gate): it folds the corpus in one run. Metrics, all
+proxies because nothing here is labelled:
 
 - `phantom`: trips under 500 m or under 5 km/h — stops misread as movement.
 - `split`: consecutive stays within 300 m and 31.7 min of each other — one
   visit cut in two.
 - `stay_cov`: share of the replayed span covered by stays.
-- `unproc`: fixes the watermark never passed — a stall.
+- `unproc`: fixes the fold still holds undecided at the end — a stall.
 
 Output is aggregate counts only; never paste per-subject rows into an issue
 or PR (AGENTS.md).
@@ -27,7 +29,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import bisect
 import math
 import os
 import sys
@@ -43,37 +44,26 @@ import sqlalchemy as sa
 
 from nora.analytics.rollup import MobilityRollup, RollupConfig
 from nora.config import AnalyticsConfig
-from nora.domain.mobility import DWELL_CAP_MS, RawFix
+from nora.domain.mobility import DWELL_CAP_MS
 from nora.infra.sql.engine import create_sql_engine
-from nora.infra.sql.schema import PRESENCE_FIXES
-from nora.testing.mobility import FakeMobilityStore
-
-_TICK_MS = 120_000
+from nora.infra.sql.schema import PRESENCE_FIXES, SOURCE_HEALTH
+from nora.testing.mobility import FakeMobilityStore, _SeededFix, _SeededPoll
 
 
-class _ReplayStore(FakeMobilityStore):
-    """The contract-tested fake, with an id-bisecting `fixes_since` so a
-    15-day, 10,000-tick replay is minutes rather than hours."""
-
-    def load(self, rows: list[Any]) -> None:
-        self._rows = sorted(rows, key=lambda r: r.id)
-        self._ids = [r.id for r in self._rows]
-
-    async def fixes_since(
-        self, *, person_ids: list[str], after_fix_id: int, grace_ms: int,
-        now_ms: int, limit: int,
-    ) -> list[RawFix]:
-        cut = now_ms - grace_ms
-        out: list[RawFix] = []
-        for r in self._rows[bisect.bisect_right(self._ids, after_fix_id):]:
-            if len(out) >= limit:
-                break
-            if r.recorded_at < cut:
-                out.append(RawFix(
-                    id=r.id, ts=r.ts, lat=r.lat, lng=r.lng, address=r.address,
-                    is_driving=None if r.is_driving is None else bool(r.is_driving),
-                ))
-        return out
+def _load(store: FakeMobilityStore, rows: list[Any], polls: list[Any]) -> None:
+    """The corpus into the contract-tested fake's tables."""
+    for r in rows:
+        store._t.fixes.append(_SeededFix(
+            id=r.id, person_id=r.person_id, ts=r.ts, lat=r.lat, lng=r.lng,
+            accuracy_m=50.0, wire_state="live", recorded_at=r.recorded_at,
+            address=r.address,
+            is_driving=None if r.is_driving is None else bool(r.is_driving),
+        ))
+    for p in polls:
+        store._t.polls.append(_SeededPoll(
+            id=p.id, scope="replay", outcome="ok", at_ms=p.at_ms,
+            recorded_ms=int(p.recorded_at.timestamp() * 1000),
+        ))
 
 
 def _haversine_m(a: float, b: float, c: float, d: float) -> float:
@@ -85,21 +75,21 @@ def _haversine_m(a: float, b: float, c: float, d: float) -> float:
     return 2 * 6_371_000 * math.asin(math.sqrt(h))
 
 
-async def _replay(subject: str, rows: list[Any], cfg: RollupConfig) -> dict[str, float]:
-    store = _ReplayStore()
-    store.load(rows)
+async def _replay(
+    subject: str, rows: list[Any], polls: list[Any], cfg: RollupConfig,
+) -> dict[str, float]:
+    store = FakeMobilityStore()
+    _load(store, rows, polls)
     rollup = MobilityRollup(store=store, config=cfg)
     start = min(r.ts for r in rows)
-    end = max(r.ts for r in rows) + 3_600_000
-    now = start
-    while now < end:
-        now += _TICK_MS
-        await rollup.run_once(
-            subject_id=subject, person_ids=[subject], circle_id="replay", now_ms=now,
-        )
+    end = max(max(r.recorded_at for r in rows), max((p.at_ms for p in polls), default=0))
+    await rollup.run_once(
+        subject_id=subject, person_ids=[subject], circle_id="replay", through_ms=end,
+    )
     stays = await store.stays_for_subject(subject_id=subject)
     trips = await store.trips_for_subject(subject_id=subject)
-    last_fix_id, _ = await store.watermark(subject_id=subject)
+    state = await store.fold_state(subject_id=subject)
+    held = set(state.window_ids) if state is not None else set()
     return {
         "stays": len(stays),
         "trips": len(trips),
@@ -110,7 +100,7 @@ async def _replay(subject: str, rows: list[Any], cfg: RollupConfig) -> dict[str,
             and _haversine_m(a.lat, a.lng, b.lat, b.lng) <= 300
         ),
         "stay_cov": sum(s.ended_ts - s.started_ts for s in stays) / (end - start),
-        "unproc": sum(1 for r in rows if r.id > last_fix_id),
+        "unproc": sum(1 for r in rows if r.id in held),
     }
 
 
@@ -144,9 +134,16 @@ async def main() -> None:
         PRESENCE_FIXES.c.accuracy_m <= 100.0,
         PRESENCE_FIXES.c.wire_state == "live",
     )
+    polls_stmt = sa.select(
+        SOURCE_HEALTH.c.id, SOURCE_HEALTH.c.at_ms, SOURCE_HEALTH.c.recorded_at,
+    ).where(
+        SOURCE_HEALTH.c.source == "presence", SOURCE_HEALTH.c.event == "poll",
+        SOURCE_HEALTH.c.outcome == "ok", SOURCE_HEALTH.c.at_ms >= since,
+    )
     try:
         async with engine.connect() as conn:
             rows = (await conn.execute(stmt)).all()
+            polls = (await conn.execute(polls_stmt)).all()
     finally:
         await engine.dispose()
 
@@ -156,7 +153,7 @@ async def main() -> None:
     totals: dict[str, float] = defaultdict(float)
     print(f"{'subject':<16}{'stays':>6}{'trips':>6}{'phantom':>8}{'split':>6}{'stay_cov':>9}{'unproc':>7}")
     for subject in sorted(by_person):
-        m = await _replay(subject, by_person[subject], cfg)
+        m = await _replay(subject, by_person[subject], polls, cfg)
         for k, v in m.items():
             totals[k] += v
         print(

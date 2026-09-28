@@ -484,7 +484,7 @@ class SqlNoteStore:
         transaction a write belongs to is the caller's decision, and `propose`
         needs its whole batch in one.
 
-        Lineage and `as_of` (migration `0071_lineage`) are computed here from
+        Lineage and `as_of` (migration `0072_lineage`) are computed here from
         the body's citations: the first revision rests on the room the note
         was raised in and on every room it cites."""
         lineage, cited_at = await _revision_lineage(
@@ -696,7 +696,7 @@ class SqlNoteStore:
         note_id = revision.note_id
         parent_revision_id = revision.parent_revision_id
         revision_id = revision.id
-        # LINEAGE (migration `0071_lineage`): this revision rests on the rooms
+        # LINEAGE (migration `0072_lineage`): this revision rests on the rooms
         # its body cites and, from the tag path, the room it was written in;
         # the note rests on the union. Read under the row lock the CAS below
         # then takes, so the union is over the head it replaces.
@@ -1489,7 +1489,7 @@ class SqlNoteStore:
         if reset_strikes:
             survivor_values["strikes"] = 0
         async with self._engine.begin() as conn:
-            # LINEAGE (migration `0071_lineage`): the survivor now rests on
+            # LINEAGE (migration `0072_lineage`): the survivor now rests on
             # everything either note rested on, and on what the folded body
             # cites.
             derived: dict[str, Any] = {}

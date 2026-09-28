@@ -607,8 +607,8 @@ async def sandbox_as_of(
     ids, sender ids included, so a subject composed against the result reads
     what Nora read then. Seeded BEFORE any subject is composed against it, so
     the target is empty (`snapshot_at.seed` refuses one that is not).
-    Memory, the Rollup, and events are not restored; `snapshot_at.EXCEPTED`
-    says why. Yields the sandbox's URL and what was copied.
+    Memory, events, and the Rollup before migration 0071 are not restored;
+    `snapshot_at.EXCEPTED` says why. Yields the sandbox's URL and what was copied.
     """
     async with sandbox_database(source_url, template=template) as url:
         source = create_readonly_sql_engine(source_url)

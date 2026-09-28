@@ -1,5 +1,5 @@
 """Lineage on the derived stores, against Postgres (design/cognition-loop/
-10-tiers.md §3, migration `0071_lineage`).
+10-tiers.md §3, migration `0072_lineage`).
 
 Two halves. The BACKFILL: rows written before 0070 get lineage from their own
 citations, and origin-room-only lineage where a citation cannot be resolved
@@ -71,7 +71,7 @@ def _entries(raw: dict, section: str) -> set[tuple]:
 
 def test_the_backfill_derives_lineage_from_citations_and_unresolved_otherwise(pg_url):
     run_migrations(pg_url)
-    alembic_command.downgrade(alembic_config(pg_url), "0070_stimulus_rename")
+    alembic_command.downgrade(alembic_config(pg_url), "0071_rollup_builds")
     engine = sa.create_engine(sync_url_for(pg_url))
     n1 = "00000000-0000-0000-0000-000000000001"
     n2 = "00000000-0000-0000-0000-000000000002"

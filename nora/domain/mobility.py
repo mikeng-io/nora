@@ -622,11 +622,19 @@ def _dwell_weighted_centroid(
     # all-zero-but-nonempty multi-fix group (e.g. duplicate timestamps)
     # divides by its fallback equal weights and not by the un-fallen-back
     # (and therefore zero) original total.
+    #
+    # A LEFT FOLD, written out rather than `sum()`: `sum()` of floats is
+    # compensated since Python 3.12, so its last bits depend on every term at
+    # once, while `segment_stays` keeps the same sums running as a group grows
+    # (`_RunningGroup`) and must reach bit-for-bit the value this computes.
     weights = dwells if any(dwells) else [1] * len(fixes)
     total = sum(weights) or 1
-    lat = sum(f.lat * w for f, w in zip(fixes, weights, strict=True)) / total
-    lng = sum(f.lng * w for f, w in zip(fixes, weights, strict=True)) / total
-    return lat, lng
+    lat_sum = 0.0
+    lng_sum = 0.0
+    for f, w in zip(fixes, weights, strict=True):
+        lat_sum += f.lat * w
+        lng_sum += f.lng * w
+    return lat_sum / total, lng_sum / total
 
 
 def _max_radius_m(fixes: list[RawFix], lat: float, lng: float) -> float:
@@ -744,6 +752,99 @@ def collapse_duplicate_fixes(fixes: list[RawFix]) -> list[RawFix]:
     return out
 
 
+#: Below the radius by at least this much, the triangle-inequality bound in
+#: `_RunningGroup.fits` is conclusive; within it, the exact scan decides. A
+#: millimetre is orders above haversine's rounding at these distances, so the
+#: fast answer is always the one the scan would give.
+_FIT_MARGIN_M = 1e-3
+
+
+class _RunningGroup:
+    """The group `segment_stays` is growing, with the dwell-weighted sums of
+    the members whose weight is final (every member but the newest, whose
+    weight is the dwell into whatever comes next).
+
+    `fits(candidate, into)` answers EXACTLY what
+    `_max_radius_m([*members, candidate], *_dwell_weighted_centroid([*members,
+    candidate], [*weights, into, 0])) <= radius_m` answers, in O(1) for the
+    common case instead of rescanning every member: the centroid comes from
+    the running sums (the same left fold `_dwell_weighted_centroid` computes,
+    so the same bits), and «every member within the radius of the new
+    centroid» is proved from a reference point by the triangle inequality
+    (`ref_r + |ref, centroid| <= radius - margin`) before any scan; only an
+    inconclusive bound rescans, and the rescan resets the reference. A group
+    that stays on one spot for hours — a night at home, the fold's held
+    window — is what made the scan quadratic per evaluation."""
+
+    __slots__ = (
+        "lat_sum", "lng_sum", "members", "radius_m", "ref", "ref_r", "w_sum",
+        "weighted", "weights",
+    )
+
+    def __init__(self, first: RawFix, *, radius_m: float) -> None:
+        self.members: list[RawFix] = [first]
+        self.weights: list[int] = []
+        self.lat_sum = 0.0
+        self.lng_sum = 0.0
+        self.w_sum = 0
+        #: `any(weights)`: a zero sum is not the same thing when a weight is
+        #: negative (a caller that broke the ts-ascending contract).
+        self.weighted = False
+        self.radius_m = radius_m
+        self.ref: tuple[float, float] | None = None
+        self.ref_r = 0.0
+
+    def centroid(self) -> tuple[float, float]:
+        """`_dwell_weighted_centroid(members, [*weights, 0])`."""
+        if not self.weighted:
+            return _dwell_weighted_centroid(self.members, [*self.weights, 0])
+        last = self.members[-1]
+        total = self.w_sum or 1
+        return (
+            (self.lat_sum + last.lat * 0) / total,
+            (self.lng_sum + last.lng * 0) / total,
+        )
+
+    def _centroid_with(self, candidate: RawFix, into: int) -> tuple[float, float]:
+        if not self.weighted and into == 0:
+            return _dwell_weighted_centroid(
+                [*self.members, candidate], [*self.weights, into, 0],
+            )
+        last = self.members[-1]
+        total = (self.w_sum + into) or 1
+        lat = (self.lat_sum + last.lat * into) + candidate.lat * 0
+        lng = (self.lng_sum + last.lng * into) + candidate.lng * 0
+        return lat / total, lng / total
+
+    def fits(self, candidate: RawFix, into: int) -> bool:
+        c_lat, c_lng = self._centroid_with(candidate, into)
+        own = haversine_distance_m(candidate.lat, candidate.lng, c_lat, c_lng)
+        if own > self.radius_m:
+            return False
+        if self.ref is not None:
+            shift = haversine_distance_m(self.ref[0], self.ref[1], c_lat, c_lng)
+            if self.ref_r + shift <= self.radius_m - _FIT_MARGIN_M:
+                return True
+        worst = max(haversine_distance_m(f.lat, f.lng, c_lat, c_lng) for f in self.members)
+        self.ref = (c_lat, c_lng)
+        self.ref_r = worst
+        return max(worst, own) <= self.radius_m
+
+    def accept(self, candidate: RawFix, into: int) -> None:
+        last = self.members[-1]
+        self.lat_sum = self.lat_sum + last.lat * into
+        self.lng_sum = self.lng_sum + last.lng * into
+        self.w_sum += into
+        self.weighted = self.weighted or into != 0
+        self.weights.append(into)
+        self.members.append(candidate)
+        if self.ref is not None:
+            self.ref_r = max(
+                self.ref_r,
+                haversine_distance_m(candidate.lat, candidate.lng, self.ref[0], self.ref[1]),
+            )
+
+
 def segment_stays(
     fixes: list[RawFix], *, subject_id: str, person_id: str, circle_id: str,
     radius_m: float, min_dwell_ms: int, wander_radius_m: float | None = None,
@@ -773,37 +874,31 @@ def segment_stays(
         return SegmentationResult(closed=(), open_stay=None)
 
     closed: list[Stay] = []
-    group: list[RawFix] = [fixes[0]]
-    dwells: list[int] = []
+    group = _RunningGroup(fixes[0], radius_m=radius_m)
     wander: list[RawFix] = []
 
-    def _wanders(candidate: RawFix, group_dwells: list[int]) -> bool:
+    def _wanders(candidate: RawFix) -> bool:
         # Only an ESTABLISHED stop can be wandered from: two core fixes, the
         # first not a driving reading. Otherwise one arrival fix — or the
         # last fix of a drive — becomes a stop's centre and the next fix
         # within `wander_radius_m` pins a stay on the road.
         if (
             wander_radius_m is None or candidate.is_driving is True
-            or len(group) < 2 or group[0].is_driving is True
+            or len(group.members) < 2 or group.members[0].is_driving is True
         ):
             return False
-        c_lat, c_lng = _dwell_weighted_centroid(group, [*group_dwells, 0])
+        c_lat, c_lng = group.centroid()
         return haversine_distance_m(c_lat, c_lng, candidate.lat, candidate.lng) <= wander_radius_m
-
-    def _fits(members: list[RawFix], member_dwells: list[int]) -> bool:
-        c_lat, c_lng = _dwell_weighted_centroid(members, [*member_dwells, 0])
-        return _max_radius_m(members, c_lat, c_lng) <= radius_m
 
     i = 1
     while i < len(fixes):
         candidate = fixes[i]
-        dwells.append(dwell_ms(group[-1].ts, candidate.ts))
-        if _fits([*group, candidate], dwells):
-            group.append(candidate)
+        into = dwell_ms(group.members[-1].ts, candidate.ts)
+        if group.fits(candidate, into):
+            group.accept(candidate, into)
             i += 1
             continue
-        if _wanders(candidate, dwells[:-1]):
-            dwells.pop()
+        if _wanders(candidate):
             wander.append(candidate)
             i += 1
             continue
@@ -825,7 +920,7 @@ def segment_stays(
         # unobserved absence of hours.
         if i + 1 < len(fixes):
             after = fixes[i + 1]
-            spike_dwells = [*dwells[:-1], dwell_ms(group[-1].ts, after.ts)]
+            bridge = dwell_ms(group.members[-1].ts, after.ts)
             # Each gap bounded on its own (independent review 2026-09-28):
             # bounding the two together by one DWELL_CAP_MS made the rule
             # dead at any resting cadence slower than ~16 min, i.e. at rest,
@@ -833,53 +928,50 @@ def segment_stays(
             if (
                 candidate.ts - fixes[i - 1].ts <= DWELL_CAP_MS
                 and after.ts - candidate.ts <= DWELL_CAP_MS
-                and _fits([*group, after], spike_dwells)
+                and group.fits(after, bridge)
             ):
-                dwells = spike_dwells
-                group.append(after)
+                group.accept(after, bridge)
                 i += 2
                 continue
-        elif len(group) > 1:
+        elif len(group.members) > 1:
             # The breaking fix is the LAST one in the window, so whether it
             # is a spike or a departure is not yet observable. Leave the
             # group OPEN (the rollup holds its fixes readable) rather than
             # closing it on a fix the next window may show to be noise; the
             # undecided fix is covered by no stay this window.
-            dwells.pop()
             break
         # `candidate` breaks the radius test — close what came before it
         # (if it reached min_dwell_ms) and start a new group at `candidate`.
-        # `dwells[:-1]` is the group's own internal transitions only — the
-        # last entry (just appended above) is the transition INTO
-        # `candidate`, which does not belong to `group`.
+        # `group.weights` are the group's own internal transitions only —
+        # the transition INTO `candidate` does not belong to it.
         stay = _close(
-            group, dwells[:-1], subject_id=subject_id, person_id=person_id,
-            circle_id=circle_id, min_dwell_ms=min_dwell_ms, wander=wander,
+            group.members, list(group.weights), subject_id=subject_id,
+            person_id=person_id, circle_id=circle_id, min_dwell_ms=min_dwell_ms,
+            wander=wander,
         )
         if stay is not None:
             closed.append(stay)
-        group = [candidate]
-        dwells = []
+        group = _RunningGroup(candidate, radius_m=radius_m)
         wander = []
         i += 1
 
     # Whatever remains in `group` never saw a breaking fix within this
-    # window — it is the open stay, not a closed one (rollup, Task 7,
-    # decides closeability against wall-clock `settled_seconds`).
-    open_lat, open_lng = _dwell_weighted_centroid(group, [*dwells, 0])
+    # window — it is the open stay, not a closed one (the rollup's fold
+    # decides closeability on its logical clock).
+    members = group.members
+    open_lat, open_lng = _dwell_weighted_centroid(members, [*group.weights, 0])
     open_stay = Stay(
         subject_id=subject_id, person_id=person_id, circle_id=circle_id,
-        started_ts=group[0].ts,
-        ended_ts=max([group[-1].ts, *(f.ts for f in wander)]),
+        started_ts=members[0].ts,
+        ended_ts=max([members[-1].ts, *(f.ts for f in wander)]),
         lat=open_lat, lng=open_lng,
-        radius_m=_max_radius_m(group, open_lat, open_lng),
-        fix_count=len(group) + len(wander),
+        radius_m=_max_radius_m(members, open_lat, open_lng),
+        fix_count=len(members) + len(wander),
         # Same as `_close`: an open stay closes later by radius break (the
-        # non-final-chunk path) or by the wall clock (`run_once`'s issue #80
-        # stay-hold path) — both land it in `new_stays`, and the place-label
-        # fallback must reach its address too, not just closed-with-the-group
-        # ones.
-        address=mode_address(f.address for f in group),
+        # non-final-chunk path) or by the fold's clock (the stay-hold path)
+        # — both land it in `new_stays`, and the place-label fallback must
+        # reach its address too, not just closed-with-the-group ones.
+        address=mode_address(f.address for f in members),
     )
     return SegmentationResult(closed=tuple(closed), open_stay=open_stay)
 

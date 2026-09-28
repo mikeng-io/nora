@@ -50,7 +50,7 @@
   },
   {
     "name": "the backfill marks a later revision citing nothing unresolved",
-    "file": "nora/infra/sql/migrations/versions/0071_lineage.py",
+    "file": "nora/infra/sql/migrations/versions/0072_lineage.py",
     "old": "                || CASE WHEN p.missing OR (NOT p.cites AND NOT p.first)",
     "new": "                || CASE WHEN p.missing",
     "target": "tests/infra/test_lineage_store.py::test_the_backfill_derives_lineage_from_citations_and_unresolved_otherwise"

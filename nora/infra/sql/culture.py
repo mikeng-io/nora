@@ -122,7 +122,7 @@ class SqlCultureStore:
                         instruction_sha256=instruction_sha256,
                         model=model,
                         # design/cognition-loop/10-tiers.md §3, migration
-                        # `0071_lineage`: the fold reads this room and is
+                        # `0072_lineage`: the fold reads this room and is
                         # shown the unit's note index, which it does not cite.
                         lineage=lineage.to_json(),
                         as_of=written_at,

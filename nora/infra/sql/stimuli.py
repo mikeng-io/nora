@@ -107,6 +107,13 @@ def activity_query(*, unit: str) -> sa.Select[Any]:
     )
 
 
+#: The partial unique indexes' predicates, spelled as the indexes spell them.
+_KIND_PREDICATE: dict[str, Any] = {
+    "time": STIMULUS.c.kind == sa.literal_column("'time'"),
+    "rollup": STIMULUS.c.kind == sa.literal_column("'rollup'"),
+}
+
+
 class SqlStimulusStore:
     """Satisfies `nora.domain.ports.StimulusStore`."""
 
@@ -123,13 +130,21 @@ class SqlStimulusStore:
             "due_ms": stimulus.due_ms, "recorded_at": _at(recorded_at_ms),
         }
         stmt: Any = pg_insert(STIMULUS).values(**values)
-        if stimulus.kind == "time":
-            # The partial unique index `uq_stimulus_time_ref`: a floor raised on
-            # every tick is written once. The conflict target must restate
-            # the index's predicate for Postgres to infer it.
+        if stimulus.kind in ("time", "rollup"):
+            # The partial unique indexes `uq_stimulus_time_ref` and
+            # `uq_stimulus_rollup_ref` (0071): a floor raised on every tick,
+            # or a Rollup stimulus raised again by a later run or a rebuild,
+            # is written once. The conflict target must restate the index's
+            # predicate for Postgres to infer it.
+            #
+            # The predicate is a LITERAL per kind, never `kind == <value>`:
+            # a bound parameter (`kind = $1`) does not imply the index's
+            # `kind = 'rollup'`, and Postgres answers «no unique or exclusion
+            # constraint matching the ON CONFLICT specification» (step 2a's
+            # first run on the deployment's data).
             stmt = stmt.on_conflict_do_nothing(
                 index_elements=[STIMULUS.c.unit, STIMULUS.c.ref],
-                index_where=STIMULUS.c.kind == "time",
+                index_where=_KIND_PREDICATE[stimulus.kind],
             )
         stmt = stmt.returning(STIMULUS.c.id)
         async with self._engine.begin() as conn:

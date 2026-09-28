@@ -92,7 +92,7 @@ WORKING_SET = "working_set"
 
 #: 10 §4's reasoning modes and §3's confidence levels, the vocabularies the
 #: `reasoning` and `confidence` columns are checked against. Migration
-#: `0071_lineage` writes them out rather than importing them (a migration is a
+#: `0072_lineage` writes them out rather than importing them (a migration is a
 #: frozen historical statement, `0053_decision_log`'s rule).
 REASONING_MODES: tuple[str, ...] = (
     "computed", "told", "deduced", "induced", "abduced", "said",
@@ -294,7 +294,7 @@ def note_revision_lineage(
     evidence_room: str | None = None,
 ) -> Lineage:
     """A note revision's lineage from its body's citations (migration
-    `0071_lineage`'s backfill rule, applied to every new revision by
+    `0072_lineage`'s backfill rule, applied to every new revision by
     `nora.infra.sql.notes`).
 
     `cited` are the `messages.id`s the body cites; `rooms` maps each one still
@@ -319,5 +319,5 @@ def note_revision_lineage(
 def own_room_lineage(room: str, sections: Iterable[str]) -> Lineage:
     """A Standing or culture row's lineage: its own room, and `unresolved` at
     it for what its fold was shown and did not cite (the unit-wide `<notes>`
-    index). Shown only in `room` (migration `0071_lineage`)."""
+    index). Shown only in `room` (migration `0072_lineage`)."""
     return Lineage.of({s: (message(room), unresolved(room)) for s in sections})
