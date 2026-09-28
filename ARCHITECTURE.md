@@ -456,9 +456,11 @@ optional administration only, never the runtime.
 
 Seeing something does not license remembering it, inferring from it, acting
 on it, or telling anyone. Each is a separate gate, and none is the model's
-judgement alone: each has a rule in code. Most are rows in
-`design/09-decision-index.md` with their enforcing test; R-31 has no row of
-its own and lives in `DisclosureGuard` (`nora/agent/whereis.py`).
+judgement alone: each has a rule in code. Each is a row in
+`design/09-decision-index.md` with their enforcing test; R-31 (its own guard
+lives in `DisclosureGuard`, `nora/agent/whereis.py`) had no row of its own
+until `design/cognition-loop` step 0 added one, indexing it faithfully
+without re-deciding it.
 
 | step | what holds | rules |
 |---|---|---|
@@ -468,7 +470,28 @@ its own and lives in `DisclosureGuard` (`nora/agent/whereis.py`).
 | **Act** | Speaking unasked is its own per-room grant (`relevance_gate` for participation, `home_room` and `proactive` for the proactive pass), separate from being allowed to answer a tag. Every send into a room goes through one `Deliverer`; the public summons passes its text through a staging `Deliverer` and publishes it only through the instagram-bridge's guarded comment write. A turn that may decline records `silent` as a success. A message crosses rooms only within one unit, at the request of someone allowed in both, under that person's name. | R-1b (amended by DEC-212), R-49 |
 | **Disclose** | Room-scoped tools resolve names only inside the room. The circle is who may be asked about; the room is only who may be told. A live position is disclosed only into a room that is a subset of the person's Life360 circle, unless the operator grants the room `location`. Identifiers never leave in a reply; a person's name or position never leaves in a routing call. A story is read only for a Tier 0 person. A summons loads no room doctrine and no memory. | R-21, R-47, R-31/DEC-79, R-18, R-28, R-98, DEC-212 |
 
+**Amended by `design/cognition-loop` step 0 (DEC-230, `design/09-decision-index.md`).**
+"Background passes never speak" holds in FORM: the Cognition adaptor's one
+act is a reminder row the fire path speaks, exactly as the proactive
+adaptor's was (**Infer**, above; `30-cognition.md` §2). "Every Dreamer write
+screened" gains one exemption: a memo body skips `dream_screen`'s key-shape
+check (**Remember**, above) and renders normally, because a memo may hold a
+password verbatim by design (`design/cognition-loop/12-schemas.md` §3). Each
+row of this table gains its own amendment in the decision index — **Infer**
+by DEC-219/DEC-220 (R-1/R-1b), **Act** by DEC-225 (R-49) and DEC-228
+(DEC-162), **Disclose** by DEC-222–DEC-227 (R-31/DEC-79, R-21, R-33, R-18,
+R-28, R-98) — none built yet; see "Not governed yet" below and each step's
+row in `design/cognition-loop/70-migration.md` §2.
+
 **Not governed yet.** Each gap has one home, and none is an oversight:
+
+- **A write verb's own disclosure surface is ungoverned until its step
+  ships.** `design/cognition-loop` adds four tiers Register writes into
+  beyond notes (memo, event) and two new ones (Character, Lessons, Standing
+  sectioned), each amended into a rule above by its own decision-index row
+  (DEC-219–DEC-230) — but each amendment holds only from the migration step
+  that builds it (`70-migration.md` §2); until then the read/act ceiling
+  DEC-133 describes is the only enforced boundary on a Dreamer adaptor.
 
 - **Grants are room-shaped.** `policy.toml` has no per-person capability, so
   «this person agrees to be looked up from rooms they are not in» cannot be

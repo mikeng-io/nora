@@ -43,7 +43,7 @@ Each step ships alone, behind a flag that defaults off, and is read back live
 
 | # | step | ships | the reading that gates the next |
 |---|---|---|---|
-| 0 | **Tiers, words, grants** | a DEC for [10](10-tiers.md), [12](12-schemas.md), [15](15-map.md); a DEC granting the named write verbs through `AdaptorGrant` (write verbs are not act verbs) and `remind_move`/`remind_cancel` for Cognition's own reminders; each amendment of §3 as a decision row, and index rows for R-31 and DEC-176, which have none; the unit read boundary settled (§4); GLOSSARY rewritten to [10](10-tiers.md)'s words, resolving the conflicts below | — |
+| 0 | **Tiers, words, grants — LANDED 2026-09-28** | DEC-217 for [10](10-tiers.md), [12](12-schemas.md), [15](15-map.md); DEC-218 granting the named write verbs through `AdaptorGrant` (write verbs are not act verbs) and `remind_move`/`remind_cancel` for Cognition's own reminders; each §3 amendment as its own row (DEC-219–DEC-230), and the missing index rows for R-31 and DEC-176; the unit read boundary settled (§4, DEC-231); GLOSSARY rewritten to [10](10-tiers.md)'s words, resolving the 14 conflicts below. Numbers as taken from `origin/master` when this landed; `nora-decision`'s numbering discipline may renumber them at merge. | — |
 | 1 | **Signals, shadow** | the durable `signal` table, the ingest signal stage, cues, the pending set, wake metrics; the wake evaluator in shadow (it logs each would-wake and its reason and fires nothing); reactions, edits and deletes or unsends ingested as items; collector polls and platform adapter health recorded; the clocks still run everything | a week of would-wakes and reasons; every wake value of [20](20-observe.md) §3 sized from it |
 | 1b | **History and snapshot** | the append-only migration of every table in §5's inventory except the rows marked 2 or 2b, which migrate at those steps (system time, heads as views, loop state as transition rows); doctrine, Dreamer-objective, config and deploy revisions recorded at load (§5); `nora snapshot --at T` (below) | a test writes, revises and retires across every store migrated here, then snapshots at two moments and gets exactly what was held at each; a recorded tag turn's blocks, rendered from a snapshot at its moment, equal the blocks its Langfuse trace recorded, with memory and the Live blocks (`tool_catalogue`, her platform presence, now) excepted and the transcript rendered through the media join as of T |
 | 2 | **Rollup and lineage** | the Rollup as a projection (logical watermark, `build`, citation by overlap), design 27's presence rollup moved onto the watermark; co-location, outing; daybook and tie partial ([25](25-rollup.md) §3); the [10](10-tiers.md) §3 columns, every lineage kind and its per-room predicate; the lineage backfill, then the filter; the `citation` edge table; `rollup_read`, `record_query`; wake defaults re-sized with Rollup signals | incremental and batch builds of each rollup agree exactly; no row with unknown lineage renders outside its origin room; a presence-lineaged field is refused in a room without the location flag and in one where DisclosureGuard fails |
@@ -155,7 +155,7 @@ rule 4); DEC-213 (note body schema).
 
 | position | what would decide it |
 |---|---|
-| the unit as the read boundary for transcripts of all its rooms | the operator's 2026-09-09 ruling covers proactive; to be confirmed for cognition at step 0. If it is not, cognition runs one session per room instead of per unit, with the same verbs and agenda |
+| ~~the unit as the read boundary for transcripts of all its rooms~~ | **SETTLED at step 0** (DEC-231): the unit is the Cognition session's read boundary, extending the operator's 2026-09-09 ruling that the proactive half holds all permissions of its unit. Each agenda item's room-scoped reads still resolve through its own bound room (R-21, amended by DEC-223); the unit bounds the SESSION, the room bounds each ITEM's disclosure. The fallback this row named — one session per room instead of per unit — is not taken |
 | granting cognition the live social reads (`instagram_*`, `x_*`, `linkedin_*`) | the operator; the risk is the messaging login |
 | one agent on the runtime model (a cheap model) holding a busy unit's day | step 3's shadow: items closed per session, refusals per rule, context size |
 | participation as a wake of the same loop | session latency measured after step 4 |
@@ -319,4 +319,12 @@ step's PR:
 (architecture, terminology, grounding, privacy).** The operator's decisions D1–D12 are listed once, in [00](00-intent.md)'s
 Status.
 
-Nothing is built.
+**Step 0 landed 2026-09-28**: DEC-217 (the canon, [10](10-tiers.md)/[12](12-schemas.md)/[15](15-map.md)),
+DEC-218 (the write-verb grant), DEC-219–DEC-230 (the §3 amendments, one row
+each), DEC-231 (the unit read boundary, settling §4), and the missing index
+rows for R-31 and DEC-176 — all in `design/09-decision-index.md`. GLOSSARY.md
+is rewritten to [10](10-tiers.md)'s words, resolving its 14 conflicts. Numbers
+are as taken from `origin/master` when this branch was written and may be
+renumbered at merge (`CONTRIBUTING.md` "Numbering discipline").
+
+Nothing else is built: steps 1–8 remain design only.
