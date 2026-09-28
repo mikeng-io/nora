@@ -154,3 +154,60 @@ async def test_an_ordinary_place_name_is_never_screened_by_r57():
         out = await _call(route, origin="天水圍站", destination="Yoho Mall")
         assert out["status"] == "ok", trusted
         assert client.calls == [("天水圍站", "Yoho Mall")], trusted
+
+
+async def test_a_bound_place_label_that_is_a_disclosed_live_address_is_still_refused():
+    """A presence read binds a place whose label is the same street `where_is`
+    just disclosed: the bound name must not skip R-57 (review 2026-09-28)."""
+    from datetime import UTC, datetime
+
+    from nora.domain.mobility import DerivedPlace, Stay
+
+    class _Mobility:
+        place = DerivedPlace(5, "p_fung", CIRCLE_ID, 22.3721, 114.1138, 100.0,
+                             "unlabeled", 0.0, "Tsuen Wan Road", None)
+
+        async def stays_for_subject(self, *, subject_id):
+            day = datetime(2026, 9, 2, tzinfo=UTC)
+            return [
+                Stay("p_fung", "p_fung", CIRCLE_ID,
+                     int(day.timestamp() * 1000) + w * 604_800_000,
+                     int(day.timestamp() * 1000) + w * 604_800_000 + 86_400_000,
+                     22.3721, 114.1138, 30.0, 9, place_id=5)
+                for w in range(6)
+            ]
+
+        async def places_for_subject(self, *, subject_id):
+            return [self.place]
+
+        async def place_by_id(self, *, place_id):
+            return self.place if place_id == 5 else None
+
+    fung = PersonRef(
+        person_id="p_fung", name="Fung", honcho_peer_id="p_fung",
+        first_name="Fung", aliases=("Fung",),
+    )
+    persons = Persons(by_person={"p_fung": fung}, index={("signal", FUNG_PHONE): "p_fung"})
+    room = Room(
+        platform="signal", conversation_id=GROUP,
+        roster_source=FakeRosterSource(groups={GROUP: (frozenset({FUNG_PHONE}),)}),
+        persons=persons,
+    )
+    circle = Circle(circle_id=CIRCLE_ID, person_ids=frozenset({"p_fung"}), people=(fung,))
+    client = _RecordingClient()
+    tools = build_tools(
+        store=None, conversation_id=GROUP, conversation_type="group",
+        persons=persons, honcho=None, deliverer=None, metrics=Metrics(),
+        room=room, transit_source=None, route_source=client,
+        presence_source=_CannedPresence(), presence_circles=(circle,),
+        location_trusted=False, geocoder=FakeReverseGeocoder("Tsuen Wan Road"),
+        question="幾點翻到屋企", context_window=40, mobility=_Mobility(),
+        clock=lambda: datetime(2026, 10, 14, 4, 0, tzinfo=UTC),
+    )
+    by = {t.tool_name: t for t in tools}
+    read = await _call(by["routine_read"], date="2026-10-14", from_hour=0, to_hour=23,
+                       name="Fung")
+    assert "Tsuen Wan Road" in str(read)  # the read bound it
+    await _disclose_live_address(by["where_is"], by["reverse_geocode"])
+    out = await _call(by["route"], origin="Tsuen Wan Road", destination="Yoho Mall")
+    assert out["status"] == "refused" and client.calls == []

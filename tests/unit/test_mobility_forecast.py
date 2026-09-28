@@ -420,8 +420,57 @@ def test_left_work_today_is_done_at_the_time_they_left():
     wed = MONDAY + timedelta(days=7 * 7 + 2)
     stays = [*_wednesday_nights(7, set()), _stay(wed, 9, 18, OFFICE)]
     fc = _fc(stays, week=7, kind="departure", place=OFFICE, from_hour=16, to_hour=22,
-             now_h=19, at_place_now=False)
+             now_h=20.5, at_place_now=False)
     assert (fc.today, fc.done_minute) == ("done", 18 * 60)
+
+
+def test_out_for_lunch_today_is_stepped_out_not_left():
+    """The habit counts a leaving only after two hours away; out since 12:30,
+    asked at 12:45, is not «already left work» (review 2026-09-28)."""
+    fri = MONDAY + timedelta(days=7 * 6 + 4)
+    stays = [*_weekly(6, 4, [(9, 18, OFFICE), (18.75, 31, HOME)]), _stay(fri, 9, 12.5, OFFICE)]
+    fc = _fc(stays, week=6, weekday=4, kind="departure", place=OFFICE, from_hour=10,
+             to_hour=20, now_h=12.75, at_place_now=False)
+    assert (fc.today, fc.done_minute) == ("stepped_out", 12 * 60 + 30)
+
+
+def test_a_window_still_open_is_not_a_past_day():
+    """Asked at 01:00 about tomorrow night: tonight's 22-to-06 window is still
+    open, and its partial evening (a late 23:15 return) must not count."""
+    stays = []
+    for i in range(9):
+        day = MONDAY + timedelta(days=i)
+        stays += [_stay(day, 9, 18, OFFICE), _stay(day, 22.5, 24 + 6.5, HOME)]
+    tonight = MONDAY + timedelta(days=9)  # a Wednesday
+    stays += [_stay(tonight, 9, 18, OFFICE), _stay(tonight, 22, 23, GYM),
+              _stay(tonight, 23.25, 24.5, HOME)]
+    now = tonight + timedelta(hours=25)
+    fc = time_forecast(
+        stays, place_ids={HOME}, kind="arrival", day=(tonight + timedelta(days=1)).date(),
+        from_hour=22, to_hour=6, tz_name="Asia/Hong_Kong", history_before_ms=_ms(now),
+    )
+    assert fc.basis == "day_type"
+    assert all(h.latest == 22 * 60 + 30 for h in fc.habits)
+
+
+def test_the_window_edges_are_inside_it():
+    """An arrival exactly at the window's last minute counts, and a window
+    from an hour to the same hour is the whole day."""
+    stays = _weekly(4, 2, [(9, 18, OFFICE), (20, 31, HOME)])
+    edge = _fc(stays, week=4, from_hour=16, to_hour=20)
+    assert [(h.earliest, h.days) for h in edge.habits] == [(20 * 60, 4)]
+    whole = _fc(stays, week=4, from_hour=9, to_hour=9)
+    assert [(h.earliest, h.days) for h in whole.habits] == [(20 * 60, 4)]
+
+
+def test_home_since_yesterday_does_not_date_this_visit_from_last_night():
+    """Home since last night, asked at 21:00 inside tonight's window: they are
+    home, but not «since» a time in tonight's window."""
+    wed = MONDAY + timedelta(days=7 * 7 + 2)
+    today = [_stay(wed - timedelta(days=1), 19, 24 + 20.9, HOME)]
+    fc = _fc(_wednesday_nights(7, set()) + today, week=7, now_h=21, at_place_now=True)
+    assert (fc.today, fc.done_minute) == ("done", None)
+
 
 
 def test_home_again_after_going_out_does_not_claim_the_first_arrival():

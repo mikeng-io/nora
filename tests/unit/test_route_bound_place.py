@@ -161,3 +161,91 @@ async def test_two_peoples_unnamed_homes_get_words_that_route_to_each(persons):
         local = routes.calls[0]["local_places"][name.casefold()]
         expected = (22.44, 114.02) if person.startswith("Miles") else _AT[SECOND]
         assert (local.lat, local.lng) == expected
+
+
+# ---- independent review 2026-09-28, second round ----------------------------
+
+
+async def test_a_place_is_bound_only_for_an_answer_she_is_shown(persons):
+    """An arrival read with too little history answers nothing_found: the
+    place it looked at must not become routable (review 2026-09-28)."""
+    routes = _Routes()
+    mobility = _Mobility()
+    mobility.stays = []
+    read, route = _turn(persons, routes, mobility)
+    out = await read(TUESDAY, 16, 4, name="Chi", what="arrival", place="Carver Home")
+    assert out["status"] == "nothing_found"
+    await route(origin="Carver Home", destination="Olympian City")
+    assert all("carver home" not in (c["local_places"] or {}) for c in routes.calls)
+
+
+async def test_the_words_are_matched_without_case_and_echoed_as_she_gave_them(persons):
+    routes = _Routes()
+    read, route = _turn(persons, routes, _Mobility())
+    await read(TUESDAY, 19, 23, name="Chi")
+    out = await route(origin="A Home Of Theirs", destination="Olympian City")
+    assert out["status"] == "ok" and out["origin"] == "A Home Of Theirs"
+    assert (routes.calls[0]["local_places"]["a home of theirs"].lat,) == (_AT[SECOND][0],)
+
+
+def _where_been_turn(persons, routes, mobility):
+    specs = build_tool_specs(
+        store=None, conversation_id="g", conversation_type="group",
+        persons=persons, honcho=None, deliverer=None, metrics=Metrics(),
+        room=_room(persons, members=(MILES, GRANT)), transit_source=None,
+        presence_circles=(_circle(persons),), location_trusted=False,
+        mobility=mobility, route_source=routes, clock=lambda: NOW.astimezone(UTC),
+    )
+    by = {s.name: s.call for s in specs}
+    return by["where_been"], by["route"]
+
+
+async def test_a_place_where_been_named_is_routable_by_that_name(persons):
+    class _Places(_Mobility):
+        async def places_with_aggregates(self, *, subject_id):
+            return [{
+                "id": SECOND, "kind": "home", "label": None, "saved": False,
+                "confidence": 1.0, "first_seen_ts": 0, "last_seen_ts": 0,
+                "stay_count": 3, "total_dwell_ms": 1,
+            }]
+
+    routes = _Routes()
+    been, route = _where_been_turn(persons, routes, _Places())
+    out = await been("places", name="Chi")
+    assert out["people"][0]["places"][0]["name"] == "a home of theirs"
+    assert (await route(origin="a home of theirs", destination="Olympian City"))["status"] == "ok"
+    assert routes.calls[0]["local_places"]["a home of theirs"].lng == _AT[SECOND][1]
+
+
+async def test_a_saved_place_wins_over_a_bound_name_of_the_same_words(persons):
+    """Someone's derived place is labelled «Home»; the household's own saved
+    «Home» is what route resolves (review 2026-09-28)."""
+    from nora.domain.presence import SavedPlace
+
+    class _Presence:
+        async def places_for(self, *, circle_id):
+            return [SavedPlace(circle_id=circle_id, place_id="h", name="Home",
+                               lat=22.11, lng=114.22, updated_ms=0, radius_m=50.0)]
+
+        async def latest_fix(self, *, circle_id, person_id):
+            return None
+
+    labelled = DerivedPlace(SECOND, "grant_carver", "c", *_AT[SECOND], 100.0, "home",
+                            1.0, "Home", None)
+    routes = _Routes()
+    specs = build_tool_specs(
+        store=None, conversation_id="g", conversation_type="group",
+        persons=persons, honcho=None, deliverer=None, metrics=Metrics(),
+        room=_room(persons, members=(MILES, GRANT)), transit_source=None,
+        presence_circles=(_circle(persons),), location_trusted=False,
+        mobility=_Mobility(places=[labelled], by_id={SECOND: labelled}),
+        route_source=routes, presence_source=_Presence(),
+        clock=lambda: NOW.astimezone(UTC),
+    )
+    by = {s.name: s.call for s in specs}
+    await by["routine_read"](TUESDAY, 19, 23, name="Chi")
+    out = await by["route"](origin="Home", destination="Olympian City")
+    assert out["status"] == "ok"
+    home = routes.calls[0]["local_places"]["home"]
+    assert (home.lat, home.lng) == (22.11, 114.22)
+    assert "maps_url" in out  # a saved name is words anyone may open

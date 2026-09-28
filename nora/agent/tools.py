@@ -5095,6 +5095,19 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         # argument nor which one it was is echoed back — the refusal says what
         # to do without reflecting the model's own string at it.
         for place in (origin, destination):
+            # R-57 first, for every name: a label equal to an address
+            # `where_is` disclosed this turn is still a live position.
+            if (
+                not location_trusted
+                and place.strip().casefold() in _disclosed_live_addresses
+            ):
+                _record(metrics, "route", "refused", reason="untrusted_position")
+                return {
+                    "status": "refused",
+                    "note": "That's somebody's live position, not a place I can "
+                            "route from in this room. Do not retry: report the "
+                            "position and its age without a travel time.",
+                }
             if str(place).strip().casefold() in _bound_places:
                 # Words a presence read gave this turn (design/27 §4.4 M3),
                 # resolved behind the presence guard below; the person screen
@@ -5125,23 +5138,12 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                             "the actual place (a building, a mall, a stop), not who "
                             "is there.",
                 }
-            # R-57: a position `where_is` disclosed THIS turn may seed a route
-            # only where the room already trusts you with location (the same
-            # `location_trusted` flag `where_is`/`saved_places` already answer
-            # to) — untrusted rooms never had the address to begin with unless
-            # the DisclosureGuard's own subset check passed independently, and
-            # even then it stops here rather than reaching Google.
-            if (
-                not location_trusted
-                and place.strip().casefold() in _disclosed_live_addresses
-            ):
-                _record(metrics, "route", "refused", reason="untrusted_position")
-                return {
-                    "status": "refused",
-                    "note": "That's somebody's live position, not a place I can "
-                            "route from in this room. Do not retry: report the "
-                            "position and its age without a travel time.",
-                }
+            # R-57 (checked above, for bound names too): a position `where_is`
+            # disclosed THIS turn may seed a route only where the room already
+            # trusts you with location (the same `location_trusted` flag
+            # `where_is`/`saved_places` answer to); untrusted rooms never had
+            # the address unless the DisclosureGuard's own subset check passed
+            # independently, and even then it stops rather than reaching Google.
         if route_source is None:
             # No client wired (offline/eval compositions, or a deployment with
             # no Google key). `unavailable`, never a silent empty — a wiring gap
@@ -5200,6 +5202,10 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                     )
                     for p in saved
                 }
+        # A household saved place wins over a bound name of the same words
+        # (a Life360 «Home» is the asker's, not whoever's derived place was
+        # labelled so); a bound place is used only where nothing saved is.
+        ref_places = {k: v for k, v in ref_places.items() if k not in (local_places or {})}
         if ref_places:
             local_places = {**(local_places or {}), **ref_places}
         try:
@@ -6233,16 +6239,10 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         if len(targets) == 1:
             only = places[next(iter(targets))]
             named = only.label or _routine_unnamed[only.kind]
-            named = _bind_place(named, only.id, person)
-            refs: dict = {}
         else:
             named = {
                 "home": "one of their homes", "work": "one of their workplaces",
             }.get(wanted, f"one of their places called {wanted}")
-            refs = {"places": [
-                _bind_place(places[pid].label or _routine_unnamed[places[pid].kind], pid, person)
-                for pid in sorted(targets, key=lambda i: (places[i].label or "", i))
-            ]}
         at_place_now = (
             None if live is None
             else (live["place"] is not None and live["place"].id in targets)
@@ -6254,6 +6254,15 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         )
         if fc.status != "ok":
             return None
+        # Bound only for an answer she is shown (review 2026-09-28).
+        refs: dict = {}
+        if len(targets) == 1:
+            named = _bind_place(named, next(iter(targets)), person)
+        else:
+            refs = {"places": [
+                _bind_place(places[pid].label or _routine_unnamed[places[pid].kind], pid, person)
+                for pid in sorted(targets, key=lambda i: (places[i].label or "", i))
+            ]}
         arrival = kind == "arrival"
         verb = "gets to" if arrival else "leaves"
         span_days = {
@@ -6293,6 +6302,12 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 else f"already left {named}"
                 + (f" at {_routine_clock(fc.done_minute)}" if fc.done_minute is not None else "")
                 + f" ({as_of})"
+            )
+        elif fc.today == "stepped_out":
+            out["today"] = (
+                f"not at {named} now, out since "
+                f"{_routine_clock(fc.done_minute or 0)} ({as_of}), which is not "
+                f"yet long enough to count as leaving for the day"
             )
         elif fc.today == "absent":
             out["today"] = (
@@ -6334,8 +6349,6 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         if live is None or (hk_now.date() != day and not start_ms <= now_ms < end_ms):
             return None
         here = live["place"]
-        # Not bound: where they are NOW is a live position, and R-57 keeps a
-        # live position from seeding a route outside a trusted room.
         here_name = (
             here.label or _routine_unnamed[here.kind] if here is not None
             else "somewhere that is not one of their places"

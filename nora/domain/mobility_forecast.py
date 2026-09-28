@@ -649,6 +649,9 @@ class TimeForecast:
       that were in the same state at this minute (not there yet, or still
       there), and `like_today_without`, how many of those
       `like_today_days` never had it happen in the window;
+    - `stepped_out` (departure only): they left the place in the window but
+      have been away less than the two hours that make a leaving, so they
+      may be back (`done_minute` is when they went out);
     - `absent` (departure only): they are not there now and were not there
       earlier in the window, so there is nothing to leave;
     - `unknown`: no fresh reading of where they are, so today is not said
@@ -659,7 +662,9 @@ class TimeForecast:
     habits: tuple[Habit, ...]
     days: int
     basis: Literal["weekday", "day_type", "all_days", "none"]
-    today: Literal["done", "pending", "absent", "unknown", "not_today"] = "not_today"
+    today: Literal[
+        "done", "pending", "stepped_out", "absent", "unknown", "not_today",
+    ] = "not_today"
     done_minute: int | None = None
     like_today: tuple[Habit, ...] = ()
     like_today_days: int = 0
@@ -746,17 +751,25 @@ def time_forecast(
         (s for s in stays if oldest <= s.started_ts and s.ended_ts <= history_before_ms),
         key=lambda s: s.started_ts,
     )
+    lo, hi = _window_bounds(from_hour, to_hour)
+
+    def past(d: date) -> bool:
+        # A past day is one whose window had CLOSED by the cutoff: asked at
+        # 01:00 about tomorrow, tonight's 22-to-06 is still open and partial
+        # (independent review 2026-09-28).
+        return d < day and _instant_ms(d, hi, tz) <= history_before_ms
+
     events = {
         d: ms for d, ms in _day_events(
             history, place_ids=place_ids, kind=kind, tz=tz, from_hour=from_hour,
             to_hour=to_hour,
-        ).items() if d < day
+        ).items() if past(d)
     }
     pick = max if kind == "arrival" else min
     per_day = {d: pick(ms) for d, ms in events.items()}
     observed = {
         d for d in _observed_days(history, tz=tz, from_hour=from_hour, to_hour=to_hour)
-        if d < day
+        if past(d)
     } | set(per_day)
 
     weekend = day.weekday() >= 5
@@ -787,7 +800,6 @@ def time_forecast(
         return TimeForecast(
             "ok", kind, forecast.habits, forecast.days, basis, today="unknown",
         )
-    lo, _ = _window_bounds(from_hour, to_hour)
     window_start = _instant_ms(day, lo, tz)
     closed = sorted((s for s in stays if s.ended_ts <= now_ms), key=lambda s: s.started_ts)
 
@@ -818,8 +830,12 @@ def time_forecast(
                 "ok", kind, forecast.habits, forecast.days, basis, today="absent",
             )
         hit = window_minute(max(left), tz, from_hour, to_hour)
+        # The habit counts a leaving only after two hours away; out for less
+        # so far is not yet «left» (lunch at 12:30 read as «already left
+        # work at 12:30», independent review 2026-09-28).
         return TimeForecast(
-            "ok", kind, forecast.habits, forecast.days, basis, today="done",
+            "ok", kind, forecast.habits, forecast.days, basis,
+            today="done" if now_ms - max(left) >= _AWAY_MINUTES * 60_000 else "stepped_out",
             done_minute=hit[1] if hit is not None else None,
         )
 
