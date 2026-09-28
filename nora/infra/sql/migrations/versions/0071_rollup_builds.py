@@ -365,7 +365,7 @@ def downgrade() -> None:
         op.execute(f'DROP TRIGGER IF EXISTS nora_row_history ON "{table}"')
         op.execute(f'DROP TRIGGER IF EXISTS nora_row_history_truncate ON "{table}"')
     op.execute(
-        "DELETE FROM row_history WHERE table_name IN ("
+        "DELETE FROM row_history WHERE table_name IN ("  # noqa: S608 — module constants, never input
         + ", ".join(f"'{t}'" for t in _HISTORY_TABLES) + ")"
     )
     for table in ("rollup_response", "rollup_tie", "rollup_daybook",

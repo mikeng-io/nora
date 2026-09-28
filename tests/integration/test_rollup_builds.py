@@ -100,8 +100,8 @@ async def _seed(engine, mobility: SqlMobilityStore, *, polls_fail_at: int | None
     async def move(person, start, a, b):
         for i in range(8):
             f = i / 7
-            await fix(person, start + i * 30_000, (a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f),
-                      f"{person} Road {i}")
+            at = (a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f)
+            await fix(person, start + i * 30_000, at, f"{person} Road {i}")
 
     for day in range(3):  # the third day is after the watermark
         for p in ("a", "b"):
@@ -196,7 +196,7 @@ async def test_every_rollup_recomputes_identically_from_the_record(pg_url):
     runner = _runner(engine)
     rollups = SqlRollupStore(engine)
     a = await rollups.create_build(code_version=CODE_VERSION, params_sha256=runner.params)
-    ticks = list(range(_START + 6 * _H, _WATERMARK, 47 * _MIN)) + [_WATERMARK]
+    ticks = [*range(_START + 6 * _H, _WATERMARK, 47 * _MIN), _WATERMARK]
     for through in ticks:
         report = await runner.run(build_id=a, through_ms=through)
         assert not report.failed

@@ -24,6 +24,7 @@ from __future__ import annotations
 import dataclasses
 import random
 from datetime import datetime
+from itertools import pairwise
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -99,7 +100,8 @@ def _seed_record(store: FakeMobilityStore, *, seed: int = 11, shuffle_ids: bool 
         d0 = _START + day * 86_400_000
         for person in ("a", "b"):
             home = _HOME[person]
-            quiet = (d0 + 3 * 3_600_000, d0 + 3 * 3_600_000 + 40 * 60_000) if person == "a" else None
+            quiet_at = d0 + 3 * 3_600_000
+            quiet = (quiet_at, quiet_at + 40 * 60_000) if person == "a" else None
             rest(person, d0, d0 + 8 * 3_600_000, home, address=f"{person} Home Road", quiet=quiet)
             roads = [f"{person} Road {i}" for i in range(20)]
             arrive = drive(person, d0 + 8 * 3_600_000, home, _WORK, roads)
@@ -177,7 +179,9 @@ async def _snapshot(store: FakeMobilityStore, *, subjects=("a", "b")) -> dict:
                 for p in places
             ),
             "rhythm": sorted(
-                (name[p.id], sorted((store.rhythm_for(subject_id=subject, place_id=p.id) or {}).items()))
+                (name[p.id], sorted(
+                    (store.rhythm_for(subject_id=subject, place_id=p.id) or {}).items()
+                ))
                 for p in places
             ),
             "fold": await store.fold_state(subject_id=subject),
@@ -197,7 +201,7 @@ async def _fold(store: FakeMobilityStore, schedule: list[int]) -> None:
 
 def _schedules(watermark: int, seed: int) -> dict[str, list[int]]:
     rng = random.Random(seed)
-    every_tick = list(range(_START, watermark, 120_000)) + [watermark]
+    every_tick = [*range(_START, watermark, 120_000), watermark]
     ragged: list[int] = []
     at = _START
     while at < watermark:
@@ -231,7 +235,7 @@ async def test_every_schedule_folds_the_record_into_the_same_rollup(seed, shuffl
             [(s.started_ts, s.ended_ts) for s in rebuild[subject]["stays"]]
             + [(t.started_ts, t.ended_ts) for t, _ in rebuild[subject]["trips"]]
         )
-        assert all(a[1] < b[0] for a, b in zip(spans, spans[1:], strict=False)), subject
+        assert all(a[1] < b[0] for a, b in pairwise(spans)), subject
     assert rebuild["a"]["fold"].late_fixes == 1  # the straggler was seen and dropped
     assert any(p[6] == "tag-home-a" for p in rebuild["a"]["places"])
     for name in ("every_tick", "ragged"):

@@ -23,9 +23,12 @@ silently (`EXCEPTED`, printed by the CLI):
   backwards. A case runs on its own empty Honcho workspace
   (`nora/subject/memory_workspace.py`) and seeds memory or declares itself
   memory-free.
-- **the Rollup** (presence stays, trips, places, occupancy, rhythm,
-  corridors): rebuilt in place today, so not reconstructable at T before
-  step 2 makes it a replayable projection.
+- **the Rollup before migration 0071**: from 0071 (step 2) it is versioned
+  builds with history, restored like every history table — the build
+  `rollup_build` says was current at T, with its rows as they were at T —
+  but its history starts at that migration, so a T before it holds none.
+  (A Rollup AT an arbitrary watermark T can also be rebuilt from the Record
+  restored here: it is a pure function of it, 25-rollup.md §2.)
 - **events and RSVPs**: updated in place until step 2b's `event_revision`.
 
 WHAT WAS IN FORCE: `in_force` reads the doctrine, the Dreamer's doctrine and
@@ -106,8 +109,8 @@ EXCEPTED: tuple[str, ...] = (
     "memory (Honcho): live and mutable, no chain to read backwards; a case "
     "runs on its own empty Honcho workspace and seeds memory or declares "
     "itself memory-free",
-    "the Rollup (presence stays, trips, places, occupancy, rhythm, corridors): "
-    "not reconstructable as of T before step 2; left empty",
+    "the Rollup before migration 0071 (step 2): its history starts there, so a "
+    "T before it holds no Rollup rows",
     "events and RSVPs: updated in place until step 2b; left empty",
 )
 
