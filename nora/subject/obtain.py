@@ -24,9 +24,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+import tomlkit
+
 from nora.app.composition import Dependencies, build_dependencies, wall_clock
+from nora.app.memory_routing import build_workspace_router
 from nora.config import Config
 from nora.config import load as _load_config
+from nora.persons import load_persons
 from nora.policy import Conversation, load_policy
 
 from .memory_workspace import (
@@ -484,8 +488,61 @@ def build_config(spec: SubjectSpec) -> Config:
     _refuse_a_workspace_outside_the_eval_namespace(cfg.memory.workspace_id, deployment)
     policy = spec.policy or default_policy(spec.room)
     (spec.workdir / "policy.toml").write_text(policy, encoding="utf-8")
+    _pin_memory_to_the_eval_workspace(spec.workdir, cfg.memory.workspace_id, deployment)
     _conversation_for(spec)
     return cfg
+
+
+def _pin_memory_to_the_eval_workspace(workdir: Path, workspace: str, deployment: str) -> None:
+    """Every Honcho workspace this subject can route to is `workspace` — the
+    eval namespace's — and that is measured, not assumed (DEC-214).
+
+    Rewriting `memory.workspace_id` was the whole guarantee while one Nora
+    was one Honcho workspace. It is not any more: a policy with `[units]`
+    routes each unit to the Honcho workspace its Nora workspace is BOUND to
+    in `identity.toml`, and the eval suite composes against the deployment's
+    own policy and identity by default — whose bindings name production's
+    live workspaces. Composed as written, a subject would feed eval speech
+    into `nora` itself with nothing raising.
+
+    So the copies in `workdir` are rewritten to ONE workspace. A policy that
+    declares `[units]` keeps it — the subject stays strict and scoped, the
+    way production reads — but every unit is put in one workspace, `eval`,
+    and `identity.toml`'s `[workspaces]` becomes that one binding, to
+    `memory.workspace_id` (already the eval namespace's). A policy without
+    `[units]` loses any `[workspaces]` table and stays implicit. Every room,
+    unit and scope survives; the divergence from production is that two Nora
+    workspaces' people share this ONE throwaway workspace's peers. Then the
+    router production itself builds from these files is asked where it can
+    reach, and anything outside the eval namespace refuses the subject. That
+    check is the guarantee; the rewrite is only what makes it pass.
+    """
+    policy_path, identity_path = workdir / "policy.toml", workdir / "identity.toml"
+    policy_doc = tomlkit.parse(policy_path.read_text(encoding="utf-8"))
+    identity_doc = tomlkit.parse(identity_path.read_text(encoding="utf-8"))
+    strict = "units" in policy_doc
+    if strict:
+        for unit in policy_doc["units"].values():  # type: ignore[union-attr]
+            unit["workspace"] = _EVAL_WORKSPACE
+        policy_path.write_text(tomlkit.dumps(policy_doc), encoding="utf-8")
+    if "workspaces" in identity_doc:
+        del identity_doc["workspaces"]
+    if strict:
+        binding = tomlkit.table()
+        binding.add(_EVAL_WORKSPACE, {"honcho_workspace": workspace})
+        identity_doc["workspaces"] = binding
+    identity_path.write_text(tomlkit.dumps(identity_doc), encoding="utf-8")
+    router = build_workspace_router(
+        policy=load_policy(policy_path),
+        bindings=load_persons(identity_path).honcho_workspaces,
+        default_workspace=workspace,
+    )
+    for reachable in router.workspaces():
+        _refuse_a_workspace_outside_the_eval_namespace(reachable, deployment)
+
+
+#: The one Nora workspace an eval subject's units are put in.
+_EVAL_WORKSPACE = "eval"
 
 
 def _conversation_for(spec: SubjectSpec) -> Conversation:

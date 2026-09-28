@@ -66,7 +66,9 @@ An earlier version of this decision said the opposite: call Honcho's dialectic
 **Honcho does not scope at the layer this needs.** `chat` on a two-message probe
 session answers freely about people who appear nowhere in it; `search` scoped to
 that session returns hits from other rooms identical to the unscoped query; and
-one Honcho workspace sits behind all of Nora's rooms.
+one Honcho workspace sits behind all of Nora's rooms. *(Since 2026-09-28,
+DEC-214: one Honcho workspace per Nora workspace, and each unit a named scope
+every read passes — a unit boundary, still no room boundary.)*
 
 The chronicle-versus-account distinction that motivated the Honcho route
 (`00-overview §3`) is unaffected and remains the reason this tier exists. What

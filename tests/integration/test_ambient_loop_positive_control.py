@@ -140,7 +140,7 @@ same incident, and both are about the two Decide paths not seeing each other.
   now: 2026-09-11T16:00:00+08:00
   rooms:
     - {platform: signal, conversation_id: signal-thread, label: thread, home: false}
-    - {platform: signal, conversation_id: home-room,     label: home,   home: true}
+    - {platform: telegram, conversation_id: home-room,   label: home,   home: true}
   notes:
     - title: X is open
       description: the group has not settled X
@@ -443,7 +443,10 @@ async def _drive(tmp_path: Path) -> _Journey:
         f'[[conversations]]\nplatform = "signal"\nid = "{THREAD_ROOM}"\n'
         f'label = "{THREAD_ROOM}"\npersons = "*"\nrelevance_gate = true\n'
         f'unit = "{UNIT}"\n'
-        f'[[conversations]]\nplatform = "signal"\nid = "{HOME_ROOM}"\n'
+        # The home room is on ANOTHER platform: a unit holds at most one
+        # room per platform (DEC-105), which `load_policy` refuses since
+        # DEC-214, and a thread plus a home room are two rooms of one unit.
+        f'[[conversations]]\nplatform = "telegram"\nid = "{HOME_ROOM}"\n'
         f'label = "{HOME_ROOM}"\npersons = "*"\n'
         f'unit = "{UNIT}"\nhome_room = true\n'
     )
@@ -624,7 +627,7 @@ async def _drive(tmp_path: Path) -> _Journey:
             platform="signal", conversation_id=THREAD_ROOM, label="thread",
         ),
         UnitRoom(
-            platform="signal", conversation_id=HOME_ROOM, label="home", home=True,
+            platform="telegram", conversation_id=HOME_ROOM, label="home", home=True,
         ),
     )
 

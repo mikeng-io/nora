@@ -441,7 +441,7 @@ class _DecisionLog(Protocol):
 class _SelfMemory(Protocol):
     async def representation(
         self, *, peer_id: str, search_query: str, max_conclusions: int = ...,
-        target: str | None = ...,
+        target: str | None = ..., unit: str | None = ...,
     ) -> Recollection: ...
 
 
@@ -688,7 +688,7 @@ class ProactiveAdaptor:
         ).render()]
         home = next(room for room in rooms if room.home)
         parts.append(await self._presence_block(home))
-        people = await self._people_block(home)
+        people = await self._people_block(home, unit=key)
         if people:
             parts.append(people)
         parts.append(_open_notes_block(
@@ -735,7 +735,7 @@ class ProactiveAdaptor:
         block = restamp(render_presence(presence, room_is=home.description), _ROW)
         return block.render()
 
-    async def _people_block(self, home: UnitRoom) -> str:
+    async def _people_block(self, home: UnitRoom, *, unit: str) -> str:
         """Who is in the home room, what they are called there, and ONE LINE of
         what she remembers about each.
 
@@ -784,7 +784,7 @@ class ProactiveAdaptor:
             return ""
         if not people:
             return ""
-        remembered = await self._roster_index(people, platform=home.platform)
+        remembered = await self._roster_index(people, platform=home.platform, unit=unit)
         lines = []
         for person in people:
             # ONE RECORD, ONE LINE, through the shared renderer (#220). A name,
@@ -810,7 +810,7 @@ class ProactiveAdaptor:
         ).render()
 
     async def _roster_index(
-        self, people: Sequence[_Person], *, platform: str,
+        self, people: Sequence[_Person], *, platform: str, unit: str,
     ) -> dict[str, tuple[str, ...]]:
         """`honcho_peer_id -> conclusions`, one concurrent batch for the whole
         roster (issue #210).
@@ -853,6 +853,9 @@ class ProactiveAdaptor:
                     # (there is none — 39 D9 drops the transcript from this turn).
                     search_query="what is still open with this person in this group",
                     max_conclusions=self._roster_index_conclusions,
+                    # This pass is keyed on the UNIT, so the read is too
+                    # (DEC-214): its Honcho workspace and its named scope.
+                    unit=unit,
                 )
                 for target in targets
             ), return_exceptions=True), timeout=self._read_timeout_seconds)
@@ -1203,6 +1206,7 @@ class ProactiveAdaptor:
                 peer_id=self._ai_peer,
                 search_query=f"what I said I would do for the {key} group",
                 max_conclusions=self._self_card_conclusions,
+                unit=key,
             )
         except Exception:
             log.exception("proactive: self-card recall failed")

@@ -64,7 +64,7 @@ async def _feed(
     *, memory: MemoryStore, peer_id: str, text: str, conversation_id: str,
     metadata: dict[str, object], metrics: Any,
 ) -> None:
-    await memory.ensure_peer(peer_id=peer_id)
+    await memory.ensure_peer(peer_id=peer_id, conversation_id=conversation_id)
     # Fed under the SPEAKER'S peer into the CONVERSATION's session (Honcho v2,
     # design/24). `ts` rides as metadata so the deriver has structure.
     ok = await memory.feed(

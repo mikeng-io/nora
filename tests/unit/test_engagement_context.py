@@ -63,20 +63,20 @@ class FakeMemory:
     async def ensure_workspace(self) -> None:
         return None
 
-    async def ensure_peer(self, *, peer_id: str) -> None:
+    async def ensure_peer(self, *, peer_id: str, **_route: str | None) -> None:
         self.calls.append(("ensure_peer", peer_id))
 
     async def feed(self, *, peer_id: str, text: str) -> bool:
         self.calls.append(("feed", peer_id))
         return True
 
-    async def peer_card(self, *, peer_id: str) -> list[str]:
+    async def peer_card(self, *, peer_id: str, **_route: str | None) -> list[str]:
         self.calls.append(("peer_card", peer_id))
         return ["likes coffee"]
 
     async def representation(
         self, *, peer_id: str, search_query: str, max_conclusions: int = 5,
-        target: str | None = None,
+        target: str | None = None, **_route: str | None,
     ) -> Recollection:
         # Records the QUERY, not just the call: `_recall_self` curates her own
         # conclusions to the inbound message, and a double that ignores the

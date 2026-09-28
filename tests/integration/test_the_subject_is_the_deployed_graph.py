@@ -33,7 +33,7 @@ async def test_obtain_returns_the_production_graph(spec) -> None:
     """Same type, same builder, same field count as `nora/__main__.py` gets."""
     subject = await obtain(spec)
     assert isinstance(subject.deps, Dependencies)
-    assert len(dataclasses.fields(Dependencies)) == 44, (
+    assert len(dataclasses.fields(Dependencies)) == 45, (
         "Dependencies changed shape; the subject follows it automatically, but "
         "this number is here so a change is noticed rather than absorbed. "
         "38 -> 40 on 2026-09-17: `relevance_gate` and `fire_path`, the two "
@@ -54,7 +54,10 @@ async def test_obtain_returns_the_production_graph(spec) -> None:
         "43 -> 44 on 2026-09-24: `self_presence`, the one `<presence>` reader "
         "the tag path, the fire path and the proactive pass share — held "
         "three times, reachable only through privates, and what the sandbox "
-        "has to stand transport health in on (`nora.subject.transport`)."
+        "has to stand transport health in on (`nora.subject.transport`). "
+        "44 -> 45 on 2026-09-28: `workspaces_of`, a person's Nora workspaces "
+        "for the portal's own-memory page (DEC-214), a callable because "
+        "`nora.web` never sees a `Policy`."
     )
 
 

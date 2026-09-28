@@ -18,6 +18,7 @@ await this function, construct `App`.
 from __future__ import annotations
 
 import asyncio
+import functools
 import logging
 import os
 from collections.abc import Awaitable, Callable, Coroutine, Mapping, Sequence
@@ -58,6 +59,11 @@ from nora.agent.telemetry import (
 from nora.agent.telemetry import timed as telemetry_timed
 from nora.agent.tools import OriginRoom
 from nora.agent.whereis import Circle, check_disclosure_invariant, circles_from_persons
+from nora.app.memory_routing import (
+    MemoryRoutingError,
+    build_workspace_router,
+    workspaces_of_person,
+)
 from nora.app.summons_inbox import SummonsInbox
 from nora.app.voice_events import VoiceEventConsumer
 from nora.config import Config, DreamBudgetConfig
@@ -96,7 +102,7 @@ from nora.engagement.stages.debrief import Wiring as DebriefWiring
 from nora.infra.blobs import FilesystemBlobStore, RustfsBlobStore
 from nora.infra.blobs.cipher import BlobCipher
 from nora.infra.compute.docker_backend import LocalDockerBackend
-from nora.infra.honcho import HonchoClient, WorkspaceRouter
+from nora.infra.honcho import HonchoClient
 from nora.infra.music import YtDlpSource
 from nora.infra.sql import SqlRecordStore, create_sql_engine, run_migrations
 from nora.infra.sql.announcements import SqlAnnouncementLog
@@ -937,6 +943,10 @@ class Dependencies:
     # `policy` above is already taken by the ENGAGE policy, which is a
     # different object answering a different question.
     resolve_voice_room: Callable[[str], str | None]
+    # A person_id -> the Nora workspaces they belong to (DEC-214), for the
+    # portal's own-memory page. A callable for `resolve_voice_room`'s reason:
+    # `nora.web` never sees a `Policy`.
+    workspaces_of: Callable[[str], tuple[str, ...]]
     assembler: ContextAssembler
     ingest: IngestPipeline
     engagement: EngagementPipeline
@@ -1573,20 +1583,40 @@ async def build_dependencies(
             "unless this split is intended",
             cfg.agent.name, cfg.memory.ai_peer,
         )
-    # The conversation→unit seam (design/24 §S.4). Today a router with NO
-    # overrides — every conversation resolves to the single `workspace_id`, so
-    # this changes nothing — but the multi-social-unit routing (a per-group
-    # unit from identity.toml / a future units.toml) lands here without
-    # a client refactor.
+    # workspace > unit > room (DEC-214): every Honcho call is routed from its
+    # room or unit to the Honcho workspace its Nora workspace is bound to, and
+    # to the unit's named scope inside it. Resolved ONCE, here, from the three
+    # files that each hold one part of it (`nora.app.memory_routing`); a
+    # disagreement between them refuses startup rather than guessing where a
+    # person's speech goes.
+    try:
+        router = build_workspace_router(
+            policy=allowlist, bindings=persons.honcho_workspaces,
+            default_workspace=cfg.memory.workspace_id,
+        )
+    except MemoryRoutingError as exc:
+        raise StartupError(f"memory routing error: {exc}") from exc
     memory = HonchoClient(
         cfg.memory.base_url, cfg.memory.workspace_id, ai_peer=cfg.memory.ai_peer,
-        workspace_router=WorkspaceRouter(cfg.memory.workspace_id),
+        workspace_router=router,
     )
-    await memory.ensure_workspace()          # best-effort, never fatal — no try/except
-    # The Nora aiPeer (Honcho v2, design/24): her replies feed under it to build
-    # her self-model card. Created here like the unit — best-effort, never
-    # fatal (a missing peer is auto-created on first feed anyway).
-    await memory.ensure_peer(peer_id=cfg.memory.ai_peer)
+    # Best-effort, never fatal — no try/except. Every bound Honcho workspace,
+    # the Nora aiPeer in each (her replies feed under it to build her
+    # self-model; peers are per Honcho workspace), and every unit's scope.
+    await memory.ensure_workspace()
+    # EXCEPT a bound Honcho workspace that belongs to another application:
+    # that is a wrong line in identity.toml, and running on it would write
+    # people's speech into someone else's peers. The client has already
+    # refused every call to it; this makes the refusal loud (R-5). An
+    # unreachable Honcho is not this — it is re-checked on the first call.
+    foreign = memory.foreign_workspaces()
+    if foreign:
+        raise StartupError(
+            f"memory routing error: Honcho workspace(s) {list(foreign)} hold "
+            "sessions and are not marked as this Nora's. Another application "
+            "uses them — bind the Nora workspace to a different "
+            "honcho_workspace in identity.toml."
+        )
 
     llm_state = LLMState()
     background = BackgroundTasks()
@@ -4137,6 +4167,7 @@ async def build_dependencies(
         media_join=media_join,
         policy=policy, assembler=assembler, ingest=ingest, engagement=engagement,
         resolve_voice_room=_voice_room_of(allowlist),
+        workspaces_of=functools.partial(workspaces_of_person, allowlist),
         dispatcher=dispatcher, adapter=adapter, registry=registry,
         participation_trigger=participation_trigger,
         relevance_gate=gate,

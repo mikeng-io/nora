@@ -217,10 +217,41 @@ class _PersonEntry(BaseModel):
         return self
 
 
+class _WorkspaceBinding(BaseModel):
+    """One `[workspaces.<nora workspace>]` table: the HONCHO workspace that
+    Nora workspace is bound to (operator 2026-09-28, DEC-214).
+
+    Here and not in `policy.toml` because it is an external id, not a trust
+    answer: `policy.toml` says which workspace a unit belongs to, this file
+    says where that workspace's person models live. A Nora workspace with no
+    table here uses its own name as its Honcho workspace id
+    (`nora.app.memory_routing`)."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    honcho_workspace: str
+
+    @field_validator("honcho_workspace")
+    @classmethod
+    def _check_honcho_workspace(cls, value: str) -> str:
+        if not _PERSON_ID_RE.match(value):
+            raise ValueError(
+                f"honcho_workspace {value!r} must match ^[a-zA-Z0-9_-]+$ — "
+                "Honcho refuses any other workspace id with a 422, at feed "
+                "time and off the reply path, so every write would be lost "
+                "without a sound"
+            )
+        return value
+
+
 class _PersonsFile(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     persons: dict[str, _PersonEntry] = Field(default_factory=dict)
+    # Nora workspace -> its Honcho binding (DEC-214). Empty is the shipped
+    # state and the back-compat one: every workspace is then bound by name,
+    # and the implicit one to `memory.workspace_id`.
+    workspaces: dict[str, _WorkspaceBinding] = Field(default_factory=dict)
 
     @field_validator("persons")
     @classmethod

@@ -4594,7 +4594,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         # so it cannot cancel its sibling.
         async def _card_of(peer: str) -> tuple[str, ...]:
             try:
-                return tuple(await honcho.peer_card(peer_id=peer))
+                return tuple(await honcho.peer_card(peer_id=peer, **_memory_route()))
             except Exception:
                 # Matches `representation`'s own contract here: memory is never
                 # load-bearing, and a card that could not be read must not cost
@@ -4615,6 +4615,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 # the room roster above already gated WHO she may recall.
                 peer_id=ai_peer,
                 target=ref.honcho_peer_id,
+                **_memory_route(),
                 # The QUESTION is Nora's to supply, not the model's (DEC-24):
                 # she has the tagging message, so asking for it would be one
                 # more value to invent per call. The model MAY supply a
@@ -4757,6 +4758,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 target=ref.honcho_peer_id,
                 query=(query or question or ref.name)[:500],
                 reasoning_level=level,
+                **_memory_route(),
             )
         except Exception:
             log.exception("ask_memory failed for %s", ref.person_id)
@@ -10415,6 +10417,21 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             log.exception("note unit resolution failed")
             return None
 
+    def _memory_route() -> dict[str, str]:
+        """The key every Honcho verb here is ROUTED by (DEC-214): the unit
+        this turn is for, or its room.
+
+        A Dreamer adaptor's `supplied_unit` IS the unit, and its synthetic
+        `Room` holds that unit in the conversation slot — so the room form
+        would name a conversation that does not exist and fail closed. The
+        tag and fire paths have a real room, and the memory client resolves
+        it to its unit from the same `policy.toml` entry `_unit()` reads,
+        so a room with no `unit_for` wired here is still routed correctly.
+        Never a model-supplied value: both are captured once (DEC-24)."""
+        if supplied_unit:
+            return {"unit": supplied_unit}
+        return {"conversation_id": bound_conversation_id}
+
     async def _resolve(book: NoteCollaborator, title: str) -> list[Note]:
         """Title → the standing notes that answer to it (§16.1).
 
@@ -10695,10 +10712,11 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         }
         try:
             # No `conversation_id`, so the client hits Honcho's WORKSPACE
-            # `/search` — and Honcho's workspace is the whole deployment, so
-            # this reaches every unit, not just this one (design/24 §S.4 is
-            # the open question of whether it should). The room verb's
-            # comment carries the
+            # `/search` — narrowed to THIS unit's named scope (DEC-214, which
+            # answered design/24 §S.4's open question): `unit` is the run's
+            # own key, never a room, and `None` (a unit that cannot be named)
+            # is refused by the client once `[units]` exists rather than
+            # widened to the workspace. The room verb's comment carries the
             # audit for why IT stays session-scoped — surfacing a roster
             # member's PRIVATE DM words into a room — and that reason does not
             # bind here: this verb exists for the Dreamer, whose output is
@@ -10707,7 +10725,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             # `build_tool_specs` only ships this verb under `dream_adaptor`.
             # It sat in the unconditional list until 2026-09-19, so the
             # sentence above was false for as long as it had been written.
-            found = await honcho.search(query=query[:500])
+            found = await honcho.search(query=query[:500], unit=_unit())
         except Exception:
             # Belt-and-braces, exactly as on the room path: the adapter catches
             # everything itself and `MessageHits.reachable` is the real signal.
@@ -10783,6 +10801,7 @@ Args:
         try:
             written = await honcho.conclude(
                 peer_id=ai_peer, target=tagger.honcho_peer_id, content=text,
+                **_memory_route(),
             )
         except Exception:
             # Belt-and-braces only, the same shape `note_create` carries: the

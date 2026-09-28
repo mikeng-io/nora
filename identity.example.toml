@@ -69,3 +69,26 @@ phone = "+85212345678"
 # username = "example_handle"   # readable, NEVER matched on
 # fbid     = "100000000000001"
 # igid     = "10000001"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# WORKSPACE BINDINGS (DEC-214). policy.toml's [units.<unit>] puts each unit in
+# a Nora workspace; this says which HONCHO workspace that Nora workspace's
+# person models live in. The two are different names for different things.
+#
+# Optional per workspace: one with no table here uses its own name as its
+# Honcho workspace id. Two Nora workspaces bound to ONE Honcho workspace refuse
+# to start (their people would merge into one set of models), and so does a
+# binding here while policy.toml has no [units] — the implicit workspace is
+# always bound to config.toml's memory.workspace_id.
+#
+# A bound Honcho workspace must be THIS Nora's: one she created (it carries her
+# `nora_owner` marker), or one that is absent or empty, which she claims. An
+# unmarked Honcho workspace that already holds sessions belongs to some other
+# application on the same Honcho server, and Nora refuses to start on it — pick
+# another id (a `nora-` prefix keeps them apart). The one exception is
+# config.toml's memory.workspace_id, which predates the marker.
+#
+# [workspaces.home]
+# honcho_workspace = "nora"     # keep an existing Honcho workspace and its history
+# [workspaces.work]
+# honcho_workspace = "nora-work"

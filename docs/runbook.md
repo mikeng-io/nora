@@ -849,6 +849,123 @@ uv run nora persons pending     # senders Nora could not map, with paste-ready s
 (`nora` is a console script declared in `pyproject.toml`; `uv run` is what puts
 it on PATH from a bare shell. `uv run python -m nora …` is identical.)
 
+**`nora memory backfill --unit <unit>`** (DEC-214) replays one unit's recorded
+human messages into that unit's own Honcho workspace — for a unit that has just
+moved to a Nora workspace of its own, whose Honcho workspace starts empty. It is
+a DRY RUN unless `--apply`; it refuses a session that already holds messages
+unless `--resume` (which skips what it holds), refuses a policy with no
+`[units]`, and refuses the unit's workspace when that is `memory.workspace_id`
+(the history is already there), and refuses a Honcho workspace another
+application uses. It reads the record store read-only, writes only Honcho,
+and deletes nothing. It replays PEOPLE's messages only — Nora's own replies are
+skipped, as live ingestion skips them — so in the new workspace a message that
+answered her arrives without what she said. `nora.app.memory_backfill` has the
+rest.
+
+**`nora memory carry-conclusions --workspace <workspace> --before <cutover>`**
+(DEC-214) copies the facts Nora was told before unit scopes existed
+(`remember`, note discharge — Nora's conclusions with no session, created
+before the cutover) into every unit scope of that workspace, where the units'
+reads now look — only facts about someone who belongs to that workspace alone;
+the rest are listed by id for you. One-time, a dry run unless `--apply`, and
+idempotent. `nora.app.memory_carry` has the rest.
+
+**`nora memory detach-unit`** (DEC-214) takes a moved unit's rooms out of the
+Honcho workspace it left, in two steps. `--unit <u> --from-honcho-workspace
+<id> --peers-file <path> --apply` deletes the unit's sessions — and, through
+Honcho's delete queue, everything stored under them — after recording the
+sessions and their peers in `<path>` (merged across runs; after the delete
+Honcho can no longer name them). `--refresh-cards --peers-file <path>` then
+waits until Honcho reports no conclusion left under each deleted session and
+rebuilds those peers' cards; it refuses rather than refresh early, and can be
+run again. Irreversible; step 1 is refused until a backfill dry run for the
+unit would feed nothing. `nora.app.memory_detach` has the rest.
+
+**The DEC-214 cutover, in this order.** On `master`'s image, `policy.toml` and
+`identity.toml` are `extra = "forbid"`, so writing `[units]`/`[workspaces]`
+into the LIVE files before the new image runs crash-loops the old one on its
+next restart. Never edit them first. Every file this writes lives under the
+checkout's `state/` — gitignored, and bind-mounted into the `nora` container at
+`/app/state` — never loose in the deploy checkout, because two of them are
+copies of `identity.toml`. Every command is on the deploy host, in
+`~/workspace/nora`, under `nora-deploy`'s lock:
+
+```bash
+D=state/dec214; mkdir -p "$D"
+
+# 1. Build the new image. Do NOT recreate yet (nora-deploy step 3, build line only).
+docker compose build nora > /tmp/nora-build.log 2>&1; echo "BUILD_RC=$?"
+
+# 2. Write the new config under $D, and a config that points at it. A config's
+#    relative paths resolve against ITS OWN directory, so the three that are not
+#    in $D are made absolute (container paths).
+cp policy.toml "$D/policy.toml.next" && cp identity.toml "$D/identity.toml.next"
+#    ...append the [units] block to $D/policy.toml.next and the [workspaces]
+#    block to $D/identity.toml.next...
+sed -e 's|^identity_file = .*|identity_file = "identity.toml.next"|' \
+    -e 's|^policy_file = .*|policy_file = "policy.toml.next"|' \
+    -e 's|^data_dir = "data"|data_dir = "/app/data"|' \
+    -e 's|^dir = "nora/doctrine"|dir = "/app/nora/doctrine"|' \
+    -e 's|^dir = "nora/dreamer"|dir = "/app/nora/dreamer"|' \
+    config.toml > "$D/config.next.toml"
+grep -cE '\.next"|"/app/' "$D/config.next.toml"      # must print 5
+
+# 3. Dry-run both commands on the NEW image; $D is already inside the container
+#    through the ./state mount. `--name` is explicit because the service sets
+#    `container_name: nora`: Compose v2 is understood not to apply it to `run`
+#    containers, but a name clash would be the first thing this dry run shows.
+NEXT="docker compose run --rm --no-deps --name nora-dec214-dryrun \
+  --entrypoint /app/.venv/bin/nora nora --config $D/config.next.toml"
+$NEXT memory backfill --unit ridgeline
+$NEXT memory carry-conclusions --workspace 67 --before "$(date -Iseconds)"
+
+# 4. Swap the files IN PLACE (cp keeps the bind-mounted inode) and recreate, in one command.
+date -Iseconds > "$D/cutover.txt"
+cp policy.toml "$D/policy.toml.pre-dec214" && cp identity.toml "$D/identity.toml.pre-dec214" \
+  && cp "$D/policy.toml.next" policy.toml && cp "$D/identity.toml.next" identity.toml \
+  && docker compose up -d --force-recreate nora presence analytics; echo "UP_RC=$?"
+
+# 5. Replay ridgeline's history (live traffic since step 4 is already in its
+#    sessions). Run it again until it reports "would feed 0" without --apply.
+docker compose exec -T nora /app/.venv/bin/nora --config config.toml \
+  memory backfill --unit ridgeline --resume --apply </dev/null
+
+# 6. Put the pre-cutover facts back into 67's unit scopes (dry run first, then --apply).
+docker compose exec -T nora /app/.venv/bin/nora --config config.toml \
+  memory carry-conclusions --workspace 67 --before "$(cat "$D/cutover.txt")" --apply </dev/null
+
+# 7. Wait for Honcho's scope backfill: every entry's "state" must read "completed".
+for ws_scope in nora/friends nora/wedding nora-ridgeline/ridgeline; do
+  docker compose exec -T nora curl -fsS \
+    "http://host.docker.internal:8000/v3/workspaces/${ws_scope%%/*}/scopes/${ws_scope#*/}/status" </dev/null; echo
+done
+
+# 8. ONLY with the operator's approval (irreversible): dry run, then --apply,
+#    then — once Honcho's delete queue has run — the cards.
+DETACH="docker compose exec -T nora /app/.venv/bin/nora --config config.toml memory detach-unit"
+$DETACH --unit ridgeline --from-honcho-workspace nora --peers-file $D/detach-ridgeline.json </dev/null
+$DETACH --unit ridgeline --from-honcho-workspace nora --peers-file $D/detach-ridgeline.json --apply </dev/null
+$DETACH --refresh-cards --peers-file $D/detach-ridgeline.json </dev/null
+```
+
+Rollback before step 5: `cp state/dec214/policy.toml.pre-dec214 policy.toml && cp
+state/dec214/identity.toml.pre-dec214 identity.toml`, then nora-deploy's rollback
+(retag the previous image, recreate). After step 8's `--apply` nothing
+restores the detached sessions.
+
+One ordering effect to expect: a Honcho document's own `created_at` is when it
+was INSERTED, not when its message was said, so the documents live ridgeline
+traffic produced after step 4 rank OLDER than those the step-5 replay derives
+from months-old history, in the "recent" channel of `representation`. It
+evens out as new traffic arrives; the replayed MESSAGES themselves carry their
+real dates.
+
+**Nora refuses to start on a Honcho workspace that is not hers**: a bound
+`honcho_workspace` that holds sessions and lacks her `nora_owner` metadata
+marker belongs to another application on the same Honcho. Bind the workspace
+to another id in identity.toml. `memory.workspace_id` is exempt (it predates
+the marker).
+
 **`nora groups`** answers "I cannot tell which group id is which". It prints
 each group's name beside the base64 `conversation_id` you need for
 `policy.toml`, marks it ALLOWED or DENIED, and emits a paste-ready

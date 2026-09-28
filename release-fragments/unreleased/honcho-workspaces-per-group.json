@@ -1,0 +1,20 @@
+{
+  "type": "change",
+  "summary": "Groups can now be kept in separate memory workspaces: what Nora remembers about people in one workspace's groups is built only from those groups, and within a workspace each group's recall draws on that group's own chats.",
+  "details": [
+    "policy.toml can put each group (unit) in a workspace with a [units] table, and identity.toml says which Honcho workspace each workspace's memories live in; with no [units] table memory reads and writes exactly as before.",
+    "A group may have at most one room per platform; a policy that gives a group two rooms on the same platform now refuses to start.",
+    "Once [units] is set, memory reads for a room or group use that group's own Honcho scope, every known room joins its group's scope at startup, and anything Nora is asked to remember is written where those reads look.",
+    "New operator command `nora memory backfill --unit <unit>` replays a group's recorded messages into its own workspace, each dated when it was said (a dry run unless --apply).",
+    "New operator command `nora memory carry-conclusions --workspace <workspace> --before <cutover>` puts the facts Nora was told before the switch back into every group's recall in that workspace, for people who belong to that workspace alone.",
+    "New operator command `nora memory detach-unit` removes a moved group's conversations from the Honcho workspace it left once its backfill has fully landed, then, as a second step once Honcho has finished deleting, rebuilds the affected people's cards.",
+    "Nora refuses to start if a workspace is bound to a Honcho workspace another application already uses.",
+    "The portal's memory page shows your memory once per workspace you belong to, with a switcher when there is more than one."
+  ],
+  "limitations": [
+    "Right after a group moves into a scope, recall starts from the facts people stated directly; deeper conclusions come back as Honcho re-derives them.",
+    "Facts saved with `remember` before the switch about someone in more than one workspace are not carried automatically; the command lists them by id.",
+    "A replayed history does not include Nora's own replies, so a message that answered her arrives without what she said.",
+    "Detaching a group does not remove conclusions Honcho reasoned across several conversations; only those stored under the group's own conversations go."
+  ]
+}

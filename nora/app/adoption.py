@@ -165,7 +165,7 @@ async def _feed(
     `MemoryStore` that raises must not abort the rows queued behind this one.
     """
     try:
-        await memory.ensure_peer(peer_id=peer_id)
+        await memory.ensure_peer(peer_id=peer_id, conversation_id=conversation_id)
         return await memory.feed(
             peer_id=peer_id, text=text, conversation_id=conversation_id,
         )

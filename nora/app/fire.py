@@ -1071,7 +1071,10 @@ class FirePath:
         card: tuple[str, ...] = ()
         if ref is not None:
             try:
-                card = tuple(await self._memory.peer_card(peer_id=ref.honcho_peer_id))
+                card = tuple(await self._memory.peer_card(
+                    peer_id=ref.honcho_peer_id,
+                    conversation_id=occasion.conversation_id,
+                ))
             except Exception:
                 # Guarded where `TranscriptInjection`'s equivalent is not, and
                 # the asymmetry is §8.2: at-most-once means a raise here writes
@@ -1268,6 +1271,7 @@ class FirePath:
                 peer_id=self._ai_peer,
                 search_query=query,
                 max_conclusions=self._self_card_conclusions,
+                conversation_id=occasion.conversation_id,
             )
         except Exception:
             log.exception("fire self-card read failed; continuing without it")
@@ -1317,6 +1321,7 @@ class FirePath:
                 target=ref.honcho_peer_id,
                 search_query=query,
                 max_conclusions=self._people_in_window_conclusions,
+                conversation_id=occasion.conversation_id,
             )
             for ref in refs
         ), return_exceptions=True)

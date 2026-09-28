@@ -6,6 +6,6 @@ is the opposite one — a failed append drops the message rather than degrading
 quietly. Sharing a package would invite sharing an error policy.
 """
 
-from nora.infra.honcho.client import HonchoClient, WorkspaceRouter
+from nora.infra.honcho.client import HonchoClient, HonchoRoute, WorkspaceRouter, unit_scope
 
-__all__ = ["HonchoClient", "WorkspaceRouter"]
+__all__ = ["HonchoClient", "HonchoRoute", "WorkspaceRouter", "unit_scope"]

@@ -67,7 +67,7 @@ class _RouteSource(Protocol):
 class _Honcho(Protocol):
     async def chat(
         self, *, peer_id: str, query: str, reasoning_level: str = "low",
-        target: str | None = None,
+        target: str | None = None, conversation_id: str | None = None,
     ) -> str | None: ...
 
 
@@ -259,7 +259,7 @@ class GatheringService:
         for person_id in roster_person_ids:
             answer = await self._honcho.chat(
                 peer_id=self._ai_peer, query=_VENUE_PREFERENCE_QUERY,
-                target=person_id,
+                target=person_id, conversation_id=conversation_id,
             )
             if not answer:
                 continue

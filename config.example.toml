@@ -69,6 +69,14 @@ base_url = "http://instagram-bridge:18082"  # the containerized Go/instameow bri
 
 [memory]
 base_url = "http://127.0.0.1:8000"
+# The Honcho workspace of the IMPLICIT Nora workspace — the one every unit is
+# in when policy.toml has no [units] table (DEC-214). Only that: once
+# policy.toml declares [units], each Nora workspace is bound by identity.toml's
+# [workspaces.<name>] (or by its own name) and this value routes nothing. It is
+# also what the eval harness rewrites into its own namespace, and it is the ONE
+# Honcho workspace exempt from the ownership check: every other bound one must
+# carry Nora's `nora_owner` marker (or be absent or empty, and then claimed),
+# because this one holds every deployment's history from before the marker.
 workspace_id = "nora"
 # `<self_card>` — how many of HER OWN conclusions ride in the prefill, so a
 # promise she made last night survives falling out of the transcript window.

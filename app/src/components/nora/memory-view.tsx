@@ -21,7 +21,11 @@ const PAGE = 12;
 export function MemoryView({ compact = false }: { compact?: boolean }) {
   const t = useTranslations("memory");
   const memory = useMemory();
-  const entry = memory.data?.[0];
+  // One entry per Nora workspace the viewer belongs to (DEC-214): her memory
+  // of you in one circle is never merged with another's.
+  const entries = memory.data ?? [];
+  const [picked, setPicked] = useState(0);
+  const entry = entries[Math.min(picked, Math.max(entries.length - 1, 0))];
   const [query, setQuery] = useState("");
   const [shown, setShown] = useState(PAGE);
 
@@ -53,6 +57,26 @@ export function MemoryView({ compact = false }: { compact?: boolean }) {
   return (
     <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)] lg:items-start lg:gap-6">
       <div className="grid gap-4">
+        {entries.length > 1 ? (
+          <div role="tablist" aria-label={t("workspaces")} className="flex flex-wrap gap-2">
+            {entries.map((e, i) => (
+              <Button
+                key={e.workspace ?? i}
+                role="tab"
+                aria-selected={entry === e}
+                variant={entry === e ? "outline" : "quiet"}
+                size="sm"
+                onClick={() => {
+                  setPicked(i);
+                  setQuery("");
+                  setShown(PAGE);
+                }}
+              >
+                {e.workspace ?? String(i + 1)}
+              </Button>
+            ))}
+          </div>
+        ) : null}
         <div className="flex items-start gap-3 rounded-panel border border-hairline bg-surface p-4">
           <Lock className="mt-0.5 size-4 shrink-0 text-ink-muted" aria-hidden="true" />
           <p className="text-meta text-ink-soft">{t("private")}</p>

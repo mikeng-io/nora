@@ -90,6 +90,9 @@ JoinPath = Literal[
     # call and filed it under «unknown»; `nora.subject` is outside the gate's
     # mypy, which is how the Literal did not catch it.
     "dreamer_eval", "judge_source",
+    # `nora memory backfill` (DEC-214): a unit's history replayed into its own
+    # Honcho workspace, joined for adoption's reason — it feeds memory.
+    "memory_backfill",
     "unknown",
 ]
 JOIN_PATHS: tuple[str, ...] = get_args(JoinPath)
