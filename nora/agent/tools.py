@@ -96,7 +96,12 @@ from ..domain.media import (
 )
 from ..domain.media import LABELS as MEDIA_LABELS
 from ..domain.media_join import MediaJoin
-from ..domain.mobility_forecast import detect_stay_anomalies, forecast_window
+from ..domain.mobility_forecast import (
+    detect_stay_anomalies,
+    forecast_hour,
+    forecast_window,
+    time_forecast,
+)
 from ..domain.models import PersonRef, TranscriptRow, WeatherObservation
 from ..domain.note_body import (
     NoteBodyError,
@@ -6013,6 +6018,146 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         "Saturdays", "Sundays",
     )
 
+    # ---- the movement model's views (design/27 §4.4 M1, M4) ----
+    # A live reading counts only while it is fresh, and matches a place when
+    # it is inside the place's own radius or the DEC-190 match radius.
+    _routine_live_max_age_ms = 30 * 60_000
+    _routine_match_m = 150.0
+
+    async def _routine_live(
+        circle: Any, ref: Any, places: dict[int, Any], now_ms: int,
+    ) -> dict | None:
+        """Where the person is by their newest raw fix, as one of their places
+        or none, when that fix is fresh; `None` when there is no fresh fix. The
+        same read `where_is` makes, behind the guard the caller has passed."""
+        if presence_source is None:
+            return None
+        try:
+            fix = await presence_source.latest_fix(
+                circle_id=circle.circle_id, person_id=ref.person_id,
+            )
+        except Exception:
+            log.exception("routine_read live read failed")
+            return None
+        if fix is None or now_ms - fix.ts > _routine_live_max_age_ms:
+            return None
+        from ..domain.presence import haversine_distance_m as _dist
+        best = None
+        for place in places.values():
+            d = _dist(fix.lat, fix.lng, place.lat, place.lng)
+            if d <= max(place.radius_m, _routine_match_m) and (best is None or d < best[0]):
+                best = (d, place)
+        return {"place": best[1] if best else None, "ts": fix.ts}
+
+    def _routine_clock(minute: int) -> str:
+        m = minute % 1440
+        return f"{m // 60:02d}:{m % 60:02d}"
+
+    def _routine_span(habit: Any) -> str:
+        if habit.latest - habit.earliest < 10:
+            return f"around {_routine_clock(habit.earliest)}"
+        return f"{_routine_clock(habit.earliest)}-{_routine_clock(habit.latest)}"
+
+    def _movement_person(
+        person: str, stays: list, places: dict[int, Any], *,
+        kind: str, place: str | None, day: Any, from_hour: int, to_hour: int,
+        now_ms: int, live: dict | None,
+    ) -> dict | None:
+        """One person's usual arrival at (or departure from) a place, as
+        habits worked out in words, never one average; on the day itself,
+        whether it already happened and, if not, what the days like today
+        did. `None` when they have no such place."""
+        wanted = (place or "home").strip().casefold()
+        targets = {
+            pid for pid, p in places.items()
+            if (p.label or "").casefold() == wanted or p.kind == wanted
+        }
+        if not targets:
+            return None
+        named = next(
+            (places[pid].label for pid in sorted(targets) if places[pid].label), None,
+        ) or ("home" if wanted == "home" else wanted)
+        at_place_now = (
+            None if live is None
+            else (live["place"] is not None and live["place"].id in targets)
+        )
+        fc = time_forecast(
+            stays, place_ids=targets, kind=kind, day=day, from_hour=from_hour,  # type: ignore[arg-type]
+            to_hour=to_hour, tz_name=_been_tz_name, history_before_ms=now_ms,
+            now_ms=now_ms, at_place_now=at_place_now,
+        )
+        if fc.status != "ok":
+            return None
+        verb = "gets to" if kind == "arrival" else "leaves"
+        span_days = {
+            "weekday": f"{_routine_days[day.weekday()]}",
+            "day_type": "weekends" if day.weekday() >= 5 else "weekdays",
+            "all_days": "any day",
+        }[fc.basis]
+        parts = [f"{_routine_span(h)} on {h.days} of {fc.days}" for h in fc.habits]
+        line = f"{span_days}: {verb} {named} " + "; ".join(parts)
+        if fc.basis == "all_days":
+            line += " (roughly, from all their days)"
+        out: dict = {
+            "person": person, "what": kind, "place": named,
+            "place_ref": f"place:{min(targets)}",
+            "routine": line,
+            "habits": [
+                {"from": _routine_clock(h.earliest), "to": _routine_clock(h.latest),
+                 "days": h.days}
+                for h in fc.habits
+            ],
+            "evidence": {"days": fc.days, "basis": fc.basis},
+        }
+        if fc.today == "done":
+            out["today"] = (
+                f"already {'at' if kind == 'arrival' else 'left'} {named}"
+                + (f" since {_routine_clock(fc.done_minute)}" if fc.done_minute else "")
+            )
+        elif fc.today == "pending":
+            if fc.like_today:
+                out["today"] = (
+                    f"not yet; on the {fc.like_today_days} days like today it was "
+                    + "; ".join(f"{_routine_span(h)}" for h in fc.like_today)
+                )
+            else:
+                out["today"] = "not yet, and later than on any of these days so far"
+        return out
+
+    def _routine_today(
+        stays: list, places: dict[int, Any], live: dict | None, *, day: Any,
+        now_ms: int,
+    ) -> str | None:
+        """M4: on the day itself, where they are now against where they
+        usually are at this hour. `None` for another day or without a fresh
+        reading."""
+        hk_now = datetime.fromtimestamp(now_ms / 1000, tz=ZoneInfo(_been_tz_name))
+        if live is None or hk_now.date() != day:
+            return None
+        here = live["place"]
+        here_name = (
+            here.label or _routine_unnamed[here.kind] if here is not None
+            else "somewhere that is not one of their places"
+        )
+        usual = forecast_hour(
+            stays, at_ms=now_ms, tz_name=_been_tz_name, history_before_ms=now_ms,
+        )
+        usual_id = usual.chances[0].place_id if usual.chances else None
+        as_of = _routine_clock(hk_now.hour * 60 + hk_now.minute)
+        if usual.status != "ok" or not usual.chances:
+            return f"now {here_name} (as of {as_of})"
+        if here is not None and usual_id == here.id:
+            return f"now {here_name} (as of {as_of}), as usual at this hour"
+        usual_place = places.get(usual_id) if usual_id is not None else None
+        usual_name = (
+            usual_place.label or _routine_unnamed[usual_place.kind]
+            if usual_place is not None else "somewhere that is not one of their places"
+        )
+        return (
+            f"now {here_name} (as of {as_of}); at this hour they are usually "
+            f"at {usual_name}"
+        )
+
     def _routine_shares(chances: Any, places: dict[int, Any]) -> list[dict]:
         """The window shared out between named places, their own small
         places (under 5% each, pooled), and stops that are none of theirs.
@@ -6020,6 +6165,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         (plain rounding gave 99 and 101, independent review 2026-09-28)."""
         raw: dict[tuple[str, str], float] = {}
         seen: dict[str, int] = {}
+        refs_by_name: dict[str, str] = {}
         for chance in chances:
             place = places.get(chance.place_id) if chance.place_id is not None else None
             if place is None:
@@ -6028,11 +6174,13 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 key = ("other places of theirs", "other")
             else:
                 name = place.label or _routine_unnamed[place.kind]
+                refs_by_name[name] = f"place:{place.id}"
                 if not place.label:
                     # Two unnamed homes must not read as one place.
                     seen[name] = seen.get(name, 0) + 1
                     if seen[name] > 1:
                         name = f"{name} ({seen[name]})"
+                        refs_by_name[name] = f"place:{place.id}"
                 key = (name, place.kind)
             raw[key] = raw.get(key, 0.0) + chance.probability * 100
         floors = {k: int(v) for k, v in raw.items()}
@@ -6042,6 +6190,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         return sorted(
             (
                 {"place": name, "kind": kind, "percent": pct}
+                | ({"place_ref": refs_by_name[name]} if name in refs_by_name else {})
                 for (name, kind), pct in floors.items() if pct > 0
             ),
             key=lambda x: -x["percent"],
@@ -6086,6 +6235,11 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             "person": person,
             "routine": line,
             "usually_at": None if how_often == "no single usual place" else where,
+            **(
+                {"usually_at_ref": top["place_ref"]}
+                if top and how_often != "no single usual place" and "place_ref" in top
+                else {}
+            ),
             "how_often": how_often,
             # A second place is never «no single usual place»: below the
             # usual ladder it is where they sometimes are instead.
@@ -6116,9 +6270,11 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
 
     async def routine_read(
         date: str, from_hour: int, to_hour: int, name: str | None = None,
+        what: Literal["where", "arrival", "departure"] = "where",
+        place: str | None = None,
     ) -> dict:
-        """Usual whereabouts by hour of the week. Call this when somebody asks
-        where someone will be.
+        """Usual whereabouts and times. Call this when somebody asks where or
+        when someone will be.
 
         Never for right now (`where_is`) or the past (`where_been`).
 
@@ -6132,6 +6288,10 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 runs past midnight.
             name: Who they asked about, exactly as they said it. Leave it out
                 for the people in THIS conversation (or pass "everyone").
+            what: "where" they usually are (default), or when they usually
+                make their "arrival" at, or "departure" from, a place.
+            place: For arrival or departure: the place, by its name, or
+                "home" or "work". Leave it out for their home.
         """
         if mobility is None or not presence_circles:
             # A wiring gap is «I could not check», never «no routine» (R-5).
@@ -6147,6 +6307,8 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             start_hour, end_hour = int(from_hour), int(to_hour)
             if not (0 <= start_hour <= 23 and 0 <= end_hour <= 23):
                 raise ValueError("hour out of range")
+            if str(what) not in ("where", "arrival", "departure"):
+                raise ValueError("what")
             now_ms = int(
                 (clock() if clock is not None else datetime.now(UTC)).timestamp() * 1000,
             )
@@ -6194,6 +6356,16 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                         p.id: p
                         for p in await mobility.places_for_subject(subject_id=subject_id)
                     }
+                    live = await _routine_live(circle, ref, places, now_ms)
+                    if what != "where":
+                        moved = _movement_person(
+                            ref.name, stays, places, kind=what, place=place,
+                            day=day, from_hour=start_hour, to_hour=end_hour,
+                            now_ms=now_ms, live=live,
+                        )
+                        if moved is not None:
+                            people.append(moved)
+                        continue
                     forecast = forecast_window(
                         stays, start_ms=start_ms, end_ms=end_ms,
                         tz_name=_been_tz_name, history_before_ms=now_ms,
@@ -6201,11 +6373,17 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                     if forecast.status != "ok":
                         continue
                     shares = _routine_shares(forecast.chances, places)
-                    people.append(_routine_person(
+                    person_out = _routine_person(
                         ref.name, shares, start=start, end=end,
                         basis=forecast.basis, weeks=forecast.support_weeks,
                         observed=round(forecast.observed_share * 100),
-                    ))
+                    )
+                    today_line = _routine_today(
+                        stays, places, live, day=day, now_ms=now_ms,
+                    )
+                    if today_line is not None:
+                        person_out["today"] = today_line
+                    people.append(person_out)
             except Exception:
                 log.exception("routine_read read failed")
                 results.append({
@@ -6227,7 +6405,8 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 "Each routine is how this person's past weeks went at these "
                 "hours, already worked out from their own movements: it is "
                 "their habit, the way a friend knows it. Evidence is there if "
-                "someone asks how sure you are."
+                "someone asks how sure you are. A place_ref can be handed to "
+                "route as the origin or destination."
             )
             _record(metrics, "routine_read", "ok", people=len(people))
             return {"status": "ok", "window": window, "people": people, "note": ok_note}
