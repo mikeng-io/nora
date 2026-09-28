@@ -60,7 +60,7 @@ from .stages import media as media_stage
 from .stages import memory_feed as memory_feed_stage
 from .stages import quote_target as quote_target_stage
 from .stages import scope as scope_stage
-from .stages import signal as signal_stage
+from .stages import stimulus as stimulus_stage
 from .stages import standing_event as standing_event_stage
 from .stages import touch as touch_stage
 
@@ -183,7 +183,7 @@ class IngestPipeline:
         comprehension: MediaComprehension | None = None,
         language: str = "",
         standing_event_wiring: Any | None = None,
-        signal_wiring: signal_stage.Wiring | None = None,
+        stimulus_wiring: stimulus_stage.Wiring | None = None,
     ) -> None:
         """`media_sources`/`blobs` default to None — media custody OFF — and
         that default is a wiring state, not a design position (DEC-43).
@@ -228,11 +228,11 @@ class IngestPipeline:
         event_enabled` in the composition root, like `debrief.Wiring` is gated
         on `[standing] enabled`.
 
-        `signal_wiring` is the signal stage (design/cognition-loop/20 §3):
+        `stimulus_wiring` is the stimulus stage (design/cognition-loop/20 §3):
         `None` — the default, `[cognition] mode = "off"`, and every offline/
-        eval composition — writes no signal. Present, every recorded
+        eval composition — writes no stimulus. Present, every recorded
         person-authored item (a message, a changed edit, a reaction, a delete)
-        appends one signal row with its cues.
+        appends one stimulus row with its cues.
         """
         self._audit = audit
         self._memory = memory
@@ -249,7 +249,7 @@ class IngestPipeline:
         self._comprehension = comprehension
         self._language = language
         self._standing_event_wiring = standing_event_wiring
-        self._signal_wiring = signal_wiring
+        self._stimulus_wiring = stimulus_wiring
 
     async def run(self, *, message: NormalizedMessage) -> IngestResult:
         """`message` is already normalized — the caller (the adapter's `listen()`
@@ -395,15 +395,15 @@ class IngestPipeline:
         if row_id is None:
             _outcome(m, message, "audit_refused")
             return IngestResult(message=None, decision=None)
-        # The SIGNAL, right behind the Record row it names (20 §3). Inside the
+        # The STIMULUS, right behind the Record row it names (20 §3). Inside the
         # guard for `standing_event`'s reason: a span for a stage that cannot
         # run would claim work that never happened.
-        if self._signal_wiring is not None:
-            with span("ingest.signal"):
-                await signal_stage.run(
+        if self._stimulus_wiring is not None:
+            with span("ingest.stimulus"):
+                await stimulus_stage.run(
                     message=message, item="message", row_id=row_id,
                     person_id=person.person_id if person else None,
-                    wiring=self._signal_wiring, metrics=m,
+                    wiring=self._stimulus_wiring, metrics=m,
                 )
         with span("ingest.memory_feed"):
             await memory_feed_stage.run(
@@ -507,14 +507,14 @@ class IngestPipeline:
         if recorded != "recorded":
             _outcome(m, message, "edit_unchanged" if recorded == "recorded_unchanged" else recorded)
             return IngestResult(message=None, decision=None)
-        # Only an edit that CHANGED what a reader sees is a signal: an
+        # Only an edit that CHANGED what a reader sees is a stimulus: an
         # unchanged one stopped above, and would wake nothing new.
-        if self._signal_wiring is not None:
-            with span("ingest.signal"):
-                await signal_stage.run(
+        if self._stimulus_wiring is not None:
+            with span("ingest.stimulus"):
+                await stimulus_stage.run(
                     message=message, item="edit", row_id=original.id,
                     person_id=person.person_id if person else original.person_id,
-                    wiring=self._signal_wiring, metrics=m, target=original,
+                    wiring=self._stimulus_wiring, metrics=m, target=original,
                 )
         with span("ingest.memory_feed"):
             await memory_feed_stage.run(
@@ -542,20 +542,20 @@ class IngestPipeline:
 
     async def _run_touch(self, *, message: NormalizedMessage, touch: Touch) -> IngestResult:
         """A reaction or a delete/unsend (design/cognition-loop/20 §1):
-        found, recorded beside its target, signalled — never a turn, never
-        fed to Honcho, never a transcript line. `touch` decides and records;
-        this only sequences."""
+        found, recorded beside its target, raising a stimulus — never a turn,
+        never fed to Honcho, never a transcript line. `touch` decides and
+        records; this only sequences."""
         m = self._metrics
         with span("ingest.touch"):
             done = await touch_stage.run(
                 message=message, touch=touch, audit=self._audit,
                 persons=self._persons, metrics=m,
             )
-        if done.row_id is not None and self._signal_wiring is not None:
-            with span("ingest.signal"):
-                await signal_stage.run(
+        if done.row_id is not None and self._stimulus_wiring is not None:
+            with span("ingest.stimulus"):
+                await stimulus_stage.run(
                     message=done.message, item=touch.kind, row_id=done.row_id,
-                    person_id=done.person_id, wiring=self._signal_wiring,
+                    person_id=done.person_id, wiring=self._stimulus_wiring,
                     metrics=m, target=done.target,
                 )
         _outcome(m, message, done.ending)

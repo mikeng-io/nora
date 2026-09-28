@@ -41,7 +41,7 @@ import unicodedata
 from typing import Literal, get_args
 
 #: Every cue a signal can carry, in the order they are stored. The label
-#: vocabulary of `nora_signal_total{cue}` is this plus `none`, DERIVED here.
+#: vocabulary of `nora_stimulus_total{cue}` is this plus `none`, DERIVED here.
 Cue = Literal["datetime", "amount", "keep", "rsvp", "place_link", "surprise"]
 CUES: tuple[str, ...] = get_args(Cue)
 

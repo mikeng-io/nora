@@ -115,9 +115,10 @@ APPEND_ONLY: dict[str, str] = {
     "doctrine_revision": "recorded_at",
     "config_revision": "recorded_at",
     "deploy_revision": "recorded_at",
-    # Step 1 (0069): the cognition loop's signals, its wake log (a unit's
-    # watermark is its newest row, never a row rewritten) and source health.
-    "signal": "recorded_at",
+    # Step 1 (0069, renamed by 0070/DEC-234): the cognition loop's stimuli,
+    # its wake log (a unit's watermark is its newest row, never a row
+    # rewritten) and source health.
+    "stimulus": "recorded_at",
     "cognition_wake": "recorded_at",
     "source_health": "recorded_at",
 }

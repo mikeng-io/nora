@@ -1,29 +1,29 @@
-"""Signals and the wake policy (design/cognition-loop/20-observe.md §3).
+"""Stimuli and the wake policy (design/cognition-loop/20-observe.md §3).
 
-A **signal** is what ingestion, the Rollup or the clock raises to wake
+A **stimulus** is what ingestion, the Rollup or the clock raises to wake
 cognition: `(unit, kind, ref, cues, at)`, one durable row per unit in the
-`signal` table. A **wake** is the moment a unit's pending signals start a
+`stimulus` table. A **wake** is the moment a unit's pending stimuli start a
 session. This module holds the types and the one pure function that decides a
 wake, so the rule is testable without a database or a clock.
 
 **Migration step 1 runs it in SHADOW.** `decide` is called exactly as it would
 be to start a Cognition session, every brake included, and its answer is
 recorded as a would-wake (`cognition_wake`, `mode = "shadow"`) with its reason
-and the signal range it would consume. Nothing is fired: there is no Cognition
+and the stimulus range it would consume. Nothing is fired: there is no Cognition
 adaptor yet, and the clocked Dreamer adaptors keep running as they did. The
 week of would-wakes is how 20 §3's starting values get sized.
 
 **The watermark is the wake log.** Each unit's durable watermark is the
-`(through_signal_id, at_ms)` of its newest wake row in that mode, not a row
+`(through_stimulus_id, at_ms)` of its newest wake row in that mode, not a row
 updated in place (10 §8: loop state is transition rows, the current value is
-the newest). A signal is PENDING when it is due by the read's cutoff and not
-consumed, and consumed means `id <= through_signal_id AND pending_since <=
+the newest). A stimulus is PENDING when it is due by the read's cutoff and not
+consumed, and consumed means `id <= through_stimulus_id AND pending_since <=
 at_ms` of that newest wake. Both bounds only ever grow — `decide` never sets
-`through_signal_id` below the one it read, and `at_ms` is the read's cutoff,
+`through_stimulus_id` below the one it read, and `at_ms` is the read's cutoff,
 which moves forward with the clock — so «consumed by some earlier wake» and
 «consumed by the newest» are the same test, which is what lets one row carry
 the watermark. The second bound is what keeps a `self` or `time`
-signal due at 19:40 pending across a wake at 15:00 (20 §3: «pending only from
+stimulus due at 19:40 pending across a wake at 15:00 (20 §3: «pending only from
 its due time»).
 
 **Single-flight and cooldown are derived from that same row.** In shadow no
@@ -41,14 +41,14 @@ from typing import Literal, get_args
 
 from .cues import is_strong
 
-#: 20 §3's signal kinds. Only `message` has a producer at step 1 (ingest), and
+#: 20 §3's stimulus kinds. Only `message` has a producer at step 1 (ingest), and
 #: `time` (the daily floors, raised by the evaluator); `rollup` arrives with
 #: step 2, `self` with step 3's pace verbs, `social`/`play` with step 5. The
 #: evaluator handles all of them generically.
-SignalKind = Literal["message", "social", "play", "rollup", "time", "self"]
-SIGNAL_KINDS: tuple[str, ...] = get_args(SignalKind)
+StimulusKind = Literal["message", "social", "play", "rollup", "time", "self"]
+STIMULUS_KINDS: tuple[str, ...] = get_args(StimulusKind)
 
-#: What a `message` signal's item was (20 §3: «`message` (including an edit,
+#: What a `message` stimulus's item was (20 §3: «`message` (including an edit,
 #: reaction or delete)»); other kinds name their own producer's item.
 MessageItem = Literal["message", "edit", "reaction", "delete"]
 
@@ -59,7 +59,7 @@ WakeReason = Literal[
 ]
 WAKE_REASONS: tuple[str, ...] = get_args(WakeReason)
 
-#: Why a unit with pending signals did NOT wake this tick.
+#: Why a unit with pending stimuli did NOT wake this tick.
 WakeBrake = Literal["single_flight", "cooldown", "concurrency"]
 WAKE_BRAKES: tuple[str, ...] = get_args(WakeBrake)
 
@@ -73,12 +73,12 @@ _OBSERVED: frozenset[str] = frozenset({"message", "social", "play"})
 
 
 @dataclass(frozen=True)
-class NewSignal:
-    """One signal to append. `due_ms` is None for an item that is pending as
-    soon as it is recorded; a `time` or `self` signal sets it."""
+class NewStimulus:
+    """One stimulus to append. `due_ms` is None for an item that is pending as
+    soon as it is recorded; a `time` or `self` stimulus sets it."""
 
     unit: str
-    kind: SignalKind
+    kind: StimulusKind
     item: str
     ref: str
     at_ms: int
@@ -88,14 +88,14 @@ class NewSignal:
     cues: tuple[str, ...] = ()
     #: 20 §3: «a person's reply to her message within `reply_quiet_seconds`
     #: does not by itself wake Cognition: it waits for the next wake». Recorded
-    #: and consumed like any other signal; it never trips a trigger.
+    #: and consumed like any other stimulus; it never trips a trigger.
     waits: bool = False
     due_ms: int | None = None
 
 
 @dataclass(frozen=True)
-class Signal:
-    """A signal as stored. `pending_since_ms` is when it became pending:
+class Stimulus:
+    """A stimulus as stored. `pending_since_ms` is when it became pending:
     its due time if it has one, else when it was recorded."""
 
     id: int
@@ -119,16 +119,16 @@ class Signal:
 
 @dataclass(frozen=True)
 class WakeRow:
-    """A recorded wake (in step 1, a would-wake). `through_signal_id` and
+    """A recorded wake (in step 1, a would-wake). `through_stimulus_id` and
     `at_ms` ARE the unit's watermark once this is its newest row."""
 
     id: int
     unit: str
     mode: str
     reason: str
-    from_signal_id: int
-    through_signal_id: int
-    signal_count: int
+    from_stimulus_id: int
+    through_stimulus_id: int
+    stimulus_count: int
     eligible_count: int
     oldest_pending_ms: int | None
     cut_cooldown: bool
@@ -142,9 +142,9 @@ class NewWake:
     unit: str
     mode: WakeMode
     reason: WakeReason
-    from_signal_id: int
-    through_signal_id: int
-    signal_count: int
+    from_stimulus_id: int
+    through_stimulus_id: int
+    stimulus_count: int
     eligible_count: int
     oldest_pending_ms: int | None
     cut_cooldown: bool
@@ -154,21 +154,21 @@ class NewWake:
 
 @dataclass(frozen=True)
 class Watermark:
-    """`(through_signal_id, through_ms)`: every signal with `id <=
-    through_signal_id` and pending since no later than `through_ms` is
+    """`(through_stimulus_id, through_ms)`: every stimulus with `id <=
+    through_stimulus_id` and pending since no later than `through_ms` is
     consumed. `ZERO` is a unit that has never woken."""
 
-    through_signal_id: int = 0
+    through_stimulus_id: int = 0
     through_ms: int = 0
 
     @classmethod
     def of(cls, wake: WakeRow | None) -> Watermark:
-        return cls() if wake is None else cls(wake.through_signal_id, wake.at_ms)
+        return cls() if wake is None else cls(wake.through_stimulus_id, wake.at_ms)
 
-    def consumed(self, signal: Signal) -> bool:
+    def consumed(self, stimulus: Stimulus) -> bool:
         return (
-            signal.id <= self.through_signal_id
-            and signal.pending_since_ms <= self.through_ms
+            stimulus.id <= self.through_stimulus_id
+            and stimulus.pending_since_ms <= self.through_ms
         )
 
 
@@ -192,27 +192,27 @@ class WakePolicy:
 
 @dataclass(frozen=True)
 class UnitView:
-    """What one tick reads for one unit: its pending signals (due, not
+    """What one tick reads for one unit: its pending stimuli (due, not
     consumed, ascending id), when its rooms last saw a person's item, and its
     newest wake in this mode."""
 
     unit: str
-    pending: tuple[Signal, ...]
+    pending: tuple[Stimulus, ...]
     last_activity_ms: int | None
     last_wake: WakeRow | None
 
 
 @dataclass(frozen=True)
 class Verdict:
-    """`reason` set: wake now, consuming `pending` up to `through_signal_id`.
+    """`reason` set: wake now, consuming `pending` up to `through_stimulus_id`.
     `reason` None and `brake` set: a trigger held but a brake stopped it.
     Both None: nothing holds."""
 
     reason: WakeReason | None = None
     brake: WakeBrake | None = None
     cut_cooldown: bool = False
-    through_signal_id: int = 0
-    signal_count: int = 0
+    through_stimulus_id: int = 0
+    stimulus_count: int = 0
     eligible_count: int = 0
     oldest_pending_ms: int | None = None
 
@@ -235,7 +235,7 @@ def _cooling(last_wake: WakeRow | None, policy: WakePolicy, now_ms: int) -> bool
 def _trigger(view: UnitView, policy: WakePolicy, now_ms: int) -> WakeReason | None:
     """The FIRST of 20 §3's triggers that holds, in the table's order.
 
-    Only signals that may wake count (`waits` False): a reply to Nora inside
+    Only stimuli that may wake count (`waits` False): a reply to Nora inside
     `reply_quiet_seconds` rides the next wake and never starts one. Quiet is
     measured from the unit's newest person-authored item, `waits` ones
     included: a room still replying to her is not a quiet room."""
@@ -251,7 +251,7 @@ def _trigger(view: UnitView, policy: WakePolicy, now_ms: int) -> WakeReason | No
 
     # `settled` and `strong cue` are about a ROOM going quiet after people
     # said something, so they count observed items only. A pending `time`,
-    # `self` or `rollup` signal has its own row in the table; letting it read
+    # `self` or `rollup` stimulus has its own row in the table; letting it read
     # as `settled` in a quiet unit would record every 07:00 floor under the
     # wrong reason and make the shadow week unreadable.
     observed = [s for s in eligible if s.kind in _OBSERVED]
@@ -305,16 +305,16 @@ def decide(view: UnitView, policy: WakePolicy, now_ms: int) -> Verdict:
     return Verdict(
         reason=reason,
         cut_cooldown=cut,
-        # NEVER BELOW the watermark it read. A `self`/`time` signal can be
-        # pending with an id older than signals an earlier wake consumed
+        # NEVER BELOW the watermark it read. A `self`/`time` stimulus can be
+        # pending with an id older than stimuli an earlier wake consumed
         # (appended at 15:00, due at 19:40); a wake that consumed only it and
-        # set the watermark to its id would re-open every signal between,
+        # set the watermark to its id would re-open every stimulus between,
         # resurrecting them as pending.
-        through_signal_id=max(
-            Watermark.of(view.last_wake).through_signal_id,
+        through_stimulus_id=max(
+            Watermark.of(view.last_wake).through_stimulus_id,
             max(s.id for s in view.pending),
         ),
-        signal_count=len(view.pending),
+        stimulus_count=len(view.pending),
         eligible_count=len(eligible),
         oldest_pending_ms=min(s.pending_since_ms for s in eligible),
     )
