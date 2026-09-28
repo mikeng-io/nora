@@ -148,6 +148,12 @@ async def said(engine):
     ids["a_eng"] = await _say(engine, platform="signal", room="ROOM-A", person="p3",
                               sender="+85200000003", ts=T0 + DAY,
                               body="we went for a big walk on Sunday")
+    ids["a_retract"] = await _say(engine, platform="signal", room="ROOM-A", person="p2",
+                                  sender="+85200000002", ts=T0 + 4_000,
+                                  body="秘密計劃喺星期五")
+    ids["a_changed"] = await _say(engine, platform="signal", room="ROOM-A", person="p3",
+                                  sender="+85200000003", ts=T0 + DAY + 500,
+                                  body="星期六去沙田")
     ids["a_other"] = await _say(engine, platform="signal", room="ROOM-A", person="p1",
                                 sender="+85200000001", ts=T0 + DAY + 1_000,
                                 body="機器學習好難")
@@ -173,6 +179,16 @@ async def said(engine):
         await conn.execute(sa.text(
             "INSERT INTO message_delete (message_id, sender_id, ts) VALUES (:id, 's', :ts)"
         ), {"id": ids["a_other"], "ts": T0 + DAY + 9_000})
+        await conn.execute(sa.text(
+            "INSERT INTO message_edit (message_id, ts, body) VALUES (:id, :ts, :b)"
+        ), {"id": ids["a_changed"], "ts": T0 + DAY + 600, "b": "星期六去大埔"})
+        # Edited, then deleted: neither version may come back.
+        await conn.execute(sa.text(
+            "INSERT INTO message_edit (message_id, ts, body) VALUES (:id, :ts, :b)"
+        ), {"id": ids["a_retract"], "ts": T0 + 5_000, "b": "冇嘢，講錯"})
+        await conn.execute(sa.text(
+            "INSERT INTO message_delete (message_id, sender_id, ts) VALUES (:id, 's', :ts)"
+        ), {"id": ids["a_retract"], "ts": T0 + 6_000})
     return ids
 
 
@@ -186,12 +202,12 @@ def _q(**kw) -> RecordQuery:
 
 async def test_the_interval_and_the_rooms_bound_the_read(engine, said):
     hits, more, _ = await SqlRecordQuery(engine).query(_q(end_ms=T0 + DAY))
-    assert [h.row.id for h in hits] == [said["a_camp"], said["a_hotel"]]
+    assert [h.row.id for h in hits] == [said["a_camp"], said["a_hotel"], said["a_retract"]]
     assert not more
     hits, more, _ = await SqlRecordQuery(engine).query(_q(limit=2))
     assert len(hits) == 2 and more
     # oldest first, of the newest two
-    assert [h.row.id for h in hits] == [said["a_eng"], said["a_other"]]
+    assert [h.row.id for h in hits] == [said["a_changed"], said["a_other"]]
 
 
 async def test_an_author_keeps_only_their_messages(engine, said):
@@ -234,6 +250,22 @@ async def test_reactions_count_what_stands_and_a_delete_is_marked(engine, said):
     assert by_id[said["a_camp"]].reactions == (("👍", 2),)
     assert by_id[said["a_other"]].deleted
     assert not by_id[said["a_camp"]].deleted
+
+
+async def test_a_deleted_message_never_matches_text_and_old_versions_are_not_searched(
+    engine, said,
+):
+    """A hit claims the words are there. A deleted message's words, and the
+    words an edit replaced, would be proven by a hit even with the body
+    withheld, so neither matches (review of the first cut)."""
+    store = SqlRecordQuery(engine)
+    assert (await store.query(_q(text="機器學習")))[0] == ()      # deleted
+    assert (await store.query(_q(text="秘密計劃")))[0] == ()      # edited away, then deleted
+    assert (await store.query(_q(text="講錯")))[0] == ()          # its newest text, deleted
+    # An edit moved the place: the old one no longer matches, the new one does.
+    assert (await store.query(_q(text="沙田")))[0] == ()
+    hits, _, _ = await store.query(_q(text="大埔"))
+    assert [h.row.id for h in hits] == [said["a_changed"]]
 
 
 # ---- the tool ----------------------------------------------------------------
@@ -305,8 +337,16 @@ async def test_a_deleted_message_keeps_its_place_and_loses_its_words(
         _tools(engine, policy, persons, room_id="ROOM-A", platform="signal"), start=START,
     )
     deleted = [m for m in result["messages"] if m.get("deleted")]
-    assert len(deleted) == 1 and deleted[0]["body"] is None
-    assert "機器學習" not in json.dumps(result, ensure_ascii=False)
+    assert len(deleted) == 2 and all(m["body"] is None for m in deleted)
+    assert all("was" not in m for m in deleted)
+    text = json.dumps(result, ensure_ascii=False)
+    for words in ("機器學習", "秘密計劃", "講錯"):
+        assert words not in text
+    found = await _call(
+        _tools(engine, policy, persons, room_id="ROOM-A", platform="signal"),
+        start=START, text="秘密計劃",
+    )
+    assert found["status"] == "nothing_found"
     assert "deleted" in result["note"]
     camp = next(m for m in result["messages"] if "大步行" in (m["body"] or ""))
     assert camp["reactions"] == {"👍": 2}

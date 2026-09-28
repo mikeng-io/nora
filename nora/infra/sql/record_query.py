@@ -13,15 +13,18 @@ store that filtered afterwards would have read another room's words into the
 process first.
 
 **Lexical search is pg_trgm** (design/dreamer-agent-loop/24-embedding-seam.md
-§2, measured on Cantonese): a message matches when its text CONTAINS the
-words (`ilike`, the note tier's operator and reason, `nora.infra.sql.notes`),
-or when pg_trgm's word similarity finds them inside it at
-`WORD_SIMILARITY_MIN` or above. The second half is 24 §2's operator: a CJK run
-is one token to full-text search, and plain `similarity` scored the true
-in-sentence match 0.18, under its own default. Containment ranks first, then
-word similarity, then the newest; a hit that does not contain the words is
-marked `near`. `idx_messages_body_trgm` (migration `0071_lineage`) serves both
-operators.
+§2, measured on Cantonese): a message matches when its CURRENT text (its
+newest edit, else its body) CONTAINS the words (`ilike`, the note tier's
+operator and reason, `nora.infra.sql.notes`), or when pg_trgm's word
+similarity finds them inside it at `WORD_SIMILARITY_MIN` or above. The second
+half is 24 §2's operator: a CJK run is one token to full-text search, and
+plain `similarity` scored the true in-sentence match 0.18, under its own
+default. Containment ranks first, then word similarity, then the newest; a
+hit that does not contain the words is marked `near`.
+`idx_messages_body_trgm` (migration `0071_lineage`) serves both operators on
+unedited messages. **A deleted message never matches text, and an earlier
+version of an edited one is never searched**: a hit is a claim that the words
+are there, and it would make that claim about words their author took back.
 
 `__init__(self, engine)` and nothing else, the house shape for a store.
 """
@@ -73,21 +76,40 @@ class SqlRecordQuery:
         needle = (q.text or "").strip()
         contains: Any = None
         if needle:
+            # WHAT IS SAID NOW, and only by a message still standing. A text
+            # match is a claim about the words: matched against an earlier
+            # version of an edited message, or against a deleted one, a hit
+            # would prove the words were there even with the body withheld
+            # (review of the first cut). So the current text is the newest
+            # edit's, or the body when there is none, and a deleted message
+            # never matches.
+            edited = sa.exists().where(MESSAGE_EDIT.c.message_id == MESSAGES.c.id)
+            newest_edit = (
+                sa.select(MESSAGE_EDIT.c.body)
+                .where(MESSAGE_EDIT.c.message_id == MESSAGES.c.id)
+                .order_by(MESSAGE_EDIT.c.id.desc())
+                .limit(1)
+                .scalar_subquery()
+            )
+            current = sa.func.coalesce(newest_edit, MESSAGES.c.body)
+            deleted = sa.exists().where(MESSAGE_DELETE.c.message_id == MESSAGES.c.id)
+            # Each half is written against `messages.body` where it can be, so
+            # `idx_messages_body_trgm` serves the unedited majority.
             contains = sa.or_(
-                MESSAGES.c.body.icontains(needle, autoescape=True),
-                sa.exists().where(
-                    MESSAGE_EDIT.c.message_id == MESSAGES.c.id,
-                    MESSAGE_EDIT.c.body.icontains(needle, autoescape=True),
-                ),
+                sa.and_(MESSAGES.c.body.icontains(needle, autoescape=True), ~edited),
+                newest_edit.icontains(needle, autoescape=True),
             )
             # `<%` is pg_trgm's word-similarity operator, true at or above
             # `pg_trgm.word_similarity_threshold` (set below for this
             # transaction): the indexable spelling of `word_similarity(...) >=`.
-            near_enough = sa.literal(needle).op("<%")(MESSAGES.c.body)
-            similar = sa.func.word_similarity(sa.literal(needle), MESSAGES.c.body)
+            near_enough = sa.or_(
+                sa.and_(sa.literal(needle).op("<%")(MESSAGES.c.body), ~edited),
+                sa.literal(needle).op("<%")(newest_edit),
+            )
+            similar = sa.func.word_similarity(sa.literal(needle), current)
             stmt = (
                 stmt.add_columns(contains.label("contains"))
-                .where(sa.or_(contains, near_enough))
+                .where(sa.or_(contains, near_enough), ~deleted)
                 .order_by(contains.desc(), similar.desc(), MESSAGES.c.ts.desc(),
                           MESSAGES.c.id.desc())
             )
@@ -103,14 +125,14 @@ class SqlRecordQuery:
             rows = rows[:limit]
             ids = [r.id for r in rows]
             reactions = await self._reactions(conn, ids)
-            deleted = await self._deleted(conn, ids)
+            gone = await self._deleted(conn, ids)
         near = frozenset(r.id for r in rows if needle and not r.contains)
         hits = sorted(
             (
                 RecordHit(
                     platform=r.platform, conversation_id=r.conversation_id,
                     row=transcript_row(r), reactions=reactions.get(r.id, ()),
-                    deleted=r.id in deleted,
+                    deleted=r.id in gone,
                 )
                 for r in rows
             ),
