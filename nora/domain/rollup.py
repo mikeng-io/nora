@@ -24,7 +24,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from itertools import pairwise
 from typing import Any, Literal, NamedTuple
@@ -59,7 +59,11 @@ POLL_RANK = 1
 #: Before every event, whatever its time (a synthetic Record may start before
 #: the epoch; a real one never does).
 NEVER = -(2**62)
-START = EventPosition(NEVER, 0, 0)
+
+
+def start_position() -> EventPosition:
+    """Where a fold that has read nothing stands: before every event."""
+    return EventPosition(NEVER, 0, 0)
 
 
 @dataclass(frozen=True)
@@ -94,7 +98,7 @@ class FoldState:
     co-location and arrival read «now» from. `tags_sha256` is the saved-place
     set the last place plan read."""
 
-    position: EventPosition = START
+    position: EventPosition = field(default_factory=start_position)
     logical_now_ms: int = NEVER
     frontier_ts: int = NEVER
     window_ids: tuple[int, ...] = ()
@@ -899,7 +903,6 @@ __all__ = [
     "LOCAL_TZ",
     "NEVER",
     "POLL_RANK",
-    "START",
     "Citation",
     "Colocation",
     "Daybook",
@@ -940,6 +943,7 @@ __all__ = [
     "responses",
     "room_key",
     "silent_runs",
+    "start_position",
     "stay_from_json",
     "stay_to_json",
     "tags_sha256",

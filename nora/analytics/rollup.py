@@ -336,12 +336,15 @@ class MobilityRollup:
             ordered, subject_id=subject_id, person_ids=person_ids,
             circle_id=circle_id, now_ms=now,
         )
-        target = max(f.id for f in window)
-        if trip_hold_id is not None:
-            target = min(target, trip_hold_id - 1)
-        if stay_hold_id is not None:
-            target = min(target, stay_hold_id - 1)
-        kept = [f for f in window if f.id > target]
+        # What stays undecided is everything from the earliest held fix ON,
+        # in TIME order — never «every id above a mark»: a fix's id is when
+        # its row was written, and the fold's window is a stretch of time
+        # (a late upload has a higher id than the fixes after it). Trimming
+        # by id kept a closed stay's fixes in the window, and the stay was
+        # written again at every later event.
+        position = {f.id: i for i, f in enumerate(ordered)}
+        holds = [position[h] for h in (trip_hold_id, stay_hold_id) if h is not None]
+        kept = ordered[min(holds):] if holds else []
         frontier = max(
             [state.frontier_ts, *(s.ended_ts for s in stays), *(t.ended_ts for t in trips)]
         )
@@ -618,7 +621,9 @@ class MobilityRollup:
                 ]
             new_trips.extend(chunk_trips)
             if held_back:
-                trip_hold_id = min(f.id for f in held_back)
+                # The EARLIEST held fix (held_back is in time order): the
+                # fold keeps its window from there, by position in time.
+                trip_hold_id = held_back[0].id
         # An open stay closes THIS evaluation only once DWELL_CAP_MS has
         # elapsed since its last fix (spec §3.2/§4) on the fold's LOGICAL
         # clock — a later fix or a recorded poll proving the time passed
@@ -691,7 +696,7 @@ class MobilityRollup:
                 # cycle starts the next group from it.
                 undecided = [f.id for f in fixes if f.ts > last_open_stay.ended_ts]
                 if undecided:
-                    stay_hold_id = min(undecided)
+                    stay_hold_id = undecided[0]
             elif elapsed_s < DWELL_CAP_MS / 1000:
                 # Hold ANY open stay that has not yet settled — whether it
                 # is sub-min-dwell (sparse arrival, issue #82) or past

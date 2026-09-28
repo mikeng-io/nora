@@ -698,18 +698,6 @@ class SqlMobilityStore:
                 .values(tags_sha256=tags_sha256)
             )
 
-    async def fold_states(self) -> dict[str, FoldState]:
-        """Every person's fold state in the bound build (the unit rollups
-        read each one's stay in progress)."""
-        stmt = sa.select(ROLLUP_FOLD_STATE).where(
-            ROLLUP_FOLD_STATE.c.build_id == self._bound(),
-        )
-        async with self._engine.connect() as conn:
-            rows = (await conn.execute(stmt)).all()
-        return {r.subject_id: _state_from_row(r) for r in rows}
-
-    # -- the derived rows of the bound build --------------------------------
-
     async def save_place(
         self, *, subject_id: str, circle_id: str, place_id: int | None,
         lat: float, lng: float, radius_m: float,

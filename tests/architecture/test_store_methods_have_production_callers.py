@@ -207,6 +207,15 @@ _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
         "Its own docstring: «the operator's read, and what the tests assert the "
         "ledger on». No consumer designed.",
     ),
+    ("rollups.py", "rows"): _Pin(
+        "read_back_affordance",
+        "Every row of one unit rollup table in a build, surrogate ids and "
+        "system time stripped: what the step-2 determinism gate compares "
+        "between an incremental build and a rebuild "
+        "(tests/integration/test_rollup_builds.py). Its consumer at runtime is "
+        "`rollup_read` (design/cognition-loop/30-cognition.md §2), not built "
+        "in step 2a.",
+    ),
     ("notes.py", "note_by_id"): _Pin(
         "read_back_affordance",
         "Retired-note lookup; no consumer designed.",
@@ -247,7 +256,7 @@ _AMBIGUOUS: frozenset[str] = frozenset(
         "aclose", "append", "claim", "create", "delete",
         "describe", "enqueue", "get", "lookup", "mark", "put", "read",
         "recent", "record", "record_wake", "resolve", "rsvps_for", "save", "search",
-        "sweep_firing", "update", "watermark",
+        "sweep_firing", "update", "apply",
     }
 )
 
@@ -273,7 +282,7 @@ _STORE_MODULES: frozenset[str] = frozenset(
         "music_queue.py", "music_session.py", "notes.py",
         "participation_state.py", "presence.py",
         "reasoning_strip.py",
-        "reminders.py", "revisions.py", "snapshot_at.py",
+        "reminders.py", "revisions.py", "rollups.py", "snapshot_at.py",
         "stimuli.py",
         "source_health.py", "tag_debounce.py",
         "standing.py", "summons.py", "tag_traces.py", "tool_call_log.py",

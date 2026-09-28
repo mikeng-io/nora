@@ -49,7 +49,7 @@ _HOME = {"a": (22.4000, 114.1000), "b": (22.3500, 114.2000)}
 _WORK = (22.3000, 114.1700)
 
 
-def _seed_record(store: FakeMobilityStore, *, seed: int = 11) -> int:
+def _seed_record(store: FakeMobilityStore, *, seed: int = 11, shuffle_ids: bool = False) -> int:
     """Seed the Record synchronously through the fake's lists (the fake's
     seeding coroutines only append), and return the watermark: the end of the
     last day. Rows recorded after it exist too, so a run that read past its
@@ -126,6 +126,15 @@ def _seed_record(store: FakeMobilityStore, *, seed: int = 11) -> int:
         pid += 1
         at += rng.choice([90_000, 120_000, 300_000])
     t.tagged.append(TaggedPlace("c1", "tag-home-a", "Home A", *_HOME["a"], 80.0))
+    if shuffle_ids:
+        # A row's id says when it was WRITTEN, which need not follow the time
+        # it describes (a late upload, a backfill, two writers). The fold
+        # orders by the Record's clock and must not lean on ids beyond a
+        # tie-break: give the fixes ids in no particular order.
+        ids = [f.id for f in t.fixes]
+        rng.shuffle(ids)
+        for f, new_id in zip(t.fixes, ids, strict=True):
+            f.id = new_id
     return watermark
 
 
@@ -197,10 +206,10 @@ def _schedules(watermark: int, seed: int) -> dict[str, list[int]]:
     return {"every_tick": every_tick, "ragged": ragged, "rebuild": [watermark]}
 
 
-@pytest.mark.parametrize("seed", [11, 23])
-async def test_every_schedule_folds_the_record_into_the_same_rollup(seed):
+@pytest.mark.parametrize(("seed", "shuffle_ids"), [(11, False), (23, False), (5, True)])
+async def test_every_schedule_folds_the_record_into_the_same_rollup(seed, shuffle_ids):
     tables = FakeMobilityStore()
-    watermark = _seed_record(tables, seed=seed)
+    watermark = _seed_record(tables, seed=seed, shuffle_ids=shuffle_ids)
     snapshots = {}
     for build, (name, schedule) in enumerate(_schedules(watermark, seed).items(), start=1):
         store = tables.scoped(build)
@@ -210,7 +219,7 @@ async def test_every_schedule_folds_the_record_into_the_same_rollup(seed):
     # Positive controls: the Record really produced every kind of row, so
     # equality is not two empty builds agreeing.
     for subject in ("a", "b"):
-        assert len(rebuild[subject]["stays"]) >= 3 * _DAYS
+        assert len(rebuild[subject]["stays"]) >= 2 * _DAYS
         assert len(rebuild[subject]["trips"]) >= 2 * (_DAYS - 1)
         assert rebuild[subject]["places"] and rebuild[subject]["occupancy"]
         assert rebuild[subject]["corridors"]

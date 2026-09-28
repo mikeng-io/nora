@@ -35,10 +35,13 @@ WHAT THIS ADDS, all additive (no table dropped, no column dropped):
    a `time` one already is, so a stimulus raised again by a later run (or by
    a rebuild recomputing the same row) is written once.
 
-THE EXISTING ROWS become build 1, `code_version = 'legacy'`, current: every
-reader keeps reading exactly what it read before this migration until the
-analytics process rebuilds (it does on start, because its code version is
-not `legacy`) and switches the pointer. Build 1 is then superseded and kept.
+THE EXISTING ROWS become one build, `code_version = 'legacy'`, current:
+every reader keeps reading exactly what it read before this migration until
+the analytics process rebuilds (it does on start, because its code version
+is not `legacy`) and switches the pointer; the legacy build is then
+superseded and kept. A database with no presence Rollup rows gets no legacy
+build (orphan occupancy or rhythm rows, which cannot exist without a place,
+would fail the NOT NULL and stop the migration rather than be guessed).
 
 Every covered table is LOCKed while it is backfilled and its trigger
 attached: the presence collector and the analytics process keep writing
@@ -181,10 +184,15 @@ def upgrade() -> None:
         sa.Column("late_fixes", sa.Integer, nullable=False, server_default=sa.text("0")),
         _recorded_at(),
     )
+    # Only a database that HOLDS presence Rollup rows gets the legacy build: a
+    # fresh one (a new deployment, an eval sandbox) starts with no build at
+    # all, which is what `nora snapshot` requires of its target.
     op.execute(
         "INSERT INTO rollup_build (code_version, params_sha256, status, switched_at, detail) "
-        "VALUES ('legacy', '', 'current', clock_timestamp(), "
-        "'{\"note\": \"rows derived before migration 0071, by the wall-clock rollup\"}'::jsonb)"
+        "SELECT 'legacy', '', 'current', clock_timestamp(), "
+        "'{\"note\": \"rows derived before migration 0071, by the wall-clock rollup\"}'::jsonb "
+        "WHERE EXISTS (SELECT 1 FROM presence_stays) OR EXISTS (SELECT 1 FROM presence_trips) "
+        "OR EXISTS (SELECT 1 FROM presence_derived_places)"
     )
     legacy = "(SELECT id FROM rollup_build WHERE code_version = 'legacy')"
 
@@ -375,7 +383,7 @@ def downgrade() -> None:
     legacy = "(SELECT id FROM rollup_build WHERE code_version = 'legacy')"
     for table in _PRESENCE_ROLLUP:
         # Only the legacy build's rows existed before this migration.
-        op.execute(f"DELETE FROM {table} WHERE build_id <> {legacy}")  # noqa: S608 — table names are module constants, never input
+        op.execute(f"DELETE FROM {table} WHERE build_id IS DISTINCT FROM {legacy}")  # noqa: S608 — table names are module constants, never input
         for column in ("recorded_at", "lineage", "build_id"):
             op.drop_column(table, column)
     op.drop_table("rollup_fold_state")

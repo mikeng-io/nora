@@ -166,10 +166,6 @@ class FakeMobilityStore:
     async def fold_state(self, *, subject_id: str) -> FoldState | None:
         return self._t.folds.get((self._bound(), subject_id))
 
-    async def fold_states(self) -> dict[str, FoldState]:
-        build = self._bound()
-        return {s: st for (b, s), st in self._t.folds.items() if b == build}
-
     async def events_since(
         self, *, person_ids: Sequence[str], circle_ids: Sequence[str],
         after: EventPosition, through_ms: int, limit: int,

@@ -269,8 +269,11 @@ async def test_ensure_build_rebuilds_a_build_of_other_code_and_keeps_its_own(pg_
     await _seed(engine, mobility)
     runner = _runner(engine)
     rollups = SqlRollupStore(engine)
+    # A build the previous code made (on a deployment, migration 0071's
+    # `legacy` build holding the wall-clock rows).
+    await mobility._seed_build_for_test(current=True)
     legacy = await rollups.current_build()
-    assert legacy is not None and legacy.code_version == "legacy"  # migration 0071
+    assert legacy is not None and legacy.code_version != CODE_VERSION
     built = await runner.ensure_build(through_ms=_t(0, 12))
     assert built != legacy.id
     assert await runner.ensure_build(through_ms=_t(0, 13)) == built
