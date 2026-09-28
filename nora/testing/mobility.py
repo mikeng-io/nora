@@ -43,7 +43,6 @@ class FakeMobilityStore:
         self._rhythm: dict[tuple[str, int], dict[str, float | int]] = {}
         self._corridors: dict[int, dict[str, Any]] = {}
         self._next_corridor_id = 1
-        self._corridor_speed: dict[tuple[str, int, int], dict[str, float | int]] = {}
 
     async def watermark(self, *, subject_id: str) -> tuple[int, int]:
         return self._watermarks.get(subject_id, (0, 0))
@@ -178,14 +177,6 @@ class FakeMobilityStore:
             (t.started_ts, t.avg_speed_kmh) for t in self._trips
             if t.subject_id == subject_id and t.corridor_id == corridor_id
         ]
-
-    async def upsert_corridor_speed(
-        self, *, subject_id: str, corridor_id: int, hour_of_week: int,
-        p50_kmh: float, p90_kmh: float, sample_count: int, now_ms: int,
-    ) -> None:
-        self._corridor_speed[(subject_id, corridor_id, hour_of_week)] = {
-            "p50_kmh": p50_kmh, "p90_kmh": p90_kmh, "sample_count": sample_count,
-        }
 
     async def places_for_subject(self, *, subject_id: str) -> list[DerivedPlace]:
         return [p for pid, p in sorted(self._places.items()) if p.subject_id == subject_id]

@@ -38,7 +38,6 @@ from nora.domain.mobility import (
     cluster_trips,
     collapse_duplicate_fixes,
     extract_trips,
-    hour_of_week,
     hour_of_week_bins,
     label_place,
     mode_address,
@@ -78,10 +77,6 @@ class MobilityStore(Protocol):
     async def trip_speeds_for_corridor(
         self, *, subject_id: str, corridor_id: int,
     ) -> list[tuple[int, float]]: ...
-    async def upsert_corridor_speed(
-        self, *, subject_id: str, corridor_id: int, hour_of_week: int,
-        p50_kmh: float, p90_kmh: float, sample_count: int, now_ms: int,
-    ) -> None: ...
     async def places_for_subject(self, *, subject_id: str) -> list[DerivedPlace]: ...
     async def save_place(
         self, *, subject_id: str, circle_id: str, place_id: int | None,
@@ -1130,7 +1125,7 @@ class MobilityRollup:
                     outcome="created" if corridor_id in created else "reconfirmed",
                 )
         for corridor_id, sequence in sorted(touched.items()):
-            await self._record_corridor_speeds(
+            await self._reconcile_corridor_count(
                 subject_id=subject_id, corridor_id=corridor_id,
                 sequence=sequence, now_ms=now_ms,
             )
@@ -1156,7 +1151,7 @@ class MobilityRollup:
             return None
         existing_id, canonical = (None, sequence) if match is None else match
         # `sample_count=len(trips)` is PROVISIONAL for an existing corridor —
-        # `_record_corridor_speeds` overwrites it with the authoritative count
+        # `_reconcile_corridor_count` overwrites it with the authoritative count
         # once the links have landed. It cannot be authoritative here: the id
         # is needed to link, and the count is only knowable after linking.
         # For a fresh insert it is already exact (no other trip carries the
@@ -1172,13 +1167,16 @@ class MobilityRollup:
         )
         return corridor_id, canonical, existing_id is None
 
-    async def _record_corridor_speeds(
+    async def _reconcile_corridor_count(
         self, *, subject_id: str, corridor_id: int, sequence: tuple[str, ...],
         now_ms: int,
     ) -> None:
-        """Per-hour-of-week p50/p90 over EVERY trip ever linked to this
-        corridor — a full recompute from the whole sample set, never an
-        incremental update, the same posture `_rebuild_rhythm` takes."""
+        """The corridor's authoritative trip count, once the links have
+        landed. It used to write per-hour-of-week speed percentiles into
+        `presence_corridor_speed` as well; nothing ever read them, so that
+        writer is retired (design/27 §4.4 M2: repeated trips are reported
+        from the trips themselves) and the table stays, the repo's «code
+        goes, tables stay»."""
         samples = await self._store.trip_speeds_for_corridor(
             subject_id=subject_id, corridor_id=corridor_id,
         )
@@ -1190,45 +1188,11 @@ class MobilityRollup:
             subject_id=subject_id, sequence=sequence, sample_count=len(samples),
             now_ms=now_ms, existing_id=corridor_id,
         )
-        buckets: dict[int, list[float]] = {}
-        for started_ts, speed_kmh in samples:
-            buckets.setdefault(
-                hour_of_week(started_ts, self._cfg.tz_name), []
-            ).append(speed_kmh)
-        for how, speeds in buckets.items():
-            ordered = sorted(speeds)
-            await self._store.upsert_corridor_speed(
-                subject_id=subject_id, corridor_id=corridor_id, hour_of_week=how,
-                p50_kmh=_percentile(ordered, 0.5), p90_kmh=_percentile(ordered, 0.9),
-                sample_count=len(ordered), now_ms=now_ms,
-            )
+
 
 def _median(ordered: list[float]) -> float:
     n = len(ordered)
     return ordered[n // 2] if n % 2 else (ordered[n // 2 - 1] + ordered[n // 2]) / 2
-
-
-def _percentile(ordered: list[float], q: float) -> float:
-    """Nearest-rank percentile over an ALREADY-SORTED, non-empty list —
-    `ordered[int(len * q)]`, clamped to the last index.
-
-    Deliberately NOT `statistics.median` / `quantiles`: those interpolate
-    between neighbours, inventing a speed no trip was ever measured at,
-    which this substrate's "bind to the real property" rule rules out. The
-    value returned is always one an actual trip actually recorded.
-
-    For ODD `len` the q=0.5 case coincides exactly with
-    `statistics.median` (verified in
-    `test_corridor_speed_percentiles_match_a_hand_computation`); for even
-    `len` it is the upper of the two middle samples rather than their
-    average, for the same never-interpolate reason.
-
-    The `min(...)` never actually fires at this module's two call sites:
-    `int(n * q) <= n - 1` for every `n >= 1` when `q <= 0.9`. It is there
-    for a `q` that does not exist yet (1.0 runs one past the end), and the
-    test asserts it at exactly that value rather than pretending 0.9
-    exercises it."""
-    return ordered[min(int(len(ordered) * q), len(ordered) - 1)]
 
 
 def _local_minute_of_day(ts_ms: int, tz: ZoneInfo) -> float:

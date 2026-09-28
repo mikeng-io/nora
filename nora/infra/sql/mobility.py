@@ -29,7 +29,6 @@ from nora.domain.mobility import (
 )
 from nora.infra.sql.schema import (
     ANALYTICS_WATERMARK,
-    PRESENCE_CORRIDOR_SPEED,
     PRESENCE_CORRIDORS,
     PRESENCE_DERIVED_PLACES,
     PRESENCE_FIXES,
@@ -568,30 +567,6 @@ class SqlMobilityStore:
         async with self._engine.connect() as conn:
             rows = (await conn.execute(stmt)).all()
         return [(r.started_ts, r.avg_speed_kmh) for r in rows]
-
-    async def upsert_corridor_speed(
-        self, *, subject_id: str, corridor_id: int, hour_of_week: int,
-        p50_kmh: float, p90_kmh: float, sample_count: int, now_ms: int,
-    ) -> None:
-        stmt = pg_insert(PRESENCE_CORRIDOR_SPEED).values(
-            subject_id=subject_id, corridor_id=corridor_id,
-            hour_of_week=hour_of_week, p50_kmh=p50_kmh, p90_kmh=p90_kmh,
-            sample_count=sample_count, updated_ts=now_ms,
-        )
-        stmt = stmt.on_conflict_do_update(
-            index_elements=[
-                PRESENCE_CORRIDOR_SPEED.c.subject_id,
-                PRESENCE_CORRIDOR_SPEED.c.corridor_id,
-                PRESENCE_CORRIDOR_SPEED.c.hour_of_week,
-            ],
-            set_={
-                "p50_kmh": stmt.excluded.p50_kmh, "p90_kmh": stmt.excluded.p90_kmh,
-                "sample_count": stmt.excluded.sample_count,
-                "updated_ts": stmt.excluded.updated_ts,
-            },
-        )
-        async with self._engine.begin() as conn:
-            await conn.execute(stmt)
 
     async def places_for_subject(self, *, subject_id: str) -> list[DerivedPlace]:
         """Every stored place for the subject, id-ascending — any number of
