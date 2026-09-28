@@ -87,10 +87,12 @@ def test_message_needs_who_is_actually_in_the_room_not_only_who_it_lists(live, w
 
 
 def test_message_is_refused_in_a_wider_room_a_star_room_or_another_unit():
-    assert not entry_permits(message("b"), _in(A), origin="b")   # A holds p3
-    assert not entry_permits(message("a"), _in(C), origin="a")   # B lists `*`
-    assert not entry_permits(message("c"), _in(B), origin="c")   # A lists `*`
-    assert not entry_permits(message("a"), _in(D), origin="a")   # another unit
+    # Each with a live roster that would pass, so the named clause is what refuses.
+    assert not entry_permits(message("b"), _in(A, live=LIVE_OK), origin="b")  # A lists p3
+    assert not entry_permits(message("a"), _in(C, live=LIVE_OK), origin="a")  # C lists `*`
+    assert not entry_permits(message("c"), _in(B, live=LIVE_OK), origin="c")  # C lists `*`
+    only_p1 = LiveRoom(person_ids=frozenset({"p1"}))
+    assert not entry_permits(message("a"), _in(D, live=only_p1), origin="a")  # another unit
     assert not entry_permits(message("gone"), _in(B), origin="gone")
     assert not entry_permits(message("a"), RenderRoom(room=None, rooms=ROOMS), origin="a")
 

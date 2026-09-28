@@ -16,8 +16,8 @@
   {
     "name": "message:<A> needs B's listed persons to be a subset of A's",
     "file": "nora/agent/lineage.py",
-    "old": "    return b.persons <= a.persons",
-    "new": "    return True",
+    "old": "    if not b.persons <= a.persons:\n        return False",
+    "new": "    if False:\n        return False",
     "target": "tests/unit/test_lineage.py::test_message_is_refused_in_a_wider_room_a_star_room_or_another_unit"
   },
   {
