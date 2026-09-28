@@ -32,7 +32,8 @@ healthy for the interval" (§3) is a query, not an assumption.
 **Perception cost.** Every story frame and every reel is a vision call. The
 social stream reuses ingest comprehension and its concurrency cap
 (`DEFAULT_MAX_CONCURRENT = 4`), under a per-unit daily perception cap; an item
-past the cap is recorded unperceived, which is a true state, not an error.
+past the cap (starting at 200 vision calls per unit per day) is recorded
+unperceived, which is a true state, not an error.
 
 **On scheduling** (operator: "should it be scheduled?"): a source that cannot
 push is polled. Stories disappear in 24 hours, so the social poller runs at
@@ -103,13 +104,13 @@ and every `time` trigger raises a **signal**: `(unit, kind, ref, cues, at)`.
 - **cues** (deterministic, never a model): a date or time expression; an
   amount or a split; a keep instruction («記低», "keep that", "write that
   down"); an RSVP word; a reply to, edit of, reaction to or delete of a
-  message a Register row cites; a place name or a place link; an arrival at a
-  place an open event names; a surprise cue ("don't tell her", «唔好話俾佢知»),
+  message a Register row cites; a place name or a place link; a surprise cue ("don't tell her", «唔好話俾佢知»),
   which makes `exclude_persons` mandatory on the write that cites it
-  ([10](10-tiers.md) §3).
+  ([10](10-tiers.md) §3). An arrival at a place an open event names is not a
+  cue on a message: the Rollup raises it as a signal ([25](25-rollup.md) §4).
 - An item whose author is Nora raises no signal. A person's reply to her
-  message within `reply_quiet_seconds` does not by itself wake cognition: it
-  waits for the next wake.
+  message within `reply_quiet_seconds` (starting at 600 s) does not by
+  itself wake Cognition: it waits for the next wake.
 
 **Absence is a signal only on healthy sources.** A deviation
 ([25](25-rollup.md) §4) is raised only when every source it rests on is
@@ -120,7 +121,9 @@ specific to it ([30](30-cognition.md) §3).
 
 **Signals are durable.** They are rows in a per-unit `signal` table, not
 memory: the Rollup raises them from the analytics process into nora, and
-they survive a restart.
+they survive a restart. **A `self` or `time` signal is pending only from its
+due time**: the watermark, `batch_max` and max age count only due signals,
+so a self-wake set for 19:40 does not hold the unit's queue open at 15:00.
 
 ### The wake policy
 
@@ -135,10 +138,10 @@ Cognition session on the **first** trigger that holds:
 |---|---|---|
 | **settled** | at least one signal pending, and the unit's rooms quiet for `quiet_seconds` | 600 s (`[dreamer] quiet_seconds` is 1800 today) |
 | **strong cue** | a pending signal carries a strong cue (a date or time, a place change, a keep instruction, an RSVP, an edit of a cited message), then `cue_quiet_seconds` of quiet | 120 s |
-| **rollup** | a Rollup signal (co-location start, play-together start, deviation) has waited `rollup_delay_seconds` | 60 s |
+| **rollup** | a Rollup signal (co-location start, a stay starting at a place an open event names, play-together start, deviation) has waited `rollup_delay_seconds` | 60 s |
 | **batch** | pending signals ≥ `batch_max` | 80 |
 | **max age** | the oldest pending signal ≥ `max_age_seconds` old | 3600 s |
-| **time** | an anchor passed, a revisit due, an event's date reached, the 07:00 HK floor | at the time |
+| **time** | an anchor passed, a revisit due, an event's date reached, the daily floors (07:00 HK and 00:00 HK) | at the time |
 | **self** | a self-wake Cognition requested is due (below) | at its time |
 
 **Watermark.** Each unit has a durable signal watermark. A session consumes
@@ -148,9 +151,9 @@ restart, and a failed session does not advance it.
 
 **Brakes, all in code:**
 
-- single-flight per unit, and at most `max_concurrent_sessions` across units
-  (design/dreamer-agent-loop/06-trigger.md §6 required a global bound; the
-  current `dream_loop` has none);
+- single-flight per unit, and at most `max_concurrent_sessions` across units,
+  starting at 2 (design/dreamer-agent-loop/06-trigger.md §6 required a global
+  bound; the current `dream_loop` has none);
 - a per-unit **cooldown** between sessions, starting at 300 s; a strong cue
   may cut it once;
 - her own messages raise no signal, and a person's reply to her message
@@ -159,7 +162,7 @@ restart, and a failed session does not advance it.
 - a daily token budget per unit, with a reserve held for strong cues and
   Rollup signals, so a chatty day cannot starve a co-location;
 - per-unit backoff after a failed session, where "nothing to do" is its own
-  outcome and never resets backoff.
+  result and never resets backoff.
 
 **Expected volume.** The dinner afternoon ([40](40-register.md) §5) is about
 5–7 sessions for the whole day; a quiet day, 1–2; never one per message.
@@ -178,8 +181,13 @@ own forecast of when to look next** (operator 2026-09-28). At the end of a
 session she may call `wake_at(at, subject_rows, why)`: "the event is at
 20:00, check at 19:40 whether the place moved"; "they said they would decide
 after lunch, look at 14:30"; or, with nothing pending, no self-wake. It
-writes a `self` signal due at `at`. It is a write verb, not an act: nothing
-leaves for a room ([30](30-cognition.md) §2).
+writes a `self` signal due at `at`.
+
+**A self-wake is not an act.** `remind` is outward: a message to a room,
+through the fire path. `wake_at` is inward: it asks for her own next look at
+the subject rows it names, and nothing leaves. The loop is therefore
+self-paced: woken by the world and by her own forecast of when to look
+next.
 
 - **Fresh evidence, not old reasoning.** When a self-wake is due, code builds
   its agenda item from the subject rows as they are now, plus what changed
@@ -193,12 +201,13 @@ leaves for a room ([30](30-cognition.md) §2).
   for this event at 19:40, requested because …; the event now reads …"), so
   she decides then. Code never cancels one itself; it only surfaces it.
 - **Guards, in code**: at most `max_self_wakes` pending per unit (starting at
-  5) and one per subject (a new one for the same subject supersedes the
-  old); a horizon no shorter than the unit's cooldown and no longer than 7
-  days (longer is a note's or an event's anchor); the same budget, reserve,
-  single-flight and cooldown as any wake; a self-wake whose session writes
-  nothing and acts on nothing is a strike against its subject, and after
-  `self_wake_strikes` (starting at 3) her self-wakes for that subject are
+  5) and one per subject: a new self-wake that shares any subject row with a
+  pending one supersedes it; a horizon no shorter than the unit's cooldown
+  and no longer than 7 days (longer is a note's or an event's anchor); the
+  same budget, single-flight and cooldown as any wake, but never the reserve
+  held for strong cues and Rollup signals; a self-wake whose session writes
+  nothing and acts on nothing is a **miss** against its subject, and after
+  `self_wake_misses` (starting at 3) her self-wakes for that subject are
   refused for a day.
 - **Measured** by the Assess adaptor: yield (the share of self-wakes that led
   to a write or an act), lateness against the moment it anticipated, and the
@@ -207,12 +216,13 @@ leaves for a room ([30](30-cognition.md) §2).
 ### The slow adaptors and Assess
 
 Each has its own per-key watermark and its own wake rule; none runs on a
-fixed schedule, and none is woken by a single message.
+fixed schedule, and none is woken by a single message, except a
+`character_dispute`.
 
 | adaptor | key | wakes when | starting value |
 |---|---|---|---|
 | **Character** | (unit, entity) | new evidence for that entity since its watermark (items it could cite: the entity's messages and social items, Rollup rows about it, Register rows naming it, a `character_dispute`) reaches `character_batch`; or its account is older than `character_stale_seconds` with any new evidence at all; a dispute wakes it at once | 200 items (Standing's `fold_batch` today); 7 days |
-| **Lessons** | unit | outcomes of her acts since its watermark (corrections, replies, silence where a reply was expected, reactions) reach `lessons_batch`; or `lessons_stale_seconds` with any new outcome | 30 outcomes; 7 days |
+| **Lessons** | unit | `response` episodes ([25](25-rollup.md) §3) closed since its watermark reach `lessons_batch`; or `lessons_stale_seconds` with any new one; or a lesson passes its horizon ([12](12-schemas.md) §4a) | 30 episodes; 7 days; 60 days |
 | **Assess** | a finished session; the unit, nightly | a session of any adaptor ends; the nightly clock | — |
 
 The Character adaptor replaces the culture adaptor's daily clock
@@ -226,5 +236,5 @@ these values.
 `nora_social_poll_total{outcome}`, `nora_play_samples_total{source}`,
 `nora_perception_total{source,outcome}`,
 `nora_cognition_unit_tokens_total{unit}`,
-`nora_self_wake_total{outcome}` (requested, fired, moved, cancelled,
+`nora_self_wake_total{transition}` (requested, fired, moved, cancelled,
 superseded, refused).

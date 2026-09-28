@@ -77,7 +77,7 @@ is also a background job: nobody tagged her when it runs.
 1. **Retraction cascade** (Honcho scopes). When a Record item is withdrawn — a
    message deleted, the PII scrub, a face label removed, a person leaving a
    unit — every derived revision whose citation chain reaches it is marked
-   `unsupported`, stops rendering, and goes on the next agenda for
+   `unsupported`, stops rendering, and goes to its writer's next session for
    re-derivation. Code walks a `citation` edge table written with every
    revision; citations already exist, and this is what makes them pay.
 2. **Transaction time everywhere, valid time only where intrinsic.** Every
@@ -91,7 +91,8 @@ is also a background job: nobody tagged her when it runs.
 3. **Decay and reinforcement** (ACT-R activation, Generative Agents recency,
    Honcho `times_derived`). Every Character, Lessons and Standing line carries
    `last_supported_at` (its newest cited Record time) and `support_count`;
-   the prompt shows the age, and code puts "account stale" on the agenda.
+   the prompt shows the age, and staleness wakes the row's writer
+   ([20](20-observe.md) §3).
 4. **Absolute dates, and re-recording measured** (Honcho's deriver, Graphiti,
    Letta's reflection rules). Write verbs refuse relative time words in date
    fields. A line that only restates one Record row is counted by the assess
@@ -130,8 +131,8 @@ is also a background job: nobody tagged her when it runs.
 - **Clustered communities** for rooms or units: they are configured.
 - **Agent-written doctrine, prompts or runtime skills** (Letta skill
   learning, LangMem prompt optimisation, applied to the authored layer):
-  doctrine and `nora/skills/` are authored and never hers to write
-  ([55](55-self.md) §3). Lessons (§4 item 8) are not this: they are her own
+  doctrine ([55](55-self.md) §3) and `nora/skills/` (ADR 0016,
+  docs/adr/0016-skill-policy.md) are authored and never hers to write. Lessons (§4 item 8) are not this: they are her own
   bounded layer below doctrine, capped, cited to outcomes, refused where they
   would loosen doctrine, visible to the operator and reversible by id.
 - **Precomputing answers to predicted questions** (sleep-time compute's

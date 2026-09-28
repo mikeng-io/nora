@@ -1,7 +1,7 @@
 ---
 type: design
 title: "Schemas — every Register, Character, Lessons and Standing row is structured Markdown with fixed sections, parsed by code"
-description: "The operator's cascade (2026-09-28): no row a model writes is free-form. One grammar for all (fixed English headings, cited lines, content in the room's language, refused never repaired), the split between typed columns and the Markdown body, and the schema of each kind: note, memo, event, the four Characters, the three Standings. The Rollup is typed and rebuilt, never Markdown."
+description: "The operator's cascade (2026-09-28): no row a model writes is free-form. One grammar for all (fixed English headings, cited lines, content in the room's language, refused never repaired), the split between typed columns and the Markdown body, and the schema of each kind: note, memo, event, the four Characters, a lesson, the three Standings. The Rollup is typed and rebuilt, never Markdown."
 tags: [nora, schema, markdown, register, character, standing, culture, note-format]
 timestamp: '2026-09-28'
 edges:
@@ -37,7 +37,8 @@ held by one parser per kind, each called by the write verb before commit:
    English; code parses keys, never content.
 3. **Every claim cites.** A Register line ends in the Record ids and Rollup
    keys it rests on; a Character or Standing paragraph ends in its ids and
-   keys; a lesson's `Why` ends in the outcomes it cites. Each must be one this session or turn was shown or fetched.
+   keys; a lesson's `Why` ends in the outcomes it cites. Each must be one this
+   session or turn was shown or fetched.
 4. **Names are names the input showed; dates are absolute.**
 5. **Some sections are code-written** (history, folds, ages) and a model never
    writes them. History is rendered from the revision chain; the head a
@@ -48,11 +49,9 @@ held by one parser per kind, each called by the write verb before commit:
    model as `refused` (ADR 0009's status) so it can rewrite.
 
 **Typed columns vs body.** What code must compute on is a column, not prose:
-ids, unit, entity, status, dates, and every column of [10](10-tiers.md) §3
-(`reasoning`, `confidence`, `lineage`, `exclude_persons`, `as_of`,
-`valid_from`/`valid_to`, `last_supported_at`/`support_count`,
-`base_revision_id`). What a model must understand is the body. Nothing is in
-both.
+ids, unit, entity, status, dates, and every column of [10](10-tiers.md) §3,
+which is canonical for them. What a model must understand is the body.
+Nothing is in both.
 
 ## 3. Register
 
@@ -110,13 +109,14 @@ One row per lesson, per unit:
 | section | required | holds |
 |---|---|---|
 | the lesson | yes | one short prescriptive line ("when they ask for food, give two options, not five") |
-| `Why` | yes | the outcomes that taught it, cited: corrections, replies that landed, reactions, silence where a reply was expected; never her own words alone |
+| `Why` | yes | the outcomes that taught it, cited as `response` episodes ([25](25-rollup.md) §3): corrections, replies that landed, reactions, silence where a reply was expected; never her own words alone |
 | `Applies when` | no | the situations it is for |
 | `History` | code | every revision and retirement, with its id, so any one can be rolled back |
 
 A lesson carries `last_supported_at` and `support_count`; one past its
-horizon renders with its age and goes on the agenda to be re-evidenced or
-retired.
+horizon (60 days, to be sized from the first month) renders with its age and
+wakes the Lessons adaptor to re-evidence or retire it
+([20](20-observe.md) §3).
 
 ## 5. Standing
 

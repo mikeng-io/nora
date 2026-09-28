@@ -45,7 +45,7 @@ Each step ships alone, behind a flag that defaults off, and is read back live
 |---|---|---|---|
 | 0 | **Tiers, words, grants** | a DEC for [10](10-tiers.md), [12](12-schemas.md), [15](15-map.md); a DEC granting the named write verbs through `AdaptorGrant` (write verbs are not act verbs); each amendment of §3 as a decision row, and index rows for R-31 and DEC-176, which have none; the unit read boundary settled (§4); GLOSSARY rewritten to [10](10-tiers.md)'s words, resolving the conflicts below | — |
 | 1 | **Signals, shadow** | the durable `signal` table, the ingest signal stage, cues, the pending set, wake metrics; the wake evaluator in shadow (it logs each would-wake and its reason and fires nothing); reactions, edits and deletes or unsends ingested as items; collector polls and platform adapter health recorded; the clocks still run everything | a week of would-wakes and reasons; every wake value of [20](20-observe.md) §3 sized from it |
-| 1b | **History and snapshot** | the append-only migration of every table in §5's inventory (system time, heads as views, loop state as transition rows); `doctrine_revision`, `config_revision` and `deploy_revision` recorded at load (§5); `nora snapshot --at T` (below) | a test writes, revises and retires across every store, then snapshots at two moments and gets exactly what was held at each; a recorded tag turn's blocks, rendered from a snapshot at its moment, equal the blocks its Langfuse trace recorded, memory blocks excepted |
+| 1b | **History and snapshot** | the append-only migration of every table in §5's inventory except the rows marked 2 or 2b, which migrate at those steps (system time, heads as views, loop state as transition rows); doctrine, Dreamer-objective, config and deploy revisions recorded at load (§5); `nora snapshot --at T` (below) | a test writes, revises and retires across every store migrated here, then snapshots at two moments and gets exactly what was held at each; a recorded tag turn's blocks, rendered from a snapshot at its moment, equal the blocks its Langfuse trace recorded, with memory and the Live blocks (`tool_catalogue`, her platform presence, now) excepted and the transcript rendered through the media join as of T |
 | 2 | **Rollup and lineage** | the Rollup as a projection (logical watermark, `build`, citation by overlap), design 27's presence rollup moved onto the watermark; co-location, outing; daybook and tie partial ([25](25-rollup.md) §3); the [10](10-tiers.md) §3 columns, every lineage kind and its per-room predicate; the lineage backfill, then the filter; the `citation` edge table; `rollup_read`, `record_query`; wake defaults re-sized with Rollup signals | incremental and batch builds of each rollup agree exactly; no row with unknown lineage renders outside its origin room; a presence-lineaged field is refused in a room without the location flag and in one where DisclosureGuard fails |
 | 2b | **Events unit-wide** | the event migration (§5); `event_revision`, the lifecycle statuses, per-field modes; the event verbs with `base_revision_id`; the tag path's five event tools renamed everywhere (§8); `event_search` | existing `Gathering` tests and the tag path's event cases green; `tool_selection` no worse |
 | 2c | **Withdrawal cascade** | `unsupported` marking over the citation table, fed by step 1's deletes, the PII scrub and a person leaving a unit; `nora person forget` and `unforget` (soft, §9) for the stores that exist | a cascade test withdraws one Record item and finds every row citing it `unsupported`, in every store; a forget followed by a snapshot before it restores everything |
@@ -57,15 +57,16 @@ Each step ships alone, behind a flag that defaults off, and is read back live
 | 8 | **Character, Lessons and Standing** (whole) | the Character adaptor generalised to the unit, persons and Nora; unit and person Standing, sectioned with per-section support and age; `character_read`, `standing_read`; the `self` block (her whole Character · Nora, capped, below the doctrine), and `self_card` out of the prompt; Honcho pushed as `explicit` plus the peer card; the correction portal and `character_dispute`; tension rows and their page; the rebuild-drift metric; **the Lessons adaptor**: `lesson_write`/`lesson_retire`, the `lessons` block, the size cap, the doctrine-conflict check, the portal page with rollback by id, Character · Nora's `What lands and what does not` moved into Lessons | a labelled set of accounts judged against the Record they cite; a labelled set of lessons (including ones that would loosen doctrine, which must become tension rows); the lesson drift and churn baselines |
 
 **`nora snapshot --at T`** builds an eval sandbox holding Nora as of T. It
-extends `nora/infra/sql/snapshot.py`, which today reconstructs four stores
-(transcript, standing, culture, notes) at one instant and leaves reminders
-and loop state empty (its own docstring and `nora/subject/sandbox.py` list the
-gaps), to every store's as-of-T view, and seeds the per-case sandbox
+extends `nora/infra/sql/snapshot.py`, which today makes five reads for one
+room at one instant (the transcript, standing through `read_as_of`, culture,
+notes, and pending reminders through `_reminders`), omits cancelled
+reminders because cancelling records no time, and reads four of a note's
+loop columns as they are now (its own docstring and `nora/subject/sandbox.py`
+list the gaps), to every store's as-of-T view, and seeds the per-case sandbox
 database `nora/subject/sandbox.py` already clones from the blank template.
 It adds the doctrine, skills, config and model route in force at T, and the
 Rollup at T (rebuilt at watermark T once step 2 makes it replayable; read
-from the stored builds before then). A
-case pins T and replays a wake or a turn against Nora-at-T. **Memory is the
+from the stored builds before then). A case pins T and replays a wake or a turn against Nora-at-T. **Memory is the
 exception**: Honcho cannot be restored to T; the case runs on its own empty
 Honcho workspace (`nora/subject/memory_workspace.py`, one per draw) and either
 seeds memory explicitly or declares itself memory-free.
@@ -124,7 +125,7 @@ this revision; this bundle does not edit GLOSSARY):
   truncation replaced by versioned builds that are kept.
 - **Standing "lossy and rewritten every turn"** (design/standing-compact/00-intent.md):
   the head stops being a lossy fold; its sections carry their own support
-  and age, and hold undated positions only. The chain, `standing_revision`
+  and age, and hold undated positions only ([12](12-schemas.md) §5). The chain, `standing_revision`
   (migration 0059, #352), is kept as it is ([50](50-character-and-standing.md) §2).
 - **This session's first draft** (commit 0e060cf, a conductor over specialist
   agents).
@@ -140,7 +141,7 @@ this revision; this bundle does not edit GLOSSARY):
 | R-21 | an agenda item's room-scoped reads resolve through its bound room |
 | R-33 | a face crop goes only to the room its media came from; every image she sends passes the custody and face check |
 | R-49 | extended to derived rows: `message:A` renders in room B only when B's listed persons are a subset of A's and B lists no `*` person; the origin room is shown |
-| R-18 | extended to images (the face check). R-18 guards replies, and it still blocks a key-shaped value in a reply, one read from a memo included, unless the operator rules otherwise |
+| R-18 | extended to images (the face check). R-18 guards replies, and it still blocks a key-shaped value in a reply, one read from a memo included |
 | R-28 | `route` refuses coordinates taken from a presence rollup |
 | DEC-214, [50](50-character-and-standing.md) §5 | Character is per unit; the peer card, unscoped within its Honcho workspace, is never Character evidence |
 | ARCHITECTURE §8 | "Background passes never speak" holds in form: cognition's one act is a reminder row the fire path speaks. "Every Dreamer write screened" gains one exemption: memo bodies skip `dream_screen`'s key-shape check (`nora/agent/dream_screen.py`, D5) and render normally. "Not governed yet" lists each gap this bundle opens until its step's DEC lands |
@@ -174,15 +175,16 @@ place today, read from its store's code, and what it becomes under
 | table (store) | changes in place today | becomes |
 |---|---|---|
 | `messages` (`nora/infra/sql/audit.py`) | delivery status and `person_id` (adoption) updated; rows deleted by `prune_all` | status and adoption as transition rows; prune hides (§9) |
+| `note_candidate` (`notes.py`) | occurrence counts upserted | occurrence rows, appended; retired with note-candidates at step 4 |
 | `note` (`nora/infra/sql/notes.py`) | seven columns: head pointer, `strikes`, `revisit_at`, `last_wake_revision_id`, and the retirement trio (`nora/infra/sql/snapshot.py` lists them) | transition rows; the head a view over `note_revision` |
 | `culture`, `standing` (`culture.py`, `standing.py`) | heads upserted over their chains | heads become views over `culture_revision` and `standing_revision` |
-| `events` (`gatherings.py`) | updated in place and upserted | `event_revision` (step 2b) |
+| `events`, `event_rsvps` (`gatherings.py`; `add_rsvp` upserts) | updated in place and upserted | `event_revision` and RSVP transition rows (**2b**) |
 | `reminders` (`reminders.py`) | status, `fired_at`, outcome updated | transition rows |
 | `compute_jobs`, `instagram_summons`, `version_announcements` | status updated | transition rows |
 | `participation_window_state`, `dream_schedule_state`, `consolidation_watermark`, `analytics_watermark`, `tag_debounce_state` | upserted loop state | transition rows (the Dreamer's schedule and watermarks retire at step 4) |
 | `media_objects` (`media_objects.py`, `media_descriptions.py`), `video_readings` | descriptions upserted ("a later describer may refresh it") | a perception row per model and prompt version |
-| `presence_fixes`, `presence_places` (`presence.py`) | deleted past retention, and places deleted on rebuild | hidden past retention; places as versioned builds |
-| trips, corridors, derived places, occupancy (`mobility.py`, `nora/analytics/rollup.py`) | updated in place, replaced, rebuilt by truncation | versioned builds, kept (step 2) |
+| `presence_fixes` (`presence.py`) | deleted past retention | hidden past retention |
+| `presence_places` (`presence.py`); `presence_stays`, `presence_trips`, corridors, derived places, `presence_occupancy`, `presence_place_rhythm` (`mobility.py`, `nora/analytics/rollup.py`) | stays and trips updated in place, occupancy and rhythm deleted and rebuilt, places deleted on rebuild | versioned builds, kept (**2**) |
 | `music_queue`, `music_session`, `geocode_cache` | updated or upserted | transition rows; cache rows kept with `recorded_at` |
 
 **Authored and configured state.** Doctrine hot-reloads on mtime from the
@@ -191,9 +193,13 @@ each doctrine load writes a `doctrine_revision` row (its sha256, as `/health`
 reports it, and its content, content-addressed). `config.toml`, `policy.toml`
 and `identity.toml` live only on the host: the loader writes a
 `config_revision` row (file, content hash, content, loaded at) at every
-start. Skills are in the image, so each start writes a `deploy_revision` row
-(git sha, image id), matching what `~/nora-backups/deploys.log` records by
-hand. The model id and route are columns on each session.
+start. `nora/dreamer/` (the Dreamer's doctrine and objectives) is
+bind-mounted and hot-reloads on mtime exactly like doctrine
+(`docker-compose.yml`), so its loads are recorded the same way,
+content-addressed. `nora/skills/` is in the image, so each start writes a
+`deploy_revision` row (git sha, image id), matching what
+`~/nora-backups/deploys.log` records by hand. The model id and route are
+columns on each session.
 
 - **Events.** `Gathering` gains a unit key; `conversation_id` becomes the
   origin room. Rows in different rooms of one unit with overlapping times and
@@ -209,10 +215,12 @@ hand. The model id and route are columns on each session.
   whose citations cannot be resolved gets origin-room-only lineage.
 - **`citation` edge table.** Filled from existing citations, then written with
   every revision.
-- **New tables**: `signal`, `event_revision`, `memo`, `character`,
-  `lesson`, `tension`, face labels and templates, the transition tables of
-  the inventory, `doctrine_revision`, `config_revision`, `deploy_revision`;
-  `build` and system-time columns on every Rollup table.
+- **New tables**: `signal`, `session` (with its agenda items, close reasons
+  and self-wake transitions), `event_revision`, `memo`, `character`,
+  `lesson`, `tension`, `assess_report`, face labels and templates, the
+  transition tables of the inventory, `doctrine_revision` (doctrine and the
+  Dreamer's objectives), `config_revision`, `deploy_revision`; `build` and
+  system-time columns on every Rollup table.
 
 ## 6. Cost model
 
@@ -269,11 +277,14 @@ step's PR:
 ## 9. Privacy operations
 
 - **`nora person forget <id>` is a soft delete** (operator 2026-09-28). It
-  hides ([10](10-tiers.md) §8) every row about or authored by the person:
-  their messages and social items, revisions and sections citing them,
-  their templates and reference photos, perceptions naming them; it excludes
-  them from every new derivation and Rollup build, and marks citing rows
-  `unsupported`. Everything stays in history, so `nora snapshot --at T`
+  **hides** ([10](10-tiers.md) §8) the rows authored by or about the person:
+  their messages and social items, their templates and reference photos,
+  perceptions naming them, and their own Character and Standing rows; it
+  excludes them from every new derivation and Rollup build. Rows that only
+  **cite** them become `unsupported` through the withdrawal cascade
+  ([10](10-tiers.md) §2 rule 7). Reference photo files move to a hidden
+  directory beside their folder that the loader skips, and their templates
+  are flagged hidden in the template index. Everything stays in history, so `nora snapshot --at T`
   restores completely; `nora person unforget <id>` makes it visible again.
   Memory cannot hide a row, so the person's conclusions and peer are deleted
   in each Honcho workspace they are in (memory is not restorable anyway).
@@ -290,14 +301,14 @@ step's PR:
 
 ## 10. Observability
 
-- `nora_cognition_item_total{kind,outcome}`;
+- `nora_cognition_item_total{kind,reason}`;
   `nora_cognition_corrected_total{tier}`; refusals by rule,
   `nora_cognition_refused_total{verb,rule}`; acts by outcome;
   `nora_cognition_unit_tokens_total{unit}`; the signal metrics of
   [20](20-observe.md) §4; `nora_dq_failures_total{check}`;
   `nora_face_match_total{outcome}`; `nora_self_tension_total{doctrine_file}`;
-  `nora_self_wake_total{outcome}`; per-adaptor wakes and sessions;
-  `nora_lesson_total{outcome}` (written, retired, refused by rule, rolled
+  `nora_self_wake_total{transition}`; per-adaptor wakes and sessions;
+  `nora_lesson_total{result}` (written, retired, refused by rule, rolled
   back).
 - One Langfuse root per session, its model calls and tool calls as children.
 
@@ -314,45 +325,7 @@ in her own blocks, below the doctrine, with any disagreement recorded as
 tension for the operator; every Register, Character, Lessons and Standing row
 is schema'd Markdown in a revision chain, and the Rollup is typed and rebuilt
 into versioned builds.
-Operator decisions, binding:
-
-- **D1** Every act is a `remind()` row whose brief carries subject rows; the
-  fire turn composes the words in the target room under its guards; no
-  `speak` or `ask` path; named write verbs granted through `AdaptorGrant` by a
-  new DEC at step 0.
-- **D2** `told` = any person stated it in words, members agreeing among
-  themselves included; `abduced` = concluded from evidence nobody stated; her
-  own words are the mode `said`, Standing only.
-- **D3** Deviation is a signal, not a rule; the only act guards are the
-  general guards ([30](30-cognition.md) §3); deviation is raised only on
-  sources proven healthy for the interval.
-- **D4** Step 8 stays whole.
-- **D5** Memo bodies are exempt from `dream_screen`'s key-shape check and
-  render normally.
-- **D6** Doctrine is the law: Nora never changes it, in whole or in part; it
-  changes only when the humans all agree. Her growth lives only in her own
-  blocks, below the doctrine; a disagreement becomes a tension row, never a
-  proposal from her.
-- **D7** Lessons: a tier of learned practice per unit, effective immediately
-  with no approval step, every change visible on the portal and reversible
-  by id.
-- **D8** Everything is versioned in system time, so Nora can be restored as
-  of any T for an eval, except memory (Honcho). Forget, retention and prune
-  are soft (hidden, reversible); only a media blob hard-deleted for storage
-  leaves a tombstone.
-- **D9** Topology: the Dreamer hosts four adaptors split by timescale —
-  Cognition (fast, writes Register and Standing, acts only by `remind`),
-  Character (slow, the culture adaptor generalised, sole writer of
-  Character), Lessons (slow, sole writer of Lessons), Assess (reports only).
-- **D10** The wake policy of [20](20-observe.md) §3: code appends a signal
-  per message and nothing else; a code evaluator wakes Cognition on the
-  first of settled, strong cue, Rollup signal, batch, max age, time or a
-  self-wake, behind a watermark and brakes; values sized from a shadow week.
-- **D11** Cognition may request, move and cancel its own next wakes
-  (`wake_at`, `wake_move`, `wake_cancel`); code surfaces a pending self-wake
-  whenever its subject changes and never cancels one itself.
-- **D12** Two layers: the adaptors are her subconscious, the speaking turns
-  her conscious; the subconscious drives the conscious, and the conscious
-  reaches the subconscious only as Record and shared state.
+The operator's decisions D1–D12 are listed once, in [00](00-intent.md)'s
+Status.
 
 Nothing is built.

@@ -28,7 +28,7 @@ have with her and with each other.
 
 | layer | what it says about her | kind | changes how |
 |---|---|---|---|
-| **given** | who she is meant to be: constraints, voice, conduct | Doctrine (authored) | only the operator |
+| **given** | who she is meant to be: constraints, voice, conduct | Doctrine (authored) | only when the humans all agree |
 | **done** | what she said and decided, and what happened after | Record (her sends, `loop_decisions`, reminders' outcomes) | every act |
 | **digested** | who she has become in this unit, as its people met her | **Character · Nora** | the Character adaptor, from what she did **and how people responded** |
 | **learned** | what she has learned about how to act in this unit | **Lessons** | the Lessons adaptor, from outcomes; the operator may roll any lesson back |
@@ -70,7 +70,9 @@ When the Character adaptor revises Character · Nora and the evidence pulls
 against a doctrine line (people keep rewarding what the doctrine forbids, or
 keep correcting what it requires), `character_revise` also writes a
 **tension** row; so does the Lessons adaptor's `lesson_write` when it
-refuses a lesson that would loosen or contradict doctrine
+refuses a lesson that would loosen or contradict doctrine. Both rest on the
+same doctrine-check instrument, run on every Character · Nora revision and
+every lesson; an instrument error writes no tension row and is counted
 ([50](50-character-and-standing.md) §6). A tension row holds the
 doctrine file and line quoted, the evidence cited, and what her Character or
 the lesson would have said without the law. The doctrine is still followed.
@@ -91,8 +93,8 @@ Tension is outside the tiers ([10](10-tiers.md) §1; [15](15-map.md) §1 and
 
 ## 5. What keeps growth honest
 
-- **The echo rule** ([50](50-character-and-standing.md) §3): her own words
-  alone never ground a change to her Character or a lesson. A change needs people's
+- **The echo rule** ([10](10-tiers.md) §2 rule 4): her own words alone
+  never ground a change to her Character or a lesson. A change needs people's
   responses: an answer, a correction, a laugh, silence where she expected
   a reply.
 - **History**: every revision is kept, so "how has she changed since
@@ -105,8 +107,8 @@ Tension is outside the tiers ([10](10-tiers.md) §1; [15](15-map.md) §1 and
 
 The operator's model (2026-09-28), not a code name:
 
-- **The subconscious** (潛意識): the Dreamer's adaptors — Cognition, and the
-  slow Character and Lessons adaptors. Always running underneath, woken by
+- **The subconscious** (潛意識): the Dreamer's adaptors — Cognition, the slow
+  Character and Lessons adaptors, and Assess. Always running underneath, woken by
   the world and by herself (`wake_at`).
 - **The conscious** (明意識): the turns that speak — the tag turn, and the fire
   turn a `remind` starts.

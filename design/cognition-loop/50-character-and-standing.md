@@ -1,14 +1,14 @@
 ---
 type: design
 title: "Character, Lessons and Standing — what an entity is like, what she has learned, where she stands; and the two slow adaptors"
-description: "Character per entity (person, room, unit, Nora) as one shape, written only by the Character adaptor; why it is not memory (Honcho); Nora's own Character beside the doctrine; Standing widened from room to unit and person, kept as an append-only chain of undated positions; the echo rule; correction by the subject; disclosure per section."
+description: "Character per entity (person, room, unit, Nora) as one shape, written only by the Character adaptor; why it is not memory (Honcho); Nora's own Character beside the doctrine; Standing widened from room to unit and person, its head no longer a lossy fold; the echo rule; correction by the subject; disclosure per section; and the two slow adaptors, Character and Lessons, with the lesson guards."
 tags: [nora, character, culture, standing, self, persons, social-cognition]
 timestamp: '2026-09-28'
 edges:
   - {dst: 10-tiers, rel: depends_on, provenance: asserted}
 ---
 
-# 50 · Character and Standing
+# 50 · Character, Lessons and Standing
 
 Both tiers are later steps ([70](70-migration.md)); this node fixes their
 shape so the loop's verbs and keys are right from the start.
@@ -72,20 +72,16 @@ the head every turn reads did not. Now the head is sectioned
 ([12](12-schemas.md) §5), each section carries its own support and age, and
 a revision changes only the sections its evidence touches.
 
-**Undated positions only.** `I hold open` and `What I am following` hold what
-has no date. A dated plan is the note's: the operator withdrew Standing's
-`open_plans` (design/standing-compact/40-open-plans.md; its PR #565 was never
-merged). Standing has no `Unsure`: a section past its horizon is dropped
-([12](12-schemas.md) §8).
+Standing holds undated positions only, and has no `Unsure`
+([12](12-schemas.md) §5, §8).
 
 ## 3. The echo rule
 
 A position built from her own words drifts: each pass agrees a little more
-with the last. So her own rows ground her Standing only as `said`, and her
-own Character and her Lessons only together with how people responded. A revision of her
-Character whose only evidence is Nora is refused; a Standing line resting
-only on her rows says only what she said (`I owe`, `I hold open`), never what
-is so.
+with the last. The rule that stops it is [10](10-tiers.md) §2 rule 4. In
+practice: a revision of her Character or a lesson whose only evidence is
+Nora is refused; a Standing line resting only on her rows says only what she
+said (`I owe`, `I hold open`), never what is so.
 
 ## 4. Correction
 
@@ -121,30 +117,34 @@ under lineage. The peer card is not scoped per unit (it is unscoped inside
 its Honcho workspace, DEC-214), so it can mix the units of one workspace:
 nothing from it is Character evidence.
 
+A lesson carries its lineage per row and renders only where it passes.
+
 An account is an input to her judgement, never text she recites.
 
 ## 6. The two slow adaptors
 
 Reflection is its own job on its own timescale ([00](00-intent.md) §3). Two
 Dreamer adaptors do it, each the sole writer of its tier; neither acts, and
-neither is woken by a single message. Their wake rules are in
-[20](20-observe.md) §3.
+neither is woken by a single message except a `character_dispute`. Their
+wake rules are in [20](20-observe.md) §3.
 
 **The Character adaptor** — per (unit, entity), for every entity: a room's
 or the unit's culture, a person, Nora. It is today's culture adaptor
 (`nora/language/culture.py`) generalised to one shape: it reads the
 entity's evidence since its last revision (the Record, the Rollup's
 aggregates, the Register, and for a room or the unit its members'
-Characters), and writes one revision through `character_revise`, or none. It
-writes a tension row when the evidence about Nora pulls against doctrine
-([55](55-self.md) §4). It replaces the culture adaptor's daily clock
+Characters), and writes one revision through `character_revise`, or none.
+Every revision of Character · Nora passes the same doctrine check as a lesson
+(below); where it finds the evidence pulling against doctrine, a tension row
+is written ([55](55-self.md) §4). It replaces the culture adaptor's daily clock
 (`[culture] fold_interval_seconds`).
 
 **The Lessons adaptor** — per unit. It reads the outcomes of her acts since
-its last session (corrections, replies that landed, silence where a reply
-was expected, reactions) with the lessons already held, and writes through
-`lesson_write` and `lesson_retire`. The operator's rollback on the portal
-goes through `lesson_retire` too.
+its last session, which are the `response` episodes of the Rollup
+([25](25-rollup.md) §3: replies, reactions and edits to her sends, and
+`silent` where one was expected), with the lessons already held, and writes
+through `lesson_write` and `lesson_retire`. The operator's rollback on the
+portal goes through `lesson_retire` too.
 
 **Enforced by code on every lesson**, on top of every write verb's checks
 ([30](30-cognition.md) §3):
@@ -157,8 +157,15 @@ goes through `lesson_retire` too.
   judgement is a separate instrument call (a model other than the session,
   reading the lesson and the doctrine); code applies its verdict. It is a
   model check, not a proof, so the assess pass measures it on a labelled set.
-- **The echo rule.** A lesson cites the outcomes that taught it; one resting
-  on her own words alone is refused.
+  **An instrument error is not a pass**: a lesson is refused; for a
+  Character · Nora revision no tension row is written (the revision itself
+  is descriptive and still commits). Either way the error is counted.
+- **The echo rule** ([10](10-tiers.md) §2 rule 4): a lesson cites the
+  `response` episodes that taught it.
 - **No approval step.** A lesson takes effect on the next turn. Every write
   and retirement is visible to the operator on the portal, with its evidence
   and history, and reversible by id through `lesson_retire`.
+- **The operator's rollback sticks.** A lesson the operator retired is never
+  re-written from outcomes older than the retirement. Rolling back a revision
+  writes the prior one as a new revision; an operator retirement is undone
+  the same way, never by deleting it.

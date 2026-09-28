@@ -47,11 +47,11 @@ prose, fully deterministic. This node generalises it to every stream.
   arriving) rebuilds into a new version and switches atomically; the build it
   replaces is superseded, not deleted, which ends design 27's rebuild by
   truncation. The Rollup as of T is the build current at T; for eval it is
-  rebuilt at watermark T from the Record as of T, hidden rows included
+  rebuilt at watermark T from the Record as of T, rows hidden after T included
   ([10](10-tiers.md) §8).
 - **Cited by key, resolved by overlap.** Citations name `(kind, subject,
-  interval)`, never a row id or an exact start, because stays are rebuilt by
-  truncation (design 27 §1.3). After a rebuild a citation resolves to the rows
+  interval)`, never a row id or an exact start, because a new build
+  recomputes rows and their boundaries. After a rebuild a citation resolves to the rows
   overlapping its interval; if none do, the citing row is `unsupported`
   ([10](10-tiers.md) §2 rule 7). A face co-appearance has no interval of its
   own and is cited by its media item.
@@ -73,6 +73,7 @@ prose, fully deterministic. This node generalises it to every stream.
 | **outing** | where have we been together, how often? | (unit, place, interval) | co-locations of ≥ 2 members away from any member's home | new |
 | **play session** | who played what, with whom, when? | (unit, game, interval) | play samples (§6) | new |
 | **daybook** | what did X do on day D? | (unit, person, local date) | that day's stays, co-locations, outings, play sessions, rooms active in, social items posted | new |
+| **response** | how did people respond to something she sent? | (unit, her send's Record id) | replies, reactions and edits to that send within `response_window_seconds` (starting at 3600 s); `silent` when a send made from an `ask` brief, or one naming a person, got nothing within the window | new; the outcomes the Lessons adaptor and Character · Nora read |
 
 **Aggregates** — counts, patterns and clusters over a window.
 
@@ -96,6 +97,8 @@ A Rollup row is observed state changing, so it can wake cognition
 ([20](20-observe.md) §3):
 
 - **co-location start** — two or more members at one place now.
+- **arrival at an event's place** — a stay starts at a place an open event
+  names.
 - **play together** — a play session with two or more members starts.
 - **deviation** — a person's pattern broke: a rhythm anomaly, or a daybook
   silent in every room and at home for N days. It is the only way *absence*

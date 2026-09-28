@@ -82,7 +82,7 @@ state, never as a command ([55](55-self.md) §6).
 
 | adaptor | timescale | wakes on ([20](20-observe.md) §3) | writes | why its own |
 |---|---|---|---|---|
-| **Cognition** ([30](30-cognition.md)) | minutes, per unit | signals: settled, strong cue, Rollup signal, batch, max age, time | Register and Standing (beside the tag path and its debrief); acts only through `remind` | orient, decide and act must share one context, or a conclusion is lost before the act |
+| **Cognition** ([30](30-cognition.md)) | minutes, per unit | signals: settled, strong cue, Rollup signal, batch, max age, time, and its own self-wakes | Register and Standing (beside the tag path and its debrief); acts only through `remind` | orient, decide and act must share one context, or a conclusion is lost before the act |
 | **Character** ([50](50-character-and-standing.md) §6) | days, per (unit, entity) | evidence for that entity past a threshold, or staleness | Character, alone | an account is induced from many instances; judging it per message would re-write it from noise |
 | **Lessons** ([50](50-character-and-standing.md) §6) | days, per unit | outcomes of her acts past a threshold, or staleness | Lessons, alone | a lesson is induced from the outcomes of many acts, which exist only after the acts |
 | **Assess** ([30](30-cognition.md) §6) | after each finished session, and nightly | a finished session; the nightly clock | reports and metrics only, never a tier | judging an act belongs outside it |

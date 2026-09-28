@@ -30,20 +30,21 @@ Built once per session, in code, before any model call:
   photo shows, whose faces, with confidence); the Rollup rows that raised
   signals; the index lines of the Register rows those items touch; the unit's
   clock in HK time; how long since the last session. Index lines, not
-  bodies: Register, Character, Lessons and Standing bodies are pulled with read tools
-  when the session needs them, and never pushed, except the capped `culture`
-  and `self` blocks ([15](15-map.md) §3–4).
+  bodies: Register, Character, Lessons and Standing bodies are pulled with
+  read tools when the session needs them, and never pushed, except the
+  capped `culture`, `self` and `lessons` blocks ([15](15-map.md) §3–4).
 - **The agenda.** One item per thing that needs attention, computed by code
   from the signals: *room R has 23 new messages*; *event E's place is named
   in 3 messages since it was set*; *a co-location of 3 members began at a
   place at 20:05*; *P's week deviates from their rhythm*; *note N's anchor
-  passed*; *4 new story frames from 2 members*. An item states **what happened**, never what to
-  conclude from it, and never a menu of possible actions. Code orders items
+  passed*; *4 new story frames from 2 members*; *a self-wake on event E is
+  due*. An item states **what happened**, never what to conclude from it, and never a menu of possible actions. Code orders items
   by computed surprise ([80](80-prior-art.md) §4) and hands at most
-  `max_items`; the rest wait for the next session.
+  `max_items` (starting at 12); the rest wait for the next session.
 
 **Every item binds one room**: the room its signal came from, or, for an item
-with none (a Rollup or `time` signal), the unit's home room (39 D2). That
+with none (a Rollup, `time`, `self`, social or play signal), the unit's home
+room (39 D2). That
 item's room-scoped reads resolve through its room (R-21), and every read
 returns only what its room may be shown ([10](10-tiers.md) §3). Which tools a
 unit-keyed session may hold at all stays decided by `UNIT_SAFE_TOOLS` and
@@ -72,9 +73,9 @@ versions injected, the config revision in force, and the model id and route
 |---|---|---|
 | **read** | every read tool the registry admits (`read_only_tools()`) except the live social reads ([20](20-observe.md) §2), plus the warehouse queries of [15](15-map.md) §4: `record_query`, `rollup_read`, `event_search`, `memo_read`, `character_read`, `standing_read`, `social_items` | returns into context, filtered by the item's room |
 | **write** | one family per tier: Register (`note_create`, `note_update`, `memo_write`, `memo_withdraw`, `event_propose` (status `staged` or `proposed`), `event_revise`, `event_set_status`), Standing (`standing_revise`); each takes `base_revision_id`. Character's and Lessons' verbs belong to their own adaptors ([50](50-character-and-standing.md) §6) | code validates, then commits (§3) |
-| **act** | `remind(at, room, brief)`, the one act verb; `room` is the agenda item's bound room | a reminder row; the fire path composes it when due |
+| **act** | `remind(at, room, brief)`, the one act verb; `room` is the agenda item's bound room. `remind_move(reminder_id, at, why)` and `remind_cancel(reminder_id, why)` for reminders Cognition itself wrote, never a person's | a reminder row; the fire path composes it when due |
 | **pace** | `wake_at(at, subject_rows, why)`, `wake_move(wake_id, at, why)`, `wake_cancel(wake_id, why)` | write verbs on the unit's signal table, not a tier: a `self` signal due at `at` ([20](20-observe.md) §3); nothing leaves for a room |
-| **close** | `close(item, outcome)` | ends one agenda item |
+| **close** | `close(item, reason)` | ends one agenda item |
 
 **Every act is a reminder** (DEC-162's decide/compose split, kept). Cognition
 decides and writes a reminder carrying a **brief**: an intent (`tell` or
@@ -95,13 +96,8 @@ kept and fires flagged as being about a cancelled event: only the tag path
 cancels a reminder a person set. The senders stay those of R-1b: the tag
 path, the fire path and, since DEC-212, the public summons.
 
-**Self-wakes are not acts.** `remind` is outward: a message to a room, through
-the fire path. `wake_at` is inward: it asks for her own next look at the
-subject rows it names, and nothing leaves. It makes the loop self-paced:
-woken by the world and by her own forecast of when to look next. Any
-session may keep, move or cancel a pending self-wake, and code puts one on
-the agenda whenever a change or a signal touches its subject, or its subject
-is retired; code never cancels one itself ([20](20-observe.md) §3).
+**Self-wakes are not acts** ([20](20-observe.md) §3 defines the pace verbs,
+their guards and their surfacing).
 
 **Which layer holds what** ([55](55-self.md) §6). The pace verbs belong to
 the subconscious only: no tag or fire turn holds them, and neither can read
@@ -118,7 +114,8 @@ verbs, and `remind` stays the only act verb.
 **Closing.** An item closes only with a write that cites it, or with a reason
 from a closed list (`no_change`, `waiting`, `covered`), counted per reason. An
 item left open when the session ends, or closed `waiting`, returns to the next
-agenda with a strike; at `max_strikes` code closes it `struck` and counts it,
+agenda with a strike; at `max_strikes` (starting at 3) code closes it
+`struck` and counts it,
 so an item that can never close does not spend every session.
 
 **Shared with the tag path.** `note_create`/`note_update` as today. The tag
@@ -138,21 +135,20 @@ The session is one agent; judging its writes is not left to it.
 
 **Enforced by code on every write verb, whichever adaptor or turn calls it,
 before commit.** A failure is refused with
-`refused` (ADR 0009's status) and a named reason, answered to the model so it can
-rewrite, and counted by rule; never silently dropped.
+`refused` (ADR 0009's status) and a named reason, answered to the model so
+it can rewrite, and counted by rule; never silently dropped.
 
 1. **Citations resolve** to ids this session was shown or fetched, and every
    citation chain ends in Record ids; a Rollup key qualifies
    ([10](10-tiers.md) §2 rule 2).
 2. **Citations point down** ([10](10-tiers.md) §2 rule 1).
-3. **Authorship.** Nora's own rows ground only `said` Standing lines and her
-   own Character paired with responses; a write whose only citations are
-   non-member social text is refused ([20](20-observe.md) §2).
+3. **Authorship** per the echo rule ([10](10-tiers.md) §2 rule 4);
+   non-member social text alone is refused ([20](20-observe.md) §2).
 4. **Schema** ([12](12-schemas.md)): headings, cited lines, absolute dates (a
    relative time word in a date field is refused).
 5. **Mode.** The mode is one the tier allows, capped at `abduced` where it
    rests on presence fixes or a face older than the freshness threshold
-   ([10](10-tiers.md) §4).
+   (starting at 900 s, [10](10-tiers.md) §4).
 6. **Concurrency.** A `base_revision_id` that is not the current revision is
    refused `stale_base`, with the current row.
 7. **Disclosure columns.** Lineage is computed from the citations; a cited
@@ -167,12 +163,20 @@ rewrite, and counted by rule; never silently dropped.
    A memo body is exempt from its key-shape check and renders normally:
    anything said in a group is already shared with that group.
 10. **Provenance and history.** Session id, trace id, model and doctrine hash
-    are stamped; every Register, Character, Lessons and Standing row is a revision
-    chain, so a wrong inference is one revision away from right.
+    are stamped; every Register, Character, Lessons and Standing row is a
+    revision chain, so a wrong inference is one revision away from right.
 11. **Told outranks cognition's cancellation.** A cognition revision that
     moves a `told` event to `cancelled`, `evicted` or `lapsed` without `told`
     evidence is written, and the event keeps rendering for 48 hours, flagged
     "cancelled?".
+12. **Own misreads only.** `event_set_status(evicted)` is refused on an event
+    whose first revision Cognition did not write; `remind_move` and
+    `remind_cancel` are refused on a reminder Cognition did not write.
+
+**The pace verbs** (`wake_at`, `wake_move`, `wake_cancel`) pass checks 1
+(their subject rows resolve to ids shown or fetched) and 10 (provenance and
+history), plus the self-wake guards of [20](20-observe.md) §3. They carry no
+schema, mode or lineage: they write a signal, not a tier.
 
 **Enforced by code on every act** — the general guards, and the only ones:
 
@@ -201,17 +205,18 @@ restatement by construction, so this is a metric, never a refusal).
 
 The base prompt is the Dreamer doctrine (what the runtime is), the situation
 and the agenda. What each kind of work asks for — how to judge a note, when a
-plan has moved, what a culture account is — lives in a **skill**. **Code
+plan has moved, when to look again — lives in a **skill**. **Code
 injects the text of the skill for each agenda kind present**, after the
 doctrine and in a fixed order, so the doctrine prefix stays cached and only
 the skills vary. `create_dream_agent` (`nora/agent/factory.py`) has no
 `skills_dir`, by design, and ADR 0016 (the skill policy) is still proposed:
-the injection is code, not SDK skill loading. The adaptors' objectives
-(`note-candidates.md`, `note-curation.md`, `note-merge.md`, `culture.md`,
-`proactive.md`) become those skills; `standing-debrief.md` stays the
-debrief's. A session that only sees chatter never loads the note skill's 280
-lines. `tool_selection` is measured on the cognition catalogue, on the
-runtime model, before step 3.
+the injection is code, not SDK skill loading. The replaced adaptors'
+objectives (`note-candidates.md`, `note-curation.md`, `note-merge.md`,
+`proactive.md`) become Cognition's skills; `culture.md` becomes the Character
+adaptor's objective; `standing-debrief.md` stays the debrief's. A session
+that only sees chatter never loads the note skill's 280 lines.
+`tool_selection` is measured on the cognition catalogue, on the runtime
+model, at step 3 ([70](70-migration.md) §2).
 
 ## 5. Budgets
 
@@ -260,8 +265,10 @@ cut-over ([70](70-migration.md)).
   as of T (`nora snapshot --at T`, [70](70-migration.md) §2): the stores,
   doctrine, skills, config and model route in force then, memory excepted.
 - **Rebuild, not only fold.** Every Character account is periodically rebuilt
-  from the Rollup and a cited window of the Record, and the rebuild is
-  diffed against the chain; the difference is the drift metric. Folding alone
+  from the Rollup and a cited window of the Record by the Assess adaptor,
+  and the rebuild is diffed against the chain and never written: the
+  difference is the drift metric, and the Character adaptor stays the only
+  writer. Folding alone
   was measured to drop what it should keep: Standing folds dropped at least
   10 open dated plans in 206 revisions
   (design/group-situation/10-standing-drops-plans.md).

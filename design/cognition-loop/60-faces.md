@@ -83,8 +83,8 @@ long work for the compute path (a later `delegate` verb, [30](30-cognition.md)
 §7).
 
 Retention: templates live until their label is removed or the person is
-forgotten ([70](70-migration.md) §9); reference photos until the operator
-removes them.
+forgotten, which hides them ([70](70-migration.md) §9); reference photos until
+the operator removes them.
 
 ## 6. Measure
 
