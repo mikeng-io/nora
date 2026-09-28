@@ -207,12 +207,6 @@ _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
         "Its own docstring: «the operator's read, and what the tests assert the "
         "ledger on». No consumer designed.",
     ),
-    ("mobility.py", "trips_for_subject"): _Pin(
-        "read_back_affordance",
-        "Kept correct for a future caller by explicit decision — its docstring "
-        "argues against silently discarding a column, «a trap for the next "
-        "caller». Outside the three memory tiers.",
-    ),
     ("notes.py", "note_by_id"): _Pin(
         "read_back_affordance",
         "Retired-note lookup; no consumer designed.",

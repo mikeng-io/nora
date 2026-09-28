@@ -103,13 +103,13 @@ async def test_places_and_routes_reads_are_select_only_and_capped():
 
     assert await store.places_with_aggregates(subject_id="miles") == [
         {
-            "kind": "home", "label": None, "saved": False, "lat": 22.3, "lng": 114.2,
+            "id": 1, "kind": "home", "label": None, "saved": False, "lat": 22.3, "lng": 114.2,
             "radius_m": 120.0, "confidence": 0.5,
             "first_seen_ts": 1, "last_seen_ts": 2,
             "stay_count": 1, "total_dwell_ms": 60_000,
         },
         {
-            "kind": "unlabeled", "label": "Gym", "saved": True, "lat": 22.4,
+            "id": 2, "kind": "unlabeled", "label": "Gym", "saved": True, "lat": 22.4,
             "lng": 114.2, "radius_m": 100.0, "confidence": 0.0,
             "first_seen_ts": 3, "last_seen_ts": 4,
             "stay_count": 0, "total_dwell_ms": 0,

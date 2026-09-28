@@ -346,3 +346,128 @@ async def test_the_ladder_reads_usually_between_60_and_85(persons):
     [p] = out["people"]
     assert (p["usually_at"], p["how_often"]) == ("Carver Home", "usually")
     assert p["also"] == [{"place": "a place they go", "how_often": "sometimes"}]
+
+
+# ---- the movement model's views (design/27 §4.4 M1, M3, M4) ---------------
+
+from types import SimpleNamespace  # noqa: E402
+
+
+class _FakeFixes:
+    def __init__(self, at: tuple[float, float] | None, age_min: float = 1):
+        self.at, self.age_min = at, age_min
+
+    async def latest_fix(self, *, circle_id, person_id):
+        if self.at is None:
+            return None
+        ts = int(NOW.timestamp() * 1000 - self.age_min * 60_000)
+        return SimpleNamespace(ts=ts, lat=self.at[0], lng=self.at[1])
+
+
+def _tool_live(persons, mobility, fixes):
+    specs = build_tool_specs(
+        store=None, conversation_id="g", conversation_type="group",
+        persons=persons, honcho=None, deliverer=None, metrics=Metrics(),
+        room=_room(persons, members=(MILES, GRANT)), transit_source=None,
+        presence_circles=(_circle(persons),), location_trusted=False,
+        mobility=mobility, clock=lambda: NOW.astimezone(UTC), presence_source=fixes,
+    )
+    return next(s for s in specs if s.name == "routine_read").call
+
+
+async def test_when_is_he_usually_back_home_on_wednesday_night(persons):
+    out = await _tool(persons, _FakeMobility(stays=_history(6)))(
+        WEDNESDAY, 16, 4, name="Chi", what="arrival")
+    assert out["status"] == "ok"
+    [p] = out["people"]
+    # Two homes (one unnamed): «home» is either, and the answer says so
+    # instead of borrowing one home's name for both (review 2026-09-28).
+    assert (p["what"], p["place"]) == ("arrival", "one of their homes")
+    # Wednesdays in the fixture: gym 19-21, home from 21:30, every week.
+    assert p["routine"] == "Wednesdays: gets to one of their homes around 21:30 on 6 of 6"
+    assert p["places"] == ["a home of theirs", "Carver Home"]
+    assert p["evidence"]["basis"] == "weekday"
+
+
+async def test_a_named_place_is_that_place(persons):
+    out = await _tool(persons, _FakeMobility(stays=_history(6)))(
+        WEDNESDAY, 16, 4, name="Chi", what="arrival", place="Carver Home")
+    [p] = out["people"]
+    assert p["place"] == "Carver Home" and "place_ref" not in p
+    assert p["routine"] == "Wednesdays: gets to Carver Home around 21:30 on 6 of 6"
+
+
+async def test_a_window_from_midnight_reads_the_whole_day(persons):
+    """0 to 23 answered «not enough history» against a 04:00 rollover."""
+    out = await _tool(persons, _FakeMobility(stays=_history(6)))(
+        WEDNESDAY, 0, 23, name="Chi", what="arrival", place="Carver Home")
+    assert out["status"] == "ok"
+    assert "around 21:30 on 6 of 6" in out["people"][0]["routine"]
+
+
+async def test_when_does_he_leave_a_named_place(persons):
+    out = await _tool(persons, _FakeMobility(stays=_history(6)))(
+        WEDNESDAY, 16, 23, name="Chi", what="departure", place="gym")
+    # «gym» matches no label or kind: they have no such place, which is not
+    # the same as a thin history (review 2026-09-28).
+    assert out["status"] == "nothing_found"
+    assert "don't know a place of theirs" in out["note"]
+    assert "history" not in out["note"]
+
+
+async def test_already_home_today_is_said_as_done(persons):
+    saturday = NOW.date().isoformat()
+    out = await _tool_live(persons, _FakeMobility(stays=_history(6)), _FakeFixes(_AT[HOME]))(
+        saturday, 10, 4, name="Chi", what="arrival")
+    [p] = out["people"]
+    assert p["today"].startswith("already at one of their homes")
+
+
+async def test_a_stale_reading_is_not_used_for_today(persons):
+    saturday = NOW.date().isoformat()
+    out = await _tool_live(
+        persons, _FakeMobility(stays=_history(6)), _FakeFixes(_AT[HOME], age_min=90),
+    )(saturday, 10, 4, name="Chi", what="arrival")
+    # No fresh reading: today is not said at all, not «not yet» (R-5).
+    assert "today" not in out["people"][0]
+
+
+async def test_today_against_the_routine_names_where_they_usually_are(persons):
+    saturday = NOW.date().isoformat()
+    out = await _tool_live(persons, _FakeMobility(stays=_history(6)), _FakeFixes(_AT[GYM]))(
+        saturday, 12, 14, name="Chi")
+    [p] = out["people"]
+    assert p["today"].startswith("now a place they go")
+    assert "usually at Carver Home" in p["today"]
+
+
+async def test_no_result_carries_a_handle(persons):
+    """Places are named in words `route` takes back this turn, never an id
+    (DEC-216 M3, amended: an id in a result is a low-level identifier)."""
+    out = await _tool(persons, _FakeMobility(stays=_history(6)))(WEDNESDAY, 22, 6, name="Chi")
+    assert "ref" not in str(out) and "place:" not in str(out)
+
+
+async def test_two_unnamed_homes_of_one_person_read_as_two_places(persons):
+    from nora.domain.mobility import DerivedPlace
+
+    unnamed = [
+        DerivedPlace(HOME, "grant_carver", "c", *_AT[HOME], 100.0, "home", 1.0, None, None),
+        DerivedPlace(SECOND, "grant_carver", "c", *_AT[SECOND], 100.0, "home", 1.0,
+                     None, None),
+    ]
+    stays = _wednesdays([(19, 21.9, HOME), (21.9, 23, SECOND)])  # ~72% / 28%
+    out = await _tool(persons, _FakeMobility(stays=stays, places=unnamed))(
+        WEDNESDAY, 19, 23, name="Chi")
+    [p] = out["people"]
+    assert {x["place"] for x in p["evidence"]["shares"]} == {
+        "a home of theirs", "a home of theirs (2)"}
+    assert p["usually_at"] == "a home of theirs"
+
+
+async def test_tonight_is_still_tonight_after_midnight(persons):
+    """A window from Friday 20:00 to Saturday 14:00, asked Saturday noon: the
+    calendar date differs, the window holds now, so today is said."""
+    out = await _tool_live(persons, _FakeMobility(stays=_history(6)), _FakeFixes(_AT[GYM]))(
+        "2026-09-04", 20, 14, name="Chi")
+    assert out["people"][0]["today"].startswith("now a place they go")

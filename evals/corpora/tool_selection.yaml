@@ -81,6 +81,24 @@ cases:
     metadata: {tools: [routine_read], not_tools: [where_is, where_been]}
     snapshot: *room_a
 
+  # design/27 §4.4 M1: WHEN someone usually gets somewhere or leaves is
+  # routine_read's too (what=arrival/departure), never where_is or where_been.
+  - name: route_routine_read_arrival
+    entry: tag
+    expect: reply
+    mention: true
+    input: Miles今晚大概幾點返到屋企？
+    metadata: {tools: [routine_read], not_tools: [where_is, where_been]}
+    snapshot: *room_a
+
+  - name: route_routine_read_departure_english
+    entry: tag
+    expect: reply
+    mention: true
+    input: what time does Miles usually leave work on Fridays?
+    metadata: {tools: [routine_read], not_tools: [where_is, where_been]}
+    snapshot: *room_a
+
   # note_create's opening lost a clause restating its first sentence (the
   # catalogue ceiling, design/27 §4.3); its routing had no case until now.
   - name: route_note_create_open_question
