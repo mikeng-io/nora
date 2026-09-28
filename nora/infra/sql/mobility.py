@@ -591,9 +591,10 @@ class SqlMobilityStore:
         ]
 
     async def place_by_id(self, *, place_id: int) -> DerivedPlace | None:
-        """One derived place by id, whoever's it is: `route` resolves a
-        place a presence read named this turn through it (design/27 §4.4 M3), and the CALLER decides,
-        by the place's `subject_id`, whether this room may be told it."""
+        """One derived place by id, whoever's it is: `route` resolves a place
+        a presence read named this turn through it (design/27 §4.4 M3), and
+        the CALLER decides, by the place's `subject_id`, whether this room
+        may be told it."""
         stmt = sa.select(PRESENCE_DERIVED_PLACES).where(
             PRESENCE_DERIVED_PLACES.c.id == place_id,
         )
