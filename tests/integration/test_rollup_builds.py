@@ -27,6 +27,7 @@ from nora.domain.rollup import Citation
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.mobility import SqlMobilityStore
 from nora.infra.sql.rollups import SqlRollupStore, UnitRooms
+from nora.infra.sql.stimuli import SqlStimulusStore
 from nora.infra.sql.schema import (
     MESSAGE_EDIT,
     MESSAGE_REACTION,
@@ -302,14 +303,26 @@ class _Pub:
 
 
 async def test_a_colocation_start_and_an_arrival_are_raised_once(pg_url):
+    """Through the REAL stimulus store: its `(unit, ref)` conflict target must
+    match migration 0071's partial index, which an in-memory sink never
+    checks (the first measured run on the deployment's data failed here)."""
     engine = create_sql_engine(pg_url)
-    sink = await _stimuli_at(engine, through=_t(0, 21), events=_Pub())
-    items = [(s.unit, s.item, s.ref) for s in sink.stimuli]
+    mobility = SqlMobilityStore(engine)
+    await _seed(engine, mobility)
+    runner = _runner(engine, stimuli=SqlStimulusStore(engine), events=_Pub())
+    build = await runner.ensure_build(through_ms=_START)
+    for t in range(_START + 6 * _H, _t(0, 21) + 1, 30 * _MIN):
+        await runner.run(build_id=build, through_ms=t)
+    async with engine.connect() as conn:
+        rows = (await conn.execute(sa.text(
+            "SELECT unit, item, ref, kind FROM stimulus ORDER BY id"
+        ))).all()
+    items = [(r.unit, r.item, r.ref) for r in rows]
+    assert all(r.kind == "rollup" for r in rows)
     starts = [i for i in items if i[1] == "colocation_start"]
     arrivals = [i for i in items if i[1] == "arrival"]
     assert len(starts) == 1 and starts[0][0] == "friends"
     assert len(arrivals) == 2  # each member's stay at the event's place
-    assert all(s.kind == "rollup" for s in sink.stimuli)
     await engine.dispose()
 
 

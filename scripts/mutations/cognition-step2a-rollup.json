@@ -117,5 +117,12 @@
     "old": "        except NoRollupBuildError:\n            return web.json_response(\n                {\"error\": \"unavailable\", \"reason\": \"no Rollup build yet\"}, status=503,\n            )",
     "new": "        except NoRollupBuildError:\n            return web.json_response({})",
     "target": "tests/web/test_presence_analytics.py::test_no_rollup_build_yet_answers_503_not_an_empty_200"
+  },
+  {
+    "name": "the rollup stimulus conflict target is a literal predicate the partial index matches",
+    "file": "nora/infra/sql/stimuli.py",
+    "old": "                index_where=_KIND_PREDICATE[stimulus.kind],",
+    "new": "                index_where=STIMULUS.c.kind == stimulus.kind,",
+    "target": "tests/integration/test_rollup_builds.py::test_a_colocation_start_and_an_arrival_are_raised_once"
   }
 ]
