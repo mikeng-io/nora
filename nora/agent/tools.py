@@ -96,6 +96,7 @@ from ..domain.media import (
 )
 from ..domain.media import LABELS as MEDIA_LABELS
 from ..domain.media_join import MediaJoin
+from ..domain.mobility_forecast import detect_stay_anomalies, forecast_window
 from ..domain.models import PersonRef, TranscriptRow, WeatherObservation
 from ..domain.note_body import (
     NoteBodyError,
@@ -670,6 +671,14 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
                              read_only=True,
                              side_effect_state="none", idempotency="idempotent", retry="safe",
                              output_contract="three_state", level=2),
+    # design/27 §4.3 (P1b): the Tier 4 forecast behind where_been's own guard,
+    # declared like where_been so the two differ only where the design says.
+    # Level 3: six statuses that each need a different reply.
+    "routine_read": NativeTool(8,
+                               time_shiftable=True, source_tier="confirmed", cacheable=False,
+                               read_only=True,
+                               side_effect_state="none", idempotency="idempotent", retry="safe",
+                               output_contract="three_state", level=3),
     # 4, sized on NETWORK cost like `transit` (design/online-status/04's own
     # budgets row): one question is ONE batched GetPlayerSummaries call — the
     # room's whole id set goes out in a single request, up to Steam's
@@ -5433,6 +5442,18 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
     _been_tz_name = "Asia/Hong_Kong"
     _been_arms = ("day", "places", "rhythm", "routes")
     _been_everyone = frozenset({"everyone", "大家"})
+    # The rollup's own defaults (`AnalyticsConfig.anomaly_*`, `cluster_eps_m`),
+    # so a flag here is the same judgement `nora_analytics_anomalies_total`
+    # counts. Named, so a config change that moves them is a visible diff.
+    _been_anomaly_min_samples = 5
+    _been_anomaly_z = 3.0
+    _been_novelty_radius_m = 100.0
+
+    def _been_clock(minute_of_day: float | None) -> str | None:
+        if minute_of_day is None:
+            return None
+        m = round(minute_of_day) % 1440
+        return f"{m // 60:02d}:{m % 60:02d}"
 
     # NOT `@staticmethod`. These names live in a FUNCTION body, not a class, so
     # the decorator wrapped a plain closure in a descriptor that only happens to
@@ -5449,6 +5470,111 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             datetime.fromtimestamp(ts_ms / 1000, tz=ZoneInfo(_been_tz_name))
             .isoformat(timespec="seconds")
         )
+
+    async def _presence_audience(
+        circle: Any, asked: str | None, *, tool: str, anyone: str,
+        people_phrase: str,
+    ) -> tuple[tuple[Any, ...], dict | None]:
+        """Who a DERIVED-presence answer may be about, or why not: `(refs,
+        None)` when the guard passes, `((), refusal)` otherwise. ONE copy for
+        `where_been` and `routine_read` (design/27 §4.3) so the two cannot
+        drift; `anyone` and `people_phrase` only word the notes.
+
+        THE SAME three-way fail-closed `Whereis.locate` runs
+        (nora/agent/whereis.py), composed directly against `DisclosureGuard`
+        so the failure matrix cannot drift from `where_is`'s: available →
+        check; degraded → `unavailable` (an ERROR, never a policy answer);
+        unnamed or room ⊄ circle → `refused` — unless the room is
+        location-trusted (DEC-79), which waives exactly what it waives there
+        and is COUNTED when it does."""
+        view = await room.scope()
+        if not view.available:
+            return (), {
+                "status": "unavailable",
+                "note": "I can't work out who is in this group right now, so "
+                        f"I can't say {anyone}. Say so rather than guessing.",
+            }
+        room_person_ids = frozenset(p.person_id for p in view.people)
+        subset_ok = (
+            location_trusted or DisclosureGuard(circle).permits(room_person_ids)
+        )
+        unnamed_blocks = view.unnamed > 0 and not location_trusted
+        if view.degraded:
+            if metrics is not None:
+                metrics.inc(
+                    "nora_presence_disclosure_refusals_total", reason="degraded",
+                )
+            log.warning(
+                "%s could not verify the room (degraded): circle=%s "
+                "location_trusted=%s", tool, circle.circle_id, location_trusted,
+            )
+            return (), {
+                "status": "unavailable",
+                "note": "I can't confirm who is in this group right now, so I "
+                        f"can't say {anyone}. Say you couldn't check, without "
+                        "guessing or blaming anyone's sharing settings.",
+            }
+        if unnamed_blocks or not subset_ok:
+            # WHICH condition fired, so a refusal is diagnosable from the
+            # metric instead of inferred — the same labels `locate` uses.
+            reason = "unnamed" if unnamed_blocks else "not_subset"
+            if metrics is not None:
+                metrics.inc(
+                    "nora_presence_disclosure_refusals_total", reason=reason,
+                )
+            log.warning(
+                "%s refused (%s): circle=%s unnamed=%d subset_ok=%s "
+                "location_trusted=%s",
+                tool, reason, circle.circle_id, view.unnamed, subset_ok,
+                location_trusted,
+            )
+            return (), {
+                "status": "refused",
+                "note": f"I can't share {people_phrase} in this conversation: "
+                        "someone here is outside the location-sharing circle, "
+                        "or I can't confirm who is here. Say so in one clause "
+                        "and do not hint at the pattern.",
+            }
+        # A WAIVED guard is counted, not silent — the same DEC-79 rule
+        # `Whereis.locate` runs one branch below its own guard.
+        if view.unnamed > 0 and location_trusted:
+            if metrics is not None:
+                metrics.inc(
+                    "nora_presence_disclosure_waived_total", reason="unnamed",
+                )
+            log.warning(
+                "%s disclosed into a location-trusted room holding %d "
+                "unmapped account(s) (DEC-79 waiver): circle=%s",
+                tool, view.unnamed, circle.circle_id,
+            )
+        # R-47: who may be ASKED ABOUT resolves against the CIRCLE unioned
+        # with the room — the audience gate has already been cleared above.
+        # No name (or 「大家」) means the room's own people: the group asking
+        # about the group.
+        if not asked or asked.casefold() in _been_everyone:
+            refs = _dedupe(view.people)
+            if not refs:
+                return (), {
+                    "status": "nothing_found",
+                    "note": "I can't see who is in this conversation, so there "
+                            "is no derived pattern to report. Say so, and do "
+                            "not guess.",
+                }
+            return tuple(refs), None
+        matches = _dedupe(find_by_name(circle.people, asked) + view.find(asked))
+        if not matches:
+            return (), {
+                "status": "not_found",
+                "note": "Nobody in this conversation goes by that. Say "
+                        "you're not sure who they mean, and do not guess.",
+            }
+        if len(matches) > 1:
+            return (), {
+                "status": "ambiguous",
+                "could_be": [p.name for p in matches],
+                "note": "More than one person here goes by that. Ask which one.",
+            }
+        return (matches[0],), None
 
     async def where_been(
         what: Literal["day", "places", "rhythm", "routes"],
@@ -5550,6 +5676,57 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             )
             return fix.ts if fix is not None else None
 
+        async def _been_mark_unusual(subject_id: str, day_stays: list[dict]) -> None:
+            """design/27 §4.3: each of the day's stays gains `unusual`, how it
+            differed from the subject's OWN past at that place, when it did
+            (`detect_stay_anomalies`, computed on read). FAIL-SOFT: the flags
+            are an annotation, and losing them must never cost the day's
+            answer, so any failure leaves the stays exactly as read."""
+            if not day_stays:
+                return
+            try:
+                history = await mobility.stays_for_subject(subject_id=subject_id)
+                labels = {
+                    p.id: p.label or p.kind
+                    for p in await mobility.places_for_subject(subject_id=subject_id)
+                }
+                by_start = {h.started_ts: h for h in history}
+                computed: list[tuple[dict, list[dict]]] = []
+                for row in day_stays:
+                    stay = by_start.get(row["started_ts"])
+                    if stay is None:
+                        continue
+                    flags = []
+                    for a in detect_stay_anomalies(
+                        stay, history=history, tz_name=_been_tz_name,
+                        min_samples=_been_anomaly_min_samples,
+                        z_threshold=_been_anomaly_z,
+                        novelty_radius_m=_been_novelty_radius_m,
+                    ):
+                        flag: dict = {"kind": a.kind}
+                        if a.kind == "duration":
+                            flag |= {
+                                "minutes": round((a.observed or 0) / 60_000),
+                                "usual_minutes": round((a.expected or 0) / 60_000),
+                            }
+                        elif a.kind in ("arrival", "departure"):
+                            flag |= {
+                                "at": _been_clock(a.observed),
+                                "usually": _been_clock(a.expected),
+                            }
+                        elif a.kind == "unusual_place":
+                            flag["usually_at"] = labels.get(a.expected_place_id)
+                        flags.append(flag)
+                    if flags:
+                        computed.append((row, flags))
+            except Exception:
+                log.exception("where_been unusual-stay flags failed; day answered without them")
+                return
+            # Applied only once every row is scored, so a failure part-way
+            # leaves the day exactly as read (the docstring's promise).
+            for row, flags in computed:
+                row["unusual"] = flags
+
         async def _been_read(subject_id: str) -> dict:
             """One arm's read for one subject, coordinates never selected and
             corridor sequences never carried out (R-28). An empty answer means
@@ -5638,6 +5815,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 }
                 for s in stays if s["started_ts"] < day_end_ms
             ]
+            await _been_mark_unusual(subject_id, day_stays)
             out = await mobility.trips_with_corridors(
                 subject_id=subject_id, window_ms=fetch_ms,
             )
@@ -5668,6 +5846,12 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                     f"Give the date ({day_iso}) with anything you quote, and "
                     "never read lat/lng aloud."
                 )
+                if any(s.get("unusual") for p in people for s in p.get("stays", ())):
+                    note += (
+                        " A stay with unusual differed from their own usual at "
+                        "that place, as listed: say it as a comparison with "
+                        "their past, never as a judgement of them."
+                    )
                 if any(
                     s.get("place_kind") is None
                     for p in people for s in p.get("stays", ())
@@ -5707,105 +5891,16 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             )
 
         async def _been_through(circle) -> dict:
-            """THE SAME three-way fail-closed `Whereis.locate` runs
-            (nora/agent/whereis.py), composed directly against
-            `DisclosureGuard` so the failure matrix cannot drift from
-            `where_is`'s: available → check; degraded → `unavailable` (an
-            ERROR, never a policy answer); unnamed or room ⊄ circle →
-            `refused` — unless the room is location-trusted (DEC-79), which
-            waives exactly what it waives there and is COUNTED when it does."""
-            view = await room.scope()
-            if not view.available:
-                return {
-                    "status": "unavailable",
-                    "note": "I can't work out who is in this group right now, so "
-                            "I can't say where anyone has been. Say so rather "
-                            "than guessing.",
-                }
-            room_person_ids = frozenset(p.person_id for p in view.people)
-            subset_ok = (
-                location_trusted or DisclosureGuard(circle).permits(room_person_ids)
-            )
-            unnamed_blocks = view.unnamed > 0 and not location_trusted
-            if view.degraded:
-                if metrics is not None:
-                    metrics.inc(
-                        "nora_presence_disclosure_refusals_total", reason="degraded",
-                    )
-                log.warning(
-                    "where_been could not verify the room (degraded): circle=%s "
-                    "location_trusted=%s", circle.circle_id, location_trusted,
-                )
-                return {
-                    "status": "unavailable",
-                    "note": "I can't confirm who is in this group right now, so I "
-                            "can't say where anyone has been. Say you couldn't "
-                            "check, without guessing or blaming anyone's sharing "
-                            "settings.",
-                }
-            if unnamed_blocks or not subset_ok:
-                # WHICH condition fired, so a refusal is diagnosable from the
-                # metric instead of inferred — the same labels `locate` uses.
-                reason = "unnamed" if unnamed_blocks else "not_subset"
-                if metrics is not None:
-                    metrics.inc(
-                        "nora_presence_disclosure_refusals_total", reason=reason,
-                    )
-                log.warning(
-                    "where_been refused (%s): circle=%s unnamed=%d subset_ok=%s "
-                    "location_trusted=%s",
-                    reason, circle.circle_id, view.unnamed, subset_ok,
-                    location_trusted,
-                )
-                return {
-                    "status": "refused",
-                    "note": "I can't share where people have been in this "
-                            "conversation: someone here is outside the "
-                            "location-sharing circle, or I can't confirm who is "
-                            "here. Say so in one clause and do not hint at the "
-                            "pattern.",
-                }
-            # A WAIVED guard is counted, not silent — the same DEC-79 rule
-            # `Whereis.locate` runs one branch below its own guard.
-            if view.unnamed > 0 and location_trusted:
-                if metrics is not None:
-                    metrics.inc(
-                        "nora_presence_disclosure_waived_total", reason="unnamed",
-                    )
-                log.warning(
-                    "where_been disclosed into a location-trusted room holding %d "
-                    "unmapped account(s) (DEC-79 waiver): circle=%s",
-                    view.unnamed, circle.circle_id,
-                )
-            # R-47: who may be ASKED ABOUT resolves against the CIRCLE unioned
-            # with the room — the audience gate has already been cleared above.
-            # No name (or 「大家」) means the room's own people: the group asking
-            # about the group.
+            """`where_been`'s read for one circle, behind `_presence_audience`
+            (the guard it shares with `routine_read`, design/27 §4.3)."""
             asked = None if name is None else str(name).strip()
-            if not asked or asked.casefold() in _been_everyone:
-                refs = _dedupe(view.people)
-                if not refs:
-                    return {
-                        "status": "nothing_found",
-                        "note": "I can't see who is in this conversation, so there "
-                                "is no derived pattern to report. Say so, and do "
-                                "not guess.",
-                    }
-            else:
-                matches = _dedupe(find_by_name(circle.people, asked) + view.find(asked))
-                if not matches:
-                    return {
-                        "status": "not_found",
-                        "note": "Nobody in this conversation goes by that. Say "
-                                "you're not sure who they mean, and do not guess.",
-                    }
-                if len(matches) > 1:
-                    return {
-                        "status": "ambiguous",
-                        "could_be": [p.name for p in matches],
-                        "note": "More than one person here goes by that. Ask which one.",
-                    }
-                refs = (matches[0],)
+            refs, refusal = await _presence_audience(
+                circle, asked, tool="where_been",
+                anyone="where anyone has been",
+                people_phrase="where people have been",
+            )
+            if refusal is not None:
+                return refusal
             # The reads — AFTER the guard passes, and only through the store.
             # The record's EDGE (`STALE_AFTER_MS`, 2026-09-24): the derived facts
             # stop where the raw fixes stop. Without it, a collector that lost
@@ -5892,6 +5987,188 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         )
         _record(metrics, "where_been", str(answer.get("status", "unavailable")))
         return answer
+
+    # ---- routine_read (design/proposed/27-presence-analytics.md §4.3, P1b) ----
+    #
+    # «Where will Grant be on Wednesday night?» answered from the Tier 4
+    # forecast (`forecast_window`): a likelihood with its evidence, never a
+    # claim about the future. Behind `where_been`'s own guard.
+    _routine_bases = {
+        "nearby_hours": "the hours either side on that weekday",
+        "day_type": "the same hours on their other weekdays, or weekend days",
+        "overall": "their week as a whole",
+    }
+
+    async def routine_read(
+        date: str, from_hour: int, to_hour: int, name: str | None = None,
+    ) -> dict:
+        """Usual whereabouts by hour of the week. Call this when somebody asks
+        where someone will be.
+
+        Never for right now (`where_is`) or the past (`where_been`).
+
+        Returns `status`: ok, nothing_found, unavailable, refused, not_found or
+        ambiguous, with a `note` on how to report it.
+
+        Args:
+            date: The local day they mean, "YYYY-MM-DD".
+            from_hour: Local hour the time window starts, 0 to 23.
+            to_hour: Local hour it ends, 0 to 23. At or before from_hour it
+                runs past midnight.
+            name: Who they asked about, exactly as they said it. Leave it out
+                for the people in THIS conversation (or pass "everyone").
+        """
+        if mobility is None or not presence_circles:
+            # A wiring gap is «I could not check», never «no routine» (R-5).
+            _record(metrics, "routine_read", "unavailable")
+            return {
+                "status": "unavailable",
+                "note": "I can't check anyone's routine right now. Say you "
+                        "have no way to see it, and do not guess.",
+            }
+        hk = ZoneInfo(_been_tz_name)
+        try:
+            day = datetime.strptime(str(date).strip(), "%Y-%m-%d").date()
+            start_hour, end_hour = int(from_hour), int(to_hour)
+            if not (0 <= start_hour <= 23 and 0 <= end_hour <= 23):
+                raise ValueError("hour out of range")
+            now_ms = int(
+                (clock() if clock is not None else datetime.now(UTC)).timestamp() * 1000,
+            )
+        except (TypeError, ValueError):
+            _record(metrics, "routine_read", "unavailable", reason="window")
+            return {
+                "status": "unavailable",
+                "note": "I couldn't read that day or those hours. Give the day "
+                        "as YYYY-MM-DD and the hours as 0 to 23.",
+            }
+        start = datetime(day.year, day.month, day.day, start_hour, tzinfo=hk)
+        end_day = day if end_hour > start_hour else day + timedelta(days=1)
+        end = datetime(end_day.year, end_day.month, end_day.day, end_hour, tzinfo=hk)
+        start_ms = int(start.timestamp() * 1000)
+        end_ms = int(end.timestamp() * 1000)
+        window = {"from_iso": _been_iso(start_ms), "to_iso": _been_iso(end_ms)}
+
+        asked = None if name is None else str(name).strip()
+        # The fold `where_been` runs: every circle is tried for an `ok` first
+        # (name resolution is per circle, so a later circle can know who an
+        # earlier one does not); only when none answers is the first
+        # non-`refused` answer returned, and `refused` only when every circle
+        # refused (independent review 2026-09-28). Written inline so each
+        # return is a literal the status-note test can read (ADR 0015 §6).
+        results: list[dict] = []
+        for circle in presence_circles:
+            refs, refusal = await _presence_audience(
+                circle, asked, tool="routine_read",
+                anyone="where anyone usually is",
+                people_phrase="where people usually are",
+            )
+            if refusal is not None:
+                results.append(refusal)
+                continue
+            try:
+                people: list[dict] = []
+                seen_subjects: set[str] = set()
+                for ref in refs:
+                    subject_id = persons.subject_id_for(ref.person_id)
+                    if subject_id in seen_subjects:
+                        continue
+                    seen_subjects.add(subject_id)
+                    stays = await mobility.stays_for_subject(subject_id=subject_id)
+                    places = {
+                        p.id: p
+                        for p in await mobility.places_for_subject(subject_id=subject_id)
+                    }
+                    forecast = forecast_window(
+                        stays, start_ms=start_ms, end_ms=end_ms,
+                        tz_name=_been_tz_name, history_before_ms=now_ms,
+                    )
+                    if forecast.status != "ok":
+                        continue
+                    named: list[dict] = []
+                    elsewhere = 0
+                    for chance in forecast.chances:
+                        percent = round(chance.probability * 100)
+                        place = (
+                            places.get(chance.place_id)
+                            if chance.place_id is not None else None
+                        )
+                        # A place under 5% is not worth a name; it and every
+                        # stop outside their places count as elsewhere.
+                        if place is None or percent < 5:
+                            elsewhere += percent
+                            continue
+                        named.append({
+                            "label": place.label, "kind": place.kind,
+                            "saved": place.saved_place_id is not None,
+                            "percent": percent,
+                        })
+                    people.append({
+                        "person": ref.name, "places": named,
+                        "elsewhere_percent": elsewhere,
+                        "basis": forecast.basis,
+                        "support_weeks": forecast.support_weeks,
+                        "observed_share_percent": round(forecast.observed_share * 100),
+                    })
+            except Exception:
+                log.exception("routine_read read failed")
+                results.append({
+                    "status": "unavailable",
+                    "note": "I couldn't check their routine just now. Say you "
+                            "couldn't look, not that they have no routine.",
+                })
+                continue
+            if not people:
+                results.append({
+                    "status": "nothing_found",
+                    "note": "There isn't enough of their history to say where "
+                            "they usually are then. Say you can't tell yet, and "
+                            "do not guess.",
+                    "window": window,
+                })
+                continue
+            ok_note = (
+                "This is where they usually were at these hours over the weeks "
+                "given, not where anyone is or will be: say it as usually, with "
+                "the percent and the weeks. The percents share out only the "
+                "time they were stopped somewhere; observed_share_percent is "
+                "how much of those hours that covered, so a low one means most "
+                "of the time is unknown, and you say so. Name a place by its "
+                "label; one with no label is a place they go that has no name, "
+                "and an unlabeled kind is never their home or work. "
+                "elsewhere_percent is every stop not named above."
+            )
+            weak = sorted({p["basis"] for p in people if p["basis"] in _routine_bases})
+            if weak:
+                ok_note += (
+                    " Where basis is not hour, too few weeks cover exactly "
+                    "these hours, so it comes from "
+                    + "; ".join(f"{b}: {_routine_bases[b]}" for b in weak)
+                    + ". Say it is a rough guess."
+                )
+            _record(metrics, "routine_read", "ok", people=len(people))
+            return {"status": "ok", "window": window, "people": people, "note": ok_note}
+        answer = next(
+            (r for r in results if r.get("status") != "refused"), results[0],
+        )
+        _record(metrics, "routine_read", str(answer["status"]))
+        if answer["status"] == "ambiguous":
+            return {
+                "status": "ambiguous",
+                "note": "More than one person here goes by that. Ask which one.",
+                "could_be": answer["could_be"],
+            }
+        if answer["status"] == "nothing_found" and "window" in answer:
+            return {
+                "status": "nothing_found",
+                "note": "There isn't enough of their history to say where they "
+                        "usually are then. Say you can't tell yet, and do not "
+                        "guess.",
+                "window": answer["window"],
+            }
+        # Every other status `_presence_audience` or the read above produced
+        # carries its own non-empty note; restated so this return shows it.
+        return {"status": answer["status"], "note": answer["note"]}
 
     # ---- online_now (design/online-status/, the #248 live-state cross-check) --
     #
@@ -10597,7 +10874,7 @@ Args:
     ) -> dict:
         """Start carrying an open question that nothing here settles yet.
 Call this when the room is chewing on something that outlives this
-conversation: an undecided thing nobody has settled.
+conversation.
 
 A note is tracked uncertainty (whose wedding is when, what the trip still
 lacks, who has not paid), never a settled fact or a description of a
@@ -11282,6 +11559,7 @@ Args:
         _spec("where_is", where_is),
         _spec("reverse_geocode", reverse_geocode),
         _spec("where_been", where_been),
+        _spec("routine_read", routine_read),
         _spec("online_now", online_now),
         _spec("who_said", who_said),
         _spec("load_transcript", load_transcript),

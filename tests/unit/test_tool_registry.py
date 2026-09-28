@@ -95,6 +95,8 @@ def test_the_registry_exposes_every_declared_tool():
         "reverse_geocode",
         # DEC-155: the derived-presence history tool (where someone HAS BEEN).
         "where_been",
+        # design/27 §4.3: the Tier 4 forecast behind where_been's own guard.
+        "routine_read",
         # design/online-status/: the LIVE digital-activity tool (who is
         # online / playing / in voice right now) — the #248 cross-check.
         "online_now",
@@ -243,6 +245,8 @@ def test_budgets_match_todays_table():
         # live-refresh block — so the currency is the model round trip, and
         # one question can legitimately walk day -> places in a turn.
         "where_been": 8,
+        # design/27 §4.3: declared like where_been (same store, same guard).
+        "routine_read": 8,
         # 4, sized on NETWORK cost like `transit` (design/online-status/04):
         # one question is ONE batched Steam GetPlayerSummaries call (the
         # room's whole id set in a single request) and/or one gateway-cache
@@ -717,6 +721,9 @@ READ_ONLY = frozenset({
     # (spec §7.4): a read verb that forgets the flag turns the classification
     # test red by name, so it is pinned here like every other read.
     "where_been",
+    # design/27 §4.3: `routine_read` reads the same substrate through the same
+    # guard; a read everywhere, room-roster-scoped, not granted to a Dreamer.
+    "routine_read",
     # design/online-status/: `online_now` is a pure read at every layer —
     # one batched Steam GetPlayerSummaries call and the Discord gateway's
     # voice cache, no writes anywhere. Dreamer-ELIGIBLE (the proactive
