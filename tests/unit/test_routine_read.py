@@ -5,7 +5,7 @@ forecast, behind `where_been`'s own guard (`_presence_audience`). The legs:
 every status with its note; the guard matrix (refused, unnamed, degraded,
 waiver counted, not_found, ambiguous) with NO store read before it passes; the
 answer carrying its evidence (window, basis, weeks, observed share) and no
-coordinate (R-28); and a weak basis told as a rough guess.
+coordinate (R-28); and a weak basis said inside the routine as «roughly».
 """
 
 from __future__ import annotations
