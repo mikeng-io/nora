@@ -290,7 +290,7 @@ this repo); **inferred** (replaced by the three inference modes); **community**
 | today | lands in |
 |---|---|
 | transcript rows, presence fixes, media, `media_objects` comprehension | Record |
-| reactions, deletes, unsends | Record (not ingested today; added at [70](70-migration.md) step 1) |
+| reactions, deletes, unsends | Record (`message_reaction`, `message_delete`, since [70](70-migration.md) step 1) |
 | `decision_log` | Record |
 | presence stays, trips, places, rhythm, occupancy, corridors (`nora/analytics/`, design 27) | **Rollup** (derived and rebuilt; this bundle's first drafts filed them as Record) |
 | `note`, `note_revision` | Register · note |

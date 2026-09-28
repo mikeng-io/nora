@@ -19,8 +19,8 @@ everything its sources give it and says what changed.
 
 | stream | records | arrives by | today |
 |---|---|---|---|
-| **messages** | every row of every room, with edits; reactions and deletes or unsends as items attached to the message they touch | push (the platform adapters) | rows and edits yes (`nora/ingest/pipeline.py`). Reactions are dropped on purpose (`nora/platform/signal/parser.py`: a reaction is metadata on another message, not a transcript line) and deletes are not ingested. Both are added at [70](70-migration.md) step 1, as items, never as transcript lines: the withdrawal cascade, the cited-message cues (§3) and the tie need them |
-| **presence** | fixes, and every collector poll with its outcome | poll (the collector) | yes, `nora/presence/collector.py`; recording the polls is new |
+| **messages** | every row of every room, with edits; reactions and deletes or unsends as items attached to the message they touch | push (the platform adapters) | rows and edits yes (`nora/ingest/pipeline.py`). Reactions and deletes or unsends were dropped until [70](70-migration.md) step 1, which records them as items (`message_reaction`, `message_delete`, `nora/ingest/stages/touch.py`), never as transcript lines, on all four platforms: the withdrawal cascade, the cited-message cues (§3) and the tie need them |
+| **presence** | fixes, and every collector poll with its outcome | poll (the collector) | yes, `nora/presence/collector.py`; its polls recorded in `source_health` since step 1 |
 | **social** | members' story frames; posts and reels once listable; tags, mentions and comments on members' items | **poll** (Instagram does not push these) | reads only on request today |
 | **play** | who is in which game, who is in which voice channel with whom | poll (Steam) and push (Discord) | live reads only ([25](25-rollup.md) §6) |
 | **perception** | what a media item shows, and whose faces are in it, stored on that item with its model's confidence | follows each new media item | room media: yes, at ingest (`[media] comprehension`; `nora/ingest/stages/media.py` spawns `nora/ingest/comprehension.py`, results in `media_objects`). Social items reuse it; faces are new ([60](60-faces.md)) |
@@ -173,6 +173,34 @@ clocks still run); the values are sized from that log, and again after step
 2 adds Rollup signals. The keys live in a `[cognition]` section;
 `quiet_seconds` and `max_age_seconds` reuse `[dreamer]`'s names, not its
 values.
+
+**As built (step 1, 2026-09-28; DEC-232).** Where the build fixed a value or
+a name this table leaves open:
+
+- `[cognition]` holds the table's keys under the names above plus `mode`
+  (`off` shipped, `shadow`), `tick_seconds` (30), `time_floors`
+  (`["07:00", "00:00"]`), `timezone`, `floor_grace_seconds` (3600: a floor is
+  raised only while no more than this late, so a deploy at 15:00 does not
+  raise that morning's 07:00) and `shadow_session_seconds` (60: how long a
+  would-wake counts as a running session, so single-flight and the cooldown
+  are exercised while nothing runs).
+- `settled` and `strong cue` count observed items only (`message`, `social`,
+  `play`); a pending `time`, `self` or `rollup` signal wakes under its own
+  row, so a 07:00 floor is never recorded as `settled`. «Quiet» is measured
+  from the unit's newest person-authored item, `waits` ones included.
+- A strong cue is a date or time, a keep instruction, an RSVP, or a place
+  LINK (standing in for «a place change» until place names have a
+  gazetteer); an edit of a cited message waits for step 2's `citation`
+  table, as do the other cited-message cues.
+- «A strong cue may cut it once» is read as: a wake that cut a cooldown
+  leaves a cooldown no cue can cut.
+- A reaction on her message inside `reply_quiet_seconds` counts as a reply
+  and is marked `waits`, like a quote of hers.
+- The watermark is the unit's newest `cognition_wake` row in its mode; a
+  signal is consumed when its id and its pending-since time are both at or
+  under that row's.
+- `nora_cognition_wake_total` carries `mode` beside `reason`, and
+  `nora_cognition_wake_deferred_total{brake}` counts unit-ticks a brake held.
 
 ### Self-wakes: Cognition paces itself
 
