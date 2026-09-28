@@ -1,7 +1,7 @@
 ---
 type: design
-title: "Character and Standing — what an entity is like, and where Nora stands toward it"
-description: "Character per entity (person, room, unit, Nora) as one shape; why it is not memory (Honcho); Nora's own Character beside the doctrine; Standing widened from room to unit and person, kept as an append-only chain of undated positions; the echo rule; correction by the subject; disclosure per section."
+title: "Character, Lessons and Standing — what an entity is like, what she has learned, where she stands; and the two slow adaptors"
+description: "Character per entity (person, room, unit, Nora) as one shape, written only by the Character adaptor; why it is not memory (Honcho); Nora's own Character beside the doctrine; Standing widened from room to unit and person, kept as an append-only chain of undated positions; the echo rule; correction by the subject; disclosure per section."
 tags: [nora, character, culture, standing, self, persons, social-cognition]
 timestamp: '2026-09-28'
 edges:
@@ -17,7 +17,8 @@ shape so the loop's verbs and keys are right from the start.
 
 An **account** per `(unit, entity)`: what the entity is like and how it
 behaves, in prose under the fixed sections of [12](12-schemas.md) §4, with
-cited evidence, revised by `character_revise` as an append-only chain (the
+cited evidence, revised only by the Character adaptor (§6) through
+`character_revise`, as an append-only chain (the
 revision chain the culture store already has, design/culture-tier/).
 
 | entity | the account holds | evidence it reads |
@@ -47,7 +48,8 @@ read beside the doctrine, never over it.
 ## 2. Standing: from room to unit and person
 
 Standing keeps its meaning (her held position toward a subject) and gains
-two subjects:
+two subjects. Its writers are the Cognition adaptor and, for room Standing,
+the tag path's debrief, both through `standing_revise`:
 
 | subject | exists | holds |
 |---|---|---|
@@ -94,8 +96,8 @@ An account nobody sees cannot be corrected, so:
   evaluated against the viewer's rooms.
 - **Only the subject may dispute a line about them.** The tag turn records a
   `character_dispute` as a Record item authored by that person
-  ([10](10-tiers.md) §1); the next session must re-evidence or remove the
-  line, and a disputed line never renders until it has.
+  ([10](10-tiers.md) §1), which wakes the Character adaptor for that entity;
+  its next session must re-evidence or remove the line, and a disputed line never renders until it has.
 - **Lines decay**: a Character line not re-evidenced within its horizon moves
   to `Unsure`; a Standing line is dropped ([12](12-schemas.md) §8).
 - **Induction needs instances**: a line about what someone reliably does cites
@@ -120,3 +122,43 @@ its Honcho workspace, DEC-214), so it can mix the units of one workspace:
 nothing from it is Character evidence.
 
 An account is an input to her judgement, never text she recites.
+
+## 6. The two slow adaptors
+
+Reflection is its own job on its own timescale ([00](00-intent.md) §3). Two
+Dreamer adaptors do it, each the sole writer of its tier; neither acts, and
+neither is woken by a single message. Their wake rules are in
+[20](20-observe.md) §3.
+
+**The Character adaptor** — per (unit, entity), for every entity: a room's
+or the unit's culture, a person, Nora. It is today's culture adaptor
+(`nora/language/culture.py`) generalised to one shape: it reads the
+entity's evidence since its last revision (the Record, the Rollup's
+aggregates, the Register, and for a room or the unit its members'
+Characters), and writes one revision through `character_revise`, or none. It
+writes a tension row when the evidence about Nora pulls against doctrine
+([55](55-self.md) §4). It replaces the culture adaptor's daily clock
+(`[culture] fold_interval_seconds`).
+
+**The Lessons adaptor** — per unit. It reads the outcomes of her acts since
+its last session (corrections, replies that landed, silence where a reply
+was expected, reactions) with the lessons already held, and writes through
+`lesson_write` and `lesson_retire`. The operator's rollback on the portal
+goes through `lesson_retire` too.
+
+**Enforced by code on every lesson**, on top of every write verb's checks
+([30](30-cognition.md) §3):
+
+- **A hard size cap per unit** (Hermes-style: sized from the first month,
+  around 800 tokens, never from one sample). A write that would pass it is
+  refused until the adaptor consolidates or retires lessons.
+- **Doctrine wins.** A lesson that would loosen or contradict doctrine is
+  refused and written as a tension row instead ([55](55-self.md) §4). The
+  judgement is a separate instrument call (a model other than the session,
+  reading the lesson and the doctrine); code applies its verdict. It is a
+  model check, not a proof, so the assess pass measures it on a labelled set.
+- **The echo rule.** A lesson cites the outcomes that taught it; one resting
+  on her own words alone is refused.
+- **No approval step.** A lesson takes effect on the next turn. Every write
+  and retirement is visible to the operator on the portal, with its evidence
+  and history, and reversible by id through `lesson_retire`.

@@ -15,7 +15,12 @@ description: >
   code then computes the ROLLUP (episodes such as co-location, outing,
   daybook; aggregates such as place, rhythm and tie) as a pure, replayable
   projection of the Record, generalising what design 27 began for presence.
-  ORIENT, DECIDE and ACT are ONE agent session per unit per wake: an agenda
+  The Dreamer runtime hosts four adaptors split by timescale: Cognition
+  (fast, per unit), Character and Lessons (slow reflection, each the sole
+  writer of its tier) and Assess (reports only); the adaptors are her
+  subconscious and the speaking turns her conscious. In Cognition, ORIENT,
+  DECIDE and ACT are ONE agent session per unit per wake, woken by a code
+  evaluator on signals or on a self-wake it requested: an agenda
   whose items each bind a room, the read tools that room permits, typed write
   verbs whose every call code validates, and one act verb, remind, whose rows
   the fire path composes inside the target room under its guards. It fixes
@@ -57,7 +62,7 @@ origin: >
   (design/dream-conductor, commit 0e060cf: a conductor planning separate
   specialist agents), which the operator's single-agent argument replaced.
   Revised the same day after four independent audits (architecture,
-  terminology, grounding, privacy); the operator's decisions D1–D8 are in
+  terminology, grounding, privacy); the operator's decisions D1–D12 are in
   00-intent and 70-migration.
 members:
   - 00-intent.md

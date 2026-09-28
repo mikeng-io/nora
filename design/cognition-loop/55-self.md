@@ -1,6 +1,6 @@
 ---
 type: design
-title: "Self — what her cognition builds, and where her growth lives"
+title: "Self — what her adaptors build, where her growth lives, and her two layers"
 description: "Cognition is not a tier: it is the loop; what it builds is Register, Character, Lessons and Standing. Her identity is the part of all state that is about her: given (doctrine), done (her Record), digested (her Character), learned (her Lessons) and held (her Standing). Growth is those changing and every turn reading them. Doctrine is the law: she never changes it, in whole or in part, and it changes only when the humans all agree. Her growth lives only in her own blocks, which render below the doctrine; where they disagree the doctrine is followed and a tension row records it for the operator."
 tags: [nora, self, identity, cognition, growth, doctrine, character]
 timestamp: '2026-09-28'
@@ -11,11 +11,13 @@ edges:
 
 # 55 · Self
 
-## 1. What cognition is made of
+## 1. What her adaptors build
 
-**Cognition is not a tier.** It is the loop that reads the Record and writes
-Register, Character, Lessons and Standing ([30](30-cognition.md)). What it has built
-is those three tiers, never "cognition".
+**Cognition is not a tier**, and neither is reflection. The Dreamer's
+adaptors read the Record and the Rollup and build Register, Character,
+Lessons and Standing ([00](00-intent.md) §3): Cognition writes Register and
+Standing, the Character adaptor writes Character, the Lessons adaptor writes
+Lessons. What they have built is those tiers, never "cognition".
 
 The operator's aim (2026-09-28): Nora builds an identity — who she is — not
 only from the doctrine she was given and what she observed, but from what she
@@ -28,14 +30,14 @@ have with her and with each other.
 |---|---|---|---|
 | **given** | who she is meant to be: constraints, voice, conduct | Doctrine (authored) | only the operator |
 | **done** | what she said and decided, and what happened after | Record (her sends, `loop_decisions`, reminders' outcomes) | every act |
-| **digested** | who she has become in this unit, as its people met her | **Character · Nora** | cognition, from what she did **and how people responded** |
-| **learned** | what she has learned about how to act in this unit | **Lessons** | cognition, from outcomes; the operator may roll any lesson back |
-| **held** | what she currently thinks, follows and owes | **Standing** (room, unit, person) | cognition and the tag debrief |
+| **digested** | who she has become in this unit, as its people met her | **Character · Nora** | the Character adaptor, from what she did **and how people responded** |
+| **learned** | what she has learned about how to act in this unit | **Lessons** | the Lessons adaptor, from outcomes; the operator may roll any lesson back |
+| **held** | what she currently thinks, follows and owes | **Standing** (room, unit, person) | Cognition and the tag debrief |
 | (heard about her) | a third party's digest of her own words | memory (self card) | Honcho |
 
 **Character · Nora is where the digested self lives.** The Character tier
 holds her identity as one of its entities, beside persons, rooms and the
-unit, and cognition is what writes it. Her full identity is that account
+unit, and the Character adaptor is what writes it. Her full identity is that account
 read together with the doctrine above it and the Standing beside it.
 
 ## 3. Growth, and the law she lives within
@@ -47,7 +49,7 @@ doctrine**, in whole or in part, and never proposes a change (operator
 
 **Her growth lives only in her own blocks**: Character · Nora (the `self`
 block), Lessons (the `lessons` block) and Standing. They render after the doctrine and always below it, so
-the doctrine is read first and wins. When cognition revises them her
+the doctrine is read first and wins. When her adaptors revise them her
 behaviour changes on the next turn with no code or doctrine change. That is
 the only way she changes herself.
 
@@ -64,11 +66,12 @@ for the humans to decide on, never a proposal from her.
 
 ## 4. Tension, made visible
 
-When cognition revises Character · Nora and the evidence pulls against a
-doctrine line (people keep rewarding what the doctrine forbids, or keep
-correcting what it requires), `character_revise` also writes a **tension**
-row; so does `lesson_write` when it refuses a lesson that would loosen or
-contradict doctrine ([30](30-cognition.md) §3). A tension row holds the
+When the Character adaptor revises Character · Nora and the evidence pulls
+against a doctrine line (people keep rewarding what the doctrine forbids, or
+keep correcting what it requires), `character_revise` also writes a
+**tension** row; so does the Lessons adaptor's `lesson_write` when it
+refuses a lesson that would loosen or contradict doctrine
+([50](50-character-and-standing.md) §6). A tension row holds the
 doctrine file and line quoted, the evidence cited, and what her Character or
 the lesson would have said without the law. The doctrine is still followed.
 Tension is outside the tiers ([10](10-tiers.md) §1; [15](15-map.md) §1 and
@@ -97,3 +100,30 @@ Tension is outside the tiers ([10](10-tiers.md) §1; [15](15-map.md) §1 and
 - **Per unit**: she can be different in two units, and neither account
   reads the other.
 - **Doctrine wins**, and a disagreement becomes a tension row, never a change.
+
+## 6. Two layers, like a person
+
+The operator's model (2026-09-28), not a code name:
+
+- **The subconscious** (潛意識): the Dreamer's adaptors — Cognition, and the
+  slow Character and Lessons adaptors. Always running underneath, woken by
+  the world and by herself (`wake_at`).
+- **The conscious** (明意識): the turns that speak — the tag turn, and the fire
+  turn a `remind` starts.
+
+`remind` is the one bridge from the subconscious to the conscious; `wake_at`
+is the subconscious scheduling itself.
+
+**The direction rule, in code: the subconscious drives the conscious; the
+conscious barely drives the subconscious.**
+
+- **Subconscious → conscious**: through the pushed blocks (the Register
+  indices, Standing, `self`, `lessons`, `culture`) and through the `remind`
+  rows the fire turn acts on.
+- **Conscious → subconscious**: only indirectly. What she says and how people
+  respond is Record a later session may read; the tag path's ordinary
+  Register writes and the debrief's Standing are shared state, not a
+  command. The conscious layer holds no pace verb (`wake_at`, `wake_move`,
+  `wake_cancel`), cannot read or edit an agenda or a pending self-wake, and
+  cannot start or steer a session. That her own messages raise no signal
+  ([20](20-observe.md) §3) is a consequence of this rule.

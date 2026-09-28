@@ -42,7 +42,8 @@ are Nora's additions.
 | Character · room, unit | none | community summary | — | — |
 | Lessons | — | — | skill learning, in part | — |
 | Standing | — | — | `persona` block, in part | reflections about self |
-| cognition session | dream pass | — | sleep-time run | reflection |
+| Cognition adaptor (fast: orient, decide, act) | deriver, in timescale | — | primary agent, in timescale | plans |
+| Character and Lessons adaptors (reflection, slow) | dream pass | — | sleep-time agent | reflection |
 | reasoning `told` / `deduced` / `induced` | `explicit` / `deductive` / `inductive` | — | — | — |
 | reasoning `abduced`, `computed`, `said` | none | none | — | — |
 | contradiction kept as a row ([50](50-character-and-standing.md) §4) | `contradiction` | invalidated edge | — | — |
@@ -52,8 +53,10 @@ are Nora's additions.
 
 **The pattern is confirmed.** Letta's sleep-time agent and Honcho's dream pass
 both keep consolidation off the live path and give the background agent sole
-ownership of long-lived memory. Nora's cognition is that pattern, woken by
-signals rather than a timer.
+ownership of long-lived memory. Nora's reflection adaptors are that pattern,
+each the sole writer of its tier and woken by evidence thresholds rather
+than a timer. The fast Cognition adaptor is the split's other half, and it
+is also a background job: nobody tagged her when it runs.
 
 ## 3. Words that collide, and the rule this bundle keeps
 
@@ -67,7 +70,7 @@ signals rather than a timer.
 | Graphiti *fact* | an edge | retired word (#115) | never imported |
 | Graphiti *community* | a clustered group | rooms and units are configured | culture is never "community" |
 | Letta *core memory*, *block* | always-on context | "memory" is Honcho; "block" is a `_BLOCKS` row | theirs is always "Letta block"; Nora's is "block" |
-| *reflection* (several) | a background pass | cognition | descriptive only |
+| *reflection* (several) | a background pass | the slow adaptors' work (Character, Lessons) | never the fast Cognition adaptor |
 
 ## 4. Adopted
 
@@ -110,7 +113,7 @@ signals rather than a timer.
    https://hermes-agent.nousresearch.com/docs/user-guide/features/memory):
    a harness layer of learned practice above an immutable core, bounded in
    size and consolidated when full. Nora's Lessons are this layer, with
-   doctrine as the core ([10](10-tiers.md) §1, [30](30-cognition.md) §3).
+   doctrine as the core ([10](10-tiers.md) §1, [50](50-character-and-standing.md) §6).
    Added at the operator's direction on 2026-09-28; not read from source in
    this revision. The known failure is drift toward what earns engagement
    (skill misevolution, arXiv 2608.12851), which the assess pass measures.

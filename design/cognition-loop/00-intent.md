@@ -57,24 +57,65 @@ assistant: README calls her "a persistent member of one circle of friends,
 not a bot in their chat", and this bundle keeps that.
 
 **Observe is code. Orient, decide and act are one agent session per unit per
-wake.**
+wake. Reflection runs beside it, slower, in its own adaptors.** The Dreamer
+runtime is kept (`DreamerRuntime`, `DreamGuard`, grants, budgets,
+`RegistryToolSource`) and hosts four adaptors, split by timescale (operator
+2026-09-28):
+
+```
+code jobs (no model)                         Dreamer runtime (kept): the subconscious
+  ingestion ──────────▶ RECORD ─┐              ┌─ Cognition adaptor   fast, per unit, on signals
+    messages, presence,         ├─ signals ───▶│    writes Register, Standing; acts only by remind()
+    social, play, perception    │              ├─ Character adaptor   slow, per (unit, entity)
+  Rollup builder ──────▶ ROLLUP ┘              │    sole writer of Character
+                                               ├─ Lessons adaptor     slow, per unit
+the conscious: the turns that speak            │    sole writer of Lessons
+  tag turn + debrief (the reflex)              └─ Assess adaptor      after each session, nightly
+    writes Register, room Standing                  reports and metrics only, never a tier
+  fire turn ◀── remind(): the one bridge from the subconscious
+  (Cognition also writes wake_at() into the signals: the subconscious scheduling itself)
+```
+
+The subconscious drives the conscious (through the pushed blocks and
+`remind`); the conscious reaches the subconscious only as Record and shared
+state, never as a command ([55](55-self.md) §6).
+
+| adaptor | timescale | wakes on ([20](20-observe.md) §3) | writes | why its own |
+|---|---|---|---|---|
+| **Cognition** ([30](30-cognition.md)) | minutes, per unit | signals: settled, strong cue, Rollup signal, batch, max age, time | Register and Standing (beside the tag path and its debrief); acts only through `remind` | orient, decide and act must share one context, or a conclusion is lost before the act |
+| **Character** ([50](50-character-and-standing.md) §6) | days, per (unit, entity) | evidence for that entity past a threshold, or staleness | Character, alone | an account is induced from many instances; judging it per message would re-write it from noise |
+| **Lessons** ([50](50-character-and-standing.md) §6) | days, per unit | outcomes of her acts past a threshold, or staleness | Lessons, alone | a lesson is induced from the outcomes of many acts, which exist only after the acts |
+| **Assess** ([30](30-cognition.md) §6) | after each finished session, and nightly | a finished session; the nightly clock | reports and metrics only, never a tier | judging an act belongs outside it |
 
 - **Observe** ([20](20-observe.md)): every source is ingested into the
   RECORD by code — messages, presence, the social stream, play, and
-  perception of media (what a picture shows, whose face is in it). Ingestion
-  raises wake signals. No model decides what is recorded.
-- **The cognition session** ([30](30-cognition.md)): one Strands agent per
-  unit, woken by signals, with an **agenda** code computes from them (each
-  item bound to one room), the read tools that room permits, typed **write
-  verbs** into the REGISTER, CHARACTER, LESSONS and STANDING tiers
-  ([10](10-tiers.md)),
-  and one **act verb**, `remind`: every act is a reminder row whose words the
-  fire path composes inside the target room, under that room's guards. The
-  proactive adaptor becomes this act step.
-- **The tag path stays the reflex**: it answers when called, reads what
-  cognition wrote, and writes through the same verbs.
+  perception of media (what a picture shows, whose face is in it). The
+  Rollup builder computes the ROLLUP. Both raise wake signals into a durable
+  table. No model decides what is recorded.
+- **Cognition** ([30](30-cognition.md)): one Strands session per unit per
+  wake, with an **agenda** code computes from the signals (each item bound to
+  one room), the read tools that room permits, typed **write verbs** into the
+  REGISTER and STANDING tiers ([10](10-tiers.md)), and one **act verb**,
+  `remind`: every act is a reminder row whose words the fire path composes
+  inside the target room, under that room's guards. It paces itself too:
+  `wake_at` asks for its own next look at a subject, so it is woken by the
+  world and by its own forecast of when to look next. It replaces
+  note-candidates, note-curation, note-merge, the proactive adaptor and the
+  ingest Standing fold.
+- **Reflection**: the Character adaptor (today's culture adaptor, generalised
+  to every entity) and the Lessons adaptor, each the sole writer of its tier.
+- **The tag path stays the reflex**: it answers when called, reads what the
+  adaptors wrote, and writes the Register and room Standing through the same
+  verbs.
 
 ## 4. One agent, not a conductor over agents
+
+**The topology refines this, and does not reverse it.** Orient, decide and
+act stay one context: the Cognition adaptor. Reflection (what an entity is
+like, what she has learned) is a different job on a different timescale,
+the split Honcho makes between its deriver and its dream pass and Letta
+between its primary agent and its sleep-time agent. The adaptors never hand
+state to each other: each reads the tiers the others wrote.
 
 This session's first draft (commit 0e060cf) had a conductor plan and code
 dispatch separate specialist agents. The operator's argument replaces it:
@@ -147,3 +188,17 @@ decisions of 2026-09-28, binding:
 - **D8** Everything is versioned in system time, so Nora can be restored as
   of any T for an eval; memory (Honcho) is the exception. Forget is a soft
   delete (hidden, reversible), so a restore is complete.
+- **D9** Topology: the Dreamer hosts four adaptors split by timescale —
+  Cognition (fast, writes Register and Standing, acts only by `remind`),
+  Character (slow, the culture adaptor generalised, sole writer of
+  Character), Lessons (slow, sole writer of Lessons), Assess (reports only).
+- **D10** The wake policy of [20](20-observe.md) §3: code appends a signal
+  per message and nothing else; a code evaluator wakes Cognition on the
+  first of settled, strong cue, Rollup signal, batch, max age, time or a
+  self-wake, behind a watermark and brakes; values sized from a shadow week.
+- **D11** Cognition may request, move and cancel its own next wakes
+  (`wake_at`, `wake_move`, `wake_cancel`); code surfaces a pending self-wake
+  whenever its subject changes and never cancels one itself.
+- **D12** Two layers: the adaptors are her subconscious, the speaking turns
+  her conscious; the subconscious drives the conscious, and the conscious
+  reaches the subconscious only as Record and shared state.

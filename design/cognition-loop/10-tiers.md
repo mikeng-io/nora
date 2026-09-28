@@ -25,10 +25,10 @@ word for any of these things is a defect.
 |---|---|---|---|---|
 | **Record** | *what was observed?* | messages (hers included) with their edits, deletes and reactions; her loop decisions and reminder outcomes; presence fixes and the collector's polls; social items; play samples; perceptions of media (what it shows, whose face); face labels and `character_dispute` items | **code**: ingestion ([20](20-observe.md)); the decision log and the fire path for her own acts; two tag-path recording verbs, `face_label` and `character_dispute`, each recording what one person said as an item authored by that person and citing their message | none: observed (a perception carries its model's confidence) |
 | **Rollup** | *what does the Record add up to over an interval?* | **episodes** (bounded happenings: a stay, a trip, a co-location, a face co-appearance, an outing, a play session, a person's day) and **aggregates** (counts, patterns and clusters over a window: place, rhythm, tie, play profile) | **code only**: a pure function of the Record up to a logical watermark ([25](25-rollup.md)) | **computed** |
-| **Register** | *what is the state of the unit's affairs?* | **note** (open, closes), **memo** (settled, kept), **event** (dated, attended) | cognition and the tag path, through write verbs | **told**, **deduced**, **abduced** |
-| **Character** | *what is this entity like, and how does it behave?* | one account per entity: a **person**, a **room**, the **unit**, **Nora** | cognition only | **induced** |
-| **Lessons** | *what has Nora learned about how to act here?* | per unit, **lessons**: short prescriptive lines of learned practice, each with the outcomes that taught it ([50](50-character-and-standing.md) §3) | cognition, through `lesson_write` and `lesson_retire`; the operator's rollback on the portal goes through `lesson_retire` | **induced**, from outcomes |
-| **Standing** | *where does Nora stand?* | her held position toward a **room**, the **unit**, a **person** | cognition and the tag-path debrief | **deduced**, **abduced**, **said** |
+| **Register** | *what is the state of the unit's affairs?* | **note** (open, closes), **memo** (settled, kept), **event** (dated, attended) | the Cognition adaptor and the tag path, through write verbs | **told**, **deduced**, **abduced** |
+| **Character** | *what is this entity like, and how does it behave?* | one account per entity: a **person**, a **room**, the **unit**, **Nora** | the Character adaptor only, through `character_revise` | **induced** |
+| **Lessons** | *what has Nora learned about how to act here?* | per unit, **lessons**: short prescriptive lines of learned practice, each with the outcomes that taught it ([12](12-schemas.md) §4a) | the Lessons adaptor only, through `lesson_write` and `lesson_retire`; the operator's rollback on the portal goes through `lesson_retire` | **induced**, from outcomes |
+| **Standing** | *where does Nora stand?* | her held position toward a **room**, the **unit**, a **person** | the Cognition adaptor and the tag-path debrief, through `standing_revise` | **deduced**, **abduced**, **said** |
 
 Outside the six, and not tiers:
 
@@ -38,18 +38,26 @@ Outside the six, and not tiers:
 - **Memory** — Honcho, and only Honcho: a third party's derived model of
   people. Read as a hint, never cited. `remember` still writes a person's own
   settled claim about themselves into it.
-- **Tension** — operator-only rows ([55](55-self.md) §4). Written by
-  `character_revise` and `lesson_write`, the exceptions to "one write path
+- **Tension** — operator-only rows ([55](55-self.md) §4). Written by the
+  Character and Lessons adaptors through `character_revise` and
+  `lesson_write`, the exceptions to "one write path
   per tier" (§2 rule 3). Code guarantees she never reads them: no read tool returns them, no
   block renders them, and a test pins both.
 - **Reminders** — the machinery of act: every act is a reminder row
   ([30](30-cognition.md) §2), never a tier.
 
-And one word names a process, never a store:
+And the words that name processes, never stores:
 
-- **Cognition** — the loop in [30](30-cognition.md) that reads the Record and
-  the Rollup and writes Register, Character, Lessons and Standing. There is no
-  "cognition tier".
+- **The Dreamer** — the runtime that hosts four adaptors ([00](00-intent.md)
+  §3): Cognition, Character, Lessons, Assess.
+- **Cognition** — the fast adaptor ([30](30-cognition.md)): orient, decide
+  and act in one session per unit per wake; it writes Register and Standing
+  and acts only through `remind`. There is no "cognition tier".
+- **Reflection** — what the two slow adaptors do: the Character adaptor
+  writes Character, the Lessons adaptor writes Lessons
+  ([50](50-character-and-standing.md) §6).
+- **Assess** — the adaptor that measures finished sessions; it writes reports
+  and metrics, never a tier ([30](30-cognition.md) §6).
 
 ## 2. The boundaries, as rules code enforces
 
@@ -69,7 +77,8 @@ And one word names a process, never a store:
 3. **One write path per tier.** Code writes the Record and the Rollup; the
    two recording verbs of §1 write Record items authored by a person. Only
    write verbs write Register, Character, Lessons and Standing, and each verb
-   belongs to exactly one tier. The exceptions are `character_revise` and
+   belongs to exactly one tier (the pace verbs write the signal table, no
+   tier). The exceptions are `character_revise` and
    `lesson_write`, which may also write a tension row.
 4. **Nora's own words are Record, and ground almost nothing.** Her rows
    cannot ground the Register or anyone's Character (the note brake,
@@ -230,12 +239,18 @@ survives as the word for the Character of a collective; the existing
 | **head** | the current revision of a chain: a view over it, never a row updated in place | the chain |
 | **snapshot** | an eval sandbox holding Nora as of T ([70](70-migration.md) §2) | a Honcho export |
 | **assess pass** | the measurement of finished sessions, off any live path ([30](30-cognition.md) §6) | a gate on a write |
-| **session** | one cognition run for one unit | a Honcho session (a conversation thread; always written "Honcho session") |
-| **cognition** | the loop | a tier |
-| **write verb** | a tool that writes one tier's row, validated by code before commit | an act |
-| **act verb** | `remind`: the one tool whose row leaves through the fire path | a send |
+| **session** | one run of a Dreamer adaptor for one key (a unit, or a unit and an entity); bare "session" is a Cognition session | a Honcho session (a conversation thread; always written "Honcho session") |
+| **cognition** | the fast adaptor: orient, decide, act | a tier; reflection |
+| **adaptor** | one job the Dreamer runtime hosts, with its own key, wake rule and write verbs | a unit; a platform adapter |
+| **reflection** | the slow adaptors' work: inducing Character and Lessons | cognition; a process name for the whole loop |
+| **Dreamer** | the runtime hosting the four adaptors | a tier; a background pass that never acts |
+| **write verb** | a tool that writes one tier's row, validated by code before commit; the pace verbs (`wake_at`, `wake_move`, `wake_cancel`) write the signal table instead | an act |
+| **act verb** | `remind`: the one tool whose row leaves through the fire path | a send; a self-wake |
+| **self-wake** | a `self` signal Cognition writes with `wake_at`, due when it forecasts the subject next needs a look; inward, nothing leaves ([20](20-observe.md) §3) | a reminder (outward, to a room) |
 | **reminder** | a row holding what is to be done in a room and when; every act is one | a note |
 | **brief** | what a reminder cognition writes carries: an intent (`tell` or `ask`) and the subject rows, never prose | the words she will say |
+| **subconscious** | the operator's name (潛意識) for the Dreamer's adaptors, always running underneath ([55](55-self.md) §6); not a code name | a tier; memory |
+| **conscious** | the operator's name (明意識) for the turns that speak: the tag turn and the fire turn; not a code name | a tier |
 | **tag path** | the turn a tag starts; the reflex | cognition |
 | **fire path** | `FirePath.speak` (`nora/app/fire.py`), the turn a due row starts; one of the senders of R-1b | a background session |
 | **unit** | the social unit a room belongs to (DEC-105); the key of everything derived | a Honcho named scope (how memory stores it); a "circle" |
@@ -260,8 +275,7 @@ Retired: **idea** (a proposal is a `## Proposed` line of a note, DEC-213);
 word for a conclusion; say "Record item" or "report"); **storage tier**;
 **mart** and **trace** (the operator's metaphors; "trace" is Langfuse's in
 this repo); **inferred** (replaced by the three inference modes); **community**
-(Graphiti's clustered group; rooms and units are configured); **reflection**
-as a process name (it is cognition).
+(Graphiti's clustered group; rooms and units are configured).
 
 ## 7. Where today's stores land
 

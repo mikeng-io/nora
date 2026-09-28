@@ -1,7 +1,7 @@
 ---
 type: design
-title: "Cognition — one session per unit per wake: orient, decide, act in one context"
-description: "What the session is handed (the situation and an agenda whose items each bind a room), what it holds (every permitted read, write verbs per tier, one act verb whose rows the fire path composes in the target room, a closing verb), what code enforces on every write and act and what the assess pass measures instead, skills injected by code, budgets, and what stays outside the loop."
+title: "Cognition — the fast adaptor: one session per unit per wake, orient, decide, act in one context"
+description: "The Cognition adaptor, one of the four the Dreamer hosts. What the session is handed (the situation and an agenda whose items each bind a room), what it holds (every permitted read, write verbs per tier, one act verb whose rows the fire path composes in the target room, a closing verb), what code enforces on every write and act and what the Assess adaptor measures instead, skills injected by code, budgets, and what stays outside the loop."
 tags: [nora, cognition, ooda, agent-loop, strands, write-verbs, proactive, skills]
 timestamp: '2026-09-28'
 edges:
@@ -12,9 +12,14 @@ edges:
 
 # 30 · Cognition
 
-One Strands agent session per unit per wake ([20](20-observe.md) §3). It
-orients, decides and acts in one context, so no conclusion is lost between
-steps and no state is handed from one model to another.
+The **Cognition adaptor**, the fast one of the four adaptors the Dreamer
+hosts ([00](00-intent.md) §3): one Strands agent session per unit per wake
+([20](20-observe.md) §3). It orients, decides and acts in one context, so no
+conclusion is lost between steps and no state is handed from one model to
+another. It writes the Register and Standing and acts only through
+`remind`. Character and Lessons are the slow adaptors' tiers
+([50](50-character-and-standing.md) §6): Cognition reads them and never
+writes them.
 
 ## 1. What code hands it
 
@@ -32,8 +37,7 @@ Built once per session, in code, before any model call:
   from the signals: *room R has 23 new messages*; *event E's place is named
   in 3 messages since it was set*; *a co-location of 3 members began at a
   place at 20:05*; *P's week deviates from their rhythm*; *note N's anchor
-  passed*; *4 new story frames from 2 members*; *the unit's culture was last
-  revised 6 days ago*. An item states **what happened**, never what to
+  passed*; *4 new story frames from 2 members*. An item states **what happened**, never what to
   conclude from it, and never a menu of possible actions. Code orders items
   by computed surprise ([80](80-prior-art.md) §4) and hands at most
   `max_items`; the rest wait for the next session.
@@ -67,8 +71,9 @@ versions injected, the config revision in force, and the model id and route
 | class | verbs | leaves the session how |
 |---|---|---|
 | **read** | every read tool the registry admits (`read_only_tools()`) except the live social reads ([20](20-observe.md) §2), plus the warehouse queries of [15](15-map.md) §4: `record_query`, `rollup_read`, `event_search`, `memo_read`, `character_read`, `standing_read`, `social_items` | returns into context, filtered by the item's room |
-| **write** | one family per tier: Register (`note_create`, `note_update`, `memo_write`, `memo_withdraw`, `event_propose` (status `staged` or `proposed`), `event_revise`, `event_set_status`), Character (`character_revise`), Lessons (`lesson_write`, `lesson_retire`), Standing (`standing_revise`); each takes `base_revision_id` | code validates, then commits (§3) |
+| **write** | one family per tier: Register (`note_create`, `note_update`, `memo_write`, `memo_withdraw`, `event_propose` (status `staged` or `proposed`), `event_revise`, `event_set_status`), Standing (`standing_revise`); each takes `base_revision_id`. Character's and Lessons' verbs belong to their own adaptors ([50](50-character-and-standing.md) §6) | code validates, then commits (§3) |
 | **act** | `remind(at, room, brief)`, the one act verb; `room` is the agenda item's bound room | a reminder row; the fire path composes it when due |
+| **pace** | `wake_at(at, subject_rows, why)`, `wake_move(wake_id, at, why)`, `wake_cancel(wake_id, why)` | write verbs on the unit's signal table, not a tier: a `self` signal due at `at` ([20](20-observe.md) §3); nothing leaves for a room |
 | **close** | `close(item, outcome)` | ends one agenda item |
 
 **Every act is a reminder** (DEC-162's decide/compose split, kept). Cognition
@@ -89,6 +94,21 @@ event's current revision. If cognition cancelled the event, the reminder is
 kept and fires flagged as being about a cancelled event: only the tag path
 cancels a reminder a person set. The senders stay those of R-1b: the tag
 path, the fire path and, since DEC-212, the public summons.
+
+**Self-wakes are not acts.** `remind` is outward: a message to a room, through
+the fire path. `wake_at` is inward: it asks for her own next look at the
+subject rows it names, and nothing leaves. It makes the loop self-paced:
+woken by the world and by her own forecast of when to look next. Any
+session may keep, move or cancel a pending self-wake, and code puts one on
+the agenda whenever a change or a signal touches its subject, or its subject
+is retired; code never cancels one itself ([20](20-observe.md) §3).
+
+**Which layer holds what** ([55](55-self.md) §6). The pace verbs belong to
+the subconscious only: no tag or fire turn holds them, and neither can read
+an agenda or a pending self-wake. `remind` is the bridge: Cognition holds it
+to reach the conscious layer, and the tag turn holds it for a reminder a
+person asks for. The write verbs on the Register and room Standing are held
+by both layers; that is shared state, not a command.
 
 **The grant.** The runtime's ceiling today is "may look, may not act": every
 read verb and one act verb (DEC-162). A new DEC at step 0 extends it by
@@ -116,7 +136,8 @@ mirrored to a review channel and held, as participation's shadow is
 
 The session is one agent; judging its writes is not left to it.
 
-**Enforced by code on every write, before commit.** A failure is refused with
+**Enforced by code on every write verb, whichever adaptor or turn calls it,
+before commit.** A failure is refused with
 `refused` (ADR 0009's status) and a named reason, answered to the model so it can
 rewrite, and counted by rule; never silently dropped.
 
@@ -152,22 +173,6 @@ rewrite, and counted by rule; never silently dropped.
     moves a `told` event to `cancelled`, `evicted` or `lapsed` without `told`
     evidence is written, and the event keeps rendering for 48 hours, flagged
     "cancelled?".
-
-**Enforced by code on every lesson**, on top of the above:
-
-- **A hard size cap per unit** (Hermes-style: sized from the first month,
-  around 800 tokens, never from one sample). A write that would pass it is
-  refused until the session consolidates or retires lessons.
-- **Doctrine wins.** A lesson that would loosen or contradict doctrine is
-  refused and written as a tension row instead ([55](55-self.md) §4). The
-  judgement is a separate instrument call (a model other than the session,
-  reading the lesson and the doctrine); code applies its verdict. It is a
-  model check, not a proof, so the assess pass measures it on a labelled set.
-- **The echo rule.** A lesson cites the outcomes that taught it; one resting
-  on her own words alone is refused.
-- **No approval step.** A lesson takes effect on the next turn. Every write
-  and retirement is visible to the operator on the portal, with its evidence
-  and history, and reversible by id through `lesson_retire`.
 
 **Enforced by code on every act** — the general guards, and the only ones:
 
@@ -217,10 +222,15 @@ session; `DreamGuard` holds the per-tool, memory and pass ledgers; `max_items`
 caps the agenda. A session that runs out closes nothing further; its open
 items return with a strike (§2).
 
-## 6. The assess pass and data quality
+## 6. The Assess adaptor and data quality
 
 Judging an act belongs outside it (design/dreamer-agent-loop/17-failure-classes.md
-§2). Both ship at step 3, before cut-over ([70](70-migration.md)).
+§2). The **Assess adaptor** runs after each finished session of any adaptor,
+and nightly, off every live path. It hosts the model-read measures below
+(the cheap reader, lesson drift and misevolution) and writes reports and
+metrics only: operator-only rows like tension, never a tier. The
+deterministic data-quality checks stay code. Both ship at step 3, before
+cut-over ([70](70-migration.md)).
 
 - **The strong measure is people.** A Register row a person later corrects
   ("no, we went to C"), a reminder nobody answered, a question she asked
@@ -244,6 +254,8 @@ Judging an act belongs outside it (design/dreamer-agent-loop/17-failure-classes.
   what earns engagement or flattery rather than what serves the unit (skill
   misevolution, arXiv 2608.12851), and lesson churn (writes and retirements
   per week).
+- **Self-wakes**: yield, lateness, and the share moved or cancelled before
+  due ([20](20-observe.md) §3).
 - **Cases pin a time.** An eval case names a moment T and runs against Nora
   as of T (`nora snapshot --at T`, [70](70-migration.md) §2): the stores,
   doctrine, skills, config and model route in force then, memory excepted.
@@ -259,6 +271,9 @@ Judging an act belongs outside it (design/dreamer-agent-loop/17-failure-classes.
 - **The tag path** — the reflex. It answers when called, reads what cognition
   wrote, writes through the same verbs, and its debrief keeps revising the
   room's Standing inside the reply slot, through `standing_revise`.
+- **The slow adaptors and Assess** — Character, Lessons and Assess are other
+  jobs on other timescales ([00](00-intent.md) §3,
+  [50](50-character-and-standing.md) §6). Cognition reads what they write.
 - **Participation** — deciding within seconds whether a quiet window is hers
   is too fast for a unit session. It stays as it is (off by default); a later
   step may make it a small-agenda wake of the same loop once session latency

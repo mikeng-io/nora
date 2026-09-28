@@ -108,7 +108,7 @@ A Rollup row is observed state changing, so it can wake cognition
 - Never pushed whole into a prompt. Read with `rollup_read(kind, subject,
   interval)` ([30](30-cognition.md) §2), under lineage ([10](10-tiers.md) §3).
 - `where_been` and `routine_read` (DEC-215, the rhythm's forecast) stay the
-  tag path's presence readers. For cognition only, under lineage,
+  tag path's presence readers. For the Dreamer's adaptors only, under lineage,
   `rollup_read` supersedes `where_been`'s 90-day cap (`_been_max_days`,
   `nora/agent/tools.py`, clamped again in the store,
   `nora/infra/sql/mobility.py`) and DEC-155's rule that the Dreamer is not granted
