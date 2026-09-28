@@ -54,7 +54,9 @@ WHAT IS STILL NOT BYTE-IDENTICAL, each a stated limitation of the extraction:
 - **Reply threading is FLATTENED.** `TranscriptRow.quoted_ts` names which
   earlier row a message replied to; `Message` has no quote field. Closing it
   needs a citation-style translation, a second piece of work.
-- **Only four tiers are extracted.** Reminders, note candidates and the
+- **Only four tiers are extracted** by this path. `sandbox_as_of` (step 1b)
+  restores every store as of T instead, row for row; cases have not moved
+  onto it yet. Reminders, note candidates and the
   debounce/window state tables are EMPTY in the sandbox. That is the same
   emptiness the hashed-room design had, now visible in one place; extending
   `snapshot.py` is how it closes, and `11-the-sandbox-rebuild.md` §6 R1 is
@@ -127,7 +129,7 @@ from nora.domain.media_join import MediaJoin
 from nora.domain.models import TranscriptRow
 from nora.domain.notes import Note, NoteRevision
 from nora.domain.reminders import Reminder, ReminderState
-from nora.infra.sql import create_readonly_sql_engine
+from nora.infra.sql import create_readonly_sql_engine, snapshot_at
 from nora.infra.sql.migrations_runner import (
     SourceRevisionMismatchError,
     current_revision,
@@ -137,6 +139,7 @@ from nora.infra.sql.migrations_runner import (
     sync_url_for,
 )
 from nora.infra.sql.snapshot import Snapshot, snapshot
+from nora.infra.sql.snapshot_at import SeedReport
 from nora.persons import Persons
 
 from .knowledge import Knowledge, Message, NoteSeed, ReminderSeed, know
@@ -147,7 +150,7 @@ __all__ = [
     "Sandboxed", "SharedDatabaseMutatedError", "SharedDatabaseVersions",
     "SourceRevisionMismatchError", "as_knowledge", "assert_shared_databases_unchanged",
     "close_private_blank_templates", "judge_source", "refuse_if_source_diverges_from_head",
-    "sandbox_database", "sandbox_from_snapshot", "shared_database_versions",
+    "sandbox_as_of", "sandbox_database", "sandbox_from_snapshot", "shared_database_versions",
     "sweep_stale_private_blank_templates",
 ]
 
@@ -588,6 +591,34 @@ async def sandbox_database(
                     await conn.execute(sa.text(f'DROP DATABASE IF EXISTS "{name}"'))
     finally:
         await admin.dispose()
+
+
+@contextlib.asynccontextmanager
+async def sandbox_as_of(
+    source_url: str, at: datetime, *, template: str | None = None,
+) -> AsyncGenerator[tuple[str, SeedReport]]:
+    """A fresh sandbox (`sandbox_database`) holding EVERY restorable store as
+    it stood at `at` in the source — `nora snapshot --at T`'s seeding, into
+    the per-case database the harness already clones from the blank template
+    (design/cognition-loop/70-migration.md §2, step 1b).
+
+    Unlike `sandbox_from_snapshot`, which reconstructs one room's four tiers
+    and rewrites them through the stores, this copies every row with its own
+    ids, sender ids included, so a subject composed against the result reads
+    what Nora read then. Seeded BEFORE any subject is composed against it, so
+    the target is empty (`snapshot_at.seed` refuses one that is not).
+    Memory, the Rollup, and events are not restored; `snapshot_at.EXCEPTED`
+    says why. Yields the sandbox's URL and what was copied.
+    """
+    async with sandbox_database(source_url, template=template) as url:
+        source = create_readonly_sql_engine(source_url)
+        target = create_async_engine(url)
+        try:
+            report = await snapshot_at.seed(source, target, at)
+        finally:
+            await source.dispose()
+            await target.dispose()
+        yield url, report
 
 
 def _collapse_duplicate_proactive_notes(

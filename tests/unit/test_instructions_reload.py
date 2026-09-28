@@ -245,3 +245,35 @@ def test_a_directory_that_vanishes_mid_run_keeps_the_last_good_value(corpus):
         path.unlink()
     corpus.rmdir()
     assert watcher.current() == "good"
+
+
+def test_a_load_records_the_text_it_served(corpus):
+    watcher = _watcher(corpus, lambda: "ok")
+    loaded = watcher.loaded()
+    assert loaded.files == (("a.md", "one"),)
+    assert loaded.generation == 1
+
+
+def test_a_file_vanishing_beside_a_good_scan_is_not_a_failure(corpus, monkeypatch):
+    """A pull can remove a file between the scan and the read of its text.
+    The scan was good: it is served, no reload failure is counted, and the
+    next read rescans so the load that is recorded has its files."""
+    import nora.instructions.reload as reload_module
+
+    real = reload_module.texts_under
+    calls = []
+
+    def flaky(directory, glob):
+        calls.append(1)
+        if len(calls) == 1:
+            raise FileNotFoundError("a.md went away mid-pull")
+        return real(directory, glob)
+
+    monkeypatch.setattr(reload_module, "texts_under", flaky)
+    metrics = Metrics()
+    watcher = _watcher(corpus, lambda: "ok", metrics=metrics)
+    assert watcher.current() == "ok"
+    assert watcher.failures == 0 and metrics.get(COUNTER) == 0
+    first = watcher.loaded()  # rescans: the fingerprint was left unset
+    assert first.files == (("a.md", "one"),)
+    assert first.generation == 2

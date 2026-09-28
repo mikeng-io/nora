@@ -25,6 +25,14 @@ would CALL this from) is legitimately above `nora.app` and so may reach down to
 here — the reverse would not be true. A caller that holds a composed subject
 passes its engine; nothing here needs to know that a subject exists.
 
+SINCE STEP 1b (design/cognition-loop/70-migration.md §2) every in-place
+table keeps `row_history`, and `nora.infra.sql.snapshot_at` restores EVERY
+store as of T — cancelled reminders and a note's loop state included — into
+a sandbox of its own. This module is unchanged and still what the eval
+runner's cases seed from (`nora.subject.sandbox.sandbox_from_snapshot`); the
+gaps below are this module's, and `snapshot_at` does not have them for any
+instant after migration `0068` (before it, its backfill says what is known).
+
 WHAT IT CANNOT FREEZE, stated rather than left to be discovered:
 
 - **Honcho-backed state** — the peer card, the representation, anything the

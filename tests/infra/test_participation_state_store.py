@@ -65,6 +65,9 @@ async def engine(_participation_db: str) -> AsyncIterator[Any]:
         yield eng
     finally:
         async with eng.begin() as conn:
+            # A reset, not a write: TRUNCATE is refused unless capture is off
+            # (migration 0068, nora.infra.sql.history.CAPTURE_SETTING).
+            await conn.execute(sa.text("SET LOCAL nora.row_history = 'off'"))
             await conn.execute(
                 sa.text("truncate participation_window_state, messages, message_edit")
             )

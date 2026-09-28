@@ -46,7 +46,7 @@ from ..domain.prompt import escape_attr
 from ..domain.provenance import instruction_sha256
 from ..obs.metrics import Metrics
 from .frontmatter import InstructionError, ParsedDocument, parse_document
-from .reload import DirectoryWatcher
+from .reload import DirectoryWatcher, Loaded
 
 log = logging.getLogger("nora.instructions.dreamer")
 
@@ -178,6 +178,11 @@ class DreamerInstructions:
     @property
     def reload_failures(self) -> int:
         return self._watcher.failures
+
+    def loaded(self) -> Loaded:
+        """The Dreamer's doctrine and objective files currently served and
+        when they were loaded (`nora.app.revisions` records each load)."""
+        return self._watcher.loaded()
 
     def for_objective(self, name: str) -> InstructionSet:
         """The doctrine plus one objective, assembled, hashed and versioned.

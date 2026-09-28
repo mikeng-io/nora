@@ -211,6 +211,11 @@ services:
       # build that was never tagged. `scripts/build-image.sh V3` is what stamps.
       args:
         NORA_VERSION: "${NORA_VERSION:-}"
+        # The commit and build time baked into the image for the deploy
+        # revision (Dockerfile, above `USER nora`); nora-deploy step 3 sets
+        # both on its `docker compose build nora`. Empty is recorded as such.
+        NORA_GIT_SHA: "${NORA_GIT_SHA:-}"
+        NORA_BUILT_AT: "${NORA_BUILT_AT:-}"
     image: nora:latest
     container_name: nora
     restart: unless-stopped

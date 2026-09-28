@@ -73,7 +73,12 @@ from nora.domain.models import UnattributedRow
 from nora.domain.participation_measures import Refusal
 from nora.infra.honcho import HonchoClient, WorkspaceRouter
 from nora.infra.life360 import Life360Client, Life360DiscoveryError
-from nora.infra.sql import SqlRecordStore, create_readonly_sql_engine
+from nora.infra.sql import (
+    SqlRecordStore,
+    create_readonly_sql_engine,
+    create_sql_engine,
+    snapshot_at,
+)
 from nora.infra.sql.media_objects import SqlMediaObjectStore
 from nora.infra.sql.reminders import SqlReminderStore
 from nora.obs.metrics import Metrics
@@ -192,6 +197,41 @@ def add_subcommands(
              "refusal-side measures report nothing considered",
     )
     measure_participation.set_defaults(func=cmd_measure_participation)
+
+    # `snapshot` — Nora as of T (design/cognition-loop/70-migration.md §2,
+    # step 1b). The SOURCE is only ever read, through the read-only engine
+    # every other command here uses; the one write is into `--into`, a
+    # separate empty sandbox database, and without `--into` (or with
+    # `--dry-run`) nothing is written anywhere.
+    snap = subparsers.add_parser(
+        "snapshot", parents=[parent],
+        help="every store as of T, plus the doctrine/config/deploy in force, "
+             "into an empty sandbox database (dry run without --into)",
+    )
+    snap.add_argument(
+        "--at", required=True,
+        help="the instant, ISO-8601 with an offset (2026-09-27T14:00:00+08:00) "
+             "or epoch milliseconds",
+    )
+    snap.add_argument(
+        "--source", default=None,
+        help="database to read (default: the URL in the config's database env var); "
+             "on the deploy host this is the eval clone, nora_eval",
+    )
+    snap.add_argument(
+        "--into", default=None,
+        help="an EMPTY migrated database to seed (e.g. `createdb -T nora_eval_blank X`); "
+             "omitted, the command is a dry run",
+    )
+    snap.add_argument(
+        "--files-out", type=Path, default=None,
+        help="also write the doctrine, Dreamer corpus and config files in force at T here",
+    )
+    snap.add_argument(
+        "--dry-run", action="store_true",
+        help="report what would be copied and what was in force; write nothing",
+    )
+    snap.set_defaults(func=cmd_snapshot)
 
     presence = subparsers.add_parser(
         "presence", parents=[parent], help="Life360 presence helpers",
@@ -759,6 +799,79 @@ async def _directory(
             "appear twice. Re-run once the daemon is back before pasting."
         )
     return contacts, groups, ""
+
+
+#: The earliest epoch-ms `--at` accepts, 2020-01-01T00:00:00Z. Nora's record
+#: starts years after it; a smaller number is a date typed without dashes
+#: (`20260927` is 1970 in milliseconds) and is refused, never read as 1970.
+EPOCH_MS_FLOOR = 1_577_836_800_000
+
+
+def parse_instant(text: str) -> datetime:
+    """`--at`: epoch milliseconds (from 2020 on), or ISO-8601 WITH an offset.
+    A naive time is refused: system time is an instant, and guessing the zone
+    would move the snapshot by hours without saying so."""
+    raw = text.strip()
+    if raw.isdigit():
+        if int(raw) < EPOCH_MS_FLOOR:
+            raise CliError(
+                f"--at {text!r} is before 2020 as epoch milliseconds; give "
+                "ISO-8601 with an offset (2026-09-27T14:00:00+08:00)"
+            )
+        return datetime.fromtimestamp(int(raw) / 1000, tz=UTC)
+    try:
+        at = datetime.fromisoformat(raw)
+    except ValueError as exc:
+        raise CliError(f"--at {text!r} is neither epoch ms nor ISO-8601") from exc
+    if at.tzinfo is None:
+        raise CliError(f"--at {text!r} has no offset; give one (e.g. +08:00 or Z)")
+    return at
+
+
+async def cmd_snapshot(args: argparse.Namespace) -> int:
+    """`nora snapshot --at T` — what every restorable store held at T, what
+    was in force, and what cannot be restored; with `--into`, seeded into
+    that (empty, migrated) database."""
+    at = parse_instant(str(args.at))
+    source_url = args.source or _database_url(_config(args))
+    dry = bool(args.dry_run) or (args.into is None and args.files_out is None)
+    source = create_readonly_sql_engine(source_url)
+    try:
+        try:
+            shot = await snapshot_at.plan(source, at)
+        except snapshot_at.SnapshotRefusedError as exc:
+            raise CliError(str(exc)) from exc
+        for line in snapshot_at.render_plan(shot, source=_redacted(source_url), dry_run=dry):
+            print(line)
+        forced = shot.in_force
+        unavailable = forced.missing()
+        if unavailable:
+            print(
+                "in force at T but unrecorded (a restore composes these from "
+                "today's files or not at all): " + ", ".join(unavailable)
+            )
+        if dry:
+            return 0
+        if args.files_out is not None:
+            _forced, written = await snapshot_at.materialise(source, at, Path(args.files_out))
+            print(f"wrote {len(written)} files under {args.files_out}")
+        if args.into is not None:
+            target = create_sql_engine(str(args.into))
+            try:
+                seeded = await snapshot_at.seed(source, target, at)
+            except snapshot_at.SnapshotRefusedError as exc:
+                raise CliError(str(exc)) from exc
+            finally:
+                await target.dispose()
+            print(
+                f"seeded {_redacted(str(args.into))}: {sum(seeded.copied.values())} rows "
+                f"in {len(seeded.copied)} tables, {seeded.history_rows} history rows"
+            )
+            for table, count in sorted(seeded.orphaned.items()):
+                print(f"  not copied: {count} {table} rows whose parent was not held at T")
+    finally:
+        await source.dispose()
+    return 0
 
 
 def _database_url(cfg: Config) -> str:

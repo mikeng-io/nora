@@ -138,3 +138,15 @@ def parse_document(
         meta=dict(meta),
         path=Path(path),
     )
+
+
+def texts_under(directory: Path, glob: str) -> tuple[tuple[str, str], ...]:
+    """Every file under `directory` matching `glob`, as `(path relative to
+    the directory, text)`, sorted by path. The raw bodies a load served, for
+    `nora.instructions.reload.Loaded` to hand to the revision recorder; it
+    lives here because this module is the package's one reader of
+    instruction files (`tests/test_boundaries.py`)."""
+    return tuple(sorted(
+        (str(path.relative_to(directory)), path.read_text(encoding="utf-8"))
+        for path in directory.glob(glob)
+    ))

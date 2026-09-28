@@ -43,7 +43,7 @@ from typing import Any
 
 from ..domain.prompt import escape_attr
 from ..instructions.frontmatter import parse_document
-from ..instructions.reload import DirectoryWatcher
+from ..instructions.reload import DirectoryWatcher, Loaded
 from ..obs.metrics import Metrics
 
 log = logging.getLogger("nora.doctrine")
@@ -603,6 +603,11 @@ class DoctrineStore:
         """How many live edits have been refused since startup, each of which
         left the previous good doctrine in place. Read by `/health`."""
         return self._watcher.failures
+
+    def loaded(self) -> Loaded:
+        """The doctrine files currently served and when they were loaded
+        (`nora.app.revisions` records each load)."""
+        return self._watcher.loaded()
 
     def _scan(self) -> tuple[DoctrineSection, ...]:
         # Recursive: doctrine lives in scope folders (`core/`, `rooms/`,

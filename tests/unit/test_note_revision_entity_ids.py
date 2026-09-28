@@ -60,4 +60,6 @@ async def test_a_revision_proposals_entity_ids_are_not_persisted(monkeypatch):
     assert {c.name for c in NOTE_REVISION.c} == {
         "id", "note_id", "body", "parent_revision_id", "written_at",
         "established_by", "instruction_sha256", "model",
+        # system time (migration 0068): a timestamp, which cannot hold an id
+        "recorded_at",
     }

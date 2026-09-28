@@ -329,6 +329,15 @@ versioned with them.
   a cache derivable from the chain, and no as-of read uses it. Mutable loop
   state (a note's strikes and revisit time, a reminder's status, an event's
   fields) is written as transition rows; the current value is the newest.
+- **As built (step 1b, DEC-232, amending the bullet above).** The tables
+  that changed in place STAY the live heads, updated in place as before;
+  the chain is `row_history`, written by a trigger in the same transaction
+  as each write, and no as-of read uses the head. No head was rebuilt as a
+  view: rewriting ~60 write statements and every reader to get one was the
+  cost, and the trigger gives the same as-of answer with no reader
+  changed. Versions are dated when the write ran, not when its
+  transaction committed. History capture has no flag, deliberately: a
+  switch that can turn history off defeats the restore guarantee.
 - **Authored and configured state is versioned too**: the doctrine and the
   Dreamer's objectives loaded, the skills, the three config files and the model route in force at T
   ([70](70-migration.md) §5).
