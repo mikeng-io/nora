@@ -138,6 +138,14 @@ class FakeHoncho:
     `requests` records `(method, path, workspace)` for every call, the
     workspace being the path segment after `/v3/workspaces/` (or the created
     id, for the create).
+
+    Messages and named scopes are modelled too (DEC-214), because the memory
+    backfill's safety rests on reading back what a session HOLDS: a message
+    POST into a session that does not exist is a 404, a list is paged like
+    every other list, and a session's scope memberships are recorded both
+    from `SessionCreate.scopes` and from `POST /scopes/{id}/sessions` (204,
+    404 for a session that does not exist). `fail_messages_after` makes the
+    N+1th message POST a 503 — Honcho's outage shape — and every later one.
     """
 
     def __init__(self) -> None:
@@ -146,6 +154,12 @@ class FakeHoncho:
         self.writes: dict[str, list[str]] = {}
         self.deleted: list[str] = []
         self.requests: list[tuple[str, str, str | None]] = []
+        # (workspace, session) -> the messages it holds, in arrival order.
+        self.messages: dict[tuple[str, str], list[dict]] = {}
+        # (workspace, scope) -> the sessions that are members of it.
+        self.scopes: dict[tuple[str, str], set[str]] = {}
+        self.fail_messages_after: int | None = None
+        self._message_posts = 0
         self._server: TestServer | None = None
         self.url = ""
 
@@ -220,7 +234,50 @@ class FakeHoncho:
         if rest == ["sessions"] and method == "POST":
             sid = (body or {}).get("id", "")
             sessions.setdefault(sid, {"id": sid, "is_active": True, "workspace_id": workspace})
+            for scope in (body or {}).get("scopes") or ():
+                self.scopes.setdefault((workspace, scope), set()).add(sid)
             return web.json_response(sessions[sid])
+        if rest == ["scopes"] and method == "POST":
+            scope = (body or {}).get("id", "")
+            created = (workspace, scope) not in self.scopes
+            self.scopes.setdefault((workspace, scope), set())
+            return web.json_response({"id": scope}, status=201 if created else 200)
+        if len(rest) == 3 and rest[0] == "scopes" and rest[2] == "sessions" and method == "POST":
+            wanted = (body or {}).get("session_ids") or []
+            if (workspace, rest[1]) not in self.scopes:
+                return web.json_response({"detail": "scope not found"}, status=404)
+            if any(sid not in sessions for sid in wanted):
+                return web.json_response({"detail": "session not found"}, status=404)
+            self.scopes[(workspace, rest[1])].update(wanted)
+            return web.Response(status=204)
+        if (
+            len(rest) == 3 and rest[0] == "sessions" and rest[2] == "messages"
+            and method == "POST"
+        ):
+            if rest[1] not in sessions:
+                return web.json_response({"detail": "session not found"}, status=404)
+            self._message_posts += 1
+            if (
+                self.fail_messages_after is not None
+                and self._message_posts > self.fail_messages_after
+            ):
+                return web.json_response({"detail": "unavailable"}, status=503)
+            self.writes.setdefault(workspace, []).append(f"{method} /{'/'.join(rest)}")
+            held = self.messages.setdefault((workspace, rest[1]), [])
+            for m in (body or {}).get("messages", []):
+                held.append({
+                    "id": f"m{len(held) + 1}", "content": m.get("content", ""),
+                    "peer_id": m.get("peer_id"), "session_id": rest[1],
+                    "metadata": m.get("metadata") or {},
+                })
+            return web.json_response(held[-len((body or {}).get("messages", [])):] or [])
+        if (
+            len(rest) == 4 and rest[0] == "sessions" and rest[2:] == ["messages", "list"]
+            and method == "POST"
+        ):
+            if rest[1] not in sessions:
+                return web.json_response({"detail": "session not found"}, status=404)
+            return self._page(list(self.messages.get((workspace, rest[1]), [])), request)
         if rest == ["sessions", "list"] and method == "POST":
             return self._page(list(sessions.values()), request)
         if len(rest) == 2 and rest[0] == "sessions" and method == "DELETE":

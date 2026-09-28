@@ -157,17 +157,32 @@ The most-used words in this repo, and none of them was here until 2026-09-08.
 
 - **unit** — the SOCIAL UNIT a room belongs to (DEC-105): the same
   people reachable in more than one place (a Signal group and its Discord
-  channel). Rooms sharing one share notes, memory search and relays
-  (`send_to`); rooms in different ones never do, however trusted each is.
-  Set per room in `policy.toml` (`unit = "friends"`); defaults to one unit.
+  channel). Rooms sharing one share notes, memory and relays (`send_to`);
+  rooms in different ones never do, however trusted each is. Set per room in
+  `policy.toml` (`unit = "friends"`); defaults to one unit. A unit holds AT
+  MOST ONE room per platform — refused at startup since DEC-214.
 
-  **Not Honcho's `workspace`, which is a different level.** A unit is a
-  group of people inside ONE Nora; a Honcho workspace is one whole Nora
-  (`memory.workspace_id`, shipped as `"nora"`), and it holds every unit at
-  once. Both were called "workspace" until 2026-09-19, which is how a note
-  discharge came to address a Honcho tenant named after a unit. Honcho's
-  word survives only inside `nora/infra/honcho/` — anywhere else, the word
-  in this codebase is `unit`.
+  The hierarchy is **workspace > unit > room** (DEC-214): every unit belongs
+  to one **workspace**, and inside that workspace's **Honcho workspace** each
+  unit is a Honcho *named scope* — its rooms' sessions are the scope's
+  members, and every memory read made for the unit passes the scope, so what
+  Nora recalls for a unit comes from that unit's rooms. The note discharge
+  that once addressed a Honcho workspace named after a unit (2026-09-19) is
+  why the memory port takes a unit and never a Honcho workspace id.
+
+- **workspace** — a group of UNITS, and the boundary of a person's model
+  (DEC-214). Units in one workspace share its Honcho workspace, so a person is
+  ONE Honcho peer across all of them; different workspaces are separate person
+  models entirely. Declared in `policy.toml` (`[units.friends] workspace =
+  "67"`). With no `[units]` table every unit is in one implicit workspace
+  (`default`). Not a Honcho workspace — see the next entry.
+
+- **Honcho workspace** — Honcho's tenant: where one workspace's peers,
+  sessions and conclusions live. Each workspace is bound to exactly one, in
+  `identity.toml` (`[workspaces.67] honcho_workspace = "nora"`); unbound, it
+  uses the workspace's own name; the implicit workspace uses `config.toml`'s
+  `memory.workspace_id`. The phrase is always «Honcho workspace» — a bare
+  «workspace» in this codebase means the grouping of units above.
 
 - **Standing** — Nora's held position on where a room's conversation stands:
   one paragraph per room, what she currently thinks, distinct from what was

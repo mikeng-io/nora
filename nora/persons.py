@@ -87,6 +87,13 @@ class Persons:
     # igid names a different account or none, with no error anywhere
     # (design/instagram-adoption/02).
     _instagram_igids: dict[str, frozenset[str]] = field(default_factory=dict)
+    # Nora workspace -> the Honcho workspace id it is bound to, from
+    # `[workspaces.<name>] honcho_workspace = "..."` (DEC-214). Only the
+    # bindings the operator WROTE: resolving an unbound workspace to its own
+    # name, and the implicit workspace to `memory.workspace_id`, is
+    # `nora.app.memory_routing`'s job, because it needs the policy and the
+    # config as well as this file.
+    honcho_workspaces: dict[str, str] = field(default_factory=dict)
 
     def subject_id_for(self, person_id: str) -> str:
         """The stable id to derive analytics under. Resolves a RETIRED
@@ -370,4 +377,8 @@ def load_persons(path: Path) -> Persons:
         by_person=by_person, index=index, life360=tuple(life360),
         _subject_aliases=subject_aliases, _instagram_handles=instagram_handles,
         _instagram_igids={pid: frozenset(ids) for pid, ids in instagram_igids.items()},
+        honcho_workspaces={
+            name: binding.honcho_workspace
+            for name, binding in parsed.workspaces.items()
+        },
     )

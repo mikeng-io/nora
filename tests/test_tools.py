@@ -1535,9 +1535,10 @@ class _RecordingHoncho:
         self._reachable = reachable
         self.calls: list[dict] = []
 
-    async def search(self, *, query, conversation_id=None, limit=8,
-                     workspace_id=None):
-        self.calls.append({"query": query, "conversation_id": conversation_id})
+    async def search(self, *, query, conversation_id=None, limit=8, unit=None):
+        self.calls.append({
+            "query": query, "conversation_id": conversation_id, "unit": unit,
+        })
         return MessageHits(reachable=self._reachable, hits=self._hits)
 
 
@@ -1567,8 +1568,10 @@ async def test_search_memory_workspace_filters_by_the_address_book(wiring):
     """The roster is `persons.by_person` — identity.toml's WHOLE address book,
     not one room's live view and not one unit's people (`PersonRef` has no
     unit). This pins the per-message guard only: a peer nobody can name never
-    comes back, and neither does Nora's own. **It does not pin a scope**, and
-    naming it after the unit said it did."""
+    comes back, and neither does Nora's own. It pins the ROUTE KEY the verb
+    passes (the run's unit, DEC-214), not the scope itself: that the client
+    turns a unit into Honcho's `scope` is pinned in
+    `tests/unit/test_honcho_workspaces.py`."""
     honcho = _RecordingHoncho(hits=(
         ("miles", "big walk 聽日朝早"),
         ("a_peer_nobody_mapped", "should never surface"),
@@ -1580,9 +1583,11 @@ async def test_search_memory_workspace_filters_by_the_address_book(wiring):
 
     assert out["status"] == "ok"
     assert out["results"] == [{"who": "Miles", "said": "big walk 聽日朝早"}]
-    # No room to scope to and none passed — Honcho's WORKSPACE endpoint,
-    # which is the whole deployment, every unit.
+    # No room passed — Honcho's WORKSPACE endpoint — but NARROWED to the
+    # run's unit (DEC-214): the client scopes the workspace search to that
+    # unit's named scope, so it no longer reaches every unit.
     assert honcho.calls[0]["conversation_id"] is None
+    assert honcho.calls[0]["unit"] == "ws-main"
     # The room verb's marker of a DEGRADED view has no meaning here: there is
     # no room view to degrade, so the key is absent rather than False.
     assert "partial_view" not in out

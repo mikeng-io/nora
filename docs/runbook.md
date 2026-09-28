@@ -849,6 +849,15 @@ uv run nora persons pending     # senders Nora could not map, with paste-ready s
 (`nora` is a console script declared in `pyproject.toml`; `uv run` is what puts
 it on PATH from a bare shell. `uv run python -m nora …` is identical.)
 
+**`nora memory backfill --unit <unit>`** (DEC-214) replays one unit's recorded
+human messages into that unit's own Honcho workspace — for a unit that has just
+moved to a Nora workspace of its own, whose Honcho workspace starts empty. It is
+a DRY RUN unless `--apply`; it refuses a session that already holds messages
+unless `--resume` (which skips what it holds), refuses a policy with no
+`[units]`, and refuses the unit's workspace when that is `memory.workspace_id`
+(the history is already there). It reads the record store read-only, writes
+only Honcho, and deletes nothing. `nora.app.memory_backfill` has the rest.
+
 **`nora groups`** answers "I cannot tell which group id is which". It prints
 each group's name beside the base64 `conversation_id` you need for
 `policy.toml`, marks it ALLOWED or DENIED, and emits a paste-ready

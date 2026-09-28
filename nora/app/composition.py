@@ -58,6 +58,7 @@ from nora.agent.telemetry import (
 from nora.agent.telemetry import timed as telemetry_timed
 from nora.agent.tools import OriginRoom
 from nora.agent.whereis import Circle, check_disclosure_invariant, circles_from_persons
+from nora.app.memory_routing import MemoryRoutingError, build_workspace_router
 from nora.app.summons_inbox import SummonsInbox
 from nora.app.voice_events import VoiceEventConsumer
 from nora.config import Config, DreamBudgetConfig
@@ -96,7 +97,7 @@ from nora.engagement.stages.debrief import Wiring as DebriefWiring
 from nora.infra.blobs import FilesystemBlobStore, RustfsBlobStore
 from nora.infra.blobs.cipher import BlobCipher
 from nora.infra.compute.docker_backend import LocalDockerBackend
-from nora.infra.honcho import HonchoClient, WorkspaceRouter
+from nora.infra.honcho import HonchoClient
 from nora.infra.music import YtDlpSource
 from nora.infra.sql import SqlRecordStore, create_sql_engine, run_migrations
 from nora.infra.sql.announcements import SqlAnnouncementLog
@@ -1573,20 +1574,27 @@ async def build_dependencies(
             "unless this split is intended",
             cfg.agent.name, cfg.memory.ai_peer,
         )
-    # The conversation→unit seam (design/24 §S.4). Today a router with NO
-    # overrides — every conversation resolves to the single `workspace_id`, so
-    # this changes nothing — but the multi-social-unit routing (a per-group
-    # unit from identity.toml / a future units.toml) lands here without
-    # a client refactor.
+    # workspace > unit > room (DEC-214): every Honcho call is routed from its
+    # room or unit to the Honcho workspace its Nora workspace is bound to, and
+    # to the unit's named scope inside it. Resolved ONCE, here, from the three
+    # files that each hold one part of it (`nora.app.memory_routing`); a
+    # disagreement between them refuses startup rather than guessing where a
+    # person's speech goes.
+    try:
+        router = build_workspace_router(
+            policy=allowlist, bindings=persons.honcho_workspaces,
+            default_workspace=cfg.memory.workspace_id,
+        )
+    except MemoryRoutingError as exc:
+        raise StartupError(f"memory routing error: {exc}") from exc
     memory = HonchoClient(
         cfg.memory.base_url, cfg.memory.workspace_id, ai_peer=cfg.memory.ai_peer,
-        workspace_router=WorkspaceRouter(cfg.memory.workspace_id),
+        workspace_router=router,
     )
-    await memory.ensure_workspace()          # best-effort, never fatal — no try/except
-    # The Nora aiPeer (Honcho v2, design/24): her replies feed under it to build
-    # her self-model card. Created here like the unit — best-effort, never
-    # fatal (a missing peer is auto-created on first feed anyway).
-    await memory.ensure_peer(peer_id=cfg.memory.ai_peer)
+    # Best-effort, never fatal — no try/except. Every bound Honcho workspace,
+    # the Nora aiPeer in each (her replies feed under it to build her
+    # self-model; peers are per Honcho workspace), and every unit's scope.
+    await memory.ensure_workspace()
 
     llm_state = LLMState()
     background = BackgroundTasks()

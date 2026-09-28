@@ -154,7 +154,7 @@ class _FakeMemory:
     async def ensure_workspace(self) -> None:
         return None
 
-    async def ensure_peer(self, *, peer_id: str) -> None:
+    async def ensure_peer(self, *, peer_id: str, **_route: str | None) -> None:
         self.peers.append(peer_id)
 
     async def feed(self, *, peer_id: str, text: str, conversation_id: str,
@@ -162,7 +162,7 @@ class _FakeMemory:
         self.fed.append((peer_id, text, conversation_id))
         return True
 
-    async def peer_card(self, *, peer_id: str) -> list[str]:
+    async def peer_card(self, *, peer_id: str, **_route: str | None) -> list[str]:
         return []
 
     async def health(self) -> MemoryHealth:
@@ -188,7 +188,7 @@ class _RecordingMemory(_FakeMemory):
         self.queries: list[tuple[str, str, str]] = []
 
     async def representation(
-        self, *, peer_id, search_query, max_conclusions=5, target=None,
+        self, *, peer_id, search_query, max_conclusions=5, target=None, **_route,
     ):
         observed = target if target is not None else peer_id
         self.queries.append((peer_id, observed, search_query))

@@ -359,13 +359,15 @@ async def build_handler(
     # The integration harness drives synthetic conversation ids, so its policy
     # admits any room; the room gate has its own unit tests. `persons = "*"`
     # still refuses an UNMAPPED sender, which is the behaviour these tests care
-    # about preserving.
+    # about preserving. Each room is its OWN unit: six Signal rooms in one unit
+    # breach DEC-105's one-room-per-platform rule, which `load_policy` refuses
+    # since DEC-214.
     policy_path = tmp_path / "policy.toml"
     policy_path.write_text(
         'default = "deny"\n'
         + "".join(
             f'[[conversations]]\nplatform = "signal"\nid = "{cid}"\n'
-            f'label = "{cid}"\npersons = "*"\n'
+            f'label = "{cid}"\npersons = "*"\nunit = "room-{cid}"\n'
             + (
                 # The participation occasion's room opt-in (35 §7): only present
                 # when the scenario wired a participation runner at all.

@@ -1,7 +1,9 @@
 """The operator control plane: the read-only commands (`nora groups`,
 `nora persons pending`, `nora presence members`, `nora reminders list`) and
 the config write surface (`nora config set/get/unset/validate` — see
-`nora.app.config_cli`). This module's own commands only READ.
+`nora.app.config_cli`). This module's own commands only READ the record
+store; two write elsewhere, each named where it is registered: `xai-login`
+(the host `.env`) and `memory backfill --apply` (Honcho, DEC-214).
 
 design/10 §6, plan Task 6. This answers the operator's original complaint —
 *"I CANNOT identify that group ID belongs to which group ... there is NO
@@ -47,16 +49,24 @@ from pathlib import Path
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import ArgumentError
 
+from nora.agent.egress import scan_identifiers
 from nora.app import config_cli, report
+from nora.app.memory_backfill import BackfillRefusedError, backfill_unit
+from nora.app.memory_backfill import render as render_backfill
+from nora.app.memory_routing import MemoryRoutingError, build_workspace_router
 from nora.app.participation_measures import gather as gather_measures
 from nora.app.participation_measures import measure as compute_measures
 from nora.app.pending import correlate
 from nora.config import Config, ConfigError, load
+from nora.domain.media_join import MediaJoin
 from nora.domain.models import UnattributedRow
 from nora.domain.participation_measures import Refusal
+from nora.infra.honcho import HonchoClient
 from nora.infra.life360 import Life360Client, Life360DiscoveryError
 from nora.infra.sql import SqlRecordStore, create_readonly_sql_engine
+from nora.infra.sql.media_objects import SqlMediaObjectStore
 from nora.infra.sql.reminders import SqlReminderStore
+from nora.obs.metrics import Metrics
 from nora.persons import Persons, PersonsError, load_persons
 from nora.platform.signal import directory
 from nora.policy import Policy, PolicyError, load_policy
@@ -182,6 +192,29 @@ def add_subcommands(
         help="list your Life360 circles + members (id + name) to paste into identity.toml",
     )
     members.set_defaults(func=cmd_presence_members)
+
+    # `memory backfill` (DEC-214): the second command here that WRITES, and
+    # like `xai-login` it writes nowhere this module's read-only guarantee
+    # covers — the record store is still opened read-only; what it writes
+    # is Honcho, and only with `--apply`. See `nora.app.memory_backfill`.
+    memory = subparsers.add_parser(
+        "memory", parents=[parent], help="Honcho memory maintenance (operator only)",
+    )
+    memory_sub = memory.add_subparsers(dest="memory_command", required=True)
+    backfill = memory_sub.add_parser(
+        "backfill", parents=[parent],
+        help="replay one unit's recorded human messages into its own Honcho "
+             "workspace (a dry run unless --apply)",
+    )
+    backfill.add_argument("--unit", required=True, help="the unit to replay")
+    backfill.add_argument(
+        "--apply", action="store_true", help="write; without it nothing is fed",
+    )
+    backfill.add_argument(
+        "--resume", action="store_true",
+        help="allow sessions that already hold messages, skipping what they hold",
+    )
+    backfill.set_defaults(func=cmd_memory_backfill)
 
     # `config` — the operator's safe config mutation surface (deploy
     # convention §4.5). See config_cli.py for the atomic-write and
@@ -417,6 +450,57 @@ async def cmd_reminders_list(args: argparse.Namespace) -> int:
     ):
         print(line)
     return 0
+
+
+async def cmd_memory_backfill(args: argparse.Namespace) -> int:
+    """`nora memory backfill --unit <unit> [--apply] [--resume]` (DEC-214).
+
+    The record store is opened READ-ONLY (`readonly_store`), exactly as the
+    other commands here open it; the only writes are Honcho feeds, and only
+    under `--apply`. The router is the one the daemon builds, from the same
+    three files, so the backfill writes where live ingestion writes."""
+    cfg = _config(args)
+    policy = _policy(cfg)
+    persons = _persons(cfg)
+    try:
+        router = build_workspace_router(
+            policy=policy, bindings=persons.honcho_workspaces,
+            default_workspace=cfg.memory.workspace_id,
+        )
+    except MemoryRoutingError as exc:
+        raise CliError(f"memory routing error: {exc}") from exc
+    memory = HonchoClient(
+        cfg.memory.base_url, cfg.memory.workspace_id, ai_peer=cfg.memory.ai_peer,
+        workspace_router=router,
+    )
+    url = _database_url(cfg)
+    store = readonly_store(url)
+    media_engine = create_readonly_sql_engine(url)
+    # The daemon's media join, over a read-only engine: what a photo showed
+    # rides in the replayed row, as it does in lazy adoption's.
+    media_join = MediaJoin(
+        store=SqlMediaObjectStore(media_engine), screen=scan_identifiers,
+        metrics=Metrics(), render_chars=cfg.media.comprehension_render_chars,
+        timeout_seconds=cfg.media.join_timeout_seconds,
+    )
+    try:
+        if args.apply:
+            await memory.ensure_workspace()
+        result = await backfill_unit(
+            unit=args.unit, policy=policy, persons=persons, router=router,
+            records=store, memory=memory, default_workspace=cfg.memory.workspace_id,
+            media_join=media_join,
+            apply=bool(args.apply), resume=bool(args.resume),
+        )
+    except BackfillRefusedError as exc:
+        raise CliError(str(exc)) from exc
+    finally:
+        await store.aclose()
+        await media_engine.dispose()
+        await memory.aclose()
+    for line in render_backfill(result):
+        print(line)
+    return 1 if result.failed else 0
 
 
 async def cmd_measure_participation(args: argparse.Namespace) -> int:

@@ -1,0 +1,15 @@
+{
+  "type": "change",
+  "summary": "Groups can now be kept in separate memory workspaces: what Nora remembers about people in one workspace's groups is built only from those groups, and within a workspace each group's recall draws on that group's own chats.",
+  "details": [
+    "policy.toml can put each group (unit) in a workspace with a [units] table, and identity.toml says which Honcho workspace each workspace's memories live in; with no [units] table everything works exactly as before.",
+    "A group may have at most one room per platform; a policy that gives a group two rooms on the same platform now refuses to start.",
+    "Memory reads for a room or group now use that group's own Honcho scope, and anything Nora is asked to remember is written where those reads look.",
+    "New operator command `nora memory backfill --unit <unit>` replays a group's recorded messages into its own workspace (a dry run unless --apply)."
+  ],
+  "limitations": [
+    "Right after a group moves into a scope, recall starts from the facts people stated directly; deeper conclusions come back as Honcho re-derives them.",
+    "Facts saved with `remember` before this change are not in any group's scope, so a group's recall no longer sees them.",
+    "Once [units] is set, the web portal's memory page shows nothing until someone decides which workspace it should show for a person in several."
+  ]
+}

@@ -61,6 +61,14 @@ async def build_memory_payload(
     if ref is None:
         return []
 
+    # UNROUTED, on purpose (DEC-214). The showcase is keyed on a PERSON, and a
+    # person can belong to units in more than one Nora workspace — each its own
+    # Honcho workspace, with its own model of them. Which of those this page
+    # shows is a product decision nobody has made, so it names no room and no
+    # unit: without `[units]` that is the one implicit workspace, exactly as
+    # before; with `[units]` the client refuses it (`reachable=False`) rather
+    # than picking a workspace and showing one group's model of a person as
+    # though it were the only one.
     recall = await honcho.representation(
         peer_id=ai_peer, target=person_id, search_query="",
         max_conclusions=_MAX_CONCLUSIONS,

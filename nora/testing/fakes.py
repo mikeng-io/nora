@@ -471,12 +471,23 @@ class FakeMemoryStore:
         # peer is a memory about nobody, which is the exact bug the `remember`
         # lane's identity refusal exists to prevent.
         self.writes: list[tuple[str, str, str]] = []
+        # (verb, conversation_id, unit) for every routed call — the ROUTE key
+        # each call carried (DEC-214). The real client sends a call for a room
+        # or unit to that unit's Honcho workspace and scope; a caller that
+        # forgets the key reads the wrong workspace (or, with `[units]`,
+        # none), so a test of a caller asserts the key here, not just the
+        # payload.
+        self.routes: list[tuple[str, str | None, str | None]] = []
         self.fail = fail
 
     async def ensure_workspace(self) -> None:
         return None
 
-    async def ensure_peer(self, *, peer_id: str) -> None:
+    async def ensure_peer(
+        self, *, peer_id: str, conversation_id: str | None = None,
+        unit: str | None = None,
+    ) -> None:
+        self.routes.append(("ensure_peer", conversation_id, unit))
         if not self.fail:
             self.peers.append(peer_id)
 
@@ -495,7 +506,7 @@ class FakeMemoryStore:
 
     async def conclude(
         self, *, peer_id: str, content: str, target: str,
-        workspace_id: str | None = None,
+        conversation_id: str | None = None, unit: str | None = None,
     ) -> bool:
         """Mirrors `HonchoClient.conclude` — the conclusion WRITE lane behind
         the `remember` tool, keyword-only exactly like the port.
@@ -508,20 +519,26 @@ class FakeMemoryStore:
         remember→about loop, closed in memory, which is the whole point of the
         write lane and the reason it must not write anywhere the readers
         cannot see."""
+        self.routes.append(("conclude", conversation_id, unit))
         if self.fail:
             return False
         self.writes.append((peer_id, target, content))
         self.conclusions.setdefault(target, []).append(content)
         return True
 
-    async def peer_card(self, *, peer_id: str) -> list[str]:
+    async def peer_card(
+        self, *, peer_id: str, conversation_id: str | None = None,
+        unit: str | None = None,
+    ) -> list[str]:
+        self.routes.append(("peer_card", conversation_id, unit))
         if self.fail:
             return []
         return list(self.cards.get(peer_id, []))
 
     async def representation(
         self, *, peer_id: str, search_query: str, max_conclusions: int = 5,
-        target: str | None = None,
+        target: str | None = None, conversation_id: str | None = None,
+        unit: str | None = None,
     ) -> Recollection:
         """Mirrors `HonchoClient.representation`, INCLUDING the shape it
         returns for a peer it has never heard of.
@@ -541,6 +558,7 @@ class FakeMemoryStore:
         how `peer_card` shipped dead.
         """
         observed = target if target is not None else peer_id
+        self.routes.append(("representation", conversation_id, unit))
         self.queries.append((peer_id, observed, search_query))
         if self.fail:
             return Recollection(reachable=False)
@@ -551,13 +569,15 @@ class FakeMemoryStore:
 
     async def chat(
         self, *, peer_id: str, query: str, reasoning_level: str = "low",
-        target: str | None = None,
+        target: str | None = None, conversation_id: str | None = None,
+        unit: str | None = None,
     ) -> str | None:
         """Mirrors `HonchoClient.chat` — the dialectic verb. Synthesises a stand-in
         answer from the observed peer's conclusions (`target or peer_id`), so a
         test that seeds conclusions gets a non-None reasoned string and an unseeded
         peer gets None (the honest «nothing to say»). `fail=True` → None."""
         observed = target if target is not None else peer_id
+        self.routes.append(("chat", conversation_id, unit))
         self.chats.append((peer_id, observed, query, reasoning_level))
         if self.fail:
             return None
@@ -568,13 +588,14 @@ class FakeMemoryStore:
 
     async def search(
         self, *, query: str, conversation_id: str | None = None,
-        limit: int = 8, workspace_id: str | None = None,
+        limit: int = 8, unit: str | None = None,
     ) -> MessageHits:
         """Mirrors `HonchoClient.search`, INCLUDING its failure shape: a
         `fail=True` adapter is UNREACHABLE, not empty. Returning `[]` for both —
         which this did — is a fake that answers every request the same way, and
         it is why `search_memory` reported a Honcho outage as «nothing was said
         here» with no test catching it."""
+        self.routes.append(("search", conversation_id, unit))
         self.searches.append(query)
         if self.fail:
             return MessageHits(reachable=False)
