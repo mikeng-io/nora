@@ -11,7 +11,8 @@ import asyncio
 import hashlib
 import logging
 import re
-from collections.abc import Mapping
+import time
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, cast
@@ -237,6 +238,9 @@ SCOPE_PEER_PREFIX = "scope."
 #: nothing about who a workspace belongs to. See `HonchoClient._owned`.
 OWNER_KEY = "nora_owner"
 
+#: How long a failed scope-member list is remembered before it is asked again.
+_MEMBER_LIST_RETRY_SECONDS = 60
+
 #: Honcho's scope-id alphabet (`^[a-zA-Z0-9_-]+$`, at most 506 characters;
 #: docs/v3/documentation/features/advanced/scopes.mdx, "Limits").
 _SCOPE_ID_OK = re.compile(r"^[a-zA-Z0-9_-]+$")
@@ -400,6 +404,7 @@ class HonchoClient:
         card_timeout: float = 3.0,
         representation_timeout: float = 3.0,
         chat_timeout: float = 25.0,
+        clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self._base = base_url.rstrip("/")
         # Every call is ROUTED (DEC-214): conversation or unit -> the Honcho
@@ -430,6 +435,9 @@ class HonchoClient:
         # deliberately larger than every other Honcho timeout, and it is why chat
         # is NOT an eager in-turn tool yet: 19 s blows the p95≤5s SLO.
         self._chat_timeout = chat_timeout
+        # Seconds, monotonic: only the scope-member list's negative cache
+        # reads it (`_scope_members`).
+        self._clock = clock
         # Honcho workspaces already ensured. A SET since DEC-214: one process
         # reaches one Honcho workspace per Nora workspace.
         self._workspaces_ready: set[str] = set()
@@ -454,8 +462,11 @@ class HonchoClient:
         self._ownership: dict[str, bool] = {}
         self._scoped_sessions: set[tuple[str, str, str]] = set()
         # (honcho workspace, scope) -> its member session ids, listed once
-        # per process (`_scope_members`) so a join never re-adds a member.
+        # per process (`_scope_members`) so a join never re-adds a member;
+        # and when a list last FAILED, so a Honcho that cannot answer is asked
+        # again after `_MEMBER_LIST_RETRY_SECONDS`, not on every message.
         self._members: dict[tuple[str, str], set[str]] = {}
+        self._members_failed_at: dict[tuple[str, str], float] = {}
         # One asyncio.Lock per peer id, not one global lock — different peers must
         # still proceed concurrently. Shared between ensure_peer and ensure_session:
         # both are check-then-act over per-peer state, and person-centric identity
@@ -829,55 +840,69 @@ class HonchoClient:
         (`POST /scopes/{scope}/sessions/list`, paged, once per scope per
         process) and only a session missing from it is added. A list that
         fails means the join is SKIPPED, logged, and tried again on a later
-        call — never an add made blind. This route also 404s on a Honcho with
-        no scopes, so a server that ignored scopes entirely still shows here."""
+        call — never an add made blind. The scope is ensured first, and the
+        check-and-add holds a per-session lock. This route also 404s on a
+        Honcho with no scopes, so a server that ignored scopes entirely still
+        shows here."""
         if route.scope is None:
             return
         key = (route.workspace, route.scope, session_id)
         if key in self._scoped_sessions:
             return
-        members = await self._scope_members(route.workspace, route.scope)
-        if members is None:
-            log.warning(
-                "could not list the members of scope %r in %r; not joining %s "
-                "this time rather than re-adding it blind",
-                route.scope, route.workspace, session_id,
-            )
+        # The scope itself first (cached): the session create no longer names
+        # it, so this is the only place a scope missing after a Honcho-down
+        # startup gets created — for a room that has only ever listened, too.
+        if not await self._ensure_scope(route):
             return
-        if session_id in members:
+        # ONE check-then-add per session: the startup gather and a room's first
+        # message can reach here together, and two adds are two backfills.
+        async with self._peer_lock(f"join:{route.workspace}:{route.scope}:{session_id}"):
+            if key in self._scoped_sessions:
+                return
+            members = await self._scope_members(route.workspace, route.scope)
+            if members is None:
+                return          # logged once per retry window by `_scope_members`
+            if session_id in members:
+                self._scoped_sessions.add(key)
+                return
+            # 204 with no body on success; `_post` would read that as a
+            # failure, so this call parses its own status.
+            url = self._url(f"/scopes/{route.scope}/sessions", workspace=route.workspace)
+            try:
+                async with (
+                    aiohttp.ClientSession(
+                        timeout=aiohttp.ClientTimeout(total=self._feed_timeout)
+                    ) as session,
+                    session.post(url, json={"session_ids": [session_id]}) as r,
+                ):
+                    if r.status == 404 and missing_ok:
+                        return          # no such session in this workspace yet
+                    if r.status >= 400:
+                        log.warning("honcho POST %s -> %s", url, r.status)
+                        return
+            except Exception as e:  # noqa: BLE001 — Honcho is never load-bearing
+                log.warning("honcho POST %s failed: %s", url, e)
+                return
             self._scoped_sessions.add(key)
-            return
-        # 204 with no body on success; `_post` would read that as a failure,
-        # so this call parses its own status.
-        url = self._url(f"/scopes/{route.scope}/sessions", workspace=route.workspace)
-        try:
-            async with (
-                aiohttp.ClientSession(
-                    timeout=aiohttp.ClientTimeout(total=self._feed_timeout)
-                ) as session,
-                session.post(url, json={"session_ids": [session_id]}) as r,
-            ):
-                if r.status == 404 and missing_ok:
-                    return          # no such session in this workspace yet
-                if r.status >= 400:
-                    log.warning("honcho POST %s -> %s", url, r.status)
-                    return
-        except Exception as e:  # noqa: BLE001 — Honcho is never load-bearing
-            log.warning("honcho POST %s failed: %s", url, e)
-            return
-        members.add(session_id)
-        self._scoped_sessions.add(key)
 
     async def _scope_members(self, workspace: str, scope: str) -> set[str] | None:
-        """The scope's member session ids, listed once per process and then
-        kept current by `_join_scope`'s own adds; `None` when unreadable (not
-        cached, so a later call lists again)."""
+        """The scope's member session ids as listed ONCE per process — every
+        page. A session this process adds afterwards is recorded in
+        `_scoped_sessions`, not here, and `_join_scope` checks that first.
+
+        `None` when the list could not be read. That is remembered for
+        `_MEMBER_LIST_RETRY_SECONDS`: until then every join to this scope is
+        skipped without asking again (a Honcho that is down would otherwise be
+        asked on every message), and the failure is logged once per window."""
         key = (workspace, scope)
         lock = self._peer_lock(f"scope-members:{workspace}:{scope}")
         async with lock:
             cached = self._members.get(key)
             if cached is not None:
                 return cached
+            failed_at = self._members_failed_at.get(key)
+            if failed_at is not None and self._clock() - failed_at < _MEMBER_LIST_RETRY_SECONDS:
+                return None
             found: set[str] = set()
             page = 1
             while True:
@@ -890,6 +915,12 @@ class HonchoClient:
                 )
                 items = (body or {}).get("items")
                 if not isinstance(items, list):
+                    self._members_failed_at[key] = self._clock()
+                    log.warning(
+                        "could not list the members of scope %r in %r; no session "
+                        "joins it for %ds rather than being added blind",
+                        scope, workspace, _MEMBER_LIST_RETRY_SECONDS,
+                    )
                     return None
                 found.update(
                     str(i["id"]) for i in items if isinstance(i, dict) and "id" in i
@@ -899,6 +930,7 @@ class HonchoClient:
                     break
                 page += 1
             self._members[key] = found
+            self._members_failed_at.pop(key, None)
             return found
 
     async def ensure_session(self, conversation_id: str) -> str | None:

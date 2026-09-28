@@ -4,7 +4,7 @@
   "details": [
     "Honcho re-copies a chat's history into a scope, and schedules extra model work, every time the chat is added, even when it already belongs there; Nora re-added every known chat on each start (two to three times a day).",
     "Nora now reads each scope's members first and adds only the chats that are missing, and new chats are created without the scope and then added while still empty.",
-    "If the member list cannot be read, the chat is not added on that start and is tried again later, rather than added blind."
+    "If the member list cannot be read, no chat is added to that scope and the list is asked for again a minute later, rather than chats being added blind."
   ],
   "limitations": [
     "A chat that has never had a Honcho session is still offered to its scope once per start; Honcho refuses it without doing any work."

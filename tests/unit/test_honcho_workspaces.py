@@ -470,16 +470,94 @@ async def test_a_session_that_is_not_a_member_is_added(honcho):
 
 
 async def test_an_unreadable_member_list_skips_the_join_instead_of_adding_blind(honcho):
+    """A failed list adds nothing, is not asked again on every message, and is
+    asked again once the retry window has passed."""
     await _room_with_history(honcho, "g-friends")
     honcho.scopes[("nora", "friends")].clear()
     honcho.scope_backfills.clear()
     honcho.fail_member_lists = True
+    now = [1000.0]
 
-    restarted = _client(honcho.url)
+    restarted = HonchoClient(honcho.url, "nora", clock=lambda: now[0], workspace_router=(
+        WorkspaceRouter("nora", unit_workspaces=_UNITS, conversation_units=_ROOMS,
+                        strict=True)
+    ))
     await restarted.ensure_workspace()
     assert honcho.scope_backfills == []
     assert _session("g-friends") not in honcho.scopes[("nora", "friends")]
 
-    honcho.fail_member_lists = False       # a later call lists again, then joins
+    honcho.fail_member_lists = False
+    honcho.requests.clear()
+    now[0] += 30                           # inside the window: not asked again
     await restarted.feed(peer_id="jordan", text="again", conversation_id="g-friends")
+    assert not [r for r in honcho.requests if r[1].endswith("/scopes/friends/sessions/list")]
+    assert _session("g-friends") not in honcho.scopes[("nora", "friends")]
+
+    now[0] += 31                           # past it: listed again, then joined
+    await restarted.feed(peer_id="jordan", text="later", conversation_id="g-friends")
     assert _session("g-friends") in honcho.scopes[("nora", "friends")]
+    assert honcho.scope_backfills == [("nora", "friends", _session("g-friends"))]
+
+
+async def test_a_scope_missing_at_the_first_message_is_created_then_joined(honcho):
+    """A Honcho that was down at startup left the scope uncreated, and the
+    session create no longer names scopes: the join creates it first."""
+    client = _client(honcho.url)
+    await client.ensure_workspace()
+    del honcho.scopes[("nora", "friends")]
+    fresh = _client(honcho.url)
+    fresh._workspaces_ready = set(client._workspaces_ready)   # skip startup: Honcho was down
+    assert await fresh.feed(peer_id="jordan", text="hi", conversation_id="g-friends")
+    assert honcho.scopes[("nora", "friends")] == {_session("g-friends")}
+
+
+async def test_every_page_of_the_member_list_is_read(honcho):
+    """Past one page (Honcho pages at most 100): a member on page 2 is still a
+    member, and must not be re-added (a re-add is a paid backfill)."""
+    await _room_with_history(honcho, "g-friends")
+    fillers = {f"a-filler-{i:04d}" for i in range(150)}      # sort BEFORE ours
+    honcho.scopes[("nora", "friends")] |= fillers
+    honcho.scope_backfills.clear()
+    honcho.requests.clear()
+
+    restarted = _client(honcho.url)
+    await restarted.ensure_workspace()
+    await restarted.feed(peer_id="jordan", text="again", conversation_id="g-friends")
+    assert honcho.scope_backfills == []
+    assert not [r for r in honcho.requests
+                if r[0] == "POST" and r[1].endswith("/scopes/friends/sessions")]
+
+
+async def test_a_scope_is_listed_once_per_process_for_all_its_rooms(honcho):
+    """Two rooms in one unit: one member list, not one per room."""
+    rooms = {"g-friends": "friends", "g-friends-discord": "friends"}
+    client = HonchoClient(honcho.url, "nora", workspace_router=WorkspaceRouter(
+        "nora", unit_workspaces={"friends": "nora"}, conversation_units=rooms, strict=True,
+    ))
+    await client.ensure_workspace()
+    for cid in rooms:
+        assert await client.feed(peer_id="jordan", text="hi", conversation_id=cid)
+    lists = [r for r in honcho.requests if r[1].endswith("/scopes/friends/sessions/list")]
+    assert len(lists) == 1
+    assert honcho.scopes[("nora", "friends")] == {_session(c) for c in rooms}
+
+
+async def test_two_concurrent_joins_of_one_session_add_it_once(honcho):
+    """The startup gather and a room's first message can join the same session
+    at the same moment; the per-session lock makes it one add, one backfill."""
+    import asyncio
+
+    await _room_with_history(honcho, "g-friends")
+    client = _client(honcho.url)
+    await client.ensure_workspace()
+    # The room is NOT a member again, and this client has cached nothing.
+    honcho.scopes[("nora", "friends")].clear()
+    honcho.scope_backfills.clear()
+    client._scoped_sessions.clear()
+    client._members.clear()
+    route = client._router.for_conversation("g-friends")
+    assert route is not None
+    await asyncio.gather(*(
+        client._join_scope(route, _session("g-friends")) for _ in range(2)
+    ))
+    assert honcho.scope_backfills == [("nora", "friends", _session("g-friends"))]
