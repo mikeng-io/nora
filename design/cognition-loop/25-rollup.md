@@ -73,7 +73,7 @@ prose, fully deterministic. This node generalises it to every stream.
 | **outing** | where have we been together, how often? | (unit, place, interval) | co-locations of ≥ 2 members away from any member's home | new |
 | **play session** | who played what, with whom, when? | (unit, game, interval) | play samples (§6) | new |
 | **daybook** | what did X do on day D? | (unit, person, local date) | that day's stays, co-locations, outings, play sessions, rooms active in, social items posted | new |
-| **response** | how did people respond to something she sent? | (unit, her send's Record id) | replies, reactions and edits to that send within `response_window_seconds` (starting at 3600 s); `silent` when a send made from an `ask` brief, or one naming a person, got nothing within the window | new; the outcomes the Lessons adaptor and Character · Nora read |
+| **response** | how did people respond to something she sent? | (unit, her send's Record id) | replies, reactions and edits to that send within `response_window_seconds` (starting at 3600 s); `silent` when a send whose Record row carries the `ask` intent of its brief, or one naming a person, got nothing within the window | new; the outcomes the Lessons adaptor and Character · Nora read |
 
 **Aggregates** — counts, patterns and clusters over a window.
 

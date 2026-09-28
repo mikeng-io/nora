@@ -99,7 +99,7 @@ path, the fire path and, since DEC-212, the public summons.
 **Self-wakes are not acts** ([20](20-observe.md) §3 defines the pace verbs,
 their guards and their surfacing).
 
-**Which layer holds what** ([55](55-self.md) §6). The pace verbs belong to
+**Which layer holds what** ([55](55-self.md) §6). The pace verbs and `remind_move`/`remind_cancel` belong to
 the subconscious only: no tag or fire turn holds them, and neither can read
 an agenda or a pending self-wake. `remind` is the bridge: Cognition holds it
 to reach the conscious layer, and the tag turn holds it for a reminder a
@@ -108,8 +108,9 @@ by both layers; that is shared state, not a command.
 
 **The grant.** The runtime's ceiling today is "may look, may not act": every
 read verb and one act verb (DEC-162). A new DEC at step 0 extends it by
-granting named **write** verbs through `AdaptorGrant`; write verbs are not act
-verbs, and `remind` stays the only act verb.
+granting named **write** verbs through `AdaptorGrant` (write verbs are not act
+verbs), and `remind_move`/`remind_cancel` by name for reminders Cognition
+wrote; `remind` stays the only verb that sends.
 
 **Closing.** An item closes only with a write that cites it, or with a reason
 from a closed list (`no_change`, `waiting`, `covered`), counted per reason. An

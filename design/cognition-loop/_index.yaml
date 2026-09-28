@@ -63,7 +63,7 @@ origin: >
   specialist agents), which the operator's single-agent argument replaced.
   Revised the same day after four independent audits (architecture,
   terminology, grounding, privacy); the operator's decisions D1–D12 are in
-  00-intent and 70-migration.
+  00-intent.
 members:
   - 00-intent.md
   - 10-tiers.md

@@ -43,7 +43,7 @@ Each step ships alone, behind a flag that defaults off, and is read back live
 
 | # | step | ships | the reading that gates the next |
 |---|---|---|---|
-| 0 | **Tiers, words, grants** | a DEC for [10](10-tiers.md), [12](12-schemas.md), [15](15-map.md); a DEC granting the named write verbs through `AdaptorGrant` (write verbs are not act verbs); each amendment of §3 as a decision row, and index rows for R-31 and DEC-176, which have none; the unit read boundary settled (§4); GLOSSARY rewritten to [10](10-tiers.md)'s words, resolving the conflicts below | — |
+| 0 | **Tiers, words, grants** | a DEC for [10](10-tiers.md), [12](12-schemas.md), [15](15-map.md); a DEC granting the named write verbs through `AdaptorGrant` (write verbs are not act verbs) and `remind_move`/`remind_cancel` for Cognition's own reminders; each amendment of §3 as a decision row, and index rows for R-31 and DEC-176, which have none; the unit read boundary settled (§4); GLOSSARY rewritten to [10](10-tiers.md)'s words, resolving the conflicts below | — |
 | 1 | **Signals, shadow** | the durable `signal` table, the ingest signal stage, cues, the pending set, wake metrics; the wake evaluator in shadow (it logs each would-wake and its reason and fires nothing); reactions, edits and deletes or unsends ingested as items; collector polls and platform adapter health recorded; the clocks still run everything | a week of would-wakes and reasons; every wake value of [20](20-observe.md) §3 sized from it |
 | 1b | **History and snapshot** | the append-only migration of every table in §5's inventory except the rows marked 2 or 2b, which migrate at those steps (system time, heads as views, loop state as transition rows); doctrine, Dreamer-objective, config and deploy revisions recorded at load (§5); `nora snapshot --at T` (below) | a test writes, revises and retires across every store migrated here, then snapshots at two moments and gets exactly what was held at each; a recorded tag turn's blocks, rendered from a snapshot at its moment, equal the blocks its Langfuse trace recorded, with memory and the Live blocks (`tool_catalogue`, her platform presence, now) excepted and the transcript rendered through the media join as of T |
 | 2 | **Rollup and lineage** | the Rollup as a projection (logical watermark, `build`, citation by overlap), design 27's presence rollup moved onto the watermark; co-location, outing; daybook and tie partial ([25](25-rollup.md) §3); the [10](10-tiers.md) §3 columns, every lineage kind and its per-room predicate; the lineage backfill, then the filter; the `citation` edge table; `rollup_read`, `record_query`; wake defaults re-sized with Rollup signals | incremental and batch builds of each rollup agree exactly; no row with unknown lineage renders outside its origin room; a presence-lineaged field is refused in a room without the location flag and in one where DisclosureGuard fails |
@@ -65,8 +65,8 @@ loop columns as they are now (its own docstring and `nora/subject/sandbox.py`
 list the gaps), to every store's as-of-T view, and seeds the per-case sandbox
 database `nora/subject/sandbox.py` already clones from the blank template.
 It adds the doctrine, skills, config and model route in force at T, and the
-Rollup at T (rebuilt at watermark T once step 2 makes it replayable; read
-from the stored builds before then). A case pins T and replays a wake or a turn against Nora-at-T. **Memory is the
+Rollup at T (rebuilt at watermark T once step 2 makes it replayable; before
+step 2 the Rollup at T is not reconstructable, and the snapshot says so). A case pins T and replays a wake or a turn against Nora-at-T. **Memory is the
 exception**: Honcho cannot be restored to T; the case runs on its own empty
 Honcho workspace (`nora/subject/memory_workspace.py`, one per draw) and either
 seeds memory explicitly or declares itself memory-free.
@@ -108,8 +108,9 @@ this revision; this bundle does not edit GLOSSARY):
 
 - **Design 39 and DEC-162** as a separate adaptor: its decide and act turns
   become cognition's act step. What survives of DEC-162: the home room (39
-  D2), generalised to each agenda item's bound room; the decide/compose split, the per-room `proactive` flag, cancellation
-  only by a tag-path revision (D11), silent recorded as done, the pending
+  D2), generalised to each agenda item's bound room; the decide/compose split, the per-room `proactive` flag, D11's screening (a row
+  whose subject was retired or revised on the tag path is cancelled when
+  claimed; Cognition may also move or cancel its own rows, [30](30-cognition.md) §2), silent recorded as done, the pending
   ceiling (D5), strikes.
 - **The 2026-09-24 story rule** (design/instagram-adoption/18-instagram-read-and-search.md):
   stories are read by ingestion.
@@ -303,7 +304,7 @@ step's PR:
 
 - `nora_cognition_item_total{kind,reason}`;
   `nora_cognition_corrected_total{tier}`; refusals by rule,
-  `nora_cognition_refused_total{verb,rule}`; acts by outcome;
+  `nora_cognition_refused_total{verb,rule}`; acts by result;
   `nora_cognition_unit_tokens_total{unit}`; the signal metrics of
   [20](20-observe.md) §4; `nora_dq_failures_total{check}`;
   `nora_face_match_total{outcome}`; `nora_self_tension_total{doctrine_file}`;
@@ -315,17 +316,7 @@ step's PR:
 ## Status / Checkpoint
 
 **2026-09-28 — proposed; revised the same day after four independent audits
-(architecture, terminology, grounding, privacy).** Operator confirmed: one
-agent for orient, decide and act; events unit-wide and derived, cognition may
-revise, confirm and cancel; no new statuses; stories, posts, reels and the
-social stream ingested; faces now; passwords may be kept in memos; culture is
-the Character of a collective; doctrine is law she never changes, in whole
-or in part, and changes only when the humans all agree; her growth lives only
-in her own blocks, below the doctrine, with any disagreement recorded as
-tension for the operator; every Register, Character, Lessons and Standing row
-is schema'd Markdown in a revision chain, and the Rollup is typed and rebuilt
-into versioned builds.
-The operator's decisions D1–D12 are listed once, in [00](00-intent.md)'s
+(architecture, terminology, grounding, privacy).** The operator's decisions D1–D12 are listed once, in [00](00-intent.md)'s
 Status.
 
 Nothing is built.
