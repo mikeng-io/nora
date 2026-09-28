@@ -99,6 +99,26 @@ HISTORY_TABLES: dict[str, tuple[str, ...]] = {
     # `messages`, `message_edit`'s case exactly.
     "message_reaction": ("id",),
     "message_delete": ("id",),
+    # Step 2 (0070): the Rollup as versioned builds. A build's rows are
+    # written by its fold and changed in place by later runs of the same
+    # build (a relink, a place's label, an occupancy bin, a unit rollup
+    # recomputed and diffed); a superseded build is never touched again. The
+    # trigger keeps each version, so the Rollup as of T is the build
+    # `rollup_build` says was current at T, with its rows as they were at T.
+    "presence_places": ("circle_id", "place_id"),
+    "presence_stays": ("id",),
+    "presence_trips": ("id",),
+    "presence_derived_places": ("id",),
+    "presence_occupancy": ("id",),
+    "presence_place_rhythm": ("subject_id", "place_id"),
+    "presence_corridors": ("id",),
+    "rollup_build": ("id",),
+    "rollup_fold_state": ("build_id", "subject_id"),
+    "rollup_colocation": ("id",),
+    "rollup_outing": ("id",),
+    "rollup_daybook": ("id",),
+    "rollup_tie": ("id",),
+    "rollup_response": ("id",),
 }
 
 #: Append-only tables a restore copies, and each one's system-time column.
@@ -128,14 +148,6 @@ APPEND_ONLY: dict[str, str] = {
 DEFERRED: dict[str, str] = {
     "events": "2b",
     "event_rsvps": "2b",
-    "presence_places": "2",
-    "presence_stays": "2",
-    "presence_trips": "2",
-    "presence_corridors": "2",
-    "presence_corridor_speed": "2",
-    "presence_derived_places": "2",
-    "presence_occupancy": "2",
-    "presence_place_rhythm": "2",
 }
 
 #: Not copied into a restore, each with why.
@@ -158,6 +170,9 @@ NOT_RESTORED: dict[str, str] = {
     "embedding": "deprecated tier (2026-09-07); table kept, code gone",
     "rendered_claim": "deprecated tier (2026-09-07); table kept, code gone",
     "note_entity": "deprecated chain (2026-09-08); nothing writes it",
+    "presence_corridor_speed": (
+        "retired writer (design/27 §4.4 M2): nothing writes or reads it; table kept"
+    ),
 }
 
 

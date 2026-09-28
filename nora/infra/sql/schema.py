@@ -393,6 +393,16 @@ PRESENCE_STAYS = sa.Table(
     sa.Column("radius_m", sa.Float, nullable=False),
     sa.Column("fix_count", sa.Integer, nullable=False),
     sa.Column("place_id", sa.Integer, nullable=True),
+    # The mode Life360 address of the stay's fixes (`Stay.address`), kept so a
+    # place's name is a function of its stays, not of the one cycle that saw
+    # their fixes (migration 0070).
+    sa.Column("address", sa.Text, nullable=True),
+    # Step 2 (migration 0070, design/cognition-loop/25-rollup.md §2): the
+    # build that computed this row, the lineage it rests on (10-tiers.md §3:
+    # one person's fixes, `[["presence", <subject>, null]]`) and system time.
+    sa.Column("build_id", sa.BigInteger, nullable=False),
+    sa.Column("lineage", pg.JSONB, nullable=False),
+    _recorded_at(),
 )
 
 # `(subject_id, started_ts DESC)` — the same alembic-check-blind DESC shape as
@@ -419,6 +429,11 @@ PRESENCE_DERIVED_PLACES = sa.Table(
     sa.Column("saved_place_id", sa.Text, nullable=True),
     sa.Column("first_seen_ts", sa.BigInteger, nullable=False),
     sa.Column("last_seen_ts", sa.BigInteger, nullable=False),
+    # Step 2 (migration 0070): build, lineage, system time — see
+    # `presence_stays`.
+    sa.Column("build_id", sa.BigInteger, nullable=False),
+    sa.Column("lineage", pg.JSONB, nullable=False),
+    _recorded_at(),
     sa.CheckConstraint(
         "kind IN ('home','work','unlabeled')", name="ck_derived_places_kind"
     ),
@@ -448,6 +463,11 @@ PRESENCE_OCCUPANCY = sa.Table(
     sa.Column("hour_of_week", sa.Integer, nullable=False),
     sa.Column("dwell_ms", sa.BigInteger, nullable=False, server_default=sa.text("0")),
     sa.Column("updated_ts", sa.BigInteger, nullable=False),
+    # Step 2 (migration 0070): build, lineage, system time — see
+    # `presence_stays`.
+    sa.Column("build_id", sa.BigInteger, nullable=False),
+    sa.Column("lineage", pg.JSONB, nullable=False),
+    _recorded_at(),
     sa.UniqueConstraint(
         "subject_id", "place_id", "hour_of_week", name="uq_occupancy_bin"
     ),
@@ -475,6 +495,11 @@ PRESENCE_PLACE_RHYTHM = sa.Table(
     sa.Column("duration_mad_ms", sa.BigInteger, nullable=True),
     sa.Column("sample_count", sa.Integer, nullable=False, server_default=sa.text("0")),
     sa.Column("updated_ts", sa.BigInteger, nullable=False),
+    # Step 2 (migration 0070): build, lineage, system time — see
+    # `presence_stays`.
+    sa.Column("build_id", sa.BigInteger, nullable=False),
+    sa.Column("lineage", pg.JSONB, nullable=False),
+    _recorded_at(),
 )
 
 # `presence_trips` / `presence_corridors` / `presence_corridor_speed` —
@@ -515,6 +540,11 @@ PRESENCE_TRIPS = sa.Table(
     # used for the same purpose there (the first-place backfill's own
     # "which stays predate this place" query).
     sa.Column("corridor_id", sa.Integer, nullable=True),
+    # Step 2 (migration 0070): build, lineage, system time — see
+    # `presence_stays`.
+    sa.Column("build_id", sa.BigInteger, nullable=False),
+    sa.Column("lineage", pg.JSONB, nullable=False),
+    _recorded_at(),
 )
 
 IDX_PRESENCE_TRIPS_SUBJECT_STARTED = sa.Index(
@@ -538,10 +568,34 @@ PRESENCE_CORRIDORS = sa.Table(
     sa.Column("sample_count", sa.Integer, nullable=False, server_default=sa.text("0")),
     sa.Column("first_seen_ts", sa.BigInteger, nullable=False),
     sa.Column("last_seen_ts", sa.BigInteger, nullable=False),
+    # Step 2 (migration 0070): build, lineage, system time — see
+    # `presence_stays`.
+    sa.Column("build_id", sa.BigInteger, nullable=False),
+    sa.Column("lineage", pg.JSONB, nullable=False),
+    _recorded_at(),
 )
 
 IDX_PRESENCE_CORRIDORS_SUBJECT = sa.Index(
     "idx_presence_corridors_subject", PRESENCE_CORRIDORS.c.subject_id,
+)
+
+# Every reader of the presence Rollup reads ONE build (the current one, or the
+# one a run writes), so each is scoped by `(build_id, subject_id)` first.
+IDX_PRESENCE_STAYS_BUILD_SUBJECT = sa.Index(
+    "idx_presence_stays_build_subject",
+    PRESENCE_STAYS.c.build_id, PRESENCE_STAYS.c.subject_id, PRESENCE_STAYS.c.started_ts,
+)
+IDX_PRESENCE_TRIPS_BUILD_SUBJECT = sa.Index(
+    "idx_presence_trips_build_subject",
+    PRESENCE_TRIPS.c.build_id, PRESENCE_TRIPS.c.subject_id, PRESENCE_TRIPS.c.started_ts,
+)
+IDX_PRESENCE_DERIVED_PLACES_BUILD_SUBJECT = sa.Index(
+    "idx_presence_derived_places_build_subject",
+    PRESENCE_DERIVED_PLACES.c.build_id, PRESENCE_DERIVED_PLACES.c.subject_id,
+)
+IDX_PRESENCE_CORRIDORS_BUILD_SUBJECT = sa.Index(
+    "idx_presence_corridors_build_subject",
+    PRESENCE_CORRIDORS.c.build_id, PRESENCE_CORRIDORS.c.subject_id,
 )
 
 # Recomputed WHOLESALE from `presence_trips` every time (never
@@ -584,6 +638,226 @@ ANALYTICS_WATERMARK = sa.Table(
         "updated_at", sa.DateTime(timezone=True), nullable=False,
         server_default=sa.text("now()"),
     ),
+)
+
+# --- the Rollup as versioned builds (design/cognition-loop/25-rollup.md §2,
+# migration 0070) ------------------------------------------------------------
+
+#: One row per build of the whole Rollup: a code version and its parameters,
+#: computed from the Record up to `through_ms`. Exactly one is `current`
+#: (`uq_rollup_build_current`), and that row IS the pointer every reader
+#: resolves; a superseded build keeps its rows. Changed in place (status,
+#: `through_ms`), so it keeps `row_history`: «the Rollup as of T is the build
+#: current at T» is an as-of read of this table.
+ROLLUP_BUILD = sa.Table(
+    "rollup_build",
+    METADATA,
+    sa.Column("id", sa.BigInteger, sa.Identity(always=False), primary_key=True),
+    sa.Column("code_version", sa.Text, nullable=False),
+    sa.Column("params_sha256", sa.Text, nullable=False),
+    sa.Column("status", sa.Text, nullable=False),
+    sa.Column("through_ms", sa.BigInteger, nullable=False, server_default=sa.text("0")),
+    sa.Column(
+        "created_at", sa.DateTime(timezone=True), nullable=False,
+        server_default=sa.text("clock_timestamp()"),
+    ),
+    sa.Column("switched_at", sa.DateTime(timezone=True), nullable=True),
+    sa.Column("superseded_at", sa.DateTime(timezone=True), nullable=True),
+    sa.Column("superseded_by", sa.BigInteger, nullable=True),
+    sa.Column("detail", pg.JSONB, nullable=False, server_default=sa.text("'{}'::jsonb")),
+    sa.CheckConstraint(
+        "status IN ('building', 'current', 'superseded', 'abandoned')",
+        name="ck_rollup_build_status",
+    ),
+)
+
+UQ_ROLLUP_BUILD_CURRENT = sa.Index(
+    "uq_rollup_build_current", ROLLUP_BUILD.c.status,
+    unique=True, postgresql_where=ROLLUP_BUILD.c.status == "current",
+)
+
+#: Where the presence fold stands for one person in one build: the last
+#: Record event it consumed (`(pos_recorded_ms, pos_rank, pos_id)`, the
+#: canonical event order), its logical clock (the newest Record time it has
+#: read, never the wall clock), the newest time its finalized output reaches
+#: (`frontier_ts`: a fix older than that arrived too late and is dropped),
+#: the fixes it still holds undecided, the saved places its last place plan
+#: read, and the stay in progress. Everything an incremental run needs to
+#: continue exactly as a rebuild over the same Record would.
+ROLLUP_FOLD_STATE = sa.Table(
+    "rollup_fold_state",
+    METADATA,
+    sa.Column("build_id", sa.BigInteger, primary_key=True),
+    sa.Column("subject_id", sa.Text, primary_key=True),
+    sa.Column("pos_recorded_ms", sa.BigInteger, nullable=False),
+    sa.Column("pos_rank", sa.Integer, nullable=False),
+    sa.Column("pos_id", sa.BigInteger, nullable=False),
+    sa.Column("logical_now_ms", sa.BigInteger, nullable=False),
+    sa.Column("frontier_ts", sa.BigInteger, nullable=False),
+    sa.Column(
+        "window_fix_ids", pg.ARRAY(sa.Integer), nullable=False,
+        server_default=sa.text("'{}'::integer[]"),
+    ),
+    sa.Column("tags_sha256", sa.Text, nullable=True),
+    sa.Column("open_stay", pg.JSONB, nullable=True),
+    sa.Column("late_fixes", sa.Integer, nullable=False, server_default=sa.text("0")),
+    _recorded_at(),
+)
+
+
+def _unit_rollup_columns() -> list[sa.Column[Any]]:
+    """What every unit Rollup row carries (10-tiers.md §3): its build, its
+    unit, the lineage it rests on, valid time and the Record time it is as
+    of. `reasoning` is `computed` for every Rollup row by definition (10 §4),
+    so it is not a column here."""
+    return [
+        sa.Column("id", sa.BigInteger, sa.Identity(always=False), primary_key=True),
+        sa.Column("build_id", sa.BigInteger, nullable=False),
+        sa.Column("unit", sa.Text, nullable=False),
+        sa.Column("lineage", pg.JSONB, nullable=False),
+        sa.Column("valid_from_ms", sa.BigInteger, nullable=False),
+        sa.Column("valid_to_ms", sa.BigInteger, nullable=False),
+        sa.Column("as_of_ms", sa.BigInteger, nullable=False),
+        _recorded_at(),
+    ]
+
+
+#: Co-location (25 §3): members of a unit at one place over one interval,
+#: from overlapping stays within a radius. `open` while the interval runs to
+#: the newest Record time. `at_home_of` names whose home it is; `homes_unknown`
+#: the members with no home place yet, for whom «away from home» cannot be
+#: proved (an outing needs both empty).
+ROLLUP_COLOCATION = sa.Table(
+    "rollup_colocation",
+    METADATA,
+    *_unit_rollup_columns(),
+    sa.Column("persons", pg.ARRAY(sa.Text), nullable=False),
+    sa.Column("lat", sa.Float, nullable=False),
+    sa.Column("lng", sa.Float, nullable=False),
+    sa.Column("radius_m", sa.Float, nullable=False),
+    sa.Column("place_label", sa.Text, nullable=True),
+    sa.Column("saved_place_id", sa.Text, nullable=True),
+    sa.Column(
+        "at_home_of", pg.ARRAY(sa.Text), nullable=False,
+        server_default=sa.text("'{}'::text[]"),
+    ),
+    sa.Column(
+        "homes_unknown", pg.ARRAY(sa.Text), nullable=False,
+        server_default=sa.text("'{}'::text[]"),
+    ),
+    sa.Column("stay_count", sa.Integer, nullable=False),
+    sa.Column("open", sa.Integer, nullable=False, server_default=sa.text("0")),
+)
+
+#: Outing (25 §3): a co-location of two or more members away from every
+#: member's home, proved (no member's home unknown).
+ROLLUP_OUTING = sa.Table(
+    "rollup_outing",
+    METADATA,
+    *_unit_rollup_columns(),
+    sa.Column("persons", pg.ARRAY(sa.Text), nullable=False),
+    sa.Column("lat", sa.Float, nullable=False),
+    sa.Column("lng", sa.Float, nullable=False),
+    sa.Column("place_label", sa.Text, nullable=True),
+    sa.Column("saved_place_id", sa.Text, nullable=True),
+    sa.Column("open", sa.Integer, nullable=False, server_default=sa.text("0")),
+)
+
+#: Daybook (25 §3): one person's local (Hong Kong) day in one unit. Counts of
+#: what the Record and the rollups below it hold, never an event attended (no
+#: upward input). `items_posted` is NULL until social items are an input.
+ROLLUP_DAYBOOK = sa.Table(
+    "rollup_daybook",
+    METADATA,
+    *_unit_rollup_columns(),
+    sa.Column("person_id", sa.Text, nullable=False),
+    sa.Column("local_date", sa.Text, nullable=False),
+    sa.Column("stays", pg.JSONB, nullable=False),
+    sa.Column("stay_ms", sa.BigInteger, nullable=False),
+    sa.Column("home_ms", sa.BigInteger, nullable=False),
+    sa.Column("colocation_ms", sa.BigInteger, nullable=False),
+    sa.Column(
+        "with_persons", pg.ARRAY(sa.Text), nullable=False,
+        server_default=sa.text("'{}'::text[]"),
+    ),
+    sa.Column("outings", sa.Integer, nullable=False),
+    sa.Column("rooms", pg.JSONB, nullable=False),
+    sa.Column("messages", sa.Integer, nullable=False),
+    sa.Column("reactions", sa.Integer, nullable=False),
+    sa.Column("items_posted", sa.Integer, nullable=True),
+)
+
+#: Tie (25 §3): how much two members of a unit interacted in one ISO week,
+#: each direction apart. `person_a < person_b`.
+ROLLUP_TIE = sa.Table(
+    "rollup_tie",
+    METADATA,
+    *_unit_rollup_columns(),
+    sa.Column("person_a", sa.Text, nullable=False),
+    sa.Column("person_b", sa.Text, nullable=False),
+    sa.Column("iso_week", sa.Text, nullable=False),
+    sa.Column("replies_ab", sa.Integer, nullable=False),
+    sa.Column("replies_ba", sa.Integer, nullable=False),
+    sa.Column("mentions_ab", sa.Integer, nullable=False),
+    sa.Column("mentions_ba", sa.Integer, nullable=False),
+    sa.Column("reactions_ab", sa.Integer, nullable=False),
+    sa.Column("reactions_ba", sa.Integer, nullable=False),
+    sa.Column("colocation_ms", sa.BigInteger, nullable=False),
+    sa.CheckConstraint("person_a < person_b", name="ck_rollup_tie_pair_order"),
+)
+
+#: Response (25 §3): how people responded to one thing Nora sent, keyed by
+#: the send's Record id. `intent` is the brief's (`tell`/`ask`) once step 3
+#: records it on the send; NULL is «not recorded». `outcome` is `open` while
+#: the window runs to the newest Record time, `silent` only when something
+#: was expected and the room's platform was proved up for the window,
+#: `unknown` when it was not.
+ROLLUP_RESPONSE = sa.Table(
+    "rollup_response",
+    METADATA,
+    *_unit_rollup_columns(),
+    sa.Column("message_id", sa.Integer, nullable=False),
+    sa.Column("platform", sa.Text, nullable=False),
+    sa.Column("conversation_id", sa.Text, nullable=False),
+    sa.Column("sent_ts", sa.BigInteger, nullable=False),
+    sa.Column("replies", sa.Integer, nullable=False),
+    sa.Column("reactions", sa.Integer, nullable=False),
+    sa.Column("edits", sa.Integer, nullable=False),
+    sa.Column(
+        "responders", pg.ARRAY(sa.Text), nullable=False,
+        server_default=sa.text("'{}'::text[]"),
+    ),
+    sa.Column(
+        "named_persons", pg.ARRAY(sa.Text), nullable=False,
+        server_default=sa.text("'{}'::text[]"),
+    ),
+    sa.Column("intent", sa.Text, nullable=True),
+    sa.Column("outcome", sa.Text, nullable=False),
+    sa.CheckConstraint(
+        "outcome IN ('open', 'responded', 'silent', 'unanswered', 'unknown')",
+        name="ck_rollup_response_outcome",
+    ),
+)
+
+IDX_ROLLUP_COLOCATION_KEY = sa.Index(
+    "idx_rollup_colocation_key",
+    ROLLUP_COLOCATION.c.build_id, ROLLUP_COLOCATION.c.unit, ROLLUP_COLOCATION.c.valid_from_ms,
+)
+IDX_ROLLUP_OUTING_KEY = sa.Index(
+    "idx_rollup_outing_key",
+    ROLLUP_OUTING.c.build_id, ROLLUP_OUTING.c.unit, ROLLUP_OUTING.c.valid_from_ms,
+)
+IDX_ROLLUP_DAYBOOK_KEY = sa.Index(
+    "idx_rollup_daybook_key",
+    ROLLUP_DAYBOOK.c.build_id, ROLLUP_DAYBOOK.c.unit, ROLLUP_DAYBOOK.c.person_id,
+    ROLLUP_DAYBOOK.c.local_date,
+)
+IDX_ROLLUP_TIE_KEY = sa.Index(
+    "idx_rollup_tie_key", ROLLUP_TIE.c.build_id, ROLLUP_TIE.c.unit, ROLLUP_TIE.c.iso_week,
+)
+IDX_ROLLUP_RESPONSE_KEY = sa.Index(
+    "idx_rollup_response_key",
+    ROLLUP_RESPONSE.c.build_id, ROLLUP_RESPONSE.c.unit, ROLLUP_RESPONSE.c.message_id,
 )
 
 # `geocode_cache` — coordinate to Google-resolved address, LAZY and PERSISTENT
@@ -3152,6 +3426,13 @@ IDX_SIGNAL_UNIT_MESSAGE_RECORDED = sa.Index(
 UQ_SIGNAL_TIME_REF = sa.Index(
     "uq_signal_time_ref", SIGNAL.c.unit, SIGNAL.c.ref,
     unique=True, postgresql_where=SIGNAL.c.kind == "time",
+)
+
+#: A Rollup stimulus is raised once per row it names (migration 0070): a later
+#: run, or a rebuild recomputing the same row, finds it on record.
+UQ_SIGNAL_ROLLUP_REF = sa.Index(
+    "uq_signal_rollup_ref", SIGNAL.c.unit, SIGNAL.c.ref,
+    unique=True, postgresql_where=SIGNAL.c.kind == "rollup",
 )
 
 # `cognition_wake`: every wake, one row each — in step 1 every row is a SHADOW

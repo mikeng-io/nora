@@ -1,24 +1,55 @@
-"""The mobility rollup — the tick, three fire conditions, three speeds
-(docs/superpowers/specs/2026-08-18-presence-analytics-substrate-design.md
-§4). `run_once` is per-subject and does the work; deciding WHEN to call it
-for a given subject (the fire-condition evaluation against wall-clock
-`settled_seconds`/`max_age_seconds`) is the caller's job — Task 9's
-`__main__` loop, which is the only place that knows the real tick cadence
-and can check every subject's watermark cheaply before deciding who to
-call this tick.
+"""The presence Rollup as a fold over the Record
+(design/cognition-loop/25-rollup.md §2; design/proposed/27-presence-analytics.md
+is the substrate it generalises).
 
-`run_once` itself always does everything it can with what is available: it
-segments every new fix it reads (Task 2), closes the open stay if it is old
-enough for `settled_seconds` to have elapsed against `now_ms`, RECHECKS
-labelling on every call regardless of whether clustering ran (the cheap
-speed, spec §4.2), and re-clusters ONLY when the stay set actually changed
-since `last_cluster_id` (the dirty-set marker, the expensive speed).
+**A pure function of the Record and a logical watermark.** `run_once` reads
+one person's Record events — their fixes, and the presence collector's
+successful polls of their circles — strictly after where the fold last stood
+(`FoldState.position`) and at or before the watermark `through_ms`, in one
+canonical order (`EventPosition`), and folds them ONE AT A TIME through
+`_step`. A rebuild at watermark W is the same fold from the start of the
+Record. Because every event is folded alone, in the same order, whatever the
+runs were, the incremental result at W and the rebuild at W are the same
+rows by construction (`tests/unit/test_rollup_determinism.py` is the gate).
+
+**No wall clock.** The fold's clock is `FoldState.logical_now_ms`: the newest
+time the Record has shown — a fix's `ts`, a successful poll's `at_ms`. A stay
+closes when a later fix, or a recorded poll proving the time passed with no
+fix, shows it ended (25 §2). The wall clock enters exactly once, in the
+daemon, to choose WHICH watermark to build to (`now - grace_seconds`, so a
+row committed late is still inside it); it never enters what is computed at
+that watermark.
+
+**Why the old incremental path and its batch disagreed (design 27, "within
+3.4% of the batch path").** `run_once` used to be handed the daemon's wall
+clock and decided every tail with it: an open stay closed once `DWELL_CAP_MS`
+of wall time had passed since its last fix, a trip settled once
+`settled_seconds` had, a provisional arrival was held while the wall clock was
+inside `DWELL_CAP_MS`, and a place's label went stale at
+`label_freshness_days` of wall time. The tick-by-tick path evaluated those
+between every pair of fixes; a batch re-derive evaluated them once, at a
+`now` long after every fix, so every tail inside the history was decided by
+the NEXT FIX instead (radius break or chunk gap). A quiet phone at home
+(one fix, then 35 minutes of silence, then a fix at the same place) was two
+stays tick by tick and one in the batch; the same history also labelled its
+places at different `now`s and read place names only from the fixes the
+current cycle happened to see. The fold decides each of these on the Record's
+own clock, at each event, in both paths.
+
+Places, occupancy, rhythm and corridors are recomputed from the fold's
+stays and trips (`_derive`) whenever those change, and a place's label is
+re-checked on the logical clock every run; each is a function of the stays
+and trips, the saved places as of the watermark and the logical clock, so
+it too is the same in both paths. Surrogate ids (a place's, a corridor's)
+are kept stable by overlap within a build and differ between builds; what
+cites them cites `(kind, subject, interval)` (25 §2).
 """
 
 from __future__ import annotations
 
 import dataclasses
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from itertools import pairwise
@@ -37,6 +68,7 @@ from nora.domain.mobility import (
     circular_mean_minute,
     cluster_trips,
     collapse_duplicate_fixes,
+    edit_distance,
     extract_trips,
     hour_of_week_bins,
     label_place,
@@ -47,36 +79,39 @@ from nora.domain.mobility import (
 )
 from nora.domain.mobility_forecast import detect_stay_anomalies
 from nora.domain.ports import GeocodeCacheStore
+from nora.domain.rollup import (
+    Event,
+    EventPosition,
+    FixEvent,
+    FoldState,
+    PollEvent,
+    StoredCorridor,
+    tags_sha256,
+)
 
 log = logging.getLogger("nora.analytics.rollup")
 
 
 class MobilityStore(Protocol):
-    async def watermark(self, *, subject_id: str) -> tuple[int, int]: ...
-    async def fixes_since(
-        self, *, person_ids: list[str], after_fix_id: int, grace_ms: int,
-        now_ms: int, limit: int,
-    ) -> list[RawFix]: ...
-    async def write_stays(self, stays: list[Stay]) -> None: ...
-    async def stays_for_subject(self, *, subject_id: str) -> list[Stay]: ...
-    async def write_trips(self, trips: list[Trip]) -> None: ...
-    async def trips_for_subject(self, *, subject_id: str) -> list[Trip]: ...
-    async def unclustered_named_trips_for_subject(
-        self, *, subject_id: str, limit: int
-    ) -> list[Trip]: ...
-    async def set_trip_corridor_ids(
-        self, *, subject_id: str, started_ts_in: list[int], corridor_id: int
+    """The presence Rollup store, bound to ONE build for writing
+    (`SqlMobilityStore.scoped`); readers use it unbound and read the current
+    build. Bound by `tests/contract/test_mobility_store_contract.py`."""
+
+    # -- the fold
+    async def fold_state(self, *, subject_id: str) -> FoldState | None: ...
+    async def events_since(
+        self, *, person_ids: Sequence[str], circle_ids: Sequence[str],
+        after: EventPosition, through_ms: int, limit: int,
+    ) -> list[Event]: ...
+    async def fixes_by_id(self, *, ids: Sequence[int]) -> list[RawFix]: ...
+    async def commit_fold(
+        self, *, subject_id: str, stays: list[Stay], trips: list[Trip],
+        state: FoldState,
     ) -> None: ...
-    async def existing_corridor(
-        self, *, subject_id: str, sequence: tuple[str, ...], max_edit_distance: int,
-    ) -> tuple[int, tuple[str, ...]] | None: ...
-    async def upsert_corridor(
-        self, *, subject_id: str, sequence: tuple[str, ...], sample_count: int,
-        now_ms: int, existing_id: int | None,
-    ) -> int: ...
-    async def trip_speeds_for_corridor(
-        self, *, subject_id: str, corridor_id: int,
-    ) -> list[tuple[int, float]]: ...
+    async def mark_derived(self, *, subject_id: str, tags_sha256: str) -> None: ...
+    # -- the derived rows of the bound build
+    async def stays_for_subject(self, *, subject_id: str) -> list[Stay]: ...
+    async def trips_for_subject(self, *, subject_id: str) -> list[Trip]: ...
     async def places_for_subject(self, *, subject_id: str) -> list[DerivedPlace]: ...
     async def save_place(
         self, *, subject_id: str, circle_id: str, place_id: int | None,
@@ -89,8 +124,6 @@ class MobilityStore(Protocol):
         self, *, subject_id: str, links: dict[int, int | None],
     ) -> None: ...
     async def tagged_places(self) -> list[TaggedPlace]: ...
-    async def advance_fix_watermark(self, *, subject_id: str, fix_id: int) -> None: ...
-    async def advance_cluster_watermark(self, *, subject_id: str, fix_id: int) -> None: ...
     async def replace_occupancy(
         self, *, subject_id: str, place_id: int, bins: dict[int, int], now_ms: int
     ) -> None: ...
@@ -98,6 +131,16 @@ class MobilityStore(Protocol):
         self, *, subject_id: str, place_id: int, mean_arrival_minute: float,
         mean_departure_minute: float, duration_median_ms: int,
         duration_mad_ms: int, sample_count: int, now_ms: int,
+    ) -> None: ...
+    async def corridors_for_subject(self, *, subject_id: str) -> list[StoredCorridor]: ...
+    async def save_corridor(
+        self, *, subject_id: str, corridor_id: int | None,
+        sequence: tuple[str, ...], sample_count: int, first_seen_ts: int,
+        last_seen_ts: int,
+    ) -> int: ...
+    async def delete_corridors(self, *, subject_id: str, corridor_ids: list[int]) -> None: ...
+    async def relink_trips(
+        self, *, subject_id: str, links: dict[int, int | None],
     ) -> None: ...
 
 
@@ -107,7 +150,13 @@ class RollupConfig:
     safety_lag: int
     settled_seconds: float
     max_age_seconds: float
+    #: How many Record events one read returns; the fold pages through a
+    #: backlog of any size, one event at a time, so this bounds memory, never
+    #: what is computed.
     batch_limit: int
+    #: Kept so a config naming them still loads; the event fold has no batch
+    #: to widen and no backlog threshold (design 27 §1.4's batch-stall fix is
+    #: subsumed: an undecided group simply stays in the window).
     backfill_batch_limit: int
     backfill_threshold: int
     grace_seconds: float
@@ -138,6 +187,25 @@ class RollupConfig:
     stay_wander_radius_m: float | None = 400.0
 
 
+@dataclass(frozen=True)
+class FoldRun:
+    """What one `run_once` did, for the unit rollups and the stimuli above it:
+    how many events it consumed, the stays it closed, the stay in progress
+    before and after, and the logical clock it reached."""
+
+    subject_id: str
+    events: int
+    new_stays: tuple[Stay, ...]
+    open_before: Stay | None
+    open_after: Stay | None
+    logical_now_ms: int
+    anomalous: tuple[Stay, ...] = ()
+
+    @property
+    def changed(self) -> bool:
+        return bool(self.new_stays) or self.open_before != self.open_after
+
+
 class MobilityRollup:
     def __init__(
         self, *, store: MobilityStore, config: RollupConfig, metrics: Any = None,
@@ -148,8 +216,10 @@ class MobilityRollup:
         self._metrics = metrics
         # Google-cache-only labelling (2026-08-19 follow-up, design/27 §3.5):
         # optional — a place with no nearby cached hit stays unlabelled
-        # rather than triggering a proactive Google call, and a caller that
-        # does not wire this behaves exactly as before it existed.
+        # rather than triggering a proactive Google call. Like the saved
+        # places, the cache is read as the store holds it when the run reads
+        # it: an input that is not an event of the fold (a rebuild as of an
+        # earlier T reads both from a snapshot at T, 70 §2).
         self._geocode_cache = geocode_cache
 
     async def _label_for(self, *, lat: float, lng: float) -> str | None:
@@ -165,251 +235,150 @@ class MobilityRollup:
             log.exception("geocode_cache label lookup failed — leaving unlabelled")
             return None
 
-    async def watermark(self, *, subject_id: str) -> tuple[int, int]:
-        """Exposes the store's watermark read without leaking the store
-        itself — `nora.analytics.__main__`'s tick loop uses this to decide
-        whether a subject is worth calling `run_once` for, without reaching
-        into a private attribute."""
-        return await self._store.watermark(subject_id=subject_id)
-
     async def run_once(
-        self, *, subject_id: str, person_ids: list[str], circle_id: str, now_ms: int,
-    ) -> None:
-        last_fix_id, last_cluster_id = await self._store.watermark(subject_id=subject_id)
-
-        lag_probe = await self._store.fixes_since(
-            person_ids=person_ids, after_fix_id=last_fix_id,
-            grace_ms=int(self._cfg.grace_seconds * 1000), now_ms=now_ms,
-            limit=self._cfg.backfill_batch_limit + 1,
-        )
-        over_threshold = len(lag_probe) > self._cfg.backfill_threshold
-        batch_limit = (
-            self._cfg.backfill_batch_limit if over_threshold else self._cfg.batch_limit
-        )
-        fixes = lag_probe[:batch_limit]
-
-        # Declared before the `if fixes:` block so Speed 3's dirty-set gate
-        # below can reference it without a possibly-unbound warning; when
-        # `fixes` is empty both stay and trip lists are empty by definition.
+        self, *, subject_id: str, person_ids: list[str], circle_id: str,
+        through_ms: int, circle_ids: Sequence[str] | None = None,
+    ) -> FoldRun:
+        """Fold every Record event for this person up to `through_ms`, then
+        derive what changed. Idempotent: a second call at the same watermark
+        reads no event and writes nothing."""
+        circles = tuple(circle_ids) if circle_ids else (circle_id,)
+        state = await self._store.fold_state(subject_id=subject_id) or FoldState()
+        window = await self._store.fixes_by_id(ids=list(state.window_ids))
+        open_before = state.open_stay
         new_stays: list[Stay] = []
         new_trips: list[Trip] = []
-
-        if fixes:
-            # `address=` is load-bearing from Tier 5 on (Task 2): it is the
-            # ONLY input `extract_trips` has for a trip's corridor
-            # sequence, and dropping it here silently produced empty
-            # corridors that cluster with each other and nothing real.
-            # `is_driving=` is load-bearing the same way (2026-08-20
-            # trip-settlement design §2.2): it is the PRIMARY settlement
-            # signal, and this projection is the only place between the
-            # store and `extract_trips` that can drop it. It was dropped
-            # here when the field was added (Task 1 threaded it through both
-            # stores, and every fix arrived at segmentation as
-            # `is_driving=None` anyway), which silently reduced the whole
-            # settlement mechanism below to its `settled_seconds` fallback —
-            # a wiring gap that no test in `tests/unit/test_mobility.py`
-            # could see, because those call `extract_trips` directly.
-            # THE BATCH-STALL FIX (audit 2026-09-27). A hold (an undecided
-            # trip, or an open stay) that starts at the FIRST fix of a batch
-            # leaves the watermark exactly where it was — and when the batch
-            # was cut at `batch_limit`, the next tick reads the SAME fixes and
-            # decides the same way, forever. 400 fixes at the 5 s moving
-            # cadence is a 33-minute drive: any longer drive froze the
-            # subject's derivation until `backfill_threshold` (4,000) fixes of
-            # backlog had piled up, which at resting cadence is a day or
-            # more, and every stay and trip after the drive — an evening out,
-            # dinner, the way home — was simply not derived in the meantime.
-            # Reproduced tick by tick in `tests/unit/test_analytics_rollup.py::
-            # test_a_drive_longer_than_one_batch_does_not_freeze_the_evening`.
-            # The fix widens THIS cycle's batch (the probe already read up to
-            # `backfill_batch_limit` fixes) until the hold resolves or the
-            # probe is exhausted; nothing is written until the batch is final.
-            limit = len(fixes)
-            max_limit = min(len(lag_probe), self._cfg.backfill_batch_limit)
-            while True:
-                fixes = lag_probe[:limit]
-                new_stays, new_trips, trip_hold_id, stay_hold_id = self._segment_batch(
-                    fixes, subject_id=subject_id, person_ids=person_ids,
-                    circle_id=circle_id, now_ms=now_ms,
+        consumed = 0
+        page = max(1, self._cfg.batch_limit)
+        while True:
+            events = await self._store.events_since(
+                person_ids=person_ids, circle_ids=circles, after=state.position,
+                through_ms=through_ms, limit=page,
+            )
+            for event in events:
+                state, window, stays, trips = self._step(
+                    state, window, event, subject_id=subject_id,
+                    person_ids=person_ids, circle_id=circle_id,
                 )
-                watermark_target = fixes[-1].id
-                if trip_hold_id is not None:
-                    watermark_target = min(watermark_target, trip_hold_id - 1)
-                if stay_hold_id is not None:
-                    watermark_target = min(watermark_target, stay_hold_id - 1)
-                if watermark_target > last_fix_id or limit >= max_limit:
-                    break
-                limit = min(max_limit, limit * 2)
-            if new_stays:
-                # Place linking, occupancy, rhythm and anomaly scoring for
-                # these stays happen in Speed 3's reconcile below, which the
-                # `or new_stays` gate guarantees runs this cycle.
-                await self._store.write_stays(new_stays)
-            if new_trips:
-                # Tier 5's half of Tier 3's Critical #1 (commit 9616af3):
-                # a derivation failure must NEVER strand the watermark, or
-                # the next tick re-reads the identical fixes, re-segments
-                # the identical stays and calls `write_stays` again against
-                # a table with no unique constraint on
-                # (subject_id, started_ts).
-                #
-                # The asymmetry with Tier 3 is REAL and accepted: these
-                # trips are unrecoverable, because the fixes that produced
-                # them are behind the watermark and nothing re-derives
-                # them. Tier 3's stays, by contrast, are already committed
-                # before its own guard is reached. Losing a batch of trips
-                # costs those trips' corridor samples; stranding the
-                # watermark corrupts Tier 1/2 permanently, so this is the
-                # cheaper failure by a wide margin — but it IS a loss, not
-                # a defer.
-                try:
-                    await self._store.write_trips(new_trips)
-                except Exception:
-                    log.exception(
-                        "trip write failed — the watermark still advances, "
-                        "so this batch's trips are a genuine accepted LOSS "
-                        "(the fixes behind them are consumed and nothing "
-                        "re-derives them), unlike Tier 3's already-committed "
-                        "stays"
-                    )
-                else:
-                    if self._metrics is not None:
-                        self._metrics.inc(
-                            "nora_analytics_trips_total", value=len(new_trips),
-                            subject=subject_id,
-                        )
-                    try:
-                        await self._record_corridors(
-                            subject_id=subject_id, now_ms=now_ms,
-                        )
-                    except Exception:
-                        # Same contract, one layer down — but unlike the
-                        # write above, this one IS recoverable now. The
-                        # trips are committed WITH their `sequence`, and
-                        # their `corridor_id` is still NULL, which is
-                        # exactly the predicate
-                        # `unclustered_named_trips_for_subject` selects on:
-                        # the next cycle that writes a trip re-reads these
-                        # and clusters them again. Migration 0020 is what
-                        # turned "permanently unlinked" into "retried next
-                        # cycle". The realistic trigger is the analytics
-                        # image deploying ahead of migration 0019/0020 —
-                        # every corridor write raises UndefinedTable, and
-                        # every cycle after the migration lands recovers.
-                        log.exception(
-                            "corridor derivation failed — the trips are "
-                            "written with their sequences and the watermark "
-                            "still advances; they keep corridor_id NULL and "
-                            "are re-clustered on a later cycle"
-                        )
-            # The watermark stops one short of anything `extract_trips`
-            # refused to finalize, so the undecided group is re-read WHOLE
-            # next cycle rather than consumed as a fragment. This is the
-            # half of the settlement fix that makes the other half safe:
-            # holding a group back is only not a data loss if its fixes stay
-            # readable.
-            #
-            # A TRIP hold reduces this below `fixes[-1].id` when the
-            # trailing group is undecided movement. A STAY hold (issue #80)
-            # does the same when the trailing group is an open stay that
-            # has not yet settled — its fixes must stay readable until the
-            # radius break or the clock closes it, or the stay is silently
-            # dropped (the production mechanism that halted stays for 10
-            # days). Both holds are bounded: the stay hold releases when
-            # `settled_seconds` elapses (the block above), the trip hold
-            # when the drive settles or `max_trip_duration_seconds` fires.
-            #
-            # Never moves backwards: every held-back fix came from `fixes`,
-            # which `fixes_since` already filtered to `id > last_fix_id`, so
-            # `trip_hold_id - 1 >= last_fix_id`. The degenerate case — the
-            # WHOLE batch is one undecided group, so the target equals the
-            # current watermark — is a no-op write, not a special case.
-            await self._store.advance_fix_watermark(
-                subject_id=subject_id, fix_id=watermark_target
+                new_stays.extend(stays)
+                new_trips.extend(trips)
+            consumed += len(events)
+            if len(events) < page:
+                break
+        if consumed:
+            state = dataclasses.replace(
+                state, window_ids=tuple(f.id for f in window),
+                tags_sha256=None if (new_stays or new_trips) else state.tags_sha256,
+            )
+            await self._store.commit_fold(
+                subject_id=subject_id, stays=new_stays, trips=new_trips, state=state,
             )
             if self._metrics is not None:
                 self._metrics.inc(
                     "nora_analytics_stays_total", value=len(new_stays), subject=subject_id,
                 )
+                if new_trips:
+                    self._metrics.inc(
+                        "nora_analytics_trips_total", value=len(new_trips),
+                        subject=subject_id,
+                    )
+        anomalous = await self._derive(
+            subject_id=subject_id, circle_id=circle_id, state=state,
+            new_stays=new_stays, advanced=bool(consumed),
+        )
+        return FoldRun(
+            subject_id=subject_id, events=consumed, new_stays=tuple(new_stays),
+            open_before=open_before, open_after=state.open_stay,
+            logical_now_ms=state.logical_now_ms, anomalous=tuple(anomalous),
+        )
 
-        # Speed 2 (cheap): the label recheck. Runs on EVERY call this
-        # function is given, independent of whether clustering ran this
-        # cycle — this is what lets max_age_seconds (the caller's fire
-        # condition) actually do something at lag == 0 (spec §4.2). Each
-        # stored place is relabelled from the stays LINKED to it — never from
-        # a radius test around its stored point, and never written back at
-        # any coordinate but its own (the old recheck wrote the subject's
-        # chronologically first stay's lat/lng onto a flipped row, a second
-        # path to a place kilometres from its stays; issue #339).
-        all_stays = await self._store.stays_for_subject(subject_id=subject_id)
-        for place in await self._store.places_for_subject(subject_id=subject_id):
-            linked = [s for s in all_stays if s.place_id == place.id]
-            if not linked:
-                continue
-            recheck = label_place(
-                linked, now_ms=now_ms, tz_name=self._cfg.tz_name,
-                min_nights=self._cfg.min_nights,
-                min_weekdays=self._cfg.min_weekdays,
-                label_freshness_days=self._cfg.label_freshness_days,
-            )
-            if recheck.kind == place.kind and recheck.confidence == place.confidence:
-                continue
-            await self._store.save_place(
-                subject_id=subject_id, circle_id=place.circle_id,
-                place_id=place.id, lat=place.lat, lng=place.lng,
-                radius_m=place.radius_m, kind=recheck.kind,
-                confidence=recheck.confidence, label=place.label,
-                saved_place_id=place.saved_place_id,
-                first_seen_ts=min(s.started_ts for s in linked),
-                last_seen_ts=max(s.ended_ts for s in linked),
-            )
-            if (
-                self._metrics is not None
-                and recheck.kind == "unlabeled" and place.kind != "unlabeled"
+    # -- the fold -----------------------------------------------------------
+
+    def _step(
+        self, state: FoldState, window: list[RawFix], event: Event, *,
+        subject_id: str, person_ids: list[str], circle_id: str,
+    ) -> tuple[FoldState, list[RawFix], list[Stay], list[Trip]]:
+        """Fold ONE event. A pure function of the state, the window and the
+        event: the whole determinism argument rests on this being so.
+
+        A fix joins the window (or, if it is older than what the fold has
+        already finalized, is dropped as late: a stay once written is never
+        re-cut by a straggler) and the window is evaluated. A poll only moves
+        the clock, and the window is evaluated only when the move crosses
+        one of the clock thresholds a decision reads (`_deadline_crossed`):
+        every other poll would change nothing, and skipping it is what keeps
+        a rebuild over months of polls affordable."""
+        if isinstance(event, FixEvent):
+            fix = event.fix
+            now = max(state.logical_now_ms, fix.ts)
+            if fix.ts <= state.frontier_ts:
+                return (
+                    dataclasses.replace(
+                        state, position=event.position, logical_now_ms=now,
+                        late_fixes=state.late_fixes + 1,
+                    ),
+                    window, [], [],
+                )
+            window = [*window, fix]
+        elif isinstance(event, PollEvent):
+            now = max(state.logical_now_ms, event.at_ms)
+            if not window or not self._deadline_crossed(
+                window, before=state.logical_now_ms, after=now,
             ):
-                self._metrics.inc("nora_analytics_unlabeled_total", subject=subject_id)
+                return (
+                    dataclasses.replace(state, position=event.position, logical_now_ms=now),
+                    window, [], [],
+                )
+        else:
+            raise TypeError(f"not a Record event: {event!r}")
+        ordered = sorted(window, key=lambda f: (f.ts, f.id))
+        stays, trips, trip_hold_id, stay_hold_id, open_stay = self._segment_batch(
+            ordered, subject_id=subject_id, person_ids=person_ids,
+            circle_id=circle_id, now_ms=now,
+        )
+        target = max(f.id for f in window)
+        if trip_hold_id is not None:
+            target = min(target, trip_hold_id - 1)
+        if stay_hold_id is not None:
+            target = min(target, stay_hold_id - 1)
+        kept = [f for f in window if f.id > target]
+        frontier = max(
+            [state.frontier_ts, *(s.ended_ts for s in stays), *(t.ended_ts for t in trips)]
+        )
+        return (
+            dataclasses.replace(
+                state, position=event.position, logical_now_ms=now,
+                frontier_ts=frontier, open_stay=open_stay,
+            ),
+            kept, stays, trips,
+        )
 
-        # Speed 3 (expensive, dirty-set gated): the place reconcile. Only
-        # when fixes or stays arrived since last_cluster_id — it is
-        # idempotent on unchanged input, so a clock-driven re-run is pure
-        # waste (spec §4.2).
-        if fixes:
-            new_last_cluster = fixes[-1].id
-            if new_last_cluster > last_cluster_id or new_stays:
-                # `or new_stays`: a stay closed purely by the clock (issue
-                # #80 stay-hold cycle — the batch is the SAME held fixes the
-                # previous cycle already clustered at, so the id gate alone
-                # is false) still needs linking now, not on some unrelated
-                # future fix.
-                try:
-                    await self._reconcile_places(
-                        subject_id=subject_id, circle_id=circle_id,
-                        all_stays=all_stays, new_stays=new_stays, now_ms=now_ms,
-                    )
-                except Exception:
-                    # The fix watermark has already advanced above, so the
-                    # stays are safe (Tier 3's Critical #1 contract). The
-                    # CLUSTER watermark deliberately does not advance: the
-                    # reconcile is idempotent and re-runs next cycle, which
-                    # is what makes a place-side failure recoverable rather
-                    # than a permanently unlinked batch.
-                    log.exception(
-                        "place reconcile failed — stays are written and the "
-                        "fix watermark advanced; the reconcile retries next cycle"
-                    )
-                else:
-                    await self._store.advance_cluster_watermark(
-                        subject_id=subject_id, fix_id=new_last_cluster
-                    )
+    def _deadline_crossed(self, window: list[RawFix], *, before: int, after: int) -> bool:
+        """Does moving the clock from `before` to `after` cross a threshold
+        any decision of `_segment_batch` reads? Every such threshold is a
+        window fix's `ts` plus `settled_seconds` (trip settlement) or plus
+        `DWELL_CAP_MS` (a stay's close and hold, the arrival hold).
+        `max_trip_duration_seconds` is measured between fixes, not against
+        the clock, so no poll can cross it."""
+        spans = (int(self._cfg.settled_seconds * 1000), DWELL_CAP_MS)
+        return any(
+            before < f.ts + span <= after for f in window for span in spans
+        )
+
 
     def _segment_batch(
         self, fixes: list[Any], *, subject_id: str, person_ids: list[str],
         circle_id: str, now_ms: int,
-    ) -> tuple[list[Stay], list[Trip], int | None, int | None]:
-        """Speed 1 over one batch: `(new_stays, new_trips, trip_hold_id,
-        stay_hold_id)`. Pure with respect to the store — `run_once` may call
-        it more than once on growing batches before it writes anything (the
-        batch-stall fix below)."""
+    ) -> tuple[list[Stay], list[Trip], int | None, int | None, Stay | None]:
+        """One evaluation of the fold's window: `(new_stays, new_trips,
+        trip_hold_id, stay_hold_id, open_stay)`. Pure with respect to the
+        store: the fold calls it after every event that could change a
+        decision (`_step`). `now_ms` is the fold's LOGICAL clock — the
+        newest time the Record has shown for this person (a fix's `ts`, a
+        successful poll's `at_ms`) — never the wall clock (25 §2); every
+        «elapsed» below is measured against it. `open_stay` is the trailing
+        stay in progress once it has dwelled `min_dwell` and the clock has
+        not closed it."""
         new_stays: list[Stay] = []
         new_trips: list[Trip] = []
         raw = collapse_duplicate_fixes([
@@ -614,23 +583,46 @@ class MobilityRollup:
             # unconfirmed (and still inside the resting-cadence clock), hold the trip
             # that runs into it as well; it is cut for good once the stop confirms,
             # or rejoins the movement if the stop dissolves.
-            if (
-                open_started is not None and chunk_trips
+            #
+            # And when the movement before the provisional stop is still too
+            # short to be a trip (the fold evaluates after EVERY fix, so a
+            # stop is provisional at the first fix of every arrival), hold
+            # those fixes too rather than discarding them as noise: a sparse
+            # drive of two fixes 30 minutes apart becomes a trip once its
+            # arrival confirms or the clock runs out, as it did when a batch
+            # saw the whole drive at once (step 2, 2026-09-29).
+            provisional_stop = (
+                open_started is not None
                 and seg.open_stay is not None
                 and seg.open_stay.ended_ts - seg.open_stay.started_ts < min_dwell_ms
                 and (now_ms - chunk[-1].ts) / 1000 < DWELL_CAP_MS / 1000
+            )
+            if (
+                provisional_stop and chunk_trips
                 and not any(c.started_ts > chunk_trips[-1].ended_ts for c in chunk_closed)
             ):
                 provisional = chunk_trips.pop()
                 held_back = held_back or [
                     f for f in chunk if f.ts >= provisional.started_ts
                 ]
+            elif provisional_stop and not held_back and open_started is not None:
+                settled_end = max((c.ended_ts for c in chunk_closed), default=None)
+                last_trip_end = chunk_trips[-1].ended_ts if chunk_trips else None
+                floor = max(
+                    (x for x in (settled_end, last_trip_end) if x is not None),
+                    default=None,
+                )
+                held_back = [
+                    f for f in chunk
+                    if f.ts < open_started and (floor is None or f.ts > floor)
+                ]
             new_trips.extend(chunk_trips)
             if held_back:
                 trip_hold_id = min(f.id for f in held_back)
-        # An open stay closes THIS cycle only once settled_seconds has
-        # elapsed since its last fix (spec §3.2/§4) — a wall-clock
-        # decision run_once makes, not segment_stays itself.
+        # An open stay closes THIS evaluation only once DWELL_CAP_MS has
+        # elapsed since its last fix (spec §3.2/§4) on the fold's LOGICAL
+        # clock — a later fix or a recorded poll proving the time passed
+        # (25 §2) — a decision this evaluation makes, not segment_stays.
         #
         # If it does NOT close this cycle, its fixes must stay readable:
         # the watermark advancing past them would mean the next cycle
@@ -756,42 +748,122 @@ class MobilityRollup:
             # watermark and let the group go. This is the pre-#82
             # behaviour for sub-min-dwell groups and it is correct: a
             # lone drive-by fix must not stall the pipeline.
-        return new_stays, new_trips, trip_hold_id, stay_hold_id
+        open_stay: Stay | None = None
+        if (
+            last_open_stay is not None
+            and (now_ms - last_open_stay.ended_ts) / 1000 < DWELL_CAP_MS / 1000
+            and last_open_stay.ended_ts - last_open_stay.started_ts >= min_dwell_ms
+        ):
+            open_stay = last_open_stay
+        return new_stays, new_trips, trip_hold_id, stay_hold_id, open_stay
+
+    # -- what the stays and trips add up to ---------------------------------
+
+    async def _derive(
+        self, *, subject_id: str, circle_id: str, state: FoldState,
+        new_stays: list[Stay], advanced: bool,
+    ) -> list[Stay]:
+        """Places, occupancy, rhythm and corridors, as a function of the
+        fold's stays and trips, the saved places and the fold's clock. The
+        full plan runs when the stays or trips changed (the fold cleared
+        `tags_sha256`) or the saved places did; otherwise only
+        the labels are re-checked, because a label is the one thing the clock
+        alone moves (`label_freshness_days`). Returns the new stays the
+        rhythm scores anomalous.
+
+        A failure here is logged and left for the next run: the fold's rows
+        are already committed, and `tags_sha256` stays cleared until a plan
+        succeeds, so the next run plans again rather than skipping it."""
+        if not advanced and state.tags_sha256 is not None:
+            return []
+        now = state.logical_now_ms
+        try:
+            tags = await self._store.tagged_places()
+            digest = tags_sha256(tags)
+            all_stays = await self._store.stays_for_subject(subject_id=subject_id)
+            if state.tags_sha256 == digest:
+                await self._recheck_labels(
+                    subject_id=subject_id, all_stays=all_stays, now_ms=now,
+                )
+                return []
+            anomalous = await self._reconcile_places(
+                subject_id=subject_id, circle_id=circle_id, all_stays=all_stays,
+                new_stays=new_stays, tags=tags, now_ms=now,
+            )
+            await self._derive_corridors(subject_id=subject_id)
+            await self._store.mark_derived(subject_id=subject_id, tags_sha256=digest)
+            return anomalous
+        except Exception:
+            log.exception(
+                "place/corridor derivation failed for %s — the fold is committed; "
+                "the next run derives again", subject_id,
+            )
+            return []
 
     async def _place_label(
-        self, planned: PlannedPlace, *, prior: DerivedPlace | None,
-        new_address_by_started_ts: dict[int, str | None],
+        self, *, lat: float, lng: float, tag_name: str | None,
+        stays: Sequence[Stay], now_ms: int,
     ) -> str | None:
-        """The display name for a planned place, in DEC-190's order: the
-        household's own tag name; else a cached Google label (2026-08-19
-        "Google-cache-only labelling"); else the Life360 mode address of its
-        stays (issue #10 option 1); else the name a previous cycle wrote.
-
-        The last step is a sticky keep, not a recomputation: only THIS
-        cycle's stays carry an address in memory (`presence_stays` has no
-        address column), so an address-less cycle is absence of new
-        evidence, never evidence of no name."""
-        if planned.tag_name is not None:
-            return planned.tag_name
-        label = await self._label_for(lat=planned.lat, lng=planned.lng)
+        """The display name for a place, in DEC-190's order: the household's
+        own tag name; else a cached Google label; else the Life360 mode
+        address of its stays (issue #10 option 1). Each stay carries its
+        own address now (`presence_stays.address`), so the name is a
+        function of the place's stays, not of the cycle that happened to see
+        their fixes — the old «keep the previous cycle's
+        name» rule is gone with the reason for it."""
+        if tag_name is not None:
+            return tag_name
+        label = await self._label_for(lat=lat, lng=lng)
         if label is not None:
             return label
-        fallback = mode_address(
-            s.address if s.address is not None
-            else new_address_by_started_ts.get(s.started_ts)
-            for s in planned.stays
-        )
-        if fallback is not None:
-            return fallback
-        # A tag that no longer claims the place must not leave its name on it.
-        if prior is not None and prior.saved_place_id is None:
-            return prior.label
-        return None
+        return mode_address(s.address for s in stays)
+
+    async def _recheck_labels(
+        self, *, subject_id: str, all_stays: list[Stay], now_ms: int,
+    ) -> None:
+        """The cheap speed (spec §4.2): each stored place relabelled from the
+        stays linked to it at the logical clock — exactly the label the full
+        plan would compute for the same stays and saved places (a saved
+        place keeps its tag's name; the plan runs again if the tags change).
+        Never moves a place (issue #339)."""
+        for place in await self._store.places_for_subject(subject_id=subject_id):
+            linked = sorted(
+                (s for s in all_stays if s.place_id == place.id),
+                key=lambda s: s.started_ts,
+            )
+            if not linked:
+                continue
+            recheck = label_place(
+                linked, now_ms=now_ms, tz_name=self._cfg.tz_name,
+                min_nights=self._cfg.min_nights,
+                min_weekdays=self._cfg.min_weekdays,
+                label_freshness_days=self._cfg.label_freshness_days,
+            )
+            name = place.label if place.saved_place_id is not None else await self._place_label(
+                lat=place.lat, lng=place.lng, tag_name=None, stays=linked, now_ms=now_ms,
+            )
+            if (recheck.kind, recheck.confidence, name) == (
+                place.kind, place.confidence, place.label,
+            ):
+                continue
+            await self._store.save_place(
+                subject_id=subject_id, circle_id=place.circle_id,
+                place_id=place.id, lat=place.lat, lng=place.lng,
+                radius_m=place.radius_m, kind=recheck.kind,
+                confidence=recheck.confidence, label=name,
+                saved_place_id=place.saved_place_id,
+                first_seen_ts=place.first_seen_ts, last_seen_ts=place.last_seen_ts,
+            )
+            if (
+                self._metrics is not None
+                and recheck.kind == "unlabeled" and place.kind != "unlabeled"
+            ):
+                self._metrics.inc("nora_analytics_unlabeled_total", subject=subject_id)
 
     async def _reconcile_places(
         self, *, subject_id: str, circle_id: str, all_stays: list[Stay],
-        new_stays: list[Stay], now_ms: int,
-    ) -> None:
+        new_stays: list[Stay], tags: list[TaggedPlace], now_ms: int,
+    ) -> list[Stay]:
         """DEC-190 (design/27 §3.7, ADR 0014, issue #339): recompute the
         subject's whole place picture with `plan_places`, then make the store
         match it — save each planned place under the id it keeps, relink
@@ -800,33 +872,30 @@ class MobilityRollup:
         and rebuild occupancy and rhythm for every place whose stay set
         changed.
 
-        Writes are DIFFED against what is stored, so a steady-state cycle
-        (same stays, same plan) writes nothing — the reconcile runs on every
-        cycle that brings fixes, and must not rewrite the table each time."""
+        Writes are DIFFED against what is stored, so a steady-state run
+        (same stays, same plan) writes nothing. The plan's content is a
+        function of the stays, the tags and the clock; only which stored id
+        each planned place keeps depends on what is stored (identity by
+        overlap), which is why a rebuild's places carry other ids and the
+        same everything else."""
         existing = await self._store.places_for_subject(subject_id=subject_id)
         existing_by_id = {p.id: p for p in existing}
-        tagged = await self._store.tagged_places()
         plan = plan_places(
-            all_stays, existing=existing, tagged=tagged, now_ms=now_ms,
+            all_stays, existing=existing, tagged=tags, now_ms=now_ms,
             tz_name=self._cfg.tz_name, cluster_eps_m=self._cfg.cluster_eps_m,
             cluster_min_samples=self._cfg.cluster_min_samples,
             match_radius_m=self._cfg.place_match_radius_m,
             min_nights=self._cfg.min_nights, min_weekdays=self._cfg.min_weekdays,
             label_freshness_days=self._cfg.label_freshness_days,
         )
-        new_address_by_started_ts = {s.started_ts: s.address for s in new_stays}
         links: dict[int, int | None] = {}
         kept: set[int] = set()
-        created: set[int] = set()
         for planned in plan:
             prior = (
                 existing_by_id.get(planned.existing_id)
                 if planned.existing_id is not None else None
             )
-            label = await self._place_label(
-                planned, prior=prior,
-                new_address_by_started_ts=new_address_by_started_ts,
-            )
+            label = await self._planned_label(planned, now_ms=now_ms)
             first_seen = min(s.started_ts for s in planned.stays)
             last_seen = max(s.ended_ts for s in planned.stays)
             unchanged = prior is not None and (
@@ -854,22 +923,15 @@ class MobilityRollup:
                         "nora_analytics_places_total",
                         subject=subject_id, kind=planned.label.kind,
                     )
-            if planned.existing_id is None:
-                created.add(place_id)
             kept.add(place_id)
             for s in planned.stays:
                 links[s.started_ts] = place_id
 
         changed_links: dict[int, int | None] = {}
-        dirty: set[int] = set(created)
         for s in all_stays:
             target = links.get(s.started_ts)
             if target != s.place_id:
                 changed_links[s.started_ts] = target
-                if target is not None:
-                    dirty.add(target)
-                if s.place_id is not None:
-                    dirty.add(s.place_id)
         await self._store.relink_stays(subject_id=subject_id, links=changed_links)
         await self._store.delete_places(
             subject_id=subject_id,
@@ -880,17 +942,24 @@ class MobilityRollup:
             target = links.get(s.started_ts)
             if target is not None:
                 members.setdefault(target, []).append(s)
-        for place_id in sorted(dirty & kept):
+        # EVERY kept place, not only the ones whose links changed this run:
+        # a run whose occupancy write failed after its relinks landed leaves
+        # no link changed for the retry to see, and the retry must still
+        # repair it (the writes are diffed, so an unchanged place costs a
+        # read, not a version).
+        for place_id in sorted(kept):
             await self._rebuild_rhythm(
                 subject_id=subject_id, place_id=place_id,
-                stays=members.get(place_id, []), now_ms=now_ms,
+                stays=members.get(place_id, []),
             )
-        if new_stays and self._metrics is not None:
+        anomalous: list[Stay] = []
+        if new_stays:
             # Anomalies are a pure function of the stays and their links, so
             # they are computed on read (`detect_stay_anomalies`), never
             # stored — a stored copy would go stale on every relink. The
-            # rollup only COUNTS the ones this cycle's stays carry, scored
-            # against the links it just wrote.
+            # rollup COUNTS the ones this run's stays carry, scored against
+            # the links it just wrote, and hands them to the deviation
+            # stimulus (25 §4).
             linked = [
                 dataclasses.replace(s, place_id=links.get(s.started_ts))
                 for s in all_stays
@@ -900,26 +969,39 @@ class MobilityRollup:
                 stay = by_start.get(new.started_ts)
                 if stay is None:
                     continue
-                for anomaly in detect_stay_anomalies(
+                found = detect_stay_anomalies(
                     stay, history=linked, tz_name=self._cfg.tz_name,
                     min_samples=self._cfg.anomaly_min_samples,
                     z_threshold=self._cfg.anomaly_z_threshold,
                     novelty_radius_m=self._cfg.cluster_eps_m,
-                ):
-                    self._metrics.inc(
-                        "nora_analytics_anomalies_total",
-                        subject=subject_id, kind=anomaly.kind,
-                    )
+                )
+                if found:
+                    anomalous.append(stay)
+                if self._metrics is not None:
+                    for anomaly in found:
+                        self._metrics.inc(
+                            "nora_analytics_anomalies_total",
+                            subject=subject_id, kind=anomaly.kind,
+                        )
+        return anomalous
+
+    async def _planned_label(self, planned: PlannedPlace, *, now_ms: int) -> str | None:
+        return await self._place_label(
+            lat=planned.lat, lng=planned.lng, tag_name=planned.tag_name,
+            stays=planned.stays, now_ms=now_ms,
+        )
 
     async def _rebuild_rhythm(
-        self, *, subject_id: str, place_id: int, stays: list[Stay], now_ms: int,
+        self, *, subject_id: str, place_id: int, stays: list[Stay],
     ) -> None:
         """Tier 3 (design/27 §4, issue #6) for ONE place, recomputed wholesale
         from the stays linked to it: occupancy (dwell per local hour-of-week)
         and rhythm (circular mean arrival/departure, duration median/MAD).
         Full recompute rather than accumulation, so it is idempotent and
         follows a relink — accumulation is what left dwell on a place after
-        its stays had moved."""
+        its stays had moved. `updated_ts` is the newest stay's end (the
+        Record time the row is as of), never a clock reading."""
+        as_of = max((s.ended_ts for s in stays), default=0)
         bins: dict[int, int] = {}
         for s in stays:
             for how, dwell in hour_of_week_bins(
@@ -927,7 +1009,7 @@ class MobilityRollup:
             ).items():
                 bins[how] = bins.get(how, 0) + dwell
         await self._store.replace_occupancy(
-            subject_id=subject_id, place_id=place_id, bins=bins, now_ms=now_ms,
+            subject_id=subject_id, place_id=place_id, bins=bins, now_ms=as_of,
         )
         if self._metrics is not None:
             self._metrics.inc(
@@ -949,245 +1031,124 @@ class MobilityRollup:
                 [_local_minute_of_day(s.ended_ts, tz) for s in stays]
             ),
             duration_median_ms=int(median_ms), duration_mad_ms=int(mad_ms),
-            sample_count=len(stays), now_ms=now_ms,
+            sample_count=len(stays), now_ms=as_of,
         )
 
-    async def _record_corridors(self, *, subject_id: str, now_ms: int) -> None:
-        """Tier 5 (design/27 §4, issue #6): cluster this subject's
-        NOT-YET-LINKED trips into corridors, give each corridor a durable
-        identity, and recompute the touched corridors' hour-of-week speed
-        percentiles.
+    async def _derive_corridors(self, *, subject_id: str) -> None:
+        """Tier 5 (design/27 §4, issue #6), recomputed from the subject's trips
+        as a whole instead of accumulated: a corridor is what the trips add
+        up to now, not what the order they arrived in happened to link.
 
-        **The set clustered here is the accumulated pool, not this cycle's
-        batch** — `unclustered_named_trips_for_subject` reads back every
-        trip with a road-name sequence whose `corridor_id` is still NULL,
-        newest first, bounded by `corridor_cluster_batch_limit`. That is
-        the whole point of the redesign. Clustering only the trips
-        extracted in the current tick meant `corridor_min_samples` similar
-        trips had to arrive inside ONE ~120 s tick, and in real deployment
-        each occurrence of a real route (a daily commute) arrives in its
-        own separate tick — so `cluster_trips` always saw a batch of one
-        and dropped it as noise. Tier 5 would have shipped minting zero
-        corridors and zero speed percentiles, silently, forever (final
-        whole-branch review, Critical #1). Now an occurrence of a route
-        waits in the pool for its siblings, however many days apart they
-        fall. Measured both ways on the same fixture — a 6-day/4324-tick
-        repeating commute driven through the real `run_once` loop gives 60
-        trips / 0 corridors / 0 speed rows with per-batch clustering, and
-        60 / 10 / 60 with this
-        (`tests/unit/test_analytics_rollup.py::
-        test_a_repeating_commute_actually_grows_corridors_over_days`).
+        1. The POOL is the newest `corridor_cluster_batch_limit` trips with a
+           road-name sequence (an address-less trip never joins: its empty
+           sequence is an edit-distance neighbour of every short corridor,
+           design/27's Task 11 review). `cluster_trips` over it, newest
+           first, makes the corridors; `corridor_min_samples` is still what
+           lets one be born.
+        2. A corridor's sequence is the most common sequence among its
+           clustered trips (the newest on a tie): a function of its members,
+           where the old «first trip's sequence, never updated» depended on
+           which trip happened to create the row.
+        3. Every other named trip — noise inside the pool, and every trip
+           older than it — joins the corridor whose sequence is nearest, when
+           within `corridor_max_edit_distance` (the old second pass, now over
+           the same corridors every time).
+        4. Each corridor keeps the stored id whose trips it overlaps most
+           (greedy, like places); links, rows and counts are then DIFFED
+           against the store.
 
-        **Still no `last_trip_cluster_id` watermark column, and now for a
-        positive reason rather than the absence of a code path**:
-        `presence_trips.corridor_id IS NULL` already IS the durable "not
-        yet processed" marker, and it is a strictly better one than a
-        watermark id — it is per-trip, so a trip that fails to link stays
-        eligible next cycle instead of being skipped past. This is the same
-        shape `presence_stays.place_id IS NULL` already plays for Tier 3's
-        first-place backfill.
-
-        **Gated on new trips arriving** — the only caller runs it inside
-        `run_once`'s `if new_trips:` branch, after `write_trips` lands. Not
-        because re-clustering an unchanged pool would be WRONG (it is
-        idempotent: same trips, same corridors, same answer) but because it
-        would be pure waste at tick cadence, and expensive waste — see the
-        cost table below. A new trip is precisely the event that can push a
-        group over `corridor_min_samples` or bring a match into range, so
-        nothing is ever delayed by more than one arriving trip. The one
-        thing the gate does defer is a CONFIG change (a lowered
-        `corridor_min_samples` takes effect on the next trip, not on the
-        next tick), which is the same bargain DEC-115's `last_cluster_id`
-        dirty-set gate already strikes for `cluster_places`.
-
-        The cost is why the gate and the bound both exist. `cluster_trips`
-        is O(n^2) in an edit-distance metric that is itself expensive.
-        Measured on this machine (2026-08-20; n trips over 6 recurring
-        corridors of 6-10 road names, jittered — the same corpus shape as
-        the pre-redesign table this replaces, and reproducing it closely):
-
-            cluster_trips  n=66     31 ms     n=600    2.67 s
-            cluster_trips  n=200   296 ms     n=1000   7.59 s
-            cluster_trips  n=400  1.19 s      n=2000  30.6 s
-            cluster_trips  n=500  1.87 s      n=3600  ~92 s (extrapolated)
-            cluster_places n=3600  6.0 s
-
-        `cluster_places`' docstring calls its own O(n^2) "trivial" at 3,600
-        stays and it is (6 s, gated). `cluster_trips` at the same n is ~15x
-        worse, because an edit distance over two 6-10 element sequences is
-        hundreds of Python-level operations where a haversine is a handful.
-        `corridor_cluster_batch_limit` defaults to 500 for a stated budget
-        — under 2% of a `tick_seconds=120` tick for one subject (see that
-        field's own comment for the arithmetic).
-
-        Cross-cycle continuity ALSO still comes from `existing_corridor`'s
-        similarity match against the persisted corridor sequences (pass 2
-        below); the pool is what lets a corridor be BORN, the similarity
-        match is what lets it keep growing once it exists.
-        """
-        # The address-less hold-out is enforced by the QUERY, not here.
-        # `edit_distance((), x) == len(x)` makes an empty sequence a
-        # similarity-neighbour of every 1-2 element real corridor, so
-        # `cluster_trips` will legitimately put an address-less trip in the
-        # same cluster as three real, named ones — it is not merely
-        # clusterable with other address-less trips. Judging that cluster by
-        # its FIRST trip's sequence is a coin-flip on input order, wrong in
-        # both directions: an empty `cluster[0]` discards the whole cluster
-        # and silently unlinks the real trips in it, and a named `cluster[0]`
-        # attaches the empty one too, contaminating the corridor's
-        # `sample_count` and its speed percentiles with an ungrounded sample
-        # (Task 11 review, Important #1). Task 11 partitioned in this method;
-        # the filter moved into `unclustered_named_trips_for_subject`'s
-        # `jsonb_array_length(sequence) > 0` when the pool became a query, so
-        # there is ONE place it is enforced and the contract suite holds both
-        # store implementations to it
-        # (`test_unclustered_named_trips_excludes_linked_and_address_less`).
-        pool = await self._store.unclustered_named_trips_for_subject(
-            subject_id=subject_id,
-            limit=self._cfg.corridor_cluster_batch_limit,
+        Cost: `cluster_trips` is O(n²) in an edit-distance metric; the pool
+        bound keeps it under ~2 s (the measured table this docstring used to
+        carry: 1.87 s at 500), and it runs only when the trips changed."""
+        trips = await self._store.trips_for_subject(subject_id=subject_id)
+        named = sorted(
+            (t for t in trips if t.corridor), key=lambda t: t.started_ts, reverse=True,
         )
-        clusters = cluster_trips(
-            pool, max_edit_distance=self._cfg.corridor_max_edit_distance,
-            min_samples=self._cfg.corridor_min_samples,
-        )
-        # id -> the corridor's CANONICAL sequence (the PERSISTED one for a
-        # match, the representative for a fresh insert), so the reconciling
-        # upsert below is handed the corridor's own identity rather than
-        # whatever sequence happened to query it. Both stores currently
-        # IGNORE `sequence` on the `existing_id` path by design
-        # (`upsert_corridor`: "identity survives, does not chase every new
-        # trip's own sequence"), so a mutation check confirms this choice is
-        # not yet observable through the store's public surface — it is
-        # carried because it is the correct value to pass, not because a
-        # test can currently tell the difference.
-        touched: dict[int, tuple[str, ...]] = {}
-        created: set[int] = set()
-        clustered_starts = {t.started_ts for cluster in clusters for t in cluster}
-        for cluster in clusters:
-            # The cluster's FIRST trip's own sequence is the
-            # representative — `PRESENCE_CORRIDORS`' own "identity
-            # survives, does not chase every new trip's own sequence". The
-            # pool arrives newest-first, so that representative is the most
-            # RECENTLY observed spelling of the route, which is the better
-            # of the two arbitrary choices.
-            attached = await self._attach_corridor(
-                subject_id=subject_id, sequence=cluster[0].corridor,
-                trips=cluster, now_ms=now_ms, may_create=True,
+        pool = named[: self._cfg.corridor_cluster_batch_limit]
+        clusters = [
+            list(c) for c in cluster_trips(
+                pool, max_edit_distance=self._cfg.corridor_max_edit_distance,
+                min_samples=self._cfg.corridor_min_samples,
             )
-            if attached is not None:
-                corridor_id, canonical, was_created = attached
-                touched[corridor_id] = canonical
-                if was_created:
-                    created.add(corridor_id)
-        # A trip `cluster_trips` called noise can still belong to a corridor
-        # this subject ALREADY has — and it usually does. Once a corridor
-        # exists, each new occurrence of that route arrives alone in its own
-        # tick and is a singleton for clustering purposes. Without this
-        # second pass a corridor's `sample_count` and its speed percentiles
-        # would freeze at whatever minted it, and Tier 5 would look built
-        # while silently never learning again. Creating from a singleton is
-        # still refused — that is `corridor_min_samples`' whole job.
-        #
-        # Grouped by EXACT sequence rather than walked trip by trip: the
-        # leftovers are dominated by repeats of the same route, `existing_
-        # corridor` would return the identical answer for each of them, and
-        # this pass now runs over an accumulated pool of up to
-        # `corridor_cluster_batch_limit` trips rather than one tick's
-        # handful — so the naive loop would be up to that many store
-        # round-trips per tick. Grouping also makes the linking one
-        # `set_trip_corridor_ids` call per corridor instead of one per trip.
-        leftovers: dict[tuple[str, ...], list[Trip]] = {}
-        for trip in pool:
-            if trip.started_ts in clustered_starts:
+        ]
+        reps = [_representative(c) for c in clusters]
+        clustered = {t.started_ts for c in clusters for t in c}
+        for trip in named:
+            if trip.started_ts in clustered:
                 continue
-            leftovers.setdefault(trip.corridor, []).append(trip)
-        for sequence, trips in leftovers.items():
-            attached = await self._attach_corridor(
-                subject_id=subject_id, sequence=sequence,
-                trips=trips, now_ms=now_ms, may_create=False,
-            )
-            if attached is not None:
-                corridor_id, canonical, was_created = attached
-                touched[corridor_id] = canonical
-                if was_created:
-                    created.add(corridor_id)
-        if self._metrics is not None:
-            # ONE increment per distinct corridor per pass, labelled by
-            # outcome — not one per attach operation, which is what this
-            # counted before and why "no corridor has ever been created"
-            # was unreadable from it (final whole-branch review, Important
-            # #2). `created` is decided by `_attach_corridor` from whether
-            # `existing_corridor` matched, so it is the real thing and not
-            # a guess from the count.
-            for corridor_id in sorted(touched):
-                self._metrics.inc(
-                    "nora_analytics_corridors_total", subject=subject_id,
-                    outcome="created" if corridor_id in created else "reconfirmed",
+            best: tuple[int, int] | None = None
+            for i, rep in enumerate(reps):
+                d = edit_distance(trip.corridor, rep)
+                if d <= self._cfg.corridor_max_edit_distance and (
+                    best is None or (d, i) < best
+                ):
+                    best = (d, i)
+            if best is not None:
+                clusters[best[1]].append(trip)
+
+        existing = await self._store.corridors_for_subject(subject_id=subject_id)
+        existing_ids = {c.id for c in existing}
+        stored_link = {t.started_ts: t.corridor_id for t in trips}
+        candidates: list[tuple[int, int, int]] = []
+        for ci, members in enumerate(clusters):
+            overlap: dict[int, int] = {}
+            for t in members:
+                cid = stored_link.get(t.started_ts)
+                if cid is not None and cid in existing_ids:
+                    overlap[cid] = overlap.get(cid, 0) + 1
+            candidates.extend((n, ci, cid) for cid, n in overlap.items())
+        candidates.sort(key=lambda c: (-c[0], c[1], c[2]))
+        keeps: dict[int, int] = {}
+        used: set[int] = set()
+        for _n, ci, cid in candidates:
+            if ci in keeps or cid in used:
+                continue
+            keeps[ci] = cid
+            used.add(cid)
+
+        by_id = {c.id: c for c in existing}
+        links: dict[int, int | None] = {}
+        kept: set[int] = set()
+        for ci, members in enumerate(clusters):
+            starts = [t.started_ts for t in members]
+            wanted = (reps[ci], len(members), min(starts), max(starts))
+            keep = keeps.get(ci)
+            prior = by_id.get(keep) if keep is not None else None
+            if prior is not None and (
+                prior.sequence, prior.sample_count, prior.first_seen_ts, prior.last_seen_ts,
+            ) == wanted:
+                cid = prior.id
+            else:
+                cid = await self._store.save_corridor(
+                    subject_id=subject_id, corridor_id=keep, sequence=reps[ci],
+                    sample_count=len(members), first_seen_ts=min(starts),
+                    last_seen_ts=max(starts),
                 )
-        for corridor_id, sequence in sorted(touched.items()):
-            await self._reconcile_corridor_count(
-                subject_id=subject_id, corridor_id=corridor_id,
-                sequence=sequence, now_ms=now_ms,
-            )
+                if self._metrics is not None:
+                    self._metrics.inc(
+                        "nora_analytics_corridors_total", subject=subject_id,
+                        outcome="created" if prior is None else "reconfirmed",
+                    )
+            kept.add(cid)
+            for t in members:
+                links[t.started_ts] = cid
+        changed = {
+            t.started_ts: links.get(t.started_ts) for t in trips
+            if links.get(t.started_ts) != t.corridor_id
+        }
+        await self._store.relink_trips(subject_id=subject_id, links=changed)
+        await self._store.delete_corridors(
+            subject_id=subject_id, corridor_ids=sorted(existing_ids - kept),
+        )
 
-    async def _attach_corridor(
-        self, *, subject_id: str, sequence: tuple[str, ...], trips: list[Trip],
-        now_ms: int, may_create: bool,
-    ) -> tuple[int, tuple[str, ...], bool] | None:
-        """Link `trips` to the corridor `sequence` names, creating it when
-        `may_create` and no near-match exists. Returns `(corridor_id,
-        canonical_sequence, created)`, or `None` when nothing was attached.
 
-        `created` — whether this call INSERTed a brand-new corridor row
-        rather than reconfirming one that already existed — is returned
-        rather than counted here, because the counting has to be per
-        corridor and this method is called once per cluster/leftover group.
-        See `_record_corridors`' own increment."""
-        match = await self._store.existing_corridor(
-            subject_id=subject_id, sequence=sequence,
-            max_edit_distance=self._cfg.corridor_max_edit_distance,
-        )
-        if match is None and not may_create:
-            return None
-        existing_id, canonical = (None, sequence) if match is None else match
-        # `sample_count=len(trips)` is PROVISIONAL for an existing corridor —
-        # `_reconcile_corridor_count` overwrites it with the authoritative count
-        # once the links have landed. It cannot be authoritative here: the id
-        # is needed to link, and the count is only knowable after linking.
-        # For a fresh insert it is already exact (no other trip carries the
-        # id yet), so the reconcile is a no-op in that case.
-        corridor_id = await self._store.upsert_corridor(
-            subject_id=subject_id, sequence=canonical, sample_count=len(trips),
-            now_ms=now_ms, existing_id=existing_id,
-        )
-        await self._store.set_trip_corridor_ids(
-            subject_id=subject_id,
-            started_ts_in=[t.started_ts for t in trips],
-            corridor_id=corridor_id,
-        )
-        return corridor_id, canonical, existing_id is None
-
-    async def _reconcile_corridor_count(
-        self, *, subject_id: str, corridor_id: int, sequence: tuple[str, ...],
-        now_ms: int,
-    ) -> None:
-        """The corridor's authoritative trip count, once the links have
-        landed. It used to write per-hour-of-week speed percentiles into
-        `presence_corridor_speed` as well; nothing ever read them, so that
-        writer is retired (design/27 §4.4 M2: repeated trips are reported
-        from the trips themselves) and the table stays, the repo's «code
-        goes, tables stay»."""
-        samples = await self._store.trip_speeds_for_corridor(
-            subject_id=subject_id, corridor_id=corridor_id,
-        )
-        if not samples:
-            return
-        # The authoritative sample count, now that the links have landed —
-        # see `_attach_corridor`'s provisional write.
-        await self._store.upsert_corridor(
-            subject_id=subject_id, sequence=sequence, sample_count=len(samples),
-            now_ms=now_ms, existing_id=corridor_id,
-        )
+def _representative(members: Sequence[Trip]) -> tuple[str, ...]:
+    """The most common sequence among a corridor's trips; on a tie the one
+    seen most recently (members arrive newest first from the pool)."""
+    counts: dict[tuple[str, ...], int] = {}
+    for t in sorted(members, key=lambda t: t.started_ts, reverse=True):
+        counts[t.corridor] = counts.get(t.corridor, 0) + 1
+    return max(counts, key=lambda seq: counts[seq])
 
 
 def _median(ordered: list[float]) -> float:
@@ -1203,7 +1164,7 @@ def _local_minute_of_day(ts_ms: int, tz: ZoneInfo) -> float:
 def _chunk_by_gap(fixes: list[RawFix], gap_ms: int) -> list[list[RawFix]]:
     """Split ts-ascending `fixes` wherever the gap to the next fix exceeds
     `gap_ms` — see the long comment at this function's one call site for
-    why `run_once` needs this before handing a batch to `segment_stays`."""
+    why the window needs this before handing it to `segment_stays`."""
     if not fixes:
         return []
     chunks: list[list[RawFix]] = [[fixes[0]]]
