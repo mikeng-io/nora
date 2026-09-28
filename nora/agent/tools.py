@@ -101,6 +101,7 @@ from ..domain.mobility_forecast import (
     forecast_hour,
     forecast_window,
     time_forecast,
+    trip_patterns,
 )
 from ..domain.models import PersonRef, TranscriptRow, WeatherObservation
 from ..domain.note_body import (
@@ -5681,6 +5682,42 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             )
             return fix.ts if fix is not None else None
 
+        async def _been_usual_trips(subject_id: str) -> list[dict]:
+            """design/27 §4.4 M2: the journeys this person repeats, from one of
+            their places to another, with how long they actually take at that
+            time of day, worked out as words. FAIL-SOFT: an annotation, so a
+            failure answers the routes without it."""
+            try:
+                stays = await mobility.stays_for_subject(subject_id=subject_id)
+                trips = await mobility.trips_for_subject(subject_id=subject_id)
+                places = {
+                    p.id: p for p in await mobility.places_for_subject(subject_id=subject_id)
+                }
+            except Exception:
+                log.exception("where_been usual trips failed; routes answered without them")
+                return []
+
+            def _name(pid: int) -> str:
+                p = places.get(pid)
+                return (p.label or _routine_unnamed[p.kind]) if p else "a place they go"
+
+            out = []
+            for pattern in trip_patterns(stays, trips, tz_name=_been_tz_name)[:8]:
+                takes = (
+                    f"about {pattern.median_minutes} min"
+                    if pattern.usual_max_minutes - pattern.usual_min_minutes < 5
+                    else f"{pattern.usual_min_minutes}-{pattern.usual_max_minutes} min"
+                )
+                out.append({
+                    "from": _name(pattern.origin_id),
+                    "from_ref": f"place:{pattern.origin_id}",
+                    "to": _name(pattern.destination_id),
+                    "to_ref": f"place:{pattern.destination_id}",
+                    "when": f"{pattern.day_type} {pattern.time_of_day}s",
+                    "usually_takes": takes, "trips": pattern.trips,
+                })
+            return out
+
         async def _been_mark_unusual(subject_id: str, day_stays: list[dict]) -> None:
             """design/27 §4.3: each of the day's stays gains `unusual`, how it
             differed from the subject's OWN past at that place, when it did
@@ -5747,7 +5784,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                     } | {
                         "first_seen_iso": _been_iso(row["first_seen_ts"]),
                         "last_seen_iso": _been_iso(row["last_seen_ts"]),
-                    }
+                    } | ({"place_ref": f"place:{row['id']}"} if "id" in row else {})
                     for row in rows
                 ]
                 return {"places": places} if places else {}
@@ -5788,7 +5825,11 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                     }
                     for t in out["trips"]
                 ]
-                return {"trips": trips, "corridors": corridors}
+                usual = await _been_usual_trips(subject_id)
+                return {
+                    "trips": trips, "corridors": corridors,
+                    **({"usual_trips": usual} if usual else {}),
+                }
             # `day`: the store's window is trailing-from-now, so the fetch
             # window is `now - day_start` (its cutoff lands exactly on the
             # day's midnight) and the day's upper edge is filtered here. A

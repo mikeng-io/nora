@@ -125,6 +125,7 @@ class SqlMobilityStore:
             agg = aggs.get(place.id)
             out.append(
                 {
+                    "id": place.id,
                     "kind": place.kind,
                     "label": place.label,
                     "saved": place.saved_place_id is not None,
