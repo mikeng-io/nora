@@ -249,3 +249,24 @@ async def test_a_saved_place_wins_over_a_bound_name_of_the_same_words(persons):
     home = routes.calls[0]["local_places"]["home"]
     assert (home.lat, home.lng) == (22.11, 114.22)
     assert "maps_url" in out  # a saved name is words anyone may open
+
+
+async def test_two_peoples_places_with_the_same_label_stay_apart(persons):
+    """Both labelled «Home» (capitalised, so the turn's lookup must fold case
+    the way it stores): the second is qualified by whose it is."""
+
+    class _Labelled(_TwoPeople):
+        def __init__(self):
+            super().__init__()
+            self.homes = {
+                k: DerivedPlace(p.id, p.subject_id, p.circle_id, p.lat, p.lng, p.radius_m,
+                                p.kind, p.confidence, "Home", None)
+                for k, p in self.homes.items()
+            }
+            self.by_id = {p.id: p for p in self.homes.values()}
+
+    routes = _Routes()
+    read, route = _turn(persons, routes, _Labelled())
+    out = await read(TUESDAY, 19, 23)
+    names = sorted(p["usually_at"] for p in out["people"])
+    assert names[0] == "Home" and names[1] in ("Home (Grant)", "Home (Miles)")
