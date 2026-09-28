@@ -338,3 +338,15 @@ def test_shadow_computes_the_same_answer_and_renders_everything():
     off = _ctx(A, notes=(NOTE_A, NOTE_B))
     assert _body(shadow) == _body(off)
     assert "raised in the smaller room" in _body(shadow)
+
+
+def test_mode_off_computes_nothing():
+    """`off` is not a shadow that happens to render everything: no view is
+    built, so nothing is computed and nothing lands on the prefill span."""
+    from nora.agent.prefill import _lineage
+
+    off = _ctx(A, notes=(NOTE_B,), lineage_room=_in(A, mode="off"))
+    assert _lineage(off) is None
+    shadow = _ctx(A, notes=(NOTE_B,), lineage_room=_in(A, mode="shadow"))
+    view = _lineage(shadow)
+    assert view is not None and dict(view.withheld) == {"notes": 1}

@@ -432,3 +432,17 @@ async def test_the_trigram_index_can_serve_both_operators(engine, said):
                 f"EXPLAIN SELECT id FROM messages WHERE {predicate}"  # noqa: S608 — literal test predicates
             )))
             assert "idx_messages_body_trgm" in plan, (predicate, plan)
+
+
+async def test_another_groups_rooms_are_not_even_counted(engine, said, policy, persons):
+    """Room D is alone in its unit. `all_rooms` from D reads D, and the three
+    rooms of the other unit are neither read nor counted as left out: another
+    group's rooms are never mentioned (D1 = B), which the unit check in
+    `_readable_rooms` is what keeps."""
+    roster = FakeRosterSource(groups={"ROOM-D": (frozenset({"+85200000001"}),)})
+    result = await _call(
+        _tools(engine, policy, persons, room_id="ROOM-D", platform="signal", roster=roster),
+        start=START, scope="all_rooms", text="大步行",
+    )
+    assert {m["room"] for m in result["messages"]} == {"Other group"}
+    assert "note" not in result
