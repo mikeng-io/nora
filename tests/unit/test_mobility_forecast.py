@@ -418,7 +418,7 @@ def test_not_at_work_and_never_there_today_is_absent_not_left():
 
 def test_left_work_today_is_done_at_the_time_they_left():
     wed = MONDAY + timedelta(days=7 * 7 + 2)
-    stays = _wednesday_nights(7, set()) + [_stay(wed, 9, 18, OFFICE)]
+    stays = [*_wednesday_nights(7, set()), _stay(wed, 9, 18, OFFICE)]
     fc = _fc(stays, week=7, kind="departure", place=OFFICE, from_hour=16, to_hour=22,
              now_h=19, at_place_now=False)
     assert (fc.today, fc.done_minute) == ("done", 18 * 60)
