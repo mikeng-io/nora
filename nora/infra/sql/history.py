@@ -150,6 +150,12 @@ APPEND_ONLY: dict[str, str] = {
     # upsert; the current response is the newest row per (event_id, person_id).
     "event_revision": "recorded_at",
     "event_rsvps": "recorded_at",
+    # Step 2c (0075_withdrawal): the citation edge table. Written once per
+    # edge (`ON CONFLICT DO NOTHING`, `nora.app.withdrawal` §2c's migration
+    # docstring) and never updated or deleted — an edge does not change, the
+    # ROW IT CITES is marked `unsupported` instead — so it is its own
+    # history, same as `event_rsvps`.
+    "citation": "recorded_at",
 }
 
 #: Changes in place today and migrates at a later step (70 §5). Not

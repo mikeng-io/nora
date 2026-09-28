@@ -201,6 +201,14 @@ MESSAGES = sa.Table(
     # of `raw_json` because that would interpret the envelope a second time,
     # per platform, in ingest.
     sa.Column("mentions_json", sa.Text),
+    # WITHDRAWAL (design/cognition-loop/10-tiers.md §8-9, migration
+    # `0075_withdrawal`, step 2c): epoch ms, set by `nora person forget <id>`
+    # for every message the person authored, cleared by `nora person
+    # unforget <id>`. `messages` is already in `HISTORY_TABLES`
+    # (`0068_system_time_history`), so this UPDATE is captured as a new
+    # version like any other write to this table — hiding is a transition,
+    # never a delete, and a snapshot before the forget restores the row.
+    sa.Column("hidden_at", sa.BigInteger, nullable=True),
     sa.CheckConstraint("conversation_type IN ('group','dm')"),
 )
 
@@ -2492,6 +2500,10 @@ NOTE = sa.Table(
     # The union of its revisions' lineage (`0073_lineage`): the index line
     # this row renders rests on everything its body has ever cited.
     *_derived("note", per_row=True),
+    # WITHDRAWAL (migration `0075_withdrawal`, step 2c): epoch ms, set by
+    # the cascade (`nora.app.withdrawal`) when this note's citation chain
+    # reaches a withdrawn Record item. NULL (supported) otherwise.
+    sa.Column("unsupported_at", sa.BigInteger, nullable=True),
 )
 
 NOTE_REVISION = sa.Table(
@@ -2911,6 +2923,10 @@ STANDING = sa.Table(
     ),
     # Sections `body` and `working_set` (`0073_lineage`).
     *_derived("standing", per_row=False),
+    # WITHDRAWAL (migration `0075_withdrawal`, step 2c): epoch ms, set by the
+    # cascade (`nora.app.withdrawal`) when this room's position cites a
+    # withdrawn Record item. NULL (supported) otherwise.
+    sa.Column("unsupported_at", sa.BigInteger, nullable=True),
 )
 
 #: One position, as it stood at the moment a fold set it — the chain behind
@@ -3269,6 +3285,10 @@ CULTURE = sa.Table(
                             name="culture_head_revision_id_fkey"),
               nullable=False),
     sa.Column("updated_at", sa.BigInteger, nullable=False),
+    # WITHDRAWAL (migration `0075_withdrawal`, step 2c): epoch ms, set by the
+    # cascade (`nora.app.withdrawal`) when this account cites a withdrawn
+    # Record item. NULL (supported) otherwise.
+    sa.Column("unsupported_at", sa.BigInteger, nullable=True),
     sa.CheckConstraint("length(btrim(key)) > 0", name="culture_has_a_key_check"),
 )
 
@@ -3355,6 +3375,44 @@ CULTURE_REVISION = sa.Table(
 IDX_CULTURE_REVISION_KEY_WRITTEN = sa.Index(
     "idx_culture_revision_key_written",
     CULTURE_REVISION.c.culture_key, sa.text("written_at DESC"), sa.text("id DESC"),
+)
+
+#: The citation edge table (migration `0075_withdrawal`, step 2c;
+#: design/cognition-loop/10-tiers.md §2 rule 7, §5): what a `note`,
+#: `standing` or `culture` head cites — today always a `messages.id` — so the
+#: withdrawal cascade (`nora.app.withdrawal`) can walk it rather than parse a
+#: body. See the migration's docstring for the full rationale and the three
+#: write sites that keep it current.
+CITATION = sa.Table(
+    "citation",
+    METADATA,
+    sa.Column("id", sa.BigInteger, sa.Identity(always=False), primary_key=True),
+    sa.Column("citing_store", sa.Text, nullable=False),
+    sa.Column("citing_key", sa.Text, nullable=False),
+    sa.Column("cited_store", sa.Text, nullable=False, server_default="message"),
+    sa.Column("cited_id", sa.Text, nullable=False),
+    _recorded_at(),
+    sa.CheckConstraint(
+        "citing_store in ('note', 'standing', 'culture')",
+        name="citation_citing_store_is_known_check",
+    ),
+    sa.CheckConstraint(
+        "cited_store in ('message')", name="citation_cited_store_is_known_check",
+    ),
+    sa.CheckConstraint(
+        "length(btrim(citing_key)) > 0", name="citation_has_a_citing_key_check",
+    ),
+    sa.CheckConstraint(
+        "length(btrim(cited_id)) > 0", name="citation_has_a_cited_id_check",
+    ),
+    sa.UniqueConstraint(
+        "citing_store", "citing_key", "cited_store", "cited_id",
+        name="citation_edge_unique",
+    ),
+)
+
+IDX_CITATION_CITED = sa.Index(
+    "idx_citation_cited", CITATION.c.cited_store, CITATION.c.cited_id,
 )
 
 

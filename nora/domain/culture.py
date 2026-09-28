@@ -264,6 +264,12 @@ class CultureRevision:
     # fail-closed side.
     lineage: Lineage = field(default=Lineage(), compare=False)
     exclude_persons: tuple[str, ...] = field(default=(), compare=False)
+    # WITHDRAWAL (design/cognition-loop/10-tiers.md §2 rule 7, migration
+    # `0075_withdrawal`, step 2c). Carried on the HEAD (`culture.
+    # unsupported_at`), never on a revision: only the head renders. `None`
+    # (supported) unless the cascade set it; epoch ms when it did.
+    # `compare=False` for the same reason `lineage` is.
+    unsupported_at: int | None = field(default=None, compare=False)
 
 
 @dataclass(frozen=True, slots=True)

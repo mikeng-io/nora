@@ -142,3 +142,25 @@ async def test_render_reports_dry_run_and_applied(policy):
     applied = await backfill_unit_ids(policy=policy, store=store, apply=True)
     lines = "\n".join(render(applied))
     assert "APPLIED" in lines
+
+
+async def test_render_dry_run_reports_the_legacy_count_not_updated(policy):
+    """`report.updated` is 0 on every dry run (`backfill_unit_ids` never
+    attempts a write without `--apply`), so a dry run's "would set" line must
+    come from `legacy` — the count of what a subsequent `--apply` would
+    change — or it always prints "would set 0" regardless of how many
+    pre-migration events there are. Two legacy events in one room, one
+    already-assigned event that must not be counted."""
+    store = FakeGatheringStore()
+    await store.create(_event(conversation_id="g-friends", unit_id="", title="Dinner"))
+    await store.create(_event(conversation_id="g-friends", unit_id="", title="Lunch"))
+    await store.create(
+        _event(conversation_id="g-friends", unit_id="friends", title="Already set"),
+    )
+
+    dry = await backfill_unit_ids(policy=policy, store=store, apply=False)
+    assert dry.updated == 0, "the bug this guards: updated is never set on a dry run"
+    assert dry.legacy == 2
+    lines = "\n".join(render(dry))
+    assert "would set 2" in lines
+    assert "would set 0" not in lines

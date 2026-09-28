@@ -129,6 +129,12 @@ async def backfill_unit_ids(
 
 
 def render(report: EventsBackfillReport) -> list[str]:
+    """`updated` is only counted on `--apply` (`backfill_unit_ids` never
+    attempts a write on a dry run, so it never has an outcome to count); on a
+    dry run the number this prints is `legacy` — the count of what WOULD be
+    set, which is what a dry run exists to report. Confusing the two used to
+    make every dry run print "would set 0" regardless of how many legacy
+    events there were."""
     verb = "set" if report.applied else "would set"
     lines = [
         f"events backfill-units ({'APPLIED' if report.applied else 'dry run: nothing written'})",
@@ -136,15 +142,17 @@ def render(report: EventsBackfillReport) -> list[str]:
     for room in report.rooms:
         if room.legacy == 0 and room.total == 0:
             continue
+        would_set = room.updated if report.applied else room.legacy
         lines.append(
             f"  {room.label} [{room.conversation_id[:12]}…] -> unit {room.unit!r}: "
             f"{room.total} event(s), {room.legacy} legacy (unit_id=''), "
-            f"{verb} {room.updated}"
+            f"{verb} {would_set}"
             + (f", {room.failed} FAILED" if room.failed else "")
         )
+    total_set = report.updated if report.applied else report.legacy
     lines.append(
         f"total: {report.legacy} legacy event(s) across {len(report.rooms)} room(s) "
-        f"policy.toml names, {verb} {report.updated}"
+        f"policy.toml names, {verb} {total_set}"
         + (f", {report.failed} FAILED" if report.failed else "")
     )
     if not report.applied:

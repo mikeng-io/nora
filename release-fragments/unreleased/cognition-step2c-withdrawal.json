@@ -1,0 +1,15 @@
+{
+  "type": "feature",
+  "summary": "An operator can now soft-forget a person: nora person forget hides their messages and marks every note, room position and room culture that only cited one of them as unsupported, so it stops reaching her; nora person unforget reverses the hide.",
+  "details": [
+    "nora person forget <id> [--apply] hides the person's recorded messages (a soft hide, kept in history, never a delete) and, in the same write, marks every note, room position (standing) and room culture whose citations reach one of those messages as unsupported. An unsupported row stops appearing in the notes index, note_search, the standing block and the culture block; it stays in the database for a later revision to re-evidence.",
+    "nora person unforget <id> [--apply] un-hides the person's messages. It does not clear an unsupported mark: a row that only cited a now-restored message is re-derived by whatever writes that tier next, not by the unforget itself.",
+    "Both commands are dry run by default and report what would change; --apply writes.",
+    "A withdrawn message also stops reaching record_query and every recorded transcript read, and a snapshot taken before the forget still shows the message as it was."
+  ],
+  "limitations": [
+    "Only messages are hidden today: social items, reference photos, templates, perceptions and person-scoped positions have no table yet (later steps).",
+    "The cascade covers notes, room positions and room culture — the stores today's write paths can cite from. Events and anything the Cognition or Character adaptors will write are not cited yet, so they are not covered until those land.",
+    "There is no automatic re-derivation: an unsupported row stays unsupported until an operator or a later adaptor revises it."
+  ]
+}

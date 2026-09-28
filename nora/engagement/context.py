@@ -302,10 +302,20 @@ class TranscriptInjection:
         # through `span`'s own `BaseException` handler before `wait_for`
         # converts it to the `TimeoutError` `read_culture` catches, so the
         # span still ends ERROR on a read that timed out.
-        return await read_culture(
+        found = await read_culture(
             traced_read("culture", "head", self._culture_reader.head(key=convo.primary_id)),
             stage="tag_culture", platform=msg.platform, metrics=self._metrics,
         )
+        # WITHDRAWAL (design/cognition-loop/10-tiers.md §2 rule 7, migration
+        # `0075_withdrawal`, step 2c): an unsupported account stops
+        # rendering into the `culture` block — the same "no account yet"
+        # `None` this method already returns for a room outside the policy,
+        # never a partial or stale one. `head()` still returns it (other
+        # callers, e.g. the fold's own "previous account" read, need the
+        # real row to re-derive from); only the render path filters here.
+        if found is not None and found.unsupported_at is not None:
+            return None
+        return found
 
     async def _presence(self, msg: NormalizedMessage) -> Presence | None:
         """Where she is, read at turn start, or `None` with no reader wired.
@@ -532,7 +542,7 @@ class TranscriptInjection:
         if self._standing_store is None:
             return None
         try:
-            return await traced_read(
+            found = await traced_read(
                 "standing", "read", self._standing_store.read(
                     platform=msg.platform, conversation_id=msg.conversation_id,
                 ),
@@ -542,6 +552,15 @@ class TranscriptInjection:
             self._metrics.inc(
                 "nora_errors_total", stage="standing", platform=msg.platform)
             return None
+        # WITHDRAWAL (design/cognition-loop/10-tiers.md §2 rule 7, migration
+        # `0075_withdrawal`, step 2c): an unsupported position stops
+        # rendering into the `standing` block, the same "no row" `None`
+        # already used for a conversation with no fold yet. `read()` itself
+        # still returns it (the fold's own read needs the real row); only
+        # the render path filters here.
+        if found is not None and found.unsupported_at is not None:
+            return None
+        return found
 
     async def _notes(self, msg: NormalizedMessage) -> tuple[Note, ...]:
         """The standing note index (2026-08-21 note-tier design §5.1).
