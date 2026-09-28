@@ -345,3 +345,154 @@ def test_the_arrival_backtest_beats_a_median_on_two_habits():
     assert result.days == 6
     assert result.accuracy == 1.0
     assert result.baseline_accuracy is not None and result.baseline_accuracy < 0.7
+
+
+# --- independent review of the movement model, 2026-09-28 ------------------
+
+
+def _weekly(weeks: int, weekday: int, segments, *, first=MONDAY) -> list[Stay]:
+    """`segments` = [(start_h, end_h, place)] on `weekday` of each week."""
+    return [
+        _stay(first + timedelta(days=7 * w + weekday), a, b, pid)
+        for w in range(weeks) for a, b, pid in segments
+    ]
+
+
+def _fc(stays, *, week, weekday=2, kind="arrival", place=HOME, from_hour=16,
+        to_hour=4, now_h=None, at_place_now=None):
+    day = MONDAY + timedelta(days=7 * week + weekday)
+    return time_forecast(
+        stays, place_ids={place}, kind=kind, day=day.date(), from_hour=from_hour,
+        to_hour=to_hour, tz_name="Asia/Hong_Kong", history_before_ms=_ms(day),
+        now_ms=None if now_h is None else _ms(day + timedelta(hours=now_h)),
+        at_place_now=at_place_now,
+    )
+
+
+def test_a_window_starting_before_four_keeps_the_rest_of_the_day():
+    """Read against a 04:00 rollover, 0-to-23 lost every event after 04:00."""
+    fc = _fc(_wednesday_nights(6, set()), week=6, from_hour=0, to_hour=23)
+    assert fc.status == "ok"
+    assert [(h.earliest, h.days) for h in fc.habits] == [(19 * 60 + 25, 6)]
+
+
+def test_a_day_without_the_event_counts_against_the_habit():
+    """Three Wednesdays at the gym all night: «on 3 of 6», not «on 3 of 3»."""
+    stays = _weekly(3, 2, [(9, 18, OFFICE), (19 + 25 / 60, 31, HOME)]) + _weekly(
+        3, 2, [(9, 18, OFFICE), (19, 32, GYM)], first=MONDAY + timedelta(weeks=3),
+    )
+    fc = _fc(stays, week=6)
+    assert (fc.days, [(h.earliest, h.days) for h in fc.habits]) == (6, [(1165, 3)])
+
+
+def test_the_last_arrival_of_the_night_is_the_one_that_counts():
+    stays = _weekly(6, 2, [(9, 18, OFFICE), (19, 20, HOME), (20.2, 22, GYM), (22.5, 31, HOME)])
+    assert [(h.earliest, h.days) for h in _fc(stays, week=6).habits] == [(22 * 60 + 30, 6)]
+
+
+def test_an_hour_out_for_lunch_is_not_leaving_work():
+    stays = _weekly(6, 4, [
+        (9, 12, OFFICE), (12 + 5 / 60, 12 + 55 / 60, None), (13, 18, OFFICE), (18.75, 31, HOME),
+    ])
+    fc = _fc(stays, week=6, weekday=4, kind="departure", place=OFFICE, from_hour=10, to_hour=20)
+    assert [(h.earliest, h.days) for h in fc.habits] == [(18 * 60, 6)]
+
+
+def test_the_first_real_departure_is_when_they_leave():
+    stays = _weekly(6, 4, [(9, 15, OFFICE), (15.2, 18, GYM), (18.2, 19, OFFICE), (19.5, 31, HOME)])
+    fc = _fc(stays, week=6, weekday=4, kind="departure", place=OFFICE, from_hour=10, to_hour=22)
+    assert [(h.earliest, h.days) for h in fc.habits] == [(15 * 60, 6)]
+
+
+def test_without_a_fresh_reading_today_is_unknown_not_pending():
+    fc = _fc(_wednesday_nights(7, set()), week=7, now_h=21, at_place_now=None)
+    assert fc.today == "unknown" and fc.like_today == ()
+
+
+def test_not_at_work_and_never_there_today_is_absent_not_left():
+    """Home all day: «already left work» was the old answer."""
+    fc = _fc(_wednesday_nights(7, set()), week=7, kind="departure", place=OFFICE,
+             from_hour=16, to_hour=22, now_h=20, at_place_now=False)
+    assert fc.today == "absent"
+
+
+def test_left_work_today_is_done_at_the_time_they_left():
+    wed = MONDAY + timedelta(days=7 * 7 + 2)
+    stays = _wednesday_nights(7, set()) + [_stay(wed, 9, 18, OFFICE)]
+    fc = _fc(stays, week=7, kind="departure", place=OFFICE, from_hour=16, to_hour=22,
+             now_h=19, at_place_now=False)
+    assert (fc.today, fc.done_minute) == ("done", 18 * 60)
+
+
+def test_home_again_after_going_out_does_not_claim_the_first_arrival():
+    """Home 19:00-20:00, out, back by 20:40 (an open stay): «since 19:00» was
+    wrong, and the time of the second arrival is not in closed stays."""
+    wed = MONDAY + timedelta(days=7 * 7 + 2)
+    today = [_stay(wed, 9, 18, OFFICE), _stay(wed, 19, 20, HOME), _stay(wed, 20.1, 20.5, GYM)]
+    fc = _fc(_wednesday_nights(7, set()) + today, week=7, now_h=20 + 40 / 60, at_place_now=True)
+    assert (fc.today, fc.done_minute) == ("done", None)
+
+
+def test_home_since_a_split_stay_says_when_they_got_in():
+    wed = MONDAY + timedelta(days=7 * 7 + 2)
+    today = [_stay(wed, 9, 18, OFFICE), _stay(wed, 19, 20.5, HOME)]
+    fc = _fc(_wednesday_nights(7, set()) + today, week=7, now_h=20 + 40 / 60, at_place_now=True)
+    assert (fc.today, fc.done_minute) == ("done", 19 * 60)
+
+
+def test_days_like_today_are_matched_by_where_they_were_at_this_time():
+    """Home by 21:00 every Wednesday, three of them popping out 22-23: asked at
+    21:00 with him not home, no past Wednesday is like tonight."""
+    stays = []
+    for w in range(7):
+        wed = MONDAY + timedelta(days=7 * w + 2)
+        stays.append(_stay(wed, 9, 18, OFFICE))
+        if w in (1, 3, 5):
+            stays += [_stay(wed, 19 + 25 / 60, 22, HOME), _stay(wed, 22.05, 23, GYM),
+                      _stay(wed, 23.25, 31, HOME)]
+        else:
+            stays.append(_stay(wed, 19 + 25 / 60, 31, HOME))
+    fc = _fc(stays, week=7, now_h=21, at_place_now=False)
+    assert (fc.today, fc.like_today_days, fc.like_today) == ("pending", 0, ())
+
+
+def test_like_today_counts_the_nights_it_never_happened():
+    """Not home at 21:00 on three nights: back ~23:45 on two, not at all on one."""
+    stays = _wednesday_nights(7, late_weeks={1, 3})
+    fifth = MONDAY + timedelta(days=7 * 5 + 2)
+    stays = [s for s in stays if not (s.started_ts >= _ms(fifth + timedelta(hours=19))
+                                      and s.started_ts < _ms(fifth + timedelta(hours=28)))]
+    stays.append(_stay(fifth, 19, 30, GYM))
+    fc = _fc(stays, week=7, now_h=21, at_place_now=False)
+    assert (fc.like_today_days, fc.like_today_without) == (3, 1)
+    assert [(h.earliest, h.days) for h in fc.like_today] == [(23 * 60 + 45, 2)]
+
+
+def test_the_arrival_backtest_cannot_see_the_day_it_scores():
+    """Early for four weeks, then late: the first late night must be a miss
+    for both sides. Any leak of later weeks into the history turns it into a
+    hit (independent review: both guards could be removed and stay green)."""
+    from nora.domain.mobility_forecast import backtest_arrivals
+
+    stays = _wednesday_nights(8, late_weeks={4, 5, 6, 7})
+    result = backtest_arrivals(
+        stays, place_ids={HOME}, tz_name="Asia/Hong_Kong",
+        start_ms=_ms(MONDAY + timedelta(weeks=3)), end_ms=_ms(MONDAY + timedelta(weeks=8)),
+    )
+    assert (result.days, result.hits, result.baseline_hits) == (5, 4, 1)
+    assert result.mean_width is not None and result.mean_width >= 30
+
+
+def test_the_middle_half_is_symmetric_at_four_trips():
+    from types import SimpleNamespace
+
+    stays, trips = [], []
+    for w, minutes in enumerate((30, 32, 34, 50)):
+        day = MONDAY + timedelta(days=7 * w)
+        stays += [_stay(day, 9, 18, OFFICE), _stay(day, 18 + minutes / 60, 30, HOME)]
+        trips.append(SimpleNamespace(
+            started_ts=_ms(day + timedelta(hours=18)),
+            ended_ts=_ms(day + timedelta(hours=18, minutes=minutes)),
+        ))
+    [p] = trip_patterns(stays, trips, tz_name="Asia/Hong_Kong")
+    assert (p.usual_min_minutes, p.usual_max_minutes) == (32, 34)

@@ -130,12 +130,12 @@ class _FakeMobilityWithHistory(_FakeMobility):
 
 
 MILES_PLACE = {
-    "kind": "home", "label": "Home", "saved": True, "lat": 22.31, "lng": 114.16,
+    "id": 7, "kind": "home", "label": "Home", "saved": True, "lat": 22.31, "lng": 114.16,
     "radius_m": 50.0, "confidence": 0.9, "first_seen_ts": NOW_MS - DAY_MS,
     "last_seen_ts": NOW_MS, "stay_count": 12, "total_dwell_ms": 400_000_000,
 }
 UNLABELED_PLACE = {
-    "kind": "unlabeled", "label": None, "saved": False, "lat": 22.44, "lng": 114.02,
+    "id": 8, "kind": "unlabeled", "label": None, "saved": False, "lat": 22.44, "lng": 114.02,
     "radius_m": 80.0, "confidence": 0.42, "first_seen_ts": NOW_MS - DAY_MS,
     "last_seen_ts": NOW_MS, "stay_count": 3, "total_dwell_ms": 40_000_000,
 }
@@ -575,6 +575,9 @@ async def test_places_and_routes_arms_carry_iso_timestamps(persons):
     tool = _where_been(persons, mobility, members=(MILES,))
     out = await tool("places", name="Miles")
     place = out["people"][0]["places"][0]
+    # The handle route resolves, and never the coordinate itself (DEC-216 M3).
+    assert place["place_ref"] == f"place:{MILES_PLACE['id']}"
+    assert "lat" not in place and "lng" not in place
     assert place["first_seen_iso"] == datetime.fromtimestamp(
         MILES_PLACE["first_seen_ts"] / 1000, tz=HK,
     ).isoformat(timespec="seconds")

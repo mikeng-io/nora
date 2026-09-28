@@ -84,3 +84,60 @@ async def test_a_place_ref_is_not_mistaken_for_an_identifier_or_a_coordinate(per
     routes = _Routes()
     out = await _route(persons, routes)(origin="Olympian City", destination="place:12")
     assert out["status"] == "ok" and out["destination"] == "a home of theirs"
+
+
+# ---- independent review 2026-09-28: the guard across circles ---------------
+
+from nora.agent.whereis import Circle  # noqa: E402
+
+PAT_PLACE = DerivedPlace(21, "pat_ho", "c2", 22.3, 114.1, 100.0, "home", 1.0, None, None)
+GRANT_PLACE = DerivedPlace(22, "grant_carver", "c", 22.3513, 114.0633, 100.0,
+                             "home", 1.0, None, None)
+
+
+class _TwoPlaces:
+    async def place_by_id(self, *, place_id):
+        return {21: PAT_PLACE, 22: GRANT_PLACE}.get(place_id)
+
+
+def _circle_of(persons, circle_id, ids):
+    return Circle(
+        circle_id=circle_id, person_ids=frozenset(ids),
+        people=tuple(persons.by_person[i] for i in ids),
+    )
+
+
+def _route_circles(persons, routes, circles):
+    specs = build_tool_specs(
+        store=None, conversation_id="g", conversation_type="group",
+        persons=persons, honcho=None, deliverer=None, metrics=Metrics(),
+        room=_room(persons, members=(MILES, GRANT)), transit_source=None,
+        presence_circles=circles, location_trusted=False,
+        mobility=_TwoPlaces(), route_source=routes, clock=lambda: NOW.astimezone(UTC),
+    )
+    return next(s for s in specs if s.name == "route").call
+
+
+async def test_a_room_that_passes_one_circle_cannot_open_anothers_places(persons):
+    """Miles and Grant pass circle A; Pat's place is in circle B only, which
+    this room is not inside. Only the circle holding the place's person may
+    answer for it."""
+    routes = _Routes()
+    circles = (
+        _circle_of(persons, "a", ("grant_carver", "miles_novak")),
+        _circle_of(persons, "b", ("pat_ho", "miles_novak")),
+    )
+    out = await _route_circles(persons, routes, circles)(
+        origin="place:21", destination="Olympian City")
+    assert out["status"] == "refused" and routes.calls == []
+
+
+async def test_the_circle_holding_the_place_is_found_past_the_first(persons):
+    routes = _Routes()
+    circles = (
+        _circle_of(persons, "a", ("pat_ho", "miles_novak")),
+        _circle_of(persons, "b", ("grant_carver", "miles_novak")),
+    )
+    out = await _route_circles(persons, routes, circles)(
+        origin="place:22", destination="Olympian City")
+    assert out["status"] == "ok" and len(routes.calls) == 1

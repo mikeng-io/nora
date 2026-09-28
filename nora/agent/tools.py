@@ -5854,7 +5854,10 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                     } | {
                         "first_seen_iso": _been_iso(row["first_seen_ts"]),
                         "last_seen_iso": _been_iso(row["last_seen_ts"]),
-                    } | ({"place_ref": f"place:{row['id']}"} if "id" in row else {})
+                        # The handle route resolves (DEC-216 M3); the store
+                        # always returns the id, so it is never optional.
+                        "place_ref": f"place:{row['id']}",
+                    }
                     for row in rows
                 ]
                 return {"places": places} if places else {}
@@ -6167,27 +6170,50 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
     def _routine_span(habit: Any) -> str:
         if habit.latest - habit.earliest < 10:
             return f"around {_routine_clock(habit.earliest)}"
+        if habit.latest - habit.earliest > 180:
+            # Chained 90-minute gaps can span an evening: that is no fixed
+            # time, and saying «16:00-02:40» would read as one.
+            return (
+                f"at no fixed time, anywhere from {_routine_clock(habit.earliest)} "
+                f"to {_routine_clock(habit.latest)}"
+            )
         return f"{_routine_clock(habit.earliest)}-{_routine_clock(habit.latest)}"
 
     def _movement_person(
         person: str, stays: list, places: dict[int, Any], *,
         kind: str, place: str | None, day: Any, from_hour: int, to_hour: int,
         now_ms: int, live: dict | None,
-    ) -> dict | None:
+    ) -> dict | str | None:
         """One person's usual arrival at (or departure from) a place, as
         habits worked out in words, never one average; on the day itself,
         whether it already happened and, if not, what the days like today
-        did. `None` when they have no such place."""
+        did. `"no_place"` when they have no such place, `None` when the
+        history is too thin."""
         wanted = (place or "home").strip().casefold()
+        # A label names one place; a kind («home») can name several, and
+        # then the answer says so instead of borrowing one of their names.
         targets = {
-            pid for pid, p in places.items()
-            if (p.label or "").casefold() == wanted or p.kind == wanted
-        }
+            pid for pid, p in places.items() if (p.label or "").casefold() == wanted
+        } or {pid for pid, p in places.items() if p.kind == wanted}
         if not targets:
-            return None
-        named = next(
-            (places[pid].label for pid in sorted(targets) if places[pid].label), None,
-        ) or ("home" if wanted == "home" else wanted)
+            return "no_place"
+        if len(targets) == 1:
+            only = places[next(iter(targets))]
+            named = only.label or _routine_unnamed[only.kind]
+            refs: dict = {"place_ref": f"place:{only.id}"}
+        else:
+            named = {
+                "home": "one of their homes", "work": "one of their workplaces",
+            }.get(wanted, f"one of their places called {wanted}")
+            seen: dict[str, int] = {}
+            listed = []
+            for pid in sorted(targets, key=lambda i: (places[i].label or "", i)):
+                name = places[pid].label or _routine_unnamed[places[pid].kind]
+                seen[name] = seen.get(name, 0) + 1
+                if seen[name] > 1:
+                    name = f"{name} ({seen[name]})"
+                listed.append({"place": name, "place_ref": f"place:{pid}"})
+            refs = {"places": listed}
         at_place_now = (
             None if live is None
             else (live["place"] is not None and live["place"].id in targets)
@@ -6199,19 +6225,25 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         )
         if fc.status != "ok":
             return None
-        verb = "gets to" if kind == "arrival" else "leaves"
+        arrival = kind == "arrival"
+        verb = "gets to" if arrival else "leaves"
         span_days = {
             "weekday": f"{_routine_days[day.weekday()]}",
             "day_type": "weekends" if day.weekday() >= 5 else "weekdays",
             "all_days": "any day",
         }[fc.basis]
         parts = [f"{_routine_span(h)} on {h.days} of {fc.days}" for h in fc.habits]
+        missing = fc.days - sum(h.days for h in fc.habits)
+        if missing > 0:
+            parts.append(
+                f"{'not there' if arrival else 'did not leave'} in these hours "
+                f"on {missing} of {fc.days}"
+            )
         line = f"{span_days}: {verb} {named} " + "; ".join(parts)
         if fc.basis == "all_days":
             line += " (roughly, from all their days)"
         out: dict = {
-            "person": person, "what": kind, "place": named,
-            "place_ref": f"place:{min(targets)}",
+            "person": person, "what": kind, "place": named, **refs,
             "routine": line,
             "habits": [
                 {"from": _routine_clock(h.earliest), "to": _routine_clock(h.latest),
@@ -6220,30 +6252,57 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             ],
             "evidence": {"days": fc.days, "basis": fc.basis},
         }
+        now_local = datetime.fromtimestamp(now_ms / 1000, tz=ZoneInfo(_been_tz_name))
+        as_of = f"as of {now_local.strftime('%H:%M')}"
+        since = (
+            f" since {_routine_clock(fc.done_minute)}" if fc.done_minute is not None
+            else ""
+        )
         if fc.today == "done":
             out["today"] = (
-                f"already {'at' if kind == 'arrival' else 'left'} {named}"
-                + (f" since {_routine_clock(fc.done_minute)}" if fc.done_minute else "")
+                f"already at {named}{since} ({as_of})" if arrival
+                else f"already left {named}"
+                + (f" at {_routine_clock(fc.done_minute)}" if fc.done_minute is not None else "")
+                + f" ({as_of})"
+            )
+        elif fc.today == "absent":
+            out["today"] = (
+                f"not at {named} now, and not there earlier in these hours "
+                f"today ({as_of}), so there is no leaving to wait for"
             )
         elif fc.today == "pending":
-            if fc.like_today:
+            state = f"not at {named} yet" if arrival else f"still at {named}"
+            if not fc.like_today_days:
                 out["today"] = (
-                    f"not yet; on the {fc.like_today_days} days like today it was "
-                    + "; ".join(f"{_routine_span(h)}" for h in fc.like_today)
+                    f"{state} ({as_of}); on none of these days were they "
+                    f"{'still away' if arrival else 'still there'} at this time"
                 )
             else:
-                out["today"] = "not yet, and later than on any of these days so far"
+                seen_parts = [f"{_routine_span(h)} on {h.days}" for h in fc.like_today]
+                if fc.like_today_without:
+                    seen_parts.append(
+                        f"{'not at all' if arrival else 'not'} in these hours "
+                        f"on {fc.like_today_without}"
+                    )
+                out["today"] = (
+                    f"{state} ({as_of}); on the {fc.like_today_days} days they "
+                    f"were {'also not there' if arrival else 'also still there'} "
+                    f"at this time, they {'got there' if arrival else 'left'} "
+                    + "; ".join(seen_parts)
+                )
+        # `unknown`: no fresh reading, so today is not said at all (R-5).
         return out
 
     def _routine_today(
         stays: list, places: dict[int, Any], live: dict | None, *, day: Any,
-        now_ms: int,
+        now_ms: int, start_ms: int, end_ms: int,
     ) -> str | None:
         """M4: on the day itself, where they are now against where they
-        usually are at this hour. `None` for another day or without a fresh
-        reading."""
+        usually are at this hour. «The day itself» is the asked date or its
+        window (a 22-to-06 window asked at 01:00 is still tonight). `None`
+        otherwise, or without a fresh reading."""
         hk_now = datetime.fromtimestamp(now_ms / 1000, tz=ZoneInfo(_been_tz_name))
-        if live is None or hk_now.date() != day:
+        if live is None or (hk_now.date() != day and not start_ms <= now_ms < end_ms):
             return None
         here = live["place"]
         here_name = (
@@ -6285,13 +6344,14 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 key = ("other places of theirs", "other")
             else:
                 name = place.label or _routine_unnamed[place.kind]
-                refs_by_name[name] = f"place:{place.id}"
                 if not place.label:
                     # Two unnamed homes must not read as one place.
                     seen[name] = seen.get(name, 0) + 1
                     if seen[name] > 1:
                         name = f"{name} ({seen[name]})"
-                        refs_by_name[name] = f"place:{place.id}"
+                # Filed under the final name: written before the rename, the
+                # second home's ref overwrote the first's (review 2026-09-28).
+                refs_by_name[name] = f"place:{place.id}"
                 key = (name, place.kind)
             raw[key] = raw.get(key, 0.0) + chance.probability * 100
         floors = {k: int(v) for k, v in raw.items()}
@@ -6456,6 +6516,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 continue
             try:
                 people: list[dict] = []
+                no_place = 0
                 seen_subjects: set[str] = set()
                 for ref in refs:
                     subject_id = persons.subject_id_for(ref.person_id)
@@ -6474,7 +6535,9 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                             day=day, from_hour=start_hour, to_hour=end_hour,
                             now_ms=now_ms, live=live,
                         )
-                        if moved is not None:
+                        if moved == "no_place":
+                            no_place += 1
+                        elif isinstance(moved, dict):
                             people.append(moved)
                         continue
                     forecast = forecast_window(
@@ -6491,6 +6554,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                     )
                     today_line = _routine_today(
                         stays, places, live, day=day, now_ms=now_ms,
+                        start_ms=start_ms, end_ms=end_ms,
                     )
                     if today_line is not None:
                         person_out["today"] = today_line
@@ -6501,6 +6565,14 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                     "status": "unavailable",
                     "note": "I couldn't check their routine just now. Say you "
                             "couldn't look, not that they have no routine.",
+                })
+                continue
+            if not people and no_place and no_place == len(seen_subjects):
+                results.append({
+                    "status": "nothing_found", "reason": "no_place",
+                    "note": "I don't know a place of theirs by that name. Say "
+                            "so, and do not guess where it is.",
+                    "window": window,
                 })
                 continue
             if not people:
@@ -6530,6 +6602,13 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 "status": "ambiguous",
                 "note": "More than one person here goes by that. Ask which one.",
                 "could_be": answer["could_be"],
+            }
+        if answer["status"] == "nothing_found" and answer.get("reason") == "no_place":
+            return {
+                "status": "nothing_found",
+                "note": "I don't know a place of theirs by that name. Say so, "
+                        "and do not guess where it is.",
+                "window": answer["window"],
             }
         if answer["status"] == "nothing_found" and "window" in answer:
             return {
