@@ -33,7 +33,7 @@ async def test_obtain_returns_the_production_graph(spec) -> None:
     """Same type, same builder, same field count as `nora/__main__.py` gets."""
     subject = await obtain(spec)
     assert isinstance(subject.deps, Dependencies)
-    assert len(dataclasses.fields(Dependencies)) == 45, (
+    assert len(dataclasses.fields(Dependencies)) == 46, (
         "Dependencies changed shape; the subject follows it automatically, but "
         "this number is here so a change is noticed rather than absorbed. "
         "38 -> 40 on 2026-09-17: `relevance_gate` and `fire_path`, the two "
@@ -57,7 +57,11 @@ async def test_obtain_returns_the_production_graph(spec) -> None:
         "has to stand transport health in on (`nora.subject.transport`). "
         "44 -> 45 on 2026-09-28: `workspaces_of`, a person's Nora workspaces "
         "for the portal's own-memory page (DEC-214), a callable because "
-        "`nora.web` never sees a `Policy`."
+        "`nora.web` never sees a `Policy`. "
+        "45 -> 46 on 2026-09-28: `revisions`, the store the daemon records "
+        "each doctrine, Dreamer, config and deploy load through "
+        "(cognition-loop step 1b), so `nora snapshot --at T` can say what "
+        "was in force."
     )
 
 

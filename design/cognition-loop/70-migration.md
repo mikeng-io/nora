@@ -188,6 +188,32 @@ place today, read from its store's code, and what it becomes under
 | `presence_places` (`presence.py`); `presence_stays`, `presence_trips`, corridors, derived places, `presence_occupancy`, `presence_place_rhythm` (`mobility.py`, `nora/analytics/rollup.py`) | stays and trips updated in place, occupancy and rhythm deleted and rebuilt, places deleted on rebuild | versioned builds, kept (**2**) |
 | `music_queue`, `music_session`, `geocode_cache` | updated or upserted | transition rows; cache rows kept with `recorded_at` |
 
+**As built at step 1b (2026-09-28), the details this table left open.**
+Every row not marked 2 or 2b is one mechanism, not one per row: the trigger
+`nora_row_history()` (migration `0068_system_time_history`) appends each
+INSERT, UPDATE and DELETE to a single `row_history` table (the row's key,
+the whole row as JSONB, `recorded_at`, `superseded_at`, `superseded_by`) in
+the same transaction, and a DELETE appends a `delete` version holding the
+removed row. So "transition rows", "occurrence rows", "a perception row per
+model and prompt version" and "prune hides" are all versions in that one
+chain, and the live tables stay as they are: each head is the
+compare-and-swap cache §8 allows, which is why no reader changed. The
+heads of `note`, `culture` and `standing` are therefore NOT rebuilt as SQL
+views; the revision tables stay their content chains, and the head's
+history says which revision was head at T. Chosen over per-site appends
+because a history that misses one of ~60 write statements is silently
+incomplete, and over typed history tables because a JSONB image survives a
+later column. `sticker_index`, an in-place cache the table above missed,
+is covered too. The append-only tables a restore reads (`note_revision`,
+`standing_revision`, `culture_revision`, `message_edit`, `decision_log`,
+`note_merge_decision`) gained `recorded_at`. Hiding is the head DELETE the
+stores already do plus the `delete` version; `unforget` (step 2c) re-inserts
+from the chain. Existing rows were backfilled at their best known time (the
+migration's docstring gives the column per table); a row deleted before
+step 1b is gone. `nora.infra.sql.history` classifies every table in the
+schema, and `tests/architecture/test_in_place_writes_keep_history.py`
+fails when code gains an in-place write on a table that keeps no history.
+
 **Authored and configured state.** Doctrine hot-reloads on mtime from the
 host checkout, which collects unpushed commits, so a git sha is not enough:
 each doctrine load writes a `doctrine_revision` row (its sha256, as `/health`
@@ -201,6 +227,17 @@ content-addressed. `nora/skills/` is in the image, so each start writes a
 `deploy_revision` row (git sha, image id), matching what
 `~/nora-backups/deploys.log` records by hand. The model id and route are
 columns on each session.
+
+As built at step 1b: `doctrine_revision` carries both corpora (`corpus` is
+`doctrine` or `dreamer`), each load's files as `path -> sha256` with the
+bodies in a content-addressed `revision_blob`, and for the doctrine the tag
+audience's assembled `sha256` (the `/health` value). `config_revision` is
+one row per file per start. `deploy_revision` records the baked manifest's
+version, commit and build time; an unstamped image (every ordinary deploy)
+has none and its row says `absent` rather than guessing a sha, and
+`image_id` is read from `NORA_IMAGE_ID` when the deployment sets it. Skills
+are identified by that deploy row. The daemon writes all four
+(`nora.app.revisions`); an eval subject records nothing.
 
 - **Events.** `Gathering` gains a unit key; `conversation_id` becomes the
   origin room. Rows in different rooms of one unit with overlapping times and
@@ -327,4 +364,19 @@ is rewritten to [10](10-tiers.md)'s words, resolving its 14 conflicts. Numbers
 are as taken from `origin/master` when this branch was written and may be
 renumbered at merge (`CONTRIBUTING.md` "Numbering discipline").
 
-Nothing else is built: steps 1–8 remain design only.
+**Step 1b built 2026-09-28** (branch `mikeng-io/cognition-step1b-history`,
+DEC-232, number to be re-read at merge): `row_history` and its trigger on
+every §5 table not marked 2 or 2b, `recorded_at` on the append-only tables,
+the four revision tables written at load, and `nora snapshot --at T` (dry
+run by default; `--into` seeds an empty sandbox, `--files-out` writes the
+doctrine, Dreamer corpus and config in force). Both gates are tests
+(`tests/integration/test_snapshot_holds_what_was_held.py`,
+`tests/integration/test_snapshot_renders_the_recorded_blocks.py`); the live
+form of the block gate is `scripts/snapshot_block_equivalence.py`, not yet
+run against a production trace. The details the design left open are in
+§5's two "As built" paragraphs. Not in 1b: the eval runner's cases still
+seed through the room snapshot (`sandbox_from_snapshot`); moving them onto
+`sandbox_as_of` changes what every case sees and ships with its own eval
+run.
+
+Steps 1 and 2–8 remain design only.

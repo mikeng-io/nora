@@ -200,6 +200,15 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         ("kind",),
     ),
     _CounterSpec("nora_doctrine_reload_failures_total", "Doctrine hot-reload failures."),
+    # design/cognition-loop/70-migration.md §5: each doctrine, Dreamer, config
+    # and deploy load is recorded so "what was in force at T" is answerable.
+    # A failed write loses that load's row and nothing else (the process runs
+    # on); this is how the gap shows.
+    _CounterSpec(
+        "nora_revision_record_failures_total",
+        "Loads of doctrine, Dreamer instructions, config or deploy that could not be recorded.",
+        ("kind",),
+    ),
     # The Dreamer's own instruction corpus (nora/dreamer/), counted separately
     # from the doctrine's on purpose: they are different files with different
     # editors and different blast radii, and one number covering both would make

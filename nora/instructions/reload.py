@@ -23,13 +23,34 @@ from __future__ import annotations
 
 import contextlib
 import logging
+import time
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Generic, TypeVar
 
 from ..obs.metrics import Metrics
+from .frontmatter import texts_under
 
 T = TypeVar("T")
+
+
+@dataclass(frozen=True, slots=True)
+class Loaded:
+    """What one successful scan loaded: the text of every file it matched,
+    keyed by path relative to the watched directory, and when (wall clock,
+    epoch seconds). Read by `nora.app.revisions` to record each load, so
+    "which instructions were in force at T" is answerable
+    (design/cognition-loop/70-migration.md §5).
+
+    Read from disk BESIDE the scan, not by it: `scan` is the caller's and
+    returns parsed sections, not bytes. An edit landing between the two
+    moves the fingerprint, so the next read rescans and records again.
+    """
+
+    generation: int
+    loaded_at: float
+    files: tuple[tuple[str, str], ...]
 
 
 class DirectoryWatcher(Generic[T]):
@@ -75,6 +96,7 @@ class DirectoryWatcher(Generic[T]):
         self._loaded = False
         self._fingerprint: tuple[tuple[str, int, int], ...] | None = None
         self._generation = 0
+        self._loaded_record: Loaded | None = None
         self.failures = 0
 
     @property
@@ -107,6 +129,14 @@ class DirectoryWatcher(Generic[T]):
         return tuple(sorted((str(p), p.stat().st_mtime_ns, p.stat().st_size)
                             for p in self._dir.glob(self._glob)))
 
+    def loaded(self) -> Loaded:
+        """The load currently served: rescans first if the directory moved,
+        exactly as `current` does."""
+        self._maybe_rescan()
+        if self._loaded_record is None:  # pragma: no cover - _maybe_rescan raises first
+            raise self._error(f"no {self._subject} loaded from {self._dir}")
+        return self._loaded_record
+
     def current(self) -> T:
         """The freshest good scan: rescan if the directory moved, else the cache."""
         self._maybe_rescan()
@@ -134,10 +164,20 @@ class DirectoryWatcher(Generic[T]):
             # nothing counts it.
             self._on_failure(exc)
             return
+        try:
+            files = texts_under(self._dir, self._glob)
+        except (OSError, UnicodeDecodeError) as exc:
+            # The scan succeeded on these files a moment ago, so this is the
+            # disk moving under us: the same failure path as a bad file.
+            self._on_failure(exc)
+            return
         self._value = value
         self._loaded = True
         self._generation += 1
         self._fingerprint = fingerprint
+        self._loaded_record = Loaded(
+            generation=self._generation, loaded_at=time.time(), files=files,
+        )
 
     def _on_failure(self, exc: Exception) -> None:
         if not self._loaded:
