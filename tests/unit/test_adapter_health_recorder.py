@@ -6,7 +6,7 @@ from __future__ import annotations
 from nora.app.source_health import AdapterHealthRecorder
 from nora.domain.ports import AdapterHealth
 from nora.obs.metrics import Metrics
-from nora.testing.signals import InMemorySourceHealthLog
+from nora.testing.stimuli import InMemorySourceHealthLog
 
 
 def _recorder(log=None):

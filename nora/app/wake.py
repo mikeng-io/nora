@@ -1,29 +1,29 @@
 """The wake evaluator — 20 §3's wake policy, run in SHADOW
 (design/cognition-loop/20-observe.md §3, migration step 1).
 
-**It fires nothing.** Every ~30 s it reads each unit's pending signals (one
+**It fires nothing.** Every ~30 s it reads each unit's pending stimuli (one
 read per unit, no model), applies the wake table and the brakes exactly as it
-would to start a Cognition session (`nora.domain.signals.decide`), and when a
-unit would wake it RECORDS the would-wake — its reason, the signal range it
+would to start a Cognition session (`nora.domain.stimuli.decide`), and when a
+unit would wake it RECORDS the would-wake — its reason, the stimulus range it
 would consume, the counts — as a `cognition_wake` row in `mode = "shadow"`.
 That row is also the unit's shadow watermark, so the next tick sees those
-signals as consumed, exactly as a session would have left them. Nothing
+stimuli as consumed, exactly as a session would have left them. Nothing
 else: no session, no model call, no adaptor started, no message. The clocked
-Dreamer adaptors keep running as they did; nothing reads the signal table for
+Dreamer adaptors keep running as they did; nothing reads the stimulus table for
 a decision (70 §2 step 1: «the clocks still run everything»).
 
 The week of rows this writes is the step's gate: 20 §3's starting values are
 sized from it (`nora_cognition_wake_total{reason}` counts them live, the
 table holds the ranges).
 
-**The daily floors are raised here.** `time` signals are the only ones a
+**The daily floors are raised here.** `time` stimuli are the only ones a
 clock raises (20 §1), and the two daily floors (proactive's 07:00 HK and the
 curator's 00:00 HK) are the only `time` producers at step 1. Each tick raises
 the floors whose instant has passed within `floor_grace_seconds`, once per
-unit per day (`uq_signal_time_ref` makes the repeat a no-op). The grace is
+unit per day (`uq_stimulus_time_ref` makes the repeat a no-op). The grace is
 what stops a deploy at 15:00 from raising that morning's 07:00 as if due now;
 a restart at 07:02 still raises it. Anchors, revisits and event dates are
-`time` signals too and arrive with the agenda (step 3), which is what reads
+`time` stimuli too and arrive with the agenda (step 3), which is what reads
 the Register rows they come from.
 
 **One unit's failure is its own.** Each unit's read and write is bounded and
@@ -42,9 +42,9 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from nora.domain.ports import SignalStore
-from nora.domain.signals import (
-    NewSignal,
+from nora.domain.ports import StimulusStore
+from nora.domain.stimuli import (
+    NewStimulus,
     NewWake,
     UnitView,
     Verdict,
@@ -58,7 +58,7 @@ from nora.domain.signals import (
 
 log = logging.getLogger("nora.app.wake")
 
-#: How many pending signals one tick reads per unit. Well above `batch_max`
+#: How many pending stimuli one tick reads per unit. Well above `batch_max`
 #: (80): a would-wake consumes what it read, and anything past this bound is
 #: consumed by the next one.
 DEFAULT_PENDING_LIMIT = 1000
@@ -88,7 +88,7 @@ class WakeEvaluator:
     def __init__(
         self,
         *,
-        store: SignalStore,
+        store: StimulusStore,
         units: Callable[[], Sequence[str]],
         policy: WakePolicy,
         metrics: Any,
@@ -106,10 +106,10 @@ class WakeEvaluator:
         INSERT and become visible at COMMIT, so two concurrent ingests can
         commit out of id order: a read that saw id N+1 before N committed
         would set the watermark past N, and N, once committed, would be
-        consumed unseen. Every signal append is bounded by the same store
-        timeout, so a signal recorded before `now - settle` has committed or
+        consumed unseen. Every stimulus append is bounded by the same store
+        timeout, so a stimulus recorded before `now - settle` has committed or
         failed; the read takes only those, and the wake's `at_ms` — the
-        watermark's time bound — is that cutoff, so a signal recorded after
+        watermark's time bound — is that cutoff, so a stimulus recorded after
         it stays pending whatever its id."""
         self._store = store
         self._units = units
@@ -157,11 +157,11 @@ class WakeEvaluator:
                 flying += 1
         return written
 
-    def _floor_signals(self, unit: str, now_ms: int) -> list[NewSignal]:
+    def _floor_stimuli(self, unit: str, now_ms: int) -> list[NewStimulus]:
         """The floors whose instant passed within the grace, today's and
-        (just after midnight) yesterday's, as `time` signals."""
+        (just after midnight) yesterday's, as `time` stimuli."""
         local_now = dt.datetime.fromtimestamp(now_ms / 1000, tz=self._tz)
-        out: list[NewSignal] = []
+        out: list[NewStimulus] = []
         for day in (local_now.date() - dt.timedelta(days=1), local_now.date()):
             for floor in self._floors:
                 instant = dt.datetime(
@@ -170,7 +170,7 @@ class WakeEvaluator:
                 at_ms = int(instant.timestamp() * 1000)
                 if at_ms > now_ms or now_ms - at_ms > self._floor_grace_ms:
                     continue
-                out.append(NewSignal(
+                out.append(NewStimulus(
                     unit=unit, kind="time", item="floor",
                     ref=f"floor:{floor.label}@{day.isoformat()}",
                     at_ms=at_ms, due_ms=at_ms,
@@ -179,13 +179,13 @@ class WakeEvaluator:
 
     async def _read(self, unit: str, now_ms: int, cutoff_ms: int) -> UnitView | None:
         try:
-            for signal in self._floor_signals(unit, now_ms):
+            for stimulus in self._floor_stimuli(unit, now_ms):
                 sid = await asyncio.wait_for(
-                    self._store.append(signal=signal, recorded_at_ms=now_ms),
+                    self._store.append(stimulus=stimulus, recorded_at_ms=now_ms),
                     timeout=self._timeout,
                 )
                 if sid is not None:
-                    self._metrics.inc("nora_signal_total", kind="time", cue="none")
+                    self._metrics.inc("nora_stimulus_total", kind="time", cue="none")
             return await asyncio.wait_for(
                 self._store.view(unit=unit, mode=self._mode, now_ms=cutoff_ms,
                                  limit=self._limit),
@@ -197,11 +197,11 @@ class WakeEvaluator:
             return None
 
     def _publish_age(self, view: UnitView, now_ms: int) -> None:
-        """`nora_signal_pending_age_seconds{unit}`: the oldest signal that
+        """`nora_stimulus_pending_age_seconds{unit}`: the oldest stimulus that
         could wake the unit, 0 when none is pending."""
         eligible = [s.pending_since_ms for s in view.pending if not s.waits]
         age = (now_ms - min(eligible)) / 1000 if eligible else 0.0
-        self._metrics.gauge("nora_signal_pending_age_seconds", max(0.0, age), unit=view.unit)
+        self._metrics.gauge("nora_stimulus_pending_age_seconds", max(0.0, age), unit=view.unit)
 
     async def _record(
         self, view: UnitView, verdict: Verdict, reason: WakeReason, at_ms: int,
@@ -215,9 +215,9 @@ class WakeEvaluator:
             cues.update(s.cues)
         wake = NewWake(
             unit=view.unit, mode=self._mode, reason=reason,
-            from_signal_id=mark.through_signal_id,
-            through_signal_id=verdict.through_signal_id,
-            signal_count=verdict.signal_count, eligible_count=verdict.eligible_count,
+            from_stimulus_id=mark.through_stimulus_id,
+            through_stimulus_id=verdict.through_stimulus_id,
+            stimulus_count=verdict.stimulus_count, eligible_count=verdict.eligible_count,
             oldest_pending_ms=verdict.oldest_pending_ms,
             cut_cooldown=verdict.cut_cooldown, at_ms=at_ms,
             detail={
@@ -240,10 +240,10 @@ class WakeEvaluator:
             "nora_cognition_wake_total", reason=reason, mode=self._mode,
         )
         log.info(
-            "cognition would-wake (%s): unit=%s reason=%s signals=%d eligible=%d "
+            "cognition would-wake (%s): unit=%s reason=%s stimuli=%d eligible=%d "
             "through=%d cut_cooldown=%s",
-            self._mode, view.unit, reason, verdict.signal_count,
-            verdict.eligible_count, verdict.through_signal_id, verdict.cut_cooldown,
+            self._mode, view.unit, reason, verdict.stimulus_count,
+            verdict.eligible_count, verdict.through_stimulus_id, verdict.cut_cooldown,
         )
         return wake_id
 

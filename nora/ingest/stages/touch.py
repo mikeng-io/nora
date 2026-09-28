@@ -29,9 +29,9 @@ AUTHOR is preferred when two rows share a timestamp — a reaction names whose
 message it is — not the reactor. Who acted is the platform's sender; where it
 names nobody (an Instagram unsend, a Discord delete, which a moderator may
 have made) the row keeps `sender_id = ""` AND `person_id = NULL`: the
-platform did not say who, and the Record does not assert it. (The signal
+platform did not say who, and the Record does not assert it. (The stimulus
 stage still treats an unattributed delete of Nora's OWN message as hers, so
-it raises no signal; that is a judgement about waking, not a Record claim.)
+it raises no stimulus; that is a judgement about waking, not a Record claim.)
 """
 
 from __future__ import annotations

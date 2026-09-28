@@ -127,5 +127,5 @@ conscious barely drives the subconscious.**
   Register writes and the debrief's Standing are shared state, not a
   command. The conscious layer holds no pace verb (`wake_at`, `wake_move`,
   `wake_cancel`), cannot read or edit an agenda or a pending self-wake, and
-  cannot start or steer a session. That her own messages raise no signal
+  cannot start or steer a session. That her own messages raise no stimulus
   ([20](20-observe.md) §3) is a consequence of this rule.

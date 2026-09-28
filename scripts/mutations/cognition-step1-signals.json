@@ -1,42 +1,42 @@
 [
   {
-    "name": "signal stage: Nora's own item is no longer refused",
-    "file": "nora/ingest/stages/signal.py",
+    "name": "stimulus stage: Nora's own item is no longer refused",
+    "file": "nora/ingest/stages/stimulus.py",
     "old": "    if _authored_by_nora(message, target, wiring.self_ids):\n        return None",
     "new": "    if False:\n        return None",
-    "target": "tests/unit/test_ingest_signals.py::test_nora_s_own_item_raises_no_signal tests/unit/test_ingest_signals.py::test_the_stage_refuses_nora_s_item_directly"
+    "target": "tests/unit/test_ingest_stimuli.py::test_nora_s_own_item_raises_no_stimulus tests/unit/test_ingest_stimuli.py::test_the_stage_refuses_nora_s_item_directly"
   },
   {
-    "name": "signal stage: an unattributed delete of Nora's message is treated as a person's",
-    "file": "nora/ingest/stages/signal.py",
+    "name": "stimulus stage: an unattributed delete of Nora's message is treated as a person's",
+    "file": "nora/ingest/stages/stimulus.py",
     "old": "    return not message.sender_id and target is not None and target.is_nora",
     "new": "    return False",
-    "target": "tests/unit/test_ingest_signals.py::test_an_unattributed_delete_of_nora_s_message_is_recorded_and_raises_nothing"
+    "target": "tests/unit/test_ingest_stimuli.py::test_an_unattributed_delete_of_nora_s_message_is_recorded_and_raises_nothing"
   },
   {
-    "name": "signal stage: a reply to Nora inside the window is no longer marked waits",
-    "file": "nora/ingest/stages/signal.py",
+    "name": "stimulus stage: a reply to Nora inside the window is no longer marked waits",
+    "file": "nora/ingest/stages/stimulus.py",
     "old": "        and at_ms - answers <= wiring.reply_quiet_seconds * 1000",
     "new": "        and False",
-    "target": "tests/unit/test_ingest_signals.py::test_a_reply_to_nora_inside_the_window_waits_and_outside_it_does_not"
+    "target": "tests/unit/test_ingest_stimuli.py::test_a_reply_to_nora_inside_the_window_waits_and_outside_it_does_not"
   },
   {
-    "name": "wake policy: a waits signal counts toward a trigger",
-    "file": "nora/domain/signals.py",
+    "name": "wake policy: a waits stimulus counts toward a trigger",
+    "file": "nora/domain/stimuli.py",
     "old": "    eligible = [s for s in view.pending if not s.waits]\n    if not eligible:\n        return None",
     "new": "    eligible = list(view.pending)\n    if not eligible:\n        return None",
     "target": "tests/unit/test_wake_evaluator.py::test_a_reply_to_nora_never_wakes_a_unit_by_itself"
   },
   {
-    "name": "watermark: a signal due later is consumed by an earlier wake",
-    "file": "nora/domain/signals.py",
-    "old": "            and signal.pending_since_ms <= self.through_ms",
+    "name": "watermark: a stimulus due later is consumed by an earlier wake",
+    "file": "nora/domain/stimuli.py",
+    "old": "            and stimulus.pending_since_ms <= self.through_ms",
     "new": "            and True",
-    "target": "tests/contract/test_signal_store_contract.py::test_a_signal_due_later_stays_pending_across_an_earlier_wake"
+    "target": "tests/contract/test_stimulus_store_contract.py::test_a_stimulus_due_later_stays_pending_across_an_earlier_wake"
   },
   {
     "name": "cooldown: a strong cue may cut it twice in a row",
-    "file": "nora/domain/signals.py",
+    "file": "nora/domain/stimuli.py",
     "old": "        if not (strong and cue_quiet and not last_cut):",
     "new": "        if not (strong and cue_quiet):",
     "target": "tests/unit/test_wake_evaluator.py::test_one_strong_cue_may_cut_the_cooldown_once"
@@ -44,30 +44,30 @@
   {
     "name": "shadow evaluator: gains an import that can act (the fire path)",
     "file": "nora/app/wake.py",
-    "old": "from nora.domain.ports import SignalStore\n",
-    "new": "from nora.app.fire import FirePath  # noqa: F401\nfrom nora.domain.ports import SignalStore\n",
+    "old": "from nora.domain.ports import StimulusStore\n",
+    "new": "from nora.app.fire import FirePath  # noqa: F401\nfrom nora.domain.ports import StimulusStore\n",
     "target": "tests/architecture/test_the_wake_evaluator_cannot_act.py::test_the_evaluator_imports_nothing_that_acts"
   },
   {
-    "name": "#1 a wake's watermark falls to its highest pending id (resurrects consumed signals)",
-    "file": "nora/domain/signals.py",
-    "old": "        through_signal_id=max(\n            Watermark.of(view.last_wake).through_signal_id,\n            max(s.id for s in view.pending),\n        ),",
-    "new": "        through_signal_id=max(s.id for s in view.pending),",
-    "target": "tests/contract/test_signal_store_contract.py::test_a_due_later_wake_does_not_resurrect_earlier_consumed_signals tests/unit/test_wake_evaluator.py::test_a_due_later_wake_does_not_resurrect_signals_already_consumed"
+    "name": "#1 a wake's watermark falls to its highest pending id (resurrects consumed stimuli)",
+    "file": "nora/domain/stimuli.py",
+    "old": "        through_stimulus_id=max(\n            Watermark.of(view.last_wake).through_stimulus_id,\n            max(s.id for s in view.pending),\n        ),",
+    "new": "        through_stimulus_id=max(s.id for s in view.pending),",
+    "target": "tests/contract/test_stimulus_store_contract.py::test_a_due_later_wake_does_not_resurrect_earlier_consumed_stimuli tests/unit/test_wake_evaluator.py::test_a_due_later_wake_does_not_resurrect_stimuli_already_consumed"
   },
   {
-    "name": "SQL watermark: an undated signal stamped after the time bound is consumed under its id",
-    "file": "nora/infra/sql/signals.py",
-    "old": "            SIGNAL.c.recorded_at > _at(through_ms),",
+    "name": "SQL watermark: an undated stimulus stamped after the time bound is consumed under its id",
+    "file": "nora/infra/sql/stimuli.py",
+    "old": "            STIMULUS.c.recorded_at > _at(through_ms),",
     "new": "            sa.false(),",
-    "target": "tests/contract/test_signal_store_contract.py::test_a_signal_recorded_after_the_wakes_time_bound_stays_pending_under_its_id"
+    "target": "tests/contract/test_stimulus_store_contract.py::test_a_stimulus_recorded_after_the_wakes_time_bound_stays_pending_under_its_id"
   },
   {
-    "name": "SQL watermark: a signal due after the time bound is consumed under its id",
-    "file": "nora/infra/sql/signals.py",
-    "old": "        sa.select(SIGNAL).where(*base, under, SIGNAL.c.due_ms > through_ms),",
-    "new": "        sa.select(SIGNAL).where(*base, under, sa.false()),",
-    "target": "tests/contract/test_signal_store_contract.py::test_a_signal_due_later_stays_pending_across_an_earlier_wake"
+    "name": "SQL watermark: a stimulus due after the time bound is consumed under its id",
+    "file": "nora/infra/sql/stimuli.py",
+    "old": "        sa.select(STIMULUS).where(*base, under, STIMULUS.c.due_ms > through_ms),",
+    "new": "        sa.select(STIMULUS).where(*base, under, sa.false()),",
+    "target": "tests/contract/test_stimulus_store_contract.py::test_a_stimulus_due_later_stays_pending_across_an_earlier_wake"
   },
   {
     "name": "settle margin removed: an id committed after a higher one is consumed unseen",
@@ -81,7 +81,7 @@
     "file": "nora/ingest/pipeline.py",
     "old": "        if message.touch is not None:\n            return await self._run_touch(",
     "new": "        if False:\n            return await self._run_touch(",
-    "target": "tests/unit/test_ingest_signals.py::test_a_reaction_is_recorded_beside_its_target_and_signalled"
+    "target": "tests/unit/test_ingest_stimuli.py::test_a_reaction_is_recorded_beside_its_target_and_raises_a_stimulus"
   },
   {
     "name": "floor grace dropped: a deploy at 15:00 raises that morning's 07:00",
@@ -98,25 +98,25 @@
     "target": "tests/unit/test_wake_evaluator.py::test_at_most_max_concurrent_sessions_across_units"
   },
   {
-    "name": "signal stage guards only OSError: a raising cue stops the turn",
-    "file": "nora/ingest/stages/signal.py",
-    "old": "    except Exception:\n        log.exception(\"signal stage failed",
-    "new": "    except OSError:\n        log.exception(\"signal stage failed",
-    "target": "tests/unit/test_ingest_signals.py::test_a_signal_stage_that_raises_never_stops_the_turn"
+    "name": "stimulus stage guards only OSError: a raising cue stops the turn",
+    "file": "nora/ingest/stages/stimulus.py",
+    "old": "    except Exception:\n        log.exception(\"stimulus stage failed",
+    "new": "    except OSError:\n        log.exception(\"stimulus stage failed",
+    "target": "tests/unit/test_ingest_stimuli.py::test_a_stimulus_stage_that_raises_never_stops_the_turn"
   },
   {
     "name": "Signal delete of someone else's message is recorded",
     "file": "nora/ingest/stages/touch.py",
     "old": "        and not _same_author(message.sender_id, person_id, target)",
     "new": "        and False",
-    "target": "tests/unit/test_ingest_signals.py::test_a_signal_delete_of_someone_else_s_message_is_refused"
+    "target": "tests/unit/test_ingest_stimuli.py::test_a_signal_delete_of_someone_else_s_message_is_refused"
   },
   {
     "name": "an unattributed delete asserts the target's author",
     "file": "nora/ingest/stages/touch.py",
     "old": "    person_id = person.person_id if person is not None else None",
     "new": "    person_id = person.person_id if person is not None else target.person_id",
-    "target": "tests/unit/test_ingest_signals.py::test_an_unattributed_delete_asserts_no_person"
+    "target": "tests/unit/test_ingest_stimuli.py::test_an_unattributed_delete_asserts_no_person"
   },
   {
     "name": "stale state dropped: a silent connected socket is up",
@@ -144,6 +144,6 @@
     "file": "nora/ingest/pipeline.py",
     "old": "        if message.touch is None:\n            m.inc(\"nora_messages_total\"",
     "new": "        if True:\n            m.inc(\"nora_messages_total\"",
-    "target": "tests/unit/test_ingest_signals.py::test_a_reaction_is_recorded_beside_its_target_and_signalled"
+    "target": "tests/unit/test_ingest_stimuli.py::test_a_reaction_is_recorded_beside_its_target_and_raises_a_stimulus"
   }
 ]

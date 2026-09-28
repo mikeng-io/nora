@@ -1,12 +1,13 @@
-"""Stage: signal — append one signal per recorded person-authored item
+"""Stage: stimulus — append one stimulus per recorded person-authored item
 (design/cognition-loop/20-observe.md §3, migration step 1).
 
-**Per item, code appends one row to the unit's `signal` table with its cues,
+**Per item, code appends one row to the unit's `stimulus` table with its cues,
 and nothing else: no model** (20 §3). It runs after the Record write it
-signals — a message's audit row, an edit's `message_edit` row, a reaction's or
-a delete's — so every signal names an item that exists (`ref`).
+raises a stimulus for — a message's audit row, an edit's `message_edit` row,
+a reaction's or a delete's — so every stimulus names an item that exists
+(`ref`).
 
-**Nora's own items raise no signal** (20 §3; 10 §2 rule 4, the echo rule).
+**Nora's own items raise no stimulus** (20 §3; 10 §2 rule 4, the echo rule).
 Her sends never pass through ingest (the parsers drop them, R-12), so this is
 the second line and it is checked HERE, not assumed from upstream: an item
 whose sender is one of her ids, or whose platform names no sender and whose
@@ -14,7 +15,7 @@ target is hers (an Instagram unsend or a Discord delete of her message), is
 skipped.
 
 **A person's reply to her message inside `reply_quiet_seconds` is recorded
-and marked `waits`** (20 §3): it is a real signal, consumed by the next wake
+and marked `waits`** (20 §3): it is a real stimulus, consumed by the next wake
 like any other, but it never starts one by itself. Two things count as a
 reply here: a message whose quote names her, and a reaction on her message;
 the window is measured from her message's time.
@@ -22,8 +23,8 @@ the window is measured from her message's time.
 **Inline, bounded, never load-bearing.** One INSERT, like the audit write
 before it, under `timeout_seconds`. Any failure in the stage — the write, a
 cue pattern, a policy read — is logged and counted
-(`nora_errors_total{stage="signal"}`) and ingest carries on: the item is
-already Record, and a missing signal costs lateness (the next item's wake
+(`nora_errors_total{stage="stimulus"}`) and ingest carries on: the item is
+already Record, and a missing stimulus costs lateness (the next item's wake
 covers the room), never the message. Shadow is the only consumer at step 1.
 
 **Off unless `[cognition] mode` is on.** `None` wiring — the default and
@@ -44,10 +45,10 @@ from typing import Any
 
 from nora.domain.cues import cues_of
 from nora.domain.models import EditedMessage, NormalizedMessage
-from nora.domain.ports import SignalStore
-from nora.domain.signals import MessageItem, NewSignal
+from nora.domain.ports import StimulusStore
+from nora.domain.stimuli import MessageItem, NewStimulus
 
-log = logging.getLogger("nora.ingest.signal")
+log = logging.getLogger("nora.ingest.stimulus")
 
 #: The table each item kind lives in, which `ref` names it by. An edit names
 #: the message it edits: `message_edit` rows are folded onto their message and
@@ -68,7 +69,7 @@ class Wiring:
     (`policy.toml` `[[conversations]] unit`); `self_ids` is
     `AdapterRegistry.self_aliases()`, every id Nora answers to."""
 
-    store: SignalStore
+    store: StimulusStore
     unit_of: Callable[[str, str], str | None]
     self_ids: frozenset[str]
     reply_quiet_seconds: float
@@ -108,7 +109,7 @@ async def run(
     metrics: Any,
     target: EditedMessage | None = None,
 ) -> int | None:
-    """Append the item's signal; return its id, or None when none was
+    """Append the item's stimulus; return its id, or None when none was
     written (Nora's own item, a room with no unit, or a failed write).
 
     `row_id` is the id of the Record row the item was written as, or of the
@@ -117,15 +118,15 @@ async def run(
     # The WHOLE body is guarded, not only the write: a cue pattern, a policy
     # read or a malformed quote that raises here would otherwise propagate
     # into the pipeline and stop the memory feed and the gate for a message
-    # that is already recorded. A signal is never worth a lost turn.
+    # that is already recorded. A stimulus is never worth a lost turn.
     try:
         return await _append(
             message=message, item=item, row_id=row_id, person_id=person_id,
             wiring=wiring, metrics=metrics, target=target,
         )
     except Exception:
-        log.exception("signal stage failed; the item is recorded, its signal is not")
-        metrics.inc("nora_errors_total", stage="signal", platform=message.platform)
+        log.exception("stimulus stage failed; the item is recorded, its stimulus is not")
+        metrics.inc("nora_errors_total", stage="stimulus", platform=message.platform)
         return None
 
 
@@ -141,7 +142,7 @@ async def _append(
         # Scope admitted the room, so it is in policy.toml and has a unit
         # (`unit` defaults to "nora"). Reaching here is a wiring fault.
         log.warning(
-            "signal: no unit for an admitted room (platform=%s); no signal",
+            "stimulus: no unit for an admitted room (platform=%s); no stimulus",
             message.platform,
         )
         return None
@@ -153,16 +154,16 @@ async def _append(
         answers is not None
         and at_ms - answers <= wiring.reply_quiet_seconds * 1000
     )
-    signal = NewSignal(
+    stimulus = NewStimulus(
         unit=unit, kind="message", item=item, ref=f"{_REF_TABLE[item]}:{row_id}",
         at_ms=at_ms, platform=message.platform,
         conversation_id=message.conversation_id, person_id=person_id,
         cues=cues, waits=waits,
     )
     sid = await asyncio.wait_for(
-        wiring.store.append(signal=signal, recorded_at_ms=now_ms),
+        wiring.store.append(stimulus=stimulus, recorded_at_ms=now_ms),
         timeout=wiring.timeout_seconds,
     )
     for cue in cues or ("none",):
-        metrics.inc("nora_signal_total", kind="message", cue=cue)
+        metrics.inc("nora_stimulus_total", kind="message", cue=cue)
     return sid

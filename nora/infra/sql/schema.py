@@ -3086,20 +3086,24 @@ IDX_INSTAGRAM_SUMMONS_STATE = sa.Index(
 )
 
 
-# ── signal, cognition_wake (design/cognition-loop/20-observe.md §3, step 1) ──
-# `signal`: what wakes cognition, one row per signal, per unit
-# (`nora.domain.signals`). Append-only (10-tiers.md §8): never updated, never
+# ── stimulus, cognition_wake (design/cognition-loop/20-observe.md §3, step 1) ──
+# `stimulus`: what wakes cognition, one row per stimulus, per unit
+# (`nora.domain.stimuli`). Append-only (10-tiers.md §8): never updated, never
 # deleted; `recorded_at` is its system time. `ref` names the Record item it was
 # raised by (`messages:<id>`, `message_reaction:<id>`, `message_delete:<id>`)
-# or, for a clock signal, the occasion (`floor:07:00@2026-09-28`).
+# or, for a clock stimulus, the occasion (`floor:07:00@2026-09-28`).
+#
+# Named `signal` through migration `0069_cognition_signal`; renamed here
+# (migration `0070_stimulus_rename`, operator 2026-09-29, DEC-234) because
+# `signal` collides with Signal, the messaging platform Nora lives on.
 #
 # `cues` is TEXT[] of `nora.domain.cues.CUES` names, computed once at ingest.
 # `waits` is 20 §3's reply to Nora inside `reply_quiet_seconds`: recorded and
-# consumed like any signal, never the one that wakes a session.
-# `due_ms` is set only on a signal that is pending from a later time (`time`,
-# `self`); NULL is «pending once recorded».
-SIGNAL = sa.Table(
-    "signal",
+# consumed like any stimulus, never the one that wakes a session.
+# `due_ms` is set only on a stimulus that is pending from a later time
+# (`time`, `self`); NULL is «pending once recorded».
+STIMULUS = sa.Table(
+    "stimulus",
     METADATA,
     sa.Column("id", sa.BigInteger, sa.Identity(always=False), primary_key=True),
     sa.Column("unit", sa.Text, nullable=False),
@@ -3116,49 +3120,49 @@ SIGNAL = sa.Table(
     sa.Column("waits", sa.Integer, nullable=False, server_default=sa.text("0")),
     sa.Column("at_ms", sa.BigInteger, nullable=False),
     sa.Column("due_ms", sa.BigInteger),
-    # System time, 1b's shape (`_recorded_at`). The signal store states it
+    # System time, 1b's shape (`_recorded_at`). The stimulus store states it
     # from the same clock the wake arithmetic runs on; the default covers a
     # writer that does not.
     _recorded_at(),
-    # Written out, not read from `nora.domain.signals.SIGNAL_KINDS`: the
+    # Written out, not read from `nora.domain.stimuli.STIMULUS_KINDS`: the
     # migration hardcodes it, and the parity gate ties the two.
     sa.CheckConstraint(
         "kind IN ('message', 'social', 'play', 'rollup', 'time', 'self')",
-        name="ck_signal_kind",
+        name="ck_stimulus_kind",
     ),
 )
 
-#: The tick's read: one unit's signals past its watermark, in id order.
-IDX_SIGNAL_UNIT_ID = sa.Index("idx_signal_unit_id", SIGNAL.c.unit, SIGNAL.c.id)
+#: The tick's read: one unit's stimuli past its watermark, in id order.
+IDX_STIMULUS_UNIT_ID = sa.Index("idx_stimulus_unit_id", STIMULUS.c.unit, STIMULUS.c.id)
 
-#: The pending read's two time branches, and last activity (`SqlSignalStore.
-#: view`): a signal due after the watermark's time bound; an undated one
+#: The pending read's two time branches, and last activity (`SqlStimulusStore.
+#: view`): a stimulus due after the watermark's time bound; an undated one
 #: recorded after it; a unit's newest person-authored item.
-IDX_SIGNAL_UNIT_DUE = sa.Index(
-    "idx_signal_unit_due", SIGNAL.c.unit, SIGNAL.c.due_ms,
-    postgresql_where=SIGNAL.c.due_ms.isnot(None),
+IDX_STIMULUS_UNIT_DUE = sa.Index(
+    "idx_stimulus_unit_due", STIMULUS.c.unit, STIMULUS.c.due_ms,
+    postgresql_where=STIMULUS.c.due_ms.isnot(None),
 )
-IDX_SIGNAL_UNIT_UNDATED_RECORDED = sa.Index(
-    "idx_signal_unit_undated_recorded", SIGNAL.c.unit, SIGNAL.c.recorded_at,
-    postgresql_where=SIGNAL.c.due_ms.is_(None),
+IDX_STIMULUS_UNIT_UNDATED_RECORDED = sa.Index(
+    "idx_stimulus_unit_undated_recorded", STIMULUS.c.unit, STIMULUS.c.recorded_at,
+    postgresql_where=STIMULUS.c.due_ms.is_(None),
 )
-IDX_SIGNAL_UNIT_MESSAGE_RECORDED = sa.Index(
-    "idx_signal_unit_message_recorded", SIGNAL.c.unit, SIGNAL.c.recorded_at,
-    postgresql_where=SIGNAL.c.kind == "message",
+IDX_STIMULUS_UNIT_MESSAGE_RECORDED = sa.Index(
+    "idx_stimulus_unit_message_recorded", STIMULUS.c.unit, STIMULUS.c.recorded_at,
+    postgresql_where=STIMULUS.c.kind == "message",
 )
 
-#: A `time` signal is raised once per occasion: the evaluator raises the day's
-#: floors on every tick and relies on this to write each one once.
-UQ_SIGNAL_TIME_REF = sa.Index(
-    "uq_signal_time_ref", SIGNAL.c.unit, SIGNAL.c.ref,
-    unique=True, postgresql_where=SIGNAL.c.kind == "time",
+#: A `time` stimulus is raised once per occasion: the evaluator raises the
+#: day's floors on every tick and relies on this to write each one once.
+UQ_STIMULUS_TIME_REF = sa.Index(
+    "uq_stimulus_time_ref", STIMULUS.c.unit, STIMULUS.c.ref,
+    unique=True, postgresql_where=STIMULUS.c.kind == "time",
 )
 
 # `cognition_wake`: every wake, one row each — in step 1 every row is a SHADOW
 # would-wake (`mode = 'shadow'`): what the evaluator would have started, why,
-# and the signal range it would have consumed. Append-only; a unit's newest row
-# in a mode IS its watermark in that mode (`through_signal_id`, `at_ms`), so
-# the watermark survives a restart with no row ever rewritten.
+# and the stimulus range it would have consumed. Append-only; a unit's newest
+# row in a mode IS its watermark in that mode (`through_stimulus_id`, `at_ms`),
+# so the watermark survives a restart with no row ever rewritten.
 COGNITION_WAKE = sa.Table(
     "cognition_wake",
     METADATA,
@@ -3168,9 +3172,9 @@ COGNITION_WAKE = sa.Table(
     sa.Column("reason", sa.Text, nullable=False),
     # The watermark it read at its start (exclusive) and the one it would
     # leave (inclusive): the consumed range, for the operator's read-back.
-    sa.Column("from_signal_id", sa.BigInteger, nullable=False),
-    sa.Column("through_signal_id", sa.BigInteger, nullable=False),
-    sa.Column("signal_count", sa.Integer, nullable=False),
+    sa.Column("from_stimulus_id", sa.BigInteger, nullable=False),
+    sa.Column("through_stimulus_id", sa.BigInteger, nullable=False),
+    sa.Column("stimulus_count", sa.Integer, nullable=False),
     sa.Column("eligible_count", sa.Integer, nullable=False),
     sa.Column("oldest_pending_ms", sa.BigInteger),
     sa.Column("cut_cooldown", sa.Integer, nullable=False, server_default=sa.text("0")),
