@@ -16,17 +16,22 @@ import psycopg
 import pytest
 import sqlalchemy as sa
 
+import nora.app.assess_dq as assess_dq
 from nora.app.assess_dq import (
     cross_room_duplicate_events,
     empty_lineage_rows,
     happened_place_mismatch,
     induced_line_no_aggregate,
     rollup_rebuild_divergence,
+    run_deterministic_checks,
     sections_past_age_horizon,
     unresolved_citations,
 )
+from nora.app.assess_run import run_nightly
+from nora.domain.assess import DQ_CHECKS
 from nora.domain.gatherings import Gathering, GatheringStatus
 from nora.domain.models import NormalizedMessage
+from nora.infra.sql.assess import SqlAssessReportStore
 from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.gatherings import SqlGatheringStore
@@ -39,7 +44,7 @@ pytestmark = pytest.mark.asyncio
 _TRUNCATE = (
     "citation", "note_revision", "note", "event_revision", "events",
     "rollup_outing", "rollup_build", "presence_stays", "messages",
-    "row_history",
+    "row_history", "assess_report",
 )
 
 
@@ -288,3 +293,66 @@ async def test_induced_line_no_aggregate_is_not_applicable_before_step_8(engine)
     async with engine.connect() as conn:
         result = await induced_line_no_aggregate(conn)
     assert result.status == "not_applicable"
+
+
+# ------------------------------------------------------- per-check isolation
+
+
+async def test_a_raising_check_errors_without_dropping_the_others(engine, monkeypatch):
+    """PR #623 review: a check that raises must not take the whole night's
+    report down with it, including checks that already passed. Patches
+    `unresolved_citations` — the first check `run_deterministic_checks` runs
+    — to raise, and asserts every OTHER check still ran to its own verdict."""
+
+    async def _raises(conn):  # noqa: ANN001 - matches the patched signature
+        raise RuntimeError("boom: citation query exploded")
+
+    monkeypatch.setattr(assess_dq, "unresolved_citations", _raises)
+    async with engine.connect() as conn:
+        results = await run_deterministic_checks(conn)
+
+    by_check = {r.check: r for r in results}
+    assert set(by_check) == set(DQ_CHECKS)
+
+    errored = by_check["unresolved_citations"]
+    assert errored.status == "error"
+    assert errored.failing == 0
+    assert "RuntimeError" in errored.detail
+    assert "boom: citation query exploded" in errored.detail
+
+    # Every check besides the one patched to raise still ran to its own,
+    # real verdict — none of them silently became "error" or "not run".
+    assert by_check["cross_room_duplicate_events"].status == "ok"
+    assert by_check["rollup_rebuild_divergence"].status == "not_applicable"
+    assert by_check["happened_place_mismatch"].status == "ok"
+    assert by_check["sections_past_age_horizon"].status == "not_applicable"
+    assert by_check["induced_line_no_aggregate"].status == "not_applicable"
+    # empty_lineage_rows has no events on this fixture, so it is clean too.
+    assert by_check["empty_lineage_rows"].status == "ok"
+
+
+async def test_a_raising_check_still_gets_a_recorded_report(engine, monkeypatch):
+    """The reviewer's repro, end to end through `run_nightly`: one check
+    raises, and the run still reaches `--record` with the FULL report — the
+    checks that ran clean are not lost because one check blew up."""
+
+    async def _raises(conn):  # noqa: ANN001 - matches the patched signature
+        raise ValueError("rollup connection dropped")
+
+    monkeypatch.setattr(assess_dq, "happened_place_mismatch", _raises)
+    outcome = await run_nightly(engine, mode="on", record=True)
+
+    assert outcome.recorded is True
+    by_check = {r.check: r for r in outcome.report.results}
+    assert by_check["happened_place_mismatch"].status == "error"
+    assert "ValueError" in by_check["happened_place_mismatch"].detail
+    assert outcome.report.errored_checks == ("happened_place_mismatch",)
+    assert by_check["cross_room_duplicate_events"].status == "ok"
+    assert by_check["empty_lineage_rows"].status == "ok"
+
+    recorded = await SqlAssessReportStore(engine).recent(limit=1)
+    assert recorded, "the report was not written despite record=True"
+    stored = recorded[0]
+    stored_by_check = {r.check: r for r in stored.results}
+    assert stored_by_check["happened_place_mismatch"].status == "error"
+    assert stored_by_check["cross_room_duplicate_events"].status == "ok"

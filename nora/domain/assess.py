@@ -47,8 +47,14 @@ DQ_CHECKS: tuple[str, ...] = (
 #: not run because what it checks does not exist yet on this deployment (a
 #: tier not shipped, a table not migrated): distinct from `ok` on purpose, so
 #: a dashboard reading `ok` never means "checked, nothing wrong" when it
-#: really means "nothing here to check yet".
-DqStatus = Literal["ok", "fail", "not_applicable"]
+#: really means "nothing here to check yet". `error` — the check itself
+#: raised (a query error, a connection drop, a programming bug) rather than
+#: running to a verdict: distinct from both `ok` and `fail` on purpose, so
+#: "the check ran clean" is never conflated with "the check never finished",
+#: and distinct from `not_applicable` because an error is a live problem, not
+#: an honestly-skipped check (`AGENTS.md`'s Measure spine: an ERROR is never
+#: a PASS).
+DqStatus = Literal["ok", "fail", "not_applicable", "error"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,6 +78,8 @@ class DqCheckResult:
             raise ValueError("status=not_applicable cannot carry a failing count")
         if self.status == "fail" and not self.failing:
             raise ValueError("status=fail needs a nonzero failing count")
+        if self.status == "error" and self.failing:
+            raise ValueError("status=error cannot carry a failing count")
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,6 +95,10 @@ class AssessReport:
     @property
     def failing_checks(self) -> tuple[str, ...]:
         return tuple(r.check for r in self.results if r.status == "fail")
+
+    @property
+    def errored_checks(self) -> tuple[str, ...]:
+        return tuple(r.check for r in self.results if r.status == "error")
 
     @property
     def total_failing(self) -> int:

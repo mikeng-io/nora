@@ -52,7 +52,7 @@ _CORPORA = Path(__file__).parent / "corpora"
 _CASE_KEYS = frozenset({"name", "series", "category", "negative_kind", "input", "expect"})
 _INPUT_ROW_KEYS = frozenset({"t", "speaker", "text"})
 
-#: The four negative kinds 30 §6 names, in its own order.
+#: The five negative kinds 30 §6 names, in its own order.
 NEGATIVE_KINDS: tuple[str, ...] = (
     "joke", "hypothetical", "other_unit", "already_cancelled", "already_settled",
 )

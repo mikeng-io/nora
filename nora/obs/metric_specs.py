@@ -2334,7 +2334,27 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "came back status=fail, by check ("
         + " / ".join(DQ_CHECKS)
         + "). status=not_applicable (the tier the check reads has not "
-        "shipped yet) never increments this.",
+        "shipped yet) never increments this, and neither does status=error "
+        "(nora_dq_errors_total is that series) — a check that never reached "
+        "a verdict is not the same fact as one that reached a verdict and "
+        "found a violation.",
+        ("check",),
+    ),
+    # A check's own function raised instead of returning a verdict (a query
+    # error, a connection drop, a programming bug) — `nora.app.assess_dq.
+    # _isolated` catches it so the rest of the night's checks still run, and
+    # counts it here rather than folding it into nora_dq_failures_total: an
+    # ERROR is never a PASS, and it must also never read as the SAME kind of
+    # red as a check that ran clean to a `fail` verdict (AGENTS.md's Measure
+    # spine).
+    _CounterSpec(
+        "nora_dq_errors_total",
+        "Nightly data-quality check runs (nora.app.assess_run) whose check "
+        "raised instead of returning a verdict, by check ("
+        + " / ".join(DQ_CHECKS)
+        + "). Distinct from nora_dq_failures_total on purpose: this is a "
+        "check that never finished, not one that finished and found a "
+        "violation.",
         ("check",),
     ),
 )

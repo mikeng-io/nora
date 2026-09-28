@@ -818,7 +818,10 @@ async def cmd_assess_run_nightly(args: argparse.Namespace) -> int:
     30-cognition.md §6, DEC-240). Refused with a clear message, not a stack
     trace, when `[assess] mode` is `"off"` (`AssessDisabledError`). The
     Rollup rebuild diff is not run from this command (`nora.app.assess_run`'s
-    own docstring: opt-in, a separate cost); it reports `not_applicable`."""
+    own docstring: opt-in, a separate cost); it reports `not_applicable`.
+    Exit code is nonzero when ANY check came back `fail` OR `error` — a check
+    that raised is not a clean run either, and the operator paging on this
+    exit code must not read an errored check as a quiet night."""
     cfg = _config(args)
     engine = create_sql_engine(_database_url(cfg))
     try:
@@ -833,7 +836,7 @@ async def cmd_assess_run_nightly(args: argparse.Namespace) -> int:
         await engine.dispose()
     for line in assess_render(outcome.report):
         print(line)
-    return 1 if outcome.report.failing_checks else 0
+    return 1 if outcome.report.failing_checks or outcome.report.errored_checks else 0
 
 
 async def cmd_measure_participation(args: argparse.Namespace) -> int:

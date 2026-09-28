@@ -17,11 +17,20 @@ the second build (`nora.analytics.runner.RollupRunner.rebuild(switch=False)`)
 is a real rebuild's cost (`25-rollup.md` §2's own caveat), so this module
 only DIFFS two already-computed builds; `nora.app.assess_run` decides whether
 and how often to pay for a fresh one.
+
+**One check raising never drops the night's report.** `run_deterministic_
+checks` runs each check through `_isolated`, which catches whatever that one
+check raises and reports it as `status="error"` (the exception's type and
+message in `detail`) instead of letting it propagate — a raising check must
+not take the checks that already passed, or the checks still to run, down
+with it. `error` is its own `DqStatus`, distinct from `fail`: a check that
+never reached a verdict is not the same fact as a check that reached one and
+found a violation.
 """
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Awaitable, Sequence
 from typing import Any
 
 import sqlalchemy as sa
@@ -294,23 +303,44 @@ async def empty_lineage_rows(conn: AsyncConnection) -> DqCheckResult:
     )
 
 
+async def _isolated(check: str, awaitable: Awaitable[DqCheckResult]) -> DqCheckResult:
+    """Run one check's coroutine to a result, never letting it raise past
+    here. A check that raises (a query error, a connection drop, a
+    programming bug) reports `status="error"` with the exception's type and
+    message in `detail` — it must never take the rest of the night's checks,
+    or a report that already recorded other checks' verdicts, down with it
+    (AGENTS.md's Measure spine: an ERROR is never a PASS, and it must not
+    erase the PASSes that already happened)."""
+    try:
+        return await awaitable
+    except Exception as exc:  # noqa: BLE001 - isolate any check's failure, by design
+        return DqCheckResult(
+            check=check, status="error",
+            detail=f"{type(exc).__name__}: {exc}",
+        )
+
+
 async def run_deterministic_checks(
     conn: AsyncConnection, *,
     rollup_builds: tuple[int, int] | None = None,
     rollup_window_ms: tuple[int, int] = (0, 0),
 ) -> tuple[DqCheckResult, ...]:
-    """Every check `nora.domain.assess.DQ_CHECKS` names, in that order."""
+    """Every check `nora.domain.assess.DQ_CHECKS` names, in that order — each
+    run in isolation (`_isolated`), so one check raising never drops the
+    report or the checks after it."""
     build_a, build_b = rollup_builds if rollup_builds else (None, None)
     since_ms, through_ms = rollup_window_ms
     return (
-        await unresolved_citations(conn),
-        await cross_room_duplicate_events(conn),
-        await rollup_rebuild_divergence(
+        await _isolated("unresolved_citations", unresolved_citations(conn)),
+        await _isolated(
+            "cross_room_duplicate_events", cross_room_duplicate_events(conn),
+        ),
+        await _isolated("rollup_rebuild_divergence", rollup_rebuild_divergence(
             conn, build_a=build_a, build_b=build_b,
             since_ms=since_ms, through_ms=through_ms,
-        ),
-        await happened_place_mismatch(conn),
-        await sections_past_age_horizon(conn),
-        await induced_line_no_aggregate(conn),
-        await empty_lineage_rows(conn),
+        )),
+        await _isolated("happened_place_mismatch", happened_place_mismatch(conn)),
+        await _isolated("sections_past_age_horizon", sections_past_age_horizon(conn)),
+        await _isolated("induced_line_no_aggregate", induced_line_no_aggregate(conn)),
+        await _isolated("empty_lineage_rows", empty_lineage_rows(conn)),
     )

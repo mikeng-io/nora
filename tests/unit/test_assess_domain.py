@@ -39,6 +39,23 @@ def test_an_unknown_check_name_is_refused():
         DqCheckResult(check="not_a_real_check", status="ok")
 
 
+def test_status_error_refuses_a_nonzero_failing_count():
+    with pytest.raises(ValueError, match="status=error"):
+        DqCheckResult(check="unresolved_citations", status="error", failing=1)
+
+
+def test_status_error_is_distinct_from_fail_and_not_applicable():
+    """An `error` (the check raised) and a `not_applicable` (the check
+    honestly did not run, nothing to check yet) are different facts, and
+    neither is `fail` (the check ran and found a violation)."""
+    result = DqCheckResult(
+        check="unresolved_citations", status="error", detail="RuntimeError: boom",
+    )
+    assert result.status == "error"
+    assert result.failing == 0
+    assert result.status not in ("fail", "not_applicable", "ok")
+
+
 def test_report_failing_checks_names_only_the_fails():
     report = AssessReport(
         kind="nightly_dq", run_at_ms=1000,
@@ -55,3 +72,22 @@ def test_report_failing_checks_names_only_the_fails():
     )
     assert report.failing_checks == ("empty_lineage_rows",)
     assert report.total_failing == 2
+
+
+def test_report_errored_checks_names_only_the_errors():
+    report = AssessReport(
+        kind="nightly_dq", run_at_ms=1000,
+        results=(
+            DqCheckResult(check="unresolved_citations", status="ok"),
+            DqCheckResult(
+                check="empty_lineage_rows", status="fail", failing=2,
+                sample=("a", "b"),
+            ),
+            DqCheckResult(
+                check="happened_place_mismatch", status="error",
+                detail="RuntimeError: boom",
+            ),
+        ),
+    )
+    assert report.errored_checks == ("happened_place_mismatch",)
+    assert report.failing_checks == ("empty_lineage_rows",)

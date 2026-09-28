@@ -4,13 +4,19 @@
 WHAT IT DOES. Runs every deterministic check `nora.app.assess_dq` names
 (`nora.domain.assess.DQ_CHECKS`, in order), against a read-only connection —
 no check here writes a tier, matching `15-map.md` §6's "Assess … reports and
-metrics only". `--record` (default) writes one `assess_report` row
-(`nora.infra.sql.assess.SqlAssessReportStore.record`) and increments
-`nora_dq_failures_total{check}` once per FAILING check (never per row: the
+metrics only". Each check runs in isolation (`nora.app.assess_dq._isolated`):
+one check raising is recorded as `status="error"` and never takes the rest of
+the run, or the report, down with it. `--record` (default) writes one
+`assess_report` row (`nora.infra.sql.assess.SqlAssessReportStore.record`,
+the FULL report, including any errored checks) and increments
+`nora_dq_failures_total{check}` once per FAILING check and
+`nora_dq_errors_total{check}` once per ERRORED check (never per row: the
 metric answers "is this check red tonight", the report's `failing` count
-answers "how red"). `--no-record` prints without writing, the same dry-run
-shape `nora.app.events_backfill` and `nora.app.person_forget` use for a
-command that touches state.
+answers "how red" — and fail and error are counted on two distinct series,
+never one, because a check that never reached a verdict is not the same fact
+as a check that reached one and found a violation). `--no-record` prints
+without writing, the same dry-run shape `nora.app.events_backfill` and
+`nora.app.person_forget` use for a command that touches state.
 
 REFUSED: the whole run, when `[assess] mode` is `"off"` — the flag this
 module's docstring promises (`nora.config.AssessConfig`). Not scoped
@@ -70,6 +76,8 @@ async def run_nightly(
         for r in results:
             if r.status == "fail":
                 metrics.inc("nora_dq_failures_total", check=r.check)  # type: ignore[attr-defined]
+            elif r.status == "error":
+                metrics.inc("nora_dq_errors_total", check=r.check)  # type: ignore[attr-defined]
     if record:
         await SqlAssessReportStore(engine).record(report)
     return NightlyReport(report=report, recorded=record)
@@ -78,7 +86,9 @@ async def run_nightly(
 def render(report: AssessReport) -> list[str]:
     lines = [f"assess nightly_dq @ {report.run_at_ms}"]
     for r in report.results:
-        marker = {"ok": "OK", "fail": "FAIL", "not_applicable": "N/A"}[r.status]
+        marker = {
+            "ok": "OK", "fail": "FAIL", "not_applicable": "N/A", "error": "ERROR",
+        }[r.status]
         line = f"  [{marker}] {r.check}"
         if r.status == "fail":
             line += f" ({r.failing}): {', '.join(r.sample)}"
