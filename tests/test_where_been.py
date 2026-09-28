@@ -498,7 +498,8 @@ async def test_unlabeled_kind_survives_end_to_end(persons):
     assert out["status"] == "ok"
     kinds = [p["kind"] for p in out["people"][0]["places"]]
     assert kinds == ["unlabeled", "home"]
-    assert out["people"][0]["places"][0]["label"] is None
+    assert out["people"][0]["places"][0]["name"] == "a place they go"
+    assert "label" not in out["people"][0]["places"][0]
 
 
 # ---- R-28 after DEC-156: sequence/radius never egress; day-stay lat/lng do ---
@@ -881,3 +882,14 @@ async def test_routes_are_answered_when_usual_trips_cannot_be_worked_out(persons
     mobility = _FakeMobility(trips=TRIPS)  # no history reads at all
     out = await _where_been(persons, mobility, members=(MILES,))("routes", name="Miles")
     assert out["status"] == "ok" and "usual_trips" not in out["people"][0]
+
+
+async def test_an_unsaved_label_never_reaches_her_as_a_label(persons):
+    """A geocoded street beside `name` was read as a road he passed, even
+    with 26 hours of stays next to it (replay 2026-09-28, 10 of 10)."""
+    street = dict(UNLABELED_PLACE, label="Main Road", saved=False)
+    tool = _where_been(persons, _FakeMobility(places=[street]), members=(MILES,))
+    [place] = (await tool("places", name="Miles"))["people"][0]["places"]
+    assert place["name"] == "a place they go near Main Road"
+    assert "label" not in place and "Main Road" not in str(
+        {k: v for k, v in place.items() if k != "name"})

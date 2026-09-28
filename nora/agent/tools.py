@@ -5886,7 +5886,10 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 places = [
                     {
                         k: row[k] for k in (
-                            "kind", "label", "saved", "confidence", "first_seen_ts",
+                            # No raw `label`: an unsaved one is a geocoded
+                            # street, and beside `name` it was read as a road
+                            # he passed (replay 2026-09-28, 10 of 10).
+                            "kind", "saved", "confidence", "first_seen_ts",
                             "last_seen_ts", "stay_count", "total_dwell_ms",
                         )
                     } | {
@@ -6039,8 +6042,9 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                     note += (
                         " A place of kind unlabeled has no home or work pattern: "
                         "never call it their home or their work. Call a place "
-                        "by its `name`: a saved label is its name; an unsaved "
-                        "one is only the street it is near, never a road they "
+                        "by its `name`. A name that says «near» a street is a "
+                        "place they stop at by that street, for as long as its "
+                        "dwell says: not the street, and not a road they "
                         "passed. Do not invent a name."
                     )
                 return note
