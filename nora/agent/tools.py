@@ -6263,8 +6263,9 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 for pid in sorted(targets, key=lambda i: (places[i].label or "", i))
             ]}
         arrival = kind == "arrival"
-        nights = from_hour >= 16 or to_hour <= from_hour
-        some = "some nights" if nights else "some days"
+        nights = from_hour >= 18 or to_hour <= from_hour
+        unit = "nights" if nights else "days"
+        some = f"some {unit}"
         span_days = {
             "weekday": f"{_routine_days[day.weekday()]}",
             "day_type": "weekends" if day.weekday() >= 5 else "weekdays",
@@ -6276,37 +6277,38 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
 
         def _hedged(habits: tuple, total: int, *, thin: bool) -> str:
             """The usual time as a friend says it: «should … around 19:20»,
-            «probably … though some nights not till around midnight», or
-            «no fixed time». No count of days reaches her."""
+            «probably … though some nights not till around midnight», «maybe
+            …», or «no fixed time». No count of days reaches her. A habit wider
+            than three hours is no time at all; days with no event in the
+            window are said as that, never given a reason."""
             act = f"gets to {named}" if arrival else f"leaves {named}"
             if not habits or not total:
                 return f"{act} at no fixed time"
             main = habits[0]
             share = main.days / total
-            second = habits[1] if len(habits) > 1 and habits[1].days / total >= 0.2 else None
             missing = total - sum(h.days for h in habits)
-            if share < 0.4:
+            second = habits[1] if len(habits) > 1 and habits[1].days / total >= 0.2 else None
+            if missing / total > 0.5:
+                return f"most {unit} not in these hours; on the others, {act} {_when(main)}"
+            if share < 0.4 or main.latest - main.earliest > 180:
                 times = [_when(h) for h in habits[:2]]
                 said = f"{act} at no fixed time; sometimes {', sometimes '.join(times)}"
             else:
-                should = share >= 0.75 and not thin
-                verb = (
-                    (f"should get to {named}" if should else f"probably gets to {named}")
-                    if arrival
-                    else (f"should leave {named}" if should else f"probably leaves {named}")
-                )
+                if share >= 0.75 and not thin:
+                    verb = f"should get to {named}" if arrival else f"should leave {named}"
+                elif share >= 0.5 or (share >= 0.4 and not thin):
+                    verb = f"probably gets to {named}" if arrival else f"probably leaves {named}"
+                else:
+                    verb = f"maybe gets to {named}" if arrival else f"maybe leaves {named}"
                 said = f"{verb} {_when(main)}"
                 if second is not None:
                     later = second.earliest > main.latest
                     said += f", though {some} {'not till ' if later else ''}{_when(second)}"
             if missing / total >= 0.2:
-                said += (
-                    f", and {some} not at all" if arrival
-                    else f", and {some} they stay past these hours"
-                )
+                said += f", and {some} not in these hours"
             return said
 
-        line = f"{span_days}: " + _hedged(fc.habits, fc.days, thin=fc.basis == "all_days")
+        line = f"{span_days}: " + _hedged(fc.habits, fc.days, thin=fc.basis != "weekday")
         out: dict = {"person": person, "what": kind, "place": named, **refs, "routine": line}
         if with_evidence:
             # Asked how sure: the past days as they were, counted.
@@ -6337,20 +6339,23 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             )
         elif fc.today == "stepped_out":
             out["today"] = (
-                f"stepped out of {named} at {_routine_clock(fc.done_minute or 0)} "
-                f"({as_of}), probably not for the day"
+                f"out of {named} since {_routine_clock(fc.done_minute or 0)} "
+                f"({as_of}), not long enough to say they have left for the day"
             )
         elif fc.today == "absent":
-            out["today"] = f"not at {named} today ({as_of})"
+            out["today"] = (
+                f"not at {named} now, and not there earlier in these hours "
+                f"today ({as_of})"
+            )
         elif fc.today == "pending":
             state = f"not at {named} yet" if arrival else f"still at {named}"
-            like = "nights" if nights else "days"
+            like = unit
             if not fc.like_today_days:
                 out["today"] = f"{state} ({as_of}), later than usual"
             elif not fc.like_today:
                 out["today"] = (
-                    f"{state} ({as_of}); on {like} like this they often "
-                    f"{'do not get there' if arrival else 'stay'} until after these hours"
+                    f"{state} ({as_of}); on {like} like this they did not "
+                    f"{'get there' if arrival else 'leave'} in these hours"
                 )
             else:
                 main = fc.like_today[0]
@@ -6458,15 +6463,17 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             f"{start.strftime('%H:%M')}-{end.strftime('%H:%M')}"
         )
         where = top["place"] if top else None
+        named_in_line: list[str] = [where] if where is not None else []
         if level == 3:
             said = f"should be at {where}"
         elif level == 2:
             said = f"probably at {where}"
         elif level == 1:
+            named_in_line += others[:1]
             said = f"maybe at {where}, maybe {'at ' + others[0] if others else 'somewhere else'}"
         elif where is not None:
-            seen = [where, *others][:3]
-            said = "hard to say; sometimes " + ", sometimes ".join(seen)
+            named_in_line = [where, *others][:3]
+            said = "hard to say; sometimes " + ", sometimes ".join(named_in_line)
         else:
             said = "hard to say"
         out = {
@@ -6475,7 +6482,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             "usually_at": where if level >= 2 else None,
             # Other places of theirs they are at some of these hours, by name,
             # so a plan can route from them too; how often is in `routine`.
-            "also": [x for x in others if level >= 2 or x not in said],
+            "also": [x for x in others if x not in named_in_line],
         }
         if with_evidence:
             # Asked how sure: what the past weeks WERE, a grounded count of
@@ -6486,8 +6493,13 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             text = (
                 f"Over the last {weeks} {_routine_days[start.weekday()]} at "
                 f"{start.strftime('%H:%M')}-{end.strftime('%H:%M')}, of the time "
-                f"on record: {on_record}. The record covers about {observed}% of "
-                f"those hours."
+                f"on record: {on_record}. "
+                + (
+                    "Nearly all of those hours are on record."
+                    if observed >= 80
+                    else "Most of those hours are on record." if observed >= 50
+                    else "Much of those hours is not on record."
+                )
             )
             if basis in _routine_rough:
                 text += (
