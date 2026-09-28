@@ -869,7 +869,7 @@ async def test_the_routes_arm_says_how_long_their_repeated_trips_take(persons):
     [usual] = out["people"][0]["usual_trips"]
     assert usual == {
         "from": "their work", "to": "Miles Home", "when": "weekday evenings",
-        "usually_takes": "about 39 min", "trips": 5,
+        "usually_takes": "about 39 min",
     }
 
 
