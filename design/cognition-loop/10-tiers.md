@@ -111,7 +111,13 @@ And the words that name processes, never stores:
    session for re-derivation. Code walks a `citation` edge table; it never
    parses bodies ([80](80-prior-art.md) §4). Two things are distinct: forget
    **hides** the rows authored by or about the person (§8); the cascade marks
-   the rows that only **cite** them `unsupported`. Neither deletes.
+   the rows that only **cite** them `unsupported`. Neither deletes. An
+   accidental cascade (a person forgotten, then unforgotten, in error) has a
+   narrow operator lever: `nora person unforget --clear-unsupported`
+   (`nora.app.person_forget.clear_unsupported`) clears `unsupported_at` on a
+   row only when every message it cites is visible again — it does not undo
+   `unforget`'s own hide/un-hide, and it re-checks soundness from the
+   citations themselves, not from which `forget` produced the mark.
 
 ## 3. What every derived row carries
 

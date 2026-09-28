@@ -108,7 +108,10 @@ class SqlCultureStore:
             # bare `primary_id` (`nora.domain.lineage`, module docstring).
             newest = (await conn.execute(
                 sa.select(MESSAGES.c.platform, MESSAGES.c.id)
-                .where(MESSAGES.c.conversation_id == key)
+                .where(
+                    MESSAGES.c.conversation_id == key,
+                    MESSAGES.c.hidden_at.is_(None),
+                )
                 .order_by(MESSAGES.c.id.desc())
                 .limit(1)
             )).one_or_none()

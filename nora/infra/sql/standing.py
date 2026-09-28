@@ -62,7 +62,10 @@ def _derived(standing: Standing) -> dict[str, Any]:
     if standing.last_folded_row_id is not None:
         as_of = sa.func.coalesce(
             sa.select(MESSAGES.c.ts)
-            .where(MESSAGES.c.id == standing.last_folded_row_id)
+            .where(
+                MESSAGES.c.id == standing.last_folded_row_id,
+                MESSAGES.c.hidden_at.is_(None),
+            )
             .scalar_subquery(),
             standing.updated_at,
         )

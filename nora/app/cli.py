@@ -69,7 +69,14 @@ from nora.app.memory_routing import MemoryRoutingError, build_workspace_router
 from nora.app.participation_measures import gather as gather_measures
 from nora.app.participation_measures import measure as compute_measures
 from nora.app.pending import correlate
-from nora.app.person_forget import forget_person, render_forget, render_unforget, unforget_person
+from nora.app.person_forget import (
+    clear_unsupported,
+    forget_person,
+    render_clear_unsupported,
+    render_forget,
+    render_unforget,
+    unforget_person,
+)
 from nora.config import Config, ConfigError, load
 from nora.domain.media_join import MediaJoin
 from nora.domain.models import UnattributedRow
@@ -355,6 +362,12 @@ def add_subcommands(
     unforget.add_argument("person_id", help="the identity.toml person id")
     unforget.add_argument(
         "--apply", action="store_true", help="write; without it nothing is changed",
+    )
+    unforget.add_argument(
+        "--clear-unsupported", action="store_true",
+        help="also clear unsupported_at on note/standing/culture rows whose "
+             "citations are ALL visible again (the operator lever for an "
+             "accidentally cascaded row; a dry run unless --apply)",
     )
     unforget.set_defaults(func=cmd_person_unforget)
 
@@ -765,10 +778,14 @@ async def cmd_person_unforget(args: argparse.Namespace) -> int:
         result = await unforget_person(
             engine, person_id=args.person_id, apply=bool(args.apply),
         )
+        for line in render_unforget(result):
+            print(line)
+        if args.clear_unsupported:
+            clear_result = await clear_unsupported(engine, apply=bool(args.apply))
+            for line in render_clear_unsupported(clear_result):
+                print(line)
     finally:
         await engine.dispose()
-    for line in render_unforget(result):
-        print(line)
     return 0
 
 

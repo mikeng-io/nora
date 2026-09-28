@@ -5,11 +5,14 @@
     "nora person forget <id> [--apply] hides the person's recorded messages (a soft hide, kept in history, never a delete) and, in the same write, marks every note, room position (standing) and room culture whose citations reach one of those messages as unsupported. An unsupported row stops appearing in the notes index, note_search, the standing block and the culture block; it stays in the database for a later revision to re-evidence.",
     "nora person unforget <id> [--apply] un-hides the person's messages. It does not clear an unsupported mark: a row that only cited a now-restored message is re-derived by whatever writes that tier next, not by the unforget itself.",
     "Both commands are dry run by default and report what would change; --apply writes.",
-    "A withdrawn message also stops reaching record_query and every recorded transcript read, and a snapshot taken before the forget still shows the message as it was."
+    "A withdrawn message also stops reaching record_query and every recorded transcript read, and a snapshot taken before the forget still shows the message as it was.",
+    "REVIEW FIX (PR #622): a hidden message could still feed the daybook, tie and response analytics rollups (nora.infra.sql.rollups.message_facts had no hidden_at filter, including through a quoted-message join and a reaction's target message); it is now excluded everywhere those rollups read messages, notes and note_candidates, standing's watermark and culture's citation lookup, and the participation gate's measures and window cursor.",
+    "REVIEW FIX (PR #622): migration 0075_withdrawal no longer rewrites every existing note/standing/culture/messages row into row_history under a table lock — that blocked live ingestion for the length of the migration. A row_history version older than this migration simply lacks the new columns' keys; the as-of restore (nora.infra.sql.snapshot_at.seed) already treats a missing key as the column's own default (NULL).",
+    "nora person unforget --clear-unsupported clears unsupported_at on a note/standing/culture row when every message it cites is visible again — the operator lever for a person forgotten and unforgotten by mistake. Dry run by default."
   ],
   "limitations": [
     "Only messages are hidden today: social items, reference photos, templates, perceptions and person-scoped positions have no table yet (later steps).",
     "The cascade covers notes, room positions and room culture — the stores today's write paths can cite from. Events and anything the Cognition or Character adaptors will write are not cited yet, so they are not covered until those land.",
-    "There is no automatic re-derivation: an unsupported row stays unsupported until an operator or a later adaptor revises it."
+    "There is no automatic re-derivation: an unsupported row stays unsupported until an operator, or --clear-unsupported, revises it."
   ]
 }

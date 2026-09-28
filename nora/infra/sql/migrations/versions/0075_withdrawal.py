@@ -127,10 +127,15 @@ def _in(values: tuple[str, ...]) -> str:
 
 
 def upgrade() -> None:
-    op.execute(
-        'LOCK TABLE "note", "standing", "culture", "culture_revision", '
-        '"note_revision", "messages" IN SHARE ROW EXCLUSIVE MODE'
-    )
+    # No table lock: cheap `ADD COLUMN`/`CREATE TABLE` DDL only takes its own
+    # brief ACCESS EXCLUSIVE lock, and the citation backfill below is a plain
+    # read + `INSERT ... ON CONFLICT DO NOTHING` that tolerates a concurrent
+    # writer — a message inserted mid-migration just gets no citation edge
+    # backfilled for it, no different from the dangling-id case the backfill
+    # already accepts as inert. A `SHARE ROW EXCLUSIVE` lock on `messages`
+    # here would block live ingestion for the length of the migration; that
+    # was needed only by the manual `row_history` catch-up this migration
+    # used to run (removed — see below), not by anything left in it now.
 
     # 1. the citation edge table
     op.create_table(
@@ -173,72 +178,22 @@ def upgrade() -> None:
     # 3. hidden_at on messages
     op.add_column("messages", sa.Column("hidden_at", sa.BigInteger, nullable=True))
 
-    # 3a. row_history catch-up. `ADD COLUMN` fires no row trigger, and
-    # `nora_row_history` (`0068_system_time_history`) suppresses an UPDATE
-    # that changes no VALUE — the property that makes an upsert of unchanged
-    # data a no-op version, `0068`'s own comment — so a note/standing/culture
-    # row whose latest captured version predates this migration would have
-    # NO version whose image carries `unsupported_at` until its next real
-    # write. `tests/infra/test_row_history.py::
-    # test_the_backfill_dates_what_each_row_proves` pins "the head the chain
-    # ends on IS the live row" for exactly this reason: a schema-only column
-    # is still part of what Nora holds NOW, so the current head must say so.
-    # This closes each table's currently-open version and opens an
-    # equivalent one whose image reflects the post-`ADD COLUMN` row —
-    # manually doing what the trigger would have done had a value actually
-    # changed, using the SAME row-key shape `0068`'s trigger builds
-    # (`jsonb_build_object(<key column>, to_jsonb(<value>))`).
-    for table, key_cols in (
-        ("note", ("id",)), ("culture", ("key",)), ("messages", ("id",)),
-    ):
-        key_json = ", ".join(f"'{c}', to_jsonb(n.{c})" for c in key_cols)
-        op.execute(f"""
-            WITH new_versions AS (
-                SELECT nextval('row_history_id_seq') AS version_id,
-                       jsonb_build_object({key_json}) AS row_key,
-                       to_jsonb(n) AS image
-                FROM "{table}" n
-            ),
-            closed AS (
-                UPDATE row_history rh
-                SET superseded_at = clock_timestamp(), superseded_by = nv.version_id
-                FROM new_versions nv
-                WHERE rh.table_name = '{table}' AND rh.row_key = nv.row_key
-                    AND rh.superseded_at IS NULL
-                RETURNING rh.superseded_by
-            )
-            INSERT INTO row_history (id, table_name, row_key, op, image, recorded_at)
-            SELECT nv.version_id, '{table}', nv.row_key, 'update', nv.image, clock_timestamp()
-            FROM new_versions nv
-            -- The JOIN is load-bearing, not decorative: an UNREFERENCED
-            -- data-modifying CTE is never planned at all in Postgres, so
-            -- without it `closed` never runs and the INSERT below collides
-            -- with the version it should have superseded first.
-            JOIN closed c ON c.superseded_by = nv.version_id
-        """)  # noqa: S608 — table/key names are module constants, never input
-    op.execute("""
-        WITH new_versions AS (
-            SELECT nextval('row_history_id_seq') AS version_id,
-                   jsonb_build_object(
-                       'platform', to_jsonb(s.platform),
-                       'conversation_id', to_jsonb(s.conversation_id)
-                   ) AS row_key,
-                   to_jsonb(s) AS image
-            FROM "standing" s
-        ),
-        closed AS (
-            UPDATE row_history rh
-            SET superseded_at = clock_timestamp(), superseded_by = nv.version_id
-            FROM new_versions nv
-            WHERE rh.table_name = 'standing' AND rh.row_key = nv.row_key
-                AND rh.superseded_at IS NULL
-            RETURNING rh.superseded_by
-        )
-        INSERT INTO row_history (id, table_name, row_key, op, image, recorded_at)
-        SELECT nv.version_id, 'standing', nv.row_key, 'update', nv.image, clock_timestamp()
-        FROM new_versions nv
-        JOIN closed c ON c.superseded_by = nv.version_id
-    """)
+    # No row_history catch-up. `ADD COLUMN` fires no row trigger, so a
+    # note/standing/culture/messages row whose latest captured version
+    # predates this migration has no version whose image carries
+    # `unsupported_at`/`hidden_at` until its next real write — that version
+    # is missing the key, not zero. The read side (`nora.app.snapshot_at`,
+    # `nora.infra.sql.snapshot`) treats a column ABSENT from an older
+    # version's JSON image as that column's default (NULL for both), which
+    # is exactly what the column was for every row at the instant this
+    # migration ran; the live row itself (read straight from the table, not
+    # a history image) always carries the true current value because
+    # `ADD COLUMN ... nullable=True` backfills NULL in place. A manual
+    # rewrite of every existing row under `SHARE ROW EXCLUSIVE` — this
+    # migration's own previous shape — bought nothing this doesn't already
+    # give for free, at the cost of blocking live ingestion for as long as
+    # the three tables took to rewrite; see `tests/infra/test_snapshot_at.py`
+    # for the guard that an old version missing the key restores as NULL.
 
     # 4. the backfill: note citations, from the head revision's body
     op.execute(f"""

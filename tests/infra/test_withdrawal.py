@@ -26,7 +26,7 @@ from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.history import as_of
 from nora.infra.sql.migrations_runner import run_migrations
 from nora.infra.sql.notes import SqlNoteStore
-from nora.infra.sql.schema import CITATION, MESSAGES
+from nora.infra.sql.schema import CITATION, MESSAGES, NOTE
 from nora.infra.sql.standing import SqlStandingStore
 
 pytestmark = pytest.mark.asyncio
@@ -231,6 +231,87 @@ async def test_forget_person_hides_messages_and_cascades(engine):
     assert await store.recent(conversation_id="g1", limit=10) != []
     held = await notes.note_by_id(unit="u", note_id=note.id)
     assert held.unsupported_at == 5000, "unforget reverses the hide, not the cascade mark"
+
+
+async def test_clear_unsupported_clears_a_row_whose_citations_are_all_visible(engine):
+    """The operator lever for an accidentally cascaded row: `forget` then
+    `unforget` a person, and `--clear-unsupported` un-marks the note whose
+    ONLY citation is that person's now-visible-again message."""
+    from nora.app.person_forget import (
+        clear_unsupported,
+        forget_person,
+        unforget_person,
+    )
+
+    mid = await _message(engine)
+    notes = SqlNoteStore(engine)
+    note = await notes.create(
+        unit="u", title="t", description="d", uncertainty="open",
+        closing_condition="c", established_in="signal:g1",
+        body=f"a claim [{mid}]", established_by="test", now_ms=1000,
+        anchor_date=20260901,
+    )
+    await forget_person(engine, person_id="miles", apply=True, now_ms=5000)
+    await unforget_person(engine, person_id="miles", apply=True)
+    held = await notes.note_by_id(unit="u", note_id=note.id)
+    assert held.unsupported_at == 5000, "unforget alone must not clear the cascade mark"
+
+    dry = await clear_unsupported(engine, apply=False)
+    assert dry.cleared["note"] == [note.id]
+    async with engine.connect() as conn:
+        untouched = (await conn.execute(
+            sa.select(NOTE.c.unsupported_at).where(NOTE.c.id == note.id)
+        )).scalar_one()
+    assert untouched == 5000, "a dry run must write nothing"
+
+    applied = await clear_unsupported(engine, apply=True)
+    assert applied.cleared["note"] == [note.id]
+    assert applied.total_cleared == 1
+    cleared = await notes.note_by_id(unit="u", note_id=note.id)
+    assert cleared is not None and cleared.unsupported_at is None
+    # the note is back in the index too — the reader's own filter, proven
+    # negative-then-positive same as the cascade test above.
+    assert await notes.standing(unit="u") != ()
+
+
+async def test_clear_unsupported_leaves_a_row_with_a_still_hidden_citation(engine):
+    """NEGATIVE: a note citing TWO messages, only one of which is
+    unforgotten, must stay unsupported — clearing is all-or-nothing per
+    row, never per citation."""
+    from nora.app.person_forget import (
+        clear_unsupported,
+        forget_person,
+        unforget_person,
+    )
+    miles_mid = await _message(engine, ts=1000)
+    store = SqlRecordStore(engine)
+    other_mid = await store.append(
+        message=NormalizedMessage(
+            "signal", "g1", "group", "+2", "Alice", 1001, "yo", {},
+        ),
+        person_id="alice",
+    )
+    notes = SqlNoteStore(engine)
+    note = await notes.create(
+        unit="u", title="t", description="d", uncertainty="open",
+        closing_condition="c", established_in="signal:g1",
+        body=f"a claim [{miles_mid}, {other_mid}]", established_by="test", now_ms=1000,
+        anchor_date=20260901,
+    )
+
+    # forget BOTH people (one note citing both messages), then only
+    # unforget Miles — Alice's message stays hidden, so the note has one
+    # visible-again citation and one still-hidden one.
+    await forget_person(engine, person_id="alice", apply=True, now_ms=4000)
+    await forget_person(engine, person_id="miles", apply=True, now_ms=5000)
+    await unforget_person(engine, person_id="miles", apply=True)
+
+    result = await clear_unsupported(engine, apply=True)
+    assert result.cleared == {}
+    held = await notes.note_by_id(unit="u", note_id=note.id)
+    assert held is not None and held.unsupported_at == 4000, (
+        "a row with any still-unresolved citation must stay unsupported"
+    )
 
 
 async def test_a_snapshot_before_the_forget_restores_the_message(engine):

@@ -54,6 +54,7 @@ from nora.subject import (
     SubjectSpec,
     know,
     obtain,
+    sandbox_as_of,
     sandbox_database,
     sandbox_from_snapshot,
 )
@@ -669,3 +670,58 @@ async def test_a_seeded_note_keeps_its_source_id_end_to_end(
             ))
     finally:
         await sandbox_engine.dispose()
+
+
+# --- migration 0075_withdrawal: an OLDER row_history image missing a new
+#     column must restore to SQL NULL, not error or misbehave -------------
+
+
+async def test_a_row_history_image_missing_the_new_hidden_at_key_restores_as_null(
+    pg_url: str, pg_template: str, engine: Any,
+) -> None:
+    """`0075_withdrawal` added `hidden_at` to `messages` — nullable, no
+    default — WITHOUT rewriting every existing `row_history` image to carry
+    the key (that rewrite took a `SHARE ROW EXCLUSIVE` lock blocking live
+    ingestion and was removed). So an OLDER version, recorded before the
+    migration ran, has an `image` JSONB blob with no `hidden_at` key at all.
+
+    This proves `nora.infra.sql.snapshot_at.seed` (via `nora.infra.sql.
+    history.as_of` and `_insert_sql`'s `jsonb_populate_recordset`) restores
+    such a row with `hidden_at` as SQL NULL rather than erroring or
+    defaulting it to something else — `hidden_at` is nullable with no
+    default, so `_insert_sql` emits the column bare (`r."hidden_at"`, no
+    `coalesce`), and `jsonb_populate_recordset` fills a JSON object's
+    missing key with NULL for a composite/record type by Postgres's own
+    contract.
+
+    The message is seeded through the real write path (`SqlRecordStore`, so
+    `row_history` gets a genuine trigger-written image with `hidden_at`
+    present), then the `hidden_at` key is stripped from that version's
+    `image` directly with the jsonb `-` operator — simulating a pre-0075
+    version, never routed back through the `messages` table itself.
+    """
+    message_id = await _say(engine, "a message from before the withdrawal migration", at=BEFORE_MS)
+
+    async with engine.begin() as conn:
+        result = await conn.execute(sa.text(
+            "UPDATE row_history SET image = image - 'hidden_at' "
+            "WHERE table_name = 'messages' AND row_key = :key "
+            "AND superseded_at IS NULL RETURNING image"
+        ), {"key": f'{{"id": {message_id}}}'})
+        [(image,)] = result.all()
+        assert "hidden_at" not in image, "the fixture must simulate a pre-0075 image"
+
+    at = datetime.now(UTC)
+    async with sandbox_as_of(pg_url, at, template=pg_template) as (sandbox_url, report):
+        assert report.copied.get("messages", 0) >= 1
+        sandbox_engine = create_sql_engine(sandbox_url)
+        try:
+            async with sandbox_engine.connect() as conn:
+                row = (await conn.execute(sa.text(
+                    "SELECT body, hidden_at FROM messages WHERE id = :id"
+                ), {"id": message_id})).one()
+        finally:
+            await sandbox_engine.dispose()
+
+    assert row.body == "a message from before the withdrawal migration"
+    assert row.hidden_at is None

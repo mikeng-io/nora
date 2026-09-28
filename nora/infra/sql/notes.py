@@ -197,7 +197,7 @@ async def _revision_lineage(
             sa.select(
                 MESSAGES.c.id, MESSAGES.c.platform, MESSAGES.c.conversation_id,
                 MESSAGES.c.ts,
-            ).where(MESSAGES.c.id.in_(lookup))
+            ).where(MESSAGES.c.id.in_(lookup), MESSAGES.c.hidden_at.is_(None))
         )).all()
         rooms = {r.id: room_key(r.platform, r.conversation_id) for r in rows}
         newest = max((r.ts for r in rows), default=None)
@@ -217,7 +217,10 @@ async def _room_key_of(conn: AsyncConnection, conversation_id: str) -> str | Non
     share."""
     platform = (await conn.execute(
         sa.select(MESSAGES.c.platform)
-        .where(MESSAGES.c.conversation_id == conversation_id)
+        .where(
+            MESSAGES.c.conversation_id == conversation_id,
+            MESSAGES.c.hidden_at.is_(None),
+        )
         .order_by(MESSAGES.c.id.desc())
         .limit(1)
     )).scalar_one_or_none()
