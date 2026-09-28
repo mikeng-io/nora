@@ -119,6 +119,9 @@ HISTORY_TABLES: dict[str, tuple[str, ...]] = {
     "rollup_daybook": ("id",),
     "rollup_tie": ("id",),
     "rollup_response": ("id",),
+    # Step 2b (0074_event_revision): the head is still the compare-and-swap
+    # cache 10-tiers.md §8 allows over `event_revision` (APPEND_ONLY, below).
+    "events": ("id",),
 }
 
 #: Append-only tables a restore copies, and each one's system-time column.
@@ -141,15 +144,20 @@ APPEND_ONLY: dict[str, str] = {
     "stimulus": "recorded_at",
     "cognition_wake": "recorded_at",
     "source_health": "recorded_at",
+    # Step 2b (0074_event_revision): the chain `events` is a
+    # compare-and-swap cache over, and RSVPs, append-only since this step
+    # ("RSVP transition rows", 70 §5) — a repeat RSVP is an INSERT, never an
+    # upsert; the current response is the newest row per (event_id, person_id).
+    "event_revision": "recorded_at",
+    "event_rsvps": "recorded_at",
 }
 
 #: Changes in place today and migrates at a later step (70 §5). Not
 #: restorable as of T before then; `nora snapshot` leaves them empty and
-#: names them.
-DEFERRED: dict[str, str] = {
-    "events": "2b",
-    "event_rsvps": "2b",
-}
+#: names them. Empty since step 2b (`0074_event_revision`) migrated the last
+#: entries `events`/`event_rsvps` marked "2b"; kept as a named group rather
+#: than removed, because a later step of this migration may add to it again.
+DEFERRED: dict[str, str] = {}
 
 #: Not copied into a restore, each with why.
 NOT_RESTORED: dict[str, str] = {

@@ -1,7 +1,11 @@
+"end" timestamp with time zone,
+"end" timestamp with time zone,
 "position" integer NOT NULL,
+"when" timestamp with time zone,
 "when" timestamp with time zone,
 $$;
 $$;
+);
 );
 );
 );
@@ -116,8 +120,11 @@ ADD CONSTRAINT deploy_revision_pkey PRIMARY KEY (id);
 ADD CONSTRAINT doctrine_revision_pkey PRIMARY KEY (id);
 ADD CONSTRAINT dream_schedule_state_pkey PRIMARY KEY (adaptor_name, scope_id);
 ADD CONSTRAINT embedding_pkey PRIMARY KEY (kind, row_key);
+ADD CONSTRAINT event_revision_event_id_fkey FOREIGN KEY (event_id) REFERENCES public.events(id);
+ADD CONSTRAINT event_revision_parent_revision_id_fkey FOREIGN KEY (parent_revision_id) REFERENCES public.event_revision(id);
+ADD CONSTRAINT event_revision_pkey PRIMARY KEY (id);
 ADD CONSTRAINT event_rsvps_event_id_fkey FOREIGN KEY (event_id) REFERENCES public.events(id);
-ADD CONSTRAINT event_rsvps_pkey PRIMARY KEY (event_id, person_id);
+ADD CONSTRAINT event_rsvps_pkey PRIMARY KEY (id);
 ADD CONSTRAINT events_pkey PRIMARY KEY (id);
 ADD CONSTRAINT exchange_observation_pkey PRIMARY KEY (id);
 ADD CONSTRAINT exchange_observation_scope_id_act_message_ids_key UNIQUE (scope_id, act, message_ids);
@@ -215,6 +222,9 @@ ALTER TABLE ONLY public.deploy_revision
 ALTER TABLE ONLY public.doctrine_revision
 ALTER TABLE ONLY public.dream_schedule_state
 ALTER TABLE ONLY public.embedding
+ALTER TABLE ONLY public.event_revision
+ALTER TABLE ONLY public.event_revision
+ALTER TABLE ONLY public.event_revision
 ALTER TABLE ONLY public.event_rsvps
 ALTER TABLE ONLY public.event_rsvps
 ALTER TABLE ONLY public.events
@@ -361,8 +371,15 @@ CONSTRAINT ck_cognition_wake_reason CHECK ((reason = ANY (ARRAY['settled'::text,
 CONSTRAINT ck_compute_jobs_state CHECK ((state = ANY (ARRAY['pending'::text, 'firing'::text, 'done'::text, 'failed'::text])))
 CONSTRAINT ck_corridor_speed_how CHECK (((hour_of_week >= 0) AND (hour_of_week < 168)))
 CONSTRAINT ck_derived_places_kind CHECK ((kind = ANY (ARRAY['home'::text, 'work'::text, 'unlabeled'::text])))
+CONSTRAINT ck_event_revision_confidence_is_a_level CHECK (((confidence IS NULL) OR (confidence = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])))),
+CONSTRAINT ck_event_revision_lineage_shape CHECK ((jsonb_typeof(lineage) = 'object'::text)),
+CONSTRAINT ck_event_revision_reasoning_is_a_mode CHECK (((reasoning IS NULL) OR (reasoning = ANY (ARRAY['told'::text, 'deduced'::text, 'abduced'::text])))),
+CONSTRAINT ck_event_revision_status CHECK ((status = ANY (ARRAY['staged'::text, 'proposed'::text, 'confirmed'::text, 'happened'::text, 'cancelled'::text, 'lapsed'::text, 'evicted'::text])))
 CONSTRAINT ck_event_rsvps_response CHECK ((response = ANY (ARRAY['yes'::text, 'no'::text, 'maybe'::text])))
-CONSTRAINT ck_events_status CHECK ((status = ANY (ARRAY['proposed'::text, 'confirmed'::text, 'cancelled'::text])))
+CONSTRAINT ck_events_confidence_is_a_level CHECK (((confidence IS NULL) OR (confidence = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])))),
+CONSTRAINT ck_events_lineage_shape CHECK ((jsonb_typeof(lineage) = 'object'::text)),
+CONSTRAINT ck_events_reasoning_is_a_mode CHECK (((reasoning IS NULL) OR (reasoning = ANY (ARRAY['told'::text, 'deduced'::text, 'abduced'::text])))),
+CONSTRAINT ck_events_status CHECK ((status = ANY (ARRAY['staged'::text, 'proposed'::text, 'confirmed'::text, 'happened'::text, 'cancelled'::text, 'lapsed'::text, 'evicted'::text])))
 CONSTRAINT ck_instagram_summons_mode CHECK ((mode = ANY (ARRAY['dry_run'::text, 'live'::text]))),
 CONSTRAINT ck_instagram_summons_state CHECK ((state = ANY (ARRAY['claimed'::text, 'unresolved'::text, 'ignored_summoner'::text, 'stale'::text, 'unreadable'::text, 'silent'::text, 'staged'::text, 'flushing'::text, 'published'::text, 'refused'::text, 'capped'::text, 'duplicate'::text, 'ambiguous'::text, 'failed'::text])))
 CONSTRAINT ck_music_queue_position_non_negative CHECK (("position" >= 0))
@@ -496,7 +513,10 @@ CREATE INDEX idx_decision_log_unit_ts ON public.decision_log USING btree (unit, 
 CREATE INDEX idx_doctrine_revision_corpus_loaded ON public.doctrine_revision USING btree (corpus, loaded_at);
 CREATE INDEX idx_embedding_scope ON public.embedding USING btree (kind, scope);
 CREATE INDEX idx_embedding_v1024 ON public.embedding USING hnsw (v1024 public.vector_cosine_ops);
+CREATE INDEX idx_event_revision_event ON public.event_revision USING btree (event_id, recorded_at);
+CREATE INDEX idx_event_rsvps_event_person ON public.event_rsvps USING btree (event_id, person_id, recorded_at);
 CREATE INDEX idx_events_conversation ON public.events USING btree (conversation_id, status);
+CREATE INDEX idx_events_unit ON public.events USING btree (unit_id, status);
 CREATE INDEX idx_exchange_observation_scope ON public.exchange_observation USING btree (scope_id);
 CREATE INDEX idx_fact_disputed ON public.fact USING btree (unit) WHERE (disputed_at IS NOT NULL);
 CREATE INDEX idx_fact_premise_premise_fact_id ON public.fact_premise USING btree (premise_fact_id);
@@ -558,6 +578,7 @@ CREATE TABLE public.deploy_revision (
 CREATE TABLE public.doctrine_revision (
 CREATE TABLE public.dream_schedule_state (
 CREATE TABLE public.embedding (
+CREATE TABLE public.event_revision (
 CREATE TABLE public.event_rsvps (
 CREATE TABLE public.events (
 CREATE TABLE public.exchange_observation (
@@ -622,6 +643,7 @@ CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.compu
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.consolidation_watermark FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('consolidator_name', 'scope_id');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.culture FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('key');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.dream_schedule_state FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('adaptor_name', 'scope_id');
+CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.events FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.geocode_cache FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('lat_rounded', 'lng_rounded');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.instagram_summons FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.media_objects FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('sha256');
@@ -660,6 +682,7 @@ CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.compute_jobs 
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.consolidation_watermark FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.culture FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.dream_schedule_state FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
+CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.events FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.geocode_cache FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.instagram_summons FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.media_objects FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
@@ -885,6 +908,8 @@ as_of bigint,
 as_of bigint,
 as_of bigint,
 as_of bigint,
+as_of bigint,
+as_of bigint,
 as_of_ms bigint NOT NULL,
 as_of_ms bigint NOT NULL,
 as_of_ms bigint NOT NULL,
@@ -911,6 +936,7 @@ body text NOT NULL,
 body text NOT NULL,
 body text NOT NULL,
 body text NOT NULL,
+body text,
 body text,
 body text,
 body text,
@@ -947,6 +973,8 @@ colocation_ms bigint NOT NULL,
 comment_id text,
 completed_at timestamp with time zone,
 confidence double precision NOT NULL,
+confidence text,
+confidence text,
 confidence text,
 confidence text,
 confidence text,
@@ -1051,10 +1079,12 @@ established_by text NOT NULL,
 established_in text NOT NULL,
 event text NOT NULL,
 event_id uuid NOT NULL,
+event_id uuid NOT NULL,
 event_id uuid,
 examples jsonb DEFAULT '[]'::jsonb NOT NULL,
 examples jsonb DEFAULT '[]'::jsonb NOT NULL,
 exchange_basis text[] DEFAULT '{}'::text[] NOT NULL,
+exclude_persons text[] DEFAULT '{}'::text[] NOT NULL,
 exclude_persons text[] DEFAULT '{}'::text[] NOT NULL,
 exclude_persons text[] DEFAULT '{}'::text[] NOT NULL,
 exclude_persons text[] DEFAULT '{}'::text[] NOT NULL,
@@ -1090,6 +1120,7 @@ guild_id text NOT NULL,
 guild_id text NOT NULL,
 head_revision_id uuid NOT NULL,
 head_revision_id uuid NOT NULL,
+head_revision_id uuid,
 hits integer DEFAULT 0 NOT NULL
 home_ms bigint NOT NULL,
 homes_unknown text[] DEFAULT '{}'::text[] NOT NULL,
@@ -1125,6 +1156,8 @@ id integer NOT NULL,
 id integer NOT NULL,
 id text NOT NULL,
 id text NOT NULL,
+id uuid DEFAULT gen_random_uuid() NOT NULL,
+id uuid DEFAULT gen_random_uuid() NOT NULL,
 id uuid DEFAULT gen_random_uuid() NOT NULL,
 id uuid DEFAULT gen_random_uuid() NOT NULL,
 id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -1200,6 +1233,8 @@ late_fixes integer DEFAULT 0 NOT NULL,
 lexeme_basis text[] DEFAULT '{}'::text[] NOT NULL,
 lineage jsonb DEFAULT '[]'::jsonb NOT NULL,
 lineage jsonb DEFAULT '[]'::jsonb NOT NULL,
+lineage jsonb DEFAULT '{}'::jsonb NOT NULL,
+lineage jsonb DEFAULT '{}'::jsonb NOT NULL,
 lineage jsonb DEFAULT '{}'::jsonb NOT NULL,
 lineage jsonb DEFAULT '{}'::jsonb NOT NULL,
 lineage jsonb DEFAULT '{}'::jsonb NOT NULL,
@@ -1311,6 +1346,7 @@ p90_kmh double precision NOT NULL,
 params_sha256 text NOT NULL,
 parent_revision_id uuid,
 parent_revision_id uuid,
+parent_revision_id uuid,
 part_of_speech text,
 participants text[] NOT NULL,
 participants text[] NOT NULL,
@@ -1318,6 +1354,8 @@ path text NOT NULL,
 path text NOT NULL,
 paused boolean NOT NULL,
 payload jsonb,
+people text[] DEFAULT '{}'::text[] NOT NULL,
+people text[] DEFAULT '{}'::text[] NOT NULL,
 person_a text NOT NULL,
 person_b text NOT NULL,
 person_id text NOT NULL,
@@ -1385,6 +1423,8 @@ reasoning text,
 reasoning text,
 reasoning text,
 reasoning text,
+reasoning text,
+reasoning text,
 reasoning_effort text NOT NULL,
 recognition_score double precision DEFAULT 0 NOT NULL,
 recognition_score double precision DEFAULT 0 NOT NULL,
@@ -1395,6 +1435,8 @@ recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL
 recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL
 recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL
 recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL
+recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
+recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
 recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
 recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
 recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
@@ -1500,6 +1542,7 @@ state text NOT NULL,
 status text NOT NULL,
 status text NOT NULL,
 status text NOT NULL,
+status text NOT NULL,
 status text,
 stay_count integer NOT NULL,
 stay_ms bigint NOT NULL,
@@ -1550,6 +1593,7 @@ title text NOT NULL,
 title text NOT NULL,
 title text NOT NULL,
 title text NOT NULL,
+title text NOT NULL,
 title text,
 tool_input jsonb NOT NULL,
 tool_name text NOT NULL,
@@ -1579,6 +1623,7 @@ unit text NOT NULL,
 unit text NOT NULL,
 unit text NOT NULL,
 unit text,
+unit_id text DEFAULT ''::text NOT NULL,
 unsupported text[] DEFAULT '{}'::text[] NOT NULL,
 updated_at bigint NOT NULL,
 updated_at bigint NOT NULL,
@@ -1609,12 +1654,19 @@ valid_to_ms bigint NOT NULL,
 valid_to_ms bigint NOT NULL,
 valid_to_ms bigint NOT NULL,
 venue_address text,
+venue_address text,
+venue_maps_url text,
 venue_maps_url text,
 venue_name text,
+venue_name text,
+venue_place_id text,
 venue_place_id text,
 venue_price_level text DEFAULT ''::text NOT NULL,
+venue_price_level text DEFAULT ''::text NOT NULL,
+venue_rating double precision,
 venue_rating double precision,
 venue_resolved_at timestamp with time zone,
+venue_text text,
 venue_text text,
 verdict text NOT NULL,
 version text NOT NULL,
@@ -1635,5 +1687,7 @@ working_set jsonb DEFAULT '[]'::jsonb NOT NULL,
 writer text NOT NULL,
 written_at bigint NOT NULL,
 written_at bigint NOT NULL,
+written_at timestamp with time zone NOT NULL,
+written_by text DEFAULT 'tag'::text NOT NULL,
 || ' would bypass row_history; delete the rows (they are kept as history) '
 || 'or SET LOCAL nora.row_history = ''off'' deliberately';

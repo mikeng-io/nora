@@ -29,7 +29,14 @@ silently (`EXCEPTED`, printed by the CLI):
   but its history starts at that migration, so a T before it holds none.
   (A Rollup AT an arbitrary watermark T can also be rebuilt from the Record
   restored here: it is a pure function of it, 25-rollup.md §2.)
-- **events and RSVPs**: updated in place until step 2b's `event_revision`.
+- **events and RSVPs before migration 0074 (step 2b)**: updated in place
+  until `event_revision` and RSVP transition rows started there, so a T
+  before it holds none; restored like every other history/append-only table
+  from 0074 on.
+- **an event's `unit_id` before an operator's cross-room backfill** (step 2b's
+  explicit scope: `0074_event_revision`'s module docstring): every event
+  migrated by 0074 holds `unit_id = ''` until that backfill runs, so a
+  restore at a T before it ran cannot resolve those rows to a unit either.
 
 WHAT WAS IN FORCE: `in_force` reads the doctrine, the Dreamer's doctrine and
 objectives, the three config files and the deploy recorded at or before T
@@ -111,7 +118,8 @@ EXCEPTED: tuple[str, ...] = (
     "itself memory-free",
     "the Rollup before migration 0071 (step 2): its history starts there, so a "
     "T before it holds no Rollup rows",
-    "events and RSVPs: updated in place until step 2b; left empty",
+    "events and RSVPs before migration 0074 (step 2b): their history starts "
+    "there, so a T before it holds none",
 )
 
 CONFIG_FILES: tuple[str, ...] = ("config.toml", "policy.toml", "identity.toml")

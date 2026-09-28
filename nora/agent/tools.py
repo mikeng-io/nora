@@ -77,6 +77,7 @@ from ..domain.gatherings import (
     GatheringNotFoundError,
     GatheringStatus,
     RSVPResponse,
+    StaleEventRevisionError,
     VenueSuggestions,
 )
 from ..domain.instagram_links import is_handle as _is_instagram_handle
@@ -1237,29 +1238,34 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
                                   side_effect_state="unknown", idempotency="non_idempotent",
                                   retry="never",
                                   output_contract="three_state", level=2),
-    # The six event verbs (ADR 0015 §3): `create_event` is level 2 (it MUST
-    # follow `list_events`, or an open event is duplicated); the rest are 1.
-    # Their non-ok results share `_EVENTS_OFF`, `_NO_SUCH_EVENT` and
+    # The event verbs (ADR 0015 §3; renamed from `create_event`,
+    # `update_event`, `rsvp_event`, `cancel_event`, `list_events` at migration
+    # step 2b, design/cognition-loop/70-migration.md §8, DEC-237):
+    # `event_propose` is level 2 (it MUST follow `event_search`, or an open
+    # event is duplicated); the rest are 1. `event_revise` and
+    # `event_set_status` each take `base_revision_id`, 10-tiers.md §3's
+    # compare-and-swap column; a stale one refuses `stale_base`. Their
+    # non-ok results share `_EVENTS_OFF`, `_NO_SUCH_EVENT` and
     # `_NOT_AN_EVENT_ID`, each with a note on how to report it.
-    "create_event": NativeTool(3,
-                               side_effect_state="unknown", idempotency="non_idempotent",
-                               retry="never",
-                               output_contract="three_state", level=2),
-    "update_event": NativeTool(2,
+    "event_propose": NativeTool(3,
+                                side_effect_state="unknown", idempotency="non_idempotent",
+                                retry="never",
+                                output_contract="three_state", level=2),
+    "event_revise": NativeTool(2,
                                side_effect_state="unknown", idempotency="non_idempotent",
                                retry="never",
                                output_contract="three_state", level=1),
-    "rsvp_event": NativeTool(1,
+    "event_rsvp": NativeTool(1,
                              side_effect_state="unknown", idempotency="non_idempotent",
                              retry="never",
                              output_contract="three_state", level=1),
-    "cancel_event": NativeTool(2,
-                               side_effect_state="unknown", idempotency="non_idempotent",
-                               retry="never",
+    "event_set_status": NativeTool(2,
+                                   side_effect_state="unknown", idempotency="non_idempotent",
+                                   retry="never",
+                                   output_contract="three_state", level=1),
+    "event_search": NativeTool(1, read_only=True,
+                               side_effect_state="none", idempotency="idempotent", retry="safe",
                                output_contract="three_state", level=1),
-    "list_events": NativeTool(1, read_only=True,
-                              side_effect_state="none", idempotency="idempotent", retry="safe",
-                              output_contract="three_state", level=1),
     "suggest_venue": NativeTool(4, read_only=True,
                                 side_effect_state="none", idempotency="idempotent", retry="safe",
                                 output_contract="three_state", level=1),
@@ -3609,7 +3615,7 @@ _MUSIC_NO_TAGGER: Mapping[str, object] = {
     "note": "I couldn't tell who's asking, so I can't check your voice channel. "
             "Say so, and don't guess a channel.",
 }
-# The six event verbs' shared results (ADR 0015 §3): what each status means
+# The event verbs' shared results (ADR 0015 §3): what each status means
 # and how to report it, in one place so the verbs cannot drift apart.
 _EVENTS_OFF: Mapping[str, object] = {
     "status": "unavailable",
@@ -3617,12 +3623,12 @@ _EVENTS_OFF: Mapping[str, object] = {
 }
 _NO_SUCH_EVENT: Mapping[str, object] = {
     "status": "refused",
-    "note": "I don't know that event here. Check list_events for its id, and "
+    "note": "I don't know that event here. Check event_search for its id, and "
             "don't guess one.",
 }
 _NOT_AN_EVENT_ID: Mapping[str, object] = {
     "status": "refused",
-    "note": "That doesn't look like an event id. Use one from list_events.",
+    "note": "That doesn't look like an event id. Use one from event_search.",
 }
 _VENUE_REPORT: Mapping[str, str] = {
     "nothing_found": "Nobody here has said anything usable about places they "
@@ -3736,12 +3742,14 @@ class EventsCollaborator(Protocol):
         self, *, conversation_id: str, requester_person_id: str, title: str,
         when: datetime | None = None, venue_text: str | None = None,
         person_names: frozenset[str] | None = None, platform: str,
+        unit_id: str = "",
     ) -> Gathering: ...
 
     async def update_event(
         self, *, event_id: UUID, conversation_id: str,
         when: datetime | None = None, venue_text: str | None = None,
         person_names: frozenset[str] | None = None, platform: str,
+        base_revision_id: UUID | None = None,
     ) -> Gathering: ...
 
     async def rsvp(
@@ -3753,8 +3761,19 @@ class EventsCollaborator(Protocol):
         self, *, event_id: UUID, conversation_id: str,
     ) -> Gathering: ...
 
+    async def set_event_status(
+        self, *, event_id: UUID, conversation_id: str, status: GatheringStatus,
+        base_revision_id: UUID | None = None,
+    ) -> Gathering: ...
+
     async def list_events(
         self, *, conversation_id: str, status: GatheringStatus | None = None,
+    ) -> Sequence[Gathering]: ...
+
+    async def search_events(
+        self, *, unit_id: str, conversation_id: str, place: str | None = None,
+        person: str | None = None, start: datetime | None = None,
+        end: datetime | None = None,
     ) -> Sequence[Gathering]: ...
 
     async def suggest_venue(
@@ -10840,45 +10859,57 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                     "it was.",
         }
 
-    async def list_events(
+    async def event_search(
         status: Literal["proposed", "confirmed", "cancelled"] | None = None,
+        place: str = "", person: str = "",
     ) -> dict:
-        """List the gatherings proposed or confirmed in THIS conversation. Call
-        this before create_event, so an open event gets updated instead of copied.
+        """List the unit's gatherings. Call this before event_propose, so an
+        open event gets revised instead of copied.
 
-        Returns `status`: ok (each event's id, title, when, venue and status),
-        refused or unavailable, with a `note` when it is not ok.
+        Falls back to this room's own events when the unit cannot be
+        resolved. Returns `status`: ok (each event's id, title, when, venue
+        and status), refused or unavailable, with a `note` when it is not ok.
 
         Args:
             status: Only events in this state. Leave it out for all of them.
+            place: Optional. Match the venue by name or the words used for it.
+            person: Optional. Only events this person created or RSVP'd to.
         """
         if events is None:
-            _record(metrics, "list_events", "unavailable")
+            _record(metrics, "event_search", "unavailable")
             return dict(_EVENTS_OFF)
         parsed_status: GatheringStatus | None = None
         if status:
             try:
                 parsed_status = GatheringStatus(status)
             except ValueError:
-                _record(metrics, "list_events", "refused", reason="bad_status")
+                _record(metrics, "event_search", "refused", reason="bad_status")
                 return {
                     "status": "refused",
                     "note": "That's not a status I know. Use proposed, confirmed "
                             "or cancelled, or leave it out.",
                 }
         try:
-            out = await events.list_events(
-                conversation_id=bound_conversation_id, status=parsed_status,
-            )
+            if place or person:
+                out = await events.search_events(
+                    unit_id=_unit() or "", conversation_id=bound_conversation_id,
+                    place=place or None, person=person or None,
+                )
+                if parsed_status is not None:
+                    out = [e for e in out if e.status is parsed_status]
+            else:
+                out = await events.list_events(
+                    conversation_id=bound_conversation_id, status=parsed_status,
+                )
         except Exception:
-            log.exception("list_events failed")
-            _record(metrics, "list_events", "unavailable")
+            log.exception("event_search failed")
+            _record(metrics, "event_search", "unavailable")
             return {
                 "status": "unavailable",
                 "note": "I couldn't check what's on. Say you couldn't check, and "
                         "don't guess what's planned.",
             }
-        _record(metrics, "list_events", "ok", count=len(out))
+        _record(metrics, "event_search", "ok", count=len(out))
         return {
             "status": "ok",
             "events": [
@@ -10892,14 +10923,15 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             ],
         }
 
-    async def create_event(
+    async def event_propose(
         title: str, when: str = "", venue_text: str = "",
     ) -> dict:
         """Propose a NEW gathering in this conversation, returning its id. Call
         this when the room wants to arrange something that is not open yet.
 
-        You MUST call list_events first: if an event is already open (proposed),
-        update it with update_event instead of creating a second one.
+        You MUST call event_search first: if an event is already open
+        (proposed), revise it with event_revise instead of creating a second
+        one.
 
         Returns `status`: ok, refused or unavailable, with a `note` when it is
         not ok.
@@ -10911,11 +10943,11 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             venue_text: Optional. The place, the way it was said.
         """
         if events is None:
-            _record(metrics, "create_event", "unavailable")
+            _record(metrics, "event_propose", "unavailable")
             return dict(_EVENTS_OFF)
         tagger = room.tagger
         if tagger is None:
-            _record(metrics, "create_event", "refused", reason="no_tagger")
+            _record(metrics, "event_propose", "refused", reason="no_tagger")
             return {
                 "status": "refused",
                 "note": "I couldn't tell who's asking, so nothing was created. Say "
@@ -10923,7 +10955,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             }
         due_at = _parse_when(when) if when else None
         if when and due_at is None:
-            _record(metrics, "create_event", "refused", reason="bad_when")
+            _record(metrics, "event_propose", "refused", reason="bad_when")
             return {
                 "status": "refused",
                 "note": "I couldn't work out that time. Ask when they mean, or "
@@ -10937,45 +10969,49 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 venue_text=venue_text or None,
                 person_names=_route_person_names,
                 platform=room.platform,
+                unit_id=_unit() or "",
             )
         except AmbiguousOpenGatheringsError:
-            _record(metrics, "create_event", "refused", reason="ambiguous")
+            _record(metrics, "event_propose", "refused", reason="ambiguous")
             return {
                 "status": "refused",
                 "note": "There's more than one open event here already. Ask which "
-                        "one they mean (list_events shows them), and don't guess.",
+                        "one they mean (event_search shows them), and don't guess.",
             }
         except Exception:
-            log.exception("create_event failed")
-            _record(metrics, "create_event", "unavailable")
+            log.exception("event_propose failed")
+            _record(metrics, "event_propose", "unavailable")
             return {
                 "status": "unavailable",
                 "note": "I couldn't set that up. Say you're not sure it's on, "
                         "rather than saying it is.",
             }
-        _record(metrics, "create_event", "ok")
-        return {"status": "ok", "id": str(ev.id)}
+        _record(metrics, "event_propose", "ok")
+        return {"status": "ok", "id": str(ev.id), "head_revision_id": str(ev.head_revision_id)}
 
-    async def update_event(
-        event_id: str, when: str = "", venue_text: str = "",
+    async def event_revise(
+        event_id: str, when: str = "", venue_text: str = "", base_revision_id: str = "",
     ) -> dict:
         """Change the time or venue of an event ALREADY proposed here. Call this
         when an open event's details are settled or change.
 
-        Returns `status`: ok (its `id` and `venue`), refused or unavailable, with
-        a `note` when it is not ok.
+        Returns `status`: ok (its `id`, `venue` and `head_revision_id`),
+        refused or unavailable, with a `note` when it is not ok.
 
         Args:
-            event_id: The event's id, from list_events.
+            event_id: The event's id, from event_search.
             when: Optional. ISO 8601 with an offset.
             venue_text: Optional. The place, the way it was said.
+            base_revision_id: Optional. The event's `head_revision_id` your
+                last read of it showed. Leave it out to write regardless of
+                what changed since.
         """
         if events is None:
-            _record(metrics, "update_event", "unavailable")
+            _record(metrics, "event_revise", "unavailable")
             return dict(_EVENTS_OFF)
         due_at = _parse_when(when) if when else None
         if when and due_at is None:
-            _record(metrics, "update_event", "refused", reason="bad_when")
+            _record(metrics, "event_revise", "refused", reason="bad_when")
             return {
                 "status": "refused",
                 "note": "I couldn't work out that time. Ask when they mean, or "
@@ -10986,35 +11022,45 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 event_id=UUID(event_id), conversation_id=bound_conversation_id,
                 when=due_at, venue_text=venue_text or None,
                 person_names=_route_person_names, platform=room.platform,
+                base_revision_id=UUID(base_revision_id) if base_revision_id else None,
             )
         except GatheringNotFoundError:
-            _record(metrics, "update_event", "refused", reason="not_found")
+            _record(metrics, "event_revise", "refused", reason="not_found")
             return dict(_NO_SUCH_EVENT)
         except GatheringCancelledError:
-            _record(metrics, "update_event", "refused", reason="cancelled")
+            _record(metrics, "event_revise", "refused", reason="cancelled")
             return {
                 "status": "refused",
                 "note": "That event has already been called off, so there's "
                         "nothing to update. Say so.",
             }
+        except StaleEventRevisionError as exc:
+            _record(metrics, "event_revise", "refused", reason="stale_base")
+            return {
+                "status": "refused",
+                "note": "Someone else changed this event since you last read it "
+                        f"(it's now at revision {exc.current.head_revision_id}). "
+                        "Read it again before writing.",
+            }
         except ValueError:
-            _record(metrics, "update_event", "refused", reason="bad_id")
+            _record(metrics, "event_revise", "refused", reason="bad_id")
             return dict(_NOT_AN_EVENT_ID)
         except Exception:
-            log.exception("update_event failed")
-            _record(metrics, "update_event", "unavailable")
+            log.exception("event_revise failed")
+            _record(metrics, "event_revise", "unavailable")
             return {
                 "status": "unavailable",
                 "note": "I couldn't update it. Say you're not sure it changed, "
                         "rather than saying it did.",
             }
-        _record(metrics, "update_event", "ok")
+        _record(metrics, "event_revise", "ok")
         return {
             "status": "ok", "id": str(ev.id),
             "venue": ev.venue_name or ev.venue_text,
+            "head_revision_id": str(ev.head_revision_id),
         }
 
-    async def rsvp_event(
+    async def event_rsvp(
         event_id: str, response: Literal["yes", "no", "maybe"],
     ) -> dict:
         """Record whether the person talking is coming to an event already
@@ -11024,15 +11070,15 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         not ok.
 
         Args:
-            event_id: The event's id, from list_events.
+            event_id: The event's id, from event_search.
             response: Whether they are coming.
         """
         if events is None:
-            _record(metrics, "rsvp_event", "unavailable")
+            _record(metrics, "event_rsvp", "unavailable")
             return dict(_EVENTS_OFF)
         tagger = room.tagger
         if tagger is None:
-            _record(metrics, "rsvp_event", "refused", reason="no_tagger")
+            _record(metrics, "event_rsvp", "refused", reason="no_tagger")
             return {
                 "status": "refused",
                 "note": "I couldn't tell who's asking, so nothing was recorded. "
@@ -11044,66 +11090,102 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 person_id=tagger.person_id, response=RSVPResponse(response),
             )
         except GatheringNotFoundError:
-            _record(metrics, "rsvp_event", "refused", reason="not_found")
+            _record(metrics, "event_rsvp", "refused", reason="not_found")
             return dict(_NO_SUCH_EVENT)
         except GatheringCancelledError:
-            _record(metrics, "rsvp_event", "refused", reason="cancelled")
+            _record(metrics, "event_rsvp", "refused", reason="cancelled")
             return {
                 "status": "refused",
                 "note": "That event has already been called off, so there's "
                         "nothing to answer. Say so.",
             }
         except ValueError:
-            _record(metrics, "rsvp_event", "refused", reason="bad_input")
+            _record(metrics, "event_rsvp", "refused", reason="bad_input")
             return {
                 "status": "refused",
-                "note": "That isn't an event id from list_events, or the answer "
+                "note": "That isn't an event id from event_search, or the answer "
                         "isn't yes, no or maybe.",
             }
         except Exception:
-            log.exception("rsvp_event failed")
-            _record(metrics, "rsvp_event", "unavailable")
+            log.exception("event_rsvp failed")
+            _record(metrics, "event_rsvp", "unavailable")
             return {
                 "status": "unavailable",
                 "note": "I couldn't record that. Say you're not sure it's saved, "
                         "rather than saying it is.",
             }
-        _record(metrics, "rsvp_event", "ok")
+        _record(metrics, "event_rsvp", "ok")
         return {"status": "ok"}
 
-    async def cancel_event(event_id: str) -> dict:
-        """Call off an event already proposed here. Call this when the room
-        agrees a gathering is not happening.
+    async def event_set_status(
+        event_id: str,
+        status: Literal["confirmed", "cancelled", "happened", "lapsed"],
+        base_revision_id: str = "",
+    ) -> dict:
+        """Move an event already proposed here to a new state. Call this when
+        the room confirms it, says it happened, or says it is off.
 
-        Returns `status`: ok, refused or unavailable, with a `note` when it is
-        not ok.
+        Returns `status`: ok (its `id` and `head_revision_id`), refused or
+        unavailable, with a `note` when it is not ok.
 
         Args:
-            event_id: The event's id, from list_events.
+            event_id: The event's id, from event_search.
+            status: The state to move it to.
+            base_revision_id: Optional. The event's `head_revision_id` your
+                last read of it showed. Leave it out to write regardless of
+                what changed since.
         """
         if events is None:
-            _record(metrics, "cancel_event", "unavailable")
+            _record(metrics, "event_set_status", "unavailable")
             return dict(_EVENTS_OFF)
         try:
-            ev = await events.cancel_event(
+            parsed_status = GatheringStatus(status)
+        except ValueError:
+            _record(metrics, "event_set_status", "refused", reason="bad_status")
+            return {
+                "status": "refused",
+                "note": "That's not a status I can set from here. Use confirmed, "
+                        "cancelled, happened or lapsed.",
+            }
+        try:
+            ev = await events.set_event_status(
                 event_id=UUID(event_id), conversation_id=bound_conversation_id,
+                status=parsed_status,
+                base_revision_id=UUID(base_revision_id) if base_revision_id else None,
             )
         except GatheringNotFoundError:
-            _record(metrics, "cancel_event", "refused", reason="not_found")
+            _record(metrics, "event_set_status", "refused", reason="not_found")
             return dict(_NO_SUCH_EVENT)
+        except GatheringCancelledError:
+            _record(metrics, "event_set_status", "refused", reason="cancelled")
+            return {
+                "status": "refused",
+                "note": "That event has already been called off. Say so.",
+            }
+        except StaleEventRevisionError as exc:
+            _record(metrics, "event_set_status", "refused", reason="stale_base")
+            return {
+                "status": "refused",
+                "note": "Someone else changed this event since you last read it "
+                        f"(it's now at revision {exc.current.head_revision_id}). "
+                        "Read it again before writing.",
+            }
         except ValueError:
-            _record(metrics, "cancel_event", "refused", reason="bad_id")
+            _record(metrics, "event_set_status", "refused", reason="bad_id")
             return dict(_NOT_AN_EVENT_ID)
         except Exception:
-            log.exception("cancel_event failed")
-            _record(metrics, "cancel_event", "unavailable")
+            log.exception("event_set_status failed")
+            _record(metrics, "event_set_status", "unavailable")
             return {
                 "status": "unavailable",
-                "note": "I couldn't cancel it. Say you're not sure it's off, "
-                        "rather than saying it is.",
+                "note": "I couldn't change it. Say you're not sure it changed, "
+                        "rather than saying it did.",
             }
-        _record(metrics, "cancel_event", "ok")
-        return {"status": "ok", "id": str(ev.id)}
+        _record(metrics, "event_set_status", "ok")
+        return {
+            "status": "ok", "id": str(ev.id),
+            "head_revision_id": str(ev.head_revision_id),
+        }
 
     async def suggest_venue(event_id: str) -> dict:
         """Suggest venues for an event already proposed here, from places people
@@ -11114,7 +11196,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         unavailable, with a `note` when it is not ok.
 
         Args:
-            event_id: The event's id, from list_events.
+            event_id: The event's id, from event_search.
         """
         if events is None:
             _record(metrics, "suggest_venue", "unavailable")
@@ -12502,11 +12584,11 @@ Args:
         _spec("remind", remind),
         _spec("list_reminders", list_reminders),
         _spec("cancel_reminder", cancel_reminder),
-        _spec("list_events", list_events),
-        _spec("create_event", create_event),
-        _spec("update_event", update_event),
-        _spec("rsvp_event", rsvp_event),
-        _spec("cancel_event", cancel_event),
+        _spec("event_search", event_search),
+        _spec("event_propose", event_propose),
+        _spec("event_revise", event_revise),
+        _spec("event_rsvp", event_rsvp),
+        _spec("event_set_status", event_set_status),
         _spec("suggest_venue", suggest_venue),
         _spec("search_memory_workspace", search_memory_workspace),
         _spec("note_read", note_read),

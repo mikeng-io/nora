@@ -192,8 +192,8 @@ def test_every_declared_tool_is_built(wiring):
         "load_tools",
         "remind", "list_reminders", "cancel_reminder",
         # The Event module (gatherings/RSVP/venue suggestions).
-        "create_event", "update_event", "rsvp_event", "cancel_event",
-        "list_events", "suggest_venue",
+        "event_propose", "event_revise", "event_rsvp", "event_set_status",
+        "event_search", "suggest_venue",
         # Nora Compute spec §4 (Task 5).
         "make_artifact",
         # DEC-97: what she is running, and what was in an earlier version.

@@ -226,6 +226,13 @@ ROWS: dict[str, Callable[[int], dict[str, Any]]] = {
         "conversation_id": "g1", "sent_ts": MS0 + i, "replies": 0, "reactions": 0,
         "edits": 0, "outcome": "open", **_UNIT_ROLLUP(i),
     },
+    # Step 2b (0074_event_revision): the head, still updated in place (the
+    # compare-and-swap cache 10-tiers.md §8 allows over `event_revision`,
+    # APPEND below).
+    "events": lambda i: {
+        "id": _uuid("event", i), "conversation_id": "g1", "title": f"event {i}",
+        "created_by": "p", "status": "proposed", "created_at": T0,
+    },
 }
 
 #: The column each revision moves, and to what.
@@ -268,6 +275,7 @@ REVISE: dict[str, tuple[str, Callable[[int], Any]]] = {
     "rollup_daybook": ("messages", lambda i: 10 + i),
     "rollup_tie": ("replies_ba", lambda i: 1 + i),
     "rollup_response": ("outcome", lambda i: "responded"),
+    "events": ("status", lambda i: "confirmed"),
 }
 
 #: One append-only row, number `n`, citing the stable key-0 parents.
@@ -318,6 +326,16 @@ APPEND: dict[str, Callable[[int], dict[str, Any]]] = {
     "source_health": lambda n: {
         "source": "presence", "scope": "c1", "event": "poll", "outcome": "ok",
         "at_ms": MS0 + n,
+    },
+    # Step 2b (0074_event_revision): the chain `events` is a
+    # compare-and-swap cache over, and RSVPs, append-only since this step.
+    "event_revision": lambda n: {
+        "id": _uuid("evr", n), "event_id": _uuid("event", 0), "status": "proposed",
+        "title": f"revision {n}", "written_at": T0,
+    },
+    "event_rsvps": lambda n: {
+        "id": _uuid("rsvp", n), "event_id": _uuid("event", 0), "person_id": f"p{n}",
+        "response": "yes", "responded_at": T0,
     },
 }
 

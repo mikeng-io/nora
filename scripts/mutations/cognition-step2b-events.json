@@ -1,0 +1,44 @@
+[
+  {
+    "name": "a stale base_revision_id actually refuses the write",
+    "file": "nora/infra/sql/gatherings.py",
+    "old": "            if base_revision_id is not None and current.head_revision_id != base_revision_id:",
+    "new": "            if False:",
+    "target": "tests/contract/test_gathering_store_contract.py -k test_a_stale_base_revision_id_is_refused_with_the_current_row"
+  },
+  {
+    "name": "an event field's reasoning is checked against the three allowed modes",
+    "file": "nora/domain/gatherings.py",
+    "old": "    if mode is not None and mode not in EVENT_FIELD_MODES:",
+    "new": "    if False:",
+    "target": "tests/unit/test_event_domain.py -k test_a_mode_outside_the_three_is_refused"
+  },
+  {
+    "name": "a revision actually chains onto the head it replaced",
+    "file": "nora/infra/sql/gatherings.py",
+    "old": "            revision = _revision_of(row, parent_revision_id=current.head_revision_id)",
+    "new": "            revision = _revision_of(row, parent_revision_id=None)",
+    "target": "tests/contract/test_gathering_store_contract.py -k test_update_appends_a_revision_chained_to_the_old_head"
+  },
+  {
+    "name": "events keeps its row_history trigger coverage",
+    "file": "nora/infra/sql/history.py",
+    "old": "    \"events\": (\"id\",),",
+    "new": "",
+    "target": "tests/infra/test_row_history.py -k test_every_table_is_classified_exactly_once"
+  },
+  {
+    "name": "rsvps_for answers with the NEWEST response, not the oldest",
+    "file": "nora/infra/sql/gatherings.py",
+    "old": "                EVENT_RSVPS.c.recorded_at.desc(),",
+    "new": "                EVENT_RSVPS.c.recorded_at.asc(),",
+    "target": "tests/contract/test_gathering_store_contract.py -k test_rsvp_upserts_on_same_person"
+  },
+  {
+    "name": "the lifecycle actually widened to seven statuses, not still three",
+    "file": "nora/domain/gatherings.py",
+    "old": "    HAPPENED = \"happened\"",
+    "new": "    HAPPENED = \"confirmed\"",
+    "target": "tests/unit/test_event_domain.py -k test_the_full_lifecycle_has_seven_statuses"
+  }
+]

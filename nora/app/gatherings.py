@@ -40,6 +40,9 @@ from nora.domain.gatherings import (
 from nora.domain.gatherings import (
     GatheringNotFoundError as GatheringNotFoundError,
 )
+from nora.domain.gatherings import (
+    StaleEventRevisionError as StaleEventRevisionError,
+)
 from nora.domain.reminders import (
     Reminder,
     ReminderCaps,
@@ -47,6 +50,17 @@ from nora.domain.reminders import (
     ReminderStore,
     ensure_utc,
 )
+
+#: 40-register.md §3's lifecycle, minus the two the tag path's
+#: `event_set_status` tool never offers: `staged`/`proposed` are
+#: `event_propose`'s own outcomes, and `evicted` is reserved to "its own
+#: misreads only" (30-cognition.md §3 check 12) — the tag path never wrote
+#: this event's first revision on Cognition's behalf, so it is never the one
+#: correcting a misread.
+TAG_SETTABLE_STATUSES: frozenset[GatheringStatus] = frozenset({
+    GatheringStatus.CONFIRMED, GatheringStatus.CANCELLED,
+    GatheringStatus.HAPPENED, GatheringStatus.LAPSED,
+})
 
 # The fixed-shape dialectic query, spec §5 step 2 — engineered to return a
 # short, directly-usable venue name (or a clear "none") rather than free
@@ -95,6 +109,7 @@ class GatheringService:
         self, *, conversation_id: str, requester_person_id: str, title: str,
         when: datetime | None = None, venue_text: str | None = None,
         person_names: frozenset[str] | None = None, platform: str,
+        unit_id: str = "",
     ) -> Gathering:
         """Spec §3.1: the CALLER (the `create_event` tool) is expected to
         have already checked `list_events(status=PROPOSED)` and decided a
@@ -137,6 +152,7 @@ class GatheringService:
             status=GatheringStatus.PROPOSED,
             reminder_id=None,
             created_at=now,
+            unit_id=unit_id,
         )
         if when is not None:
             event = await self._link_reminder(
@@ -147,13 +163,16 @@ class GatheringService:
             event = await self._resolve_venue(
                 event, venue_text, now=now, person_names=person_names,
             )
-        await self._store.create(event)
-        return event
+        # `create` mints the first revision and returns the row WITH its
+        # `head_revision_id` populated (10-tiers.md §3's compare-and-swap
+        # value) — the local `event` built above never had one.
+        return await self._store.create(event)
 
     async def update_event(
         self, *, event_id: UUID, conversation_id: str,
         when: datetime | None = None, venue_text: str | None = None,
         person_names: frozenset[str] | None = None, platform: str,
+        base_revision_id: UUID | None = None,
     ) -> Gathering:
         current = await self._require_in_conversation(event_id, conversation_id)
         if current.status is GatheringStatus.CANCELLED:
@@ -172,8 +191,33 @@ class GatheringService:
             updated = await self._resolve_venue(
                 updated, venue_text, now=self._now(), person_names=person_names,
             )
-        await self._store.update(updated)
-        return updated
+        # 10-tiers.md §3: "a stale [base_revision_id] is refused `stale_base`,
+        # with the current row" — `base_revision_id` (when the caller passes
+        # one; internal callers that predate the event verbs do not) is
+        # checked against the row THIS CALL read, not re-read after
+        # `_link_reminder`/`_resolve_venue`, matching every other refusal
+        # here being decided on the state `_require_in_conversation` read.
+        return await self._store.update(updated, base_revision_id=base_revision_id)
+
+    async def set_event_status(
+        self, *, event_id: UUID, conversation_id: str, status: GatheringStatus,
+        base_revision_id: UUID | None = None,
+    ) -> Gathering:
+        """The general lifecycle move `event_set_status` backs (40-register.md
+        §3): `cancel_event` is `set_event_status(status=CANCELLED)` restated,
+        kept as its own method below for the one caller (`suggest_venue`'s
+        sibling read paths, `nora.web.gatherings`) that predates this."""
+        current = await self._require_in_conversation(event_id, conversation_id)
+        if current.status is GatheringStatus.CANCELLED and status is not GatheringStatus.CANCELLED:
+            # The same refusal `update_event` gives a cancelled event: no
+            # lifecycle move revives one that was called off.
+            raise GatheringCancelledError(event_id)
+        if status is GatheringStatus.CANCELLED and current.reminder_id is not None:
+            await self._reminders.cancel(
+                current.reminder_id, conversation_id=current.conversation_id,
+            )
+        updated = replace(current, status=status)
+        return await self._store.update(updated, base_revision_id=base_revision_id)
 
     async def rsvp(
         self, *, event_id: UUID, conversation_id: str, person_id: str,
@@ -193,20 +237,36 @@ class GatheringService:
         return row
 
     async def cancel_event(self, *, event_id: UUID, conversation_id: str) -> Gathering:
-        current = await self._require_in_conversation(event_id, conversation_id)
-        if current.reminder_id is not None:
-            await self._reminders.cancel(
-                current.reminder_id, conversation_id=current.conversation_id,
-            )
-        updated = replace(current, status=GatheringStatus.CANCELLED)
-        await self._store.update(updated)
-        return updated
+        return await self.set_event_status(
+            event_id=event_id, conversation_id=conversation_id,
+            status=GatheringStatus.CANCELLED,
+        )
 
     async def list_events(
         self, *, conversation_id: str, status: GatheringStatus | None = None,
     ) -> Sequence[Gathering]:
         return await self._store.list_for_conversation(
             conversation_id=conversation_id, status=status,
+        )
+
+    async def search_events(
+        self, *, unit_id: str, conversation_id: str, place: str | None = None,
+        person: str | None = None, start: datetime | None = None,
+        end: datetime | None = None,
+    ) -> Sequence[Gathering]:
+        """`event_search`'s store side (15-map.md §4: "events... **new**;
+        `list_events` is per room, filtered by status only"). Unit-wide when
+        `unit_id` names one; falls back to this room's own events
+        (`list_events`'s old scope) when it does not — a room with no unit
+        resolved is not left unable to search its own events at all, and a
+        bare `event_search()` call with none of `place`/`person`/`start`/`end`
+        given reads exactly as `list_events()` did (this step's explicit
+        choice: the design leaves the exact routing between "this room" and
+        "the unit" unstated beyond "unit-wide, filtered")."""
+        if not unit_id:
+            return await self.list_events(conversation_id=conversation_id)
+        return await self._store.search(
+            unit_id=unit_id, place=place, person=person, start=start, end=end,
         )
 
     async def get_event(self, *, event_id: UUID) -> Gathering | None:

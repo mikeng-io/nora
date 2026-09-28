@@ -1,20 +1,32 @@
 """`GatheringStore` over SQLAlchemy Core. Shaped like `nora.infra.sql.reminders`:
-the engine comes through `__init__`, every write is one statement inside
-`async with self._engine.begin()`, every read inside
-`async with self._engine.connect()`.
+the engine comes through `__init__`, every write is one statement (or one
+transaction of a few) inside `async with self._engine.begin()`, every read
+inside `async with self._engine.connect()`.
 
-`FakeGatheringStore` (`nora/testing/events.py`) is the second implementation;
-`tests/contract/test_event_store_contract.py` is the one suite both pass.
+Since migration `0074_event_revision` (design/cognition-loop/70-migration.md
+§2 row 2b): `events` is a head, a compare-and-swap cache over the append-only
+`event_revision` chain (10-tiers.md §8), mirroring `nora.infra.sql.notes`'
+`note`/`note_revision` split — `create` mints both the head and its first
+revision in one transaction, `update` appends a new revision and moves the
+head, optionally refusing a stale `base_revision_id` (`StaleEventRevisionError`,
+10 §3: "a stale one is refused `stale_base`, with the current row"). RSVPs
+are append-only too (`event_rsvps`): `add_rsvp` INSERTs, never upserts;
+`rsvps_for` projects the newest row per person, so callers see the same
+"one current RSVP per person" shape as before the migration.
+
+`FakeGatheringStore` (`nora/testing/gatherings.py`) is the second
+implementation; `tests/contract/test_gathering_store_contract.py` is the one
+suite both pass.
 """
 
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import replace as _replace
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import sqlalchemy as sa
-from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.engine import Row
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine
@@ -22,12 +34,15 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from nora.domain.gatherings import (
     RSVP,
     DuplicateGatheringError,
+    EventRevision,
     Gathering,
     GatheringStatus,
     RSVPResponse,
+    StaleEventRevisionError,
     normalise_gathering,
 )
-from nora.infra.sql.schema import EVENT_RSVPS, EVENTS
+from nora.domain.lineage import Lineage
+from nora.infra.sql.schema import EVENT_REVISION, EVENT_RSVPS, EVENTS
 
 # PostgreSQL SQLSTATE 23505, unique_violation — matched exactly, the same
 # reasoning as `nora.infra.sql.reminders._PG_UNIQUE_VIOLATION`: this table
@@ -55,7 +70,43 @@ def _row_to_event(r: Row[Any]) -> Gathering:
             status=GatheringStatus(r.status),
             reminder_id=r.reminder_id,
             created_at=r.created_at,
+            unit_id=r.unit_id,
+            end=r.end,
+            people=tuple(r.people or ()),
+            reasoning=r.reasoning,
+            confidence=r.confidence,
+            lineage=Lineage.from_json(r.lineage),
+            as_of=r.as_of,
+            exclude_persons=tuple(r.exclude_persons or ()),
+            head_revision_id=r.head_revision_id,
         )
+    )
+
+
+def _row_to_revision(r: Row[Any]) -> EventRevision:
+    return EventRevision(
+        id=r.id,
+        event_id=r.event_id,
+        parent_revision_id=r.parent_revision_id,
+        status=GatheringStatus(r.status),
+        title=r.title,
+        when=r.when,
+        end=r.end,
+        venue_text=r.venue_text,
+        venue_place_id=r.venue_place_id,
+        venue_name=r.venue_name,
+        venue_address=r.venue_address,
+        venue_rating=r.venue_rating,
+        venue_price_level=r.venue_price_level,
+        venue_maps_url=r.venue_maps_url,
+        people=tuple(r.people or ()),
+        reasoning=r.reasoning,
+        confidence=r.confidence,
+        lineage=Lineage.from_json(r.lineage),
+        as_of=r.as_of,
+        body=r.body,
+        written_by=r.written_by,
+        written_at=r.written_at,
     )
 
 
@@ -68,7 +119,7 @@ def _row_to_rsvp(r: Row[Any]) -> RSVP:
     )
 
 
-def _insert_values(event: Gathering) -> dict[str, Any]:
+def _event_values(event: Gathering) -> dict[str, Any]:
     return {
         "id": event.id,
         "conversation_id": event.conversation_id,
@@ -86,7 +137,59 @@ def _insert_values(event: Gathering) -> dict[str, Any]:
         "status": event.status.value,
         "reminder_id": event.reminder_id,
         "created_at": event.created_at,
+        "unit_id": event.unit_id,
+        "end": event.end,
+        "people": list(event.people),
+        "reasoning": event.reasoning,
+        "confidence": event.confidence,
+        "lineage": event.lineage.to_json(),
+        "as_of": event.as_of,
+        "exclude_persons": list(event.exclude_persons),
+        "head_revision_id": event.head_revision_id,
     }
+
+
+def _revision_values(revision: EventRevision) -> dict[str, Any]:
+    return {
+        "id": revision.id,
+        "event_id": revision.event_id,
+        "parent_revision_id": revision.parent_revision_id,
+        "status": revision.status.value,
+        "title": revision.title,
+        "when": revision.when,
+        "end": revision.end,
+        "venue_text": revision.venue_text,
+        "venue_place_id": revision.venue_place_id,
+        "venue_name": revision.venue_name,
+        "venue_address": revision.venue_address,
+        "venue_rating": revision.venue_rating,
+        "venue_price_level": revision.venue_price_level,
+        "venue_maps_url": revision.venue_maps_url,
+        "people": list(revision.people),
+        "reasoning": revision.reasoning,
+        "confidence": revision.confidence,
+        "lineage": revision.lineage.to_json(),
+        "as_of": revision.as_of,
+        "body": revision.body,
+        "written_by": revision.written_by,
+        "written_at": revision.written_at,
+    }
+
+
+def _revision_of(event: Gathering, *, parent_revision_id: UUID | None) -> EventRevision:
+    """The revision a write of `event` produces — the head's own columns,
+    snapshotted, chained onto `parent_revision_id`."""
+    return EventRevision(
+        id=uuid4(), event_id=event.id, parent_revision_id=parent_revision_id,
+        status=event.status, title=event.title, when=event.when, end=event.end,
+        venue_text=event.venue_text, venue_place_id=event.venue_place_id,
+        venue_name=event.venue_name, venue_address=event.venue_address,
+        venue_rating=event.venue_rating, venue_price_level=event.venue_price_level,
+        venue_maps_url=event.venue_maps_url, people=event.people,
+        reasoning=event.reasoning, confidence=event.confidence,
+        lineage=event.lineage, as_of=event.as_of, body=None,
+        written_by="tag", written_at=event.created_at,
+    )
 
 
 class SqlGatheringStore:
@@ -95,16 +198,23 @@ class SqlGatheringStore:
     def __init__(self, engine: AsyncEngine) -> None:
         self._engine = engine
 
-    async def create(self, event: Gathering) -> None:
+    async def create(self, event: Gathering) -> Gathering:
         row = normalise_gathering(event)
-        stmt = sa.insert(EVENTS).values(**_insert_values(row))
+        revision = _revision_of(row, parent_revision_id=None)
+        row_with_head = _replace(row, head_revision_id=revision.id)
         try:
             async with self._engine.begin() as conn:
-                await conn.execute(stmt)
+                await conn.execute(
+                    sa.insert(EVENTS).values(**_event_values(row_with_head)),
+                )
+                await conn.execute(
+                    sa.insert(EVENT_REVISION).values(**_revision_values(revision)),
+                )
         except IntegrityError as exc:
             if getattr(exc.orig, "sqlstate", None) != _PG_UNIQUE_VIOLATION:
                 raise
             raise DuplicateGatheringError(row.id) from exc
+        return row_with_head
 
     async def get(self, event_id: UUID) -> Gathering | None:
         stmt = sa.select(EVENTS).where(EVENTS.c.id == event_id)
@@ -142,49 +252,111 @@ class SqlGatheringStore:
             rows = (await conn.execute(stmt)).all()
         return [_row_to_event(r) for r in rows]
 
-    async def update(self, event: Gathering) -> None:
+    async def update(
+        self, event: Gathering, *, base_revision_id: UUID | None = None,
+    ) -> Gathering:
         row = normalise_gathering(event)
-        stmt = (
-            sa.update(EVENTS)
-            .where(EVENTS.c.id == row.id)
-            .values(**{k: v for k, v in _insert_values(row).items() if k != "id"})
-        )
         async with self._engine.begin() as conn:
-            await conn.execute(stmt)
+            current = (await conn.execute(
+                sa.select(EVENTS.c.head_revision_id)
+                .where(EVENTS.c.id == row.id)
+                .with_for_update(),
+            )).one_or_none()
+            if current is None:
+                return row
+            if base_revision_id is not None and current.head_revision_id != base_revision_id:
+                stale = _row_to_event((await conn.execute(
+                    sa.select(EVENTS).where(EVENTS.c.id == row.id),
+                )).one())
+                raise StaleEventRevisionError(row.id, stale)
+            revision = _revision_of(row, parent_revision_id=current.head_revision_id)
+            await conn.execute(
+                sa.insert(EVENT_REVISION).values(**_revision_values(revision)),
+            )
+            values = {
+                k: v for k, v in _event_values(row).items() if k != "id"
+            }
+            values["head_revision_id"] = revision.id
+            await conn.execute(
+                sa.update(EVENTS).where(EVENTS.c.id == row.id).values(**values),
+            )
+        return _replace(row, head_revision_id=revision.id)
 
     async def add_rsvp(self, rsvp: RSVP) -> None:
-        # `on_conflict_do_update` is a postgres-dialect-insert method, not
-        # `sa.insert`'s — a person can RSVP more than once (changing their
-        # mind), and (event_id, person_id) is the primary key, so a repeat
-        # RSVP must UPDATE, not raise `DuplicateGatheringError`-shaped noise.
-        stmt = (
-            pg_insert(EVENT_RSVPS)
-            .values(
-                event_id=rsvp.event_id,
-                person_id=rsvp.person_id,
-                response=rsvp.response.value,
-                responded_at=rsvp.responded_at,
-            )
-            .on_conflict_do_update(
-                index_elements=[EVENT_RSVPS.c.event_id, EVENT_RSVPS.c.person_id],
-                set_={
-                    "response": rsvp.response.value,
-                    "responded_at": rsvp.responded_at,
-                },
-            )
+        # Append-only since `0074_event_revision` ("RSVP transition rows",
+        # 70 §5): a repeat RSVP is a new row, never an UPDATE of the old one
+        # — `rsvps_for` is what projects "the current one" back out.
+        stmt = sa.insert(EVENT_RSVPS).values(
+            id=uuid4(),
+            event_id=rsvp.event_id,
+            person_id=rsvp.person_id,
+            response=rsvp.response.value,
+            responded_at=rsvp.responded_at,
+            recorded_at=rsvp.responded_at,
         )
         async with self._engine.begin() as conn:
             await conn.execute(stmt)
 
     async def rsvps_for(self, event_id: UUID) -> Sequence[RSVP]:
-        stmt = (
+        # DISTINCT ON the newest row per person (Postgres extension; both
+        # implementations of this port already assume Postgres elsewhere —
+        # `nora.infra.sql.reminders` uses `ON CONFLICT`, the dialect-specific
+        # precedent this follows).
+        latest = (
             sa.select(EVENT_RSVPS)
+            .distinct(EVENT_RSVPS.c.person_id)
             .where(EVENT_RSVPS.c.event_id == event_id)
-            .order_by(EVENT_RSVPS.c.responded_at)
+            .order_by(
+                EVENT_RSVPS.c.person_id,
+                EVENT_RSVPS.c.recorded_at.desc(),
+                EVENT_RSVPS.c.id.desc(),
+            )
+            .subquery()
         )
+        stmt = sa.select(latest).order_by(latest.c.responded_at)
         async with self._engine.connect() as conn:
             rows = (await conn.execute(stmt)).all()
         return [_row_to_rsvp(r) for r in rows]
+
+    async def revisions_for(self, event_id: UUID) -> Sequence[EventRevision]:
+        stmt = (
+            sa.select(EVENT_REVISION)
+            .where(EVENT_REVISION.c.event_id == event_id)
+            .order_by(EVENT_REVISION.c.recorded_at, EVENT_REVISION.c.id)
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+        return [_row_to_revision(r) for r in rows]
+
+    async def search(
+        self, *, unit_id: str, place: str | None = None, person: str | None = None,
+        start: Any = None, end: Any = None,
+    ) -> Sequence[Gathering]:
+        """Unit-wide (15-map.md §4: `event_search(place?, person?,
+        interval?)`), `event_search`'s store side. `place` matches
+        `venue_name`/`venue_text` by containment; `person` matches the
+        creator or an RSVP; `start`/`end` bound `events.when`."""
+        stmt = sa.select(EVENTS).where(EVENTS.c.unit_id == unit_id)
+        if place:
+            needle = f"%{place}%"
+            stmt = stmt.where(sa.or_(
+                EVENTS.c.venue_name.ilike(needle), EVENTS.c.venue_text.ilike(needle),
+            ))
+        if person:
+            rsvpd = sa.select(EVENT_RSVPS.c.event_id).where(
+                EVENT_RSVPS.c.person_id == person,
+            )
+            stmt = stmt.where(sa.or_(
+                EVENTS.c.created_by == person, EVENTS.c.id.in_(rsvpd),
+            ))
+        if start is not None:
+            stmt = stmt.where(sa.or_(EVENTS.c.when.is_(None), EVENTS.c.when >= start))
+        if end is not None:
+            stmt = stmt.where(sa.or_(EVENTS.c.when.is_(None), EVENTS.c.when <= end))
+        stmt = stmt.order_by(EVENTS.c.created_at)
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+        return [_row_to_event(r) for r in rows]
 
     async def aclose(self) -> None:
         await self._engine.dispose()

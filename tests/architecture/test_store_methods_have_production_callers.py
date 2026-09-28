@@ -224,6 +224,16 @@ _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
         "read_back_affordance",
         "Revision-by-id read-back; no consumer designed.",
     ),
+    ("gatherings.py", "revisions_for"): _Pin(
+        "read_back_affordance",
+        "An event's full revision chain (10-tiers.md §3/§8; migration "
+        "0074_event_revision). No prompt block or tool reads the chain today "
+        "— `event_propose`/`event_revise`/`event_set_status` only ever read "
+        "the head through `head_revision_id` for `base_revision_id`'s "
+        "compare-and-swap. Its consumer is a `History` section on an event "
+        "(12-schemas.md §3's `Changes`, 'every revision: field, from, to, "
+        "mode, why, when'), not built at step 2b.",
+    ),
     ("standing.py", "write_if_unchanged"): _Pin(
         "operator_script",
         "The compare-and-set write for a manual Standing edit (design/"

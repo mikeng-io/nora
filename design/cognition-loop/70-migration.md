@@ -273,7 +273,20 @@ are identified by that deploy row. The daemon writes all four
   the same place merge into one event with both origins kept; other
   candidates are listed for the operator, never merged by guess. A new
   `event_revision` table, the lifecycle statuses, and a mode per field:
-  `told` where a tag turn wrote the row, `abduced` otherwise.
+  `told` where a tag turn wrote the row, `abduced` otherwise. **As built
+  (migration `0074_event_revision`, DEC-237):** `events` stays the head (a
+  compare-and-swap cache over `event_revision`, 10 §8); `unit_id` is added
+  and written from the tag path's own unit resolver (`_unit()`,
+  `nora.agent.tools`, the same one `note_create` shares), but existing rows
+  backfill to `''` — the database alone cannot resolve a room to a unit — so
+  the cross-room de-duplication of legacy per-room events into one row is
+  **not built here**: it is an operator-run backfill, once `unit_id` is
+  populated, that this row hands off rather than guesses at. `reasoning` and
+  `lineage` follow `0073`'s row-level simplification (`lineage` sectioned by
+  FIELD name, reusing `nora.domain.lineage.Lineage`); no writer states either
+  yet (step 3 is the first). `event_search(place?, person?, interval?)`
+  reads the unit when `unit_id` resolves and falls back to `list_events`'s
+  old per-room scope otherwise (a choice the design left open).
 - **Culture → sectioned Character.** Old revisions stay readable; the next
   revision is written to the schema.
 - **Standing → sections.** The JSON working set becomes `Found, not yet

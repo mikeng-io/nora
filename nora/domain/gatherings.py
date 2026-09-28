@@ -24,19 +24,41 @@ on-demand check, never a cached column).
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
 from typing import Protocol, runtime_checkable
 from uuid import UUID
 
+from nora.domain.lineage import CONFIDENCES, Lineage
 from nora.domain.reminders import ensure_utc
 
+#: design/cognition-loop/40-register.md §4: an event field's reasoning is one
+#: of these three ("told", "deduced", "abduced" — never `computed`, `induced`
+#: or `said`; `nora.domain.lineage.REASONING_MODES` is the full six other
+#: tiers allow). `None` means "not stated", the same convention `0073_lineage`
+#: set for note/standing/culture: no write verb states a mode until one
+#: actually reasons about a field (design 30 §3 check 5 is what enforces
+#: membership; step 2b only carries the column and the check, step 3 is the
+#: first writer to set one on purpose).
+EVENT_FIELD_MODES: frozenset[str] = frozenset({"told", "deduced", "abduced"})
 
+#: 10-tiers.md §3's confidence vocabulary; identical to every other tier's,
+#: reused rather than restated (`nora.domain.lineage.CONFIDENCES`).
+EVENT_FIELD_CONFIDENCES: frozenset[str] = frozenset(CONFIDENCES)
+
+#: design/cognition-loop/40-register.md §3: an event's lifecycle.
+#: `PROPOSED`/`CONFIRMED`/`CANCELLED` predate this step (DEC-117); `STAGED`,
+#: `HAPPENED`, `LAPSED` and `EVICTED` are 70-migration.md §2 row 2b's
+#: addition. No further statuses "for now" (operator 2026-09-28).
 class GatheringStatus(StrEnum):
+    STAGED = "staged"
     PROPOSED = "proposed"
     CONFIRMED = "confirmed"
+    HAPPENED = "happened"
     CANCELLED = "cancelled"
+    LAPSED = "lapsed"
+    EVICTED = "evicted"
 
 
 class RSVPResponse(StrEnum):
@@ -52,6 +74,42 @@ class DuplicateGatheringError(Exception):
     def __init__(self, event_id: UUID) -> None:
         super().__init__(f"event {event_id} already exists")
         self.event_id = event_id
+
+
+class InvalidEventFieldModeError(Exception):
+    """Raised when a field's reasoning or confidence is not one the tier
+    allows (design/cognition-loop/30-cognition.md §3 check 5: "the mode is
+    one the tier allows"). `field` names which of `field_meta`'s keys failed;
+    `value` is what was rejected."""
+
+    def __init__(self, field_name: str, value: str) -> None:
+        super().__init__(f"{field_name}: {value!r} is not an event field mode")
+        self.field = field_name
+        self.value = value
+
+
+class StaleEventRevisionError(Exception):
+    """Raised on an `event_revise`/`event_set_status`-shaped write whose
+    `base_revision_id` is not the event's current `head_revision_id`
+    (10-tiers.md §3: "a stale one is refused `stale_base`, with the current
+    row"). Carries the row so the caller can show it without a second read."""
+
+    def __init__(self, event_id: UUID, current: Gathering) -> None:
+        super().__init__(f"event {event_id}: base_revision_id is stale")
+        self.event_id = event_id
+        self.current = current
+
+
+def validate_event_field_mode(mode: str | None) -> None:
+    """`None` ("not stated") always passes; anything else must be one of
+    `EVENT_FIELD_MODES`."""
+    if mode is not None and mode not in EVENT_FIELD_MODES:
+        raise InvalidEventFieldModeError("reasoning", mode)
+
+
+def validate_event_field_confidence(confidence: str | None) -> None:
+    if confidence is not None and confidence not in EVENT_FIELD_CONFIDENCES:
+        raise InvalidEventFieldModeError("confidence", confidence)
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,6 +130,77 @@ class Gathering:
     status: GatheringStatus
     reminder_id: UUID | None
     created_at: datetime
+    #: 70-migration.md §5 "Events.": unit-wide, origin room kept in
+    #: `conversation_id`. Empty string until a caller resolves one (the tool
+    #: layer's `_unit()`), matching `note`'s own "no unit means unavailable"
+    #: convention rather than raising here.
+    unit_id: str = ""
+    #: The dated thing's end, alongside `when` as its start (12-schemas.md
+    #: §3's `event` columns: "what, start, end, place, people, status").
+    end: datetime | None = None
+    #: Who is coming — deduced or abduced from co-location/RSVPs, or told.
+    #: Distinct from `RSVP`: an RSVP is a person's OWN stated response: this
+    #: is the event's field, cognition's to revise on evidence nobody stated
+    #: (40-register.md §3).
+    people: tuple[str, ...] = ()
+    #: 10-tiers.md §3's per-derived-row columns. Row-level for now, the same
+    #: simplification `0073_lineage` made for Standing and culture despite
+    #: their sections ("until step 3/4's writers cite per section... render
+    #: only in their own room" — DEC-236): `reasoning`/`confidence`/`as_of`
+    #: stay NULL until a write verb states one for the row as a whole.
+    #: `lineage` reuses `nora.domain.lineage.Lineage`, sectioned by FIELD name
+    #: (`what`, `start`, `end`, `place`, `people`, `status`) — the one part
+    #: of 10 §3 events get from day one, because `Lineage` already
+    #: generalises to an arbitrary section name and per-field disclosure is
+    #: what the design states outright ("per field on an event").
+    reasoning: str | None = None
+    confidence: str | None = None
+    lineage: Lineage = field(default_factory=Lineage)
+    as_of: int | None = None
+    exclude_persons: tuple[str, ...] = ()
+    #: The current `EventRevision.id` (10-tiers.md §3's compare-and-swap
+    #: cache); `None` only before the first revision is written.
+    head_revision_id: UUID | None = None
+
+    def __post_init__(self) -> None:
+        validate_event_field_mode(self.reasoning)
+        validate_event_field_confidence(self.confidence)
+
+
+@dataclass(frozen=True, slots=True)
+class EventRevision:
+    """One entry of an event's revision chain (`event_revision`,
+    70-migration.md §5). Carries the FULL snapshot the way `note_revision`
+    and `culture_revision` do — the head (`Gathering`) is a compare-and-swap
+    cache over this chain (10-tiers.md §8), never the record of truth."""
+
+    id: UUID
+    event_id: UUID
+    parent_revision_id: UUID | None
+    status: GatheringStatus
+    title: str
+    when: datetime | None
+    end: datetime | None
+    venue_text: str | None
+    venue_place_id: str | None
+    venue_name: str | None
+    venue_address: str | None
+    venue_rating: float | None
+    venue_price_level: str
+    venue_maps_url: str | None
+    people: tuple[str, ...]
+    reasoning: str | None
+    confidence: str | None
+    lineage: Lineage
+    as_of: int | None
+    #: The `Plan`/`Open`/`Happened` Markdown body (12-schemas.md §3). `None`
+    #: until a write verb actually composes one (step 3); this step carries
+    #: the column, never requires it.
+    body: str | None
+    #: "tag" for the tag path, else the adaptor name that wrote it
+    #: (30-cognition.md §3 check 10: "session id... stamped").
+    written_by: str
+    written_at: datetime
 
 
 @dataclass(frozen=True, slots=True)
@@ -156,7 +285,7 @@ class AmbiguousOpenGatheringsError(Exception):
 
 @runtime_checkable
 class GatheringStore(Protocol):
-    async def create(self, event: Gathering) -> None: ...
+    async def create(self, event: Gathering) -> Gathering: ...
 
     async def get(self, event_id: UUID) -> Gathering | None: ...
 
@@ -166,11 +295,20 @@ class GatheringStore(Protocol):
 
     async def list_for_person(self, *, person_id: str) -> Sequence[Gathering]: ...
 
-    async def update(self, event: Gathering) -> None: ...
+    async def update(
+        self, event: Gathering, *, base_revision_id: UUID | None = None,
+    ) -> Gathering: ...
 
     async def add_rsvp(self, rsvp: RSVP) -> None: ...
 
     async def rsvps_for(self, event_id: UUID) -> Sequence[RSVP]: ...
+
+    async def revisions_for(self, event_id: UUID) -> Sequence[EventRevision]: ...
+
+    async def search(
+        self, *, unit_id: str, place: str | None = None, person: str | None = None,
+        start: datetime | None = None, end: datetime | None = None,
+    ) -> Sequence[Gathering]: ...
 
     async def aclose(self) -> None: ...
 
@@ -185,6 +323,10 @@ def normalise_gathering(event: Gathering) -> Gathering:
         when=(
             None if event.when is None
             else ensure_utc(event.when, field="when")
+        ),
+        end=(
+            None if event.end is None
+            else ensure_utc(event.end, field="end")
         ),
         venue_resolved_at=(
             None if event.venue_resolved_at is None
