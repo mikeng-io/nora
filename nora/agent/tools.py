@@ -5820,7 +5820,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                     "from": _name(pattern.origin_id),
                     "to": _name(pattern.destination_id),
                     "when": f"{pattern.day_type} {pattern.time_of_day}s",
-                    "usually_takes": takes, "trips": pattern.trips,
+                    "usually_takes": takes,
                 })
             return out
 
@@ -6151,21 +6151,20 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
     # «Where will Grant be on Wednesday night?» answered from the Tier 4
     # forecast (`forecast_window`): a likelihood with its evidence, never a
     # claim about the future. Behind `where_been`'s own guard.
-    # How often the top place holds the window, as a person would say it.
-    # A fixed ladder over its share, so the same evidence always reads the
-    # same way (design/27 §4.3, amended 2026-09-28: comprehend, not report).
-    _routine_ladder = ((85, "almost always"), (60, "usually"), (35, "often"))
+    # How sure the forecast is, said the way a friend would: «should be»,
+    # «probably», «maybe», «hard to say». A fixed ladder over the top place's
+    # share, one step down on a thin record, so the same evidence always
+    # reads the same way; no percent, share or count reaches her (operator
+    # 2026-09-28: «Blake will probably be back around 9:30», never «with a
+    # 72% rate»; a number in her input came out in her reply).
+    _routine_ladder = ((85, 3), (60, 2), (35, 1))
     # An unnamed place is said by its label's absence, never a guessed name;
     # its kind still tells her what it is to them (DEC-190).
     _routine_unnamed = {
         "home": "a home of theirs", "work": "their work",
         "unlabeled": "a place they go",
     }
-    _routine_rough = {
-        "nearby_hours": "roughly, from the hours either side",
-        "day_type": "roughly, from the same hours on other days",
-        "overall": "roughly, from their week overall",
-    }
+    _routine_rough = ("nearby_hours", "day_type", "overall")
     _routine_days = (
         "Mondays", "Tuesdays", "Wednesdays", "Thursdays", "Fridays",
         "Saturdays", "Sundays",
@@ -6221,7 +6220,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
     def _movement_person(
         person: str, stays: list, places: dict[int, Any], *,
         kind: str, place: str | None, day: Any, from_hour: int, to_hour: int,
-        now_ms: int, live: dict | None,
+        now_ms: int, live: dict | None, with_evidence: bool = False,
     ) -> dict | str | None:
         """One person's usual arrival at (or departure from) a place, as
         habits worked out in words, never one average; on the day itself,
@@ -6264,75 +6263,110 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 for pid in sorted(targets, key=lambda i: (places[i].label or "", i))
             ]}
         arrival = kind == "arrival"
-        verb = "gets to" if arrival else "leaves"
+        nights = from_hour >= 18 or to_hour <= from_hour
+        unit = "nights" if nights else "days"
+        some = f"some {unit}"
         span_days = {
             "weekday": f"{_routine_days[day.weekday()]}",
             "day_type": "weekends" if day.weekday() >= 5 else "weekdays",
             "all_days": "any day",
         }[fc.basis]
-        parts = [f"{_routine_span(h)} on {h.days} of {fc.days}" for h in fc.habits]
-        missing = fc.days - sum(h.days for h in fc.habits)
-        if missing > 0:
-            parts.append(
-                f"{'not there' if arrival else 'did not leave'} in these hours "
-                f"on {missing} of {fc.days}"
+
+        def _when(h: Any) -> str:
+            return _routine_span(h)
+
+        def _hedged(habits: tuple, total: int, *, thin: bool) -> str:
+            """The usual time as a friend says it: «should … around 19:20»,
+            «probably … though some nights not till around midnight», «maybe
+            …», or «no fixed time». No count of days reaches her. A habit wider
+            than three hours is no time at all; days with no event in the
+            window are said as that, never given a reason."""
+            act = f"gets to {named}" if arrival else f"leaves {named}"
+            if not habits or not total:
+                return f"{act} at no fixed time"
+            main = habits[0]
+            share = main.days / total
+            missing = total - sum(h.days for h in habits)
+            second = habits[1] if len(habits) > 1 and habits[1].days / total >= 0.2 else None
+            if missing / total > 0.5:
+                return f"most {unit} not in these hours; on the others, {act} {_when(main)}"
+            if share < 0.4 or main.latest - main.earliest > 180:
+                times = [_when(h) for h in habits[:2]]
+                said = f"{act} at no fixed time; sometimes {', sometimes '.join(times)}"
+            else:
+                if share >= 0.75 and not thin:
+                    verb = f"should get to {named}" if arrival else f"should leave {named}"
+                elif share >= 0.5 or (share >= 0.4 and not thin):
+                    verb = f"probably gets to {named}" if arrival else f"probably leaves {named}"
+                else:
+                    verb = f"maybe gets to {named}" if arrival else f"maybe leaves {named}"
+                said = f"{verb} {_when(main)}"
+                if second is not None:
+                    later = second.earliest > main.latest
+                    said += f", though {some} {'not till ' if later else ''}{_when(second)}"
+            if missing / total >= 0.2:
+                said += f", and {some} not in these hours"
+            return said
+
+        line = f"{span_days}: " + _hedged(fc.habits, fc.days, thin=fc.basis != "weekday")
+        out: dict = {"person": person, "what": kind, "place": named, **refs, "routine": line}
+        if with_evidence:
+            # Asked how sure: the past days as they were, counted.
+            counted = [
+                f"{_routine_span(h)} on {h.days}" for h in fc.habits
+            ]
+            missing_days = fc.days - sum(h.days for h in fc.habits)
+            if missing_days:
+                counted.append(
+                    f"{'not at all' if arrival else 'not'} in these hours on {missing_days}"
+                )
+            days_word = {"weekday": span_days, "day_type": span_days, "all_days": "days"}[fc.basis]
+            out["evidence"] = (
+                f"Of the last {fc.days} {days_word} they were seen: "
+                f"{'got there' if arrival else 'left'} " + "; ".join(counted) + "."
             )
-        line = f"{span_days}: {verb} {named} " + "; ".join(parts)
-        if fc.basis == "all_days":
-            line += " (roughly, from all their days)"
-        out: dict = {
-            "person": person, "what": kind, "place": named, **refs,
-            "routine": line,
-            "habits": [
-                {"from": _routine_clock(h.earliest), "to": _routine_clock(h.latest),
-                 "days": h.days}
-                for h in fc.habits
-            ],
-            "evidence": {"days": fc.days, "basis": fc.basis},
-        }
         now_local = datetime.fromtimestamp(now_ms / 1000, tz=ZoneInfo(_been_tz_name))
         as_of = f"as of {now_local.strftime('%H:%M')}"
-        since = (
-            f" since {_routine_clock(fc.done_minute)}" if fc.done_minute is not None
-            else ""
-        )
         if fc.today == "done":
             out["today"] = (
-                f"already at {named}{since} ({as_of})" if arrival
+                f"already at {named}"
+                + (f" since {_routine_clock(fc.done_minute)}" if fc.done_minute is not None else "")
+                + f" ({as_of})"
+                if arrival
                 else f"already left {named}"
                 + (f" at {_routine_clock(fc.done_minute)}" if fc.done_minute is not None else "")
                 + f" ({as_of})"
             )
         elif fc.today == "stepped_out":
             out["today"] = (
-                f"not at {named} now, out since "
-                f"{_routine_clock(fc.done_minute or 0)} ({as_of}), which is not "
-                f"yet long enough to count as leaving for the day"
+                f"out of {named} since {_routine_clock(fc.done_minute or 0)} "
+                f"({as_of}), not long enough to say they have left for the day"
             )
         elif fc.today == "absent":
             out["today"] = (
                 f"not at {named} now, and not there earlier in these hours "
-                f"today ({as_of}), so there is no leaving to wait for"
+                f"today ({as_of})"
             )
         elif fc.today == "pending":
             state = f"not at {named} yet" if arrival else f"still at {named}"
+            like = unit
             if not fc.like_today_days:
+                out["today"] = f"{state} ({as_of}), later than usual"
+            elif not fc.like_today:
                 out["today"] = (
-                    f"{state} ({as_of}); on none of these days were they "
-                    f"{'still away' if arrival else 'still there'} at this time"
+                    f"{state} ({as_of}); on {like} like this they did not "
+                    f"{'get there' if arrival else 'leave'} in these hours"
                 )
             else:
-                seen_parts = [f"{_routine_span(h)} on {h.days}" for h in fc.like_today]
-                if fc.like_today_without:
-                    seen_parts.append(
-                        f"{'not at all' if arrival else 'not'} in these hours "
-                        f"on {fc.like_today_without}"
-                    )
+                main = fc.like_today[0]
+                share = main.days / fc.like_today_days
+                hedge = "probably" if share >= 0.6 else "maybe"
+                tail = ""
+                if fc.like_today_without / fc.like_today_days >= 0.3:
+                    tail = ", or not till after these hours"
                 out["today"] = (
-                    f"{state} ({as_of}); on the {fc.like_today_days} days they "
-                    f"were {'also not there' if arrival else 'also still there'} "
-                    f"at this time, they {'got there' if arrival else 'left'} "
-                    + "; ".join(seen_parts)
+                    f"{state} ({as_of}); on {like} like this, {hedge} "
+                    f"{'there' if arrival else 'gone'} {_when(main)}{tail}"
                 )
         # `unknown`: no fresh reading, so today is not said at all (R-5).
         return out
@@ -6403,77 +6437,83 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             key=lambda x: -x["percent"],
         )
 
-    def _routine_how_often(percent: int) -> str:
-        return next(
-            (words for floor, words in _routine_ladder if percent >= floor),
-            "no single usual place",
-        )
+    def _routine_sureness(percent: int, *, thin: bool) -> int:
+        level = next((lvl for floor, lvl in _routine_ladder if percent >= floor), 0)
+        return max(level - 1, 0) if thin else level
 
     def _routine_person(
         person: str, shares: list[dict], *, start: datetime, end: datetime,
-        basis: str, weeks: int, observed: int,
+        basis: str, observed: int, weeks: int, with_evidence: bool,
     ) -> dict:
-        """One person's routine for the window, comprehended: the place they
-        are usually at and how often, as one line, with the numbers kept as
-        evidence. Thin evidence is said inside the line («roughly», «on a
-        patchy record») so the qualifier travels with the fact."""
+        """One person's routine for the window as a friend would say it: where
+        they should be, probably are, or maybe are, with the hedge in the
+        words. Thin evidence (a patchy record, a rough basis) says it one
+        step less surely rather than naming why."""
         # Only one of their own named places can be where they usually are:
         # the pooled small places and the «not theirs» bucket never are.
         real = [x for x in shares if x["kind"] not in ("other", "elsewhere")]
         top: dict | None = real[0] if real else None
-        how_often = _routine_how_often(int(top["percent"]) if top else 0)
-        where = top["place"] if top else None
+        level = _routine_sureness(
+            int(top["percent"]) if top else 0,
+            thin=basis in _routine_rough or observed < 50,
+        )
+        others = [x["place"] for x in real if x is not top and x["percent"] >= 10]
         span = (
             f"{_routine_days[start.weekday()]} "
             f"{start.strftime('%H:%M')}-{end.strftime('%H:%M')}"
         )
-        if how_often == "no single usual place":
-            line = f"{span}: no single usual place"
+        where = top["place"] if top else None
+        named_in_line: list[str] = [where] if where is not None else []
+        if level == 3:
+            said = f"should be at {where}"
+        elif level == 2:
+            said = f"probably at {where}"
+        elif level == 1:
+            named_in_line += others[:1]
+            said = f"maybe at {where}, maybe {'at ' + others[0] if others else 'somewhere else'}"
+        elif where is not None:
+            named_in_line = [where, *others][:3]
+            said = "hard to say; sometimes " + ", sometimes ".join(named_in_line)
         else:
-            line = f"{span}: {how_often} at {where}"
-        qualifiers = []
-        if basis in _routine_rough:
-            qualifiers.append(_routine_rough[basis])
-        if observed < 50:
-            qualifiers.append("on a patchy record")
-        if qualifiers:
-            line += f" ({', '.join(qualifiers)})"
-        return {
+            said = "hard to say"
+        out = {
             "person": person,
-            "routine": line,
-            "usually_at": None if how_often == "no single usual place" else where,
-            "how_often": how_often,
-            # A second place is never «no single usual place»: below the
-            # usual ladder it is where they sometimes are instead.
-            # With no usual place, the most frequent one belongs here too.
-            "also": [
-                {
-                    "place": x["place"],
-                    "how_often": (
-                        "sometimes" if x["percent"] < 35
-                        else _routine_how_often(x["percent"])
-                    ),
-                }
-                for x in shares
-                if x["percent"] >= 10
-                and (x is not top or how_often == "no single usual place")
-            ],
-            "evidence": {
-                "weeks": weeks, "basis": basis,
-                # Words, not a second percent: live replay (2026-09-28) had
-                # her read a 91% «hours on record» as the home share, 2 in 8.
-                "record": (
-                    "full" if observed >= 80
-                    else "mostly there" if observed >= 50 else "patchy"
-                ),
-                "shares": shares,
-            },
+            "routine": f"{span}: {said}",
+            "usually_at": where if level >= 2 else None,
+            # Other places of theirs they are at some of these hours, by name,
+            # so a plan can route from them too; how often is in `routine`.
+            "also": [x for x in others if x not in named_in_line],
         }
+        if with_evidence:
+            # Asked how sure: what the past weeks WERE, a grounded count of
+            # the past, never a confidence figure (none is measured).
+            on_record = ", ".join(
+                f"{x['place']} {x['percent']}%" for x in shares if x["percent"] > 0
+            )
+            text = (
+                f"Over the last {weeks} {_routine_days[start.weekday()]} at "
+                f"{start.strftime('%H:%M')}-{end.strftime('%H:%M')}, of the time "
+                f"on record: {on_record}. "
+                + (
+                    "Nearly all of those hours are on record."
+                    if observed >= 80
+                    else "Most of those hours are on record." if observed >= 50
+                    else "Much of those hours is not on record."
+                )
+            )
+            if basis in _routine_rough:
+                text += (
+                    " These hours were rarely on record, so it was read from"
+                    " nearby hours or days."
+                )
+            out["evidence"] = text
+        return out
 
     async def routine_read(
         date: str, from_hour: int, to_hour: int, name: str | None = None,
         what: Literal["where", "arrival", "departure"] = "where",
         place: str | None = None,
+        detail: Literal["answer", "evidence"] = "answer",
     ) -> dict:
         """Usual whereabouts by hour of the week. Call this when somebody asks
         where someone will be.
@@ -6494,6 +6534,8 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 make their "arrival" at, or "departure" from, a place.
             place: For arrival or departure: the place, by its name, or
                 "home" or "work". Leave it out for their home.
+            detail: "answer" (default), or "evidence" when they ask how sure
+                you are or why: what their past weeks actually were.
         """
         if mobility is None or not presence_circles:
             # A wiring gap is «I could not check», never «no routine» (R-5).
@@ -6511,6 +6553,8 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 raise ValueError("hour out of range")
             if str(what) not in ("where", "arrival", "departure"):
                 raise ValueError("what")
+            if str(detail) not in ("answer", "evidence"):
+                raise ValueError("detail")
             now_ms = int(
                 (clock() if clock is not None else datetime.now(UTC)).timestamp() * 1000,
             )
@@ -6565,6 +6609,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                             ref.name, stays, places, kind=what, place=place,
                             day=day, from_hour=start_hour, to_hour=end_hour,
                             now_ms=now_ms, live=live,
+                            with_evidence=detail == "evidence",
                         )
                         if moved == "no_place":
                             no_place += 1
@@ -6580,8 +6625,10 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                     shares = _routine_shares(forecast.chances, places, ref.name)
                     person_out = _routine_person(
                         ref.name, shares, start=start, end=end,
-                        basis=forecast.basis, weeks=forecast.support_weeks,
+                        basis=forecast.basis,
                         observed=round(forecast.observed_share * 100),
+                        weeks=forecast.support_weeks,
+                        with_evidence=detail == "evidence",
                     )
                     today_line = _routine_today(
                         stays, places, live, day=day, now_ms=now_ms,
@@ -6616,10 +6663,15 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 })
                 continue
             ok_note = (
-                "Each routine is how this person's past weeks went at these "
-                "hours, already worked out from their own movements: it is "
-                "their habit, the way a friend knows it. Evidence is there if "
-                "someone asks how sure you are."
+                "Each routine is how this person usually is at these hours, "
+                "worked out from their own past weeks and already said the way "
+                "a friend would put it: «should be», «probably» and «maybe» "
+                "carry how sure it is. A forecast, not a record."
+            ) + (
+                " `evidence` is what their past days actually were, given "
+                "because someone asked how sure: counts of the past, not a "
+                "confidence figure, which there is none of."
+                if detail == "evidence" else ""
             )
             _record(metrics, "routine_read", "ok", people=len(people))
             return {"status": "ok", "window": window, "people": people, "note": ok_note}
