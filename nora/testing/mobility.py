@@ -181,6 +181,9 @@ class FakeMobilityStore:
     async def places_for_subject(self, *, subject_id: str) -> list[DerivedPlace]:
         return [p for pid, p in sorted(self._places.items()) if p.subject_id == subject_id]
 
+    async def place_by_id(self, *, place_id: int) -> DerivedPlace | None:
+        return self._places.get(place_id)
+
     async def save_place(
         self, *, subject_id: str, circle_id: str, place_id: int | None,
         lat: float, lng: float, radius_m: float,

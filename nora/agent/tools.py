@@ -1851,6 +1851,11 @@ def _send_status(
     return HELD if deliverer.held_count > held_before else REFUSED
 
 
+#: A presence place reference (design/27 §4.4 M3): `place:<derived place id>`,
+#: handed out by routine_read/where_been and resolved by route server side.
+_PLACE_REF = re.compile(r"place:(\d+)")
+
+
 def _record(metrics, tool: str, status: str, **detail: object) -> None:
     """Count and log a call to a tool that had no counter before."""
     metrics.inc("nora_tool_calls_total", tool=tool, status=status)
@@ -5042,8 +5047,9 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         how to report it.
 
         Args:
-            origin: Where the trip STARTS, as a place name the way it was said.
-            destination: Where the trip ENDS, as a place name.
+            origin: Where the trip STARTS, as a place name the way it was
+                said, or a place_ref from routine_read or where_been.
+            destination: Where the trip ENDS, as a place name or a place_ref.
             mode: TRANSIT (bus and rail, the default), DRIVE or WALK.
             arrive_by: Optional. When they need to ARRIVE, as a full timestamp
                 with offset. Transit only; get it from the clock, never invent
@@ -5063,6 +5069,10 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         # argument nor which one it was is echoed back — the refusal says what
         # to do without reflecting the model's own string at it.
         for place in (origin, destination):
+            if _PLACE_REF.fullmatch(str(place).strip()):
+                # Our own opaque reference (design/27 §4.4 M3), resolved
+                # behind the presence guard below, never the model's words.
+                continue
             if scan_identifiers(place) is not None:
                 _record(metrics, "route", "refused", reason="identifier")
                 return {
@@ -5121,6 +5131,25 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         # name falls through to the public lookup indistinguishably. Import is
         # local so offline compositions (route_source None, returned above)
         # never touch the routes package.
+        # design/27 §4.4 M3: a presence `place:<id>` resolves to its place
+        # here, server side, only when this room may be told that person's
+        # places (the same guard `where_been`/`routine_read` pass); the
+        # coordinate goes to the routing service and never to the model.
+        ref_places: dict[str, Any] = {}
+        for place in (origin, destination):
+            match = _PLACE_REF.fullmatch(str(place).strip())
+            if match is None:
+                continue
+            resolved = await _resolve_place_ref(int(match.group(1)))
+            if resolved is None:
+                _record(metrics, "route", "refused", reason="place_ref")
+                return {
+                    "status": "refused",
+                    "note": "I can't route from that place in this room. Ask "
+                            "for it by name instead, and do not guess where "
+                            "it is.",
+                }
+            ref_places[str(place).strip().casefold()] = resolved
         local_places = None
         if presence_source is not None and presence_circles:
             from ..infra.routes.places import Place
@@ -5141,6 +5170,8 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                     )
                     for p in saved
                 }
+        if ref_places:
+            local_places = {**(local_places or {}), **ref_places}
         try:
             out = await route_source.route(
                 origin, destination, mode=mode, arrive_by=arrive_by,
@@ -5162,12 +5193,17 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         # candidate lists are Google-authored place names rendered on their way
         # to a reply, screened for the same reason `transit` screens `near`.
         for key in ("origin", "destination"):
+            asked_ref = ref_places.get(str(out.get(key, "")).strip().casefold())
+            if asked_ref is not None:
+                out[key] = asked_ref.name
             if scan_identifiers(str(out.get(key, ""))) is not None:
                 out.pop(key, None)
         for key in ("origin_could_be", "destination_could_be"):
             if isinstance(out.get(key), list):
                 out[key] = [c for c in out[key] if scan_identifiers(str(c)) is None]
-        if out.get("status") == "ok":
+        # No link for a trip from a place_ref: a link is built from the words
+        # as asked, and a reference is not words anyone can open.
+        if out.get("status") == "ok" and not ref_places:
             # A Google Maps deep link for the same trip (Maps URLs API — keyless
             # and stable), built from the words AS ASKED, never from anything
             # resolved: a coordinate or resolved address in a link would publish
@@ -5476,6 +5512,40 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             datetime.fromtimestamp(ts_ms / 1000, tz=ZoneInfo(_been_tz_name))
             .isoformat(timespec="seconds")
         )
+
+    async def _resolve_place_ref(place_id: int) -> Any:
+        """A derived place for `route`, or `None` when this room may not be
+        told it: the place's person must be in a circle whose audience check
+        passes for this room (`_presence_audience`, R-31), exactly as their
+        routine would be. Unknown ids and any failure are `None` too."""
+        if mobility is None or not presence_circles:
+            return None
+        try:
+            place = await mobility.place_by_id(place_id=place_id)
+        except Exception:
+            log.exception("route place_ref read failed")
+            return None
+        if place is None:
+            return None
+        for circle in presence_circles:
+            if not any(
+                persons.subject_id_for(pid) == place.subject_id
+                for pid in circle.person_ids
+            ):
+                continue
+            _, refusal = await _presence_audience(
+                circle, None, tool="route",
+                anyone="where anyone's places are",
+                people_phrase="people's places",
+            )
+            if refusal is None:
+                from ..infra.routes.places import Place
+                name = place.label or _routine_unnamed[place.kind]
+                return Place(
+                    place_id=f"derived:{place.id}", name=name, address=name,
+                    lat=place.lat, lng=place.lng,
+                )
+        return None
 
     async def _presence_audience(
         circle: Any, asked: str | None, *, tool: str, anyone: str,

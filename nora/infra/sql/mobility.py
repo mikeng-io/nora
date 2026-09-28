@@ -590,6 +590,25 @@ class SqlMobilityStore:
             for r in rows
         ]
 
+    async def place_by_id(self, *, place_id: int) -> DerivedPlace | None:
+        """One derived place by id, whoever's it is: `route` resolves a
+        `place_ref` through it (design/27 §4.4 M3), and the CALLER decides,
+        by the place's `subject_id`, whether this room may be told it."""
+        stmt = sa.select(PRESENCE_DERIVED_PLACES).where(
+            PRESENCE_DERIVED_PLACES.c.id == place_id,
+        )
+        async with self._engine.connect() as conn:
+            r = (await conn.execute(stmt)).first()
+        if r is None:
+            return None
+        return DerivedPlace(
+            id=r.id, subject_id=r.subject_id, circle_id=r.circle_id,
+            lat=r.lat, lng=r.lng, radius_m=r.radius_m, kind=r.kind,
+            confidence=r.confidence, label=r.label,
+            saved_place_id=r.saved_place_id,
+            first_seen_ts=r.first_seen_ts, last_seen_ts=r.last_seen_ts,
+        )
+
     async def save_place(
         self, *, subject_id: str, circle_id: str, place_id: int | None,
         lat: float, lng: float, radius_m: float,
