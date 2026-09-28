@@ -5689,6 +5689,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                     for p in await mobility.places_for_subject(subject_id=subject_id)
                 }
                 by_start = {h.started_ts: h for h in history}
+                computed: list[tuple[dict, list[dict]]] = []
                 for row in day_stays:
                     stay = by_start.get(row["started_ts"])
                     if stay is None:
@@ -5715,9 +5716,14 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                             flag["usually_at"] = labels.get(a.expected_place_id)
                         flags.append(flag)
                     if flags:
-                        row["unusual"] = flags
+                        computed.append((row, flags))
             except Exception:
                 log.exception("where_been unusual-stay flags failed; day answered without them")
+                return
+            # Applied only once every row is scored, so a failure part-way
+            # leaves the day exactly as read (the docstring's promise).
+            for row, flags in computed:
+                row["unusual"] = flags
 
         async def _been_read(subject_id: str) -> dict:
             """One arm's read for one subject, coordinates never selected and
@@ -6042,10 +6048,13 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         window = {"from_iso": _been_iso(start_ms), "to_iso": _been_iso(end_ms)}
 
         asked = None if name is None else str(name).strip()
-        # The fold `where_been` runs: one gate per circle, the first answer
-        # that is not `refused` wins, and a `refused` stands only when every
-        # circle refused. Written inline so each return is a literal the
-        # status-note test can read (ADR 0015 §6).
+        # The fold `where_been` runs: every circle is tried for an `ok` first
+        # (name resolution is per circle, so a later circle can know who an
+        # earlier one does not); only when none answers is the first
+        # non-`refused` answer returned, and `refused` only when every circle
+        # refused (independent review 2026-09-28). Written inline so each
+        # return is a literal the status-note test can read (ADR 0015 §6).
+        results: list[dict] = []
         for circle in presence_circles:
             refs, refusal = await _presence_audience(
                 circle, asked, tool="routine_read",
@@ -6053,13 +6062,8 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 people_phrase="where people usually are",
             )
             if refusal is not None:
-                if refusal["status"] == "refused":
-                    continue
-                _record(metrics, "routine_read", str(refusal["status"]))
-                return {
-                    "status": refusal["status"], "note": refusal["note"],
-                    "could_be": refusal.get("could_be"),
-                }
+                results.append(refusal)
+                continue
             try:
                 people: list[dict] = []
                 seen_subjects: set[str] = set()
@@ -6106,28 +6110,31 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                     })
             except Exception:
                 log.exception("routine_read read failed")
-                _record(metrics, "routine_read", "unavailable")
-                return {
+                results.append({
                     "status": "unavailable",
                     "note": "I couldn't check their routine just now. Say you "
                             "couldn't look, not that they have no routine.",
-                }
+                })
+                continue
             if not people:
-                _record(metrics, "routine_read", "nothing_found")
-                return {
+                results.append({
                     "status": "nothing_found",
                     "note": "There isn't enough of their history to say where "
                             "they usually are then. Say you can't tell yet, and "
                             "do not guess.",
                     "window": window,
-                }
+                })
+                continue
             ok_note = (
                 "This is where they usually were at these hours over the weeks "
                 "given, not where anyone is or will be: say it as usually, with "
-                "the percent and the weeks. Name a place by its label; one with "
-                "no label is a place they go that has no name, and an unlabeled "
-                "kind is never their home or work. elsewhere_percent is time "
-                "stopped somewhere that is not one of their places."
+                "the percent and the weeks. The percents share out only the "
+                "time they were stopped somewhere; observed_share_percent is "
+                "how much of those hours that covered, so a low one means most "
+                "of the time is unknown, and you say so. Name a place by its "
+                "label; one with no label is a place they go that has no name, "
+                "and an unlabeled kind is never their home or work. "
+                "elsewhere_percent is every stop not named above."
             )
             weak = sorted({p["basis"] for p in people if p["basis"] in _routine_bases})
             if weak:
@@ -6139,15 +6146,27 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 )
             _record(metrics, "routine_read", "ok", people=len(people))
             return {"status": "ok", "window": window, "people": people, "note": ok_note}
-        # Every circle refused: the same words `_presence_audience` uses.
-        _record(metrics, "routine_read", "refused")
-        return {
-            "status": "refused",
-            "note": "I can't share where people usually are in this "
-                    "conversation: someone here is outside the location-sharing "
-                    "circle, or I can't confirm who is here. Say so in one "
-                    "clause and do not hint at the pattern.",
-        }
+        answer = next(
+            (r for r in results if r.get("status") != "refused"), results[0],
+        )
+        _record(metrics, "routine_read", str(answer["status"]))
+        if answer["status"] == "ambiguous":
+            return {
+                "status": "ambiguous",
+                "note": "More than one person here goes by that. Ask which one.",
+                "could_be": answer["could_be"],
+            }
+        if answer["status"] == "nothing_found" and "window" in answer:
+            return {
+                "status": "nothing_found",
+                "note": "There isn't enough of their history to say where they "
+                        "usually are then. Say you can't tell yet, and do not "
+                        "guess.",
+                "window": answer["window"],
+            }
+        # Every other status `_presence_audience` or the read above produced
+        # carries its own non-empty note; restated so this return shows it.
+        return {"status": answer["status"], "note": answer["note"]}
 
     # ---- online_now (design/online-status/, the #248 live-state cross-check) --
     #

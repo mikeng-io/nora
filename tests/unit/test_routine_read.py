@@ -226,3 +226,50 @@ async def test_not_found_and_ambiguous(persons):
     amb = await _tool(persons, mobility, with_pat=True)(WEDNESDAY, 22, 6, name="Miles")
     assert amb["status"] == "ambiguous" and amb["note"] and len(amb["could_be"]) == 2
     assert mobility.calls == []
+
+
+# ---- independent review, 2026-09-28 -----------------------------------------
+
+
+async def test_a_person_known_only_to_a_later_circle_is_still_answered(persons):
+    """The fold is `where_been`'s: every circle is tried for `ok` first. Pat is
+    on circle B only; circle A's `not_found` must not end the call."""
+    from nora.agent.whereis import Circle
+
+    def circle(cid, ids):
+        return Circle(circle_id=cid, person_ids=frozenset(ids),
+                      people=tuple(persons.by_person[i] for i in ids))
+
+    circles = (
+        circle("A", ("grant_carver", "miles_novak")),
+        circle("B", ("grant_carver", "miles_novak", "pat_ho")),
+    )
+    specs = build_tool_specs(
+        store=None, conversation_id="g", conversation_type="group",
+        persons=persons, honcho=None, deliverer=None, metrics=Metrics(),
+        room=_room(persons, members=(MILES, GRANT)), transit_source=None,
+        presence_circles=circles, location_trusted=False,
+        mobility=_FakeMobility(stays=_history(6)),
+        clock=lambda: NOW.astimezone(UTC),
+    )
+    tool = next(s for s in specs if s.name == "routine_read").call
+    out = await tool(WEDNESDAY, 22, 6, name="Pat")
+    assert out["status"] == "ok"
+
+
+async def test_a_mostly_unobserved_window_is_said_to_be_mostly_unknown(persons):
+    """Six Wednesdays that only observed 22:00-23:00 of an 8-hour window: the
+    shares are of that hour, and the note says what observed_share means."""
+    stays = [
+        _stay(datetime(2026, 8, 5, tzinfo=HK) + timedelta(weeks=w), 22, 23, HOME)
+        for w in range(4)
+    ]
+    out = await _tool(persons, _FakeMobility(stays=stays))(WEDNESDAY, 22, 6, name="Chi")
+    [grant] = out["people"]
+    assert grant["observed_share_percent"] < 20
+    assert "observed_share_percent" in out["note"] and "unknown" in out["note"]
+
+
+async def test_non_ambiguous_answers_carry_no_could_be(persons):
+    out = await _tool(persons, _FakeMobility(stays=_history(6)))(WEDNESDAY, 22, 6, name="Nobody")
+    assert out["status"] == "not_found" and "could_be" not in out
