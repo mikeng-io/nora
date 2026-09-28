@@ -9,7 +9,8 @@
   "limitations": [
     "History starts at this upgrade: earlier states are reconstructed only as far as each record's own dates allow, and rows deleted before it are gone.",
     "Memory (Honcho), the presence summaries (until step 2) and events (until step 2b) cannot be restored as of a past moment; the snapshot says so.",
-    "The upgrade writes one history row per existing row of the covered tables, once, at the first start after deploy.",
+    "The upgrade writes one history row per existing row of the covered tables, once, at the first start after deploy, and holds a write lock on those tables while it runs: the presence collector and the analytics process wait for it.",
+    "TRUNCATE on a covered table is refused (it would bypass the history); rows are deleted instead, and are kept as hidden history.",
     "Eval cases still seed through the per-room snapshot; moving them onto the whole-store snapshot is a later change."
   ]
 }

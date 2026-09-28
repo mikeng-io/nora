@@ -39,13 +39,16 @@ single-agent decision and does not reverse it ([00](00-intent.md) §4).
 ## 2. The steps
 
 Each step ships alone, behind a flag that defaults off, and is read back live
-(`nora-readback`) before the next starts.
+(`nora-readback`) before the next starts. **One exception, deliberate:** step
+1b's history capture has no flag and is always on (DEC-232), because a
+switch that can turn history off defeats the restore guarantee; its only
+bypass is the session setting the snapshot's seeding and test resets use.
 
 | # | step | ships | the reading that gates the next |
 |---|---|---|---|
 | 0 | **Tiers, words, grants — LANDED 2026-09-28** | DEC-217 for [10](10-tiers.md), [12](12-schemas.md), [15](15-map.md); DEC-218 granting the named write verbs through `AdaptorGrant` (write verbs are not act verbs) and `remind_move`/`remind_cancel` for Cognition's own reminders; each §3 amendment as its own row (DEC-219–DEC-230), and the missing index rows for R-31 and DEC-176; the unit read boundary settled (§4, DEC-231); GLOSSARY rewritten to [10](10-tiers.md)'s words, resolving the 14 conflicts below. Numbers as taken from `origin/master` when this landed; `nora-decision`'s numbering discipline may renumber them at merge. | — |
 | 1 | **Signals, shadow** | the durable `signal` table, the ingest signal stage, cues, the pending set, wake metrics; the wake evaluator in shadow (it logs each would-wake and its reason and fires nothing); reactions, edits and deletes or unsends ingested as items; collector polls and platform adapter health recorded; the clocks still run everything | a week of would-wakes and reasons; every wake value of [20](20-observe.md) §3 sized from it |
-| 1b | **History and snapshot** | the append-only migration of every table in §5's inventory except the rows marked 2 or 2b, which migrate at those steps (system time, heads as views, loop state as transition rows); doctrine, Dreamer-objective, config and deploy revisions recorded at load (§5); `nora snapshot --at T` (below) | a test writes, revises and retires across every store migrated here, then snapshots at two moments and gets exactly what was held at each; a recorded tag turn's blocks, rendered from a snapshot at its moment, equal the blocks its Langfuse trace recorded, with memory and the Live blocks (`tool_catalogue`, her platform presence, now) excepted and the transcript rendered through the media join as of T |
+| 1b | **History and snapshot** | the append-only migration of every table in §5's inventory except the rows marked 2 or 2b, which migrate at those steps (system time, heads as views, loop state as transition rows; as built, DEC-232 amends "heads as views": the in-place tables stay the live heads and the chain is the trigger-written `row_history`, §5); doctrine, Dreamer-objective, config and deploy revisions recorded at load (§5); `nora snapshot --at T` (below) | a test writes, revises and retires across every store migrated here, then snapshots at two moments and gets exactly what was held at each; a recorded tag turn's blocks, rendered from a snapshot at its moment, equal the blocks its Langfuse trace recorded, with memory and the Live blocks (`tool_catalogue`, her platform presence, now) excepted and the transcript rendered through the media join as of T |
 | 2 | **Rollup and lineage** | the Rollup as a projection (logical watermark, `build`, citation by overlap), design 27's presence rollup moved onto the watermark; co-location, outing; daybook and tie partial ([25](25-rollup.md) §3); the [10](10-tiers.md) §3 columns, every lineage kind and its per-room predicate; the lineage backfill, then the filter; the `citation` edge table; `rollup_read`, `record_query`; wake defaults re-sized with Rollup signals | incremental and batch builds of each rollup agree exactly; no row with unknown lineage renders outside its origin room; a presence-lineaged field is refused in a room without the location flag and in one where DisclosureGuard fails |
 | 2b | **Events unit-wide** | the event migration (§5); `event_revision`, the lifecycle statuses, per-field modes; the event verbs with `base_revision_id`; the tag path's five event tools renamed everywhere (§8); `event_search` | existing `Gathering` tests and the tag path's event cases green; `tool_selection` no worse |
 | 2c | **Withdrawal cascade** | `unsupported` marking over the citation table, fed by step 1's deletes, the PII scrub and a person leaving a unit; `nora person forget` and `unforget` (soft, §9) for the stores that exist | a cascade test withdraws one Record item and finds every row citing it `unsupported`, in every store; a forget followed by a snapshot before it restores everything |
@@ -204,7 +207,17 @@ history says which revision was head at T. Chosen over per-site appends
 because a history that misses one of ~60 write statements is silently
 incomplete, and over typed history tables because a JSONB image survives a
 later column. `sticker_index`, an in-place cache the table above missed,
-is covered too. The append-only tables a restore reads (`note_revision`,
+is covered too, and so is `message_edit`: written append-only, but a
+prune deletes a message's edits by ON DELETE CASCADE with no store
+asking, and only a row trigger sees that. The migration LOCKs every covered
+table while it backfills (the presence collector and the analytics process
+keep writing while `nora` restarts), and a BEFORE TRUNCATE trigger refuses
+a TRUNCATE, which fires no row trigger, unless capture is switched off.
+Versions are dated by the database clock when the write ran, not when its
+transaction committed, so a restore at T can include a row whose
+transaction was still open at T. History growth is read hourly as
+`nora_row_history_rows` and `nora_row_history_bytes` per table. The
+append-only tables a restore reads (`note_revision`,
 `standing_revision`, `culture_revision`, `message_edit`, `decision_log`,
 `note_merge_decision`) gained `recorded_at`. Hiding is the head DELETE the
 stores already do plus the `delete` version; `unforget` (step 2c) re-inserts
@@ -233,9 +246,12 @@ As built at step 1b: `doctrine_revision` carries both corpora (`corpus` is
 bodies in a content-addressed `revision_blob`, and for the doctrine the tag
 audience's assembled `sha256` (the `/health` value). `config_revision` is
 one row per file per start. `deploy_revision` records the baked manifest's
-version, commit and build time; an unstamped image (every ordinary deploy)
-has none and its row says `absent` rather than guessing a sha, and
-`image_id` is read from `NORA_IMAGE_ID` when the deployment sets it. Skills
+version, commit and build time when the image was stamped, and otherwise the
+commit and build time every build now bakes in (`NORA_GIT_SHA`,
+`NORA_BUILT_AT`: Dockerfile ARG to ENV, passed by the build scripts and
+nora-deploy's compose build); `image_id` is read from `NORA_IMAGE_ID` when
+the deployment sets it. A row naming no version, commit or image is
+reported unavailable by the snapshot. Skills
 are identified by that deploy row. The daemon writes all four
 (`nora.app.revisions`); an eval subject records nothing.
 
