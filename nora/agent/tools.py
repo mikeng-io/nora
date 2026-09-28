@@ -5993,11 +5993,67 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
     # «Where will Grant be on Wednesday night?» answered from the Tier 4
     # forecast (`forecast_window`): a likelihood with its evidence, never a
     # claim about the future. Behind `where_been`'s own guard.
-    _routine_bases = {
-        "nearby_hours": "the hours either side on that weekday",
-        "day_type": "the same hours on their other weekdays, or weekend days",
-        "overall": "their week as a whole",
+    # How often the top place holds the window, as a person would say it.
+    # A fixed ladder over its share, so the same evidence always reads the
+    # same way (design/27 §4.3, amended 2026-09-28: comprehend, not report).
+    _routine_ladder = ((85, "almost always"), (60, "usually"), (35, "often"))
+    # An unnamed place is said by its label's absence, never a guessed name;
+    # its kind still tells her what it is to them (DEC-190).
+    _routine_unnamed = {
+        "home": "a home of theirs", "work": "their work",
+        "unlabeled": "a place they go",
     }
+    _routine_days = (
+        "Mondays", "Tuesdays", "Wednesdays", "Thursdays", "Fridays",
+        "Saturdays", "Sundays",
+    )
+
+    def _routine_how_often(percent: int) -> str:
+        return next(
+            (words for floor, words in _routine_ladder if percent >= floor),
+            "no single usual place",
+        )
+
+    def _routine_person(
+        person: str, shares: list[dict], *, start: datetime, end: datetime,
+        basis: str, weeks: int, observed: int,
+    ) -> dict:
+        """One person's routine for the window, comprehended: the place they
+        are usually at and how often, as one line, with the numbers kept as
+        evidence. Thin evidence is said inside the line («roughly», «on a
+        patchy record») so the qualifier travels with the fact."""
+        top = shares[0]
+        how_often = _routine_how_often(top["percent"])
+        where = top["place"]
+        span = (
+            f"{_routine_days[start.weekday()]} "
+            f"{start.strftime('%H:%M')}-{end.strftime('%H:%M')}"
+        )
+        if how_often == "no single usual place":
+            line = f"{span}: no single usual place"
+        else:
+            line = f"{span}: {how_often} at {where}"
+        qualifiers = []
+        if basis != "hour":
+            qualifiers.append("roughly, from their other weeks' pattern")
+        if observed < 50:
+            qualifiers.append("on a patchy record")
+        if qualifiers:
+            line += f" ({', '.join(qualifiers)})"
+        return {
+            "person": person,
+            "routine": line,
+            "usually_at": None if how_often == "no single usual place" else where,
+            "how_often": how_often,
+            "also": [
+                {"place": x["place"], "how_often": _routine_how_often(x["percent"])}
+                for x in shares[1:] if x["percent"] >= 10
+            ],
+            "evidence": {
+                "weeks": weeks, "basis": basis,
+                "observed_share_percent": observed, "shares": shares,
+            },
+        }
 
     async def routine_read(
         date: str, from_hour: int, to_hour: int, name: str | None = None,
@@ -6085,8 +6141,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                     )
                     if forecast.status != "ok":
                         continue
-                    named: list[dict] = []
-                    elsewhere = 0
+                    shares: list[dict] = []
                     for chance in forecast.chances:
                         percent = round(chance.probability * 100)
                         place = (
@@ -6094,22 +6149,25 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                             if chance.place_id is not None else None
                         )
                         # A place under 5% is not worth a name; it and every
-                        # stop outside their places count as elsewhere.
+                        # stop outside their places are «elsewhere».
                         if place is None or percent < 5:
-                            elsewhere += percent
                             continue
-                        named.append({
-                            "label": place.label, "kind": place.kind,
-                            "saved": place.saved_place_id is not None,
-                            "percent": percent,
+                        shares.append({
+                            "place": place.label or _routine_unnamed[place.kind],
+                            "kind": place.kind, "percent": percent,
                         })
-                    people.append({
-                        "person": ref.name, "places": named,
-                        "elsewhere_percent": elsewhere,
-                        "basis": forecast.basis,
-                        "support_weeks": forecast.support_weeks,
-                        "observed_share_percent": round(forecast.observed_share * 100),
-                    })
+                    named_total = sum(x["percent"] for x in shares)
+                    if named_total < 100:
+                        shares.append({
+                            "place": "somewhere that is not one of their places",
+                            "kind": "elsewhere", "percent": 100 - named_total,
+                        })
+                    shares.sort(key=lambda x: -x["percent"])
+                    people.append(_routine_person(
+                        ref.name, shares, start=start, end=end,
+                        basis=forecast.basis, weeks=forecast.support_weeks,
+                        observed=round(forecast.observed_share * 100),
+                    ))
             except Exception:
                 log.exception("routine_read read failed")
                 results.append({
@@ -6128,24 +6186,11 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 })
                 continue
             ok_note = (
-                "This is where they usually were at these hours over the weeks "
-                "given, not where anyone is or will be: say it as usually, with "
-                "the percent and the weeks. The percents share out only the "
-                "time they were stopped somewhere; observed_share_percent is "
-                "how much of those hours that covered, so a low one means most "
-                "of the time is unknown, and you say so. Name a place by its "
-                "label; one with no label is a place they go that has no name, "
-                "and an unlabeled kind is never their home or work. "
-                "elsewhere_percent is every stop not named above."
+                "Each routine is how this person's past weeks went at these "
+                "hours, already worked out from their own movements: it is "
+                "their habit, the way a friend knows it. Evidence is there if "
+                "someone asks how sure you are."
             )
-            weak = sorted({p["basis"] for p in people if p["basis"] in _routine_bases})
-            if weak:
-                ok_note += (
-                    " Where basis is not hour, too few weeks cover exactly "
-                    "these hours, so it comes from "
-                    + "; ".join(f"{b}: {_routine_bases[b]}" for b in weak)
-                    + ". Say it is a rough guess."
-                )
             _record(metrics, "routine_read", "ok", people=len(people))
             return {"status": "ok", "window": window, "people": people, "note": ok_note}
         answer = next(

@@ -1,0 +1,9 @@
+{
+  "type": "fix",
+  "summary": "Asked where someone usually is at a time, Nora now answers from their routine the way a friend who knows it would, instead of opening with «I can't answer» and reciting percentages.",
+  "details": [
+    "The routine arrives already worked out (for example «Mondays 17:00-23:00: almost always at Miles Home»), with how often and any other usual places; the percentages and weeks are kept as evidence for when someone asks how sure she is.",
+    "Thin or patchy evidence is said inside that line («roughly», «on a patchy record») rather than as a separate disclaimer."
+  ],
+  "limitations": []
+}

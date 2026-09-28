@@ -132,28 +132,33 @@ async def test_where_will_grant_be_on_wednesday_night(persons):
     }
     [grant] = out["people"]
     assert grant["person"] == "Grant Carver"
-    assert grant["basis"] == "hour" and grant["support_weeks"] == 6
-    top = grant["places"][0]
-    assert (top["label"], top["kind"], top["saved"]) == ("Carver Home", "home", True)
-    assert top["percent"] >= 95
-    assert "usually" in out["note"] and "rough guess" not in out["note"]
+    # Comprehended, not reported (design/27 §4.3, amended 2026-09-28): the
+    # routine arrives worked out; the numbers are evidence.
+    assert grant["routine"] == "Wednesdays 22:00-06:00: almost always at Carver Home"
+    assert (grant["usually_at"], grant["how_often"]) == ("Carver Home", "almost always")
+    assert grant["evidence"]["weeks"] == 6 and grant["evidence"]["basis"] == "hour"
+    assert grant["evidence"]["shares"][0]["percent"] >= 95
+    assert sum(x["percent"] for x in grant["evidence"]["shares"]) == 100
+    assert "habit" in out["note"]
+    for word in ("will be", "can't", "cannot", "not where"):
+        assert word not in out["note"]  # nothing that reads as a reason to disclaim
     assert _no_coordinates(out)  # R-28: nothing here can be read aloud as a position
 
 
-async def test_tuesday_night_is_the_second_home_and_an_unnamed_place_says_so(persons):
+async def test_tuesday_night_is_the_second_home_said_as_one_even_unnamed(persons):
     tool = _tool(persons, _FakeMobility(stays=_history(6)))
     out = await tool("2026-09-08", 23, 5, name="Chi")
-    top = out["people"][0]["places"][0]
-    assert (top["label"], top["kind"]) == (None, "home")
-    assert "no label is a place they go that has no name" in out["note"]
+    person = out["people"][0]
+    assert person["usually_at"] == "a home of theirs"
+    assert person["evidence"]["shares"][0]["kind"] == "home"
 
 
-async def test_thin_history_is_told_as_a_rough_guess(persons):
+async def test_thin_history_is_said_inside_the_routine_as_rough(persons):
     tool = _tool(persons, _FakeMobility(stays=_history(1)))
     out = await tool(WEDNESDAY, 22, 6, name="Chi")
     assert out["status"] == "ok"
-    assert out["people"][0]["basis"] != "hour"
-    assert "rough guess" in out["note"]
+    assert out["people"][0]["evidence"]["basis"] != "hour"
+    assert "roughly" in out["people"][0]["routine"]
 
 
 async def test_no_history_is_nothing_found_with_its_window(persons):
@@ -257,7 +262,7 @@ async def test_a_person_known_only_to_a_later_circle_is_still_answered(persons):
     assert out["status"] == "ok"
 
 
-async def test_a_mostly_unobserved_window_is_said_to_be_mostly_unknown(persons):
+async def test_a_mostly_unobserved_window_says_the_record_is_patchy(persons):
     """Six Wednesdays that only observed 22:00-23:00 of an 8-hour window: the
     shares are of that hour, and the note says what observed_share means."""
     stays = [
@@ -266,8 +271,8 @@ async def test_a_mostly_unobserved_window_is_said_to_be_mostly_unknown(persons):
     ]
     out = await _tool(persons, _FakeMobility(stays=stays))(WEDNESDAY, 22, 6, name="Chi")
     [grant] = out["people"]
-    assert grant["observed_share_percent"] < 20
-    assert "observed_share_percent" in out["note"] and "unknown" in out["note"]
+    assert grant["evidence"]["observed_share_percent"] < 20
+    assert "on a patchy record" in grant["routine"]
 
 
 async def test_non_ambiguous_answers_carry_no_could_be(persons):
