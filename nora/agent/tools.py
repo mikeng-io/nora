@@ -96,6 +96,7 @@ from ..domain.media import (
 )
 from ..domain.media import LABELS as MEDIA_LABELS
 from ..domain.media_join import MediaJoin
+from ..domain.mobility_forecast import forecast_window
 from ..domain.models import PersonRef, TranscriptRow, WeatherObservation
 from ..domain.note_body import (
     NoteBodyError,
@@ -670,6 +671,14 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
                              read_only=True,
                              side_effect_state="none", idempotency="idempotent", retry="safe",
                              output_contract="three_state", level=2),
+    # design/27 §4.3 (P1b): the Tier 4 forecast behind where_been's own guard,
+    # declared like where_been so the two differ only where the design says.
+    # Level 3: six statuses that each need a different reply.
+    "routine_read": NativeTool(8,
+                               time_shiftable=True, source_tier="confirmed", cacheable=False,
+                               read_only=True,
+                               side_effect_state="none", idempotency="idempotent", retry="safe",
+                               output_contract="three_state", level=3),
     # 4, sized on NETWORK cost like `transit` (design/online-status/04's own
     # budgets row): one question is ONE batched GetPlayerSummaries call — the
     # room's whole id set goes out in a single request, up to Steam's
@@ -5907,6 +5916,175 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         _record(metrics, "where_been", str(answer.get("status", "unavailable")))
         return answer
 
+    # ---- routine_read (design/proposed/27-presence-analytics.md §4.3, P1b) ----
+    #
+    # «Where will Grant be on Wednesday night?» answered from the Tier 4
+    # forecast (`forecast_window`): a likelihood with its evidence, never a
+    # claim about the future. Behind `where_been`'s own guard.
+    _routine_bases = {
+        "nearby_hours": "the hours either side on that weekday",
+        "day_type": "the same hours on their other weekdays, or weekend days",
+        "overall": "their week as a whole",
+    }
+
+    async def routine_read(
+        date: str, from_hour: int, to_hour: int, name: str | None = None,
+    ) -> dict:
+        """Usual whereabouts by hour of the week. Call this when somebody asks
+        where someone will be.
+
+        Never for right now (`where_is`) or the past (`where_been`).
+
+        Returns `status`: ok, nothing_found, unavailable, refused, not_found or
+        ambiguous, with a `note` on how to report it.
+
+        Args:
+            date: The local day they mean, "YYYY-MM-DD".
+            from_hour: Local hour the time window starts, 0 to 23.
+            to_hour: Local hour it ends, 0 to 23. At or before from_hour it
+                runs past midnight.
+            name: Who they asked about, exactly as they said it. Leave it out
+                for the people in THIS conversation (or pass "everyone").
+        """
+        if mobility is None or not presence_circles:
+            # A wiring gap is «I could not check», never «no routine» (R-5).
+            _record(metrics, "routine_read", "unavailable")
+            return {
+                "status": "unavailable",
+                "note": "I can't check anyone's routine right now. Say you "
+                        "have no way to see it, and do not guess.",
+            }
+        hk = ZoneInfo(_been_tz_name)
+        try:
+            day = datetime.strptime(str(date).strip(), "%Y-%m-%d").date()
+            start_hour, end_hour = int(from_hour), int(to_hour)
+            if not (0 <= start_hour <= 23 and 0 <= end_hour <= 23):
+                raise ValueError("hour out of range")
+            now_ms = int(
+                (clock() if clock is not None else datetime.now(UTC)).timestamp() * 1000,
+            )
+        except (TypeError, ValueError):
+            _record(metrics, "routine_read", "unavailable", reason="window")
+            return {
+                "status": "unavailable",
+                "note": "I couldn't read that day or those hours. Give the day "
+                        "as YYYY-MM-DD and the hours as 0 to 23.",
+            }
+        start = datetime(day.year, day.month, day.day, start_hour, tzinfo=hk)
+        end_day = day if end_hour > start_hour else day + timedelta(days=1)
+        end = datetime(end_day.year, end_day.month, end_day.day, end_hour, tzinfo=hk)
+        start_ms = int(start.timestamp() * 1000)
+        end_ms = int(end.timestamp() * 1000)
+        window = {"from_iso": _been_iso(start_ms), "to_iso": _been_iso(end_ms)}
+
+        asked = None if name is None else str(name).strip()
+        # The fold `where_been` runs: one gate per circle, the first answer
+        # that is not `refused` wins, and a `refused` stands only when every
+        # circle refused. Written inline so each return is a literal the
+        # status-note test can read (ADR 0015 §6).
+        for circle in presence_circles:
+            refs, refusal = await _presence_audience(
+                circle, asked, tool="routine_read",
+                anyone="where anyone usually is",
+                people_phrase="where people usually are",
+            )
+            if refusal is not None:
+                if refusal["status"] == "refused":
+                    continue
+                _record(metrics, "routine_read", str(refusal["status"]))
+                return {
+                    "status": refusal["status"], "note": refusal["note"],
+                    "could_be": refusal.get("could_be"),
+                }
+            try:
+                people: list[dict] = []
+                seen_subjects: set[str] = set()
+                for ref in refs:
+                    subject_id = persons.subject_id_for(ref.person_id)
+                    if subject_id in seen_subjects:
+                        continue
+                    seen_subjects.add(subject_id)
+                    stays = await mobility.stays_for_subject(subject_id=subject_id)
+                    places = {
+                        p.id: p
+                        for p in await mobility.places_for_subject(subject_id=subject_id)
+                    }
+                    forecast = forecast_window(
+                        stays, start_ms=start_ms, end_ms=end_ms,
+                        tz_name=_been_tz_name, history_before_ms=now_ms,
+                    )
+                    if forecast.status != "ok":
+                        continue
+                    named: list[dict] = []
+                    elsewhere = 0
+                    for chance in forecast.chances:
+                        percent = round(chance.probability * 100)
+                        place = (
+                            places.get(chance.place_id)
+                            if chance.place_id is not None else None
+                        )
+                        # A place under 5% is not worth a name; it and every
+                        # stop outside their places count as elsewhere.
+                        if place is None or percent < 5:
+                            elsewhere += percent
+                            continue
+                        named.append({
+                            "label": place.label, "kind": place.kind,
+                            "saved": place.saved_place_id is not None,
+                            "percent": percent,
+                        })
+                    people.append({
+                        "person": ref.name, "places": named,
+                        "elsewhere_percent": elsewhere,
+                        "basis": forecast.basis,
+                        "support_weeks": forecast.support_weeks,
+                        "observed_share_percent": round(forecast.observed_share * 100),
+                    })
+            except Exception:
+                log.exception("routine_read read failed")
+                _record(metrics, "routine_read", "unavailable")
+                return {
+                    "status": "unavailable",
+                    "note": "I couldn't check their routine just now. Say you "
+                            "couldn't look, not that they have no routine.",
+                }
+            if not people:
+                _record(metrics, "routine_read", "nothing_found")
+                return {
+                    "status": "nothing_found",
+                    "note": "There isn't enough of their history to say where "
+                            "they usually are then. Say you can't tell yet, and "
+                            "do not guess.",
+                    "window": window,
+                }
+            ok_note = (
+                "This is where they usually were at these hours over the weeks "
+                "given, not where anyone is or will be: say it as usually, with "
+                "the percent and the weeks. Name a place by its label; one with "
+                "no label is a place they go that has no name, and an unlabeled "
+                "kind is never their home or work. elsewhere_percent is time "
+                "stopped somewhere that is not one of their places."
+            )
+            weak = sorted({p["basis"] for p in people if p["basis"] in _routine_bases})
+            if weak:
+                ok_note += (
+                    " Where basis is not hour, too few weeks cover exactly "
+                    "these hours, so it comes from "
+                    + "; ".join(f"{b}: {_routine_bases[b]}" for b in weak)
+                    + ". Say it is a rough guess."
+                )
+            _record(metrics, "routine_read", "ok", people=len(people))
+            return {"status": "ok", "window": window, "people": people, "note": ok_note}
+        # Every circle refused: the same words `_presence_audience` uses.
+        _record(metrics, "routine_read", "refused")
+        return {
+            "status": "refused",
+            "note": "I can't share where people usually are in this "
+                    "conversation: someone here is outside the location-sharing "
+                    "circle, or I can't confirm who is here. Say so in one "
+                    "clause and do not hint at the pattern.",
+        }
+
     # ---- online_now (design/online-status/, the #248 live-state cross-check) --
     #
     # Steam's own personastate vocabulary, spelled for the model. The port
@@ -10594,7 +10772,7 @@ Args:
     ) -> dict:
         """Start carrying an open question that nothing here settles yet.
 Call this when the room is chewing on something that outlives this
-conversation: an undecided thing nobody has settled.
+conversation.
 
 A note is tracked uncertainty (whose wedding is when, what the trip still
 lacks, who has not paid), never a settled fact or a description of a
@@ -11279,6 +11457,7 @@ Args:
         _spec("where_is", where_is),
         _spec("reverse_geocode", reverse_geocode),
         _spec("where_been", where_been),
+        _spec("routine_read", routine_read),
         _spec("online_now", online_now),
         _spec("who_said", who_said),
         _spec("load_transcript", load_transcript),

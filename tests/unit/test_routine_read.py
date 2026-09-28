@@ -1,0 +1,228 @@
+"""`routine_read` (design/proposed/27-presence-analytics.md §4.3, P1b).
+
+«Where will Grant be on Wednesday night?» answered from the Tier 4
+forecast, behind `where_been`'s own guard (`_presence_audience`). The legs:
+every status with its note; the guard matrix (refused, unnamed, degraded,
+waiver counted, not_found, ambiguous) with NO store read before it passes; the
+answer carrying its evidence (window, basis, weeks, observed share) and no
+coordinate (R-28); and a weak basis told as a rough guess.
+"""
+
+from __future__ import annotations
+
+from datetime import UTC, datetime, timedelta
+
+import pytest
+
+from nora.agent.tools import build_tool_specs
+from nora.domain.mobility import DerivedPlace, Stay
+from nora.obs.metrics import Metrics
+from nora.persons import load_persons
+from tests.test_where_been import (
+    GRANT,
+    HK,
+    IDENTITY,
+    MILES,
+    STRANGER,
+    UNNAMED,
+    _circle,
+    _labelled,
+    _room,
+)
+
+# Saturday 2026-09-05 12:00 HKT: the history below ends before it.
+NOW = datetime(2026, 9, 5, 12, 0, tzinfo=HK)
+HOME, SECOND, GYM = 11, 12, 13
+_AT = {HOME: (22.388, 114.037), SECOND: (22.410, 114.177), GYM: (22.300, 114.170)}
+
+
+@pytest.fixture
+def persons(tmp_path):
+    path = tmp_path / "identity.toml"
+    path.write_text(IDENTITY)
+    return load_persons(path)
+
+
+def _stay(day: datetime, start_h: float, end_h: float, place: int | None) -> Stay:
+    lat, lng = _AT[place] if place is not None else (22.1, 114.0)
+    return Stay(
+        subject_id="grant_carver", person_id="grant_carver", circle_id="c",
+        started_ts=int((day + timedelta(hours=start_h)).timestamp() * 1000),
+        ended_ts=int((day + timedelta(hours=end_h)).timestamp() * 1000),
+        lat=lat, lng=lng, radius_m=30.0, fix_count=6, place_id=place,
+    )
+
+
+def _history(weeks: int) -> list[Stay]:
+    """Home every night except Tuesday, which is the second home; the gym
+    on Wednesday 19-21, then home. `weeks` whole weeks ending before NOW."""
+    first_monday = datetime(2026, 8, 31, tzinfo=HK) - timedelta(weeks=weeks)
+    stays: list[Stay] = []
+    for w in range(weeks):
+        for d in range(7):
+            day = first_monday + timedelta(days=7 * w + d)
+            if d == 2:
+                stays.append(_stay(day, 19, 21, GYM))
+                stays.append(_stay(day, 21.5, 31, HOME))
+            else:
+                stays.append(_stay(day, 19, 31, SECOND if d == 1 else HOME))
+    return stays
+
+
+PLACES = [
+    DerivedPlace(HOME, "grant_carver", "c", *_AT[HOME], 100.0, "home", 1.0,
+                 "Carver Home", "l360-1"),
+    DerivedPlace(SECOND, "grant_carver", "c", *_AT[SECOND], 100.0, "home", 1.0,
+                 None, None),
+    DerivedPlace(GYM, "grant_carver", "c", *_AT[GYM], 100.0, "unlabeled", 0.0,
+                 None, None),
+]
+
+
+class _FakeMobility:
+    def __init__(self, stays=None, places=None, fail=False):
+        self.stays = stays or []
+        self.places = places if places is not None else PLACES
+        self.fail = fail
+        self.calls: list[tuple] = []
+
+    async def stays_for_subject(self, *, subject_id):
+        self.calls.append(("stays", subject_id))
+        if self.fail:
+            raise RuntimeError("db down")
+        return list(self.stays)
+
+    async def places_for_subject(self, *, subject_id):
+        self.calls.append(("places", subject_id))
+        return list(self.places)
+
+
+def _tool(persons, mobility, *, members=(MILES, GRANT), fail=False, tagger=None,
+          location_trusted=False, metrics=None, with_pat=False):
+    specs = build_tool_specs(
+        store=None, conversation_id="g", conversation_type="group",
+        persons=persons, honcho=None, deliverer=None,
+        metrics=metrics if metrics is not None else Metrics(),
+        room=_room(persons, members=members, fail=fail, tagger=tagger),
+        transit_source=None,
+        presence_circles=(_circle(persons, with_pat=with_pat),),
+        location_trusted=location_trusted, mobility=mobility,
+        clock=lambda: NOW.astimezone(UTC),
+    )
+    return next(s for s in specs if s.name == "routine_read").call
+
+
+WEDNESDAY = "2026-09-09"
+
+
+def _no_coordinates(value) -> bool:
+    if isinstance(value, dict):
+        return all(k not in ("lat", "lng") and _no_coordinates(v) for k, v in value.items())
+    if isinstance(value, list):
+        return all(_no_coordinates(v) for v in value)
+    return True
+
+
+async def test_where_will_grant_be_on_wednesday_night(persons):
+    tool = _tool(persons, _FakeMobility(stays=_history(6)))
+    out = await tool(WEDNESDAY, 22, 6, name="Chi")
+    assert out["status"] == "ok"
+    assert out["window"] == {
+        "from_iso": "2026-09-09T22:00:00+08:00", "to_iso": "2026-09-10T06:00:00+08:00",
+    }
+    [grant] = out["people"]
+    assert grant["person"] == "Grant Carver"
+    assert grant["basis"] == "hour" and grant["support_weeks"] == 6
+    top = grant["places"][0]
+    assert (top["label"], top["kind"], top["saved"]) == ("Carver Home", "home", True)
+    assert top["percent"] >= 95
+    assert "usually" in out["note"] and "rough guess" not in out["note"]
+    assert _no_coordinates(out)  # R-28: nothing here can be read aloud as a position
+
+
+async def test_tuesday_night_is_the_second_home_and_an_unnamed_place_says_so(persons):
+    tool = _tool(persons, _FakeMobility(stays=_history(6)))
+    out = await tool("2026-09-08", 23, 5, name="Chi")
+    top = out["people"][0]["places"][0]
+    assert (top["label"], top["kind"]) == (None, "home")
+    assert "no label is a place they go that has no name" in out["note"]
+
+
+async def test_thin_history_is_told_as_a_rough_guess(persons):
+    tool = _tool(persons, _FakeMobility(stays=_history(1)))
+    out = await tool(WEDNESDAY, 22, 6, name="Chi")
+    assert out["status"] == "ok"
+    assert out["people"][0]["basis"] != "hour"
+    assert "rough guess" in out["note"]
+
+
+async def test_no_history_is_nothing_found_with_its_window(persons):
+    tool = _tool(persons, _FakeMobility(stays=[]))
+    out = await tool(WEDNESDAY, 22, 6, name="Chi")
+    assert out["status"] == "nothing_found"
+    assert out["note"] and out["window"]["from_iso"].startswith("2026-09-09T22")
+
+
+async def test_unwired_is_unavailable_not_nothing_found(persons):
+    tool = _tool(persons, None)
+    out = await tool(WEDNESDAY, 22, 6, name="Chi")
+    assert out["status"] == "unavailable" and out["note"]
+
+
+@pytest.mark.parametrize("date,from_h,to_h", [
+    ("next wednesday", 22, 6), ("2026-09-09", 24, 6), ("2026-09-09", 22, -1),
+])
+async def test_a_bad_window_is_unavailable_and_reads_nothing(persons, date, from_h, to_h):
+    mobility = _FakeMobility(stays=_history(6))
+    out = await _tool(persons, mobility)(date, from_h, to_h, name="Chi")
+    assert out["status"] == "unavailable" and out["note"]
+    assert mobility.calls == []
+
+
+async def test_a_store_failure_is_unavailable(persons):
+    out = await _tool(persons, _FakeMobility(fail=True))(WEDNESDAY, 22, 6, name="Chi")
+    assert out["status"] == "unavailable"
+    assert "not that they have no routine" in out["note"]
+
+
+# ---- the guard is where_been's: same matrix, no read before it passes -------
+
+
+async def test_a_stranger_in_the_room_is_refused_before_any_read(persons):
+    mobility = _FakeMobility(stays=_history(6))
+    metrics = Metrics()
+    out = await _tool(persons, mobility, members=(MILES, GRANT, STRANGER),
+                      metrics=metrics)(WEDNESDAY, 22, 6, name="Chi")
+    assert out["status"] == "refused" and out["note"]
+    assert mobility.calls == []
+    assert _labelled(metrics, "nora_presence_disclosure_refusals_total", "reason", "not_subset")
+
+
+async def test_an_unnamed_account_is_refused_unless_the_room_is_trusted(persons):
+    mobility = _FakeMobility(stays=_history(6))
+    out = await _tool(persons, mobility, members=(MILES, UNNAMED))(
+        WEDNESDAY, 22, 6, name="Chi")
+    assert out["status"] == "refused" and mobility.calls == []
+    metrics = Metrics()
+    trusted = await _tool(persons, mobility, members=(MILES, UNNAMED),
+                          location_trusted=True, metrics=metrics)(
+        WEDNESDAY, 22, 6, name="Chi")
+    assert trusted["status"] == "ok"
+    assert _labelled(metrics, "nora_presence_disclosure_waived_total", "reason", "unnamed")
+
+
+async def test_a_degraded_room_is_unavailable_not_refused(persons):
+    mobility = _FakeMobility(stays=_history(6))
+    tagger = persons.resolve("signal", "+85290000101")
+    out = await _tool(persons, mobility, members=(MILES,), fail=True, tagger=tagger)(
+        WEDNESDAY, 22, 6, name="Chi")
+    assert out["status"] == "unavailable" and mobility.calls == []
+
+
+async def test_not_found_and_ambiguous(persons):
+    mobility = _FakeMobility(stays=_history(6))
+    out = await _tool(persons, mobility)(WEDNESDAY, 22, 6, name="Nobody")
+    assert out["status"] == "not_found" and out["note"]
+    amb = await _tool(persons, mobility, with_pat=True)(WEDNESDAY, 22, 6, name="Miles")
+    assert amb["status"] == "ambiguous" and amb["note"] and len(amb["could_be"]) == 2
+    assert mobility.calls == []

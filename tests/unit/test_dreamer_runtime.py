@@ -741,6 +741,9 @@ def test_every_read_only_tool_is_classified_unit_safe_or_room_scoped():
         # deliberately NOT in UNIT_SAFE_TOOLS: spec §7.4 records the
         # grant was NOT made.)
         "where_been",
+        # `routine_read` (design/27 §4.3): the same substrate behind the SAME
+        # guard as `where_been`, so the same fail-closed side.
+        "routine_read",
         # `online_now` (design/online-status/) answers about the ROOM's own
         # members — the invoking conversation's roster is its input domain
         # (03-guards), which a unit-keyed Dreamer tick does not have.
