@@ -284,7 +284,7 @@ async function startSocket() {
         log(`dropped id=${msg.key.id} chat=${redactJid(msg.key.remoteJid)} outer=[${outer}] inner=[${inner}]`);
         continue;
       }
-      log(`message id=${event.id || '?'} chat=${redactJid(event.chat_jid)} from=${redactJid(event.sender_jid)} group=${event.is_group} from_me=${event.from_me} edit=${!!event.edit_of} media=${event.media.length} buffered=${sseClients.size === 0}`);
+      log(`message id=${event.id || '?'} chat=${redactJid(event.chat_jid)} from=${redactJid(event.sender_jid)} group=${event.is_group} from_me=${event.from_me} edit=${!!event.edit_of} type=${event.type} media=${(event.media || []).length} buffered=${sseClients.size === 0}`);
       emitEvent(event);
     }
   });

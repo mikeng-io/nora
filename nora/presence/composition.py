@@ -27,6 +27,7 @@ from nora.config import Config
 from nora.infra.life360 import Life360Client
 from nora.infra.sql import create_sql_engine, run_migrations
 from nora.infra.sql.presence import PresenceStore
+from nora.infra.sql.source_health import SqlSourceHealthLog
 from nora.obs.metrics import Metrics
 from nora.persons import Persons, PersonsError, load_persons
 from nora.presence.collector import CircleSpec, PresenceCollector
@@ -137,8 +138,9 @@ def build_collector(cfg: Config) -> PresenceDependencies:
     except Exception as exc:
         raise PresenceStartupError(f"migration error: {exc}") from exc
 
+    engine = create_sql_engine(database_url)
     store = PresenceStore(
-        create_sql_engine(database_url),
+        engine,
         retention_days=presence.retention_days,
         metrics=metrics,
     )
@@ -160,6 +162,9 @@ def build_collector(cfg: Config) -> PresenceDependencies:
         cadence_moving_seconds=presence.cadence_moving_seconds,
         cadence_still_seconds=presence.cadence_still_seconds,
         metrics=metrics,
+        # Every poll's outcome, as Record (design/cognition-loop/20 §1): what
+        # lets a later step prove «the collector was healthy for the span».
+        health_log=SqlSourceHealthLog(engine),
     )
     log.info(
         "presence collector wired: %d circle(s), cadence %.0f-%.0fs, retention %dd",

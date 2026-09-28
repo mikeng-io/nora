@@ -47,7 +47,7 @@ bypass is the session setting the snapshot's seeding and test resets use.
 | # | step | ships | the reading that gates the next |
 |---|---|---|---|
 | 0 | **Tiers, words, grants — LANDED 2026-09-28** | DEC-217 for [10](10-tiers.md), [12](12-schemas.md), [15](15-map.md); DEC-218 granting the named write verbs through `AdaptorGrant` (write verbs are not act verbs) and `remind_move`/`remind_cancel` for Cognition's own reminders; each §3 amendment as its own row (DEC-219–DEC-230), and the missing index rows for R-31 and DEC-176; the unit read boundary settled (§4, DEC-231); GLOSSARY rewritten to [10](10-tiers.md)'s words, resolving the 14 conflicts below. Numbers as taken from `origin/master` when this landed; `nora-decision`'s numbering discipline may renumber them at merge. | — |
-| 1 | **Signals, shadow** | the durable `signal` table, the ingest signal stage, cues, the pending set, wake metrics; the wake evaluator in shadow (it logs each would-wake and its reason and fires nothing); reactions, edits and deletes or unsends ingested as items; collector polls and platform adapter health recorded; the clocks still run everything | a week of would-wakes and reasons; every wake value of [20](20-observe.md) §3 sized from it |
+| 1 | **Signals, shadow — BUILT 2026-09-28, not yet deployed** | the durable `signal` table, the ingest signal stage, cues, the pending set, wake metrics; the wake evaluator in shadow (it logs each would-wake and its reason and fires nothing); reactions, edits and deletes or unsends ingested as items; collector polls and platform adapter health recorded; the clocks still run everything | a week of would-wakes and reasons; every wake value of [20](20-observe.md) §3 sized from it |
 | 1b | **History and snapshot** | the append-only migration of every table in §5's inventory except the rows marked 2 or 2b, which migrate at those steps (system time, heads as views, loop state as transition rows; as built, DEC-232 amends "heads as views": the in-place tables stay the live heads and the chain is the trigger-written `row_history`, §5); doctrine, Dreamer-objective, config and deploy revisions recorded at load (§5); `nora snapshot --at T` (below) | a test writes, revises and retires across every store migrated here, then snapshots at two moments and gets exactly what was held at each; a recorded tag turn's blocks, rendered from a snapshot at its moment, equal the blocks its Langfuse trace recorded, with memory and the Live blocks (`tool_catalogue`, her platform presence, now) excepted and the transcript rendered through the media join as of T |
 | 2 | **Rollup and lineage** | the Rollup as a projection (logical watermark, `build`, citation by overlap), design 27's presence rollup moved onto the watermark; co-location, outing; daybook and tie partial ([25](25-rollup.md) §3); the [10](10-tiers.md) §3 columns, every lineage kind and its per-room predicate; the lineage backfill, then the filter; the `citation` edge table; `rollup_read`, `record_query`; wake defaults re-sized with Rollup signals | incremental and batch builds of each rollup agree exactly; no row with unknown lineage renders outside its origin room; a presence-lineaged field is refused in a room without the location flag and in one where DisclosureGuard fails |
 | 2b | **Events unit-wide** | the event migration (§5); `event_revision`, the lifecycle statuses, per-field modes; the event verbs with `base_revision_id`; the tag path's five event tools renamed everywhere (§8); `event_search` | existing `Gathering` tests and the tag path's event cases green; `tool_selection` no worse |
@@ -395,4 +395,28 @@ seed through the room snapshot (`sandbox_from_snapshot`); moving them onto
 `sandbox_as_of` changes what every case sees and ships with its own eval
 run.
 
-Steps 1 and 2–8 remain design only.
+**Step 1 built 2026-09-28** (branch `mikeng-io/cognition-step1-signals`, DEC-233,
+migration `0069_cognition_signal`, on 1b's `0068`): the append-only `signal` table and the
+ingest signal stage with deterministic cues (`nora/domain/cues.py`); the
+shadow wake evaluator (`nora/app/wake.py`), which records every would-wake in
+`cognition_wake` (`mode = 'shadow'`, also the shadow watermark) and fires
+nothing; reactions and deletes/unsends ingested as Record items on Signal,
+Instagram, Discord and WhatsApp (`message_reaction`, `message_delete`; the
+WhatsApp bridge emits them from this step); presence collector polls and
+adapter state transitions in `source_health`. Only the signals and the
+evaluator sit behind `[cognition] mode`, shipped `"off"`; the reaction and
+delete rows, the WhatsApp bridge's new event types, the presence poll rows
+and the adapter transitions are always on (Record, acting on nothing). The
+operator sets `"shadow"` at deploy and the gate — a week of would-wakes and
+reasons — is read from `cognition_wake` and
+`nora_cognition_wake_total{reason}`. Where the build fixed a value or a name,
+[20](20-observe.md) §3's «As built» note says so. Not built at step 1: the
+cited-message cues (they need step 2's `citation` table), place-name cues
+(no gazetteer), and `time` signals for anchors, revisits and event dates (the
+agenda reads those Register rows, step 3); the daily floors are the only
+`time` producer. Nothing reads the signal table for a decision yet. Under
+1b's system time, `signal`, `cognition_wake` and `source_health` are
+append-only (`recorded_at`), and `message_reaction` and `message_delete`,
+which cascade from `messages`, keep `row_history` like `message_edit`.
+
+Steps 2–8 remain design only.

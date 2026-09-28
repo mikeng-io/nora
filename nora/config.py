@@ -3279,6 +3279,78 @@ class DreamerConfig(BaseModel):
         return self.budgets.get(adaptor, DreamBudgetConfig())
 
 
+class CognitionConfig(BaseModel):
+    """The cognition loop's signals and wake evaluator
+    (design/cognition-loop/20-observe.md §3, migration step 1).
+
+    **Ships OFF** (`mode = "off"`): a new subsystem does not switch itself on,
+    the `[dreamer]`/`[analytics]` shape. Off, the ingest pipeline builds no
+    signal stage and no evaluator is spawned; nothing is written to `signal`
+    or `cognition_wake`.
+
+    **`mode = "shadow"`** is migration step 1: every recorded person-authored
+    item appends a signal with its cues, and the evaluator ticks every
+    `tick_seconds`, applying 20 §3's wake table and brakes exactly as it
+    would to start a session — and FIRES NOTHING. Each would-wake is recorded
+    with its reason and the signal range it would consume; the clocked Dreamer
+    adaptors keep running as before. A `live` mode arrives with the Cognition
+    adaptor (step 3/4), not here.
+
+    The wake numbers are 20 §3's STARTING values, every one a guess the
+    shadow week sizes. `quiet_seconds` and `max_age_seconds` reuse
+    `[dreamer]`'s key NAMES (20 §3), not their values: the Dreamer's clock
+    keeps its own 1800 s / 86400 s, untouched.
+
+    Two keys are not in 20 §3 and are this implementation's:
+    `shadow_session_seconds` is how long a would-wake is treated as a running
+    session, so single-flight and the cooldown can be exercised while nothing
+    runs; `floor_grace_seconds` is how late a daily floor may still be raised
+    after its instant (a restart at 07:02 raises the 07:00 floor; a deploy at
+    15:00 does not raise that morning's).
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    mode: Literal["off", "shadow"] = "off"
+    tick_seconds: float = Field(default=30.0, gt=0)
+    quiet_seconds: float = Field(default=600.0, ge=0)
+    cue_quiet_seconds: float = Field(default=120.0, ge=0)
+    rollup_delay_seconds: float = Field(default=60.0, ge=0)
+    batch_max: int = Field(default=80, ge=1)
+    max_age_seconds: float = Field(default=3600.0, gt=0)
+    cooldown_seconds: float = Field(default=300.0, ge=0)
+    max_concurrent_sessions: int = Field(default=2, ge=1)
+    reply_quiet_seconds: float = Field(default=600.0, ge=0)
+    shadow_session_seconds: float = Field(default=60.0, ge=0)
+    # The daily floors (20 §3: proactive's 07:00 HK and the curator's 00:00
+    # HK), local wall-clock "HH:MM" in `timezone`.
+    time_floors: list[str] = Field(default_factory=lambda: ["07:00", "00:00"])
+    timezone: str = "Asia/Hong_Kong"
+    floor_grace_seconds: float = Field(default=3600.0, ge=0)
+    store_timeout_seconds: float = Field(default=5.0, gt=0)
+
+    @field_validator("time_floors")
+    @classmethod
+    def _floors_are_wall_clock(cls, value: list[str]) -> list[str]:
+        for floor in value:
+            hh, _, mm = floor.partition(":")
+            if not (hh.isdigit() and mm.isdigit() and len(mm) == 2
+                    and 0 <= int(hh) < 24 and 0 <= int(mm) < 60):
+                raise ValueError(f"time_floors entry {floor!r} is not HH:MM")
+        return value
+
+    @field_validator("timezone")
+    @classmethod
+    def _zone_exists(cls, value: str) -> str:
+        from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+        try:
+            ZoneInfo(value)
+        except (ZoneInfoNotFoundError, ValueError) as exc:
+            raise ValueError(f"unknown timezone {value!r}") from exc
+        return value
+
+
 class LoggingConfig(BaseModel):
     """Where the log goes is no longer a setting: it goes to stdout.
 
@@ -3599,6 +3671,9 @@ class Config(BaseModel):
     # (`enabled = false`): off, no `DreamerRuntime` is constructed and the
     # existing consolidators keep running unchanged.
     dreamer: DreamerConfig = DreamerConfig()
+    # Optional and defaulted — see `CognitionConfig`. Ships OFF: no signal is
+    # written and no wake evaluator runs until the operator sets `mode`.
+    cognition: CognitionConfig = CognitionConfig()
     identity_file: Path
     policy_file: Path
     obs: ObsConfig

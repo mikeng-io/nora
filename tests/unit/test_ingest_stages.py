@@ -77,7 +77,7 @@ async def test_audit_failure_drops_the_message_and_never_raises(monkeypatch):
 
     recorded = await audit.run(message=_msg(), audit=store, metrics=metrics)
 
-    assert recorded is False
+    assert recorded is None
     assert store.rows == []
 
 
@@ -115,7 +115,7 @@ async def test_an_unmapped_sender_is_audited_but_never_fed():
     recorded = await audit.run(
         message=msg, audit=store, metrics=metrics, person=person
     )
-    assert recorded is True
+    assert recorded == 1
     assert len(store.rows) == 1
     assert store.rows[0]["person_id"] is None, "unmapped must be recorded as NULL"
 

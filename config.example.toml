@@ -2192,6 +2192,54 @@ max_memory_calls = 12
 lookup_person = 12
 
 
+# The cognition loop's signals and wake evaluator (design/cognition-loop/
+# 20-observe.md §3; migration step 1). SHIPS OFF: a new subsystem does not
+# switch itself on. `mode = "shadow"` is step 1: every recorded person-authored
+# item (a message, a changed edit, a reaction, a delete) appends one row to its
+# unit's `signal` table with its deterministic cues, and the evaluator ticks,
+# applies the wake table and every brake exactly as it would to start a
+# Cognition session, and FIRES NOTHING — it records each would-wake, its
+# reason and the signal range it would consume in `cognition_wake`. The clocked
+# Dreamer adaptors keep running unchanged. The operator turns it on at deploy
+# and reads a week of would-wakes to size the numbers below.
+[cognition]
+mode = "off"
+# How often the evaluator looks at every unit. One read per unit, no model.
+tick_seconds = 30
+# 20 §3's STARTING values, every one a guess the shadow week sizes.
+# `quiet_seconds` and `max_age_seconds` reuse [dreamer]'s key NAMES, not its
+# values: the Dreamer's own clock keeps 1800 / 86400.
+#
+# settled: a signal pending and the unit's rooms quiet this long.
+quiet_seconds = 600
+# strong cue: a date/time, a place link, a keep instruction or an RSVP
+# pending, then this much quiet.
+cue_quiet_seconds = 120
+# rollup: a Rollup signal has waited this long (no producer until step 2).
+rollup_delay_seconds = 60
+# batch: this many pending signals.
+batch_max = 80
+# max age: the oldest pending signal is this old.
+max_age_seconds = 3600
+# The brakes: a cooldown after each session (one strong cue may cut it once),
+# and at most this many sessions at once across units.
+cooldown_seconds = 300
+max_concurrent_sessions = 2
+# A person's reply to Nora's message (a quote of hers, or a reaction on hers)
+# inside this window is recorded and consumed, but never wakes a session alone.
+reply_quiet_seconds = 600
+# Not in 20 §3: how long a shadow would-wake is treated as a running session,
+# so single-flight and the cooldown are exercised while nothing runs.
+shadow_session_seconds = 60
+# The daily floors (proactive's 07:00, the curator's 00:00), local time in
+# `timezone`, raised as `time` signals once per unit per day, and only while
+# no more than `floor_grace_seconds` late (a deploy at 15:00 does not raise
+# that morning's 07:00).
+time_floors = ["07:00", "00:00"]
+timezone = "Asia/Hong_Kong"
+floor_grace_seconds = 3600
+store_timeout_seconds = 5
+
 
 [obs.logging]
 level = "INFO"

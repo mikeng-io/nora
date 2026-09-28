@@ -95,6 +95,10 @@ HISTORY_TABLES: dict[str, tuple[str, ...]] = {
     "music_session": ("guild_id",),
     "geocode_cache": ("lat_rounded", "lng_rounded"),
     "sticker_index": ("platform", "fetch_token"),
+    # Step 1 (0069): written append-only, but ON DELETE CASCADE from
+    # `messages`, `message_edit`'s case exactly.
+    "message_reaction": ("id",),
+    "message_delete": ("id",),
 }
 
 #: Append-only tables a restore copies, and each one's system-time column.
@@ -111,6 +115,11 @@ APPEND_ONLY: dict[str, str] = {
     "doctrine_revision": "recorded_at",
     "config_revision": "recorded_at",
     "deploy_revision": "recorded_at",
+    # Step 1 (0069): the cognition loop's signals, its wake log (a unit's
+    # watermark is its newest row, never a row rewritten) and source health.
+    "signal": "recorded_at",
+    "cognition_wake": "recorded_at",
+    "source_health": "recorded_at",
 }
 
 #: Changes in place today and migrates at a later step (70 §5). Not

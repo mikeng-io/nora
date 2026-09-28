@@ -454,9 +454,11 @@ test('a phone edit wrapped in editedMessage is unwrapped into an edit event', ()
 });
 
 test('non-edit protocol messages and contentless messages produce no event', () => {
+  // REVOKE is not in this list any more: it is a `delete` event since
+  // design/cognition-loop step 1 (pinned at the end of this file).
   assert.equal(extractMessageEvent({
     key: { id: 'P1', remoteJid: '176569@g.us', participant: '1@s.whatsapp.net' },
-    message: { protocolMessage: { type: 'REVOKE', key: { id: 'X' } } },
+    message: { protocolMessage: { type: 'EPHEMERAL_SETTING', key: { id: 'X' } } },
   }, {}), null);
 
   assert.equal(extractMessageEvent({
@@ -658,4 +660,48 @@ test('the editor is tried as the original sender, whatsmeow\'s first choice', ()
   });
   const opened = decryptSecretEdit(edit, { recentCache: cache, decode: (b) => proto.Message.decode(b) });
   assert.ok(opened.msg, `not decrypted: ${opened.reason}`);
+});
+
+// ── reactions and revokes (design/cognition-loop/20-observe.md §1) ─────────
+
+test('a reactionMessage becomes a reaction event naming its target', () => {
+  const event = extractMessageEvent({
+    key: { id: '3EB0F2', remoteJid: '176569000000000000@g.us', participant: '60000000000001:2@lid', fromMe: false },
+    pushName: 'Alice',
+    messageTimestamp: 1756963200,
+    message: { reactionMessage: { key: { id: '3EB0F1' }, text: '👍', senderTimestampMs: 1756963200123 } },
+  }, { lidToPhone: LID_MAP });
+  assert.equal(event.type, 'reaction');
+  assert.equal(event.target_id, '3EB0F1');
+  assert.equal(event.emoji, '👍');
+  assert.equal(event.removed, false);
+  assert.equal(event.timestamp_ms, 1756963200123);
+  assert.equal(event.sender_phone, '85290000100');
+});
+
+test('an empty reaction text is a removal', () => {
+  const event = extractMessageEvent({
+    key: { id: '3EB0F4', remoteJid: '176569000000000000@g.us', participant: '60000000000001:2@lid', fromMe: false },
+    messageTimestamp: 1756963200,
+    message: { reactionMessage: { key: { id: '3EB0F1' }, text: '' } },
+  }, { lidToPhone: LID_MAP });
+  assert.equal(event.type, 'reaction');
+  assert.equal(event.removed, true);
+  assert.equal(event.timestamp_ms, 1756963200000);
+});
+
+test('a REVOKE protocolMessage becomes a delete event naming its target', () => {
+  const event = extractMessageEvent({
+    key: { id: '3EB0F3', remoteJid: '176569000000000000@g.us', participant: '60000000000001:2@lid', fromMe: false },
+    messageTimestamp: 1756963200,
+    message: { protocolMessage: { type: 'REVOKE', key: { id: '3EB0F1' } } },
+  }, { lidToPhone: LID_MAP });
+  assert.equal(event.type, 'delete');
+  assert.equal(event.target_id, '3EB0F1');
+});
+
+test('a reaction or revoke naming no target is dropped', () => {
+  const base = { key: { id: 'X', remoteJid: '176569000000000000@g.us', participant: '1@s.whatsapp.net' }, messageTimestamp: 1 };
+  assert.equal(extractMessageEvent({ ...base, message: { reactionMessage: { text: '👍' } } }), null);
+  assert.equal(extractMessageEvent({ ...base, message: { protocolMessage: { type: 0 } } }), null);
 });

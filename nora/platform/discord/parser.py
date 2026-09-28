@@ -18,10 +18,10 @@ from __future__ import annotations
 import dataclasses
 import logging
 import re
-from typing import Protocol
+from typing import Any, Protocol
 
 from ...domain.media import MediaRef, label_for, render_placeholder
-from ...domain.models import EditTarget, NormalizedMessage, Quote
+from ...domain.models import EditTarget, NormalizedMessage, Quote, Touch
 from .snowflake import timestamp_ms as _timestamp_ms
 
 log = logging.getLogger("nora.discord.parser")
@@ -305,3 +305,80 @@ def parse_discord_edit(
     return dataclasses.replace(
         parsed, timestamp=ts, edit_of=EditTarget(message_id=str(message.id)),
     )
+
+
+def parse_discord_reaction(
+    payload: Any, *, own_id: str, removed: bool,
+) -> NormalizedMessage | None:
+    """`on_raw_reaction_add`/`on_raw_reaction_remove`'s
+    `RawReactionActionEvent` → a `Touch` on the message it names
+    (design/cognition-loop/20-observe.md §1).
+
+    The RAW events, for `on_raw_message_edit`'s reason: the cached ones fire
+    only for a message still in discord.py's cache. Guild channels only (a DM
+    reaction has no `guild_id`); Nora's own reaction is dropped (R-12). The
+    Gateway gives a reaction no time of its own, so `timestamp` is 0 and ingest
+    stamps arrival."""
+    try:
+        guild_id = getattr(payload, "guild_id", None)
+        if guild_id is None:
+            return None
+        user_id = str(getattr(payload, "user_id", "") or "")
+        if not user_id or user_id == own_id:
+            return None
+        emoji = str(getattr(payload, "emoji", "") or "")
+        message_id = str(getattr(payload, "message_id", "") or "")
+        if not emoji or not message_id:
+            return None
+        channel_id = getattr(payload, "channel_id", None)
+        return NormalizedMessage(
+            platform="discord",
+            conversation_id=f"{guild_id}/{channel_id}",
+            conversation_type="group",
+            sender_id=user_id,
+            sender_name=None,
+            timestamp=0,
+            body="",
+            raw={"message_id": message_id, "guild_id": guild_id,
+                 "channel_id": channel_id, "user_id": user_id, "emoji": emoji,
+                 "removed": removed},
+            touch=Touch(kind="reaction", target=EditTarget(message_id=message_id),
+                        emoji=emoji, removed=removed),
+        )
+    except Exception:
+        log.exception("unparseable discord reaction, skipping")
+        return None
+
+
+def parse_discord_delete(payload: Any) -> NormalizedMessage | None:
+    """`on_raw_message_delete`'s `RawMessageDeleteEvent` → a delete `Touch`.
+
+    The event names the message and its channel and NOT who deleted it (an
+    author or a moderator), so the sender is `""` and ingest attributes the
+    row to the target's author, keeping `sender_id` empty rather than claim
+    more. A bulk delete (`on_raw_bulk_message_delete`, a moderation purge) is
+    not recorded: it names no one and a purge is not a member withdrawing
+    something they said."""
+    try:
+        guild_id = getattr(payload, "guild_id", None)
+        if guild_id is None:
+            return None
+        message_id = str(getattr(payload, "message_id", "") or "")
+        if not message_id:
+            return None
+        channel_id = getattr(payload, "channel_id", None)
+        return NormalizedMessage(
+            platform="discord",
+            conversation_id=f"{guild_id}/{channel_id}",
+            conversation_type="group",
+            sender_id="",
+            sender_name=None,
+            timestamp=0,
+            body="",
+            raw={"message_id": message_id, "guild_id": guild_id,
+                 "channel_id": channel_id},
+            touch=Touch(kind="delete", target=EditTarget(message_id=message_id)),
+        )
+    except Exception:
+        log.exception("unparseable discord delete, skipping")
+        return None

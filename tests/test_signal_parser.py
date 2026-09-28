@@ -597,3 +597,52 @@ def test_mention_spans_is_total(event):
     from nora.platform.signal.parser import mention_spans
 
     assert mention_spans(event) == ()
+
+
+# ── reactions and remote deletes (design/cognition-loop/20-observe.md §1) ──
+
+
+def test_a_reaction_becomes_a_touch_on_the_message_it_reacts_to():
+    """Recorded beside its target, never a transcript line: the body is empty
+    and `touch` carries the target's (author, sent-timestamp) pair."""
+    msg = parse_event(envelope(message=None, reaction={
+        "emoji": "👍", "targetAuthor": "+85299990000",
+        "targetAuthorNumber": "+85299990000", "targetSentTimestamp": 1600,
+        "isRemove": False,
+    }), OWN)
+    assert msg is not None and msg.body == "" and msg.edit_of is None
+    assert msg.sender_id == "+85212345678" and msg.timestamp == 1700
+    assert msg.touch is not None
+    assert (msg.touch.kind, msg.touch.emoji, msg.touch.removed) == ("reaction", "👍", False)
+    assert msg.touch.target == EditTarget(sent_ts=1600)
+    assert msg.touch.target_author == "+85299990000"
+
+
+def test_a_reaction_taken_back_is_a_touch_marked_removed():
+    msg = parse_event(envelope(message=None, reaction={
+        "emoji": "❤️", "targetAuthorUuid": "8185b8fa-359a-4c0a-c6ed-24814dc655bb",
+        "targetSentTimestamp": 1600, "isRemove": True,
+    }), OWN)
+    assert msg is not None and msg.touch is not None
+    assert msg.touch.removed is True
+    assert msg.touch.target_author == "8185b8fa-359a-4c0a-c6ed-24814dc655bb"
+
+
+def test_a_remote_delete_becomes_a_delete_touch():
+    msg = parse_event(envelope(message=None, remoteDelete={"timestamp": 1600}), OWN)
+    assert msg is not None and msg.body == ""
+    assert msg.touch is not None and msg.touch.kind == "delete"
+    assert msg.touch.target == EditTarget(sent_ts=1600)
+
+
+def test_our_own_reaction_is_still_dropped():
+    """R-12: her own 👀 never comes back in as a Record item of someone else's."""
+    e = envelope(message=None, reaction={"emoji": "👀", "targetSentTimestamp": 1600})
+    e["params"]["envelope"]["source"] = OWN
+    assert parse_event(e, OWN) is None
+
+
+def test_a_touch_naming_no_target_is_dropped():
+    assert parse_event(envelope(message=None, remoteDelete={}), OWN) is None
+    assert parse_event(envelope(message=None, reaction={
+        "emoji": "", "targetSentTimestamp": 1600}), OWN) is None

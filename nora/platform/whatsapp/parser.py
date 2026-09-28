@@ -20,6 +20,12 @@ ingest records it beside the message it edits rather than as a row of its own
 (design/message-edits/03 §1). `message_id` stays the edit's own stanza id —
 the original's is what `edit_of` names.
 
+A `reaction` or a `delete` (REVOKE) event becomes a `Touch` on the message
+its `target_id` names (`_parse_touch`), recorded beside that message and
+never as a message of its own (design/cognition-loop/20-observe.md §1). The
+bridge emits both since 2026-09-28; before, both fell through its empty-turn
+drop.
+
 Never raises: one malformed event is logged and skipped, mirroring the
 sibling parsers — a bad turn must never kill the stream behind it.
 """
@@ -29,7 +35,7 @@ from __future__ import annotations
 import logging
 
 from ...domain.media import MediaRef, label_for, render_placeholder
-from ...domain.models import EditTarget, NormalizedMessage, Quote
+from ...domain.models import EditTarget, NormalizedMessage, Quote, Touch
 from .jid import (
     conversation_id_for,
     is_broadcast,
@@ -129,8 +135,62 @@ def _quoted(quoted: object) -> Quote | None:
     )
 
 
+def _parse_touch(event: dict) -> NormalizedMessage | None:
+    """A bridge `reaction` or `delete` event → a `Touch` (see the module
+    docstring). Nora's own (`from_me`) is dropped (R-12); so is one naming no
+    target, and one from a status broadcast or a newsletter. A DM's touch is
+    parsed like a group's; the room gate drops it at ingest, as it drops a DM
+    message (Nora does not take DMs)."""
+    if event.get("from_me"):
+        return None
+    chat_jid = event.get("chat_jid")
+    target = str(event.get("target_id") or "")
+    if not isinstance(chat_jid, str) or not chat_jid or not target:
+        return None
+    if is_broadcast(chat_jid) or is_newsletter(chat_jid):
+        return None
+    if event.get("type") == "reaction":
+        emoji = event.get("emoji")
+        emoji = emoji if isinstance(emoji, str) else ""
+        # A removal carries NO emoji on WhatsApp: the row records `""` and
+        # `removed`, rather than guess which of the sender's reactions it was.
+        touch = Touch(
+            kind="reaction", target=EditTarget(message_id=target),
+            emoji=emoji, removed=bool(event.get("removed")) or not emoji,
+        )
+    else:
+        touch = Touch(kind="delete", target=EditTarget(message_id=target))
+    is_group = bool(event.get("is_group")) or is_group_jid(chat_jid)
+    resolved_phone = event.get("sender_phone")
+    timestamp_ms = event.get("timestamp_ms")
+    return NormalizedMessage(
+        platform="whatsapp",
+        conversation_id=conversation_id_for(
+            chat_jid, resolved_phone if isinstance(resolved_phone, str) else None,
+        ),
+        conversation_type="group" if is_group else "dm",
+        sender_id=sender_form(
+            str(event.get("sender_jid") or ""),
+            resolved_phone if isinstance(resolved_phone, str) else None,
+            event.get("sender_lid") if isinstance(event.get("sender_lid"), str) else None,
+        ),
+        sender_name=event.get("push_name") or None,
+        timestamp=(
+            timestamp_ms
+            if isinstance(timestamp_ms, int) and not isinstance(timestamp_ms, bool)
+            else 0
+        ),
+        body="",
+        raw=event,
+        message_id=str(event.get("id") or ""),
+        touch=touch,
+    )
+
+
 def parse_event(event: dict) -> NormalizedMessage | None:
     try:
+        if isinstance(event, dict) and event.get("type") in ("reaction", "delete"):
+            return _parse_touch(event)
         if not isinstance(event, dict) or event.get("type") != "message":
             return None                     # heartbeat / dropped are listener-level
         if event.get("from_me"):

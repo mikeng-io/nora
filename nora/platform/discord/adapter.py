@@ -37,7 +37,12 @@ from .music_commands import register as register_music_commands
 from .music_commands import resume_persisted_sessions as resume_persisted_music_sessions
 from .music_manager import MusicPlayerManager
 from .music_notify import ResolveMusicChannel, no_music_channel
-from .parser import parse_discord_edit, parse_discord_message
+from .parser import (
+    parse_discord_delete,
+    parse_discord_edit,
+    parse_discord_message,
+    parse_discord_reaction,
+)
 from .react import DiscordReactor
 from .self_id import derive_identity
 from .send import DEFAULT_API_BASE, DiscordSender
@@ -229,8 +234,25 @@ class DiscordAdapter:
                 async with _lock_for(raw_message):
                     await on_message(message)
 
+        # A reaction or a delete reaches the SAME `on_message` too, as a
+        # `NormalizedMessage` with `touch` set (design/cognition-loop/20 §1),
+        # under the channel's lock so it cannot race the message it touches.
+        async def _on_discord_touch(kind: str, payload: Any) -> None:
+            message = (
+                parse_discord_delete(payload) if kind == "delete"
+                else parse_discord_reaction(
+                    payload, own_id=self._own_id, removed=kind == "reaction_remove",
+                )
+            )
+            if message is not None:
+                key = str(getattr(payload, "channel_id", ""))
+                async with channel_locks.setdefault(key, asyncio.Lock()):
+                    await on_message(message)
+
         try:
-            await self._listener.listen(_on_discord_message, _on_discord_edit)
+            await self._listener.listen(
+                _on_discord_message, _on_discord_edit, _on_discord_touch,
+            )
         finally:
             # `Client.start()` is `login()` then `connect()`. `connect()` closes
             # the client itself before re-raising, but `login()` raising — a

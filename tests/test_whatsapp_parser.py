@@ -305,3 +305,48 @@ def test_a_malformed_event_is_none_not_an_exception():
     assert parse_event({"type": "message"}) is None
     assert parse_event(event(timestamp_ms="junk")) is not None  # degrades to 0
     assert parse_event(event(mentioned="not-a-list")) is not None
+
+
+# ── reactions and revokes (design/cognition-loop/20-observe.md §1) ───────────
+
+
+def _touch_event(kind: str, **over) -> dict:
+    e = {
+        "type": kind, "id": "3EB0F2", "chat_jid": GROUP_JID, "is_group": True,
+        "from_me": False, "sender_jid": f"{ALICE_PHONE}@s.whatsapp.net",
+        "sender_phone": ALICE_PHONE, "sender_lid": ALICE_LID, "push_name": "Alice",
+        "target_id": "3EB0F1A2B3C4", "timestamp_ms": 1756963200500,
+    }
+    if kind == "reaction":
+        e.update(emoji="👍", removed=False)
+    e.update(over)
+    return e
+
+
+def test_a_reaction_is_a_touch_on_the_stanza_it_names():
+    from nora.domain.models import EditTarget
+
+    msg = parse_event(_touch_event("reaction"))
+    assert msg is not None and msg.body == "" and msg.edit_of is None
+    assert msg.conversation_id == parse_event(event()).conversation_id
+    assert msg.sender_id == parse_event(event()).sender_id
+    assert msg.touch is not None
+    assert (msg.touch.kind, msg.touch.emoji, msg.touch.removed) == ("reaction", "👍", False)
+    assert msg.touch.target == EditTarget(message_id="3EB0F1A2B3C4")
+    assert msg.timestamp == 1756963200500
+
+
+def test_an_empty_reaction_is_a_removal_with_no_emoji_claimed():
+    msg = parse_event(_touch_event("reaction", emoji="", removed=True))
+    assert msg is not None and msg.touch is not None
+    assert (msg.touch.emoji, msg.touch.removed) == ("", True)
+
+
+def test_a_revoke_is_a_delete_touch():
+    msg = parse_event(_touch_event("delete"))
+    assert msg is not None and msg.touch is not None and msg.touch.kind == "delete"
+
+
+def test_nora_s_own_touch_and_one_naming_nothing_are_dropped():
+    assert parse_event(_touch_event("reaction", from_me=True)) is None
+    assert parse_event(_touch_event("delete", target_id="")) is None

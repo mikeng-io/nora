@@ -85,8 +85,10 @@ def test_the_platform_message_id_is_carried_because_react_addresses_by_it():
 def test_a_non_message_kind_is_dropped():
     """`kind`, not WhatsApp's `type`. The parser stays total on its own even
     though the listener swallows two of these. `edit` is not in the list: it
-    is an edit now (design/message-edits/03 §1), pinned below."""
-    for kind in ("heartbeat", "dropped", "reaction", "unsend", "typing"):
+    is an edit now (design/message-edits/03 §1), pinned below; nor are
+    `reaction` and `unsend`, which are touches now
+    (design/cognition-loop/20 §1), pinned at the end of this file."""
+    for kind in ("heartbeat", "dropped", "typing"):
         assert parse_event(_event(kind=kind)) is None
 
 
@@ -1035,3 +1037,62 @@ def test_an_unlinked_share_keeps_the_whole_caption():
     ))
     assert msg.body == f"[shared story by @some.account — {LONG_CAPTION.strip()}] [cover image]"
     assert "…" not in msg.body
+
+
+# --- reactions and unsends (design/cognition-loop/20-observe.md §1) ---------
+
+
+def test_a_reaction_is_a_touch_on_the_message_it_names():
+    """The bridge's `reactionEvent`, field for field: recorded beside its
+    target by handle, with the reactor as sender and never a body."""
+    msg = parse_event({
+        "kind": "reaction", "room_id": ROOM, "message_id": "mid.$target",
+        "sender_fbid": SENDER_FBID, "emoji": "😂", "removed": False,
+        "from_me": False, "timestamp_ms": 1789985625999,
+    })
+    assert msg is not None and msg.body == "" and msg.edit_of is None
+    assert msg.sender_id == SENDER_FBID and msg.timestamp == 1789985625999
+    assert msg.touch is not None
+    assert (msg.touch.kind, msg.touch.emoji, msg.touch.removed) == ("reaction", "😂", False)
+    assert msg.touch.target == EditTarget(message_id="mid.$target")
+
+
+def test_a_removed_reaction_is_marked_and_nora_s_own_is_dropped():
+    removed = parse_event({
+        "kind": "reaction", "room_id": ROOM, "message_id": "mid.$target",
+        "sender_fbid": SENDER_FBID, "emoji": "😂", "removed": True, "from_me": False,
+    })
+    assert removed is not None and removed.touch is not None and removed.touch.removed
+    assert removed.timestamp == 0          # ingest stamps arrival
+    assert parse_event({
+        "kind": "reaction", "room_id": ROOM, "message_id": "mid.$target",
+        "sender_fbid": NORA_FBID, "emoji": "👀", "removed": False, "from_me": True,
+    }) is None
+
+
+def test_an_unsend_is_a_delete_touch_with_no_sender():
+    """`unsendEvent` is a message id and nothing else (`from_me` null by
+    contract), so the sender is left empty for ingest to attribute."""
+    msg = parse_event({
+        "kind": "unsend", "room_id": ROOM, "message_id": "mid.$gone", "from_me": None,
+    })
+    assert msg is not None and msg.sender_id == "" and msg.body == ""
+    assert msg.touch is not None and msg.touch.kind == "delete"
+    assert msg.touch.target == EditTarget(message_id="mid.$gone")
+
+
+def test_a_touch_naming_nothing_is_dropped():
+    assert parse_event({"kind": "unsend", "room_id": ROOM, "message_id": ""}) is None
+    assert parse_event({"kind": "reaction", "room_id": ROOM,
+                        "message_id": "mid.$t", "emoji": ""}) is None
+
+
+def test_a_reaction_removal_with_no_emoji_is_still_a_removal():
+    """The bridge's `DeleteReactionEvent` reuses the reaction struct and may
+    carry no emoji; the removal is recorded with `""`, not dropped."""
+    msg = parse_event({
+        "kind": "reaction", "room_id": ROOM, "message_id": "mid.$target",
+        "sender_fbid": SENDER_FBID, "emoji": "", "removed": True, "from_me": False,
+    })
+    assert msg is not None and msg.touch is not None
+    assert (msg.touch.emoji, msg.touch.removed) == ("", True)

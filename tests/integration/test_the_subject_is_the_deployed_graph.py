@@ -33,7 +33,7 @@ async def test_obtain_returns_the_production_graph(spec) -> None:
     """Same type, same builder, same field count as `nora/__main__.py` gets."""
     subject = await obtain(spec)
     assert isinstance(subject.deps, Dependencies)
-    assert len(dataclasses.fields(Dependencies)) == 46, (
+    assert len(dataclasses.fields(Dependencies)) == 49, (
         "Dependencies changed shape; the subject follows it automatically, but "
         "this number is here so a change is noticed rather than absorbed. "
         "38 -> 40 on 2026-09-17: `relevance_gate` and `fire_path`, the two "
@@ -61,7 +61,11 @@ async def test_obtain_returns_the_production_graph(spec) -> None:
         "45 -> 46 on 2026-09-28: `revisions`, the store the daemon records "
         "each doctrine, Dreamer, config and deploy load through "
         "(cognition-loop step 1b), so `nora snapshot --at T` can say what "
-        "was in force."
+        "was in force. "
+        "46 -> 49 on 2026-09-28: `wake_evaluator` and `wake_tick_seconds`, the "
+        "cognition loop's shadow evaluator (None under `[cognition] mode = "
+        "off`), and `health_recorder`, adapter health as Record "
+        "(design/cognition-loop step 1)."
     )
 
 

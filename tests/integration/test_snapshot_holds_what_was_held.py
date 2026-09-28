@@ -68,6 +68,14 @@ ROWS: dict[str, Callable[[int], dict[str, Any]]] = {
     "message_edit": lambda i: {
         "id": 3000 + i, "message_id": 1000, "ts": MS0 + i, "body": f"edit {i}",
     },
+    # Step 1's two cascading children of `messages` (0069).
+    "message_reaction": lambda i: {
+        "id": 4000 + i, "message_id": 1000, "sender_id": f"s{i}", "emoji": "👍",
+        "ts": MS0 + i,
+    },
+    "message_delete": lambda i: {
+        "id": 5000 + i, "message_id": 1000, "sender_id": "", "ts": MS0 + i,
+    },
     "note_candidate": lambda i: {
         "id": _uuid("nc", i), "unit": "u", "kind": "miss", "probe": f"p{i}",
         "first_seen_at": MS0, "last_seen_at": MS0, "occurrence_count": 1,
@@ -150,6 +158,8 @@ ROWS: dict[str, Callable[[int], dict[str, Any]]] = {
 REVISE: dict[str, tuple[str, Callable[[int], Any]]] = {
     "messages": ("delivery_status", lambda i: f"delivered-{i}"),
     "message_edit": ("body", lambda i: f"re-edited {i}"),
+    "message_reaction": ("removed", lambda i: 1),
+    "message_delete": ("ts", lambda i: MS0 + 100 + i),
     "note_candidate": ("occurrence_count", lambda i: 10 + i),
     "note": ("strikes", lambda i: 1 + i),
     "culture": ("updated_at", lambda i: MS0 + 1000 + i),
@@ -207,6 +217,19 @@ APPEND: dict[str, Callable[[int], dict[str, Any]]] = {
         "file": "policy.toml", "path": "/p", "content_sha256": f"{n:064x}", "loaded_at": T0,
     },
     "deploy_revision": lambda n: {"started_at": T0, "manifest_status": "absent"},
+    # Step 1 (0069): the cognition loop's signals, wake log and source health.
+    "signal": lambda n: {
+        "unit": "u", "kind": "message", "item": "message", "ref": f"messages:{n}",
+        "at_ms": MS0 + n,
+    },
+    "cognition_wake": lambda n: {
+        "unit": "u", "mode": "shadow", "reason": "settled", "from_signal_id": 0,
+        "through_signal_id": n, "signal_count": 1, "eligible_count": 1, "at_ms": MS0 + n,
+    },
+    "source_health": lambda n: {
+        "source": "presence", "scope": "c1", "event": "poll", "outcome": "ok",
+        "at_ms": MS0 + n,
+    },
 }
 
 

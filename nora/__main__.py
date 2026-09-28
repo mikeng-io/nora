@@ -21,7 +21,7 @@ from pathlib import Path
 
 from . import config
 from .agent.telemetry import setup_agent_tracing
-from .app import adoption, cli, runtime
+from .app import adoption, cli, runtime, wake
 from .app.composition import Dependencies, StartupError, build_dependencies
 from .app.revisions import RevisionRecorder
 from .config import ConfigError
@@ -293,6 +293,17 @@ class App:
             )
         else:
             log.info("dream loop disabled (dreamer.enabled = false)")
+        # The cognition loop's wake evaluator, in SHADOW (design/cognition-loop/
+        # 20 §3, migration step 1): it records would-wakes and fires nothing;
+        # the Dreamer's clock above keeps running everything. `None` under
+        # `[cognition] mode = "off"`, the shipped default.
+        if deps.wake_evaluator is not None:
+            deps.background.spawn(wake.wake_loop(
+                deps.wake_evaluator, deps.metrics,
+                tick_seconds=deps.wake_tick_seconds,
+            ))
+        else:
+            log.info("cognition wake evaluator disabled (cognition.mode = off)")
         deps.background.spawn(runtime.debounce_sweep_loop(
             deps.debounce, deps.metrics,
             interval_seconds=DEBOUNCE_SWEEP_INTERVAL_SECONDS,
@@ -360,16 +371,24 @@ class App:
         answer goes to its own series instead, which is append-only and breaks
         nothing.
         """
+        recorder = self.deps.health_recorder
         while True:
             await asyncio.sleep(10.0)
             for adapter in self.deps.registry:
                 try:
-                    age = (await adapter.health()).last_event_age_seconds
+                    health = await adapter.health()
                 except Exception:
                     # A gauge never takes the loop down: one adapter's failing
                     # health() must not stop the others being published.
                     log.exception("health() failed for adapter %s", adapter.platform)
+                    if recorder is not None:
+                        await recorder.unknown(adapter.platform)
                     continue
+                # The same sample, recorded as a transition when the state
+                # changed (design/cognition-loop/20 §1): source health is Record.
+                if recorder is not None:
+                    await recorder.sample(health)
+                age = health.last_event_age_seconds
                 if age is None:
                     continue
                 self.deps.metrics.gauge(

@@ -22,19 +22,20 @@ async def run(
     audit: RecordStore,
     metrics: Any,
     person: PersonRef | None = None,
-) -> bool:
-    """Return True if the message was recorded and ingest should continue.
+) -> int | None:
+    """Return the recorded row's id, or None when the message was dropped and
+    ingest should stop. The id is what the signal stage names the Record item
+    by (`messages:<id>`, design/cognition-loop/20-observe.md §3).
 
     `person` is already resolved (identity runs first) so it lands in this one
     INSERT rather than a follow-up UPDATE — WAL allows a single writer and this
     path drops the message on contention.
     """
     try:
-        await audit.append(
+        return await audit.append(
             message=message, person_id=person.person_id if person else None
         )
     except Exception:
         log.exception("audit append failed; dropping message")
         metrics.inc("nora_errors_total", stage="ambient", platform=message.platform)
-        return False
-    return True
+        return None

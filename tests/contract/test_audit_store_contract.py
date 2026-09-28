@@ -742,3 +742,84 @@ async def test_activity_last_ts_is_not_bounded_by_the_window(store):
     got = await store.room_activity(conversation_id="g1", since_ts=100)
 
     assert (got.count, got.last_ts) == (0, 3)
+
+
+# ── reactions and deletes (design/cognition-loop/20-observe.md §1, step 1) ────
+
+
+def _touch(kind: str, *, ts: int, sender: str = "+852222", emoji: str = "",
+           removed: bool = False) -> NormalizedMessage:
+    from nora.domain.models import Touch
+
+    return NormalizedMessage(
+        platform="signal", conversation_id="g1", conversation_type="group",
+        sender_id=sender, sender_name=None, timestamp=ts, body="",
+        raw={"touch": kind, "ts": ts},
+        touch=Touch(kind=kind, target=EditTarget(sent_ts=1), emoji=emoji,  # type: ignore[arg-type]
+                    removed=removed),
+    )
+
+
+async def _touch_rows(store) -> tuple[list[tuple], list[tuple]]:
+    """(reactions, deletes) as tuples, read from whichever store this is —
+    the port has no read for them on purpose (nothing reads them yet)."""
+    if isinstance(store, FakeRecordStore):
+        return (
+            [(r["message_id"], r["sender_id"], r["person_id"], r["emoji"],
+              bool(r["removed"]), r["ts"], json.loads(r["raw_json"]))
+             for r in store.reactions],
+            [(d["message_id"], d["sender_id"], d["person_id"], d["ts"],
+              json.loads(d["raw_json"])) for d in store.deletes],
+        )
+    import sqlalchemy as sa
+
+    from nora.infra.sql.schema import MESSAGE_DELETE, MESSAGE_REACTION
+
+    async with store._engine.connect() as conn:
+        reactions = (await conn.execute(sa.select(
+            MESSAGE_REACTION.c.message_id, MESSAGE_REACTION.c.sender_id,
+            MESSAGE_REACTION.c.person_id, MESSAGE_REACTION.c.emoji,
+            MESSAGE_REACTION.c.removed, MESSAGE_REACTION.c.ts,
+            MESSAGE_REACTION.c.raw_json,
+        ).order_by(MESSAGE_REACTION.c.id))).all()
+        deletes = (await conn.execute(sa.select(
+            MESSAGE_DELETE.c.message_id, MESSAGE_DELETE.c.sender_id,
+            MESSAGE_DELETE.c.person_id, MESSAGE_DELETE.c.ts, MESSAGE_DELETE.c.raw_json,
+        ).order_by(MESSAGE_DELETE.c.id))).all()
+    return (
+        [(r[0], r[1], r[2], r[3], bool(r[4]), r[5], json.loads(r[6])) for r in reactions],
+        [(d[0], d[1], d[2], d[3], json.loads(d[4])) for d in deletes],
+    )
+
+
+async def test_a_reaction_and_its_removal_are_two_rows_beside_the_message(store):
+    """Append-only: taking a reaction back is its own row, and neither is a
+    `messages` row, so the transcript is unchanged."""
+    target = await store.append(message=_msg(body="dinner at 8", ts=1))
+    first = await store.append_reaction(
+        message_id=target, message=_touch("reaction", ts=5, emoji="👍"), person_id="p2")
+    second = await store.append_reaction(
+        message_id=target, message=_touch("reaction", ts=9, emoji="👍", removed=True),
+        person_id="p2")
+    assert second > first
+    reactions, deletes = await _touch_rows(store)
+    assert reactions == [
+        (target, "+852222", "p2", "👍", False, 5, {"touch": "reaction", "ts": 5}),
+        (target, "+852222", "p2", "👍", True, 9, {"touch": "reaction", "ts": 9}),
+    ]
+    assert deletes == []
+    rows = await store.recent(conversation_id="g1", limit=10)
+    assert [r.body for r in rows] == ["dinner at 8"]
+
+
+async def test_a_delete_is_recorded_and_the_message_still_reads(store):
+    """The delete is the Record item the withdrawal cascade (step 2c) will be
+    fed from; hiding the row is that step's, not this one's."""
+    target = await store.append(message=_msg(body="dinner at 8", ts=1))
+    did = await store.append_delete(
+        message_id=target, message=_touch("delete", ts=7, sender=""), person_id=None)
+    assert did >= 1
+    _, deletes = await _touch_rows(store)
+    assert deletes == [(target, "", None, 7, {"touch": "delete", "ts": 7})]
+    rows = await store.recent(conversation_id="g1", limit=10)
+    assert [r.body for r in rows] == ["dinner at 8"]

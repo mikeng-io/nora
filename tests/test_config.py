@@ -1864,3 +1864,47 @@ def test_no_sidecars_loads_and_fails_closed(toml_path):
 
     assert cfg.speech.tts.sidecars == []
     assert cfg.speech.tts.sidecars_by_guild == {}
+
+
+# ── [cognition] (design/cognition-loop/20-observe.md §3, migration step 1) ──
+
+
+def test_cognition_ships_off_with_20s_starting_values(toml_path):
+    """A new subsystem does not switch itself on; the numbers are 20 §3's."""
+    c = load(toml_path).cognition
+    assert c.mode == "off"
+    assert (c.quiet_seconds, c.cue_quiet_seconds, c.rollup_delay_seconds,
+            c.batch_max, c.max_age_seconds, c.cooldown_seconds,
+            c.max_concurrent_sessions, c.reply_quiet_seconds) == (
+        600, 120, 60, 80, 3600, 300, 2, 600,
+    )
+    assert c.time_floors == ["07:00", "00:00"] and c.timezone == "Asia/Hong_Kong"
+
+
+def test_the_cognition_section_is_optional(toml_path):
+    text = toml_path.read_text()
+    start = text.index("[cognition]")
+    end = text.index("[obs.logging]")
+    toml_path.write_text(text[:start] + text[end:])
+    assert load(toml_path).cognition.mode == "off"
+
+
+def test_cognition_shadow_is_the_one_other_mode(toml_path):
+    text = toml_path.read_text().replace(
+        '[cognition]\nmode = "off"', '[cognition]\nmode = "shadow"')
+    toml_path.write_text(text)
+    assert load(toml_path).cognition.mode == "shadow"
+    toml_path.write_text(text.replace('[cognition]\nmode = "shadow"', '[cognition]\nmode = "live"'))
+    with pytest.raises(ConfigError):
+        load(toml_path)
+
+
+def test_a_floor_that_is_not_hh_mm_or_an_unknown_zone_refuses_to_start(toml_path):
+    text = toml_path.read_text()
+    toml_path.write_text(_set_key(text, "time_floors", '["7am"]'))
+    with pytest.raises(ConfigError):
+        load(toml_path)
+    toml_path.write_text(text.replace('timezone = "Asia/Hong_Kong"\nfloor_grace_seconds',
+                                      'timezone = "Mars/Olympus"\nfloor_grace_seconds'))
+    with pytest.raises(ConfigError):
+        load(toml_path)

@@ -339,3 +339,57 @@ def test_a_sticker_name_never_reaches_the_body():
     assert result is not None
     assert "85212345678" not in result.body
     assert result.body == "[sticker]"
+
+
+# ── reactions and deletes (design/cognition-loop/20-observe.md §1) ──────────
+
+
+@dataclass
+class _RawReaction:
+    """The fields `RawReactionActionEvent` carries that the parser reads."""
+
+    message_id: int = 1497000000000000001
+    channel_id: int = 22
+    guild_id: int | None = 11
+    user_id: int = 42
+    emoji: str = "🔥"
+
+
+@dataclass
+class _RawDelete:
+    message_id: int = 1497000000000000001
+    channel_id: int = 22
+    guild_id: int | None = 11
+
+
+def test_a_raw_reaction_is_a_touch_on_its_message():
+    from nora.domain.models import EditTarget
+    from nora.platform.discord.parser import parse_discord_reaction
+
+    msg = parse_discord_reaction(_RawReaction(), own_id="999", removed=False)
+    assert msg is not None and msg.conversation_id == "11/22"
+    assert msg.sender_id == "42" and msg.body == "" and msg.timestamp == 0
+    assert msg.touch is not None
+    assert (msg.touch.kind, msg.touch.emoji, msg.touch.removed) == ("reaction", "🔥", False)
+    assert msg.touch.target == EditTarget(message_id="1497000000000000001")
+    removed = parse_discord_reaction(_RawReaction(), own_id="999", removed=True)
+    assert removed is not None and removed.touch is not None and removed.touch.removed
+
+
+def test_nora_s_own_reaction_and_a_dm_reaction_are_dropped():
+    from nora.platform.discord.parser import parse_discord_reaction
+
+    assert parse_discord_reaction(_RawReaction(user_id=999), own_id="999", removed=False) is None
+    assert parse_discord_reaction(_RawReaction(guild_id=None), own_id="999",
+                                  removed=False) is None
+
+
+def test_a_raw_delete_is_a_delete_touch_naming_no_one():
+    from nora.domain.models import EditTarget
+    from nora.platform.discord.parser import parse_discord_delete
+
+    msg = parse_discord_delete(_RawDelete())
+    assert msg is not None and msg.sender_id == "" and msg.conversation_id == "11/22"
+    assert msg.touch is not None and msg.touch.kind == "delete"
+    assert msg.touch.target == EditTarget(message_id="1497000000000000001")
+    assert parse_discord_delete(_RawDelete(guild_id=None)) is None

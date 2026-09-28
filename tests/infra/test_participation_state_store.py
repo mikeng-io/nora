@@ -69,7 +69,8 @@ async def engine(_participation_db: str) -> AsyncIterator[Any]:
             # (migration 0068, nora.infra.sql.history.CAPTURE_SETTING).
             await conn.execute(sa.text("SET LOCAL nora.row_history = 'off'"))
             await conn.execute(
-                sa.text("truncate participation_window_state, messages, message_edit")
+                sa.text("truncate participation_window_state, messages, message_edit, "
+                        "message_reaction, message_delete")
             )
         await eng.dispose()
 
