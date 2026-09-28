@@ -799,8 +799,7 @@ def time_forecast(
             run.insert(0, s)
         since = None
         if (
-            run and len(run) < len(closed)
-            and now_ms - run[-1].ended_ts <= _SAME_VISIT_MS
+            run and now_ms - run[-1].ended_ts <= _SAME_VISIT_MS
             and run[0].started_ts >= window_start
         ):
             hit = window_minute(run[0].started_ts, tz, from_hour, to_hour)

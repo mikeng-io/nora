@@ -496,3 +496,12 @@ def test_the_middle_half_is_symmetric_at_four_trips():
         ))
     [p] = trip_patterns(stays, trips, tz_name="Asia/Hong_Kong")
     assert (p.usual_min_minutes, p.usual_max_minutes) == (32, 34)
+
+
+def test_a_home_stay_that_ended_long_ago_does_not_date_this_visit():
+    """Home 19:00-19:30 on record, nothing since, home again at 20:40: they may
+    have gone out in between, so when they got in is not known."""
+    wed = MONDAY + timedelta(days=7 * 7 + 2)
+    today = [_stay(wed, 9, 18, OFFICE), _stay(wed, 19, 19.5, HOME)]
+    fc = _fc(_wednesday_nights(7, set()) + today, week=7, now_h=20 + 40 / 60, at_place_now=True)
+    assert (fc.today, fc.done_minute) == ("done", None)
