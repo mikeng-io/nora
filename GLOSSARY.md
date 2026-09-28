@@ -358,8 +358,9 @@ Other words this bundle introduces:
 - **reasoning** — the mode a derived row was reached by: `computed`, `told`,
   `deduced`, `induced`, `abduced`, `said` (`10-tiers.md` §4). Never the
   model's chain of thought.
-- **signal** — what ingestion, the Rollup or the clock raises to wake
-  Cognition. Never an event.
+- **stimulus** (plural **stimuli**) — what ingestion, the Rollup or the clock
+  raises to wake Cognition. Never the Signal platform, never a Python/OS
+  signal, never an event.
 - **cognition** — the fast adaptor: orient, decide, act in one session per
   unit per wake. Never a tier, never "the cognition tier" or "a cognition
   layer" (see *placement*, below).

@@ -49,6 +49,19 @@ def test_every_preserved_name_still_renders():
         assert f"TYPE {name} " in text, f"{name} missing from /metrics"
 
 
+def test_the_cognition_stimulus_metrics_render_under_their_renamed_names():
+    """DEC-234: `nora_signal_total`/`nora_signal_pending_age_seconds` were
+    renamed to `nora_stimulus_total`/`nora_stimulus_pending_age_seconds` hours
+    after DEC-233 shipped them — the one stated exception to metric names
+    being append-only, made before any dashboard depended on the old names.
+    The new names render; the old ones are gone outright, not aliased."""
+    text = Metrics().render()
+    assert "TYPE nora_stimulus_total " in text
+    assert "TYPE nora_stimulus_pending_age_seconds " in text
+    assert "nora_signal_total" not in text
+    assert "nora_signal_pending_age_seconds" not in text
+
+
 def test_prometheus_client_does_not_double_the_total_suffix():
     """prometheus-client auto-appends `_total` to a Counter's name unless it
     already ends with `_total` — every declared counter name here already

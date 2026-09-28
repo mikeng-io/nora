@@ -92,7 +92,7 @@ flowchart BT
   end
   REC[(RECORD · lake)]
   ROL[(ROLLUP · computed<br/>episodes · aggregates)]
-  SIG[(signals · per unit)]
+  SIG[(stimuli · per unit)]
   REG[(REGISTER<br/>note · memo · event)]
   CHR[(CHARACTER<br/>person · room · unit · Nora)]
   LES[(LESSONS<br/>per unit)]
@@ -113,7 +113,7 @@ flowchart BT
 
   SRC -->|ingestion + perception, code| REC
   REC -->|Rollup builder, code| ROL
-  REC & ROL -->|signals| SIG
+  REC & ROL -->|stimuli| SIG
   SIG -->|wakes| COG
   COG -->|wake_at| SIG
   REC -->|feeds| MEM
@@ -136,8 +136,8 @@ flowchart BT
   MEM --> COG & TAG
 ```
 
-Solid arrows are writes, reads and signals; dotted arrows are citations,
-which only point down. What she says becomes Record and raises no signal
+Solid arrows are writes, reads and stimuli; dotted arrows are citations,
+which only point down. What she says becomes Record and raises no stimulus
 ([20](20-observe.md) §3). Every adaptor reads the tiers and blocks it needs;
 the read arrows are left out. The two layers are the operator's model
 ([55](55-self.md) §6): the subconscious drives the conscious, through the

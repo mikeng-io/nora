@@ -1,0 +1,6 @@
+{
+  "type": "change",
+  "summary": "Nora's background loop waits for 30 minutes of quiet before it considers a conversation settled.",
+  "details": [],
+  "limitations": []
+}

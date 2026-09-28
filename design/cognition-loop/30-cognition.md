@@ -25,16 +25,16 @@ writes them.
 
 Built once per session, in code, before any model call:
 
-- **The situation.** The Record items that raised the pending signals, each
+- **The situation.** The Record items that raised the pending stimuli, each
   with its author, its room, **its age**, its cues and its perception (what a
   photo shows, whose faces, with confidence); the Rollup rows that raised
-  signals; the index lines of the Register rows those items touch; the unit's
+  stimuli; the index lines of the Register rows those items touch; the unit's
   clock in HK time; how long since the last session. Index lines, not
   bodies: Register, Character, Lessons and Standing bodies are pulled with
   read tools when the session needs them, and never pushed, except the
   capped `culture`, `self` and `lessons` blocks ([15](15-map.md) §3–4).
 - **The agenda.** One item per thing that needs attention, computed by code
-  from the signals: *room R has 23 new messages*; *event E's place is named
+  from the stimuli: *room R has 23 new messages*; *event E's place is named
   in 3 messages since it was set*; *a co-location of 3 members began at a
   place at 20:05*; *P's week deviates from their rhythm*; *note N's anchor
   passed*; *4 new story frames from 2 members*; *a self-wake on event E is
@@ -42,8 +42,8 @@ Built once per session, in code, before any model call:
   by computed surprise ([80](80-prior-art.md) §4) and hands at most
   `max_items` (starting at 12); the rest wait for the next session.
 
-**Every item binds one room**: the room its signal came from, or, for an item
-with none (a Rollup, `time`, `self`, social or play signal), the unit's home
+**Every item binds one room**: the room its stimulus came from, or, for an item
+with none (a Rollup, `time`, `self`, social or play stimulus), the unit's home
 room (39 D2). That
 item's room-scoped reads resolve through its room (R-21), and every read
 returns only what its room may be shown ([10](10-tiers.md) §3). Which tools a
@@ -62,7 +62,7 @@ An agenda with no items is no session: zero model calls, the rule every
 adaptor keeps today.
 
 **A session is replayable.** Its row records its inputs: the situation and
-agenda as handed, the signal ids it claimed, the doctrine sha256, the skill
+agenda as handed, the stimulus ids it claimed, the doctrine sha256, the skill
 versions injected, the config revision in force, and the model id and route
 (a column, not only a trace attribute). With the stores as of its start
 ([10](10-tiers.md) §8), that is enough to run it again.
@@ -74,7 +74,7 @@ versions injected, the config revision in force, and the model id and route
 | **read** | every read tool the registry admits (`read_only_tools()`) except the live social reads ([20](20-observe.md) §2), plus the warehouse queries of [15](15-map.md) §4: `record_query`, `rollup_read`, `event_search`, `memo_read`, `character_read`, `standing_read`, `social_items` | returns into context, filtered by the item's room |
 | **write** | one family per tier: Register (`note_create`, `note_update`, `memo_write`, `memo_withdraw`, `event_propose` (status `staged` or `proposed`), `event_revise`, `event_set_status`), Standing (`standing_revise`); each takes `base_revision_id`. Character's and Lessons' verbs belong to their own adaptors ([50](50-character-and-standing.md) §6) | code validates, then commits (§3) |
 | **act** | `remind(at, room, brief)`, the one act verb; `room` is the agenda item's bound room. `remind_move(reminder_id, at, why)` and `remind_cancel(reminder_id, why)` for reminders Cognition itself wrote, never a person's | a reminder row; the fire path composes it when due |
-| **pace** | `wake_at(at, subject_rows, why)`, `wake_move(wake_id, at, why)`, `wake_cancel(wake_id, why)` | write verbs on the unit's signal table, not a tier: a `self` signal due at `at` ([20](20-observe.md) §3); nothing leaves for a room |
+| **pace** | `wake_at(at, subject_rows, why)`, `wake_move(wake_id, at, why)`, `wake_cancel(wake_id, why)` | write verbs on the unit's stimulus table, not a tier: a `self` stimulus due at `at` ([20](20-observe.md) §3); nothing leaves for a room |
 | **close** | `close(item, reason)` | ends one agenda item |
 
 **Every act is a reminder** (DEC-162's decide/compose split, kept). Cognition
@@ -177,7 +177,7 @@ it can rewrite, and counted by rule; never silently dropped.
 **The pace verbs** (`wake_at`, `wake_move`, `wake_cancel`) pass checks 1
 (their subject rows resolve to ids shown or fetched) and 10 (provenance and
 history), plus the self-wake guards of [20](20-observe.md) §3. They carry no
-schema, mode or lineage: they write a signal, not a tier.
+schema, mode or lineage: they write a stimulus, not a tier.
 
 **Enforced by code on every act** — the general guards, and the only ones:
 
@@ -192,8 +192,8 @@ schema, mode or lineage: they write a signal, not a tier.
   does, and a reminder about a row is cancelled before it fires when that
   row is retired or revised on the tag path (DEC-162 D11).
 
-**Deviation is a signal, not a rule.** No gate is specific to it. It enters
-her context like any other signal, and whether and how to act on it is her
+**Deviation is a stimulus, not a rule.** No gate is specific to it. It enters
+her context like any other stimulus, and whether and how to act on it is her
 judgement from everything she can read.
 
 **Measured by the assess pass, not enforced** (§6): whether a citation

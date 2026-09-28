@@ -23,7 +23,7 @@ from nora.domain.reasoning_strip import (
     STRIP_OUTCOMES,
     WRITE_OUTCOMES,
 )
-from nora.domain.signals import SIGNAL_KINDS, WAKE_BRAKES, WAKE_MODES, WAKE_REASONS
+from nora.domain.stimuli import STIMULUS_KINDS, WAKE_BRAKES, WAKE_MODES, WAKE_REASONS
 from nora.domain.summons import (
     FOLLOW_UP_OUTCOMES,
     INTAKE_OUTCOMES,
@@ -2265,18 +2265,24 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "pushed out of the full inbox by a newer one.",
         ("outcome",),
     ),
-    # The cognition loop's signals and its shadow wake evaluator
+    # The cognition loop's stimuli and its shadow wake evaluator
     # (design/cognition-loop/20-observe.md §3-§4, migration step 1). Both
-    # vocabularies are DERIVED from `nora.domain.cues` / `nora.domain.signals`.
+    # vocabularies are DERIVED from `nora.domain.cues` / `nora.domain.stimuli`.
+    # `nora_stimulus_total` and `nora_stimulus_pending_age_seconds` were
+    # `nora_signal_total`/`nora_signal_pending_age_seconds` for hours after
+    # #615 (DEC-233); renamed the same day, before any dashboard depended on
+    # the old spelling, to stop clashing with Signal the platform (operator
+    # 2026-09-29, DEC-234) — the one stated exception to metric names being
+    # append-only.
     _CounterSpec(
-        "nora_signal_total",
-        "Signals appended to a unit's signal table, by kind ("
-        + " / ".join(SIGNAL_KINDS)
+        "nora_stimulus_total",
+        "Stimuli appended to a unit's stimulus table, by kind ("
+        + " / ".join(STIMULUS_KINDS)
         + ") and cue ("
         + " / ".join((*CUES, "none"))
-        + "). ONE INCREMENT PER (signal, cue): a signal carrying two cues "
+        + "). ONE INCREMENT PER (stimulus, cue): a stimulus carrying two cues "
         "counts twice, one carrying none counts once under cue=none, so the "
-        "sum over cue is not the signal count. A person's item raises one "
+        "sum over cue is not the stimulus count. A person's item raises one "
         "(kind=message); a daily floor raises one (kind=time); Nora's own "
         "items raise none.",
         ("kind", "cue"),
@@ -2288,7 +2294,7 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         + ") and mode ("
         + " / ".join(WAKE_MODES)
         + "). mode=shadow is a WOULD-wake: recorded with its reason and "
-        "signal range in cognition_wake, and nothing fired (migration step "
+        "stimulus range in cognition_wake, and nothing fired (migration step "
         "1). The operator sizes the wake values from this week of rows.",
         ("reason", "mode"),
     ),
@@ -2566,8 +2572,8 @@ _GAUGES: tuple[_GaugeSpec, ...] = (
         "operator must clear it), 0 after a write published.",
     ),
     _GaugeSpec(
-        "nora_signal_pending_age_seconds",
-        "Age of a unit's oldest pending signal that could wake it (a reply "
+        "nora_stimulus_pending_age_seconds",
+        "Age of a unit's oldest pending stimulus that could wake it (a reply "
         "to Nora inside reply_quiet_seconds does not count), set by the wake "
         "evaluator each tick; 0 when nothing is pending "
         "(design/cognition-loop/20-observe.md §4). ABSENT until the "

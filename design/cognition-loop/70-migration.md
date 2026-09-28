@@ -19,7 +19,7 @@ kept, and what is replaced is how it is woken and how its work is divided.
 | part | fate |
 |---|---|
 | `DreamerRuntime.run` (`nora/agent/dreamer.py`), the Strands dream agent, `AdaptorBudget`, `DreamGuard`, `AdaptorGrant` and home-room resolution, `UNIT_SAFE_TOOLS` and `tool_subset_faults`, `RegistryToolSource`, telemetry | **kept**: they host the four adaptors ([00](00-intent.md) §3); `AdaptorGrant` gains the named write verbs by a new DEC (step 0) |
-| `dream_loop`, `_dream_adaptor_once`, `seed_watermarks` (`nora/app/runtime.py`), `AdaptorSchedule`, per-adaptor clocks | **replaced** by the wake evaluator, the signal table and each adaptor's own watermark and wake rule ([20](20-observe.md) §3) |
+| `dream_loop`, `_dream_adaptor_once`, `seed_watermarks` (`nora/app/runtime.py`), `AdaptorSchedule`, per-adaptor clocks | **replaced** by the wake evaluator, the stimulus table and each adaptor's own watermark and wake rule ([20](20-observe.md) §3) |
 | `note_candidates`, `note_curator`, `note_merge` (`nora/language/`) | **replaced by the Cognition adaptor** after cut-over; their objectives become its skills ([30](30-cognition.md) §4) |
 | the proactive adaptor | **replaced by the Cognition adaptor**, whose act step it becomes; its writes to the shared decision log (DEC-179) become Cognition's |
 | the ingest-triggered Standing fold (`nora/ingest/stages/standing_event.py`) | **replaced by the Cognition adaptor**'s `standing_revise` (room case) |
@@ -47,9 +47,9 @@ bypass is the session setting the snapshot's seeding and test resets use.
 | # | step | ships | the reading that gates the next |
 |---|---|---|---|
 | 0 | **Tiers, words, grants — LANDED 2026-09-28** | DEC-217 for [10](10-tiers.md), [12](12-schemas.md), [15](15-map.md); DEC-218 granting the named write verbs through `AdaptorGrant` (write verbs are not act verbs) and `remind_move`/`remind_cancel` for Cognition's own reminders; each §3 amendment as its own row (DEC-219–DEC-230), and the missing index rows for R-31 and DEC-176; the unit read boundary settled (§4, DEC-231); GLOSSARY rewritten to [10](10-tiers.md)'s words, resolving the 14 conflicts below. Numbers as taken from `origin/master` when this landed; `nora-decision`'s numbering discipline may renumber them at merge. | — |
-| 1 | **Signals, shadow — BUILT 2026-09-28, not yet deployed** | the durable `signal` table, the ingest signal stage, cues, the pending set, wake metrics; the wake evaluator in shadow (it logs each would-wake and its reason and fires nothing); reactions, edits and deletes or unsends ingested as items; collector polls and platform adapter health recorded; the clocks still run everything | a week of would-wakes and reasons; every wake value of [20](20-observe.md) §3 sized from it |
+| 1 | **Stimuli, shadow — BUILT 2026-09-28, not yet deployed; renamed from `signal` 2026-09-29 (DEC-234)** | the durable `stimulus` table, the ingest stimulus stage, cues, the pending set, wake metrics; the wake evaluator in shadow (it logs each would-wake and its reason and fires nothing); reactions, edits and deletes or unsends ingested as items; collector polls and platform adapter health recorded; the clocks still run everything | a week of would-wakes and reasons; every wake value of [20](20-observe.md) §3 sized from it |
 | 1b | **History and snapshot** | the append-only migration of every table in §5's inventory except the rows marked 2 or 2b, which migrate at those steps (system time, heads as views, loop state as transition rows; as built, DEC-232 amends "heads as views": the in-place tables stay the live heads and the chain is the trigger-written `row_history`, §5); doctrine, Dreamer-objective, config and deploy revisions recorded at load (§5); `nora snapshot --at T` (below) | a test writes, revises and retires across every store migrated here, then snapshots at two moments and gets exactly what was held at each; a recorded tag turn's blocks, rendered from a snapshot at its moment, equal the blocks its Langfuse trace recorded, with memory and the Live blocks (`tool_catalogue`, her platform presence, now) excepted and the transcript rendered through the media join as of T |
-| 2 | **Rollup and lineage** | the Rollup as a projection (logical watermark, `build`, citation by overlap), design 27's presence rollup moved onto the watermark; co-location, outing; daybook and tie partial ([25](25-rollup.md) §3); the [10](10-tiers.md) §3 columns, every lineage kind and its per-room predicate; the lineage backfill, then the filter; the `citation` edge table; `rollup_read`, `record_query`; wake defaults re-sized with Rollup signals | incremental and batch builds of each rollup agree exactly; no row with unknown lineage renders outside its origin room; a presence-lineaged field is refused in a room without the location flag and in one where DisclosureGuard fails |
+| 2 | **Rollup and lineage** | the Rollup as a projection (logical watermark, `build`, citation by overlap), design 27's presence rollup moved onto the watermark; co-location, outing; daybook and tie partial ([25](25-rollup.md) §3); the [10](10-tiers.md) §3 columns, every lineage kind and its per-room predicate; the lineage backfill, then the filter; the `citation` edge table; `rollup_read`, `record_query`; wake defaults re-sized with Rollup stimuli | incremental and batch builds of each rollup agree exactly; no row with unknown lineage renders outside its origin room; a presence-lineaged field is refused in a room without the location flag and in one where DisclosureGuard fails |
 | 2b | **Events unit-wide** | the event migration (§5); `event_revision`, the lifecycle statuses, per-field modes; the event verbs with `base_revision_id`; the tag path's five event tools renamed everywhere (§8); `event_search` | existing `Gathering` tests and the tag path's event cases green; `tool_selection` no worse |
 | 2c | **Withdrawal cascade** | `unsupported` marking over the citation table, fed by step 1's deletes, the PII scrub and a person leaving a unit; `nora person forget` and `unforget` (soft, §9) for the stores that exist | a cascade test withdraws one Record item and finds every row citing it `unsupported`, in every store; a forget followed by a snapshot before it restores everything |
 | 3 | **Cognition, shadow** | the Cognition adaptor's session and agenda; its note, event and Standing verbs in dry run (would-write rows recorded, nothing committed); the pace verbs and self-wakes in shadow; skills injected; `standing_revise` and the room Standing schema, live: the debrief and the ingest fold both write through it from here, so the head has one shape; the act verb mirrored and held ([30](30-cognition.md) §2), read against the live proactive pass's decisions; the Assess adaptor, nightly data-quality checks and labelled corpora ([30](30-cognition.md) §6); `tool_selection` on the cognition catalogue | the truncated dinner case passes ([40](40-register.md) §5); the event and note corpora meet their gates; over a shadow week every clocked-adaptor write is matched or deliberately closed; the act caps and dedupe hold in shadow |
@@ -79,7 +79,7 @@ at step 1, the assess pass at step 3): a lesson takes effect with no approval
 step, so the portal page that shows and rolls it back, and the tension path
 that catches one loosening doctrine, must exist first, and both ship at 8.
 
-Steps 5 and 6 need step 1 (signals), step 2 (lineage kinds, rollup tables)
+Steps 5 and 6 need step 1 (stimuli), step 2 (lineage kinds, rollup tables)
 and the act verb (step 4); their ingestion may be built from step 2 on, in
 shadow. Perception reuses ingest comprehension throughout
 ([20](20-observe.md) §1).
@@ -103,7 +103,7 @@ this revision; this bundle does not edit GLOSSARY):
 12. "conversation — the unit" and "scope" (:452, :462);
 13. the peer card "returned null in this deployment" (:93–95);
 14. missing entries: Record, Rollup, Register, memo, episode, aggregate,
-    lineage, reasoning, signal, cognition, event (code `Gathering`).
+    lineage, reasoning, stimulus, cognition, event (code `Gathering`).
 
 ## 3. What this supersedes and amends
 
@@ -269,7 +269,7 @@ are identified by that deploy row. The daemon writes all four
   whose citations cannot be resolved gets origin-room-only lineage.
 - **`citation` edge table.** Filled from existing citations, then written with
   every revision.
-- **New tables**: `signal`, `session` (with its agenda items, close reasons
+- **New tables**: `stimulus`, `session` (with its agenda items, close reasons
   and self-wake transitions), `event_revision`, `memo`, `character`,
   `lesson`, `tension`, `assess_report`, face labels and templates, the
   transition tables of the inventory, `doctrine_revision` (doctrine and the
@@ -307,11 +307,11 @@ and step 6's matcher each have their own off switch.
 
 | failure | what happens |
 |---|---|
-| database down | no session; ingestion fails as it does today; pending signals are rows, so nothing is lost once it returns |
-| model down | the session fails, its signals are released, per-unit backoff; nothing is written |
+| database down | no session; ingestion fails as it does today; pending stimuli are rows, so nothing is lost once it returns |
+| model down | the session fails, its stimuli are released, per-unit backoff; nothing is written |
 | Honcho down | memory hints are absent; `character_revise` for a person is refused rather than written from partial evidence |
-| analytics process down | no Rollup signals; the recorded polls show the gap, so no deviation is raised |
-| bridge or login down | poll outcomes counted; no social signals; nothing inferred from the absence |
+| analytics process down | no Rollup stimuli; the recorded polls show the gap, so no deviation is raised |
+| bridge or login down | poll outcomes counted; no social stimuli; nothing inferred from the absence |
 | perception cap reached | items recorded unperceived |
 
 ## 8. Tag-path changes
@@ -358,7 +358,7 @@ step's PR:
 - `nora_cognition_item_total{kind,reason}`;
   `nora_cognition_corrected_total{tier}`; refusals by rule,
   `nora_cognition_refused_total{verb,rule}`; acts by result;
-  `nora_cognition_unit_tokens_total{unit}`; the signal metrics of
+  `nora_cognition_unit_tokens_total{unit}`; the stimulus metrics of
   [20](20-observe.md) §4; `nora_dq_failures_total{check}`;
   `nora_face_match_total{outcome}`; `nora_self_tension_total{doctrine_file}`;
   `nora_self_wake_total{transition}`; per-adaptor wakes and sessions;
@@ -418,5 +418,18 @@ agenda reads those Register rows, step 3); the daily floors are the only
 1b's system time, `signal`, `cognition_wake` and `source_health` are
 append-only (`recorded_at`), and `message_reaction` and `message_delete`,
 which cascade from `messages`, keep `row_history` like `message_edit`.
+
+**Step 1's `signal` renamed to `stimulus` 2026-09-29** (branch
+`mikeng-io/cognition-stimulus-rename`, DEC-234, migration `0070_stimulus_rename`,
+on step 1's `0069`): "signal" collided with Signal, the platform Nora lives
+on. Everywhere above that names step 1's build keeps its 2026-09-28 spelling
+as the historical record of what shipped that day; from 2026-09-29 the table,
+its indexes and constraints, `cognition_wake`'s `from_signal_id` /
+`through_signal_id` / `signal_count` columns, every Python symbol, and the
+metrics `nora_signal_total` / `nora_signal_pending_age_seconds` are `stimulus`
+/ `stimuli` throughout the tree — see DEC-234 for the full old→new map. The
+Signal platform itself (`nora/platform/signal/`, `signal-cli`, the `signal`
+platform string, room platform names) is untouched: only the cognition-loop's
+own concept moved.
 
 Steps 2–8 remain design only.

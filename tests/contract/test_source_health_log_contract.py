@@ -1,7 +1,7 @@
 """Shared contract for the source health log (design/cognition-loop/20 §1).
 
 `nora.infra.sql.source_health.SqlSourceHealthLog` over real Postgres and
-`nora.testing.signals.InMemorySourceHealthLog`. The property: a row is
+`nora.testing.stimuli.InMemorySourceHealthLog`. The property: a row is
 appended with what it was told, and a write that fails answers False rather
 than raising (health is recorded beside the work it describes and must never
 stop it).
@@ -17,7 +17,7 @@ import sqlalchemy as sa
 
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.source_health import SqlSourceHealthLog
-from nora.testing.signals import InMemorySourceHealthLog
+from nora.testing.stimuli import InMemorySourceHealthLog
 
 NOW = 1_790_000_000_000
 
