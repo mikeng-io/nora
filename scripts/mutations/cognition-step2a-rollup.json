@@ -61,5 +61,40 @@
     "old": "        for place_id in sorted(kept):\n            await self._rebuild_rhythm(",
     "new": "        for place_id in sorted(kept - {s.place_id for s in all_stays}):\n            await self._rebuild_rhythm(",
     "target": "tests/unit/test_analytics_rollup.py::test_a_tier3_failure_leaves_the_fold_committed_and_is_retried"
+  },
+  {
+    "name": "the unit rollups read messages at or below the watermark's mark only",
+    "file": "nora/infra/sql/rollups.py",
+    "old": "            .where(self._in_rooms(unit.rooms), MESSAGES.c.id <= mark.message_id)",
+    "new": "            .where(self._in_rooms(unit.rooms))",
+    "target": "tests/integration/test_rollup_builds.py::test_every_rollup_recomputes_identically_from_the_record"
+  },
+  {
+    "name": "the fold reads fixes recorded at or before its watermark only",
+    "file": "nora/infra/sql/mobility.py",
+    "old": "                fix_recorded <= through_ms,\n",
+    "new": "",
+    "target": "tests/integration/test_rollup_builds.py::test_every_rollup_recomputes_identically_from_the_record"
+  },
+  {
+    "name": "an outing needs every member's home known (the unlabeled home case)",
+    "file": "nora/domain/rollup.py",
+    "old": "            len(self.persons) >= 2 and not self.at_home_of and not self.homes_unknown",
+    "new": "            len(self.persons) >= 2 and not self.at_home_of",
+    "target": "tests/unit/test_unit_rollups.py::test_a_member_with_no_known_home_makes_it_not_an_outing"
+  },
+  {
+    "name": "silence needs the room's platform proved up for the window (R-27)",
+    "file": "nora/domain/rollup.py",
+    "old": "        elif platform_up.get(s.id, False):",
+    "new": "        elif True:",
+    "target": "tests/unit/test_unit_rollups.py::test_silence_is_only_called_when_an_answer_was_expected_and_the_room_was_up"
+  },
+  {
+    "name": "a deviation is raised only when the collector's polls were healthy for its span (D3)",
+    "file": "nora/analytics/units.py",
+    "old": "            polls_healthy(rows, scope=circle, start_ms=deviation.start_ms,",
+    "new": "            True or polls_healthy(rows, scope=circle, start_ms=deviation.start_ms,",
+    "target": "tests/integration/test_rollup_builds.py::test_a_deviation_is_raised_only_on_healthy_sources"
   }
 ]
