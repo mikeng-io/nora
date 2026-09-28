@@ -1,0 +1,51 @@
+[
+  {
+    "name": "signal stage: Nora's own item is no longer refused",
+    "file": "nora/ingest/stages/signal.py",
+    "old": "    if _authored_by_nora(message, target, wiring.self_ids):\n        return None",
+    "new": "    if False:\n        return None",
+    "target": "tests/unit/test_ingest_signals.py::test_nora_s_own_item_raises_no_signal tests/unit/test_ingest_signals.py::test_the_stage_refuses_nora_s_item_directly"
+  },
+  {
+    "name": "signal stage: an unattributed delete of Nora's message is treated as a person's",
+    "file": "nora/ingest/stages/signal.py",
+    "old": "    return not message.sender_id and target is not None and target.is_nora",
+    "new": "    return False",
+    "target": "tests/unit/test_ingest_signals.py::test_an_unattributed_delete_of_nora_s_message_is_recorded_and_raises_nothing"
+  },
+  {
+    "name": "signal stage: a reply to Nora inside the window is no longer marked waits",
+    "file": "nora/ingest/stages/signal.py",
+    "old": "        and at_ms - answers <= wiring.reply_quiet_seconds * 1000",
+    "new": "        and False",
+    "target": "tests/unit/test_ingest_signals.py::test_a_reply_to_nora_inside_the_window_waits_and_outside_it_does_not"
+  },
+  {
+    "name": "wake policy: a waits signal counts toward a trigger",
+    "file": "nora/domain/signals.py",
+    "old": "    eligible = [s for s in view.pending if not s.waits]\n    if not eligible:\n        return None",
+    "new": "    eligible = list(view.pending)\n    if not eligible:\n        return None",
+    "target": "tests/unit/test_wake_evaluator.py::test_a_reply_to_nora_never_wakes_a_unit_by_itself"
+  },
+  {
+    "name": "watermark: a signal due later is consumed by an earlier wake",
+    "file": "nora/domain/signals.py",
+    "old": "            and signal.pending_since_ms <= self.through_ms",
+    "new": "            and True",
+    "target": "tests/contract/test_signal_store_contract.py::test_a_signal_due_later_stays_pending_across_an_earlier_wake"
+  },
+  {
+    "name": "cooldown: a strong cue may cut it twice in a row",
+    "file": "nora/domain/signals.py",
+    "old": "        if not (strong and cue_quiet and not last_cut):",
+    "new": "        if not (strong and cue_quiet):",
+    "target": "tests/unit/test_wake_evaluator.py::test_one_strong_cue_may_cut_the_cooldown_once"
+  },
+  {
+    "name": "shadow evaluator: gains an import that can act (the fire path)",
+    "file": "nora/app/wake.py",
+    "old": "from nora.domain.ports import SignalStore\n",
+    "new": "from nora.app.fire import FirePath  # noqa: F401\nfrom nora.domain.ports import SignalStore\n",
+    "target": "tests/architecture/test_the_wake_evaluator_cannot_act.py::test_the_evaluator_imports_nothing_that_acts"
+  }
+]
