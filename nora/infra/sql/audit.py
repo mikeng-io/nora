@@ -73,9 +73,17 @@ def _latest_edit(*, edits_before: int | None = None) -> Any:
 
 def transcript_select(*, edits_before: int | None = None) -> Any:
     """The columns every transcript read returns, with the newest edit
-    folded in. ONE select for `recent`, `since`, `since_including_nora` and
-    the snapshot's as-of read, so the fold cannot reach one and miss another;
-    `transcript_row` is its mapping."""
+    folded in. ONE select for `recent`, `since`, `since_including_nora`,
+    `record_query` and the snapshot's as-of read, so the fold cannot reach
+    one and miss another; `transcript_row` is its mapping.
+
+    **`hidden_at IS NULL`** (migration `0075_withdrawal`, step 2c): a message
+    `nora person forget` hid is excluded from every transcript this select
+    powers — a prompt block, a tool result, `record_query`, and the
+    snapshot's as-of read, which copies the historical row image (`hidden_at`
+    as it stood at T) into the sandbox and then reads it through this same
+    select, so a snapshot before a forget correctly shows the row unhidden
+    (design/cognition-loop/10-tiers.md §9's own gate)."""
     latest = _latest_edit(edits_before=edits_before)
     return sa.select(
         MESSAGES.c.id, MESSAGES.c.sender_id, MESSAGES.c.sender_name,
@@ -84,7 +92,9 @@ def transcript_select(*, edits_before: int | None = None) -> Any:
         MESSAGES.c.quoted_ts, MESSAGES.c.media_json, MESSAGES.c.person_id,
         latest.c.ts.label("edit_ts"), latest.c.body.label("edit_body"),
         latest.c.raw_json.label("edit_raw_json"),
-    ).select_from(MESSAGES.outerjoin(latest, sa.true()))
+    ).select_from(MESSAGES.outerjoin(latest, sa.true())).where(
+        MESSAGES.c.hidden_at.is_(None),
+    )
 
 
 def _edit_mentions_json(message: NormalizedMessage) -> str | None:

@@ -74,6 +74,7 @@ class SqlParticipationStateStore:
                 == PARTICIPATION_WINDOW_STATE.c.conversation_id,
                 # Her own replies are not candidates — see the module docstring.
                 MESSAGES.c.is_nora == 0,
+                MESSAGES.c.hidden_at.is_(None),
             )
             .order_by(MESSAGES.c.ts.desc(), MESSAGES.c.id.desc())
             .limit(1)

@@ -163,7 +163,9 @@ async def gather(url: str, *, since: int) -> GatheredRows:
                 sa.select(
                     MESSAGES.c.id, MESSAGES.c.conversation_id, MESSAGES.c.ts,
                     MESSAGES.c.quoted_ts, MESSAGES.c.is_nora,
-                ).where(MESSAGES.c.ts >= since).order_by(MESSAGES.c.ts)
+                ).where(
+                    MESSAGES.c.ts >= since, MESSAGES.c.hidden_at.is_(None),
+                ).order_by(MESSAGES.c.ts)
             )).all()
     finally:
         await engine.dispose()

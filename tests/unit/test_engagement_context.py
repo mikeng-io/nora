@@ -741,6 +741,59 @@ async def test_a_failed_standing_read_is_counted_rather_than_swallowed():
         "nora_errors_total", stage="standing", platform="signal") == 1
 
 
+async def test_an_unsupported_standing_position_does_not_render():
+    """WITHDRAWAL (design/cognition-loop/10-tiers.md §2 rule 7, migration
+    `0075_withdrawal`, step 2c): a room's position the cascade marked
+    `unsupported_at` must stop reaching the `standing` block — the same
+    `None` a conversation with no fold yet already gets, never a stale
+    opinion. `read()` itself still returns the row (a store-level fake
+    proves that separately); this is the NEGATIVE the render path owes."""
+    from nora.domain.standing import Standing
+    from nora.testing import InMemoryStandingStore
+
+    store = InMemoryStandingStore()
+    await store.write(standing=Standing(
+        platform="signal", conversation_id="g1", body="a position",
+        fold_count=1, updated_at=1, unsupported_at=123,
+    ))
+    assembler = TranscriptInjection(
+        audit=FakeRecordStore(), memory=FakeMemory(), persons=_MILES,
+        context_window=10, metrics=Metrics(), standing=store,
+    )
+    ctx = await assembler.assemble(request=_request())
+    assert ctx.standing is None
+    # `read()` itself is untouched — the store still holds and returns the
+    # real row, so a future re-derivation has something to read.
+    read_back = await store.read(platform="signal", conversation_id="g1")
+    assert read_back is not None and read_back.unsupported_at == 123
+
+
+async def test_an_unsupported_culture_account_does_not_render():
+    """The same guarantee, for the `culture` block (Character · room).
+    `InMemoryCultureStore` (`nora.testing`) is the shared fake; this only
+    marks the appended head `unsupported`, the same thing the withdrawal
+    cascade (`nora.app.withdrawal`) does in Postgres — a local twist on the
+    shared fake, not a second implementation of `CultureReader`."""
+    import dataclasses
+
+    from nora.testing.culture_store import InMemoryCultureStore
+
+    store = InMemoryCultureStore()
+    revision = await store.append(
+        key="g1", body="an account", written_at=1, established_by="fold",
+    )
+    store._revisions[revision.id] = dataclasses.replace(
+        revision, unsupported_at=456,
+    )
+    assembler = TranscriptInjection(
+        audit=FakeRecordStore(), memory=FakeMemory(), persons=_MILES,
+        context_window=10, metrics=Metrics(),
+        culture=store, policy=_policy(),
+    )
+    ctx = await assembler.assemble(request=_request())
+    assert ctx.culture is None
+
+
 async def test_the_tag_path_reads_presence_at_turn_start():
     """design/self-awareness/02: the assembler hands the reader the turn's
     own room, and what it returns reaches `TagContext.presence` — the one

@@ -292,8 +292,13 @@ class SqlRollupStore:
                 quoted.c.platform == MESSAGES.c.platform,
                 quoted.c.ts == MESSAGES.c.quoted_ts,
                 quoted.c.id <= mark.message_id,
+                quoted.c.hidden_at.is_(None),
             )))
-            .where(self._in_rooms(unit.rooms), MESSAGES.c.id <= mark.message_id)
+            .where(
+                self._in_rooms(unit.rooms),
+                MESSAGES.c.id <= mark.message_id,
+                MESSAGES.c.hidden_at.is_(None),
+            )
             .order_by(MESSAGES.c.id, quoted.c.id)
         )
         target = MESSAGES.alias("target")
@@ -312,6 +317,7 @@ class SqlRollupStore:
                 MESSAGE_REACTION.c.id <= mark.reaction_id,
                 MESSAGE_REACTION.c.removed == 0,
                 MESSAGE_REACTION.c.person_id.is_not(None),
+                target.c.hidden_at.is_(None),
                 sa.or_(*(
                     sa.and_(target.c.platform == p, target.c.conversation_id == c)
                     for p, c in unit.rooms

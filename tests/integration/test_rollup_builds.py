@@ -235,6 +235,47 @@ async def test_every_rollup_recomputes_identically_from_the_record(pg_url):
     await engine.dispose()
 
 
+async def test_a_forgotten_persons_message_is_no_longer_a_reply_target_in_the_tie_rollup(pg_url):
+    """NEGATIVE, PR #622 review: `message_facts`'s `quoted` join carried no
+    `hidden_at` filter, so a `nora person forget`-hidden message a reply
+    quotes still counted as a reply relationship feeding `rollup_tie` (and,
+    on the main select, a hidden message's own reactions/mentions still fed
+    `rollup_daybook`/`rollup_response`). Build once as seeded — b's reply to
+    a's day-0 and day-1 message registers twice, the same positive control
+    `test_every_rollup_recomputes_identically_from_the_record` pins — hide
+    every message person "a" sent, and rebuild fresh: the replies that
+    quoted them must be GONE from the tie rollup, not merely relabelled."""
+    engine = create_sql_engine(pg_url)
+    mobility = SqlMobilityStore(engine)
+    await _seed(engine, mobility)
+    runner = _runner(engine)
+    rollups = SqlRollupStore(engine)
+
+    before = await rollups.create_build(code_version=CODE_VERSION, params_sha256=runner.params)
+    await runner.run(build_id=before, through_ms=_WATERMARK)
+    ties_before = await rollups.rows(table=ROLLUP_TIE, build_id=before)
+    books_before = await rollups.rows(table=ROLLUP_DAYBOOK, build_id=before)
+    assert sum(t["replies_ba"] for t in ties_before) == 2  # positive control
+    assert sum(d["messages"] for d in books_before if d["person_id"] == "a") > 0
+    # b's only reaction is on a's message (m1): a positive control for the
+    # reaction-target `hidden_at` filter too.
+    assert sum(d["reactions"] for d in books_before if d["person_id"] == "b") > 0
+
+    async with engine.begin() as conn:
+        await conn.execute(
+            sa.update(MESSAGES).where(MESSAGES.c.person_id == "a").values(hidden_at=1)
+        )
+
+    after = await rollups.create_build(code_version=CODE_VERSION, params_sha256=runner.params)
+    await runner.run(build_id=after, through_ms=_WATERMARK)
+    ties_after = await rollups.rows(table=ROLLUP_TIE, build_id=after)
+    books_after = await rollups.rows(table=ROLLUP_DAYBOOK, build_id=after)
+    assert sum(t["replies_ba"] for t in ties_after) == 0
+    assert sum(d["messages"] for d in books_after if d["person_id"] == "a") == 0
+    assert sum(d["reactions"] for d in books_after if d["person_id"] == "b") == 0
+    await engine.dispose()
+
+
 async def test_a_citation_resolves_by_overlap_after_a_rebuild_switches_the_pointer(pg_url):
     engine = create_sql_engine(pg_url)
     mobility = SqlMobilityStore(engine)

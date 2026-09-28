@@ -44,6 +44,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.domain.lineage import BODY, WORKING_SET, Lineage, own_room_lineage, room_key
 from nora.domain.standing import Standing, working_set_from_json, working_set_to_json
+from nora.infra.sql.citation import record_message_citation
 from nora.infra.sql.schema import MESSAGES, STANDING, STANDING_REVISION
 
 #: A Standing row's sections today (`nora.domain.lineage`): the position and
@@ -61,7 +62,10 @@ def _derived(standing: Standing) -> dict[str, Any]:
     if standing.last_folded_row_id is not None:
         as_of = sa.func.coalesce(
             sa.select(MESSAGES.c.ts)
-            .where(MESSAGES.c.id == standing.last_folded_row_id)
+            .where(
+                MESSAGES.c.id == standing.last_folded_row_id,
+                MESSAGES.c.hidden_at.is_(None),
+            )
             .scalar_subquery(),
             standing.updated_at,
         )
@@ -94,6 +98,10 @@ def _standing(row: sa.Row[Any]) -> Standing:
             row.lineage, origin=room_key(row.platform, row.conversation_id),
         ),
         exclude_persons=tuple(row.exclude_persons or ()),
+        # Only the HEAD (`standing.unsupported_at`) carries this;
+        # `standing_revision` has no such column, so `getattr` reads `None`
+        # (supported) for every revision-chain row this mapper also serves.
+        unsupported_at=getattr(row, "unsupported_at", None),
     )
 
 
@@ -272,6 +280,13 @@ class SqlStandingStore:
         async with self._engine.begin() as conn:
             await conn.execute(stmt)
             await conn.execute(revision)
+            # The citation edge table (migration `0075_withdrawal`, step
+            # 2c): the one message id the fold already tracks.
+            await record_message_citation(
+                conn, citing_store="standing",
+                citing_key=f"{standing.platform}:{standing.conversation_id}",
+                message_id=standing.last_folded_row_id,
+            )
 
     async def write_if_unchanged(
         self, *, expected: Standing, standing: Standing

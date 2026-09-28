@@ -337,6 +337,11 @@ APPEND: dict[str, Callable[[int], dict[str, Any]]] = {
         "id": _uuid("rsvp", n), "event_id": _uuid("event", 0), "person_id": f"p{n}",
         "response": "yes", "responded_at": T0,
     },
+    # Step 2c (0075_withdrawal): the citation edge table.
+    "citation": lambda n: {
+        "citing_store": "note", "citing_key": _uuid("note", n),
+        "cited_store": "message", "cited_id": f"{n}",
+    },
 }
 
 
@@ -469,3 +474,45 @@ async def test_a_snapshot_at_each_moment_holds_exactly_what_was_held(
         assert report.orphaned == {}
         for table in copied_tables():
             assert restored[table] == held[table], f"{table} at {at.isoformat()}"
+
+
+@pytest.mark.asyncio
+async def test_a_history_version_missing_a_later_column_restores_it_as_null(
+    pg_url: str, pg_template: str,
+) -> None:
+    """0075_withdrawal added `hidden_at` to `messages` with no row_history
+    catch-up (a manual rewrite of every existing row under `SHARE ROW
+    EXCLUSIVE`, removed): a version recorded before that migration has no
+    `hidden_at` key in its `image` at all, never a `null` value. A restore
+    to an instant covered by such a version must still produce a row —
+    with `hidden_at` NULL, the column's own default for a row nothing ever
+    hid — not an error and not a spuriously-hidden one."""
+    engine = create_sql_engine(pg_url)
+    try:
+        async with engine.begin() as conn:
+            await _write(conn, "messages", 0)
+        t1 = await _clock(engine)
+        async with engine.begin() as conn:
+            # Simulate a pre-0075 version: strip `hidden_at` from the image
+            # `row_history` already holds, rather than leaving it `null` —
+            # a key ABSENT is what every version recorded before the
+            # migration actually looks like.
+            await conn.execute(sa.text(
+                "UPDATE row_history SET image = image - 'hidden_at' "
+                "WHERE table_name = 'messages' "
+                "AND row_key = jsonb_build_object('id', CAST(:i AS bigint))"
+            ), {"i": ROWS["messages"](0)["id"]})
+    finally:
+        await engine.dispose()
+
+    async with sandbox_as_of(pg_url, t1, template=pg_template) as (url, report):
+        restored_engine = create_sql_engine(url)
+        try:
+            async with restored_engine.connect() as conn:
+                hidden_at = (await conn.execute(sa.text(
+                    'SELECT hidden_at FROM "messages" WHERE id = :i'
+                ), {"i": ROWS["messages"](0)["id"]})).scalar_one_or_none()
+        finally:
+            await restored_engine.dispose()
+    assert report.orphaned == {}
+    assert hidden_at is None

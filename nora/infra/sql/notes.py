@@ -137,6 +137,7 @@ from nora.domain.reminders import (
     PROACTIVE_KIND,
     ReminderState,
 )
+from nora.infra.sql.citation import record_citations
 from nora.infra.sql.schema import (
     MESSAGES,
     NOTE,
@@ -170,6 +171,7 @@ def _row_to_note(r: Row[Any]) -> Note:
         reminder_id=r.reminder_id,
         lineage=Lineage.from_json(r.lineage, origin=r.established_in),
         exclude_persons=tuple(r.exclude_persons or ()),
+        unsupported_at=getattr(r, "unsupported_at", None),
     )
 
 
@@ -195,7 +197,7 @@ async def _revision_lineage(
             sa.select(
                 MESSAGES.c.id, MESSAGES.c.platform, MESSAGES.c.conversation_id,
                 MESSAGES.c.ts,
-            ).where(MESSAGES.c.id.in_(lookup))
+            ).where(MESSAGES.c.id.in_(lookup), MESSAGES.c.hidden_at.is_(None))
         )).all()
         rooms = {r.id: room_key(r.platform, r.conversation_id) for r in rows}
         newest = max((r.ts for r in rows), default=None)
@@ -215,7 +217,10 @@ async def _room_key_of(conn: AsyncConnection, conversation_id: str) -> str | Non
     share."""
     platform = (await conn.execute(
         sa.select(MESSAGES.c.platform)
-        .where(MESSAGES.c.conversation_id == conversation_id)
+        .where(
+            MESSAGES.c.conversation_id == conversation_id,
+            MESSAGES.c.hidden_at.is_(None),
+        )
         .order_by(MESSAGES.c.id.desc())
         .limit(1)
     )).scalar_one_or_none()
@@ -536,6 +541,12 @@ class SqlNoteStore:
             model=revision.model,
             **derived,
         ))
+        # The citation edge table (migration `0075_withdrawal`, step 2c):
+        # keyed to the NOTE, not the revision — only the head renders, and
+        # the withdrawal cascade marks the head.
+        await record_citations(
+            conn, citing_store="note", citing_key=str(note.id), body=revision.body,
+        )
 
     async def standing(self, *, unit: str) -> tuple[Note, ...]:
         """Every note that has not been retired — the read the injected index
@@ -557,7 +568,17 @@ class SqlNoteStore:
         """
         stmt = (
             sa.select(NOTE)
-            .where(NOTE.c.unit == unit, NOTE.c.retired_at.is_(None))
+            .where(
+                NOTE.c.unit == unit,
+                NOTE.c.retired_at.is_(None),
+                # WITHDRAWAL (migration `0075_withdrawal`, step 2c): this IS
+                # the injected index's read, so an unsupported note stops
+                # rendering here — the one place that decides what a tag
+                # sees, per `note_read`'s own resolution through `_resolve`
+                # (`nora.agent.tools`), which only ever sees candidates this
+                # method returned.
+                NOTE.c.unsupported_at.is_(None),
+            )
             .order_by(NOTE.c.created_at.asc(), NOTE.c.id.asc())
         )
         async with self._engine.connect() as conn:
@@ -789,6 +810,9 @@ class SqlNoteStore:
             model=revision.model,
             **derived,
         ))
+        await record_citations(
+            conn, citing_store="note", citing_key=str(note_id), body=revision.body,
+        )
 
     async def search(
         self, *, unit: str, query: str, limit: int,
@@ -822,6 +846,10 @@ class SqlNoteStore:
             .where(
                 NOTE.c.unit == unit,
                 NOTE.c.retired_at.is_(None),
+                # WITHDRAWAL (migration `0075_withdrawal`, step 2c): `note_
+                # search` is a tool result, so an unsupported note must not
+                # be a hit either.
+                NOTE.c.unsupported_at.is_(None),
                 NOTE_REVISION.c.body.icontains(query, autoescape=True),
             )
             .order_by(NOTE.c.created_at.asc(), NOTE.c.id.asc())
@@ -1130,20 +1158,7 @@ class SqlNoteStore:
             row = (await conn.execute(stmt)).one_or_none()
         if row is None:
             return None
-        return Note(
-            id=row.id, unit=row.unit, title=row.title,
-            description=row.description, uncertainty=row.uncertainty,
-            closing_condition=row.closing_condition,
-            established_in=row.established_in, created_at=row.created_at,
-            head_revision_id=row.head_revision_id,
-            anchor_date=row.anchor_date,
-            anchor_entity_ids=tuple(row.anchor_entity_ids or ()),
-            retired_at=row.retired_at, replaced_by=row.replaced_by,
-            retire_reason=row.retire_reason,
-            revisit_at=row.revisit_at, strikes=row.strikes,
-            last_wake_revision_id=row.last_wake_revision_id,
-            event_id=row.event_id, reminder_id=row.reminder_id,
-        )
+        return _row_to_note(row)
 
     # ---- DreamSink (the curator's write boundary) --------------------------
 

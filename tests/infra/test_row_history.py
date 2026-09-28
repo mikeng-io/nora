@@ -231,19 +231,31 @@ async def test_the_backfill_dates_what_each_row_proves(pg_url: str, engine: Any)
         fired: "done", cancelled: "cancelled",
     }
     # the head the chain ends on IS the live row, for every backfilled table
+    # — up to a key a LATER migration added after this row's head version was
+    # written (0075_withdrawal's `unsupported_at`, added with no row_history
+    # catch-up): such a key is simply ABSENT from `head`, not `null`, and the
+    # read side (`nora.infra.sql.snapshot_at._insert_sql`,
+    # `jsonb_populate_recordset`) already treats an absent key as the
+    # column's own default — NULL here, since neither column added since
+    # this backfill carries a server default. A key `head` is missing must
+    # therefore be NULL in `live`, never some other value.
     async with engine.connect() as conn:
         for table in ("note", "reminders"):
-            live = sorted(
-                (await conn.execute(sa.text(
-                    f'SELECT to_jsonb(t) FROM "{table}" t'  # noqa: S608 — a literal above
-                ))).scalars(),
-                key=str,
-            )
-            head = sorted((await conn.execute(sa.text(
+            live_rows = (await conn.execute(sa.text(
+                f'SELECT to_jsonb(t) FROM "{table}" t'  # noqa: S608 — a literal above
+            ))).scalars().all()
+            head_rows = (await conn.execute(sa.text(
                 "SELECT image FROM row_history WHERE table_name = :t "
                 "AND superseded_at IS NULL AND op <> 'delete'"
-            ), {"t": table})).scalars(), key=str)
-            assert head == live, table
+            ), {"t": table})).scalars().all()
+            live = sorted(live_rows, key=str)
+            head = sorted(head_rows, key=str)
+            assert len(head) == len(live), table
+            for h, live_row in zip(head, live, strict=True):
+                missing = set(live_row) - set(h)
+                assert all(live_row[k] is None for k in missing), (table, missing)
+                filled = {**dict.fromkeys(missing), **h}
+                assert filled == live_row, table
 
 
 @pytest.mark.asyncio

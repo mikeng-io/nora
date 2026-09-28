@@ -69,6 +69,14 @@ from nora.app.memory_routing import MemoryRoutingError, build_workspace_router
 from nora.app.participation_measures import gather as gather_measures
 from nora.app.participation_measures import measure as compute_measures
 from nora.app.pending import correlate
+from nora.app.person_forget import (
+    clear_unsupported,
+    forget_person,
+    render_clear_unsupported,
+    render_forget,
+    render_unforget,
+    unforget_person,
+)
 from nora.config import Config, ConfigError, load
 from nora.domain.media_join import MediaJoin
 from nora.domain.models import UnattributedRow
@@ -325,6 +333,43 @@ def add_subcommands(
         "--apply", action="store_true", help="write; without it nothing is changed",
     )
     backfill_units.set_defaults(func=cmd_events_backfill_units)
+
+    # `person forget/unforget` (design/cognition-loop/70-migration.md §2 row
+    # 2c, §9; migration `0075_withdrawal`, DEC-238): the FOURTH command here
+    # that WRITES, a WRITABLE engine like `events backfill-units`. Soft: hides
+    # a person's messages and cascades `unsupported`; `unforget` reverses the
+    # hide only (`nora.app.person_forget`'s module docstring on why the
+    # cascade is not reversed by it). Dry run by default.
+    person = subparsers.add_parser(
+        "person", parents=[parent],
+        help="soft forget/unforget for one person (operator only, writes)",
+    )
+    person_sub = person.add_subparsers(dest="person_command", required=True)
+    forget = person_sub.add_parser(
+        "forget", parents=[parent],
+        help="hide a person's messages and mark whatever cites them unsupported "
+             "(a dry run unless --apply)",
+    )
+    forget.add_argument("person_id", help="the identity.toml person id")
+    forget.add_argument(
+        "--apply", action="store_true", help="write; without it nothing is changed",
+    )
+    forget.set_defaults(func=cmd_person_forget)
+    unforget = person_sub.add_parser(
+        "unforget", parents=[parent],
+        help="un-hide a person's messages (a dry run unless --apply)",
+    )
+    unforget.add_argument("person_id", help="the identity.toml person id")
+    unforget.add_argument(
+        "--apply", action="store_true", help="write; without it nothing is changed",
+    )
+    unforget.add_argument(
+        "--clear-unsupported", action="store_true",
+        help="also clear unsupported_at on note/standing/culture rows whose "
+             "citations are ALL visible again (the operator lever for an "
+             "accidentally cascaded row; a dry run unless --apply)",
+    )
+    unforget.set_defaults(func=cmd_person_unforget)
 
     # `config` — the operator's safe config mutation surface (deploy
     # convention §4.5). See config_cli.py for the atomic-write and
@@ -703,6 +748,45 @@ async def cmd_events_backfill_units(args: argparse.Namespace) -> int:
     for line in render_events_backfill(result):
         print(line)
     return 1 if result.failed else 0
+
+
+async def cmd_person_forget(args: argparse.Namespace) -> int:
+    """`nora person forget <id> [--apply]` (design/cognition-loop/
+    70-migration.md §2 row 2c, §9, DEC-238). Opens a WRITABLE engine, same
+    reason `cmd_events_backfill_units` does. See `nora.app.person_forget`."""
+    cfg = _config(args)
+    engine = create_sql_engine(_database_url(cfg))
+    try:
+        result = await forget_person(
+            engine, person_id=args.person_id, apply=bool(args.apply),
+            now_ms=int(datetime.now(UTC).timestamp() * 1000),
+        )
+    finally:
+        await engine.dispose()
+    for line in render_forget(result):
+        print(line)
+    return 0
+
+
+async def cmd_person_unforget(args: argparse.Namespace) -> int:
+    """`nora person unforget <id> [--apply]` — reverses the hide only, never
+    a cascade mark (`nora.app.person_forget`'s docstring). Same writable
+    engine as `forget`."""
+    cfg = _config(args)
+    engine = create_sql_engine(_database_url(cfg))
+    try:
+        result = await unforget_person(
+            engine, person_id=args.person_id, apply=bool(args.apply),
+        )
+        for line in render_unforget(result):
+            print(line)
+        if args.clear_unsupported:
+            clear_result = await clear_unsupported(engine, apply=bool(args.apply))
+            for line in render_clear_unsupported(clear_result):
+                print(line)
+    finally:
+        await engine.dispose()
+    return 0
 
 
 async def cmd_measure_participation(args: argparse.Namespace) -> int:
