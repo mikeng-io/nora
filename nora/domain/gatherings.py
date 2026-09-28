@@ -67,6 +67,20 @@ class RSVPResponse(StrEnum):
     MAYBE = "maybe"
 
 
+#: 40-register.md §3's lifecycle line: "Any status before `happened` may be
+#: revised... No further statuses for happened/cancelled/lapsed/evicted."
+#: Derived from `GatheringStatus` itself (every member except the three that
+#: sit BEFORE `happened`) rather than hand-listed a second time, so a new
+#: status added to the enum lands in exactly one bucket by construction
+#: instead of silently falling into neither set.
+_PRE_HAPPENED_STATUSES: frozenset[GatheringStatus] = frozenset({
+    GatheringStatus.STAGED, GatheringStatus.PROPOSED, GatheringStatus.CONFIRMED,
+})
+TERMINAL_STATUSES: frozenset[GatheringStatus] = frozenset(
+    s for s in GatheringStatus if s not in _PRE_HAPPENED_STATUSES
+)
+
+
 class DuplicateGatheringError(Exception):
     """Raised by `GatheringStore.create` on a primary-key collision — mirrors
     `DuplicateReminderError`'s shape so callers handle both the same way."""
@@ -256,16 +270,25 @@ class GatheringNotFoundError(Exception):
 
 
 class GatheringCancelledError(Exception):
-    """Raised by `GatheringService` (`nora.app.gatherings`) when `update_event`/`rsvp`
-    is asked to act on an event whose `status` is already `CANCELLED` — a new
-    `when` would otherwise re-arm the event's reminder for a gathering that
-    was called off (Fix I2). Lives here for the same layering reason as
+    """Raised by `GatheringService` (`nora.app.gatherings`) when `update_event`/
+    `rsvp` is asked to act on an event whose `status` is already in
+    `TERMINAL_STATUSES` (`happened`, `cancelled`, `lapsed`, `evicted` —
+    40-register.md §3: "Any status before `happened` may be revised... No
+    further statuses" after it). Originally named for the one terminal
+    status it covered (`CANCELLED`, Fix I2: a new `when` would otherwise
+    re-arm the event's reminder for a gathering that was called off) — kept
+    under this name rather than renamed when the check widened to the whole
+    terminal set, so every existing catch site (`nora.agent.tools`, both
+    layers' tests) keeps working; `status` says which terminal status it
+    actually was. Lives here for the same layering reason as
     `GatheringNotFoundError`: the exception TYPE must be reachable from
     `nora.agent`, which sits below `nora.app` and may not import it."""
 
-    def __init__(self, event_id: UUID) -> None:
-        super().__init__(f"event {event_id} is cancelled")
+    def __init__(self, event_id: UUID, status: GatheringStatus | None = None) -> None:
+        label = status.value if status is not None else "cancelled"
+        super().__init__(f"event {event_id} is {label}")
         self.event_id = event_id
+        self.status = status
 
 
 class AmbiguousOpenGatheringsError(Exception):
@@ -308,7 +331,17 @@ class GatheringStore(Protocol):
     async def search(
         self, *, unit_id: str, place: str | None = None, person: str | None = None,
         start: datetime | None = None, end: datetime | None = None,
-    ) -> Sequence[Gathering]: ...
+        room_ids: Sequence[str] = (),
+    ) -> Sequence[Gathering]:
+        """Unit-wide (`unit_id == unit_id`), PLUS (B3, 70-migration.md §8) any
+        row with the migration's backfilled `unit_id=""` whose
+        `conversation_id` is in `room_ids` — the unit's own rooms, resolved
+        by the CALLER from `policy.toml` (units are not in the DB, so the
+        migration could not fill this column for events that predate it).
+        `room_ids=()` is the honest default: no legacy row is ever matched
+        by accident when a caller has not resolved the unit's rooms. Never a
+        cross-unit leak: a legacy row in another unit's room is never in
+        `room_ids`, so it is never returned."""
 
     async def aclose(self) -> None: ...
 

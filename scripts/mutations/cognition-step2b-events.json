@@ -40,5 +40,26 @@
     "old": "    HAPPENED = \"happened\"",
     "new": "    HAPPENED = \"confirmed\"",
     "target": "tests/unit/test_event_domain.py -k test_the_full_lifecycle_has_seven_statuses"
+  },
+  {
+    "name": "update_event actually refuses on EVERY terminal status, not just cancelled",
+    "file": "nora/app/gatherings.py",
+    "old": "        if current.status in TERMINAL_STATUSES:\n            # 40-register.md §3: only a status BEFORE `happened` may be",
+    "new": "        if current.status is GatheringStatus.CANCELLED:\n            # 40-register.md §3: only a status BEFORE `happened` may be",
+    "target": "tests/test_gatherings_service.py -k test_update_event_refuses_on_every_terminal_status"
+  },
+  {
+    "name": "rsvp actually refuses on EVERY terminal status, not just cancelled",
+    "file": "nora/app/gatherings.py",
+    "old": "        if current.status in TERMINAL_STATUSES:\n            # 40-register.md §3, the same set `update_event` refuses on:",
+    "new": "        if current.status is GatheringStatus.CANCELLED:\n            # 40-register.md §3, the same set `update_event` refuses on:",
+    "target": "tests/test_gatherings_service.py -k test_rsvp_refuses_on_every_terminal_status"
+  },
+  {
+    "name": "events backfill-units --apply actually writes unit_id, not just counts it",
+    "file": "nora/app/events_backfill.py",
+    "old": "                await store.update(replace(event, unit_id=convo.unit))",
+    "new": "                pass",
+    "target": "tests/unit/test_events_backfill.py -k test_apply_sets_unit_id_through_the_normal_update_path"
   }
 ]

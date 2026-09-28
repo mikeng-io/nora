@@ -8,6 +8,7 @@ import pytest
 
 from nora.app.gatherings import AmbiguousOpenGatheringsError, GatheringService
 from nora.domain.gatherings import (
+    TERMINAL_STATUSES,
     Gathering,
     GatheringCancelledError,
     GatheringNotFoundError,
@@ -52,6 +53,7 @@ def _service(
     reminders=None,
     route_source=None,
     honcho=None,
+    unit_room_ids=None,
 ) -> GatheringService:
     return GatheringService(
         store=store or FakeGatheringStore(),
@@ -61,6 +63,7 @@ def _service(
         honcho=honcho or _FakeHoncho(),
         ai_peer="nora",
         now=lambda: NOW,
+        unit_room_ids=unit_room_ids,
     )
 
 
@@ -470,6 +473,66 @@ async def test_rsvp_refuses_on_a_cancelled_event():
         )
 
 
+# ── B1: EVERY terminal status refuses, not just CANCELLED
+# (40-register.md §3: "Any status before `happened` may be revised... No
+# further statuses" once one is reached). Parametrized over the domain's
+# OWN `TERMINAL_STATUSES` — never a hand-copied list here — so a status
+# later added to the enum is covered by construction, not by remembering to
+# update this file too. ─────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize("terminal", sorted(TERMINAL_STATUSES, key=lambda s: s.value))
+async def test_update_event_refuses_on_every_terminal_status(terminal):
+    reminders = FakeReminderStore()
+    svc = _service(reminders=reminders)
+    ev = await svc.create_event(
+        conversation_id="signal:group-1",
+        requester_person_id="miles",
+        title="Dinner",
+        platform="signal",
+    )
+    await svc.set_event_status(
+        event_id=ev.id, conversation_id="signal:group-1", status=terminal,
+    )
+
+    with pytest.raises(GatheringCancelledError) as exc_info:
+        await svc.update_event(
+            event_id=ev.id,
+            conversation_id="signal:group-1",
+            when=NOW + timedelta(days=3),
+            platform="signal",
+        )
+    assert exc_info.value.status is terminal, (
+        "revising a happened event mints a fresh PENDING reminder via "
+        "_link_reminder unless every terminal status is refused, not just "
+        "CANCELLED"
+    )
+    assert list(await reminders.pending_for("signal:group-1")) == []
+
+
+@pytest.mark.parametrize("terminal", sorted(TERMINAL_STATUSES, key=lambda s: s.value))
+async def test_rsvp_refuses_on_every_terminal_status(terminal):
+    svc = _service()
+    ev = await svc.create_event(
+        conversation_id="signal:group-1",
+        requester_person_id="miles",
+        title="Dinner",
+        platform="signal",
+    )
+    await svc.set_event_status(
+        event_id=ev.id, conversation_id="signal:group-1", status=terminal,
+    )
+
+    with pytest.raises(GatheringCancelledError) as exc_info:
+        await svc.rsvp(
+            event_id=ev.id,
+            conversation_id="signal:group-1",
+            person_id="daisy",
+            response=RSVPResponse.YES,
+        )
+    assert exc_info.value.status is terminal
+
+
 # ── Fix I5: event ids are conversation-scoped on every write verb ──────────
 
 
@@ -727,3 +790,59 @@ async def test_no_reminder_row_written_with_platform_event_sentinel():
     row = await reminders.get(ev.reminder_id)
     assert row is not None
     assert row.platform != "event"
+
+
+# ── B3(a): search_events finds a legacy unit_id="" event through the
+# unit's own rooms, and never another unit's ────────────────────────────
+
+
+def _legacy_event(*, conversation_id: str, title: str) -> Gathering:
+    """A pre-migration row: `unit_id=""`, exactly what the backfill left
+    every existing event with (units live in `policy.toml`, not the DB)."""
+    return Gathering(
+        id=uuid.uuid4(),
+        conversation_id=conversation_id,
+        title=title,
+        created_by="miles",
+        when=None,
+        venue_text=None,
+        venue_place_id=None,
+        venue_name=None,
+        venue_address=None,
+        venue_rating=None,
+        venue_price_level="",
+        venue_maps_url=None,
+        venue_resolved_at=None,
+        status=GatheringStatus.PROPOSED,
+        reminder_id=None,
+        created_at=NOW,
+        unit_id="",
+    )
+
+
+async def test_search_events_finds_legacy_event_via_unit_room_ids():
+    store = FakeGatheringStore()
+    svc = _service(
+        store=store,
+        unit_room_ids=lambda unit: ("signal:room-a",) if unit == "friends" else (),
+    )
+    legacy = await store.create(
+        _legacy_event(conversation_id="signal:room-a", title="Pre-migration dinner"),
+    )
+
+    found = await svc.search_events(unit_id="friends", conversation_id="signal:room-a")
+    assert legacy.id in {e.id for e in found}
+
+
+async def test_search_events_never_leaks_a_legacy_event_from_another_units_room():
+    store = FakeGatheringStore()
+    svc = _service(
+        store=store,
+        unit_room_ids=lambda unit: ("signal:room-a",) if unit == "friends" else (),
+    )
+    other_unit_legacy = await store.create(_legacy_event(
+        conversation_id="signal:room-z", title="Someone else's pre-migration dinner",
+    ))
+
+    found = await svc.search_events(unit_id="friends", conversation_id="signal:room-a")
+    assert other_unit_legacy.id not in {e.id for e in found}

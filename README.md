@@ -105,7 +105,7 @@ Signal / Discord / WhatsApp / Instagram room
      description (DEC-150 deleted the generated capability section). Among them:
        transcript & memory   load_transcript / who_said / search_memory / about / ask_memory / remember
        people & places       group_members / lookup_person / where_is / saved_places / route / transit / weather / parking
-       what the group holds  note_read / note_search / note_create / note_update / list_events / create_event / rsvp_event
+       what the group holds  note_read / note_search / note_create / note_update / event_search / event_propose / event_rsvp
        later                 remind / list_reminders / cancel_reminder / make_artifact
        the world             web_search / web_fetch / x_read / x_search / linkedin_read / linkedin_search / instagram_read / media_fetch / generate_image
        speaking              send_reply / send_gif / send_to (relay to a sibling room)

@@ -330,13 +330,29 @@ class SqlGatheringStore:
 
     async def search(
         self, *, unit_id: str, place: str | None = None, person: str | None = None,
-        start: Any = None, end: Any = None,
+        start: Any = None, end: Any = None, room_ids: Sequence[str] = (),
     ) -> Sequence[Gathering]:
         """Unit-wide (15-map.md §4: `event_search(place?, person?,
         interval?)`), `event_search`'s store side. `place` matches
         `venue_name`/`venue_text` by containment; `person` matches the
-        creator or an RSVP; `start`/`end` bound `events.when`."""
-        stmt = sa.select(EVENTS).where(EVENTS.c.unit_id == unit_id)
+        creator or an RSVP; `start`/`end` bound `events.when`.
+
+        B3: `room_ids`, when the caller passes any, widens the match to also
+        catch a pre-migration row (`unit_id=""`) whose `conversation_id` is
+        one of the unit's own rooms — units live in `policy.toml`, not the
+        DB, so the migration backfilled every existing event to
+        `unit_id=""` and this is the only way one is found unit-wide again.
+        `room_ids=()` keeps the old, exact `unit_id == unit_id` match."""
+        unit_clause: Any = EVENTS.c.unit_id == unit_id
+        if room_ids:
+            unit_clause = sa.or_(
+                unit_clause,
+                sa.and_(
+                    EVENTS.c.unit_id == "",
+                    EVENTS.c.conversation_id.in_(room_ids),
+                ),
+            )
+        stmt = sa.select(EVENTS).where(unit_clause)
         if place:
             needle = f"%{place}%"
             stmt = stmt.where(sa.or_(

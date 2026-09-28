@@ -376,3 +376,41 @@ async def test_search_is_unit_wide_and_filters_by_place_person_and_interval(stor
     )
     assert [e.id for e in by_interval] == [in_room_b.id]
 
+
+async def test_search_room_ids_finds_legacy_events_without_leaking_other_units(store):
+    """B3(a): the migration backfilled every pre-existing event to
+    `unit_id=""` (units live in `policy.toml`, not the DB, so the migration
+    could not fill it). `room_ids` is how the caller — which resolves the
+    unit's rooms from policy — gets those rows back into a unit-wide search.
+    The negative matters as much as the positive: a legacy row in a room
+    the caller did NOT name (another unit's room) must never be returned,
+    or `room_ids` becomes a cross-unit leak."""
+    unit = f"unit-{uuid4()}"
+    legacy_in_unit = _event(
+        id=uuid4(), conversation_id="signal:room-a", unit_id="",
+        title="Pre-migration dinner",
+    )
+    legacy_in_other_unit = _event(
+        id=uuid4(), conversation_id="discord:room-z", unit_id="",
+        title="Someone else's pre-migration dinner",
+    )
+    backfilled = _event(
+        id=uuid4(), conversation_id="signal:room-b", unit_id=unit,
+        title="Post-migration dinner",
+    )
+    await store.create(legacy_in_unit)
+    await store.create(legacy_in_other_unit)
+    await store.create(backfilled)
+
+    found = await store.search(unit_id=unit, room_ids=("signal:room-a", "signal:room-b"))
+    assert {e.id for e in found} == {legacy_in_unit.id, backfilled.id}
+    assert legacy_in_other_unit.id not in {e.id for e in found}, (
+        "a legacy unit_id='' event in a room outside room_ids must never "
+        "leak into another unit's search"
+    )
+
+    # No room_ids at all: back to the exact, pre-B3 unit_id match — a legacy
+    # event is invisible unless the caller explicitly resolved its room.
+    without_room_ids = await store.search(unit_id=unit)
+    assert {e.id for e in without_room_ids} == {backfilled.id}
+

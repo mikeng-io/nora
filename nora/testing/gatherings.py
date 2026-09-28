@@ -107,15 +107,18 @@ class FakeGatheringStore:
 
     async def search(
         self, *, unit_id: str, place: str | None = None, person: str | None = None,
-        start=None, end=None,
+        start=None, end=None, room_ids: Sequence[str] = (),
     ) -> Sequence[Gathering]:
         rsvpd_ids = (
             {r.event_id for r in self._rsvps if r.person_id == person}
             if person else set()
         )
+        legacy_room_ids = frozenset(room_ids)
         out = []
         for e in self._events.values():
-            if e.unit_id != unit_id:
+            in_unit = e.unit_id == unit_id
+            in_legacy_room = e.unit_id == "" and e.conversation_id in legacy_room_ids
+            if not (in_unit or in_legacy_room):
                 continue
             if place and place.lower() not in (
                 (e.venue_name or "") + (e.venue_text or "")
