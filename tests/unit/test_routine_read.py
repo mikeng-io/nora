@@ -712,3 +712,21 @@ async def test_every_answer_calls_an_unsaved_place_by_the_same_words(persons):
     [p] = leaves["people"]
     assert p["place"] == "their work near Main Road"
     assert p["routine"].startswith("Wednesday")
+
+
+async def test_no_rollup_build_yet_is_unavailable_not_nothing_found(persons):
+    """A fresh database, before the analytics process's first rebuild switches
+    a build in: nothing has been derived, which is «I couldn't check», never
+    «they have no routine» (R-27). The REAL store fake, unbound, with no
+    current build — and the same store with one, as the positive control."""
+    from nora.testing.mobility import FakeMobilityStore
+
+    store = FakeMobilityStore()
+    reader = store.unbound()
+    store.set_current_build(None)
+    out = await _tool(persons, reader)(WEDNESDAY, 22, 6, name="Chi")
+    assert out["status"] == "unavailable"
+    assert "not that they have no routine" in out["note"]
+    store.set_current_build(1)
+    out = await _tool(persons, reader)(WEDNESDAY, 22, 6, name="Chi")
+    assert out["status"] == "nothing_found"  # a build, honestly empty

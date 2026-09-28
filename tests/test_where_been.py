@@ -907,3 +907,25 @@ async def test_the_day_names_a_saved_place_by_its_name_and_an_unsaved_one_near_i
     out = await _where_been(persons, mobility, members=(MILES,))("day", name="Miles")
     names = sorted(s["place"] for s in out["people"][0]["stays"])
     assert names == ["Home", "a place they go near Main Road"]
+
+
+async def test_no_rollup_build_yet_is_unavailable_not_nothing_found(persons, pg_url):
+    """A fresh database has no current Rollup build until the analytics
+    process's first rebuild switches one in: `where_been` then answers
+    `unavailable`, never an empty `nothing_found` («no places») about data
+    nobody derived (R-27). The real SQL store, on a real fresh database; the
+    same store with a build is the positive control."""
+    from nora.infra.sql import create_sql_engine
+    from nora.infra.sql.mobility import SqlMobilityStore
+
+    engine = create_sql_engine(pg_url)
+    try:
+        mobility = SqlMobilityStore(engine)
+        for what in ("places", "rhythm", "routes"):
+            out = await _where_been(persons, mobility, members=(MILES,))(what, name="Miles")
+            assert out["status"] == "unavailable", what
+        await mobility._seed_build_for_test(current=True)
+        out = await _where_been(persons, mobility, members=(MILES,))("places", name="Miles")
+        assert out["status"] == "nothing_found"
+    finally:
+        await engine.dispose()

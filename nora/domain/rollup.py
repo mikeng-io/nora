@@ -107,6 +107,13 @@ class FoldState:
     late_fixes: int = 0
 
 
+class NoRollupBuildError(RuntimeError):
+    """No Rollup build is current (a fresh database, before the analytics
+    process's first rebuild switches one in). A reader must answer R-27
+    `unavailable` — «I couldn't check» — never an empty result, which would
+    say «there is nothing» about data that was never derived."""
+
+
 @dataclass(frozen=True)
 class StoredCorridor:
     """One `presence_corridors` row of a build: a named route, what its trips
@@ -915,6 +922,7 @@ __all__ = [
     "Home",
     "LineageEntry",
     "MessageFact",
+    "NoRollupBuildError",
     "Outing",
     "PollEvent",
     "ReactionFact",

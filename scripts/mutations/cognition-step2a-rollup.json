@@ -103,5 +103,19 @@
     "old": "        position = {f.id: i for i, f in enumerate(ordered)}\n        holds = [position[h] for h in (trip_hold_id, stay_hold_id) if h is not None]\n        kept = ordered[min(holds):] if holds else []",
     "new": "        target = max(f.id for f in window)\n        for h in (trip_hold_id, stay_hold_id):\n            if h is not None:\n                target = min(target, h - 1)\n        kept = [f for f in window if f.id > target]",
     "target": "tests/unit/test_rollup_determinism.py::test_every_schedule_folds_the_record_into_the_same_rollup"
+  },
+  {
+    "name": "no current build is unavailable, never an empty read (the old NULL-pointer behaviour)",
+    "file": "nora/infra/sql/mobility.py",
+    "old": "        if build is None:\n            raise NoRollupBuildError(\"no Rollup build is current yet\")\n        return int(build)",
+    "new": "        if build is None:\n            return -1\n        return int(build)",
+    "target": "tests/test_where_been.py::test_no_rollup_build_yet_is_unavailable_not_nothing_found tests/web/test_presence_analytics.py::test_no_rollup_build_yet_answers_503_not_an_empty_200"
+  },
+  {
+    "name": "the portal answers 503 without a build",
+    "file": "nora/web/api.py",
+    "old": "        except NoRollupBuildError:\n            return web.json_response(\n                {\"error\": \"unavailable\", \"reason\": \"no Rollup build yet\"}, status=503,\n            )",
+    "new": "        except NoRollupBuildError:\n            return web.json_response({})",
+    "target": "tests/web/test_presence_analytics.py::test_no_rollup_build_yet_answers_503_not_an_empty_200"
   }
 ]

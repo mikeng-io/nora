@@ -30,6 +30,7 @@ from nora.domain.rollup import (
     EventPosition,
     FixEvent,
     FoldState,
+    NoRollupBuildError,
     PollEvent,
     StoredCorridor,
 )
@@ -104,8 +105,11 @@ class FakeMobilityStore:
     def build_id(self) -> int | None:
         return self._build_id
 
-    def _reading(self) -> int | None:
-        return self._build_id if self._build_id is not None else self._t.current_build
+    def _reading(self) -> int:
+        build = self._build_id if self._build_id is not None else self._t.current_build
+        if build is None:
+            raise NoRollupBuildError("no Rollup build is current yet")
+        return build
 
     def _bound(self) -> int:
         if self._build_id is None:

@@ -43,6 +43,7 @@ from nora.domain.rollup import (
     EventPosition,
     FixEvent,
     FoldState,
+    NoRollupBuildError,
     PollEvent,
     StoredCorridor,
     lineage_json,
@@ -167,10 +168,23 @@ class SqlMobilityStore:
     def build_id(self) -> int | None:
         return self._build_id
 
-    def _in_build(self, table: sa.Table) -> Any:
+    @staticmethod
+    def _in_build(build: int, table: sa.Table) -> Any:
+        return table.c.build_id == build
+
+    async def _read_build(self) -> int:
+        """The build a read reads: the bound one, else the current one. With
+        no current build (a fresh database before the first rebuild switches
+        one in) there is NOTHING derived to read, which is not «nothing
+        found»: it raises `NoRollupBuildError`, and every reader above this
+        store already answers an exception as R-27 `unavailable`."""
         if self._build_id is not None:
-            return table.c.build_id == self._build_id
-        return table.c.build_id == current_build_id()
+            return self._build_id
+        async with self._engine.connect() as conn:
+            build = (await conn.execute(sa.select(current_build_id()))).scalar_one_or_none()
+        if build is None:
+            raise NoRollupBuildError("no Rollup build is current yet")
+        return int(build)
 
     def _bound(self) -> int:
         if self._build_id is None:
@@ -195,11 +209,12 @@ class SqlMobilityStore:
         # The cap keeps the most RECENTLY seen places: before DEC-190 a
         # subject held at most two rows and the cap was unreachable; places
         # are unbounded now, and an id-ascending cut would drop the newest.
+        build = await self._read_build()
         places_stmt = (
             sa.select(PRESENCE_DERIVED_PLACES)
             .where(
                 PRESENCE_DERIVED_PLACES.c.subject_id == subject_id,
-                self._in_build(PRESENCE_DERIVED_PLACES),
+                self._in_build(build, PRESENCE_DERIVED_PLACES),
             )
             .order_by(
                 PRESENCE_DERIVED_PLACES.c.last_seen_ts.desc(),
@@ -222,7 +237,7 @@ class SqlMobilityStore:
             )
             .where(
                 PRESENCE_STAYS.c.subject_id == subject_id,
-                self._in_build(PRESENCE_STAYS),
+                self._in_build(build, PRESENCE_STAYS),
                 PRESENCE_STAYS.c.place_id.is_not(None),
             )
             .group_by(PRESENCE_STAYS.c.place_id)
@@ -268,11 +283,12 @@ class SqlMobilityStore:
             return []
         now_ms = int(time.time() * 1000)
         cutoff_ms = now_ms - window_ms
+        build = await self._read_build()
         stmt = (
             sa.select(PRESENCE_STAYS.c.started_ts, PRESENCE_STAYS.c.ended_ts)
             .where(
                 PRESENCE_STAYS.c.subject_id == subject_id,
-                self._in_build(PRESENCE_STAYS),
+                self._in_build(build, PRESENCE_STAYS),
                 PRESENCE_STAYS.c.ended_ts >= cutoff_ms,
             )
             .order_by(PRESENCE_STAYS.c.started_ts.desc())
@@ -321,6 +337,7 @@ class SqlMobilityStore:
         if window_ms == 0:
             return []
         cutoff_ms = int(time.time() * 1000) - window_ms
+        build = await self._read_build()
         stmt = (
             sa.select(
                 PRESENCE_STAYS.c.started_ts, PRESENCE_STAYS.c.ended_ts,
@@ -337,7 +354,7 @@ class SqlMobilityStore:
             )
             .where(
                 PRESENCE_STAYS.c.subject_id == subject_id,
-                self._in_build(PRESENCE_STAYS),
+                self._in_build(build, PRESENCE_STAYS),
                 PRESENCE_STAYS.c.started_ts >= cutoff_ms,
             )
             .order_by(PRESENCE_STAYS.c.started_ts.desc())
@@ -368,6 +385,7 @@ class SqlMobilityStore:
         if window_ms == 0:
             return {"trips": [], "corridors": []}
         cutoff_ms = int(time.time() * 1000) - window_ms
+        build = await self._read_build()
         stmt = (
             sa.select(
                 PRESENCE_TRIPS.c.id.label("trip_id"),
@@ -390,7 +408,7 @@ class SqlMobilityStore:
             )
             .where(
                 PRESENCE_TRIPS.c.subject_id == subject_id,
-                self._in_build(PRESENCE_TRIPS),
+                self._in_build(build, PRESENCE_TRIPS),
                 PRESENCE_TRIPS.c.started_ts >= cutoff_ms,
             )
             .order_by(PRESENCE_TRIPS.c.started_ts.desc())
@@ -428,11 +446,12 @@ class SqlMobilityStore:
         }
 
     async def stays_for_subject(self, *, subject_id: str) -> list[Stay]:
+        build = await self._read_build()
         stmt = (
             sa.select(PRESENCE_STAYS)
             .where(
                 PRESENCE_STAYS.c.subject_id == subject_id,
-                self._in_build(PRESENCE_STAYS),
+                self._in_build(build, PRESENCE_STAYS),
             )
             .order_by(PRESENCE_STAYS.c.started_ts.asc(), PRESENCE_STAYS.c.id.asc())
         )
@@ -451,11 +470,12 @@ class SqlMobilityStore:
     async def trips_for_subject(self, *, subject_id: str) -> list[Trip]:
         """Every trip for the subject in the build, oldest first, WITH its
         road-name sequence."""
+        build = await self._read_build()
         stmt = (
             sa.select(PRESENCE_TRIPS)
             .where(
                 PRESENCE_TRIPS.c.subject_id == subject_id,
-                self._in_build(PRESENCE_TRIPS),
+                self._in_build(build, PRESENCE_TRIPS),
             )
             .order_by(PRESENCE_TRIPS.c.started_ts.asc(), PRESENCE_TRIPS.c.id.asc())
         )
@@ -466,11 +486,12 @@ class SqlMobilityStore:
     async def places_for_subject(self, *, subject_id: str) -> list[DerivedPlace]:
         """Every place for the subject in the build, id-ascending — any
         number of them, two homes included (DEC-190)."""
+        build = await self._read_build()
         stmt = (
             sa.select(PRESENCE_DERIVED_PLACES)
             .where(
                 PRESENCE_DERIVED_PLACES.c.subject_id == subject_id,
-                self._in_build(PRESENCE_DERIVED_PLACES),
+                self._in_build(build, PRESENCE_DERIVED_PLACES),
             )
             .order_by(PRESENCE_DERIVED_PLACES.c.id.asc())
         )
@@ -509,11 +530,12 @@ class SqlMobilityStore:
         ]
 
     async def corridors_for_subject(self, *, subject_id: str) -> list[StoredCorridor]:
+        build = await self._read_build()
         stmt = (
             sa.select(PRESENCE_CORRIDORS)
             .where(
                 PRESENCE_CORRIDORS.c.subject_id == subject_id,
-                self._in_build(PRESENCE_CORRIDORS),
+                self._in_build(build, PRESENCE_CORRIDORS),
             )
             .order_by(PRESENCE_CORRIDORS.c.id.asc())
         )
