@@ -3298,8 +3298,10 @@ class CognitionConfig(BaseModel):
 
     The wake numbers are 20 §3's STARTING values, every one a guess the
     shadow week sizes. `quiet_seconds` and `max_age_seconds` reuse
-    `[dreamer]`'s key NAMES (20 §3), not their values: the Dreamer's clock
-    keeps its own 1800 s / 86400 s, untouched.
+    `[dreamer]`'s key NAMES (20 §3), not their values as a rule: the two are
+    configured independently, and the Dreamer's clock keeps its own 1800 s /
+    86400 s, untouched. `quiet_seconds` itself was set to match — 1800 s,
+    the operator's 30-minute settled window (2026-09-29, was 600 s).
 
     Two keys are not in 20 §3 and are this implementation's:
     `shadow_session_seconds` is how long a would-wake is treated as a running
@@ -3313,7 +3315,7 @@ class CognitionConfig(BaseModel):
 
     mode: Literal["off", "shadow"] = "off"
     tick_seconds: float = Field(default=30.0, gt=0)
-    quiet_seconds: float = Field(default=600.0, ge=0)
+    quiet_seconds: float = Field(default=1800.0, ge=0)  # operator 2026-09-29, was 600
     cue_quiet_seconds: float = Field(default=120.0, ge=0)
     rollup_delay_seconds: float = Field(default=60.0, ge=0)
     batch_max: int = Field(default=80, ge=1)

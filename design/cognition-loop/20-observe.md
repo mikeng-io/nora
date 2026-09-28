@@ -136,7 +136,7 @@ Cognition session on the **first** trigger that holds:
 
 | trigger | fires when | starting value |
 |---|---|---|
-| **settled** | at least one signal pending, and the unit's rooms quiet for `quiet_seconds` | 600 s (`[dreamer] quiet_seconds` is 1800 today) |
+| **settled** | at least one signal pending, and the unit's rooms quiet for `quiet_seconds` | 1800 s (operator 2026-09-29, was 600 s; matches `[dreamer] quiet_seconds`) |
 | **strong cue** | a pending signal carries a strong cue (a date or time, a place change, a keep instruction, an RSVP, an edit of a cited message), then `cue_quiet_seconds` of quiet | 120 s |
 | **rollup** | a Rollup signal (co-location start, a stay starting at a place an open event names, play-together start, deviation) has waited `rollup_delay_seconds` | 60 s |
 | **batch** | pending signals ≥ `batch_max` | 80 |

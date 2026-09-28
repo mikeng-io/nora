@@ -157,10 +157,13 @@ The objections the first draft raised, and where each is answered now:
 - **Nothing lost in the switch.** For a shadow week, every row the clocked
   adaptors wrote is also written, or deliberately closed as not needed, by a
   cognition session on the same messages.
-- **Latency.** Median time from a settling message to the row that records it
-  under ten minutes; today up to an hour, and never for events.
-  (`[dreamer] quiet_seconds` is 1800 today; cognition's wake keys are its
-  own, [20](20-observe.md) §3.)
+- **Latency.** Measured on cue-bearing changes (a plan moving carries a
+  strong cue): median time from a settling message to the row that records
+  it stays under ten minutes via the 120 s cue-quiet wake; a cue-free change
+  now waits up to the 1800 s settled window (operator 2026-09-29, was 600 s),
+  still inside the up-to-an-hour bound, and never for events. (`[dreamer]
+  quiet_seconds` is also 1800 today; cognition's wake keys are its own,
+  [20](20-observe.md) §3.)
 
 ## Status / Checkpoint
 
