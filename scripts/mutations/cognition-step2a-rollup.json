@@ -1,0 +1,65 @@
+[
+  {
+    "name": "a run folds every page of its backlog, not only the first",
+    "file": "nora/analytics/rollup.py",
+    "old": "            consumed += len(events)\n            if len(events) < page:\n                break",
+    "new": "            consumed += len(events)\n            break",
+    "target": "tests/unit/test_rollup_determinism.py::test_every_schedule_folds_the_record_into_the_same_rollup"
+  },
+  {
+    "name": "the fixes a fold holds undecided are persisted with its position",
+    "file": "nora/analytics/rollup.py",
+    "old": "                state, window_ids=tuple(f.id for f in window),",
+    "new": "                state, window_ids=(),",
+    "target": "tests/unit/test_rollup_determinism.py::test_every_schedule_folds_the_record_into_the_same_rollup"
+  },
+  {
+    "name": "new stays or trips clear the plan key, so places are re-planned",
+    "file": "nora/analytics/rollup.py",
+    "old": "                tags_sha256=None if (new_stays or new_trips) else state.tags_sha256,",
+    "new": "                tags_sha256=state.tags_sha256,",
+    "target": "tests/unit/test_rollup_determinism.py::test_every_schedule_folds_the_record_into_the_same_rollup"
+  },
+  {
+    "name": "a successful poll moves the fold's clock (the Record's evidence of time)",
+    "file": "nora/analytics/rollup.py",
+    "old": "            now = max(state.logical_now_ms, event.at_ms)",
+    "new": "            now = state.logical_now_ms",
+    "target": "tests/unit/test_rollup_determinism.py::test_a_quiet_phone_at_home_is_one_stay_on_every_schedule"
+  },
+  {
+    "name": "a fix older than the finalized output is dropped as late, never spliced in",
+    "file": "nora/analytics/rollup.py",
+    "old": "            if fix.ts <= state.frontier_ts:",
+    "new": "            if False:",
+    "target": "tests/unit/test_rollup_determinism.py::test_every_schedule_folds_the_record_into_the_same_rollup"
+  },
+  {
+    "name": "labels are re-checked on the logical clock when no stay changed",
+    "file": "nora/analytics/rollup.py",
+    "old": "            if state.tags_sha256 == digest:\n                await self._recheck_labels(\n                    subject_id=subject_id, all_stays=all_stays, now_ms=now,\n                )\n                return []",
+    "new": "            if state.tags_sha256 == digest:\n                return []",
+    "target": "tests/unit/test_analytics_rollup.py::test_a_stale_home_label_flips_to_unlabeled_on_a_recheck_with_zero_new_fixes"
+  },
+  {
+    "name": "the SQL store merges fixes and polls into one canonical order",
+    "file": "nora/infra/sql/mobility.py",
+    "old": "        events.sort(key=lambda e: e.position)\n        return events[:limit]",
+    "new": "        return events[:limit]",
+    "target": "tests/contract/test_mobility_store_contract.py::test_fixes_and_polls_merge_in_recorded_order_a_fix_first_on_a_tie"
+  },
+  {
+    "name": "a provisional arrival holds the short movement before it instead of dropping it",
+    "file": "nora/analytics/rollup.py",
+    "old": "            elif provisional_stop and not held_back and open_started is not None:",
+    "new": "            elif False:",
+    "target": "tests/unit/test_analytics_rollup.py::test_a_two_fix_drive_is_recorded_as_a_trip"
+  },
+  {
+    "name": "a place re-plan rebuilds occupancy for every kept place, so a failed write is repaired",
+    "file": "nora/analytics/rollup.py",
+    "old": "        for place_id in sorted(kept):\n            await self._rebuild_rhythm(",
+    "new": "        for place_id in sorted(kept - {s.place_id for s in all_stays}):\n            await self._rebuild_rhythm(",
+    "target": "tests/unit/test_analytics_rollup.py::test_a_tier3_failure_leaves_the_fold_committed_and_is_retried"
+  }
+]
