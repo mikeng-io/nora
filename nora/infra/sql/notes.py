@@ -108,6 +108,8 @@ from sqlalchemy.engine import Row
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
+from nora.domain.lineage import Lineage, note_revision_lineage, room_key
+from nora.domain.note_body import cited_ids_in
 from nora.domain.notes import (
     CANDIDATE_CREATED,
     CANDIDATE_PENDING,
@@ -136,6 +138,7 @@ from nora.domain.reminders import (
     ReminderState,
 )
 from nora.infra.sql.schema import (
+    MESSAGES,
     NOTE,
     NOTE_CANDIDATE,
     NOTE_MERGE_DECISION,
@@ -165,7 +168,83 @@ def _row_to_note(r: Row[Any]) -> Note:
         revisit_at=r.revisit_at, strikes=r.strikes,
         last_wake_revision_id=r.last_wake_revision_id, event_id=r.event_id,
         reminder_id=r.reminder_id,
+        lineage=Lineage.from_json(r.lineage, origin=r.established_in),
+        exclude_persons=tuple(r.exclude_persons or ()),
     )
+
+
+#: `messages.id` is int4: a cited number past it names no row, and binding it
+#: would be a driver error rather than the ordinary "not on record".
+_MESSAGE_ID_MAX = 2**31 - 1
+
+
+async def _revision_lineage(
+    conn: AsyncConnection, *, body: str, origin: str, first: bool,
+    evidence_room: str | None = None,
+) -> tuple[Lineage, int | None]:
+    """A revision's lineage and `as_of`, from the messages its body cites
+    (`nora.domain.lineage.note_revision_lineage`, 10 §3: "code, from the
+    citation chain; never the model"). `as_of` is the newest cited message's
+    time, or `None` for the caller to date at the write."""
+    cited = cited_ids_in(body)
+    rooms: dict[int, str] = {}
+    newest: int | None = None
+    lookup = [i for i in cited if 0 < i <= _MESSAGE_ID_MAX]
+    if lookup:
+        rows = (await conn.execute(
+            sa.select(
+                MESSAGES.c.id, MESSAGES.c.platform, MESSAGES.c.conversation_id,
+                MESSAGES.c.ts,
+            ).where(MESSAGES.c.id.in_(lookup))
+        )).all()
+        rooms = {r.id: room_key(r.platform, r.conversation_id) for r in rows}
+        newest = max((r.ts for r in rows), default=None)
+    origin_key = await _room_key_of(conn, origin)
+    lineage = note_revision_lineage(
+        cited=cited, rooms=rooms, origin=origin, origin_key=origin_key,
+        first=first, evidence_room=evidence_room,
+    )
+    return lineage, newest
+
+
+async def _room_key_of(conn: AsyncConnection, conversation_id: str) -> str | None:
+    """`conversation_id`'s room key, from the platform its Record was written
+    under, or `None` when nothing it said is on record. A note carries no
+    platform (`established_in` is a bare id); the Record does. The newest row
+    decides, for the one conversation id two platforms could in principle
+    share."""
+    platform = (await conn.execute(
+        sa.select(MESSAGES.c.platform)
+        .where(MESSAGES.c.conversation_id == conversation_id)
+        .order_by(MESSAGES.c.id.desc())
+        .limit(1)
+    )).scalar_one_or_none()
+    return None if platform is None else room_key(platform, conversation_id)
+
+
+async def _head_lineage(
+    conn: AsyncConnection, *, unit: str, note_id: str,
+) -> tuple[str, Lineage, int | None] | None:
+    """A note's origin room, lineage and `as_of`, locked for this transaction:
+    what a revision's lineage is unioned into. `None` when there is no such
+    note in `unit` (the compare-and-swap that follows refuses it)."""
+    row = (await conn.execute(
+        sa.select(NOTE.c.established_in, NOTE.c.lineage, NOTE.c.as_of)
+        .where(NOTE.c.id == note_id, NOTE.c.unit == unit)
+        .with_for_update()
+    )).one_or_none()
+    if row is None:
+        return None
+    return (
+        row.established_in,
+        Lineage.from_json(row.lineage, origin=row.established_in),
+        row.as_of,
+    )
+
+
+def _newest(*values: int | None) -> int | None:
+    present = [v for v in values if v is not None]
+    return max(present) if present else None
 
 
 def _row_to_create_candidate(r: Row[Any]) -> NoteCreateCandidate:
@@ -421,7 +500,19 @@ class SqlNoteStore:
         """The two inserts, on a connection the CALLER owns — the `create`
         sibling of `_append_on_conn`, extracted for the same reason: which
         transaction a write belongs to is the caller's decision, and `propose`
-        needs its whole batch in one."""
+        needs its whole batch in one.
+
+        Lineage and `as_of` (migration `0073_lineage`) are computed here from
+        the body's citations: the first revision rests on the room the note
+        was raised in and on every room it cites."""
+        lineage, cited_at = await _revision_lineage(
+            conn, body=revision.body, origin=note.established_in, first=True,
+        )
+        as_of = cited_at if cited_at is not None else revision.written_at
+        derived = {
+            "lineage": lineage.to_json(), "as_of": as_of,
+            "exclude_persons": list(note.exclude_persons),
+        }
         await conn.execute(sa.insert(NOTE).values(
             id=note.id, unit=note.unit, title=note.title,
             description=note.description, uncertainty=note.uncertainty,
@@ -435,6 +526,7 @@ class SqlNoteStore:
             # (§5.3 resolution (c)). Written unconditionally rather than only
             # when not-None, so both callers share ONE insert.
             revisit_at=note.revisit_at,
+            **derived,
         ))
         await conn.execute(sa.insert(NOTE_REVISION).values(
             id=revision.id, note_id=revision.note_id, body=revision.body,
@@ -442,6 +534,7 @@ class SqlNoteStore:
             established_by=revision.established_by,
             instruction_sha256=revision.instruction_sha256,
             model=revision.model,
+            **derived,
         ))
 
     async def standing(self, *, unit: str) -> tuple[Note, ...]:
@@ -566,6 +659,7 @@ class SqlNoteStore:
         now_ms: int,
         instruction_sha256: str | None = None,
         model: str | None = None,
+        evidence_room: str | None = None,
     ) -> NoteRevision:
         """§6.3's compare-and-swap. See the module docstring's (2): the
         comparison IS the `UPDATE`'s `WHERE`, so a `rowcount` of 0 is the
@@ -599,13 +693,14 @@ class SqlNoteStore:
             )
         async with self._engine.begin() as conn:
             await self._append_on_conn(
-                conn, unit=unit, revision=revision,
+                conn, unit=unit, revision=revision, evidence_room=evidence_room,
             )
         return revision
 
     @staticmethod
     async def _append_on_conn(
         conn: AsyncConnection, *, unit: str, revision: NoteRevision,
+        evidence_room: str | None = None,
     ) -> None:
         """The CAS and the insert, on a connection the CALLER owns.
 
@@ -619,6 +714,25 @@ class SqlNoteStore:
         note_id = revision.note_id
         parent_revision_id = revision.parent_revision_id
         revision_id = revision.id
+        # LINEAGE (migration `0073_lineage`): this revision rests on the rooms
+        # its body cites and, from the tag path, the room it was written in;
+        # the note rests on the union. Read under the row lock the CAS below
+        # then takes, so the union is over the head it replaces.
+        head = await _head_lineage(conn, unit=unit, note_id=note_id)
+        derived: dict[str, Any] = {}
+        head_values: dict[str, Any] = {"head_revision_id": revision_id}
+        if head is not None:
+            origin, held, held_as_of = head
+            lineage, cited_at = await _revision_lineage(
+                conn, body=revision.body, origin=origin, first=False,
+                evidence_room=evidence_room,
+            )
+            as_of = cited_at if cited_at is not None else revision.written_at
+            derived = {"lineage": lineage.to_json(), "as_of": as_of}
+            head_values |= {
+                "lineage": held.union(lineage).to_json(),
+                "as_of": _newest(held_as_of, as_of),
+            }
         swapped = await conn.execute(
             sa.update(NOTE)
             .where(
@@ -632,7 +746,7 @@ class SqlNoteStore:
                 # reads again.
                 NOTE.c.retired_at.is_(None),
             )
-            .values(head_revision_id=revision_id)
+            .values(**head_values)
         )
         if swapped.rowcount == 0:
             # Read the head back only to build the message — the refusal was
@@ -673,6 +787,7 @@ class SqlNoteStore:
             established_by=revision.established_by,
             instruction_sha256=revision.instruction_sha256,
             model=revision.model,
+            **derived,
         ))
 
     async def search(
@@ -1392,6 +1507,25 @@ class SqlNoteStore:
         if reset_strikes:
             survivor_values["strikes"] = 0
         async with self._engine.begin() as conn:
+            # LINEAGE (migration `0073_lineage`): the survivor now rests on
+            # everything either note rested on, and on what the folded body
+            # cites.
+            derived: dict[str, Any] = {}
+            survivor = await _head_lineage(conn, unit=unit, note_id=survivor_id)
+            duplicate = await _head_lineage(conn, unit=unit, note_id=duplicate_id)
+            if survivor is not None:
+                origin, held, held_as_of = survivor
+                lineage, cited_at = await _revision_lineage(
+                    conn, body=revision.body, origin=origin, first=False,
+                )
+                as_of = cited_at if cited_at is not None else revision.written_at
+                derived = {"lineage": lineage.to_json(), "as_of": as_of}
+                union = held.union(lineage)
+                newest = _newest(held_as_of, as_of)
+                if duplicate is not None:
+                    union = union.union(duplicate[1])
+                    newest = _newest(newest, duplicate[2])
+                survivor_values |= {"lineage": union.to_json(), "as_of": newest}
             swapped = await conn.execute(
                 sa.update(NOTE)
                 .where(
@@ -1415,6 +1549,7 @@ class SqlNoteStore:
                 established_by=revision.established_by,
                 instruction_sha256=revision.instruction_sha256,
                 model=revision.model,
+                **derived,
             ))
             retired = await conn.execute(
                 sa.update(NOTE)

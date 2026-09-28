@@ -169,6 +169,34 @@ Memory has no lineage kind: it is never cited, so nothing derived rests on it.
   from everything a row cites, and across links between Register rows (a
   note and its event through `Note.event_id`; a note and the memo it closes
   into), re-checking on every link write.
+- **As built (step 2, lineage half, DEC-236; 2026-09-29).** The column has
+  one format in every store, the one step 2a writes on Rollup rows: a
+  sorted JSON array of `[kind, subject, origin]` triples, rooms keyed
+  `platform:conversation_id` (this node fixes no room key; 2a's was the
+  first in the store). A row with lineage per row (a note, a Rollup row)
+  stores the array; a row with lineage per section stores an object of
+  arrays: a Standing row `body` and `working_set`, the two sections today's
+  schema has, a culture row `body` (prose until the sectioned account, step
+  4). `message` entries carry the room as origin and no subject;
+  `unresolved` carries the row's own room. The predicates are `nora/agent/lineage.py`
+  and fix the details the table leaves open: `message:<A>` passes only
+  between rooms of one unit and never out of a `*` room (R-49's boundary),
+  and only when B's live roster is readable, names every account and holds
+  only listed persons of A (a listed-persons subset alone says nothing about
+  who is in B; tightened on review);
+  `presence` needs the flag AND the guard, the guard not waived by the flag
+  as `where_is` waives it (DEC-79), and it denies with no subject or no live
+  roster; an unknown kind, including the `unresolved` code writes for a
+  citation it cannot resolve, passes only in the row's origin room. A
+  Standing or culture row rests on its own room plus `unresolved`, because
+  its fold is shown the unit's `<notes>` and cites nothing from it, so both
+  stay in their own room until their writers cite per section.
+  `exclude_persons` is checked against the room's listed persons and its
+  live roster. The four pushed blocks filter behind `[lineage] mode`
+  (`off`, `shadow`, `on`; shipped `off`); `record_query` applies lineage in
+  every mode. Block assembly reads no live roster yet, so until it does a
+  presence entry or a surprise withholds its section in every room, and a
+  `message:<A>` entry in every room but A.
 
 ## 4. Reasoning modes
 

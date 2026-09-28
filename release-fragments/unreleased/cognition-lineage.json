@@ -1,0 +1,17 @@
+{
+  "type": "feature",
+  "summary": "Nora can now search what was said over a stretch of time with a new record_query tool, and every note, room position and room culture records which rooms it rests on, so what one room said can be kept out of a room with other people in it.",
+  "details": [
+    "record_query reads the recorded messages of this room, or of every room of the group, between two Hong Kong times, optionally by one person or by words. Cantonese and English words are found inside sentences; each result names its room and carries its edits and reactions.",
+    "With all_rooms, a room is searched only when everyone in the asking room is also a listed person of that room, and never a room open to anyone or one in another group. The result says when rooms were left out.",
+    "A deleted or unsent message keeps its place in the result but not its words.",
+    "Notes, room positions (standing and its working set) and room culture now carry lineage: the rooms their citations reach. Existing rows were backfilled from what they cite; a citation that can no longer be resolved keeps the row to the room it came from.",
+    "With [lineage] mode = \"shadow\", every prompt works out which of these rows a room may be shown and records what it would hold back on the prefill span, while showing everything. With mode = \"on\", a note or section that fails is not shown and the rest are."
+  ],
+  "limitations": [
+    "[lineage] ships with mode = \"off\": prompts are unchanged until the operator turns it on. It is not to be turned on before a note shown in another room says which room it came from, which is not built yet.",
+    "record_query ships behind [record_query] enabled = false: no turn is offered it until its three tool_selection cases have run on both arms (the eval subject's config must enable it for that run). When on, it applies lineage whatever [lineage] says.",
+    "A room position or culture shows only in its own room, which is the only room either is shown in today.",
+    "The prompt blocks read no live roster yet, so with lineage on a note from another room is held back there until they do; record_query reads the asking room's roster itself and searches no other room when it cannot."
+  ]
+}

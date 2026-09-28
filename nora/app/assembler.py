@@ -17,6 +17,8 @@ so a shared helper in the same package needs no new edge in the import graph.
 
 from __future__ import annotations
 
+from nora.agent.lineage import LineagePolicy
+from nora.agent.whereis import circles_from_persons
 from nora.config import Config
 from nora.domain.media_join import MediaJoin
 from nora.domain.ports import (
@@ -34,6 +36,18 @@ from nora.engagement.self_presence import PresenceReader
 from nora.obs.metrics import Metrics
 from nora.persons import Persons
 from nora.policy import Policy
+
+
+def lineage_policy(cfg: Config, *, policy: Policy, persons: Persons) -> LineagePolicy:
+    """The ONE `LineagePolicy` of a process (design/cognition-loop/
+    10-tiers.md §3): every room of `policy.toml`, the location circles of
+    `identity.toml` (the same `circles_from_persons` `where_is` reads) and
+    `[lineage] mode`. A pure value; the tag path's assembler, the fire path
+    and the tool registry (`record_query`) each hold one built here, so the
+    three cannot disagree about who a room is."""
+    return LineagePolicy.from_policy(
+        policy, circles=circles_from_persons(persons), mode=cfg.lineage.mode,
+    )
 
 
 def build_assembler(
@@ -83,4 +97,8 @@ def build_assembler(
         # while `[culture] enabled = false`, and in every harness that wires
         # no store, which renders no block.
         culture=culture,
+        # Lineage (design/cognition-loop/10-tiers.md §3). Built here, from the
+        # same policy and identity every harness already passes, so an eval
+        # turn is filtered exactly as a live one in every `[lineage] mode`.
+        lineage=lineage_policy(cfg, policy=policy, persons=persons),
     )

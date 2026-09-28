@@ -383,11 +383,14 @@ CONSTRAINT ck_version_announcements_state CHECK ((state = ANY (ARRAY['announcing
 CONSTRAINT config_revision_file_check CHECK ((file = ANY (ARRAY['config.toml'::text, 'policy.toml'::text, 'identity.toml'::text])))
 CONSTRAINT culture_has_a_key_check CHECK ((length(btrim(key)) > 0))
 CONSTRAINT culture_revision_body_fits_the_ceiling_check CHECK ((length(body) <= 32000)),
+CONSTRAINT culture_revision_confidence_is_a_level_check CHECK (((confidence IS NULL) OR (confidence = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])))),
 CONSTRAINT culture_revision_has_a_body_check CHECK ((length(btrim(body)) > 0)),
 CONSTRAINT culture_revision_instruction_sha256_check CHECK (((instruction_sha256 IS NULL) OR (instruction_sha256 ~ '^[0-9a-f]{64}$'::text))),
+CONSTRAINT culture_revision_lineage_shape_check CHECK ((jsonb_typeof(lineage) = 'object'::text)),
 CONSTRAINT culture_revision_model_is_named_check CHECK (((model IS NULL) OR (length(btrim(model)) > 0))),
 CONSTRAINT culture_revision_names_its_writer_check CHECK ((length(btrim(established_by)) > 0)),
-CONSTRAINT culture_revision_parent_is_not_self_check CHECK (((parent_revision_id IS NULL) OR (parent_revision_id <> id)))
+CONSTRAINT culture_revision_parent_is_not_self_check CHECK (((parent_revision_id IS NULL) OR (parent_revision_id <> id))),
+CONSTRAINT culture_revision_reasoning_is_a_mode_check CHECK (((reasoning IS NULL) OR (reasoning = ANY (ARRAY['computed'::text, 'told'::text, 'deduced'::text, 'induced'::text, 'abduced'::text, 'said'::text]))))
 CONSTRAINT decision_log_reason_fits_the_block_check CHECK ((length(reason) <= 80)),
 CONSTRAINT decision_log_verdict_is_known_check CHECK ((verdict = ANY (ARRAY['spoke'::text, 'silent'::text, 'remind'::text, 'decline'::text, 'replied'::text, 'failed'::text]))),
 CONSTRAINT decision_log_writer_is_known_check CHECK ((writer = ANY (ARRAY['participation'::text, 'proactive_decide'::text, 'proactive_act'::text, 'tag'::text])))
@@ -431,18 +434,24 @@ CONSTRAINT note_candidate_kind_check CHECK ((kind = ANY (ARRAY['miss'::text, 'cr
 CONSTRAINT note_candidate_miss_fields_check CHECK (((kind <> 'miss'::text) OR ((probe IS NOT NULL) AND (first_seen_at IS NOT NULL) AND (last_seen_at IS NOT NULL)))),
 CONSTRAINT note_candidate_status_check CHECK (((status IS NULL) OR (status = ANY (ARRAY['pending'::text, 'created'::text, 'refused'::text])))),
 CONSTRAINT note_candidate_title_fits_the_index_check CHECK (((title IS NULL) OR ((length(btrim(title)) > 0) AND (length(title) <= 60))))
+CONSTRAINT note_confidence_is_a_level_check CHECK (((confidence IS NULL) OR (confidence = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])))),
 CONSTRAINT note_description_fits_the_index_check CHECK (((length(btrim(description)) > 0) AND (length(description) <= 200))),
 CONSTRAINT note_has_a_closing_condition_check CHECK ((length(btrim(closing_condition)) > 0)),
 CONSTRAINT note_has_an_anchor_check CHECK (((anchor_date IS NOT NULL) OR (cardinality(anchor_entity_ids) > 0))),
+CONSTRAINT note_lineage_shape_check CHECK ((jsonb_typeof(lineage) = 'array'::text)),
 CONSTRAINT note_merge_decision_mode_is_known_check CHECK ((mode = ANY (ARRAY['shadow'::text, 'on'::text]))),
 CONSTRAINT note_merge_decision_outcome_is_known_check CHECK ((outcome = ANY (ARRAY['would_merge'::text, 'merged'::text, 'stale'::text, 'too_long'::text, 'not_open'::text, 'overlap'::text, 'cross_room'::text, 'not_changed'::text]))),
 CONSTRAINT note_merge_decision_reason_is_a_sentence_check CHECK ((length(reason) <= 500))
+CONSTRAINT note_reasoning_is_a_mode_check CHECK (((reasoning IS NULL) OR (reasoning = ANY (ARRAY['computed'::text, 'told'::text, 'deduced'::text, 'induced'::text, 'abduced'::text, 'said'::text])))),
 CONSTRAINT note_replacement_implies_retirement_check CHECK (((replaced_by IS NULL) OR (retired_at IS NOT NULL))),
 CONSTRAINT note_revision_body_fits_the_ceiling_check CHECK ((length(body) <= 32000)),
+CONSTRAINT note_revision_confidence_is_a_level_check CHECK (((confidence IS NULL) OR (confidence = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])))),
 CONSTRAINT note_revision_has_a_body_check CHECK ((length(btrim(body)) > 0)),
 CONSTRAINT note_revision_instruction_sha256_check CHECK (((instruction_sha256 IS NULL) OR (instruction_sha256 ~ '^[0-9a-f]{64}$'::text))),
+CONSTRAINT note_revision_lineage_shape_check CHECK ((jsonb_typeof(lineage) = 'array'::text)),
 CONSTRAINT note_revision_model_is_named_check CHECK (((model IS NULL) OR (length(btrim(model)) > 0))),
-CONSTRAINT note_revision_names_its_writer_check CHECK ((length(btrim(established_by)) > 0))
+CONSTRAINT note_revision_names_its_writer_check CHECK ((length(btrim(established_by)) > 0)),
+CONSTRAINT note_revision_reasoning_is_a_mode_check CHECK (((reasoning IS NULL) OR (reasoning = ANY (ARRAY['computed'::text, 'told'::text, 'deduced'::text, 'induced'::text, 'abduced'::text, 'said'::text]))))
 CONSTRAINT note_strikes_are_not_negative_check CHECK ((strikes >= 0)),
 CONSTRAINT note_title_fits_the_index_check CHECK (((length(btrim(title)) > 0) AND (length(title) <= 60)))
 CONSTRAINT rendered_claim_kind_check CHECK ((kind = ANY (ARRAY['fact'::text, 'lexeme'::text]))),
@@ -459,9 +468,15 @@ CONSTRAINT room_lexeme_state_check CHECK ((state = ANY (ARRAY['live'::text, 'fad
 CONSTRAINT row_history_op_is_known_check CHECK ((op = ANY (ARRAY['backfill'::text, 'insert'::text, 'update'::text, 'delete'::text]))),
 CONSTRAINT row_history_supersession_is_whole_check CHECK (((superseded_at IS NULL) = (superseded_by IS NULL)))
 CONSTRAINT standing_body_fits_the_ceiling_check CHECK (((length(btrim(body)) > 0) AND (length(body) <= 4000))),
+CONSTRAINT standing_confidence_is_a_level_check CHECK (((confidence IS NULL) OR (confidence = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])))),
 CONSTRAINT standing_fold_count_is_not_negative_check CHECK ((fold_count >= 0)),
+CONSTRAINT standing_lineage_shape_check CHECK ((jsonb_typeof(lineage) = 'object'::text)),
+CONSTRAINT standing_reasoning_is_a_mode_check CHECK (((reasoning IS NULL) OR (reasoning = ANY (ARRAY['computed'::text, 'told'::text, 'deduced'::text, 'induced'::text, 'abduced'::text, 'said'::text])))),
 CONSTRAINT standing_revision_body_fits_the_ceiling_check CHECK (((length(btrim(body)) > 0) AND (length(body) <= 4000))),
+CONSTRAINT standing_revision_confidence_is_a_level_check CHECK (((confidence IS NULL) OR (confidence = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])))),
 CONSTRAINT standing_revision_fold_count_is_not_negative_check CHECK ((fold_count >= 0)),
+CONSTRAINT standing_revision_lineage_shape_check CHECK ((jsonb_typeof(lineage) = 'object'::text)),
+CONSTRAINT standing_revision_reasoning_is_a_mode_check CHECK (((reasoning IS NULL) OR (reasoning = ANY (ARRAY['computed'::text, 'told'::text, 'deduced'::text, 'induced'::text, 'abduced'::text, 'said'::text])))),
 CONSTRAINT standing_revision_source_is_fold_or_operator_check CHECK ((source = ANY (ARRAY['fold'::text, 'operator'::text]))),
 CONSTRAINT standing_revision_working_set_fits_the_ceiling_check CHECK (((jsonb_array_length(working_set) <= 20) AND (octet_length((working_set)::text) <= 2400)))
 CONSTRAINT standing_working_set_fits_the_ceiling_check CHECK (((jsonb_array_length(working_set) <= 20) AND (octet_length((working_set)::text) <= 2400)))
@@ -491,6 +506,7 @@ CREATE INDEX idx_language_observation_scope ON public.language_observation USING
 CREATE INDEX idx_message_delete_message ON public.message_delete USING btree (message_id);
 CREATE INDEX idx_message_edit_message_ts ON public.message_edit USING btree (message_id, ts);
 CREATE INDEX idx_message_reaction_message ON public.message_reaction USING btree (message_id);
+CREATE INDEX idx_messages_body_trgm ON public.messages USING gin (body public.gin_trgm_ops);
 CREATE INDEX idx_messages_conv_platform_message_id ON public.messages USING btree (conversation_id, platform_message_id);
 CREATE INDEX idx_messages_conv_ts ON public.messages USING btree (conversation_id, ts DESC);
 CREATE INDEX idx_messages_dream_lag ON public.messages USING btree (conversation_id, id) WHERE (is_nora = 0);
@@ -864,6 +880,11 @@ anchor_entity_ids text[] DEFAULT '{}'::text[] NOT NULL,
 anchor_entity_ids text[] DEFAULT '{}'::text[] NOT NULL,
 announced_at timestamp with time zone NOT NULL,
 artifact_id text,
+as_of bigint,
+as_of bigint,
+as_of bigint,
+as_of bigint,
+as_of bigint,
 as_of_ms bigint NOT NULL,
 as_of_ms bigint NOT NULL,
 as_of_ms bigint NOT NULL,
@@ -926,6 +947,11 @@ colocation_ms bigint NOT NULL,
 comment_id text,
 completed_at timestamp with time zone,
 confidence double precision NOT NULL,
+confidence text,
+confidence text,
+confidence text,
+confidence text,
+confidence text,
 consolidator_name text NOT NULL,
 consumed_verdict_tag text,
 consumed_verdict_tag text,
@@ -1029,6 +1055,11 @@ event_id uuid,
 examples jsonb DEFAULT '[]'::jsonb NOT NULL,
 examples jsonb DEFAULT '[]'::jsonb NOT NULL,
 exchange_basis text[] DEFAULT '{}'::text[] NOT NULL,
+exclude_persons text[] DEFAULT '{}'::text[] NOT NULL,
+exclude_persons text[] DEFAULT '{}'::text[] NOT NULL,
+exclude_persons text[] DEFAULT '{}'::text[] NOT NULL,
+exclude_persons text[] DEFAULT '{}'::text[] NOT NULL,
+exclude_persons text[] DEFAULT '{}'::text[] NOT NULL,
 expires_at bigint
 extractor_confidence double precision NOT NULL,
 extractor_confidence double precision NOT NULL,
@@ -1167,6 +1198,11 @@ lat double precision NOT NULL,
 lat_rounded double precision NOT NULL,
 late_fixes integer DEFAULT 0 NOT NULL,
 lexeme_basis text[] DEFAULT '{}'::text[] NOT NULL,
+lineage jsonb DEFAULT '[]'::jsonb NOT NULL,
+lineage jsonb DEFAULT '[]'::jsonb NOT NULL,
+lineage jsonb DEFAULT '{}'::jsonb NOT NULL,
+lineage jsonb DEFAULT '{}'::jsonb NOT NULL,
+lineage jsonb DEFAULT '{}'::jsonb NOT NULL,
 lineage jsonb NOT NULL,
 lineage jsonb NOT NULL,
 lineage jsonb NOT NULL,
@@ -1344,6 +1380,11 @@ reading_digest text NOT NULL,
 reason text DEFAULT ''::text NOT NULL,
 reason text DEFAULT ''::text NOT NULL,
 reason text NOT NULL,
+reasoning text,
+reasoning text,
+reasoning text,
+reasoning text,
+reasoning text,
 reasoning_effort text NOT NULL,
 recognition_score double precision DEFAULT 0 NOT NULL,
 recognition_score double precision DEFAULT 0 NOT NULL,

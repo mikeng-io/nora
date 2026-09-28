@@ -796,6 +796,11 @@ def test_every_read_only_tool_is_classified_unit_safe_or_room_scoped():
         # words from every room of a unit, which a proactive row could then
         # carry into another room. Nobody has made that disclosure decision.
         "room_list", "room_read",
+        # `record_query` (design/cognition-loop/15-map.md §4) reads through
+        # the ROOM's lineage: a unit-keyed tick's synthetic room is in no
+        # policy, so every call there is `unavailable`. Cognition's per-item
+        # bound room (30 §1, DEC-223) is what admits it, at step 3.
+        "record_query",
         # `instagram_read` (design/instagram-adoption/18) resolves the name it
         # is given against the ROOM's live roster (`room.scope().find`, the
         # lookup `about` uses) — the input a unit-keyed tick does not have,

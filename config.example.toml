@@ -2198,6 +2198,27 @@ max_memory_calls = 12
 lookup_person = 12
 
 
+# Lineage at assembly (design/cognition-loop/10-tiers.md §3; migration step
+# 2). Every derived row carries the set of (kind, subject, origin room) its
+# citations reach; the four pushed blocks that render derived rows (<notes>,
+# <standing>, <standing_working_set>, <culture>) show a row or section only in
+# a room its lineage passes for. SHIPS OFF. "shadow" runs the predicates on
+# every prompt and records what they would withhold on the agent.prefill span
+# (nora.prefill.lineage_withheld) while every block still renders: read it
+# before "on". "on" drops a section that fails. `record_query` applies
+# lineage in every mode.
+[lineage]
+mode = "off"
+
+
+# `record_query` (design/cognition-loop/15-map.md §4): the recorded messages
+# over a time span, by author or words, under lineage. SHIPS OFF: off, no turn
+# is offered the tool. Turn it on after its tool_selection cases have run on
+# both arms.
+[record_query]
+enabled = false
+
+
 # The cognition loop's stimuli and wake evaluator (design/cognition-loop/
 # 20-observe.md §3; migration step 1). SHIPS OFF: a new subsystem does not
 # switch itself on. `mode = "shadow"` is step 1: every recorded person-authored

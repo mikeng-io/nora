@@ -81,6 +81,8 @@ from ..domain.gatherings import (
 )
 from ..domain.instagram_links import is_handle as _is_instagram_handle
 from ..domain.instagram_links import parse_link as _parse_instagram_link
+from ..domain.lineage import LiveRoom, RenderRoom, RoomFacts, room_key
+from ..domain.lineage import message as message_lineage
 from ..domain.linkedin_links import is_handle as _is_linkedin_handle
 from ..domain.linkedin_links import parse_link as _parse_linkedin_link
 from ..domain.media import (
@@ -144,6 +146,7 @@ from ..domain.ports import (
     VoicePresenceSource,
 )
 from ..domain.prompt import stamp
+from ..domain.record_query import RECORD_QUERY_MAX, RecordHit, RecordQuery
 from ..domain.reminders import (
     PROACTIVE_KIND,
     UNIT_SECONDS,
@@ -181,6 +184,7 @@ from ..obs.tracing import annotate, span
 from .arithmetic import evaluate as evaluate_expression
 from .dream_screen import screen as _dream_screen
 from .egress import scan_reply
+from .lineage import LineagePolicy, entry_permits
 
 # Re-exported, explicitly (`as`-aliased to themselves so ruff's F401 reads
 # them as intentional, not dead): `tests/test_media_fetch.py` and
@@ -794,6 +798,17 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
                             time_shiftable=False, source_tier="remembered", read_only=True,
                             side_effect_state="none", idempotency="idempotent", retry="safe",
                             output_contract="three_state", level=2),
+    # `record_query` (design/cognition-loop/15-map.md §4, migration step 2):
+    # the Record over an interval, by author or by words, in this room or in
+    # every room of the unit its lineage lets this room read. 3: «what did
+    # they say on Saturday», then a narrower window, then one person. A new
+    # verb, `query` (tests/architecture/test_tool_names.py says why none of
+    # the eight fits). `remembered`: stored words people wrote, like
+    # `load_transcript`. ADR 0015 level 2: one SHOULD (the words as written).
+    "record_query": NativeTool(3,
+                               source_tier="remembered", read_only=True,
+                               side_effect_state="none", idempotency="idempotent",
+                               retry="safe", output_contract="three_state", level=2),
     # The three room-scoped tools. Every budget here is chosen against ONE
     # currency: a tool call is a model round trip (~4 s on this gateway), and
     # `llm.limits.turns = 8` is the real global ceiling — these numbers only
@@ -2431,6 +2446,16 @@ class RoomDirectory(Protocol):
     ) -> UnitRooms: ...
 
 
+class RecordQuerySource(Protocol):
+    """The Record read `record_query` runs (`nora.infra.sql.record_query.
+    SqlRecordQuery`, the one implementation). Returns the hits oldest first,
+    whether more matched, and the ids that only near-match the text."""
+
+    async def query(
+        self, q: RecordQuery,
+    ) -> tuple[tuple[RecordHit, ...], bool, frozenset[int]]: ...
+
+
 def _room_name(room: KnownRoom) -> str:
     """What a room is called to her: the operator's label, or its network when
     it has none. Never `conversation_id` (R-18), and the SAME string
@@ -2659,6 +2684,98 @@ def _before_bound(before: str | None, now: datetime) -> int | None:
     if moment >= now:
         return None
     return int(moment.timestamp() * 1000)
+
+
+#: `record_query`'s notes (ADR 0015 §3: interpretation lives in the result).
+_RECORD_QUERY_OFF = (
+    "I can't search what was said right now. Say so; do not guess what was said."
+)
+_RECORD_QUERY_TIME = (
+    'I could not read that time. Give it as "YYYY-MM-DD HH:MM" Hong Kong time, '
+    'or "YYYY-MM-DD" for a whole day.'
+)
+_RECORD_QUERY_NO_AUTHOR = (
+    "Nobody in this conversation goes by that. Check the name with "
+    "lookup_person; do not guess who was meant."
+)
+_RECORD_QUERY_NONE = (
+    "No recorded message in that stretch matches. Say you found none there, "
+    "not that it was never said."
+)
+_RECORD_QUERY_WITHHELD = (
+    " Rooms whose people are not all in this conversation were not searched."
+)
+_RECORD_QUERY_MORE = (
+    "More messages matched than are shown. Narrow start and end, or add "
+    "author or text."
+)
+_RECORD_QUERY_DELETED = (
+    "A message marked deleted was taken back by its author: say it was "
+    "deleted, never what it said."
+)
+_RECORD_QUERY_NEAR = (
+    "A message marked near has words close to these but not these words; do "
+    "not quote it as saying them."
+)
+
+
+def _readable_rooms(
+    target: RenderRoom, here: RoomFacts, *, all_rooms: bool,
+) -> tuple[list[RoomFacts], int]:
+    """The rooms `record_query` may read for `here`, and how many of the
+    unit's other rooms it may not. A room is read when its `message` lineage
+    passes for `here` (design/cognition-loop/10-tiers.md §3, DEC-225): itself
+    always; another room of the unit only when this room's listed persons are
+    a subset of that room's, neither lists `*`, and `target.live` (this
+    room's roster, read now) names everyone in it and holds only that room's
+    listed persons."""
+    if not all_rooms:
+        return [here], 0
+    rooms: list[RoomFacts] = []
+    withheld = 0
+    for other in target.rooms:
+        if other.unit != here.unit:
+            continue
+        if other == here:
+            rooms.append(other)
+            continue
+        entry = message_lineage(room_key(other.platform, sorted(other.ids)[0]))
+        if entry_permits(entry, target, origin=None):
+            rooms.append(other)
+        else:
+            withheld += 1
+    return rooms, withheld
+
+
+def _start_bound(start: str, now: datetime) -> int:
+    """`start` as an INCLUSIVE epoch-ms bound on `ts`: the beginning of the
+    span a person names (a date is its midnight, «21:14» that minute), Hong
+    Kong time. The same lenient reading `_before_bound` takes of a value
+    copied from a row's `when`, and the same refusal of anything else: raises
+    `ValueError`."""
+    text = re.sub(r"\((?:just now|\d+[mhd] ago)\)", " ", str(start))
+    text = re.sub(r"(?<=\d)T(?=\d)", " ", text)
+    text = " ".join(_BEFORE_FOLDED.sub(" ", text).split())
+    shape = _BEFORE_SHAPE.fullmatch(text)
+    if shape is None:
+        raise ValueError(start)
+    day, minute, second, millis = shape.groups()
+    moment = datetime.strptime(
+        f"{day} {minute or '00:00'}:{second or '00'}", "%Y-%m-%d %H:%M:%S",
+    ).replace(tzinfo=_HKT)
+    if millis is not None:
+        moment += timedelta(milliseconds=int(millis))
+    return int(moment.timestamp() * 1000)
+
+
+def _record_interval(start: str, end: str | None, now: datetime) -> tuple[int, int]:
+    """`record_query`'s `[start, end)` in epoch ms. `end` is `_before_bound`'s
+    reading (the END of the span named, exclusive), and a bound at or after
+    now, or none, reads up to now. Raises `ValueError` on either value it
+    cannot read."""
+    upper = _before_bound(end, now) if end is not None else None
+    now_ms = int(now.timestamp() * 1000)
+    return _start_bound(start, now), (upper if upper is not None else now_ms + 1)
 
 
 #: What a malformed `before` says. Never a silent read of the newest rows:
@@ -3689,6 +3806,7 @@ class NoteCollaborator(Protocol):
     async def append_revision(
         self, *, unit: str, note_id: str, body: str,
         parent_revision_id: str, established_by: str, now_ms: int,
+        evidence_room: str | None = None,
     ) -> NoteRevision: ...
 
     async def record_miss(
@@ -3819,6 +3937,12 @@ def build_tool_specs(
     # every test that does not care) makes `room_list` and `room_read` answer
     # `unavailable`, never an empty list of rooms.
     rooms: RoomDirectory | None = None,
+    # `record_query`'s two collaborators (design/cognition-loop/15-map.md §4):
+    # the Record read, and the process's one `LineagePolicy` (who each room of
+    # the policy is, `nora.app.assembler.lineage_policy`). `None` for either
+    # (offline, eval, every test that does not care) answers `unavailable`.
+    record: RecordQuerySource | None = None,
+    lineage: LineagePolicy | None = None,
 ) -> tuple[ToolSpec, ...]:
     """Every native tool, closed over one turn's collaborators.
 
@@ -4432,6 +4556,158 @@ def build_tool_specs(
         if older:
             result["note"] = _older_note(rows)
         return _memory_result(result)
+
+    async def record_query(
+        start: str,
+        end: str | None = None,
+        scope: Literal["this_room", "all_rooms"] = "this_room",
+        author: str | None = None,
+        text: str | None = None,
+    ) -> dict:
+        """Search this group's recorded messages over a time span, by author
+        or words. Call this when someone asks what was said on a day or who
+        mentioned something.
+
+        SHOULD: give `text` as the words were written, not a paraphrase.
+        Returns `messages` oldest first, each with `room`, `sender`, `body`
+        and `when`. Statuses: ok, nothing_found, ambiguous, unavailable.
+
+        Args:
+            start: From this Hong Kong time, "YYYY-MM-DD HH:MM", or a date
+                for the start of that day.
+            end: Up to this Hong Kong time, same form, a date meaning the end
+                of that day. Leave it out to read up to now.
+            scope: this_room, or all_rooms of this group.
+            author: Only messages by this person, a name used in this
+                conversation.
+            text: Only messages containing these words.
+        """
+        # design/cognition-loop/15-map.md §4, migration step 2. LINEAGE
+        # FIRST, before any read: the rooms this call may touch are the ones
+        # whose `message` lineage passes for THIS room (10 §3, DEC-225), so
+        # another room's words never reach the process for a room that may
+        # not be shown them. `[lineage] mode` does not apply here: a new
+        # surface has no earlier behaviour to keep. `start`, `author` and
+        # `text` are MODEL-SUPPLIED and never echoed back or logged.
+        if record is None or lineage is None:
+            _record(metrics, "record_query", "unavailable", reason="unwired")
+            return {"status": "unavailable", "note": _RECORD_QUERY_OFF}
+        target = lineage.render_room(
+            platform=room.platform, conversation_id=bound_conversation_id,
+        )
+        here = target.room
+        if here is None:
+            _record(metrics, "record_query", "unavailable", reason="room")
+            return {"status": "unavailable", "note": _RECORD_QUERY_OFF}
+        now = now_fn().astimezone(_HKT)
+        try:
+            start_ms, end_ms = _record_interval(start, end, now)
+        except (ValueError, OverflowError):
+            _record(metrics, "record_query", "unavailable", reason="time")
+            return {"status": "unavailable", "note": _RECORD_QUERY_TIME}
+        if scope == "all_rooms":
+            # Another room's words reach this one only when everyone actually
+            # here may see them (`message` lineage reads the live roster): read
+            # it once, and a roster that cannot be read withholds every other
+            # room rather than guessing.
+            view = await room.scope()
+            target = target.with_live(LiveRoom(
+                person_ids=frozenset(p.person_id for p in view.people),
+                unnamed=view.unnamed, available=view.available,
+                degraded=view.degraded,
+            ))
+        rooms, withheld = _readable_rooms(target, here, all_rooms=scope == "all_rooms")
+        person_id: str | None = None
+        if author is not None and author.strip():
+            # R-21: a name resolves only among THIS conversation's people, so
+            # «not here» and «nobody» are one answer.
+            view = await room.scope()
+            if not view.available:
+                _record(metrics, "record_query", "unavailable", reason="roster")
+                return {"status": "unavailable", "note": _RECORD_QUERY_OFF}
+            matches = view.find(author)
+            if not matches:
+                _record(metrics, "record_query", "nothing_found", reason="author")
+                return {"status": "nothing_found", "note": _RECORD_QUERY_NO_AUTHOR}
+            if len(matches) > 1:
+                _record(metrics, "record_query", "ambiguous")
+                return {
+                    "status": "ambiguous",
+                    "could_be": [p.name for p in matches],
+                    "note": "More than one person here goes by that. Ask which one.",
+                }
+            person_id = matches[0].person_id
+        try:
+            hits, more, near = await record.query(RecordQuery(
+                rooms=tuple(
+                    (r.platform, cid) for r in rooms for cid in sorted(r.ids)
+                ),
+                start_ms=start_ms, end_ms=end_ms, person_id=person_id,
+                text=text.strip() if text and text.strip() else None,
+                limit=RECORD_QUERY_MAX,
+            ))
+        except Exception:
+            log.exception("record_query failed")
+            _record(metrics, "record_query", "unavailable")
+            return {"status": "unavailable", "note": _RECORD_QUERY_OFF}
+        if not hits:
+            _record(metrics, "record_query", "nothing_found",
+                    rooms=len(rooms), withheld=withheld)
+            return {
+                "status": "nothing_found",
+                "note": _RECORD_QUERY_NONE + (_RECORD_QUERY_WITHHELD if withheld else ""),
+            }
+        # Named per room's platform (a sender id is keyed by platform), then
+        # through the SHARED media join, `load_transcript`'s cost class: a
+        # photo reads the same here as in `<group_transcript>` (issue #116).
+        rows = [
+            persons.name_transcript([h.row], platform=h.platform)[0] for h in hits
+        ]
+        if media_join is not None:
+            rows = list(await media_join.enrich(rows, path="load_transcript"))
+        out = _record_messages(hits, rows, rooms=rooms, near=near, now=now)
+        notes = []
+        if more:
+            notes.append(_RECORD_QUERY_MORE)
+        if any(h.deleted for h in hits):
+            notes.append(_RECORD_QUERY_DELETED)
+        if near:
+            notes.append(_RECORD_QUERY_NEAR)
+        if withheld:
+            notes.append(_RECORD_QUERY_WITHHELD.strip())
+        _record(metrics, "record_query", "ok", rows=len(out), more=more,
+                rooms=len(rooms), withheld=withheld, near=len(near))
+        result: dict = {"status": "ok", "messages": out}
+        if notes:
+            result["note"] = " ".join(notes)
+        return _memory_result(result)
+
+    def _record_messages(
+        hits: Sequence[RecordHit], rows: Sequence[TranscriptRow], *,
+        rooms: Sequence[RoomFacts], near: frozenset[int], now: datetime,
+    ) -> list[dict]:
+        """The hits in `load_transcript`'s one shape (`_transcript_messages`),
+        each named with its room, its reactions and whether it was deleted.
+        A deleted message keeps its place and loses its words: its author
+        took them back (the withdrawal cascade that hides it is step 2c)."""
+        names = {
+            (r.platform, cid): (r.label or platform_name(r.platform))
+            for r in rooms for cid in r.ids
+        }
+        out: list[dict] = []
+        for hit, row in zip(hits, rows, strict=True):
+            item = _transcript_messages([row], now=now)[0][0]
+            item = {"room": names.get((hit.platform, hit.conversation_id), ""), **item}
+            if hit.reactions:
+                item["reactions"] = dict(hit.reactions)
+            if hit.deleted:
+                item["body"] = None
+                item.pop("was", None)
+                item["deleted"] = True
+            if hit.row.id in near:
+                item["near"] = True
+            out.append(item)
+        return out
 
     # ---- the three room-scoped tools -------------------------------------
     #
@@ -11692,6 +11968,9 @@ Args:
                 parent_revision_id=parent,
                 established_by=f"{TAG_PATH_PREFIX}{tagger.person_id}",
                 now_ms=_now_ms(),
+                # LINEAGE (design/cognition-loop/10-tiers.md §3): a revision
+                # written here rests on this room as well as on what it cites.
+                evidence_room=room_key(room.platform, bound_conversation_id),
             )
         except StaleNoteHeadError:
             # §6.3. `unavailable`, never `refused` and never applied on top:
@@ -12192,6 +12471,7 @@ Args:
         _spec("load_transcript", load_transcript),
         _spec("room_list", room_list),
         _spec("room_read", room_read),
+        _spec("record_query", record_query),
         _spec("group_members", group_members),
         _spec("lookup_person", lookup_person),
         _spec("about", about),
@@ -12424,6 +12704,8 @@ def build_tools(
     rooms: RoomDirectory | None = None,
     clock: Callable[[], datetime] | None = None,
     on_rows: Callable[[Sequence[TranscriptRow]], None] | None = None,
+    record: RecordQuerySource | None = None,
+    lineage: LineagePolicy | None = None,
 ) -> list:
     """The Strands-ready form of `build_tool_specs` — `adapt()` each spec so
     the docstrings above become the tool's model-facing description/schema
@@ -12481,5 +12763,7 @@ def build_tools(
         media_join=media_join,
         rooms=rooms,
         clock=clock,
+        record=record,
+        lineage=lineage,
     )
     return [adapt(spec) for spec in specs]

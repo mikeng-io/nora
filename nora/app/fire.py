@@ -74,6 +74,7 @@ from datetime import datetime
 from typing import Any
 
 from nora.agent.guards import ReplyGuard
+from nora.agent.lineage import LineagePolicy
 from nora.agent.outbound import OutboundComposer
 from nora.agent.prefill import (
     build_prefill,
@@ -781,6 +782,7 @@ class FirePath:
         gate_shadow_platform: str = "discord",
         decisions: DecisionLogRecorder | None = None,
         presence: PresenceReader | None = None,
+        lineage: LineagePolicy | None = None,
     ) -> None:
         # S5 (15-roadmap §6.3): `<standing>` renders on the fire path too.
         #
@@ -861,6 +863,11 @@ class FirePath:
         # every test construction site has.
         self._notes = notes
         self._policy = policy
+        # Lineage (design/cognition-loop/10-tiers.md §3): the SAME value the
+        # tag path's assembler holds (`nora.app.assembler.lineage_policy`), so
+        # a fire turn's derived blocks are filtered for its room exactly as a
+        # tag reply's are. `None` is `[lineage] mode = "off"`.
+        self._lineage = lineage
         self._persons = persons
         self._records = records
         # The shared quote-window resolver (DEC-195, design/11 §2.5's
@@ -1135,6 +1142,13 @@ class FirePath:
             decisions=decisions,
             presence=presence,
             room_members=self._room_members(occasion),
+            lineage_room=(
+                self._lineage.render_room(
+                    platform=occasion.platform,
+                    conversation_id=occasion.conversation_id,
+                )
+                if self._lineage is not None else None
+            ),
         )
 
     def _room_members(self, occasion: Event) -> tuple[PersonRef, ...]:

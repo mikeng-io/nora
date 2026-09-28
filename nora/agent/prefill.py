@@ -33,6 +33,7 @@ from ..language.self_card_render import render_self_card
 from ..language.standing_render import render_standing, render_standing_working_set
 from ..obs.tracing import annotate, span
 from .clock import local_now, state_time
+from .lineage import DerivedView, derived_view
 
 _CLOSING_LINE = "Understood. I'll read the conversation and reply as myself."
 
@@ -772,7 +773,31 @@ def _people_in_window_block(ctx: TagContext) -> ContextBlock | None:
     )
 
 
-def _notes_block(ctx: TagContext, *, now: datetime) -> ContextBlock | None:
+def _lineage(ctx: TagContext) -> DerivedView | None:
+    """Which derived rows this room may be shown (design/cognition-loop/
+    10-tiers.md §3, 15-map.md §3; migration step 2). `None` when lineage is
+    off for this context (no target, or `[lineage] mode = "off"`): every
+    block renders as it always has.
+
+    The pushed blocks that render DERIVED rows are four: `<notes>` (a row
+    each), `<standing>` and `<standing_working_set>` (Standing's two
+    sections today) and `<culture>` (its one section). Every other block is
+    authored, live, the Record of this room, or memory, and carries no
+    lineage. A section that fails is dropped whole, never cut inside its
+    prose; the rest of its row still renders.
+    """
+    target = ctx.lineage_room
+    if target is None or target.mode == "off":
+        return None
+    return derived_view(
+        notes=ctx.notes, standing=ctx.standing, culture=ctx.culture,
+        target=target,
+    )
+
+
+def _notes_block(
+    ctx: TagContext, *, now: datetime, view: DerivedView | None = None,
+) -> ContextBlock | None:
     """The note tier's index. VOLATILE-TIER ONLY, and that placement is the
     point: it is rendered here (`build_prefill`'s per-turn message) rather
     than in `_context_header`, so the static head — the cache PREFIX
@@ -804,7 +829,20 @@ def _notes_block(ctx: TagContext, *, now: datetime) -> ContextBlock | None:
     # «may already have settled» and gave her no way to tell which; the
     # anchor date was on the row and rendered nowhere.
     today = now.year * 10000 + now.month * 100 + now.day
-    return render_notes(ctx.notes, today=today)
+    notes = view.notes if view is not None and _enforced(ctx) else ctx.notes
+    return render_notes(notes, today=today)
+
+
+def _enforced(ctx: TagContext) -> bool:
+    """`[lineage] mode = "on"`: a failing section is not rendered. `shadow`
+    computes the same answer and only reports it on the prefill span."""
+    return ctx.lineage_room is not None and ctx.lineage_room.mode == "on"
+
+
+def _shown(ctx: TagContext, view: DerivedView | None, block: str) -> bool:
+    if view is None or not _enforced(ctx):
+        return True
+    return bool(getattr(view, block))
 
 
 
@@ -825,7 +863,9 @@ def _presence_block(ctx: TagContext) -> ContextBlock:
     return render_presence(presence)
 
 
-def _standing_block(ctx: TagContext) -> ContextBlock | None:
+def _standing_block(
+    ctx: TagContext, view: DerivedView | None = None,
+) -> ContextBlock | None:
     """Her own position in THIS conversation, as the debrief left it last turn
     (`design/dreamer-agent-loop/26-standing.md`). Same volatile-tier placement
     and trailing-newline convention as its five siblings above, `""` when there
@@ -847,10 +887,14 @@ def _standing_block(ctx: TagContext) -> ContextBlock | None:
     still hedges itself; see `render_standing`'s docstring for why that is not
     a contradiction.
     """
+    if not _shown(ctx, view, "standing"):
+        return None
     return render_standing(ctx.standing)
 
 
-def _standing_working_set_block(ctx: TagContext) -> ContextBlock | None:
+def _standing_working_set_block(
+    ctx: TagContext, view: DerivedView | None = None,
+) -> ContextBlock | None:
     """Options she found and has not given this room, as
     `<standing_working_set>` (design/standing-compact/30-working-set.md §4,
     issue #445). Sits immediately after `_standing_block` in `_BLOCKS` (order
@@ -862,12 +906,16 @@ def _standing_working_set_block(ctx: TagContext) -> ContextBlock | None:
     or second store read, the same way `Standing.body` reaches
     `_standing_block` above.
     """
+    if not _shown(ctx, view, "standing_working_set"):
+        return None
     return render_standing_working_set(
         ctx.standing.working_set if ctx.standing is not None else (),
     )
 
 
-def _culture_block(ctx: TagContext, *, now: datetime) -> ContextBlock | None:
+def _culture_block(
+    ctx: TagContext, *, now: datetime, view: DerivedView | None = None,
+) -> ContextBlock | None:
     """What this ROOM is like, as `<culture>` (design/culture-tier).
 
     **The only block in this prompt that is about the room rather than about a
@@ -889,6 +937,8 @@ def _culture_block(ctx: TagContext, *, now: datetime) -> ContextBlock | None:
     one, for `render_standing`'s reason: a room she has never folded is not a
     room she looked at and found featureless.
     """
+    if not _shown(ctx, view, "culture"):
+        return None
     return render_culture(ctx.culture, now=now)
 
 
@@ -987,6 +1037,9 @@ def build_prefill(
         # Sub-millisecond in effect, and exactly the «interpret once» the
         # spine asks for: everything below computes on one fixed model of now.
         clock = now or local_now()
+        # Lineage, decided ONCE for the whole prefill: the four derived blocks
+        # below all read this one view.
+        view = _lineage(ctx)
         # RENDER first, DECLARE second, ASSEMBLE third. The order the blocks
         # reach her, and the catalogue that introduces them, both come from
         # `_BLOCKS` — so a block cannot be served without an entry, and an
@@ -1004,11 +1057,11 @@ def build_prefill(
             _peer_card_block(ctx),
             _peer_history_block(ctx),
             _people_in_window_block(ctx),
-            _restamp(_notes_block(ctx, now=clock)),
+            _restamp(_notes_block(ctx, now=clock, view=view)),
             _restamp(_decisions_block(ctx, now=clock)),
-            _restamp(_culture_block(ctx, now=clock)),
-            _restamp(_standing_block(ctx)),
-            _restamp(_standing_working_set_block(ctx)),
+            _restamp(_culture_block(ctx, now=clock, view=view)),
+            _restamp(_standing_block(ctx, view)),
+            _restamp(_standing_working_set_block(ctx, view)),
             _transcript_block(ctx, display_name, clock, context_window),
         ])
         # WHICH blocks were actually built (non-empty body — `assemble`'s own
@@ -1020,6 +1073,17 @@ def build_prefill(
         # second time to ask. Sizes are the rendered body only — the wrapping
         # tag and the catalogue line are the assembler's cost, not the read's.
         rendered = [b for b in declared if b.body]
+        # LINEAGE, on every mode but `off` (migration step 2): what the four
+        # derived blocks withheld from this room, or would have in `shadow`.
+        # The shadow reading that gates `on` is read from these two
+        # attributes.
+        if view is not None and ctx.lineage_room is not None:
+            annotate(**{
+                "nora.prefill.lineage_mode": ctx.lineage_room.mode,
+                "nora.prefill.lineage_withheld": ",".join(
+                    f"{name}:{n}" for name, n in view.withheld
+                ),
+            })
         annotate(**{
             "nora.prefill.blocks_declared": len(declared),
             "nora.prefill.blocks_rendered": ",".join(b.name for b in rendered),

@@ -63,6 +63,7 @@ from ..infra.transit import TransitClient
 from ..infra.version import VersionManifest
 from ..infra.vision import VisionCache, VisionClient
 from ..infra.vision.preprocess import VIDEO_CHUNK_SECONDS, VIDEO_MAX_CHUNKS
+from .lineage import LineagePolicy
 from .links import LinkCarry
 from .mcp import McpToolGroup
 from .ports import ToolSpec, adapt
@@ -80,6 +81,7 @@ from .tools import (
     ImageGenerator,
     NoteCollaborator,
     OriginRoom,
+    RecordQuerySource,
     RoomDirectory,
     build_tool_specs,
     utc_now,
@@ -209,8 +211,23 @@ class ToolRegistry:
         image_refs_allowed: bool = False,
         media_store: MediaObjectStore | None = None,
         budget_overrides: Mapping[str, int] | None = None,
+        # `record_query`'s Record read and the process's one `LineagePolicy`
+        # (design/cognition-loop/15-map.md §4). Process-lifetime, like
+        # `rooms`: the per-turn part (which room) is the turn's own
+        # `conversation_id`. `None` answers `unavailable`.
+        record: RecordQuerySource | None = None,
+        lineage: LineagePolicy | None = None,
     ) -> None:
         self._budget_overrides = dict(budget_overrides or {})
+        self._record = record
+        self._lineage = lineage
+        # Tools no turn is offered in this process: `record_query` without its
+        # Record read (`[record_query] enabled = false`, the shipped default).
+        # Withheld from every surface and from the gate's digest, so an
+        # unconfigured tool costs no prompt and cannot be routed to.
+        self._withheld: frozenset[str] = (
+            frozenset() if record is not None else frozenset({"record_query"})
+        )
         self._transit = transit if transit is not None else TransitClient()
         # `parking` is keyless like `transit` — the TD open-data feed needs no
         # key, so the same default-construct argument applies: a required
@@ -645,7 +662,9 @@ class ToolRegistry:
         guidance; a reader deciding whether an answer could exist needs the
         verb and its subject, not its usage rules.
         """
-        return "\n".join(self._digest_lines(self.read_only_tools() - {LOADER_TOOL}))
+        return "\n".join(self._digest_lines(
+            self.read_only_tools() - {LOADER_TOOL} - self._withheld,
+        ))
 
     def _digest_lines(
         self, names: Iterable[str], *, hot: Container[str] = frozenset()
@@ -993,6 +1012,8 @@ class ToolRegistry:
             links=links,
             relay=self._relay,
             rooms=self._rooms,
+            record=self._record,
+            lineage=self._lineage,
             versions=self._versions,
             giphy_source=self._giphy,
             reaction_picker=self._reaction,
@@ -1120,6 +1141,7 @@ class ToolRegistry:
         admitted = [
             spec for spec in specs
             if spec.name != LOADER_TOOL and scope.admits(spec.name)
+            and spec.name not in self._withheld
         ]
         resident = [spec for spec in admitted if not defer or spec.name in HOT_TOOLS]
         shelf.stock({

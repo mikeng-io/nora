@@ -108,6 +108,9 @@ open, as the build fixed them:
   column. Surrogate ids are stable within a build (by overlap, as places
   always were) and differ between builds; `SqlRollupStore.resolve` answers a
   `(kind, subject, interval)` citation by overlap against the current build.
+  The lineage format is the store's one format since step 2's lineage half
+  (DEC-236, [10](10-tiers.md) §3 «As built»): notes, Standing and culture
+  store the same triples, a Rollup row's array read as the row's one set.
 
 ## 3. The rollups
 

@@ -120,6 +120,15 @@ _NOT_A_RAW_READER = {
     # not a caller bypassing them. Its own `MESSAGES.c.body` selects are the
     # store's storage, not a second transcript rendered for a model.
     "nora/infra/sql/audit.py": "defines the record store's own reads, is not a caller of them",
+    # design/cognition-loop/15-map.md §4: the Record read behind
+    # `record_query`, a store like `audit.py`. Its one caller, the tool in
+    # `nora/agent/tools.py`, runs the rows through the shared `MediaJoin`.
+    "nora/infra/sql/record_query.py": (
+        "a store read; its one caller, record_query, joins the rows it returns"
+    ),
+    # `idx_messages_body_trgm` names `MESSAGES.c.body` in an index; it reads
+    # nothing.
+    "nora/infra/sql/schema.py": "declares an index over the column, reads nothing",
 }
 
 

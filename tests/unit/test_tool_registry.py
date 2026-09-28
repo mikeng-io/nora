@@ -58,6 +58,24 @@ def _room() -> Room:
     )
 
 
+#: A Record read that is never called: `record_query` is offered only when one
+#: is wired (`[record_query] enabled`), and the declared-surface tests below
+#: ask about every tool.
+_RECORD = object()
+
+
+def test_record_query_is_offered_only_when_its_record_read_is_wired():
+    """`[record_query] enabled = false` (the shipped default) builds the
+    registry with no Record read, and then no turn and no gate digest carries
+    the tool; wired, both do."""
+    off = ToolRegistry()
+    assert "record_query" not in {t.tool_name for t in _built_tools(off)}
+    assert "record_query" not in off.capability_digest()
+    on = ToolRegistry(record=_RECORD)
+    assert "record_query" in {t.tool_name for t in _built_tools(on)}
+    assert "record_query" in on.capability_digest()
+
+
 def _built_tools(registry: ToolRegistry, *, dream_adaptor: str = "proactive") -> list:
     """The DECLARED surface, which is what every caller below asks about.
 
@@ -75,7 +93,7 @@ def _built_tools(registry: ToolRegistry, *, dream_adaptor: str = "proactive") ->
 
 
 def test_the_registry_exposes_every_declared_tool():
-    tools = _built_tools(ToolRegistry())
+    tools = _built_tools(ToolRegistry(record=_RECORD))
     assert {t.tool_name for t in tools} == {
         # DEC-146: the window-scoped rung below `load_transcript`.
         "who_said",
@@ -84,6 +102,9 @@ def test_the_registry_exposes_every_declared_tool():
         # design/self-awareness/07: which rooms this group has, and what is
         # said in one of them.
         "room_list", "room_read",
+        # design/cognition-loop/15-map.md §4: the Record over an interval,
+        # under lineage.
+        "record_query",
         "group_members", "lookup_person", "about", "ask_memory", "search_memory",
         "recall_lookups",
         "calculate", "transit", "route",
@@ -204,6 +225,9 @@ def test_budgets_match_todays_table():
         # second re-checks a transport after a send. `room_read` 3: two rooms
         # plus a corrected name.
         "room_list": 2, "room_read": 3,
+        # design/cognition-loop/15-map.md §4: an interval, then a narrower
+        # one, then one person.
+        "record_query": 3,
         # Sized against model round trips, not against work — see
         # `NATIVE_TOOL_BUDGETS` for the per-tool reasoning.
         "group_members": 1, "lookup_person": 4, "about": 4,
@@ -409,7 +433,7 @@ def test_adapting_produces_objects_the_agent_factory_accepts():
     model = factory.create_model_provider(
         model="deepseek-v4-flash", max_tokens=400, temperature=0.7, client=client,
     )
-    tools = _built_tools(ToolRegistry())
+    tools = _built_tools(ToolRegistry(record=_RECORD))
     agent = factory.create_agent(
         model=model, system_prompt="p", tools=tools, pre_fill=[],
         guard=ReplyGuard(conversation_id="g1", budgets=ToolRegistry().budgets(),
@@ -733,6 +757,8 @@ READ_ONLY = frozenset({
     # design/self-awareness/07: the room tools read policy, health, rosters
     # and stored messages, and write nothing.
     "room_list", "room_read",
+    # design/cognition-loop/15-map.md §4: a Record read under lineage.
+    "record_query",
     "saved_places", "who_said", "load_transcript", "group_members", "lookup_person",
     "about", "ask_memory", "search_memory", "recall_lookups", "media_fetch",
     "media_search",

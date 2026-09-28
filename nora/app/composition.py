@@ -124,6 +124,7 @@ from nora.infra.sql.notes import SqlNoteStore
 from nora.infra.sql.participation_state import SqlParticipationStateStore
 from nora.infra.sql.presence import PresenceStore
 from nora.infra.sql.reasoning_strip import SqlReasoningStripStore
+from nora.infra.sql.record_query import SqlRecordQuery
 from nora.infra.sql.reminders import SqlReminderStore
 from nora.infra.sql.revisions import SqlRevisionStore
 from nora.infra.sql.source_health import SqlSourceHealthLog
@@ -184,7 +185,7 @@ from nora.web.games import PulseGamesClient
 
 from .agent_runner import LiveAgentRunner
 from .announce import AnnouncementTarget, VersionAnnouncer
-from .assembler import build_assembler
+from .assembler import build_assembler, lineage_policy
 from .compute_poller import ComputeJobPoller
 from .compute_poller import recover as compute_poller_recover
 from .dispatch import Dispatcher
@@ -2735,7 +2736,17 @@ async def build_dependencies(
                 "internal error: registry's 'discord' entry is not a DiscordAdapter "
                 "— online_now's Discord arms stay unavailable"
             )
+    # LINEAGE (design/cognition-loop/10-tiers.md §3, migration step 2): the
+    # ONE value that says who each room of the policy is, held by the fire
+    # path below and by `record_query` through the registry. The tag path's
+    # assembler builds the same value from the same three inputs
+    # (`build_assembler`).
+    lineage = lineage_policy(cfg, policy=allowlist, persons=persons)
     tool_registry = ToolRegistry(
+        # `[record_query] enabled` (ships off): without the read the registry
+        # withholds the tool from every turn.
+        record=SqlRecordQuery(engine) if cfg.record_query.enabled else None,
+        lineage=lineage,
         route=route_client, vision=vision_client,
         describe_models=_describe_models(cfg),
         describe_providers=_describe_providers(cfg),
@@ -3022,6 +3033,7 @@ async def build_dependencies(
         # It reads doctrine at `applies_to="heartbeat"` itself.
         fire_path = FirePath(
             persons=persons, records=audit, memory=memory,
+            lineage=lineage,
             media_join=media_join,
             # The shared quote-window resolver (DEC-195, design/11 §2.5's
             # amendment). The SAME instance `build_assembler` above holds —
