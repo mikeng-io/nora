@@ -1,0 +1,79 @@
+[
+  {
+    "name": "an unknown lineage kind is shown only in the row's origin room",
+    "file": "nora/agent/lineage.py",
+    "old": "        return target.room is not None and target.room.is_room(origin)\n    return predicate(entry, target)",
+    "new": "        return True\n    return predicate(entry, target)",
+    "target": "tests/unit/test_lineage.py::test_an_unknown_kind_shows_only_in_the_rows_origin_room"
+  },
+  {
+    "name": "exclude_persons refuses a room listing an excluded person",
+    "file": "nora/agent/lineage.py",
+    "old": "    if b is None or b.persons is None or names & b.persons:",
+    "new": "    if b is None or b.persons is None:",
+    "target": "tests/unit/test_lineage.py::test_exclude_persons_refuses_a_room_holding_one_of_them"
+  },
+  {
+    "name": "message:<A> needs B's listed persons to be a subset of A's",
+    "file": "nora/agent/lineage.py",
+    "old": "    return b.persons <= a.persons",
+    "new": "    return True",
+    "target": "tests/unit/test_lineage.py::test_message_is_refused_in_a_wider_room_a_star_room_or_another_unit"
+  },
+  {
+    "name": "message:<A> resolves A only inside B's unit",
+    "file": "nora/domain/lineage.py",
+    "old": "        return tuple(r for r in self.rooms if r.unit == unit and conversation_id in r.ids)",
+    "new": "        return tuple(r for r in self.rooms if conversation_id in r.ids)",
+    "target": "tests/unit/test_lineage.py::test_message_is_refused_in_a_wider_room_a_star_room_or_another_unit"
+  },
+  {
+    "name": "presence needs the room's location flag",
+    "file": "nora/agent/lineage.py",
+    "old": "    if b is None or not b.location or entry.subject is None:",
+    "new": "    if b is None or entry.subject is None:",
+    "target": "tests/unit/test_lineage.py::test_presence_is_refused"
+  },
+  {
+    "name": "mode on renders only the notes whose lineage passes",
+    "file": "nora/agent/prefill.py",
+    "old": "    notes = view.notes if view is not None and _enforced(ctx) else ctx.notes",
+    "new": "    notes = ctx.notes",
+    "target": "tests/unit/test_lineage.py::test_a_note_is_not_rendered_in_a_wider_room_and_the_rest_are"
+  },
+  {
+    "name": "a failing Standing or culture section is not rendered",
+    "file": "nora/agent/prefill.py",
+    "old": "    return bool(getattr(view, block))",
+    "new": "    return True",
+    "target": "tests/unit/test_lineage.py::test_a_failing_section_is_dropped_and_the_rest_of_its_row_renders"
+  },
+  {
+    "name": "the backfill marks a later revision citing nothing unresolved",
+    "file": "nora/infra/sql/migrations/versions/0070_lineage.py",
+    "old": "                || CASE WHEN p.missing OR (NOT p.cites AND NOT p.first)",
+    "new": "                || CASE WHEN p.missing",
+    "target": "tests/infra/test_lineage_store.py::test_the_backfill_derives_lineage_from_citations_and_unresolved_otherwise"
+  },
+  {
+    "name": "a revision written from a room rests on that room",
+    "file": "nora/domain/lineage.py",
+    "old": "    if evidence_room:\n        entries.append(message(evidence_room))",
+    "new": "    if False:\n        entries.append(message(evidence_room))",
+    "target": "tests/infra/test_lineage_store.py::test_a_revision_from_another_room_widens_the_note_and_an_uncited_one_is_unresolved"
+  },
+  {
+    "name": "record_query reads another room only when its lineage passes here",
+    "file": "nora/agent/tools.py",
+    "old": "        if entry_permits(entry, target, origin=None):",
+    "new": "        if True:",
+    "target": "tests/infra/test_record_query.py::test_all_rooms_reads_only_the_rooms_whose_lineage_passes_here"
+  },
+  {
+    "name": "record_query withholds a deleted message's words",
+    "file": "nora/agent/tools.py",
+    "old": "                item[\"body\"] = None\n",
+    "new": "                pass\n",
+    "target": "tests/infra/test_record_query.py::test_a_deleted_message_keeps_its_place_and_loses_its_words"
+  }
+]

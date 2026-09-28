@@ -128,8 +128,8 @@
   {
     "name": "R3 load_transcript joins",
     "file": "nora/agent/tools.py",
-    "old": "        if media_join is not None:\n            rows = list(await media_join.enrich(rows, path=\"load_transcript\"))",
-    "new": "        if media_join is not None:\n            pass",
+    "old": "        # difference.\n        if media_join is not None:\n            rows = list(await media_join.enrich(rows, path=\"load_transcript\"))",
+    "new": "        # difference.\n        if media_join is not None:\n            pass",
     "target": "tests/test_media_fetch.py -k load_transcript_renders_media"
   },
   {
