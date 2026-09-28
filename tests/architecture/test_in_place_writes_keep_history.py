@@ -6,10 +6,24 @@ covers. It was read off the code once; this is what keeps it true when a
 store grows an UPDATE, an upsert or a DELETE on a table nobody listed — the
 write would work and its history would silently not exist.
 
-Read from source, like the other architecture tests: every `sa.update(T)`
-and `sa.delete(T)` target anywhere under `nora/`, and for every
-`on_conflict_do_update` the nearest `insert(T)` above it (the upsert's own
-table; the statement is built a few lines before the conflict clause).
+Read from source, like the other architecture tests, anywhere under
+`nora/` outside the migrations:
+
+- `sa.update(T)` / `sa.delete(T)` / a bare `update(T)` / `delete(T)`, and
+  `T.update()` / `T.delete()` on a table constant;
+- for every `on_conflict_do_update`, the nearest `insert(T)` above it (the
+  upsert's own table; the statement is built a few lines before the clause);
+- raw SQL in the source text: `UPDATE t SET`, `DELETE FROM t`, and
+  `INSERT INTO t ... DO UPDATE`;
+- a call whose table is a VARIABLE (`sa.delete(table)` in a loop) cannot be
+  resolved from source, so every such site is pinned in `_VARIABLE_TARGETS`
+  with the tables it reaches, and a new one fails until it is pinned.
+
+And from the schema: a foreign key that cascades (ON DELETE CASCADE / SET
+NULL / SET DEFAULT) changes its child's rows whenever its parent's are
+deleted, with no statement naming the child. If the parent changes in place,
+the child must keep history too — `message_edit` under `messages` is the
+case that made this a rule.
 """
 
 from __future__ import annotations
@@ -21,7 +35,23 @@ from nora.infra.sql import schema
 from nora.infra.sql.history import CAPTURE_SETTING, DEFERRED, HISTORY_TABLES
 
 ROOT = Path(__file__).resolve().parents[2]
-_DIRECT = re.compile(r"\bsa\.(?:update|delete)\(\s*([A-Z_]+)\s*\)")
+_DIRECT = re.compile(
+    r"(?:\bsa\.|(?<![.\w]))(?:update|delete)\(\s*([A-Z_]+)\s*\)"
+    r"|\b([A-Z_]+)\.(?:update|delete)\("
+)
+_VARIABLE = re.compile(r"(?:\bsa\.|(?<![.\w]))(?:update|delete)\(\s*([a-z_]\w*)\s*\)")
+_RAW = re.compile(
+    r'\bUPDATE\s+"?([a-z_]+)"?\s+SET\b'
+    r'|\bDELETE\s+FROM\s+"?([a-z_]+)'
+    r'|\bINSERT\s+INTO\s+"?([a-z_]+)"?[^;]{0,400}?\bDO\s+UPDATE\b'
+)
+
+#: Sites whose table is a variable: path -> the tables the variable can be.
+#: `mobility.py`'s rebuild deletes the derived presence tables in a loop
+#: (step 2's Rollup, deferred).
+_VARIABLE_TARGETS: dict[str, frozenset[str]] = {
+    "nora/infra/sql/mobility.py": frozenset({"presence_occupancy", "presence_place_rhythm"}),
+}
 #: How far above an `on_conflict_do_update` its `insert(T)` may be. The
 #: widest in the tree on 2026-09-28 is 25 lines (`media_objects.py`), and
 #: `test_every_upsert_finds_its_insert` fails before one outgrows this.
@@ -40,7 +70,14 @@ def _in_place_targets() -> dict[str, set[str]]:
         if "migrations" in path.parts:
             continue
         text = path.read_text(encoding="utf-8")
-        constants = set(_DIRECT.findall(text))
+        constants = {a or b for a, b in _DIRECT.findall(text)}
+        names = {next(g for g in groups if g) for groups in _RAW.findall(text)}
+        for name in names & set(schema.METADATA.tables):
+            found.setdefault(name, set()).add(str(path.relative_to(ROOT)))
+        rel = str(path.relative_to(ROOT))
+        if _VARIABLE.search(text):
+            for name in _VARIABLE_TARGETS.get(rel, frozenset()):
+                found.setdefault(name, set()).add(rel)
         lines = text.splitlines()
         for number, line in enumerate(lines):
             if "on_conflict_do_update(" not in line:
@@ -98,3 +135,49 @@ def test_only_the_snapshot_switches_capture_off() -> None:
         and ("CAPTURE_SETTING" in (t := p.read_text(encoding="utf-8")) or CAPTURE_SETTING in t)
     )
     assert users == ["nora/infra/sql/history.py", "nora/infra/sql/snapshot_at.py"]
+
+
+def test_every_variable_table_write_is_pinned() -> None:
+    sites = {
+        str(p.relative_to(ROOT)) for p in (ROOT / "nora").rglob("*.py")
+        if "migrations" not in p.parts and _VARIABLE.search(p.read_text(encoding="utf-8"))
+    }
+    assert sites == set(_VARIABLE_TARGETS), (
+        "a write whose table is a variable cannot be checked from source: pin "
+        f"it in _VARIABLE_TARGETS with the tables it reaches. unpinned: "
+        f"{sorted(sites - set(_VARIABLE_TARGETS))}; stale: "
+        f"{sorted(set(_VARIABLE_TARGETS) - sites)}"
+    )
+
+
+def test_a_cascading_child_of_an_in_place_parent_keeps_history() -> None:
+    changing = set(HISTORY_TABLES) | set(DEFERRED)
+    cascades = [
+        (fk.parent.table.name, fk.column.table.name)
+        for table in schema.METADATA.tables.values()
+        for fk in table.foreign_keys
+        if (fk.ondelete or "").upper() in {"CASCADE", "SET NULL", "SET DEFAULT"}
+    ]
+    assert ("message_edit", "messages") in cascades  # positive control
+    unkept = sorted(
+        (child, parent) for child, parent in cascades
+        if parent in changing and child not in changing
+    )
+    assert not unkept, (
+        "these tables' rows change when their parent's are deleted, with no "
+        f"statement naming them, and they keep no history: {unkept}"
+    )
+
+
+def test_each_scanned_form_is_recognised() -> None:
+    """The patterns, on the forms they exist to catch, so a regex edit that
+    stops matching one cannot pass on an empty scan."""
+    assert {a or b for a, b in _DIRECT.findall(
+        "sa.update(NOTE) update(REMINDERS) MESSAGES.delete() x.update(NOPE)"
+    )} == {"NOTE", "REMINDERS", "MESSAGES"}
+    raw = 'UPDATE "standing" SET a = 1; DELETE FROM media_objects; ' \
+          "INSERT INTO culture (k) VALUES (1) ON CONFLICT (k) DO UPDATE SET k = 2"
+    assert {next(g for g in m if g) for m in _RAW.findall(raw)} == {
+        "standing", "media_objects", "culture",
+    }
+    assert _VARIABLE.findall("sa.delete(table) session.delete(url)") == ["table"]

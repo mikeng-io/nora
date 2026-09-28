@@ -92,6 +92,16 @@ class SqlRevisionStore:
                 git_sha=git_sha, built_at=built_at, image_id=image_id, hostname=hostname,
             ))
 
+    async def history_sizes(self) -> dict[str, tuple[int, int]]:
+        """`table -> (versions, bytes)` in `row_history`: how much history each
+        table has cost, for the gauges DEC-232's reversal condition reads."""
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(sa.text(
+                "SELECT table_name, count(*), coalesce(sum(pg_column_size(h.*)), 0) "
+                "FROM row_history h GROUP BY table_name"
+            ))).all()
+        return {str(r[0]): (int(r[1]), int(r[2])) for r in rows}
+
     @staticmethod
     async def _blobs(conn: AsyncConnection, blobs: Mapping[str, str]) -> None:
         if not blobs:

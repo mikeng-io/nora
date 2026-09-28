@@ -63,11 +63,18 @@ async def test_each_load_is_recorded_and_in_force_answers_by_time(
         store=SqlRevisionStore(engine), doctrine=doctrine, dreamer=dreamer,
         config_files=(("config.toml", config), ("policy.toml", policy)),
         metrics=metrics, manifest_path=tmp_path / "absent-version.json",
-        hostname="test-host",
+        hostname="test-host", environ={"NORA_GIT_SHA": "0" * 40},
     )
 
+    # The deploy write fails at start (its table is briefly not there) and
+    # is retried on the next tick, not lost.
+    async with engine.begin() as conn:
+        await conn.execute(sa.text("ALTER TABLE deploy_revision RENAME TO deploy_revision_away"))
     await recorder.record_start(started_at=await _clock(engine))
-    await recorder.poll()  # nothing moved: no second row
+    assert metrics.get("nora_revision_record_failures_total", kind="deploy") == 1
+    async with engine.begin() as conn:
+        await conn.execute(sa.text("ALTER TABLE deploy_revision_away RENAME TO deploy_revision"))
+    await recorder.poll()  # the deploy retried; no corpus moved, so no second row
     first = await _clock(engine)
 
     objective = sorted((dreamer_dir / "objectives").glob("*.md"))[0]
@@ -87,7 +94,8 @@ async def test_each_load_is_recorded_and_in_force_answers_by_time(
     assert now.dreamer is not None and now.dreamer.content_sha256 != then.dreamer.content_sha256
     assert then.config["identity.toml"] is None  # never recorded: unavailable, not guessed
     assert then.deploy is not None and then.deploy["manifest_status"] == "absent"
-    assert metrics.get("nora_revision_record_failures_total") == 0
+    assert then.deploy["git_sha"] == "0" * 40  # the baked sha, the manifest absent
+    assert metrics.get("nora_revision_record_failures_total") == 1  # the one retried
 
     out = tmp_path / "restored"
     forced, _written = await materialise(engine, first, out)
@@ -100,3 +108,18 @@ async def test_each_load_is_recorded_and_in_force_answers_by_time(
         assert (out / "doctrine" / path.relative_to(doctrine_dir)).read_text(
             encoding="utf-8",
         ) == path.read_text(encoding="utf-8")
+
+
+async def test_a_deploy_that_names_no_code_is_unavailable(engine: Any, tmp_path: Path) -> None:
+    """An image built with no `NORA_GIT_SHA` and no manifest records a row
+    with every identifier empty: that names no code, so it is missing."""
+    store = SqlRevisionStore(engine)
+    at = await _clock(engine)
+    await store.record_deploy(
+        started_at=at, manifest_status="absent", version=None, git_sha=None,
+        built_at=None, image_id=None, hostname="h",
+    )
+    async with engine.connect() as conn:
+        forced = await in_force(conn, await _clock(engine))
+    assert forced.deploy is not None
+    assert "deploy" in forced.missing()

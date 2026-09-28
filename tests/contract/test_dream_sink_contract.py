@@ -548,6 +548,9 @@ async def _open_sink(name: str, request) -> AsyncIterator[tuple[object, _Impl]]:
         # across tests, and every table in one statement so ordering against
         # the foreign keys is Postgres's problem rather than ours.
         async with engine.begin() as conn:
+            # A reset, not a write: TRUNCATE is refused unless capture is off
+            # (migration 0068, nora.infra.sql.history.CAPTURE_SETTING).
+            await conn.execute(sa.text("SET LOCAL nora.row_history = 'off'"))
             await conn.execute(sa.text(
                 # note_revision before note (FK), and every table named
                 # explicitly: the note tables have no FK into the knowledge

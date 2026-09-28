@@ -303,6 +303,9 @@ async def notes(request: Any) -> AsyncIterator[_Harness]:
         # fraction of the cost. See `_notes_db` for what the rebuild was doing
         # to an unrelated test.
         async with engine.begin() as conn:
+            # A reset, not a write: TRUNCATE is refused unless capture is off
+            # (migration 0068, nora.infra.sql.history.CAPTURE_SETTING).
+            await conn.execute(sa.text("SET LOCAL nora.row_history = 'off'"))
             await conn.execute(sa.text(
                 "truncate note, note_revision, note_entity, note_candidate, "
                 "note_merge_decision, fact_entity cascade"

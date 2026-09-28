@@ -69,7 +69,8 @@ if [ "$AHEAD" != 0 ] || [ -n "$DIRTY" ]; then echo "CHECKOUT_NOT_CLEAN ahead=$AH
 git merge -q --ff-only origin/master || { echo "FF_FAILED"; exit 4; }
 git merge-base --is-ancestor "$SHA" HEAD || { echo "SHA_NOT_IN_HEAD"; exit 5; }
 git log --oneline -1
-docker compose build nora > /tmp/nora-build.log 2>&1; BUILD_RC=$?
+NORA_GIT_SHA=$(git rev-parse HEAD) NORA_BUILT_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ) \
+  docker compose build nora > /tmp/nora-build.log 2>&1; BUILD_RC=$?
 echo "BUILD_RC=$BUILD_RC"; grep -E 'Built|ERROR' /tmp/nora-build.log | tail -n 3
 [ "$BUILD_RC" = 0 ] || exit 6
 docker compose up -d --force-recreate nora presence analytics; UP_RC=$?

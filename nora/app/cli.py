@@ -801,12 +801,23 @@ async def _directory(
     return contacts, groups, ""
 
 
+#: The earliest epoch-ms `--at` accepts, 2020-01-01T00:00:00Z. Nora's record
+#: starts years after it; a smaller number is a date typed without dashes
+#: (`20260927` is 1970 in milliseconds) and is refused, never read as 1970.
+EPOCH_MS_FLOOR = 1_577_836_800_000
+
+
 def parse_instant(text: str) -> datetime:
-    """`--at`: epoch milliseconds, or ISO-8601 WITH an offset. A naive time
-    is refused: system time is an instant, and guessing the zone would move
-    the snapshot by hours without saying so."""
+    """`--at`: epoch milliseconds (from 2020 on), or ISO-8601 WITH an offset.
+    A naive time is refused: system time is an instant, and guessing the zone
+    would move the snapshot by hours without saying so."""
     raw = text.strip()
     if raw.isdigit():
+        if int(raw) < EPOCH_MS_FLOOR:
+            raise CliError(
+                f"--at {text!r} is before 2020 as epoch milliseconds; give "
+                "ISO-8601 with an offset (2026-09-27T14:00:00+08:00)"
+            )
         return datetime.fromtimestamp(int(raw) / 1000, tz=UTC)
     try:
         at = datetime.fromisoformat(raw)

@@ -8,11 +8,18 @@ WHAT THIS ADDS, all additive (no table dropped, no reader changed):
    AFTER INSERT OR UPDATE OR DELETE to every table 70 §5 lists as changing in
    place, except the rows it marks for steps 2 and 2b (events, RSVPs and the
    presence Rollup tables), plus `sticker_index`, an in-place cache the
-   inventory missed. Each write appends the new version and closes the one it
+   inventory missed, and `message_edit`, whose rows a prune deletes by
+   ON DELETE CASCADE without any store asking. Each write appends the new
+   version and closes the one it
    replaced (`superseded_at`, `superseded_by`) in the SAME transaction; a
    DELETE appends a `delete` version carrying the removed row, so a prune or
    a retention sweep hides a row from the head and keeps it in history.
    The live tables are unchanged, so every reader and writer is unchanged.
+   Every covered table is LOCKed for the migration (the presence collector
+   and the analytics process keep writing while `nora` restarts, and a write
+   between a table's backfill and its trigger would be in no history), and a
+   BEFORE TRUNCATE trigger refuses a TRUNCATE, which fires no row trigger,
+   unless capture was switched off deliberately.
 
    A trigger rather than an append at each write site, because the write
    sites are ~60 statements across 17 modules (upserts, compare-and-swaps,
@@ -98,6 +105,11 @@ depends_on = None
 #: Frozen here; `nora.infra.sql.history.HISTORY_TABLES` is the live copy.
 _HISTORY_TABLES: dict[str, tuple[str, ...]] = {
     "messages": ("id",),
+    # `message_edit` is append-only by its writer, but its FK to `messages` is
+    # ON DELETE CASCADE: a prune deletes a message's edits WITHOUT any store
+    # asking. Row triggers fire on cascaded deletes, so the trigger is what
+    # keeps those edits (hidden, kept) rather than losing them.
+    "message_edit": ("id",),
     "note_candidate": ("id",),
     "note": ("id",),
     "culture": ("key",),
@@ -137,6 +149,7 @@ _APPEND_ONLY_BACKFILL: dict[str, str] = {
 #: `now()` (this migration) is the last resort for a row with no time at all.
 _CURRENT_AT: dict[str, str] = {
     "messages": "to_timestamp(x.ts / 1000.0)",
+    "message_edit": "x.recorded_at",
     "note_candidate": "to_timestamp(x.first_seen_at / 1000.0)",
     "note": "to_timestamp(greatest(x.created_at, coalesce(x.retired_at, 0)) / 1000.0)",
     "culture": "to_timestamp(x.updated_at / 1000.0)",
@@ -263,6 +276,24 @@ END
 $fn$
 """
 
+#: TRUNCATE fires no row trigger, so a truncated table would leave its chain
+#: claiming rows the head no longer holds, silently. It is refused instead,
+#: unless the session switched capture off (the same documented switch the
+#: snapshot's seeding uses; test fixtures that reset tables set it too).
+_TRUNCATE_GUARD = """
+CREATE FUNCTION nora_row_history_refuse_truncate() RETURNS trigger
+LANGUAGE plpgsql AS $fn$
+BEGIN
+    IF current_setting('nora.row_history', true) = 'off' THEN
+        RETURN NULL;
+    END IF;
+    RAISE EXCEPTION USING MESSAGE = 'TRUNCATE ' || TG_TABLE_NAME
+        || ' would bypass row_history; delete the rows (they are kept as history) '
+        || 'or SET LOCAL nora.row_history = ''off'' deliberately';
+END
+$fn$
+"""
+
 
 def _key_sql(columns: tuple[str, ...], alias: str = "x") -> str:
     pairs = ", ".join(f"'{c}', to_jsonb({alias}.\"{c}\")" for c in columns)
@@ -320,6 +351,14 @@ def _link(table: str) -> None:
 
 
 def upgrade() -> None:
+    # 0. No write to a covered table may land between its backfill and its
+    # trigger: that write would be in no history, permanently. Only `nora` is
+    # recreated on a deploy; the presence collector and the analytics process
+    # keep writing through the migration, so they wait here instead. SHARE ROW
+    # EXCLUSIVE blocks every write and allows reads; the lock is held until
+    # this migration's transaction commits.
+    tables = ", ".join(f'"{t}"' for t in _HISTORY_TABLES)
+    op.execute(f"LOCK TABLE {tables} IN SHARE ROW EXCLUSIVE MODE")
     # 1. the chain table
     op.create_table(
         "row_history",
@@ -373,6 +412,12 @@ def upgrade() -> None:
         op.execute(
             f"CREATE TRIGGER nora_row_history AFTER INSERT OR UPDATE OR DELETE "
             f"ON \"{table}\" FOR EACH ROW EXECUTE FUNCTION nora_row_history({args})"
+        )
+    op.execute(_TRUNCATE_GUARD)
+    for table in _HISTORY_TABLES:
+        op.execute(
+            f"CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON \"{table}\" "
+            "FOR EACH STATEMENT EXECUTE FUNCTION nora_row_history_refuse_truncate()"
         )
 
     # 4. what was in force: content, instruction loads, config, code.
@@ -460,7 +505,9 @@ def downgrade() -> None:
     op.drop_table("revision_blob")
     for table in _HISTORY_TABLES:
         op.execute(f'DROP TRIGGER IF EXISTS nora_row_history ON "{table}"')
+        op.execute(f'DROP TRIGGER IF EXISTS nora_row_history_truncate ON "{table}"')
     op.execute("DROP FUNCTION IF EXISTS nora_row_history()")
+    op.execute("DROP FUNCTION IF EXISTS nora_row_history_refuse_truncate()")
     for table in _APPEND_ONLY_BACKFILL:
         op.drop_column(table, "recorded_at")
     op.drop_index("uq_row_history_open", table_name="row_history")

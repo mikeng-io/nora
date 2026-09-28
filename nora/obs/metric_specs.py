@@ -206,7 +206,8 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     # on); this is how the gap shows.
     _CounterSpec(
         "nora_revision_record_failures_total",
-        "Loads of doctrine, Dreamer instructions, config or deploy that could not be recorded.",
+        "Revision writes that failed (kind: deploy, config, doctrine, dreamer, "
+        "history_size); each is retried on the next 30s tick.",
         ("kind",),
     ),
     # The Dreamer's own instruction corpus (nora/dreamer/), counted separately
@@ -2290,6 +2291,19 @@ _GAUGES: tuple[_GaugeSpec, ...] = (
     # series' IDENTITY, so anything selecting it by bare name stops matching
     # with no error anywhere. This one covers every enabled platform, so a
     # wedged Discord Gateway is alertable instead of invisible.
+    # design/cognition-loop step 1b, DEC-232: what system-time history costs,
+    # per covered table, measured hourly by `nora.app.revisions`. The
+    # decision's reversal condition is this growth on the hot tables.
+    _GaugeSpec(
+        "nora_row_history_rows",
+        "Versions held in row_history, per covered table (hourly).",
+        ("table",),
+    ),
+    _GaugeSpec(
+        "nora_row_history_bytes",
+        "Bytes of row_history rows, per covered table (hourly).",
+        ("table",),
+    ),
     _GaugeSpec(
         "nora_adapter_last_event_age_seconds",
         "Seconds since the last ingest event, per platform.",

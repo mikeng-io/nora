@@ -63,9 +63,16 @@ CAPTURE_SETTING = "nora.row_history"
 
 #: Tables that change in place, and the columns that identify a row (the
 #: trigger's arguments). 70 §5's inventory minus its rows marked 2 or 2b,
-#: plus `sticker_index` (an in-place cache the inventory missed).
+#: plus `sticker_index` (an in-place cache the inventory missed) and
+#: `message_edit` (deleted by cascade when a message is pruned).
 HISTORY_TABLES: dict[str, tuple[str, ...]] = {
     "messages": ("id",),
+    # Written append-only, but `message_edit.message_id` is ON DELETE CASCADE:
+    # a prune deletes a message's edits with no store asking, and only a row
+    # trigger (which fires on a cascaded delete) keeps them. Kept over
+    # dropping the cascade, which would make every prune of an edited message
+    # fail on the foreign key instead.
+    "message_edit": ("id",),
     "note_candidate": ("id",),
     "note": ("id",),
     "culture": ("key",),
@@ -97,7 +104,6 @@ APPEND_ONLY: dict[str, str] = {
     "note_revision": "recorded_at",
     "standing_revision": "recorded_at",
     "culture_revision": "recorded_at",
-    "message_edit": "recorded_at",
     "decision_log": "recorded_at",
     "note_merge_decision": "recorded_at",
     "tool_call_log": "created_at",

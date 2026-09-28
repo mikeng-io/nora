@@ -50,7 +50,11 @@ class Loaded:
 
     generation: int
     loaded_at: float
-    files: tuple[tuple[str, str], ...]
+    #: `None` when a file could not be read beside a scan that succeeded (a
+    #: pull landing mid-read): the scan is still served, nothing is counted
+    #: as a reload failure, and the next read rescans so the load that IS
+    #: recorded has its files.
+    files: tuple[tuple[str, str], ...] | None
 
 
 class DirectoryWatcher(Generic[T]):
@@ -164,17 +168,19 @@ class DirectoryWatcher(Generic[T]):
             # nothing counts it.
             self._on_failure(exc)
             return
+        files: tuple[tuple[str, str], ...] | None
         try:
             files = texts_under(self._dir, self._glob)
-        except (OSError, UnicodeDecodeError) as exc:
+        except (OSError, UnicodeDecodeError):
             # The scan succeeded on these files a moment ago, so this is the
-            # disk moving under us: the same failure path as a bad file.
-            self._on_failure(exc)
-            return
+            # disk moving under us (a pull mid-read), not a bad file: serve the
+            # good scan, count nothing, and leave the fingerprint unset so the
+            # next read rescans and reads the files again.
+            files = None
         self._value = value
         self._loaded = True
         self._generation += 1
-        self._fingerprint = fingerprint
+        self._fingerprint = fingerprint if files is not None else None
         self._loaded_record = Loaded(
             generation=self._generation, loaded_at=time.time(), files=files,
         )

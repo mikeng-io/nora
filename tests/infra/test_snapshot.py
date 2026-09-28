@@ -83,6 +83,9 @@ async def engine(_snapshot_db: str) -> AsyncIterator[Any]:
         yield eng
     finally:
         async with eng.begin() as conn:
+            # A reset, not a write: TRUNCATE is refused unless capture is off
+            # (migration 0068, nora.infra.sql.history.CAPTURE_SETTING).
+            await conn.execute(sa.text("SET LOCAL nora.row_history = 'off'"))
             await conn.execute(sa.text(
                 "truncate messages, standing, standing_revision, culture, "
                 "culture_revision, note, note_revision cascade"

@@ -91,3 +91,28 @@ async def test_the_source_is_never_the_target(pg_url: str, engine: Any, capsys: 
 async def test_a_time_without_an_offset_is_refused(pg_url: str, capsys: Any) -> None:
     assert await _run("--at", "2026-09-28T12:00:00", "--source", pg_url) == 1
     assert "no offset" in capsys.readouterr().err
+
+
+async def test_a_date_typed_as_digits_is_refused_not_read_as_1970(
+    pg_url: str, capsys: Any,
+) -> None:
+    assert await _run("--at", "20260927", "--source", pg_url) == 1
+    assert "before 2020" in capsys.readouterr().err
+
+
+async def test_a_target_at_another_migration_is_refused(
+    pg_url: str, pg_template: str, engine: Any, capsys: Any,
+) -> None:
+    at, _ = await _state(engine)
+    async with sandbox_database(pg_url, template=pg_template) as target:
+        other = create_sql_engine(target)
+        try:
+            async with other.begin() as conn:
+                await conn.execute(sa.text(
+                    "UPDATE alembic_version SET version_num = '0067_summons_message_key'"
+                ))
+        finally:
+            await other.dispose()
+        assert await _run("--at", at, "--source", pg_url, "--into", target) == 1
+        assert "one schema only" in capsys.readouterr().err
+        assert await _count(target, "SELECT count(*) FROM tag_debounce_state") == 0

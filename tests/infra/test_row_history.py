@@ -244,3 +244,13 @@ async def test_the_backfill_dates_what_each_row_proves(pg_url: str, engine: Any)
                 "AND superseded_at IS NULL AND op <> 'delete'"
             ), {"t": table})).scalars(), key=str)
             assert head == live, table
+
+
+@pytest.mark.asyncio
+async def test_a_truncate_is_refused_unless_capture_is_off(engine: Any) -> None:
+    with pytest.raises(sa.exc.DBAPIError, match="would bypass row_history"):
+        async with engine.begin() as conn:
+            await conn.execute(sa.text("TRUNCATE tag_debounce_state"))
+    async with engine.begin() as conn:
+        await conn.execute(sa.text(f"SET LOCAL {CAPTURE_SETTING} = 'off'"))
+        await conn.execute(sa.text("TRUNCATE tag_debounce_state"))

@@ -54,6 +54,19 @@ RUN uv sync --frozen --no-dev --extra sentry
 
 RUN mkdir -p /app/data && chown -R nora:nora /app
 
+# WHICH COMMIT this image was built from, and when, for every build and not
+# only a stamped release: the deploy revision each process start records
+# (`nora.app.revisions`, design/cognition-loop/70-migration.md §5) reads
+# them, so "what code was running at T" is answerable on an ordinary,
+# unversioned deploy too. `.git` is not in the build context
+# (`.dockerignore`), so the sha arrives as a build argument: the build
+# scripts and the compose build nora-deploy runs pass `git rev-parse HEAD`.
+# Empty when a bare `docker build` passes nothing, and the deploy row then
+# says so. Declared this late so it busts no dependency layer above.
+ARG NORA_GIT_SHA=""
+ARG NORA_BUILT_AT=""
+ENV NORA_GIT_SHA=$NORA_GIT_SHA NORA_BUILT_AT=$NORA_BUILT_AT
+
 USER nora
 
 EXPOSE 9100

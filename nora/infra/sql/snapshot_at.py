@@ -42,6 +42,17 @@ every restored row at the moment of the copy.
 The source is only read (`plan`, `in_force` and the read half of `seed` take
 a read-only transaction at REPEATABLE READ, so every table is read at one
 instant of the source).
+
+VERSIONS ARE DATED WHEN THE TRIGGER RAN, NOT WHEN THEIR TRANSACTION
+COMMITTED. `recorded_at` is `clock_timestamp()` at the write, so a restore at
+T includes a version whose transaction was still open at T and committed
+after it (or later rolled back never reached the table at all). The window
+is a transaction's length, milliseconds on every write path here; a T that
+falls inside one is the only case where the restore differs from what a
+reader at T could see.
+
+THE SOURCE AND THE TARGET MUST BE AT THE SAME MIGRATION. `seed` refuses a
+mismatch rather than copying rows into columns the source never had.
 """
 
 from __future__ import annotations
@@ -140,8 +151,14 @@ class InForce:
     deploy: dict[str, Any] | None
 
     def missing(self) -> tuple[str, ...]:
-        out = [n for n, v in (("doctrine", self.doctrine), ("dreamer", self.dreamer),
-                              ("deploy", self.deploy)) if v is None]
+        """Each thing whose state at T cannot be named. A deploy row that
+        carries no version, commit or image id (an image built with no
+        `NORA_GIT_SHA`) names no code, so it is missing too."""
+        out = [n for n, v in (("doctrine", self.doctrine), ("dreamer", self.dreamer))
+               if v is None]
+        deploy = self.deploy
+        if deploy is None or not any(deploy.get(k) for k in ("version", "git_sha", "image_id")):
+            out.append("deploy")
         out += [f for f, v in self.config.items() if v is None]
         return tuple(out)
 
@@ -503,6 +520,13 @@ async def seed(source: AsyncEngine, target: AsyncEngine, at: datetime) -> SeedRe
     async with source.connect() as src, src.begin(), target.connect() as dst, dst.begin():
         await _read_only(src)
         await _require_history(src)
+        source_revision = await _source_revision(src)
+        target_revision = await _source_revision(dst)
+        if source_revision != target_revision:
+            raise SnapshotRefusedError(
+                f"the source is at migration {source_revision!r} and the target at "
+                f"{target_revision!r}; a snapshot copies rows between one schema only"
+            )
         await dst.execute(sa.text(f"SET LOCAL {CAPTURE_SETTING} = 'off'"))
         await _refuse_a_target_that_holds_rows(dst)
         for table in copied_tables():

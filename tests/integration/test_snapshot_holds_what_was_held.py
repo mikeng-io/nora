@@ -20,6 +20,11 @@ Per in-place table, six rows keyed 0..5 walk every transition:
 - 5 written after t2.
 
 Append-only tables get one row in each of the three stretches.
+
+And one case no store asks for: an edit of message 2, which is pruned
+between t1 and t2. `message_edit.message_id` is ON DELETE CASCADE, so the
+prune deletes the edit with no statement naming it; the edit must be held at
+t1, gone at t2, and kept in history as hidden.
 """
 
 from __future__ import annotations
@@ -41,6 +46,9 @@ from nora.subject import sandbox_as_of
 T0 = datetime(2026, 9, 1, tzinfo=UTC)
 MS0 = int(T0.timestamp() * 1000)
 
+#: The edit of message 2 that the prune cascades away.
+PRUNED_EDIT = 3100
+
 
 def _uuid(table: str, i: int) -> str:
     return str(uuid.uuid5(uuid.NAMESPACE_URL, f"{table}:{i}"))
@@ -56,6 +64,9 @@ ROWS: dict[str, Callable[[int], dict[str, Any]]] = {
         "id": 1000 + i, "platform": "signal", "conversation_id": "g1",
         "conversation_type": "group", "sender_id": f"s{i}", "sender_name": f"n{i}",
         "ts": MS0 + i, "body": f"message {i}", "is_nora": 0,
+    },
+    "message_edit": lambda i: {
+        "id": 3000 + i, "message_id": 1000, "ts": MS0 + i, "body": f"edit {i}",
     },
     "note_candidate": lambda i: {
         "id": _uuid("nc", i), "unit": "u", "kind": "miss", "probe": f"p{i}",
@@ -138,6 +149,7 @@ ROWS: dict[str, Callable[[int], dict[str, Any]]] = {
 #: The column each revision moves, and to what.
 REVISE: dict[str, tuple[str, Callable[[int], Any]]] = {
     "messages": ("delivery_status", lambda i: f"delivered-{i}"),
+    "message_edit": ("body", lambda i: f"re-edited {i}"),
     "note_candidate": ("occurrence_count", lambda i: 10 + i),
     "note": ("strikes", lambda i: 1 + i),
     "culture": ("updated_at", lambda i: MS0 + 1000 + i),
@@ -174,7 +186,6 @@ APPEND: dict[str, Callable[[int], dict[str, Any]]] = {
         "id": _uuid("cr", n), "culture_key": "room0", "body": f"account {n}",
         "written_at": MS0 + n, "established_by": "test",
     },
-    "message_edit": lambda n: {"message_id": 1000, "ts": MS0 + n, "body": f"edit {n}"},
     "decision_log": lambda n: {
         "id": f"d{n}", "writer": "tag", "platform": "signal", "conversation_id": "g1",
         "verdict": "replied", "ts": MS0 + n,
@@ -264,6 +275,9 @@ async def test_a_snapshot_at_each_moment_holds_exactly_what_was_held(
             for table in tables:
                 for i in (0, 1, 2, 3):
                     await _write(conn, table, i)
+            await conn.execute(sa.insert(_table("message_edit")).values(
+                id=PRUNED_EDIT, message_id=ROWS["messages"](2)["id"], ts=MS0, body="edited",
+            ))
         async with engine.begin() as conn:
             for table in tables:
                 await _revise(conn, table, 3)
@@ -298,6 +312,22 @@ async def test_a_snapshot_at_each_moment_holds_exactly_what_was_held(
     # returned today's rows, or t1's at t2, cannot pass.
     for table in (*tables, *APPEND):
         assert held_t1[table] != held_t2[table] != now[table], table
+
+    def edits(held: dict[str, list[str]]) -> set[int]:
+        return {json.loads(r)["id"] for r in held["message_edit"]}
+
+    assert PRUNED_EDIT in edits(held_t1) and PRUNED_EDIT not in edits(held_t2)
+    engine = create_sql_engine(pg_url)
+    try:
+        async with engine.connect() as conn:
+            hidden = (await conn.execute(sa.text(
+                "SELECT op FROM row_history WHERE table_name = 'message_edit' "
+                "AND row_key = jsonb_build_object('id', CAST(:i AS integer)) "
+                "AND superseded_at IS NULL"
+            ), {"i": PRUNED_EDIT})).scalar_one()
+    finally:
+        await engine.dispose()
+    assert hidden == "delete"  # the cascade was recorded: hidden, and kept
 
     for at, held in ((t1, held_t1), (t2, held_t2)):
         async with sandbox_as_of(pg_url, at, template=pg_template) as (url, report):
