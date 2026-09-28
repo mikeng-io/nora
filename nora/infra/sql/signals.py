@@ -70,6 +70,43 @@ def _detail(raw: Any) -> dict[str, object]:
     return dict(raw)
 
 
+def pending_query(
+    *, unit: str, through_id: int, through_ms: int, now_ms: int, limit: int,
+) -> sa.Select[Any]:
+    """The unit's signals not consumed by the watermark `(through_id,
+    through_ms)` and pending by `now_ms`, ascending id.
+
+    NOT consumed — `NOT (id <= through_id AND pending_since <= through_ms)` —
+    is split into three DISJOINT range reads, each answered by its own index
+    rather than by walking a unit's whole history (`signal` is append-only
+    and grows forever): past the watermark's id (`idx_signal_unit_id`); at or
+    under it but due after its time bound (`idx_signal_unit_due`); at or
+    under it, undated, and recorded after its time bound
+    (`idx_signal_unit_undated_recorded`, the late commit the evaluator's
+    settle margin exists for). `tests/infra/test_signal_store_plan.py` holds
+    the plan to those indexes."""
+    since = sa.func.coalesce(SIGNAL.c.due_ms, _RECORDED_MS)
+    base = (SIGNAL.c.unit == unit, since <= now_ms)
+    under = SIGNAL.c.id <= through_id
+    branches = sa.union_all(
+        sa.select(SIGNAL).where(*base, SIGNAL.c.id > through_id),
+        sa.select(SIGNAL).where(*base, under, SIGNAL.c.due_ms > through_ms),
+        sa.select(SIGNAL).where(
+            *base, under, SIGNAL.c.due_ms.is_(None),
+            SIGNAL.c.recorded_at > _at(through_ms),
+        ),
+    ).subquery("pending")
+    return sa.select(branches).order_by(branches.c.id.asc()).limit(limit)
+
+
+def activity_query(*, unit: str) -> sa.Select[Any]:
+    """The `recorded_at` of the unit's newest person-authored item; one probe
+    of `idx_signal_unit_message_recorded`."""
+    return sa.select(sa.func.max(SIGNAL.c.recorded_at)).where(
+        SIGNAL.c.unit == unit, SIGNAL.c.kind == "message",
+    )
+
+
 class SqlSignalStore:
     """Satisfies `nora.domain.ports.SignalStore`."""
 
@@ -108,27 +145,21 @@ class SqlSignalStore:
             .order_by(COGNITION_WAKE.c.id.desc())
             .limit(1)
         )
-        since = sa.func.coalesce(SIGNAL.c.due_ms, _RECORDED_MS)
         async with self._engine.connect() as conn:
             last_row = (await conn.execute(last_q)).first()
             last = None if last_row is None else _wake(last_row)
             through_id = 0 if last is None else last.through_signal_id
             through_ms = 0 if last is None else last.at_ms
-            consumed = sa.and_(SIGNAL.c.id <= through_id, since <= through_ms)
-            pending_q = (
-                sa.select(SIGNAL)
-                .where(SIGNAL.c.unit == unit, since <= now_ms, sa.not_(consumed))
-                .order_by(SIGNAL.c.id.asc())
-                .limit(limit)
+            pending_q = pending_query(
+                unit=unit, through_id=through_id, through_ms=through_ms,
+                now_ms=now_ms, limit=limit,
             )
             pending = tuple(_signal(r) for r in (await conn.execute(pending_q)).all())
-            activity_q = sa.select(sa.func.max(_RECORDED_MS)).where(
-                SIGNAL.c.unit == unit, SIGNAL.c.kind == "message",
-            )
+            activity_q = activity_query(unit=unit)
             activity = (await conn.execute(activity_q)).scalar_one_or_none()
         return UnitView(
             unit=unit, pending=pending,
-            last_activity_ms=None if activity is None else int(activity),
+            last_activity_ms=None if activity is None else _ms(activity),
             last_wake=last,
         )
 

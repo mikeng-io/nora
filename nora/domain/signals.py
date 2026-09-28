@@ -16,11 +16,13 @@ week of would-wakes is how 20 §3's starting values get sized.
 **The watermark is the wake log.** Each unit's durable watermark is the
 `(through_signal_id, at_ms)` of its newest wake row in that mode, not a row
 updated in place (10 §8: loop state is transition rows, the current value is
-the newest). A signal is PENDING when it is due (`due_ms <= now`) and not
-consumed, and consumed means `id <= through_signal_id AND due_ms <= at_ms` of
-that newest wake. Both bounds only ever grow, so «consumed by some earlier
-wake» and «consumed by the newest» are the same test, which is what lets one
-row carry the watermark. The second bound is what keeps a `self` or `time`
+the newest). A signal is PENDING when it is due by the read's cutoff and not
+consumed, and consumed means `id <= through_signal_id AND pending_since <=
+at_ms` of that newest wake. Both bounds only ever grow — `decide` never sets
+`through_signal_id` below the one it read, and `at_ms` is the read's cutoff,
+which moves forward with the clock — so «consumed by some earlier wake» and
+«consumed by the newest» are the same test, which is what lets one row carry
+the watermark. The second bound is what keeps a `self` or `time`
 signal due at 19:40 pending across a wake at 15:00 (20 §3: «pending only from
 its due time»).
 
@@ -303,7 +305,15 @@ def decide(view: UnitView, policy: WakePolicy, now_ms: int) -> Verdict:
     return Verdict(
         reason=reason,
         cut_cooldown=cut,
-        through_signal_id=max(s.id for s in view.pending),
+        # NEVER BELOW the watermark it read. A `self`/`time` signal can be
+        # pending with an id older than signals an earlier wake consumed
+        # (appended at 15:00, due at 19:40); a wake that consumed only it and
+        # set the watermark to its id would re-open every signal between,
+        # resurrecting them as pending.
+        through_signal_id=max(
+            Watermark.of(view.last_wake).through_signal_id,
+            max(s.id for s in view.pending),
+        ),
         signal_count=len(view.pending),
         eligible_count=len(eligible),
         oldest_pending_ms=min(s.pending_since_ms for s in eligible),

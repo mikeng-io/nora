@@ -98,8 +98,19 @@ class WakeEvaluator:
         mode: WakeMode = "shadow",
         store_timeout_seconds: float = 5.0,
         pending_limit: int = DEFAULT_PENDING_LIMIT,
+        settle_seconds: float | None = None,
         clock: Callable[[], float] = time.time,
     ) -> None:
+        """`settle_seconds` (default: twice `store_timeout_seconds`) is how
+        far behind the clock the pending read looks. Ids are assigned at
+        INSERT and become visible at COMMIT, so two concurrent ingests can
+        commit out of id order: a read that saw id N+1 before N committed
+        would set the watermark past N, and N, once committed, would be
+        consumed unseen. Every signal append is bounded by the same store
+        timeout, so a signal recorded before `now - settle` has committed or
+        failed; the read takes only those, and the wake's `at_ms` — the
+        watermark's time bound — is that cutoff, so a signal recorded after
+        it stays pending whatever its id."""
         self._store = store
         self._units = units
         self._policy = policy
@@ -111,14 +122,18 @@ class WakeEvaluator:
         self._timeout = store_timeout_seconds
         self._limit = pending_limit
         self._clock = clock
+        self._settle_ms = int(
+            (2 * store_timeout_seconds if settle_seconds is None else settle_seconds) * 1000
+        )
 
     async def tick(self) -> list[int]:
         """Evaluate every unit; return the ids of the wake rows written."""
         now_ms = int(self._clock() * 1000)
+        cutoff_ms = now_ms - self._settle_ms
         units = sorted(set(self._units()))
         views: list[UnitView] = []
         for unit in units:
-            view = await self._read(unit, now_ms)
+            view = await self._read(unit, now_ms, cutoff_ms)
             if view is not None:
                 views.append(view)
         flying = sum(in_flight(v.last_wake, self._policy, now_ms) for v in views)
@@ -136,7 +151,7 @@ class WakeEvaluator:
                 # pending and is looked at again next tick.
                 self._metrics.inc("nora_cognition_wake_deferred_total", brake="concurrency")
                 continue
-            wake_id = await self._record(view, verdict, verdict.reason, now_ms)
+            wake_id = await self._record(view, verdict, verdict.reason, cutoff_ms)
             if wake_id is not None:
                 written.append(wake_id)
                 flying += 1
@@ -162,7 +177,7 @@ class WakeEvaluator:
                 ))
         return out
 
-    async def _read(self, unit: str, now_ms: int) -> UnitView | None:
+    async def _read(self, unit: str, now_ms: int, cutoff_ms: int) -> UnitView | None:
         try:
             for signal in self._floor_signals(unit, now_ms):
                 sid = await asyncio.wait_for(
@@ -172,7 +187,7 @@ class WakeEvaluator:
                 if sid is not None:
                     self._metrics.inc("nora_signal_total", kind="time", cue="none")
             return await asyncio.wait_for(
-                self._store.view(unit=unit, mode=self._mode, now_ms=now_ms,
+                self._store.view(unit=unit, mode=self._mode, now_ms=cutoff_ms,
                                  limit=self._limit),
                 timeout=self._timeout,
             )
@@ -189,8 +204,9 @@ class WakeEvaluator:
         self._metrics.gauge("nora_signal_pending_age_seconds", max(0.0, age), unit=view.unit)
 
     async def _record(
-        self, view: UnitView, verdict: Verdict, reason: WakeReason, now_ms: int,
+        self, view: UnitView, verdict: Verdict, reason: WakeReason, at_ms: int,
     ) -> int | None:
+        """`at_ms` is the read's cutoff: the watermark's time bound."""
         mark = Watermark.of(view.last_wake)
         items: dict[str, int] = {}
         cues: set[str] = set()
@@ -203,7 +219,7 @@ class WakeEvaluator:
             through_signal_id=verdict.through_signal_id,
             signal_count=verdict.signal_count, eligible_count=verdict.eligible_count,
             oldest_pending_ms=verdict.oldest_pending_ms,
-            cut_cooldown=verdict.cut_cooldown, at_ms=now_ms,
+            cut_cooldown=verdict.cut_cooldown, at_ms=at_ms,
             detail={
                 "items": items,
                 "cues": sorted(cues),
@@ -213,7 +229,7 @@ class WakeEvaluator:
         )
         try:
             wake_id = await asyncio.wait_for(
-                self._store.record_wake(wake=wake, recorded_at_ms=now_ms),
+                self._store.record_wake(wake=wake, recorded_at_ms=int(self._clock() * 1000)),
                 timeout=self._timeout,
             )
         except Exception:

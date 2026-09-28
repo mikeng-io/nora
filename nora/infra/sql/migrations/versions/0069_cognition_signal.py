@@ -138,6 +138,19 @@ def upgrade() -> None:
         "uq_signal_time_ref", "signal", ["unit", "ref"], unique=True,
         postgresql_where=sa.text("kind = 'time'"),
     )
+    # The pending read's time branches and last activity (`SqlSignalStore.view`).
+    op.create_index(
+        "idx_signal_unit_due", "signal", ["unit", "due_ms"],
+        postgresql_where=sa.text("due_ms IS NOT NULL"),
+    )
+    op.create_index(
+        "idx_signal_unit_undated_recorded", "signal", ["unit", "recorded_at"],
+        postgresql_where=sa.text("due_ms IS NULL"),
+    )
+    op.create_index(
+        "idx_signal_unit_message_recorded", "signal", ["unit", "recorded_at"],
+        postgresql_where=sa.text("kind = 'message'"),
+    )
 
     op.create_table(
         "cognition_wake",
@@ -189,6 +202,9 @@ def downgrade() -> None:
     op.drop_table("source_health")
     op.drop_index("idx_cognition_wake_unit_mode_id", table_name="cognition_wake")
     op.drop_table("cognition_wake")
+    op.drop_index("idx_signal_unit_message_recorded", table_name="signal")
+    op.drop_index("idx_signal_unit_undated_recorded", table_name="signal")
+    op.drop_index("idx_signal_unit_due", table_name="signal")
     op.drop_index("uq_signal_time_ref", table_name="signal")
     op.drop_index("idx_signal_unit_id", table_name="signal")
     op.drop_table("signal")

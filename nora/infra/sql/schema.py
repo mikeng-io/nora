@@ -3131,6 +3131,22 @@ SIGNAL = sa.Table(
 #: The tick's read: one unit's signals past its watermark, in id order.
 IDX_SIGNAL_UNIT_ID = sa.Index("idx_signal_unit_id", SIGNAL.c.unit, SIGNAL.c.id)
 
+#: The pending read's two time branches, and last activity (`SqlSignalStore.
+#: view`): a signal due after the watermark's time bound; an undated one
+#: recorded after it; a unit's newest person-authored item.
+IDX_SIGNAL_UNIT_DUE = sa.Index(
+    "idx_signal_unit_due", SIGNAL.c.unit, SIGNAL.c.due_ms,
+    postgresql_where=SIGNAL.c.due_ms.isnot(None),
+)
+IDX_SIGNAL_UNIT_UNDATED_RECORDED = sa.Index(
+    "idx_signal_unit_undated_recorded", SIGNAL.c.unit, SIGNAL.c.recorded_at,
+    postgresql_where=SIGNAL.c.due_ms.is_(None),
+)
+IDX_SIGNAL_UNIT_MESSAGE_RECORDED = sa.Index(
+    "idx_signal_unit_message_recorded", SIGNAL.c.unit, SIGNAL.c.recorded_at,
+    postgresql_where=SIGNAL.c.kind == "message",
+)
+
 #: A `time` signal is raised once per occasion: the evaluator raises the day's
 #: floors on every tick and relies on this to write each one once.
 UQ_SIGNAL_TIME_REF = sa.Index(
@@ -3180,7 +3196,7 @@ IDX_COGNITION_WAKE_UNIT_MODE_ID = sa.Index(
 # source healthy for the interval» (20 §3's absence rule, D3) is a query.
 # Append-only. `scope` is the circle for a poll, "" for an adapter; `outcome`
 # is the poll's read status (`ok`, `challenge`, `empty_circle`, ...) or the
-# adapter's new state (`up`, `degraded`, `down`).
+# adapter's new state (`up`, `stale`, `degraded`, `down`, `unknown`).
 SOURCE_HEALTH = sa.Table(
     "source_health",
     METADATA,

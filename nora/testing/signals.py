@@ -24,6 +24,10 @@ class InMemorySignalStore:
         self.wakes: list[WakeRow] = []
         #: Set True to make every call raise, as a database outage does.
         self.fail = False
+        #: Ids appended but not yet COMMITTED: invisible to `view`, the way a
+        #: concurrent transaction's row is to another connection until it
+        #: commits. Lets a test commit ids out of order.
+        self.uncommitted: set[int] = set()
 
     def _check(self) -> None:
         if self.fail:
@@ -53,11 +57,12 @@ class InMemorySignalStore:
         mark = Watermark.of(last)
         pending = [
             s for s in self.signals
-            if s.unit == unit and s.pending_since_ms <= now_ms and not mark.consumed(s)
+            if s.unit == unit and s.id not in self.uncommitted
+            and s.pending_since_ms <= now_ms and not mark.consumed(s)
         ][:limit]
         activity = [
             s.recorded_at_ms for s in self.signals
-            if s.unit == unit and s.kind == "message"
+            if s.unit == unit and s.kind == "message" and s.id not in self.uncommitted
         ]
         return UnitView(
             unit=unit, pending=tuple(pending),

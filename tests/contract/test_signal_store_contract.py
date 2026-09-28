@@ -194,3 +194,44 @@ async def test_last_activity_counts_message_signals_only(store):
     )
     view = await store.view(unit=UNIT, mode="shadow", now_ms=NOW + 100, limit=100)
     assert view.last_activity_ms == NOW
+
+
+async def test_a_due_later_wake_does_not_resurrect_earlier_consumed_signals(store):
+    """The watermark only moves forward, on both stores: a wake whose only
+    pending signal is an OLD id that just became due (a self-wake appended at
+    15:00, due at 19:40) records a watermark no lower than the one it read,
+    so the signals an earlier wake consumed stay consumed. The through id is
+    `decide`'s, exactly as the evaluator records it."""
+    from nora.domain.signals import WakePolicy, decide
+
+    policy = WakePolicy(quiet_seconds=0, cooldown_seconds=0, session_seconds=0)
+    due = NOW + 60_000
+    await store.append(signal=NewSignal(unit=UNIT, kind="self", item="self", ref="wake:1",
+                                        at_ms=NOW, due_ms=due), recorded_at_ms=NOW)
+    for i in (2, 3, 4):
+        await store.append(signal=_msg(f"messages:{i}"), recorded_at_ms=NOW + i)
+    for at in (NOW + 10, due + 10):
+        view = await store.view(unit=UNIT, mode="shadow", now_ms=at, limit=100)
+        verdict = decide(view, policy, at)
+        assert verdict.reason is not None
+        await store.record_wake(wake=NewWake(
+            unit=UNIT, mode="shadow", reason=verdict.reason, from_signal_id=0,
+            through_signal_id=verdict.through_signal_id,
+            signal_count=verdict.signal_count, eligible_count=verdict.eligible_count,
+            oldest_pending_ms=verdict.oldest_pending_ms, cut_cooldown=False, at_ms=at,
+        ), recorded_at_ms=at)
+    after = await store.view(unit=UNIT, mode="shadow", now_ms=due + 10**6, limit=100)
+    assert after.pending == ()
+    assert after.last_wake is not None and after.last_wake.through_signal_id >= 4
+
+
+async def test_a_signal_recorded_after_the_wakes_time_bound_stays_pending_under_its_id(store):
+    """A late commit: two concurrent ingests, the LOWER id stamped later.
+    A wake that read through the higher id with its time bound between the
+    two stamps must leave the later-stamped one pending — the evaluator's
+    settle margin relies on exactly this."""
+    late = await store.append(signal=_msg("messages:1"), recorded_at_ms=NOW + 100)
+    early = await store.append(signal=_msg("messages:2"), recorded_at_ms=NOW)
+    await store.record_wake(wake=_wake(early, NOW + 50), recorded_at_ms=NOW + 50)
+    view = await store.view(unit=UNIT, mode="shadow", now_ms=NOW + 200, limit=100)
+    assert [s.id for s in view.pending] == [late]

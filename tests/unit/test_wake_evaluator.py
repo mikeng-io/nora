@@ -46,13 +46,13 @@ class Clock:
         self.ms += int(seconds * 1000)
 
 
-def _setup(*, units=("nora",), policy=POLICY, floors=(), start=T):
+def _setup(*, units=("nora",), policy=POLICY, floors=(), start=T, settle=0.0):
     store = InMemorySignalStore()
     clock = Clock(start)
     metrics = Metrics()
     ev = WakeEvaluator(
         store=store, units=lambda: units, policy=policy, metrics=metrics,
-        floors=floors, tz=HK, clock=clock,
+        floors=floors, tz=HK, clock=clock, settle_seconds=settle,
     )
     return ev, store, clock, metrics
 
@@ -188,7 +188,7 @@ async def test_the_watermark_survives_a_restart():
     clock.advance(600)
     await ev.tick()
     fresh = WakeEvaluator(store=store, units=lambda: ("nora",), policy=POLICY,
-                          metrics=metrics, tz=HK, clock=clock)
+                          metrics=metrics, tz=HK, clock=clock, settle_seconds=0)
     clock.advance(1000)
     assert await fresh.tick() == []
     assert len(store.wakes) == 1
@@ -296,3 +296,55 @@ async def test_a_shadow_tick_writes_a_would_wake_and_nothing_else():
     assert store.wakes[0].mode == "shadow"
     assert store.signals == before
 
+
+
+# ── the two ways a watermark could lose a signal ─────────────────────────────
+
+
+async def test_a_due_later_wake_does_not_resurrect_signals_already_consumed():
+    """A `self` signal appended first (id 1) and due later is consumed by a
+    wake AFTER ids 2-3 were consumed; its wake must not set the watermark
+    back to id 1 and re-open them."""
+    ev, store, clock, _ = _setup(policy=WakePolicy(quiet_seconds=0, cooldown_seconds=0,
+                                                  session_seconds=0))
+    await _say(store, clock, kind="self", ref="wake:1", due_ms=clock.ms + 3600 * S)
+    await _say(store, clock)
+    await _say(store, clock)
+    await ev.tick()
+    assert [(w.reason, w.through_signal_id, w.signal_count) for w in store.wakes] == [
+        ("settled", 3, 2)]
+    clock.advance(3600)
+    await ev.tick()
+    assert store.wakes[-1].reason == "self"
+    assert store.wakes[-1].through_signal_id == 3
+    clock.advance(600)
+    assert await ev.tick() == [], "ids 2-3 came back as pending"
+
+
+async def test_an_id_committed_after_a_higher_one_is_not_consumed_unseen():
+    """Concurrent ingests commit out of id order. With no settle margin a
+    read that saw id 2 before id 1 committed consumes id 1 unseen; with the
+    margin the read waits until both are in."""
+    lost_ev, lost, clock, _ = _setup(policy=WakePolicy(quiet_seconds=0))
+    first = await _say(lost, clock)
+    lost.uncommitted.add(first)
+    await _say(lost, clock)
+    clock.advance(2)
+    await lost_ev.tick()                         # sees only id 2
+    lost.uncommitted.clear()                     # id 1 commits
+    assert lost.wakes[0].signal_count == 1
+    view = await lost.view(unit="nora", mode="shadow", now_ms=clock.ms + 10**6, limit=100)
+    assert first not in [s.id for s in view.pending], "control: the race loses id 1"
+
+    ev, store, clock, _ = _setup(policy=WakePolicy(quiet_seconds=0), settle=5)
+    first = await _say(store, clock)
+    store.uncommitted.add(first)
+    await _say(store, clock)
+    clock.advance(2)
+    assert await ev.tick() == []                  # both inside the margin
+    clock.advance(1)
+    store.uncommitted.clear()                     # id 1 commits within the margin
+    clock.advance(4)
+    await ev.tick()
+    assert [w.signal_count for w in store.wakes] == [2]
+    assert store.wakes[0].at_ms == clock.ms - 5 * S   # the cutoff is the time bound
