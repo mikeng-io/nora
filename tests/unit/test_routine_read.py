@@ -138,8 +138,9 @@ async def test_where_will_grant_be_on_wednesday_night(persons):
     assert grant["routine"] == "Wednesday night: should be at Carver Home"
     assert grant["usually_at"] == "Carver Home"
     assert set(grant) == {"person", "routine", "usually_at", "also"}
-    # The hedge carries the doubt; a «forecast, not a record» line became
-    # «呢個係慣性推算，唔係實時» in two live replies.
+    # The hedge carries the doubt; a «forecast, not a record» line came out
+    # as a «this is only an estimate, not real-time» disclaimer in two live
+    # replies.
     assert "friend" in out["note"] and "record" not in out["note"]
     for word in ("will be", "can't", "cannot", "not where"):
         assert word not in out["note"]  # nothing that reads as a reason to disclaim
