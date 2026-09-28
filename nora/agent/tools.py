@@ -6064,9 +6064,9 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         # Only one of their own named places can be where they usually are:
         # the pooled small places and the «not theirs» bucket never are.
         real = [x for x in shares if x["kind"] not in ("other", "elsewhere")]
-        top = real[0] if real else {"place": None, "percent": 0}
-        how_often = _routine_how_often(top["percent"])
-        where = top["place"]
+        top: dict | None = real[0] if real else None
+        how_often = _routine_how_often(int(top["percent"]) if top else 0)
+        where = top["place"] if top else None
         span = (
             f"{_routine_days[start.weekday()]} "
             f"{start.strftime('%H:%M')}-{end.strftime('%H:%M')}"
