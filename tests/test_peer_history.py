@@ -313,7 +313,7 @@ class _Policy:
     def conversation(self, platform, conversation_id):
         if (platform, conversation_id) != ("signal", "room"):
             return None
-        return type("_Convo", (), {"primary_id": "room-primary", "unit": "u"})()
+        return type("_Convo", (), {"primary_id": "room-primary", "unit": "u", "persons": None})()
 
 
 async def test_a_tag_turn_carries_the_rooms_account_through_assemble_and_prefill():
