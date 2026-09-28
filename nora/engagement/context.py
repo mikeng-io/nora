@@ -249,7 +249,18 @@ class TranscriptInjection:
             standing=standing,
             presence=presence,
             culture=culture,
+            # A pure lookup (policy.toml, identity.toml), no read: the room's
+            # listed persons and their aliases for `<room_members>`.
+            room_members=self._room_members(msg),
         )
+
+    def _room_members(self, msg: NormalizedMessage) -> tuple[PersonRef, ...]:
+        """This room's listed persons, for `<room_members>`; empty for a room
+        outside the policy or a `persons = "*"` room (`Persons.room_members`)."""
+        if self._policy is None:
+            return ()
+        conv = self._policy.conversation(msg.platform, msg.conversation_id)
+        return self._persons.room_members(conv.persons) if conv is not None else ()
 
     async def _culture(self, msg: NormalizedMessage) -> CultureRevision | None:
         """This room's account, or `None` (design/culture-tier, DEC-207).

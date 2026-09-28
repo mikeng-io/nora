@@ -1134,7 +1134,16 @@ class FirePath:
             notes=notes,
             decisions=decisions,
             presence=presence,
+            room_members=self._room_members(occasion),
         )
+
+    def _room_members(self, occasion: Event) -> tuple[PersonRef, ...]:
+        """This room's listed persons for `<room_members>` (a pure lookup, no
+        read), the same answer the tag path's assembler gives."""
+        if self._policy is None:
+            return ()
+        conv = self._policy.conversation(occasion.platform, occasion.conversation_id)
+        return self._persons.room_members(conv.persons) if conv is not None else ()
 
     async def _read_presence(self, occasion: Event) -> Presence | None:
         """Where she is for this occasion's room, read now, or `None` with no

@@ -50,6 +50,7 @@ section only where its lineage passes for the room ([10](10-tiers.md) §3).
 |---|---|---|---|---|
 | doctrine (system prompt) | Authored | Nora | every turn | — |
 | `<room>` | Authored | a room | proactive only today (`this_room_is` on `<presence>`, `nora/language/proactive.py`); tag and fire turns do not get it (`prefill.py` calls `render_presence` without `room_is`); note-candidates and culture get `description_for`. Cognition gets it for every bound room | one line |
+| `room_members` | Authored (identity.toml, through the room's `persons` in policy.toml) | a room | tag, fire; not the relevance gate or the public summons | one line per listed person |
 | `tool_catalogue`, `presence` (her platform status, not presence fixes), now | Live | — | tag, fire | — |
 | `group_transcript` | Record | a room | tag, fire | window |
 | `loop_decisions` | Record | the unit | fire (participation, proactive), cognition | recent |
