@@ -27,7 +27,6 @@ from nora.domain.rollup import Citation
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.mobility import SqlMobilityStore
 from nora.infra.sql.rollups import SqlRollupStore, UnitRooms
-from nora.infra.sql.stimuli import SqlStimulusStore
 from nora.infra.sql.schema import (
     MESSAGE_EDIT,
     MESSAGE_REACTION,
@@ -39,6 +38,7 @@ from nora.infra.sql.schema import (
     ROLLUP_TIE,
     SOURCE_HEALTH,
 )
+from nora.infra.sql.stimuli import SqlStimulusStore
 from nora.testing.stimuli import InMemoryStimulusStore
 
 _HKT = ZoneInfo("Asia/Hong_Kong")
@@ -356,4 +356,49 @@ async def test_a_deviation_is_raised_only_on_healthy_sources(pg_url, outage):
         assert [(s.person_id, s.ref) for s in deviations] == [
             ("a", f"deviation|silence|a|{_t(1, 0)}"),
         ]
+    await engine.dispose()
+
+
+async def test_a_run_with_nothing_new_rewrites_no_settled_row(pg_url):
+    """Write amplification (measured on a copy of the deployment's data: the
+    unit rollups rewrote EVERY row EVERY tick, ~45,000 row_history versions
+    an hour, because each row's `as_of_ms` was the unit's clock). A row's
+    `as_of_ms` is its own newest evidence, so a later run whose Record adds
+    only polls changes nothing that has settled."""
+    engine = create_sql_engine(pg_url)
+    mobility = SqlMobilityStore(engine)
+    await _seed(engine, mobility)
+    runner = _runner(engine)
+    rollups = SqlRollupStore(engine)
+    build = await runner.rebuild(through_ms=_WATERMARK)
+    count = (
+        "SELECT count(*) FROM row_history WHERE table_name IN ("
+        "'rollup_colocation', 'rollup_outing', 'rollup_daybook', 'rollup_tie', "
+        "'rollup_response')"
+    )
+    async with engine.connect() as conn:
+        before = (await conn.execute(sa.text(count))).scalar_one()
+    settled = {
+        t.name: sorted(map(repr, (
+            r for r in await rollups.rows(table=t, build_id=build)
+            if r["valid_to_ms"] < _t(1, 0)
+        )))
+        for t in TABLES
+    }
+    report = await runner.run(build_id=build, through_ms=_WATERMARK + 10 * _MIN)
+    changed = sum(n for u in report.units for n in u.changes.values())
+    # Only the day still running moves (each member's stay in progress grows):
+    # at most one daybook per member, never the history.
+    assert changed <= len(UNIT.members), report.units
+    async with engine.connect() as conn:
+        after = (await conn.execute(sa.text(count))).scalar_one()
+    assert after - before == changed
+    assert settled == {
+        t.name: sorted(map(repr, (
+            r for r in await rollups.rows(table=t, build_id=build)
+            if r["valid_to_ms"] < _t(1, 0)
+        )))
+        for t in TABLES
+    }
+    assert any(settled.values())  # positive control: there were settled rows
     await engine.dispose()

@@ -452,7 +452,10 @@ def colocations(
             at_home_of=tuple(at_home), homes_unknown=tuple(unknown),
             stay_count=len(spans),
             open=any(s.open and s.ended_ts >= end for s in spans),
-            as_of_ms=as_of_ms,
+            # The row's OWN newest evidence, never the unit's clock: a clock
+            # stamp would rewrite every row on every run (measured on the
+            # deployment's data: every unit rollup row, every tick).
+            as_of_ms=max(s.ended_ts for s in spans),
         ))
     return out
 
@@ -545,7 +548,11 @@ def daybooks(
         return per.setdefault((person, day), {
             "stays": [], "stay_ms": 0, "home_ms": 0, "coloc_ms": 0,
             "with": set(), "outings": 0, "rooms": {}, "messages": 0, "reactions": 0,
+            "newest": None,
         })
+
+    def seen(row: dict[str, Any], ts: int) -> None:
+        row["newest"] = ts if row["newest"] is None else max(row["newest"], ts)
 
     for s in stays:
         if s.person_id not in member_set:
@@ -562,6 +569,7 @@ def daybooks(
                 "open": s.open,
             })
             row["stay_ms"] += piece
+            seen(row, min(s.ended_ts, d1))
             if s.place_kind == "home":
                 row["home_ms"] += piece
     for c in found:
@@ -575,23 +583,28 @@ def daybooks(
                     continue
                 row = slot(p, day)
                 row["coloc_ms"] += piece
+                seen(row, min(c.as_of_ms, d1))
                 row["with"].update(q for q in c.persons if q != p)
     for o in outings_found:
         for p in o.persons:
             if p in member_set:
-                slot(p, local_date(o.valid_from_ms, tz_name))["outings"] += 1
+                row = slot(p, local_date(o.valid_from_ms, tz_name))
+                row["outings"] += 1
+                seen(row, o.as_of_ms)
     for m in messages:
         if m.person_id not in member_set:
             continue
         row = slot(m.person_id, local_date(m.ts, tz_name))
         row["messages"] += 1
         row["rooms"][m.room] = row["rooms"].get(m.room, 0) + 1
+        seen(row, m.ts)
     for r in reactions:
         if r.person_id not in member_set:
             continue
         row = slot(r.person_id, local_date(r.ts, tz_name))
         row["reactions"] += 1
         row["rooms"].setdefault(r.room, 0)
+        seen(row, r.ts)
     last_day = local_date(as_of_ms, tz_name)
     out: list[Daybook] = []
     for (person, day), row in sorted(per.items()):
@@ -605,7 +618,8 @@ def daybooks(
             colocation_ms=row["coloc_ms"], with_persons=tuple(sorted(row["with"])),
             outings=row["outings"], rooms=dict(sorted(row["rooms"].items())),
             messages=row["messages"], reactions=row["reactions"],
-            valid_from_ms=d0, valid_to_ms=d1, as_of_ms=as_of_ms,
+            valid_from_ms=d0, valid_to_ms=d1,
+            as_of_ms=row["newest"] if row["newest"] is not None else d0,
         ))
     return out
 
@@ -653,8 +667,9 @@ def ties(
         a, b = sorted((src, dst))
         row = acc.setdefault((a, b, iso_week(ts, tz_name)), {
             "replies_ab": 0, "replies_ba": 0, "mentions_ab": 0, "mentions_ba": 0,
-            "reactions_ab": 0, "reactions_ba": 0, "coloc": 0, "rooms": set(),
+            "reactions_ab": 0, "reactions_ba": 0, "coloc": 0, "rooms": set(), "newest": ts,
         })
+        row["newest"] = max(row["newest"], ts)
         row[f"{what}_{'ab' if src == a else 'ba'}"] += 1
         if room is not None:
             row["rooms"].add(room)
@@ -678,9 +693,10 @@ def ties(
                     row = acc.setdefault((a, b, week), {
                         "replies_ab": 0, "replies_ba": 0, "mentions_ab": 0,
                         "mentions_ba": 0, "reactions_ab": 0, "reactions_ba": 0,
-                        "coloc": 0, "rooms": set(),
+                        "coloc": 0, "rooms": set(), "newest": w0,
                     })
                     row["coloc"] += piece
+                    row["newest"] = max(row["newest"], min(c.as_of_ms, w1))
                     cursor = w1
     out: list[Tie] = []
     for (a, b, week), row in sorted(acc.items()):
@@ -693,7 +709,7 @@ def ties(
             mentions_ab=row["mentions_ab"], mentions_ba=row["mentions_ba"],
             reactions_ab=row["reactions_ab"], reactions_ba=row["reactions_ba"],
             colocation_ms=row["coloc"], rooms=tuple(sorted(row["rooms"])),
-            valid_from_ms=w0, valid_to_ms=w1, as_of_ms=as_of_ms,
+            valid_from_ms=w0, valid_to_ms=w1, as_of_ms=row["newest"],
         ))
     return out
 
@@ -797,7 +813,9 @@ def responses(
             responders=tuple(sorted({e.person_id for e in inside})),
             named_persons=tuple(sorted(set(s.named))), intent=s.intent,
             outcome=outcome, valid_from_ms=s.ts, valid_to_ms=end,
-            as_of_ms=as_of_ms,
+            # Its newest answer, else the send itself: not the clock (the
+            # outcome is what moves when the window closes).
+            as_of_ms=max((e.ts for e in inside), default=s.ts),
         ))
     return out
 
