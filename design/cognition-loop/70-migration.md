@@ -155,7 +155,7 @@ rule 4); DEC-213 (note body schema).
 
 | position | what would decide it |
 |---|---|
-| ~~the unit as the read boundary for transcripts of all its rooms~~ | **SETTLED at step 0** (DEC-231): the unit is the Cognition session's read boundary, extending the operator's 2026-09-09 ruling that the proactive half holds all permissions of its unit. Each agenda item's room-scoped reads still resolve through its own bound room (R-21, amended by DEC-223); the unit bounds the SESSION, the room bounds each ITEM's disclosure. The fallback this row named — one session per room instead of per unit — is not taken |
+| ~~the unit as the read boundary for transcripts of all its rooms~~ | **SETTLED at step 0** (DEC-231): the unit is the Cognition session's read boundary, transcripts of every room included (operator, 2026-09-28), extending design 39's home-room reads to the whole unit. Each agenda item's room-scoped reads still resolve through its own bound room (R-21, amended by DEC-223); the unit bounds the SESSION, the room bounds each ITEM's disclosure. The fallback this row named — one session per room instead of per unit — is not taken |
 | granting cognition the live social reads (`instagram_*`, `x_*`, `linkedin_*`) | the operator; the risk is the messaging login |
 | one agent on the runtime model (a cheap model) holding a busy unit's day | step 3's shadow: items closed per session, refusals per rule, context size |
 | participation as a wake of the same loop | session latency measured after step 4 |

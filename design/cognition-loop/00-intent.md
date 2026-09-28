@@ -129,7 +129,7 @@ The objections the first draft raised, and where each is answered now:
 | objection | answered by |
 |---|---|
 | a model does not convict itself (the Standing verdict read 21/21 grounded) | writes are **tool calls code validates** (citations resolve, schema holds, modes allowed, provenance stamped); what code cannot check, an **assess** pass measures afterwards (design/dreamer-agent-loop/17-failure-classes.md §2; [30](30-cognition.md) §3, §6) |
-| room vs unit disclosure (DEC-105, R-49) | every agenda item binds a room, and lineage is applied at assembly, per field, when a read returns and when a block renders ([10](10-tiers.md) §3). Whether the unit is the read boundary for all its rooms' transcripts is to be confirmed at step 0 ([70](70-migration.md) §4) |
+| room vs unit disclosure (DEC-105, R-49) | every agenda item binds a room, and lineage is applied at assembly, per field, when a read returns and when a block renders ([10](10-tiers.md) §3). The unit is the session's read boundary, transcripts of every room included (DEC-231, operator 2026-09-28) |
 | a model told of a cap declines the work | caps stay in code, never in words; an agenda item not closed returns to the next session with a strike instead of being dropped |
 | one large prompt dilutes a cheap model | code injects the skill text for the agenda kinds present, not text in the base prompt (ADR 0016, proposed, is the placement policy) |
 | per-pass eval suites exist | their cases become agenda-item cases; the verdicts they grade are the same rows |

@@ -53,10 +53,10 @@ unit-keyed session may hold at all stays decided by `UNIT_SAFE_TOOLS` and
 One context holds several items' reads, so a line written for one item can
 carry what was read for another. Code bounds this through citations (every
 line cites, and its lineage is computed from what it cites); the assess pass
-measures whether a citation supports its line (§6). Whether the unit is the
-read boundary for all its rooms' transcripts is open until step 0; if it is
-not, cognition runs one session per room instead, with the same verbs
-([70](70-migration.md) §4).
+measures whether a citation supports its line (§6). The unit is the
+read boundary for all its rooms' transcripts, raw transcripts included
+(DEC-231, operator 2026-09-28); what reaches a room is still decided by
+lineage at assembly.
 
 An agenda with no items is no session: zero model calls, the rule every
 adaptor keeps today.
