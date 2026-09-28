@@ -20,7 +20,7 @@ class _FakeMemory:
         self.peers: list[str] = []
         self._fail = fail
 
-    async def ensure_peer(self, *, peer_id: str) -> None:
+    async def ensure_peer(self, *, peer_id: str, **_route: str | None) -> None:
         self.peers.append(peer_id)
 
     async def feed(self, *, peer_id: str, text: str, conversation_id: str,

@@ -371,6 +371,7 @@
   "memory": {
     "title": "Her memory of you",
     "lede": "What Nora has written down about you from the group chats. Only you can see this page.",
+    "workspaces": "Circles",
     "private": "Only you can see this. Nobody else in the circle can open your page's memory, and Nora won't describe it to anyone.",
     "partial": "Part of her memory didn't answer just now, so this may be missing things.",
     "unreachable": "Her memory didn't answer. This isn't the same as there being nothing.",

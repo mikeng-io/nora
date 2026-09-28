@@ -20,7 +20,9 @@ silent mute."
 
 from __future__ import annotations
 
+import re
 import tomllib
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -28,6 +30,21 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 
 # Not a person_id: the wildcard admitting anyone in a conversation (§4.3).
 EVERYONE = "*"
+
+#: The Nora WORKSPACE every unit belongs to when `policy.toml` has no `[units]`
+#: table at all (the decision of 2026-09-28, DEC-214). A workspace holds units,
+#: a unit holds rooms; a policy written before the hierarchy existed names no
+#: workspace, so all of its units share this implicit one, and that one is
+#: bound to `config.toml`'s `memory.workspace_id` rather than to its own name
+#: (`nora.app.memory_routing`). Not a Honcho workspace id: a Nora workspace
+#: and a Honcho workspace are separate names for separate things.
+DEFAULT_WORKSPACE = "default"
+
+#: A Nora workspace name may be used verbatim as a Honcho workspace id (when
+#: `identity.toml` binds it to nothing), and Honcho refuses any resource id
+#: outside this alphabet with a 422 — at feed time, silently, off the reply
+#: path. Refused here, at startup, instead.
+_WORKSPACE_NAME = re.compile(r"^[a-zA-Z0-9_-]+$")
 
 
 #: A Discord snowflake is a 64-bit id — 17-20 decimal digits in practice. The
@@ -229,9 +246,37 @@ class Policy:
     _music_by_guild: dict[tuple[str, str], Conversation] = field(
         repr=False, default_factory=dict,
     )
+    # unit -> the Nora WORKSPACE it belongs to (the hierarchy workspace > unit
+    # > room, operator 2026-09-28). Filled only from a `[units]` table; empty
+    # when the file has none, and then `units_declared` is False and every
+    # unit belongs to `DEFAULT_WORKSPACE`.
+    _unit_workspace: dict[str, str] = field(repr=False, default_factory=dict)
+    units_declared: bool = False
 
     def conversation(self, platform: str, conversation_id: str) -> Conversation | None:
         return self._by_id.get((platform, conversation_id))
+
+    def workspace_of(self, unit: str) -> str | None:
+        """The Nora workspace `unit` belongs to, or `None` when the file
+        declares `[units]` and this unit is not in it.
+
+        With no `[units]` table every unit — named in this file or not —
+        belongs to `DEFAULT_WORKSPACE`: that is the back-compat reading of a
+        policy written before workspaces existed, and `load_policy` refuses a
+        `[units]` table that leaves any room's unit out, so `None` is only
+        ever the answer for a unit no room here has."""
+        if not self.units_declared:
+            return DEFAULT_WORKSPACE
+        return self._unit_workspace.get(unit)
+
+    def unit_workspaces(self) -> Mapping[str, str]:
+        """Every unit a room here belongs to -> its Nora workspace. The
+        implicit case maps each of them to `DEFAULT_WORKSPACE`, so a caller
+        never has to know which form the file took."""
+        units = {convo.unit for convo in self.conversations}
+        return {
+            unit: self.workspace_of(unit) or DEFAULT_WORKSPACE for unit in sorted(units)
+        }
 
     def voice_room(self, platform: str, guild_id: str) -> Conversation | None:
         """The room a spoken utterance from `guild_id` belongs to, or `None`.
@@ -454,12 +499,40 @@ class _ConversationEntry(BaseModel):
         return value
 
 
+class _UnitEntry(BaseModel):
+    """One `[units.<unit>]` table: which Nora workspace the unit belongs to.
+
+    Only the STRUCTURE lives here. Which Honcho workspace a Nora workspace is
+    bound to is an external binding and lives in `identity.toml`'s
+    `[workspaces.<name>]` (`nora.persons_file`), for DEC-8's reason: this file
+    changes when trust changes, and a Honcho id is not a trust answer."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    workspace: str
+
+    @field_validator("workspace")
+    @classmethod
+    def _check_workspace(cls, value: str) -> str:
+        if not _WORKSPACE_NAME.match(value):
+            raise ValueError(
+                f"workspace {value!r} must match ^[a-zA-Z0-9_-]+$ — a workspace "
+                "with no binding in identity.toml is used verbatim as its "
+                "Honcho workspace id, and Honcho refuses any other character"
+            )
+        return value
+
+
 class _PolicyFile(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     default: str = "deny"
     dm: dict[str, list[str]] = Field(default_factory=dict)
     conversations: list[_ConversationEntry] = Field(default_factory=list)
+    # `None` — the table is ABSENT — is the back-compat case: every unit
+    # belongs to `DEFAULT_WORKSPACE`. Present, it must be complete; see
+    # `load_policy`.
+    units: dict[str, _UnitEntry] | None = None
 
     @field_validator("default")
     @classmethod
@@ -667,6 +740,9 @@ def load_policy(path: Path) -> Policy:
             )
         music_by_guild[key] = convo
 
+    _refuse_two_rooms_on_one_platform(conversations)
+    unit_workspace = _unit_workspaces(parsed.units, conversations, path)
+
     if not conversations:
         raise PolicyError(
             f"{path} allows no conversations, so Nora would ingest and answer "
@@ -681,4 +757,70 @@ def load_policy(path: Path) -> Policy:
         _by_id=by_id,
         _voice_by_guild=voice_by_guild,
         _music_by_guild=music_by_guild,
+        _unit_workspace=unit_workspace,
+        units_declared=parsed.units is not None,
     )
+
+
+def _refuse_two_rooms_on_one_platform(conversations: list[Conversation]) -> None:
+    """A unit holds AT MOST ONE room per platform (DEC-105; enforced from
+    2026-09-28, DEC-214).
+
+    DEC-105 stated it and nothing in code held it, and it was breached twice
+    by hand (the 2026-09-17 cleanup measured one breach: 1953 messages, 11
+    notes and a whole culture table to undo). Everything that addresses a
+    unit's room by PLATFORM leans on it — `send_to`'s «tell the Signal lot»
+    names one room only because there is one — and so does every unit-keyed
+    read that picks "the unit's room on X". Refused in every form of the
+    file, `[units]` or not: the invariant is the unit's, not the workspace's.
+    """
+    seen: dict[tuple[str, str], Conversation] = {}
+    for convo in conversations:
+        key = (convo.unit, convo.platform)
+        other = seen.get(key)
+        if other is not None:
+            raise PolicyError(
+                f"unit {convo.unit!r} has two {convo.platform} rooms "
+                f"({other.label or other.primary_id!r} and "
+                f"{convo.label or convo.primary_id!r}). A unit holds at most "
+                "one room per platform (DEC-105): anything that addresses the "
+                "unit's room on a platform would otherwise be guessing. Give "
+                "one of them its own unit."
+            )
+        seen[key] = convo
+
+
+def _unit_workspaces(
+    units: Mapping[str, _UnitEntry] | None,
+    conversations: list[Conversation],
+    path: Path,
+) -> dict[str, str]:
+    """unit -> Nora workspace, from the `[units]` table.
+
+    ABSENT table: `{}`, and `Policy.workspace_of` answers `DEFAULT_WORKSPACE`
+    for every unit — the policy that existed before the hierarchy keeps
+    loading unchanged. PRESENT: it must be COMPLETE and EXACT. A room whose
+    unit has no entry would belong to no workspace, which means no Honcho
+    workspace could be named for it, so it is a startup error rather than a
+    guess (R-5's refuse-to-start shape). A unit entry that no room uses is
+    refused too: a unit holds one or more rooms, so an entry with none is a
+    typo or a stale line, and either way it is an answer nobody reads."""
+    if units is None:
+        return {}
+    used = {convo.unit for convo in conversations}
+    missing = sorted(used - set(units))
+    if missing:
+        raise PolicyError(
+            f"{path} declares [units] but not {missing}. Once the table exists "
+            "every unit a room uses must name its workspace — add "
+            f'[units.{missing[0]}] workspace = "..." — or delete [units] '
+            "entirely to put every unit in the one implicit workspace."
+        )
+    unused = sorted(set(units) - used)
+    if unused:
+        raise PolicyError(
+            f"{path} declares [units.{unused[0]}] but no conversation has "
+            f"unit = {unused[0]!r}. A unit holds at least one room; remove the "
+            "entry or fix the unit name it was meant to match."
+        )
+    return {unit: entry.workspace for unit, entry in units.items()}

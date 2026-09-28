@@ -14,7 +14,7 @@ import pytest
 from aiohttp import web
 from aiohttp.test_utils import TestServer
 
-from nora.infra.honcho import HonchoClient, WorkspaceRouter
+from nora.infra.honcho import HonchoClient, HonchoRoute, WorkspaceRouter
 
 
 @pytest.fixture
@@ -36,43 +36,89 @@ async def server_factory():
         await server.close()
 
 
+#: `acme` exists and carries Nora's owner marker: these tests are about
+#: routing, and a bound workspace other than the default is only reachable
+#: once it is known to be Nora's (`HonchoClient._owned`).
+def _owned_acme() -> web.Response:
+    return web.json_response(
+        {"items": [{"id": "acme", "metadata": {"nora_owner": "nora"}}], "pages": 1},
+    )
+
+
 def test_workspace_router_maps_conversations_and_falls_back_to_the_default():
-    """design/24 §S: a conversation resolves to its social unit's workspace, or
-    the single default when unmapped (today, every conversation)."""
-    r = WorkspaceRouter("nora", {"g-work": "acme"})
-    assert r.workspace_for("g-work") == "acme"
-    assert r.workspace_for("g-unmapped") == "nora"
+    """DEC-214: a conversation resolves through its unit to that unit's
+    Honcho workspace and named scope. Without `[units]` (not strict) anything
+    unknown falls back to the single default, UNSCOPED — the pre-hierarchy
+    behaviour every harness relies on."""
+    r = WorkspaceRouter(
+        "nora", unit_workspaces={"work": "acme"},
+        conversation_units={"g-work": "work"},
+    )
+    # Not strict (no `[units]`): the unit's workspace, but NO scope — reads
+    # stay exactly as unscoped as before DEC-214 until `[units]` is written.
+    assert r.for_conversation("g-work") == HonchoRoute("acme")
+    assert r.for_unit("work") == HonchoRoute("acme")
+    assert r.for_conversation("g-unmapped") == HonchoRoute("nora")
+    assert r.unrouted() == HonchoRoute("nora")
+
+
+def test_a_strict_router_refuses_what_it_was_not_built_with():
+    """With `[units]` declared there is no default a caller could have meant:
+    an unknown room, an unknown unit and a call naming neither have NO route,
+    which the client turns into a refused call — never a widened one."""
+    r = WorkspaceRouter(
+        "nora", unit_workspaces={"work": "acme"},
+        conversation_units={"g-work": "work"}, strict=True,
+    )
+    assert r.for_conversation("g-work") == HonchoRoute("acme", "work")
+    assert r.for_conversation("g-unmapped") is None
+    assert r.for_unit("nobody") is None
+    assert r.unrouted() is None
+    assert r.workspaces() == ("acme",)
 
 
 async def test_feed_routes_every_call_to_the_conversations_workspace(server_factory):
-    """The seam threaded through the whole feed path (design/24 §S): a mapped
-    conversation's session-create, peer-config AND message POST all land under
-    its own workspace — never the default."""
+    """The seam threaded through the whole feed path (DEC-214): a mapped
+    conversation's session-create, peer-config, scope membership AND message
+    POST all land under its own Honcho workspace — never the default."""
     paths: list[str] = []
 
     async def handler(request: web.Request) -> web.Response:
+        if request.path == "/v3/workspaces/list":
+            return _owned_acme()
         paths.append(request.path)
-        if request.path.endswith("/sessions"):
+        if request.path.endswith("/sessions") and "/scopes/" not in request.path:
             return web.json_response({"id": "s1"})
+        if "/scopes/" in request.path:
+            return web.Response(status=204)
         return web.json_response({"ok": True})
 
     base = await server_factory(handler)
     client = HonchoClient(
-        base, "nora", workspace_router=WorkspaceRouter("nora", {"g-work": "acme"}),
+        base, "nora", workspace_router=WorkspaceRouter(
+            "nora", unit_workspaces={"work": "acme"},
+            conversation_units={"g-work": "work"}, strict=True,
+        ),
     )
     assert await client.feed(peer_id="miles", text="hi", conversation_id="g-work") is True
     assert paths and all("/workspaces/acme/" in p for p in paths), paths
     assert not any("/workspaces/nora/" in p for p in paths)
 
 
-async def test_an_unmapped_conversation_and_a_direct_recall_use_the_default(server_factory):
-    """The behaviour-preserving half: no override → the single default workspace,
-    exactly as before the seam. And a recall carrying an explicit `workspace_id`
-    targets that workspace (the caller resolves it from the room)."""
+async def test_an_unmapped_conversation_and_a_unit_recall_route_apart(server_factory):
+    """The behaviour-preserving half: an unmapped room (no `[units]`) goes to
+    the single default workspace, exactly as before the hierarchy. And, once
+    `[units]` exists, a recall naming a UNIT goes to that unit's workspace,
+    scoped to it."""
     paths: list[str] = []
+    bodies: dict[str, dict] = {}
 
     async def handler(request: web.Request) -> web.Response:
+        if request.path == "/v3/workspaces/list":
+            return _owned_acme()
         paths.append(request.path)
+        if request.method == "POST" and request.can_read_body:
+            bodies[request.path] = await request.json()
         if request.path.endswith("/sessions"):
             return web.json_response({"id": "s1"})
         if request.path.endswith("/representation"):
@@ -80,16 +126,27 @@ async def test_an_unmapped_conversation_and_a_direct_recall_use_the_default(serv
         return web.json_response({"ok": True})
 
     base = await server_factory(handler)
-    client = HonchoClient(
-        base, "nora", workspace_router=WorkspaceRouter("nora", {"g-work": "acme"}),
+    implicit = HonchoClient(
+        base, "nora", workspace_router=WorkspaceRouter(
+            "nora", unit_workspaces={"work": "acme"},
+            conversation_units={"g-work": "work"},
+        ),
     )
-    await client.feed(peer_id="miles", text="hi", conversation_id="g-other")   # unmapped
+    await implicit.feed(peer_id="miles", text="hi", conversation_id="g-other")   # unmapped
     assert all("/workspaces/nora/" in p for p in paths) and paths
     paths.clear()
-    await client.representation(
-        peer_id="nora", target="miles", search_query="q", workspace_id="acme",
+    client = HonchoClient(
+        base, "nora", workspace_router=WorkspaceRouter(
+            "nora", unit_workspaces={"work": "acme"},
+            conversation_units={"g-work": "work"}, strict=True,
+        ),
     )
-    assert any("/workspaces/acme/peers/nora/representation" in p for p in paths), paths
+    await client.representation(
+        peer_id="nora", target="miles", search_query="q", unit="work",
+    )
+    rep = "/v3/workspaces/acme/peers/nora/representation"
+    assert rep in paths, paths
+    assert bodies[rep]["scope"] == "work"
 
 
 async def test_feed_creates_a_session_then_posts_the_message_batch(server_factory):
@@ -244,15 +301,13 @@ async def test_ensure_peer_is_idempotent_under_concurrency(monkeypatch):
     client = HonchoClient("http://127.0.0.1:8000", "nora")
     creates = []
 
-    async def _fake_create(peer_id):
+    async def _fake_post(url, payload, timeout):  # noqa: ASYNC109 -- `_post`'s own signature
         await asyncio.sleep(0.01)      # widen the check-then-act window
-        creates.append(peer_id)
+        if url.endswith("/peers"):
+            creates.append(payload["id"])
+        return {"id": payload.get("id")}
 
-    async def _fake_exists(peer_id):
-        return peer_id in creates
-
-    monkeypatch.setattr(client, "_peer_exists", _fake_exists)
-    monkeypatch.setattr(client, "_create_peer", _fake_create)
+    monkeypatch.setattr(client, "_post", _fake_post)
 
     await asyncio.gather(*(client.ensure_peer(peer_id="miles") for _ in range(5)))
     assert creates == ["miles"]

@@ -365,6 +365,17 @@ confused — including in this document until 2026-08-06.
 **Postgres is the RECORD; Honcho is the INTERPRETATION.** Postgres stores what was
 literally said, is authoritative, and is the only thing R-2/A9 guarantee.
 
+**Where the interpretation lives is workspace > unit > room** (DEC-214). A
+workspace (`policy.toml` `[units]`) groups units; each workspace is bound to
+ONE Honcho workspace (`identity.toml` `[workspaces]`, or `memory.workspace_id`
+when there is no `[units]`), so a person is one Honcho peer across a
+workspace's units and a separate one in every other workspace; and, once
+`[units]` is declared, each unit is a Honcho named scope, so every memory read
+for a room or unit sees only that unit's rooms (without `[units]` reads stay
+unscoped, as before). `nora.app.memory_routing` resolves it once at startup and
+`HonchoClient` routes every call through it; a room the policy places in no
+workspace is refused, never widened.
+
 **Media is part of the record, not a fourth layer** (DEC-45,
 `design/18-media-custody.md`). An attachment's BYTES live in
 `data/media/<first2>/<rest>`, content-addressed by sha256, and the row that

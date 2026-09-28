@@ -230,7 +230,11 @@ messages answers freely about people appearing nowhere in it. `search` is worse
 — scoped to that same session it returns six hits from other rooms, byte-identical
 to the unscoped query. **Neither endpoint honours session scoping for the layer
 this tier needs**, and there is one Honcho workspace behind all of Nora's rooms
-(`_workspace_for` returns the single default; no router is wired).
+(`_workspace_for` returns the single default; no router is wired). *(True when
+written. Since 2026-09-28 (DEC-214) each Nora workspace has its own Honcho
+workspace and each unit is a Honcho NAMED scope that every read passes — a
+unit boundary Honcho does honour; a ROOM boundary still does not exist there,
+which is what this tier's argument rests on.)*
 
 So there is no room boundary in Honcho, and no workspace boundary either.
 

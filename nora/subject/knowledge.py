@@ -727,10 +727,18 @@ async def know(
         # about them, nothing here may have created `peer` yet. Skipping this
         # 404s the write and this loop's fail-loud check misreports it as
         # Honcho refusing a well-formed call.
-        await subject.deps.memory.ensure_peer(peer_id=peer)
+        #
+        # ROUTED by the room (DEC-214), exactly as the `remember` tool in a
+        # turn in this room would be: the room's unit decides the Honcho
+        # workspace and the named scope its reads look in, so a seed written
+        # anywhere else would be written and never read.
+        await subject.deps.memory.ensure_peer(
+            peer_id=peer, conversation_id=conversation_id,
+        )
         for line in lines:
             if not await subject.deps.memory.conclude(
                 peer_id=subject.cfg.memory.ai_peer, content=line, target=peer,
+                conversation_id=conversation_id,
             ):
                 raise RuntimeError(
                     f"could not write a conclusion for {peer!r} — Honcho is "

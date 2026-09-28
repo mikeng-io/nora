@@ -119,3 +119,39 @@ async def test_identity_is_the_persons_own_self_scoped_peer_card_not_an_observer
     )
 
     assert payload[0]["identity"] == ["Name: Miles Novak", "Aliases: Miles"]
+
+
+async def test_one_entry_per_workspace_the_caller_belongs_to_each_read_there():
+    """DEC-214: a person in units of two Nora workspaces has a separate model
+    in each workspace's Honcho workspace. The page shows them apart, labelled,
+    each read routed by the WORKSPACE (unscoped across its units) — and only
+    ever the caller's own model."""
+    honcho = FakeMemoryStore(conclusions={"miles": ["likes climbing"], "ada": ["x"]})
+    persons = _persons(MILES, ADA)
+    member_of = {"miles": ("67", "ridgeline"), "ada": ("67",)}
+
+    payload = await build_memory_payload(
+        honcho=honcho, persons=persons, ai_peer="nora", person_id="miles",
+        workspaces_of=lambda pid: member_of.get(pid, ()),
+    )
+
+    assert [(e["person_id"], e["workspace"]) for e in payload] == [
+        ("miles", "67"), ("miles", "ridgeline"),
+    ]
+    assert honcho.workspace_reads == [
+        ("representation", "67"), ("peer_card", "67"),
+        ("representation", "ridgeline"), ("peer_card", "ridgeline"),
+    ]
+    assert {observed for (_obs, observed, _q) in honcho.queries} == {"miles"}
+
+
+async def test_a_caller_in_no_workspace_sees_nothing_rather_than_a_guess():
+    """A person no listed room names belongs to no workspace, so there is no
+    Honcho workspace to read — empty, never a default one."""
+    honcho = FakeMemoryStore(conclusions={"miles": ["x"]})
+    payload = await build_memory_payload(
+        honcho=honcho, persons=_persons(MILES), ai_peer="nora", person_id="miles",
+        workspaces_of=lambda _pid: (),
+    )
+    assert payload == []
+    assert honcho.queries == []

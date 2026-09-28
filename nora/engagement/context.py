@@ -355,7 +355,9 @@ class TranscriptInjection:
             return ()
         try:
             card = tuple(await traced_read(
-                "memory", "peer_card", self._memory.peer_card(peer_id=ref.honcho_peer_id),
+                "memory", "peer_card", self._memory.peer_card(
+                    peer_id=ref.honcho_peer_id, conversation_id=msg.conversation_id,
+                ),
             ))
             if not card:
                 # THE ONE SIGNAL THIS READ HAS. `peer_card` answers `[]` for a
@@ -411,6 +413,7 @@ class TranscriptInjection:
                     target=ref.honcho_peer_id,
                     search_query=msg.body or "",
                     max_conclusions=self._tagger_card_conclusions,
+                    conversation_id=msg.conversation_id,
                 ),
                 # `Recollection` has no `__len__` — `_row_count` would leave
                 # this read unmeasured even though it plainly has a count.
@@ -432,9 +435,10 @@ class TranscriptInjection:
 
         The `representation` verb with `target=None`, i.e. observer==observed —
         her own model of herself, built from what she has said in this
-        Honcho workspace. NOT `peer_card`: the card renders the same history as
-        IDENTITY claims, and hers currently asserts «Kind: AI chatbot/assistant»
-        and an owner with «admin authority», both of which contradict
+        room's unit (its named scope, DEC-214). NOT `peer_card`: the card
+        renders the same history as IDENTITY claims, and hers currently
+        asserts «Kind: AI chatbot/assistant» and an owner with «admin
+        authority», both of which contradict
         `identity.md` and would win on injection because a learned claim reads
         as evidence next to an authored one.
 
@@ -459,6 +463,7 @@ class TranscriptInjection:
                     peer_id=self._ai_peer,
                     search_query=msg.body or "",
                     max_conclusions=self._self_card_conclusions,
+                    conversation_id=msg.conversation_id,
                 ),
                 count=lambda r: len(r.conclusions),
             )

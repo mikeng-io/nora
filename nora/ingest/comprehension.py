@@ -481,7 +481,9 @@ class MediaComprehension:
             detail = ""
         text = f"{marker}\n{detail}" if detail else marker
         try:
-            await self._memory.ensure_peer(peer_id=person.honcho_peer_id)
+            await self._memory.ensure_peer(
+                peer_id=person.honcho_peer_id, conversation_id=conversation_id,
+            )
             ok = await self._memory.feed(
                 peer_id=person.honcho_peer_id, text=text,
                 conversation_id=conversation_id,

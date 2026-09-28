@@ -42,7 +42,7 @@ class _FakeHoncho:
     def __init__(self, answers: dict[str, str | None] | None = None) -> None:
         self._answers = answers or {}
 
-    async def chat(self, *, peer_id, query, reasoning_level="low", target=None):
+    async def chat(self, *, peer_id, query, reasoning_level="low", target=None, **_route):
         return self._answers.get(target)
 
 

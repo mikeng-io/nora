@@ -38,12 +38,15 @@ class FakeMemory:
     def __init__(self) -> None:
         self.known_peers: set[str] = set()
         self.calls: list[tuple[str, str]] = []
+        self.routes: list[tuple[str, str | None, str | None]] = []
 
     async def ensure_workspace(self) -> None:
         return None
 
-    async def ensure_peer(self, *, peer_id: str) -> None:
+    async def ensure_peer(self, *, peer_id: str, conversation_id: str | None = None,
+                          unit: str | None = None) -> None:
         self.calls.append(("ensure_peer", peer_id))
+        self.routes.append(("ensure_peer", conversation_id, unit))
         self.known_peers.add(peer_id)
 
     async def feed(self, *, peer_id: str, text: str, conversation_id: str = "",
@@ -52,11 +55,14 @@ class FakeMemory:
         return True
 
     async def conclude(self, *, peer_id: str, content: str, target: str,
-                        workspace_id: str | None = None) -> bool:
+                        conversation_id: str | None = None,
+                        unit: str | None = None) -> bool:
         self.calls.append(("conclude", target))
+        self.routes.append(("conclude", conversation_id, unit))
         return target in self.known_peers
 
-    async def peer_card(self, *, peer_id: str) -> list[str]:
+    async def peer_card(self, *, peer_id: str, conversation_id: str | None = None,
+                        unit: str | None = None) -> list[str]:
         return []
 
 
@@ -97,6 +103,23 @@ async def test_know_ensures_the_peer_before_concluding_about_them() -> None:
     assert ensure_index < conclude_index
 
 
+async def test_know_routes_the_seed_by_the_subjects_room() -> None:
+    """DEC-214: a seeded conclusion goes where a `remember` in this room
+    would — routed by the room, so its unit's workspace and named scope, the
+    place the room's reads look. Unrouted, it would land in the implicit
+    workspace's unscoped collection and every scoped read would miss it."""
+    subject = _FakeSubject()
+    knowledge = Knowledge(
+        transcript=(Message(body="hi"),),
+        conclusions={"miles_novak": ("miles likes coffee",)},
+    )
+
+    await know(subject, knowledge)  # type: ignore[arg-type]
+
+    routed = [r for r in subject.deps.memory.routes if r[0] in ("ensure_peer", "conclude")]
+    assert routed and all(r[1] == "g1" and r[2] is None for r in routed), routed
+
+
 async def test_know_raises_loudly_if_the_peer_was_never_ensured() -> None:
     """Falsification: with `ensure_peer` never called, `FakeMemory.conclude`
     reproduces the live 404 and `know()` must still fail loud, not silently."""
@@ -105,7 +128,8 @@ async def test_know_raises_loudly_if_the_peer_was_never_ensured() -> None:
     knowledge = Knowledge(conclusions={"miles_novak": ("miles likes coffee",)})
 
     async def _broken_conclude(*, peer_id: str, content: str, target: str,
-                                workspace_id: str | None = None) -> bool:
+                                conversation_id: str | None = None,
+                                unit: str | None = None) -> bool:
         return False  # simulates the old code path: no ensure_peer ever ran
 
     subject.deps.memory.conclude = _broken_conclude  # type: ignore[method-assign]
