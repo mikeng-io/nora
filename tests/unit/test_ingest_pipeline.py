@@ -617,7 +617,8 @@ async def _drive_edit(metrics, *, edit_body: str, original_is_nora: bool = False
     return await pipeline.run(message=edit)
 
 
-async def _drive_touch(metrics, *, kind: str, recorded: bool = True):
+async def _drive_touch(metrics, *, kind: str, recorded: bool = True,
+                       sender_id: str = "+852111"):
     """A REACTION or a DELETE of the Signal message sent at ts=1
     (design/cognition-loop/20-observe.md §1). `recorded=False` leaves the
     target off the record — an orphan."""
@@ -632,7 +633,7 @@ async def _drive_touch(metrics, *, kind: str, recorded: bool = True):
         allowlist=_policy_of(), metrics=metrics,
     )
     touch = dataclasses.replace(
-        _msg(body=""), timestamp=5,
+        _msg(sender_id=sender_id, body=""), timestamp=5,
         touch=Touch(kind=kind, target=EditTarget(sent_ts=1), emoji="👍"),  # type: ignore[arg-type]
     )
     return await pipeline.run(message=touch)
@@ -663,6 +664,8 @@ def _all_drivers(monkeypatch, metrics):
         "reaction_orphaned": lambda: _drive_touch(metrics, kind="reaction", recorded=False),
         "delete_recorded": lambda: _drive_touch(metrics, kind="delete"),
         "delete_orphaned": lambda: _drive_touch(metrics, kind="delete", recorded=False),
+        "delete_refused": lambda: _drive_touch(metrics, kind="delete",
+                                               sender_id="+852999"),
     }
 
 

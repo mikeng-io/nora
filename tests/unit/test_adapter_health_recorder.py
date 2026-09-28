@@ -53,3 +53,39 @@ async def test_a_failed_write_is_retried_on_the_next_sample():
     log.fail = False
     await rec.sample(AdapterHealth(platform="signal", connected=False))
     assert log.outcomes("signal") == ["down"]
+
+
+async def test_a_connected_socket_that_delivers_nothing_is_stale_not_up():
+    """The PlatformSilent threshold: connected, but no event for 900 s."""
+    rec, log = _recorder()
+    await rec.sample(AdapterHealth(platform="signal", connected=True,
+                                   last_event_age_seconds=30))
+    await rec.sample(AdapterHealth(platform="signal", connected=True,
+                                   last_event_age_seconds=901))
+    await rec.sample(AdapterHealth(platform="signal", connected=True,
+                                   last_event_age_seconds=5))
+    assert log.outcomes("signal") == ["up", "stale", "up"]
+
+
+async def test_a_hung_write_times_out_and_is_retried():
+    """A write that never returns must not freeze the sampler (it publishes
+    the liveness gauges too): bounded, counted, retried next sample."""
+    import asyncio
+
+    class _Hung(InMemorySourceHealthLog):
+        hang = True
+
+        async def record(self, **kwargs):
+            if self.hang:
+                await asyncio.Event().wait()
+            return await super().record(**kwargs)
+
+    log = _Hung()
+    metrics = Metrics()
+    rec = AdapterHealthRecorder(log=log, metrics=metrics, timeout_seconds=0.01)
+    await asyncio.wait_for(rec.sample(AdapterHealth(platform="signal", connected=True)), 1)
+    assert log.rows == []
+    assert metrics.get("nora_errors_total", stage="source_health", platform="signal") == 1
+    log.hang = False
+    await rec.sample(AdapterHealth(platform="signal", connected=True))
+    assert log.outcomes("signal") == ["up"]

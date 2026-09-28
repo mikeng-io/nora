@@ -564,11 +564,19 @@ def _parse_touch(event: dict) -> NormalizedMessage | None:
     kind = event.get("kind")
     if kind == "reaction":
         emoji = event.get("emoji")
-        if not isinstance(emoji, str) or not emoji:
+        emoji = emoji if isinstance(emoji, str) else ""
+        removed = bool(event.get("removed"))
+        # A REMOVAL may carry no emoji: the bridge builds it from
+        # `slidetypes.DeleteReactionEvent`, whose `Reaction` is the same
+        # struct as a new reaction's and nothing guarantees Meta fills its
+        # emoji on a delete. It is recorded as a removal with `""`, as
+        # WhatsApp's is, rather than lost. A NEW reaction with no emoji
+        # names nothing and is dropped.
+        if not emoji and not removed:
             return None
         touch = Touch(
             kind="reaction", target=EditTarget(message_id=target), emoji=emoji,
-            removed=bool(event.get("removed")),
+            removed=removed,
         )
         sender = fbid_form(event.get("sender_fbid"))
     else:

@@ -61,6 +61,10 @@ PLACES_REFRESH_SECONDS = 3600.0
 # more than a few times a day.
 PRUNE_INTERVAL_SECONDS = 6 * 3600.0
 
+# How long one `source_health` poll row may take to write before the cycle
+# gives up on it (counted, never raised).
+HEALTH_WRITE_TIMEOUT_SECONDS = 5.0
+
 
 @dataclass(frozen=True)
 class CircleSpec:
@@ -211,9 +215,13 @@ class PresenceCollector:
         if self._health_log is None:
             return
         try:
-            ok = await self._health_log.record(
-                source="presence", scope=circle_id, event="poll", outcome=outcome,
-                at_ms=now_ms,
+            # Bounded: a hung write must not stall the circle's cycle.
+            ok = await asyncio.wait_for(
+                self._health_log.record(
+                    source="presence", scope=circle_id, event="poll", outcome=outcome,
+                    at_ms=now_ms,
+                ),
+                timeout=HEALTH_WRITE_TIMEOUT_SECONDS,
             )
         except Exception:
             log.exception("presence poll health row not written")

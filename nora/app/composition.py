@@ -4258,6 +4258,7 @@ async def build_dependencies(
         wake_tick_seconds=cfg.cognition.tick_seconds,
         health_recorder=AdapterHealthRecorder(
             log=SqlSourceHealthLog(engine), metrics=metrics,
+            timeout_seconds=cfg.cognition.store_timeout_seconds,
         ),
     )
 

@@ -107,7 +107,14 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "liveness-* reasons the watch raises itself.",
         ("guild_id", "reason"),
     ),
-    _CounterSpec("nora_messages_total", "Ambient messages ingested, by platform.", ("platform",)),
+    _CounterSpec(
+        "nora_messages_total",
+        "Ambient messages ingested (edits included), by platform. Reactions "
+        "and deletes/unsends are NOT counted here: they are Record items, "
+        "not messages, and are counted on nora_ingest_outcomes_total "
+        "(reaction_* / delete_*).",
+        ("platform",),
+    ),
     _CounterSpec(
         "nora_tags_total", "Tags detected and accepted for handling.", ("platform",),
     ),

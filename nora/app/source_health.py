@@ -13,13 +13,26 @@ and whenever its state changes; a steady state writes nothing. Four states:
 
 | state | from `AdapterHealth` |
 |---|---|
-| `up` | `connected` and not `degraded` |
-| `degraded` | `degraded` (present, unable to act until a human intervenes) |
-| `down` | not `connected` |
-| `unknown` | `health()` itself raised: «could not check» is not «down» (R-27) |
+- `up`: `connected`, not `degraded`, an event within `STALE_AFTER_SECONDS`;
+- `stale`: `connected` and not `degraded`, but no event for
+  `STALE_AFTER_SECONDS` — a socket that says it is open and delivers
+  nothing is not `up`;
+- `degraded`: present, unable to act until a human intervenes;
+- `down`: not `connected`;
+- `unknown`: `health()` itself raised — «could not check» is not «down»
+  (R-27).
 
-A row that could not be written is retried on the next sample (the state is
-only remembered once written), and counted
+`stale` is the SAME threshold the `PlatformSilent` alert fires on
+(`deploy/prometheus/rules/nora.yml`, 900 s), so the Record and the alert agree
+on what «silent» means. A genuinely quiet room reads `stale` too on a
+platform with no heartbeat of its own (Discord stamps only its connect
+edges); that is the alert's semantics as well, and it is why a later step
+treats `stale` as «not proven healthy», never as «down».
+
+A row that could not be written — including one that did not finish within
+`timeout_seconds`: the sampler also publishes the liveness gauges, and a hung
+database write must not freeze them — is retried on the next sample (the
+state is only remembered once written), and counted
 (`nora_errors_total{stage="source_health"}`).
 
 Resolution is the sampler's 10 s: a flap shorter than that is invisible here,
@@ -28,6 +41,7 @@ as it is to the liveness gauges.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from collections.abc import Callable
@@ -37,18 +51,28 @@ from nora.domain.ports import AdapterHealth, SourceHealthLog
 
 log = logging.getLogger("nora.app.source_health")
 
+#: `PlatformSilent`'s threshold (`deploy/prometheus/rules/nora.yml`).
+STALE_AFTER_SECONDS = 900.0
 
-def state_of(health: AdapterHealth) -> str:
+
+def state_of(health: AdapterHealth, *, stale_after: float = STALE_AFTER_SECONDS) -> str:
     if health.degraded:
         return "degraded"
-    return "up" if health.connected else "down"
+    if not health.connected:
+        return "down"
+    age = health.last_event_age_seconds
+    return "stale" if age is not None and age > stale_after else "up"
 
 
 class AdapterHealthRecorder:
     def __init__(
         self, *, log: SourceHealthLog, metrics: Any,
         clock: Callable[[], float] = time.time,
+        timeout_seconds: float = 5.0,
+        stale_after_seconds: float = STALE_AFTER_SECONDS,
     ) -> None:
+        self._timeout = timeout_seconds
+        self._stale_after = stale_after_seconds
         self._log = log
         self._metrics = metrics
         self._clock = clock
@@ -56,7 +80,9 @@ class AdapterHealthRecorder:
 
     async def sample(self, health: AdapterHealth) -> None:
         """Record `health` if its state differs from the last one written."""
-        await self._transition(health.platform, state_of(health), health.detail)
+        await self._transition(
+            health.platform, state_of(health, stale_after=self._stale_after), health.detail,
+        )
 
     async def unknown(self, platform: str) -> None:
         """`health()` raised for `platform`."""
@@ -66,9 +92,12 @@ class AdapterHealthRecorder:
         if self._last.get(platform) == state:
             return
         try:
-            ok = await self._log.record(
-                source=platform, scope="", event="transition", outcome=state,
-                at_ms=int(self._clock() * 1000), detail=detail,
+            ok = await asyncio.wait_for(
+                self._log.record(
+                    source=platform, scope="", event="transition", outcome=state,
+                    at_ms=int(self._clock() * 1000), detail=detail,
+                ),
+                timeout=self._timeout,
             )
         except Exception:
             log.exception("adapter health transition not written (%s)", platform)

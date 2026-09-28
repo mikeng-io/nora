@@ -102,6 +102,7 @@ IngestOutcome = Literal[
     "reaction_orphaned",    # no message on record to attach it to; dropped
     "delete_recorded",      # recorded beside the message it deletes
     "delete_orphaned",      # no message on record to attach it to; dropped
+    "delete_refused",       # an author-only delete naming someone else's message
 ]
 
 _OUTCOMES: frozenset[str] = frozenset(get_args(IngestOutcome))
@@ -308,7 +309,12 @@ class IngestPipeline:
         without re-deriving it, and it would also swallow the exception ending
         that `span` already records for itself."""
         m = self._metrics
-        m.inc("nora_messages_total", platform=message.platform)
+        # Messages and edits, as it always counted. A reaction or a delete is
+        # not a message (design/cognition-loop/20 §1): it is counted on
+        # `nora_ingest_outcomes_total` (`reaction_*`, `delete_*`), never here,
+        # so this series keeps the meaning its dashboards were built on.
+        if message.touch is None:
+            m.inc("nora_messages_total", platform=message.platform)
 
         # The ROOM gate, before anything is written: a conversation the
         # operator has not allowlisted is not recorded at all.

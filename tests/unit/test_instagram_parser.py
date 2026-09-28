@@ -1085,3 +1085,14 @@ def test_a_touch_naming_nothing_is_dropped():
     assert parse_event({"kind": "unsend", "room_id": ROOM, "message_id": ""}) is None
     assert parse_event({"kind": "reaction", "room_id": ROOM,
                         "message_id": "mid.$t", "emoji": ""}) is None
+
+
+def test_a_reaction_removal_with_no_emoji_is_still_a_removal():
+    """The bridge's `DeleteReactionEvent` reuses the reaction struct and may
+    carry no emoji; the removal is recorded with `""`, not dropped."""
+    msg = parse_event({
+        "kind": "reaction", "room_id": ROOM, "message_id": "mid.$target",
+        "sender_fbid": SENDER_FBID, "emoji": "", "removed": True, "from_me": False,
+    })
+    assert msg is not None and msg.touch is not None
+    assert (msg.touch.emoji, msg.touch.removed) == ("", True)

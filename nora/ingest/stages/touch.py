@@ -8,7 +8,7 @@ item attached to the message it touches (`message_reaction`,
 `message_delete`), because the withdrawal cascade (step 2c), the
 cited-message cues and the tie need them.
 
-Three endings, each counted on `nora_ingest_outcomes_total`:
+Four endings, each counted on `nora_ingest_outcomes_total`:
 
 * **`<kind>_recorded`** — the target is on record and the row is written.
 * **`<kind>_orphaned`** — nothing on record to attach it to (a message from
@@ -16,16 +16,22 @@ Three endings, each counted on `nora_ingest_outcomes_total`:
   `edit_target`'s reason: a touch of nothing cannot be attached, and a
   lookup that FAILED counts an error besides — «could not look» is not «not
   there».
+* **`delete_refused`** — a delete on a platform where only a message's author
+  can delete it (Signal's remote delete), naming a message whose author is
+  not the deleter: a malformed or forged event, refused as
+  `edit_target` refuses an edit by someone else. Authorship is the platform
+  id first, the resolved person second (one person, two id forms).
 * **`audit_refused`** — the write failed; dropped and counted, never raised
   (this runs on the listener's await path, like the audit write).
 
 The target is found by the lookup an edit uses. On Signal the target's
 AUTHOR is preferred when two rows share a timestamp — a reaction names whose
 message it is — not the reactor. Who acted is the platform's sender; where it
-names nobody (an Instagram unsend, a Discord delete) the row keeps `""` and
-the person is the target's author: only an author can unsend on Instagram,
-and on Discord (a moderator can delete) it is the closest honest answer, so
-the row's `sender_id` stays empty rather than claim more.
+names nobody (an Instagram unsend, a Discord delete, which a moderator may
+have made) the row keeps `sender_id = ""` AND `person_id = NULL`: the
+platform did not say who, and the Record does not assert it. (The signal
+stage still treats an unattributed delete of Nora's OWN message as hers, so
+it raises no signal; that is a judgement about waking, not a Record claim.)
 """
 
 from __future__ import annotations
@@ -44,9 +50,13 @@ log = logging.getLogger("nora.ingest.touch")
 
 TouchEnding = Literal[
     "reaction_recorded", "reaction_orphaned",
-    "delete_recorded", "delete_orphaned",
+    "delete_recorded", "delete_orphaned", "delete_refused",
     "audit_refused",
 ]
+
+#: Platforms where only a message's author can delete it for everyone, so a
+#: delete naming someone else's message is not a member's action.
+_AUTHOR_ONLY_DELETES: frozenset[str] = frozenset({"signal"})
 
 
 @dataclass(frozen=True)
@@ -86,11 +96,13 @@ async def run(
     if target is None:
         return TouchResult(ending=orphaned, message=message)
 
-    if message.sender_id:
-        person = persons.resolve(message.platform, message.sender_id)
-        person_id = person.person_id if person is not None else None
-    else:
-        person_id = target.person_id
+    person = persons.resolve(message.platform, message.sender_id) if message.sender_id else None
+    person_id = person.person_id if person is not None else None
+    if (
+        touch.kind == "delete" and message.platform in _AUTHOR_ONLY_DELETES
+        and not _same_author(message.sender_id, person_id, target)
+    ):
+        return TouchResult(ending="delete_refused", message=message, target=target)
     try:
         if touch.kind == "reaction":
             row_id = await audit.append_reaction(
@@ -108,3 +120,11 @@ async def run(
         ending="reaction_recorded" if touch.kind == "reaction" else "delete_recorded",
         message=message, target=target, row_id=row_id, person_id=person_id,
     )
+
+
+def _same_author(sender_id: str, person_id: str | None, target: EditedMessage) -> bool:
+    """`edit_target._same_author`'s rule: the same platform id, or the same
+    resolved person (a Signal sender seen by phone once and by ACI once)."""
+    if sender_id and sender_id == target.sender_id:
+        return True
+    return person_id is not None and person_id == target.person_id

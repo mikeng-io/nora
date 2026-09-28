@@ -138,7 +138,9 @@ def _quoted(quoted: object) -> Quote | None:
 def _parse_touch(event: dict) -> NormalizedMessage | None:
     """A bridge `reaction` or `delete` event → a `Touch` (see the module
     docstring). Nora's own (`from_me`) is dropped (R-12); so is one naming no
-    target, and one outside a group (Nora does not take DMs)."""
+    target, and one from a status broadcast or a newsletter. A DM's touch is
+    parsed like a group's; the room gate drops it at ingest, as it drops a DM
+    message (Nora does not take DMs)."""
     if event.get("from_me"):
         return None
     chat_jid = event.get("chat_jid")

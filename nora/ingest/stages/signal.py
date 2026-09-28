@@ -20,7 +20,8 @@ reply here: a message whose quote names her, and a reaction on her message;
 the window is measured from her message's time.
 
 **Inline, bounded, never load-bearing.** One INSERT, like the audit write
-before it, under `timeout_seconds`. A failure is logged and counted
+before it, under `timeout_seconds`. Any failure in the stage — the write, a
+cue pattern, a policy read — is logged and counted
 (`nora_errors_total{stage="signal"}`) and ingest carries on: the item is
 already Record, and a missing signal costs lateness (the next item's wake
 covers the room), never the message. Shadow is the only consumer at step 1.
@@ -113,6 +114,26 @@ async def run(
     `row_id` is the id of the Record row the item was written as, or of the
     message an edit edits; `target` is the message a reaction, a delete or an
     edit touches."""
+    # The WHOLE body is guarded, not only the write: a cue pattern, a policy
+    # read or a malformed quote that raises here would otherwise propagate
+    # into the pipeline and stop the memory feed and the gate for a message
+    # that is already recorded. A signal is never worth a lost turn.
+    try:
+        return await _append(
+            message=message, item=item, row_id=row_id, person_id=person_id,
+            wiring=wiring, metrics=metrics, target=target,
+        )
+    except Exception:
+        log.exception("signal stage failed; the item is recorded, its signal is not")
+        metrics.inc("nora_errors_total", stage="signal", platform=message.platform)
+        return None
+
+
+async def _append(
+    *, message: NormalizedMessage, item: MessageItem, row_id: int,
+    person_id: str | None, wiring: Wiring, metrics: Any,
+    target: EditedMessage | None,
+) -> int | None:
     if _authored_by_nora(message, target, wiring.self_ids):
         return None
     unit = wiring.unit_of(message.platform, message.conversation_id)
@@ -138,15 +159,10 @@ async def run(
         conversation_id=message.conversation_id, person_id=person_id,
         cues=cues, waits=waits,
     )
-    try:
-        sid = await asyncio.wait_for(
-            wiring.store.append(signal=signal, recorded_at_ms=now_ms),
-            timeout=wiring.timeout_seconds,
-        )
-    except Exception:
-        log.exception("signal append failed; the item is recorded, its signal is not")
-        metrics.inc("nora_errors_total", stage="signal", platform=message.platform)
-        return None
+    sid = await asyncio.wait_for(
+        wiring.store.append(signal=signal, recorded_at_ms=now_ms),
+        timeout=wiring.timeout_seconds,
+    )
     for cue in cues or ("none",):
         metrics.inc("nora_signal_total", kind="message", cue=cue)
     return sid

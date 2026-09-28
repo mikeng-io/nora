@@ -159,6 +159,8 @@ async def test_a_reaction_is_recorded_beside_its_target_and_signalled():
     assert store.signals[-1].cues == ()
     assert metrics.get("nora_ingest_outcomes_total", platform="signal",
                        conversation_type="group", outcome="reaction_recorded") == 1
+    assert metrics.get("nora_messages_total", platform="signal") == 1, \
+        "a reaction is not a message"
 
 
 async def test_a_reaction_on_nora_s_message_inside_the_window_waits():
@@ -189,10 +191,41 @@ async def test_an_unattributed_delete_of_nora_s_message_is_recorded_and_raises_n
         message=dataclasses.replace(_msg("her words", sender=NORA), message_id="mid.$her"),
         is_nora=True,
     )
-    await pipeline.run(message=_msg("", sender="", touch=Touch(
-        kind="delete", target=EditTarget(message_id="mid.$her"))))
+    unsend = dataclasses.replace(_msg("", sender="", touch=Touch(
+        kind="delete", target=EditTarget(message_id="mid.$her"))), platform="instagram")
+    await pipeline.run(message=unsend)
     assert [d["message_id"] for d in audit.deletes] == [row]
     assert store.signals == []
+
+
+async def test_an_unattributed_delete_asserts_no_person():
+    """A Discord delete (maybe a moderator's) or an Instagram unsend names no
+    one: the row keeps no sender AND no person, never the author's."""
+    pipeline, audit, store, _ = _setup()
+    await audit.append(message=dataclasses.replace(_msg("hi"), message_id="mid.$p"),
+                       person_id="someone")
+    unsend = dataclasses.replace(_msg("", sender="", touch=Touch(
+        kind="delete", target=EditTarget(message_id="mid.$p"))), platform="instagram")
+    await pipeline.run(message=unsend)
+    assert [(d["sender_id"], d["person_id"]) for d in audit.deletes] == [("", None)]
+    assert store.signals[-1].person_id is None
+
+
+async def test_a_signal_delete_of_someone_else_s_message_is_refused():
+    """Only a Signal message's author can remote-delete it; a delete naming
+    another author's message is malformed or forged, and is refused like an
+    edit by someone else. The positive control is the author's own delete."""
+    pipeline, audit, store, metrics = _setup()
+    await pipeline.run(message=_msg("mine", sender=PERSON, ts=5_000))
+    await pipeline.run(message=_msg("", sender="+85299999999", touch=Touch(
+        kind="delete", target=EditTarget(sent_ts=5_000))))
+    assert audit.deletes == []
+    assert metrics.get("nora_ingest_outcomes_total", platform="signal",
+                       conversation_type="group", outcome="delete_refused") == 1
+    await pipeline.run(message=_msg("", sender=PERSON, touch=Touch(
+        kind="delete", target=EditTarget(sent_ts=5_000))))
+    assert len(audit.deletes) == 1
+    assert [s.item for s in store.signals] == ["message", "delete"]
 
 
 async def test_a_touch_of_nothing_on_record_is_dropped_and_counted():
@@ -229,4 +262,18 @@ async def test_a_failed_signal_write_keeps_the_message_and_counts_an_error():
     store.fail = True
     result = await pipeline.run(message=_msg("hello"))
     assert len(audit.rows) == 1 and result.message is not None
+    assert metrics.get("nora_errors_total", stage="signal", platform="signal") == 1
+
+
+async def test_a_signal_stage_that_raises_never_stops_the_turn(monkeypatch):
+    """Fail-soft is the WHOLE stage, not only the write: a cue function that
+    raises still lets the message be recorded, fed and answered."""
+    def _boom(_text):
+        raise RuntimeError("a cue pattern broke")
+
+    monkeypatch.setattr(signal_stage, "cues_of", _boom)
+    pipeline, audit, store, metrics = _setup()
+    result = await pipeline.run(message=_msg("nora.000 are you there"))
+    assert result.decision is not None and result.decision.engage is True
+    assert len(audit.rows) == 1 and store.signals == []
     assert metrics.get("nora_errors_total", stage="signal", platform="signal") == 1
