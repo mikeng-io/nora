@@ -6059,7 +6059,13 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             ],
             "evidence": {
                 "weeks": weeks, "basis": basis,
-                "observed_share_percent": observed, "shares": shares,
+                # Words, not a second percent: live replay (2026-09-28) had
+                # her read a 91% «hours on record» as the home share, 2 in 8.
+                "record": (
+                    "full" if observed >= 80
+                    else "mostly there" if observed >= 50 else "patchy"
+                ),
+                "shares": shares,
             },
         }
 

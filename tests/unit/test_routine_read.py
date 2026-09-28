@@ -271,7 +271,8 @@ async def test_a_mostly_unobserved_window_says_the_record_is_patchy(persons):
     ]
     out = await _tool(persons, _FakeMobility(stays=stays))(WEDNESDAY, 22, 6, name="Chi")
     [grant] = out["people"]
-    assert grant["evidence"]["observed_share_percent"] < 20
+    assert grant["evidence"]["record"] == "patchy"
+    assert "percent" not in str({k: v for k, v in grant["evidence"].items() if k != "shares"})
     assert "on a patchy record" in grant["routine"]
 
 
