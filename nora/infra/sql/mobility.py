@@ -29,7 +29,6 @@ from nora.domain.mobility import (
 )
 from nora.infra.sql.schema import (
     ANALYTICS_WATERMARK,
-    PRESENCE_CORRIDOR_SPEED,
     PRESENCE_CORRIDORS,
     PRESENCE_DERIVED_PLACES,
     PRESENCE_FIXES,
@@ -125,6 +124,7 @@ class SqlMobilityStore:
             agg = aggs.get(place.id)
             out.append(
                 {
+                    "id": place.id,
                     "kind": place.kind,
                     "label": place.label,
                     "saved": place.saved_place_id is not None,
@@ -568,30 +568,6 @@ class SqlMobilityStore:
             rows = (await conn.execute(stmt)).all()
         return [(r.started_ts, r.avg_speed_kmh) for r in rows]
 
-    async def upsert_corridor_speed(
-        self, *, subject_id: str, corridor_id: int, hour_of_week: int,
-        p50_kmh: float, p90_kmh: float, sample_count: int, now_ms: int,
-    ) -> None:
-        stmt = pg_insert(PRESENCE_CORRIDOR_SPEED).values(
-            subject_id=subject_id, corridor_id=corridor_id,
-            hour_of_week=hour_of_week, p50_kmh=p50_kmh, p90_kmh=p90_kmh,
-            sample_count=sample_count, updated_ts=now_ms,
-        )
-        stmt = stmt.on_conflict_do_update(
-            index_elements=[
-                PRESENCE_CORRIDOR_SPEED.c.subject_id,
-                PRESENCE_CORRIDOR_SPEED.c.corridor_id,
-                PRESENCE_CORRIDOR_SPEED.c.hour_of_week,
-            ],
-            set_={
-                "p50_kmh": stmt.excluded.p50_kmh, "p90_kmh": stmt.excluded.p90_kmh,
-                "sample_count": stmt.excluded.sample_count,
-                "updated_ts": stmt.excluded.updated_ts,
-            },
-        )
-        async with self._engine.begin() as conn:
-            await conn.execute(stmt)
-
     async def places_for_subject(self, *, subject_id: str) -> list[DerivedPlace]:
         """Every stored place for the subject, id-ascending — any number of
         them, two homes included (DEC-190 lifted the one-row-per-kind
@@ -613,6 +589,26 @@ class SqlMobilityStore:
             )
             for r in rows
         ]
+
+    async def place_by_id(self, *, place_id: int) -> DerivedPlace | None:
+        """One derived place by id, whoever's it is: `route` resolves a place
+        a presence read named this turn through it (design/27 §4.4 M3), and
+        the CALLER decides, by the place's `subject_id`, whether this room
+        may be told it."""
+        stmt = sa.select(PRESENCE_DERIVED_PLACES).where(
+            PRESENCE_DERIVED_PLACES.c.id == place_id,
+        )
+        async with self._engine.connect() as conn:
+            r = (await conn.execute(stmt)).first()
+        if r is None:
+            return None
+        return DerivedPlace(
+            id=r.id, subject_id=r.subject_id, circle_id=r.circle_id,
+            lat=r.lat, lng=r.lng, radius_m=r.radius_m, kind=r.kind,
+            confidence=r.confidence, label=r.label,
+            saved_place_id=r.saved_place_id,
+            first_seen_ts=r.first_seen_ts, last_seen_ts=r.last_seen_ts,
+        )
 
     async def save_place(
         self, *, subject_id: str, circle_id: str, place_id: int | None,

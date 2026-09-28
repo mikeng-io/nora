@@ -96,7 +96,13 @@ from ..domain.media import (
 )
 from ..domain.media import LABELS as MEDIA_LABELS
 from ..domain.media_join import MediaJoin
-from ..domain.mobility_forecast import detect_stay_anomalies, forecast_window
+from ..domain.mobility_forecast import (
+    detect_stay_anomalies,
+    forecast_hour,
+    forecast_window,
+    time_forecast,
+    trip_patterns,
+)
 from ..domain.models import PersonRef, TranscriptRow, WeatherObservation
 from ..domain.note_body import (
     NoteBodyError,
@@ -1843,6 +1849,7 @@ def _send_status(
     if sent:
         return SENT
     return HELD if deliverer.held_count > held_before else REFUSED
+
 
 
 def _record(metrics, tool: str, status: str, **detail: object) -> None:
@@ -5015,6 +5022,36 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
     # once per tag and the set must not survive past this turn.
     _disclosed_live_addresses: set[str] = set()
 
+    # design/27 §4.4 M3 (amended 2026-09-28): the places a presence read NAMED
+    # this turn, by the words it named them with, so `route` can take those
+    # words back. No handle reaches the model: a result says «a home of
+    # theirs», never an id (Anthropic, «Writing effective tools for agents»:
+    # eschew low-level identifiers). Filled only after the reading tool's own
+    # audience guard passed, and `route` re-checks it. One turn, like the set
+    # above.
+    _bound_places: dict[str, tuple[int, str]] = {}
+
+    def _bind_place(name: str, place_id: int, owner: str) -> str:
+        """The words to show for this place, unique within the turn: the plain
+        name when it is free (or already this place's), else qualified by
+        whose it is («a home of theirs (Grant)»), or numbered for a second
+        place of the same person («a home of theirs (2)»)."""
+        base = name.strip()
+        first = owner.split()[0] if owner.strip() else ""
+        candidate, n = base, 1
+        while True:
+            held = _bound_places.get(candidate.casefold())
+            if held is None or held[0] == place_id:
+                _bound_places[candidate.casefold()] = (place_id, owner)
+                return candidate
+            n += 1
+            same_owner = _bound_places.get(base.casefold(), (0, ""))[1] == owner
+            candidate = (
+                f"{base} ({n})" if same_owner or not first
+                else f"{base} ({first})" if n == 2
+                else f"{base} ({first} {n - 1})"
+            )
+
     async def route(
         origin: str, destination: str,
         mode: Literal["TRANSIT", "DRIVE", "WALK"] = "TRANSIT", arrive_by: str = "",
@@ -5036,7 +5073,8 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         how to report it.
 
         Args:
-            origin: Where the trip STARTS, as a place name the way it was said.
+            origin: Where the trip STARTS, as a place name the way it was
+                said, or exactly as routine_read or where_been named it.
             destination: Where the trip ENDS, as a place name.
             mode: TRANSIT (bus and rail, the default), DRIVE or WALK.
             arrive_by: Optional. When they need to ARRIVE, as a full timestamp
@@ -5057,6 +5095,24 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         # argument nor which one it was is echoed back — the refusal says what
         # to do without reflecting the model's own string at it.
         for place in (origin, destination):
+            # R-57 first, for every name: a label equal to an address
+            # `where_is` disclosed this turn is still a live position.
+            if (
+                not location_trusted
+                and place.strip().casefold() in _disclosed_live_addresses
+            ):
+                _record(metrics, "route", "refused", reason="untrusted_position")
+                return {
+                    "status": "refused",
+                    "note": "That's somebody's live position, not a place I can "
+                            "route from in this room. Do not retry: report the "
+                            "position and its age without a travel time.",
+                }
+            if str(place).strip().casefold() in _bound_places:
+                # Words a presence read gave this turn (design/27 §4.4 M3),
+                # resolved behind the presence guard below; the person screen
+                # would refuse «a home of theirs (Grant)» for its name.
+                continue
             if scan_identifiers(place) is not None:
                 _record(metrics, "route", "refused", reason="identifier")
                 return {
@@ -5082,23 +5138,12 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                             "the actual place (a building, a mall, a stop), not who "
                             "is there.",
                 }
-            # R-57: a position `where_is` disclosed THIS turn may seed a route
-            # only where the room already trusts you with location (the same
-            # `location_trusted` flag `where_is`/`saved_places` already answer
-            # to) — untrusted rooms never had the address to begin with unless
-            # the DisclosureGuard's own subset check passed independently, and
-            # even then it stops here rather than reaching Google.
-            if (
-                not location_trusted
-                and place.strip().casefold() in _disclosed_live_addresses
-            ):
-                _record(metrics, "route", "refused", reason="untrusted_position")
-                return {
-                    "status": "refused",
-                    "note": "That's somebody's live position, not a place I can "
-                            "route from in this room. Do not retry: report the "
-                            "position and its age without a travel time.",
-                }
+            # R-57 (checked above, for bound names too): a position `where_is`
+            # disclosed THIS turn may seed a route only where the room already
+            # trusts you with location (the same `location_trusted` flag
+            # `where_is`/`saved_places` answer to); untrusted rooms never had
+            # the address unless the DisclosureGuard's own subset check passed
+            # independently, and even then it stops rather than reaching Google.
         if route_source is None:
             # No client wired (offline/eval compositions, or a deployment with
             # no Google key). `unavailable`, never a silent empty — a wiring gap
@@ -5115,6 +5160,28 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         # name falls through to the public lookup indistinguishably. Import is
         # local so offline compositions (route_source None, returned above)
         # never touch the routes package.
+        # design/27 §4.4 M3: a place a presence read named this turn resolves
+        # to its place here, server side, only when this room may be told that
+        # person's places (the same guard `where_been`/`routine_read` pass);
+        # the coordinate goes to the routing service and never to the model.
+        ref_places: dict[str, Any] = {}
+        for place in (origin, destination):
+            bound = _bound_places.get(str(place).strip().casefold())
+            if bound is None:
+                continue
+            resolved = await _resolve_bound_place(bound[0])
+            if resolved is None:
+                _record(metrics, "route", "refused", reason="bound_place")
+                return {
+                    "status": "refused",
+                    "note": "I can't route from that place in this room. Ask "
+                            "for it by name instead, and do not guess where "
+                            "it is.",
+                }
+            ref_places[str(place).strip().casefold()] = type(resolved)(
+                place_id=resolved.place_id, name=str(place).strip(),
+                address=str(place).strip(), lat=resolved.lat, lng=resolved.lng,
+            )
         local_places = None
         if presence_source is not None and presence_circles:
             from ..infra.routes.places import Place
@@ -5135,6 +5202,12 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                     )
                     for p in saved
                 }
+        # A household saved place wins over a bound name of the same words
+        # (a Life360 «Home» is the asker's, not whoever's derived place was
+        # labelled so); a bound place is used only where nothing saved is.
+        ref_places = {k: v for k, v in ref_places.items() if k not in (local_places or {})}
+        if ref_places:
+            local_places = {**(local_places or {}), **ref_places}
         try:
             out = await route_source.route(
                 origin, destination, mode=mode, arrive_by=arrive_by,
@@ -5156,12 +5229,17 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         # candidate lists are Google-authored place names rendered on their way
         # to a reply, screened for the same reason `transit` screens `near`.
         for key in ("origin", "destination"):
+            asked_ref = ref_places.get(str(out.get(key, "")).strip().casefold())
+            if asked_ref is not None:
+                out[key] = asked_ref.name
             if scan_identifiers(str(out.get(key, ""))) is not None:
                 out.pop(key, None)
         for key in ("origin_could_be", "destination_could_be"):
             if isinstance(out.get(key), list):
                 out[key] = [c for c in out[key] if scan_identifiers(str(c)) is None]
-        if out.get("status") == "ok":
+        # No link for a trip from a place presence named: «a home of theirs»
+        # is not words anyone can open, and a resolved pin must never publish.
+        if out.get("status") == "ok" and not ref_places:
             # A Google Maps deep link for the same trip (Maps URLs API — keyless
             # and stable), built from the words AS ASKED, never from anything
             # resolved: a coordinate or resolved address in a link would publish
@@ -5471,6 +5549,40 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             .isoformat(timespec="seconds")
         )
 
+    async def _resolve_bound_place(place_id: int) -> Any:
+        """A derived place for `route`, or `None` when this room may not be
+        told it: the place's person must be in a circle whose audience check
+        passes for this room (`_presence_audience`, R-31), exactly as their
+        routine would be. Unknown ids and any failure are `None` too."""
+        if mobility is None or not presence_circles:
+            return None
+        try:
+            place = await mobility.place_by_id(place_id=place_id)
+        except Exception:
+            log.exception("route bound place read failed")
+            return None
+        if place is None:
+            return None
+        for circle in presence_circles:
+            if not any(
+                persons.subject_id_for(pid) == place.subject_id
+                for pid in circle.person_ids
+            ):
+                continue
+            _, refusal = await _presence_audience(
+                circle, None, tool="route",
+                anyone="where anyone's places are",
+                people_phrase="people's places",
+            )
+            if refusal is None:
+                from ..infra.routes.places import Place
+                name = place.label or _routine_unnamed[place.kind]
+                return Place(
+                    place_id=f"derived:{place.id}", name=name, address=name,
+                    lat=place.lat, lng=place.lng,
+                )
+        return None
+
     async def _presence_audience(
         circle: Any, asked: str | None, *, tool: str, anyone: str,
         people_phrase: str,
@@ -5676,6 +5788,42 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             )
             return fix.ts if fix is not None else None
 
+        async def _been_usual_trips(subject_id: str, owner: str) -> list[dict]:
+            """design/27 §4.4 M2: the journeys this person repeats, from one of
+            their places to another, with how long they actually take at that
+            time of day, worked out as words. FAIL-SOFT: an annotation, so a
+            failure answers the routes without it."""
+            try:
+                stays = await mobility.stays_for_subject(subject_id=subject_id)
+                trips = await mobility.trips_for_subject(subject_id=subject_id)
+                places = {
+                    p.id: p for p in await mobility.places_for_subject(subject_id=subject_id)
+                }
+            except Exception:
+                log.exception("where_been usual trips failed; routes answered without them")
+                return []
+
+            def _name(pid: int) -> str:
+                p = places.get(pid)
+                if p is None:
+                    return "a place they go"
+                return _bind_place(p.label or _routine_unnamed[p.kind], p.id, owner)
+
+            out = []
+            for pattern in trip_patterns(stays, trips, tz_name=_been_tz_name)[:8]:
+                takes = (
+                    f"about {pattern.median_minutes} min"
+                    if pattern.usual_max_minutes - pattern.usual_min_minutes < 5
+                    else f"{pattern.usual_min_minutes}-{pattern.usual_max_minutes} min"
+                )
+                out.append({
+                    "from": _name(pattern.origin_id),
+                    "to": _name(pattern.destination_id),
+                    "when": f"{pattern.day_type} {pattern.time_of_day}s",
+                    "usually_takes": takes, "trips": pattern.trips,
+                })
+            return out
+
         async def _been_mark_unusual(subject_id: str, day_stays: list[dict]) -> None:
             """design/27 §4.3: each of the day's stays gains `unusual`, how it
             differed from the subject's OWN past at that place, when it did
@@ -5727,7 +5875,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             for row, flags in computed:
                 row["unusual"] = flags
 
-        async def _been_read(subject_id: str) -> dict:
+        async def _been_read(subject_id: str, owner: str) -> dict:
             """One arm's read for one subject, coordinates never selected and
             corridor sequences never carried out (R-28). An empty answer means
             «no derived data», which the caller renders as `nothing_found`."""
@@ -5742,6 +5890,12 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                     } | {
                         "first_seen_iso": _been_iso(row["first_seen_ts"]),
                         "last_seen_iso": _been_iso(row["last_seen_ts"]),
+                        # What she calls it, and what `route` takes back
+                        # (DEC-216 M3): never an id.
+                        "name": _bind_place(
+                            row["label"] or _routine_unnamed[row["kind"]],
+                            row["id"], owner,
+                        ),
                     }
                     for row in rows
                 ]
@@ -5783,7 +5937,11 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                     }
                     for t in out["trips"]
                 ]
-                return {"trips": trips, "corridors": corridors}
+                usual = await _been_usual_trips(subject_id, owner)
+                return {
+                    "trips": trips, "corridors": corridors,
+                    **({"usual_trips": usual} if usual else {}),
+                }
             # `day`: the store's window is trailing-from-now, so the fetch
             # window is `now - day_start` (its cutoff lands exactly on the
             # day's midnight) and the day's upper edge is filtered here. A
@@ -5919,7 +6077,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                     if subject_id in seen_subjects:
                         continue
                     seen_subjects.add(subject_id)
-                    payload = await _been_read(subject_id)
+                    payload = await _been_read(subject_id, ref.name)
                     last_ms = await _been_last_recorded(circle, ref)
                     edge: dict = {}
                     if last_ms is not None:
@@ -6013,13 +6171,214 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         "Saturdays", "Sundays",
     )
 
-    def _routine_shares(chances: Any, places: dict[int, Any]) -> list[dict]:
+    # ---- the movement model's views (design/27 §4.4 M1, M4) ----
+    # A live reading counts only while it is fresh, and matches a place when
+    # it is inside the place's own radius or the DEC-190 match radius.
+    _routine_live_max_age_ms = 30 * 60_000
+    _routine_match_m = 150.0
+
+    async def _routine_live(
+        circle: Any, ref: Any, places: dict[int, Any], now_ms: int,
+    ) -> dict | None:
+        """Where the person is by their newest raw fix, as one of their places
+        or none, when that fix is fresh; `None` when there is no fresh fix. The
+        same read `where_is` makes, behind the guard the caller has passed."""
+        if presence_source is None:
+            return None
+        try:
+            fix = await presence_source.latest_fix(
+                circle_id=circle.circle_id, person_id=ref.person_id,
+            )
+        except Exception:
+            log.exception("routine_read live read failed")
+            return None
+        if fix is None or now_ms - fix.ts > _routine_live_max_age_ms:
+            return None
+        from ..domain.presence import haversine_distance_m as _dist
+        best = None
+        for place in places.values():
+            d = _dist(fix.lat, fix.lng, place.lat, place.lng)
+            if d <= max(place.radius_m, _routine_match_m) and (best is None or d < best[0]):
+                best = (d, place)
+        return {"place": best[1] if best else None, "ts": fix.ts}
+
+    def _routine_clock(minute: int) -> str:
+        m = minute % 1440
+        return f"{m // 60:02d}:{m % 60:02d}"
+
+    def _routine_span(habit: Any) -> str:
+        if habit.latest - habit.earliest < 10:
+            return f"around {_routine_clock(habit.earliest)}"
+        if habit.latest - habit.earliest > 180:
+            # Chained 90-minute gaps can span an evening: that is no fixed
+            # time, and saying «16:00-02:40» would read as one.
+            return (
+                f"at no fixed time, anywhere from {_routine_clock(habit.earliest)} "
+                f"to {_routine_clock(habit.latest)}"
+            )
+        return f"{_routine_clock(habit.earliest)}-{_routine_clock(habit.latest)}"
+
+    def _movement_person(
+        person: str, stays: list, places: dict[int, Any], *,
+        kind: str, place: str | None, day: Any, from_hour: int, to_hour: int,
+        now_ms: int, live: dict | None,
+    ) -> dict | str | None:
+        """One person's usual arrival at (or departure from) a place, as
+        habits worked out in words, never one average; on the day itself,
+        whether it already happened and, if not, what the days like today
+        did. `"no_place"` when they have no such place, `None` when the
+        history is too thin."""
+        wanted = (place or "home").strip().casefold()
+        # A label names one place; a kind («home») can name several, and
+        # then the answer says so instead of borrowing one of their names.
+        targets = {
+            pid for pid, p in places.items() if (p.label or "").casefold() == wanted
+        } or {pid for pid, p in places.items() if p.kind == wanted}
+        if not targets:
+            return "no_place"
+        if len(targets) == 1:
+            only = places[next(iter(targets))]
+            named = only.label or _routine_unnamed[only.kind]
+        else:
+            named = {
+                "home": "one of their homes", "work": "one of their workplaces",
+            }.get(wanted, f"one of their places called {wanted}")
+        at_place_now = (
+            None if live is None
+            else (live["place"] is not None and live["place"].id in targets)
+        )
+        fc = time_forecast(
+            stays, place_ids=targets, kind=kind, day=day, from_hour=from_hour,  # type: ignore[arg-type]
+            to_hour=to_hour, tz_name=_been_tz_name, history_before_ms=now_ms,
+            now_ms=now_ms, at_place_now=at_place_now,
+        )
+        if fc.status != "ok":
+            return None
+        # Bound only for an answer she is shown (review 2026-09-28).
+        refs: dict = {}
+        if len(targets) == 1:
+            named = _bind_place(named, next(iter(targets)), person)
+        else:
+            refs = {"places": [
+                _bind_place(places[pid].label or _routine_unnamed[places[pid].kind], pid, person)
+                for pid in sorted(targets, key=lambda i: (places[i].label or "", i))
+            ]}
+        arrival = kind == "arrival"
+        verb = "gets to" if arrival else "leaves"
+        span_days = {
+            "weekday": f"{_routine_days[day.weekday()]}",
+            "day_type": "weekends" if day.weekday() >= 5 else "weekdays",
+            "all_days": "any day",
+        }[fc.basis]
+        parts = [f"{_routine_span(h)} on {h.days} of {fc.days}" for h in fc.habits]
+        missing = fc.days - sum(h.days for h in fc.habits)
+        if missing > 0:
+            parts.append(
+                f"{'not there' if arrival else 'did not leave'} in these hours "
+                f"on {missing} of {fc.days}"
+            )
+        line = f"{span_days}: {verb} {named} " + "; ".join(parts)
+        if fc.basis == "all_days":
+            line += " (roughly, from all their days)"
+        out: dict = {
+            "person": person, "what": kind, "place": named, **refs,
+            "routine": line,
+            "habits": [
+                {"from": _routine_clock(h.earliest), "to": _routine_clock(h.latest),
+                 "days": h.days}
+                for h in fc.habits
+            ],
+            "evidence": {"days": fc.days, "basis": fc.basis},
+        }
+        now_local = datetime.fromtimestamp(now_ms / 1000, tz=ZoneInfo(_been_tz_name))
+        as_of = f"as of {now_local.strftime('%H:%M')}"
+        since = (
+            f" since {_routine_clock(fc.done_minute)}" if fc.done_minute is not None
+            else ""
+        )
+        if fc.today == "done":
+            out["today"] = (
+                f"already at {named}{since} ({as_of})" if arrival
+                else f"already left {named}"
+                + (f" at {_routine_clock(fc.done_minute)}" if fc.done_minute is not None else "")
+                + f" ({as_of})"
+            )
+        elif fc.today == "stepped_out":
+            out["today"] = (
+                f"not at {named} now, out since "
+                f"{_routine_clock(fc.done_minute or 0)} ({as_of}), which is not "
+                f"yet long enough to count as leaving for the day"
+            )
+        elif fc.today == "absent":
+            out["today"] = (
+                f"not at {named} now, and not there earlier in these hours "
+                f"today ({as_of}), so there is no leaving to wait for"
+            )
+        elif fc.today == "pending":
+            state = f"not at {named} yet" if arrival else f"still at {named}"
+            if not fc.like_today_days:
+                out["today"] = (
+                    f"{state} ({as_of}); on none of these days were they "
+                    f"{'still away' if arrival else 'still there'} at this time"
+                )
+            else:
+                seen_parts = [f"{_routine_span(h)} on {h.days}" for h in fc.like_today]
+                if fc.like_today_without:
+                    seen_parts.append(
+                        f"{'not at all' if arrival else 'not'} in these hours "
+                        f"on {fc.like_today_without}"
+                    )
+                out["today"] = (
+                    f"{state} ({as_of}); on the {fc.like_today_days} days they "
+                    f"were {'also not there' if arrival else 'also still there'} "
+                    f"at this time, they {'got there' if arrival else 'left'} "
+                    + "; ".join(seen_parts)
+                )
+        # `unknown`: no fresh reading, so today is not said at all (R-5).
+        return out
+
+    def _routine_today(
+        stays: list, places: dict[int, Any], live: dict | None, *, day: Any,
+        now_ms: int, start_ms: int, end_ms: int, owner: str,
+    ) -> str | None:
+        """M4: on the day itself, where they are now against where they
+        usually are at this hour. «The day itself» is the asked date or its
+        window (a 22-to-06 window asked at 01:00 is still tonight). `None`
+        otherwise, or without a fresh reading."""
+        hk_now = datetime.fromtimestamp(now_ms / 1000, tz=ZoneInfo(_been_tz_name))
+        if live is None or (hk_now.date() != day and not start_ms <= now_ms < end_ms):
+            return None
+        here = live["place"]
+        here_name = (
+            here.label or _routine_unnamed[here.kind] if here is not None
+            else "somewhere that is not one of their places"
+        )
+        usual = forecast_hour(
+            stays, at_ms=now_ms, tz_name=_been_tz_name, history_before_ms=now_ms,
+        )
+        usual_id = usual.chances[0].place_id if usual.chances else None
+        as_of = _routine_clock(hk_now.hour * 60 + hk_now.minute)
+        if usual.status != "ok" or not usual.chances:
+            return f"now {here_name} (as of {as_of})"
+        if here is not None and usual_id == here.id:
+            return f"now {here_name} (as of {as_of}), as usual at this hour"
+        usual_place = places.get(usual_id) if usual_id is not None else None
+        usual_name = (
+            _bind_place(usual_place.label or _routine_unnamed[usual_place.kind],
+                        usual_place.id, owner)
+            if usual_place is not None else "somewhere that is not one of their places"
+        )
+        return (
+            f"now {here_name} (as of {as_of}); at this hour they are usually "
+            f"at {usual_name}"
+        )
+
+    def _routine_shares(chances: Any, places: dict[int, Any], owner: str) -> list[dict]:
         """The window shared out between named places, their own small
         places (under 5% each, pooled), and stops that are none of theirs.
         Largest-remainder rounding, so the percents always sum to exactly 100
         (plain rounding gave 99 and 101, independent review 2026-09-28)."""
         raw: dict[tuple[str, str], float] = {}
-        seen: dict[str, int] = {}
         for chance in chances:
             place = places.get(chance.place_id) if chance.place_id is not None else None
             if place is None:
@@ -6027,12 +6386,9 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             elif chance.probability < 0.05:
                 key = ("other places of theirs", "other")
             else:
-                name = place.label or _routine_unnamed[place.kind]
-                if not place.label:
-                    # Two unnamed homes must not read as one place.
-                    seen[name] = seen.get(name, 0) + 1
-                    if seen[name] > 1:
-                        name = f"{name} ({seen[name]})"
+                # Two unnamed homes must not read as one place, within this
+                # answer or across the turn: the name is what `route` takes.
+                name = _bind_place(place.label or _routine_unnamed[place.kind], place.id, owner)
                 key = (name, place.kind)
             raw[key] = raw.get(key, 0.0) + chance.probability * 100
         floors = {k: int(v) for k, v in raw.items()}
@@ -6116,6 +6472,8 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
 
     async def routine_read(
         date: str, from_hour: int, to_hour: int, name: str | None = None,
+        what: Literal["where", "arrival", "departure"] = "where",
+        place: str | None = None,
     ) -> dict:
         """Usual whereabouts by hour of the week. Call this when somebody asks
         where someone will be.
@@ -6132,6 +6490,10 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 runs past midnight.
             name: Who they asked about, exactly as they said it. Leave it out
                 for the people in THIS conversation (or pass "everyone").
+            what: "where" they usually are (default), or when they usually
+                make their "arrival" at, or "departure" from, a place.
+            place: For arrival or departure: the place, by its name, or
+                "home" or "work". Leave it out for their home.
         """
         if mobility is None or not presence_circles:
             # A wiring gap is «I could not check», never «no routine» (R-5).
@@ -6147,6 +6509,8 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             start_hour, end_hour = int(from_hour), int(to_hour)
             if not (0 <= start_hour <= 23 and 0 <= end_hour <= 23):
                 raise ValueError("hour out of range")
+            if str(what) not in ("where", "arrival", "departure"):
+                raise ValueError("what")
             now_ms = int(
                 (clock() if clock is not None else datetime.now(UTC)).timestamp() * 1000,
             )
@@ -6183,6 +6547,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 continue
             try:
                 people: list[dict] = []
+                no_place = 0
                 seen_subjects: set[str] = set()
                 for ref in refs:
                     subject_id = persons.subject_id_for(ref.person_id)
@@ -6194,24 +6559,51 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                         p.id: p
                         for p in await mobility.places_for_subject(subject_id=subject_id)
                     }
+                    live = await _routine_live(circle, ref, places, now_ms)
+                    if what != "where":
+                        moved = _movement_person(
+                            ref.name, stays, places, kind=what, place=place,
+                            day=day, from_hour=start_hour, to_hour=end_hour,
+                            now_ms=now_ms, live=live,
+                        )
+                        if moved == "no_place":
+                            no_place += 1
+                        elif isinstance(moved, dict):
+                            people.append(moved)
+                        continue
                     forecast = forecast_window(
                         stays, start_ms=start_ms, end_ms=end_ms,
                         tz_name=_been_tz_name, history_before_ms=now_ms,
                     )
                     if forecast.status != "ok":
                         continue
-                    shares = _routine_shares(forecast.chances, places)
-                    people.append(_routine_person(
+                    shares = _routine_shares(forecast.chances, places, ref.name)
+                    person_out = _routine_person(
                         ref.name, shares, start=start, end=end,
                         basis=forecast.basis, weeks=forecast.support_weeks,
                         observed=round(forecast.observed_share * 100),
-                    ))
+                    )
+                    today_line = _routine_today(
+                        stays, places, live, day=day, now_ms=now_ms,
+                        start_ms=start_ms, end_ms=end_ms, owner=ref.name,
+                    )
+                    if today_line is not None:
+                        person_out["today"] = today_line
+                    people.append(person_out)
             except Exception:
                 log.exception("routine_read read failed")
                 results.append({
                     "status": "unavailable",
                     "note": "I couldn't check their routine just now. Say you "
                             "couldn't look, not that they have no routine.",
+                })
+                continue
+            if not people and no_place and no_place == len(seen_subjects):
+                results.append({
+                    "status": "nothing_found", "reason": "no_place",
+                    "note": "I don't know a place of theirs by that name. Say "
+                            "so, and do not guess where it is.",
+                    "window": window,
                 })
                 continue
             if not people:
@@ -6240,6 +6632,13 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 "status": "ambiguous",
                 "note": "More than one person here goes by that. Ask which one.",
                 "could_be": answer["could_be"],
+            }
+        if answer["status"] == "nothing_found" and answer.get("reason") == "no_place":
+            return {
+                "status": "nothing_found",
+                "note": "I don't know a place of theirs by that name. Say so, "
+                        "and do not guess where it is.",
+                "window": answer["window"],
             }
         if answer["status"] == "nothing_found" and "window" in answer:
             return {

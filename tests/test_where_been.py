@@ -130,12 +130,12 @@ class _FakeMobilityWithHistory(_FakeMobility):
 
 
 MILES_PLACE = {
-    "kind": "home", "label": "Home", "saved": True, "lat": 22.31, "lng": 114.16,
+    "id": 7, "kind": "home", "label": "Home", "saved": True, "lat": 22.31, "lng": 114.16,
     "radius_m": 50.0, "confidence": 0.9, "first_seen_ts": NOW_MS - DAY_MS,
     "last_seen_ts": NOW_MS, "stay_count": 12, "total_dwell_ms": 400_000_000,
 }
 UNLABELED_PLACE = {
-    "kind": "unlabeled", "label": None, "saved": False, "lat": 22.44, "lng": 114.02,
+    "id": 8, "kind": "unlabeled", "label": None, "saved": False, "lat": 22.44, "lng": 114.02,
     "radius_m": 80.0, "confidence": 0.42, "first_seen_ts": NOW_MS - DAY_MS,
     "last_seen_ts": NOW_MS, "stay_count": 3, "total_dwell_ms": 40_000_000,
 }
@@ -575,6 +575,10 @@ async def test_places_and_routes_arms_carry_iso_timestamps(persons):
     tool = _where_been(persons, mobility, members=(MILES,))
     out = await tool("places", name="Miles")
     place = out["people"][0]["places"][0]
+    # The words route takes back this turn, never an id or a coordinate
+    # (DEC-216 M3).
+    assert place["name"] == "Home" and "place_ref" not in place
+    assert "lat" not in place and "lng" not in place
     assert place["first_seen_iso"] == datetime.fromtimestamp(
         MILES_PLACE["first_seen_ts"] / 1000, tz=HK,
     ).isoformat(timespec="seconds")
@@ -831,3 +835,49 @@ async def test_the_day_is_answered_when_the_flags_cannot_be_computed(persons):
     out = await tool("day", name="Miles", date="2026-09-04")
     assert out["status"] == "ok"
     assert all("unusual" not in s for s in out["people"][0]["stays"])
+
+
+# ---- the routes arm's usual trips, and places' refs (design/27 §4.4 M2, M3) -
+
+
+async def test_the_routes_arm_says_how_long_their_repeated_trips_take(persons):
+    from nora.domain.mobility import DerivedPlace, Stay, Trip
+
+    def at(day, hours):
+        return int((day + timedelta(hours=hours)).timestamp() * 1000)
+
+    stays, trips = [], []
+    for d in range(5):
+        day = datetime(2026, 8, 24, tzinfo=HK) + timedelta(days=d)  # Mon-Fri
+        minutes = 35 + d * 2
+        stays.append(Stay("miles_novak", "miles_novak", "c", at(day, 9), at(day, 18),
+                          22.28, 114.18, 30.0, 9, place_id=3))
+        stays.append(Stay("miles_novak", "miles_novak", "c", at(day, 18 + minutes / 60),
+                          at(day, 30), 22.47, 114.0, 30.0, 9, place_id=1))
+        trips.append(Trip("miles_novak", "miles_novak", "c", at(day, 18),
+                          at(day, 18 + minutes / 60), 20_000.0, 40.0, 30, ()))
+    mobility = _FakeMobilityWithHistory(
+        history=stays,
+        derived_places=[
+            DerivedPlace(1, "miles_novak", "c", 22.47, 114.0, 100.0, "home", 1.0, "Miles Home", "t"),
+            DerivedPlace(3, "miles_novak", "c", 22.28, 114.18, 100.0, "work", 1.0, None, None),
+        ],
+        trips=TRIPS,
+    )
+    mobility.trips_for_subject = lambda *, subject_id: _async(trips)  # type: ignore[method-assign]
+    out = await _where_been(persons, mobility, members=(MILES,))("routes", name="Miles")
+    [usual] = out["people"][0]["usual_trips"]
+    assert usual == {
+        "from": "their work", "to": "Miles Home", "when": "weekday evenings",
+        "usually_takes": "about 39 min", "trips": 5,
+    }
+
+
+async def _async(value):
+    return value
+
+
+async def test_routes_are_answered_when_usual_trips_cannot_be_worked_out(persons):
+    mobility = _FakeMobility(trips=TRIPS)  # no history reads at all
+    out = await _where_been(persons, mobility, members=(MILES,))("routes", name="Miles")
+    assert out["status"] == "ok" and "usual_trips" not in out["people"][0]

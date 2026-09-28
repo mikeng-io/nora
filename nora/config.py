@@ -1425,7 +1425,7 @@ class AnalyticsConfig(BaseModel):
     # `haversine_distance_m`/`derive_speed_kmh` to run over, so its
     # `distance_m` and `avg_speed_kmh` are structurally 0.0 — admitting
     # one would feed a fabricated zero-speed sample into
-    # `presence_corridor_speed`'s percentiles.
+    # a corridor's samples (and once, `presence_corridor_speed`'s percentiles).
     min_trip_fixes: int = Field(default=2, ge=2)
     # Trip settlement (design/27 §4, 2026-08-20 trip-settlement design
     # §2.4): the safety valve against a stuck `is_driving` signal — if
