@@ -207,7 +207,11 @@ async def test_a_bound_place_label_that_is_a_disclosed_live_address_is_still_ref
     by = {t.tool_name: t for t in tools}
     read = await _call(by["routine_read"], date="2026-10-14", from_hour=0, to_hour=23,
                        name="Fung")
-    assert "Tsuen Wan Road" in str(read)  # the read bound it
+    # Unsaved (the common case live: 77 of 98 derived places), so its label is
+    # the geocoded street and the bound words are «… near Tsuen Wan Road».
+    words = "a place they go near Tsuen Wan Road"
+    assert words in str(read)
     await _disclose_live_address(by["where_is"], by["reverse_geocode"])
-    out = await _call(by["route"], origin="Tsuen Wan Road", destination="Yoho Mall")
-    assert out["status"] == "refused" and client.calls == []
+    for origin in ("Tsuen Wan Road", words):
+        out = await _call(by["route"], origin=origin, destination="Yoho Mall")
+        assert out["status"] == "refused" and client.calls == [], origin
