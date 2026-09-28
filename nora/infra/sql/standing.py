@@ -42,14 +42,27 @@ import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from nora.domain.lineage import BODY, WORKING_SET, Lineage, own_room_lineage, room_key
+from nora.domain.lineage import (
+    BODY,
+    HOLD_OPEN,
+    I_OWE,
+    WORKING_SET,
+    Lineage,
+    own_room_lineage,
+    room_key,
+)
 from nora.domain.standing import Standing, working_set_from_json, working_set_to_json
 from nora.infra.sql.citation import record_message_citation
 from nora.infra.sql.schema import MESSAGES, STANDING, STANDING_REVISION
 
-#: A Standing row's sections today (`nora.domain.lineage`): the position and
-#: the working set. The sectioned Standing schema arrives at migration step 3.
-SECTIONS: tuple[str, ...] = (BODY, WORKING_SET)
+#: A Standing row's sections (`nora.domain.lineage`; `design/cognition-loop/
+#: 12-schemas.md` §5, step 3 row 3b): `Where it stands` (`BODY`), `I hold
+#: open`, `I owe` and `Found, not yet given` (`WORKING_SET`) — the sectioned
+#: schema, live from `0076_standing_sections`. `HOLD_OPEN`/`I_OWE` carry the
+#: SAME lineage as `BODY`/`WORKING_SET`: the fold that writes them reads the
+#: same room, so `own_room_lineage` applies to every section a room-Standing
+#: row has, not just the two that existed before this step.
+SECTIONS: tuple[str, ...] = (BODY, HOLD_OPEN, I_OWE, WORKING_SET)
 
 
 def _derived(standing: Standing) -> dict[str, Any]:
@@ -102,6 +115,11 @@ def _standing(row: sa.Row[Any]) -> Standing:
         # `standing_revision` has no such column, so `getattr` reads `None`
         # (supported) for every revision-chain row this mapper also serves.
         unsupported_at=getattr(row, "unsupported_at", None),
+        # THE TWO NEW SECTIONS (`0076_standing_sections`, step 3 row 3b):
+        # both tables carry them, so this is a plain column read, not a
+        # `getattr` fallback like `unsupported_at` above.
+        hold_open=row.hold_open,
+        i_owe=row.i_owe,
     )
 
 
@@ -218,6 +236,8 @@ class SqlStandingStore:
             updated_at=standing.updated_at,
             last_folded_row_id=standing.last_folded_row_id,
             working_set=working_set_to_json(standing.working_set),
+            hold_open=standing.hold_open,
+            i_owe=standing.i_owe,
             **_derived(standing),
         )
         stmt = stmt.on_conflict_do_update(
@@ -226,6 +246,12 @@ class SqlStandingStore:
                 "body": stmt.excluded.body,
                 "fold_count": stmt.excluded.fold_count,
                 "updated_at": stmt.excluded.updated_at,
+                # THE TWO NEW SECTIONS (`0076_standing_sections`): written on
+                # every upsert, the same "never by accident" argument
+                # `working_set` makes below — an omitted key would keep the
+                # row's old value instead of the caller's decision.
+                "hold_open": stmt.excluded.hold_open,
+                "i_owe": stmt.excluded.i_owe,
                 # `consumed_verdict_tag` is NOT written: it was the watermark
                 # of the ungrounded re-derivation trigger, deleted 2026-09-24
                 # with the verdict (design/standing-compact/). The column
@@ -275,6 +301,8 @@ class SqlStandingStore:
             last_folded_row_id=standing.last_folded_row_id,
             source=source,
             working_set=working_set_to_json(standing.working_set),
+            hold_open=standing.hold_open,
+            i_owe=standing.i_owe,
             **_derived(standing),
         )
         async with self._engine.begin() as conn:
@@ -343,11 +371,14 @@ class SqlStandingStore:
             or standing.fold_count != expected.fold_count
             or standing.last_folded_row_id != expected.last_folded_row_id
             or standing.working_set != expected.working_set
+            or standing.hold_open != expected.hold_open
+            or standing.i_owe != expected.i_owe
         ):
             raise ValueError(
                 "write_if_unchanged only changes body and updated_at — "
-                "platform, conversation_id, fold_count, last_folded_row_id "
-                "and working_set must match `expected` exactly"
+                "platform, conversation_id, fold_count, last_folded_row_id, "
+                "working_set, hold_open and i_owe must match `expected` "
+                "exactly"
             )
         last_folded_row_id_matches = (
             STANDING.c.last_folded_row_id == expected.last_folded_row_id
@@ -375,6 +406,10 @@ class SqlStandingStore:
                 # "never by accident" argument `write`'s upsert makes for
                 # this column.
                 working_set=working_set_to_json(standing.working_set),
+                # UNCHANGED, same reason as `working_set` above (the raise
+                # already proved both match `expected`).
+                hold_open=standing.hold_open,
+                i_owe=standing.i_owe,
                 **_derived(standing),
             )
         )
@@ -387,6 +422,8 @@ class SqlStandingStore:
             last_folded_row_id=standing.last_folded_row_id,
             source="operator",
             working_set=working_set_to_json(standing.working_set),
+            hold_open=standing.hold_open,
+            i_owe=standing.i_owe,
             **_derived(standing),
         )
         async with self._engine.begin() as conn:

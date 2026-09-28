@@ -898,15 +898,32 @@ def test_the_slot_hold_counts_every_store_await_the_stage_makes():
         if not isinstance(node, ast.Call):
             continue
         f = node.func
-        if not (isinstance(f, ast.Attribute) and isinstance(f.value, ast.Name)):
-            continue
-        if f.value.id not in receivers:
-            continue
         parent = parents.get(node)
         bounded = _in_wait_for(node)
-        if not (bounded or isinstance(parent, ast.Await)):
-            continue          # not awaited at all — not a store call
-        calls.append((f"{f.value.id}.{f.attr}", bounded))
+        awaited = bounded or isinstance(parent, ast.Await)
+        if isinstance(f, ast.Attribute) and isinstance(f.value, ast.Name):
+            if f.value.id not in receivers or not awaited:
+                continue          # not awaited at all — not a store call
+            calls.append((f"{f.value.id}.{f.attr}", bounded))
+            continue
+        # `standing_revise` (design/cognition-loop/70-migration.md step 3 row
+        # 3b) is a WRITE VERB: a plain function, not a method on a
+        # collaborator, that takes `store=` as a keyword and makes exactly
+        # one bounded store call inside itself
+        # (`nora.infra.sql.standing_revise`'s own docstring). A call shaped
+        # `f.value.id.attr` cannot see it — it is `standing_revise(store=
+        # store, ...)`, a bare `Name` call — so a collaborator handed as a
+        # KEYWORD ARGUMENT to an awaited bare-name call counts too, the same
+        # "awaited, directly or via wait_for" rule above. This is what keeps
+        # the validator seeing the write after it moved behind the verb,
+        # rather than silently dropping one call the way v1's `wait_for`
+        # count and v2's hardcoded receiver list each went blind in their
+        # own way (this test's own docstring).
+        if isinstance(f, ast.Name) and awaited:
+            for kw in node.keywords:
+                if isinstance(kw.value, ast.Name) and kw.value.id in receivers:
+                    calls.append((f"{f.id}({kw.arg}={kw.value.id})", bounded))
+                    break
 
     named = [n for n, _ in calls]
     assert len(calls) == debrief.STORE_CALLS_PER_FOLD, (

@@ -291,6 +291,23 @@ class Standing:
     # marked this room's position unsupported; epoch ms when it did.
     # `compare=False` for the same reason `lineage` is.
     unsupported_at: int | None = field(default=None, compare=False)
+    # THE SECTIONED SCHEMA (design/cognition-loop/12-schemas.md §5,
+    # 50-character-and-standing.md §2; migration `0076_standing_sections`,
+    # step 3 row 3b). Room Standing has four sections there: `Where it
+    # stands` (required, `body` above, unchanged), `I hold open`, `I owe`
+    # and `Found, not yet given` (`working_set` above, unchanged). These two
+    # are new and both OPTIONAL — `None` is "nothing revised this section
+    # yet", the correct reading of every row `standing_revise` migrates:
+    # additive columns, so an existing head keeps every fact it held and
+    # gains two sections with nothing in them, never a rewrite. Written and
+    # read only through `standing_revise`
+    # (`nora.infra.sql.standing_revise`), which enforces the schema (a
+    # section given blank rather than omitted is refused) before either
+    # reaches this dataclass. LAST, after `unsupported_at`, for the same
+    # "a defaulted field cannot precede the ones above it" rule
+    # `working_set` follows.
+    hold_open: str | None = None
+    i_owe: str | None = None
 
     def __post_init__(self) -> None:
         if not self.body or not self.body.strip():
@@ -321,3 +338,18 @@ class Standing:
                 f"Standing.working_set is {rendered_bytes} bytes rendered, "
                 f"over the {WORKING_SET_CEILING_BYTES}-byte ceiling"
             )
+        for name, value in (("hold_open", self.hold_open), ("i_owe", self.i_owe)):
+            if value is not None and not value.strip():
+                # `None` is "not revised"; a blank string is a second
+                # spelling of the same absence and is refused rather than
+                # stored — `WorkingSetItem.bears_on`'s own rule, applied to
+                # these two sections.
+                raise ValueError(
+                    f"Standing.{name} is a section body or None, never a "
+                    f"blank string"
+                )
+            if value is not None and len(value) > STANDING_BODY_CEILING_CHARS:
+                raise ValueError(
+                    f"Standing.{name} is {len(value)} characters, over the "
+                    f"{STANDING_BODY_CEILING_CHARS}-character ceiling"
+                )
