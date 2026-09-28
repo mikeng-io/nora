@@ -5576,7 +5576,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             )
             if refusal is None:
                 from ..infra.routes.places import Place
-                name = place.label or _routine_unnamed[place.kind]
+                name = _place_words(place.label, place.kind, place.saved_place_id is not None)
                 return Place(
                     place_id=f"derived:{place.id}", name=name, address=name,
                     lat=place.lat, lng=place.lng,
@@ -5807,7 +5807,9 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 p = places.get(pid)
                 if p is None:
                     return "a place they go"
-                return _bind_place(p.label or _routine_unnamed[p.kind], p.id, owner)
+                return _bind_place(
+                    _place_words(p.label, p.kind, p.saved_place_id is not None), p.id, owner,
+                )
 
             out = []
             for pattern in trip_patterns(stays, trips, tz_name=_been_tz_name)[:8]:
@@ -5893,7 +5895,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                         # What she calls it, and what `route` takes back
                         # (DEC-216 M3): never an id.
                         "name": _bind_place(
-                            row["label"] or _routine_unnamed[row["kind"]],
+                            _place_words(row["label"], row["kind"], bool(row["saved"])),
                             row["id"], owner,
                         ),
                     }
@@ -6036,10 +6038,10 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                     # named place with hundreds of hours of dwell.
                     note += (
                         " A place of kind unlabeled has no home or work pattern: "
-                        "never call it their home or their work. If it has a "
-                        "label, that is its name and you may use it; if not, "
-                        "say it is a place they go that has no name, and do "
-                        "not invent one."
+                        "never call it their home or their work. Call a place "
+                        "by its `name`: a saved label is its name; an unsaved "
+                        "one is only the street it is near, never a road they "
+                        "passed. Do not invent a name."
                     )
                 return note
             return (
@@ -6164,6 +6166,18 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         "home": "a home of theirs", "work": "their work",
         "unlabeled": "a place they go",
     }
+
+    def _place_words(label: str | None, kind: str, saved: bool) -> str:
+        """What she calls a place: its household name when Life360 saved one;
+        otherwise what it is to them, near the street its label gives. An
+        unsaved label is the street address of the spot (the geocode cache),
+        not a name: live on 2026-09-28 a road's name, read as a name, became
+        «a road they only drive along» for a place with four-hour stays."""
+        if label and saved:
+            return label
+        if label:
+            return f"{_routine_unnamed[kind]} near {label}"
+        return _routine_unnamed[kind]
     _routine_rough = ("nearby_hours", "day_type", "overall")
     _routine_days = (
         "Mondays", "Tuesdays", "Wednesdays", "Thursdays", "Fridays",
@@ -6237,7 +6251,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             return "no_place"
         if len(targets) == 1:
             only = places[next(iter(targets))]
-            named = only.label or _routine_unnamed[only.kind]
+            named = _place_words(only.label, only.kind, only.saved_place_id is not None)
         else:
             named = {
                 "home": "one of their homes", "work": "one of their workplaces",
@@ -6259,7 +6273,13 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             named = _bind_place(named, next(iter(targets)), person)
         else:
             refs = {"places": [
-                _bind_place(places[pid].label or _routine_unnamed[places[pid].kind], pid, person)
+                _bind_place(
+                    _place_words(
+                        places[pid].label, places[pid].kind,
+                        places[pid].saved_place_id is not None,
+                    ),
+                    pid, person,
+                )
                 for pid in sorted(targets, key=lambda i: (places[i].label or "", i))
             ]}
         arrival = kind == "arrival"
@@ -6384,7 +6404,8 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             return None
         here = live["place"]
         here_name = (
-            here.label or _routine_unnamed[here.kind] if here is not None
+            _place_words(here.label, here.kind, here.saved_place_id is not None)
+            if here is not None
             else "somewhere that is not one of their places"
         )
         usual = forecast_hour(
@@ -6398,8 +6419,13 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             return f"now {here_name} (as of {as_of}), as usual at this hour"
         usual_place = places.get(usual_id) if usual_id is not None else None
         usual_name = (
-            _bind_place(usual_place.label or _routine_unnamed[usual_place.kind],
-                        usual_place.id, owner)
+            _bind_place(
+                _place_words(
+                    usual_place.label, usual_place.kind,
+                    usual_place.saved_place_id is not None,
+                ),
+                usual_place.id, owner,
+            )
             if usual_place is not None else "somewhere that is not one of their places"
         )
         return (
@@ -6422,7 +6448,10 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             else:
                 # Two unnamed homes must not read as one place, within this
                 # answer or across the turn: the name is what `route` takes.
-                name = _bind_place(place.label or _routine_unnamed[place.kind], place.id, owner)
+                name = _bind_place(
+                    _place_words(place.label, place.kind, place.saved_place_id is not None),
+                    place.id, owner,
+                )
                 key = (name, place.kind)
             raw[key] = raw.get(key, 0.0) + chance.probability * 100
         floors = {k: int(v) for k, v in raw.items()}
@@ -6436,6 +6465,27 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             ),
             key=lambda x: -x["percent"],
         )
+
+    _routine_day = (
+        "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday",
+    )
+
+    def _routine_window_words(start: datetime, end: datetime) -> str:
+        """The asked hours the way a person names them («Wednesday evening»),
+        not a clock range she would recite back (live 2026-09-28: «18:00-23:00
+        都係嗰邊» for a question that said «tomorrow night»)."""
+        hours = (end - start).total_seconds() / 3600
+        day = _routine_day[start.weekday()]
+        if hours >= 20:
+            return f"{day}, all day"
+        if start.hour < 12 and hours >= 7 and end.hour >= 15:
+            return f"{day}, during the day"
+        part = (
+            "late night" if start.hour < 5 else "morning" if start.hour < 12
+            else "afternoon" if start.hour < 17 else "evening" if start.hour < 21
+            else "night"
+        )
+        return f"{day} {part}"
 
     def _routine_sureness(percent: int, *, thin: bool) -> int:
         level = next((lvl for floor, lvl in _routine_ladder if percent >= floor), 0)
@@ -6458,10 +6508,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             thin=basis in _routine_rough or observed < 50,
         )
         others = [x["place"] for x in real if x is not top and x["percent"] >= 10]
-        span = (
-            f"{_routine_days[start.weekday()]} "
-            f"{start.strftime('%H:%M')}-{end.strftime('%H:%M')}"
-        )
+        span = _routine_window_words(start, end)
         where = top["place"] if top else None
         named_in_line: list[str] = [where] if where is not None else []
         if level == 3:
@@ -6487,13 +6534,18 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         if with_evidence:
             # Asked how sure: what the past weeks WERE, a grounded count of
             # the past, never a confidence figure (none is measured).
-            on_record = ", ".join(
-                f"{x['place']} {x['percent']}%" for x in shares if x["percent"] > 0
+            ranked = [x for x in shares if x["percent"] > 0]
+            on_record = ", then ".join(
+                f"{x['place']} (about {x['percent']}%)" for x in ranked[:2]
+            ) + (
+                f"; the rest across {len(ranked) - 2} other "
+                f"{'place' if len(ranked) == 3 else 'places'}"
+                if len(ranked) > 2 else ""
             )
             text = (
                 f"Over the last {weeks} {_routine_days[start.weekday()]} at "
-                f"{start.strftime('%H:%M')}-{end.strftime('%H:%M')}, of the time "
-                f"on record: {on_record}. "
+                f"{start.strftime('%H:%M')}-{end.strftime('%H:%M')}, most of the "
+                f"time on record was at {on_record}. "
                 + (
                     "Nearly all of those hours are on record."
                     if observed >= 80
@@ -6666,7 +6718,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 "Each routine is how this person usually is at these hours, "
                 "worked out from their own past weeks and already said the way "
                 "a friend would put it: «should be», «probably» and «maybe» "
-                "carry how sure it is. A forecast, not a record."
+                "carry how sure it is."
             ) + (
                 " `evidence` is what their past days actually were, given "
                 "because someone asked how sure: counts of the past, not a "

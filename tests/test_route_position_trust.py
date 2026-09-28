@@ -165,7 +165,7 @@ async def test_a_bound_place_label_that_is_a_disclosed_live_address_is_still_ref
 
     class _Mobility:
         place = DerivedPlace(5, "p_fung", CIRCLE_ID, 22.3721, 114.1138, 100.0,
-                             "unlabeled", 0.0, "Tsuen Wan Road", None)
+                             "unlabeled", 0.0, "Tsuen Wan Road", "l360-5")
 
         async def stays_for_subject(self, *, subject_id):
             day = datetime(2026, 9, 2, tzinfo=UTC)
