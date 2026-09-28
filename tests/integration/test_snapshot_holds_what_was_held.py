@@ -337,6 +337,11 @@ APPEND: dict[str, Callable[[int], dict[str, Any]]] = {
         "id": _uuid("rsvp", n), "event_id": _uuid("event", 0), "person_id": f"p{n}",
         "response": "yes", "responded_at": T0,
     },
+    # Step 2c (0075_withdrawal): the citation edge table.
+    "citation": lambda n: {
+        "citing_store": "note", "citing_key": _uuid("note", n),
+        "cited_store": "message", "cited_id": f"{n}",
+    },
 }
 
 

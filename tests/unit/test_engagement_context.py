@@ -769,20 +769,26 @@ async def test_an_unsupported_standing_position_does_not_render():
 
 
 async def test_an_unsupported_culture_account_does_not_render():
-    """The same guarantee, for the `culture` block (Character · room)."""
-    from nora.domain.culture import CultureRevision
+    """The same guarantee, for the `culture` block (Character · room).
+    `InMemoryCultureStore` (`nora.testing`) is the shared fake; this only
+    marks the appended head `unsupported`, the same thing the withdrawal
+    cascade (`nora.app.withdrawal`) does in Postgres — a local twist on the
+    shared fake, not a second implementation of `CultureReader`."""
+    import dataclasses
 
-    class _UnsupportedCulture:
-        async def head(self, *, key: str) -> CultureRevision:
-            return CultureRevision(
-                id="rev-1", culture_key=key, body="an account",
-                written_at=1, established_by="fold", unsupported_at=456,
-            )
+    from nora.testing.culture_store import InMemoryCultureStore
 
+    store = InMemoryCultureStore()
+    revision = await store.append(
+        key="g1", body="an account", written_at=1, established_by="fold",
+    )
+    store._revisions[revision.id] = dataclasses.replace(
+        revision, unsupported_at=456,
+    )
     assembler = TranscriptInjection(
         audit=FakeRecordStore(), memory=FakeMemory(), persons=_MILES,
         context_window=10, metrics=Metrics(),
-        culture=_UnsupportedCulture(), policy=_policy(),
+        culture=store, policy=_policy(),
     )
     ctx = await assembler.assemble(request=_request())
     assert ctx.culture is None

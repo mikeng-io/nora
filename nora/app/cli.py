@@ -54,7 +54,6 @@ from nora.agent.egress import scan_identifiers
 from nora.app import config_cli, report
 from nora.app.events_backfill import backfill_unit_ids
 from nora.app.events_backfill import render as render_events_backfill
-from nora.app.person_forget import forget_person, render_forget, render_unforget, unforget_person
 from nora.app.memory_backfill import BackfillRefusedError, backfill_unit
 from nora.app.memory_backfill import render as render_backfill
 from nora.app.memory_carry import CarryRefusedError, carry_conclusions
@@ -70,6 +69,7 @@ from nora.app.memory_routing import MemoryRoutingError, build_workspace_router
 from nora.app.participation_measures import gather as gather_measures
 from nora.app.participation_measures import measure as compute_measures
 from nora.app.pending import correlate
+from nora.app.person_forget import forget_person, render_forget, render_unforget, unforget_person
 from nora.config import Config, ConfigError, load
 from nora.domain.media_join import MediaJoin
 from nora.domain.models import UnattributedRow
@@ -344,14 +344,18 @@ def add_subcommands(
              "(a dry run unless --apply)",
     )
     forget.add_argument("person_id", help="the identity.toml person id")
-    forget.add_argument("--apply", action="store_true", help="write; without it nothing is changed")
+    forget.add_argument(
+        "--apply", action="store_true", help="write; without it nothing is changed",
+    )
     forget.set_defaults(func=cmd_person_forget)
     unforget = person_sub.add_parser(
         "unforget", parents=[parent],
         help="un-hide a person's messages (a dry run unless --apply)",
     )
     unforget.add_argument("person_id", help="the identity.toml person id")
-    unforget.add_argument("--apply", action="store_true", help="write; without it nothing is changed")
+    unforget.add_argument(
+        "--apply", action="store_true", help="write; without it nothing is changed",
+    )
     unforget.set_defaults(func=cmd_person_unforget)
 
     # `config` — the operator's safe config mutation surface (deploy
