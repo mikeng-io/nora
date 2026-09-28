@@ -1,0 +1,6 @@
+{
+  "type": "none",
+  "reason": "Design only so far (design/27 §4.3): the tool that lets Nora answer where someone will usually be is specified, not built; the build replaces this fragment's type in its own commit.",
+  "details": [],
+  "limitations": []
+}
