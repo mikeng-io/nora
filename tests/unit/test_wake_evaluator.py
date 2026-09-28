@@ -76,6 +76,13 @@ async def test_nothing_pending_records_nothing():
     assert store.wakes == []
 
 
+def test_wake_policy_bare_default_quiet_seconds_is_1800():
+    """The dataclass default, unmediated by `POLICY` above or
+    `composition.py` (which always passes `cfg.cognition.quiet_seconds`
+    explicitly and so never exercises this default at all)."""
+    assert WakePolicy().quiet_seconds == 1800.0
+
+
 async def test_settled_fires_after_quiet_seconds_and_not_before():
     ev, store, clock, metrics = _setup()
     await _say(store, clock)

@@ -167,12 +167,15 @@ restart, and a failed session does not advance it.
 **Expected volume.** The dinner afternoon ([40](40-register.md) §5) is about
 5–7 sessions for the whole day; a quiet day, 1–2; never one per message.
 
-**Every starting value is a guess.** Step 1 runs the evaluator in shadow for
-a week (it logs each would-wake and its reason, fires nothing, and the old
-clocks still run); the values are sized from that log, and again after step
-2 adds Rollup signals. The keys live in a `[cognition]` section;
-`quiet_seconds` and `max_age_seconds` reuse `[dreamer]`'s names, not its
-values.
+**Every starting value is a guess, except `quiet_seconds`** (settled),
+fixed by the operator at 1800 s (2026-09-29, table above). Step 1 runs the
+evaluator in shadow for a week (it logs each would-wake and its reason,
+fires nothing, and the old clocks still run); the remaining values are
+sized from that log, and again after step 2 adds Rollup signals. The keys
+live in a `[cognition]` section; `quiet_seconds` and `max_age_seconds`
+reuse `[dreamer]`'s names, not its values as a rule — the two sections are
+configured independently — though `quiet_seconds` now happens to match
+`[dreamer]`'s 1800.
 
 **As built (step 1, 2026-09-28; DEC-233).** Where the build fixed a value or
 a name this table leaves open:
