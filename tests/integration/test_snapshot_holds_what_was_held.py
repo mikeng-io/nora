@@ -62,7 +62,7 @@ def _hex(table: str, i: int) -> str:
 _ROLLUP: dict[str, Any] = {"build_id": 1, "lineage": [["presence", "s", None]]}
 
 
-def _UNIT_ROLLUP(i: int) -> dict[str, Any]:  # noqa: N802 — read as a constant
+def _UNIT_ROLLUP(i: int) -> dict[str, Any]:
     return {
         "build_id": 1, "unit": "u", "lineage": [["presence", "a", None]],
         "valid_from_ms": MS0 + i, "valid_to_ms": MS0 + 1000 + i, "as_of_ms": MS0 + i,

@@ -1,0 +1,17 @@
+{
+  "type": "change",
+  "summary": "The derived presence layer (stays, trips, places, routines, routes) is now computed the same way whether it is built up tick by tick or rebuilt from scratch, and the analytics process also derives who was together, outings, each member's day, how much pairs interact each week, and how people answered Nora's messages.",
+  "details": [
+    "A stay now ends when the recorded data shows it ended (a later fix, or the collector's successful poll proving the time passed), never because the analytics process's own clock passed; the tick-by-tick path and a rebuild previously disagreed by a few percent.",
+    "Derived rows are kept in versioned builds: a new build is made when the code or its settings change and replaces the old one in one step, and the old build is kept rather than deleted. Every reader (where_been, the routine forecast, the portal's presence pages) reads the current build.",
+    "The first start after deploy rebuilds from the recorded fixes before it resumes; `python -m nora.analytics rebuild` does the same on demand.",
+    "New derived rows per unit: co-locations, outings (together away from every member's home), a daybook per member per day, a weekly tie per pair, and a response outcome for each of Nora's messages; these wake-up stimuli are recorded for the cognition loop, which still runs in shadow.",
+    "The analytics container now reads policy.toml to know which rooms make up each unit."
+  ],
+  "limitations": [
+    "Whether one of Nora's messages asked a question is not recorded on the message yet, so a message is treated as expecting an answer only when it mentions a member.",
+    "Nothing reads the new unit rows yet; they feed the cognition loop's later steps.",
+    "Arrival at a planned event's place raises nothing until events carry a place (the next step).",
+    "A deviation is raised only when the collector's polls and the chat platforms are recorded healthy for the whole span, and adapter health is only recorded from this release, so none are raised about earlier days."
+  ]
+}
