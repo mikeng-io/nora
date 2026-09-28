@@ -32,7 +32,7 @@ from collections.abc import Callable, Coroutine
 from dataclasses import dataclass
 from typing import Any, Literal, get_args
 
-from nora.domain.models import EditedMessage, NormalizedMessage
+from nora.domain.models import EditedMessage, NormalizedMessage, Touch
 from nora.domain.ports import (
     BlobStore,
     EngageDecision,
@@ -60,7 +60,9 @@ from .stages import media as media_stage
 from .stages import memory_feed as memory_feed_stage
 from .stages import quote_target as quote_target_stage
 from .stages import scope as scope_stage
+from .stages import signal as signal_stage
 from .stages import standing_event as standing_event_stage
+from .stages import touch as touch_stage
 
 log = logging.getLogger("nora.ingest.pipeline")
 
@@ -93,6 +95,13 @@ IngestOutcome = Literal[
     "edit_stale",           # older than the edit on record (a redelivery); nothing written
     "edit_orphaned",        # no original on record; dropped, whoever sent it
     "edit_refused",         # the original is hers, or its author is not the editor
+    # REACTIONS and DELETES (design/cognition-loop/20-observe.md §1, step 1):
+    # Record items attached to the message they touch, never messages, so
+    # they get their own endings for the edit path's reason.
+    "reaction_recorded",    # recorded beside the message it reacts to
+    "reaction_orphaned",    # no message on record to attach it to; dropped
+    "delete_recorded",      # recorded beside the message it deletes
+    "delete_orphaned",      # no message on record to attach it to; dropped
 ]
 
 _OUTCOMES: frozenset[str] = frozenset(get_args(IngestOutcome))
@@ -173,6 +182,7 @@ class IngestPipeline:
         comprehension: MediaComprehension | None = None,
         language: str = "",
         standing_event_wiring: Any | None = None,
+        signal_wiring: signal_stage.Wiring | None = None,
     ) -> None:
         """`media_sources`/`blobs` default to None — media custody OFF — and
         that default is a wiring state, not a design position (DEC-43).
@@ -216,6 +226,12 @@ class IngestPipeline:
         the accumulator reaches `fold_batch`. Gated on `[standing]
         event_enabled` in the composition root, like `debrief.Wiring` is gated
         on `[standing] enabled`.
+
+        `signal_wiring` is the signal stage (design/cognition-loop/20 §3):
+        `None` — the default, `[cognition] mode = "off"`, and every offline/
+        eval composition — writes no signal. Present, every recorded
+        person-authored item (a message, a changed edit, a reaction, a delete)
+        appends one signal row with its cues.
         """
         self._audit = audit
         self._memory = memory
@@ -232,6 +248,7 @@ class IngestPipeline:
         self._comprehension = comprehension
         self._language = language
         self._standing_event_wiring = standing_event_wiring
+        self._signal_wiring = signal_wiring
 
     async def run(self, *, message: NormalizedMessage) -> IngestResult:
         """`message` is already normalized — the caller (the adapter's `listen()`
@@ -321,6 +338,12 @@ class IngestPipeline:
                 message=found.message, original=found.original,
             )
 
+        # A REACTION or a DELETE (design/cognition-loop/20-observe.md §1):
+        # recorded beside the message it touches, never as a message, and
+        # never a turn — a reaction is not an utterance, a delete says nothing.
+        if message.touch is not None:
+            return await self._run_touch(message=message, touch=message.touch)
+
         # Identity first, so the resolved person_id lands in the audit INSERT
         # instead of a second write. `Persons.resolve` is two dict lookups on a
         # startup-built frozen mapping — no I/O, so nothing fallible moved
@@ -360,12 +383,22 @@ class IngestPipeline:
                 message=message, audit=self._audit, metrics=m,
             )
         with span("ingest.audit"):
-            recorded = await audit_stage.run(
+            row_id = await audit_stage.run(
                 message=message, audit=self._audit, metrics=m, person=person
             )
-        if not recorded:
+        if row_id is None:
             _outcome(m, message, "audit_refused")
             return IngestResult(message=None, decision=None)
+        # The SIGNAL, right behind the Record row it names (20 §3). Inside the
+        # guard for `standing_event`'s reason: a span for a stage that cannot
+        # run would claim work that never happened.
+        if self._signal_wiring is not None:
+            with span("ingest.signal"):
+                await signal_stage.run(
+                    message=message, item="message", row_id=row_id,
+                    person_id=person.person_id if person else None,
+                    wiring=self._signal_wiring, metrics=m,
+                )
         with span("ingest.memory_feed"):
             await memory_feed_stage.run(
                 message=message, person=person, memory=self._memory, metrics=m,
@@ -468,6 +501,15 @@ class IngestPipeline:
         if recorded != "recorded":
             _outcome(m, message, "edit_unchanged" if recorded == "recorded_unchanged" else recorded)
             return IngestResult(message=None, decision=None)
+        # Only an edit that CHANGED what a reader sees is a signal: an
+        # unchanged one stopped above, and would wake nothing new.
+        if self._signal_wiring is not None:
+            with span("ingest.signal"):
+                await signal_stage.run(
+                    message=message, item="edit", row_id=original.id,
+                    person_id=person.person_id if person else original.person_id,
+                    wiring=self._signal_wiring, metrics=m, target=original,
+                )
         with span("ingest.memory_feed"):
             await memory_feed_stage.run(
                 message=message, person=person, memory=self._memory, metrics=m,
@@ -491,3 +533,24 @@ class IngestPipeline:
             message_id=original.platform_message_id,
         )
         return IngestResult(message=answered_as, decision=decision)
+
+    async def _run_touch(self, *, message: NormalizedMessage, touch: Touch) -> IngestResult:
+        """A reaction or a delete/unsend (design/cognition-loop/20 §1):
+        found, recorded beside its target, signalled — never a turn, never
+        fed to Honcho, never a transcript line. `touch` decides and records;
+        this only sequences."""
+        m = self._metrics
+        with span("ingest.touch"):
+            done = await touch_stage.run(
+                message=message, touch=touch, audit=self._audit,
+                persons=self._persons, metrics=m,
+            )
+        if done.row_id is not None and self._signal_wiring is not None:
+            with span("ingest.signal"):
+                await signal_stage.run(
+                    message=done.message, item=touch.kind, row_id=done.row_id,
+                    person_id=done.person_id, wiring=self._signal_wiring,
+                    metrics=m, target=done.target,
+                )
+        _outcome(m, message, done.ending)
+        return IngestResult(message=None, decision=None)

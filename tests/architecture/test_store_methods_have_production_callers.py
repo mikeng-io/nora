@@ -246,7 +246,7 @@ _AMBIGUOUS: frozenset[str] = frozenset(
     {
         "aclose", "append", "claim", "create", "delete",
         "describe", "enqueue", "get", "lookup", "mark", "put", "read",
-        "recent", "resolve", "rsvps_for", "save", "search",
+        "recent", "record", "record_wake", "resolve", "rsvps_for", "save", "search",
         "sweep_firing", "update", "watermark",
     }
 )
@@ -273,7 +273,7 @@ _STORE_MODULES: frozenset[str] = frozenset(
         "music_queue.py", "music_session.py", "notes.py",
         "participation_state.py", "presence.py",
         "reasoning_strip.py",
-        "reminders.py", "tag_debounce.py",
+        "reminders.py", "signals.py", "source_health.py", "tag_debounce.py",
         "standing.py", "summons.py", "tag_traces.py", "tool_call_log.py",
         "video_readings.py",
     }

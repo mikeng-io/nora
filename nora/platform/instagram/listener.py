@@ -30,7 +30,8 @@ at listener level, and never reach `on_event`:
 
 `reaction`, `edit`, `unsend` and `typing` are NOT handled here. They are part
 of the contract and they reach `on_event`, where `parser.parse_event` turns an
-`edit` into an edit (design/message-edits/03) and answers None for the rest —
+`edit` into an edit (design/message-edits/03), a `reaction` or an `unsend`
+into a `Touch` (design/cognition-loop/20 §1), and answers None for the rest —
 the same posture WhatsApp takes toward event types it does not ingest, and the
 reason the parser stays total on its own rather than relying on
 this module to pre-filter.

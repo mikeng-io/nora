@@ -1,0 +1,152 @@
+"""Stage: signal — append one signal per recorded person-authored item
+(design/cognition-loop/20-observe.md §3, migration step 1).
+
+**Per item, code appends one row to the unit's `signal` table with its cues,
+and nothing else: no model** (20 §3). It runs after the Record write it
+signals — a message's audit row, an edit's `message_edit` row, a reaction's or
+a delete's — so every signal names an item that exists (`ref`).
+
+**Nora's own items raise no signal** (20 §3; 10 §2 rule 4, the echo rule).
+Her sends never pass through ingest (the parsers drop them, R-12), so this is
+the second line and it is checked HERE, not assumed from upstream: an item
+whose sender is one of her ids, or whose platform names no sender and whose
+target is hers (an Instagram unsend or a Discord delete of her message), is
+skipped.
+
+**A person's reply to her message inside `reply_quiet_seconds` is recorded
+and marked `waits`** (20 §3): it is a real signal, consumed by the next wake
+like any other, but it never starts one by itself. Two things count as a
+reply here: a message whose quote names her, and a reaction on her message;
+the window is measured from her message's time.
+
+**Inline, bounded, never load-bearing.** One INSERT, like the audit write
+before it, under `timeout_seconds`. A failure is logged and counted
+(`nora_errors_total{stage="signal"}`) and ingest carries on: the item is
+already Record, and a missing signal costs lateness (the next item's wake
+covers the room), never the message. Shadow is the only consumer at step 1.
+
+**Off unless `[cognition] mode` is on.** `None` wiring — the default and
+every offline/eval composition — makes the stage inert, the `standing_event`
+shape.
+
+One public entry point: `run(...)`.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import time
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import Any
+
+from nora.domain.cues import cues_of
+from nora.domain.models import EditedMessage, NormalizedMessage
+from nora.domain.ports import SignalStore
+from nora.domain.signals import MessageItem, NewSignal
+
+log = logging.getLogger("nora.ingest.signal")
+
+#: The table each item kind lives in, which `ref` names it by. An edit names
+#: the message it edits: `message_edit` rows are folded onto their message and
+#: the edit's own time rides `at_ms`.
+_REF_TABLE: dict[str, str] = {
+    "message": "messages",
+    "edit": "messages",
+    "reaction": "message_reaction",
+    "delete": "message_delete",
+}
+
+
+@dataclass(frozen=True)
+class Wiring:
+    """Everything the stage needs, present or absent as one object.
+
+    `unit_of` is the SAME policy read every other unit-keyed writer makes
+    (`policy.toml` `[[conversations]] unit`); `self_ids` is
+    `AdapterRegistry.self_aliases()`, every id Nora answers to."""
+
+    store: SignalStore
+    unit_of: Callable[[str, str], str | None]
+    self_ids: frozenset[str]
+    reply_quiet_seconds: float
+    timeout_seconds: float = 2.0
+    clock: Callable[[], float] = time.time
+
+
+def _authored_by_nora(
+    message: NormalizedMessage, target: EditedMessage | None, self_ids: frozenset[str],
+) -> bool:
+    if message.sender_id and message.sender_id in self_ids:
+        return True
+    return not message.sender_id and target is not None and target.is_nora
+
+
+def _answers_nora_at(
+    message: NormalizedMessage, item: MessageItem, target: EditedMessage | None,
+    self_ids: frozenset[str],
+) -> int | None:
+    """The time of Nora's message this item answers, or None."""
+    if item == "message" and message.quote is not None:
+        if message.quote.author_id in self_ids and message.quote.quoted_ts > 0:
+            return message.quote.quoted_ts
+        return None
+    if item == "reaction" and target is not None and target.is_nora:
+        return target.ts
+    return None
+
+
+async def run(
+    *,
+    message: NormalizedMessage,
+    item: MessageItem,
+    row_id: int,
+    person_id: str | None,
+    wiring: Wiring,
+    metrics: Any,
+    target: EditedMessage | None = None,
+) -> int | None:
+    """Append the item's signal; return its id, or None when none was
+    written (Nora's own item, a room with no unit, or a failed write).
+
+    `row_id` is the id of the Record row the item was written as, or of the
+    message an edit edits; `target` is the message a reaction, a delete or an
+    edit touches."""
+    if _authored_by_nora(message, target, wiring.self_ids):
+        return None
+    unit = wiring.unit_of(message.platform, message.conversation_id)
+    if not unit:
+        # Scope admitted the room, so it is in policy.toml and has a unit
+        # (`unit` defaults to "nora"). Reaching here is a wiring fault.
+        log.warning(
+            "signal: no unit for an admitted room (platform=%s); no signal",
+            message.platform,
+        )
+        return None
+    now_ms = int(wiring.clock() * 1000)
+    cues = cues_of(message.body) if item in ("message", "edit") else ()
+    answers = _answers_nora_at(message, item, target, wiring.self_ids)
+    at_ms = message.timestamp if message.timestamp > 0 else now_ms
+    waits = (
+        answers is not None
+        and at_ms - answers <= wiring.reply_quiet_seconds * 1000
+    )
+    signal = NewSignal(
+        unit=unit, kind="message", item=item, ref=f"{_REF_TABLE[item]}:{row_id}",
+        at_ms=at_ms, platform=message.platform,
+        conversation_id=message.conversation_id, person_id=person_id,
+        cues=cues, waits=waits,
+    )
+    try:
+        sid = await asyncio.wait_for(
+            wiring.store.append(signal=signal, recorded_at_ms=now_ms),
+            timeout=wiring.timeout_seconds,
+        )
+    except Exception:
+        log.exception("signal append failed; the item is recorded, its signal is not")
+        metrics.inc("nora_errors_total", stage="signal", platform=message.platform)
+        return None
+    for cue in cues or ("none",):
+        metrics.inc("nora_signal_total", kind="message", cue=cue)
+    return sid

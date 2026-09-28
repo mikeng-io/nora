@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from typing import NamedTuple
 
+from nora.domain.cues import CUES
 from nora.domain.media import MEDIA_FETCH_CALLERS
 from nora.domain.media_join import JOIN_PATHS
 from nora.domain.reasoning_strip import (
@@ -22,6 +23,7 @@ from nora.domain.reasoning_strip import (
     STRIP_OUTCOMES,
     WRITE_OUTCOMES,
 )
+from nora.domain.signals import SIGNAL_KINDS, WAKE_BRAKES, WAKE_MODES, WAKE_REASONS
 from nora.domain.summons import (
     FOLLOW_UP_OUTCOMES,
     INTAKE_OUTCOMES,
@@ -2246,6 +2248,42 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "pushed out of the full inbox by a newer one.",
         ("outcome",),
     ),
+    # The cognition loop's signals and its shadow wake evaluator
+    # (design/cognition-loop/20-observe.md §3-§4, migration step 1). Both
+    # vocabularies are DERIVED from `nora.domain.cues` / `nora.domain.signals`.
+    _CounterSpec(
+        "nora_signal_total",
+        "Signals appended to a unit's signal table, by kind ("
+        + " / ".join(SIGNAL_KINDS)
+        + ") and cue ("
+        + " / ".join((*CUES, "none"))
+        + "). ONE INCREMENT PER (signal, cue): a signal carrying two cues "
+        "counts twice, one carrying none counts once under cue=none, so the "
+        "sum over cue is not the signal count. A person's item raises one "
+        "(kind=message); a daily floor raises one (kind=time); Nora's own "
+        "items raise none.",
+        ("kind", "cue"),
+    ),
+    _CounterSpec(
+        "nora_cognition_wake_total",
+        "Wakes the evaluator recorded, by reason ("
+        + " / ".join(WAKE_REASONS)
+        + ") and mode ("
+        + " / ".join(WAKE_MODES)
+        + "). mode=shadow is a WOULD-wake: recorded with its reason and "
+        "signal range in cognition_wake, and nothing fired (migration step "
+        "1). The operator sizes the wake values from this week of rows.",
+        ("reason", "mode"),
+    ),
+    _CounterSpec(
+        "nora_cognition_wake_deferred_total",
+        "Unit-ticks where a wake trigger held and a brake stopped it, by "
+        "brake ("
+        + " / ".join(WAKE_BRAKES)
+        + "). Counted once per unit per ~30s tick while it holds, so it "
+        "measures how long brakes hold, not how many wakes they stopped.",
+        ("brake",),
+    ),
 )
 
 _GAUGES: tuple[_GaugeSpec, ...] = (
@@ -2496,6 +2534,15 @@ _GAUGES: tuple[_GaugeSpec, ...] = (
         "1 when the last public summons write was refused writes_blocked "
         "(the bridge latched comment writes off after an action block; an "
         "operator must clear it), 0 after a write published.",
+    ),
+    _GaugeSpec(
+        "nora_signal_pending_age_seconds",
+        "Age of a unit's oldest pending signal that could wake it (a reply "
+        "to Nora inside reply_quiet_seconds does not count), set by the wake "
+        "evaluator each tick; 0 when nothing is pending "
+        "(design/cognition-loop/20-observe.md §4). ABSENT until the "
+        "evaluator's first tick for the unit.",
+        ("unit",),
     ),
 )
 

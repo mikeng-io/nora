@@ -76,6 +76,7 @@ class DiscordListener:
         self,
         on_message_cb: Callable[[Any], Awaitable[None]],
         on_edit_cb: Callable[[Any], Awaitable[None]] | None = None,
+        on_touch_cb: Callable[[str, Any], Awaitable[None]] | None = None,
     ) -> None:
         """`on_edit_cb` receives the EDITED message (design/message-edits/03).
         It is wired to `on_raw_message_edit`, not `on_message_edit`: the
@@ -127,15 +128,40 @@ class DiscordListener:
             except Exception:
                 log.exception("edit handler raised; continuing")
 
+        # REACTIONS and DELETES (design/cognition-loop/20-observe.md §1),
+        # raw for `on_raw_message_edit`'s reason: the cached events miss any
+        # message older than the cache. `on_touch_cb` receives the event's
+        # name and its raw payload; the adapter parses it.
+        async def _touch(kind: str, payload: Any) -> None:
+            self.last_event_at = self._clock()
+            if on_touch_cb is None:
+                return
+            try:
+                await on_touch_cb(kind, payload)
+            except Exception:
+                log.exception("%s handler raised; continuing", kind)
+
+        async def on_raw_reaction_add(payload: Any) -> None:
+            await _touch("reaction_add", payload)
+
+        async def on_raw_reaction_remove(payload: Any) -> None:
+            await _touch("reaction_remove", payload)
+
+        async def on_raw_message_delete(payload: Any) -> None:
+            await _touch("delete", payload)
+
         async def on_disconnect() -> None:
             self.connected = False
             log.warning("discord gateway disconnected")
 
         # Registration binds on `coro.__name__` (discord.py's own convention),
-        # which is exactly what the five closures above are named for.
+        # which is exactly what the closures above are named for.
         self._client.event(on_ready)
         self._client.event(on_resumed)
         self._client.event(on_message)
         self._client.event(on_raw_message_edit)
+        self._client.event(on_raw_reaction_add)
+        self._client.event(on_raw_reaction_remove)
+        self._client.event(on_raw_message_delete)
         self._client.event(on_disconnect)
         await self._client.start(self._token)

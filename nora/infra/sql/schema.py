@@ -189,6 +189,68 @@ IDX_MESSAGE_EDIT_MESSAGE_TS = sa.Index(
     "idx_message_edit_message_ts", MESSAGE_EDIT.c.message_id, MESSAGE_EDIT.c.ts,
 )
 
+# ── message_reaction, message_delete (design/cognition-loop/20 §1, step 1) ───
+# A reaction and a delete/unsend are Record items attached to the message they
+# touch — never `messages` rows, for `message_edit`'s reason: every reader of
+# `messages` would count them as utterances. Both are append-only: a reaction
+# taken back is its own row (`removed = 1`), and a delete leaves the message it
+# deletes untouched (hiding it is the withdrawal cascade, step 2c). CASCADE for
+# `message_edit`'s reason: `prune_all` deletes messages.
+#
+# `sender_id` is who the platform says acted, `''` where it names nobody (an
+# Instagram unsend, a Discord delete); `person_id` is that sender resolved, or
+# the target's author when the platform named nobody.
+MESSAGE_REACTION = sa.Table(
+    "message_reaction",
+    METADATA,
+    sa.Column("id", sa.Integer, sa.Identity(always=False), primary_key=True),
+    sa.Column(
+        "message_id", sa.Integer,
+        sa.ForeignKey("messages.id", name="message_reaction_message_id_fkey",
+                      ondelete="CASCADE"),
+        nullable=False,
+    ),
+    sa.Column("sender_id", sa.Text, nullable=False),
+    sa.Column("person_id", sa.Text),
+    sa.Column("emoji", sa.Text, nullable=False),
+    sa.Column("removed", sa.Integer, nullable=False, server_default=sa.text("0")),
+    # The PLATFORM's time for the reaction, ms (arrival when it gives none).
+    sa.Column("ts", sa.BigInteger, nullable=False),
+    sa.Column("raw_json", sa.Text),
+    sa.Column(
+        "created_at", sa.Text, nullable=False,
+        server_default=sa.text("now()::text"),
+    ),
+)
+
+IDX_MESSAGE_REACTION_MESSAGE = sa.Index(
+    "idx_message_reaction_message", MESSAGE_REACTION.c.message_id,
+)
+
+MESSAGE_DELETE = sa.Table(
+    "message_delete",
+    METADATA,
+    sa.Column("id", sa.Integer, sa.Identity(always=False), primary_key=True),
+    sa.Column(
+        "message_id", sa.Integer,
+        sa.ForeignKey("messages.id", name="message_delete_message_id_fkey",
+                      ondelete="CASCADE"),
+        nullable=False,
+    ),
+    sa.Column("sender_id", sa.Text, nullable=False),
+    sa.Column("person_id", sa.Text),
+    sa.Column("ts", sa.BigInteger, nullable=False),
+    sa.Column("raw_json", sa.Text),
+    sa.Column(
+        "created_at", sa.Text, nullable=False,
+        server_default=sa.text("now()::text"),
+    ),
+)
+
+IDX_MESSAGE_DELETE_MESSAGE = sa.Index(
+    "idx_message_delete_message", MESSAGE_DELETE.c.message_id,
+)
+
 # Declared after the table so the expression index can reference its columns.
 # `idx_messages_conv_ts` is excluded from Alembic autogenerate by
 # `migrations/env.py::include_object` — see that hook's comment — and is authored
@@ -2996,4 +3058,116 @@ INSTAGRAM_SUMMONS = sa.Table(
 IDX_INSTAGRAM_SUMMONS_STATE = sa.Index(
     "idx_instagram_summons_state",
     INSTAGRAM_SUMMONS.c.state, INSTAGRAM_SUMMONS.c.mode,
+)
+
+
+# ── signal, cognition_wake (design/cognition-loop/20-observe.md §3, step 1) ──
+# `signal`: what wakes cognition, one row per signal, per unit
+# (`nora.domain.signals`). Append-only (10-tiers.md §8): never updated, never
+# deleted; `recorded_at` is its system time. `ref` names the Record item it was
+# raised by (`messages:<id>`, `message_reaction:<id>`, `message_delete:<id>`)
+# or, for a clock signal, the occasion (`floor:07:00@2026-09-28`).
+#
+# `cues` is TEXT[] of `nora.domain.cues.CUES` names, computed once at ingest.
+# `waits` is 20 §3's reply to Nora inside `reply_quiet_seconds`: recorded and
+# consumed like any signal, never the one that wakes a session.
+# `due_ms` is set only on a signal that is pending from a later time (`time`,
+# `self`); NULL is «pending once recorded».
+SIGNAL = sa.Table(
+    "signal",
+    METADATA,
+    sa.Column("id", sa.BigInteger, sa.Identity(always=False), primary_key=True),
+    sa.Column("unit", sa.Text, nullable=False),
+    sa.Column("kind", sa.Text, nullable=False),
+    sa.Column("item", sa.Text, nullable=False),
+    sa.Column("ref", sa.Text, nullable=False),
+    sa.Column("platform", sa.Text),
+    sa.Column("conversation_id", sa.Text),
+    sa.Column("person_id", sa.Text),
+    sa.Column(
+        "cues", pg.ARRAY(sa.Text), nullable=False,
+        server_default=sa.text("'{}'::text[]"),
+    ),
+    sa.Column("waits", sa.Integer, nullable=False, server_default=sa.text("0")),
+    sa.Column("at_ms", sa.BigInteger, nullable=False),
+    sa.Column("due_ms", sa.BigInteger),
+    sa.Column("recorded_at", sa.BigInteger, nullable=False),
+    # Written out, not read from `nora.domain.signals.SIGNAL_KINDS`: the
+    # migration hardcodes it, and the parity gate ties the two.
+    sa.CheckConstraint(
+        "kind IN ('message', 'social', 'play', 'rollup', 'time', 'self')",
+        name="ck_signal_kind",
+    ),
+)
+
+#: The tick's read: one unit's signals past its watermark, in id order.
+IDX_SIGNAL_UNIT_ID = sa.Index("idx_signal_unit_id", SIGNAL.c.unit, SIGNAL.c.id)
+
+#: A `time` signal is raised once per occasion: the evaluator raises the day's
+#: floors on every tick and relies on this to write each one once.
+UQ_SIGNAL_TIME_REF = sa.Index(
+    "uq_signal_time_ref", SIGNAL.c.unit, SIGNAL.c.ref,
+    unique=True, postgresql_where=SIGNAL.c.kind == "time",
+)
+
+# `cognition_wake`: every wake, one row each — in step 1 every row is a SHADOW
+# would-wake (`mode = 'shadow'`): what the evaluator would have started, why,
+# and the signal range it would have consumed. Append-only; a unit's newest row
+# in a mode IS its watermark in that mode (`through_signal_id`, `at_ms`), so
+# the watermark survives a restart with no row ever rewritten.
+COGNITION_WAKE = sa.Table(
+    "cognition_wake",
+    METADATA,
+    sa.Column("id", sa.BigInteger, sa.Identity(always=False), primary_key=True),
+    sa.Column("unit", sa.Text, nullable=False),
+    sa.Column("mode", sa.Text, nullable=False),
+    sa.Column("reason", sa.Text, nullable=False),
+    # The watermark it read at its start (exclusive) and the one it would
+    # leave (inclusive): the consumed range, for the operator's read-back.
+    sa.Column("from_signal_id", sa.BigInteger, nullable=False),
+    sa.Column("through_signal_id", sa.BigInteger, nullable=False),
+    sa.Column("signal_count", sa.Integer, nullable=False),
+    sa.Column("eligible_count", sa.Integer, nullable=False),
+    sa.Column("oldest_pending_ms", sa.BigInteger),
+    sa.Column("cut_cooldown", sa.Integer, nullable=False, server_default=sa.text("0")),
+    sa.Column("detail", pg.JSONB, nullable=False, server_default=sa.text("'{}'::jsonb")),
+    sa.Column("at_ms", sa.BigInteger, nullable=False),
+    sa.Column("recorded_at", sa.BigInteger, nullable=False),
+    sa.CheckConstraint("mode IN ('shadow')", name="ck_cognition_wake_mode"),
+    sa.CheckConstraint(
+        "reason IN ('settled', 'strong_cue', 'rollup', 'batch', 'max_age', "
+        "'time', 'self')",
+        name="ck_cognition_wake_reason",
+    ),
+)
+
+#: The watermark read: a unit's newest wake in a mode.
+IDX_COGNITION_WAKE_UNIT_MODE_ID = sa.Index(
+    "idx_cognition_wake_unit_mode_id",
+    COGNITION_WAKE.c.unit, COGNITION_WAKE.c.mode, COGNITION_WAKE.c.id,
+)
+
+# `source_health` — source health as Record (20-observe.md §1): one row per
+# presence collector poll and per platform adapter state transition, so «every
+# source healthy for the interval» (20 §3's absence rule, D3) is a query.
+# Append-only. `scope` is the circle for a poll, "" for an adapter; `outcome`
+# is the poll's read status (`ok`, `challenge`, `empty_circle`, ...) or the
+# adapter's new state (`up`, `degraded`, `down`).
+SOURCE_HEALTH = sa.Table(
+    "source_health",
+    METADATA,
+    sa.Column("id", sa.BigInteger, sa.Identity(always=False), primary_key=True),
+    sa.Column("source", sa.Text, nullable=False),
+    sa.Column("scope", sa.Text, nullable=False, server_default=sa.text("''")),
+    sa.Column("event", sa.Text, nullable=False),
+    sa.Column("outcome", sa.Text, nullable=False),
+    sa.Column("detail", sa.Text, nullable=False, server_default=sa.text("''")),
+    sa.Column("at_ms", sa.BigInteger, nullable=False),
+    sa.Column("recorded_at", sa.BigInteger, nullable=False),
+    sa.CheckConstraint("event IN ('poll', 'transition')", name="ck_source_health_event"),
+)
+
+#: «was this source healthy over [a, b]» reads one source's rows by time.
+IDX_SOURCE_HEALTH_SOURCE_AT = sa.Index(
+    "idx_source_health_source_at", SOURCE_HEALTH.c.source, SOURCE_HEALTH.c.at_ms,
 )

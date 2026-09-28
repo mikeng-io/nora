@@ -125,6 +125,10 @@ class FakeRecordStore:
         # `message_edit`, as dicts: {"id", "message_id", "ts", "body",
         # "raw_json", "mentions_json"} (design/message-edits/01 §2).
         self.edits: list[dict[str, Any]] = []
+        # `message_reaction` and `message_delete`, as dicts, mirroring the
+        # columns `SqlRecordStore.append_reaction`/`append_delete` write.
+        self.reactions: list[dict[str, Any]] = []
+        self.deletes: list[dict[str, Any]] = []
         self.fail_on_nora = False
         self.fail_on_recent = False
         self.closed = False
@@ -261,6 +265,31 @@ class FakeRecordStore:
                 else mentions_json(message.mentions)
             ),
         })
+
+    async def append_reaction(
+        self, *, message_id: int, message: NormalizedMessage, person_id: str | None,
+    ) -> int:
+        """Mirrors `SqlRecordStore.append_reaction`."""
+        touch = message.touch
+        self.reactions.append({
+            "id": len(self.reactions) + 1, "message_id": message_id,
+            "sender_id": message.sender_id, "person_id": person_id,
+            "emoji": touch.emoji if touch is not None else "",
+            "removed": bool(touch.removed) if touch is not None else False,
+            "ts": message.timestamp, "raw_json": json.dumps(message.raw),
+        })
+        return len(self.reactions)
+
+    async def append_delete(
+        self, *, message_id: int, message: NormalizedMessage, person_id: str | None,
+    ) -> int:
+        """Mirrors `SqlRecordStore.append_delete`."""
+        self.deletes.append({
+            "id": len(self.deletes) + 1, "message_id": message_id,
+            "sender_id": message.sender_id, "person_id": person_id,
+            "ts": message.timestamp, "raw_json": json.dumps(message.raw),
+        })
+        return len(self.deletes)
 
     async def recent(self, *, conversation_id: str, limit: int) -> list[TranscriptRow]:
         if self.fail_on_recent:

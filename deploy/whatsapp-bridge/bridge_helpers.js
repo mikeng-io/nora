@@ -588,7 +588,49 @@ export function extractMessageEvent(msg, { lidToPhone = {}, phoneToLid = {}, rec
   let content = getMessageContent(msg);
   let editOf = null;
 
+  // A REACTION or a REVOKE (delete for everyone) is not a message: it names
+  // the message it touches and says nothing itself. Emitted as its own event
+  // type so Nora records it BESIDE that message, never as a transcript line
+  // (design/cognition-loop/20-observe.md §1). Both used to fall through to
+  // the empty-turn drop below and were lost.
+  const who = {
+    id: msg.key.id || null,
+    chat_jid: chatJid,
+    is_group: group,
+    from_me: Boolean(msg.key.fromMe),
+    sender_jid: senderJid,
+    sender_phone: sender.phone,
+    sender_lid: sender.lid,
+    push_name: msg.pushName || null,
+  };
+  const reaction = content.reactionMessage;
+  if (reaction) {
+    const target = reaction.key?.id || null;
+    if (!target) return null;
+    const emoji = typeof reaction.text === 'string' ? reaction.text : '';
+    return {
+      type: 'reaction',
+      ...who,
+      target_id: target,
+      // An EMPTY text is WhatsApp's «reaction removed».
+      emoji,
+      removed: emoji === '',
+      timestamp_ms: toNumber(reaction.senderTimestampMs) || timestampMs(msg.messageTimestamp),
+    };
+  }
+
   const proto = content.protocolMessage;
+  // Baileys proto constants: REVOKE = 0 (a string in JSON land).
+  if (proto && (proto.type === 'REVOKE' || proto.type === 0)) {
+    const target = proto.key?.id || null;
+    if (!target) return null;
+    return {
+      type: 'delete',
+      ...who,
+      target_id: target,
+      timestamp_ms: timestampMs(msg.messageTimestamp),
+    };
+  }
   if (proto) {
     // Baileys proto constants: MESSAGE_EDIT = 14 (string in JSON land).
     if (proto.type !== 'MESSAGE_EDIT' && proto.type !== 14) return null;

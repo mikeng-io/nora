@@ -68,7 +68,7 @@ async def test_listen_parses_and_forwards_only_parseable_events(monkeypatch):
         ),
     ]
 
-    async def _fake_listen(self, on_message_cb, on_edit_cb=None):
+    async def _fake_listen(self, on_message_cb, on_edit_cb=None, on_touch_cb=None):
         for event in events:
             await on_message_cb(event)
 
@@ -117,7 +117,7 @@ async def test_an_edit_reaches_the_same_callback_marked_as_an_edit(monkeypatch):
     )
     embed_only.edited_at = None
 
-    async def _fake_listen(self, on_message_cb, on_edit_cb=None):
+    async def _fake_listen(self, on_message_cb, on_edit_cb=None, on_touch_cb=None):
         assert on_edit_cb is not None, "the adapter must wire the edit callback"
         await on_edit_cb(self_edit)
         await on_edit_cb(embed_only)
@@ -136,6 +136,41 @@ async def test_an_edit_reaches_the_same_callback_marked_as_an_edit(monkeypatch):
     assert received[0].edit_of == EditTarget(message_id="4")
     assert received[0].body == "hello, fixed"
     assert received[0].timestamp == int(edited.edited_at.timestamp() * 1000)
+
+
+async def test_a_reaction_and_a_delete_reach_the_same_callback_as_touches(monkeypatch):
+    """design/cognition-loop/20 §1: the adapter wires the listener's touch
+    callback and parses each raw event into a `Touch`; Nora's own reaction
+    never reaches ingest (R-12)."""
+    from types import SimpleNamespace
+
+    from nora.domain.models import EditTarget
+
+    adapter = DiscordAdapter("tok")
+    adapter._identity = PlatformIdentity(platform="discord", primary="999")
+    adapter._own_id = "999"
+    reaction = SimpleNamespace(message_id=4, channel_id=2, guild_id=1, user_id=42, emoji="👍")
+    own = SimpleNamespace(message_id=4, channel_id=2, guild_id=1, user_id=999, emoji="👀")
+    delete = SimpleNamespace(message_id=4, channel_id=2, guild_id=1)
+
+    async def _fake_listen(self, on_message_cb, on_edit_cb=None, on_touch_cb=None):
+        assert on_touch_cb is not None, "the adapter must wire the touch callback"
+        await on_touch_cb("reaction_add", own)
+        await on_touch_cb("reaction_add", reaction)
+        await on_touch_cb("reaction_remove", reaction)
+        await on_touch_cb("delete", delete)
+
+    monkeypatch.setattr(DiscordListener, "listen", _fake_listen)
+    received = []
+
+    async def _capture(message):
+        received.append(message)
+
+    await adapter.listen(on_message=_capture)
+    assert [(m.touch.kind, m.touch.removed, m.sender_id) for m in received] == [
+        ("reaction", False, "42"), ("reaction", True, "42"), ("delete", False, ""),
+    ]
+    assert all(m.touch.target == EditTarget(message_id="4") for m in received)
 
 
 async def test_health_reports_connection_state():
@@ -530,7 +565,7 @@ async def test_a_channels_message_and_its_edit_are_ingested_in_order(monkeypatch
     edited.edited_at = _dt.datetime(2026, 9, 24, tzinfo=_dt.UTC)
     order: list[str] = []
 
-    async def _fake_listen(self, on_message_cb, on_edit_cb=None):
+    async def _fake_listen(self, on_message_cb, on_edit_cb=None, on_touch_cb=None):
         # Both dispatched at once, as discord.py does.
         await asyncio.gather(on_message_cb(original), on_edit_cb(edited))
 

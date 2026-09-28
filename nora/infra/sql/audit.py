@@ -41,7 +41,7 @@ from nora.domain.models import (
 )
 from nora.domain.ports import RoomActivity
 from nora.infra.sql.migrations_runner import head_revision
-from nora.infra.sql.schema import MESSAGE_EDIT, MESSAGES
+from nora.infra.sql.schema import MESSAGE_DELETE, MESSAGE_EDIT, MESSAGE_REACTION, MESSAGES
 
 DEFAULT_MAX_PER_CONVERSATION = 500
 
@@ -438,6 +438,40 @@ class SqlRecordStore:
         )
         async with self._engine.begin() as conn:
             await conn.execute(stmt)
+
+    async def append_reaction(
+        self, *, message_id: int, message: NormalizedMessage, person_id: str | None,
+    ) -> int:
+        """See `nora.domain.ports.RecordStore.append_reaction`. One INSERT."""
+        touch = message.touch
+        stmt = sa.insert(MESSAGE_REACTION).values(
+            message_id=message_id,
+            sender_id=message.sender_id,
+            person_id=person_id,
+            emoji=touch.emoji if touch is not None else "",
+            removed=int(touch.removed) if touch is not None else 0,
+            ts=message.timestamp,
+            raw_json=json.dumps(message.raw),
+        ).returning(MESSAGE_REACTION.c.id)
+        async with self._engine.begin() as conn:
+            result = await conn.execute(stmt)
+        return int(result.scalar_one())
+
+    async def append_delete(
+        self, *, message_id: int, message: NormalizedMessage, person_id: str | None,
+    ) -> int:
+        """See `nora.domain.ports.RecordStore.append_delete`. One INSERT; the
+        deleted row is never touched."""
+        stmt = sa.insert(MESSAGE_DELETE).values(
+            message_id=message_id,
+            sender_id=message.sender_id,
+            person_id=person_id,
+            ts=message.timestamp,
+            raw_json=json.dumps(message.raw),
+        ).returning(MESSAGE_DELETE.c.id)
+        async with self._engine.begin() as conn:
+            result = await conn.execute(stmt)
+        return int(result.scalar_one())
 
     async def aclose(self) -> None:
         await self._engine.dispose()

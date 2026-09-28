@@ -13,7 +13,7 @@ import re
 from dataclasses import dataclass
 
 from ...domain.media import MediaRef, label_for, render_placeholder, resolve_media_type
-from ...domain.models import EditTarget, NormalizedMessage, Quote
+from ...domain.models import EditTarget, NormalizedMessage, Quote, Touch
 
 log = logging.getLogger("nora.signal.parser")
 
@@ -310,10 +310,12 @@ def _body_parts(data: dict, refs: tuple[MediaRef, ...]) -> list[str]:
     had rendered, which silently dropped a sticker sent with a caption — see
     `_sticker_ref` and spec §3.2.
 
-    A REACTION stays dropped, and that is a different judgement rather than an
-    oversight: a reaction is metadata attached to somebody else's message, not
-    a message. Rendering a bare `👍` as its own transcript line would add a
-    turn that never happened, detached from what it was reacting to.
+    A REACTION is not a body part, and that is a different judgement rather
+    than an oversight: a reaction is metadata attached to somebody else's
+    message, not a message. Rendering a bare `👍` as its own transcript line
+    would add a turn that never happened, detached from what it was reacting
+    to. Since design/cognition-loop step 1 it is still RECORDED, as a `Touch`
+    beside the message it reacts to (`_touch`), never through this function.
     """
     parts = []
     text = (data.get("message") or "").strip()
@@ -321,6 +323,44 @@ def _body_parts(data: dict, refs: tuple[MediaRef, ...]) -> list[str]:
         parts.append(text)
     parts += [render_placeholder(label_for(ref)) for ref in refs]
     return parts
+
+
+def _touch(data: dict) -> Touch | None:
+    """A reaction (`dataMessage.reaction`) or a remote delete
+    (`dataMessage.remoteDelete`) as a `Touch`, or None when the message is
+    neither (design/cognition-loop/20-observe.md §1).
+
+    signal-cli's `JsonReaction` names its target by `targetSentTimestamp` and
+    its author (`targetAuthor`, or the number/ACI forms); `isRemove` marks a
+    reaction being taken back. `JsonRemoteDelete` carries only the deleted
+    message's sent-timestamp, and Signal lets only its author delete it, so
+    the envelope's sender IS the target's author. A target with no usable
+    timestamp names nothing and is dropped (None, and `parse_event` then
+    answers None as before)."""
+    reaction = data.get("reaction")
+    if isinstance(reaction, dict):
+        ts = reaction.get("targetSentTimestamp")
+        emoji = reaction.get("emoji")
+        if not isinstance(ts, int) or isinstance(ts, bool) or ts <= 0:
+            return None
+        if not isinstance(emoji, str) or not emoji:
+            return None
+        author = (
+            reaction.get("targetAuthor") or reaction.get("targetAuthorNumber")
+            or reaction.get("targetAuthorUuid") or ""
+        )
+        return Touch(
+            kind="reaction", target=EditTarget(sent_ts=ts),
+            target_author=str(author), emoji=emoji,
+            removed=bool(reaction.get("isRemove")),
+        )
+    deleted = data.get("remoteDelete")
+    if isinstance(deleted, dict):
+        ts = deleted.get("timestamp")
+        if not isinstance(ts, int) or isinstance(ts, bool) or ts <= 0:
+            return None
+        return Touch(kind="delete", target=EditTarget(sent_ts=ts))
+    return None
 
 
 def extract_envelope(event: dict) -> dict | None:
@@ -387,13 +427,30 @@ def parse_event(event: dict, own_account: str) -> NormalizedMessage | None:
         if own_account and source == own_account:
             return None                       # R-12: Nora never ingests her own sends
 
+        if "reaction" in data or "remoteDelete" in data:
+            # Recorded beside the message it touches, never as a message.
+            touch = _touch(data)
+            if touch is None:
+                return None
+            return NormalizedMessage(
+                platform="signal",
+                conversation_id=group_id,
+                conversation_type="group",
+                sender_id=source,
+                sender_name=env.get("sourceName") or None,
+                timestamp=int(env.get("timestamp") or data.get("timestamp") or 0),
+                body="",
+                raw=event,
+                touch=touch,
+            )
+
         refs = _attachments(data)
         sticker = _sticker_ref(data)
         if sticker is not None:
             refs = (*refs, sticker)
         parts = _body_parts(data, refs)
         if not parts:
-            return None                       # reaction / empty — no usable body
+            return None                       # empty — no usable body
 
         return NormalizedMessage(
             platform="signal",

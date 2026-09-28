@@ -228,3 +228,27 @@ async def test_a_raising_edit_callback_does_not_propagate():
         message = "edited-message-1"
 
     await client.handlers["on_raw_message_edit"](_Payload())  # must not raise
+
+
+async def test_raw_reactions_and_deletes_reach_the_touch_callback():
+    """design/cognition-loop/20 §1: the RAW events are registered (the cached
+    ones miss anything older than the cache) and each reaches `on_touch_cb`
+    with its name, so the adapter can record it beside its message."""
+    client = FakeClient()
+    listener = DiscordListener(client, "tok", clock=lambda: 5.0)
+    seen: list[tuple[str, object]] = []
+
+    async def on_message(_message):
+        pass
+
+    async def on_touch(kind, payload):
+        seen.append((kind, payload))
+
+    await listener.listen(on_message, None, on_touch)
+    for name in ("on_raw_reaction_add", "on_raw_reaction_remove", "on_raw_message_delete"):
+        assert name in client.handlers
+    await client.handlers["on_raw_reaction_add"]("p1")
+    await client.handlers["on_raw_reaction_remove"]("p2")
+    await client.handlers["on_raw_message_delete"]("p3")
+    assert seen == [("reaction_add", "p1"), ("reaction_remove", "p2"), ("delete", "p3")]
+    assert listener.last_event_at == 5.0

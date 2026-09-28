@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any
+from typing import Any, Literal
 
 from .culture import CultureRevision
 from .decision_log import DecisionRow
@@ -91,6 +91,43 @@ class EditTarget:
     mentions_known: bool = True
 
 
+#: What a `Touch` does to the message it names. Closed on purpose: every
+#: parser produces one of these two, and ingest records each in its own table
+#: (`message_reaction`, `message_delete`).
+TouchKind = Literal["reaction", "delete"]
+
+
+@dataclass(frozen=True)
+class Touch:
+    """A reaction to, or a delete or unsend of, a message Nora recorded
+    (design/cognition-loop/20-observe.md §1, migration step 1).
+
+    Neither is a message. A reaction is metadata on somebody else's row, and
+    rendering a bare emoji as its own transcript line would add a turn that
+    never happened; a delete withdraws a row, it says nothing. So, like an
+    edit, each is recorded BESIDE the message it touches (`message_reaction`,
+    `message_delete`) and never as a `messages` row. They are Record items
+    because the withdrawal cascade, the cited-message cues and the tie need
+    them; nothing reads them to answer yet.
+
+    `target` names the message the way the platform does, exactly as an
+    edit's does: a handle (`message_id`) on WhatsApp, Instagram and Discord,
+    the author's sent-timestamp (`sent_ts`) on Signal. `target_author` is the
+    author the platform says the target has ("" where it does not say), used
+    only to PREFER that author when two rows share a Signal timestamp.
+
+    `emoji` is set for a reaction; `removed` marks a reaction being taken
+    back, which is recorded as its own row (append-only), never as a delete of
+    the earlier one.
+    """
+
+    kind: TouchKind
+    target: EditTarget
+    target_author: str = ""
+    emoji: str = ""
+    removed: bool = False
+
+
 @dataclass(frozen=True)
 class NormalizedMessage:
     platform: str                  # "signal"
@@ -150,6 +187,12 @@ class NormalizedMessage:
     # message it edits rather than as a message of its own
     # (design/message-edits/02 §4). Every parser leaves it None otherwise.
     edit_of: EditTarget | None = None
+    # Set when this "message" is a REACTION to, or a DELETE/UNSEND of, a
+    # recorded message (`Touch`). Its `body` is then "" and it is never a
+    # `messages` row: ingest records it beside the message it touches
+    # (design/cognition-loop/20-observe.md §1). Every parser leaves it None
+    # for an ordinary message or an edit.
+    touch: Touch | None = None
 
     def target(self) -> ConversationTarget:
         return ConversationTarget(

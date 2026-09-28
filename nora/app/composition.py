@@ -64,8 +64,10 @@ from nora.app.memory_routing import (
     build_workspace_router,
     workspaces_of_person,
 )
+from nora.app.source_health import AdapterHealthRecorder
 from nora.app.summons_inbox import SummonsInbox
 from nora.app.voice_events import VoiceEventConsumer
+from nora.app.wake import Floor, WakeEvaluator
 from nora.config import Config, DreamBudgetConfig
 from nora.doctrine.loader import Doctrine, DoctrineError, DoctrineStore
 from nora.domain.compute import ComputeJobStore
@@ -93,6 +95,7 @@ from nora.domain.ports import (
 )
 from nora.domain.quote_window import QuoteWindow
 from nora.domain.reminders import ReminderCaps, ReminderStore
+from nora.domain.signals import WakePolicy
 from nora.domain.tool_call_log import ToolCallLogStore
 from nora.engagement.pipeline import EngagementPipeline
 from nora.engagement.self_presence import PresenceReader
@@ -122,6 +125,8 @@ from nora.infra.sql.participation_state import SqlParticipationStateStore
 from nora.infra.sql.presence import PresenceStore
 from nora.infra.sql.reasoning_strip import SqlReasoningStripStore
 from nora.infra.sql.reminders import SqlReminderStore
+from nora.infra.sql.signals import SqlSignalStore
+from nora.infra.sql.source_health import SqlSourceHealthLog
 from nora.infra.sql.standing import SqlStandingStore
 from nora.infra.sql.tag_debounce import SqlTagDebounceStore
 from nora.infra.sql.tag_traces import SqlTagTraceStore
@@ -145,6 +150,7 @@ from nora.ingest.policy import (
 )
 from nora.ingest.relevance_gate import Completion as GateCompletion
 from nora.ingest.relevance_gate import RelevanceGate
+from nora.ingest.stages import signal as signal_stage
 from nora.ingest.stages import standing_event
 from nora.ingest.stickers import StickerReader
 from nora.instructions.dreamer import DreamerInstructions
@@ -1101,6 +1107,16 @@ class Dependencies:
     # and every voice verb fails closed.
     voice_hub: VoiceControllerHub | None
     voice_event_consumer: VoiceEventConsumer | None
+    # The cognition loop's wake evaluator in SHADOW (design/cognition-loop/20
+    # §3, migration step 1) — `None` under `[cognition] mode = "off"`, the
+    # shipped default. It fires nothing: `nora.app.wake`.
+    wake_evaluator: WakeEvaluator | None = None
+    wake_tick_seconds: float = 30.0
+    # Platform adapter health transitions as Record (20 §1). ALWAYS built:
+    # it is Record, not a subsystem that acts, and «was the source healthy
+    # for the span» must be answerable for the whole history, not only from
+    # the day an operator flipped a flag.
+    health_recorder: AdapterHealthRecorder | None = None
 
 
 def wall_clock() -> datetime:
@@ -2177,6 +2193,42 @@ async def build_dependencies(
                 else None
             ),
         )
+    # The cognition loop's signals (design/cognition-loop/20-observe.md §3,
+    # migration step 1): OFF under `[cognition] mode = "off"`, the shipped
+    # default. On (`shadow`), the ingest pipeline appends one signal per
+    # recorded person-authored item, and the evaluator below reads them and
+    # records would-wakes, firing nothing.
+    signal_wiring: signal_stage.Wiring | None = None
+    wake_evaluator: WakeEvaluator | None = None
+    if cfg.cognition.mode != "off":
+        signal_store = SqlSignalStore(engine)
+        signal_wiring = signal_stage.Wiring(
+            store=signal_store,
+            unit_of=_note_unit_of(allowlist),
+            self_ids=registry.self_aliases(),
+            reply_quiet_seconds=cfg.cognition.reply_quiet_seconds,
+            timeout_seconds=cfg.cognition.store_timeout_seconds,
+        )
+        wake_evaluator = WakeEvaluator(
+            store=signal_store,
+            units=unit_scopes,
+            policy=WakePolicy(
+                quiet_seconds=cfg.cognition.quiet_seconds,
+                cue_quiet_seconds=cfg.cognition.cue_quiet_seconds,
+                rollup_delay_seconds=cfg.cognition.rollup_delay_seconds,
+                batch_max=cfg.cognition.batch_max,
+                max_age_seconds=cfg.cognition.max_age_seconds,
+                cooldown_seconds=cfg.cognition.cooldown_seconds,
+                max_concurrent_sessions=cfg.cognition.max_concurrent_sessions,
+                session_seconds=cfg.cognition.shadow_session_seconds,
+            ),
+            metrics=metrics,
+            floors=tuple(Floor.parse(f) for f in cfg.cognition.time_floors),
+            tz=ZoneInfo(cfg.cognition.timezone),
+            floor_grace_seconds=cfg.cognition.floor_grace_seconds,
+            mode="shadow",
+            store_timeout_seconds=cfg.cognition.store_timeout_seconds,
+        )
     ingest = IngestPipeline(
         audit=audit, memory=memory, persons=persons,
         policy=policy, allowlist=allowlist, metrics=metrics, spawn=_spawn,
@@ -2186,6 +2238,7 @@ async def build_dependencies(
         comprehension=comprehension,
         language=cfg.speech.stt.language,
         standing_event_wiring=standing_event_wiring,
+        signal_wiring=signal_wiring,
     )
     # `web_search`/`web_fetch` (DEC-73/DEC-116) are wired ONLY when `[search]
     # enabled` AND the SELECTED backend's key is present — the `route`-keyless
@@ -4194,6 +4247,11 @@ async def build_dependencies(
         speaker=speaker,
         voice_hub=voice_hub,
         voice_event_consumer=voice_event_consumer,
+        wake_evaluator=wake_evaluator,
+        wake_tick_seconds=cfg.cognition.tick_seconds,
+        health_recorder=AdapterHealthRecorder(
+            log=SqlSourceHealthLog(engine), metrics=metrics,
+        ),
     )
 
 

@@ -9,9 +9,12 @@ here is a contract-test failure, not a judgment call. Field names below
 
 Dropped before a `NormalizedMessage` is built:
 
-- anything whose `kind` is not `message` or `edit` — `heartbeat`, `dropped`,
-  `reaction`, `unsend` and `typing` are listener-level or not ingested, and
-  this function still answers None for them so it stays total on its own;
+- anything whose `kind` is not `message`, `edit`, `reaction` or `unsend` —
+  `heartbeat`, `dropped` and `typing` are listener-level or not ingested, and
+  this function still answers None for them so it stays total on its own.
+  A `reaction` and an `unsend` become a `Touch` (`_parse_touch`), recorded
+  beside the message they touch and never as a message
+  (design/cognition-loop/20-observe.md §1);
 - `from_me` — R-12's first pass, never ingest Nora's own sends. Unlike
   WhatsApp this field is **structural rather than derived**: the bridge
   compares `sender_fbid` against `client.GetOwnFBID()` itself, so the adapter
@@ -71,7 +74,7 @@ from dataclasses import replace
 
 from ...domain.instagram_links import is_handle, link_shape, parse_link
 from ...domain.media import MediaRef, label_for, render_placeholder
-from ...domain.models import EditTarget, NormalizedMessage, Quote
+from ...domain.models import EditTarget, NormalizedMessage, Quote, Touch
 from .ids import conversation_id_for, fbid_form, is_person_mention
 
 log = logging.getLogger("nora.instagram.parser")
@@ -542,10 +545,60 @@ def _parse_edit(event: dict) -> NormalizedMessage | None:
     )
 
 
+def _parse_touch(event: dict) -> NormalizedMessage | None:
+    """A `kind: "reaction"` or `kind: "unsend"` event → a `Touch` on the
+    message it names (design/cognition-loop/20-observe.md §1).
+
+    A reaction carries its reactor (`sender_fbid`), the emoji, `removed` and
+    usually a time; `from_me` true is Nora's own reaction and is dropped
+    (R-12). An unsend is a message id and nothing else — `from_me` is null by
+    contract — so its sender is `""` and ingest attributes it to the target's
+    author (only an author can unsend on Instagram). A target naming nothing
+    is dropped."""
+    if event.get("from_me"):
+        return None
+    room_id = conversation_id_for(event.get("room_id"))
+    target = str(event.get("message_id") or "")
+    if not room_id or not target:
+        return None
+    kind = event.get("kind")
+    if kind == "reaction":
+        emoji = event.get("emoji")
+        if not isinstance(emoji, str) or not emoji:
+            return None
+        touch = Touch(
+            kind="reaction", target=EditTarget(message_id=target), emoji=emoji,
+            removed=bool(event.get("removed")),
+        )
+        sender = fbid_form(event.get("sender_fbid"))
+    else:
+        touch = Touch(kind="delete", target=EditTarget(message_id=target))
+        sender = ""
+    timestamp_ms = event.get("timestamp_ms")
+    return NormalizedMessage(
+        platform="instagram",
+        conversation_id=room_id,
+        conversation_type="group",
+        sender_id=sender,
+        sender_name=None,
+        timestamp=(
+            timestamp_ms
+            if isinstance(timestamp_ms, int) and not isinstance(timestamp_ms, bool)
+            and timestamp_ms > 0
+            else 0          # ingest stamps arrival (`nora.ingest.stages.touch`)
+        ),
+        body="",
+        raw=event,
+        touch=touch,
+    )
+
+
 def parse_event(event: dict) -> NormalizedMessage | None:
     try:
         if isinstance(event, dict) and event.get("kind") == "edit":
             return _parse_edit(event)
+        if isinstance(event, dict) and event.get("kind") in ("reaction", "unsend"):
+            return _parse_touch(event)
         if not isinstance(event, dict) or event.get("kind") != "message":
             return None                     # heartbeat / dropped are listener-level
         if event.get("from_me"):

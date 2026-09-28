@@ -35,6 +35,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from nora.domain.ports import SourceHealthLog
 from nora.domain.presence import PresenceFix
 from nora.infra.life360 import CircleRead, Life360Client, Member, ReadStatus
 from nora.infra.sql.presence import PresenceStore
@@ -87,8 +88,15 @@ class PresenceCollector:
         cadence_moving_seconds: float | None = None,
         cadence_still_seconds: float | None = None,
         metrics: Any = None,
+        health_log: SourceHealthLog | None = None,
     ) -> None:
         self._client = client
+        # Every background poll's outcome, one append-only row each
+        # (design/cognition-loop/20-observe.md §1): «the collector's recorded
+        # polls succeeded» is how a later step proves presence was healthy for
+        # an interval before reading an absence as a signal. `None` records
+        # nothing, which is what every test that predates it constructs.
+        self._health_log = health_log
         self._store = store
         self._circles = tuple(circles)
         self._cadence_seconds = cadence_seconds
@@ -154,6 +162,7 @@ class PresenceCollector:
             self._count("nora_presence_canary_total", reason="non_json")
         if read.status is not ReadStatus.OK:
             self._publish_liveness(circle.circle_id, now_ms)
+            await self._record_poll(circle.circle_id, read.status.value, now_ms)
             return read
 
         if not read.members:
@@ -166,6 +175,8 @@ class PresenceCollector:
             # the last real success, then stop before pretending a fix was written.
             self._count("nora_presence_canary_total", reason="empty_circle")
             self._publish_liveness(circle.circle_id, now_ms)
+            # Not `ok`: the read returned, and it is the breakage (the canary).
+            await self._record_poll(circle.circle_id, "empty_circle", now_ms)
             return read
 
         moving = False
@@ -190,7 +201,25 @@ class PresenceCollector:
 
         self._last_success_ms[circle.circle_id] = now_ms
         self._publish_liveness(circle.circle_id, now_ms)
+        await self._record_poll(circle.circle_id, ReadStatus.OK.value, now_ms)
         return read
+
+    async def _record_poll(self, circle_id: str, outcome: str, now_ms: int) -> None:
+        """One `source_health` row for this poll. Never raises and never
+        stops the cycle: the log answers False on a failed write, which is
+        counted here."""
+        if self._health_log is None:
+            return
+        try:
+            ok = await self._health_log.record(
+                source="presence", scope=circle_id, event="poll", outcome=outcome,
+                at_ms=now_ms,
+            )
+        except Exception:
+            log.exception("presence poll health row not written")
+            ok = False
+        if not ok:
+            self._count("nora_errors_total", stage="source_health")
 
     async def _refresh_places(self, circle: CircleSpec, *, now_ms: int) -> None:
         """Fetch the circle's saved places if due. NEVER raises.

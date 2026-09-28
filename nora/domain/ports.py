@@ -224,6 +224,7 @@ from nora.domain.models import (
     WeatherObservation,
 )
 from nora.domain.parking import StreetParking as StreetParking
+from nora.domain.signals import NewSignal, NewWake, UnitView
 from nora.domain.standing import Standing as Standing
 from nora.domain.utf16 import utf16_len
 
@@ -868,6 +869,27 @@ class RecordStore(Protocol):
         newest edit onto it instead (design/message-edits/01 §3)."""
         ...
 
+    async def append_reaction(
+        self, *, message_id: int, message: NormalizedMessage, person_id: str | None,
+    ) -> int:
+        """Record one reaction (or its removal) on the `messages` row
+        `message_id`, from `message.touch`; returns the new row's id.
+        Append-only: a removal is its own row, never an update or a delete of
+        the reaction it takes back (design/cognition-loop/10-tiers.md §8). The
+        reaction is Record, never a transcript line: no transcript read joins
+        it (20-observe.md §1)."""
+        ...
+
+    async def append_delete(
+        self, *, message_id: int, message: NormalizedMessage, person_id: str | None,
+    ) -> int:
+        """Record that the `messages` row `message_id` was deleted or unsent
+        on its platform; returns the new row's id. The row itself is NOT
+        touched and still renders: hiding it, and marking what cites it
+        `unsupported`, is the withdrawal cascade (migration step 2c). This is
+        the Record item that cascade will be fed from."""
+        ...
+
     async def unattributed(self, *, limit: int) -> list[UnattributedRow]: ...
 
     async def set_person_id(self, *, row_id: int, person_id: str) -> None: ...
@@ -883,6 +905,62 @@ class RecordStore(Protocol):
     async def stats(self) -> dict[str, Any]: ...
 
     async def aclose(self) -> None: ...
+
+
+@runtime_checkable
+class SignalStore(Protocol):
+    """The per-unit `signal` table and the wake log
+    (design/cognition-loop/20-observe.md §3; `nora.domain.signals`).
+
+    Append-only in both tables (10-tiers.md §8): a signal is never updated or
+    deleted, and a unit's watermark is its newest wake row, never a row
+    rewritten. Implementations: `nora.infra.sql.signals.SqlSignalStore` and
+    `nora.testing.signals.FakeSignalStore`, bound by
+    `tests/contract/test_signal_store_contract.py`.
+    """
+
+    async def append(self, *, signal: NewSignal, recorded_at_ms: int) -> int | None:
+        """Append one signal and return its id. A `time` signal is unique on
+        `(unit, ref)`: appending one already on record returns None and writes
+        nothing, which is what lets the evaluator raise a daily floor on every
+        tick without counting it twice."""
+        ...
+
+    async def view(
+        self, *, unit: str, mode: str, now_ms: int, limit: int,
+    ) -> UnitView:
+        """One tick's read for one unit: its newest wake in `mode`, the signals
+        pending against that wake's watermark and due by `now_ms` (ascending
+        id, at most `limit`), and the `recorded_at` of its newest person-
+        authored item (a `message` signal, `waits` included)."""
+        ...
+
+    async def record_wake(self, *, wake: NewWake, recorded_at_ms: int) -> int:
+        """Append one wake row; it is the unit's new watermark in its mode."""
+        ...
+
+    async def aclose(self) -> None: ...
+
+
+#: How a source's health row came about: a `poll` it made, or a `transition`
+#: of an adapter's state observed by the sampler.
+SourceHealthEvent = Literal["poll", "transition"]
+
+
+@runtime_checkable
+class SourceHealthLog(Protocol):
+    """Source health as Record (design/cognition-loop/20-observe.md §1: «every
+    collector poll and every platform adapter's up and down transitions are
+    recorded, so "every source healthy for the interval" is a query, not an
+    assumption»). Append-only. Never raises: health is recorded beside the
+    work it describes and must never stop it."""
+
+    async def record(
+        self, *, source: str, scope: str, event: SourceHealthEvent, outcome: str,
+        at_ms: int, detail: str = "",
+    ) -> bool:
+        """Append one row; False when it could not be written (logged)."""
+        ...
 
 
 @runtime_checkable

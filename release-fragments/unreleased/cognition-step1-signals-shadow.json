@@ -1,0 +1,18 @@
+{
+  "type": "feature",
+  "summary": "Nora now records reactions and deleted or unsent messages beside the messages they touch, records the health of her sources, and can run a shadow wake evaluator that logs when her future cognition loop would have woken, without acting.",
+  "details": [
+    "Reactions (and reactions taken back) and deletes or unsends are recorded on Signal, Instagram, Discord and WhatsApp as items attached to the message they touch. They never appear as transcript lines and never start a turn. The WhatsApp bridge now emits reactions and deletes for everyone.",
+    "Every presence collector poll and every platform adapter going up, down or degraded is recorded with its time, so a later step can tell a quiet person from a broken source.",
+    "With [cognition] mode = \"shadow\", every recorded message, changed edit, reaction and delete from a person appends a signal with deterministic cues (dates and times in English and Cantonese, amounts, keep instructions, RSVPs, place links, surprise phrases). Nora's own messages raise none, and a reply to her within reply_quiet_seconds is recorded but never wakes anything by itself.",
+    "In shadow the wake evaluator checks every unit about every 30 seconds with no model call, applies the wake table and its brakes (settled, strong cue, batch, max age, the 07:00 and 00:00 daily floors, cooldown, single flight, at most two at once) and records each would-wake with its reason and the signals it would consume. It starts nothing: the existing Dreamer passes keep running on their clocks.",
+    "New metrics: nora_signal_total{kind,cue}, nora_cognition_wake_total{reason,mode}, nora_cognition_wake_deferred_total{brake} and nora_signal_pending_age_seconds{unit}."
+  ],
+  "limitations": [
+    "[cognition] ships with mode = \"off\"; the operator turns shadow on at deploy, and the wake values are guesses until a week of would-wakes sizes them.",
+    "A deleted message still shows in the transcript: hiding it and what cites it is a later step.",
+    "Cues about a message a note or event cites, place names without a link, and time signals for note anchors, revisits and event dates are not computed yet.",
+    "A bulk delete on Discord is not recorded, and a Discord delete does not say who deleted, so it is attributed to the message's author.",
+    "The WhatsApp half needs the bridge image rebuilt as well as Nora's."
+  ]
+}

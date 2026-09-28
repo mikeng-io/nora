@@ -66,7 +66,8 @@ async def engine(_participation_db: str) -> AsyncIterator[Any]:
     finally:
         async with eng.begin() as conn:
             await conn.execute(
-                sa.text("truncate participation_window_state, messages, message_edit")
+                sa.text("truncate participation_window_state, messages, message_edit, "
+                        "message_reaction, message_delete")
             )
         await eng.dispose()
 

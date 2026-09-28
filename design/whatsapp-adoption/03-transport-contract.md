@@ -105,6 +105,29 @@ Field rules:
   at the original's position (`design/message-edits/`, 2026-09-23; before
   that it was ingested as its own row).
 
+### `reaction` and `delete` (2026-09-28, design/cognition-loop step 1)
+
+```json
+{"type": "reaction", "id": "3EB0F2", "chat_jid": "176569000000000000@g.us",
+ "is_group": true, "from_me": false, "sender_jid": "...", "sender_phone": "...",
+ "sender_lid": "...", "push_name": "Alice", "target_id": "3EB0F1",
+ "emoji": "👍", "removed": false, "timestamp_ms": 1756963200000}
+{"type": "delete", "id": "3EB0F3", "chat_jid": "...", "is_group": true,
+ "from_me": false, "sender_jid": "...", "sender_phone": "...",
+ "sender_lid": "...", "push_name": "Alice", "target_id": "3EB0F1",
+ "timestamp_ms": 1756963200000}
+```
+
+- `reaction` is Baileys' `reactionMessage`; `target_id` is the stanza id it
+  reacts to, and an EMPTY `emoji` is WhatsApp's «reaction removed»
+  (`removed: true`).
+- `delete` is a `protocolMessage` of type REVOKE (delete for everyone);
+  `target_id` names the deleted message. The sender may be an admin, not
+  the author.
+- Before this both fell through the empty-turn drop and were lost. Nora
+  records each BESIDE the message it touches, never as a transcript line
+  (`design/cognition-loop/20-observe.md` §1).
+
 ### `heartbeat`
 
 ```json
