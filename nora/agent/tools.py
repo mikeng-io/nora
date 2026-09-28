@@ -6588,8 +6588,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 "Each routine is how this person's past weeks went at these "
                 "hours, already worked out from their own movements: it is "
                 "their habit, the way a friend knows it. Evidence is there if "
-                "someone asks how sure you are. A place_ref can be handed to "
-                "route as the origin or destination."
+                "someone asks how sure you are."
             )
             _record(metrics, "routine_read", "ok", people=len(people))
             return {"status": "ok", "window": window, "people": people, "note": ok_note}
