@@ -11,8 +11,9 @@ edges:
 
 # 80 · Prior art
 
-Read from source on 2026-09-28: Honcho `2eb27b6` (v3.2.1), Graphiti `6b4b56f`,
-letta-code `e14d5e5`, mem0 `94c3fe9`; papers by URL. The operator asked
+Read from source on 2026-09-28: Honcho `2eb27b6` (v3.2.1, upstream; the
+deployment runs v3.1.2, §6), Graphiti `6b4b56f`, letta-code `e14d5e5`, mem0
+`94c3fe9`; papers by URL. The operator asked
 (2026-09-28) whether Honcho's deduction, induction and abduction, and
 Graphiti's model, should shape this design.
 
@@ -26,8 +27,8 @@ Graphiti's model, should shape this design.
 | **Generative Agents** (arXiv 2304.03442) | memory stream of observations → reflections citing their sources | reflection fires when summed importance passes a threshold | recency decay | — | recency + importance + relevance |
 | **Mem0** (arXiv 2504.19413) | messages → memories | the OSS release reversed its own LLM UPDATE/DELETE to **ADD-only**, and removed graph memory | — | — | semantic + BM25 + entity |
 
-Honcho's code has **no abductive level** (`DocumentLevel`, src/utils/types.py);
-its docs mention one, its code calls it hypothetical. Abduction and computation
+Honcho's code at `2eb27b6` has **no abductive level** (`DocumentLevel`,
+src/utils/types.py); its docs mention one. Abduction, computation and `said`
 are Nora's additions.
 
 ## 2. Mapping to Nora
@@ -43,8 +44,10 @@ are Nora's additions.
 | cognition session | dream pass | — | sleep-time run | reflection |
 | reasoning `told` / `deduced` / `induced` | `explicit` / `deductive` / `inductive` | — | — | — |
 | reasoning `abduced`, `computed` | none | none | — | — |
-| tension row | `contradiction` | invalidated edge | — | — |
-| lineage | `source_ids` | `episodes[]` | git history | cited indices |
+| contradiction kept as a row ([50](50-character-and-standing.md) §4) | `contradiction` | invalidated edge | — | — |
+| tension row (operator-only) | none | none | — | — |
+| citations | `source_ids` | `episodes[]` | git history | cited indices |
+| lineage (who may see a row) | none | none | — | — |
 
 **The pattern is confirmed.** Letta's sleep-time agent and Honcho's dream pass
 both keep consolidation off the live path and give the background agent sole
@@ -62,7 +65,7 @@ signals rather than a timer.
 | Graphiti *episode* | a raw ingested item | Record | Nora's episode is Tulving's: a bounded happening ([25](25-rollup.md)) |
 | Graphiti *fact* | an edge | retired word (#115) | never imported |
 | Graphiti *community* | a clustered group | rooms and units are configured | culture is never "community" |
-| Letta *core memory*, *block* | always-on context | "memory" is Honcho; "block" is a `_BLOCKS` row | say "context block" |
+| Letta *core memory*, *block* | always-on context | "memory" is Honcho; "block" is a `_BLOCKS` row | theirs is always "Letta block"; Nora's is "block" |
 | *reflection* (several) | a background pass | cognition | descriptive only |
 
 ## 4. Adopted
@@ -71,21 +74,23 @@ signals rather than a timer.
    message deleted, the PII scrub, a face label removed, a person leaving a
    unit — every derived revision whose citation chain reaches it is marked
    `unsupported`, stops rendering, and goes on the next agenda for
-   re-derivation. Citations already exist; this is what makes them pay.
+   re-derivation. Code walks a `citation` edge table written with every
+   revision; citations already exist, and this is what makes them pay.
 2. **Transaction time everywhere, valid time only where intrinsic.** Revision
    chains already give when a row was written. `valid_from`/`valid_to` belong
    to Rollup episodes (code computes them) and Register rows (dated by nature),
    **not** to Character or Standing: the knowledge tier measured `valid_to`
-   at 0 writes out of 5, because a friends' circle has no authority that
+   at 0 writes out of 5, because a unit of friends has no authority that
    retracts (design/dreamer-agent-loop/20-knowledge-tier.md §0).
 3. **Decay and reinforcement** (ACT-R activation, Generative Agents recency,
    Honcho `times_derived`). Every Character and Standing line carries
    `last_supported_at` (its newest cited Record time) and `support_count`;
    the prompt shows the age, and code puts "account stale" on the agenda.
-4. **Absolute dates, and no re-recording** (Honcho's deriver, Graphiti, Letta's
-   reflection rules). Write verbs refuse relative time words in date fields,
-   and a Register or Character line that only restates one Record row is
-   refused: the Record is already searchable.
+4. **Absolute dates, and re-recording measured** (Honcho's deriver, Graphiti,
+   Letta's reflection rules). Write verbs refuse relative time words in date
+   fields. A line that only restates one Record row is counted by the assess
+   pass, not refused: a memo is such a restatement by construction
+   ([30](30-cognition.md) §3).
 5. **Hybrid search for `record_query`**: lexical (pg_trgm: Postgres's default
    text search does not segment Cantonese) plus vector plus filters (person,
    room, span), fused by reciprocal rank, recency as the tiebreak.
@@ -100,7 +105,7 @@ signals rather than a timer.
 ## 5. Refused
 
 - **Model-extracted triples or an entity graph** (Graphiti, Mem0's graph,
-  Cognee): the knowledge tier, #115 — 5 facts in 11 days, predicates that held
+  Cognee): the knowledge tier, #115 — 5 rows in 11 days, predicates that held
   their own answer, every read `nothing_found`. Mem0 removed its own graph
   memory.
 - **Rewriting or deleting old rows on the write path** (Mem0's old
@@ -118,13 +123,14 @@ signals rather than a timer.
 
 Both Honcho's dream pass and Nora's cognition would induce a behavioural
 account of each person from the same messages, and put both in one prompt
-(`peer_history` beside `character`). Honcho builds her self card from her own
-messages, which rule 4 of [10](10-tiers.md) §2 forbids as evidence. And Honcho
-cannot read presence, social items or perceptions, or model a room.
+(`peer_history` beside a `character_read` result). Honcho builds her self
+card from her own messages, which rule 4 of [10](10-tiers.md) §2 forbids as
+evidence. And Honcho cannot read presence, social items or perceptions, or
+model a room.
 
 | owner | holds |
 |---|---|
-| **Honcho** | what a person said about themselves: `explicit` conclusions, the peer card, `remember`. In Nora's terms, *told* evidence about one person |
+| **Honcho** | what a person said about themselves: `explicit` conclusions, the peer card, `remember`. In Nora's terms, a hint of what one person told; never a citation |
 | **Nora** | everything induced, multi-source, collective or about Nora: Character (all four entities), Standing, Register, Rollup |
 
 1. **Scoped per unit — done, DEC-214 (#603, #605, live 2026-09-28).** Nora's
@@ -132,9 +138,10 @@ cannot read presence, social items or perceptions, or model a room.
    workspace (the person-model boundary), each unit is one Honcho named scope
    inside it, and room and unit reads pass that scope. Live: workspace 67
    (friends, wedding) on Honcho `nora`; ridgeline on `nora-ridgeline`. The peer
-   card stays unscoped inside its workspace (Honcho v3.1.2's card endpoint
-   takes no scope), so it can mix the units of one workspace, never two
-   workspaces.
+   card stays unscoped inside its Honcho workspace (Honcho v3.1.2's card
+   endpoint takes no scope), so it can mix the units of one workspace, never
+   two workspaces; that is why it is never Character evidence
+   ([50](50-character-and-standing.md) §5).
 2. **Push only told conclusions and the peer card**, filtered client-side to
    `explicit`. Once Character · person and Character · Nora ship, Honcho's
    deductive and inductive conclusions and the self card leave the prompt.

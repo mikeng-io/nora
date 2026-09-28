@@ -1,7 +1,7 @@
 ---
 type: design
-title: "Map — every store, every context block, every read tool, and how they relate"
-description: "The kinds of state (authored, live, observed, computed, derived by Nora, derived by memory), each store in each; which context is pushed into every prompt as a small index and which is pulled by a read tool; who writes what; and the graph, laid out as the operator's lake, transform, warehouse, dashboard, action."
+title: "Map — every store, every block, every read tool, and how they relate"
+description: "The kinds of state (authored, live, observed, computed, derived by Nora, derived by memory, operator-only), each store in each; which context is pushed into every prompt as a small index and which is pulled by a read tool; who writes what; and the graph, laid out as the operator's lake, transform, warehouse, dashboard, action."
 tags: [nora, tiers, map, context, prompt-blocks, read-tools, graph, rollup]
 timestamp: '2026-09-28'
 edges:
@@ -17,11 +17,11 @@ edges:
 | kind | what makes it this kind | stores | written by |
 |---|---|---|---|
 | **Authored** | a person decided it | doctrine (`nora/doctrine/`); the Dreamer doctrine and skills; `<room>` and `policy.toml`; `identity.toml`; reference photos for faces ([60](60-faces.md) §2) | the operator |
-| **Live** | computed for this turn, never stored | the clock; where she is (which platforms are up); the tool catalogue | code, per turn |
-| **Record** | it happened and was seen | messages; her own sends and decisions; presence fixes; social items and edges; play samples; perceptions (what media shows, whose face); face labels and templates | code (ingestion; the decision log and the fire path for her own acts) |
-| **Rollup** | code computed it from the Record | episodes: stay, trip, co-location, outing, play session, daybook · aggregates: place, rhythm, anomaly, route, tie, play profile ([25](25-rollup.md)) | code only |
+| **Live** | computed for this turn, never stored | the clock; her platform status (which platforms are up); the tool catalogue | code, per turn |
+| **Record** | it happened and was seen | messages with edits, deletes and reactions; her own sends and decisions; presence fixes and collector polls; social items; play samples; perceptions (what media shows, whose face); face labels and templates; `character_dispute` items | code (ingestion; the decision log and the fire path for her own acts; the tag path's `face_label` and `character_dispute`, authored by the person) |
+| **Rollup** | code computed it from the Record | episodes: stay, trip, co-location, face co-appearance, outing, play session, daybook · aggregates: place, occupancy, rhythm, corridor and trip speeds, tie, play profile ([25](25-rollup.md)); anomalies are computed on read, not stored | code only |
 | **Register**, **Character**, **Standing** | cognition concluded it | Register: note, memo, event · Character: person, room (culture), unit (culture), Nora · Standing: room, unit, person | cognition; the tag path for Register and room Standing |
-| **memory** | Honcho concluded it | representation (Nora → person), self card (Nora → Nora), `remember` conclusions | Honcho; `remember` |
+| **memory** | Honcho concluded it | representation (Nora → person), self card (Nora → Nora), peer card, `remember` conclusions | Honcho; `remember` |
 | **Operator-only** | for the operator, never for her | tension rows ([55](55-self.md) §4) | cognition, via `character_revise` |
 
 ## 2. The operator's analogy, laid out
@@ -33,54 +33,53 @@ edges:
 | transform, deterministic | **Rollup** ([25](25-rollup.md)) |
 | transform, judged | **cognition** ([30](30-cognition.md)) writing Register, Character, Standing |
 | warehouse | Rollup + Register + Character + Standing |
-| row-level security | **lineage** and `exclude_persons` ([10](10-tiers.md) §3) |
+| row-level security | **lineage** and `exclude_persons`, applied at assembly ([10](10-tiers.md) §3) |
 | dashboard | small indices pushed into every prompt (§3) |
 | queries | read tools (§4) |
-| action | the act step and the fire path |
+| action | the act verb and the fire path |
 
 ## 3. Context pushed into the prompt: small indices only
 
 Pushed blocks are few and short, because every per-turn line costs every turn
 and a row that varies per turn ends the cached prefix's hit rate (the comment
 on `culture` in `_BLOCKS`, `nora/agent/prefill.py`). Everything else is pulled
-(§4). Every pushed block carries its age.
+(§4). Every pushed block carries its age, and renders each row, field or
+section only where its lineage passes for the room ([10](10-tiers.md) §3).
 
 | block | tier | subject | pushed into | size |
 |---|---|---|---|---|
 | doctrine (system prompt) | Authored | Nora | every turn | — |
-| `<room>` (tag and fire: `room_is` on `<presence>`) | Authored | a room | tag, fire, cognition | one line |
-| `tool_catalogue`, `presence` (where she is), now | Live | — | tag, fire | — |
+| `<room>` | Authored | a room | proactive only today (`this_room_is` on `<presence>`, `nora/language/proactive.py`); tag and fire turns do not get it (`prefill.py` calls `render_presence` without `room_is`); note-candidates and culture get `description_for`. Cognition gets it for every bound room | one line |
+| `tool_catalogue`, `presence` (her platform status, not presence fixes), now | Live | — | tag, fire | — |
 | `group_transcript` | Record | a room | tag, fire | window |
 | `loop_decisions` | Record | the unit | fire (participation, proactive), cognition | recent |
 | `notes` | Register · note | the unit | tag, fire, cognition | titles |
 | **`memos`** (new) | Register · memo | the unit | tag, fire, cognition | titles |
-| **`events`** (new) | Register · event | the unit | tag, fire, cognition | next 14 days and last 48 hours, one line each, with reasoning and `as_of` |
+| **`events`** (new) | Register · event | the unit | tag, fire, cognition | next 14 days and last 48 hours, one line each, with each field's mode and `as_of` |
 | `culture` | Character · room | a room | tag, fire, cognition | capped |
-| **`self`** (new) | Character · Nora | Nora | every turn | capped in lines |
+| **`self`** (new, step 8) | Character · Nora | Nora | every turn, after doctrine; only sections in doctrine rows whose latitude is open ([55](55-self.md) §3) | capped in lines |
 | `standing`, `standing_working_set` | Standing · room | a room | tag, fire | as today |
-| `self_card` | memory | Nora | tag, fire | as today |
-| `peer_card`, `peer_history`, `people_in_window` | memory | a person; the people in the window | tag; fire | as today |
-
-Every block applies lineage per room before it renders a row.
+| `self_card` | memory | Nora | tag, fire; until step 8 | as today |
+| `peer_card`, `peer_history`, `people_in_window` | memory | a person; the people in the window | tag, fire | as today |
 
 ## 4. Context pulled by a read tool
 
 | tool | reads | returns | new? |
 |---|---|---|---|
-| `record_query(scope, from, to, author?, text?)` | the Record | messages and items in a span; lexical search by pg_trgm, measured on Cantonese (design/dreamer-agent-loop/24-embedding-seam.md §2) | **new**: the Record has no search today |
-| `rollup_read(kind, subject, span)` | the Rollup | episodes and aggregates | **new** |
-| `where_been` | the Rollup (presence) | stays, places, rhythm | exists; tag path |
-| `note_read`, `note_search` | Register · note | a note body; matching notes | exists |
+| `record_query(scope, from, to, author?, text?)` | the Record | messages and items in an interval; lexical search by pg_trgm, measured on Cantonese (design/dreamer-agent-loop/24-embedding-seam.md §2) | **new**: Postgres messages have no text index today; Honcho's search (`search_memory`, `search_memory_workspace`) is memory |
+| `rollup_read(kind, subject, interval)` | the Rollup | episodes and aggregates | **new** |
+| `where_been`, `routine_read` | the Rollup (presence) | stays, places, rhythm; a forecast from the rhythm (DEC-215) | exist; tag path |
+| `note_read`, `note_search` | Register · note | a note body; matching notes | exist |
 | `memo_read` | Register · memo | a memo body | **new** |
-| `event_search(place?, person?, span?)` | Register · event | events | **new**; `list_events` is per room, filtered by status only |
+| `event_search(place?, person?, interval?)` | Register · event | events | **new**; `list_events` is per room, filtered by status only |
 | `character_read(entity)` | Character | an account | **new**; instead of an always-on person block |
-| `standing_read(subject)` | Standing | a unit's or a person's Standing | **new** |
-| `social_items(person, span)` | Record · social | ingested stories, posts, reels with their perceptions | **new**; `instagram_read` stays the live fetch |
-| `about`, `ask_memory`, `search_memory` | memory | Honcho | exists |
+| `standing_read(subject)` | Standing | a room's, the unit's or a person's Standing | **new** |
+| `social_items(person, interval)` | Record · social | ingested stories, posts, reels with their perceptions | **new**; the live `instagram_*`, `x_*`, `linkedin_*` reads stay on the tag path and are withheld from cognition ([20](20-observe.md) §2) |
+| `about`, `ask_memory`, `search_memory`, `search_memory_workspace` | memory | Honcho | exist |
 
-Every read tool applies lineage for the room the turn is in. Cognition, which
-has no room, reads freely within its unit and applies lineage at the act step,
-before anything leaves.
+Every read tool applies lineage for the room its turn or agenda item is bound
+to. Cognition has no room of its own: each agenda item binds one, and that
+item's room-scoped reads resolve through it ([30](30-cognition.md) §1).
 
 ## 5. The graph
 
@@ -95,21 +94,24 @@ flowchart BT
   CHR[(CHARACTER<br/>person · room · unit · Nora)]
   STD[(STANDING<br/>room · unit · person)]
   MEM[(memory · Honcho)]
+  TEN[(tension · operator only)]
   DOC[[DOCTRINE · authored]]
   COG{{COGNITION<br/>one session per unit}}
   TAG{{tag turn · reflex}}
-  FIRE>fire path: speak, remind, ask]
+  FIRE>fire path: a due reminder]
 
   SRC -->|ingestion + perception, code| REC
   REC -->|code| ROL
   REC -->|signals| COG
   ROL -->|signals: co-location, deviation, play| COG
-  REC -.feeds.-> MEM
+  REC -->|feeds| MEM
   COG -->|write verbs| REG & CHR & STD
-  COG -->|act verbs| FIRE
+  COG -->|character_revise| TEN
+  COG -->|act verb: remind| FIRE
   TAG -->|write verbs| REG
   TAG -->|debrief: standing_revise| STD
-  TAG --> FIRE
+  TAG -->|face_label, character_dispute| REC
+  TAG -->|remind| FIRE
   FIRE -->|her sends are observed| REC
   ROL -. cites .-> REC
   REG -. cites .-> REC & ROL
@@ -125,13 +127,12 @@ which only point down. What she says becomes Record and raises no signal
 
 ## 6. Who may write what
 
-| writer | Record | Rollup | Register | Character | Standing | memory | doctrine |
-|---|---|---|---|---|---|---|---|
-| ingestion (code) | **yes** | — | — | — | — | feed | — |
-| rollup (code) | — | **yes** | — | — | — | — | — |
-| cognition | — | — | **yes** | **yes** | **yes** | — | **never** ([55](55-self.md) §3) |
-| tag turn | — | — | **yes** | — | room, via debrief | `remember` | — |
-| operator | — | — | via Nora | — | — | — | **yes** |
+| writer | Record | Rollup | Register | Character | Standing | tension | memory | doctrine |
+|---|---|---|---|---|---|---|---|---|
+| ingestion (code) | **yes** | — | — | — | — | — | feed | — |
+| rollup (code) | — | **yes** | — | — | — | — | — | — |
+| cognition | — | — | **yes** | **yes** | **yes** | via `character_revise` | — | **never** ([55](55-self.md) §3) |
+| tag turn | `face_label`, `character_dispute` | — | **yes** | — | room, via debrief | — | `remember` | — |
+| operator, or the subject | face labels (portal, [60](60-faces.md) §2) | — | via Nora | — | — | — | — | operator only |
 
-Tension rows ([55](55-self.md) §4) are written by cognition through
-`character_revise` and read only by the operator.
+Tension rows are read only by the operator ([55](55-self.md) §4).

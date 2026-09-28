@@ -1,7 +1,7 @@
 ---
 type: design
 title: "Cognition — one session per unit per wake: orient, decide, act in one context"
-description: "What the session is handed (the situation and the agenda), what it holds (every read tool, write verbs per tier, act verbs through the fire path, a closing verb), how code keeps every write honest, skills instead of one long prompt, the assess pass after, and what stays outside the loop."
+description: "What the session is handed (the situation and an agenda whose items each bind a room), what it holds (every permitted read, write verbs per tier, one act verb whose rows the fire path composes in the target room, a closing verb), what code enforces on every write and act and what the assess pass measures instead, skills injected by code, budgets, and what stays outside the loop."
 tags: [nora, cognition, ooda, agent-loop, strands, write-verbs, proactive, skills]
 timestamp: '2026-09-28'
 edges:
@@ -23,17 +23,34 @@ Built once per session, in code, before any model call:
 - **The situation.** The Record items that raised the pending signals, each
   with its author, its room, **its age**, its cues and its perception (what a
   photo shows, whose faces, with confidence); the Rollup rows that raised
-  signals (a co-location started, a deviation); the index lines of the
-  Register rows those items touch; the unit's clock in HK time; how long
-  since the last session. Index lines, not bodies: Character, Standing and
-  Register bodies are pulled with read tools when the session needs them,
-  never pushed ([15](15-map.md) §3–4).
+  signals; the index lines of the Register rows those items touch; the unit's
+  clock in HK time; how long since the last session. Index lines, not
+  bodies: Register, Character and Standing bodies are pulled with read tools
+  when the session needs them, and never pushed, except the capped `culture`
+  and `self` blocks ([15](15-map.md) §3–4).
 - **The agenda.** One item per thing that needs attention, computed by code
   from the signals: *room R has 23 new messages*; *event E's place is named
-  in 3 messages since it was set*; *a co-location of 3 members began at a place at 20:05*; *P's week deviates from their rhythm*;
-  *note N's anchor passed*; *4 new story frames from 2 members*; *the unit's
-  culture was last revised 6 days ago*. An item states **what happened**,
-  never what to conclude from it, and never a menu of possible actions.
+  in 3 messages since it was set*; *a co-location of 3 members began at a
+  place at 20:05*; *P's week deviates from their rhythm*; *note N's anchor
+  passed*; *4 new story frames from 2 members*; *the unit's culture was last
+  revised 6 days ago*. An item states **what happened**, never what to
+  conclude from it, and never a menu of possible actions. Code orders items
+  by computed surprise ([80](80-prior-art.md) §4) and hands at most
+  `max_items`; the rest wait for the next session.
+
+**Every item binds one room**: the room its signal came from, or, for an item
+with none (a Rollup or `time` signal), the unit's home room (39 D2). That
+item's room-scoped reads resolve through its room (R-21), and every read
+returns only what its room may be shown ([10](10-tiers.md) §3). Which tools a
+unit-keyed session may hold at all stays decided by `UNIT_SAFE_TOOLS` and
+`tool_subset_faults` (`nora/agent/dreamer.py`).
+
+One context holds several items' reads, so a line written for one item can
+carry what was read for another. Code bounds this through citations (every
+line cites, and its lineage is computed from what it cites); the assess pass
+measures whether a citation supports its line (§6). Whether the unit is the
+read boundary for all its rooms' transcripts is open until step 0
+([70](70-migration.md) §4).
 
 An agenda with no items is no session: zero model calls, the rule every
 adaptor keeps today.
@@ -42,83 +59,156 @@ adaptor keeps today.
 
 | class | verbs | leaves the session how |
 |---|---|---|
-| **read** | every read tool the registry admits (`read_only_tools()`), plus the warehouse queries of [15](15-map.md) §4: `record_query`, `rollup_read`, `event_search`, `memo_read`, `character_read`, `standing_read`, `social_items`; presence, `route`, places, memory, web, `media_fetch` | returns into context |
-| **write** | one family per tier: Register (`note_create`, `note_update`, `memo_write`, `memo_withdraw`, `event_propose` (status `staged` or `proposed`), `event_revise`, `event_set_status`), Character (`character_revise`), Standing (`standing_revise`) | code validates, then commits ([§3](#3-code-keeps-every-write-honest)) |
-| **act** | `remind` (a reminder at a chosen time), `speak` (a message into a room of the unit now), `ask` (a question to a person, in a room of the unit, e.g. who is in a photo, [60](60-faces.md)) | a fire occasion through `FirePath.speak` in `nora/app/fire.py` — the fire path, one of the two senders (R-1b), with its egress screens, rate cap and attribution |
-| **close** | `close(item, outcome)` | ends one agenda item; the session ends when every item is closed or the budget is spent |
+| **read** | every read tool the registry admits (`read_only_tools()`) except the live social reads ([20](20-observe.md) §2), plus the warehouse queries of [15](15-map.md) §4: `record_query`, `rollup_read`, `event_search`, `memo_read`, `character_read`, `standing_read`, `social_items` | returns into context, filtered by the item's room |
+| **write** | one family per tier: Register (`note_create`, `note_update`, `memo_write`, `memo_withdraw`, `event_propose` (status `staged` or `proposed`), `event_revise`, `event_set_status`), Character (`character_revise`), Standing (`standing_revise`); each takes `base_revision_id` | code validates, then commits (§3) |
+| **act** | `remind(at, room, brief)`, the one act verb | a reminder row; the fire path composes it when due |
+| **close** | `close(item, outcome)` | ends one agenda item |
 
-Write verbs are shared with the tag path: `note_create`/`note_update` as
-today, and the tag path's event tools (`create_event`, `update_event`,
-`cancel_event`) are renamed to the event verbs above at step 2, so a note or
-event written by cognition and one written on a tag turn pass the same
-validator. The act step is the proactive adaptor's decide and act
-turns made one: deciding *whether and when* to speak happens in the same
-context that just revised the event it would speak about.
+**Every act is a reminder** (DEC-162's decide/compose split, kept). Cognition
+decides and writes a reminder carrying a **brief**: an intent (`tell` or
+`ask`) and the subject rows (Register ids, Rollup keys, Record ids), never
+prose. "Speak now" is a reminder due now; "ask" is a brief whose intent is
+`ask`. When it comes due, the fire path composes the words inside the target
+room, under that room's guards: the brief's rows are assembled through the
+room's lineage and the live DisclosureGuard, the room's `proactive` flag
+applies, and `max_pending_per_requester` caps what is pending. There is no
+separate speak or ask send path. The senders stay those of R-1b: the tag
+path, the fire path and, since DEC-212, the public summons.
 
-## 3. Code keeps every write honest
+**The grant.** The runtime's ceiling today is "may look, may not act": every
+read verb and one act verb (DEC-162). A new DEC at step 0 extends it by
+granting named **write** verbs through `AdaptorGrant`; write verbs are not act
+verbs, and `remind` stays the only act verb.
 
-The session is one agent; judging its writes is not left to it. Every write
-verb, before it commits:
+**Closing.** An item closes only with a write that cites it, or with a reason
+from a closed list (`no_change`, `waiting`, `covered`), counted per reason. An
+item left open when the session ends, or closed `waiting`, returns to the next
+agenda with a strike; at `max_strikes` code closes it `struck` and counts it,
+so an item that can never close does not spend every session.
 
-1. **Citations resolve** to ids this session was shown or fetched: Record
-   ids, plus lower-tier rows where [10](10-tiers.md) §2 rule 1 allows them. At
-   least one is a Record id (rule 2).
-2. **Citations point down** and **Nora's own rows ground nothing** they may
-   not ground ([10](10-tiers.md) §2).
-3. **The kind's schema holds** ([12](12-schemas.md)): fixed sections, cited
-   lines, absolute dates only (a relative time word in a date field is
-   refused), refused never repaired.
-4. **No re-recording**: a Register or Character line that only restates one
-   Record row is refused; the Record is already searchable
-   ([80](80-prior-art.md) §4).
-5. **Provenance is stamped**: session id, trace id, model, doctrine hash.
-6. **History is kept**: every derived row is a revision chain; nothing is
-   overwritten, so a wrong inference is one revision away from right.
+**Shared with the tag path.** `note_create`/`note_update` as today. The tag
+path's event tools (`create_event`, `update_event`, `cancel_event`,
+`rsvp_event`, `list_events`) move to the event verbs and `event_search` at
+step 2b, each rename measured with `tool_selection` before and after (ADR
+0015), so a note or event written by cognition and one written on a tag turn
+pass the same validator.
 
-A refused write is answered to the model with its reason (R-27
-`unavailable`), counted, and never silently dropped.
+**Shadow before cut-over.** Until step 4, every reminder cognition writes is
+mirrored to a review channel and held, as participation's shadow is
+(`nora/app/fire.py`).
+
+## 3. What code enforces, and what is measured instead
+
+The session is one agent; judging its writes is not left to it.
+
+**Enforced by code on every write, before commit.** A failure is refused with
+R-27 `refused` and a named reason (ADR 0009), answered to the model so it can
+rewrite, and counted by rule; never silently dropped.
+
+1. **Citations resolve** to ids this session was shown or fetched; at least
+   one is a Record id ([10](10-tiers.md) §2 rule 2).
+2. **Citations point down** ([10](10-tiers.md) §2 rule 1).
+3. **Authorship.** Nora's own rows ground only `said` Standing lines and her
+   own Character paired with responses; a write whose only citations are
+   non-member social text is refused ([20](20-observe.md) §2).
+4. **Schema** ([12](12-schemas.md)): headings, cited lines, absolute dates (a
+   relative time word in a date field is refused).
+5. **Mode.** The mode is one the tier allows, capped at `abduced` where it
+   rests on presence fixes or a face older than the freshness threshold
+   ([10](10-tiers.md) §4).
+6. **Concurrency.** A `base_revision_id` that is not the current revision is
+   refused `stale_base`, with the current row.
+7. **Disclosure columns.** Lineage is computed from the citations; a cited
+   message carrying a surprise cue makes `exclude_persons` mandatory, and it
+   is unioned down the citation chain ([10](10-tiers.md) §3).
+8. **Subjects.** `character_revise` for a person refuses anyone not a listed
+   person of the unit's rooms; nothing from the peer card is Character
+   evidence ([50](50-character-and-standing.md) §5).
+9. **Egress screen.** Every write passes `dream_screen` before it is stored.
+   A memo body is exempt from its key-shape check and renders normally:
+   anything said in a group is already shared with that group.
+10. **Provenance and history.** Session id, trace id, model and doctrine hash
+    are stamped; every Register, Character and Standing row is a revision
+    chain, so a wrong inference is one revision away from right.
+
+**Enforced by code on every act** — the general guards, and the only ones:
+
+- disclosure at assembly, re-run when the reminder fires;
+- rate caps: a daily act cap per room and per person, and the pending
+  ceiling;
+- dedupe: one pending act per (agenda item, addressee);
+- a value that is only abduced goes out as a question: code sets the brief's
+  intent to `ask`;
+- an act whose only citations are non-member social text is refused;
+- cognition never cancels a reminder a person set; only a tag-path revision
+  does, and a reminder about a row is cancelled before it fires when that
+  row is retired or revised on the tag path (DEC-162 D11);
+- a cognition revision that moves a `told` event to `cancelled`, `evicted` or
+  `lapsed` without `told` evidence keeps it rendering for 48 hours, flagged
+  "cancelled?".
+
+**Deviation is a signal, not a rule.** No gate is specific to it. It enters
+her context like any other signal, and whether and how to act on it is her
+judgement from everything she can read.
+
+**Measured by the assess pass, not enforced** (§6): whether a citation
+supports its claim; whether `told` and `abduced` were assigned correctly;
+whether a Character line is true of the Record it cites; and the re-recording
+rate (lines that only restate one Record row; a memo is a one-row
+restatement by construction, so this is a metric, never a refusal).
 
 ## 4. Skills, not one long prompt
 
 The base prompt is the Dreamer doctrine (what the runtime is), the situation
-and the agenda. What each kind of work asks for — how to judge a note, when
-a plan has moved, what a culture account is — lives in a **skill** the session
-loads when its agenda holds that kind of item (ADR 0016's mechanism). The
-adaptors' objectives (`note-candidates.md`, `note-curation.md`,
-`note-merge.md`, `culture.md`, `proactive.md`) become those skills;
-`standing-debrief.md` stays the debrief's. A session that only sees chatter
-never loads the note skill's 280 lines.
+and the agenda. What each kind of work asks for — how to judge a note, when a
+plan has moved, what a culture account is — lives in a **skill**. **Code
+injects the text of the skill for each agenda kind present**, after the
+doctrine and in a fixed order, so the doctrine prefix stays cached and only
+the skills vary. `create_dream_agent` (`nora/agent/factory.py`) has no
+`skills_dir`, by design, and ADR 0016 (the skill policy) is still proposed:
+the injection is code, not SDK skill loading. The adaptors' objectives
+(`note-candidates.md`, `note-curation.md`, `note-merge.md`, `culture.md`,
+`proactive.md`) become those skills; `standing-debrief.md` stays the
+debrief's. A session that only sees chatter never loads the note skill's 280
+lines. `tool_selection` is measured on the cognition catalogue, on the
+runtime model, before step 3.
 
 ## 5. Budgets
 
-Per session: turns, total and output tokens, a wall clock, and a cap on tool
-calls over every verb together, all in `DreamGuard`, all in code, none stated
-in the prompt (a model told of a cap declines work, measured on the proactive
-pass). A session that runs out closes nothing further; its open items stay
-pending with their signals and head the next session's agenda.
+Per session, in code and never stated in the prompt (a model told of a cap
+declines work, measured on the proactive pass): `AdaptorBudget` holds turns,
+total and output tokens and the timeout, one wall clock over the whole
+session; `DreamGuard` holds the per-tool, memory and pass ledgers; `max_items`
+caps the agenda. A session that runs out closes nothing further; its open
+items return with a strike (§2).
 
-## 6. The assess pass
+## 6. The assess pass and data quality
 
 Judging an act belongs outside it (design/dreamer-agent-loop/17-failure-classes.md
-§2). After a session, off any live path:
+§2). Both ship at step 3, before cut-over ([70](70-migration.md)).
 
 - **The strong measure is people.** A Register row a person later corrects
-  ("no, we went to C"), a message Nora sent that nobody answered, a question
-  she asked twice: each is counted against the session that wrote it
+  ("no, we went to C"), a reminder nobody answered, a question she asked
+  twice: each is counted against the session that wrote it
   (`nora_cognition_corrected_total{tier}`).
+- **Labelled corpora.** Per capability (event derivation, note, memo, room
+  Character), at least 40 labelled cases including negatives (a joke, a
+  hypothetical, another unit's plan, a plan already cancelled), with
+  precision and recall gates, a false-derivation rate and an unasked-act rate.
 - **A cheap reader** samples finished sessions for writes whose citations do
   not say what the write claims. It reports; it never edits.
 - **Data-quality checks, nightly, in code** (the analogue of warehouse tests):
-  citations that no longer resolve; one happening recorded as two events
-  across rooms; a Rollup row a rebuild computes differently; a happened
-  event whose place differs from its outing's; sections past their age
-  horizon; an induced line citing no aggregate. Each a counter
+  citations that no longer resolve; one happening written as two events
+  across rooms; a Rollup row a rebuild computes differently; a happened event
+  whose place differs from its outing's; sections past their age horizon; an
+  induced line citing no aggregate; a row with empty lineage. Each a counter
   (`nora_dq_failures_total{check}`).
-- **Rebuild, not only fold.** Every Character account is periodically
-  rebuilt from the Rollup and a cited window of the Record, and the rebuild
-  is diffed against the folded chain; the difference is the drift metric.
-  Folding alone was measured to drop what it should keep (Standing dropped
-  open plans, #565).
+- **Rebuild, not only fold.** Every Character account is periodically rebuilt
+  from the Rollup and a cited window of the Record, and the rebuild is
+  diffed against the chain; the difference is the drift metric. Folding alone
+  was measured to drop what it should keep: Standing folds dropped at least
+  10 open dated plans in 206 revisions
+  (design/group-situation/10-standing-drops-plans.md).
 
 ## 7. What stays outside the loop
 
@@ -135,9 +225,8 @@ Judging an act belongs outside it (design/dreamer-agent-loop/17-failure-classes.
 
 ## 8. Why no Strands multi-agent primitive
 
-The session is one Strands `Agent` from `create_dream_agent` in
-`nora/agent/factory.py`, which gains a `skills_dir` for §4's skills (it has
-none today, by design). `Swarm`, `Graph` and `Agent.as_tool()` all pass text
+The session is one Strands `Agent` from `create_dream_agent`, with skills
+injected by code (§4). `Swarm`, `Graph` and `Agent.as_tool()` all pass text
 one model wrote into another model's prompt (read from strands-agents 1.50.2
 and 1.57.1), which is the context boundary this design removes. Perception
 models (vision, faces) are called as tools that return typed results, not as
