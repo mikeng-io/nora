@@ -385,19 +385,15 @@ async def test_when_is_he_usually_back_home_on_wednesday_night(persons):
     assert (p["what"], p["place"]) == ("arrival", "one of their homes")
     # Wednesdays in the fixture: gym 19-21, home from 21:30, every week.
     assert p["routine"] == "Wednesdays: gets to one of their homes around 21:30 on 6 of 6"
-    assert "place_ref" not in p
-    assert p["places"] == [
-        {"place": "a home of theirs", "place_ref": f"place:{SECOND}"},
-        {"place": "Carver Home", "place_ref": f"place:{HOME}"},
-    ]
+    assert p["places"] == ["a home of theirs", "Carver Home"]
     assert p["evidence"]["basis"] == "weekday"
 
 
-async def test_a_named_place_is_that_place_and_its_ref(persons):
+async def test_a_named_place_is_that_place(persons):
     out = await _tool(persons, _FakeMobility(stays=_history(6)))(
         WEDNESDAY, 16, 4, name="Chi", what="arrival", place="Carver Home")
     [p] = out["people"]
-    assert (p["place"], p["place_ref"]) == ("Carver Home", f"place:{HOME}")
+    assert p["place"] == "Carver Home" and "place_ref" not in p
     assert p["routine"] == "Wednesdays: gets to Carver Home around 21:30 on 6 of 6"
 
 
@@ -445,19 +441,14 @@ async def test_today_against_the_routine_names_where_they_usually_are(persons):
     assert "usually at Carver Home" in p["today"]
 
 
-async def test_places_carry_a_ref_route_can_take(persons):
+async def test_no_result_carries_a_handle(persons):
+    """Places are named in words `route` takes back this turn, never an id
+    (DEC-216 M3, amended: an id in a result is a low-level identifier)."""
     out = await _tool(persons, _FakeMobility(stays=_history(6)))(WEDNESDAY, 22, 6, name="Chi")
-    [p] = out["people"]
-    assert p["usually_at_ref"] == f"place:{HOME}"
-    assert all(
-        x.get("place_ref", "").startswith("place:")
-        for x in p["evidence"]["shares"] if x["kind"] not in ("other", "elsewhere")
-    )
+    assert "ref" not in str(out) and "place:" not in str(out)
 
 
-async def test_two_unnamed_homes_keep_their_own_refs(persons):
-    """The ref was filed before the «(2)» rename, so both homes carried the
-    second one's, and route would have planned from the wrong home."""
+async def test_two_unnamed_homes_of_one_person_read_as_two_places(persons):
     from nora.domain.mobility import DerivedPlace
 
     unnamed = [
@@ -469,10 +460,9 @@ async def test_two_unnamed_homes_keep_their_own_refs(persons):
     out = await _tool(persons, _FakeMobility(stays=stays, places=unnamed))(
         WEDNESDAY, 19, 23, name="Chi")
     [p] = out["people"]
-    refs = {x["place"]: x["place_ref"] for x in p["evidence"]["shares"]}
-    assert refs == {"a home of theirs": f"place:{HOME}",
-                    "a home of theirs (2)": f"place:{SECOND}"}
-    assert p["usually_at_ref"] == f"place:{HOME}"
+    assert {x["place"] for x in p["evidence"]["shares"]} == {
+        "a home of theirs", "a home of theirs (2)"}
+    assert p["usually_at"] == "a home of theirs"
 
 
 async def test_tonight_is_still_tonight_after_midnight(persons):

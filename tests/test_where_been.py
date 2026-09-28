@@ -575,8 +575,9 @@ async def test_places_and_routes_arms_carry_iso_timestamps(persons):
     tool = _where_been(persons, mobility, members=(MILES,))
     out = await tool("places", name="Miles")
     place = out["people"][0]["places"][0]
-    # The handle route resolves, and never the coordinate itself (DEC-216 M3).
-    assert place["place_ref"] == f"place:{MILES_PLACE['id']}"
+    # The words route takes back this turn, never an id or a coordinate
+    # (DEC-216 M3).
+    assert place["name"] == "Home" and "place_ref" not in place
     assert "lat" not in place and "lng" not in place
     assert place["first_seen_iso"] == datetime.fromtimestamp(
         MILES_PLACE["first_seen_ts"] / 1000, tz=HK,
@@ -867,8 +868,7 @@ async def test_the_routes_arm_says_how_long_their_repeated_trips_take(persons):
     out = await _where_been(persons, mobility, members=(MILES,))("routes", name="Miles")
     [usual] = out["people"][0]["usual_trips"]
     assert usual == {
-        "from": "their work", "from_ref": "place:3", "to": "Miles Home",
-        "to_ref": "place:1", "when": "weekday evenings",
+        "from": "their work", "to": "Miles Home", "when": "weekday evenings",
         "usually_takes": "about 39 min", "trips": 5,
     }
 
