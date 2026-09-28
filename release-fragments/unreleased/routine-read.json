@@ -1,0 +1,13 @@
+{
+  "type": "feature",
+  "summary": "Nora can answer where someone usually is at a given time, such as «where will Grant be on Wednesday night?», from their own weekly routine, and when she describes someone's day she can say which stops were unusual for them.",
+  "details": [
+    "The answer is a likelihood, not a prediction: the places they are usually at in that window, each as a share, with how many past weeks it rests on and whether it had to fall back to broader evidence, in which case she says it is a rough guess.",
+    "It is guarded exactly like where someone has been: refused when someone outside the location-sharing circle is in the room, never naming coordinates.",
+    "A day's stops now carry what was unusual about them compared with that person's own past at that place (much longer or shorter than usual, arriving or leaving at an unusual time, a place never visited before, or not being where they usually are at that hour)."
+  ],
+  "limitations": [
+    "The forecast is a frequency table over past weeks; a first backtest scored 73.6% against 62.9% for always-their-usual-place, measured once by its author and not yet re-derived by anyone else.",
+    "Nora only mentions unusual stops when asked about someone's day; nothing is said unprompted."
+  ]
+}

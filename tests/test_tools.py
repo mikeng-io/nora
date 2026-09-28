@@ -154,6 +154,8 @@ def test_every_declared_tool_is_built(wiring):
         "reverse_geocode",
         # DEC-155: the derived-presence history tool (where someone HAS BEEN).
         "where_been",
+        # design/27 §4.3: where someone usually is, from the Tier 4 forecast.
+        "routine_read",
         # design/online-status/: live digital activity (online / playing /
         # voice) — exercised in tests/unit/test_online_now.py.
         "online_now",

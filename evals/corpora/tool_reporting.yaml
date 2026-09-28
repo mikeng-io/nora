@@ -90,3 +90,14 @@ cases:
     input: 聽朝九點提我交租
     metadata: {criteria: [tool_status_reported]}
     snapshot: *room_a
+
+  # routine_read (design/27 §4.3): whatever it returns (in the sandbox,
+  # `unavailable`: no presence feed), the reply reports exactly that, and an
+  # answer is said as «usually», never «will».
+  - name: report_routine_read_future
+    entry: tag
+    expect: reply
+    mention: true
+    input: Miles星期三晚會喺邊？
+    metadata: {criteria: [tool_status_reported]}
+    snapshot: *room_a
