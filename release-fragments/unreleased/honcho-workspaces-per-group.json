@@ -7,7 +7,7 @@
     "Once [units] is set, memory reads for a room or group use that group's own Honcho scope, every known room joins its group's scope at startup, and anything Nora is asked to remember is written where those reads look.",
     "New operator command `nora memory backfill --unit <unit>` replays a group's recorded messages into its own workspace, each dated when it was said (a dry run unless --apply).",
     "New operator command `nora memory carry-conclusions --workspace <workspace> --before <cutover>` puts the facts Nora was told before the switch back into every group's recall in that workspace, for people who belong to that workspace alone.",
-    "New operator command `nora memory detach-unit` removes a moved group's conversations from the Honcho workspace it left, after its backfill has landed.",
+    "New operator command `nora memory detach-unit` removes a moved group's conversations from the Honcho workspace it left once its backfill has fully landed, then, as a second step once Honcho has finished deleting, rebuilds the affected people's cards.",
     "Nora refuses to start if a workspace is bound to a Honcho workspace another application already uses.",
     "The portal's memory page shows your memory once per workspace you belong to, with a switcher when there is more than one."
   ],

@@ -87,7 +87,7 @@ class BackfillRefusedError(Exception):
     has been written when this is raised."""
 
 
-class _Memory(Protocol):
+class BackfillMemory(Protocol):
     """What the backfill needs of `HonchoClient`: the two `MemoryStore`
     verbs the live feed uses, and the one read that is not on the port."""
 
@@ -195,7 +195,7 @@ async def backfill_unit(
     persons: Persons,
     router: WorkspaceRouter,
     records: RecordStore,
-    memory: _Memory,
+    memory: BackfillMemory,
     default_workspace: str,
     media_join: MediaJoin | None = None,
     apply: bool = False,
@@ -242,8 +242,19 @@ async def backfill_unit(
 
     # READ EVERYTHING FIRST. A refusal must come before the first write, not
     # halfway through the rooms.
+    #
+    # The ROWS are read here too, and BEFORE what the session holds: the rows
+    # are the fixed set this run replays, so a message said while the run is
+    # writing — which live ingestion feeds itself — is not in it and is never
+    # fed twice. Reading the rows first and the session second means a row
+    # that live ingestion fed before the pre-pass is already in `held`. The
+    # window left is a message recorded between the two reads whose live feed
+    # (spawned off the listener path) lands after the second; it would be fed
+    # twice, once each way, and cost one duplicate line in Honcho.
     held: dict[str, set[tuple[object, ...]]] = {}
+    rows: dict[str, list[TranscriptRow]] = {}
     for cid, label in targets:
+        rows[cid] = await _rows(records, cid, media_join)
         messages = await memory.session_messages(conversation_id=cid)
         if messages is None:
             raise BackfillRefusedError(
@@ -269,7 +280,7 @@ async def backfill_unit(
     for cid, label in targets:
         counts = RoomCounts(conversation_id=cid, label=label, held_before=len(held[cid]))
         report.rooms.append(counts)
-        for row in await _rows(records, cid, media_join):
+        for row in rows[cid]:
             counts.rows += 1
             if row.person_id is None:
                 counts.unmapped += 1

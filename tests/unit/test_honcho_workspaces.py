@@ -359,3 +359,56 @@ async def test_a_page_view_never_creates_or_marks_a_workspace(honcho):
     )
     await client.peer_card(peer_id="jordan", workspace="ridgeline")
     assert "ridgeline" not in honcho.workspaces
+
+
+@pytest.mark.parametrize("state", ["absent", "empty"])
+async def test_a_claim_is_believed_only_from_honchos_marked_answer(aiohttp_server, state):
+    """Get-or-create on a workspace someone else created a moment ago answers
+    with THEIRS, unmarked; so does a metadata update that did not take. The
+    client must not cache that as Nora's, and must route nothing there."""
+    writes: list[str] = []
+
+    async def handler(request: web.Request) -> web.Response:
+        path = request.path
+        if path == "/v3/workspaces/list":
+            items = [] if state == "absent" else [{"id": "ridgeline", "metadata": {}}]
+            return web.json_response({"items": items, "pages": 1})
+        if path == "/v3/workspaces/ridgeline/sessions/list":
+            return web.json_response({"items": [], "total": 0, "pages": 0})
+        if path in ("/v3/workspaces", "/v3/workspaces/ridgeline"):
+            return web.json_response({"id": "ridgeline", "metadata": {}})   # unmarked
+        writes.append(path)
+        return web.json_response({"id": "x"})
+
+    app = web.Application()
+    app.router.add_route("*", "/{tail:.*}", handler)
+    server = await aiohttp_server(app)
+    client = _client(str(server.make_url("/")).rstrip("/"))
+    assert not await client.feed(peer_id="jordan", text="hi", conversation_id="g-ridgeline")
+    assert client._ownership.get("ridgeline") is not True
+    assert not [p for p in writes if "/workspaces/ridgeline/" in p]
+
+
+async def test_the_startup_joins_run_concurrently(aiohttp_server):
+    """A slow Honcho costs startup one join's time, not one per room."""
+    import asyncio
+    import time
+
+    async def handler(request: web.Request) -> web.Response:
+        if request.path == "/v3/workspaces/list":
+            return web.json_response({"items": [
+                {"id": w, "metadata": {"nora_owner": "nora"}} for w in ("nora", "ridgeline")
+            ], "pages": 1})
+        if request.path.endswith("/sessions") and "/scopes/" in request.path:
+            await asyncio.sleep(0.3)
+            return web.Response(status=204)
+        return web.json_response({"id": "x"})
+
+    app = web.Application()
+    app.router.add_route("*", "/{tail:.*}", handler)
+    server = await aiohttp_server(app)
+    client = _client(str(server.make_url("/")).rstrip("/"))
+    started = time.monotonic()
+    await client.ensure_workspace()
+    assert time.monotonic() - started < 0.8, "three rooms' joins ran one after another"
+    assert len(client._scoped_sessions) == 3

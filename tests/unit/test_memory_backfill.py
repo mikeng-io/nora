@@ -230,3 +230,33 @@ async def test_a_refusal_provisions_nothing(world, honcho):
     with pytest.raises(BackfillRefusedError, match="twice"):
         await _run(world, honcho, await _records(), unit="friends", apply=True)
     assert honcho.workspaces == {}
+
+
+async def test_a_message_said_during_the_run_is_not_replayed(world, honcho):
+    """The rows are fixed at the pre-pass: a message recorded while the run is
+    writing is live ingestion's to feed, and replaying it too would feed it
+    twice."""
+    policy, persons, router = world
+    records = await _records()
+
+    class _SaysSomethingMidRun(HonchoClient):
+        said = False
+
+        async def feed(self, **kw):  # type: ignore[override]
+            if not self.said:
+                self.said = True
+                # In a room the run has not reached yet.
+                await records.append(
+                    message=_msg("g-ridgeline-old", 9000, "said during the run"),
+                    person_id="jordan",
+                )
+            return await super().feed(**kw)
+
+    memory = _SaysSomethingMidRun(honcho.url, "nora", workspace_router=router)
+    await backfill_unit(
+        unit="ridgeline", policy=policy, persons=persons, router=router, records=records,
+        memory=memory, default_workspace="nora", apply=True,
+    )
+    later_room = [m["content"] for m in honcho.messages[("ridgeline", "nora-conv-g-ridgeline-old")]]
+    assert later_room == ["from the old id"]
+    assert "first" in [m["content"] for m in honcho.messages[("ridgeline", _SESSION)]]

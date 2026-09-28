@@ -750,7 +750,10 @@ class HonchoClient:
         # for as long as nobody spoke there. Session ids are deterministic, so
         # this needs no state; a room with no session yet in this workspace is
         # skipped (a 404), and `_join_scope` is idempotent on both sides.
+        # CONCURRENT: each join is bounded by `_feed_timeout`, and a Honcho that
+        # hangs must cost startup one timeout, not one per room.
         if self._router.strict:
+            joins = []
             for cid, _unit in self._router.conversations():
                 room = self._router.for_conversation(cid)
                 if (
@@ -758,10 +761,10 @@ class HonchoClient:
                     and room.workspace in self._workspaces_ready
                     and (room.workspace, room.scope) in self._known_scopes
                 ):
-                    await self._join_scope(
-                        room, f"nora-conv-{_safe_conversation_key(cid)}",
-                        missing_ok=True,
-                    )
+                    joins.append(self._join_scope(
+                        room, conversation_session_id(cid), missing_ok=True,
+                    ))
+            await asyncio.gather(*joins)
 
     async def _ensure_peer_in(self, workspace: str, peer_id: str) -> None:
         # Check-then-act without this lock creates two peers for one id when
@@ -1651,6 +1654,22 @@ class HonchoClient:
             log.warning("honcho DELETE %s failed: %s", url, e)
             return False
         return True
+
+    async def conclusions_under_session_in(
+        self, *, workspace: str, session_id: str,
+    ) -> int | None:
+        """How many conclusions THIS Honcho workspace still stores under a
+        session — `POST /conclusions/list` filtered by `session_id`, read off
+        the page's `total`. A session delete (202) removes them from a queue,
+        not at once; this is how to know it has. `None` when unreadable."""
+        if not await self._owned(workspace, claim=False):
+            return None
+        body = await self._post(
+            self._url("/conclusions/list?page=1&size=1", workspace=workspace),
+            {"filters": {"session_id": session_id}}, self._representation_timeout,
+        )
+        total = (body or {}).get("total")
+        return total if isinstance(total, int) else None
 
     async def refresh_card_in(self, *, workspace: str, observer: str, observed: str) -> bool:
         """Schedule a `card_refresh` dream with `rebuild=True` for one

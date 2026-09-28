@@ -56,7 +56,12 @@ from nora.app.memory_backfill import BackfillRefusedError, backfill_unit
 from nora.app.memory_backfill import render as render_backfill
 from nora.app.memory_carry import CarryRefusedError, carry_conclusions
 from nora.app.memory_carry import render as render_carry
-from nora.app.memory_detach import DetachRefusedError, detach_unit
+from nora.app.memory_detach import (
+    DetachRefusedError,
+    detach_unit,
+    refresh_cards,
+    render_refresh,
+)
 from nora.app.memory_detach import render as render_detach
 from nora.app.memory_routing import MemoryRoutingError, build_workspace_router
 from nora.app.participation_measures import gather as gather_measures
@@ -241,12 +246,20 @@ def add_subcommands(
         help="delete a unit's rooms from the Honcho workspace it left, after its "
              "backfill landed (a dry run unless --apply; irreversible)",
     )
-    detach.add_argument("--unit", required=True, help="the unit that moved")
+    detach.add_argument("--unit", help="the unit that moved (step 1)")
     detach.add_argument(
-        "--from-honcho-workspace", required=True,
-        help="the HONCHO workspace id it left (e.g. nora)",
+        "--from-honcho-workspace", help="the HONCHO workspace id it left, e.g. nora (step 1)",
     )
-    detach.add_argument("--apply", action="store_true", help="delete; without it nothing is")
+    detach.add_argument(
+        "--peers-file", required=True, type=Path,
+        help="where step 1 records the deleted sessions and their peers, and step 2 "
+             "reads them — keep it under the ignored state/ directory",
+    )
+    detach.add_argument("--apply", action="store_true", help="step 1: delete (irreversible)")
+    detach.add_argument(
+        "--refresh-cards", action="store_true",
+        help="step 2: once Honcho has finished deleting, rebuild the recorded peers' cards",
+    )
     detach.set_defaults(func=cmd_memory_detach)
 
     # `config` — the operator's safe config mutation surface (deploy
@@ -505,18 +518,36 @@ def _memory_client(cfg: Config) -> tuple[Policy, Persons, WorkspaceRouter, Honch
 async def cmd_memory_detach(args: argparse.Namespace) -> int:
     """`nora memory detach-unit` (DEC-214); see `nora.app.memory_detach`."""
     cfg = _config(args)
-    policy, _, router, memory = _memory_client(cfg)
+    policy, persons, router, memory = _memory_client(cfg)
+    if args.refresh_cards:
+        if args.apply:
+            raise CliError("--refresh-cards is its own step; do not combine it with --apply")
+        try:
+            refreshed = await refresh_cards(
+                peers_file=args.peers_file, memory=memory, ai_peer=cfg.memory.ai_peer,
+            )
+        except DetachRefusedError as exc:
+            raise CliError(str(exc)) from exc
+        finally:
+            await memory.aclose()
+        for line in render_refresh(refreshed):
+            print(line)
+        return 1 if refreshed.failed else 0
+    if not args.unit or not args.from_honcho_workspace:
+        raise CliError("step 1 needs --unit and --from-honcho-workspace")
+    store = readonly_store(_database_url(cfg))
     try:
         result = await detach_unit(
             unit=args.unit, from_honcho_workspace=args.from_honcho_workspace,
-            policy=policy, router=router, memory=memory, ai_peer=cfg.memory.ai_peer,
-            apply=bool(args.apply),
+            policy=policy, persons=persons, router=router, records=store, memory=memory,
+            peers_file=args.peers_file, apply=bool(args.apply),
         )
     except DetachRefusedError as exc:
         raise CliError(str(exc)) from exc
     finally:
+        await store.aclose()
         await memory.aclose()
-    for line in render_detach(result):
+    for line in render_detach(result, args.peers_file):
         print(line)
     return 1 if result.failed else 0
 

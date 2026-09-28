@@ -162,6 +162,8 @@ class FakeHoncho:
         self.conclusions: dict[str, list[dict]] = {}
         self.deleted_sessions: list[tuple[str, str]] = []
         self.dreams: list[tuple[str, dict]] = []
+        self.defer_session_deletes = False
+        self._delete_queue: list[tuple[str, str]] = []
         self.fail_messages_after: int | None = None
         self._message_posts = 0
         self._server: TestServer | None = None
@@ -173,6 +175,16 @@ class FakeHoncho:
             "created_at": created_at,
         }
         self.sessions.setdefault(workspace, {})
+
+    def run_delete_queue(self) -> None:
+        """What Honcho's deriver does with each queued session delete: the
+        session's messages and every document stored under it go."""
+        for workspace, sid in self._delete_queue:
+            self.messages.pop((workspace, sid), None)
+            self.conclusions[workspace] = [
+                c for c in self.conclusions.get(workspace, []) if c.get("session_id") != sid
+            ]
+        self._delete_queue.clear()
 
     async def start(self) -> str:
         app = web.Application()
@@ -257,10 +269,10 @@ class FakeHoncho:
                 })
             return web.json_response(held[-len(rows):], status=201)
         if rest == ["conclusions", "list"] and method == "POST":
-            wanted = ((body or {}).get("filters") or {}).get("observer_id")
+            filters = (body or {}).get("filters") or {}
             return self._page(
                 [c for c in self.conclusions.get(workspace, [])
-                 if wanted is None or c["observer_id"] == wanted],
+                 if all(c.get(k) == v for k, v in filters.items())],
                 request,
             )
         if not rest and method == "DELETE":
@@ -324,14 +336,13 @@ class FakeHoncho:
             if rest[1] not in sessions:
                 return web.json_response({"detail": "session not found"}, status=404)
             sessions[rest[1]]["is_active"] = False
-            # Honcho's queued cascade (`crud.delete_session`), applied at once:
-            # the session's messages and every document stored under it.
+            # Honcho's cascade (`crud.delete_session`) runs from a QUEUE after
+            # the 202; `defer_session_deletes` keeps it queued until
+            # `run_delete_queue()`, so a caller that assumes it is instant shows.
             self.deleted_sessions.append((workspace, rest[1]))
-            self.messages.pop((workspace, rest[1]), None)
-            self.conclusions[workspace] = [
-                c for c in self.conclusions.get(workspace, [])
-                if c.get("session_id") != rest[1]
-            ]
+            self._delete_queue.append((workspace, rest[1]))
+            if not self.defer_session_deletes:
+                self.run_delete_queue()
             return web.json_response({}, status=202)
         if len(rest) == 3 and rest[0] == "sessions" and rest[2] == "peers" and method == "GET":
             if rest[1] not in sessions:
