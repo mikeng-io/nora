@@ -84,10 +84,15 @@ name = "Ada"
 [[persons.p1.signal]]
 phone = "+85200000001"
 
+[[persons.p1.discord]]
+user_id = "1001"
+
 [persons.p2]
 name = "Ben"
 [[persons.p2.signal]]
 phone = "+85200000002"
+[[persons.p2.discord]]
+user_id = "1002"
 
 [persons.p3]
 name = "Cy"
@@ -294,6 +299,9 @@ async def _call(tool, **kwargs):
 
 START = _hk(T0 - 60_000)
 
+#: Room B's roster as read now: Ada and Ben, both listed persons of A.
+B_ROSTER = FakeRosterSource(groups={"ROOM-B": (frozenset({"1001"}), frozenset({"1002"}))})
+
 
 async def test_all_rooms_reads_only_the_rooms_whose_lineage_passes_here(
     engine, said, policy, persons,
@@ -301,7 +309,7 @@ async def test_all_rooms_reads_only_the_rooms_whose_lineage_passes_here(
     """From room B (p1, p2): room A (p1..p3) is a superset, so its words may
     be shown here; room C lists `*`, room D is another unit. Neither is read,
     and the result says rooms were left out."""
-    result = await _call(_tools(engine, policy, persons), start=START,
+    result = await _call(_tools(engine, policy, persons, roster=B_ROSTER), start=START,
                          scope="all_rooms", text="大步行")
     assert result["status"] == "ok"
     rooms = {m["room"] for m in result["messages"]}
@@ -310,6 +318,24 @@ async def test_all_rooms_reads_only_the_rooms_whose_lineage_passes_here(
     assert "open room" not in text and "another group" not in text
     assert "were not searched" in result["note"]
     assert result["untrusted"] is True
+
+
+@pytest.mark.parametrize("roster, why", [
+    (None, "no roster could be read"),
+    (FakeRosterSource(groups={"ROOM-B": (frozenset({"1001"}), frozenset({"9999"}))}),
+     "an account in B that maps to nobody"),
+    (FakeRosterSource(fail=True), "the roster read failed"),
+])
+async def test_all_rooms_reads_no_other_room_when_this_rooms_people_cannot_be_verified(
+    engine, said, policy, persons, roster, why,
+):
+    """B lists only people A lists, but who is actually in B right now decides
+    (review of the first cut): an unreadable roster or an unnamed account
+    withholds room A, and the result says rooms were left out."""
+    result = await _call(_tools(engine, policy, persons, roster=roster), start=START,
+                         scope="all_rooms", text="大步行")
+    assert {m["room"] for m in result["messages"]} == {"Small room"}, why
+    assert "were not searched" in result["note"]
 
 
 async def test_from_the_wider_room_the_smaller_rooms_words_are_not_read(

@@ -81,7 +81,7 @@ from ..domain.gatherings import (
 )
 from ..domain.instagram_links import is_handle as _is_instagram_handle
 from ..domain.instagram_links import parse_link as _parse_instagram_link
-from ..domain.lineage import RenderRoom, RoomFacts
+from ..domain.lineage import LiveRoom, RenderRoom, RoomFacts
 from ..domain.lineage import message as message_lineage
 from ..domain.linkedin_links import is_handle as _is_linkedin_handle
 from ..domain.linkedin_links import parse_link as _parse_linkedin_link
@@ -2726,7 +2726,9 @@ def _readable_rooms(
     unit's other rooms it may not. A room is read when its `message` lineage
     passes for `here` (design/cognition-loop/10-tiers.md §3, DEC-225): itself
     always; another room of the unit only when this room's listed persons are
-    a subset of that room's and neither lists `*`."""
+    a subset of that room's, neither lists `*`, and `target.live` (this
+    room's roster, read now) names everyone in it and holds only that room's
+    listed persons."""
     if not all_rooms:
         return [here], 0
     rooms: list[RoomFacts] = []
@@ -4603,6 +4605,17 @@ def build_tool_specs(
         except (ValueError, OverflowError):
             _record(metrics, "record_query", "unavailable", reason="time")
             return {"status": "unavailable", "note": _RECORD_QUERY_TIME}
+        if scope == "all_rooms":
+            # Another room's words reach this one only when everyone actually
+            # here may see them (`message` lineage reads the live roster): read
+            # it once, and a roster that cannot be read withholds every other
+            # room rather than guessing.
+            view = await room.scope()
+            target = target.with_live(LiveRoom(
+                person_ids=frozenset(p.person_id for p in view.people),
+                unnamed=view.unnamed, available=view.available,
+                degraded=view.degraded,
+            ))
         rooms, withheld = _readable_rooms(target, here, all_rooms=scope == "all_rooms")
         person_id: str | None = None
         if author is not None and author.strip():

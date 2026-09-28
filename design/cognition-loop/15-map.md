@@ -92,7 +92,8 @@ backfilled rows render byte-for-byte as before in that room.
 scope, author?, text?)`: `from`/`to` are `start`/`end` (Hong Kong time, a
 date meaning that day), `scope` is `this_room` or `all_rooms`, and `all_rooms`
 reads only the unit's rooms whose `message` lineage passes for the turn's
-room, saying when some were left out. `author` resolves in this room only
+room, whose live roster it reads for that (unreadable: no other room), saying
+when some were left out. `author` resolves in this room only
 (R-21). `text` matches by containment (`ilike`) or pg_trgm word similarity at
 0.5, the value 24 §2 measured for a Cantonese term inside a sentence, both
 served by `idx_messages_body_trgm`; a hit that only nears the words is marked

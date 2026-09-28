@@ -174,8 +174,11 @@ Memory has no lineage kind: it is never cited, so nothing derived rests on it.
   section, `row`; a Standing row has `body` and `working_set`, the two
   sections today's schema has; a culture row has `body` (it is prose until
   the sectioned account, step 4). The predicates are `nora/agent/lineage.py`
-  and fix three details the table leaves open: `message:<A>` passes only
-  between rooms of one unit and never out of a `*` room (R-49's boundary);
+  and fix the details the table leaves open: `message:<A>` passes only
+  between rooms of one unit and never out of a `*` room (R-49's boundary),
+  and only when B's live roster is readable, names every account and holds
+  only listed persons of A (a listed-persons subset alone says nothing about
+  who is in B; tightened on review);
   `presence` needs the flag AND the guard, the guard not waived by the flag
   as `where_is` waives it (DEC-79), and it denies with no subject or no live
   roster; an unknown kind, including the `unresolved` code writes for a
@@ -186,8 +189,9 @@ Memory has no lineage kind: it is never cited, so nothing derived rests on it.
   `exclude_persons` is checked against the room's listed persons and its
   live roster. The four pushed blocks filter behind `[lineage] mode`
   (`off`, `shadow`, `on`; shipped `off`); `record_query` applies lineage in
-  every mode. Block assembly reads no live roster yet, so a presence entry
-  or a surprise withholds its section in every room until one is read.
+  every mode. Block assembly reads no live roster yet, so until it does a
+  presence entry or a surprise withholds its section in every room, and a
+  `message:<A>` entry in every room but A.
 
 ## 4. Reasoning modes
 

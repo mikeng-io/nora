@@ -11,7 +11,8 @@ One pure function per lineage kind, each answering for ONE entry and ONE room,
 and each written from 10 §3's table. Room B may be shown:
 
 - `message:<A>`: when B is A; or A and B are in one unit, B's listed persons
-  are a subset of A's, and neither lists `*`;
+  are a subset of A's, neither lists `*`, and B's live roster is readable,
+  names every account, and holds only listed persons of A;
 - `presence` (P): when B's `location` flag is on and the live DisclosureGuard
   passes for P in B;
 - `face` (P): when B is the media's origin room; or P is listed in B and B
@@ -99,7 +100,16 @@ def _message(entry: LineageEntry, target: RenderRoom) -> bool:
     a = sources[0]
     if a.persons is None or b.persons is None:
         return False
-    return b.persons <= a.persons
+    if not b.persons <= a.persons:
+        return False
+    # WHO IS ACTUALLY IN B, not only who B lists (review of 4444adbb): a
+    # listed-persons subset says nothing about an account that joined B and
+    # was never listed. B's live roster must be readable, whole, fully named,
+    # and every person in it a listed person of A; otherwise deny.
+    live = target.live
+    if live is None or not live.available or live.degraded or live.unnamed > 0:
+        return False
+    return live.person_ids <= a.persons
 
 
 def _presence(entry: LineageEntry, target: RenderRoom) -> bool:

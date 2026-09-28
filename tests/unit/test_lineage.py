@@ -70,7 +70,20 @@ LIVE_OK = LiveRoom(person_ids=frozenset({"p1", "p2"}))
 
 def test_message_passes_in_its_own_room_and_in_a_subset_room_of_the_unit():
     assert entry_permits(message("a"), _in(A), origin="a")
-    assert entry_permits(message("a"), _in(B), origin="a")
+    assert entry_permits(message("a"), _in(B, live=LIVE_OK), origin="a")
+
+
+@pytest.mark.parametrize("live, why", [
+    (None, "no live roster was read"),
+    (LiveRoom(person_ids=frozenset({"p1"}), available=False), "roster unreadable"),
+    (LiveRoom(person_ids=frozenset({"p1"}), degraded=True), "roster degraded"),
+    (LiveRoom(person_ids=frozenset({"p1"}), unnamed=1), "an account nobody can name"),
+    (LiveRoom(person_ids=frozenset({"p1", "p9"})), "p9 is in B and not listed in A"),
+])
+def test_message_needs_who_is_actually_in_the_room_not_only_who_it_lists(live, why):
+    """B lists a subset of A's people; who is IN B right now must be too
+    (review of the first cut). Unverifiable is refused."""
+    assert not entry_permits(message("a"), _in(B, live=live), origin="a"), why
 
 
 def test_message_is_refused_in_a_wider_room_a_star_room_or_another_unit():
@@ -122,7 +135,7 @@ def test_social_and_play_need_the_person_listed_in_the_room(kind):
 def test_face_passes_in_the_media_room_or_where_listed_and_the_media_passes():
     face = LineageEntry(kind="face", subject="p1", origin="a", reads=(message("a"),))
     assert entry_permits(face, _in(A), origin="a")
-    assert entry_permits(face, _in(B), origin="a")          # p1 listed, a -> b passes
+    assert entry_permits(face, _in(B, live=LIVE_OK), origin="a")  # p1 listed, a -> b passes
     other = LineageEntry(kind="face", subject="p3", origin="a", reads=(message("a"),))
     assert not entry_permits(other, _in(B), origin="a")     # p3 not listed in B
     wide = LineageEntry(kind="face", subject="p1", origin="b", reads=(message("b"),))
@@ -131,7 +144,7 @@ def test_face_passes_in_the_media_room_or_where_listed_and_the_media_passes():
 
 def test_perception_passes_where_the_item_it_reads_passes():
     reads_a = LineageEntry(kind="perception", origin="a", reads=(message("a"),))
-    assert entry_permits(reads_a, _in(B), origin="a")
+    assert entry_permits(reads_a, _in(B, live=LIVE_OK), origin="a")
     reads_b = LineageEntry(kind="perception", origin="b", reads=(message("b"),))
     assert not entry_permits(reads_b, _in(A), origin="b")
     bare = LineageEntry(kind="perception", origin="a")
@@ -159,7 +172,7 @@ def test_an_empty_section_is_unknown():
 
 
 def test_every_entry_must_pass():
-    assert section_permits((message("a"),), _in(B), origin="a")
+    assert section_permits((message("a"),), _in(B, live=LIVE_OK), origin="a")
     assert not section_permits((message("a"), unresolved("a")), _in(B), origin="a")
 
 
@@ -285,9 +298,13 @@ def test_a_note_is_not_rendered_in_a_wider_room_and_the_rest_are():
     holds p3, who was not there); one resting on A is shown in B; one with an
     unresolved citation stays in A."""
     in_b = derived_view(notes=(NOTE_A, NOTE_B, NOTE_A_LEGACY), standing=None,
-                        culture=None, target=_in(B))
+                        culture=None, target=_in(B, live=LIVE_OK))
     assert [n.title for n in in_b.notes] == ["raised here", "raised in the smaller room"]
     assert dict(in_b.withheld) == {"notes": 1}
+    # Block assembly reads no live roster today: the note from A is withheld.
+    unread = derived_view(notes=(NOTE_A, NOTE_B), standing=None, culture=None,
+                          target=_in(B))
+    assert [n.title for n in unread.notes] == ["raised in the smaller room"]
     in_a = derived_view(notes=(NOTE_A, NOTE_B, NOTE_A_LEGACY), standing=None,
                         culture=None, target=_in(A))
     assert [n.title for n in in_a.notes] == ["raised here", "legacy revision"]
