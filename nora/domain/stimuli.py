@@ -180,7 +180,7 @@ class WakePolicy:
     treated as running, so single-flight and cooldown can be exercised while
     nothing runs."""
 
-    quiet_seconds: float = 600.0
+    quiet_seconds: float = 1800.0  # operator 2026-09-29, was 600 ([cognition])
     cue_quiet_seconds: float = 120.0
     rollup_delay_seconds: float = 60.0
     batch_max: int = 80

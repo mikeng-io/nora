@@ -157,10 +157,16 @@ The objections the first draft raised, and where each is answered now:
 - **Nothing lost in the switch.** For a shadow week, every row the clocked
   adaptors wrote is also written, or deliberately closed as not needed, by a
   cognition session on the same messages.
-- **Latency.** Median time from a settling message to the row that records it
-  under ten minutes; today up to an hour, and never for events.
-  (`[dreamer] quiet_seconds` is 1800 today; cognition's wake keys are its
-  own, [20](20-observe.md) §3.)
+- **Latency.** For a change carrying a strong cue (a date or time, a keep
+  instruction, an RSVP, or a place link — [20](20-observe.md) §3's list):
+  median time from a settling message to the row that records it stays
+  under ten minutes via the 120 s cue-quiet wake. A cue-free change (a plan
+  moved by naming a venue, today, carries no cue — the dinner case above)
+  instead waits 1800 s of quiet at minimum, and up to `max_age_seconds`
+  (3600 s) in a room that keeps talking (operator 2026-09-29, was 600 s) —
+  no faster than today's clocked adaptors, and still never for events.
+  (`[dreamer] quiet_seconds` is also 1800 today, independently configured;
+  cognition's wake keys are its own, [20](20-observe.md) §3.)
 
 ## Status / Checkpoint
 

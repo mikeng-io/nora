@@ -2208,10 +2208,12 @@ mode = "off"
 tick_seconds = 30
 # 20 §3's STARTING values, every one a guess the shadow week sizes.
 # `quiet_seconds` and `max_age_seconds` reuse [dreamer]'s key NAMES, not its
-# values: the Dreamer's own clock keeps 1800 / 86400.
+# values as a rule: the Dreamer's own clock keeps 1800 / 86400, configured
+# independently.
 #
 # settled: a signal pending and the unit's rooms quiet this long.
-quiet_seconds = 600
+# operator 2026-09-29: 1800 (30 min), was 600 — matches [dreamer] quiet_seconds.
+quiet_seconds = 1800
 # strong cue: a date/time, a place link, a keep instruction or an RSVP
 # pending, then this much quiet.
 cue_quiet_seconds = 120

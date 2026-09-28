@@ -29,7 +29,7 @@ HK = ZoneInfo("Asia/Hong_Kong")
 T = int(dt.datetime(2026, 9, 28, 15, 0, tzinfo=HK).timestamp() * 1000)
 S = 1000
 POLICY = WakePolicy(
-    quiet_seconds=600, cue_quiet_seconds=120, rollup_delay_seconds=60, batch_max=5,
+    quiet_seconds=1800, cue_quiet_seconds=120, rollup_delay_seconds=60, batch_max=5,
     max_age_seconds=3600, cooldown_seconds=300, max_concurrent_sessions=2,
     session_seconds=60,
 )
@@ -76,10 +76,17 @@ async def test_nothing_pending_records_nothing():
     assert store.wakes == []
 
 
+def test_wake_policy_bare_default_quiet_seconds_is_1800():
+    """The dataclass default, unmediated by `POLICY` above or
+    `composition.py` (which always passes `cfg.cognition.quiet_seconds`
+    explicitly and so never exercises this default at all)."""
+    assert WakePolicy().quiet_seconds == 1800.0
+
+
 async def test_settled_fires_after_quiet_seconds_and_not_before():
     ev, store, clock, metrics = _setup()
     await _say(store, clock)
-    clock.advance(599)
+    clock.advance(1799)
     assert await ev.tick() == []
     clock.advance(1)
     assert len(await ev.tick()) == 1
@@ -156,7 +163,7 @@ async def test_a_reply_to_nora_never_wakes_a_unit_by_itself():
     assert await ev.tick() == []
     # ...and rides the next wake a person's item starts.
     await _say(store, clock)
-    clock.advance(600)
+    clock.advance(1800)
     await ev.tick()
     assert len(store.wakes) == 1
     assert (store.wakes[0].signal_count, store.wakes[0].eligible_count) == (2, 1)
@@ -169,13 +176,13 @@ async def test_a_reply_to_nora_never_wakes_a_unit_by_itself():
 async def test_a_would_wake_consumes_through_the_id_it_read():
     ev, store, clock, _ = _setup()
     a = await _say(store, clock)
-    clock.advance(600)
+    clock.advance(1800)
     await ev.tick()
     w = store.wakes[0]
     assert (w.from_signal_id, w.through_signal_id) == (0, a)
     clock.advance(400)                        # past session + cooldown
     b = await _say(store, clock)
-    clock.advance(600)
+    clock.advance(1800)
     await ev.tick()
     assert (store.wakes[1].from_signal_id, store.wakes[1].through_signal_id) == (a, b)
     assert store.wakes[1].signal_count == 1   # `a` was consumed, not re-read
@@ -185,7 +192,7 @@ async def test_the_watermark_survives_a_restart():
     """A fresh evaluator over the same rows is the same evaluator."""
     ev, store, clock, metrics = _setup()
     await _say(store, clock)
-    clock.advance(600)
+    clock.advance(1800)
     await ev.tick()
     fresh = WakeEvaluator(store=store, units=lambda: ("nora",), policy=POLICY,
                           metrics=metrics, tz=HK, clock=clock, settle_seconds=0)
