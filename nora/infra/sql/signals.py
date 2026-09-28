@@ -10,6 +10,7 @@ scalar subquery, and nothing is ever updated.
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from typing import Any
 
 import sqlalchemy as sa
@@ -20,10 +21,27 @@ from nora.domain.signals import NewSignal, NewWake, Signal, UnitView, WakeRow
 from nora.infra.sql.schema import COGNITION_WAKE, SIGNAL
 
 
+def _at(ms: int) -> datetime:
+    """`recorded_at` is timestamptz (1b's system-time shape); the wake
+    arithmetic is in epoch milliseconds. Millisecond values round-trip
+    exactly through timestamptz's microseconds."""
+    return datetime.fromtimestamp(ms / 1000, tz=UTC)
+
+
+def _ms(at: datetime) -> int:
+    return round(at.timestamp() * 1000)
+
+
+#: `recorded_at` as epoch milliseconds, in SQL, for the pending read.
+_RECORDED_MS = sa.cast(
+    sa.func.round(sa.extract("epoch", SIGNAL.c.recorded_at) * 1000), sa.BigInteger,
+)
+
+
 def _signal(r: Any) -> Signal:
     return Signal(
         id=int(r.id), unit=r.unit, kind=r.kind, item=r.item, ref=r.ref,
-        at_ms=int(r.at_ms), recorded_at_ms=int(r.recorded_at),
+        at_ms=int(r.at_ms), recorded_at_ms=_ms(r.recorded_at),
         platform=r.platform, conversation_id=r.conversation_id,
         person_id=r.person_id, cues=tuple(r.cues or ()), waits=bool(r.waits),
         due_ms=None if r.due_ms is None else int(r.due_ms),
@@ -38,7 +56,7 @@ def _wake(r: Any) -> WakeRow:
         signal_count=int(r.signal_count), eligible_count=int(r.eligible_count),
         oldest_pending_ms=None if r.oldest_pending_ms is None else int(r.oldest_pending_ms),
         cut_cooldown=bool(r.cut_cooldown), at_ms=int(r.at_ms),
-        recorded_at_ms=int(r.recorded_at), detail=_detail(r.detail),
+        recorded_at_ms=_ms(r.recorded_at), detail=_detail(r.detail),
     )
 
 
@@ -65,7 +83,7 @@ class SqlSignalStore:
             "conversation_id": signal.conversation_id,
             "person_id": signal.person_id, "cues": list(signal.cues),
             "waits": int(signal.waits), "at_ms": signal.at_ms,
-            "due_ms": signal.due_ms, "recorded_at": recorded_at_ms,
+            "due_ms": signal.due_ms, "recorded_at": _at(recorded_at_ms),
         }
         stmt: Any = pg_insert(SIGNAL).values(**values)
         if signal.kind == "time":
@@ -90,7 +108,7 @@ class SqlSignalStore:
             .order_by(COGNITION_WAKE.c.id.desc())
             .limit(1)
         )
-        since = sa.func.coalesce(SIGNAL.c.due_ms, SIGNAL.c.recorded_at)
+        since = sa.func.coalesce(SIGNAL.c.due_ms, _RECORDED_MS)
         async with self._engine.connect() as conn:
             last_row = (await conn.execute(last_q)).first()
             last = None if last_row is None else _wake(last_row)
@@ -104,7 +122,7 @@ class SqlSignalStore:
                 .limit(limit)
             )
             pending = tuple(_signal(r) for r in (await conn.execute(pending_q)).all())
-            activity_q = sa.select(sa.func.max(SIGNAL.c.recorded_at)).where(
+            activity_q = sa.select(sa.func.max(_RECORDED_MS)).where(
                 SIGNAL.c.unit == unit, SIGNAL.c.kind == "message",
             )
             activity = (await conn.execute(activity_q)).scalar_one_or_none()
@@ -125,7 +143,7 @@ class SqlSignalStore:
             # JSON text cast to jsonb: the detail is a small flat mapping and
             # this keeps the dialect's JSON serializer out of the question.
             detail=sa.cast(json.dumps(wake.detail, sort_keys=True), COGNITION_WAKE.c.detail.type),
-            at_ms=wake.at_ms, recorded_at=recorded_at_ms,
+            at_ms=wake.at_ms, recorded_at=_at(recorded_at_ms),
         ).returning(COGNITION_WAKE.c.id)
         async with self._engine.begin() as conn:
             result = await conn.execute(stmt)

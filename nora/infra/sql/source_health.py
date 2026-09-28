@@ -14,6 +14,7 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import Callable
+from datetime import UTC, datetime
 
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncEngine
@@ -39,7 +40,8 @@ class SqlSourceHealthLog:
     ) -> bool:
         stmt = sa.insert(SOURCE_HEALTH).values(
             source=source, scope=scope, event=event, outcome=outcome,
-            detail=detail, at_ms=at_ms, recorded_at=int(self._clock() * 1000),
+            detail=detail, at_ms=at_ms,
+            recorded_at=datetime.fromtimestamp(self._clock(), tz=UTC),
         )
         try:
             async with self._engine.begin() as conn:

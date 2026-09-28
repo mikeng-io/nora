@@ -72,6 +72,9 @@ async def store(_db: str) -> AsyncIterator[SqlStandingStore]:
         yield SqlStandingStore(engine)
     finally:
         async with engine.begin() as conn:
+            # A reset, not a write: TRUNCATE is refused unless capture is off
+            # (migration 0068, nora.infra.sql.history.CAPTURE_SETTING).
+            await conn.execute(sa.text("SET LOCAL nora.row_history = 'off'"))
             await conn.execute(sa.text("truncate standing, standing_revision cascade"))
         await engine.dispose()
 

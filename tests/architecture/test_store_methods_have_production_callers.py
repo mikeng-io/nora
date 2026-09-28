@@ -273,7 +273,8 @@ _STORE_MODULES: frozenset[str] = frozenset(
         "music_queue.py", "music_session.py", "notes.py",
         "participation_state.py", "presence.py",
         "reasoning_strip.py",
-        "reminders.py", "signals.py", "source_health.py", "tag_debounce.py",
+        "reminders.py", "revisions.py", "signals.py", "snapshot_at.py",
+        "source_health.py", "tag_debounce.py",
         "standing.py", "summons.py", "tag_traces.py", "tool_call_log.py",
         "video_readings.py",
     }

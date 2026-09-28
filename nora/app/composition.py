@@ -125,6 +125,7 @@ from nora.infra.sql.participation_state import SqlParticipationStateStore
 from nora.infra.sql.presence import PresenceStore
 from nora.infra.sql.reasoning_strip import SqlReasoningStripStore
 from nora.infra.sql.reminders import SqlReminderStore
+from nora.infra.sql.revisions import SqlRevisionStore
 from nora.infra.sql.signals import SqlSignalStore
 from nora.infra.sql.source_health import SqlSourceHealthLog
 from nora.infra.sql.standing import SqlStandingStore
@@ -1081,6 +1082,11 @@ class Dependencies:
     # would put a `None` on the one path whose whole purpose is to survive
     # process boundaries. `dream_loop` ignores it when `schedules` is empty.
     dream_schedule_clock: SqlDreamScheduleClock
+    # What instructions, config and code were in force when
+    # (design/cognition-loop/70-migration.md §5, step 1b). The store only:
+    # the daemon's `App.run` builds the recorder that writes through it, so
+    # an eval subject composed from this graph records no loads of its own.
+    revisions: SqlRevisionStore
     # `language_scopes`' unit-keyed sibling. `Conversation.unit`
     # (DEC-105) — several rooms of one unit are ONE unit of work here, not
     # several, which is the whole reason a unit-keyed adaptor could not
@@ -4242,6 +4248,7 @@ async def build_dependencies(
         dream_adaptors=dream_adaptors,
         dream_schedules=dream_schedules,
         dream_schedule_clock=dream_schedule_clock,
+        revisions=SqlRevisionStore(engine),
         unit_scopes=unit_scopes,
         events=events,
         speaker=speaker,

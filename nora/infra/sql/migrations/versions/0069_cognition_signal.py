@@ -1,32 +1,35 @@
 """cognition_signal -- signals, the shadow wake log, reactions, deletes and
 source health (design/cognition-loop/70-migration.md §2 step 1, 20-observe.md).
 
-Five new tables, all append-only (10-tiers.md §8); nothing existing changes:
+Five new tables, all append-only (10-tiers.md §8); nothing existing changes.
+Two of them keep `row_history` all the same (below):
 
-* `signal` -- one row per signal per unit (20 §3), `recorded_at` its system
-  time; a `time` signal unique on `(unit, ref)` (partial unique index) so a
-  daily floor raised on every tick is written once.
+* `signal` -- one row per signal per unit (20 §3), `recorded_at` its
+  system time (timestamptz, 1b's shape); a `time` signal unique on
+  `(unit, ref)` (partial unique index) so a daily floor raised on every tick
+  is written once.
 * `cognition_wake` -- every (in step 1, would-)wake with its reason and the
   signal range it would consume; a unit's newest row in a mode is its
   watermark in that mode.
 * `message_reaction`, `message_delete` -- a reaction and a delete/unsend as
   Record items attached to the message they touch (20 §1), CASCADE on the
-  message for `message_edit`'s reason.
+  message for `message_edit`'s reason, and so, by 1b's rule (a cascading
+  child of an in-place table), history tables: `nora_row_history()` and the
+  TRUNCATE guard from `0068_system_time_history` are attached to both.
 * `source_health` -- presence collector polls and platform adapter
   transitions (20 §1), so «every source healthy for the interval» is a query.
 
 THE VOCABULARIES ARE WRITTEN OUT rather than read from `nora.domain.signals`,
 following `0053_decision_log`: a migration is a frozen historical statement.
 
->>> RE-POINT AT MERGE TIME. <<< `down_revision` is the head of `origin/master`
-when this branch was cut (`0067_summons_message_key`). Migration step 1b is
-being built in parallel and adds its own revision on the same parent;
-whichever merges second re-points onto the other and renames nothing else.
-Then `uv run alembic heads` must print exactly ONE line (AGENTS.md, "Never
-assume your migration's parent is unclaimed").
+>>> RE-POINTED AT MERGE. <<< Cut on `0067_summons_message_key`; step 1b's
+`0068_system_time_history` merged first, so this is re-parented onto it and
+renumbered 0069 (its triggers are what the two new history tables need).
+`uv run alembic heads` must print exactly ONE line (AGENTS.md, "Never assume
+your migration's parent is unclaimed").
 
-Revision ID: 0068_cognition_signal
-Revises: 0067_summons_message_key
+Revision ID: 0069_cognition_signal
+Revises: 0068_system_time_history
 Create Date: 2026-09-28
 """
 
@@ -36,8 +39,25 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql as pg
 
-revision = "0068_cognition_signal"
-down_revision = "0067_summons_message_key"
+#: The two new tables that cascade from `messages` and so keep `row_history`
+#: (1b's rule), with the columns that identify a row. Frozen here;
+#: `nora.infra.sql.history.HISTORY_TABLES` is the live copy.
+_HISTORY_TABLES: dict[str, tuple[str, ...]] = {
+    "message_reaction": ("id",),
+    "message_delete": ("id",),
+}
+
+
+def _recorded_at() -> sa.Column:  # type: ignore[type-arg]
+    """System time, 1b's shape (`0068_system_time_history`): timestamptz from
+    the database clock unless the writer states it."""
+    return sa.Column(
+        "recorded_at", sa.DateTime(timezone=True), nullable=False,
+        server_default=sa.text("clock_timestamp()"),
+    )
+
+revision = "0069_cognition_signal"
+down_revision = "0068_system_time_history"
 branch_labels = None
 depends_on = None
 
@@ -79,6 +99,18 @@ def upgrade() -> None:
                   server_default=sa.text("now()::text")),
     )
     op.create_index("idx_message_delete_message", "message_delete", ["message_id"])
+    # New and empty, so no backfill: the trigger records every row from its
+    # first insert. `nora_row_history()` and the truncate guard are 0068's.
+    for table, columns in _HISTORY_TABLES.items():
+        args = ", ".join(f"'{c}'" for c in columns)
+        op.execute(
+            f"CREATE TRIGGER nora_row_history AFTER INSERT OR UPDATE OR DELETE "
+            f"ON \"{table}\" FOR EACH ROW EXECUTE FUNCTION nora_row_history({args})"
+        )
+        op.execute(
+            f"CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON \"{table}\" "
+            "FOR EACH STATEMENT EXECUTE FUNCTION nora_row_history_refuse_truncate()"
+        )
 
     op.create_table(
         "signal",
@@ -95,7 +127,7 @@ def upgrade() -> None:
         sa.Column("waits", sa.Integer, nullable=False, server_default=sa.text("0")),
         sa.Column("at_ms", sa.BigInteger, nullable=False),
         sa.Column("due_ms", sa.BigInteger),
-        sa.Column("recorded_at", sa.BigInteger, nullable=False),
+        _recorded_at(),
         sa.CheckConstraint(
             "kind IN ('message', 'social', 'play', 'rollup', 'time', 'self')",
             name="ck_signal_kind",
@@ -123,7 +155,7 @@ def upgrade() -> None:
         sa.Column("detail", pg.JSONB, nullable=False,
                   server_default=sa.text("'{}'::jsonb")),
         sa.Column("at_ms", sa.BigInteger, nullable=False),
-        sa.Column("recorded_at", sa.BigInteger, nullable=False),
+        _recorded_at(),
         sa.CheckConstraint("mode IN ('shadow')", name="ck_cognition_wake_mode"),
         sa.CheckConstraint(
             "reason IN ('settled', 'strong_cue', 'rollup', 'batch', 'max_age', "
@@ -144,7 +176,7 @@ def upgrade() -> None:
         sa.Column("outcome", sa.Text, nullable=False),
         sa.Column("detail", sa.Text, nullable=False, server_default=sa.text("''")),
         sa.Column("at_ms", sa.BigInteger, nullable=False),
-        sa.Column("recorded_at", sa.BigInteger, nullable=False),
+        _recorded_at(),
         sa.CheckConstraint("event IN ('poll', 'transition')", name="ck_source_health_event"),
     )
     op.create_index(

@@ -45,6 +45,8 @@ defaults are not. The store was SQLite until the 2026-08-07 migration
 
 from __future__ import annotations
 
+from typing import Any
+
 import sqlalchemy as sa
 
 # The one domain import this module makes, and it is deliberate. `tag_trace`'s
@@ -81,6 +83,23 @@ from nora.domain.standing import (
 EMBEDDING_DIMENSIONS = 1024
 
 METADATA = sa.MetaData()
+
+
+def _recorded_at() -> sa.Column[Any]:
+    """System time on an APPEND-ONLY table (design/cognition-loop/10-tiers.md
+    §8, migration `0068_system_time_history`): when Nora wrote the row, from
+    the database's own clock at the insert. `clock_timestamp()` rather than
+    `now()`: `now()` is the TRANSACTION's start, so a row inserted late in a
+    long transaction would claim to have been held before rows written ahead
+    of it. No writer sets it; the default does, so no store changed to carry
+    it. Rows that existed when the column was added were backfilled from
+    their own write time (the migration names the column per table). Tables
+    that change IN PLACE carry `row_history` instead
+    (`nora.infra.sql.history`)."""
+    return sa.Column(
+        "recorded_at", sa.DateTime(timezone=True), nullable=False,
+        server_default=sa.text("clock_timestamp()"),
+    )
 
 MESSAGES = sa.Table(
     "messages",
@@ -180,6 +199,7 @@ MESSAGE_EDIT = sa.Table(
         "created_at", sa.Text, nullable=False,
         server_default=sa.text("now()::text"),
     ),
+    _recorded_at(),
 )
 
 #: The fold's read: the newest edit of each message. Ascending on purpose —
@@ -2034,6 +2054,7 @@ NOTE_REVISION = sa.Table(
     # revised many times by different authors).
     sa.Column("instruction_sha256", sa.Text),
     sa.Column("model", sa.Text),
+    _recorded_at(),
     sa.CheckConstraint(
         "instruction_sha256 is null or instruction_sha256 ~ '^[0-9a-f]{64}$'",
         name="note_revision_instruction_sha256_check",
@@ -2500,6 +2521,7 @@ STANDING_REVISION = sa.Table(
         "working_set", pg.JSONB, nullable=False,
         server_default=sa.text("'[]'::jsonb"),
     ),
+    _recorded_at(),
     # The SAME ceiling the head carries, not a looser one: a revision holds a
     # value the head held, so a body this table would accept and `standing`
     # would refuse is a history recording a position that could never have been
@@ -2641,6 +2663,7 @@ DECISION_LOG = sa.Table(
     sa.Column("verdict", sa.Text, nullable=False),
     sa.Column("reason", sa.Text, nullable=False, server_default=""),
     sa.Column("ts", sa.BigInteger, nullable=False),
+    _recorded_at(),
     # The two closed vocabularies, enforced where a writer that bypassed
     # `DecisionRow.__post_init__` still meets them. Not tidiness: a row wearing
     # an unknown `writer` is a decision that both renders silently drop — it is
@@ -2718,6 +2741,7 @@ NOTE_MERGE_DECISION = sa.Table(
     sa.Column("reason", sa.Text, nullable=False, server_default=""),
     sa.Column("established_by", sa.Text, nullable=False),
     sa.Column("ts", sa.BigInteger, nullable=False),
+    _recorded_at(),
     sa.CheckConstraint(
         f"mode in ({_in_list(NOTE_MERGE_MODES)})",
         name="note_merge_decision_mode_is_known_check",
@@ -2827,6 +2851,7 @@ CULTURE_REVISION = sa.Table(
     sa.Column("established_by", sa.Text, nullable=False),
     sa.Column("instruction_sha256", sa.Text),
     sa.Column("model", sa.Text),
+    _recorded_at(),
     sa.CheckConstraint(
         "instruction_sha256 is null or instruction_sha256 ~ '^[0-9a-f]{64}$'",
         name="culture_revision_instruction_sha256_check",
@@ -3091,7 +3116,10 @@ SIGNAL = sa.Table(
     sa.Column("waits", sa.Integer, nullable=False, server_default=sa.text("0")),
     sa.Column("at_ms", sa.BigInteger, nullable=False),
     sa.Column("due_ms", sa.BigInteger),
-    sa.Column("recorded_at", sa.BigInteger, nullable=False),
+    # System time, 1b's shape (`_recorded_at`). The signal store states it
+    # from the same clock the wake arithmetic runs on; the default covers a
+    # writer that does not.
+    _recorded_at(),
     # Written out, not read from `nora.domain.signals.SIGNAL_KINDS`: the
     # migration hardcodes it, and the parity gate ties the two.
     sa.CheckConstraint(
@@ -3132,7 +3160,7 @@ COGNITION_WAKE = sa.Table(
     sa.Column("cut_cooldown", sa.Integer, nullable=False, server_default=sa.text("0")),
     sa.Column("detail", pg.JSONB, nullable=False, server_default=sa.text("'{}'::jsonb")),
     sa.Column("at_ms", sa.BigInteger, nullable=False),
-    sa.Column("recorded_at", sa.BigInteger, nullable=False),
+    _recorded_at(),
     sa.CheckConstraint("mode IN ('shadow')", name="ck_cognition_wake_mode"),
     sa.CheckConstraint(
         "reason IN ('settled', 'strong_cue', 'rollup', 'batch', 'max_age', "
@@ -3163,11 +3191,175 @@ SOURCE_HEALTH = sa.Table(
     sa.Column("outcome", sa.Text, nullable=False),
     sa.Column("detail", sa.Text, nullable=False, server_default=sa.text("''")),
     sa.Column("at_ms", sa.BigInteger, nullable=False),
-    sa.Column("recorded_at", sa.BigInteger, nullable=False),
+    _recorded_at(),
     sa.CheckConstraint("event IN ('poll', 'transition')", name="ck_source_health_event"),
 )
 
 #: «was this source healthy over [a, b]» reads one source's rows by time.
 IDX_SOURCE_HEALTH_SOURCE_AT = sa.Index(
     "idx_source_health_source_at", SOURCE_HEALTH.c.source, SOURCE_HEALTH.c.at_ms,
+)
+
+
+# --- system time (design/cognition-loop/10-tiers.md §8, step 1b) -----------
+
+#: Every version any in-place table ever held, in SYSTEM time: when Nora held
+#: it, never when it was true (that is valid time, and it stays in each
+#: table's own columns). Written ONLY by the trigger `nora_row_history()`
+#: that migration `0068_system_time_history` attaches to each table in
+#: `nora.infra.sql.history.HISTORY_TABLES`, in the same transaction as the
+#: write it records; no store writes it and no production path reads it. The
+#: live table stays what every reader reads (a head, a cache the chain here
+#: can rebuild); this is what `nora snapshot --at T` reads.
+#:
+#: One row per version: `op` says which write produced it (`backfill` is the
+#: migration's reconstruction of a row that predates the table), `image` is
+#: the whole row as `to_jsonb` rendered it, and `superseded_at` /
+#: `superseded_by` are set on the version the next write replaced. A DELETE
+#: writes a `delete` version whose image is the row as it was removed — the
+#: row is hidden (gone from the head) and kept (here), which is what soft
+#: removal means at this step (70-migration §9).
+#:
+#: `image` is JSONB rather than a typed copy of each table so a later column
+#: added to a table needs no second migration here: an image written before
+#: the column existed reads it as NULL (`jsonb_populate_record`), which is
+#: what the row held.
+ROW_HISTORY = sa.Table(
+    "row_history",
+    METADATA,
+    sa.Column("id", sa.BigInteger, sa.Identity(always=False), primary_key=True),
+    sa.Column("table_name", sa.Text, nullable=False),
+    sa.Column("row_key", pg.JSONB, nullable=False),
+    sa.Column("op", sa.Text, nullable=False),
+    sa.Column("image", pg.JSONB, nullable=False),
+    sa.Column("recorded_at", sa.DateTime(timezone=True), nullable=False),
+    sa.Column("superseded_at", sa.DateTime(timezone=True), nullable=True),
+    sa.Column("superseded_by", sa.BigInteger, nullable=True),
+    sa.CheckConstraint(
+        "op IN ('backfill', 'insert', 'update', 'delete')",
+        name="row_history_op_is_known_check",
+    ),
+    sa.CheckConstraint(
+        "(superseded_at IS NULL) = (superseded_by IS NULL)",
+        name="row_history_supersession_is_whole_check",
+    ),
+)
+
+#: At most ONE open version per row: the trigger closes the previous version
+#: before it inserts the next, and this is what makes a second open version a
+#: constraint violation rather than an as-of read that returns two heads.
+IDX_ROW_HISTORY_OPEN = sa.Index(
+    "uq_row_history_open",
+    ROW_HISTORY.c.table_name, ROW_HISTORY.c.row_key,
+    unique=True,
+    postgresql_where=ROW_HISTORY.c.superseded_at.is_(None),
+)
+
+#: One row's chain, oldest first: the trigger's close and a chain read.
+IDX_ROW_HISTORY_KEY = sa.Index(
+    "idx_row_history_key",
+    ROW_HISTORY.c.table_name, ROW_HISTORY.c.row_key, ROW_HISTORY.c.recorded_at,
+)
+
+#: The as-of read: every version of one table recorded at or before T.
+IDX_ROW_HISTORY_TABLE_RECORDED = sa.Index(
+    "idx_row_history_table_recorded",
+    ROW_HISTORY.c.table_name, ROW_HISTORY.c.recorded_at,
+)
+
+
+#: Content-addressed text: every doctrine, Dreamer and config file body a
+#: revision below names, stored once per distinct content. Append-only
+#: (`INSERT ... ON CONFLICT DO NOTHING`, never updated): the same bytes are
+#: the same row by construction.
+REVISION_BLOB = sa.Table(
+    "revision_blob",
+    METADATA,
+    sa.Column("sha256", sa.Text, primary_key=True),
+    sa.Column("content", sa.Text, nullable=False),
+    _recorded_at(),
+    sa.CheckConstraint("sha256 ~ '^[0-9a-f]{64}$'", name="revision_blob_sha256_check"),
+)
+
+#: One row per LOAD of an instruction corpus by a running process: the
+#: doctrine (`nora/doctrine`) or the Dreamer's doctrine and objectives
+#: (`nora/dreamer`). Both hot-reload on mtime from the deploy host's own
+#: checkout, which collects unpushed commits, so a git sha does not say what
+#: was served; this does (70-migration §5). `files` maps each file's path,
+#: relative to the corpus directory, to its content's sha256 in
+#: `revision_blob`; `content_sha256` is over that map, so two loads of the
+#: same tree share it. `assembled_sha256` is the tag audience's
+#: `Doctrine.sha256` — the value `/health` and every tag trace report — and
+#: is NULL for the Dreamer corpus, which has no such single digest.
+#:
+#: "In force at T" is the newest row of a corpus with `loaded_at <= T`.
+DOCTRINE_REVISION = sa.Table(
+    "doctrine_revision",
+    METADATA,
+    sa.Column("id", sa.BigInteger, sa.Identity(always=False), primary_key=True),
+    sa.Column("corpus", sa.Text, nullable=False),
+    sa.Column("content_sha256", sa.Text, nullable=False),
+    sa.Column("assembled_sha256", sa.Text, nullable=True),
+    sa.Column("files", pg.JSONB, nullable=False),
+    sa.Column("loaded_at", sa.DateTime(timezone=True), nullable=False),
+    sa.Column("hostname", sa.Text, nullable=False, server_default=""),
+    _recorded_at(),
+    sa.CheckConstraint(
+        "corpus IN ('doctrine', 'dreamer')", name="doctrine_revision_corpus_check",
+    ),
+)
+
+IDX_DOCTRINE_REVISION_CORPUS_LOADED = sa.Index(
+    "idx_doctrine_revision_corpus_loaded",
+    DOCTRINE_REVISION.c.corpus, DOCTRINE_REVISION.c.loaded_at,
+)
+
+#: One row per config file per process start: `config.toml`, `policy.toml`,
+#: `identity.toml`. All three live only on the deploy host and are read once
+#: at startup, so the content each process ran on is recorded here, keyed to
+#: `revision_blob` by content hash (70-migration §5).
+CONFIG_REVISION = sa.Table(
+    "config_revision",
+    METADATA,
+    sa.Column("id", sa.BigInteger, sa.Identity(always=False), primary_key=True),
+    sa.Column("file", sa.Text, nullable=False),
+    sa.Column("path", sa.Text, nullable=False),
+    sa.Column("content_sha256", sa.Text, nullable=False),
+    sa.Column("loaded_at", sa.DateTime(timezone=True), nullable=False),
+    sa.Column("hostname", sa.Text, nullable=False, server_default=""),
+    _recorded_at(),
+    sa.CheckConstraint(
+        "file IN ('config.toml', 'policy.toml', 'identity.toml')",
+        name="config_revision_file_check",
+    ),
+)
+
+IDX_CONFIG_REVISION_FILE_LOADED = sa.Index(
+    "idx_config_revision_file_loaded",
+    CONFIG_REVISION.c.file, CONFIG_REVISION.c.loaded_at,
+)
+
+#: One row per process start: what code was running. `nora/skills` and every
+#: module are baked into the image, so the image's own manifest
+#: (`nora/version.json`: version, commit, build time) names them. An
+#: unstamped build (every ordinary deploy, `scripts/build-image.sh`) has no
+#: manifest, and its row says so in `manifest_status` rather than inventing
+#: a commit; `image_id` is read from `NORA_IMAGE_ID` when the deployment sets
+#: it and is NULL otherwise.
+DEPLOY_REVISION = sa.Table(
+    "deploy_revision",
+    METADATA,
+    sa.Column("id", sa.BigInteger, sa.Identity(always=False), primary_key=True),
+    sa.Column("started_at", sa.DateTime(timezone=True), nullable=False),
+    sa.Column("manifest_status", sa.Text, nullable=False),
+    sa.Column("version", sa.Text, nullable=True),
+    sa.Column("git_sha", sa.Text, nullable=True),
+    sa.Column("built_at", sa.Text, nullable=True),
+    sa.Column("image_id", sa.Text, nullable=True),
+    sa.Column("hostname", sa.Text, nullable=False, server_default=""),
+    _recorded_at(),
+    sa.CheckConstraint(
+        "manifest_status IN ('ok', 'absent', 'unreadable')",
+        name="deploy_revision_manifest_status_check",
+    ),
 )

@@ -16,12 +16,14 @@ import logging
 import os
 import sys
 import time
+from datetime import UTC, datetime
 from pathlib import Path
 
 from . import config
 from .agent.telemetry import setup_agent_tracing
 from .app import adoption, cli, runtime, wake
 from .app.composition import Dependencies, StartupError, build_dependencies
+from .app.revisions import RevisionRecorder
 from .config import ConfigError
 from .obs.errors import setup_errors
 from .obs.health import build_health_app, serve
@@ -92,13 +94,14 @@ async def build_app(config_path: Path) -> App:
             log.warning("tracing setup failed; continuing without tracing", exc_info=True)
 
     deps = await build_dependencies(cfg)
-    return App(cfg=cfg, deps=deps)
+    return App(cfg=cfg, deps=deps, config_path=config_path)
 
 
 class App:
-    def __init__(self, *, cfg, deps: Dependencies) -> None:
+    def __init__(self, *, cfg, deps: Dependencies, config_path: Path | None = None) -> None:
         self.cfg = cfg
         self.deps = deps
+        self.config_path = config_path
         self._health_runner = None
 
     # Convenience accessors matching the pre-phase-3 App's surface — tests and
@@ -171,6 +174,25 @@ class App:
         self._health_runner = await serve(health_app, self.cfg.obs.metrics.port)
 
         deps.background.spawn(heartbeat(deps.metrics))
+        # What this process loaded: its deploy, its three config files, and
+        # every doctrine and Dreamer load from now on, so `nora snapshot --at
+        # T` can say what was in force (design/cognition-loop/70-migration
+        # §5). Spawned, never awaited: a slow or failing database costs the
+        # rows, not the start.
+        recorder = RevisionRecorder(
+            store=deps.revisions, doctrine=deps.doctrine_store,
+            dreamer=deps.dreamer_instructions, metrics=deps.metrics,
+            config_files=tuple(
+                (name, path) for name, path in (
+                    ("config.toml", self.config_path),
+                    ("policy.toml", self.cfg.policy_file),
+                    ("identity.toml", self.cfg.identity_file),
+                ) if path is not None
+            ),
+        )
+        deps.background.spawn(self._record_revisions(
+            recorder, started_at=datetime.fromtimestamp(started_at, tz=UTC),
+        ))
         deps.background.spawn(self._update_last_event_age())
         # Lazy adoption, spawned exactly like the prune sweep and for the same
         # reason: it writes to the record store, and the ingest path drops a
@@ -374,6 +396,11 @@ class App:
                 )
                 if adapter.platform == "signal":
                     self.deps.metrics.gauge("nora_last_event_age_seconds", age)
+
+    @staticmethod
+    async def _record_revisions(recorder: RevisionRecorder, *, started_at: datetime) -> None:
+        await recorder.record_start(started_at=started_at)
+        await recorder.watch()
 
     async def shutdown(self) -> None:
         if self._health_runner is not None:

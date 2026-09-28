@@ -72,6 +72,9 @@ async def store(_standing_history_db: str) -> AsyncIterator[SqlStandingStore]:
         yield SqlStandingStore(engine)
     finally:
         async with engine.begin() as conn:
+            # A reset, not a write: TRUNCATE is refused unless capture is off
+            # (migration 0068, nora.infra.sql.history.CAPTURE_SETTING).
+            await conn.execute(sa.text("SET LOCAL nora.row_history = 'off'"))
             await conn.execute(
                 sa.text("truncate standing, standing_revision cascade")
             )
@@ -239,6 +242,9 @@ async def test_the_head_does_not_move_when_the_append_fails(
         assert landed is not None and landed.body == "and now it lands"
     finally:
         async with eng.begin() as conn:
+            # A reset, not a write: TRUNCATE is refused unless capture is off
+            # (migration 0068, nora.infra.sql.history.CAPTURE_SETTING).
+            await conn.execute(sa.text("SET LOCAL nora.row_history = 'off'"))
             await conn.execute(
                 sa.text("truncate standing, standing_revision cascade")
             )

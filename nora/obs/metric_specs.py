@@ -202,6 +202,16 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         ("kind",),
     ),
     _CounterSpec("nora_doctrine_reload_failures_total", "Doctrine hot-reload failures."),
+    # design/cognition-loop/70-migration.md §5: each doctrine, Dreamer, config
+    # and deploy load is recorded so "what was in force at T" is answerable.
+    # A failed write loses that load's row and nothing else (the process runs
+    # on); this is how the gap shows.
+    _CounterSpec(
+        "nora_revision_record_failures_total",
+        "Revision writes that failed (kind: deploy, config, doctrine, dreamer, "
+        "history_size); each is retried on the next 30s tick.",
+        ("kind",),
+    ),
     # The Dreamer's own instruction corpus (nora/dreamer/), counted separately
     # from the doctrine's on purpose: they are different files with different
     # editors and different blast radii, and one number covering both would make
@@ -2319,6 +2329,19 @@ _GAUGES: tuple[_GaugeSpec, ...] = (
     # series' IDENTITY, so anything selecting it by bare name stops matching
     # with no error anywhere. This one covers every enabled platform, so a
     # wedged Discord Gateway is alertable instead of invisible.
+    # design/cognition-loop step 1b, DEC-232: what system-time history costs,
+    # per covered table, measured hourly by `nora.app.revisions`. The
+    # decision's reversal condition is this growth on the hot tables.
+    _GaugeSpec(
+        "nora_row_history_rows",
+        "Versions held in row_history, per covered table (hourly).",
+        ("table",),
+    ),
+    _GaugeSpec(
+        "nora_row_history_bytes",
+        "Bytes of row_history rows, per covered table (hourly).",
+        ("table",),
+    ),
     _GaugeSpec(
         "nora_adapter_last_event_age_seconds",
         "Seconds since the last ingest event, per platform.",

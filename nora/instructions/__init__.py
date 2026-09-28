@@ -24,13 +24,14 @@ directory arrives as a `Path` from the composition root.
 
 from .dreamer import DreamerInstructions, InstructionSet
 from .frontmatter import InstructionError, ParsedDocument, parse_document
-from .reload import DirectoryWatcher
+from .reload import DirectoryWatcher, Loaded
 
 __all__ = [
     "DirectoryWatcher",
     "DreamerInstructions",
     "InstructionError",
     "InstructionSet",
+    "Loaded",
     "ParsedDocument",
     "parse_document",
 ]

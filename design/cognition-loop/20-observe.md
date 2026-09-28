@@ -174,7 +174,7 @@ clocks still run); the values are sized from that log, and again after step
 `quiet_seconds` and `max_age_seconds` reuse `[dreamer]`'s names, not its
 values.
 
-**As built (step 1, 2026-09-28; DEC-232).** Where the build fixed a value or
+**As built (step 1, 2026-09-28; DEC-233).** Where the build fixed a value or
 a name this table leaves open:
 
 - `[cognition]` holds the table's keys under the names above plus `mode`
