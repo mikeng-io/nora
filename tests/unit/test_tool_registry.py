@@ -58,6 +58,24 @@ def _room() -> Room:
     )
 
 
+#: A Record read that is never called: `record_query` is offered only when one
+#: is wired (`[record_query] enabled`), and the declared-surface tests below
+#: ask about every tool.
+_RECORD = object()
+
+
+def test_record_query_is_offered_only_when_its_record_read_is_wired():
+    """`[record_query] enabled = false` (the shipped default) builds the
+    registry with no Record read, and then no turn and no gate digest carries
+    the tool; wired, both do."""
+    off = ToolRegistry()
+    assert "record_query" not in {t.tool_name for t in _built_tools(off)}
+    assert "record_query" not in off.capability_digest()
+    on = ToolRegistry(record=_RECORD)
+    assert "record_query" in {t.tool_name for t in _built_tools(on)}
+    assert "record_query" in on.capability_digest()
+
+
 def _built_tools(registry: ToolRegistry, *, dream_adaptor: str = "proactive") -> list:
     """The DECLARED surface, which is what every caller below asks about.
 
@@ -75,7 +93,7 @@ def _built_tools(registry: ToolRegistry, *, dream_adaptor: str = "proactive") ->
 
 
 def test_the_registry_exposes_every_declared_tool():
-    tools = _built_tools(ToolRegistry())
+    tools = _built_tools(ToolRegistry(record=_RECORD))
     assert {t.tool_name for t in tools} == {
         # DEC-146: the window-scoped rung below `load_transcript`.
         "who_said",
@@ -415,7 +433,7 @@ def test_adapting_produces_objects_the_agent_factory_accepts():
     model = factory.create_model_provider(
         model="deepseek-v4-flash", max_tokens=400, temperature=0.7, client=client,
     )
-    tools = _built_tools(ToolRegistry())
+    tools = _built_tools(ToolRegistry(record=_RECORD))
     agent = factory.create_agent(
         model=model, system_prompt="p", tools=tools, pre_fill=[],
         guard=ReplyGuard(conversation_id="g1", budgets=ToolRegistry().budgets(),

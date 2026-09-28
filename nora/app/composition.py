@@ -2743,7 +2743,10 @@ async def build_dependencies(
     # (`build_assembler`).
     lineage = lineage_policy(cfg, policy=allowlist, persons=persons)
     tool_registry = ToolRegistry(
-        record=SqlRecordQuery(engine), lineage=lineage,
+        # `[record_query] enabled` (ships off): without the read the registry
+        # withholds the tool from every turn.
+        record=SqlRecordQuery(engine) if cfg.record_query.enabled else None,
+        lineage=lineage,
         route=route_client, vision=vision_client,
         describe_models=_describe_models(cfg),
         describe_providers=_describe_providers(cfg),

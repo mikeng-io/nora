@@ -99,7 +99,8 @@ when some were left out. `author` resolves in this room only
 served by `idx_messages_body_trgm`; a hit that only nears the words is marked
 `near`. At most 30 hits, oldest first, each with its edit, reactions and a
 `deleted` mark; a deleted message's words are withheld until step 2c hides it.
-Statuses: ok, nothing_found, ambiguous, unavailable. Its verb, `query`, is new
+Statuses: ok, nothing_found, ambiguous, unavailable. Offered only with
+`[record_query] enabled` (shipped `false`). Its verb, `query`, is new
 (`tests/architecture/test_tool_names.py` says why). Vectors are not used (80
 §4 leaves them optional).
 

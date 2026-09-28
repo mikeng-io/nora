@@ -9,9 +9,9 @@
     "With [lineage] mode = \"shadow\", every prompt works out which of these rows a room may be shown and records what it would hold back on the prefill span, while showing everything. With mode = \"on\", a note or section that fails is not shown and the rest are."
   ],
   "limitations": [
-    "[lineage] ships with mode = \"off\": prompts are unchanged until the operator turns it on. record_query applies lineage whatever the mode.",
+    "[lineage] ships with mode = \"off\": prompts are unchanged until the operator turns it on. It is not to be turned on before a note shown in another room says which room it came from, which is not built yet.",
+    "record_query ships behind [record_query] enabled = false: no turn is offered it until its three tool_selection cases have run on both arms (the eval subject's config must enable it for that run). When on, it applies lineage whatever [lineage] says.",
     "A room position or culture shows only in its own room, which is the only room either is shown in today.",
-    "A note shown in another room does not yet say which room it came from.",
-    "The tool's routing has three new tool_selection cases and has not been measured live yet."
+    "The prompt blocks read no live roster yet, so with lineage on a note from another room is held back there until they do; record_query reads the asking room's roster itself and searches no other room when it cannot."
   ]
 }

@@ -3375,6 +3375,20 @@ class LineageConfig(BaseModel):
     mode: Literal["off", "shadow", "on"] = "off"
 
 
+class RecordQueryConfig(BaseModel):
+    """`record_query` (design/cognition-loop/15-map.md §4, migration step 2).
+
+    **Ships OFF.** Off, the tool is in no turn's tools, catalogue or the
+    Relevance Gate's capability digest: the registry is built without its
+    Record read, and a tool with nothing to read is withheld rather than
+    offered to answer `unavailable`. Turned on after the prepared
+    `tool_selection` cases run on both arms (the nora-tool skill's §7)."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    enabled: bool = False
+
+
 class LoggingConfig(BaseModel):
     """Where the log goes is no longer a setting: it goes to stdout.
 
@@ -3700,6 +3714,8 @@ class Config(BaseModel):
     cognition: CognitionConfig = CognitionConfig()
     # Optional and defaulted — see `LineageConfig`. Ships OFF.
     lineage: LineageConfig = LineageConfig()
+    # Optional and defaulted — see `RecordQueryConfig`. Ships OFF.
+    record_query: RecordQueryConfig = RecordQueryConfig()
     identity_file: Path
     policy_file: Path
     obs: ObsConfig

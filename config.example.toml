@@ -2205,6 +2205,14 @@ lookup_person = 12
 mode = "off"
 
 
+# `record_query` (design/cognition-loop/15-map.md §4): the recorded messages
+# over a time span, by author or words, under lineage. SHIPS OFF: off, no turn
+# is offered the tool. Turn it on after its tool_selection cases have run on
+# both arms.
+[record_query]
+enabled = false
+
+
 # The cognition loop's stimuli and wake evaluator (design/cognition-loop/
 # 20-observe.md §3; migration step 1). SHIPS OFF: a new subsystem does not
 # switch itself on. `mode = "shadow"` is step 1: every recorded person-authored

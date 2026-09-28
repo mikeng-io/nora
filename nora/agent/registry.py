@@ -221,6 +221,13 @@ class ToolRegistry:
         self._budget_overrides = dict(budget_overrides or {})
         self._record = record
         self._lineage = lineage
+        # Tools no turn is offered in this process: `record_query` without its
+        # Record read (`[record_query] enabled = false`, the shipped default).
+        # Withheld from every surface and from the gate's digest, so an
+        # unconfigured tool costs no prompt and cannot be routed to.
+        self._withheld: frozenset[str] = (
+            frozenset() if record is not None else frozenset({"record_query"})
+        )
         self._transit = transit if transit is not None else TransitClient()
         # `parking` is keyless like `transit` — the TD open-data feed needs no
         # key, so the same default-construct argument applies: a required
@@ -655,7 +662,9 @@ class ToolRegistry:
         guidance; a reader deciding whether an answer could exist needs the
         verb and its subject, not its usage rules.
         """
-        return "\n".join(self._digest_lines(self.read_only_tools() - {LOADER_TOOL}))
+        return "\n".join(self._digest_lines(
+            self.read_only_tools() - {LOADER_TOOL} - self._withheld,
+        ))
 
     def _digest_lines(
         self, names: Iterable[str], *, hot: Container[str] = frozenset()
@@ -1132,6 +1141,7 @@ class ToolRegistry:
         admitted = [
             spec for spec in specs
             if spec.name != LOADER_TOOL and scope.admits(spec.name)
+            and spec.name not in self._withheld
         ]
         resident = [spec for spec in admitted if not defer or spec.name in HOT_TOOLS]
         shelf.stock({
