@@ -43,6 +43,7 @@ __all__ = [
     "HABIT_GAP_MINUTES",
     "AnchorEvent",
     "Anomaly",
+    "ArrivalBacktest",
     "BacktestDay",
     "BacktestResult",
     "Forecast",
@@ -51,6 +52,7 @@ __all__ = [
     "TimeForecast",
     "TripPattern",
     "anchor_events",
+    "backtest_arrivals",
     "backtest_forecast",
     "detect_stay_anomalies",
     "forecast_hour",
@@ -778,3 +780,66 @@ def trip_patterns(
             o, d, day_type, tod, n, round(q1), round(q3), round(ordered_d[n // 2]),  # type: ignore[arg-type]
         ))
     return sorted(out, key=lambda p: -p.trips)
+
+
+@dataclass(frozen=True)
+class ArrivalBacktest:
+    """M1's committed instrument (design/27 §4.4): for each held-out day with
+    an arrival in the window, did it fall inside a predicted habit (± the
+    tolerance), against «the median of every earlier day ± 30 min»."""
+
+    days: int
+    hits: int
+    baseline_hits: int
+
+    @property
+    def accuracy(self) -> float | None:
+        return None if not self.days else self.hits / self.days
+
+    @property
+    def baseline_accuracy(self) -> float | None:
+        return None if not self.days else self.baseline_hits / self.days
+
+
+def backtest_arrivals(
+    stays: list[Stay], *, place_ids: set[int], tz_name: str, start_ms: int,
+    end_ms: int, from_hour: int = 16, to_hour: int = 4, tolerance_min: int = 15,
+    baseline_band_min: int = 30,
+) -> ArrivalBacktest:
+    """Rolling origin, one local day at a time: predict from stays that ended
+    before the day began, score the day's real last arrival in the window."""
+    tz = ZoneInfo(tz_name)
+    lo, hi = rollover_hour(from_hour), rollover_hour(to_hour)
+    if hi <= lo:
+        hi += 1440
+    actual: dict[date, int] = {}
+    for ev in anchor_events(stays, place_ids=place_ids, tz_name=tz_name):
+        if ev.kind == "arrival" and lo <= ev.minute <= hi and start_ms <= ev.ts < end_ms:
+            actual[ev.day] = max(actual.get(ev.day, ev.minute), ev.minute)
+    days = hits = baseline_hits = 0
+    for day, minute in sorted(actual.items()):
+        day_start = int(
+            datetime(day.year, day.month, day.day, _ROLLOVER_HOUR, tzinfo=tz).timestamp() * 1000
+        )
+        fc = time_forecast(
+            stays, place_ids=place_ids, kind="arrival", day=day, from_hour=from_hour,
+            to_hour=to_hour, tz_name=tz_name, history_before_ms=day_start,
+        )
+        if fc.status != "ok":
+            continue
+        earlier = sorted(
+            ev.minute for ev in anchor_events(
+                [s for s in stays if s.ended_ts <= day_start], place_ids=place_ids,
+                tz_name=tz_name,
+            )
+            if ev.kind == "arrival" and lo <= ev.minute <= hi
+        )
+        days += 1
+        if any(
+            h.earliest - tolerance_min <= minute <= h.latest + tolerance_min
+            for h in fc.habits
+        ):
+            hits += 1
+        if earlier and abs(minute - earlier[len(earlier) // 2]) <= baseline_band_min:
+            baseline_hits += 1
+    return ArrivalBacktest(days, hits, baseline_hits)

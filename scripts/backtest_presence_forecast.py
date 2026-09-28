@@ -25,7 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import sqlalchemy as sa
 
-from nora.domain.mobility_forecast import backtest_forecast
+from nora.domain.mobility_forecast import backtest_arrivals, backtest_forecast
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.mobility import SqlMobilityStore
 from nora.infra.sql.schema import PRESENCE_STAYS
@@ -54,9 +54,18 @@ async def main() -> None:
                 subjects = sorted(r.subject_id for r in rows)
         end_ms = int(time.time() * 1000)
         start_ms = end_ms - args.days * _DAY_MS
+        arrival_rows = []
         print(f"{'subject':<24}{'days':>6}{'bins':>7}{'forecast':>10}{'baseline':>10}")
         for subject in subjects:
             stays = await store.stays_for_subject(subject_id=subject)
+            homes = {
+                p.id for p in await store.places_for_subject(subject_id=subject)
+                if p.kind == "home"
+            }
+            arrival_rows.append((subject, backtest_arrivals(
+                stays, place_ids=homes, tz_name=args.tz, start_ms=start_ms,
+                end_ms=end_ms,
+            )))
             result = backtest_forecast(
                 stays, tz_name=args.tz, start_ms=start_ms, end_ms=end_ms,
             )
@@ -67,6 +76,14 @@ async def main() -> None:
                 f"{subject:<24}{len(result.days):>6}{result.bins:>7}"
                 f"{result.accuracy:>10.1%}{result.baseline_accuracy:>10.1%}"
             )
+        # M1 (design/27 §4.4): evening arrival home, habit windows ± 15 min
+        # against «the median of every earlier evening ± 30 min».
+        print(f"\n{'arrival home':<24}{'nights':>7}{'habits':>9}{'median':>9}")
+        for subject, a in arrival_rows:
+            if not a.days:
+                print(f"{subject:<24}{0:>7}{'-':>9}{'-':>9}")
+                continue
+            print(f"{subject:<24}{a.days:>7}{a.accuracy:>9.1%}{a.baseline_accuracy:>9.1%}")
     finally:
         await store.aclose()
 

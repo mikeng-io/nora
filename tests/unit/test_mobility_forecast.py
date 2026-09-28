@@ -330,3 +330,18 @@ def test_a_repeated_trip_reports_what_it_actually_took():
     assert (p.usual_min_minutes, p.usual_max_minutes, p.median_minutes) == (37, 41, 39)
     # Two trips are not a pattern.
     assert trip_patterns(stays[:4], trips[:2], tz_name="Asia/Hong_Kong") == []
+
+
+def test_the_arrival_backtest_beats_a_median_on_two_habits():
+    """Two real habits (19:25 and ~23:45): a median band catches neither kind of
+    night well; the habit windows catch both."""
+    from nora.domain.mobility_forecast import backtest_arrivals
+
+    stays = _wednesday_nights(10, late_weeks={1, 3, 5, 7, 9})
+    result = backtest_arrivals(
+        stays, place_ids={HOME}, tz_name="Asia/Hong_Kong",
+        start_ms=_ms(MONDAY + timedelta(weeks=4)), end_ms=_ms(MONDAY + timedelta(weeks=10)),
+    )
+    assert result.days == 6
+    assert result.accuracy == 1.0
+    assert result.baseline_accuracy is not None and result.baseline_accuracy < 0.7
