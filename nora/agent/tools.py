@@ -6003,10 +6003,49 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         "home": "a home of theirs", "work": "their work",
         "unlabeled": "a place they go",
     }
+    _routine_rough = {
+        "nearby_hours": "roughly, from the hours either side",
+        "day_type": "roughly, from the same hours on other days",
+        "overall": "roughly, from their week overall",
+    }
     _routine_days = (
         "Mondays", "Tuesdays", "Wednesdays", "Thursdays", "Fridays",
         "Saturdays", "Sundays",
     )
+
+    def _routine_shares(chances: Any, places: dict[int, Any]) -> list[dict]:
+        """The window shared out between named places, their own small
+        places (under 5% each, pooled), and stops that are none of theirs.
+        Largest-remainder rounding, so the percents always sum to exactly 100
+        (plain rounding gave 99 and 101, independent review 2026-09-28)."""
+        raw: dict[tuple[str, str], float] = {}
+        seen: dict[str, int] = {}
+        for chance in chances:
+            place = places.get(chance.place_id) if chance.place_id is not None else None
+            if place is None:
+                key = ("somewhere that is not one of their places", "elsewhere")
+            elif chance.probability < 0.05:
+                key = ("other places of theirs", "other")
+            else:
+                name = place.label or _routine_unnamed[place.kind]
+                if not place.label:
+                    # Two unnamed homes must not read as one place.
+                    seen[name] = seen.get(name, 0) + 1
+                    if seen[name] > 1:
+                        name = f"{name} ({seen[name]})"
+                key = (name, place.kind)
+            raw[key] = raw.get(key, 0.0) + chance.probability * 100
+        floors = {k: int(v) for k, v in raw.items()}
+        short = 100 - sum(floors.values())
+        for k in sorted(raw, key=lambda k: (-(raw[k] - floors[k]), k))[:max(short, 0)]:
+            floors[k] += 1
+        return sorted(
+            (
+                {"place": name, "kind": kind, "percent": pct}
+                for (name, kind), pct in floors.items() if pct > 0
+            ),
+            key=lambda x: -x["percent"],
+        )
 
     def _routine_how_often(percent: int) -> str:
         return next(
@@ -6022,7 +6061,10 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         are usually at and how often, as one line, with the numbers kept as
         evidence. Thin evidence is said inside the line («roughly», «on a
         patchy record») so the qualifier travels with the fact."""
-        top = shares[0]
+        # Only one of their own named places can be where they usually are:
+        # the pooled small places and the «not theirs» bucket never are.
+        real = [x for x in shares if x["kind"] not in ("other", "elsewhere")]
+        top = real[0] if real else {"place": None, "percent": 0}
         how_often = _routine_how_often(top["percent"])
         where = top["place"]
         span = (
@@ -6034,8 +6076,8 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         else:
             line = f"{span}: {how_often} at {where}"
         qualifiers = []
-        if basis != "hour":
-            qualifiers.append("roughly, from their other weeks' pattern")
+        if basis in _routine_rough:
+            qualifiers.append(_routine_rough[basis])
         if observed < 50:
             qualifiers.append("on a patchy record")
         if qualifiers:
@@ -6047,6 +6089,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             "how_often": how_often,
             # A second place is never «no single usual place»: below the
             # usual ladder it is where they sometimes are instead.
+            # With no usual place, the most frequent one belongs here too.
             "also": [
                 {
                     "place": x["place"],
@@ -6055,7 +6098,9 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                         else _routine_how_often(x["percent"])
                     ),
                 }
-                for x in shares[1:] if x["percent"] >= 10
+                for x in shares
+                if x["percent"] >= 10
+                and (x is not top or how_often == "no single usual place")
             ],
             "evidence": {
                 "weeks": weeks, "basis": basis,
@@ -6155,28 +6200,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                     )
                     if forecast.status != "ok":
                         continue
-                    shares: list[dict] = []
-                    for chance in forecast.chances:
-                        percent = round(chance.probability * 100)
-                        place = (
-                            places.get(chance.place_id)
-                            if chance.place_id is not None else None
-                        )
-                        # A place under 5% is not worth a name; it and every
-                        # stop outside their places are «elsewhere».
-                        if place is None or percent < 5:
-                            continue
-                        shares.append({
-                            "place": place.label or _routine_unnamed[place.kind],
-                            "kind": place.kind, "percent": percent,
-                        })
-                    named_total = sum(x["percent"] for x in shares)
-                    if named_total < 100:
-                        shares.append({
-                            "place": "somewhere that is not one of their places",
-                            "kind": "elsewhere", "percent": 100 - named_total,
-                        })
-                    shares.sort(key=lambda x: -x["percent"])
+                    shares = _routine_shares(forecast.chances, places)
                     people.append(_routine_person(
                         ref.name, shares, start=start, end=end,
                         basis=forecast.basis, weeks=forecast.support_weeks,

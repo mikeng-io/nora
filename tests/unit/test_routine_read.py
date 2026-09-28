@@ -285,3 +285,64 @@ async def test_a_second_place_is_sometimes_never_no_usual_place(persons):
     out = await _tool(persons, _FakeMobility(stays=_history(6)))("2026-09-09", 19, 22, name="Chi")
     also = out["people"][0]["also"]
     assert also and all(a["how_often"] != "no single usual place" for a in also)
+
+
+# ---- independent review of the reshaping, 2026-09-28 ------------------------
+
+
+def _wednesdays(segments, weeks=6):
+    """`segments` = [(start_h, end_h, place_id)], repeated every Wednesday
+    for `weeks` weeks before NOW."""
+    first = datetime(2026, 8, 26, tzinfo=HK) - timedelta(weeks=weeks - 1)
+    return [
+        _stay(first + timedelta(weeks=w), a, b, pid)
+        for w in range(weeks) for a, b, pid in segments
+    ]
+
+
+async def test_with_no_usual_place_the_most_frequent_is_still_named(persons):
+    stays = _wednesdays([(19, 20, GYM), (20, 21, HOME), (21, 22, SECOND)])
+    out = await _tool(persons, _FakeMobility(stays=stays))(WEDNESDAY, 19, 22, name="Chi")
+    [p] = out["people"]
+    assert (p["usually_at"], p["how_often"]) == (None, "no single usual place")
+    assert "no single usual place" in p["routine"]
+    assert {a["place"] for a in p["also"]} == {"Carver Home", "a home of theirs", "a place they go"}
+    assert sum(x["percent"] for x in p["evidence"]["shares"]) == 100
+    assert all(x["kind"] != "elsewhere" for x in p["evidence"]["shares"])  # none invented
+
+
+async def test_shares_sum_to_100_when_rounding_would_give_101(persons):
+    stays = _wednesdays([
+        (19, 19 + 42 / 60, GYM), (20, 20 + 42 / 60, HOME), (21, 21 + 41 / 60, SECOND),
+    ])
+    out = await _tool(persons, _FakeMobility(stays=stays))(WEDNESDAY, 19, 22, name="Chi")
+    assert sum(x["percent"] for x in out["people"][0]["evidence"]["shares"]) == 100
+
+
+async def test_their_own_small_places_are_pooled_and_never_the_answer(persons):
+    from nora.domain.mobility import DerivedPlace
+
+    small = [
+        DerivedPlace(100 + i, "grant_carver", "c", 22.2 + i / 1000, 114.1, 100.0,
+                     "unlabeled", 0.0, f"Shop {i}", None)
+        for i in range(20)
+    ]
+    _AT.update({100 + i: (22.2 + i / 1000, 114.1) for i in range(20)})
+    segments = [(19, 20, HOME)] + [
+        (20 + i * 0.15, 20 + i * 0.15 + 0.15, 100 + i) for i in range(20)
+    ]
+    out = await _tool(persons, _FakeMobility(stays=_wednesdays(segments),
+                                             places=PLACES + small))(WEDNESDAY, 19, 23, name="Chi")
+    [p] = out["people"]
+    kinds = {x["kind"]: x for x in p["evidence"]["shares"]}
+    assert "elsewhere" not in kinds  # every stop was at one of their places
+    assert kinds["other"]["place"] == "other places of theirs"
+    assert p["usually_at"] in (None, "Carver Home")  # the pool is never the answer
+
+
+async def test_the_ladder_reads_usually_between_60_and_85(persons):
+    stays = _wednesdays([(19, 21.1, HOME), (21.1, 22, GYM)])  # 70% home
+    out = await _tool(persons, _FakeMobility(stays=stays))(WEDNESDAY, 19, 22, name="Chi")
+    [p] = out["people"]
+    assert (p["usually_at"], p["how_often"]) == ("Carver Home", "usually")
+    assert p["also"] == [{"place": "a place they go", "how_often": "sometimes"}]
