@@ -5,7 +5,7 @@
     "Asked «when will Grant be home tonight?», she answers from his own nights, as habits rather than one average («most Wednesdays by 19:30; on the late ones, around midnight»), and on the night itself only from the nights like tonight: if he isn't home by 21:00, the answer is the late habit.",
     "Asked about someone's usual whereabouts today, she also says where they are now against where they usually are at this hour.",
     "Their repeated journeys (for example work to home on weekday evenings) come with how long they actually take.",
-    "Every place she names carries a reference the routing tool can take, so a trip can start from a place like «a home of theirs» without its location ever appearing in a reply or a link."
+    "She can plan a trip from any place she has just named, including one with no name like «a home of theirs», by those same words; its location never appears in a reply or a link."
   ],
   "limitations": [
     "Arrival and departure habits read the last twelve weeks; with fewer than three matching days she falls back to weekdays or weekends as a group and says so.",
