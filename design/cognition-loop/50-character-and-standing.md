@@ -55,13 +55,16 @@ Its modes are `deduced`, `abduced` and `said` ([10](10-tiers.md) §4). It may
 cite every tier below it, including Character ("they tend to change plans
 late, so I hold this one loosely").
 
-**An append-only chain, which reverses standing-compact.** Standing today is
-"lossy and rewritten every turn" (design/standing-compact/00-intent.md). A
-rewrite cannot give back what it dropped, and folds were measured dropping
-at least 10 open dated plans in 206 revisions
-(design/group-situation/10-standing-drops-plans.md). Every Standing revision
-is now kept in a chain, so what a fold dropped is still readable and
-diffable.
+**The head stops being a lossy fold, which reverses standing-compact.**
+Standing already keeps its history: `standing_revision` (migration 0059,
+#352) is append-only and written in the same transaction as the head. What
+changes is the head. Today every fold rewrites it whole, "lossy and rewritten
+every turn" (design/standing-compact/00-intent.md), and folds were measured
+dropping at least 10 open dated plans in 206 revisions
+(design/group-situation/10-standing-drops-plans.md): the chain kept them, but
+the head every turn reads did not. Now the head is sectioned
+([12](12-schemas.md) §5), each section carries its own support and age, and
+a revision changes only the sections its evidence touches.
 
 **Undated positions only.** `I hold open` and `What I am following` hold what
 has no date. A dated plan is the note's: the operator withdrew Standing's

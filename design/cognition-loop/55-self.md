@@ -1,7 +1,7 @@
 ---
 type: design
-title: "Self — what her cognition builds, and how far she may change herself"
-description: "Cognition is not a tier: it is the loop; what it builds is Register, Character and Standing. Her identity is the part of all state that is about her: given (doctrine), done (her Record), digested (her Character) and held (her Standing). Growth is those changing and every turn reading them. Doctrine is law she never proposes to change; within the latitude the operator opens she grows through her Character and Standing, and where evidence pulls against the law the tension is shown to the operator only."
+title: "Self — what her cognition builds, and where her growth lives"
+description: "Cognition is not a tier: it is the loop; what it builds is Register, Character and Standing. Her identity is the part of all state that is about her: given (doctrine), done (her Record), digested (her Character) and held (her Standing). Growth is those changing and every turn reading them. Doctrine is the law: she never changes it, in whole or in part, and it changes only when the humans all agree. Her growth lives only in her own blocks, which render below the doctrine; where they disagree the doctrine is followed and a tension row records it for the operator."
 tags: [nora, self, identity, cognition, growth, doctrine, character]
 timestamp: '2026-09-28'
 edges:
@@ -39,36 +39,27 @@ read together with the doctrine above it and the Standing beside it.
 
 ## 3. Growth, and the law she lives within
 
-Doctrine is the law: the framework she lives inside, authored by the operator
-and never changed by her. **She never proposes doctrine** (operator
-2026-09-28, a red line). Within the law she grows only where the law opens
-latitude, in its own words.
+Doctrine is the law: every file of it, `core/identity.md`,
+`rooms/voice.md` and `rooms/belonging.md` included. **Nora never changes
+doctrine**, in whole or in part, and never proposes a change (operator
+2026-09-28). It changes only when the humans all agree.
+
+**Her growth lives only in her own blocks**: Character · Nora (the `self`
+block) and Standing. They render after the doctrine and always below it, so
+the doctrine is read first and wins. When cognition revises them her
+behaviour changes on the next turn with no code or doctrine change. That is
+the only way she changes herself.
 
 **What is read.** Tag and fire turns read the `self` block and room Standing
 (the `standing` block); unit and person Standing are read with
 `standing_read`, which covers room, unit and person ([15](15-map.md) §3–4).
-When cognition revises them her behaviour changes on the next turn with no
-code or doctrine change. That is the only way she changes herself.
-
-**The `self` block** (step 8) renders after the doctrine and shows only the
-sections of Character · Nora that grow under a doctrine row whose latitude
-the operator has opened; until a row is opened its sections do not render.
-`self_card` stays pushed until then and leaves the prompt at step 8
+The `self` block (step 8) renders her whole Character · Nora, capped in
+lines. `self_card` stays pushed until then and leaves the prompt at step 8
 ([80](80-prior-art.md) §6).
 
-| doctrine | kind | latitude | the section that grows under it |
-|---|---|---|---|
-| `nora/doctrine/core/constraints.md`, `nora/doctrine/public/constraints.md`, `nora/doctrine/rooms/pictures.md` | constraint | **none — settled law** | — |
-| `nora/doctrine/rooms/conduct.md`, `nora/doctrine/public/conduct.md`, `nora/doctrine/rooms/participation-conduct.md`, `nora/doctrine/rooms/silence.md` | conduct | **none — settled law** | — |
-| `nora/doctrine/instruments/` | instrument | not hers | — |
-| `nora/doctrine/core/identity.md` | identity | **undecided**: what she is stays fixed; how she carries herself in one unit may be hers | `How I come across` |
-| `nora/doctrine/rooms/voice.md`, `nora/doctrine/public/voice.md` | identity | **undecided, leaning yes**: within the voice register the file sets, word choice, humour, length and a unit's own expressions may be hers | `How I sound here`, `What lands and what does not` |
-| `nora/doctrine/rooms/belonging.md` | identity | **undecided**: her place in a unit is authored today, and it is what Character and Standing grow into | `What they come to me for` |
-
-Where latitude is opened it is opened **in the doctrine's own words** ("within
-this voice register, how you sound in a unit is yours to find"). She does not
-claim it; the law gives it. The undecided rows are the operator's to settle,
-before step 8.
+**Where her blocks and the doctrine disagree, the doctrine is followed** and
+a tension row records the disagreement for the operator (§4): information
+for the humans to decide on, never a proposal from her.
 
 ## 4. Tension, made visible
 
@@ -87,9 +78,10 @@ Tension is outside the tiers ([10](10-tiers.md) §1; [15](15-map.md) §1 and
   (none is in `read_only_tools()`), no block renders one, and a test pins
   both. A tension rendered into her turns would become an argument with the
   law.
-- **A report, not a request.** What the operator does with it is the
-  operator's; the operator called it the experiment's most interesting
-  possible result, growth beyond what was expected.
+- **A report, not a request.** It is information for the humans, who alone
+  decide whether the doctrine changes; she never proposes the change. The
+  operator called it the experiment's most interesting possible result,
+  growth beyond what was expected.
 
 ## 5. What keeps growth honest
 

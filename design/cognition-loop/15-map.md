@@ -57,7 +57,7 @@ section only where its lineage passes for the room ([10](10-tiers.md) §3).
 | **`memos`** (new) | Register · memo | the unit | tag, fire, cognition | titles |
 | **`events`** (new) | Register · event | the unit | tag, fire, cognition | next 14 days and last 48 hours, one line each, with each field's mode and `as_of` |
 | `culture` | Character · room | a room | tag, fire, cognition | capped |
-| **`self`** (new, step 8) | Character · Nora | Nora | every turn, after doctrine; only sections in doctrine rows whose latitude is open ([55](55-self.md) §3) | capped in lines |
+| **`self`** (new, step 8) | Character · Nora | Nora | every turn, after the doctrine and below it; her whole account ([55](55-self.md) §3) | capped in lines |
 | `standing`, `standing_working_set` | Standing · room | a room | tag, fire | as today |
 | `self_card` | memory | Nora | tag, fire; until step 8 | as today |
 | `peer_card`, `peer_history`, `people_in_window` | memory | a person; the people in the window | tag, fire | as today |

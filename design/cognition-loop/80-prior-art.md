@@ -43,7 +43,7 @@ are Nora's additions.
 | Standing | — | — | `persona` block, in part | reflections about self |
 | cognition session | dream pass | — | sleep-time run | reflection |
 | reasoning `told` / `deduced` / `induced` | `explicit` / `deductive` / `inductive` | — | — | — |
-| reasoning `abduced`, `computed` | none | none | — | — |
+| reasoning `abduced`, `computed`, `said` | none | none | — | — |
 | contradiction kept as a row ([50](50-character-and-standing.md) §4) | `contradiction` | invalidated edge | — | — |
 | tension row (operator-only) | none | none | — | — |
 | citations | `source_ids` | `episodes[]` | git history | cited indices |

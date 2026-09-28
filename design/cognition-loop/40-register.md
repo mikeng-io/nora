@@ -79,7 +79,8 @@ and evict its own misreads. Every change cites its evidence and keeps the
 previous revision. Two guards hold ([30](30-cognition.md) §3): a revision that
 moves a `told` event to `cancelled`, `evicted` or `lapsed` without `told`
 evidence keeps it rendering, flagged "cancelled?", for 48 hours; and
-cognition never cancels a reminder a person set.
+cognition never cancels a reminder a person set, which fires with the
+event's current revision.
 
 **The newest evidence outranks the event's older revision.** A message after
 the event was set, a co-location episode at another place at the event's time
@@ -138,6 +139,8 @@ those two fields.
 Any Register row may name `exclude_persons`: a birthday plan is never shown to
 the person it is for, in any room, by any block or tool, nor in any room with
 unnamed platform accounts. A surprise cue in a cited message ("don't tell
-her") makes it mandatory on the write; code unions it into every row that
-cites this one, and re-checks it when a reminder about the row fires
-([10](10-tiers.md) §3).
+her") makes it mandatory on the write. Code unions it into every row that
+cites this one and across Register links: a note and its event
+(`Note.event_id`) share it both ways, and a memo a note closes into inherits
+it. It is re-checked on every link write and when a reminder about the row
+fires ([10](10-tiers.md) §3).

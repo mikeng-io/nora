@@ -38,17 +38,17 @@ Each step ships alone, behind a flag that defaults off, and is read back live
 
 | # | step | ships | the reading that gates the next |
 |---|---|---|---|
-| 0 | **Tiers, words, grants** | a DEC for [10](10-tiers.md), [12](12-schemas.md), [15](15-map.md); a DEC granting the named write verbs through `AdaptorGrant` (write verbs are not act verbs); each amendment of §3 as a decision row; the unit read boundary settled (§4); GLOSSARY rewritten to [10](10-tiers.md)'s words, resolving the conflicts below | — |
-| 1 | **Signals, shadow** | the durable `signal` table, the ingest signal stage, cues, the pending set, wake metrics; reactions, edits and deletes or unsends ingested as items; collector polls recorded; the clocks still run everything | a week of wake reasons; defaults sized from it |
+| 0 | **Tiers, words, grants** | a DEC for [10](10-tiers.md), [12](12-schemas.md), [15](15-map.md); a DEC granting the named write verbs through `AdaptorGrant` (write verbs are not act verbs); each amendment of §3 as a decision row, and index rows for R-31 and DEC-176, which have none; the unit read boundary settled (§4); GLOSSARY rewritten to [10](10-tiers.md)'s words, resolving the conflicts below | — |
+| 1 | **Signals, shadow** | the durable `signal` table, the ingest signal stage, cues, the pending set, wake metrics; reactions, edits and deletes or unsends ingested as items; collector polls and platform adapter health recorded; the clocks still run everything | a week of wake reasons; defaults sized from it |
 | 2 | **Rollup and lineage** | the Rollup as a projection (logical watermark, `build`, citation by overlap), design 27's presence rollup moved onto the watermark; co-location, outing; daybook and tie partial ([25](25-rollup.md) §3); the [10](10-tiers.md) §3 columns, every lineage kind and its per-room predicate; the lineage backfill, then the filter; the `citation` edge table; `rollup_read`, `record_query`; wake defaults re-sized with Rollup signals | incremental and batch builds of each rollup agree exactly; no row with unknown lineage renders outside its origin room; a presence-lineaged field is refused in a room without the location flag and in one where DisclosureGuard fails |
 | 2b | **Events unit-wide** | the event migration (§5); `event_revision`, the lifecycle statuses, per-field modes; the event verbs with `base_revision_id`; the tag path's five event tools renamed everywhere (§8); `event_search` | existing `Gathering` tests and the tag path's event cases green; `tool_selection` no worse |
 | 2c | **Withdrawal cascade** | `unsupported` marking over the citation table, fed by step 1's deletes, the PII scrub and a person leaving a unit; `nora person forget` for the stores that exist (§9) | a cascade test withdraws one Record item and finds every row citing it `unsupported`, in every store |
-| 3 | **Cognition, shadow** | the session and agenda; the note, event and room-Character verbs in dry run (would-write rows recorded, nothing committed); skills injected; `standing_revise` and the room Standing schema (the debrief writes through it live; the ingest fold's replacement runs dry); culture migrated to the sectioned account; the act verb mirrored and held ([30](30-cognition.md) §2), read against the live proactive pass's decisions; the assess pass, nightly data-quality checks and labelled corpora ([30](30-cognition.md) §6); `tool_selection` on the cognition catalogue | the truncated dinner case passes ([40](40-register.md) §5); each capability's corpus meets its gates; over a shadow week every clocked-adaptor write is matched or deliberately closed; the act caps and dedupe hold in shadow |
-| 4 | **Cut over** | cognition commits; the clocks, the four orient adaptors and the ingest Standing fold retired (with `rollup_max_folds` and its metric); proactive is the act step; culture written by `character_revise` | the re-pointed adaptor eval suites green, master vs branch; the latency falsifier ([00](00-intent.md) §6) |
-| 5 | **Social and play** | the story poller (members only, rate-capped, per-person off switch), perceived through ingest comprehension under the per-unit cap; the story rule and its test rewritten; posts and reels as the bridge can list them; Steam polling and Discord rich presence and voice sampled; play session and play profile; daybook and tie rebuilt with the new inputs | poll outcomes and item counts read back; the login unharmed for a week; the dinner case with stories |
+| 3 | **Cognition, shadow** | the session and agenda; the note, event and room-Character verbs in dry run (would-write rows recorded, nothing committed); skills injected; `standing_revise` and the room Standing schema, live: the debrief and the ingest fold both write through it from here, so the head has one shape; the act verb mirrored and held ([30](30-cognition.md) §2), read against the live proactive pass's decisions; the assess pass, nightly data-quality checks and labelled corpora ([30](30-cognition.md) §6); `tool_selection` on the cognition catalogue | the truncated dinner case passes ([40](40-register.md) §5); the event, note and room-Character corpora meet their gates; over a shadow week every clocked-adaptor write is matched or deliberately closed; the act caps and dedupe hold in shadow |
+| 4 | **Cut over** | cognition commits; the clocks, the four orient adaptors and the ingest Standing fold retired (with `rollup_max_folds` and its metric); proactive is the act step; culture migrated to the sectioned account and written by `character_revise` from here | the re-pointed adaptor eval suites green, master vs branch; the latency falsifier ([00](00-intent.md) §6) |
+| 5 | **Social and play** | the story poller (members only, rate-capped, per-person off switch), perceived through ingest comprehension under the per-unit cap; the story rule and its test rewritten; posts and reels as the bridge can list them; `social_items`; Steam polling and Discord rich presence and voice sampled; play session and play profile; daybook and tie rebuilt with the new inputs | poll outcomes and item counts read back; the login unharmed for a week; the dinner case with stories |
 | 6 | **Faces** | detector, embedder, templates keyed by workspace; labels by reference photos, the portal and `face_label`; face co-appearance; the custody and face checks | precision on the held-out labelled set ([60](60-faces.md) §6) |
-| 7 | **Memos** | the memo table, `memo_write`/`memo_withdraw`/`memo_read`, `<memos>`, the «記低» routing, the key-shape exemption | `tool_selection` before and after; the dinner case whole |
-| 8 | **Character and Standing** (whole) | person, unit and Nora Character; unit and person Standing; Standing as an append-only chain; `character_read`, `standing_read`; the `self` block, and `self_card` out of the prompt; Honcho pushed as `explicit` plus the peer card; the correction portal and `character_dispute`; tension rows and their page; the rebuild-drift metric | a labelled set of accounts judged against the Record they cite |
+| 7 | **Memos** | the memo table, `memo_write`/`memo_withdraw`/`memo_read`, `<memos>`, the «記低» routing, the key-shape exemption | the memo corpus meets its gates; `tool_selection` before and after; the dinner case whole |
+| 8 | **Character and Standing** (whole) | person, unit and Nora Character; unit and person Standing, sectioned with per-section support and age; `character_read`, `standing_read`; the `self` block (her whole Character · Nora, capped, below the doctrine), and `self_card` out of the prompt; Honcho pushed as `explicit` plus the peer card; the correction portal and `character_dispute`; tension rows and their page; the rebuild-drift metric | a labelled set of accounts judged against the Record they cite |
 
 Steps 5 and 6 need step 1 (signals), step 2 (lineage kinds, rollup tables)
 and the act verb (step 4); their ingestion may be built from step 2 on, in
@@ -82,7 +82,7 @@ this revision; this bundle does not edit GLOSSARY):
 
 - **Design 39 and DEC-162** as a separate adaptor: its decide and act turns
   become cognition's act step. What survives of DEC-162: the home room (39
-  D2), the decide/compose split, the per-room `proactive` flag, cancellation
+  D2), generalised to each agenda item's bound room; the decide/compose split, the per-room `proactive` flag, cancellation
   only by a tag-path revision (D11), silent recorded as done, the pending
   ceiling (D5), strikes.
 - **The 2026-09-24 story rule** (design/instagram-adoption/18-instagram-read-and-search.md):
@@ -97,7 +97,9 @@ this revision; this bundle does not edit GLOSSARY):
 - **Design 27's Tier 6** (co-location, speculative): built as a Rollup; design
   27's incremental path moved onto the logical watermark.
 - **Standing "lossy and rewritten every turn"** (design/standing-compact/00-intent.md):
-  an append-only chain ([50](50-character-and-standing.md) §2).
+  the head stops being a lossy fold; its sections carry their own support
+  and age, and hold undated positions only. The chain, `standing_revision`
+  (migration 0059, #352), is kept as it is ([50](50-character-and-standing.md) §2).
 - **This session's first draft** (commit 0e060cf, a conductor over specialist
   agents).
 
@@ -107,15 +109,15 @@ this revision; this bundle does not edit GLOSSARY):
 |---|---|
 | R-1 | cognition sends nothing; its acts are reminder rows the fire path sends. Ambient traffic reaches a background session as Record it reads, and that session cannot send |
 | R-1b | unchanged: three senders since DEC-212 (tag path, fire path, public summons); cognition adds none |
-| R-98 | *who* kept (trust Tier 0: the listed persons of the unit's rooms); *only on request* reversed: the poller reads members' stories |
-| R-31, DEC-79 | the live DisclosureGuard re-runs at render for every presence-lineaged field; DEC-79's room `location` flag is the `presence` predicate |
+| R-98 | *who* kept: the unit's roster (the listed persons of its rooms) is a subset of trust Tier 0 (anyone listed in any group room); *only on request* reversed: the poller reads members' stories |
+| R-31, DEC-79 | the live DisclosureGuard re-runs at render for every presence-lineaged field; DEC-79's room `location` flag is the `presence` predicate. R-31 has no index row today; step 0 adds one |
 | R-21 | an agenda item's room-scoped reads resolve through its bound room |
 | R-33 | a face crop goes only to the room its media came from; every image she sends passes the custody and face check |
 | R-49 | extended to derived rows: `message:A` renders in room B only when B's listed persons are a subset of A's and B lists no `*` person; the origin room is shown |
-| R-18 | extended to images (the face check); memo bodies exempt from the key-shape check (D5) |
+| R-18 | extended to images (the face check). R-18 guards replies, and it still blocks a key-shaped value in a reply, one read from a memo included, unless the operator rules otherwise |
 | R-28 | `route` refuses coordinates taken from a presence rollup |
 | DEC-214, [50](50-character-and-standing.md) §5 | Character is per unit; the peer card, unscoped within its Honcho workspace, is never Character evidence |
-| ARCHITECTURE §8 | "Background passes never speak" holds in form: cognition's one act is a reminder row the fire path speaks. "Every Dreamer write screened" gains the memo key-shape exemption. "Not governed yet" lists each gap this bundle opens until its step's DEC lands |
+| ARCHITECTURE §8 | "Background passes never speak" holds in form: cognition's one act is a reminder row the fire path speaks. "Every Dreamer write screened" gains one exemption: memo bodies skip `dream_screen`'s key-shape check (`nora/agent/dream_screen.py`, D5) and render normally. "Not governed yet" lists each gap this bundle opens until its step's DEC lands |
 | DEC-176 | has no index row (it lives in design/ambient-loop/03-decisions.md); step 0 adds one |
 
 **Kept**: the note brake (GLOSSARY **note**), widened ([10](10-tiers.md) §2
@@ -125,8 +127,8 @@ rule 4); DEC-213 (note body schema).
 
 | position | what would decide it |
 |---|---|
-| latitude in `core/identity.md`, `voice.md`, `belonging.md` ([55](55-self.md) §3) | the operator, before step 8 |
-| the unit as the read boundary for transcripts of all its rooms | the operator's 2026-09-09 ruling covers proactive; to be confirmed for cognition at step 0 |
+| a Lessons tier (learned practice, Hermes/Prime-style) | operator deciding |
+| the unit as the read boundary for transcripts of all its rooms | the operator's 2026-09-09 ruling covers proactive; to be confirmed for cognition at step 0. If it is not, cognition runs one session per room instead of per unit, with the same verbs and agenda |
 | granting cognition the live social reads (`instagram_*`, `x_*`, `linkedin_*`) | the operator; the risk is the messaging login |
 | one agent on the runtime model (a cheap model) holding a busy unit's day | step 3's shadow: items closed per session, refusals per rule, context size |
 | participation as a wake of the same loop | session latency measured after step 4 |
@@ -149,13 +151,13 @@ All additive: no table is dropped (the rule the deprecated tiers set).
 - **Culture → sectioned Character.** Old revisions stay readable; the next
   revision is written to the schema.
 - **Standing → sections.** The JSON working set becomes `Found, not yet
-  given`; the chain starts with the current row.
+  given`; `standing_revision` continues unchanged.
 - **Lineage backfill.** Computed from each existing row's citations; a row
   whose citations cannot be resolved gets origin-room-only lineage.
 - **`citation` edge table.** Filled from existing citations, then written with
   every revision.
 - **New tables**: `signal`, `event_revision`, `memo`, `character`,
-  `standing_revision`, `tension`, face labels and templates; `build` on every
+  `tension`, face labels and templates; `build` on every
   Rollup table.
 
 ## 6. Cost model
@@ -199,6 +201,8 @@ step's PR:
 - **new blocks**: `memos`, `events`, `self`;
 - **new tools**: `memo_write`, `memo_withdraw`, `memo_read`, `event_search`,
   `character_read`, `standing_read`, `face_label`, `character_dispute`;
+- **changed**: `remind` gains `brief` for cognition's acts; it is the tool the
+  tag path already holds, so the change is measured like a new one;
 - **renamed**: `create_event`, `update_event`, `cancel_event`, `rsvp_event`,
   `list_events` → the event verbs and `event_search`, in tools, doctrine,
   skills, evals and tests at once (step 2b).
@@ -209,8 +213,12 @@ step's PR:
   person (the chain is kept, bodies blanked), deletes their templates and
   reference photos, sets perceptions naming them to `unknown`, purges their
   social items and blobs, rebuilds the Rollup without them, and marks every
-  citing row `unsupported`. A cascade test covers every store; each step that
-  adds a store extends both.
+  citing row `unsupported`. It also deletes the person's conclusions and peer
+  in each Honcho workspace they are in. In Langfuse it deletes the traces
+  whose metadata names the person; their words inside other traces (a
+  transcript window) are not reachable by person and age out under
+  Langfuse's retention, and the command reports both counts. A cascade test
+  covers every store; each step that adds a store extends both.
 - **Retention per source**: story items and blobs, other social items, and
   face data each have their own retention key, set before the step that
   ingests them ships.
@@ -220,7 +228,8 @@ step's PR:
 
 ## 10. Observability
 
-- `nora_cognition_item_total{kind,outcome}`; refusals by rule,
+- `nora_cognition_item_total{kind,outcome}`;
+  `nora_cognition_corrected_total{tier}`; refusals by rule,
   `nora_cognition_refused_total{verb,rule}`; acts by outcome;
   `nora_cognition_unit_tokens_total{unit}`; the signal metrics of
   [20](20-observe.md) §4; `nora_dq_failures_total{check}`;
@@ -234,8 +243,10 @@ step's PR:
 agent for orient, decide and act; events unit-wide and derived, cognition may
 revise, confirm and cancel; no new statuses; stories, posts, reels and the
 social stream ingested; faces now; passwords may be kept in memos; culture is
-the Character of a collective; doctrine is law she never proposes to change,
-tension shown to the operator; every Register, Character and Standing row is
+the Character of a collective; doctrine is law she never changes, in whole
+or in part, and changes only when the humans all agree; her growth lives only
+in her own blocks, below the doctrine, with any disagreement recorded as
+tension for the operator; every Register, Character and Standing row is
 schema'd Markdown in a revision chain, and the Rollup is typed and rebuilt.
 Operator decisions, binding:
 
@@ -246,9 +257,9 @@ Operator decisions, binding:
 - **D2** `told` = any person stated it in words, members agreeing among
   themselves included; `abduced` = concluded from evidence nobody stated; her
   own words are the mode `said`, Standing only.
-- **D3** Deviation is a signal, not a rule; the only act guards are
-  disclosure, rate caps, dedupe and abduced-only-as-a-question; deviation is
-  raised only on sources proven healthy for the interval.
+- **D3** Deviation is a signal, not a rule; the only act guards are the
+  general guards ([30](30-cognition.md) §3); deviation is raised only on
+  sources proven healthy for the interval.
 - **D4** Step 8 stays whole.
 - **D5** Memo bodies are exempt from `dream_screen`'s key-shape check and
   render normally.

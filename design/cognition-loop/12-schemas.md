@@ -43,7 +43,7 @@ held by one parser per kind, each called by the write verb before commit:
    writes them.
 6. **Refused, never repaired**, beyond whitespace. The refusal names the rule
    (a closed vocabulary, one counter label per rule) and is answered to the
-   model as R-27 `refused` so it can rewrite.
+   model as `refused` (ADR 0009's status) so it can rewrite.
 
 **Typed columns vs body.** What code must compute on is a column, not prose:
 ids, unit, entity, status, dates, and every column of [10](10-tiers.md) §3
@@ -121,7 +121,7 @@ Standing: it answers Standing's question, not Character's
 |---|---|---|
 | note | schema (DEC-213) | unchanged |
 | culture | continuous prose, "no headings" by its objective | the sectioned account above; prose inside each section |
-| room Standing | one paragraph + JSON working set, rewritten every turn | the sections above, as an append-only revision chain ([50](50-character-and-standing.md) §2) |
+| room Standing | one paragraph + JSON working set, the head rewritten by every fold (its chain, `standing_revision`, exists) | the sections above, each with its own support and age; the head is no longer a lossy fold ([50](50-character-and-standing.md) §2) |
 | event | typed columns, no body | columns with per-field modes + body, revision chain |
 
 Rows written before a schema still read back and are never rewritten in place;

@@ -32,7 +32,8 @@ word for any of these things is a defect.
 Outside the five, and not tiers:
 
 - **Doctrine** — authored by the operator (`nora/doctrine/`). Never derived,
-  never written by Nora, and it wins over anything derived about her.
+  never changed by Nora in whole or in part, changed only when the humans
+  all agree, and it wins over anything derived about her.
 - **Memory** — Honcho, and only Honcho: a third party's derived model of
   people. Read as a hint, never cited. `remember` still writes a person's own
   settled claim about themselves into it.
@@ -58,8 +59,10 @@ And one word names a process, never a store:
    members or rooms; Standing cites any of the four. **Nothing cites upward**:
    a note may not rest on "that person tends to cancel", which is a Character
    line, not a claim about the plan.
-2. **Everything derived rests on the Record.** A derived row with no chain of
-   citations ending in Record ids is refused.
+2. **Everything derived rests on the Record.** Every citation chain ends in
+   Record ids; a Rollup key qualifies, because every Rollup row is computed
+   from Record ids. A derived row with a chain that does not end there is
+   refused.
 3. **One write path per tier.** Code writes the Record and the Rollup; the
    two recording verbs of §1 write Record items authored by a person. Only
    write verbs write Register, Character and Standing, and each verb belongs
@@ -77,7 +80,7 @@ And one word names a process, never a store:
 6. **Keys are fixed.** The unit is the key of everything derived, inside
    DEC-214's hierarchy (workspace > unit > room; one room per platform per
    unit), with one exception: the person-scoped Rollup rows (stay, trip,
-   place, rhythm) are keyed by person and shared across that person's units,
+   place, occupancy, rhythm, corridor) are keyed by person and shared across that person's units,
    because a person moves as one stream; lineage decides which rooms see
    them. Record: by room, by person, by platform account. Rollup: (kind,
    person, interval) or (kind, unit, subject, interval), cited by (kind,
@@ -101,8 +104,8 @@ Columns, computed or checked by code:
 | **reasoning** | how it was reached ([§4](#4-reasoning-modes)) | every derived row; **per field** on an event | code for `computed`; otherwise the write verb's argument, checked against the tier's allowed modes (§1) and capped by code (§4) |
 | **confidence** | the writer's stated certainty: `low`, `medium`, `high` | Register, Character and Standing rows | the write verb |
 | **lineage** | the set of `(kind, subject, origin room)` its citations reach down to; **per field** on an event, **per section** on a Character or Standing row | every derived row | code, from the citation chain; never the model |
-| **exclude_persons** | people this row is never shown to (a surprise) | Register rows, and by union every row citing one; always empty on the Rollup | the write verb; code unions it down the citation chain |
-| **as_of** | when its newest evidence was observed | every derived row | code |
+| **exclude_persons** | people this row is never shown to (a surprise) | Register rows, and by union every row citing or linked to one; always empty on the Rollup | the write verb; code unions it from everything the row cites and across Register links (below) |
+| **as_of** | when its newest evidence was observed | every derived row; **per field** on an event | code |
 | **valid_from / valid_to** | when what it says held in the world, not when it was written | Rollup episodes and Register rows only | code for Rollup; the write verb for Register |
 | **last_supported_at / support_count** | the newest Record time its citations reach, and how many independent citations support it | Character and Standing sections | code |
 | **base_revision_id** | the revision a write replaces; a stale one is refused `stale_base` with the current row | Register, Character and Standing revisions | the write verb |
@@ -125,11 +128,13 @@ Each lineage kind has one written per-room predicate, in code:
 | `social` (subject P) | P is a listed person of B |
 | `play` (subject P) | P is a listed person of B |
 | `perception` | B passes the lineage of the item it reads |
-| `memory:<unit>` | B belongs to that unit |
 
-- **Per field.** A field (on an event) or section (on a Character or Standing
-  row) whose lineage fails for a room is not shown there; the rest of the
-  row is. A status or people field that places people is `presence`-lineaged.
+Memory has no lineage kind: it is never cited, so nothing derived rests on it.
+
+- **Per field, every entry.** A field (on an event) or section (on a
+  Character or Standing row) renders in a room only if every entry of its
+  lineage passes there; one that fails is not shown, and the rest of the row
+  is. A status or people field that places people is `presence`-lineaged.
 - **Placing a person is presence.** Any row that places a person somewhere at
   a time carries `presence` for that person, whatever its source: a
   co-location, a face in a media item, a story's location tag.
@@ -141,7 +146,10 @@ Each lineage kind has one written per-room predicate, in code:
   backfill before the filter ships ([70](70-migration.md) step 2).
 - **Surprises.** A row with a non-empty `exclude_persons` never renders in a
   room holding an excluded person, never in a room with unnamed platform
-  accounts, and is re-checked when a reminder about it fires.
+  accounts, and is re-checked when a reminder about it fires. Code unions it
+  from everything a row cites, and across links between Register rows (a
+  note and its event through `Note.event_id`; a note and the memo it closes
+  into), re-checking on every link write.
 
 ## 4. Reasoning modes
 
@@ -197,11 +205,24 @@ survives as the word for the Character of a collective; the existing
 | **memory** | Honcho | any store of ours |
 | **conclusion** | a derived row in Honcho | a Record item (Honcho calls its conclusions "observations"; Nora never does) |
 | **signal** | what ingestion, the Rollup or the clock raises to wake cognition | an event |
-| **agenda** | the items code computes from a unit's pending signals for one session | a plan the model writes; a menu of actions |
+| **agenda** | the items code computes from a unit's pending signals for one session, each bound to a room | a plan the model writes; a menu of actions |
+| **cue** | a deterministic feature of an item that makes it matter (a date, an amount, a keep instruction, a surprise) | a model's judgement |
+| **wake** | the moment a unit's pending signals start a session | a clock tick |
+| **strike** | one session that ended with an agenda item still open; at a ceiling code closes the item | a note's strike (a raise nobody answered), though it is the same idea |
+| **deviation** | a Rollup signal: a person's pattern broke, raised only on healthy sources | a rule that triggers an act |
+| **co-location** | the Rollup episode of members at one place at one time | an event |
+| **outing** | the Rollup episode of co-located members away from every member's home | an event |
+| **tie** | the Rollup aggregate of how much two people interact, per week | a Character line about closeness |
+| **echo rule** | her own rows ground only `said` Standing and her Character paired with responses | a filter on her replies |
+| **unsupported** | the state of a derived row whose citation chain reaches a withdrawn Record item; it does not render | deleted |
+| **tombstone** | what a pruned, still-cited Record row leaves: id, kind, time, no body | an `unsupported` row |
+| **assess pass** | the measurement of finished sessions, off any live path ([30](30-cognition.md) §6) | a gate on a write |
 | **session** | one cognition run for one unit | a Honcho session (a conversation thread; always written "Honcho session") |
 | **cognition** | the loop | a tier |
 | **write verb** | a tool that writes one tier's row, validated by code before commit | an act |
 | **act verb** | `remind`: the one tool whose row leaves through the fire path | a send |
+| **reminder** | a row holding what is to be done in a room and when; every act is one | a note |
+| **brief** | what a reminder cognition writes carries: an intent (`tell` or `ask`) and the subject rows, never prose | the words she will say |
 | **tag path** | the turn a tag starts; the reflex | cognition |
 | **fire path** | `FirePath.speak` (`nora/app/fire.py`), the turn a due row starts; one of the senders of R-1b | a background session |
 | **unit** | the social unit a room belongs to (DEC-105); the key of everything derived | a Honcho named scope (how memory stores it); a "circle" |

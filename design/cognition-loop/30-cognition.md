@@ -49,7 +49,8 @@ One context holds several items' reads, so a line written for one item can
 carry what was read for another. Code bounds this through citations (every
 line cites, and its lineage is computed from what it cites); the assess pass
 measures whether a citation supports its line (§6). Whether the unit is the
-read boundary for all its rooms' transcripts is open until step 0
+read boundary for all its rooms' transcripts is open until step 0; if it is
+not, cognition runs one session per room instead, with the same verbs
 ([70](70-migration.md) §4).
 
 An agenda with no items is no session: zero model calls, the rule every
@@ -61,7 +62,7 @@ adaptor keeps today.
 |---|---|---|
 | **read** | every read tool the registry admits (`read_only_tools()`) except the live social reads ([20](20-observe.md) §2), plus the warehouse queries of [15](15-map.md) §4: `record_query`, `rollup_read`, `event_search`, `memo_read`, `character_read`, `standing_read`, `social_items` | returns into context, filtered by the item's room |
 | **write** | one family per tier: Register (`note_create`, `note_update`, `memo_write`, `memo_withdraw`, `event_propose` (status `staged` or `proposed`), `event_revise`, `event_set_status`), Character (`character_revise`), Standing (`standing_revise`); each takes `base_revision_id` | code validates, then commits (§3) |
-| **act** | `remind(at, room, brief)`, the one act verb | a reminder row; the fire path composes it when due |
+| **act** | `remind(at, room, brief)`, the one act verb; `room` is the agenda item's bound room | a reminder row; the fire path composes it when due |
 | **close** | `close(item, outcome)` | ends one agenda item |
 
 **Every act is a reminder** (DEC-162's decide/compose split, kept). Cognition
@@ -71,8 +72,16 @@ prose. "Speak now" is a reminder due now; "ask" is a brief whose intent is
 `ask`. When it comes due, the fire path composes the words inside the target
 room, under that room's guards: the brief's rows are assembled through the
 room's lineage and the live DisclosureGuard, the room's `proactive` flag
-applies, and `max_pending_per_requester` caps what is pending. There is no
-separate speak or ask send path. The senders stay those of R-1b: the tag
+applies, and `max_pending_per_requester` caps what is pending. The room is
+always the agenda item's bound room: DEC-162's home room, generalised. There
+is no separate speak or ask send path. `remind` is the tool the tag path
+already holds, so adding `brief` changes a shared tool and is measured with
+`tool_selection` ([70](70-migration.md) §8).
+
+**A person's reminder after cognition revises its event** fires with the
+event's current revision. If cognition cancelled the event, the reminder is
+kept and fires flagged as being about a cancelled event: only the tag path
+cancels a reminder a person set. The senders stay those of R-1b: the tag
 path, the fire path and, since DEC-212, the public summons.
 
 **The grant.** The runtime's ceiling today is "may look, may not act": every
@@ -102,11 +111,12 @@ mirrored to a review channel and held, as participation's shadow is
 The session is one agent; judging its writes is not left to it.
 
 **Enforced by code on every write, before commit.** A failure is refused with
-R-27 `refused` and a named reason (ADR 0009), answered to the model so it can
+`refused` (ADR 0009's status) and a named reason, answered to the model so it can
 rewrite, and counted by rule; never silently dropped.
 
-1. **Citations resolve** to ids this session was shown or fetched; at least
-   one is a Record id ([10](10-tiers.md) §2 rule 2).
+1. **Citations resolve** to ids this session was shown or fetched, and every
+   citation chain ends in Record ids; a Rollup key qualifies
+   ([10](10-tiers.md) §2 rule 2).
 2. **Citations point down** ([10](10-tiers.md) §2 rule 1).
 3. **Authorship.** Nora's own rows ground only `said` Standing lines and her
    own Character paired with responses; a write whose only citations are
@@ -120,32 +130,35 @@ rewrite, and counted by rule; never silently dropped.
    refused `stale_base`, with the current row.
 7. **Disclosure columns.** Lineage is computed from the citations; a cited
    message carrying a surprise cue makes `exclude_persons` mandatory, and it
-   is unioned down the citation chain ([10](10-tiers.md) §3).
+   is unioned from everything the row cites and across Register links
+   ([10](10-tiers.md) §3).
 8. **Subjects.** `character_revise` for a person refuses anyone not a listed
    person of the unit's rooms; nothing from the peer card is Character
    evidence ([50](50-character-and-standing.md) §5).
-9. **Egress screen.** Every write passes `dream_screen` before it is stored.
+9. **Egress screen.** Every write passes `dream_screen` (the module
+   `nora/agent/dream_screen.py`, its function `screen`) before it is stored.
    A memo body is exempt from its key-shape check and renders normally:
    anything said in a group is already shared with that group.
 10. **Provenance and history.** Session id, trace id, model and doctrine hash
     are stamped; every Register, Character and Standing row is a revision
     chain, so a wrong inference is one revision away from right.
+11. **Told outranks cognition's cancellation.** A cognition revision that
+    moves a `told` event to `cancelled`, `evicted` or `lapsed` without `told`
+    evidence is written, and the event keeps rendering for 48 hours, flagged
+    "cancelled?".
 
 **Enforced by code on every act** — the general guards, and the only ones:
 
 - disclosure at assembly, re-run when the reminder fires;
 - rate caps: a daily act cap per room and per person, and the pending
   ceiling;
-- dedupe: one pending act per (agenda item, addressee);
+- dedupe: one pending act per (subject rows, addressee);
 - a value that is only abduced goes out as a question: code sets the brief's
   intent to `ask`;
 - an act whose only citations are non-member social text is refused;
 - cognition never cancels a reminder a person set; only a tag-path revision
   does, and a reminder about a row is cancelled before it fires when that
-  row is retired or revised on the tag path (DEC-162 D11);
-- a cognition revision that moves a `told` event to `cancelled`, `evicted` or
-  `lapsed` without `told` evidence keeps it rendering for 48 hours, flagged
-  "cancelled?".
+  row is retired or revised on the tag path (DEC-162 D11).
 
 **Deviation is a signal, not a rule.** No gate is specific to it. It enters
 her context like any other signal, and whether and how to act on it is her
@@ -195,6 +208,8 @@ Judging an act belongs outside it (design/dreamer-agent-loop/17-failure-classes.
   Character), at least 40 labelled cases including negatives (a joke, a
   hypothetical, another unit's plan, a plan already cancelled), with
   precision and recall gates, a false-derivation rate and an unasked-act rate.
+  Each corpus gates the step that ships its capability (the memo corpus
+  gates step 7).
 - **A cheap reader** samples finished sessions for writes whose citations do
   not say what the write claims. It reports; it never edits.
 - **Data-quality checks, nightly, in code** (the analogue of warehouse tests):

@@ -25,6 +25,10 @@ everything its sources give it and says what changed.
 | **play** | who is in which game, who is in which voice channel with whom | poll (Steam) and push (Discord) | live reads only ([25](25-rollup.md) §6) |
 | **perception** | what a media item shows, and whose faces are in it, stored on that item with its model's confidence | follows each new media item | room media: yes, at ingest (`[media] comprehension`; `nora/ingest/stages/media.py` spawns `nora/ingest/comprehension.py`, results in `media_objects`). Social items reuse it; faces are new ([60](60-faces.md)) |
 
+**Source health is Record.** From step 1, every collector poll and every
+platform adapter's up and down transitions are recorded, so "every source
+healthy for the interval" (§3) is a query, not an assumption.
+
 **Perception cost.** Every story frame and every reel is a vision call. The
 social stream reuses ingest comprehension and its concurrency cap
 (`DEFAULT_MAX_CONCURRENT = 4`), under a per-unit daily perception cap; an item
@@ -51,8 +55,8 @@ What is observed between the unit's known people:
   account), and no endpoint lists who a member follows.
 
 **Membership is one function**: the listed persons of the unit's rooms,
-resolved to platform accounts through `identity.toml`. It is the same set as
-R-98's trust Tier 0 (every person in a room Nora is in). Around it:
+resolved to platform accounts through `identity.toml`. It is a subset of
+R-98's trust Tier 0 (anyone listed in any group room Nora is in). Around it:
 
 - A platform account a member tags, or that comments on a member's item, is
   recorded as a handle on that item and never read. Nothing is crawled.
@@ -109,7 +113,7 @@ and every `time` trigger raises a **signal**: `(unit, kind, ref, cues, at)`.
 **Absence is a signal only on healthy sources.** A deviation
 ([25](25-rollup.md) §4) is raised only when every source it rests on is
 proven healthy for the interval: the collector's recorded polls succeeded,
-the platforms were up. Missing data from an outage is not absence of
+and the adapters' recorded health shows the platforms up. Missing data from an outage is not absence of
 activity (R-27). A deviation is then a signal like any other; no gate is
 specific to it ([30](30-cognition.md) §3).
 
@@ -121,9 +125,11 @@ fails.
 **Wake.** A unit's signals collect until the first of: the unit's rooms quiet
 for `quiet_seconds`; `batch_max` signals pending; a strong cue plus
 `cue_quiet_seconds` of quiet; the oldest pending signal `max_age_seconds` old.
-Then one cognition session runs ([30](30-cognition.md)). These are
-cognition's own keys: `[dreamer] quiet_seconds` is 1800 today, which alone
-would miss the ten-minute latency falsifier ([00](00-intent.md) §6). Every
+Then one cognition session runs ([30](30-cognition.md)). The keys live in a
+`[cognition]` section; `quiet_seconds` and `max_age_seconds` keep the names
+`[dreamer]` uses, not its values: `[dreamer] quiet_seconds` is 1800 today,
+which alone would miss the ten-minute latency falsifier
+([00](00-intent.md) §6). Every
 default is sized from a shadow week of measured wake reasons, never from one
 sample, and re-sized after step 2 adds Rollup signals.
 
