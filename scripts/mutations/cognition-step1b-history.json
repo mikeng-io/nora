@@ -1,0 +1,44 @@
+[
+  {
+    "name": "reminders loses its history trigger: the reminders store is no longer append-only",
+    "file": "nora/infra/sql/migrations/versions/0068_system_time_history.py",
+    "old": "    \"reminders\": (\"id\",),\n    \"compute_jobs\"",
+    "new": "    \"compute_jobs\"",
+    "target": "tests/integration/test_snapshot_holds_what_was_held.py::test_a_snapshot_at_each_moment_holds_exactly_what_was_held"
+  },
+  {
+    "name": "note loses its history trigger: a note's loop state is no longer append-only",
+    "file": "nora/infra/sql/migrations/versions/0068_system_time_history.py",
+    "old": "    \"note\": (\"id\",),\n    \"culture\": (\"key\",),\n    \"standing\"",
+    "new": "    \"culture\": (\"key\",),\n    \"standing\"",
+    "target": "tests/integration/test_snapshot_holds_what_was_held.py::test_a_snapshot_at_each_moment_holds_exactly_what_was_held"
+  },
+  {
+    "name": "media_objects loses its history trigger: a photo renders without the description it had at T",
+    "file": "nora/infra/sql/migrations/versions/0068_system_time_history.py",
+    "old": "    \"media_objects\": (\"sha256\",),\n    \"video_readings\": (\n",
+    "new": "    \"video_readings\": (\n",
+    "target": "tests/integration/test_snapshot_renders_the_recorded_blocks.py::test_a_restore_renders_the_blocks_the_turn_was_handed"
+  },
+  {
+    "name": "as_of stops excluding delete versions: a hidden row is restored as held",
+    "file": "nora/infra/sql/history.py",
+    "old": "            ROW_HISTORY.c.op != \"delete\",\n",
+    "new": "",
+    "target": "tests/integration/test_snapshot_holds_what_was_held.py::test_a_snapshot_at_each_moment_holds_exactly_what_was_held"
+  },
+  {
+    "name": "an append-only table is read past T",
+    "file": "nora/infra/sql/history.py",
+    "old": "f'WHERE t.\"{column}\" <= :at ORDER BY t.\"{column}\"'",
+    "new": "f'WHERE t.\"{column}\" <= :at OR true ORDER BY t.\"{column}\"'",
+    "target": "tests/integration/test_snapshot_holds_what_was_held.py::test_a_snapshot_at_each_moment_holds_exactly_what_was_held"
+  },
+  {
+    "name": "the trigger records an upsert that changed nothing as a version",
+    "file": "nora/infra/sql/migrations/versions/0068_system_time_history.py",
+    "old": "IF TG_OP = 'UPDATE' AND new_image = old_image THEN",
+    "new": "IF false THEN",
+    "target": "tests/infra/test_row_history.py::test_one_rows_chain_is_every_version_it_held"
+  }
+]
