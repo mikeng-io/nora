@@ -638,7 +638,10 @@ async def test_day_honours_the_date_and_filters_the_upper_edge(persons):
     assert [s["started_ts"] for s in stays] == [DAY_STAY_TS]
     # places visited, from the substrate's own linkage: kind/label only.
     assert stays[0]["place_kind"] == "home"
-    assert stays[0]["place_label"] == "Home"
+    # The words every presence answer uses, never the raw label: this one's
+    # fixture carries no saved flag, so its label is only a street.
+    assert stays[0]["place"] == "a home of theirs near Home"
+    assert "place_label" not in stays[0]
     trips = out["people"][0]["trips"]
     assert [t["started_ts"] for t in trips] == [DAY_TRIP_TS]
     assert ("trips", "miles_novak", fetch_ms) in mobility.calls
@@ -868,6 +871,7 @@ async def test_the_routes_arm_says_how_long_their_repeated_trips_take(persons):
     mobility.trips_for_subject = lambda *, subject_id: _async(trips)  # type: ignore[method-assign]
     out = await _where_been(persons, mobility, members=(MILES,))("routes", name="Miles")
     [usual] = out["people"][0]["usual_trips"]
+    # «Miles Home» is saved (its tag id): said by its name.
     assert usual == {
         "from": "their work", "to": "Miles Home", "when": "weekday evenings",
         "usually_takes": "about 39 min",
@@ -893,3 +897,13 @@ async def test_an_unsaved_label_never_reaches_her_as_a_label(persons):
     assert place["name"] == "a place they go near Main Road"
     assert "label" not in place and "Main Road" not in str(
         {k: v for k, v in place.items() if k != "name"})
+
+
+async def test_the_day_names_a_saved_place_by_its_name_and_an_unsaved_one_near_its_street(persons):
+    saved = dict(DAY_STAYS[1], place_label="Home", place_saved=True)
+    street = dict(DAY_STAYS[1], started_ts=DAY_STAYS[1]["started_ts"] + 1,
+                  place_kind="unlabeled", place_label="Main Road", place_saved=False)
+    mobility = _FakeMobility(stays=[saved, street])
+    out = await _where_been(persons, mobility, members=(MILES,))("day", name="Miles")
+    names = sorted(s["place"] for s in out["people"][0]["stays"])
+    assert names == ["Home", "a place they go near Main Road"]

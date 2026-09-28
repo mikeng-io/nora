@@ -136,14 +136,14 @@ async def test_stays_for_subject_window_is_select_only_capped_and_carries_latlng
             SimpleNamespace(
                 started_ts=start, ended_ts=start + 3_600_000,
                 lat=22.410, lng=114.124,
-                place_kind="home", place_label="Home",
+                place_kind="home", place_label="Home", place_saved_id="l360-home",
             ),
         ]),
         _Result([
             SimpleNamespace(
                 started_ts=start, ended_ts=start + 3_600_000,
                 lat=22.410, lng=114.124,
-                place_kind="unlabeled", place_label=None,
+                place_kind="unlabeled", place_label=None, place_saved_id=None,
             ),
         ]),
         _Result([]),
@@ -160,7 +160,7 @@ async def test_stays_for_subject_window_is_select_only_capped_and_carries_latlng
     assert rows == [{
         "started_ts": start, "ended_ts": start + 3_600_000,
         "lat": 22.410, "lng": 114.124,
-        "place_kind": "home", "place_label": "Home",
+        "place_kind": "home", "place_label": "Home", "place_saved": True,
     }]
 
     unlabeled = await store.stays_for_subject_window(
@@ -168,6 +168,7 @@ async def test_stays_for_subject_window_is_select_only_capped_and_carries_latlng
     )
     assert unlabeled[0]["place_kind"] == "unlabeled"
     assert unlabeled[0]["place_label"] is None
+    assert unlabeled[0]["place_saved"] is False
 
     await store.stays_for_subject_window(subject_id="miles", window_ms=10**30)
 

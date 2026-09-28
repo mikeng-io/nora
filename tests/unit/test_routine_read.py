@@ -490,7 +490,7 @@ async def test_evidence_only_when_asked_and_as_counts_of_the_past(persons):
     [p] = asked["people"]
     assert p["routine"] == plain["people"][0]["routine"]
     assert p["evidence"].startswith("Over the last 6 Wednesdays at 22:00-06:00")
-    assert "Carver Home" in p["evidence"] and "%" in p["evidence"]
+    assert "all of it at Carver Home" in p["evidence"]
     assert "not a confidence figure" in asked["note"]
     assert "confiden" not in p["evidence"]  # a count of the past, never a confidence
 
@@ -572,7 +572,7 @@ async def test_evidence_says_the_record_in_words_not_a_second_percent(persons):
     out = await _tool(persons, _FakeMobility(stays=_history(6)))(
         WEDNESDAY, 22, 6, name="Chi", detail="evidence")
     evidence = out["people"][0]["evidence"]
-    assert "on record." in evidence and evidence.count("%") == 1
+    assert "on record." in evidence and "%" not in evidence  # one place: no percent at all
 
 
 def _arrivals(weeks):
@@ -652,9 +652,16 @@ async def test_an_unsaved_label_is_the_street_it_is_near_not_its_name(persons):
 async def test_the_window_is_named_the_way_a_person_names_it(persons):
     tool = _tool(persons, _FakeMobility(stays=_history(6)))
     lines = {
-        (7, 9): "Wednesday morning", (13, 16): "Wednesday afternoon",
-        (18, 23): "Wednesday evening", (22, 6): "Wednesday night",
+        (7, 9): "Wednesday morning", (5, 11): "Wednesday morning",
+        (4, 9): "Wednesday early morning", (0, 6): "Wednesday early morning",
+        (13, 16): "Wednesday afternoon", (12, 17): "Wednesday afternoon",
+        (12, 23): "Wednesday afternoon and evening",
+        (16, 4): "Wednesday afternoon into the night",
+        (17, 20): "Wednesday evening", (18, 23): "Wednesday evening",
+        (20, 23): "Wednesday evening", (21, 23): "Wednesday night",
+        (22, 6): "Wednesday night", (11, 2): "Wednesday from the day into the night",
         (9, 18): "Wednesday, during the day", (0, 23): "Wednesday, all day",
+        (6, 1): "Wednesday, all day",
     }
     for (a, b), words in lines.items():
         out = await tool(WEDNESDAY, a, b, name="Chi")
@@ -669,5 +676,39 @@ async def test_evidence_names_the_top_two_and_sums_up_the_rest(persons):
     out = await _tool(persons, _FakeMobility(stays=stays))(
         WEDNESDAY, 19, 22, name="Chi", detail="evidence")
     evidence = out["people"][0]["evidence"]
-    assert "Carver Home (about 44%), then a place they go (about 28%)" in evidence
-    assert "the rest across 2 other places" in evidence
+    # Never «most of the time» below half; the rest is not counted as places.
+    assert "about 44% at Carver Home, about 28% at a place they go; the rest spread out" in evidence
+    assert "most" not in evidence
+
+
+async def test_every_answer_calls_an_unsaved_place_by_the_same_words(persons):
+    """routine_read's movement view, its `also`, and a later `place=` all use
+    «… near <street>», and the words it gave are taken back (review
+    2026-09-28: `place=` rejected the name routine_read had just said)."""
+    from nora.domain.mobility import DerivedPlace
+
+    office = DerivedPlace(GYM, "grant_carver", "c", *_AT[GYM], 100.0, "work", 1.0,
+                          "Main Road", None)
+    places = [p for p in PLACES if p.id != GYM] + [office]
+    first = datetime(2026, 8, 26, tzinfo=HK) - timedelta(weeks=5)
+    stays = [
+        s for w in range(6)
+        for s in (_stay(first + timedelta(weeks=w), 9, 18, GYM),
+                  _stay(first + timedelta(weeks=w), 18.75, 31, HOME))
+    ]
+    specs = build_tool_specs(
+        store=None, conversation_id="g", conversation_type="group",
+        persons=persons, honcho=None, deliverer=None, metrics=Metrics(),
+        room=_room(persons, members=(MILES, GRANT)), transit_source=None,
+        presence_circles=(_circle(persons),), location_trusted=False,
+        mobility=_FakeMobility(stays=stays, places=places),
+        clock=lambda: NOW.astimezone(UTC),
+    )
+    tool = next(s for s in specs if s.name == "routine_read").call
+    where = await tool(WEDNESDAY, 10, 20, name="Chi")
+    assert where["people"][0]["usually_at"] == "their work near Main Road"
+    leaves = await tool(WEDNESDAY, 10, 20, name="Chi", what="departure",
+                        place="their work near Main Road")
+    [p] = leaves["people"]
+    assert p["place"] == "their work near Main Road"
+    assert p["routine"].startswith("Wednesday")

@@ -5169,7 +5169,21 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             bound = _bound_places.get(str(place).strip().casefold())
             if bound is None:
                 continue
-            resolved = await _resolve_bound_place(bound[0])
+            resolved, raw_label = await _resolve_bound_place(bound[0])
+            if (
+                resolved is not None and not location_trusted and raw_label
+                and raw_label.strip().casefold() in _disclosed_live_addresses
+            ):
+                # R-57 on the place behind the words: an unsaved label is the
+                # geocoded street of the spot, so «a place they go near X»
+                # where `where_is` just disclosed X is a live position.
+                _record(metrics, "route", "refused", reason="untrusted_position")
+                return {
+                    "status": "refused",
+                    "note": "That's somebody's live position, not a place I can "
+                            "route from in this room. Do not retry: report the "
+                            "position and its age without a travel time.",
+                }
             if resolved is None:
                 _record(metrics, "route", "refused", reason="bound_place")
                 return {
@@ -5549,20 +5563,20 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             .isoformat(timespec="seconds")
         )
 
-    async def _resolve_bound_place(place_id: int) -> Any:
+    async def _resolve_bound_place(place_id: int) -> tuple[Any, str | None]:
         """A derived place for `route`, or `None` when this room may not be
         told it: the place's person must be in a circle whose audience check
         passes for this room (`_presence_audience`, R-31), exactly as their
         routine would be. Unknown ids and any failure are `None` too."""
         if mobility is None or not presence_circles:
-            return None
+            return None, None
         try:
             place = await mobility.place_by_id(place_id=place_id)
         except Exception:
             log.exception("route bound place read failed")
-            return None
+            return None, None
         if place is None:
-            return None
+            return None, None
         for circle in presence_circles:
             if not any(
                 persons.subject_id_for(pid) == place.subject_id
@@ -5580,8 +5594,8 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 return Place(
                     place_id=f"derived:{place.id}", name=name, address=name,
                     lat=place.lat, lng=place.lng,
-                )
-        return None
+                ), place.label
+        return None, None
 
     async def _presence_audience(
         circle: Any, asked: str | None, *, tool: str, anyone: str,
@@ -5837,7 +5851,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             try:
                 history = await mobility.stays_for_subject(subject_id=subject_id)
                 labels = {
-                    p.id: p.label or p.kind
+                    p.id: _place_words(p.label, p.kind, p.saved_place_id is not None)
                     for p in await mobility.places_for_subject(subject_id=subject_id)
                 }
                 by_start = {h.started_ts: h for h in history}
@@ -5972,7 +5986,15 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             )
             day_stays = [
                 {
-                    **s,
+                    **{k: v for k, v in s.items() if k not in ("place_label", "place_saved")},
+                    # What she calls the place, as every presence answer
+                    # does; an unsaved label is only its street.
+                    "place": (
+                        _place_words(
+                            s.get("place_label"), s["place_kind"], bool(s.get("place_saved")),
+                        )
+                        if s.get("place_kind") else None
+                    ),
                     "started_iso": _been_iso(s["started_ts"]),
                     "ended_iso": _been_iso(s["ended_ts"]),
                 }
@@ -6248,9 +6270,11 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         wanted = (place or "home").strip().casefold()
         # A label names one place; a kind («home») can name several, and
         # then the answer says so instead of borrowing one of their names.
-        targets = {
-            pid for pid, p in places.items() if (p.label or "").casefold() == wanted
-        } or {pid for pid, p in places.items() if p.kind == wanted}
+        bound_words = _bound_places.get(wanted)
+        targets = (
+            {bound_words[0]} if bound_words is not None and bound_words[0] in places
+            else {pid for pid, p in places.items() if (p.label or "").casefold() == wanted}
+        ) or {pid for pid, p in places.items() if p.kind == wanted}
         if not targets:
             return "no_place"
         if len(targets) == 1:
@@ -6476,20 +6500,34 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
 
     def _routine_window_words(start: datetime, end: datetime) -> str:
         """The asked hours the way a person names them («Wednesday evening»),
-        not a clock range she would recite back (live 2026-09-28: «18:00-23:00
-        都係嗰邊» for a question that said «tomorrow night»)."""
+        not a clock range she would recite back (live 2026-09-28: the window
+        read back in two replies to a question that said «tomorrow night»).
+        00:00-05:00 is «early morning» of that day, never «late night», which
+        reads as the night before."""
         hours = (end - start).total_seconds() / 3600
         day = _routine_day[start.weekday()]
-        if hours >= 20:
+        if hours >= 16:
             return f"{day}, all day"
-        if start.hour < 12 and hours >= 7 and end.hour >= 15:
-            return f"{day}, during the day"
-        part = (
-            "late night" if start.hour < 5 else "morning" if start.hour < 12
-            else "afternoon" if start.hour < 17 else "evening" if start.hour < 21
-            else "night"
-        )
-        return f"{day} {part}"
+        if end.date() > start.date() and end.hour > 0:
+            part = (
+                "night" if start.hour >= 17
+                else "afternoon into the night" if start.hour >= 12
+                else "from the day into the night"
+            )
+        elif start.hour < 5:
+            part = "early morning"
+        elif start.hour < 12:
+            part = "during the day" if end.hour >= 15 or end.date() > start.date() else "morning"
+        elif start.hour < 17:
+            part = (
+                "afternoon and evening" if end.hour >= 20 or end.date() > start.date()
+                else "afternoon"
+            )
+        elif start.hour < 21:
+            part = "evening"
+        else:
+            part = "night"
+        return f"{day} {part}" if not part.startswith("during") else f"{day}, {part}"
 
     def _routine_sureness(percent: int, *, thin: bool) -> int:
         level = next((lvl for floor, lvl in _routine_ladder if percent >= floor), 0)
@@ -6539,17 +6577,16 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             # Asked how sure: what the past weeks WERE, a grounded count of
             # the past, never a confidence figure (none is measured).
             ranked = [x for x in shares if x["percent"] > 0]
-            on_record = ", then ".join(
-                f"{x['place']} (about {x['percent']}%)" for x in ranked[:2]
-            ) + (
-                f"; the rest across {len(ranked) - 2} other "
-                f"{'place' if len(ranked) == 3 else 'places'}"
-                if len(ranked) > 2 else ""
-            )
+            if len(ranked) == 1:
+                on_record = f"all of it at {ranked[0]['place']}"
+            else:
+                on_record = ", ".join(
+                    f"about {x['percent']}% at {x['place']}" for x in ranked[:2]
+                ) + ("; the rest spread out" if len(ranked) > 2 else "")
             text = (
                 f"Over the last {weeks} {_routine_days[start.weekday()]} at "
-                f"{start.strftime('%H:%M')}-{end.strftime('%H:%M')}, most of the "
-                f"time on record was at {on_record}. "
+                f"{start.strftime('%H:%M')}-{end.strftime('%H:%M')}, of the time "
+                f"on record: {on_record}. "
                 + (
                     "Nearly all of those hours are on record."
                     if observed >= 80
