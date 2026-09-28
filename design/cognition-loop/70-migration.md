@@ -403,9 +403,12 @@ shadow wake evaluator (`nora/app/wake.py`), which records every would-wake in
 nothing; reactions and deletes/unsends ingested as Record items on Signal,
 Instagram, Discord and WhatsApp (`message_reaction`, `message_delete`; the
 WhatsApp bridge emits them from this step); presence collector polls and
-adapter state transitions in `source_health`. Behind `[cognition] mode`,
-shipped `"off"`; the operator sets `"shadow"` at deploy and the gate — a week
-of would-wakes and reasons — is read from `cognition_wake` and
+adapter state transitions in `source_health`. Only the signals and the
+evaluator sit behind `[cognition] mode`, shipped `"off"`; the reaction and
+delete rows, the WhatsApp bridge's new event types, the presence poll rows
+and the adapter transitions are always on (Record, acting on nothing). The
+operator sets `"shadow"` at deploy and the gate — a week of would-wakes and
+reasons — is read from `cognition_wake` and
 `nora_cognition_wake_total{reason}`. Where the build fixed a value or a name,
 [20](20-observe.md) §3's «As built» note says so. Not built at step 1: the
 cited-message cues (they need step 2's `citation` table), place-name cues

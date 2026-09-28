@@ -198,7 +198,15 @@ a name this table leaves open:
   and is marked `waits`, like a quote of hers.
 - The watermark is the unit's newest `cognition_wake` row in its mode; a
   signal is consumed when its id and its pending-since time are both at or
-  under that row's.
+  under that row's. A wake never records a `through_signal_id` below the one
+  it read (a due-later self-wake with an old id would otherwise re-open what
+  an earlier wake consumed), and the evaluator reads only signals older than
+  a settle margin (twice `store_timeout_seconds`), whose cutoff is the wake's
+  time bound: ids commit out of order under concurrent ingest, and an id
+  committed after a higher one was read is then still pending, not consumed
+  unseen.
+- An adapter connected but silent for `PlatformSilent`'s 900 s is recorded
+  `stale`, not `up`.
 - `nora_cognition_wake_total` carries `mode` beside `reason`, and
   `nora_cognition_wake_deferred_total{brake}` counts unit-ticks a brake held.
 
