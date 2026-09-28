@@ -25,8 +25,15 @@ _CHARSET = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 #: The verbs, as ADR 0015 §1 delegates them to this constant. `read` takes a
 #: known subject, `fetch` a URL, `search` free text, `list` enumerates; the rest
 #: act. A new verb is added HERE, in a PR that states why it is not one of these.
+#:
+#: `query` (2026-09-29, `record_query`, design/cognition-loop/15-map.md §4): a
+#: filtered read over an interval. Not `read` (it names no one subject), not
+#: `search` (its free text is optional; «what was said on Saturday» has none),
+#: not `list` (it filters by time, author and words, and enumerates nothing
+#: fixed). The design named the tool before this rule was applied to it.
 VERBS: tuple[str, ...] = (
     "read", "fetch", "search", "list", "create", "update", "cancel", "send",
+    "query",
 )
 
 

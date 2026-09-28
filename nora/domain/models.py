@@ -9,6 +9,7 @@ from typing import Any, Literal
 
 from .culture import CultureRevision
 from .decision_log import DecisionRow
+from .lineage import RenderRoom
 from .media import MediaBlob, MediaRef
 from .notes import Note
 from .self_presence import Presence
@@ -606,6 +607,14 @@ class TagContext:
     # prefill then renders `Presence.minimal` — the network alone, exactly
     # what `_where_line` said before this replaced it.
     presence: Presence | None = None
+    # WHO THIS ROOM IS, for lineage (design/cognition-loop/10-tiers.md §3,
+    # migration step 2): the room the blocks render into, every other room of
+    # the policy, the location circles and `[lineage] mode`, built by the
+    # assembler from `nora.agent.lineage.LineagePolicy`. `nora.agent.prefill`
+    # renders each derived row's section only where its lineage passes for
+    # this room. `None` (an offline harness, a caller with no policy) is
+    # `mode = "off"`: every block as before.
+    lineage_room: RenderRoom | None = None
 
 
 @dataclass(frozen=True)

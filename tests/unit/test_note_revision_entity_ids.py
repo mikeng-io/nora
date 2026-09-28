@@ -62,4 +62,9 @@ async def test_a_revision_proposals_entity_ids_are_not_persisted(monkeypatch):
         "established_by", "instruction_sha256", "model",
         # system time (migration 0068): a timestamp, which cannot hold an id
         "recorded_at",
+        # the derived-row columns (migration 0070): code writes `lineage` from
+        # the body's cited message ids (rooms, never entities) and `as_of`
+        # from their times; `reasoning`, `confidence` and `exclude_persons`
+        # take no value from a proposal.
+        "reasoning", "confidence", "lineage", "exclude_persons", "as_of",
     }

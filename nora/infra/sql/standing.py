@@ -42,8 +42,34 @@ import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from nora.domain.lineage import BODY, WORKING_SET, Lineage, own_room_lineage
 from nora.domain.standing import Standing, working_set_from_json, working_set_to_json
-from nora.infra.sql.schema import STANDING, STANDING_REVISION
+from nora.infra.sql.schema import MESSAGES, STANDING, STANDING_REVISION
+
+#: A Standing row's sections today (`nora.domain.lineage`): the position and
+#: the working set. The sectioned Standing schema arrives at migration step 3.
+SECTIONS: tuple[str, ...] = (BODY, WORKING_SET)
+
+
+def _derived(standing: Standing) -> dict[str, Any]:
+    """The columns every derived row carries (design/cognition-loop/
+    10-tiers.md §3, migration `0070_lineage`), computed by code from the row:
+    the fold reads its own room, and is shown a prompt it does not cite
+    (`own_room_lineage`); `as_of` is the time of the newest message it read
+    (`last_folded_row_id`), else the fold's own instant."""
+    as_of: Any = standing.updated_at
+    if standing.last_folded_row_id is not None:
+        as_of = sa.func.coalesce(
+            sa.select(MESSAGES.c.ts)
+            .where(MESSAGES.c.id == standing.last_folded_row_id)
+            .scalar_subquery(),
+            standing.updated_at,
+        )
+    return {
+        "lineage": own_room_lineage(standing.conversation_id, SECTIONS).to_json(),
+        "exclude_persons": list(standing.exclude_persons),
+        "as_of": as_of,
+    }
 
 
 def _standing(row: sa.Row[Any]) -> Standing:
@@ -62,6 +88,8 @@ def _standing(row: sa.Row[Any]) -> Standing:
         updated_at=row.updated_at,
         last_folded_row_id=row.last_folded_row_id,
         working_set=working_set_from_json(row.working_set),
+        lineage=Lineage.from_json(row.lineage, origin=row.conversation_id),
+        exclude_persons=tuple(row.exclude_persons or ()),
     )
 
 
@@ -178,6 +206,7 @@ class SqlStandingStore:
             updated_at=standing.updated_at,
             last_folded_row_id=standing.last_folded_row_id,
             working_set=working_set_to_json(standing.working_set),
+            **_derived(standing),
         )
         stmt = stmt.on_conflict_do_update(
             index_elements=[STANDING.c.platform, STANDING.c.conversation_id],
@@ -206,6 +235,11 @@ class SqlStandingStore:
                 # omitted key here would silently keep whatever the row held
                 # instead of the decision the caller made.
                 "working_set": stmt.excluded.working_set,
+                # The derived-row columns (`0070_lineage`), recomputed by
+                # `_derived` on every write and never kept from the old row.
+                "lineage": stmt.excluded.lineage,
+                "exclude_persons": stmt.excluded.exclude_persons,
+                "as_of": stmt.excluded.as_of,
             },
         )
         # The APPEND, beside the upsert and inside the same transaction. Same
@@ -229,6 +263,7 @@ class SqlStandingStore:
             last_folded_row_id=standing.last_folded_row_id,
             source=source,
             working_set=working_set_to_json(standing.working_set),
+            **_derived(standing),
         )
         async with self._engine.begin() as conn:
             await conn.execute(stmt)
@@ -321,6 +356,7 @@ class SqlStandingStore:
                 # "never by accident" argument `write`'s upsert makes for
                 # this column.
                 working_set=working_set_to_json(standing.working_set),
+                **_derived(standing),
             )
         )
         revision = sa.insert(STANDING_REVISION).values(
@@ -332,6 +368,7 @@ class SqlStandingStore:
             last_folded_row_id=standing.last_folded_row_id,
             source="operator",
             working_set=working_set_to_json(standing.working_set),
+            **_derived(standing),
         )
         async with self._engine.begin() as conn:
             result = await conn.execute(update_stmt)

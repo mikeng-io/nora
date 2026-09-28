@@ -231,9 +231,12 @@ def test_the_whole_corpus_is_accounted_for() -> None:
     design/proposed/27-presence-analytics.md §4.3: a question about later is
     neither where_is nor where_been; note_create's trimmed opening had no
     routing case at all), plus `tool_selection`'s 2 arrival/departure cases
-    (2026-09-28, design/27 §4.4 M1); a change to it
+    (2026-09-28, design/27 §4.4 M1), plus `tool_selection`'s 3
+    `record_query` cases (2026-09-29, design/cognition-loop/15-map.md §4: a
+    past day, who mentioned a thing, an English interval, each naming the
+    neighbour it could lose to); a change to it
     is a change to what the suite claims to measure and belongs in a commit that
     says so. Recomputed with `census()` at each merge, never summed."""
     totals = [census(n) for n in CORPORA]
-    assert sum(c.total for c in totals) == 247
-    assert sum(c.active + c.parked for c in totals) == 247
+    assert sum(c.total for c in totals) == 250
+    assert sum(c.active + c.parked for c in totals) == 250

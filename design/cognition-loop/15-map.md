@@ -64,6 +64,15 @@ section only where its lineage passes for the room ([10](10-tiers.md) §3).
 | `self_card` | memory | Nora | tag, fire; until step 8 | as today |
 | `peer_card`, `peer_history`, `people_in_window` | memory | a person; the people in the window | tag, fire | as today |
 
+**As built (step 2, lineage half, DEC-234).** The pushed blocks that render
+derived rows today are `notes` (per row), `standing` and
+`standing_working_set` (Standing's two sections) and `culture` (one section);
+every other block is authored, live, this room's Record or memory. They
+filter in `nora/agent/prefill.py` under `[lineage] mode`: `shadow` records
+what would be withheld on the `agent.prefill` span and renders everything,
+`on` drops a failing row or section whole and keeps the rest. A room's own
+backfilled rows render byte-for-byte as before in that room.
+
 ## 4. Context pulled by a read tool
 
 | tool | reads | returns | new? |
@@ -78,6 +87,20 @@ section only where its lineage passes for the room ([10](10-tiers.md) §3).
 | `standing_read(subject)` | Standing | a room's, the unit's or a person's Standing | **new** |
 | `social_items(person, interval)` | Record · social | ingested stories, posts, reels with their perceptions | **new**; the live `instagram_*`, `x_*`, `linkedin_*` reads stay on the tag path and are withheld from cognition ([20](20-observe.md) §2) |
 | `about`, `ask_memory`, `search_memory`, `search_memory_workspace` | memory | Honcho | exist |
+
+**`record_query` as built (step 2, DEC-234).** `record_query(start, end?,
+scope, author?, text?)`: `from`/`to` are `start`/`end` (Hong Kong time, a
+date meaning that day), `scope` is `this_room` or `all_rooms`, and `all_rooms`
+reads only the unit's rooms whose `message` lineage passes for the turn's
+room, saying when some were left out. `author` resolves in this room only
+(R-21). `text` matches by containment (`ilike`) or pg_trgm word similarity at
+0.5, the value 24 §2 measured for a Cantonese term inside a sentence, both
+served by `idx_messages_body_trgm`; a hit that only nears the words is marked
+`near`. At most 30 hits, oldest first, each with its edit, reactions and a
+`deleted` mark; a deleted message's words are withheld until step 2c hides it.
+Statuses: ok, nothing_found, ambiguous, unavailable. Its verb, `query`, is new
+(`tests/architecture/test_tool_names.py` says why). Vectors are not used (80
+§4 leaves them optional).
 
 Every read tool applies lineage for the room its turn or agenda item is bound
 to. Cognition has no room of its own: each agenda item binds one, and that

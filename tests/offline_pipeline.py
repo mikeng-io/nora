@@ -41,7 +41,7 @@ from typing import Any
 
 from nora.agent import factory
 from nora.agent.registry import ToolRegistry
-from nora.app.assembler import build_assembler
+from nora.app.assembler import build_assembler, lineage_policy
 from nora.app.dispatch import Dispatcher
 from nora.app.fire import FirePath, gathering_occasion, proactive_occasion, reminder_occasion
 from nora.app.participation import ParticipationTrigger
@@ -287,6 +287,11 @@ def build_offline_pipeline(
             # a name on only one side means an eval measures a turn
             # production never builds.
             reasoning_strip_store=None,
+            # Lineage (design/cognition-loop/10-tiers.md §3): the same value
+            # `build_assembler` above builds for the tag prompt, from the same
+            # policy and identity, so an eval's fire prompt is filtered as
+            # production's is.
+            lineage=lineage_policy(cfg, policy=permissive_policy(), persons=persons),
             event_registry={
                 "reminder": reminder_occasion,
                 "gathering": gathering_occasion,

@@ -256,6 +256,39 @@ cases:
     metadata: {tools: [group_members], not_tools: [room_list, room_read]}
     snapshot: *room_a
 
+  # --- the Record over an interval (design/cognition-loop/15-map.md §4) ------
+  # `record_query` (2026-09-29) reads what was said over a stretch of time, by
+  # author or by words, under lineage. Each case names the neighbour it could
+  # lose to: `load_transcript` pages back from now in this room with no filter;
+  # `who_said` checks only the lines already in view; `search_memory` is what
+  # memory concluded, not what was said. Authored inputs, no member named. In
+  # the sandbox the tool answers from the clone's messages only if the
+  # subject's policy holds room A; an honest `unavailable` is still a
+  # correctly routed call (this file's header).
+  - name: route_record_query_a_past_day
+    entry: tag
+    expect: reply
+    mention: true
+    input: 上個禮拜六大家喺度講過啲咩？
+    metadata: {tools: [record_query], not_tools: [load_transcript, search_memory]}
+    snapshot: *room_a
+
+  - name: route_record_query_who_mentioned
+    entry: tag
+    expect: reply
+    mention: true
+    input: 之前有冇人提過想去露營？邊個講㗎？
+    metadata: {tools: [record_query], not_tools: [who_said, search_memory]}
+    snapshot: *room_a
+
+  - name: route_record_query_english_interval
+    entry: tag
+    expect: reply
+    mention: true
+    input: what did we talk about on Monday afternoon?
+    metadata: {tools: [record_query], not_tools: [load_transcript]}
+    snapshot: *room_a
+
   # --- hot-set control -----------------------------------------------------------
   # Resident on both sides, so it should NOT move. If it does, the change moved
   # something other than cold-tool reach.

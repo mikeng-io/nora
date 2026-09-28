@@ -63,6 +63,7 @@ from ..infra.transit import TransitClient
 from ..infra.version import VersionManifest
 from ..infra.vision import VisionCache, VisionClient
 from ..infra.vision.preprocess import VIDEO_CHUNK_SECONDS, VIDEO_MAX_CHUNKS
+from .lineage import LineagePolicy
 from .links import LinkCarry
 from .mcp import McpToolGroup
 from .ports import ToolSpec, adapt
@@ -80,6 +81,7 @@ from .tools import (
     ImageGenerator,
     NoteCollaborator,
     OriginRoom,
+    RecordQuerySource,
     RoomDirectory,
     build_tool_specs,
     utc_now,
@@ -209,8 +211,16 @@ class ToolRegistry:
         image_refs_allowed: bool = False,
         media_store: MediaObjectStore | None = None,
         budget_overrides: Mapping[str, int] | None = None,
+        # `record_query`'s Record read and the process's one `LineagePolicy`
+        # (design/cognition-loop/15-map.md §4). Process-lifetime, like
+        # `rooms`: the per-turn part (which room) is the turn's own
+        # `conversation_id`. `None` answers `unavailable`.
+        record: RecordQuerySource | None = None,
+        lineage: LineagePolicy | None = None,
     ) -> None:
         self._budget_overrides = dict(budget_overrides or {})
+        self._record = record
+        self._lineage = lineage
         self._transit = transit if transit is not None else TransitClient()
         # `parking` is keyless like `transit` — the TD open-data feed needs no
         # key, so the same default-construct argument applies: a required
@@ -993,6 +1003,8 @@ class ToolRegistry:
             links=links,
             relay=self._relay,
             rooms=self._rooms,
+            record=self._record,
+            lineage=self._lineage,
             versions=self._versions,
             giphy_source=self._giphy,
             reaction_picker=self._reaction,

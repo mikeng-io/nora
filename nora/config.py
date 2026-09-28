@@ -3351,6 +3351,28 @@ class CognitionConfig(BaseModel):
         return value
 
 
+class LineageConfig(BaseModel):
+    """Lineage at assembly (design/cognition-loop/10-tiers.md §3, migration
+    step 2): whether the pushed blocks that render derived rows (`<notes>`,
+    `<standing>`, `<standing_working_set>`, `<culture>`) show each row or
+    section only in the rooms its lineage passes for.
+
+    **Ships OFF**, 70 §2's rule for every step. `off`: blocks render as they
+    always have and nothing is computed. `shadow`: the predicates run on every
+    prefill and what they would withhold is recorded on the `agent.prefill`
+    span (`nora.prefill.lineage_withheld`), and every block still renders:
+    the reading that gates `on`. `on`: a section that fails is not rendered.
+
+    `record_query` applies lineage whatever this says: it is a new surface,
+    so there is no earlier behaviour to keep, and it never returns a message
+    its room may not be shown.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    mode: Literal["off", "shadow", "on"] = "off"
+
+
 class LoggingConfig(BaseModel):
     """Where the log goes is no longer a setting: it goes to stdout.
 
@@ -3674,6 +3696,8 @@ class Config(BaseModel):
     # Optional and defaulted — see `CognitionConfig`. Ships OFF: no signal is
     # written and no wake evaluator runs until the operator sets `mode`.
     cognition: CognitionConfig = CognitionConfig()
+    # Optional and defaulted — see `LineageConfig`. Ships OFF.
+    lineage: LineageConfig = LineageConfig()
     identity_file: Path
     policy_file: Path
     obs: ObsConfig

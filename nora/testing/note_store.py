@@ -330,8 +330,15 @@ class InMemoryNoteStore:
         now_ms: int,
         instruction_sha256: str | None = None,
         model: str | None = None,
+        evidence_room: str | None = None,
     ) -> NoteRevision:
         """§6.3's compare-and-swap — the refusal in the module docstring's (1).
+
+        `evidence_room` is accepted and not kept: lineage is computed from the
+        `messages` a body cites, which this fake does not hold, so its notes
+        carry `Lineage()` (every section unknown, origin room only). Lineage is
+        `SqlNoteStore`'s, tested against Postgres
+        (`tests/infra/test_lineage_store.py`).
 
         `observed_head` is `None` when the note is absent OR in another
         unit, matching `SqlNoteStore`: from the caller's side those are the

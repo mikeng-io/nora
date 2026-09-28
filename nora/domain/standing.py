@@ -45,7 +45,9 @@ are unchanged (§7 — this field does not touch them). See `WorkingSetItem`.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+
+from nora.domain.lineage import Lineage
 
 #: The absolute ceiling on `Standing.body`, enforced HERE and by
 #: `standing_body_fits_the_ceiling_check`. Deliberately far above the operating
@@ -275,6 +277,15 @@ class Standing:
     # not backfilling history that never existed. LAST, because a defaulted
     # field cannot precede the ones above it.
     working_set: tuple[WorkingSetItem, ...] = ()
+    # WHERE IT MAY BE SHOWN (design/cognition-loop/10-tiers.md §3, migration
+    # `0070_lineage`): the `(kind, subject, origin room)` set its citations
+    # reach, and the people it is never shown to. Written by the store from
+    # the row's own citations, never by a model; read at render by
+    # `nora.agent.lineage`. `compare=False`: equality stays about content, and
+    # a row built by hand (no lineage, every section unknown) is on the
+    # fail-closed side.
+    lineage: Lineage = field(default=Lineage(), compare=False)
+    exclude_persons: tuple[str, ...] = field(default=(), compare=False)
 
     def __post_init__(self) -> None:
         if not self.body or not self.body.strip():

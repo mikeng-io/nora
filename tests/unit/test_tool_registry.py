@@ -84,6 +84,9 @@ def test_the_registry_exposes_every_declared_tool():
         # design/self-awareness/07: which rooms this group has, and what is
         # said in one of them.
         "room_list", "room_read",
+        # design/cognition-loop/15-map.md §4: the Record over an interval,
+        # under lineage.
+        "record_query",
         "group_members", "lookup_person", "about", "ask_memory", "search_memory",
         "recall_lookups",
         "calculate", "transit", "route",
@@ -204,6 +207,9 @@ def test_budgets_match_todays_table():
         # second re-checks a transport after a send. `room_read` 3: two rooms
         # plus a corrected name.
         "room_list": 2, "room_read": 3,
+        # design/cognition-loop/15-map.md §4: an interval, then a narrower
+        # one, then one person.
+        "record_query": 3,
         # Sized against model round trips, not against work — see
         # `NATIVE_TOOL_BUDGETS` for the per-tool reasoning.
         "group_members": 1, "lookup_person": 4, "about": 4,
@@ -733,6 +739,8 @@ READ_ONLY = frozenset({
     # design/self-awareness/07: the room tools read policy, health, rosters
     # and stored messages, and write nothing.
     "room_list", "room_read",
+    # design/cognition-loop/15-map.md §4: a Record read under lineage.
+    "record_query",
     "saved_places", "who_said", "load_transcript", "group_members", "lookup_person",
     "about", "ask_memory", "search_memory", "recall_lookups", "media_fetch",
     "media_search",

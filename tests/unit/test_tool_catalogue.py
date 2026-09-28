@@ -29,7 +29,16 @@ ENC = tiktoken.get_encoding("cl100k_base")
 # WHEN, pinned by `test_the_opening_paragraph_is_an_l1`; that measures 1,702.
 # Still an index: 7.7% of the 22,130 tokens of schemas it replaces. Headroom
 # ~18%, again not sized to the current value.
-BLOCK_CEILING = 2_000
+#
+# RE-SET 2026-09-29, 2,000 -> 2,100, for a NEW TOOL, not for drift:
+# `record_query` (design/cognition-loop/15-map.md §4) adds one line of 35
+# tokens to a block measured at exactly 2,000 over 63 lines. With it, 64
+# lines at a mean of 30.9, under `MEAN_CEILING` below, which is what binds
+# per-line drift; no existing line changed. The headroom the 2026-09-23 re-set
+# left had been spent by tools added since, one line each. 2,100 holds this
+# line and roughly two more; the next tool that needs more re-sets this with
+# its own line count, never a line rewritten to fit.
+BLOCK_CEILING = 2_100
 
 # The per-line ceiling, and it was REVISED after measurement. The bundle
 # asserted 20 from an estimate; rendering the real thing put eleven lines

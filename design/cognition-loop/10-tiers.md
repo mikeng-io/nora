@@ -169,6 +169,25 @@ Memory has no lineage kind: it is never cited, so nothing derived rests on it.
   from everything a row cites, and across links between Register rows (a
   note and its event through `Note.event_id`; a note and the memo it closes
   into), re-checking on every link write.
+- **As built (step 2, lineage half, DEC-234; 2026-09-29).** The column is
+  JSONB, section to a list of `{kind, subject, origin}`: a note has one
+  section, `row`; a Standing row has `body` and `working_set`, the two
+  sections today's schema has; a culture row has `body` (it is prose until
+  the sectioned account, step 4). The predicates are `nora/agent/lineage.py`
+  and fix three details the table leaves open: `message:<A>` passes only
+  between rooms of one unit and never out of a `*` room (R-49's boundary);
+  `presence` needs the flag AND the guard, the guard not waived by the flag
+  as `where_is` waives it (DEC-79), and it denies with no subject or no live
+  roster; an unknown kind, including the `unresolved` code writes for a
+  citation it cannot resolve, passes only in the row's origin room. A
+  Standing or culture row rests on its own room plus `unresolved`, because
+  its fold is shown the unit's `<notes>` and cites nothing from it, so both
+  stay in their own room until their writers cite per section.
+  `exclude_persons` is checked against the room's listed persons and its
+  live roster. The four pushed blocks filter behind `[lineage] mode`
+  (`off`, `shadow`, `on`; shipped `off`); `record_query` applies lineage in
+  every mode. Block assembly reads no live roster yet, so a presence entry
+  or a surprise withholds its section in every room until one is read.
 
 ## 4. Reasoning modes
 

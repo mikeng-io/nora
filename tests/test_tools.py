@@ -139,6 +139,8 @@ def test_every_declared_tool_is_built(wiring):
         "send_to",
         # design/self-awareness/07: the room tools.
         "room_list", "room_read",
+        # design/cognition-loop/15-map.md §4: the Record under lineage.
+        "record_query",
         "group_members", "lookup_person", "about", "ask_memory", "search_memory",
         "recall_lookups",
         # `search_memory_workspace` IS built here — `build_tools` builds every

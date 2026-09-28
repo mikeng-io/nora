@@ -40,6 +40,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from xml.sax.saxutils import unescape
 
+from nora.domain.lineage import Lineage
 from nora.domain.prompt import one_line
 
 #: The injected index carries one line per note on EVERY tag (§5.1), so these
@@ -360,6 +361,15 @@ class Note:
     last_wake_revision_id: str | None = None
     event_id: str | None = None
     reminder_id: str | None = None
+    # WHERE IT MAY BE SHOWN (design/cognition-loop/10-tiers.md §3, migration
+    # `0070_lineage`): the `(kind, subject, origin room)` set its citations
+    # reach, and the people it is never shown to. Written by the store from
+    # the row's own citations, never by a model; read at render by
+    # `nora.agent.lineage`. `compare=False`: equality stays about content, and
+    # a row built by hand (no lineage, every section unknown) is on the
+    # fail-closed side.
+    lineage: Lineage = field(default=Lineage(), compare=False)
+    exclude_persons: tuple[str, ...] = field(default=(), compare=False)
 
     def __post_init__(self) -> None:
         _required(self.title, "title")

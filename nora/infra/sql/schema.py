@@ -66,6 +66,7 @@ from nora.domain.facts import (
     FACT_PREDICATE_CEILING_CHARS,
     FACT_TERM_CEILING_CHARS,
 )
+from nora.domain.lineage import CONFIDENCES, REASONING_MODES
 from nora.domain.notes import (
     MERGE_REASON_MAX_CHARS,
     NOTE_BODY_CEILING_CHARS,
@@ -100,6 +101,42 @@ def _recorded_at() -> sa.Column[Any]:
         "recorded_at", sa.DateTime(timezone=True), nullable=False,
         server_default=sa.text("clock_timestamp()"),
     )
+
+
+def _derived(table: str) -> list[Any]:
+    """The columns every derived row carries (design/cognition-loop/
+    10-tiers.md §3, migration `0070_lineage`), with their CHECKs.
+
+    `lineage` is section -> list of `{kind, subject, origin}`
+    (`nora.domain.lineage`); `'{}'` is every section unknown, which renders
+    only in the row's origin room, so a writer that forgets it is on the
+    fail-closed side. `reasoning` and `confidence` are NULL for "not stated":
+    no write verb states either yet. `as_of` is epoch ms, the clock the
+    neighbouring `written_at`/`updated_at` columns use.
+    """
+    return [
+        sa.Column("reasoning", sa.Text, nullable=True),
+        sa.Column("confidence", sa.Text, nullable=True),
+        sa.Column("lineage", pg.JSONB, nullable=False,
+                  server_default=sa.text("'{}'::jsonb")),
+        sa.Column("exclude_persons", pg.ARRAY(sa.Text), nullable=False,
+                  server_default=sa.text("'{}'")),
+        sa.Column("as_of", sa.BigInteger, nullable=True),
+        sa.CheckConstraint(
+            "reasoning is null or reasoning in "
+            f"({', '.join(repr(m) for m in REASONING_MODES)})",
+            name=f"{table}_reasoning_is_a_mode_check",
+        ),
+        sa.CheckConstraint(
+            "confidence is null or confidence in "
+            f"({', '.join(repr(c) for c in CONFIDENCES)})",
+            name=f"{table}_confidence_is_a_level_check",
+        ),
+        sa.CheckConstraint(
+            "jsonb_typeof(lineage) = 'object'",
+            name=f"{table}_lineage_is_an_object_check",
+        ),
+    ]
 
 MESSAGES = sa.Table(
     "messages",
@@ -279,6 +316,16 @@ IDX_CONV_TS = sa.Index(
     "idx_messages_conv_ts", MESSAGES.c.conversation_id, sa.text("ts DESC")
 )
 IDX_IS_NORA = sa.Index("idx_messages_is_nora", MESSAGES.c.is_nora)
+
+#: `record_query`'s lexical search (design/cognition-loop/15-map.md §4,
+#: migration `0070_lineage`): GIN + trigram for `idx_note_revision_body_trgm`'s
+#: reason, a mixed English and Cantonese corpus no tsvector config segments
+#: (design/dreamer-agent-loop/24-embedding-seam.md §2). Serves `ilike`
+#: substring and `<%` word similarity alike.
+IDX_MESSAGES_BODY_TRGM = sa.Index(
+    "idx_messages_body_trgm", MESSAGES.c.body,
+    postgresql_using="gin", postgresql_ops={"body": "gin_trgm_ops"},
+)
 
 
 # `presence_fixes` — the presence collector's record (design/19 §3). It lives in
@@ -2030,6 +2077,9 @@ NOTE = sa.Table(
         name="note_replacement_implies_retirement_check",
     ),
     sa.CheckConstraint("strikes >= 0", name="note_strikes_are_not_negative_check"),
+    # The union of its revisions' lineage (`0070_lineage`): the index line
+    # this row renders rests on everything its body has ever cited.
+    *_derived("note"),
 )
 
 NOTE_REVISION = sa.Table(
@@ -2078,6 +2128,7 @@ NOTE_REVISION = sa.Table(
         "length(btrim(established_by)) > 0",
         name="note_revision_names_its_writer_check",
     ),
+    *_derived("note_revision"),
 )
 
 NOTE_ENTITY = sa.Table(
@@ -2446,6 +2497,8 @@ STANDING = sa.Table(
         f"and octet_length(working_set::text) <= {WORKING_SET_CEILING_BYTES}",
         name="standing_working_set_fits_the_ceiling_check",
     ),
+    # Sections `body` and `working_set` (`0070_lineage`).
+    *_derived("standing"),
 )
 
 #: One position, as it stood at the moment a fold set it — the chain behind
@@ -2543,6 +2596,7 @@ STANDING_REVISION = sa.Table(
         f"and octet_length(working_set::text) <= {WORKING_SET_CEILING_BYTES}",
         name="standing_revision_working_set_fits_the_ceiling_check",
     ),
+    *_derived("standing_revision"),
 )
 
 #: The as-of read: one room's revisions, newest first. `updated_at DESC` because
@@ -2877,6 +2931,9 @@ CULTURE_REVISION = sa.Table(
         "parent_revision_id is null or parent_revision_id <> id",
         name="culture_revision_parent_is_not_self_check",
     ),
+    # Section `body` (`0070_lineage`). The `culture` head gains none: it is a
+    # pointer to this row.
+    *_derived("culture_revision"),
 )
 
 #: The chain read: one key's revisions, newest first. The head is

@@ -23,6 +23,7 @@ import logging
 import time
 from typing import Any, Protocol
 
+from nora.agent.lineage import LineagePolicy
 from nora.domain.culture import CultureRevision
 from nora.domain.media_join import MediaJoin
 from nora.domain.models import (
@@ -99,6 +100,7 @@ class TranscriptInjection:
         media_join: MediaJoin | None = None,
         presence: PresenceReader | None = None,
         culture: CultureReader | None = None,
+        lineage: LineagePolicy | None = None,
     ) -> None:
         self._audit = audit
         self._memory = memory
@@ -157,6 +159,13 @@ class TranscriptInjection:
         # Keyed on the room's `primary_id`, resolved through `policy` — see
         # `_culture`.
         self._culture_reader = culture
+        # WHO THIS ROOM IS, for lineage (design/cognition-loop/10-tiers.md §3).
+        # A pure value built at the composition root; `None` is `[lineage]
+        # mode = "off"` for a harness that wires none. No read: the room's
+        # facts are policy, and the live roster the `presence` predicate needs
+        # is not read here (every row a block renders today carries no
+        # presence entry; a predicate that needs the roster denies without it).
+        self._lineage = lineage
 
     async def assemble(self, *, request: EngagementRequest) -> TagContext:
         msg = request.message
@@ -252,6 +261,12 @@ class TranscriptInjection:
             # A pure lookup (policy.toml, identity.toml), no read: the room's
             # listed persons and their aliases for `<room_members>`.
             room_members=self._room_members(msg),
+            lineage_room=(
+                self._lineage.render_room(
+                    platform=msg.platform, conversation_id=msg.conversation_id,
+                )
+                if self._lineage is not None else None
+            ),
         )
 
     def _room_members(self, msg: NormalizedMessage) -> tuple[PersonRef, ...]:
