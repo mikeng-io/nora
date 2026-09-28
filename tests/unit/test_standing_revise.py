@@ -64,9 +64,16 @@ def test_no_base_asserted_never_refuses():
 
 
 def test_a_base_against_a_room_with_no_revision_yet_is_stale():
+    """`current_fold_count is None` is its own branch, ahead of the generic
+    `base_revision_id != current_fold_count` comparison that would also
+    catch it (any int is `!= None`) — kept for the friendlier `detail`
+    ("no revision exists yet") rather than a bare mismatch message, so the
+    assertion pins that detail specifically: removing the branch would not
+    change `reason`, only the message a caller logs."""
     refusal = check_stale_base(base_revision_id=0, current_fold_count=None)
     assert refusal is not None
     assert refusal.reason == "stale_base"
+    assert "no revision exists yet" in refusal.detail
 
 
 def test_a_base_matching_the_current_revision_passes():
