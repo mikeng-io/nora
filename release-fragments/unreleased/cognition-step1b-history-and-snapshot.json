@@ -1,0 +1,16 @@
+{
+  "type": "change",
+  "summary": "Nora now keeps a history of everything she changes in her own records, so her state at any past moment can be restored for testing.",
+  "details": [
+    "Every change to her in-place records (messages, notes, reminders, standing, culture, media descriptions, loop state and caches) is kept as a dated version; nothing she reads changes, and a pruned or expired row is kept in that history rather than lost.",
+    "Each doctrine and Dreamer instruction load, each config file and each process start is recorded, so which instructions and settings were in force at a moment can be answered.",
+    "nora snapshot --at T reports what every store held at T and what was in force then, and with --into copies it into an empty sandbox database; without --into it writes nothing."
+  ],
+  "limitations": [
+    "History starts at this upgrade: earlier states are reconstructed only as far as each record's own dates allow, and rows deleted before it are gone.",
+    "Memory (Honcho), the presence summaries (until step 2) and events (until step 2b) cannot be restored as of a past moment; the snapshot says so.",
+    "The upgrade writes one history row per existing row of the covered tables, once, at the first start after deploy, and holds a write lock on those tables while it runs: the presence collector and the analytics process wait for it.",
+    "TRUNCATE on a covered table is refused (it would bypass the history); rows are deleted instead, and are kept as hidden history.",
+    "Eval cases still seed through the per-room snapshot; moving them onto the whole-store snapshot is a later change."
+  ]
+}
