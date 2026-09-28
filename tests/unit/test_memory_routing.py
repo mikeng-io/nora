@@ -15,6 +15,7 @@ from nora.app.memory_routing import (
     MemoryRoutingError,
     build_workspace_router,
     honcho_workspaces,
+    workspaces_of_person,
 )
 from nora.infra.honcho import HonchoRoute
 from nora.persons import PersonsError, load_persons
@@ -66,12 +67,13 @@ def test_a_honcho_id_honcho_would_refuse_is_refused_at_startup(tmp_path):
 
 def test_the_live_mapping_routes_two_workspaces_apart(tmp_path):
     """The operator's decision, by its own names: `67` = friends + wedding on
-    the EXISTING Honcho workspace `nora`; `ridgeline` alone, bound by name.
+    the EXISTING Honcho workspace `nora`; `ridgeline` alone, on `nora-ridgeline`
+    (the Honcho workspace named `ridgeline` belongs to another application).
     Units of one workspace share its Honcho workspace; each is its own
     scope; every id a room answers to routes."""
     router = build_workspace_router(
         policy=_policy(tmp_path, _LIVE_SHAPE),
-        bindings={"67": "nora"},
+        bindings={"67": "nora", "ridgeline": "nora-ridgeline"},
         default_workspace="nora",
     )
     assert router.strict is True
@@ -80,10 +82,11 @@ def test_the_live_mapping_routes_two_workspaces_apart(tmp_path):
         "100000000000000001/100000000000000002",
     ) == HonchoRoute("nora", "friends")
     assert router.for_conversation("sig-wedding") == HonchoRoute("nora", "wedding")
-    assert router.for_conversation("sig-ridgeline") == HonchoRoute("ridgeline", "ridgeline")
-    assert router.for_conversation("sig-ridgeline-old") == HonchoRoute("ridgeline", "ridgeline")
+    assert router.for_conversation("sig-ridgeline") == HonchoRoute("nora-ridgeline", "ridgeline")
+    assert router.for_conversation("sig-ridgeline-old") == HonchoRoute("nora-ridgeline", "ridgeline")
     assert router.for_conversation("sig-unlisted") is None
-    assert router.workspaces() == ("nora", "ridgeline")
+    assert router.workspaces() == ("nora", "nora-ridgeline")
+    assert router.for_workspace("67") == HonchoRoute("nora")
 
 
 def test_without_units_everything_is_the_default_workspace_scoped_per_unit(tmp_path):
@@ -135,3 +138,26 @@ def test_one_conversation_id_in_two_units_is_refused(tmp_path):
         build_workspace_router(
             policy=_policy(tmp_path, body), bindings={}, default_workspace="nora",
         )
+
+
+def test_a_person_belongs_to_the_workspaces_whose_rooms_name_them(tmp_path):
+    """The portal's membership rule: a room whose `persons` list names you
+    puts you in its unit's workspace; a `persons = "*"` room names nobody, so
+    it places nobody."""
+    def room(cid, unit, persons):
+        return (
+            f'[[conversations]]\nplatform = "signal"\nid = "{cid}"\nlabel = "{cid}"\n'
+            f"persons = {persons}\nunit = \"{unit}\"\n"
+        )
+    body = (
+        'default = "deny"\n'
+        + room("a", "friends", '["jordan", "blair"]')
+        + room("b", "ridgeline", '["jordan"]')
+        + room("c", "open", '"*"')
+        + '[units.friends]\nworkspace = "67"\n[units.ridgeline]\nworkspace = "ridgeline"\n'
+        + '[units.open]\nworkspace = "public"\n'
+    )
+    policy = _policy(tmp_path, body)
+    assert workspaces_of_person(policy, "jordan") == ("67", "ridgeline")
+    assert workspaces_of_person(policy, "blair") == ("67",)
+    assert workspaces_of_person(policy, "nobody") == ()

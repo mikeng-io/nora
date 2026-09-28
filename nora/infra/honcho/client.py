@@ -223,6 +223,13 @@ def _conclusions(representation: Any) -> tuple[str, ...]:
 #: (`src/crud/document.py::create_observations`). See `HonchoClient.conclude`.
 SCOPE_PEER_PREFIX = "scope."
 
+#: Workspace metadata key Nora stamps on every Honcho workspace she creates or
+#: claims, valued with her `ai_peer`. Honcho workspaces are shared by every
+#: application on the server — the deploy host's `ridgeline` holds another
+#: application's 837 sessions (read back 2026-09-28) — so a name alone proves
+#: nothing about who a workspace belongs to. See `HonchoClient._owned`.
+OWNER_KEY = "nora_owner"
+
 #: Honcho's scope-id alphabet (`^[a-zA-Z0-9_-]+$`, at most 506 characters;
 #: docs/v3/documentation/features/advanced/scopes.mdx, "Limits").
 _SCOPE_ID_OK = re.compile(r"^[a-zA-Z0-9_-]+$")
@@ -298,12 +305,24 @@ class WorkspaceRouter:
         *,
         unit_workspaces: Mapping[str, str] | None = None,
         conversation_units: Mapping[str, str] | None = None,
+        workspace_routes: Mapping[str, str] | None = None,
         strict: bool = False,
     ) -> None:
         self._default = default
         self._unit_workspaces = dict(unit_workspaces or {})
         self._conversation_units = dict(conversation_units or {})
+        # Nora workspace name -> its Honcho workspace, for the one kind of
+        # read keyed on a WORKSPACE rather than a room or unit: a person's own
+        # model across that workspace, unscoped (the portal's memory page).
+        self._workspace_routes = dict(workspace_routes or {})
         self._strict = strict
+
+    @property
+    def default(self) -> str:
+        """`memory.workspace_id`: the implicit workspace's Honcho workspace, and
+        the one Honcho workspace Nora is known to own without a marker (it
+        predates the marker, and every deployment's history is in it)."""
+        return self._default
 
     @property
     def strict(self) -> bool:
@@ -323,6 +342,12 @@ class WorkspaceRouter:
         if unit is None:
             return None if self._strict else HonchoRoute(self._default)
         return self.for_unit(unit)
+
+    def for_workspace(self, name: str) -> HonchoRoute | None:
+        """A Nora WORKSPACE's Honcho workspace, UNSCOPED — every unit of it at
+        once. `None` for a workspace this router was not built with."""
+        workspace = self._workspace_routes.get(name)
+        return HonchoRoute(workspace) if workspace is not None else None
 
     def unrouted(self) -> HonchoRoute | None:
         """The route of a call that names neither a room nor a unit: the
@@ -408,6 +433,9 @@ class HonchoClient:
         # scope, session) memberships already asserted this process — each
         # costs one idempotent POST, once, like `_configured_peers`.
         self._known_scopes: set[tuple[str, str]] = set()
+        # Honcho workspace -> whether it is Nora's (`_owned`). Only settled
+        # answers are cached; an unreachable Honcho is asked again.
+        self._ownership: dict[str, bool] = {}
         self._scoped_sessions: set[tuple[str, str, str]] = set()
         # One asyncio.Lock per peer id, not one global lock — different peers must
         # still proceed concurrently. Shared between ensure_peer and ensure_session:
@@ -429,8 +457,9 @@ class HonchoClient:
     def _url(self, path: str, *, workspace: str) -> str:
         return f"{self._base}/v3/workspaces/{workspace}{path}"
 
-    def _route(
+    async def _route(
         self, *, conversation_id: str | None = None, unit: str | None = None,
+        workspace: str | None = None, claim: bool = True,
     ) -> HonchoRoute | None:
         """Where a call for this room or unit goes, or `None` for nowhere.
 
@@ -440,7 +469,21 @@ class HonchoClient:
         closed rather than sent to either. Neither is the unrouted case,
         which exists only without `[units]` (`WorkspaceRouter.unrouted`).
         `None` is logged here once per call so every verb's own fail-closed
-        branch stays one line."""
+        branch stays one line.
+
+        `workspace` names a NORA workspace, for a read of a person across all
+        of its units (unscoped), and excludes the other two keys. Every route
+        is then checked for OWNERSHIP (`_owned`): a Honcho workspace that
+        belongs to some other application has no route at all."""
+        if workspace is not None:
+            if unit is not None or conversation_id is not None:
+                log.warning("honcho call names a workspace AND a room or unit; refused")
+                return None
+            route = self._router.for_workspace(workspace)
+            if route is None:
+                log.warning("honcho call names workspace %r, which is not bound", workspace)
+                return None
+            return route if await self._owned(route.workspace, claim=claim) else None
         if unit is not None:
             route = self._router.for_unit(unit)
             if conversation_id is not None and route != self._router.for_conversation(
@@ -461,7 +504,137 @@ class HonchoClient:
                 "names no workspace for it, so it is refused, not widened",
                 unit, conversation_id,
             )
-        return route
+            return None
+        return route if await self._owned(route.workspace, claim=claim) else None
+
+    async def inspect_workspace(self, workspace: str) -> str | None:
+        """Who a Honcho workspace belongs to, READ-ONLY: `"owned"` (it carries
+        Nora's `OWNER_KEY`), `"absent"` (no such workspace), `"empty"` (it
+        exists, unmarked, with no session in it), `"foreign"` (unmarked, or
+        marked by another `ai_peer`, and holding sessions), or `None` when
+        Honcho could not be read.
+
+        Built on the two reads Honcho v3.1.2 offers for it: the workspace
+        list (`POST /workspaces/list`, which carries each workspace's
+        `metadata`; there is no single-workspace GET that does not also
+        create) and the session list (`POST /workspaces/{id}/sessions/list`,
+        whose page `total` counts them). The marker is the reliable signal —
+        a session-name heuristic would have to know every name another
+        application might choose, and the live `nora` workspace already
+        holds probe sessions no rule of ours would call Nora-shaped."""
+        found: dict[str, Any] | None = None
+        page = 1
+        while found is None:
+            body = await self._post(
+                f"{self._base}/v3/workspaces/list?page={page}&size=100", {},
+                self._card_timeout,
+            )
+            items = (body or {}).get("items")
+            if not isinstance(items, list):
+                return None
+            for item in items:
+                if isinstance(item, dict) and item.get("id") == workspace:
+                    found = item
+                    break
+            pages = (body or {}).get("pages")
+            if found is None and (not isinstance(pages, int) or page >= pages):
+                return "absent"
+            page += 1
+        metadata = found.get("metadata")
+        owner = metadata.get(OWNER_KEY) if isinstance(metadata, dict) else None
+        if owner == self._ai_peer:
+            return "owned"
+        sessions = await self._post(
+            self._url("/sessions/list?page=1&size=1", workspace=workspace), {},
+            self._card_timeout,
+        )
+        total = (sessions or {}).get("total")
+        if not isinstance(total, int):
+            return None
+        if owner is None and total == 0:
+            return "empty"
+        return "foreign"
+
+    async def _owned(self, workspace: str, *, claim: bool = True) -> bool:
+        """Whether calls may go to this Honcho workspace (DEC-214).
+
+        The DEFAULT (`memory.workspace_id`) always may: it is the workspace
+        every deployment's history is already in, created before the marker
+        existed, and the eval harness's draw workspaces arrive through it. Any
+        other bound workspace must be OURS: marked with `OWNER_KEY`, or
+        absent or empty — in which case it is claimed here, created with the
+        marker or given it (`PUT /workspaces/{id}` REPLACES metadata, so the
+        existing keys are carried over). An unmarked workspace that holds
+        sessions belongs to someone else, and every call routed to it is
+        refused for the life of the process, logged as an error; a binding
+        is a line in identity.toml, and writing Nora's speech into another
+        application's peers because of a name clash could not be undone.
+
+        `claim=False` is the read-only form, for a caller that must write
+        nothing (the backfill's dry run): an absent or empty workspace is
+        then allowed without being created or marked. An unreadable Honcho
+        is `False`, not cached, so the next call asks again."""
+        if workspace == self._router.default:
+            return True
+        known = self._ownership.get(workspace)
+        if known is not None:
+            return known
+        state = await self.inspect_workspace(workspace)
+        if state is None:
+            return False
+        if state == "foreign":
+            log.error(
+                "honcho workspace %r holds sessions and is not marked as Nora's "
+                "(%s); every call bound to it is refused — bind this workspace to "
+                "another Honcho workspace in identity.toml",
+                workspace, OWNER_KEY,
+            )
+            self._ownership[workspace] = False
+            return False
+        if state == "owned":
+            self._ownership[workspace] = True
+            return True
+        if not claim:
+            return True
+        if not await self._claim(workspace, exists=state == "empty"):
+            return False
+        self._ownership[workspace] = True
+        return True
+
+    async def _claim(self, workspace: str, *, exists: bool) -> bool:
+        marker = {OWNER_KEY: self._ai_peer}
+        if not exists:
+            result = await self._post(
+                f"{self._base}/v3/workspaces", {"id": workspace, "metadata": marker},
+                self._card_timeout,
+            )
+            return result is not None
+        # It exists and is empty: mark it, keeping whatever metadata it had.
+        body = await self._post(
+            f"{self._base}/v3/workspaces", {"id": workspace}, self._card_timeout,
+        )
+        existing = (body or {}).get("metadata")
+        merged = {**(existing if isinstance(existing, dict) else {}), **marker}
+        url = f"{self._base}/v3/workspaces/{workspace}"
+        try:
+            async with (
+                aiohttp.ClientSession(
+                    timeout=aiohttp.ClientTimeout(total=self._card_timeout)
+                ) as session,
+                session.put(url, json={"metadata": merged}) as r,
+            ):
+                if r.status >= 400:
+                    log.warning("honcho PUT %s -> %s", url, r.status)
+                    return False
+        except Exception as e:  # noqa: BLE001 — Honcho is never load-bearing
+            log.warning("honcho PUT %s failed: %s", url, e)
+            return False
+        return True
+
+    def foreign_workspaces(self) -> tuple[str, ...]:
+        """The bound Honcho workspaces found to belong to someone else — for
+        the composition root to refuse startup on, after `ensure_workspace`."""
+        return tuple(sorted(w for w, ok in self._ownership.items() if not ok))
 
     async def _post(
         self,
@@ -508,10 +681,16 @@ class HonchoClient:
         first call that needs it."""
         for workspace in self._router.workspaces():
             if workspace not in self._workspaces_ready:
-                result = await self._post(
-                    f"{self._base}/v3/workspaces", {"id": workspace}, self._card_timeout
-                )
-                if result is None:
+                if workspace == self._router.default:
+                    result = await self._post(
+                        f"{self._base}/v3/workspaces", {"id": workspace},
+                        self._card_timeout,
+                    )
+                    if result is None:
+                        continue
+                elif not await self._owned(workspace):
+                    # Foreign (logged, and `foreign_workspaces` names it) or
+                    # unreachable: no peer and no scope is created in it.
                     continue
                 self._workspaces_ready.add(workspace)
             # Nora's aiPeer, per workspace: peers are workspace-scoped, so her
@@ -544,7 +723,7 @@ class HonchoClient:
         """Create `peer_id` in the Honcho workspace of the room or unit the
         caller is about to write for. Per (workspace, peer): the same person
         is a separate peer in each Honcho workspace they are seen in."""
-        route = self._route(conversation_id=conversation_id, unit=unit)
+        route = await self._route(conversation_id=conversation_id, unit=unit)
         if route is None:
             return
         await self._ensure_peer_in(route.workspace, peer_id)
@@ -627,7 +806,7 @@ class HonchoClient:
         existed BEFORE scopes into its unit. `None` when the conversation has
         no route: nothing is created anywhere.
         """
-        route = self._route(conversation_id=conversation_id)
+        route = await self._route(conversation_id=conversation_id)
         if route is None:
             return None
         ws = route.workspace
@@ -712,7 +891,7 @@ class HonchoClient:
         session_id = await self.ensure_session(conversation_id)
         if session_id is None:
             return False
-        route = self._route(conversation_id=conversation_id)
+        route = await self._route(conversation_id=conversation_id)
         if route is None:
             return False
         ws = route.workspace
@@ -787,7 +966,7 @@ class HonchoClient:
         scoped conclusion (`SCOPE_PEER_PREFIX`); a Honcho that refuses it
         answers >=400, which is `False` — `unavailable`, never a silent
         success. `False` too, without a request, when there is no route."""
-        route = self._route(conversation_id=conversation_id, unit=unit)
+        route = await self._route(conversation_id=conversation_id, unit=unit)
         if route is None:
             return False
         rows: list[dict[str, object]] = [
@@ -810,7 +989,7 @@ class HonchoClient:
 
     async def peer_card(
         self, *, peer_id: str, conversation_id: str | None = None,
-        unit: str | None = None,
+        unit: str | None = None, workspace: str | None = None,
     ) -> list[str]:
         """Durable recall about a peer. [] on any failure — a missing card is normal.
 
@@ -841,7 +1020,9 @@ class HonchoClient:
         purpose, and it can never reach another Nora workspace's. No route,
         no request: `[]`.
         """
-        route = self._route(conversation_id=conversation_id, unit=unit)
+        route = await self._route(
+            conversation_id=conversation_id, unit=unit, workspace=workspace,
+        )
         if route is None:
             return []
         result = await self._get(
@@ -862,6 +1043,7 @@ class HonchoClient:
         target: str | None = None,
         conversation_id: str | None = None,
         unit: str | None = None,
+        workspace: str | None = None,
     ) -> Recollection:
         """What Honcho concludes about one peer, curated to one question.
 
@@ -942,8 +1124,15 @@ class HonchoClient:
         `scope` excludes `session_id` and `filters`, neither of which this
         sends. No route: `reachable=False` without a request — an honest
         «could not check», never a read of some other workspace.
+
+        `workspace` (a NORA workspace name) instead of a room or unit reads
+        the person across every unit of that workspace, UNSCOPED — the one
+        caller is a person reading their OWN model on the portal
+        (`nora.web.memory`), which is shown per workspace.
         """
-        route = self._route(conversation_id=conversation_id, unit=unit)
+        route = await self._route(
+            conversation_id=conversation_id, unit=unit, workspace=workspace,
+        )
         if route is None:
             return Recollection(reachable=False)
         if not await self._ensure_scope(route):
@@ -1018,7 +1207,7 @@ class HonchoClient:
         arm, `scope=<unit>`, which confines both the conclusions the answer
         reasons from and the messages it may read to the unit's rooms. No
         route: None, without a request."""
-        route = self._route(conversation_id=conversation_id, unit=unit)
+        route = await self._route(conversation_id=conversation_id, unit=unit)
         if route is None:
             return None
         if not await self._ensure_scope(route):
@@ -1074,7 +1263,7 @@ class HonchoClient:
         (`WorkspaceMessageSearchOptions.scope`, one name only), so the
         Dreamer's «anything said about X» reaches the unit's rooms and not
         the whole workspace. No route: `reachable=False`, no request."""
-        route = self._route(conversation_id=conversation_id, unit=unit)
+        route = await self._route(conversation_id=conversation_id, unit=unit)
         if route is None:
             return MessageHits(reachable=False)
         payload: dict[str, object] = {"query": query, "limit": limit}
@@ -1130,8 +1319,10 @@ class HonchoClient:
         already holds before it writes, and no turn ever needs that.
         `POST /sessions/{id}/messages/list` (paginated, honcho v3.1.2
         `src/routers/messages.py::get_messages`) in the conversation's
-        routed workspace; a 404 is the absent session."""
-        route = self._route(conversation_id=conversation_id)
+        routed workspace; a 404 is the absent session. READ-ONLY: it never
+        creates or marks the workspace (`claim=False`), and a workspace that
+        belongs to someone else is `None`."""
+        route = await self._route(conversation_id=conversation_id, claim=False)
         if route is None:
             return None
         session_id = f"nora-conv-{_safe_conversation_key(conversation_id)}"
@@ -1172,6 +1363,75 @@ class HonchoClient:
             if not isinstance(pages, int) or page >= pages or not items:
                 return out
             page += 1
+
+    async def list_conclusions(
+        self, *, workspace: str, observer: str, page_size: int = 100,
+    ) -> list[dict[str, Any]] | None:
+        """Every conclusion `observer` holds in a NORA workspace's Honcho
+        workspace, as `{"observed_id", "content", "session_id", "level"}`
+        dicts — or `None` when that could not be read. Read-only.
+
+        NOT on the `MemoryStore` port: its one caller is the operator's
+        `nora memory carry-conclusions`. `POST /conclusions/list`, paged,
+        filtered by `observer_id` (honcho v3.1.2 `src/utils/filter.py` maps it
+        to the document's observer)."""
+        route = await self._route(workspace=workspace, claim=False)
+        if route is None:
+            return None
+        out: list[dict[str, Any]] = []
+        page = 1
+        while True:
+            body = await self._post(
+                self._url(
+                    f"/conclusions/list?page={page}&size={page_size}",
+                    workspace=route.workspace,
+                ),
+                {"filters": {"observer_id": observer}},
+                self._representation_timeout,
+            )
+            items = (body or {}).get("items")
+            if not isinstance(items, list):
+                return None
+            out.extend(
+                {
+                    "observed_id": item.get("observed_id"),
+                    "content": item.get("content"),
+                    "session_id": item.get("session_id"),
+                    "level": item.get("level", "explicit"),
+                }
+                for item in items if isinstance(item, dict)
+            )
+            pages = (body or {}).get("pages")
+            if not isinstance(pages, int) or page >= pages or not items:
+                return out
+            page += 1
+
+    async def carry_to_scope(
+        self, *, unit: str, rows: list[tuple[str, str]],
+    ) -> bool:
+        """Write `(observed, content)` rows as the UNIT'S scope conclusions —
+        observer `scope.<unit>`, no session — the rows a named-scope read of
+        that unit serves (see `conclude`). Batches of 100, Honcho's cap; False
+        at the first batch that does not land. Operator-only
+        (`nora memory carry-conclusions`)."""
+        route = await self._route(unit=unit)
+        if route is None or route.scope is None:
+            return False
+        if not await self._ensure_scope(route):
+            return False
+        observer = f"{SCOPE_PEER_PREFIX}{route.scope}"
+        for start in range(0, len(rows), 100):
+            batch = [
+                {"content": content, "observer_id": observer, "observed_id": observed}
+                for observed, content in rows[start:start + 100]
+            ]
+            result = await self._post(
+                self._url("/conclusions", workspace=route.workspace),
+                {"conclusions": batch}, self._feed_timeout,
+            )
+            if result is None:
+                return False
+        return True
 
     async def health(self) -> MemoryHealth:
         result = await self._get(f"{self._base}/health", self._card_timeout)

@@ -125,6 +125,12 @@ class _Recorder:
 
     async def handler(self, request: web.Request) -> web.Response:
         body = await request.json() if request.can_read_body else {}
+        if request.path == "/v3/workspaces/list":
+            # Both bound workspaces exist and carry Nora's owner marker, so
+            # these tests are about routing, not ownership (tested below).
+            return web.json_response({"items": [
+                {"id": w, "metadata": {"nora_owner": "nora"}} for w in ("nora", "ridgeline")
+            ], "pages": 1})
         self.bodies.append((request.method, request.path, body))
         if request.path.endswith("/representation"):
             return web.json_response({"representation": "- x"})
@@ -231,3 +237,86 @@ async def test_without_units_an_unknown_room_keeps_the_old_single_workspace(reco
     rep = recorder.body("/v3/workspaces/nora/peers/nora/representation")
     assert "scope" not in rep
     assert json.dumps(rep)  # a real body was sent
+
+
+# ── ownership: a bound Honcho workspace must be Nora's ───────────────────────
+
+
+async def test_a_foreign_honcho_workspace_is_refused_and_named(honcho):
+    """The deploy host's `ridgeline` Honcho workspace belongs to another
+    application. Bound by name, it must get no peer, no scope and no speech,
+    and the client must say which workspace it refused."""
+    honcho.seed("ridgeline", created_at="2026-01-01T00:00:00Z")
+    honcho.sessions["ridgeline"]["other-app-session-1"] = {
+        "id": "other-app-session-1", "is_active": True, "workspace_id": "ridgeline",
+    }
+    client = _client(honcho.url)
+    await client.ensure_workspace()
+
+    assert client.foreign_workspaces() == ("ridgeline",)
+    assert not await client.feed(peer_id="jordan", text="hi", conversation_id="g-ridgeline")
+    assert ("ridgeline", _session("g-ridgeline")) not in honcho.messages
+    assert ("ridgeline", "ridgeline") not in honcho.scopes
+    assert "metadata" not in honcho.workspaces["ridgeline"] or not honcho.workspaces[
+        "ridgeline"]["metadata"], "a foreign workspace is never marked"
+    # The rest of the deployment still works.
+    assert await client.feed(peer_id="jordan", text="hi", conversation_id="g-friends")
+
+
+async def test_an_absent_workspace_is_created_marked_and_an_empty_one_is_marked(honcho):
+    honcho.seed("ridgeline", created_at="2026-01-01T00:00:00Z", metadata={"note": "kept"})
+    client = _client(honcho.url)
+    await client.ensure_workspace()
+    assert client.foreign_workspaces() == ()
+    assert honcho.workspaces["ridgeline"]["metadata"] == {"note": "kept", "nora_owner": "nora"}
+    assert await client.feed(peer_id="jordan", text="hi", conversation_id="g-ridgeline")
+
+    fresh = FakeHoncho()
+    await fresh.start()
+    try:
+        await _client(fresh.url).ensure_workspace()
+        assert fresh.workspaces["ridgeline"]["metadata"] == {"nora_owner": "nora"}
+    finally:
+        await fresh.close()
+
+
+async def test_the_default_workspace_is_nora_s_without_a_marker(honcho):
+    """`memory.workspace_id` holds every deployment's history, created before
+    the marker, with probe sessions no naming rule would call Nora's. It is
+    accepted as it is, and never re-marked."""
+    honcho.seed("nora", created_at="2026-01-01T00:00:00Z")
+    honcho.sessions["nora"]["probe-session-1"] = {
+        "id": "probe-session-1", "is_active": True, "workspace_id": "nora",
+    }
+    client = _client(honcho.url)
+    await client.ensure_workspace()
+    assert "nora" not in client.foreign_workspaces()
+    assert honcho.workspaces["nora"]["metadata"] == {}
+    assert await client.feed(peer_id="jordan", text="hi", conversation_id="g-friends")
+
+
+async def test_a_workspace_marked_by_another_nora_is_foreign(honcho):
+    honcho.seed("ridgeline", created_at="2026-01-01T00:00:00Z", metadata={"nora_owner": "delia"})
+    honcho.sessions["ridgeline"]["nora-conv-x"] = {
+        "id": "nora-conv-x", "is_active": True, "workspace_id": "ridgeline",
+    }
+    client = _client(honcho.url)
+    await client.ensure_workspace()
+    assert client.foreign_workspaces() == ("ridgeline",)
+
+
+async def test_a_workspace_read_is_unscoped_in_that_workspace(recorder):
+    """The portal's read: a NORA workspace name, resolved to its Honcho
+    workspace and read across every unit — no `scope`."""
+    client = HonchoClient(recorder.url, "nora", workspace_router=WorkspaceRouter(
+        "nora", unit_workspaces=_UNITS, conversation_units=_ROOMS,
+        workspace_routes={"67": "nora", "ridgeline": "ridgeline"}, strict=True,
+    ))
+    assert (await client.representation(
+        peer_id="nora", target="jordan", search_query="", workspace="ridgeline",
+    )).reachable
+    rep = recorder.body("/v3/workspaces/ridgeline/peers/nora/representation")
+    assert "scope" not in rep
+    assert not (await client.representation(
+        peer_id="nora", search_query="", workspace="unbound",
+    )).reachable

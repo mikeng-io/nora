@@ -158,6 +158,8 @@ class FakeHoncho:
         self.messages: dict[tuple[str, str], list[dict]] = {}
         # (workspace, scope) -> the sessions that are members of it.
         self.scopes: dict[tuple[str, str], set[str]] = {}
+        # workspace -> its conclusions, as Honcho lists them.
+        self.conclusions: dict[str, list[dict]] = {}
         self.fail_messages_after: int | None = None
         self._message_posts = 0
         self._server: TestServer | None = None
@@ -224,6 +226,36 @@ class FakeHoncho:
         if workspace not in self.workspaces:
             return web.json_response({"detail": "workspace not found"}, status=404)
         sessions = self.sessions[workspace]
+        if not rest and method == "PUT":
+            # `WorkspaceUpdate`: provided metadata REPLACES the current one.
+            if (body or {}).get("metadata") is not None:
+                self.workspaces[workspace]["metadata"] = dict(body["metadata"])
+            return web.json_response(self.workspaces[workspace])
+        if rest == ["conclusions"] and method == "POST":
+            rows = (body or {}).get("conclusions") or []
+            for row in rows:
+                observer = row.get("observer_id", "")
+                if observer.startswith("scope.") and (
+                    (workspace, observer.removeprefix("scope.")) not in self.scopes
+                ):
+                    return web.json_response({"detail": "peer not found"}, status=404)
+            self.writes.setdefault(workspace, []).append(f"{method} /{'/'.join(rest)}")
+            held = self.conclusions.setdefault(workspace, [])
+            for row in rows:
+                held.append({
+                    "id": f"c{len(held) + 1}", "content": row.get("content"),
+                    "observer_id": row.get("observer_id"),
+                    "observed_id": row.get("observed_id"),
+                    "session_id": row.get("session_id"), "level": "explicit",
+                })
+            return web.json_response(held[-len(rows):], status=201)
+        if rest == ["conclusions", "list"] and method == "POST":
+            wanted = ((body or {}).get("filters") or {}).get("observer_id")
+            return self._page(
+                [c for c in self.conclusions.get(workspace, [])
+                 if wanted is None or c["observer_id"] == wanted],
+                request,
+            )
         if not rest and method == "DELETE":
             if any(s["is_active"] for s in sessions.values()):
                 return web.json_response({"detail": "active sessions"}, status=409)

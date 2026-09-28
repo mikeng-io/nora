@@ -148,6 +148,7 @@ class App:
             mobility=deps.mobility,
             skills_dir=deps.skills_dir, events=deps.events,
             doctrine_store=deps.doctrine_store,
+            workspaces_of=deps.workspaces_of,
         )
         # The voice channel's text entry point (design/voice-channel/, stage
         # 3): the wake service POSTs transcripts here, and they enter through

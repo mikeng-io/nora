@@ -18,6 +18,7 @@ await this function, construct `App`.
 from __future__ import annotations
 
 import asyncio
+import functools
 import logging
 import os
 from collections.abc import Awaitable, Callable, Coroutine, Mapping, Sequence
@@ -58,7 +59,11 @@ from nora.agent.telemetry import (
 from nora.agent.telemetry import timed as telemetry_timed
 from nora.agent.tools import OriginRoom
 from nora.agent.whereis import Circle, check_disclosure_invariant, circles_from_persons
-from nora.app.memory_routing import MemoryRoutingError, build_workspace_router
+from nora.app.memory_routing import (
+    MemoryRoutingError,
+    build_workspace_router,
+    workspaces_of_person,
+)
 from nora.app.summons_inbox import SummonsInbox
 from nora.app.voice_events import VoiceEventConsumer
 from nora.config import Config, DreamBudgetConfig
@@ -938,6 +943,10 @@ class Dependencies:
     # `policy` above is already taken by the ENGAGE policy, which is a
     # different object answering a different question.
     resolve_voice_room: Callable[[str], str | None]
+    # A person_id -> the Nora workspaces they belong to (DEC-214), for the
+    # portal's own-memory page. A callable for `resolve_voice_room`'s reason:
+    # `nora.web` never sees a `Policy`.
+    workspaces_of: Callable[[str], tuple[str, ...]]
     assembler: ContextAssembler
     ingest: IngestPipeline
     engagement: EngagementPipeline
@@ -1595,6 +1604,19 @@ async def build_dependencies(
     # the Nora aiPeer in each (her replies feed under it to build her
     # self-model; peers are per Honcho workspace), and every unit's scope.
     await memory.ensure_workspace()
+    # EXCEPT a bound Honcho workspace that belongs to another application:
+    # that is a wrong line in identity.toml, and running on it would write
+    # people's speech into someone else's peers. The client has already
+    # refused every call to it; this makes the refusal loud (R-5). An
+    # unreachable Honcho is not this — it is re-checked on the first call.
+    foreign = memory.foreign_workspaces()
+    if foreign:
+        raise StartupError(
+            f"memory routing error: Honcho workspace(s) {list(foreign)} hold "
+            "sessions and are not marked as this Nora's. Another application "
+            "uses them — bind the Nora workspace to a different "
+            "honcho_workspace in identity.toml."
+        )
 
     llm_state = LLMState()
     background = BackgroundTasks()
@@ -4145,6 +4167,7 @@ async def build_dependencies(
         media_join=media_join,
         policy=policy, assembler=assembler, ingest=ingest, engagement=engagement,
         resolve_voice_room=_voice_room_of(allowlist),
+        workspaces_of=functools.partial(workspaces_of_person, allowlist),
         dispatcher=dispatcher, adapter=adapter, registry=registry,
         participation_trigger=participation_trigger,
         relevance_gate=gate,

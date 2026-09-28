@@ -5,11 +5,14 @@
     "policy.toml can put each group (unit) in a workspace with a [units] table, and identity.toml says which Honcho workspace each workspace's memories live in; with no [units] table everything works exactly as before.",
     "A group may have at most one room per platform; a policy that gives a group two rooms on the same platform now refuses to start.",
     "Memory reads for a room or group now use that group's own Honcho scope, and anything Nora is asked to remember is written where those reads look.",
-    "New operator command `nora memory backfill --unit <unit>` replays a group's recorded messages into its own workspace (a dry run unless --apply)."
+    "New operator command `nora memory backfill --unit <unit>` replays a group's recorded messages into its own workspace (a dry run unless --apply).",
+    "New operator command `nora memory carry-conclusions --workspace <workspace>` puts the facts Nora was told before this change back into every group's recall in that workspace.",
+    "Nora refuses to start if a workspace is bound to a Honcho workspace another application already uses.",
+    "The portal's memory page shows your memory once per workspace you belong to."
   ],
   "limitations": [
     "Right after a group moves into a scope, recall starts from the facts people stated directly; deeper conclusions come back as Honcho re-derives them.",
-    "Facts saved with `remember` before this change are not in any group's scope, so a group's recall no longer sees them.",
-    "Once [units] is set, the web portal's memory page shows nothing until someone decides which workspace it should show for a person in several."
+    "Facts saved with `remember` before this change are missing from every group's recall until `nora memory carry-conclusions` is run for their workspace.",
+    "For someone in more than one workspace, the portal page currently displays only the first."
   ]
 }

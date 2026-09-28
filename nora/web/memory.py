@@ -2,6 +2,9 @@
 reversing 2026-08-17-nora-web-design.md §2's original "no per-person opt-in/
 opt-out" decision).
 
+Since DEC-214 a person can have one entry per Nora workspace they belong to,
+each labelled `workspace` (see `build_memory_payload`).
+
 Every whitelisted person's full Honcho representation used to be visible to
 every OTHER whitelisted person — a deliberate v1 choice for a small trusted
 friend group. It is reversed here: a caller now sees ONLY their own
@@ -18,8 +21,10 @@ doesn't render copy, so that rule lives in the frontend, not here.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
+from nora.domain.models import PersonRef
 from nora.domain.ports import MemoryStore
 from nora.persons import Persons
 
@@ -31,10 +36,10 @@ _MAX_CONCLUSIONS = 20
 
 async def build_memory_payload(
     *, honcho: MemoryStore, persons: Persons, ai_peer: str, person_id: str | None,
+    workspaces_of: Callable[[str], tuple[str, ...]] | None = None,
 ) -> list[dict[str, Any]]:
-    """The caller's own entry only — a list of at most one, so the wire shape
-    stays what the frontend already expects (see the module docstring for why
-    this used to be everyone's and no longer is).
+    """The caller's own entries only — one per Nora WORKSPACE they belong to
+    (DEC-214), each labelled `workspace`, in workspace-name order.
 
     Carries BOTH of Honcho's two distinct reads of the person
     (nora/domain/models.py's `TagContext` docstring is the authority on why
@@ -51,6 +56,18 @@ async def build_memory_payload(
       message to scope `search_query` to (empty string: the general, not
       turn-relevant, view).
 
+    **Per workspace, unscoped within it.** A person is one Honcho peer per
+    Honcho workspace, so someone in units of two Nora workspaces has two
+    models of them, and they are shown apart, never merged: each read names
+    the WORKSPACE (`workspace=`), which the memory client resolves to that
+    workspace's Honcho workspace and reads across all its units. Membership
+    is `workspaces_of` — the workspaces holding a room whose `persons` list
+    names them (`nora.app.memory_routing.workspaces_of_person`). Only the
+    caller's own model is read here, so no other person's memory is routed
+    through anything. `workspaces_of=None` is the pre-hierarchy caller: one
+    unrouted entry, which a deployment with no `[units]` answers from its one
+    workspace exactly as before (and one with `[units]` refuses).
+
     `MemoryStore.peer_card` returns `[]` both when Honcho is down and when
     it genuinely knows nothing (`ports.py`'s own documented ambiguity) — so
     an empty `identity` list is never surfaced as an error here, only
@@ -60,24 +77,29 @@ async def build_memory_payload(
     ref = persons.by_person.get(person_id)
     if ref is None:
         return []
+    if workspaces_of is None:
+        return [await _entry(honcho, ref, ai_peer, workspace=None)]
+    return [
+        await _entry(honcho, ref, ai_peer, workspace=name)
+        for name in workspaces_of(person_id)
+    ]
 
-    # UNROUTED, on purpose (DEC-214). The showcase is keyed on a PERSON, and a
-    # person can belong to units in more than one Nora workspace — each its own
-    # Honcho workspace, with its own model of them. Which of those this page
-    # shows is a product decision nobody has made, so it names no room and no
-    # unit: without `[units]` that is the one implicit workspace, exactly as
-    # before; with `[units]` the client refuses it (`reachable=False`) rather
-    # than picking a workspace and showing one group's model of a person as
-    # though it were the only one.
+
+async def _entry(
+    honcho: MemoryStore, ref: PersonRef, ai_peer: str, *, workspace: str | None,
+) -> dict[str, Any]:
     recall = await honcho.representation(
-        peer_id=ai_peer, target=person_id, search_query="",
-        max_conclusions=_MAX_CONCLUSIONS,
+        peer_id=ai_peer, target=ref.person_id, search_query="",
+        max_conclusions=_MAX_CONCLUSIONS, workspace=workspace,
     )
-    identity = await honcho.peer_card(peer_id=ref.honcho_peer_id)
-    return [{
-        "person_id": person_id,
+    identity = await honcho.peer_card(peer_id=ref.honcho_peer_id, workspace=workspace)
+    entry: dict[str, Any] = {
+        "person_id": ref.person_id,
         "display_name": ref.name,
         "reachable": recall.reachable,
         "identity": list(identity),
         "episodes": list(recall.conclusions),
-    }]
+    }
+    if workspace is not None:
+        entry["workspace"] = workspace
+    return entry

@@ -897,7 +897,9 @@ class MemoryStore(Protocol):
     be here, and a unit name passed through it addressed a Honcho workspace
     that did not exist (`NoteCurator._discharge`, 2026-09-19). On the peer
     verbs (`ensure_peer`, `conclude`, `peer_card`, `representation`, `chat`)
-    the key ROUTES only; it never narrows a read to one session. On `feed`
+    the key ROUTES only; it never narrows a read to one session. `peer_card`
+    and `representation` also take `workspace` — a NORA workspace name — for
+    a person's model across every unit of it, unscoped (the portal). On `feed`
     and `search` a `conversation_id` also names the room's own session, as it
     always has. A call whose key the deployment cannot route (a room or unit
     `policy.toml` does not place in any workspace) fails closed: a read is
@@ -941,7 +943,7 @@ class MemoryStore(Protocol):
 
     async def peer_card(
         self, *, peer_id: str, conversation_id: str | None = None,
-        unit: str | None = None,
+        unit: str | None = None, workspace: str | None = None,
     ) -> list[str]: ...
 
     # `peer_id` is the OBSERVER, `target` the OBSERVED (design/24 §4). With
@@ -958,6 +960,7 @@ class MemoryStore(Protocol):
         target: str | None = None,
         conversation_id: str | None = None,
         unit: str | None = None,
+        workspace: str | None = None,
     ) -> Recollection: ...
 
     # The DIALECTIC verb: Honcho REASONS over the (observer, observed) model to

@@ -478,6 +478,9 @@ class FakeMemoryStore:
         # none), so a test of a caller asserts the key here, not just the
         # payload.
         self.routes: list[tuple[str, str | None, str | None]] = []
+        # (verb, Nora workspace) for the reads keyed on a whole WORKSPACE (the
+        # portal's own-memory page), which name neither a room nor a unit.
+        self.workspace_reads: list[tuple[str, str]] = []
         self.fail = fail
 
     async def ensure_workspace(self) -> None:
@@ -528,9 +531,11 @@ class FakeMemoryStore:
 
     async def peer_card(
         self, *, peer_id: str, conversation_id: str | None = None,
-        unit: str | None = None,
+        unit: str | None = None, workspace: str | None = None,
     ) -> list[str]:
         self.routes.append(("peer_card", conversation_id, unit))
+        if workspace is not None:
+            self.workspace_reads.append(("peer_card", workspace))
         if self.fail:
             return []
         return list(self.cards.get(peer_id, []))
@@ -538,7 +543,7 @@ class FakeMemoryStore:
     async def representation(
         self, *, peer_id: str, search_query: str, max_conclusions: int = 5,
         target: str | None = None, conversation_id: str | None = None,
-        unit: str | None = None,
+        unit: str | None = None, workspace: str | None = None,
     ) -> Recollection:
         """Mirrors `HonchoClient.representation`, INCLUDING the shape it
         returns for a peer it has never heard of.
@@ -559,6 +564,8 @@ class FakeMemoryStore:
         """
         observed = target if target is not None else peer_id
         self.routes.append(("representation", conversation_id, unit))
+        if workspace is not None:
+            self.workspace_reads.append(("representation", workspace))
         self.queries.append((peer_id, observed, search_query))
         if self.fail:
             return Recollection(reachable=False)

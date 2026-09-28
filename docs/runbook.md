@@ -855,8 +855,21 @@ moved to a Nora workspace of its own, whose Honcho workspace starts empty. It is
 a DRY RUN unless `--apply`; it refuses a session that already holds messages
 unless `--resume` (which skips what it holds), refuses a policy with no
 `[units]`, and refuses the unit's workspace when that is `memory.workspace_id`
-(the history is already there). It reads the record store read-only, writes
-only Honcho, and deletes nothing. `nora.app.memory_backfill` has the rest.
+(the history is already there), and refuses a Honcho workspace another
+application uses. It reads the record store read-only, writes only Honcho,
+and deletes nothing. `nora.app.memory_backfill` has the rest.
+
+**`nora memory carry-conclusions --workspace <workspace>`** (DEC-214) copies the
+facts Nora was told before unit scopes existed (`remember`, note discharge —
+Nora's conclusions with no session) into every unit scope of that workspace,
+where the units' reads now look. One-time, a dry run unless `--apply`, and
+idempotent. `nora.app.memory_carry` has the rest.
+
+**Nora refuses to start on a Honcho workspace that is not hers**: a bound
+`honcho_workspace` that holds sessions and lacks her `nora_owner` metadata
+marker belongs to another application on the same Honcho. Bind the workspace
+to another id in identity.toml. `memory.workspace_id` is exempt (it predates
+the marker).
 
 **`nora groups`** answers "I cannot tell which group id is which". It prints
 each group's name beside the base64 `conversation_id` you need for

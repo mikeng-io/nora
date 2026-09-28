@@ -2,8 +2,9 @@
 `nora persons pending`, `nora presence members`, `nora reminders list`) and
 the config write surface (`nora config set/get/unset/validate` — see
 `nora.app.config_cli`). This module's own commands only READ the record
-store; two write elsewhere, each named where it is registered: `xai-login`
-(the host `.env`) and `memory backfill --apply` (Honcho, DEC-214).
+store; three write elsewhere, each named where it is registered: `xai-login`
+(the host `.env`), and `memory backfill --apply` and `memory
+carry-conclusions --apply` (Honcho, DEC-214).
 
 design/10 §6, plan Task 6. This answers the operator's original complaint —
 *"I CANNOT identify that group ID belongs to which group ... there is NO
@@ -53,6 +54,8 @@ from nora.agent.egress import scan_identifiers
 from nora.app import config_cli, report
 from nora.app.memory_backfill import BackfillRefusedError, backfill_unit
 from nora.app.memory_backfill import render as render_backfill
+from nora.app.memory_carry import CarryRefusedError, carry_conclusions
+from nora.app.memory_carry import render as render_carry
 from nora.app.memory_routing import MemoryRoutingError, build_workspace_router
 from nora.app.participation_measures import gather as gather_measures
 from nora.app.participation_measures import measure as compute_measures
@@ -61,7 +64,7 @@ from nora.config import Config, ConfigError, load
 from nora.domain.media_join import MediaJoin
 from nora.domain.models import UnattributedRow
 from nora.domain.participation_measures import Refusal
-from nora.infra.honcho import HonchoClient
+from nora.infra.honcho import HonchoClient, WorkspaceRouter
 from nora.infra.life360 import Life360Client, Life360DiscoveryError
 from nora.infra.sql import SqlRecordStore, create_readonly_sql_engine
 from nora.infra.sql.media_objects import SqlMediaObjectStore
@@ -215,6 +218,17 @@ def add_subcommands(
         help="allow sessions that already hold messages, skipping what they hold",
     )
     backfill.set_defaults(func=cmd_memory_backfill)
+    carry = memory_sub.add_parser(
+        "carry-conclusions", parents=[parent],
+        help="copy the facts Nora was told before unit scopes into every unit "
+             "scope of one workspace (a dry run unless --apply)",
+    )
+    carry.add_argument(
+        "--workspace", required=True,
+        help="the NORA workspace (policy.toml [units]); `default` without [units]",
+    )
+    carry.add_argument("--apply", action="store_true", help="write; without it nothing is copied")
+    carry.set_defaults(func=cmd_memory_carry)
 
     # `config` — the operator's safe config mutation surface (deploy
     # convention §4.5). See config_cli.py for the atomic-write and
@@ -452,14 +466,7 @@ async def cmd_reminders_list(args: argparse.Namespace) -> int:
     return 0
 
 
-async def cmd_memory_backfill(args: argparse.Namespace) -> int:
-    """`nora memory backfill --unit <unit> [--apply] [--resume]` (DEC-214).
-
-    The record store is opened READ-ONLY (`readonly_store`), exactly as the
-    other commands here open it; the only writes are Honcho feeds, and only
-    under `--apply`. The router is the one the daemon builds, from the same
-    three files, so the backfill writes where live ingestion writes."""
-    cfg = _config(args)
+def _memory_client(cfg: Config) -> tuple[Policy, Persons, WorkspaceRouter, HonchoClient]:
     policy = _policy(cfg)
     persons = _persons(cfg)
     try:
@@ -473,6 +480,38 @@ async def cmd_memory_backfill(args: argparse.Namespace) -> int:
         cfg.memory.base_url, cfg.memory.workspace_id, ai_peer=cfg.memory.ai_peer,
         workspace_router=router,
     )
+    return policy, persons, router, memory
+
+
+async def cmd_memory_carry(args: argparse.Namespace) -> int:
+    """`nora memory carry-conclusions --workspace <w> [--apply]` (DEC-214).
+    Touches Honcho only, and writes only under `--apply`; see
+    `nora.app.memory_carry`."""
+    cfg = _config(args)
+    policy, _, router, memory = _memory_client(cfg)
+    try:
+        result = await carry_conclusions(
+            workspace=args.workspace, policy=policy, router=router, memory=memory,
+            ai_peer=cfg.memory.ai_peer, apply=bool(args.apply),
+        )
+    except CarryRefusedError as exc:
+        raise CliError(str(exc)) from exc
+    finally:
+        await memory.aclose()
+    for line in render_carry(result):
+        print(line)
+    return 1 if result.failed else 0
+
+
+async def cmd_memory_backfill(args: argparse.Namespace) -> int:
+    """`nora memory backfill --unit <unit> [--apply] [--resume]` (DEC-214).
+
+    The record store is opened READ-ONLY (`readonly_store`), exactly as the
+    other commands here open it; the only writes are Honcho feeds, and only
+    under `--apply`. The router is the one the daemon builds, from the same
+    three files, so the backfill writes where live ingestion writes."""
+    cfg = _config(args)
+    policy, persons, router, memory = _memory_client(cfg)
     url = _database_url(cfg)
     store = readonly_store(url)
     media_engine = create_readonly_sql_engine(url)

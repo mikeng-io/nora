@@ -202,3 +202,22 @@ async def test_it_refuses_a_policy_with_no_units(world, honcho, tmp_path):
             memory=HonchoClient(honcho.url, "nora", workspace_router=router),
             default_workspace="nora",
         )
+
+
+async def test_it_refuses_a_honcho_workspace_another_application_uses(world, honcho):
+    """The deploy host's `ridgeline` Honcho workspace holds another
+    application's sessions. A dry run must find that out and refuse, and
+    write nothing — no workspace, no marker, no message."""
+    honcho.seed("ridgeline", created_at="2026-01-01T00:00:00Z")
+    honcho.sessions["ridgeline"]["other-app-session-1"] = {
+        "id": "other-app-session-1", "is_active": True, "workspace_id": "ridgeline",
+    }
+    with pytest.raises(BackfillRefusedError, match="another application"):
+        await _run(world, honcho, await _records())
+    assert honcho.workspaces["ridgeline"]["metadata"] == {}
+    assert honcho.messages == {}
+
+
+async def test_a_dry_run_creates_no_workspace(world, honcho):
+    await _run(world, honcho, await _records())
+    assert "ridgeline" not in honcho.workspaces

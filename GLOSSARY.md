@@ -182,7 +182,10 @@ The most-used words in this repo, and none of them was here until 2026-09-08.
   `identity.toml` (`[workspaces.67] honcho_workspace = "nora"`); unbound, it
   uses the workspace's own name; the implicit workspace uses `config.toml`'s
   `memory.workspace_id`. The phrase is always «Honcho workspace» — a bare
-  «workspace» in this codebase means the grouping of units above.
+  «workspace» in this codebase means the grouping of units above. Honcho
+  workspaces are shared by every application on the server, so a bound one
+  must be Nora's: marked `nora_owner` in its metadata, or absent or empty
+  (then claimed); anything else refuses startup.
 
 - **Standing** — Nora's held position on where a room's conversation stands:
   one paragraph per room, what she currently thinks, distinct from what was

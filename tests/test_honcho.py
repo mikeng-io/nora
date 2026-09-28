@@ -36,6 +36,15 @@ async def server_factory():
         await server.close()
 
 
+#: `acme` exists and carries Nora's owner marker: these tests are about
+#: routing, and a bound workspace other than the default is only reachable
+#: once it is known to be Nora's (`HonchoClient._owned`).
+def _owned_acme() -> web.Response:
+    return web.json_response(
+        {"items": [{"id": "acme", "metadata": {"nora_owner": "nora"}}], "pages": 1},
+    )
+
+
 def test_workspace_router_maps_conversations_and_falls_back_to_the_default():
     """DEC-214: a conversation resolves through its unit to that unit's
     Honcho workspace and named scope. Without `[units]` (not strict) anything
@@ -73,6 +82,8 @@ async def test_feed_routes_every_call_to_the_conversations_workspace(server_fact
     paths: list[str] = []
 
     async def handler(request: web.Request) -> web.Response:
+        if request.path == "/v3/workspaces/list":
+            return _owned_acme()
         paths.append(request.path)
         if request.path.endswith("/sessions") and "/scopes/" not in request.path:
             return web.json_response({"id": "s1"})
@@ -100,6 +111,8 @@ async def test_an_unmapped_conversation_and_a_unit_recall_route_apart(server_fac
     bodies: dict[str, dict] = {}
 
     async def handler(request: web.Request) -> web.Response:
+        if request.path == "/v3/workspaces/list":
+            return _owned_acme()
         paths.append(request.path)
         if request.method == "POST" and request.can_read_body:
             bodies[request.path] = await request.json()

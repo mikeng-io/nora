@@ -41,7 +41,9 @@ the live feed stamps — so a half-finished run, or live traffic fed since the
 move, is never fed twice. The run stops at its first failed feed, so a
 resume continues in order rather than around a hole.
 
-REFUSED OUTRIGHT: a policy with no `[units]` (every unit is then in the one
+REFUSED OUTRIGHT: a Honcho workspace that belongs to another application
+(it holds sessions and lacks Nora's owner marker, `HonchoClient._owned`), a
+policy with no `[units]` (every unit is then in the one
 implicit workspace, so there is nowhere new to write), a unit the policy does
 not route, and a unit whose Honcho workspace is `memory.workspace_id` — the
 implicit default's, which already holds this history, so a replay there
@@ -97,6 +99,8 @@ class _Memory(Protocol):
     async def session_messages(
         self, *, conversation_id: str,
     ) -> list[dict[str, Any]] | None: ...
+
+    async def inspect_workspace(self, workspace: str) -> str | None: ...
 
 
 @dataclass
@@ -204,6 +208,21 @@ async def backfill_unit(
             f"unit {unit!r} is bound to Honcho workspace {route.workspace!r}, which is "
             "memory.workspace_id — the workspace that already holds this history. "
             "Replaying there would feed every message twice."
+        )
+    # OURS, or nothing. A Honcho workspace another application uses can carry
+    # the same name as a Nora workspace (the deploy host's `ridgeline` does), and
+    # a replay into it would write people's words into someone else's peers.
+    ownership = await memory.inspect_workspace(route.workspace)
+    if ownership is None:
+        raise BackfillRefusedError(
+            f"could not read who Honcho workspace {route.workspace!r} belongs to — "
+            "nothing was written"
+        )
+    if ownership == "foreign":
+        raise BackfillRefusedError(
+            f"Honcho workspace {route.workspace!r} holds sessions and is not marked "
+            "as this Nora's: another application uses it. Nothing was written. Bind "
+            "the workspace to a different honcho_workspace in identity.toml."
         )
     report = BackfillReport(unit=unit, honcho_workspace=route.workspace, applied=apply)
     targets: list[tuple[str, str]] = sorted(

@@ -123,5 +123,23 @@ def build_workspace_router(
         default_workspace,
         unit_workspaces=unit_workspaces,
         conversation_units=conversation_units,
+        workspace_routes=by_workspace,
         strict=policy.units_declared,
     )
+
+
+def workspaces_of_person(policy: Policy, person_id: str) -> tuple[str, ...]:
+    """The Nora workspaces `person_id` BELONGS to: those holding a unit with a
+    room whose `persons` list names them. Sorted, so a page renders them in
+    one order.
+
+    A `persons = "*"` room establishes nobody's membership — it admits
+    whoever is in the room, and the policy cannot say who that is — so it is
+    not counted: the caller shows nothing for a workspace it cannot place the
+    person in, rather than guessing one. (Every live room lists its persons,
+    read back 2026-09-28.)"""
+    return tuple(sorted({
+        policy.workspace_of(convo.unit) or ""
+        for convo in policy.conversations
+        if convo.persons is not None and person_id in convo.persons
+    } - {""}))
