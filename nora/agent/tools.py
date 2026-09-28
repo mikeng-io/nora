@@ -6045,8 +6045,16 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             "routine": line,
             "usually_at": None if how_often == "no single usual place" else where,
             "how_often": how_often,
+            # A second place is never «no single usual place»: below the
+            # usual ladder it is where they sometimes are instead.
             "also": [
-                {"place": x["place"], "how_often": _routine_how_often(x["percent"])}
+                {
+                    "place": x["place"],
+                    "how_often": (
+                        "sometimes" if x["percent"] < 35
+                        else _routine_how_often(x["percent"])
+                    ),
+                }
                 for x in shares[1:] if x["percent"] >= 10
             ],
             "evidence": {

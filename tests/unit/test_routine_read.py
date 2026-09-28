@@ -278,3 +278,9 @@ async def test_a_mostly_unobserved_window_says_the_record_is_patchy(persons):
 async def test_non_ambiguous_answers_carry_no_could_be(persons):
     out = await _tool(persons, _FakeMobility(stays=_history(6)))(WEDNESDAY, 22, 6, name="Nobody")
     assert out["status"] == "not_found" and "could_be" not in out
+
+
+async def test_a_second_place_is_sometimes_never_no_usual_place(persons):
+    out = await _tool(persons, _FakeMobility(stays=_history(6)))("2026-09-09", 19, 22, name="Chi")
+    also = out["people"][0]["also"]
+    assert also and all(a["how_often"] != "no single usual place" for a in also)
