@@ -134,6 +134,12 @@ _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     # It renders only when tools are deferred (`[llm] defer_tools`); with
     # every schema resident it would be a second copy of them.
     ("tool_catalogue", 3, "room"),
+    # WHO IS WHO (design/cognition-loop/15-map.md §3): this room's listed
+    # persons with the names the group calls them. `room`: it changes only
+    # with policy.toml or identity.toml, so it stays in the steady front of
+    # the per-turn message. Never the whole identity file (see
+    # `build_prefill`'s docstring for the roster that did that).
+    ("room_members", 4, "room"),
     # WHERE SHE IS, FIRST (design/self-awareness/02). Where `_where_line`
     # sat — straight after the clock — so the turn opens on when and where,
     # then her past, then theirs. `turn`, not `room`: transport health varies
@@ -689,6 +695,24 @@ def _peer_history_block(ctx: TagContext) -> ContextBlock | None:
     )
 
 
+def _room_members_block(ctx: TagContext) -> ContextBlock | None:
+    """`<room_members>`: this room's listed persons, each with the other
+    names the group calls them, so a nickname used ABOUT someone resolves
+    to them (live 2026-09-28: an alias used about a member was read as a
+    different person, because aliases reached her only for the tagger).
+
+    Authored data (identity.toml via the room's own `persons` list), never
+    the whole file and never a platform id (R-18). Absent when the room lists
+    nobody identity maps, which is also a `persons = "*"` room."""
+    if not ctx.room_members:
+        return None
+    lines = [
+        f"{ref.name}: {', '.join(ref.aliases)}" if ref.aliases else ref.name
+        for ref in ctx.room_members
+    ]
+    return _block("room_members", body=escape("\n".join(lines)))
+
+
 def _people_in_window_block(ctx: TagContext) -> ContextBlock | None:
     """What happened with THE PEOPLE TALKING IN THIS WINDOW — `<peer_history>`,
     plural, for the turn that has no tagger (issue #210).
@@ -968,6 +992,7 @@ def build_prefill(
             # about the tools, which are built beside the prefill, not about
             # what the context assembler read.
             _block("tool_catalogue", body=catalogue) if catalogue else None,
+            _room_members_block(ctx),
             _restamp(_presence_block(ctx)),
             _self_card_block(ctx),
             _peer_card_block(ctx),

@@ -27,13 +27,15 @@ from nora.domain.standing import Standing, WorkingSetItem
 
 def _ctx(transcript=(), peer_card=(), body="nora.000 what time", tagger=None, self_card=(),
          quote=None, platform="signal", tagger_card=(), notes=(),
-         standing=None, decisions=(), people_in_window=(), culture=None) -> TagContext:
+         standing=None, decisions=(), people_in_window=(), culture=None,
+         room_members=()) -> TagContext:
     msg = NormalizedMessage(platform, "g1", "group", "+852111", "Miles", 1, body, {},
                             quote=quote)
     kwargs = {"tagger_card": tuple(tagger_card),
               "notes": tuple(notes), "standing": standing, "culture": culture,
               "decisions": tuple(decisions),
-              "people_in_window": tuple(people_in_window)}
+              "people_in_window": tuple(people_in_window),
+              "room_members": tuple(room_members)}
     return TagContext("tag-1", msg, tagger, tuple(transcript), tuple(peer_card), 0.0,
                       tuple(self_card), **kwargs)
 
@@ -246,6 +248,7 @@ def _full_prefill_body() -> str:
         standing=_standing(working_set=(_working_set_item(),)),
         culture=_culture(), decisions=_decisions(),
         people_in_window=(("Grant", ("asked about dinner",)),),
+        room_members=(PersonRef("p_ann", "Ann Lee", "p_ann", aliases=("Annie", "阿Ann")),),
     )
     return build_prefill(
         ctx, display_name="Nora", context_window=40,
@@ -1512,3 +1515,26 @@ def test_the_whole_turn_gate_actually_looks_at_the_tag_message():
         "the fixture stopped rendering a resolvable quote, so the nested "
         "block is no longer in front of the gate"
     )
+
+
+def test_room_members_names_each_listed_person_with_what_the_group_calls_them():
+    """An alias used ABOUT a member (not by them) must reach her: live
+    2026-09-28 one was read as a different person, because aliases were in
+    her context only for the tagger."""
+    ctx = _ctx(_rows("hi"), room_members=(
+        PersonRef("p_miles", "Miles Novak", "p_miles", aliases=("俊爺", "Miles")),
+        PersonRef("p_zoe", "Zoe", "p_zoe"),
+    ))
+    body = build_prefill(ctx, display_name="Nora", context_window=40)[1]["content"][0]["text"]
+    block = body.split("<room_members", 1)[1].split("</room_members>", 1)[0]
+    assert "Miles Novak: 俊爺, Miles" in block and "\nZoe\n" in block + "\n"
+    # Right after the tool catalogue's slot and before `<presence>`: steady
+    # per-room data ahead of the per-turn rows.
+    order = [name for name, *_ in __import__("nora.agent.prefill", fromlist=["_BLOCKS"])._BLOCKS]
+    assert order.index("room_members") == order.index("tool_catalogue") + 1
+
+
+def test_no_room_members_block_when_the_room_lists_nobody():
+    body = build_prefill(_ctx(_rows("hi")), display_name="Nora",
+                         context_window=40)[1]["content"][0]["text"]
+    assert "<room_members" not in body
