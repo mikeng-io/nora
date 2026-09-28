@@ -875,6 +875,22 @@ async def run(
         # `store.write` on its own, so the head has one shape and one
         # validator whichever wrote it.
         #
+        # A domain-invariant refusal (a schema violation `standing_revise`'s
+        # own checks catch — including the body-length ceiling on
+        # `hold_open`/`i_owe`) must never be caught by the `except Exception`
+        # below and counted `unavailable`: it is "the candidate row is
+        # invalid", not "I could not check the store", and conflating them
+        # sent one investigation at Postgres when the model's answer was the
+        # problem (R-27 regression, PR #624 review — this fold used to
+        # construct `Standing(...)` OUTSIDE this `try` for exactly this
+        # reason before the construction moved into `standing_revise`
+        # itself). `standing_revise` now returns a typed `Refusal` for every
+        # invariant its own inner `Standing(...)` would otherwise raise on,
+        # so nothing this `try` can catch is a schema problem any more — the
+        # `if not revision.committed` branch below is where a refusal is
+        # counted, and this `except` is left for what it always meant: the
+        # store did not respond.
+        #
         # The watermark: it advances on exactly ONE condition — a fold that
         # read new rows. Carried forward unchanged on a fold with nothing to
         # read, and on every refusal path above this write (which never

@@ -18,7 +18,7 @@ import json
 import pytest
 
 from nora.domain.models import DeliveryStatus, NormalizedMessage, TranscriptRow
-from nora.domain.standing import Standing, WorkingSetItem
+from nora.domain.standing import STANDING_BODY_CEILING_CHARS, Standing, WorkingSetItem
 from nora.domain.tag_trace import TagTrace
 from nora.engagement.stages import debrief
 from nora.obs.metrics import Metrics
@@ -645,6 +645,41 @@ async def test_a_hanging_store_write_cannot_hold_the_slot_forever():
         _run(store=_Hangs(), store_timeout_seconds=0.05), timeout=5,
     )
     assert _counter(metrics, "nora_debrief_total", outcome="unavailable") == 1
+
+
+async def test_an_oversized_hold_open_reaching_the_write_is_refused_not_unavailable(
+    monkeypatch,
+):
+    """R-27 regression (PR #624 review): master built `Standing(...)` OUTSIDE
+    the `try` around the store write for exactly this reason — a
+    domain-invariant `ValueError` (a schema violation `__post_init__`
+    refuses on) is a REFUSAL, never a store failure, and must not be caught
+    by the `except Exception` below and counted `unavailable`. The branch
+    under review moved the construction into `standing_revise` and lost that
+    discipline in both callers.
+
+    Neither caller passes `hold_open`/`i_owe` today (the fold's objective
+    does not ask the model for them yet — `nora.domain.standing_revise`'s
+    module docstring) — so this reaches the invariant by wrapping the REAL
+    `standing_revise` and forcing an oversized `hold_open` onto the call
+    this stage makes, then runs every line of real validation and
+    construction the fix touches: `check_schema`'s ceiling check, and the
+    belt-and-suspenders `except ValueError` around `Standing(...)` in
+    `nora.infra.sql.standing_revise`.
+    """
+    real_standing_revise = debrief.standing_revise
+    too_long = "x" * (STANDING_BODY_CEILING_CHARS + 1)
+
+    async def _forcing_an_oversized_hold_open(**kwargs):
+        kwargs["hold_open"] = too_long
+        return await real_standing_revise(**kwargs)
+
+    monkeypatch.setattr(debrief, "standing_revise", _forcing_an_oversized_hold_open)
+    _, metrics = await _run()
+    assert _counter(metrics, "nora_debrief_total", outcome="unavailable") == 0
+    assert _counter(
+        metrics, "nora_debrief_total", outcome="refused_section_too_long",
+    ) == 1
 
 
 async def test_a_store_write_timeout_is_unavailable_and_never_timeout():

@@ -45,6 +45,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from nora.domain.standing import STANDING_BODY_CEILING_CHARS
+
 #: `design/cognition-loop/10-tiers.md` §4: the reasoning modes Standing
 #: allows. `computed` is Rollup-only, `told` and `induced` are Register/
 #: Character-only; a Standing row is `deduced`, `abduced` or `said`.
@@ -91,11 +93,36 @@ def check_schema(
     """`12-schemas.md` §5: `Where it stands` is required and non-blank; a
     given optional section must not be blank — a caller that means "nothing
     to add here" omits the section (`None`), it does not send an empty one.
+
+    **Mirrors every invariant `nora.domain.standing.Standing.__post_init__`
+    enforces on these three fields**, including the
+    `STANDING_BODY_CEILING_CHARS` ceiling on `hold_open`/`i_owe` — not just
+    the blank check. R-27 regression (PR #624 review): the impure half
+    (`nora.infra.sql.standing_revise`) used to run only the blank check here
+    and then build a `Standing` straight from the caller's arguments; an
+    oversized section raised `Standing.__post_init__`'s `ValueError`
+    UNCAUGHT into the caller's own `except Exception`, which is the
+    generic "I could not check the store" branch — turning a domain
+    refusal into `unavailable` (a wiring gap), never the `refused_*` outcome
+    a genuine schema violation is. A `standing_revise` caller must be able to
+    tell "the model's answer breaks the schema" (refused, its own fault,
+    worth logging as such) from "Postgres did not respond" (unavailable, not
+    the model's fault) — the same R-27 distinction the store-read/store-write
+    paths already keep. Checking the ceiling HERE, before `Standing(...)` is
+    ever constructed, is what makes that distinction hold: the constructor's
+    own `ValueError` becomes unreachable through this verb rather than merely
+    unlikely.
     """
     if not where_it_stands or not where_it_stands.strip():
         return Refusal(
             reason="missing_required_section",
             detail="'Where it stands' is required and was blank",
+        )
+    if len(where_it_stands) > STANDING_BODY_CEILING_CHARS:
+        return Refusal(
+            reason="section_too_long",
+            detail=f"'Where it stands' is {len(where_it_stands)} characters, "
+                   f"over the {STANDING_BODY_CEILING_CHARS}-character ceiling",
         )
     for name, value in (("I hold open", hold_open), ("I owe", i_owe)):
         if value is not None and not value.strip():
@@ -103,6 +130,12 @@ def check_schema(
                 reason="blank_section",
                 detail=f"{name!r} was given blank; omit it (None) instead "
                        f"of sending an empty section",
+            )
+        if value is not None and len(value) > STANDING_BODY_CEILING_CHARS:
+            return Refusal(
+                reason="section_too_long",
+                detail=f"{name!r} is {len(value)} characters, over the "
+                       f"{STANDING_BODY_CEILING_CHARS}-character ceiling",
             )
     return None
 

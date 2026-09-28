@@ -56,6 +56,20 @@
   "target": "tests/unit/test_standing_revise.py -k test_increments_fold_count_is_the_one_thing_that_differs_between_callers"
  },
  {
+  "name": "standing-revise: check_schema actually enforces the body-length ceiling on hold_open/i_owe (R-27, PR #624 review)",
+  "file": "nora/domain/standing_revise.py",
+  "old": "        if value is not None and len(value) > STANDING_BODY_CEILING_CHARS:\n            return Refusal(\n                reason=\"section_too_long\",",
+  "new": "        if False:\n            return Refusal(\n                reason=\"section_too_long\",",
+  "target": "tests/unit/test_standing_revise.py -k test_an_oversized_hold_open_or_i_owe_is_refused_by_check_schema"
+ },
+ {
+  "name": "standing-revise: check_schema actually enforces the body-length ceiling on where_it_stands",
+  "file": "nora/domain/standing_revise.py",
+  "old": "    if len(where_it_stands) > STANDING_BODY_CEILING_CHARS:\n        return Refusal(\n            reason=\"section_too_long\",",
+  "new": "    if False:\n        return Refusal(\n            reason=\"section_too_long\",",
+  "target": "tests/unit/test_standing_revise.py -k test_an_oversized_where_it_stands_is_refused_by_check_schema"
+ },
+ {
   "name": "standing-revise: the two new sections actually round-trip to the store",
   "file": "nora/infra/sql/standing_revise.py",
   "old": "        hold_open=hold_open,\n        i_owe=i_owe,",

@@ -130,19 +130,42 @@ async def standing_revise(
     if stale_refusal is not None:
         return Revision(committed=False, standing=prior, refusal=stale_refusal)
 
-    revised = Standing(
-        platform=platform,
-        conversation_id=conversation_id,
-        body=where_it_stands,
-        hold_open=hold_open,
-        i_owe=i_owe,
-        fold_count=(
-            (prior.fold_count + 1) if increments_fold_count else prior.fold_count
-        ) if prior is not None else (1 if increments_fold_count else 0),
-        updated_at=now_ms if now_ms is not None else int(time.time() * 1000),
-        last_folded_row_id=last_folded_row_id,
-        working_set=working_set,
-    )
+    # CONSTRUCTED IN ITS OWN `try`, deliberately, and separately from the
+    # store call below (R-27 regression, PR #624 review). `Standing(...)` is
+    # an argument expression: a caller ahead of this verb (`debrief.py`'s
+    # tag-path fold) used to build it outside its own `try` for exactly this
+    # reason, and moving the construction into this shared verb without
+    # keeping the same discipline let `__post_init__`'s `ValueError` — a
+    # domain-invariant refusal, never a store failure — fall through
+    # uncaught into EACH caller's `except Exception` around the whole
+    # `standing_revise(...)` call, where it was indistinguishable from
+    # "Postgres did not respond" and counted `unavailable`. `check_schema`
+    # above now enforces every invariant this constructor does (including
+    # the body-length ceiling on `hold_open`/`i_owe`), so this `except`
+    # is belt-and-suspenders — unreachable today, cheap to keep, and it means
+    # a FUTURE invariant added to `__post_init__` and not mirrored above
+    # fails as a counted `refused`, never as an uncaught exception one layer
+    # up.
+    try:
+        revised = Standing(
+            platform=platform,
+            conversation_id=conversation_id,
+            body=where_it_stands,
+            hold_open=hold_open,
+            i_owe=i_owe,
+            fold_count=(
+                (prior.fold_count + 1) if increments_fold_count else prior.fold_count
+            ) if prior is not None else (1 if increments_fold_count else 0),
+            updated_at=now_ms if now_ms is not None else int(time.time() * 1000),
+            last_folded_row_id=last_folded_row_id,
+            working_set=working_set,
+        )
+    except ValueError as exc:
+        return Revision(
+            committed=False,
+            standing=prior,
+            refusal=Refusal(reason="invalid_standing", detail=str(exc)),
+        )
     # `source` stays each store's own default (`SqlStandingStore.write`'s
     # `"fold"`) — the `StandingStore` protocol (`nora.domain.ports`) does not
     # carry the parameter, and neither existing caller passed it before this

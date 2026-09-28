@@ -471,6 +471,17 @@ async def _fold_batch(
     # this path's one behavioural difference (D3, this module's own
     # docstring): rollup folds carry `fold_count` forward unchanged rather
     # than counting themselves.
+    #
+    # A domain-invariant refusal must never land in the `except Exception`
+    # below as `error` — that label is "the store did not respond", not "the
+    # candidate row was invalid" (R-27 regression, PR #624 review: this fold
+    # used to construct `Standing(...)` outside any `try`, the same way the
+    # tag path's debrief did, and lost that discipline when construction
+    # moved inside `standing_revise`). `standing_revise` now runs every check
+    # `Standing.__post_init__` would otherwise raise on — including the
+    # body-length ceiling on `hold_open`/`i_owe` — and returns a typed
+    # `Refusal` instead, so a schema violation is counted on the
+    # `if not revision.committed` branch below as `refused_*`, never here.
     try:
         revision = await asyncio.wait_for(
             standing_revise(

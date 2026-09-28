@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import pytest
 
-from nora.domain.standing import Standing, WorkingSetItem
+from nora.domain.standing import STANDING_BODY_CEILING_CHARS, Standing, WorkingSetItem
 from nora.domain.standing_revise import (
     ALLOWED_MODES,
     check_mode,
@@ -56,6 +56,33 @@ def test_a_given_optional_section_must_not_be_blank():
 
 def test_an_omitted_optional_section_is_never_refused():
     assert check_schema(where_it_stands="x", hold_open=None, i_owe=None) is None
+
+
+def test_an_oversized_hold_open_or_i_owe_is_refused_by_check_schema():
+    """R-27 regression (PR #624 review): `check_schema` used to check only
+    that `hold_open`/`i_owe` were non-blank, leaving the body-length ceiling
+    (`STANDING_BODY_CEILING_CHARS`) to `Standing.__post_init__` alone — which
+    means an oversized section reached `standing_revise` (the impure half)
+    and raised `ValueError` OUTSIDE this function, uncaught by anything this
+    verb controls, where a caller's `except Exception` around the whole call
+    reads it as a store failure. `check_schema` now mirrors the ceiling for
+    both optional sections, so the refusal is typed and returned here,
+    before a `Standing` is ever built."""
+    too_long = "x" * (STANDING_BODY_CEILING_CHARS + 1)
+    for kwargs in (
+        {"hold_open": too_long, "i_owe": None},
+        {"hold_open": None, "i_owe": too_long},
+    ):
+        refusal = check_schema(where_it_stands="x", **kwargs)
+        assert refusal is not None
+        assert refusal.reason == "section_too_long"
+
+
+def test_an_oversized_where_it_stands_is_refused_by_check_schema():
+    too_long = "x" * (STANDING_BODY_CEILING_CHARS + 1)
+    refusal = check_schema(where_it_stands=too_long, hold_open=None, i_owe=None)
+    assert refusal is not None
+    assert refusal.reason == "section_too_long"
 
 
 def test_no_base_asserted_never_refuses():
@@ -198,6 +225,28 @@ async def test_a_matching_base_revision_id_is_accepted():
         base_revision_id=prior.fold_count,
     )
     assert revision.committed
+
+
+async def test_an_oversized_hold_open_is_refused_not_raised():
+    """The async wrapper (`nora.infra.sql.standing_revise.standing_revise`)
+    must never let `Standing.__post_init__`'s `ValueError` escape uncaught —
+    that is exactly the R-27 regression PR #624's review caught: a caller's
+    `except Exception` around the whole call reads an uncaught `ValueError`
+    as `unavailable` («I could not check»), when a schema violation is a
+    `refused` outcome the caller's own domain, not its store, is responsible
+    for. `check_schema` now refuses this before `Standing(...)` is built, so
+    this asserts the outcome as the caller sees it: a `Revision` with
+    `committed=False`, never an exception."""
+    store = InMemoryStandingStore()
+    too_long = "x" * (STANDING_BODY_CEILING_CHARS + 1)
+    revision = await standing_revise(
+        store=store, prior=None, platform="signal", conversation_id="g1",
+        where_it_stands="x", hold_open=too_long, last_folded_row_id=1, now_ms=1_000,
+    )
+    assert not revision.committed
+    assert revision.refusal is not None
+    assert revision.refusal.reason == "section_too_long"
+    assert await store.read(platform="signal", conversation_id="g1") is None
 
 
 async def test_hold_open_and_i_owe_round_trip_through_the_verb():
