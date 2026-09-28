@@ -9,6 +9,7 @@
   ],
   "limitations": [
     "Arrival and departure habits read the last twelve weeks; with fewer than three matching days she falls back to weekdays or weekends as a group and says so.",
-    "No accuracy figure is claimed for arrival times yet; the backtest for them is designed, not yet run by anyone but its author."
+    "No accuracy figure is claimed for arrival times yet; the backtest for them is designed, not yet run by anyone but its author.",
+    "She says how today is going only from a location reading under 30 minutes old; without one she gives the usual times and nothing about today."
   ]
 }

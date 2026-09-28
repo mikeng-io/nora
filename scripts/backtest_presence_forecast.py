@@ -78,12 +78,17 @@ async def main() -> None:
             )
         # M1 (design/27 §4.4): evening arrival home, habit windows ± 15 min
         # against «the median of every earlier evening ± 30 min».
-        print(f"\n{'arrival home':<24}{'nights':>7}{'habits':>9}{'median':>9}")
+        # `width` is the mean minutes the habit windows covered: a wide habit
+        # hits cheaply, and the median's band is always 60.
+        print(f"\n{'arrival home':<24}{'nights':>7}{'habits':>9}{'width':>7}{'median':>9}")
         for subject, a in arrival_rows:
             if not a.days:
-                print(f"{subject:<24}{0:>7}{'-':>9}{'-':>9}")
+                print(f"{subject:<24}{0:>7}{'-':>9}{'-':>7}{'-':>9}")
                 continue
-            print(f"{subject:<24}{a.days:>7}{a.accuracy:>9.1%}{a.baseline_accuracy:>9.1%}")
+            print(
+                f"{subject:<24}{a.days:>7}{a.accuracy:>9.1%}{a.mean_width:>7.0f}"
+                f"{a.baseline_accuracy:>9.1%}"
+            )
     finally:
         await store.aclose()
 
