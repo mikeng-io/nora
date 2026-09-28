@@ -130,8 +130,10 @@ The most-used words in this repo, and none of them was here until 2026-09-08.
   on its own `AdaptorSchedule` today, moving to a per-adaptor wake rule,
   `design/cognition-loop/20-observe.md` §3), and never in the reply path. It
   reads what the record already holds and writes derived state back; **it
-  never speaks to a room directly** — its one bridge out is the Cognition
-  adaptor's `remind`, a row the fire path composes and sends. It hosts
+  never speaks to a room directly** — its one bridge out is `remind`, a row
+  the fire path composes and sends. Today that bridge is the proactive
+  adaptor's `remind` (DEC-162 §3); the Cognition adaptor's `remind` takes
+  over from migration step 4. It hosts
   **adaptors** (`nora/language/`, wired in the composition root under
   `dream_adaptors`; the settled set is Cognition, Character, Lessons and
   Assess, `design/cognition-loop/00-intent.md` §3 — not "units", which now
@@ -243,11 +245,13 @@ The most-used words in this repo, and none of them was here until 2026-09-08.
 
   **Today's fold keeps no history beyond its head**, so anything that must
   survive belongs in a note. `design/cognition-loop/10-tiers.md` §1 and
-  `12-schemas.md` §5 change this at migration step 8: the head stops being a
-  lossy fold, and each section (room, unit, person) carries its own support
-  and age, and may hold an undated position that persists across folds —
-  `I hold open`, `What I am following`. Not built yet; described above as it
-  runs today.
+  `12-schemas.md` §5 change this: the head stops being a lossy fold, and each
+  section carries its own support and age, and may hold an undated position
+  that persists across folds — `I hold open`, `What I am following`. The
+  ROOM schema (`Where it stands`, `I hold open`, `I owe`, `Found, not yet
+  given`) ships live at migration step 3, written by both the debrief and the
+  ingest fold through one shape; UNIT and PERSON Standing, new subjects, ship
+  at step 8. Not built yet; described above as it runs today.
 
   Standing is Nora's held **position** — do not read it as status or a queue
   position. And do not read `NoteStore.standing()` — the query for
@@ -275,12 +279,14 @@ The most-used words in this repo, and none of them was here until 2026-09-08.
   reads the room again and speaks or declines. Choosing *when* is the
   capability; a fixed daily slot would only be scheduling.
 
-  **Superseded by `design/cognition-loop`** (DEC-162's survivors are listed
-  at `70-migration.md` §3): the decide and act turns described above become
-  the Cognition adaptor's act step, one session instead of a separate
-  adaptor; what survives is named there (the home room generalised to each
-  agenda item's bound room, the decide/compose split, the pending ceiling,
-  strikes). Described above as it runs today, until migration step 4.
+  **Superseded by `design/cognition-loop`** (DEC-228, `design/09-decision-index.md`;
+  `70-migration.md` §3): the decide and act turns described above become the
+  Cognition adaptor's act step, one session instead of a separate adaptor.
+  What survives, clause by clause: the home room, generalised to each agenda
+  item's bound room; the decide/compose split; the per-room `proactive`
+  flag; D11's screening (a row whose subject was retired or revised on the
+  tag path is cancelled when claimed); silent recorded as done; the pending
+  ceiling; strikes. Described above as it runs today, until migration step 4.
 
 - **home room** — the one room of a unit the proactive adaptor stands
   in (`home_room = true` in `policy.toml`, 39 D2): its roster is what
@@ -309,11 +315,12 @@ word below**; this section only resolves what collides with words already in
 use elsewhere in this file, and adds what had no entry.
 
 - **Record** — the observed tier: messages (hers included) with their edits,
-  deletes and reactions; her own sends and decisions; presence fixes and
-  collector polls; social items; play samples; perceptions (what media
-  shows, whose face); face labels. Written by code. This is what "the record
-  store" / "the RECORD" above already names — never "a database row" in
-  general.
+  deletes and reactions; her loop decisions and reminder results; presence
+  fixes and the collector's polls; social items; play samples; perceptions
+  of media (what it shows, whose face); face labels and `character_dispute`
+  items (`10-tiers.md` §1's words). Written by code. This is what "the
+  record store" / "the RECORD" above already names — never "a database row"
+  in general.
 - **Rollup** — the computed tier: **episodes** (a Rollup row for one bounded
   happening, with a start, an end and participants — a stay, a co-location,
   an outing, a person's day) and **aggregates** (a Rollup row of counts,
@@ -326,12 +333,15 @@ use elsewhere in this file, and adds what had no entry.
 - **Register** — the unit's affairs: **note** (unchanged, DEC-213), **memo**
   (a settled thing the unit wants kept, that does not close — distinct from
   `remember`, which is about the speaker alone), **event** (a dated thing
-  people attend; the code name stays `Gathering`, DEC-139 — "event" never
-  names code). Written by the Cognition adaptor and the tag path.
+  people attend; the code name stays `Gathering`). "Event" here never means
+  the fire-turn *occasion* — that is code `Event` (`nora.domain.events.Event`,
+  DEC-139, see *occasion* below), a different thing with the same English
+  word. Written by the Cognition adaptor and the tag path.
 - **Character** — what a **person**, a **room** (culture's new home, above),
   the **unit** or **Nora** is like and how it behaves. **account** is the
-  body of one Character row — always "platform account" for a login (§
-  above). Written only by the Character adaptor, through `character_revise`.
+  body of one Character row — always "platform account" for a login (the
+  *platform account* entry above). Written only by the Character adaptor,
+  through `character_revise`.
 - **Lessons** — what Nora has learned about how to act in a unit: short
   prescriptive lines, each with the outcomes that taught it. Written only by
   the Lessons adaptor, through `lesson_write`/`lesson_retire`. Not doctrine
@@ -354,7 +364,8 @@ Other words this bundle introduces:
   unit per wake. Never a tier, never "the cognition tier" or "a cognition
   layer" (see *placement*, below).
 - **event** — Register's third kind, a dated thing people attend; code:
-  `Gathering` (DEC-139, above).
+  `Gathering` (above). Never the fire-turn occasion (code `Event`, DEC-139,
+  see *occasion*, below).
 - **subconscious / conscious** — the operator's own words (潛意識 / 明意識,
   `design/cognition-loop/55-self.md` §6) for the two layers: the Dreamer's
   four adaptors run underneath, always; the tag turn and the fire turn
@@ -432,7 +443,7 @@ kind. The files sit in four scope folders — `core/` (wherever she is),
 - **audience** — which occasion a doctrine file speaks to (`applies_to`):
   `tag`, `heartbeat`, `participation`, `proactive`, `summons`, and the
   instruments' own (`relevance_gate`, `reaction`, and `dreamer` for the
-  background tier). The same word labels every failure counter
+  Dreamer runtime). The same word labels every failure counter
   (`nora_silent_failures_total{audience}`), so a fire turn's failures are
   never charged to the tag budget.
 - **participation** — the occasion triggered by the room itself
