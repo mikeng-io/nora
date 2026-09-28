@@ -165,6 +165,11 @@ class FakeHoncho:
         self.defer_session_deletes = False
         self._delete_queue: list[tuple[str, str]] = []
         self.fail_messages_after: int | None = None
+        # (workspace, scope, session) for every `scope_backfill` Honcho would
+        # enqueue — each one an omni dream per touched collection, i.e. model
+        # spend — and a switch that makes the scope-member list unreadable.
+        self.scope_backfills: list[tuple[str, str, str]] = []
+        self.fail_member_lists = False
         self._message_posts = 0
         self._server: TestServer | None = None
         self.url = ""
@@ -287,6 +292,10 @@ class FakeHoncho:
             sessions.setdefault(sid, {"id": sid, "is_active": True, "workspace_id": workspace})
             for scope in (body or {}).get("scopes") or ():
                 self.scopes.setdefault((workspace, scope), set()).add(sid)
+                # `crud.get_or_create_session`: a session with messages gets a
+                # backfill per listed scope, member already or not.
+                if self.messages.get((workspace, sid)):
+                    self.scope_backfills.append((workspace, scope, sid))
             return web.json_response(sessions[sid])
         if rest == ["scopes"] and method == "POST":
             scope = (body or {}).get("id", "")
@@ -300,7 +309,24 @@ class FakeHoncho:
             if any(sid not in sessions for sid in wanted):
                 return web.json_response({"detail": "session not found"}, status=404)
             self.scopes[(workspace, rest[1])].update(wanted)
+            # `crud.add_sessions_to_scope`: EVERY named session that has
+            # messages gets a backfill enqueued — members included.
+            for sid in wanted:
+                if self.messages.get((workspace, sid)):
+                    self.scope_backfills.append((workspace, rest[1], sid))
             return web.Response(status=204)
+        if (
+            len(rest) == 4 and rest[0] == "scopes" and rest[2:] == ["sessions", "list"]
+            and method == "POST"
+        ):
+            if (workspace, rest[1]) not in self.scopes:
+                return web.json_response({"detail": "scope not found"}, status=404)
+            members = sorted(self.scopes[(workspace, rest[1])])
+            if self.fail_member_lists:
+                return web.json_response({"detail": "unavailable"}, status=503)
+            return self._page(
+                [{"id": sid, "workspace_id": workspace} for sid in members], request,
+            )
         if (
             len(rest) == 3 and rest[0] == "sessions" and rest[2] == "messages"
             and method == "POST"
