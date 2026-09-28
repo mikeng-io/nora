@@ -146,8 +146,8 @@ def test_the_registry_exposes_every_declared_tool():
         "set_music_volume",
         "remind", "list_reminders", "cancel_reminder",
         # The Event module (gatherings/RSVP/venue suggestions).
-        "create_event", "update_event", "rsvp_event", "cancel_event",
-        "list_events", "suggest_venue",
+        "event_propose", "event_revise", "event_rsvp", "event_set_status",
+        "event_search", "suggest_venue",
         # Nora Compute spec §4 (Task 5).
         "make_artifact",
         # DEC-97: what she is running, and what was in an earlier version.
@@ -353,13 +353,15 @@ def test_budgets_match_todays_table():
         # room-scoped read, same answer if called twice). `create_event`/
         # `suggest_venue` are the ones that reach further — `suggest_venue`
         # asks Honcho's dialectic once per roster member and resolves venues
-        # after, sized like `media_fetch`'s 4; `create_event` is 3, between
+        # after, sized like `media_fetch`'s 4; `event_propose` is 3, between
         # `remind`'s 2 and `suggest_venue`'s 4, for the same round-trip
-        # reason. `update_event`/`cancel_event` are 2, sized like the
-        # reminder verbs. `rsvp_event` is 1 — a single yes/no/maybe, and a
+        # reason (renamed from `create_event`/`update_event`/`rsvp_event`/
+        # `cancel_event`/`list_events`, step 2b, DEC-237).
+        # `event_revise`/`event_set_status` are 2, sized like the
+        # reminder verbs. `event_rsvp` is 1 — a single yes/no/maybe, and a
         # second call in the same turn is a model looping on its own write.
-        "list_events": 1, "create_event": 3, "update_event": 2,
-        "rsvp_event": 1, "cancel_event": 2, "suggest_venue": 4,
+        "event_search": 1, "event_propose": 3, "event_revise": 2,
+        "event_rsvp": 1, "event_set_status": 2, "suggest_venue": 4,
         # 1 — like `group_members`/`saved_places`: a slow, external call
         # (Nora Compute spec §4), sized by model round trips rather than by
         # cost. A second `make_artifact` in one turn is a model looping on a
@@ -706,7 +708,7 @@ def test_cacheable_tools_is_a_frozenset_not_a_list():
 # background agent four write verbs.
 ACT_VERBS = frozenset({
     "remind", "cancel_reminder",
-    "create_event", "update_event", "rsvp_event", "cancel_event",
+    "event_propose", "event_revise", "event_rsvp", "event_set_status",
     "make_artifact",
     "send_reply", "send_to", "send_gif",
     # DEC-137: generation is an external side effect (provider call +
@@ -762,7 +764,7 @@ READ_ONLY = frozenset({
     "saved_places", "who_said", "load_transcript", "group_members", "lookup_person",
     "about", "ask_memory", "search_memory", "recall_lookups", "media_fetch",
     "media_search",
-    "web_search", "web_fetch", "weather", "list_reminders", "list_events",
+    "web_search", "web_fetch", "weather", "list_reminders", "event_search",
     "suggest_venue", "version", "search_gifs",
     # The two parking verbs (2026-08-31): live reads that act on nothing —
     # vacancy lookups and nearby discovery, no writes anywhere.

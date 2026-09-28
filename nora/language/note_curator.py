@@ -443,6 +443,7 @@ class _EventSink(Protocol):
         self, *, conversation_id: str, requester_person_id: str, title: str,
         when: Any = None, venue_text: str | None = None,
         person_names: frozenset[str] | None = None, platform: str,
+        unit_id: str = "",
     ) -> object: ...
 
 
@@ -1665,6 +1666,14 @@ class NoteCuratorAdaptor:
                 platform="",
                 venue_text=None,
                 person_names=None,
+                # B4 fix: `Note.unit` IS the note's unit — the curator does
+                # not need a separate resolver the way `room_for`/
+                # `platform_for` do, because a note already carries the
+                # value they exist to derive. Leaving this unset wrote
+                # `unit_id=""` on every note-discharged event forever, which
+                # `search_events`'s unit-wide filter (`unit_id == unit`)
+                # then could never find.
+                unit_id=note.unit,
             )
         except AmbiguousOpenGatheringsError:
             # A real domain refusal, not a wiring gap: two open events

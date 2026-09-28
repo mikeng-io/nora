@@ -2082,7 +2082,7 @@ class _FakeEventSink:
 
     async def create_event(
         self, *, conversation_id, requester_person_id, title, when=None,
-        venue_text=None, person_names=None, platform,
+        venue_text=None, person_names=None, platform, unit_id="",
     ):
         if self._ambiguous:
             raise AmbiguousOpenGatheringsError(conversation_id, ())
@@ -2093,6 +2093,7 @@ class _FakeEventSink:
             "requester_person_id": requester_person_id, "title": title,
             "when": when, "venue_text": venue_text,
             "person_names": person_names, "platform": platform,
+            "unit_id": unit_id,
         })
         return object()
 
@@ -2163,6 +2164,11 @@ async def test_discharge_commitment_writes_a_real_event():
     assert call["when"] is None, (
         "no conversation->platform lookup exists for this tier; see "
         "_discharge_commitment's own docstring"
+    )
+    assert call["unit_id"] == note.unit, (
+        "B4: the note already carries its unit — create_event must be "
+        "passed it, or every note-discharged event is written with "
+        "unit_id='' forever and search_events (unit-wide) never finds it"
     )
     assert metrics.get(
         "nora_note_discharge_total", kind="commitment", outcome="written") == 1

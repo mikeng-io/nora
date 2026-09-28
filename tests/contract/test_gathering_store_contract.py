@@ -234,3 +234,183 @@ async def test_rsvp_upserts_on_same_person(store):
     assert len(back) == 1
     assert back[0].response is RSVPResponse.YES
     assert back[0].responded_at == second
+
+
+# ── migration 0074_event_revision (design/cognition-loop/70-migration.md §2
+# row 2b): event_revision, lifecycle statuses, base_revision_id, RSVP
+# transition rows, unit-wide search. ────────────────────────────────────────
+
+
+async def test_create_writes_one_revision_and_points_the_head_at_it(store):
+    ev = _event()
+    await store.create(ev)
+
+    back = await store.get(ev.id)
+    assert back.head_revision_id is not None
+
+    revisions = await store.revisions_for(ev.id)
+    assert len(revisions) == 1
+    assert revisions[0].id == back.head_revision_id
+    assert revisions[0].parent_revision_id is None
+    assert revisions[0].title == ev.title
+
+
+async def test_update_appends_a_revision_chained_to_the_old_head(store):
+    from dataclasses import replace
+
+    ev = _event()
+    await store.create(ev)
+    first_head = (await store.get(ev.id)).head_revision_id
+
+    await store.update(replace(ev, status=GatheringStatus.CONFIRMED))
+
+    back = await store.get(ev.id)
+    assert back.head_revision_id != first_head
+    revisions = await store.revisions_for(ev.id)
+    assert len(revisions) == 2
+    assert revisions[0].id == first_head
+    assert revisions[1].id == back.head_revision_id
+    assert revisions[1].parent_revision_id == first_head
+    assert revisions[1].status is GatheringStatus.CONFIRMED
+
+
+async def test_a_stale_base_revision_id_is_refused_with_the_current_row(store):
+    from dataclasses import replace
+
+    from nora.domain.gatherings import StaleEventRevisionError
+
+    ev = _event()
+    await store.create(ev)
+    stale_id = uuid4()  # never the real head
+
+    with pytest.raises(StaleEventRevisionError) as exc_info:
+        await store.update(
+            replace(ev, status=GatheringStatus.CONFIRMED), base_revision_id=stale_id,
+        )
+    assert exc_info.value.event_id == ev.id
+    assert exc_info.value.current.status is GatheringStatus.PROPOSED  # unchanged
+
+    # The real head_revision_id succeeds.
+    real_head = (await store.get(ev.id)).head_revision_id
+    await store.update(
+        replace(ev, status=GatheringStatus.CONFIRMED), base_revision_id=real_head,
+    )
+    assert (await store.get(ev.id)).status is GatheringStatus.CONFIRMED
+
+
+async def test_the_full_lifecycle_is_writable(store):
+    from dataclasses import replace
+
+    for status in (
+        GatheringStatus.STAGED, GatheringStatus.PROPOSED, GatheringStatus.CONFIRMED,
+        GatheringStatus.HAPPENED, GatheringStatus.LAPSED, GatheringStatus.EVICTED,
+    ):
+        ev = _event(id=uuid4(), status=status)
+        await store.create(ev)
+        back = await store.get(ev.id)
+        assert back.status is status
+
+    ev = _event(id=uuid4())
+    await store.create(ev)
+    await store.update(replace(ev, status=GatheringStatus.CANCELLED))
+    assert (await store.get(ev.id)).status is GatheringStatus.CANCELLED
+
+
+async def test_rsvp_is_stored_append_only_even_though_the_read_projects_latest(store):
+    """70 §5: "RSVP transition rows" — a repeat RSVP must be a second row in
+    storage, not an overwrite of the first, even though `rsvps_for` (the
+    read side) still answers with only the current one (the test above)."""
+    ev = _event()
+    await store.create(ev)
+    first = datetime(2026, 8, 19, 13, 0, tzinfo=UTC)
+    second = datetime(2026, 8, 19, 14, 0, tzinfo=UTC)
+    await store.add_rsvp(RSVP(
+        event_id=ev.id, person_id="miles", response=RSVPResponse.MAYBE,
+        responded_at=first,
+    ))
+    await store.add_rsvp(RSVP(
+        event_id=ev.id, person_id="miles", response=RSVPResponse.YES,
+        responded_at=second,
+    ))
+
+    if isinstance(store, FakeGatheringStore):
+        assert len(store._rsvps) == 2
+    else:
+        from sqlalchemy import text
+        async with store._engine.connect() as conn:
+            count = (await conn.execute(
+                text("SELECT count(*) FROM event_rsvps WHERE event_id = :id"),
+                {"id": ev.id},
+            )).scalar_one()
+        assert count == 2
+
+
+async def test_search_is_unit_wide_and_filters_by_place_person_and_interval(store):
+    unit = f"unit-{uuid4()}"
+    in_room_a = _event(
+        id=uuid4(), conversation_id="signal:room-a", unit_id=unit,
+        title="Dinner", venue_name="Soi 29", created_by="miles",
+        when=datetime(2026, 8, 22, 20, 0, tzinfo=UTC),
+    )
+    in_room_b = _event(
+        id=uuid4(), conversation_id="discord:room-b", unit_id=unit,
+        title="Lunch", venue_name="Elsewhere", created_by="daisy",
+        when=datetime(2026, 8, 23, 12, 0, tzinfo=UTC),
+    )
+    other_unit = _event(id=uuid4(), unit_id=f"other-{uuid4()}", title="Not this unit")
+    await store.create(in_room_a)
+    await store.create(in_room_b)
+    await store.create(other_unit)
+
+    everything = await store.search(unit_id=unit)
+    assert {e.id for e in everything} == {in_room_a.id, in_room_b.id}
+
+    by_place = await store.search(unit_id=unit, place="soi")
+    assert [e.id for e in by_place] == [in_room_a.id]
+
+    by_person = await store.search(unit_id=unit, person="daisy")
+    assert [e.id for e in by_person] == [in_room_b.id]
+
+    by_interval = await store.search(
+        unit_id=unit, start=datetime(2026, 8, 23, 0, 0, tzinfo=UTC),
+    )
+    assert [e.id for e in by_interval] == [in_room_b.id]
+
+
+async def test_search_room_ids_finds_legacy_events_without_leaking_other_units(store):
+    """B3(a): the migration backfilled every pre-existing event to
+    `unit_id=""` (units live in `policy.toml`, not the DB, so the migration
+    could not fill it). `room_ids` is how the caller — which resolves the
+    unit's rooms from policy — gets those rows back into a unit-wide search.
+    The negative matters as much as the positive: a legacy row in a room
+    the caller did NOT name (another unit's room) must never be returned,
+    or `room_ids` becomes a cross-unit leak."""
+    unit = f"unit-{uuid4()}"
+    legacy_in_unit = _event(
+        id=uuid4(), conversation_id="signal:room-a", unit_id="",
+        title="Pre-migration dinner",
+    )
+    legacy_in_other_unit = _event(
+        id=uuid4(), conversation_id="discord:room-z", unit_id="",
+        title="Someone else's pre-migration dinner",
+    )
+    backfilled = _event(
+        id=uuid4(), conversation_id="signal:room-b", unit_id=unit,
+        title="Post-migration dinner",
+    )
+    await store.create(legacy_in_unit)
+    await store.create(legacy_in_other_unit)
+    await store.create(backfilled)
+
+    found = await store.search(unit_id=unit, room_ids=("signal:room-a", "signal:room-b"))
+    assert {e.id for e in found} == {legacy_in_unit.id, backfilled.id}
+    assert legacy_in_other_unit.id not in {e.id for e in found}, (
+        "a legacy unit_id='' event in a room outside room_ids must never "
+        "leak into another unit's search"
+    )
+
+    # No room_ids at all: back to the exact, pre-B3 unit_id match — a legacy
+    # event is invisible unless the caller explicitly resolved its room.
+    without_room_ids = await store.search(unit_id=unit)
+    assert {e.id for e in without_room_ids} == {backfilled.id}
+

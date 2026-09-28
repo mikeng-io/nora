@@ -9,7 +9,7 @@
 # WEIGHTED TOWARD CONFUSABLE PAIRS, because that is where selection errors
 # concentrate and where a one-line catalogue entry is thinnest:
 # where_is/where_been, find_parking/parking_status, route/transit,
-# create_event/update_event, weather/web_search. Each such case names the
+# event_propose/event_revise, weather/web_search. Each such case names the
 # sibling in `not_tools`: calling it is the error the pair exists to catch.
 # The rest are single cold tools, so a turn that never loads anything is
 # visible as a FAIL rather than hidden behind a hot tool.
@@ -147,12 +147,12 @@ cases:
     metadata: {tools: [transit], not_tools: [route]}
     snapshot: *room_a
 
-  - name: route_create_event
+  - name: route_event_propose
     entry: tag
     expect: reply
     mention: true
     input: 幫我哋開個飯局，下星期六晚七點，喺旺角
-    metadata: {tools: [create_event], not_tools: [update_event]}
+    metadata: {tools: [event_propose], not_tools: [event_revise]}
     snapshot: *room_a
 
   - name: route_weather_not_web

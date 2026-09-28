@@ -52,6 +52,8 @@ from sqlalchemy.exc import ArgumentError
 
 from nora.agent.egress import scan_identifiers
 from nora.app import config_cli, report
+from nora.app.events_backfill import backfill_unit_ids
+from nora.app.events_backfill import render as render_events_backfill
 from nora.app.memory_backfill import BackfillRefusedError, backfill_unit
 from nora.app.memory_backfill import render as render_backfill
 from nora.app.memory_carry import CarryRefusedError, carry_conclusions
@@ -79,6 +81,7 @@ from nora.infra.sql import (
     create_sql_engine,
     snapshot_at,
 )
+from nora.infra.sql.gatherings import SqlGatheringStore
 from nora.infra.sql.media_objects import SqlMediaObjectStore
 from nora.infra.sql.reminders import SqlReminderStore
 from nora.obs.metrics import Metrics
@@ -301,6 +304,27 @@ def add_subcommands(
         help="step 2: once Honcho has finished deleting, rebuild the recorded peers' cards",
     )
     detach.set_defaults(func=cmd_memory_detach)
+
+    # `events backfill-units` (B3(b), design/cognition-loop/70-migration.md
+    # §8, DEC-237): the THIRD command here that WRITES — unlike `memory
+    # backfill`'s Honcho-only write, this one writes the `events` table
+    # itself (through `GatheringStore.update`, the same path `update_event`
+    # writes through), so it needs a WRITABLE engine, not the read-only one
+    # every other command in this module opens. A dry run by default; see
+    # `nora.app.events_backfill`.
+    events = subparsers.add_parser(
+        "events", parents=[parent], help="Gathering/event maintenance (operator only)",
+    )
+    events_sub = events.add_subparsers(dest="events_command", required=True)
+    backfill_units = events_sub.add_parser(
+        "backfill-units", parents=[parent],
+        help="set unit_id on every pre-migration event (unit_id='') from its "
+             "conversation's policy.toml unit (a dry run unless --apply)",
+    )
+    backfill_units.add_argument(
+        "--apply", action="store_true", help="write; without it nothing is changed",
+    )
+    backfill_units.set_defaults(func=cmd_events_backfill_units)
 
     # `config` — the operator's safe config mutation surface (deploy
     # convention §4.5). See config_cli.py for the atomic-write and
@@ -656,6 +680,27 @@ async def cmd_memory_backfill(args: argparse.Namespace) -> int:
         await media_engine.dispose()
         await memory.aclose()
     for line in render_backfill(result):
+        print(line)
+    return 1 if result.failed else 0
+
+
+async def cmd_events_backfill_units(args: argparse.Namespace) -> int:
+    """`nora events backfill-units [--apply]` (B3(b), design/cognition-loop/
+    70-migration.md §8, DEC-237). Opens a WRITABLE engine (`create_sql_
+    engine`, not `create_readonly_sql_engine`): unlike every other command
+    in this module it writes the `events` table itself, through
+    `GatheringStore.update` — the same path `update_event` writes through —
+    so `row_history` records it like any other write. See
+    `nora.app.events_backfill` for what is read, skipped and written."""
+    cfg = _config(args)
+    policy = _policy(cfg)
+    engine = create_sql_engine(_database_url(cfg))
+    store = SqlGatheringStore(engine)
+    try:
+        result = await backfill_unit_ids(policy=policy, store=store, apply=bool(args.apply))
+    finally:
+        await store.aclose()
+    for line in render_events_backfill(result):
         print(line)
     return 1 if result.failed else 0
 

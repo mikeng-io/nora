@@ -1705,6 +1705,11 @@ IDX_MESSAGES_DREAM_LAG = sa.Index(
 # resolved ONCE via the existing Places infra and cached here — see the
 # module docstring on `nora.domain.gatherings` for what is deliberately absent
 # (raw lat/lng, open_now) and why.
+#: design/cognition-loop/40-register.md §3, migration 0074_event_revision.
+_EVENT_LIFECYCLE = (
+    "staged", "proposed", "confirmed", "happened", "cancelled", "lapsed", "evicted",
+)
+
 EVENTS = sa.Table(
     "events",
     METADATA,
@@ -1726,8 +1731,52 @@ EVENTS = sa.Table(
     sa.Column("status", sa.Text, nullable=False),
     sa.Column("reminder_id", sa.Uuid, nullable=True),
     sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+    # 0074_event_revision (design/cognition-loop/70-migration.md §2 row 2b,
+    # §5 "Events."; 10-tiers.md §3, §8): unit-wide, per-field
+    # reasoning/confidence/lineage/as_of, and the compare-and-swap cache over
+    # `event_revision`.
+    sa.Column("unit_id", sa.Text, nullable=False, server_default=sa.text("''")),
+    sa.Column("end", sa.DateTime(timezone=True), nullable=True),
+    sa.Column(
+        "people", pg.ARRAY(sa.Text), nullable=False, server_default=sa.text("'{}'"),
+    ),
+    # Row-level for now (10 §3's per-field ambition; the `0073_lineage`
+    # simplification, module docstring on `nora.domain.gatherings.Gathering`):
+    # `reasoning`/`confidence` NULL until a write verb states one, `lineage`
+    # an object sectioned by FIELD name (`nora.domain.lineage.Lineage`).
+    sa.Column("reasoning", sa.Text, nullable=True),
+    sa.Column("confidence", sa.Text, nullable=True),
+    sa.Column(
+        "lineage", pg.JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"),
+    ),
+    sa.Column("as_of", sa.BigInteger, nullable=True),
+    sa.Column(
+        "exclude_persons", pg.ARRAY(sa.Text), nullable=False,
+        server_default=sa.text("'{}'"),
+    ),
+    sa.Column(
+        # No FK, deliberately, `note.head_revision_id`'s precedent exactly:
+        # `create` mints and inserts `events` and `event_revision` in one
+        # transaction, each naming the other's id, so a hard FK either
+        # direction makes ONE of the two inserts fail on the row the other
+        # has not written yet. What the write-verb's compare-and-swap
+        # (`base_revision_id`) compares.
+        "head_revision_id", sa.Uuid, nullable=True,
+    ),
     sa.CheckConstraint(
-        "status IN ('proposed','confirmed','cancelled')", name="ck_events_status",
+        "status IN (" + ", ".join(f"'{s}'" for s in _EVENT_LIFECYCLE) + ")",
+        name="ck_events_status",
+    ),
+    sa.CheckConstraint(
+        "reasoning is null or reasoning in ('told', 'deduced', 'abduced')",
+        name="ck_events_reasoning_is_a_mode",
+    ),
+    sa.CheckConstraint(
+        "confidence is null or confidence in ('low', 'medium', 'high')",
+        name="ck_events_confidence_is_a_level",
+    ),
+    sa.CheckConstraint(
+        "jsonb_typeof(lineage) = 'object'", name="ck_events_lineage_shape",
     ),
 )
 
@@ -1739,19 +1788,104 @@ IDX_EVENTS_CONVERSATION = sa.Index(
     "idx_events_conversation", EVENTS.c.conversation_id, EVENTS.c.status,
 )
 
+IDX_EVENTS_UNIT = sa.Index("idx_events_unit", EVENTS.c.unit_id, EVENTS.c.status)
+
+# `event_revision` — the append-only chain the `events` head is a
+# compare-and-swap cache over (10-tiers.md §8; 70-migration.md §5). Mirrors
+# `note_revision`'s shape: a full snapshot per row, `parent_revision_id`
+# chaining back, `recorded_at` the system-time column `nora.infra.sql.history`
+# reads (`APPEND_ONLY`).
+EVENT_REVISION = sa.Table(
+    "event_revision",
+    METADATA,
+    sa.Column(
+        "id", pg.UUID(as_uuid=True), primary_key=True,
+        server_default=sa.text("gen_random_uuid()"),
+    ),
+    sa.Column("event_id", sa.Uuid, sa.ForeignKey("events.id"), nullable=False),
+    sa.Column(
+        "parent_revision_id", sa.Uuid, sa.ForeignKey("event_revision.id"),
+        nullable=True,
+    ),
+    sa.Column("status", sa.Text, nullable=False),
+    sa.Column("title", sa.Text, nullable=False),
+    sa.Column("when", sa.DateTime(timezone=True), nullable=True),
+    sa.Column("end", sa.DateTime(timezone=True), nullable=True),
+    sa.Column("venue_text", sa.Text, nullable=True),
+    sa.Column("venue_place_id", sa.Text, nullable=True),
+    sa.Column("venue_name", sa.Text, nullable=True),
+    sa.Column("venue_address", sa.Text, nullable=True),
+    sa.Column("venue_rating", sa.Float, nullable=True),
+    sa.Column(
+        "venue_price_level", sa.Text, nullable=False, server_default=sa.text("''"),
+    ),
+    sa.Column("venue_maps_url", sa.Text, nullable=True),
+    sa.Column(
+        "people", pg.ARRAY(sa.Text), nullable=False, server_default=sa.text("'{}'"),
+    ),
+    sa.Column("reasoning", sa.Text, nullable=True),
+    sa.Column("confidence", sa.Text, nullable=True),
+    sa.Column(
+        "lineage", pg.JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"),
+    ),
+    sa.Column("as_of", sa.BigInteger, nullable=True),
+    sa.Column("body", sa.Text, nullable=True),
+    sa.Column("written_by", sa.Text, nullable=False, server_default=sa.text("'tag'")),
+    sa.Column("written_at", sa.DateTime(timezone=True), nullable=False),
+    sa.Column(
+        "recorded_at", sa.DateTime(timezone=True), nullable=False,
+        server_default=sa.text("clock_timestamp()"),
+    ),
+    sa.CheckConstraint(
+        "status IN (" + ", ".join(f"'{s}'" for s in _EVENT_LIFECYCLE) + ")",
+        name="ck_event_revision_status",
+    ),
+    sa.CheckConstraint(
+        "reasoning is null or reasoning in ('told', 'deduced', 'abduced')",
+        name="ck_event_revision_reasoning_is_a_mode",
+    ),
+    sa.CheckConstraint(
+        "confidence is null or confidence in ('low', 'medium', 'high')",
+        name="ck_event_revision_confidence_is_a_level",
+    ),
+    sa.CheckConstraint(
+        "jsonb_typeof(lineage) = 'object'", name="ck_event_revision_lineage_shape",
+    ),
+)
+
+IDX_EVENT_REVISION_EVENT = sa.Index(
+    "idx_event_revision_event", EVENT_REVISION.c.event_id, EVENT_REVISION.c.recorded_at,
+)
+
+# `event_rsvps` — 0074_event_revision makes this append-only ("RSVP
+# transition rows", 70-migration.md §5): a repeat RSVP INSERTs a new row
+# rather than upserting the old one, so `id` (not `(event_id, person_id)`) is
+# the primary key and `recorded_at` is the system-time column. The CURRENT
+# response is the newest row per `(event_id, person_id)` — `rsvps_for`
+# (`nora.infra.sql.gatherings`) is what projects that, not the storage shape.
 EVENT_RSVPS = sa.Table(
     "event_rsvps",
     METADATA,
     sa.Column(
-        "event_id", sa.Uuid,
-        sa.ForeignKey("events.id"), primary_key=True,
+        "id", pg.UUID(as_uuid=True), primary_key=True,
+        server_default=sa.text("gen_random_uuid()"),
     ),
-    sa.Column("person_id", sa.Text, primary_key=True),
+    sa.Column("event_id", sa.Uuid, sa.ForeignKey("events.id"), nullable=False),
+    sa.Column("person_id", sa.Text, nullable=False),
     sa.Column("response", sa.Text, nullable=False),
     sa.Column("responded_at", sa.DateTime(timezone=True), nullable=False),
+    sa.Column(
+        "recorded_at", sa.DateTime(timezone=True), nullable=False,
+        server_default=sa.text("clock_timestamp()"),
+    ),
     sa.CheckConstraint(
         "response IN ('yes','no','maybe')", name="ck_event_rsvps_response",
     ),
+)
+
+IDX_EVENT_RSVPS_EVENT_PERSON = sa.Index(
+    "idx_event_rsvps_event_person",
+    EVENT_RSVPS.c.event_id, EVENT_RSVPS.c.person_id, EVENT_RSVPS.c.recorded_at,
 )
 
 # The fact tier (2026-08-20 fact-tier design). Keyed on UNIT, not

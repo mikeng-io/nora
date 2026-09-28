@@ -31,9 +31,21 @@ _CHARSET = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 #: `search` (its free text is optional; «what was said on Saturday» has none),
 #: not `list` (it filters by time, author and words, and enumerates nothing
 #: fixed). The design named the tool before this rule was applied to it.
+#:
+#: `propose`, `revise`, `set_status`, `rsvp` (2026-09-29, the event verbs,
+#: design/cognition-loop/70-migration.md §8, DEC-237): `event_propose` is not
+#: `create` — it stages or proposes, a status `event_set_status` may later
+#: move on, never a finished write the way `create_event` was; `event_revise`
+#: is not `update` — it appends a REVISION to a chain (`base_revision_id`,
+#: 10-tiers.md §3), never an in-place change; `event_set_status` is not
+#: `cancel` — it moves an event through the WHOLE lifecycle (confirmed,
+#: happened, lapsed, not only cancelled), so one verb replaces what
+#: `cancel_event` alone could not cover; `event_rsvp` is not `create` or
+#: `update` — a person's own response, appended (RSVP transition rows), naming
+#: neither.
 VERBS: tuple[str, ...] = (
     "read", "fetch", "search", "list", "create", "update", "cancel", "send",
-    "query",
+    "query", "propose", "revise", "set_status", "rsvp",
 )
 
 
@@ -69,6 +81,9 @@ _RENAMED_SINCE: frozenset[str] = frozenset({
     # DEC-201 (design/social-per-network): retired into `x_read` and
     # `x_search`, which meet the pattern.
     "social_fetch",
+    # DEC-237 (design/cognition-loop/70-migration.md §8, migration step 2b):
+    # renamed to the event verbs and `event_search`.
+    "create_event", "update_event", "rsvp_event", "cancel_event", "list_events",
 })
 
 _PREDATES_THE_RULE = _SNAPSHOT_2026_09_24 - _RENAMED_SINCE

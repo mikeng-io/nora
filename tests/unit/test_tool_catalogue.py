@@ -129,8 +129,8 @@ def test_confusable_pairs_are_discriminated_in_the_catalogue_itself():
     assert "this group's" in by_name["search_memory"]
     assert "EVERY room" in by_name["search_memory_workspace"]
 
-    assert "NEW" in by_name["create_event"]
-    assert "ALREADY" in by_name["update_event"]
+    assert "NEW" in by_name["event_propose"]
+    assert "ALREADY" in by_name["event_revise"]
 
 
 def test_the_hot_set_is_marked_and_matches_the_one_declaration():

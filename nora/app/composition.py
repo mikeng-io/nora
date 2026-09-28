@@ -2014,6 +2014,21 @@ async def build_dependencies(
     # and `ai_peer=cfg.memory.ai_peer` are the SAME Honcho client and id
     # already threaded to `TranscriptInjection`/`ToolRegistry` below.
     event_store = SqlGatheringStore(engine)
+    # B3(a) (design/cognition-loop/70-migration.md §8): the migration
+    # backfilled every pre-existing event to `unit_id=""` — units live in
+    # `policy.toml`, not the DB, so it could not fill this column — and
+    # `search_events`'s unit-wide filter would otherwise never find one
+    # again. `_unit_rooms(allowlist)` is the SAME unit -> rooms mapping the
+    # proactive adaptor already builds from policy (below); reusing it here
+    # means `GatheringService` and the Dreamer cannot disagree about which
+    # rooms a unit has.
+    event_unit_rooms = _unit_rooms(allowlist)
+
+    def _event_unit_room_ids(unit_id: str) -> tuple[str, ...]:
+        return tuple(
+            room.conversation_id for room in event_unit_rooms.get(unit_id, ())
+        )
+
     events = GatheringService(
         store=event_store,
         reminders=reminders,
@@ -2021,6 +2036,7 @@ async def build_dependencies(
         route_source=route_client,
         honcho=memory,
         ai_peer=cfg.memory.ai_peer,
+        unit_room_ids=_event_unit_room_ids,
     )
     # `media_fetch` (DEC-56) reads a stored blob back through MiMo. Its two
     # collaborators are wired together: the blob store (already built above,
