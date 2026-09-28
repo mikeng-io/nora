@@ -1,6 +1,6 @@
 ---
 type: design
-title: "Schemas — every Register, Character and Standing row is structured Markdown with fixed sections, parsed by code"
+title: "Schemas — every Register, Character, Lessons and Standing row is structured Markdown with fixed sections, parsed by code"
 description: "The operator's cascade (2026-09-28): no row a model writes is free-form. One grammar for all (fixed English headings, cited lines, content in the room's language, refused never repaired), the split between typed columns and the Markdown body, and the schema of each kind: note, memo, event, the four Characters, the three Standings. The Rollup is typed and rebuilt, never Markdown."
 tags: [nora, schema, markdown, register, character, standing, culture, note-format]
 timestamp: '2026-09-28'
@@ -13,7 +13,7 @@ edges:
 
 ## 1. The rule
 
-**Every row of Register, Character and Standing has a schema. Free-form is
+**Every row of Register, Character, Lessons and Standing has a schema. Free-form is
 refused.** The operator's reason (2026-09-28): the free-form notes taught
 nothing, because a model cannot tell which formatting carries meaning when
 none of it does. A schema says what each part *is*, which is what a model
@@ -37,10 +37,12 @@ held by one parser per kind, each called by the write verb before commit:
    English; code parses keys, never content.
 3. **Every claim cites.** A Register line ends in the Record ids and Rollup
    keys it rests on; a Character or Standing paragraph ends in its ids and
-   keys. Each must be one this session or turn was shown or fetched.
+   keys; a lesson's `Why` ends in the outcomes it cites. Each must be one this session or turn was shown or fetched.
 4. **Names are names the input showed; dates are absolute.**
 5. **Some sections are code-written** (history, folds, ages) and a model never
-   writes them.
+   writes them. History is rendered from the revision chain; the head a
+   block shows is a view over that chain, never a row updated in place
+   ([10](10-tiers.md) §8).
 6. **Refused, never repaired**, beyond whitespace. The refusal names the rule
    (a closed vocabulary, one counter label per rule) and is answered to the
    model as `refused` (ADR 0009's status) so it can rewrite.
@@ -89,13 +91,32 @@ The sections fix **what** is said; each paragraph stays prose and cites.
 | **person** | `How they talk`, `What they care about`, `How they decide`, `What they reliably do`, `Who they are close to`, `Unsure` |
 | **room** (culture) | `How they talk`, `How things get decided`, `Names and where they came from`, `What they do together`, `Unsure` |
 | **unit** (culture) | the room's sections, plus `Across rooms` (how its rooms differ) |
-| **Nora** | `How I come across`, `What they come to me for`, `What lands and what does not`, `How I sound here`, `Unsure` |
+| **Nora** | `How I come across`, `What they come to me for`, `How I sound here`, `Unsure` |
+
+Character is descriptive: what the entity is like. What she has learned to
+*do* is a lesson (§4a), which is why Character · Nora has no `What lands and
+what does not`.
 
 `Unsure` holds what the evidence suggests but does not yet carry; a line moves
 out of it only with new evidence. Where-she-stands content that culture
 carries today ("her own standing there", GLOSSARY **culture**) moves to
 Standing: it answers Standing's question, not Character's
 ([10](10-tiers.md) §1).
+
+## 4a. Lessons
+
+One row per lesson, per unit:
+
+| section | required | holds |
+|---|---|---|
+| the lesson | yes | one short prescriptive line ("when they ask for food, give two options, not five") |
+| `Why` | yes | the outcomes that taught it, cited: corrections, replies that landed, reactions, silence where a reply was expected; never her own words alone |
+| `Applies when` | no | the situations it is for |
+| `History` | code | every revision and retirement, with its id, so any one can be rolled back |
+
+A lesson carries `last_supported_at` and `support_count`; one past its
+horizon renders with its age and goes on the agenda to be re-evidenced or
+retired.
 
 ## 5. Standing
 
@@ -122,7 +143,8 @@ Standing: it answers Standing's question, not Character's
 | note | schema (DEC-213) | unchanged |
 | culture | continuous prose, "no headings" by its objective | the sectioned account above; prose inside each section |
 | room Standing | one paragraph + JSON working set, the head rewritten by every fold (its chain, `standing_revision`, exists) | the sections above, each with its own support and age; the head is no longer a lossy fold ([50](50-character-and-standing.md) §2) |
-| event | typed columns, no body | columns with per-field modes + body, revision chain |
+| event | typed columns, no body, updated in place | columns with per-field modes + body, revision chain |
+| Lessons | — | new ([§4a](#4a-lessons)) |
 
 Rows written before a schema still read back and are never rewritten in place;
 the next revision is written to the schema (the rule note bodies follow,
@@ -132,8 +154,9 @@ design 42 §9).
 
 Rollup rows are typed columns only ([25](25-rollup.md)): code writes them and
 code reads them, and a model sees them rendered by one renderer, the way
-design 27's substrate is read today. No body, no prose, no revision chain: a
-Rollup row is rebuilt, never revised.
+design 27's substrate is read today. No body, no prose: a Rollup row is
+rebuilt into a new build, never revised, and superseded builds are kept, so
+the Rollup as of T is readable ([10](10-tiers.md) §8).
 
 ## 8. Age on every section
 

@@ -1,7 +1,7 @@
 ---
 type: design
 title: "Self — what her cognition builds, and where her growth lives"
-description: "Cognition is not a tier: it is the loop; what it builds is Register, Character and Standing. Her identity is the part of all state that is about her: given (doctrine), done (her Record), digested (her Character) and held (her Standing). Growth is those changing and every turn reading them. Doctrine is the law: she never changes it, in whole or in part, and it changes only when the humans all agree. Her growth lives only in her own blocks, which render below the doctrine; where they disagree the doctrine is followed and a tension row records it for the operator."
+description: "Cognition is not a tier: it is the loop; what it builds is Register, Character, Lessons and Standing. Her identity is the part of all state that is about her: given (doctrine), done (her Record), digested (her Character), learned (her Lessons) and held (her Standing). Growth is those changing and every turn reading them. Doctrine is the law: she never changes it, in whole or in part, and it changes only when the humans all agree. Her growth lives only in her own blocks, which render below the doctrine; where they disagree the doctrine is followed and a tension row records it for the operator."
 tags: [nora, self, identity, cognition, growth, doctrine, character]
 timestamp: '2026-09-28'
 edges:
@@ -14,7 +14,7 @@ edges:
 ## 1. What cognition is made of
 
 **Cognition is not a tier.** It is the loop that reads the Record and writes
-Register, Character and Standing ([30](30-cognition.md)). What it has built
+Register, Character, Lessons and Standing ([30](30-cognition.md)). What it has built
 is those three tiers, never "cognition".
 
 The operator's aim (2026-09-28): Nora builds an identity — who she is — not
@@ -29,6 +29,7 @@ have with her and with each other.
 | **given** | who she is meant to be: constraints, voice, conduct | Doctrine (authored) | only the operator |
 | **done** | what she said and decided, and what happened after | Record (her sends, `loop_decisions`, reminders' outcomes) | every act |
 | **digested** | who she has become in this unit, as its people met her | **Character · Nora** | cognition, from what she did **and how people responded** |
+| **learned** | what she has learned about how to act in this unit | **Lessons** | cognition, from outcomes; the operator may roll any lesson back |
 | **held** | what she currently thinks, follows and owes | **Standing** (room, unit, person) | cognition and the tag debrief |
 | (heard about her) | a third party's digest of her own words | memory (self card) | Honcho |
 
@@ -45,13 +46,13 @@ doctrine**, in whole or in part, and never proposes a change (operator
 2026-09-28). It changes only when the humans all agree.
 
 **Her growth lives only in her own blocks**: Character · Nora (the `self`
-block) and Standing. They render after the doctrine and always below it, so
+block), Lessons (the `lessons` block) and Standing. They render after the doctrine and always below it, so
 the doctrine is read first and wins. When cognition revises them her
 behaviour changes on the next turn with no code or doctrine change. That is
 the only way she changes herself.
 
-**What is read.** Tag and fire turns read the `self` block and room Standing
-(the `standing` block); unit and person Standing are read with
+**What is read.** Tag and fire turns read the `self` block, the `lessons`
+block and room Standing (the `standing` block); unit and person Standing are read with
 `standing_read`, which covers room, unit and person ([15](15-map.md) §3–4).
 The `self` block (step 8) renders her whole Character · Nora, capped in
 lines. `self_card` stays pushed until then and leaves the prompt at step 8
@@ -66,10 +67,12 @@ for the humans to decide on, never a proposal from her.
 When cognition revises Character · Nora and the evidence pulls against a
 doctrine line (people keep rewarding what the doctrine forbids, or keep
 correcting what it requires), `character_revise` also writes a **tension**
-row: the doctrine file and line quoted, the evidence cited, and what her
-Character would have said without the law. The doctrine is still followed.
+row; so does `lesson_write` when it refuses a lesson that would loosen or
+contradict doctrine ([30](30-cognition.md) §3). A tension row holds the
+doctrine file and line quoted, the evidence cited, and what her Character or
+the lesson would have said without the law. The doctrine is still followed.
 Tension is outside the tiers ([10](10-tiers.md) §1; [15](15-map.md) §1 and
-§6), and the one exception to "one write path per tier".
+§6), and written by the two exceptions to "one write path per tier".
 
 - **Visible to the operator only**: a portal page listing tensions with their
   evidence, beside the history of her Character, and
@@ -86,7 +89,7 @@ Tension is outside the tiers ([10](10-tiers.md) §1; [15](15-map.md) §1 and
 ## 5. What keeps growth honest
 
 - **The echo rule** ([50](50-character-and-standing.md) §3): her own words
-  alone never ground a change to her Character. A change needs people's
+  alone never ground a change to her Character or a lesson. A change needs people's
   responses: an answer, a correction, a laugh, silence where she expected
   a reply.
 - **History**: every revision is kept, so "how has she changed since

@@ -1,8 +1,8 @@
 ---
 type: design
-title: "Tiers — Record, Rollup, Register, Character, Standing; and the words that are not tiers"
-description: "Five stores, each answering exactly one question, each with one write path, one key and one citation direction; every derived row carries its reasoning mode, its confidence, its lineage and its age. Lineage is a set of (kind, subject, origin room) per field, checked per room at assembly. Cognition is the loop, memory is Honcho, doctrine is authored, tension is the operator's. The terminology table and the words retired."
-tags: [nora, tiers, terminology, record, rollup, register, character, standing, culture, lineage, reasoning-mode]
+title: "Tiers — Record, Rollup, Register, Character, Lessons, Standing; and the words that are not tiers"
+description: "Six stores, each answering exactly one question, each with one write path, one key and one citation direction; every derived row carries its reasoning mode, its confidence, its lineage and its age. Lineage is a set of (kind, subject, origin room) per field, checked per room at assembly. Every store is append-only in system time, so Nora as of any past moment can be restored, memory excepted. Cognition is the loop, memory is Honcho, doctrine is authored, tension is the operator's. The terminology table and the words retired."
+tags: [nora, tiers, terminology, record, rollup, register, character, lessons, standing, culture, lineage, reasoning-mode, versioning, as-of]
 timestamp: '2026-09-28'
 edges:
   - {dst: 20-observe, rel: sequences, provenance: asserted}
@@ -27,9 +27,10 @@ word for any of these things is a defect.
 | **Rollup** | *what does the Record add up to over an interval?* | **episodes** (bounded happenings: a stay, a trip, a co-location, a face co-appearance, an outing, a play session, a person's day) and **aggregates** (counts, patterns and clusters over a window: place, rhythm, tie, play profile) | **code only**: a pure function of the Record up to a logical watermark ([25](25-rollup.md)) | **computed** |
 | **Register** | *what is the state of the unit's affairs?* | **note** (open, closes), **memo** (settled, kept), **event** (dated, attended) | cognition and the tag path, through write verbs | **told**, **deduced**, **abduced** |
 | **Character** | *what is this entity like, and how does it behave?* | one account per entity: a **person**, a **room**, the **unit**, **Nora** | cognition only | **induced** |
+| **Lessons** | *what has Nora learned about how to act here?* | per unit, **lessons**: short prescriptive lines of learned practice, each with the outcomes that taught it ([50](50-character-and-standing.md) §3) | cognition, through `lesson_write` and `lesson_retire`; the operator's rollback on the portal goes through `lesson_retire` | **induced**, from outcomes |
 | **Standing** | *where does Nora stand?* | her held position toward a **room**, the **unit**, a **person** | cognition and the tag-path debrief | **deduced**, **abduced**, **said** |
 
-Outside the five, and not tiers:
+Outside the six, and not tiers:
 
 - **Doctrine** — authored by the operator (`nora/doctrine/`). Never derived,
   never changed by Nora in whole or in part, changed only when the humans
@@ -38,8 +39,8 @@ Outside the five, and not tiers:
   people. Read as a hint, never cited. `remember` still writes a person's own
   settled claim about themselves into it.
 - **Tension** — operator-only rows ([55](55-self.md) §4). Written by
-  `character_revise`, the one exception to "one write path per tier" (§2 rule
-  3). Code guarantees she never reads them: no read tool returns them, no
+  `character_revise` and `lesson_write`, the exceptions to "one write path
+  per tier" (§2 rule 3). Code guarantees she never reads them: no read tool returns them, no
   block renders them, and a test pins both.
 - **Reminders** — the machinery of act: every act is a reminder row
   ([30](30-cognition.md) §2), never a tier.
@@ -47,16 +48,18 @@ Outside the five, and not tiers:
 And one word names a process, never a store:
 
 - **Cognition** — the loop in [30](30-cognition.md) that reads the Record and
-  the Rollup and writes Register, Character and Standing. There is no
+  the Rollup and writes Register, Character, Lessons and Standing. There is no
   "cognition tier".
 
 ## 2. The boundaries, as rules code enforces
 
 1. **Citations point down.** Order: Record < Rollup < Register < Character <
-   Standing. A row cites only rows below it: Rollup cites the Record; Register
-   cites the Record and the Rollup; Character cites those and the Register,
-   and a room's or the unit's Character may also cite the Characters of its
-   members or rooms; Standing cites any of the four. **Nothing cites upward**:
+   Lessons < Standing. A row cites only rows below it: Rollup cites the
+   Record; Register cites the Record and the Rollup; Character cites those and
+   the Register, and a room's or the unit's Character may also cite the
+   Characters of its members or rooms; Lessons cite any of those four (both
+   Character and Lessons are induced from outcomes, and a lesson may rest on
+   what a person is like, never the reverse); Standing cites any of the five. **Nothing cites upward**:
    a note may not rest on "that person tends to cancel", which is a Character
    line, not a claim about the plan.
 2. **Everything derived rests on the Record.** Every citation chain ends in
@@ -65,34 +68,34 @@ And one word names a process, never a store:
    refused.
 3. **One write path per tier.** Code writes the Record and the Rollup; the
    two recording verbs of §1 write Record items authored by a person. Only
-   write verbs write Register, Character and Standing, and each verb belongs
-   to exactly one tier. The one exception is `character_revise`, which may
-   also write a tension row.
+   write verbs write Register, Character, Lessons and Standing, and each verb
+   belongs to exactly one tier. The exceptions are `character_revise` and
+   `lesson_write`, which may also write a tension row.
 4. **Nora's own words are Record, and ground almost nothing.** Her rows
    cannot ground the Register or anyone's Character (the note brake,
    GLOSSARY **note**, kept and widened). They may ground her Standing only in
-   the mode `said`, and her own Character only paired with how people
-   responded. **A person's assent to her own guess** ("you ended up at C,
+   the mode `said`, and her own Character and her Lessons only paired with
+   how people responded (the echo rule). **A person's assent to her own guess** ("you ended up at C,
    right?" — "yeah") **does not upgrade it**: the row stays abduced.
-5. **Counts and routines live in the Rollup.** A Character or Standing line
-   about frequency, regularity or closeness ("usually", "often", "closest")
-   cites a Rollup aggregate and never states a count or a time itself.
+5. **Counts and routines live in the Rollup.** A Character, Lessons or
+   Standing line about frequency, regularity or closeness ("usually",
+   "often", "closest") cites a Rollup aggregate and never states a count or a time itself.
 6. **Keys are fixed.** The unit is the key of everything derived, inside
    DEC-214's hierarchy (workspace > unit > room; one room per platform per
    unit), with one exception: the person-scoped Rollup rows (stay, trip,
-   place, occupancy, rhythm, corridor) are keyed by person and shared across that person's units,
-   because a person moves as one stream; lineage decides which rooms see
+   place, occupancy, rhythm, corridor) are keyed by person and shared
+   across that person's units, because a person moves as one stream; lineage decides which rooms see
    them. Record: by room, by person, by platform account. Rollup: (kind,
    person, interval) or (kind, unit, subject, interval), cited by (kind,
    subject, interval) and resolved by overlap ([25](25-rollup.md) §2).
    Register: by unit, with the origin room kept. Character: by (unit,
-   entity). Standing: by (unit, subject). A person in two units has two
+   entity). Lessons: by unit. Standing: by (unit, subject). A person in two units has two
    Characters, each from that unit's evidence.
 7. **Withdrawal cascades.** When a Record item is withdrawn (a message deleted
    or unsent, the PII scrub, a face label removed, a person leaving a unit,
    `nora person forget`), every derived row whose citation chain reaches it
    is marked `unsupported`, stops rendering, and goes on the next agenda for
-   re-derivation. Code walks a `citation` edge table; it never parses bodies
+   re-derivation. Withdrawal hides; it never deletes (§8). Code walks a `citation` edge table; it never parses bodies
    ([80](80-prior-art.md) §4).
 
 ## 3. What every derived row carries
@@ -102,14 +105,15 @@ Columns, computed or checked by code:
 | column | what it is | on | set by |
 |---|---|---|---|
 | **reasoning** | how it was reached ([§4](#4-reasoning-modes)) | every derived row; **per field** on an event | code for `computed`; otherwise the write verb's argument, checked against the tier's allowed modes (§1) and capped by code (§4) |
-| **confidence** | the writer's stated certainty: `low`, `medium`, `high` | Register, Character and Standing rows | the write verb |
+| **confidence** | the writer's stated certainty: `low`, `medium`, `high` | Register, Character, Lessons and Standing rows | the write verb |
 | **lineage** | the set of `(kind, subject, origin room)` its citations reach down to; **per field** on an event, **per section** on a Character or Standing row | every derived row | code, from the citation chain; never the model |
 | **exclude_persons** | people this row is never shown to (a surprise) | Register rows, and by union every row citing or linked to one; always empty on the Rollup | the write verb; code unions it from everything the row cites and across Register links (below) |
 | **as_of** | when its newest evidence was observed | every derived row; **per field** on an event | code |
 | **valid_from / valid_to** | when what it says held in the world, not when it was written | Rollup episodes and Register rows only | code for Rollup; the write verb for Register |
-| **last_supported_at / support_count** | the newest Record time its citations reach, and how many independent citations support it | Character and Standing sections | code |
-| **base_revision_id** | the revision a write replaces; a stale one is refused `stale_base` with the current row | Register, Character and Standing revisions | the write verb |
+| **last_supported_at / support_count** | the newest Record time its citations reach, and how many independent citations support it | Character and Standing sections; lessons | code |
+| **base_revision_id** | the revision a write replaces; a stale one is refused `stale_base` with the current row | Register, Character, Lessons and Standing revisions | the write verb |
 | **build** | the code version that computed it | Rollup rows | code |
+| **recorded_at / superseded_at / superseded_by** | system time: when this row entered the store, and when and by which row it stopped being current (§8) | every row of every store | code |
 
 ### Lineage decides who may see a row
 
@@ -162,7 +166,7 @@ Nora's own (Honcho's code has no abductive level, [80](80-prior-art.md) §1):
 | **computed** | arithmetic over the Record; no inference | Rollup | same Record and watermark, same row |
 | **told** | a person stated it in words, to Nora or to each other; members agreeing among themselves counts ("ok B then" tells B) | Register | cites the message |
 | **deduced** | follows necessarily from rows already held | Register, Standing | "the event is at C from 20:00, and a co-location on fresh fixes puts P at C at 20:05, so P attended" |
-| **induced** | a generalisation from many instances | Character | cites a Rollup aggregate; one instance is never induction |
+| **induced** | a generalisation from many instances | Character, Lessons | cites a Rollup aggregate or, for a lesson, the several outcomes that taught it; one instance is never induction |
 | **abduced** | the best explanation of evidence nobody stated | Register, Standing | a value resting only on abduction goes out as a question ("you ended up at C, right?"); never upgraded by assent (§2 rule 4) |
 | **said** | Nora herself said it; the row asserts only that she said it | Standing | cites her own Record row; grounds nothing but itself |
 
@@ -195,6 +199,9 @@ survives as the word for the Character of a collective; the existing
 | **Character** | what an entity is like and how it behaves | a person's attributes (Honcho), a persona (DEC-29) |
 | **account** | the body of one Character row | a platform account (a login: always "platform account") |
 | **culture** | the Character of a room or the unit | `<room>`, the operator's statement of what a room is FOR |
+| **Lessons** | the tier of what Nora has learned about how to act in a unit | doctrine; her Character (what she is like) |
+| **lesson** | one row of Lessons: a short prescriptive line, why (cited outcomes), and when it applies | a rule she may not break (that is doctrine); a runtime skill |
+| **outcome** | how people responded to something she did: a reply that landed, a correction, a reaction, silence where a reply was expected | an agenda item's close |
 | **Standing** | Nora's held position toward a subject | status, queue position, `NoteStore.standing()` |
 | **tension** | an operator-only row: evidence pulling against a doctrine line | Honcho's `contradiction`; a Character line |
 | **reasoning** | the mode a derived row was reached by (§4) | the model's chain of thought |
@@ -213,9 +220,15 @@ survives as the word for the Character of a collective; the existing
 | **co-location** | the Rollup episode of members at one place at one time | an event |
 | **outing** | the Rollup episode of co-located members away from every member's home | an event |
 | **tie** | the Rollup aggregate of how much two people interact, per week | a Character line about closeness |
-| **echo rule** | her own rows ground only `said` Standing and her Character paired with responses | a filter on her replies |
+| **echo rule** | her own rows ground only `said` Standing, and her Character and Lessons paired with responses | a filter on her replies |
 | **unsupported** | the state of a derived row whose citation chain reaches a withdrawn Record item; it does not render | deleted |
-| **tombstone** | what a pruned, still-cited Record row leaves: id, kind, time, no body | an `unsupported` row |
+| **hidden** | a row kept in history but excluded from every read, block, tool, Rollup build, portal view and new derivation (forget, retention, prune); reversible | deleted; `unsupported` |
+| **tombstone** | what a media blob hard-deleted for storage leaves: id, kind, time; a restore is incomplete for it | a hidden row; an `unsupported` row |
+| **system time** | when a row entered and left the store (`recorded_at`, `superseded_at`) | valid time |
+| **valid time** | when what a row says held in the world (`valid_from`, `valid_to`) | system time |
+| **as of T** | every row with `recorded_at` ≤ T and not superseded at T (§8) | "valid at T" |
+| **head** | the current revision of a chain: a view over it, never a row updated in place | the chain |
+| **snapshot** | an eval sandbox holding Nora as of T ([70](70-migration.md) §2) | a Honcho export |
 | **assess pass** | the measurement of finished sessions, off any live path ([30](30-cognition.md) §6) | a gate on a write |
 | **session** | one cognition run for one unit | a Honcho session (a conversation thread; always written "Honcho session") |
 | **cognition** | the loop | a tier |
@@ -265,6 +278,45 @@ as a process name (it is cognition).
 | — | Character · person, unit, Nora (new) |
 | `standing` (per room) and its working set | Standing · room |
 | — | Standing · unit, person (new) |
+| — | Lessons (new); Character · Nora's `What lands and what does not` moves here |
 | Honcho representation, self card, peer card | memory (a hint, never a citation, never Character evidence) |
 | — | tension (new, operator-only) |
 | reminders | the machinery of act, not a tier |
+
+## 8. Time: every store is append-only, so Nora can be restored as of T
+
+**The principle** (operator 2026-09-28). Every store Nora writes is
+append-only in **system time**: each row carries `recorded_at`, and a revision
+carries `superseded_at` and `superseded_by` on the row it replaces. This
+holds for the Record, Rollup builds, Register, Character, Lessons, Standing,
+tension rows, face labels and templates, perceptions (versioned by model and
+prompt), signals, sessions and their agenda outcomes, reminders and every
+state transition of one, the decision log, and the `citation` edge table.
+Lineage and `exclude_persons` are columns of the versioned rows, so they are
+versioned with them.
+
+- **As of T** is every row with `recorded_at` ≤ T and not superseded at T.
+  It is what Nora held at T, and a query over it is how she is restored.
+- **System time is not valid time.** `valid_from`/`valid_to` (§3) say when a
+  thing was true in the world; `recorded_at`/`superseded_at` say when Nora
+  held a row. A dinner at 20:00 recorded at 18:40 has valid time 20:00 and
+  system time 18:40.
+- **No UPDATE in place on anything derived.** A head is a view over its chain
+  (the revision not superseded). A head pointer kept for compare-and-swap is
+  a cache derivable from the chain, and no as-of read uses it. Mutable loop
+  state (a note's strikes and revisit time, a reminder's status, an event's
+  fields) is written as transition rows; the current value is the newest.
+- **Authored and configured state is versioned too**: the doctrine loaded,
+  the skills, the three config files and the model route in force at T
+  ([70](70-migration.md) §5).
+
+**Removal is soft.** `nora person forget`, retention and prune **hide** rows:
+a hidden row is excluded from every read, block, tool, Rollup build, portal
+view and new derivation, and kept in history, so a restore to T is complete.
+Hiding is itself a transition row, and `nora person unforget` reverses it.
+The withdrawal cascade marks rows `unsupported`, also a transition.
+
+**The one exception is memory** (Honcho): live and mutable by design, with no
+chain to read backwards, it cannot be restored to T. The only other gap is a
+media blob hard-deleted because storage forces it ([70](70-migration.md) §9):
+it leaves a tombstone that marks a restore incomplete for that blob.

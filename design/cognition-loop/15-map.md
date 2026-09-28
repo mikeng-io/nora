@@ -20,7 +20,7 @@ edges:
 | **Live** | computed for this turn, never stored | the clock; her platform status (which platforms are up); the tool catalogue | code, per turn |
 | **Record** | it happened and was seen | messages with edits, deletes and reactions; her own sends and decisions; presence fixes and collector polls; social items; play samples; perceptions (what media shows, whose face); face labels and templates; `character_dispute` items | code (ingestion; the decision log and the fire path for her own acts; the tag path's `face_label` and `character_dispute`, authored by the person) |
 | **Rollup** | code computed it from the Record | episodes: stay, trip, co-location, face co-appearance, outing, play session, daybook · aggregates: place, occupancy, rhythm, corridor and trip speeds, tie, play profile ([25](25-rollup.md)); anomalies are computed on read, not stored | code only |
-| **Register**, **Character**, **Standing** | cognition concluded it | Register: note, memo, event · Character: person, room (culture), unit (culture), Nora · Standing: room, unit, person | cognition; the tag path for Register and room Standing |
+| **Register**, **Character**, **Lessons**, **Standing** | cognition concluded it | Register: note, memo, event · Character: person, room (culture), unit (culture), Nora · Lessons: the unit's lessons · Standing: room, unit, person | cognition; the tag path for Register and room Standing |
 | **memory** | Honcho concluded it | representation (Nora → person), self card (Nora → Nora), peer card, `remember` conclusions | Honcho; `remember` |
 | **Operator-only** | for the operator, never for her | tension rows ([55](55-self.md) §4) | cognition, via `character_revise` |
 
@@ -31,8 +31,8 @@ edges:
 | lake | **Record** |
 | extract / enrich | ingestion and perception ([20](20-observe.md), [60](60-faces.md)) |
 | transform, deterministic | **Rollup** ([25](25-rollup.md)) |
-| transform, judged | **cognition** ([30](30-cognition.md)) writing Register, Character, Standing |
-| warehouse | Rollup + Register + Character + Standing |
+| transform, judged | **cognition** ([30](30-cognition.md)) writing Register, Character, Lessons, Standing |
+| warehouse | Rollup + Register + Character + Lessons + Standing |
 | row-level security | **lineage** and `exclude_persons`, applied at assembly ([10](10-tiers.md) §3) |
 | dashboard | small indices pushed into every prompt (§3) |
 | queries | read tools (§4) |
@@ -58,6 +58,7 @@ section only where its lineage passes for the room ([10](10-tiers.md) §3).
 | **`events`** (new) | Register · event | the unit | tag, fire, cognition | next 14 days and last 48 hours, one line each, with each field's mode and `as_of` |
 | `culture` | Character · room | a room | tag, fire, cognition | capped |
 | **`self`** (new, step 8) | Character · Nora | Nora | every turn, after the doctrine and below it; her whole account ([55](55-self.md) §3) | capped in lines |
+| **`lessons`** (new, step 8) | Lessons | the unit | tag, fire, cognition, after the doctrine and below it | the unit's lessons, under a hard size cap ([30](30-cognition.md) §3) |
 | `standing`, `standing_working_set` | Standing · room | a room | tag, fire | as today |
 | `self_card` | memory | Nora | tag, fire; until step 8 | as today |
 | `peer_card`, `peer_history`, `people_in_window` | memory | a person; the people in the window | tag, fire | as today |
@@ -92,6 +93,7 @@ flowchart BT
   ROL[(ROLLUP · computed<br/>episodes · aggregates)]
   REG[(REGISTER<br/>note · memo · event)]
   CHR[(CHARACTER<br/>person · room · unit · Nora)]
+  LES[(LESSONS<br/>per unit)]
   STD[(STANDING<br/>room · unit · person)]
   MEM[(memory · Honcho)]
   TEN[(tension · operator only)]
@@ -105,7 +107,8 @@ flowchart BT
   REC -->|signals| COG
   ROL -->|signals: co-location, deviation, play| COG
   REC -->|feeds| MEM
-  COG -->|write verbs| REG & CHR & STD
+  COG -->|write verbs| REG & CHR & LES & STD
+  COG -->|lesson_write| TEN
   COG -->|character_revise| TEN
   COG -->|act verb: remind| FIRE
   TAG -->|write verbs| REG
@@ -116,7 +119,8 @@ flowchart BT
   ROL -. cites .-> REC
   REG -. cites .-> REC & ROL
   CHR -. cites .-> REC & ROL & REG & CHR
-  STD -. cites .-> REC & ROL & REG & CHR
+  LES -. cites .-> REC & ROL & REG & CHR
+  STD -. cites .-> REC & ROL & REG & CHR & LES
   DOC --> COG & TAG
   MEM --> COG & TAG
 ```
@@ -127,12 +131,21 @@ which only point down. What she says becomes Record and raises no signal
 
 ## 6. Who may write what
 
-| writer | Record | Rollup | Register | Character | Standing | tension | memory | doctrine |
-|---|---|---|---|---|---|---|---|---|
-| ingestion (code) | **yes** | — | — | — | — | — | feed | — |
-| rollup (code) | — | **yes** | — | — | — | — | — | — |
-| cognition | — | — | **yes** | **yes** | **yes** | via `character_revise` | — | **never** ([55](55-self.md) §3) |
-| tag turn | `face_label`, `character_dispute` | — | **yes** | — | room, via debrief | — | `remember` | — |
-| operator, or the subject | face labels (portal, [60](60-faces.md) §2) | — | via Nora | — | — | — | — | operator only |
+| writer | Record | Rollup | Register | Character | Lessons | Standing | tension | memory | doctrine |
+|---|---|---|---|---|---|---|---|---|---|
+| ingestion (code) | **yes** | — | — | — | — | — | — | feed | — |
+| rollup (code) | — | **yes** | — | — | — | — | — | — | — |
+| cognition | — | — | **yes** | **yes** | **yes** | **yes** | via `character_revise`, `lesson_write` | — | **never** ([55](55-self.md) §3) |
+| tag turn | `face_label`, `character_dispute` | — | **yes** | — | — | room, via debrief | — | `remember` | — |
+| operator, or the subject | face labels (portal, [60](60-faces.md) §2) | — | via Nora | — | rollback by id (portal) | — | — | — | operator only; changes when the humans all agree |
 
 Tension rows are read only by the operator ([55](55-self.md) §4).
+
+## 7. The as-of dimension
+
+Every store above except memory is append-only in system time
+([10](10-tiers.md) §8), so each has a second axis: *as of T*. The blocks and
+read tools read the current view (as of now); `nora snapshot --at T`
+([70](70-migration.md) §2) reads every store as of T, with the doctrine,
+skills, config and model route in force at T, and the Rollup rebuilt to the
+watermark T. Memory has no such axis.

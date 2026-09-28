@@ -21,18 +21,20 @@ description: >
   the fire path composes inside the target room under its guards. It fixes
   the tiers and their words so nothing overlaps: RECORD (what was observed),
   ROLLUP (what it adds up to, computed), REGISTER (the unit's affairs: note,
-  memo, event), CHARACTER (what an entity is like), STANDING (where Nora
-  stands). Every derived row carries its reasoning mode (computed, told,
+  memo, event), CHARACTER (what an entity is like), LESSONS (what she has
+  learned about how to act here), STANDING (where Nora stands). Every derived row carries its reasoning mode (computed, told,
   deduced, induced, abduced, said), its confidence, its lineage (a set of
   kind, subject and origin room, per field, which decides at assembly the
   rooms each field may reach) and its age; small indices are pushed into
   prompts and everything else is queried. Cognition is the loop, never a
   store; her identity is the slice of all state about her (doctrine given,
-  Record done, Character digested, Standing held), and she grows by revising
-  it inside doctrine she never changes, with any tension shown to the
-  operator only. Every Register, Character and Standing row is structured
+  Record done, Character digested, Lessons learned, Standing held), and she
+  grows by revising her own blocks below doctrine she never changes, with
+  any disagreement recorded as tension for the operator. Every store is
+  append-only in system time, so Nora as of any past moment can be restored
+  into an eval sandbox; memory (Honcho) is the exception. Every Register, Character, Lessons and Standing row is structured
   Markdown with a fixed schema in a revision chain; the Rollup is typed and
-  rebuilt. The Dreamer runtime is kept and its scheduling half replaced; the
+  rebuilt into versioned builds. The Dreamer runtime is kept and its scheduling half replaced; the
   proactive adaptor becomes the loop's act step.
 status: proposed
 governance: operator-directed
@@ -55,7 +57,7 @@ origin: >
   (design/dream-conductor, commit 0e060cf: a conductor planning separate
   specialist agents), which the operator's single-agent argument replaced.
   Revised the same day after four independent audits (architecture,
-  terminology, grounding, privacy); the operator's decisions D1–D5 are in
+  terminology, grounding, privacy); the operator's decisions D1–D8 are in
   00-intent and 70-migration.
 members:
   - 00-intent.md

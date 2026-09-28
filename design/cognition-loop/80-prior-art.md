@@ -1,7 +1,7 @@
 ---
 type: design
 title: "Prior art — Honcho, Graphiti/Zep, Letta, Generative Agents, Mem0; what Nora adopts, what it refuses, and the boundary with Honcho"
-description: "What each memory system does from raw input to derived memory, read from source on 2026-09-28; the mapping to Nora's tiers; the word collisions and how this bundle avoids them; the adopted mechanisms (retraction cascade, decay and reinforcement, valid time only where intrinsic, hybrid search, contradiction as a row); the refused ones (model-extracted triples, rewriting old rows, agent-written procedure); and where Honcho stops and Nora's tiers start."
+description: "What each memory system does from raw input to derived memory, read from source on 2026-09-28; the mapping to Nora's tiers; the word collisions and how this bundle avoids them; the adopted mechanisms (retraction cascade, decay and reinforcement, transaction time everywhere and valid time only where intrinsic, hybrid search, contradiction as a row, a learning loop below fixed law); the refused ones (model-extracted triples, rewriting old rows, agent-written doctrine or skills); and where Honcho stops and Nora's tiers start."
 tags: [nora, prior-art, honcho, graphiti, zep, letta, generative-agents, mem0, memory, terminology]
 timestamp: '2026-09-28'
 edges:
@@ -40,6 +40,7 @@ are Nora's additions.
 | Register | — | entity edges | core blocks (task state) | plans |
 | Character · person | inductive conclusions | entity summary | `human` block | reflections about others |
 | Character · room, unit | none | community summary | — | — |
+| Lessons | — | — | skill learning, in part | — |
 | Standing | — | — | `persona` block, in part | reflections about self |
 | cognition session | dream pass | — | sleep-time run | reflection |
 | reasoning `told` / `deduced` / `induced` | `explicit` / `deductive` / `inductive` | — | — | — |
@@ -76,14 +77,16 @@ signals rather than a timer.
    `unsupported`, stops rendering, and goes on the next agenda for
    re-derivation. Code walks a `citation` edge table written with every
    revision; citations already exist, and this is what makes them pay.
-2. **Transaction time everywhere, valid time only where intrinsic.** Revision
-   chains already give when a row was written. `valid_from`/`valid_to` belong
-   to Rollup episodes (code computes them) and Register rows (dated by nature),
-   **not** to Character or Standing: the knowledge tier measured `valid_to`
+2. **Transaction time everywhere, valid time only where intrinsic.** Every
+   row of every store carries system time (Graphiti's `created_at` and
+   `expired_at`), so Nora can be restored as of any T ([10](10-tiers.md) §8);
+   Honcho, which has no history, is the stated exception. `valid_from` and
+   `valid_to` belong to Rollup episodes (code computes them) and Register rows
+   (dated by nature), **not** to Character, Lessons or Standing: the knowledge tier measured `valid_to`
    at 0 writes out of 5, because a unit of friends has no authority that
    retracts (design/dreamer-agent-loop/20-knowledge-tier.md §0).
 3. **Decay and reinforcement** (ACT-R activation, Generative Agents recency,
-   Honcho `times_derived`). Every Character and Standing line carries
+   Honcho `times_derived`). Every Character, Lessons and Standing line carries
    `last_supported_at` (its newest cited Record time) and `support_count`;
    the prompt shows the age, and code puts "account stale" on the agenda.
 4. **Absolute dates, and re-recording measured** (Honcho's deriver, Graphiti,
@@ -101,6 +104,16 @@ signals rather than a timer.
    sampling, Generative Agents' importance): a new place, a first
    co-location, a message burst order the agenda. Never an importance model
    call per Record item.
+8. **A learning loop below fixed law** (Prime Agent's `/refine`,
+   https://www.primeintellect.ai/blog/prime-agent; Hermes Agent's memory and
+   learning loop,
+   https://hermes-agent.nousresearch.com/docs/user-guide/features/memory):
+   a harness layer of learned practice above an immutable core, bounded in
+   size and consolidated when full. Nora's Lessons are this layer, with
+   doctrine as the core ([10](10-tiers.md) §1, [30](30-cognition.md) §3).
+   Added at the operator's direction on 2026-09-28; not read from source in
+   this revision. The known failure is drift toward what earns engagement
+   (skill misevolution, arXiv 2608.12851), which the assess pass measures.
 
 ## 5. Refused
 
@@ -112,9 +125,12 @@ signals rather than a timer.
   UPDATE/DELETE, A-MEM's memory evolution, Honcho's dream deletes): breaks
   "nothing overwritten" and lineage. Mem0 measured ADD-only as better.
 - **Clustered communities** for rooms or units: they are configured.
-- **Agent-written procedure or prompts** (Letta skill learning, LangMem prompt
-  optimisation): doctrine is authored and never hers to write
-  ([55](55-self.md) §3).
+- **Agent-written doctrine, prompts or runtime skills** (Letta skill
+  learning, LangMem prompt optimisation, applied to the authored layer):
+  doctrine and `nora/skills/` are authored and never hers to write
+  ([55](55-self.md) §3). Lessons (§4 item 8) are not this: they are her own
+  bounded layer below doctrine, capped, cited to outcomes, refused where they
+  would loosen doctrine, visible to the operator and reversible by id.
 - **Precomputing answers to predicted questions** (sleep-time compute's
   headline): it pays only when questions are predictable; Nora's value is the
   unasked.
@@ -131,7 +147,7 @@ model a room.
 | owner | holds |
 |---|---|
 | **Honcho** | what a person said about themselves: `explicit` conclusions, the peer card, `remember`. In Nora's terms, a hint of what one person told; never a citation |
-| **Nora** | everything induced, multi-source, collective or about Nora: Character (all four entities), Standing, Register, Rollup |
+| **Nora** | everything induced, multi-source, collective or about Nora: Character (all four entities), Lessons, Standing, Register, Rollup |
 
 1. **Scoped per unit — done, DEC-214 (#603, #605, live 2026-09-28).** Nora's
    hierarchy is workspace > unit > room: each Nora workspace binds one Honcho

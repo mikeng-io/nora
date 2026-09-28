@@ -1,7 +1,7 @@
 ---
 type: design
 title: "Migration — inside the Dreamer runtime, in shippable steps"
-description: "What of the Dreamer runtime is kept and what is replaced; the build order with the reading that gates each step and the GLOSSARY conflicts step 0 resolves; every decision this supersedes or amends; open positions; data migrations; the cost model; rollback and failure modes; tag-path changes; privacy operations (forget, retention, prune); observability."
+description: "What of the Dreamer runtime is kept and what is replaced; the build order with the reading that gates each step, the snapshot command and the GLOSSARY conflicts step 0 resolves; every decision this supersedes or amends; open positions; data migrations, including the inventory of tables that change in place today; the cost model; rollback and failure modes; tag-path changes; privacy operations (soft forget, retention, prune); observability."
 tags: [nora, migration, dreamer, refactor, shadow, eval]
 timestamp: '2026-09-28'
 edges:
@@ -40,15 +40,35 @@ Each step ships alone, behind a flag that defaults off, and is read back live
 |---|---|---|---|
 | 0 | **Tiers, words, grants** | a DEC for [10](10-tiers.md), [12](12-schemas.md), [15](15-map.md); a DEC granting the named write verbs through `AdaptorGrant` (write verbs are not act verbs); each amendment of §3 as a decision row, and index rows for R-31 and DEC-176, which have none; the unit read boundary settled (§4); GLOSSARY rewritten to [10](10-tiers.md)'s words, resolving the conflicts below | — |
 | 1 | **Signals, shadow** | the durable `signal` table, the ingest signal stage, cues, the pending set, wake metrics; reactions, edits and deletes or unsends ingested as items; collector polls and platform adapter health recorded; the clocks still run everything | a week of wake reasons; defaults sized from it |
+| 1b | **History and snapshot** | the append-only migration of every table in §5's inventory (system time, heads as views, loop state as transition rows); `doctrine_revision`, `config_revision` and `deploy_revision` recorded at load (§5); `nora snapshot --at T` (below) | a test writes, revises and retires across every store, then snapshots at two moments and gets exactly what was held at each; a recorded tag turn's blocks, rendered from a snapshot at its moment, equal the blocks its Langfuse trace recorded, memory blocks excepted |
 | 2 | **Rollup and lineage** | the Rollup as a projection (logical watermark, `build`, citation by overlap), design 27's presence rollup moved onto the watermark; co-location, outing; daybook and tie partial ([25](25-rollup.md) §3); the [10](10-tiers.md) §3 columns, every lineage kind and its per-room predicate; the lineage backfill, then the filter; the `citation` edge table; `rollup_read`, `record_query`; wake defaults re-sized with Rollup signals | incremental and batch builds of each rollup agree exactly; no row with unknown lineage renders outside its origin room; a presence-lineaged field is refused in a room without the location flag and in one where DisclosureGuard fails |
 | 2b | **Events unit-wide** | the event migration (§5); `event_revision`, the lifecycle statuses, per-field modes; the event verbs with `base_revision_id`; the tag path's five event tools renamed everywhere (§8); `event_search` | existing `Gathering` tests and the tag path's event cases green; `tool_selection` no worse |
-| 2c | **Withdrawal cascade** | `unsupported` marking over the citation table, fed by step 1's deletes, the PII scrub and a person leaving a unit; `nora person forget` for the stores that exist (§9) | a cascade test withdraws one Record item and finds every row citing it `unsupported`, in every store |
+| 2c | **Withdrawal cascade** | `unsupported` marking over the citation table, fed by step 1's deletes, the PII scrub and a person leaving a unit; `nora person forget` and `unforget` (soft, §9) for the stores that exist | a cascade test withdraws one Record item and finds every row citing it `unsupported`, in every store; a forget followed by a snapshot before it restores everything |
 | 3 | **Cognition, shadow** | the session and agenda; the note, event and room-Character verbs in dry run (would-write rows recorded, nothing committed); skills injected; `standing_revise` and the room Standing schema, live: the debrief and the ingest fold both write through it from here, so the head has one shape; the act verb mirrored and held ([30](30-cognition.md) §2), read against the live proactive pass's decisions; the assess pass, nightly data-quality checks and labelled corpora ([30](30-cognition.md) §6); `tool_selection` on the cognition catalogue | the truncated dinner case passes ([40](40-register.md) §5); the event, note and room-Character corpora meet their gates; over a shadow week every clocked-adaptor write is matched or deliberately closed; the act caps and dedupe hold in shadow |
 | 4 | **Cut over** | cognition commits; the clocks, the four orient adaptors and the ingest Standing fold retired (with `rollup_max_folds` and its metric); proactive is the act step; culture migrated to the sectioned account and written by `character_revise` from here | the re-pointed adaptor eval suites green, master vs branch; the latency falsifier ([00](00-intent.md) §6) |
 | 5 | **Social and play** | the story poller (members only, rate-capped, per-person off switch), perceived through ingest comprehension under the per-unit cap; the story rule and its test rewritten; posts and reels as the bridge can list them; `social_items`; Steam polling and Discord rich presence and voice sampled; play session and play profile; daybook and tie rebuilt with the new inputs | poll outcomes and item counts read back; the login unharmed for a week; the dinner case with stories |
 | 6 | **Faces** | detector, embedder, templates keyed by workspace; labels by reference photos, the portal and `face_label`; face co-appearance; the custody and face checks | precision on the held-out labelled set ([60](60-faces.md) §6) |
 | 7 | **Memos** | the memo table, `memo_write`/`memo_withdraw`/`memo_read`, `<memos>`, the «記低» routing, the key-shape exemption | the memo corpus meets its gates; `tool_selection` before and after; the dinner case whole |
-| 8 | **Character and Standing** (whole) | person, unit and Nora Character; unit and person Standing, sectioned with per-section support and age; `character_read`, `standing_read`; the `self` block (her whole Character · Nora, capped, below the doctrine), and `self_card` out of the prompt; Honcho pushed as `explicit` plus the peer card; the correction portal and `character_dispute`; tension rows and their page; the rebuild-drift metric | a labelled set of accounts judged against the Record they cite |
+| 8 | **Character and Standing** (whole) | person, unit and Nora Character; unit and person Standing, sectioned with per-section support and age; `character_read`, `standing_read`; the `self` block (her whole Character · Nora, capped, below the doctrine), and `self_card` out of the prompt; Honcho pushed as `explicit` plus the peer card; the correction portal and `character_dispute`; tension rows and their page; the rebuild-drift metric; **Lessons**: `lesson_write`/`lesson_retire`, the `lessons` block, the size cap, the doctrine-conflict check, the portal page with rollback by id, Character · Nora's `What lands and what does not` moved into Lessons | a labelled set of accounts judged against the Record they cite; a labelled set of lessons (including ones that would loosen doctrine, which must become tension rows); the lesson drift and churn baselines |
+
+**`nora snapshot --at T`** builds an eval sandbox holding Nora as of T. It
+extends `nora/infra/sql/snapshot.py`, which today reconstructs four stores
+(transcript, standing, culture, notes) at one instant and leaves reminders
+and loop state empty (its own docstring and `nora/subject/sandbox.py` list the
+gaps), to every store's as-of-T view, and seeds the per-case sandbox
+database `nora/subject/sandbox.py` already clones from the blank template.
+It adds the doctrine, skills, config and model route in force at T, and the
+Rollup at T (rebuilt at watermark T once step 2 makes it replayable; read
+from the stored builds before then). A
+case pins T and replays a wake or a turn against Nora-at-T. **Memory is the
+exception**: Honcho cannot be restored to T; the case runs on its own empty
+Honcho workspace (`nora/subject/memory_workspace.py`, one per draw) and either
+seeds memory explicitly or declares itself memory-free.
+
+**Lessons ship at step 8**, though their evidence is ready earlier (reactions
+at step 1, the assess pass at step 3): a lesson takes effect with no approval
+step, so the portal page that shows and rolls it back, and the tension path
+that catches one loosening doctrine, must exist first, and both ship at 8.
 
 Steps 5 and 6 need step 1 (signals), step 2 (lineage kinds, rollup tables)
 and the act verb (step 4); their ingestion may be built from step 2 on, in
@@ -95,7 +115,8 @@ this revision; this bundle does not edit GLOSSARY):
   90-day cap, for cognition only: cognition reads presence through
   `rollup_read`, under lineage ([25](25-rollup.md) §5).
 - **Design 27's Tier 6** (co-location, speculative): built as a Rollup; design
-  27's incremental path moved onto the logical watermark.
+  27's incremental path moved onto the logical watermark, and its rebuild by
+  truncation replaced by versioned builds that are kept.
 - **Standing "lossy and rewritten every turn"** (design/standing-compact/00-intent.md):
   the head stops being a lossy fold; its sections carry their own support
   and age, and hold undated positions only. The chain, `standing_revision`
@@ -127,7 +148,6 @@ rule 4); DEC-213 (note body schema).
 
 | position | what would decide it |
 |---|---|
-| a Lessons tier (learned practice, Hermes/Prime-style) | operator deciding |
 | the unit as the read boundary for transcripts of all its rooms | the operator's 2026-09-09 ruling covers proactive; to be confirmed for cognition at step 0. If it is not, cognition runs one session per room instead of per unit, with the same verbs and agenda |
 | granting cognition the live social reads (`instagram_*`, `x_*`, `linkedin_*`) | the operator; the risk is the messaging login |
 | one agent on the runtime model (a cheap model) holding a busy unit's day | step 3's shadow: items closed per session, refusals per rule, context size |
@@ -141,6 +161,34 @@ rule 4); DEC-213 (note body schema).
 ## 5. Data migrations
 
 All additive: no table is dropped (the rule the deprecated tiers set).
+
+**The in-place inventory** (step 1b). Every table that updates or deletes in
+place today, read from its store's code, and what it becomes under
+[10](10-tiers.md) §8:
+
+| table (store) | changes in place today | becomes |
+|---|---|---|
+| `messages` (`nora/infra/sql/audit.py`) | delivery status and `person_id` (adoption) updated; rows deleted by `prune_all` | status and adoption as transition rows; prune hides (§9) |
+| `note` (`nora/infra/sql/notes.py`) | seven columns: head pointer, `strikes`, `revisit_at`, `last_wake_revision_id`, and the retirement trio (`nora/infra/sql/snapshot.py` lists them) | transition rows; the head a view over `note_revision` |
+| `culture`, `standing` (`culture.py`, `standing.py`) | heads upserted over their chains | heads become views over `culture_revision` and `standing_revision` |
+| `events` (`gatherings.py`) | updated in place and upserted | `event_revision` (step 2b) |
+| `reminders` (`reminders.py`) | status, `fired_at`, outcome updated | transition rows |
+| `compute_jobs`, `instagram_summons`, `version_announcements` | status updated | transition rows |
+| `participation_window_state`, `dream_schedule_state`, `consolidation_watermark`, `analytics_watermark`, `tag_debounce_state` | upserted loop state | transition rows (the Dreamer's schedule and watermarks retire at step 4) |
+| `media_objects` (`media_objects.py`, `media_descriptions.py`), `video_readings` | descriptions upserted ("a later describer may refresh it") | a perception row per model and prompt version |
+| `presence_fixes`, `presence_places` (`presence.py`) | deleted past retention, and places deleted on rebuild | hidden past retention; places as versioned builds |
+| trips, corridors, derived places, occupancy (`mobility.py`, `nora/analytics/rollup.py`) | updated in place, replaced, rebuilt by truncation | versioned builds, kept (step 2) |
+| `music_queue`, `music_session`, `geocode_cache` | updated or upserted | transition rows; cache rows kept with `recorded_at` |
+
+**Authored and configured state.** Doctrine hot-reloads on mtime from the
+host checkout, which collects unpushed commits, so a git sha is not enough:
+each doctrine load writes a `doctrine_revision` row (its sha256, as `/health`
+reports it, and its content, content-addressed). `config.toml`, `policy.toml`
+and `identity.toml` live only on the host: the loader writes a
+`config_revision` row (file, content hash, content, loaded at) at every
+start. Skills are in the image, so each start writes a `deploy_revision` row
+(git sha, image id), matching what `~/nora-backups/deploys.log` records by
+hand. The model id and route are columns on each session.
 
 - **Events.** `Gathering` gains a unit key; `conversation_id` becomes the
   origin room. Rows in different rooms of one unit with overlapping times and
@@ -157,8 +205,9 @@ All additive: no table is dropped (the rule the deprecated tiers set).
 - **`citation` edge table.** Filled from existing citations, then written with
   every revision.
 - **New tables**: `signal`, `event_revision`, `memo`, `character`,
-  `tension`, face labels and templates; `build` on every
-  Rollup table.
+  `lesson`, `tension`, face labels and templates, the transition tables of
+  the inventory, `doctrine_revision`, `config_revision`, `deploy_revision`;
+  `build` and system-time columns on every Rollup table.
 
 ## 6. Cost model
 
@@ -175,6 +224,11 @@ Nothing is measured yet; each term is measured before the budget it sets.
   Measured at step 5. Faces are CPU, not model calls.
 - The per-unit daily token budget and its reserve ([20](20-observe.md) §3)
   are sized from these readings, never before them.
+- **History storage**: nothing derived is overwritten, so the database grows
+  with every revision and transition. Revision bodies are short text; media
+  blobs dominate, are hidden past retention and are the only thing
+  hard-deleted, and only when storage forces it (§9). Growth is read monthly
+  from table sizes; history is kept as long as the Record it derives from.
 
 ## 7. Rollback and failure modes
 
@@ -198,7 +252,7 @@ and step 6's matcher each have their own off switch.
 Each measured with `tool_selection` before and after (ADR 0015), in its
 step's PR:
 
-- **new blocks**: `memos`, `events`, `self`;
+- **new blocks**: `memos`, `events`, `self`, `lessons`;
 - **new tools**: `memo_write`, `memo_withdraw`, `memo_read`, `event_search`,
   `character_read`, `standing_read`, `face_label`, `character_dispute`;
 - **changed**: `remind` gains `brief` for cognition's acts; it is the tool the
@@ -209,22 +263,25 @@ step's PR:
 
 ## 9. Privacy operations
 
-- **`nora person forget <id>`**: redacts the bodies of revisions citing the
-  person (the chain is kept, bodies blanked), deletes their templates and
-  reference photos, sets perceptions naming them to `unknown`, purges their
-  social items and blobs, rebuilds the Rollup without them, and marks every
-  citing row `unsupported`. It also deletes the person's conclusions and peer
-  in each Honcho workspace they are in. In Langfuse it deletes the traces
-  whose metadata names the person; their words inside other traces (a
-  transcript window) are not reachable by person and age out under
-  Langfuse's retention, and the command reports both counts. A cascade test
-  covers every store; each step that adds a store extends both.
-- **Retention per source**: story items and blobs, other social items, and
-  face data each have their own retention key, set before the step that
-  ingests them ships.
-- **Prune with tombstones**: `[store] prune_enabled` removes only rows no live
-  derived row cites; a cited row is replaced by a tombstone (id, kind, time,
-  no body) that the citation still resolves to.
+- **`nora person forget <id>` is a soft delete** (operator 2026-09-28). It
+  hides ([10](10-tiers.md) §8) every row about or authored by the person:
+  their messages and social items, revisions and sections citing them,
+  their templates and reference photos, perceptions naming them; it excludes
+  them from every new derivation and Rollup build, and marks citing rows
+  `unsupported`. Everything stays in history, so `nora snapshot --at T`
+  restores completely; `nora person unforget <id>` makes it visible again.
+  Memory cannot hide a row, so the person's conclusions and peer are deleted
+  in each Honcho workspace they are in (memory is not restorable anyway).
+  Langfuse is not read by Nora; its traces are left to Langfuse's retention,
+  and the command reports how many name the person. A cascade test covers
+  every store; each step that adds a store extends both.
+- **Retention is soft too**: story items, other social items, presence fixes
+  and face data each have a retention key, set before the step that ingests
+  them ships, and past it rows are hidden, not deleted. **Media blobs are the
+  one exception**: story frames, reels and photos are hidden like the rest
+  until storage forces deletion; then the blob is hard-deleted and leaves a
+  tombstone (id, kind, time) that marks a restore incomplete for it.
+- **Prune is hiding**: `[store] prune_enabled` hides what it trims today.
 
 ## 10. Observability
 
@@ -233,7 +290,9 @@ step's PR:
   `nora_cognition_refused_total{verb,rule}`; acts by outcome;
   `nora_cognition_unit_tokens_total{unit}`; the signal metrics of
   [20](20-observe.md) §4; `nora_dq_failures_total{check}`;
-  `nora_face_match_total{outcome}`; `nora_self_tension_total{doctrine_file}`.
+  `nora_face_match_total{outcome}`; `nora_self_tension_total{doctrine_file}`;
+  `nora_lesson_total{outcome}` (written, retired, refused by rule, rolled
+  back).
 - One Langfuse root per session, its model calls and tool calls as children.
 
 ## Status / Checkpoint
@@ -246,8 +305,9 @@ social stream ingested; faces now; passwords may be kept in memos; culture is
 the Character of a collective; doctrine is law she never changes, in whole
 or in part, and changes only when the humans all agree; her growth lives only
 in her own blocks, below the doctrine, with any disagreement recorded as
-tension for the operator; every Register, Character and Standing row is
-schema'd Markdown in a revision chain, and the Rollup is typed and rebuilt.
+tension for the operator; every Register, Character, Lessons and Standing row
+is schema'd Markdown in a revision chain, and the Rollup is typed and rebuilt
+into versioned builds.
 Operator decisions, binding:
 
 - **D1** Every act is a `remind()` row whose brief carries subject rows; the
@@ -263,5 +323,16 @@ Operator decisions, binding:
 - **D4** Step 8 stays whole.
 - **D5** Memo bodies are exempt from `dream_screen`'s key-shape check and
   render normally.
+- **D6** Doctrine is the law: Nora never changes it, in whole or in part; it
+  changes only when the humans all agree. Her growth lives only in her own
+  blocks, below the doctrine; a disagreement becomes a tension row, never a
+  proposal from her.
+- **D7** Lessons: a tier of learned practice per unit, effective immediately
+  with no approval step, every change visible on the portal and reversible
+  by id.
+- **D8** Everything is versioned in system time, so Nora can be restored as
+  of any T for an eval, except memory (Honcho). Forget, retention and prune
+  are soft (hidden, reversible); only a media blob hard-deleted for storage
+  leaves a tombstone.
 
 Nothing is built.

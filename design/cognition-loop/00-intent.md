@@ -66,7 +66,8 @@ wake.**
 - **The cognition session** ([30](30-cognition.md)): one Strands agent per
   unit, woken by signals, with an **agenda** code computes from them (each
   item bound to one room), the read tools that room permits, typed **write
-  verbs** into the REGISTER, CHARACTER and STANDING tiers ([10](10-tiers.md)),
+  verbs** into the REGISTER, CHARACTER, LESSONS and STANDING tiers
+  ([10](10-tiers.md)),
   and one **act verb**, `remind`: every act is a reminder row whose words the
   fire path composes inside the target room, under that room's guards. The
   proactive adaptor becomes this act step.
@@ -138,3 +139,11 @@ decisions of 2026-09-28, binding:
 - **D4** Step 8 stays whole.
 - **D5** Memo bodies are exempt from `dream_screen`'s key-shape check and
   render normally.
+- **D6** Nora never changes doctrine, in whole or in part; it changes only
+  when the humans all agree. Her growth lives only in her own blocks, below
+  the doctrine, and a disagreement becomes a tension row for the operator.
+- **D7** Lessons, a tier of learned practice per unit: effective immediately,
+  no approval step, visible on the portal and reversible by id.
+- **D8** Everything is versioned in system time, so Nora can be restored as
+  of any T for an eval; memory (Honcho) is the exception. Forget is a soft
+  delete (hidden, reversible), so a restore is complete.

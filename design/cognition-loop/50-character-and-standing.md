@@ -30,6 +30,10 @@ revision chain the culture store already has, design/culture-tier/).
 `character_revise` for a person refuses anyone who is not a listed person of
 the unit's rooms.
 
+Character is descriptive. What Nora has learned to *do* in a unit ("two
+options, not five") is a lesson, in the Lessons tier ([10](10-tiers.md) §1,
+[12](12-schemas.md) §4a), not a line of her Character.
+
 **Why not memory.** Honcho's model of a person was measured on 2026-08-06 as
 about 88% happenings and 12% traits (GLOSSARY, **representation**): it
 records what someone did, not who they are, and its derivation is not ours
@@ -52,7 +56,7 @@ two subjects:
 | **person** | new | her position toward one person: what is between them, what she owes them, how they receive her |
 
 Its modes are `deduced`, `abduced` and `said` ([10](10-tiers.md) §4). It may
-cite every tier below it, including Character ("they tend to change plans
+cite every tier below it, including Character and Lessons ("they tend to change plans
 late, so I hold this one loosely").
 
 **The head stops being a lossy fold, which reverses standing-compact.**
@@ -76,7 +80,7 @@ merged). Standing has no `Unsure`: a section past its horizon is dropped
 
 A position built from her own words drifts: each pass agrees a little more
 with the last. So her own rows ground her Standing only as `said`, and her
-own Character only together with how people responded. A revision of her
+own Character and her Lessons only together with how people responded. A revision of her
 Character whose only evidence is Nora is refused; a Standing line resting
 only on her rows says only what she said (`I owe`, `I hold open`), never what
 is so.

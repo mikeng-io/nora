@@ -42,9 +42,13 @@ prose, fully deterministic. This node generalises it to every stream.
   its batch path (design 27, the 2026-09-17 re-derivation); step 2 moves it
   onto the watermark, and until then the nightly rebuild diff
   ([30](30-cognition.md) §6) is its bound and is reported.
-- **Versioned builds.** Every row carries the `build` that computed it. A new
-  build (a code change, or a new input stream arriving) rebuilds into a new
-  version and switches atomically.
+- **Versioned builds, kept.** Every row carries the `build` that computed it
+  and its `recorded_at`. A new build (a code change, or a new input stream
+  arriving) rebuilds into a new version and switches atomically; the build it
+  replaces is superseded, not deleted, which ends design 27's rebuild by
+  truncation. The Rollup as of T is the build current at T; for eval it is
+  rebuilt at watermark T from the Record as of T, hidden rows included
+  ([10](10-tiers.md) §8).
 - **Cited by key, resolved by overlap.** Citations name `(kind, subject,
   interval)`, never a row id or an exact start, because stays are rebuilt by
   truncation (design 27 §1.3). After a rebuild a citation resolves to the rows

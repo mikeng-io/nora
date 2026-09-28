@@ -25,7 +25,7 @@ Built once per session, in code, before any model call:
   photo shows, whose faces, with confidence); the Rollup rows that raised
   signals; the index lines of the Register rows those items touch; the unit's
   clock in HK time; how long since the last session. Index lines, not
-  bodies: Register, Character and Standing bodies are pulled with read tools
+  bodies: Register, Character, Lessons and Standing bodies are pulled with read tools
   when the session needs them, and never pushed, except the capped `culture`
   and `self` blocks ([15](15-map.md) §3–4).
 - **The agenda.** One item per thing that needs attention, computed by code
@@ -56,12 +56,18 @@ not, cognition runs one session per room instead, with the same verbs
 An agenda with no items is no session: zero model calls, the rule every
 adaptor keeps today.
 
+**A session is replayable.** Its row records its inputs: the situation and
+agenda as handed, the signal ids it claimed, the doctrine sha256, the skill
+versions injected, the config revision in force, and the model id and route
+(a column, not only a trace attribute). With the stores as of its start
+([10](10-tiers.md) §8), that is enough to run it again.
+
 ## 2. What it holds
 
 | class | verbs | leaves the session how |
 |---|---|---|
 | **read** | every read tool the registry admits (`read_only_tools()`) except the live social reads ([20](20-observe.md) §2), plus the warehouse queries of [15](15-map.md) §4: `record_query`, `rollup_read`, `event_search`, `memo_read`, `character_read`, `standing_read`, `social_items` | returns into context, filtered by the item's room |
-| **write** | one family per tier: Register (`note_create`, `note_update`, `memo_write`, `memo_withdraw`, `event_propose` (status `staged` or `proposed`), `event_revise`, `event_set_status`), Character (`character_revise`), Standing (`standing_revise`); each takes `base_revision_id` | code validates, then commits (§3) |
+| **write** | one family per tier: Register (`note_create`, `note_update`, `memo_write`, `memo_withdraw`, `event_propose` (status `staged` or `proposed`), `event_revise`, `event_set_status`), Character (`character_revise`), Lessons (`lesson_write`, `lesson_retire`), Standing (`standing_revise`); each takes `base_revision_id` | code validates, then commits (§3) |
 | **act** | `remind(at, room, brief)`, the one act verb; `room` is the agenda item's bound room | a reminder row; the fire path composes it when due |
 | **close** | `close(item, outcome)` | ends one agenda item |
 
@@ -140,12 +146,28 @@ rewrite, and counted by rule; never silently dropped.
    A memo body is exempt from its key-shape check and renders normally:
    anything said in a group is already shared with that group.
 10. **Provenance and history.** Session id, trace id, model and doctrine hash
-    are stamped; every Register, Character and Standing row is a revision
+    are stamped; every Register, Character, Lessons and Standing row is a revision
     chain, so a wrong inference is one revision away from right.
 11. **Told outranks cognition's cancellation.** A cognition revision that
     moves a `told` event to `cancelled`, `evicted` or `lapsed` without `told`
     evidence is written, and the event keeps rendering for 48 hours, flagged
     "cancelled?".
+
+**Enforced by code on every lesson**, on top of the above:
+
+- **A hard size cap per unit** (Hermes-style: sized from the first month,
+  around 800 tokens, never from one sample). A write that would pass it is
+  refused until the session consolidates or retires lessons.
+- **Doctrine wins.** A lesson that would loosen or contradict doctrine is
+  refused and written as a tension row instead ([55](55-self.md) §4). The
+  judgement is a separate instrument call (a model other than the session,
+  reading the lesson and the doctrine); code applies its verdict. It is a
+  model check, not a proof, so the assess pass measures it on a labelled set.
+- **The echo rule.** A lesson cites the outcomes that taught it; one resting
+  on her own words alone is refused.
+- **No approval step.** A lesson takes effect on the next turn. Every write
+  and retirement is visible to the operator on the portal, with its evidence
+  and history, and reversible by id through `lesson_retire`.
 
 **Enforced by code on every act** — the general guards, and the only ones:
 
@@ -218,6 +240,13 @@ Judging an act belongs outside it (design/dreamer-agent-loop/17-failure-classes.
   whose place differs from its outing's; sections past their age horizon; an
   induced line citing no aggregate; a row with empty lineage. Each a counter
   (`nora_dq_failures_total{check}`).
+- **Lessons drift.** The assess pass measures whether lessons drift toward
+  what earns engagement or flattery rather than what serves the unit (skill
+  misevolution, arXiv 2608.12851), and lesson churn (writes and retirements
+  per week).
+- **Cases pin a time.** An eval case names a moment T and runs against Nora
+  as of T (`nora snapshot --at T`, [70](70-migration.md) §2): the stores,
+  doctrine, skills, config and model route in force then, memory excepted.
 - **Rebuild, not only fold.** Every Character account is periodically rebuilt
   from the Rollup and a cited window of the Record, and the rebuild is
   diffed against the chain; the difference is the drift metric. Folding alone
