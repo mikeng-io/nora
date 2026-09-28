@@ -138,9 +138,11 @@ def test_face_passes_in_the_media_room_or_where_listed_and_the_media_passes():
     face = LineageEntry(kind="face", subject="p1", origin="signal:a", reads=(message("signal:a"),))
     assert entry_permits(face, _in(A), origin="a")
     assert entry_permits(face, _in(B, live=LIVE_OK), origin="a")  # p1 listed, a -> b passes
-    other = LineageEntry(kind="face", subject="p3", origin="signal:a", reads=(message("signal:a"),))
+    other = LineageEntry(kind="face", subject="p3", origin="signal:a",
+                         reads=(message("signal:a"),))
     assert not entry_permits(other, _in(B), origin="a")     # p3 not listed in B
-    wide = LineageEntry(kind="face", subject="p1", origin="discord:b", reads=(message("discord:b"),))
+    wide = LineageEntry(kind="face", subject="p1", origin="discord:b",
+                        reads=(message("discord:b"),))
     assert not entry_permits(wide, _in(A), origin="b")      # b -> a fails
 
 
