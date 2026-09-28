@@ -61,6 +61,54 @@ prose, fully deterministic. This node generalises it to every stream.
 - **Fail-closed labelling** (design 27 §3.4): `unlabeled` is an answer, never
   smoothed into a guess.
 
+**As built (step 2a, 2026-09-29, DEC-235).** The details this section left
+open, as the build fixed them:
+
+- **The watermark and the clock.** The presence fold reads one person's
+  Record events — their admitted fixes and the collector's *successful*
+  polls of their circles (`source_health`) — in one canonical order,
+  `(recorded_at, source, id)`, one event at a time
+  (`nora/analytics/rollup.py`, `MobilityRollup._step`). Its clock is the
+  newest time those events show (a fix's `ts`, a poll's `at_ms`); a failed
+  poll is no evidence of time (R-27). The wall clock chooses only *which*
+  watermark a run builds to (`now - grace_seconds`, so a row committed a
+  moment late is inside it); it never enters what is computed there.
+  Because a rebuild is the same fold from the start, the two agree by
+  construction; `tests/unit/test_rollup_determinism.py` and
+  `tests/integration/test_rollup_builds.py` are the gate.
+- **Design 27's 3.4%, its cause.** The old incremental path was handed the
+  daemon's wall clock and decided every tail with it (an open stay closed at
+  `DWELL_CAP_MS` of wall time, a trip settled at `settled_seconds`, an
+  arrival held on the clock, a label expired at `label_freshness_days`); a
+  batch evaluated the same rules once, long after every fix, so a tail
+  inside the history was decided by the next fix. The quiet phone at home is
+  the case: one stay in the batch, two tick by tick. On the fold, a stay
+  closes on the clock only when a recorded poll proves the time passed, on
+  every schedule alike. Two further history dependences went with it: a
+  place's name came only from the stays whose fixes the current cycle saw
+  (stays now keep their mode address), and a corridor's trips depended on
+  the order they arrived in (corridors are now recomputed from the trips).
+- **Builds.** One build covers every rollup (`rollup_build`; the pointer is
+  its one `current` row). A build is named by `CODE_VERSION` and a digest of
+  the parameters a row depends on; a start on other code or parameters
+  rebuilds from the Record and switches atomically, and `python -m
+  nora.analytics rebuild` does so on demand. The rows written before 0071
+  are the `legacy` build. Rows of the current build change in place (a
+  relink, a label, a diffed unit rollup) and keep `row_history`, so the
+  Rollup as of T is the build current at T with its rows as they were at T.
+- **Inputs that are not events.** Saved places and the geocode cache are
+  read as the store holds them when a run reads them; the place plan runs
+  again when the saved places change. A rebuild as of a past T reads them
+  from a snapshot at T (70 §2), where they are restored as of T.
+- **Keys and columns.** Stay, trip, place, occupancy, rhythm and corridor
+  rows carry `build_id`, `lineage` (`[["presence", <person>, null]]`) and
+  `recorded_at`; the unit rollups carry `unit`, their natural key, `lineage`,
+  `valid_from_ms`/`valid_to_ms` and `as_of_ms` (the unit's Record clock).
+  `reasoning` is `computed` for every Rollup row by definition and is not a
+  column. Surrogate ids are stable within a build (by overlap, as places
+  always were) and differ between builds; `SqlRollupStore.resolve` answers a
+  `(kind, subject, interval)` citation by overlap against the current build.
+
 ## 3. The rollups
 
 **Episodes** — one bounded happening, with a start, an end, participants.
@@ -91,6 +139,29 @@ by person and shared across that person's units ([10](10-tiers.md) §2 rule
 alone, and are rebuilt as a new build when each further input arrives
 (reactions at step 1, social and play at step 5, faces at step 6).
 
+**As built (step 2a).** Co-location: two members' stays (closed, or in
+progress once past `min_dwell`) within `colocation_radius_m` (150 m)
+overlapping at least `colocation_min_overlap_seconds` (600 s); stays joined
+that way, transitively, are one episode. **Outing, the `unlabeled` home
+case:** a member with no place labelled home in the build cannot be proved
+away from it, so the co-location is not an outing and names that member in
+`homes_unknown`; a co-location within a member's home place is a visit
+(`at_home_of`), not an outing. Daybook: per member per local date, stays
+split at midnight (home minutes from places labelled home), co-location
+minutes and companions, outings, messages and reactions per room;
+`items_posted` is NULL until social items are an input (step 5). Tie: per
+pair per ISO week, replies (a quote of the other's message), mentions (a
+structured mention resolving to the other), reactions, each direction, and
+co-location minutes split at the week boundary. Response: per send,
+replies, reactions and edits of a reply inside `response_window_seconds`;
+`open` while the window runs past the unit's Record clock; with nothing in
+a closed window, `silent` only when an answer was expected AND the room's
+platform was proved up for the window (`source_health` transitions),
+`unknown` when expected but unproved, `unanswered` when nothing was
+expected. **Expected** is a structured mention of a member today; the
+brief's `ask` intent is read when step 3 records it on the send (`intent`
+is NULL until then — pending).
+
 ## 4. Stimuli the Rollup raises
 
 A Rollup row is observed state changing, so it can wake cognition
@@ -105,6 +176,23 @@ A Rollup row is observed state changing, so it can wake cognition
   wakes the loop, and it is raised only when every source it rests on is
   proven healthy for the interval ([20](20-observe.md) §3). It is a stimulus,
   not a rule: what to make of it is her judgement ([30](30-cognition.md) §3).
+
+**As built (step 2a).** Every Rollup stimulus is `kind = 'rollup'` in the
+per-unit `stimulus` table, unique on `(unit, ref)` (migration 0071), where
+`ref` names the row that raised it — so a later run, or a rebuild
+recomputing the row, never raises it twice — and only for a row whose start
+is within `stimulus_horizon_seconds` of the unit's Record clock (a rebuild
+over months raises nothing historical). Co-location start: a co-location
+still open. Arrival: a member's stay in progress inside a place an open
+event names — `EventPlaces` is the hook; events are step 2b's and name no
+place yet, so none is raised. Deviation: a newly closed stay the rhythm
+scores anomalous, or `deviation_silence_days` completed days on which the
+member posted and reacted nowhere in the unit and was never at home;
+**healthy** is proved from `source_health`: the collector polled the
+person's circles at most `health_max_poll_gap_seconds` (900 s) apart across
+the span with every poll `ok`, and, for silence, every platform of the
+unit's rooms was `up` throughout. Withheld deviations are counted
+(`nora_rollup_stimuli_total{outcome="unhealthy"}`).
 
 ## 5. How it is read
 

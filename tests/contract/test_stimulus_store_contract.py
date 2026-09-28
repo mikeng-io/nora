@@ -170,8 +170,24 @@ async def test_a_time_stimulus_is_written_once_per_ref(store):
     assert [s.id for s in view.pending] == [first]
 
 
+async def test_a_rollup_stimulus_is_written_once_per_ref(store):
+    """Migration 0071: a Rollup stimulus names the row that raised it, and a
+    later run (or a rebuild recomputing the row) raises it again; it is on
+    record once."""
+    sig = NewStimulus(unit=UNIT, kind="rollup", item="colocation_start",
+                      ref="colocation|a,b|1000", at_ms=NOW)
+    first = await store.append(stimulus=sig, recorded_at_ms=NOW)
+    again = await store.append(stimulus=sig, recorded_at_ms=NOW + 30_000)
+    assert first is not None and again is None
+    time_same_ref = await store.append(
+        stimulus=NewStimulus(unit=UNIT, kind="time", item="floor",
+                             ref="colocation|a,b|1000", at_ms=NOW, due_ms=NOW),
+        recorded_at_ms=NOW)
+    assert time_same_ref is not None  # the two kinds' refs are separate spaces
+
+
 async def test_message_refs_are_not_deduplicated(store):
-    """Only `time` is unique on its ref: two reactions that share a message
+    """Only `time` and `rollup` are unique on their ref: two reactions that share a message
     are two Record items, and both are stimuli."""
     a = await store.append(stimulus=_msg("messages:1"), recorded_at_ms=NOW)
     b = await store.append(stimulus=_msg("messages:1"), recorded_at_ms=NOW)

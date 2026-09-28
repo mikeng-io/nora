@@ -9,6 +9,10 @@ from nora.infra.sql import mobility as mobility_sql
 from nora.infra.sql.mobility import SqlMobilityStore
 
 
+# The store is BOUND to a build here: these tests script the engine's answers
+# statement by statement, and an unbound read first resolves the current build
+# (`_read_build`), which the no-build tests in `tests/test_where_been.py` and
+# `tests/web/test_presence_analytics.py` exercise against a real database.
 class _Result:
     def __init__(self, rows: list[SimpleNamespace]) -> None:
         self._rows = rows
@@ -55,7 +59,7 @@ async def test_rhythm_bins_uses_the_substrate_local_hour_of_week(monkeypatch):
     ])
     monkeypatch.setattr(mobility_sql.time, "time", lambda: (start + 86_400_000) / 1000)
 
-    bins = await SqlMobilityStore(engine).rhythm_bins(
+    bins = await SqlMobilityStore(engine, build_id=1).rhythm_bins(
         subject_id="miles", window_ms=24 * 60 * 60 * 1000,
     )
 
@@ -71,7 +75,7 @@ async def test_rhythm_bins_splits_an_overnight_stay_across_the_hours_it_covers(m
     engine = _Engine([_Result([SimpleNamespace(started_ts=start, ended_ts=end)])])
     monkeypatch.setattr(mobility_sql.time, "time", lambda: (end + 3_600_000) / 1000)
 
-    bins = await SqlMobilityStore(engine).rhythm_bins(
+    bins = await SqlMobilityStore(engine, build_id=1).rhythm_bins(
         subject_id="miles", window_ms=2 * 86_400_000,
     )
 
@@ -99,7 +103,7 @@ async def test_places_and_routes_reads_are_select_only_and_capped():
         _Result([]),
         _Result([]),
     ])
-    store = SqlMobilityStore(engine)
+    store = SqlMobilityStore(engine, build_id=1)
 
     assert await store.places_with_aggregates(subject_id="miles") == [
         {
@@ -149,7 +153,7 @@ async def test_stays_for_subject_window_is_select_only_capped_and_carries_latlng
         _Result([]),
     ])
     monkeypatch.setattr(mobility_sql.time, "time", lambda: (start + 86_400_000) / 1000)
-    store = SqlMobilityStore(engine)
+    store = SqlMobilityStore(engine, build_id=1)
 
     assert await store.stays_for_subject_window(subject_id="miles", window_ms=0) == []
     assert engine.connection.statements == []

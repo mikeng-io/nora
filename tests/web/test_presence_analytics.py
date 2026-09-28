@@ -240,3 +240,30 @@ async def test_analytics_unknown_subjects_are_empty_and_not_read(aiohttp_client)
     assert routes == {"subjectId": "stranger", "trips": [], "corridors": []}
     assert mobility.rhythm_windows == []
     assert mobility.route_windows == []
+
+
+async def test_no_rollup_build_yet_answers_503_not_an_empty_200(aiohttp_client, pg_url):
+    """Before the first build is current the portal says «unavailable», not
+    «no places, no rhythm, no routes». The real SQL store on a fresh database;
+    the same endpoints answer 200 once a build is current."""
+    from nora.infra.sql import create_sql_engine
+    from nora.infra.sql.mobility import SqlMobilityStore
+
+    engine = create_sql_engine(pg_url)
+    try:
+        mobility = SqlMobilityStore(engine)
+        client = await aiohttp_client(_app(presence=object(), mobility=mobility))  # type: ignore[arg-type]
+        paths = [
+            "/app/v1/presence/analytics/places",
+            "/app/v1/presence/analytics/rhythm?subjectId=miles",
+            "/app/v1/presence/analytics/routes?subjectId=miles",
+        ]
+        for path in paths:
+            resp = await client.get(path)
+            assert resp.status == 503, path
+            assert (await resp.json())["error"] == "unavailable"
+        await mobility._seed_build_for_test(current=True)
+        for path in paths:
+            assert (await client.get(path)).status == 200, path
+    finally:
+        await engine.dispose()

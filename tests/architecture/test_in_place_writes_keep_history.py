@@ -47,10 +47,15 @@ _RAW = re.compile(
 )
 
 #: Sites whose table is a variable: path -> the tables the variable can be.
-#: `mobility.py`'s rebuild deletes the derived presence tables in a loop
-#: (step 2's Rollup, deferred).
+#: `mobility.py`'s place deletion clears the Tier 3 tables in a loop, and
+#: `rollups.py` diffs each unit rollup table through one helper (step 2).
 _VARIABLE_TARGETS: dict[str, frozenset[str]] = {
     "nora/infra/sql/mobility.py": frozenset({"presence_occupancy", "presence_place_rhythm"}),
+    # The unit rollups' diffed write (`_diff_apply`), one table at a time.
+    "nora/infra/sql/rollups.py": frozenset({
+        "rollup_colocation", "rollup_outing", "rollup_daybook", "rollup_tie",
+        "rollup_response",
+    }),
 }
 #: How far above an `on_conflict_do_update` its `insert(T)` may be. The
 #: widest in the tree on 2026-09-28 is 25 lines (`media_objects.py`), and

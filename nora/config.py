@@ -1444,6 +1444,32 @@ class AnalyticsConfig(BaseModel):
     # 3 hours is generous enough to cover a real long drive without
     # leaving a stuck signal unbounded.
     max_trip_duration_seconds: float = Field(default=10800.0, gt=0)
+    # ── the unit rollups and their stimuli (step 2,
+    # design/cognition-loop/25-rollup.md §3-§4). Starting values, each a
+    # judgement to be sized from the first weeks of rows, as 20 §3's wake
+    # values are sized from the shadow week.
+    #
+    # Two members' stays are one co-location when their centres are this
+    # close — the stay radius (120 m) plus the measured resting scatter's
+    # median (~50 m, design/27 §1.4), not the wander radius, which would
+    # put neighbours in one flat.
+    colocation_radius_m: float = Field(default=150.0, gt=0)
+    # ...and they overlap at least this long: the stay's own min dwell, so a
+    # pass in a lobby is not «together».
+    colocation_min_overlap_seconds: float = Field(default=600.0, ge=0)
+    # 25 §3's `response_window_seconds`: how long after one of her sends a
+    # reply, reaction or edit still counts as answering it.
+    response_window_seconds: float = Field(default=3600.0, gt=0)
+    # A Rollup stimulus (co-location start, arrival, deviation) is raised
+    # only for a row whose start is this recent on the Record's clock, so a
+    # rebuild over months does not raise a stimulus per historical row.
+    stimulus_horizon_seconds: float = Field(default=3600.0, gt=0)
+    # 25 §4's «silent in every room and at home for N days».
+    deviation_silence_days: int = Field(default=2, ge=1)
+    # «The collector's recorded polls succeeded» (20 §3) means polled at
+    # least this often across the span: three still-cadence polls (300 s,
+    # `[presence] cadence_still_seconds`). A longer gap is an outage.
+    health_max_poll_gap_seconds: float = Field(default=900.0, gt=0)
     tz_name: str = "Asia/Hong_Kong"
     # The substrate's own metrics/health endpoint. 9100 is Nora's own
     # (`[obs.metrics]`), 9101 is the presence collector's

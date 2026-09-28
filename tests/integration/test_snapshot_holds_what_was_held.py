@@ -58,6 +58,17 @@ def _hex(table: str, i: int) -> str:
     return uuid.uuid5(uuid.NAMESPACE_URL, f"{table}:{i}").hex
 
 
+#: What every presence Rollup row carries (0071).
+_ROLLUP: dict[str, Any] = {"build_id": 1, "lineage": [["presence", "s", None]]}
+
+
+def _UNIT_ROLLUP(i: int) -> dict[str, Any]:
+    return {
+        "build_id": 1, "unit": "u", "lineage": [["presence", "a", None]],
+        "valid_from_ms": MS0 + i, "valid_to_ms": MS0 + 1000 + i, "as_of_ms": MS0 + i,
+    }
+
+
 #: A valid row per in-place table, for key `i`.
 ROWS: dict[str, Callable[[int], dict[str, Any]]] = {
     "messages": lambda i: {
@@ -152,6 +163,69 @@ ROWS: dict[str, Callable[[int], dict[str, Any]]] = {
     "sticker_index": lambda i: {
         "platform": "signal", "fetch_token": f"t{i}", "sha256": f"{i:064x}",
     },
+    # Step 2 (0071): the Rollup's builds, fold states, presence rows and
+    # unit rollups, and the collector's saved places.
+    "presence_places": lambda i: {
+        "circle_id": "c", "place_id": f"pl{i}", "name": f"place {i}", "lat": 22.25,
+        "lng": 114.125, "updated_ms": MS0 + i,
+    },
+    "presence_stays": lambda i: {
+        "id": 6000 + i, "subject_id": "s", "person_id": "s", "circle_id": "c",
+        "started_ts": MS0 + i, "ended_ts": MS0 + 600_000 + i, "lat": 22.25, "lng": 114.125,
+        "radius_m": 50.0, "fix_count": 3, **_ROLLUP,
+    },
+    "presence_trips": lambda i: {
+        "id": 6100 + i, "subject_id": "s", "person_id": "s", "circle_id": "c",
+        "started_ts": MS0 + i, "ended_ts": MS0 + 60_000 + i, "distance_m": 500.0,
+        "avg_speed_kmh": 30.0, "fix_count": 3, "sequence": [], **_ROLLUP,
+    },
+    "presence_derived_places": lambda i: {
+        "id": 6200 + i, "subject_id": "s", "circle_id": "c", "lat": 22.25, "lng": 114.125,
+        "radius_m": 100.0, "kind": "home", "confidence": 0.5, "first_seen_ts": MS0,
+        "last_seen_ts": MS0, **_ROLLUP,
+    },
+    "presence_occupancy": lambda i: {
+        "id": 6300 + i, "subject_id": "s", "place_id": 6200, "hour_of_week": i,
+        "dwell_ms": 1000, "updated_ts": MS0, **_ROLLUP,
+    },
+    "presence_place_rhythm": lambda i: {
+        "subject_id": "s", "place_id": 6200 + i, "sample_count": 1, "updated_ts": MS0,
+        **_ROLLUP,
+    },
+    "presence_corridors": lambda i: {
+        "id": 6400 + i, "subject_id": "s", "sequence": ["Road A"], "sample_count": 3,
+        "first_seen_ts": MS0, "last_seen_ts": MS0, **_ROLLUP,
+    },
+    "rollup_build": lambda i: {
+        "id": 1 + i, "code_version": "test", "params_sha256": "", "status": "building",
+    },
+    "rollup_fold_state": lambda i: {
+        "build_id": 1, "subject_id": f"s{i}", "pos_recorded_ms": MS0 + i, "pos_rank": 0,
+        "pos_id": i, "logical_now_ms": MS0 + i, "frontier_ts": MS0,
+    },
+    "rollup_colocation": lambda i: {
+        "id": 6500 + i, "persons": ["a", "b"], "lat": 22.25, "lng": 114.125,
+        "radius_m": 50.0, "stay_count": 2, **_UNIT_ROLLUP(i),
+    },
+    "rollup_outing": lambda i: {
+        "id": 6600 + i, "persons": ["a", "b"], "lat": 22.25, "lng": 114.125,
+        **_UNIT_ROLLUP(i),
+    },
+    "rollup_daybook": lambda i: {
+        "id": 6700 + i, "person_id": "a", "local_date": f"2026-09-0{1 + i}", "stays": [],
+        "stay_ms": 0, "home_ms": 0, "colocation_ms": 0, "outings": 0, "rooms": {},
+        "messages": i, "reactions": 0, **_UNIT_ROLLUP(i),
+    },
+    "rollup_tie": lambda i: {
+        "id": 6800 + i, "person_a": "a", "person_b": "b", "iso_week": f"2026-W3{i}",
+        "replies_ab": i, "replies_ba": 0, "mentions_ab": 0, "mentions_ba": 0,
+        "reactions_ab": 0, "reactions_ba": 0, "colocation_ms": 0, **_UNIT_ROLLUP(i),
+    },
+    "rollup_response": lambda i: {
+        "id": 6900 + i, "message_id": 1000 + i, "platform": "signal",
+        "conversation_id": "g1", "sent_ts": MS0 + i, "replies": 0, "reactions": 0,
+        "edits": 0, "outcome": "open", **_UNIT_ROLLUP(i),
+    },
 }
 
 #: The column each revision moves, and to what.
@@ -180,6 +254,20 @@ REVISE: dict[str, tuple[str, Callable[[int], Any]]] = {
     "music_session": ("paused", lambda i: True),
     "geocode_cache": ("address", lambda i: f"renamed {i}"),
     "sticker_index": ("hits", lambda i: 7 + i),
+    "presence_places": ("name", lambda i: f"renamed place {i}"),
+    "presence_stays": ("place_id", lambda i: 6200 + i),
+    "presence_trips": ("corridor_id", lambda i: 6400 + i),
+    "presence_derived_places": ("label", lambda i: f"label {i}"),
+    "presence_occupancy": ("dwell_ms", lambda i: 2000 + i),
+    "presence_place_rhythm": ("sample_count", lambda i: 5 + i),
+    "presence_corridors": ("sample_count", lambda i: 9 + i),
+    "rollup_build": ("status", lambda i: "abandoned"),
+    "rollup_fold_state": ("logical_now_ms", lambda i: MS0 + 99 + i),
+    "rollup_colocation": ("stay_count", lambda i: 3 + i),
+    "rollup_outing": ("open", lambda i: 1),
+    "rollup_daybook": ("messages", lambda i: 10 + i),
+    "rollup_tie": ("replies_ba", lambda i: 1 + i),
+    "rollup_response": ("outcome", lambda i: "responded"),
 }
 
 #: One append-only row, number `n`, citing the stable key-0 parents.
