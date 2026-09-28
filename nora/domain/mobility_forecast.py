@@ -58,10 +58,10 @@ __all__ = [
     "forecast_hour",
     "forecast_window",
     "habits_of",
-    "rollover_hour",
     "rollover_minute",
     "time_forecast",
     "trip_patterns",
+    "window_minute",
 ]
 
 _HOUR_MS = 3_600_000
@@ -542,9 +542,37 @@ def rollover_minute(ts: int, tz: ZoneInfo) -> tuple[date, int]:
     return local.date(), minute
 
 
-def rollover_hour(hour: int) -> int:
-    """An hour of the clock as a minute of the rollover day."""
-    return (hour + 24 if hour < _ROLLOVER_HOUR else hour) * 60
+def _window_bounds(from_hour: int, to_hour: int) -> tuple[int, int]:
+    """The asked window as minutes of its own day: past midnight when
+    `to_hour <= from_hour`, so 00:14 the next morning is minute 1454."""
+    lo, hi = from_hour * 60, to_hour * 60
+    if hi <= lo:
+        hi += 1440
+    return lo, hi
+
+
+def window_minute(
+    ts: int, tz: ZoneInfo, from_hour: int, to_hour: int,
+) -> tuple[date, int] | None:
+    """The day whose window (`from_hour` to `to_hour`) holds this instant, and
+    the minute of that day it falls at; `None` outside every such window.
+
+    The window's own start day, not a fixed rollover hour: a 0-to-23 window
+    lost every event after 04:00 when it was read against a 04:00 rollover
+    (independent review 2026-09-28)."""
+    lo, hi = _window_bounds(from_hour, to_hour)
+    local = datetime.fromtimestamp(ts / 1000, tz=tz)
+    minute = local.hour * 60 + local.minute
+    for day, m in ((local.date(), minute), (local.date() - timedelta(days=1), minute + 1440)):
+        if lo <= m <= hi:
+            return day, m
+    return None
+
+
+def _instant_ms(day: date, minute: int, tz: ZoneInfo) -> int:
+    """The instant `minute` minutes after `day`'s local midnight."""
+    midnight = datetime(day.year, day.month, day.day, tzinfo=tz)
+    return int((midnight + timedelta(minutes=minute)).timestamp() * 1000)
 
 
 @dataclass(frozen=True)
@@ -608,22 +636,89 @@ def habits_of(minutes: Iterable[int], *, gap: int = HABIT_GAP_MINUTES) -> tuple[
 class TimeForecast:
     """When someone usually arrives at (or leaves) a place on a kind of day.
 
-    `basis`: `weekday` (the same weekday), `day_type` (every weekday, or every
-    weekend day, when the weekday alone has fewer than the minimum), `all_days`
-    (the weakest), `none` (no event at all). `today`: when the asked day is
-    today, whether it already happened (`done`, with `done_minute`), or not yet
-    (`pending`) with `like_today`, the habits of only those past days on which
-    it had not happened by now either."""
+    `days` counts the past days of the basis on which they were seen at all
+    in the window, so a habit reads «on 4 of 7» and the other 3 are days the
+    event did not happen in these hours. `basis`: `weekday` (the same
+    weekday), `day_type` (every weekday, or every weekend day, when the
+    weekday alone has fewer than the minimum), `all_days` (the weakest),
+    `none` (no event at all).
+
+    `today`, when `now` falls inside the asked day's window:
+    - `done`: it already happened (`done_minute` when the time is known);
+    - `pending`: not yet, with `like_today`, the habits of only the past days
+      that were in the same state at this minute (not there yet, or still
+      there), and `like_today_without`, how many of those
+      `like_today_days` never had it happen in the window;
+    - `absent` (departure only): they are not there now and were not there
+      earlier in the window, so there is nothing to leave;
+    - `unknown`: no fresh reading of where they are, so today is not said
+      (R-5: I could not check is not «not yet»)."""
 
     status: Literal["ok", "insufficient"]
     kind: Literal["arrival", "departure"]
     habits: tuple[Habit, ...]
     days: int
     basis: Literal["weekday", "day_type", "all_days", "none"]
-    today: Literal["done", "pending", "not_today"] = "not_today"
+    today: Literal["done", "pending", "absent", "unknown", "not_today"] = "not_today"
     done_minute: int | None = None
     like_today: tuple[Habit, ...] = ()
     like_today_days: int = 0
+    like_today_without: int = 0
+
+
+# A departure is a leaving only when they stay away this long: an hour out
+# for lunch is not «leaving work».
+_AWAY_MINUTES = 120
+# A closed stay at the place that ended this recently is the same visit as
+# the fresh reading there, so its start is when they got in.
+_SAME_VISIT_MS = 30 * 60_000
+
+
+def _day_events(
+    stays: list[Stay], *, place_ids: set[int], kind: str, tz: ZoneInfo,
+    from_hour: int, to_hour: int,
+) -> dict[date, list[int]]:
+    """Each window day's event minutes: every arrival, or every departure
+    after which they stayed away `_AWAY_MINUTES` or more."""
+    events = anchor_events(stays, place_ids=place_ids, tz_name=tz.key)
+    returns = sorted(e.ts for e in events if e.kind == "arrival")
+    out: dict[date, list[int]] = {}
+    for ev in events:
+        if ev.kind != kind:
+            continue
+        if kind == "departure":
+            i = bisect.bisect_right(returns, ev.ts)
+            if i < len(returns) and returns[i] - ev.ts < _AWAY_MINUTES * 60_000:
+                continue
+        hit = window_minute(ev.ts, tz, from_hour, to_hour)
+        if hit is not None:
+            out.setdefault(hit[0], []).append(hit[1])
+    return out
+
+
+def _observed_days(
+    stays: list[Stay], *, tz: ZoneInfo, from_hour: int, to_hour: int,
+) -> set[date]:
+    """The window days on which any stay of theirs overlaps the window."""
+    lo, hi = _window_bounds(from_hour, to_hour)
+    out: set[date] = set()
+    for s in stays:
+        first = datetime.fromtimestamp(s.started_ts / 1000, tz=tz).date() - timedelta(days=1)
+        last = datetime.fromtimestamp(s.ended_ts / 1000, tz=tz).date()
+        d = first
+        while d <= last:
+            if s.started_ts <= _instant_ms(d, hi, tz) and s.ended_ts >= _instant_ms(d, lo, tz):
+                out.add(d)
+            d += timedelta(days=1)
+    return out
+
+
+def _at_place(stays: list[Stay], place_ids: set[int], ts: int) -> bool:
+    """Whether a stay at the place covers this instant (in transit, or at
+    another place, is not)."""
+    return any(
+        s.started_ts <= ts <= s.ended_ts for s in stays if s.place_id in place_ids
+    )
 
 
 def time_forecast(
@@ -637,77 +732,113 @@ def time_forecast(
     like `day`, from stays before `history_before_ms`, the last twelve weeks.
 
     Per past day, an arrival is the LAST arrival in the window («when is he
-    back home tonight» is the final return), a departure the FIRST («when does
-    he leave work»).
+    back home tonight» is the final return), a departure the FIRST one after
+    which they stayed away two hours («when does he leave work», not lunch).
 
-    When `day` is today and `now_ms` falls inside the window: `at_place_now`
-    (from a live reading, the caller's) or an event already seen today decides
-    `done`; otherwise `pending`, and `like_today` reads only the past days on
-    which the event came after this clock time («on the nights he wasn't home
-    by 21:00, he got in around midnight»)."""
+    `stays` are closed, so where someone is NOW comes only from
+    `at_place_now`, the caller's fresh live reading; `None` makes today
+    `unknown`. Past days are matched to today by their state at this same
+    minute: asked at 21:00 with him not home, only the nights he was not home
+    at 21:00 either are read («he got in around midnight»)."""
     tz = ZoneInfo(tz_name)
-    lo = rollover_hour(from_hour)
-    hi = rollover_hour(to_hour)
-    if hi <= lo:
-        hi += 1440
     oldest = history_before_ms - _HABIT_WEEKS * _WEEK_MS
-    history = [s for s in stays if oldest <= s.started_ts and s.ended_ts <= history_before_ms]
-    per_day: dict[date, int] = {}
-    for ev in anchor_events(history, place_ids=place_ids, tz_name=tz_name):
-        if ev.kind != kind or not (lo <= ev.minute <= hi) or ev.day >= day:
-            continue
-        if ev.day not in per_day:
-            per_day[ev.day] = ev.minute
-        elif kind == "arrival":
-            per_day[ev.day] = max(per_day[ev.day], ev.minute)
-        else:
-            per_day[ev.day] = min(per_day[ev.day], ev.minute)
-
-    def pick(pred: Any) -> dict[date, int]:
-        return {d: m for d, m in per_day.items() if pred(d)}
+    history = sorted(
+        (s for s in stays if oldest <= s.started_ts and s.ended_ts <= history_before_ms),
+        key=lambda s: s.started_ts,
+    )
+    events = {
+        d: ms for d, ms in _day_events(
+            history, place_ids=place_ids, kind=kind, tz=tz, from_hour=from_hour,
+            to_hour=to_hour,
+        ).items() if d < day
+    }
+    pick = max if kind == "arrival" else min
+    per_day = {d: pick(ms) for d, ms in events.items()}
+    observed = {
+        d for d in _observed_days(history, tz=tz, from_hour=from_hour, to_hour=to_hour)
+        if d < day
+    } | set(per_day)
 
     weekend = day.weekday() >= 5
     chosen: dict[date, int] = {}
     basis: Literal["weekday", "day_type", "all_days", "none"] = "none"
+    in_basis: Any = None
     for level, pred in (
         ("weekday", lambda d: d.weekday() == day.weekday()),
         ("day_type", lambda d: (d.weekday() >= 5) == weekend),
         ("all_days", lambda d: True),
     ):
-        candidate = pick(pred)
+        candidate = {d: m for d, m in per_day.items() if pred(d)}
         if len(candidate) >= min_days:
-            chosen, basis = candidate, level  # type: ignore[assignment]
+            chosen, basis, in_basis = candidate, level, pred  # type: ignore[assignment]
             break
     if not chosen:
         return TimeForecast("insufficient", kind, (), 0, "none")
+    basis_days = sorted(d for d in observed if in_basis(d))
 
-    forecast = TimeForecast("ok", kind, habits_of(chosen.values()), len(chosen), basis)
+    forecast = TimeForecast("ok", kind, habits_of(chosen.values()), len(basis_days), basis)
     if now_ms is None:
         return forecast
-    now_day, now_minute = rollover_minute(now_ms, tz)
-    if now_day != day or not (lo <= now_minute <= hi):
+    now_hit = window_minute(now_ms, tz, from_hour, to_hour)
+    if now_hit is None or now_hit[0] != day:
         return forecast
-    today_events = [
-        ev.minute for ev in anchor_events(
-            [s for s in stays if s.ended_ts <= now_ms], place_ids=place_ids,
-            tz_name=tz_name,
+    now_minute = now_hit[1]
+    if at_place_now is None:
+        return TimeForecast(
+            "ok", kind, forecast.habits, forecast.days, basis, today="unknown",
         )
-        if ev.kind == kind and ev.day == day and lo <= ev.minute <= now_minute
-    ]
-    done = (
-        at_place_now if kind == "arrival" and at_place_now is not None
-        else (not at_place_now) if kind == "departure" and at_place_now is not None
-        else bool(today_events)
-    )
-    if done:
+    lo, _ = _window_bounds(from_hour, to_hour)
+    window_start = _instant_ms(day, lo, tz)
+    closed = sorted((s for s in stays if s.ended_ts <= now_ms), key=lambda s: s.started_ts)
+
+    if kind == "arrival" and at_place_now:
+        run: list[Stay] = []
+        for s in reversed(closed):
+            if s.place_id not in place_ids:
+                break
+            run.insert(0, s)
+        since = None
+        if (
+            run and len(run) < len(closed)
+            and now_ms - run[-1].ended_ts <= _SAME_VISIT_MS
+            and run[0].started_ts >= window_start
+        ):
+            hit = window_minute(run[0].started_ts, tz, from_hour, to_hour)
+            since = hit[1] if hit is not None and hit[0] == day else None
         return TimeForecast(
             "ok", kind, forecast.habits, forecast.days, basis, today="done",
-            done_minute=(max if kind == "arrival" else min)(today_events) if today_events else None,
+            done_minute=since,
         )
-    later = [m for m in chosen.values() if m > now_minute]
+    if kind == "departure" and not at_place_now:
+        left = [
+            s.ended_ts for s in closed
+            if s.place_id in place_ids and window_start <= s.ended_ts <= now_ms
+        ]
+        if not left:
+            return TimeForecast(
+                "ok", kind, forecast.habits, forecast.days, basis, today="absent",
+            )
+        hit = window_minute(max(left), tz, from_hour, to_hour)
+        return TimeForecast(
+            "ok", kind, forecast.habits, forecast.days, basis, today="done",
+            done_minute=hit[1] if hit is not None else None,
+        )
+
+    # Pending: not there yet (arrival) or still there (departure). Read the
+    # past days that were in that same state at this minute.
+    matched = [
+        d for d in basis_days
+        if _at_place(history, place_ids, _instant_ms(d, now_minute, tz)) == at_place_now
+    ]
+    after = []
+    for d in matched:
+        later = [m for m in events.get(d, ()) if m > now_minute]
+        if later:
+            after.append(pick(later))
     return TimeForecast(
         "ok", kind, forecast.habits, forecast.days, basis, today="pending",
-        like_today=habits_of(later), like_today_days=len(later),
+        like_today=habits_of(after), like_today_days=len(matched),
+        like_today_without=len(matched) - len(after),
     )
 
 
@@ -775,7 +906,9 @@ def trip_patterns(
             continue
         ordered_d = sorted(durations)
         n = len(ordered_d)
-        q1, q3 = ordered_d[n // 4], ordered_d[(3 * n) // 4 if n > 3 else n - 1]
+        # Nearest rank at the same distance from each end, so the middle half
+        # is symmetric at every n (at n=4 it was the 2nd to the maximum).
+        q1, q3 = ordered_d[round((n - 1) / 4)], ordered_d[n - 1 - round((n - 1) / 4)]
         out.append(TripPattern(
             o, d, day_type, tod, n, round(q1), round(q3), round(ordered_d[n // 2]),  # type: ignore[arg-type]
         ))
@@ -786,11 +919,16 @@ def trip_patterns(
 class ArrivalBacktest:
     """M1's committed instrument (design/27 §4.4): for each held-out day with
     an arrival in the window, did it fall inside a predicted habit (± the
-    tolerance), against «the median of every earlier day ± 30 min»."""
+    tolerance), against «the median of every earlier day ± 30 min».
+
+    `width_minutes` sums the width of the habit windows that were scored
+    (tolerance included), so `mean_width` says how wide a net the hit rate
+    was bought with: the baseline's net is always `2 * baseline_band_min`."""
 
     days: int
     hits: int
     baseline_hits: int
+    width_minutes: int = 0
 
     @property
     def accuracy(self) -> float | None:
@@ -800,41 +938,47 @@ class ArrivalBacktest:
     def baseline_accuracy(self) -> float | None:
         return None if not self.days else self.baseline_hits / self.days
 
+    @property
+    def mean_width(self) -> float | None:
+        return None if not self.days else self.width_minutes / self.days
+
 
 def backtest_arrivals(
     stays: list[Stay], *, place_ids: set[int], tz_name: str, start_ms: int,
     end_ms: int, from_hour: int = 16, to_hour: int = 4, tolerance_min: int = 15,
     baseline_band_min: int = 30,
 ) -> ArrivalBacktest:
-    """Rolling origin, one local day at a time: predict from stays that ended
-    before the day began, score the day's real last arrival in the window."""
+    """Rolling origin, one window day at a time: predict from stays that
+    ended before that day's window opened, score the day's real last arrival
+    in the window. The baseline reads the same stays, so neither side sees
+    the day it is scored on."""
     tz = ZoneInfo(tz_name)
-    lo, hi = rollover_hour(from_hour), rollover_hour(to_hour)
-    if hi <= lo:
-        hi += 1440
-    actual: dict[date, int] = {}
-    for ev in anchor_events(stays, place_ids=place_ids, tz_name=tz_name):
-        if ev.kind == "arrival" and lo <= ev.minute <= hi and start_ms <= ev.ts < end_ms:
-            actual[ev.day] = max(actual.get(ev.day, ev.minute), ev.minute)
-    days = hits = baseline_hits = 0
+    lo, _ = _window_bounds(from_hour, to_hour)
+    actual = {
+        d: max(ms) for d, ms in _day_events(
+            stays, place_ids=place_ids, kind="arrival", tz=tz, from_hour=from_hour,
+            to_hour=to_hour,
+        ).items()
+        if start_ms <= _instant_ms(d, lo, tz) < end_ms
+    }
+    days = hits = baseline_hits = width = 0
     for day, minute in sorted(actual.items()):
-        day_start = int(
-            datetime(day.year, day.month, day.day, _ROLLOVER_HOUR, tzinfo=tz).timestamp() * 1000
-        )
+        opens = _instant_ms(day, lo, tz)
         fc = time_forecast(
             stays, place_ids=place_ids, kind="arrival", day=day, from_hour=from_hour,
-            to_hour=to_hour, tz_name=tz_name, history_before_ms=day_start,
+            to_hour=to_hour, tz_name=tz_name, history_before_ms=opens,
         )
         if fc.status != "ok":
             continue
         earlier = sorted(
-            ev.minute for ev in anchor_events(
-                [s for s in stays if s.ended_ts <= day_start], place_ids=place_ids,
-                tz_name=tz_name,
-            )
-            if ev.kind == "arrival" and lo <= ev.minute <= hi
+            max(ms) for d, ms in _day_events(
+                [s for s in stays if s.ended_ts <= opens], place_ids=place_ids,
+                kind="arrival", tz=tz, from_hour=from_hour, to_hour=to_hour,
+            ).items()
+            if d < day
         )
         days += 1
+        width += sum(h.latest - h.earliest + 2 * tolerance_min for h in fc.habits)
         if any(
             h.earliest - tolerance_min <= minute <= h.latest + tolerance_min
             for h in fc.habits
@@ -842,4 +986,4 @@ def backtest_arrivals(
             hits += 1
         if earlier and abs(minute - earlier[len(earlier) // 2]) <= baseline_band_min:
             baseline_hits += 1
-    return ArrivalBacktest(days, hits, baseline_hits)
+    return ArrivalBacktest(days, hits, baseline_hits, width)
