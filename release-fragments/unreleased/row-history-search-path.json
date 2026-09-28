@@ -1,0 +1,8 @@
+{
+  "type": "fix",
+  "summary": "A data-only restore of a table Nora keeps history on (row_history) no longer fails.",
+  "details": [
+    "nora_row_history() and nora_row_history_refuse_truncate() now pin their own search_path, so a caller that clears or changes it (a pg_dump data-only restore, notably) no longer breaks the row_history trigger."
+  ],
+  "limitations": []
+}
