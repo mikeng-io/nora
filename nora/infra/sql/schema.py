@@ -103,22 +103,26 @@ def _recorded_at() -> sa.Column[Any]:
     )
 
 
-def _derived(table: str) -> list[Any]:
+def _derived(table: str, *, per_row: bool) -> list[Any]:
     """The columns every derived row carries (design/cognition-loop/
-    10-tiers.md §3, migration `0072_lineage`), with their CHECKs.
+    10-tiers.md §3, migration `0073_lineage`), with their CHECKs.
 
-    `lineage` is section -> list of `{kind, subject, origin}`
-    (`nora.domain.lineage`); `'{}'` is every section unknown, which renders
-    only in the row's origin room, so a writer that forgets it is on the
-    fail-closed side. `reasoning` and `confidence` are NULL for "not stated":
-    no write verb states either yet. `as_of` is epoch ms, the clock the
-    neighbouring `written_at`/`updated_at` columns use.
+    `lineage` is the format step 2a writes on every Rollup row
+    (`nora.domain.lineage`): a JSON array of `[kind, subject, origin]` triples
+    on a row with lineage per row (`per_row`, a note), an object of such
+    arrays per section otherwise (Standing, culture). The empty default is
+    every section unknown, which renders only in the row's origin room, so a
+    writer that forgets it is on the fail-closed side. `reasoning` and
+    `confidence` are NULL for "not stated": no write verb states either yet.
+    `as_of` is epoch ms, the clock the neighbouring `written_at`/`updated_at`
+    columns use.
     """
+    shape, shape_empty = ("array", "[]") if per_row else ("object", "{}")
     return [
         sa.Column("reasoning", sa.Text, nullable=True),
         sa.Column("confidence", sa.Text, nullable=True),
         sa.Column("lineage", pg.JSONB, nullable=False,
-                  server_default=sa.text("'{}'::jsonb")),
+                  server_default=sa.text(f"'{shape_empty}'::jsonb")),
         sa.Column("exclude_persons", pg.ARRAY(sa.Text), nullable=False,
                   server_default=sa.text("'{}'")),
         sa.Column("as_of", sa.BigInteger, nullable=True),
@@ -133,8 +137,8 @@ def _derived(table: str) -> list[Any]:
             name=f"{table}_confidence_is_a_level_check",
         ),
         sa.CheckConstraint(
-            "jsonb_typeof(lineage) = 'object'",
-            name=f"{table}_lineage_is_an_object_check",
+            f"jsonb_typeof(lineage) = '{shape}'",
+            name=f"{table}_lineage_shape_check",
         ),
     ]
 
@@ -318,7 +322,7 @@ IDX_CONV_TS = sa.Index(
 IDX_IS_NORA = sa.Index("idx_messages_is_nora", MESSAGES.c.is_nora)
 
 #: `record_query`'s lexical search (design/cognition-loop/15-map.md §4,
-#: migration `0072_lineage`): GIN + trigram for `idx_note_revision_body_trgm`'s
+#: migration `0073_lineage`): GIN + trigram for `idx_note_revision_body_trgm`'s
 #: reason, a mixed English and Cantonese corpus no tsvector config segments
 #: (design/dreamer-agent-loop/24-embedding-seam.md §2). Serves `ilike`
 #: substring and `<%` word similarity alike.
@@ -2351,9 +2355,9 @@ NOTE = sa.Table(
         name="note_replacement_implies_retirement_check",
     ),
     sa.CheckConstraint("strikes >= 0", name="note_strikes_are_not_negative_check"),
-    # The union of its revisions' lineage (`0072_lineage`): the index line
+    # The union of its revisions' lineage (`0073_lineage`): the index line
     # this row renders rests on everything its body has ever cited.
-    *_derived("note"),
+    *_derived("note", per_row=True),
 )
 
 NOTE_REVISION = sa.Table(
@@ -2402,7 +2406,7 @@ NOTE_REVISION = sa.Table(
         "length(btrim(established_by)) > 0",
         name="note_revision_names_its_writer_check",
     ),
-    *_derived("note_revision"),
+    *_derived("note_revision", per_row=True),
 )
 
 NOTE_ENTITY = sa.Table(
@@ -2771,8 +2775,8 @@ STANDING = sa.Table(
         f"and octet_length(working_set::text) <= {WORKING_SET_CEILING_BYTES}",
         name="standing_working_set_fits_the_ceiling_check",
     ),
-    # Sections `body` and `working_set` (`0072_lineage`).
-    *_derived("standing"),
+    # Sections `body` and `working_set` (`0073_lineage`).
+    *_derived("standing", per_row=False),
 )
 
 #: One position, as it stood at the moment a fold set it — the chain behind
@@ -2870,7 +2874,7 @@ STANDING_REVISION = sa.Table(
         f"and octet_length(working_set::text) <= {WORKING_SET_CEILING_BYTES}",
         name="standing_revision_working_set_fits_the_ceiling_check",
     ),
-    *_derived("standing_revision"),
+    *_derived("standing_revision", per_row=False),
 )
 
 #: The as-of read: one room's revisions, newest first. `updated_at DESC` because
@@ -3205,9 +3209,9 @@ CULTURE_REVISION = sa.Table(
         "parent_revision_id is null or parent_revision_id <> id",
         name="culture_revision_parent_is_not_self_check",
     ),
-    # Section `body` (`0072_lineage`). The `culture` head gains none: it is a
+    # Section `body` (`0073_lineage`). The `culture` head gains none: it is a
     # pointer to this row.
-    *_derived("culture_revision"),
+    *_derived("culture_revision", per_row=False),
 )
 
 #: The chain read: one key's revisions, newest first. The head is

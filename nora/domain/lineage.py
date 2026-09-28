@@ -8,23 +8,30 @@ room may be shown a section are the other half and live in
 `nora.agent.lineage`, beside the live `DisclosureGuard` the `presence`
 predicate re-runs (DEC-222).
 
-**The column's shape.** One JSON object per row, section name to a list of
-entries:
+**The column's shape** is the one step 2a writes on every Rollup row
+(`nora.domain.rollup.lineage_json`, design/cognition-loop/25-rollup.md
+«Keys and columns»), so there is one lineage format in the store. An entry is
+the triple `[kind, subject, origin]`; a set is a JSON array of them, sorted and
+de-duplicated. A row with lineage per ROW (a Register row, a Rollup row, 10 §3)
+stores the array itself:
 
-    {"row": [{"kind": "message", "subject": "<A>", "origin": "<A>"}]}
+    [["message", null, "signal:<conversation_id>"]]
 
-A Register row (a note) has one section, `row`, because 10 §3 gives it lineage
-per row. A Standing row has `body` and `working_set`, the two sections today's
-schema has (the sectioned Standing schema arrives at step 3); a culture row
-(Character · room) has `body`, because culture is prose with no sections
-(DEC-184) until the Character adaptor writes the sectioned account at step 4.
+A row with lineage per SECTION stores an object, section name to array: a
+Standing row has `body` and `working_set`, the two sections today's schema has
+(the sectioned Standing schema arrives at step 3); a culture row (Character ·
+room) has `body`, being prose with no sections (DEC-184) until step 4.
 
-**An entry.** `kind` names the predicate; `subject` is what it is about (the
-room `A` for `message:<A>`, the person for `presence`, `face`, `social`,
-`play`); `origin` is the room the row that carries it was written in, so an
-unknown kind can still be shown where it came from; `reads` is the lineage of
-the item a `perception` or `face` entry reads (10 §3: "B passes the lineage of
-the item it reads").
+**An entry.** `kind` names the predicate. `subject` is the person it is about
+(`presence`, `face`, `social`, `play`) and null for `message`. `origin` is a
+room, keyed `platform:conversation_id` as 2a keys it (the design fixes no room
+key, and 2a's rows are the first in the store): for `message` the room the
+words were said in, for `face` the media's room, for `unresolved` the row's own
+room. An optional fourth element holds the entries of the item a `perception`
+or `face` entry reads (10 §3: "B passes the lineage of the item it reads");
+2a writes none. A room reference without a known platform prefix is a bare
+conversation id (a note's `established_in` carries no platform) and is matched
+within the unit.
 
 **Unknown is deny** (10 §3). A section whose list is missing or empty, an
 entry of a kind no predicate is written for, and a malformed entry all render
@@ -43,6 +50,8 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any, Literal
 
+from nora.domain.rollup import room_key
+
 __all__ = [
     "BODY",
     "CONFIDENCES",
@@ -51,6 +60,7 @@ __all__ = [
     "LINEAGE_MODES",
     "MESSAGE",
     "PERCEPTION",
+    "PLATFORMS",
     "PLAY",
     "PRESENCE",
     "REASONING_MODES",
@@ -67,6 +77,8 @@ __all__ = [
     "message",
     "note_revision_lineage",
     "own_room_lineage",
+    "room_key",
+    "split_room",
     "unresolved",
 ]
 
@@ -92,7 +104,7 @@ WORKING_SET = "working_set"
 
 #: 10 §4's reasoning modes and §3's confidence levels, the vocabularies the
 #: `reasoning` and `confidence` columns are checked against. Migration
-#: `0072_lineage` writes them out rather than importing them (a migration is a
+#: `0073_lineage` writes them out rather than importing them (a migration is a
 #: frozen historical statement, `0053_decision_log`'s rule).
 REASONING_MODES: tuple[str, ...] = (
     "computed", "told", "deduced", "induced", "abduced", "said",
@@ -109,27 +121,23 @@ class LineageEntry:
     origin: str | None = None
     reads: tuple[LineageEntry, ...] = ()
 
-    def to_json(self) -> dict[str, Any]:
-        out: dict[str, Any] = {
-            "kind": self.kind, "subject": self.subject, "origin": self.origin,
-        }
+    def to_json(self) -> list[Any]:
+        out: list[Any] = [self.kind, self.subject, self.origin]
         if self.reads:
-            out["reads"] = [r.to_json() for r in self.reads]
+            out.append([r.to_json() for r in self.reads])
         return out
 
     @classmethod
     def from_json(cls, raw: Any, *, origin: str | None = None) -> LineageEntry:
-        """Tolerant: anything that is not a well-formed entry becomes an
-        `UNRESOLVED` entry at `origin`, never an exception and never a
-        permissive value. A reader that raised here would take a whole block
-        down over one bad row; one that skipped the entry would widen the row
-        (fewer entries, fewer predicates to fail)."""
-        if not isinstance(raw, Mapping):
+        """Tolerant: anything that is not a well-formed triple (or its
+        four-element form) becomes an `UNRESOLVED` entry at `origin`, never an
+        exception and never a permissive value. A reader that raised here
+        would take a whole block down over one bad row; one that skipped the
+        entry would widen the row (fewer entries, fewer predicates to fail)."""
+        if not isinstance(raw, list | tuple) or len(raw) not in (3, 4):
             return cls(kind=UNRESOLVED, origin=origin)
-        kind = raw.get("kind")
-        subject = raw.get("subject")
-        entry_origin = raw.get("origin", origin)
-        reads_raw = raw.get("reads", ())
+        kind, subject, entry_origin = raw[0], raw[1], raw[2]
+        reads_raw = raw[3] if len(raw) == 4 else []
         if (
             not isinstance(kind, str) or not kind
             or (subject is not None and not isinstance(subject, str))
@@ -189,13 +197,22 @@ class Lineage:
                 merged.setdefault(name, []).extend(entries)
         return Lineage.of(merged)
 
-    def to_json(self) -> dict[str, Any]:
+    def to_json(self) -> list[Any] | dict[str, Any]:
+        """The array for a row-level set (the only section is `ROW`), the
+        object of arrays otherwise (module docstring)."""
+        if [name for name, _ in self.sections] == [ROW]:
+            return [e.to_json() for e in self.sections[0][1]]
         return {name: [e.to_json() for e in entries] for name, entries in self.sections}
 
     @classmethod
     def from_json(cls, raw: Any, *, origin: str | None = None) -> Lineage:
-        """The column's value as read back. Anything that is not an object of
-        lists reads as `Lineage()`: every section unknown."""
+        """The column's value as read back: an array is the row's one set
+        (`ROW`), an object is per section. Anything else reads as `Lineage()`,
+        every section unknown."""
+        if isinstance(raw, list | tuple):
+            if not raw:
+                return cls()
+            return cls.of({ROW: [LineageEntry.from_json(e, origin=origin) for e in raw]})
         if not isinstance(raw, Mapping):
             return cls()
         sections: dict[str, list[LineageEntry]] = {}
@@ -209,9 +226,26 @@ class Lineage:
         return cls.of(sections)
 
 
+#: The platforms a room key may start with. A reference whose prefix is not one
+#: of these is a bare conversation id.
+PLATFORMS: frozenset[str] = frozenset({
+    "signal", "discord", "whatsapp", "instagram", "telegram",
+})
+
+
+def split_room(ref: str) -> tuple[str | None, str]:
+    """`platform:conversation_id` as its two parts, or `(None, ref)` for a
+    bare conversation id."""
+    platform, sep, conversation_id = ref.partition(":")
+    if sep and platform in PLATFORMS and conversation_id:
+        return platform, conversation_id
+    return None, ref
+
+
 def message(room: str) -> LineageEntry:
-    """`message:<room>`: the row rests on something said in `room`."""
-    return LineageEntry(kind=MESSAGE, subject=room, origin=room)
+    """`message:<room>`: the row rests on something said in `room`, a room
+    key (`room_key`), as 2a writes it: no subject, the room as origin."""
+    return LineageEntry(kind=MESSAGE, subject=None, origin=room)
 
 
 def unresolved(origin: str | None) -> LineageEntry:
@@ -240,8 +274,15 @@ class RoomFacts:
     #: the room to her (never an id, R-18).
     label: str = ""
 
-    def is_room(self, conversation_id: str | None) -> bool:
-        return conversation_id is not None and conversation_id in self.ids
+    def is_room(self, ref: str | None) -> bool:
+        """Whether `ref`, a room key or a bare conversation id, names this
+        room."""
+        if ref is None:
+            return False
+        platform, conversation_id = split_room(ref)
+        if platform is not None and platform != self.platform:
+            return False
+        return conversation_id in self.ids
 
 
 @dataclass(frozen=True, slots=True)
@@ -279,45 +320,51 @@ class RenderRoom:
             mode=self.mode,
         )
 
-    def resolve(self, conversation_id: str | None) -> tuple[RoomFacts, ...]:
-        """Every policy room known by `conversation_id` in B's unit. Ids are
-        unique per platform, and a derived row carries no platform (a note's
-        `established_in`), so the unit is what makes the lookup one room."""
-        if conversation_id is None or self.room is None:
+    def resolve(self, ref: str | None) -> tuple[RoomFacts, ...]:
+        """Every policy room `ref` (a room key, or a bare conversation id)
+        names in B's unit. A bare id carries no platform (a note's
+        `established_in`), so the unit is what makes that lookup one room."""
+        if ref is None or self.room is None:
             return ()
         unit = self.room.unit
-        return tuple(r for r in self.rooms if r.unit == unit and conversation_id in r.ids)
+        return tuple(r for r in self.rooms if r.unit == unit and r.is_room(ref))
 
 
 def note_revision_lineage(
-    *, cited: Iterable[int], rooms: Mapping[int, str], origin: str, first: bool,
-    evidence_room: str | None = None,
+    *, cited: Iterable[int], rooms: Mapping[int, str], origin: str,
+    origin_key: str | None, first: bool, evidence_room: str | None = None,
 ) -> Lineage:
     """A note revision's lineage from its body's citations (migration
-    `0072_lineage`'s backfill rule, applied to every new revision by
+    `0073_lineage`'s backfill rule, applied to every new revision by
     `nora.infra.sql.notes`).
 
     `cited` are the `messages.id`s the body cites; `rooms` maps each one still
-    on record to the room it was said in. Every such room is `message:<room>`;
-    the FIRST revision also rests on the room the note was raised in
-    (`origin`, its `established_in`); a revision written from a known room
-    (the tag path's `note_update`) rests on that room too. A cited id no longer
-    on record, or a later revision citing nothing from no known room, is
-    `unresolved` at `origin`: shown only there (70 §5).
+    on record to the room key it was said in. Every such room is
+    `message:<room>`. The FIRST revision also rests on the room the note was
+    raised in: `origin` is its bare `established_in`, `origin_key` that room's
+    key when the Record names its platform. A revision written from a known
+    room (the tag path's `note_update`) rests on that room key too. A cited id
+    no longer on record, a first revision whose room has no platform on
+    record, or a later revision citing nothing from no known room, is
+    `unresolved` at the origin: shown only there (70 §5).
     """
     ids = frozenset(cited)
+    here = origin_key or origin
     entries = [message(rooms[i]) for i in ids if i in rooms]
     if first:
-        entries.append(message(origin))
+        entries.append(message(origin_key) if origin_key else unresolved(here))
     if evidence_room:
         entries.append(message(evidence_room))
     if ids - rooms.keys() or not entries:
-        entries.append(unresolved(origin))
+        entries.append(unresolved(here))
     return Lineage.of({ROW: entries})
 
 
-def own_room_lineage(room: str, sections: Iterable[str]) -> Lineage:
+def own_room_lineage(room: str, sections: Iterable[str], *, keyed: bool = True) -> Lineage:
     """A Standing or culture row's lineage: its own room, and `unresolved` at
     it for what its fold was shown and did not cite (the unit-wide `<notes>`
-    index). Shown only in `room` (migration `0072_lineage`)."""
-    return Lineage.of({s: (message(room), unresolved(room)) for s in sections})
+    index). Shown only in `room` (migration `0073_lineage`). `keyed=False` is
+    a room with no platform on record: only the `unresolved` entry, since a
+    `message` entry must name a room key."""
+    entries = (message(room), unresolved(room)) if keyed else (unresolved(room),)
+    return Lineage.of(dict.fromkeys(sections, entries))

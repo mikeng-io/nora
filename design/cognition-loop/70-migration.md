@@ -280,7 +280,7 @@ are identified by that deploy row. The daemon writes all four
   given`; `standing_revision` continues unchanged.
 - **Lineage backfill.** Computed from each existing row's citations; a row
   whose citations cannot be resolved gets origin-room-only lineage. **As
-  built (migration `0072_lineage`, DEC-236):** a note revision rests on every
+  built (migration `0073_lineage`, DEC-236):** a note revision rests on every
   room its cited `messages.id`s were said in, its first revision also on the
   room the note was raised in, and a later revision citing nothing, or citing
   a pruned message, gets `unresolved` (origin room only); a note is the union

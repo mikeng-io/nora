@@ -81,7 +81,7 @@ from ..domain.gatherings import (
 )
 from ..domain.instagram_links import is_handle as _is_instagram_handle
 from ..domain.instagram_links import parse_link as _parse_instagram_link
-from ..domain.lineage import LiveRoom, RenderRoom, RoomFacts
+from ..domain.lineage import LiveRoom, RenderRoom, RoomFacts, room_key
 from ..domain.lineage import message as message_lineage
 from ..domain.linkedin_links import is_handle as _is_linkedin_handle
 from ..domain.linkedin_links import parse_link as _parse_linkedin_link
@@ -2739,7 +2739,7 @@ def _readable_rooms(
         if other == here:
             rooms.append(other)
             continue
-        entry = message_lineage(sorted(other.ids)[0])
+        entry = message_lineage(room_key(other.platform, sorted(other.ids)[0]))
         if entry_permits(entry, target, origin=None):
             rooms.append(other)
         else:
@@ -11970,7 +11970,7 @@ Args:
                 now_ms=_now_ms(),
                 # LINEAGE (design/cognition-loop/10-tiers.md §3): a revision
                 # written here rests on this room as well as on what it cites.
-                evidence_room=bound_conversation_id,
+                evidence_room=room_key(room.platform, bound_conversation_id),
             )
         except StaleNoteHeadError:
             # §6.3. `unavailable`, never `refused` and never applied on top:

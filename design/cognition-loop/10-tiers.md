@@ -169,11 +169,16 @@ Memory has no lineage kind: it is never cited, so nothing derived rests on it.
   from everything a row cites, and across links between Register rows (a
   note and its event through `Note.event_id`; a note and the memo it closes
   into), re-checking on every link write.
-- **As built (step 2, lineage half, DEC-236; 2026-09-29).** The column is
-  JSONB, section to a list of `{kind, subject, origin}`: a note has one
-  section, `row`; a Standing row has `body` and `working_set`, the two
-  sections today's schema has; a culture row has `body` (it is prose until
-  the sectioned account, step 4). The predicates are `nora/agent/lineage.py`
+- **As built (step 2, lineage half, DEC-236; 2026-09-29).** The column has
+  one format in every store, the one step 2a writes on Rollup rows: a
+  sorted JSON array of `[kind, subject, origin]` triples, rooms keyed
+  `platform:conversation_id` (this node fixes no room key; 2a's was the
+  first in the store). A row with lineage per row (a note, a Rollup row)
+  stores the array; a row with lineage per section stores an object of
+  arrays: a Standing row `body` and `working_set`, the two sections today's
+  schema has, a culture row `body` (prose until the sectioned account, step
+  4). `message` entries carry the room as origin and no subject;
+  `unresolved` carries the row's own room. The predicates are `nora/agent/lineage.py`
   and fix the details the table leaves open: `message:<A>` passes only
   between rooms of one unit and never out of a `*` room (R-49's boundary),
   and only when B's live roster is readable, names every account and holds

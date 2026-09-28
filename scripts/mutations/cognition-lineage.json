@@ -23,8 +23,8 @@
   {
     "name": "message:<A> resolves A only inside B's unit",
     "file": "nora/domain/lineage.py",
-    "old": "        return tuple(r for r in self.rooms if r.unit == unit and conversation_id in r.ids)",
-    "new": "        return tuple(r for r in self.rooms if conversation_id in r.ids)",
+    "old": "        return tuple(r for r in self.rooms if r.unit == unit and r.is_room(ref))",
+    "new": "        return tuple(r for r in self.rooms if r.is_room(ref))",
     "target": "tests/unit/test_lineage.py::test_message_is_refused_in_a_wider_room_a_star_room_or_another_unit"
   },
   {
@@ -50,7 +50,7 @@
   },
   {
     "name": "the backfill marks a later revision citing nothing unresolved",
-    "file": "nora/infra/sql/migrations/versions/0072_lineage.py",
+    "file": "nora/infra/sql/migrations/versions/0073_lineage.py",
     "old": "                || CASE WHEN p.missing OR (NOT p.cites AND NOT p.first)",
     "new": "                || CASE WHEN p.missing",
     "target": "tests/infra/test_lineage_store.py::test_the_backfill_derives_lineage_from_citations_and_unresolved_otherwise"
@@ -138,5 +138,12 @@
     "old": "            and spec.name not in self._withheld\n",
     "new": "",
     "target": "tests/unit/test_tool_registry.py::test_record_query_is_offered_only_when_its_record_read_is_wired"
+  },
+  {
+    "name": "a Rollup row's array is read as the row's one set, not as malformed",
+    "file": "nora/domain/lineage.py",
+    "old": "            return cls.of({ROW: [LineageEntry.from_json(e, origin=origin) for e in raw]})",
+    "new": "            return cls()",
+    "target": "tests/infra/test_rollup_lineage.py::test_a_rollup_row_passes_in_a_room_of_its_unit_and_is_refused_outside_it"
   }
 ]

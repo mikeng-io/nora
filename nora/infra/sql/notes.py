@@ -108,7 +108,7 @@ from sqlalchemy.engine import Row
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
-from nora.domain.lineage import Lineage, note_revision_lineage
+from nora.domain.lineage import Lineage, note_revision_lineage, room_key
 from nora.domain.note_body import cited_ids_in
 from nora.domain.notes import (
     CANDIDATE_CREATED,
@@ -192,16 +192,34 @@ async def _revision_lineage(
     lookup = [i for i in cited if 0 < i <= _MESSAGE_ID_MAX]
     if lookup:
         rows = (await conn.execute(
-            sa.select(MESSAGES.c.id, MESSAGES.c.conversation_id, MESSAGES.c.ts)
-            .where(MESSAGES.c.id.in_(lookup))
+            sa.select(
+                MESSAGES.c.id, MESSAGES.c.platform, MESSAGES.c.conversation_id,
+                MESSAGES.c.ts,
+            ).where(MESSAGES.c.id.in_(lookup))
         )).all()
-        rooms = {r.id: r.conversation_id for r in rows}
+        rooms = {r.id: room_key(r.platform, r.conversation_id) for r in rows}
         newest = max((r.ts for r in rows), default=None)
+    origin_key = await _room_key_of(conn, origin)
     lineage = note_revision_lineage(
-        cited=cited, rooms=rooms, origin=origin, first=first,
-        evidence_room=evidence_room,
+        cited=cited, rooms=rooms, origin=origin, origin_key=origin_key,
+        first=first, evidence_room=evidence_room,
     )
     return lineage, newest
+
+
+async def _room_key_of(conn: AsyncConnection, conversation_id: str) -> str | None:
+    """`conversation_id`'s room key, from the platform its Record was written
+    under, or `None` when nothing it said is on record. A note carries no
+    platform (`established_in` is a bare id); the Record does. The newest row
+    decides, for the one conversation id two platforms could in principle
+    share."""
+    platform = (await conn.execute(
+        sa.select(MESSAGES.c.platform)
+        .where(MESSAGES.c.conversation_id == conversation_id)
+        .order_by(MESSAGES.c.id.desc())
+        .limit(1)
+    )).scalar_one_or_none()
+    return None if platform is None else room_key(platform, conversation_id)
 
 
 async def _head_lineage(
@@ -484,7 +502,7 @@ class SqlNoteStore:
         transaction a write belongs to is the caller's decision, and `propose`
         needs its whole batch in one.
 
-        Lineage and `as_of` (migration `0072_lineage`) are computed here from
+        Lineage and `as_of` (migration `0073_lineage`) are computed here from
         the body's citations: the first revision rests on the room the note
         was raised in and on every room it cites."""
         lineage, cited_at = await _revision_lineage(
@@ -696,7 +714,7 @@ class SqlNoteStore:
         note_id = revision.note_id
         parent_revision_id = revision.parent_revision_id
         revision_id = revision.id
-        # LINEAGE (migration `0072_lineage`): this revision rests on the rooms
+        # LINEAGE (migration `0073_lineage`): this revision rests on the rooms
         # its body cites and, from the tag path, the room it was written in;
         # the note rests on the union. Read under the row lock the CAS below
         # then takes, so the union is over the head it replaces.
@@ -1489,7 +1507,7 @@ class SqlNoteStore:
         if reset_strikes:
             survivor_values["strikes"] = 0
         async with self._engine.begin() as conn:
-            # LINEAGE (migration `0072_lineage`): the survivor now rests on
+            # LINEAGE (migration `0073_lineage`): the survivor now rests on
             # everything either note rested on, and on what the folded body
             # cites.
             derived: dict[str, Any] = {}

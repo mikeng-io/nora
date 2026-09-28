@@ -66,6 +66,7 @@ from ..domain.lineage import (
     LiveRoom,
     RenderRoom,
     RoomFacts,
+    room_key,
 )
 from ..domain.notes import Note
 from ..domain.standing import Standing
@@ -90,9 +91,11 @@ def _message(entry: LineageEntry, target: RenderRoom) -> bool:
     b = target.room
     if b is None:
         return False
-    if b.is_room(entry.subject):
+    # The room the words were said in is the entry's ORIGIN, as 2a writes
+    # it (`nora.domain.lineage`, module docstring).
+    if b.is_room(entry.origin):
         return True
-    sources = target.resolve(entry.subject)
+    sources = target.resolve(entry.origin)
     if len(sources) != 1:
         # Not a room of B's unit (another unit, or no longer in the policy),
         # or ambiguous: nothing to check a subset against.
@@ -285,7 +288,7 @@ def derived_view(
     stand = (
         visible_sections(
             standing.lineage, (BODY, WORKING_SET), target,
-            origin=standing.conversation_id,
+            origin=room_key(standing.platform, standing.conversation_id),
             exclude_persons=standing.exclude_persons,
         )
         if standing is not None else {BODY: True, WORKING_SET: True}

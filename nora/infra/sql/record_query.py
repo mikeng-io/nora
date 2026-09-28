@@ -21,7 +21,7 @@ half is 24 §2's operator: a CJK run is one token to full-text search, and
 plain `similarity` scored the true in-sentence match 0.18, under its own
 default. Containment ranks first, then word similarity, then the newest; a
 hit that does not contain the words is marked `near`.
-`idx_messages_body_trgm` (migration `0072_lineage`) serves both operators on
+`idx_messages_body_trgm` (migration `0073_lineage`) serves both operators on
 unedited messages. **A deleted message never matches text, and an earlier
 version of an edited one is never searched**: a hit is a claim that the words
 are there, and it would make that claim about words their author took back.

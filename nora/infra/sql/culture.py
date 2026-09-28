@@ -31,8 +31,8 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.domain.culture import CultureRevision
-from nora.domain.lineage import BODY, Lineage, own_room_lineage
-from nora.infra.sql.schema import CULTURE, CULTURE_REVISION
+from nora.domain.lineage import BODY, Lineage, own_room_lineage, room_key
+from nora.infra.sql.schema import CULTURE, CULTURE_REVISION, MESSAGES
 
 __all__ = ["SqlCultureStore"]
 
@@ -101,8 +101,20 @@ class SqlCultureStore:
         costs nothing across rooms — which is the only concurrency this loop
         actually has, since `dream_loop` dispatches each scope as its own task.
         """
-        lineage = own_room_lineage(key, (BODY,))
         async with self._engine.begin() as conn:
+            # The room key comes from the Record: a culture key is the room's
+            # bare `primary_id` (`nora.domain.lineage`, module docstring).
+            platform = (await conn.execute(
+                sa.select(MESSAGES.c.platform)
+                .where(MESSAGES.c.conversation_id == key)
+                .order_by(MESSAGES.c.id.desc())
+                .limit(1)
+            )).scalar_one_or_none()
+            lineage = (
+                own_room_lineage(room_key(platform, key), (BODY,))
+                if platform is not None
+                else own_room_lineage(key, (BODY,), keyed=False)
+            )
             parent = (
                 await conn.execute(
                     sa.select(CULTURE.c.head_revision_id)
@@ -122,7 +134,7 @@ class SqlCultureStore:
                         instruction_sha256=instruction_sha256,
                         model=model,
                         # design/cognition-loop/10-tiers.md §3, migration
-                        # `0072_lineage`: the fold reads this room and is
+                        # `0073_lineage`: the fold reads this room and is
                         # shown the unit's note index, which it does not cite.
                         lineage=lineage.to_json(),
                         as_of=written_at,

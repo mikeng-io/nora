@@ -69,8 +69,8 @@ LIVE_OK = LiveRoom(person_ids=frozenset({"p1", "p2"}))
 
 
 def test_message_passes_in_its_own_room_and_in_a_subset_room_of_the_unit():
-    assert entry_permits(message("a"), _in(A), origin="a")
-    assert entry_permits(message("a"), _in(B, live=LIVE_OK), origin="a")
+    assert entry_permits(message("signal:a"), _in(A), origin="a")
+    assert entry_permits(message("signal:a"), _in(B, live=LIVE_OK), origin="a")
 
 
 @pytest.mark.parametrize("live, why", [
@@ -83,18 +83,18 @@ def test_message_passes_in_its_own_room_and_in_a_subset_room_of_the_unit():
 def test_message_needs_who_is_actually_in_the_room_not_only_who_it_lists(live, why):
     """B lists a subset of A's people; who is IN B right now must be too
     (review of the first cut). Unverifiable is refused."""
-    assert not entry_permits(message("a"), _in(B, live=live), origin="a"), why
+    assert not entry_permits(message("signal:a"), _in(B, live=live), origin="a"), why
 
 
 def test_message_is_refused_in_a_wider_room_a_star_room_or_another_unit():
     # Each with a live roster that would pass, so the named clause is what refuses.
-    assert not entry_permits(message("b"), _in(A, live=LIVE_OK), origin="b")  # A lists p3
-    assert not entry_permits(message("a"), _in(C, live=LIVE_OK), origin="a")  # C lists `*`
-    assert not entry_permits(message("c"), _in(B, live=LIVE_OK), origin="c")  # C lists `*`
+    assert not entry_permits(message("discord:b"), _in(A, live=LIVE_OK), origin="b")  # A lists p3
+    assert not entry_permits(message("signal:a"), _in(C, live=LIVE_OK), origin="a")  # C lists `*`
+    assert not entry_permits(message("whatsapp:c"), _in(B, live=LIVE_OK), origin="c")  # C lists `*`
     only_p1 = LiveRoom(person_ids=frozenset({"p1"}))
-    assert not entry_permits(message("a"), _in(D, live=only_p1), origin="a")  # another unit
-    assert not entry_permits(message("gone"), _in(B), origin="gone")
-    assert not entry_permits(message("a"), RenderRoom(room=None, rooms=ROOMS), origin="a")
+    assert not entry_permits(message("signal:a"), _in(D, live=only_p1), origin="a")  # another unit
+    assert not entry_permits(message("signal:gone"), _in(B), origin="gone")
+    assert not entry_permits(message("signal:a"), RenderRoom(room=None, rooms=ROOMS), origin="a")
 
 
 # ---- presence -----------------------------------------------------------------
@@ -135,21 +135,21 @@ def test_social_and_play_need_the_person_listed_in_the_room(kind):
 
 
 def test_face_passes_in_the_media_room_or_where_listed_and_the_media_passes():
-    face = LineageEntry(kind="face", subject="p1", origin="a", reads=(message("a"),))
+    face = LineageEntry(kind="face", subject="p1", origin="signal:a", reads=(message("signal:a"),))
     assert entry_permits(face, _in(A), origin="a")
     assert entry_permits(face, _in(B, live=LIVE_OK), origin="a")  # p1 listed, a -> b passes
-    other = LineageEntry(kind="face", subject="p3", origin="a", reads=(message("a"),))
+    other = LineageEntry(kind="face", subject="p3", origin="signal:a", reads=(message("signal:a"),))
     assert not entry_permits(other, _in(B), origin="a")     # p3 not listed in B
-    wide = LineageEntry(kind="face", subject="p1", origin="b", reads=(message("b"),))
+    wide = LineageEntry(kind="face", subject="p1", origin="discord:b", reads=(message("discord:b"),))
     assert not entry_permits(wide, _in(A), origin="b")      # b -> a fails
 
 
 def test_perception_passes_where_the_item_it_reads_passes():
-    reads_a = LineageEntry(kind="perception", origin="a", reads=(message("a"),))
+    reads_a = LineageEntry(kind="perception", origin="signal:a", reads=(message("signal:a"),))
     assert entry_permits(reads_a, _in(B, live=LIVE_OK), origin="a")
-    reads_b = LineageEntry(kind="perception", origin="b", reads=(message("b"),))
+    reads_b = LineageEntry(kind="perception", origin="discord:b", reads=(message("discord:b"),))
     assert not entry_permits(reads_b, _in(A), origin="b")
-    bare = LineageEntry(kind="perception", origin="a")
+    bare = LineageEntry(kind="perception", origin="signal:a")
     assert entry_permits(bare, _in(A), origin="a")
     assert not entry_permits(bare, _in(B), origin="a")
 
@@ -174,8 +174,8 @@ def test_an_empty_section_is_unknown():
 
 
 def test_every_entry_must_pass():
-    assert section_permits((message("a"),), _in(B, live=LIVE_OK), origin="a")
-    assert not section_permits((message("a"), unresolved("a")), _in(B), origin="a")
+    assert section_permits((message("signal:a"),), _in(B, live=LIVE_OK), origin="a")
+    assert not section_permits((message("signal:a"), unresolved("a")), _in(B), origin="a")
 
 
 # ---- surprises ------------------------------------------------------------------
@@ -213,15 +213,23 @@ def test_a_surprise_withholds_every_section():
 
 
 def test_a_note_revision_rests_on_its_rooms_and_unresolved_when_it_cannot_say():
-    first = note_revision_lineage(cited=(1, 2), rooms={1: "b", 2: "a"}, origin="a", first=True)
-    assert set(first.section(ROW)) == {message("a"), message("b")}
-    pruned = note_revision_lineage(cited=(1, 9), rooms={1: "b"}, origin="a", first=False)
-    assert set(pruned.section(ROW)) == {message("b"), unresolved("a")}
-    silent = note_revision_lineage(cited=(), rooms={}, origin="a", first=False)
-    assert set(silent.section(ROW)) == {unresolved("a")}
-    from_b = note_revision_lineage(cited=(), rooms={}, origin="a", first=False,
-                                   evidence_room="b")
-    assert set(from_b.section(ROW)) == {message("b")}
+    b, a = "discord:b", "signal:a"
+    first = note_revision_lineage(cited=(1, 2), rooms={1: b, 2: a}, origin="a",
+                                  origin_key=a, first=True)
+    assert set(first.section(ROW)) == {message(a), message(b)}
+    pruned = note_revision_lineage(cited=(1, 9), rooms={1: b}, origin="a",
+                                   origin_key=a, first=False)
+    assert set(pruned.section(ROW)) == {message(b), unresolved(a)}
+    silent = note_revision_lineage(cited=(), rooms={}, origin="a", origin_key=a,
+                                   first=False)
+    assert set(silent.section(ROW)) == {unresolved(a)}
+    from_b = note_revision_lineage(cited=(), rooms={}, origin="a", origin_key=a,
+                                   first=False, evidence_room=b)
+    assert set(from_b.section(ROW)) == {message(b)}
+    # A first revision whose room has nothing on record to name its platform.
+    unkeyed = note_revision_lineage(cited=(), rooms={}, origin="a", origin_key=None,
+                                    first=True)
+    assert set(unkeyed.section(ROW)) == {unresolved("a")}
 
 
 # ---- assembly: the four derived blocks ------------------------------------------
@@ -240,12 +248,13 @@ def _note(note_id: str, title: str, origin: str, lineage: Lineage) -> Note:
 
 
 def _standing(room: str) -> Standing:
+    platform = {"a": "signal", "b": "discord", "c": "whatsapp"}[room]
     return Standing(
-        platform="signal", conversation_id=room, body="where it had got to",
+        platform=platform, conversation_id=room, body="where it had got to",
         fold_count=1, updated_at=1,
         working_set=(WorkingSetItem(what="an option", source="web_search",
                                     found_at=int(NOW.timestamp() * 1000)),),
-        lineage=own_room_lineage(room, (BODY, WORKING_SET)),
+        lineage=own_room_lineage(f"{platform}:{room}", (BODY, WORKING_SET)),
     )
 
 
@@ -272,13 +281,13 @@ def _body(ctx: TagContext) -> str:
     return content if isinstance(content, str) else "".join(c["text"] for c in content)
 
 
-# Backfilled rows, as `0072_lineage` writes them for a room's own data.
+# Backfilled rows, as `0073_lineage` writes them for a room's own data.
 NOTE_A = _note("0191f2c4-0000-7000-8000-0000000000a1", "raised here", "a",
-               Lineage.of({ROW: [message("a")]}))
+               Lineage.of({ROW: [message("signal:a")]}))
 NOTE_B = _note("0191f2c4-0000-7000-8000-0000000000a2", "raised in the smaller room", "b",
-               Lineage.of({ROW: [message("b")]}))
+               Lineage.of({ROW: [message("discord:b")]}))
 NOTE_A_LEGACY = _note("0191f2c4-0000-7000-8000-0000000000a3", "legacy revision", "a",
-                      Lineage.of({ROW: [message("a"), unresolved("a")]}))
+                      Lineage.of({ROW: [message("signal:a"), unresolved("a")]}))
 
 
 def test_a_same_room_read_renders_exactly_what_it_rendered_without_lineage():
@@ -317,7 +326,7 @@ def test_a_note_is_not_rendered_in_a_wider_room_and_the_rest_are():
 
 def test_a_failing_section_is_dropped_and_the_rest_of_its_row_renders():
     standing = replace(_standing("b"), lineage=Lineage.of({
-        BODY: [message("b")], WORKING_SET: [message("b"), unresolved("c")],
+        BODY: [message("discord:b")], WORKING_SET: [message("discord:b"), unresolved("c")],
     }))
     ctx = _ctx(B, standing=standing, lineage_room=_in(B))
     view = derived_view(notes=(), standing=standing, culture=None, target=_in(B))
@@ -328,7 +337,7 @@ def test_a_failing_section_is_dropped_and_the_rest_of_its_row_renders():
     assert "<standing" not in body
     # Make only the working set fail in B: the position still renders.
     split = replace(standing, lineage=Lineage.of({
-        BODY: [message("b")], WORKING_SET: [LineageEntry(kind="presence", subject="p1")],
+        BODY: [message("discord:b")], WORKING_SET: [LineageEntry(kind="presence", subject="p1")],
     }))
     body = _body(replace(ctx, standing=split))
     assert "where it had got to" in body
@@ -352,3 +361,15 @@ def test_mode_off_computes_nothing():
     shadow = _ctx(A, notes=(NOTE_B,), lineage_room=_in(A, mode="shadow"))
     view = _lineage(shadow)
     assert view is not None and dict(view.withheld) == {"notes": 1}
+
+
+
+def test_a_rows_origin_may_be_a_room_key_or_a_bare_id():
+    """Room keys are `platform:conversation_id` (step 2a's); a note's
+    `established_in` is a bare id, matched within the unit. A key on another
+    platform is not this room."""
+    assert A.is_room("signal:a") and A.is_room("a")
+    assert not A.is_room("discord:a")
+    assert entry_permits(unresolved("a"), _in(A), origin="a")
+    assert entry_permits(unresolved("signal:a"), _in(A), origin="signal:a")
+    assert not entry_permits(unresolved("discord:a"), _in(A), origin="discord:a")

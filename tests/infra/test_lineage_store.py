@@ -1,5 +1,5 @@
 """Lineage on the derived stores, against Postgres (design/cognition-loop/
-10-tiers.md §3, migration `0072_lineage`).
+10-tiers.md §3, migration `0073_lineage`).
 
 Two halves. The BACKFILL: rows written before 0070 get lineage from their own
 citations, and origin-room-only lineage where a citation cannot be resolved
@@ -65,13 +65,19 @@ def _insert_note(conn, *, note_id: str, origin: str, revisions: list[tuple[str, 
         parent = rev_id
 
 
-def _entries(raw: dict, section: str) -> set[tuple]:
-    return {(e["kind"], e["subject"], e["origin"]) for e in raw[section]}
+def _entries(raw, section: str) -> set[tuple]:
+    """The stored triples of one section: the array itself on a per-row
+    store, the section's array on a per-section one."""
+    triples = raw if isinstance(raw, list) else raw[section]
+    return {tuple(e) for e in triples}
+
+
+KEY_A, KEY_B, KEY_C = "signal:room-a", "signal:room-b", "signal:room-c"
 
 
 def test_the_backfill_derives_lineage_from_citations_and_unresolved_otherwise(pg_url):
     run_migrations(pg_url)
-    alembic_command.downgrade(alembic_config(pg_url), "0071_rollup_builds")
+    alembic_command.downgrade(alembic_config(pg_url), "0072_row_history_search_path")
     engine = sa.create_engine(sync_url_for(pg_url))
     n1 = "00000000-0000-0000-0000-000000000001"
     n2 = "00000000-0000-0000-0000-000000000002"
@@ -125,23 +131,23 @@ def test_the_backfill_derives_lineage_from_citations_and_unresolved_otherwise(pg
         engine.dispose()
 
     first = revs["00000000-0000-0000-0001-000000000001"]
+    assert isinstance(first.lineage, list)   # per row: step 2a's array of triples
     assert _entries(first.lineage, ROW) == {
-        ("message", ROOM_B, ROOM_B), ("message", ROOM_A, ROOM_A),
+        ("message", None, KEY_B), ("message", None, KEY_A),
     }
     assert first.as_of == 5_000  # the cited message's time, not the write's
     later = revs["00000000-0000-0000-0001-000000000002"]
-    assert _entries(later.lineage, ROW) == {(UNRESOLVED, None, ROOM_A)}
+    assert _entries(later.lineage, ROW) == {(UNRESOLVED, None, KEY_A)}
     assert later.as_of == 20
     assert _entries(notes[n1].lineage, ROW) == {
-        ("message", ROOM_B, ROOM_B), ("message", ROOM_A, ROOM_A),
-        (UNRESOLVED, None, ROOM_A),
+        ("message", None, KEY_B), ("message", None, KEY_A), (UNRESOLVED, None, KEY_A),
     }
     assert notes[n1].as_of == 5_000
-    assert _entries(notes[n2].lineage, ROW) == {("message", ROOM_A, ROOM_A)}
+    assert _entries(notes[n2].lineage, ROW) == {("message", None, KEY_A)}
     assert _entries(notes[n3].lineage, ROW) == {
-        ("message", ROOM_A, ROOM_A), (UNRESOLVED, None, ROOM_A),
+        ("message", None, KEY_A), (UNRESOLVED, None, KEY_A),
     }
-    own = {("message", ROOM_A, ROOM_A), (UNRESOLVED, None, ROOM_A)}
+    own = {("message", None, KEY_A), (UNRESOLVED, None, KEY_A)}
     assert _entries(standing.lineage, BODY) == own
     assert _entries(standing.lineage, WORKING_SET) == own
     assert standing.as_of == 5_000  # the newest message the fold read
@@ -168,6 +174,7 @@ async def _message(engine, *, room: str, ts: int) -> int:
 
 
 async def test_a_new_note_rests_on_its_room_and_every_room_it_cites(engine):
+    await _message(engine, room=ROOM_A, ts=3_000)
     in_b = await _message(engine, room=ROOM_B, ts=4_000)
     store = SqlNoteStore(engine)
     note = await store.create(
@@ -178,7 +185,7 @@ async def test_a_new_note_rests_on_its_room_and_every_room_it_cites(engine):
     read = await store.read(unit="unit-1", note_id=note.id)
     assert read is not None
     head, _rev = read
-    assert set(head.lineage.section(ROW)) == {message(ROOM_A), message(ROOM_B)}
+    assert set(head.lineage.section(ROW)) == {message(KEY_A), message(KEY_B)}
     async with engine.connect() as conn:
         as_of = (await conn.execute(sa.text(
             "SELECT as_of FROM note WHERE id = :id"), {"id": note.id})).scalar_one()
@@ -188,6 +195,7 @@ async def test_a_new_note_rests_on_its_room_and_every_room_it_cites(engine):
 async def test_a_revision_from_another_room_widens_the_note_and_an_uncited_one_is_unresolved(
     engine,
 ):
+    await _message(engine, room=ROOM_A, ts=500)   # room A's Record names its platform
     store = SqlNoteStore(engine)
     note = await store.create(
         unit="unit-1", title="a plan", description="d", uncertainty="u",
@@ -197,17 +205,17 @@ async def test_a_revision_from_another_room_widens_the_note_and_an_uncited_one_i
     rev = await store.append_revision(
         unit="unit-1", note_id=note.id, body="legacy again",
         parent_revision_id=note.head_revision_id, established_by="tag:p2",
-        now_ms=2_000, evidence_room=ROOM_C,
+        now_ms=2_000, evidence_room=KEY_C,
     )
     head, _ = await store.read(unit="unit-1", note_id=note.id)  # type: ignore[misc]
-    assert set(head.lineage.section(ROW)) == {message(ROOM_A), message(ROOM_C)}
+    assert set(head.lineage.section(ROW)) == {message(KEY_A), message(KEY_C)}
     await store.append_revision(
         unit="unit-1", note_id=note.id, body="no room, no citation",
         parent_revision_id=rev.id, established_by="dreamer:x", now_ms=3_000,
     )
     head, _ = await store.read(unit="unit-1", note_id=note.id)  # type: ignore[misc]
     assert set(head.lineage.section(ROW)) == {
-        message(ROOM_A), message(ROOM_C), unresolved(ROOM_A),
+        message(KEY_A), message(KEY_C), unresolved(KEY_A),
     }
 
 
@@ -221,7 +229,7 @@ async def test_standing_and_culture_writes_rest_on_their_own_room(engine):
     ))
     held = await standing_store.read(platform="signal", conversation_id=ROOM_A)
     assert held is not None
-    own = {message(ROOM_A), unresolved(ROOM_A)}
+    own = {message(KEY_A), unresolved(KEY_A)}
     assert set(held.lineage.section(BODY)) == own
     assert set(held.lineage.section(WORKING_SET)) == own
     async with engine.connect() as conn:
@@ -242,8 +250,29 @@ async def test_standing_and_culture_writes_rest_on_their_own_room(engine):
 def test_lineage_json_round_trips_and_a_malformed_entry_reads_as_unresolved():
     from nora.domain.lineage import Lineage
 
-    good = Lineage.of({ROW: [message(ROOM_B), message(ROOM_A)]})
+    good = Lineage.of({ROW: [message(KEY_B), message(KEY_A)]})
+    assert good.to_json() == [["message", None, KEY_A], ["message", None, KEY_B]]
     assert Lineage.from_json(json.loads(json.dumps(good.to_json()))) == good
-    bad = Lineage.from_json({ROW: [{"kind": 3}, "nonsense"]}, origin=ROOM_A)
+    bad = Lineage.from_json([[3, None, None], "nonsense"], origin=ROOM_A)
     assert set(bad.section(ROW)) == {LineageEntry(kind=UNRESOLVED, origin=ROOM_A)}
     assert Lineage.from_json(None).sections == ()
+
+
+
+async def test_a_room_with_nothing_on_record_gets_only_unresolved(engine):
+    """A note or culture account whose own room has no message on record has
+    no platform to key it by: it rests on `unresolved` at the bare id, shown
+    only there, never on a `message` entry naming a room it cannot key."""
+    store = SqlNoteStore(engine)
+    note = await store.create(
+        unit="unit-1", title="quiet", description="d", uncertainty="u",
+        closing_condition="c", established_in="room-silent", body="legacy",
+        established_by="tag:p1", now_ms=1_000, anchor_date=20260929,
+    )
+    head, _ = await store.read(unit="unit-1", note_id=note.id)  # type: ignore[misc]
+    assert set(head.lineage.section(ROW)) == {unresolved("room-silent")}
+    culture = SqlCultureStore(engine)
+    await culture.append(key="room-silent", body="an account", written_at=9_000,
+                         established_by="dreamer:culture")
+    acc = await culture.head(key="room-silent")
+    assert acc is not None and set(acc.lineage.section(BODY)) == {unresolved("room-silent")}
