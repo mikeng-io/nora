@@ -71,8 +71,9 @@ collector and the analytics process keep writing while `nora` restarts.
 >>> RE-POINTED AT MERGE. <<< Cut on `0069_cognition_signal` as `0070_lineage`;
 `0070_stimulus_rename` merged first, so this is re-parented onto it and
 renumbered 0071. Step 2a (the Rollup engine) adds a migration off the same
-head; whichever merges second re-parents and renumbers again. `uv run alembic heads` must print exactly ONE
-line (AGENTS.md, "Never assume your migration's parent is unclaimed").
+head; whichever merges second re-parents and renumbers again.
+`uv run alembic heads` must print exactly ONE line (AGENTS.md, "Never assume
+your migration's parent is unclaimed").
 
 Revision ID: 0071_lineage
 Revises: 0070_stimulus_rename
