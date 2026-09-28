@@ -96,7 +96,7 @@ from ..domain.media import (
 )
 from ..domain.media import LABELS as MEDIA_LABELS
 from ..domain.media_join import MediaJoin
-from ..domain.mobility_forecast import forecast_window
+from ..domain.mobility_forecast import detect_stay_anomalies, forecast_window
 from ..domain.models import PersonRef, TranscriptRow, WeatherObservation
 from ..domain.note_body import (
     NoteBodyError,
@@ -5440,6 +5440,18 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
     _been_tz_name = "Asia/Hong_Kong"
     _been_arms = ("day", "places", "rhythm", "routes")
     _been_everyone = frozenset({"everyone", "大家"})
+    # The rollup's own defaults (`AnalyticsConfig.anomaly_*`, `cluster_eps_m`),
+    # so a flag here is the same judgement `nora_analytics_anomalies_total`
+    # counts. Named, so a config change that moves them is a visible diff.
+    _been_anomaly_min_samples = 5
+    _been_anomaly_z = 3.0
+    _been_novelty_radius_m = 100.0
+
+    def _been_clock(minute_of_day: float | None) -> str | None:
+        if minute_of_day is None:
+            return None
+        m = round(minute_of_day) % 1440
+        return f"{m // 60:02d}:{m % 60:02d}"
 
     # NOT `@staticmethod`. These names live in a FUNCTION body, not a class, so
     # the decorator wrapped a plain closure in a descriptor that only happens to
@@ -5662,6 +5674,51 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             )
             return fix.ts if fix is not None else None
 
+        async def _been_mark_unusual(subject_id: str, day_stays: list[dict]) -> None:
+            """design/27 §4.3: each of the day's stays gains `unusual`, how it
+            differed from the subject's OWN past at that place, when it did
+            (`detect_stay_anomalies`, computed on read). FAIL-SOFT: the flags
+            are an annotation, and losing them must never cost the day's
+            answer, so any failure leaves the stays exactly as read."""
+            if not day_stays:
+                return
+            try:
+                history = await mobility.stays_for_subject(subject_id=subject_id)
+                labels = {
+                    p.id: p.label or p.kind
+                    for p in await mobility.places_for_subject(subject_id=subject_id)
+                }
+                by_start = {h.started_ts: h for h in history}
+                for row in day_stays:
+                    stay = by_start.get(row["started_ts"])
+                    if stay is None:
+                        continue
+                    flags = []
+                    for a in detect_stay_anomalies(
+                        stay, history=history, tz_name=_been_tz_name,
+                        min_samples=_been_anomaly_min_samples,
+                        z_threshold=_been_anomaly_z,
+                        novelty_radius_m=_been_novelty_radius_m,
+                    ):
+                        flag: dict = {"kind": a.kind}
+                        if a.kind == "duration":
+                            flag |= {
+                                "minutes": round((a.observed or 0) / 60_000),
+                                "usual_minutes": round((a.expected or 0) / 60_000),
+                            }
+                        elif a.kind in ("arrival", "departure"):
+                            flag |= {
+                                "at": _been_clock(a.observed),
+                                "usually": _been_clock(a.expected),
+                            }
+                        elif a.kind == "unusual_place":
+                            flag["usually_at"] = labels.get(a.expected_place_id)
+                        flags.append(flag)
+                    if flags:
+                        row["unusual"] = flags
+            except Exception:
+                log.exception("where_been unusual-stay flags failed; day answered without them")
+
         async def _been_read(subject_id: str) -> dict:
             """One arm's read for one subject, coordinates never selected and
             corridor sequences never carried out (R-28). An empty answer means
@@ -5750,6 +5807,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 }
                 for s in stays if s["started_ts"] < day_end_ms
             ]
+            await _been_mark_unusual(subject_id, day_stays)
             out = await mobility.trips_with_corridors(
                 subject_id=subject_id, window_ms=fetch_ms,
             )
@@ -5780,6 +5838,12 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                     f"Give the date ({day_iso}) with anything you quote, and "
                     "never read lat/lng aloud."
                 )
+                if any(s.get("unusual") for p in people for s in p.get("stays", ())):
+                    note += (
+                        " A stay with unusual differed from their own usual at "
+                        "that place, as listed: say it as a comparison with "
+                        "their past, never as a judgement of them."
+                    )
                 if any(
                     s.get("place_kind") is None
                     for p in people for s in p.get("stays", ())
