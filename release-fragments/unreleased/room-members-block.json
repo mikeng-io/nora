@@ -1,0 +1,11 @@
+{
+  "type": "fix",
+  "summary": "Nora now knows every nickname the group uses for the people in a room, not only the nicknames of whoever is talking to her.",
+  "details": [
+    "When someone asks about a member by a nickname («tell me when <nickname> joins voice»), she knows who is meant; before, a nickname used about someone else read as a stranger.",
+    "Only the people a room lists are included, never everyone Nora knows across other rooms."
+  ],
+  "limitations": [
+    "A room open to everyone («persons = \"*\"») gets no such list yet, because it would need a live membership check on every message."
+  ]
+}

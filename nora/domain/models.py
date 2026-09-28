@@ -585,6 +585,16 @@ class TagContext:
     # nothing for an empty tuple, so a deployed prompt gains nothing until
     # something populates it.
     people_in_window: tuple[tuple[str, tuple[str, ...]], ...] = ()
+    # `<room_members>`: who is who in THIS room, each listed person with the
+    # other names the group calls them (`PersonRef.aliases`). Only the room's
+    # own listed persons (`policy.toml` `persons`) that identity maps, never
+    # the whole identity file: a roster fed the address book listed people
+    # who had never been members (design/12 §3, `build_prefill`'s docstring).
+    # Empty for a `persons = "*"` room, which would need a live roster read
+    # on every turn. Live 2026-09-28: a member's alias used ABOUT them (not by
+    # them) was read as a different person, because aliases reached her only
+    # for the tagger (`tag_message also_known_as`).
+    room_members: tuple[PersonRef, ...] = ()
     # `<presence>` (design/self-awareness/02) — where she is on this turn: the
     # room, the group's other rooms with each network's transport state, that
     # other groups exist (never which), and her own public handles. Read at

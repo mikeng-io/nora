@@ -232,6 +232,22 @@ class Persons:
             for row in transcript
         )
 
+    def room_members(self, listed: frozenset[str] | None) -> tuple[PersonRef, ...]:
+        """The persons a room LISTS (`policy.toml` `persons`) that this file
+        maps, by name, for `<room_members>`. Never the whole file: a roster
+        fed the address book listed people who had never been in the room
+        (design/12 §3). `None` (a `persons = "*"` room) is empty, because
+        who is actually there would need a live roster read."""
+        if listed is None:
+            return ()
+        return tuple(sorted(
+            (self.by_person[pid] for pid in listed if pid in self.by_person),
+            # The id breaks a tie between two people of one name: a frozenset
+            # walks in hash order, which changes per process, and the block is
+            # a cached, snapshot-compared prefix (review 2026-09-28).
+            key=lambda ref: (ref.name, ref.person_id),
+        ))
+
 
 def load_persons(path: Path) -> Persons:
     path = Path(path).expanduser()

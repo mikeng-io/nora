@@ -116,6 +116,16 @@ async def test_a_restore_renders_the_blocks_the_turn_was_handed(
             ),),
         ),
         template=pg_template, before_ms=BEFORE_MS,
+        # A room that LISTS its person, with aliases, so `<room_members>`
+        # renders (a `persons = "*"` room, the default, has none).
+        policy=(
+            'default = "deny"\n[[conversations]]\nplatform = "signal"\n'
+            'id = "g1"\nlabel = "g1"\npersons = ["miles_novak"]\nunit = "nora"\n'
+        ),
+        identity=(
+            '[persons.miles_novak]\nname = "Miles"\naliases = ["俊爺", "阿Miles"]\n'
+            '[[persons.miles_novak.signal]]\nphone = "+852111"\n'
+        ),
     )
     await _describe(engine, _photo_sha(1), "a red bicycle against a wall")
 
@@ -181,6 +191,12 @@ async def test_a_restore_renders_the_blocks_the_turn_was_handed(
 
     diff = compare_blocks(recorded, restored)
     assert set(diff.compared) >= MUST_COMPARE, diff
+    # `<room_members>` is authored (policy + identity, recorded by
+    # `config_revision`), so a restore renders it identically; it is compared,
+    # not excepted, and does not move with the record (so it is not in the
+    # control's `differs` above).
+    assert "room_members" in diff.compared, diff
+    assert "Miles: 俊爺, 阿Miles" in recorded["room_members"]
     assert diff.equal, {
         name: (recorded.get(name), restored.get(name))
         for name in (*diff.differs, *diff.missing, *diff.extra)
