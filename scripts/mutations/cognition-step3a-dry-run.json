@@ -4,7 +4,14 @@
   "file": "nora/domain/cognition_write.py",
   "old": "        if self.outcome == \"would_commit\" and self.candidate is None:\n            raise ValueError(\"a would_commit WouldWrite must carry its candidate row\")",
   "new": "        if False:\n            raise ValueError(\"a would_commit WouldWrite must carry its candidate row\")",
-  "target": "tests/unit/test_cognition_dry_run.py -k test_note_create_commits_nothing_and_records_would_commit"
+  "target": "tests/unit/test_cognition_dry_run.py -k test_would_write_refuses_a_would_commit_carrying_no_candidate"
+ },
+ {
+  "name": "cognition_write: WouldWrite actually refuses a refused outcome with no reason",
+  "file": "nora/domain/cognition_write.py",
+  "old": "        if self.outcome == \"refused\" and self.refusal_reason is None:\n            raise ValueError(\"a refused WouldWrite must carry a refusal_reason\")",
+  "new": "        if False:\n            raise ValueError(\"a refused WouldWrite must carry a refusal_reason\")",
+  "target": "tests/unit/test_cognition_dry_run.py -k test_would_write_refuses_a_refusal_carrying_no_reason"
  },
  {
   "name": "cognition_write: stale_event_base actually treats a missing base as always passing",

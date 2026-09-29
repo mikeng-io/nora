@@ -23,6 +23,7 @@ from nora.agent.cognition_dry_run import (
     dry_run_note_update,
     dry_run_standing_revise,
 )
+from nora.domain.cognition_write import WouldWrite
 from nora.domain.gatherings import Gathering, GatheringStatus
 from nora.domain.note_body import Shown, ShownMessage
 from nora.domain.standing import Standing
@@ -262,3 +263,23 @@ async def test_standing_revise_would_commit_increments_the_would_be_fold_count()
     )
     assert write.outcome == "would_commit"
     assert write.candidate["fold_count"] == 4
+
+
+# -- WouldWrite's own shape invariant --------------------------------------
+
+def test_would_write_refuses_a_would_commit_carrying_no_candidate():
+    with pytest.raises(ValueError):
+        WouldWrite(
+            tier="standing", verb="standing_revise", platform="signal",
+            conversation_id="room-a", args={}, outcome="would_commit",
+            candidate=None,
+        )
+
+
+def test_would_write_refuses_a_refusal_carrying_no_reason():
+    with pytest.raises(ValueError):
+        WouldWrite(
+            tier="standing", verb="standing_revise", platform="signal",
+            conversation_id="room-a", args={}, outcome="refused",
+            refusal_reason=None,
+        )
