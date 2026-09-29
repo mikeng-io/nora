@@ -160,6 +160,13 @@ APPEND_ONLY: dict[str, str] = {
     # per run, never rewritten — the next run is the next row
     # (`nora.domain.assess.AssessReport`).
     "assess_report": "recorded_at",
+    # Step 3a (0078_cognition_session): the Cognition adaptor's session and
+    # its dry-run write verbs. All three written once, never revised — a
+    # session is a replay input, a close and a would-write are each their
+    # own row.
+    "cognition_session": "recorded_at",
+    "cognition_session_close": "recorded_at",
+    "cognition_would_write": "recorded_at",
 }
 
 #: Changes in place today and migrates at a later step (70 §5). Not

@@ -3356,6 +3356,30 @@ class CognitionConfig(BaseModel):
     timezone: str = "Asia/Hong_Kong"
     floor_grace_seconds: float = Field(default=3600.0, ge=0)
     store_timeout_seconds: float = Field(default=5.0, gt=0)
+    # Migration step 3a (design/cognition-loop/70-migration.md §2 row 3a):
+    # a SEPARATE switch from `mode` above, deliberately. `mode` governs the
+    # wake EVALUATOR (20-observe.md §3) and makes NO model call in either of
+    # its values; `session_mode = "shadow"` governs whether a Cognition
+    # SESSION actually runs on each would-wake the evaluator records — real
+    # reads, a real model call, its note/event/Standing verbs in dry run
+    # (`nora.agent.cognition_dry_run`), its `remind` mirrored and held. Two
+    # switches rather than growing `mode` to a three-value enum: `mode`'s own
+    # docstring already promised "a `live` mode arrives with the Cognition
+    # adaptor", and folding session-running into the SAME field as the
+    # evaluator's would collapse two independently-flippable behaviours (the
+    # evaluator can run for a week with zero model spend before anyone turns
+    # sessions on) into one knob. **Ships OFF** (`session_mode = "off"`),
+    # the same "a new subsystem does not switch itself on" rule `mode`
+    # itself states — today's behaviour (no session ever runs, no model call
+    # this config did not already make) is exactly what `"off"` keeps.
+    # `session_mode = "shadow"` REQUIRES `mode = "shadow"` (the validator
+    # below): a session has nothing to run on without the evaluator's
+    # would-wakes.
+    session_mode: Literal["off", "shadow"] = "off"
+    #: 30-cognition.md §1: "starting at 12".
+    max_items: int = Field(default=12, ge=1)
+    #: 30-cognition.md §2: "starting at 3".
+    max_strikes: int = Field(default=3, ge=1)
 
     @field_validator("time_floors")
     @classmethod
@@ -3377,6 +3401,16 @@ class CognitionConfig(BaseModel):
         except (ZoneInfoNotFoundError, ValueError) as exc:
             raise ValueError(f"unknown timezone {value!r}") from exc
         return value
+
+    @model_validator(mode="after")
+    def _session_mode_needs_the_evaluator_running(self) -> CognitionConfig:
+        if self.session_mode == "shadow" and self.mode != "shadow":
+            raise ValueError(
+                "[cognition] session_mode = \"shadow\" needs mode = \"shadow\": "
+                "a session runs on the wake evaluator's would-wakes, so the "
+                "evaluator must be recording them"
+            )
+        return self
 
 
 class AssessConfig(BaseModel):
