@@ -25,8 +25,8 @@ Indexed on `(kind, run_at_ms)`: the operator page's own read ("the last N
 nightly runs", "how has `check` trended") and the CLI's own "print the newest
 report" both filter by kind and order by time.
 
-Revision ID: 0076_assess_report
-Revises: 0075_withdrawal
+Revision ID: 0077_assess_report
+Revises: 0076_standing_sections
 Create Date: 2026-09-29
 """
 
@@ -36,8 +36,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql as pg
 
-revision = "0076_assess_report"
-down_revision = "0075_withdrawal"
+revision = "0077_assess_report"
+down_revision = "0076_standing_sections"
 branch_labels = None
 depends_on = None
 

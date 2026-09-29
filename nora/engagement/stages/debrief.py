@@ -191,6 +191,7 @@ from nora.domain.standing import (
     working_set_to_json,
 )
 from nora.domain.tag_trace import TagTrace
+from nora.infra.sql.standing_revise import standing_revise
 from nora.obs.metrics import Metrics
 from nora.obs.tracing import annotate
 
@@ -867,42 +868,51 @@ async def run(
         # the read path was already careful about; reading that off the
         # debrief-budget series would send the next investigation at the model
         # when the problem is Postgres.
-        # CONSTRUCTED OUTSIDE the `try` below, deliberately. `Standing(...)` is
-        # an argument expression, so leaving it inside meant a domain-invariant
-        # violation — `__post_init__` refusing a blank or over-ceiling body —
-        # was caught by that `except` and counted `unavailable`, i.e. «the
-        # store could not be written». "The model produced a body the domain
-        # refuses" and "Postgres was unreachable" are different readings, and
-        # conflating them is the R-27 substitution the `except` itself exists
-        # to avoid. Unreachable today (`max_chars` cannot exceed the ceiling,
-        # `_max_chars_stays_under_the_database_ceiling` sees to that) and
-        # hoisting costs nothing, which is exactly when to fix it rather than
-        # argue it is fine.
-        revised = Standing(
-            platform=platform,
-            conversation_id=trace.conversation_id,
-            body=body,
-            # A plain count of folds on this row. It fed the fold-count
-            # re-derivation ceiling until 2026-09-24; nothing resets it now.
-            fold_count=(prior.fold_count + 1) if prior is not None else 1,
-            updated_at=now_ms,
-            # The ROW-ID watermark (design/standing-watermark/20), and it
-            # advances on exactly ONE condition: a fold that read new rows.
-            # Carried forward unchanged on a fold with nothing to read, and on
-            # every refusal path above this write (which never reaches here at
-            # all). Advanced to the last row the
-            # fold actually read — the batch is ascending, so `batch[-1]` is
-            # the furthest it saw; a batch capped at `fold_batch` leaves the
-            # rest for the next fold (the rollup's job, 30-rollup.md).
-            last_folded_row_id=(
-                batch[-1].id if batch else (
-                    prior.last_folded_row_id if prior is not None else None)
-            ),
-            working_set=working_set,
-        )
+        # `standing_revise` (design/cognition-loop/70-migration.md step 3 row
+        # 3b) is the ONE write path for room Standing now: this fold and the
+        # rollup fold (`nora.ingest.stages.standing_event`) both call it
+        # rather than each constructing a `Standing` and calling
+        # `store.write` on its own, so the head has one shape and one
+        # validator whichever wrote it.
+        #
+        # A domain-invariant refusal (a schema violation `standing_revise`'s
+        # own checks catch — including the body-length ceiling on
+        # `hold_open`/`i_owe`) must never be caught by the `except Exception`
+        # below and counted `unavailable`: it is "the candidate row is
+        # invalid", not "I could not check the store", and conflating them
+        # sent one investigation at Postgres when the model's answer was the
+        # problem (R-27 regression, PR #624 review — this fold used to
+        # construct `Standing(...)` OUTSIDE this `try` for exactly this
+        # reason before the construction moved into `standing_revise`
+        # itself). `standing_revise` now returns a typed `Refusal` for every
+        # invariant its own inner `Standing(...)` would otherwise raise on,
+        # so nothing this `try` can catch is a schema problem any more — the
+        # `if not revision.committed` branch below is where a refusal is
+        # counted, and this `except` is left for what it always meant: the
+        # store did not respond.
+        #
+        # The watermark: it advances on exactly ONE condition — a fold that
+        # read new rows. Carried forward unchanged on a fold with nothing to
+        # read, and on every refusal path above this write (which never
+        # reaches here at all). Advanced to the last row the fold actually
+        # read — the batch is ascending, so `batch[-1]` is the furthest it
+        # saw; a batch capped at `fold_batch` leaves the rest for the next
+        # fold (the rollup's job, 30-rollup.md).
         try:
-            await asyncio.wait_for(
-                store.write(standing=revised), timeout=store_timeout_seconds)
+            revision = await asyncio.wait_for(
+                standing_revise(
+                    store=store, prior=prior,
+                    platform=platform, conversation_id=trace.conversation_id,
+                    where_it_stands=body,
+                    last_folded_row_id=(
+                        batch[-1].id if batch else (
+                            prior.last_folded_row_id if prior is not None else None)
+                    ),
+                    working_set=working_set,
+                    now_ms=now_ms,
+                ),
+                timeout=store_timeout_seconds,
+            )
         except Exception:
             # **Says what it KNOWS, not what it assumes.** This used to log
             # "the prior position stands", which is a claim about database
@@ -919,6 +929,26 @@ async def run(
                 trace.tag_id,
             )
             outcome = "unavailable"
+            return
+        if not revision.committed:
+            # Refused by `standing_revise` itself (design/cognition-loop/
+            # 30-cognition.md §2 rule; ADR 0009's `refused`), never a store
+            # failure — the body is already known non-blank (`_body`) and
+            # `mode="deduced"` is always allowed, so this is unreachable on
+            # this call today (no `base_revision_id` is asserted here), and
+            # counted rather than silently treated as `written` if it ever
+            # is reachable.
+            log.warning(
+                "debrief: standing_revise refused the revision (tag=%s "
+                "reason=%s %s); keeping the prior position",
+                trace.tag_id,
+                revision.refusal.reason if revision.refusal else "?",
+                revision.refusal.detail if revision.refusal else "",
+            )
+            outcome = (
+                f"refused_{revision.refusal.reason}" if revision.refusal
+                else "refused"
+            )
             return
         outcome = "written"
     except TimeoutError:

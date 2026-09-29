@@ -56,6 +56,8 @@ __all__ = [
     "BODY",
     "CONFIDENCES",
     "FACE",
+    "HOLD_OPEN",
+    "I_OWE",
     "KINDS",
     "LINEAGE_MODES",
     "MESSAGE",
@@ -101,6 +103,14 @@ UNRESOLVED = "unresolved"
 ROW = "row"
 BODY = "body"
 WORKING_SET = "working_set"
+#: Room Standing's two new sections (design/cognition-loop/12-schemas.md §5,
+#: 50-character-and-standing.md §2; step 3 row 3b, 70-migration.md §2):
+#: `Where it stands` stays `BODY`; `Found, not yet given` stays
+#: `WORKING_SET` (the working set, headed); these two are new and, like
+#: `WORKING_SET`, unpopulated (`None`) on every row this step migrates —
+#: `nora.domain.standing.Standing.hold_open`/`.i_owe`.
+HOLD_OPEN = "hold_open"
+I_OWE = "i_owe"
 
 #: 10 §4's reasoning modes and §3's confidence levels, the vocabularies the
 #: `reasoning` and `confidence` columns are checked against. Migration

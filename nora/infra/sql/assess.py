@@ -1,6 +1,6 @@
 """`SqlAssessReportStore` — the Assess adaptor's one write, and the operator's
 one read (design/cognition-loop/30-cognition.md §6, 15-map.md §6, migration
-`0076_assess_report`).
+`0077_assess_report`).
 
 Two methods only: `record` (append one run's report) and `recent` (the
 operator's own read, newest first). Nothing here is on a turn's path — no

@@ -1,4 +1,4 @@
-"""`SqlAssessReportStore` (migration `0076_assess_report`, DEC-240):
+"""`SqlAssessReportStore` (migration `0077_assess_report`, DEC-240):
 `record`/`recent` round-trip, and NEGATIVE — no read tool or prefill block
 reaches `assess_report` (design/cognition-loop/15-map.md §6, "reports and
 metrics only")."""

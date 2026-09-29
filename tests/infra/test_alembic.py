@@ -466,6 +466,100 @@ def test_0065_the_ceiling_check_refuses_an_oversized_working_set(pg_url):
         engine.dispose()
 
 
+def test_0076_an_existing_head_migrates_with_both_new_sections_null(pg_url):
+    """A pre-0076 head keeps every fact it held and gains two empty sections
+    — the additive migration `0076_standing_sections`'s own argument, and
+    the read-back that shows an existing row is not rewritten: `NULL` is
+    "not revised", not a placeholder written by the migration."""
+    run_migrations(pg_url)
+    engine = sa.create_engine(sync_url_for(pg_url))
+    try:
+        with engine.connect() as conn:
+            conn.execute(sa.text(
+                "INSERT INTO standing (platform, conversation_id, body, "
+                "fold_count, updated_at) VALUES "
+                "('signal', 'pre-0076', 'a position', 1, 1000)"
+            ))
+            conn.commit()
+            row = conn.execute(sa.text(
+                "SELECT body, hold_open, i_owe FROM standing "
+                "WHERE conversation_id = 'pre-0076'"
+            )).one()
+    finally:
+        engine.dispose()
+    assert row.body == "a position"
+    assert row.hold_open is None
+    assert row.i_owe is None
+
+
+def test_0076_downgrade_drops_both_standing_sections_columns_and_their_checks(pg_url):
+    """The falsification side: downgrading past 0076 removes both columns
+    and their CHECK on both tables, and the chain still reaches the same
+    head when re-applied — `test_0065_downgrade_drops_both_working_set_
+    columns_and_their_checks`'s own shape, one migration family over."""
+    run_migrations(pg_url)
+    command.downgrade(alembic_config(pg_url), "0075_withdrawal")
+
+    engine = sa.create_engine(sync_url_for(pg_url))
+    try:
+        with engine.connect() as conn:
+            standing_columns = conn.execute(sa.text(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_name = 'standing'"
+            )).scalars().all()
+            revision_columns = conn.execute(sa.text(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_name = 'standing_revision'"
+            )).scalars().all()
+    finally:
+        engine.dispose()
+    assert "hold_open" not in standing_columns
+    assert "i_owe" not in standing_columns
+    assert "hold_open" not in revision_columns
+    assert "i_owe" not in revision_columns
+
+    run_migrations(pg_url)
+    assert current_revision(pg_url) == head_revision()
+
+    engine = sa.create_engine(sync_url_for(pg_url))
+    try:
+        with engine.connect() as conn:
+            checks = conn.execute(sa.text(
+                "SELECT conname FROM pg_constraint "
+                "WHERE conrelid = 'standing'::regclass AND contype = 'c'"
+            )).scalars().all()
+            revision_checks = conn.execute(sa.text(
+                "SELECT conname FROM pg_constraint "
+                "WHERE conrelid = 'standing_revision'::regclass AND contype = 'c'"
+            )).scalars().all()
+    finally:
+        engine.dispose()
+    assert "standing_sections_are_not_blank_when_given_check" in checks
+    assert (
+        "standing_revision_sections_are_not_blank_when_given_check"
+        in revision_checks
+    )
+
+
+def test_0076_the_check_refuses_a_blank_section_given_rather_than_omitted(pg_url):
+    """The absolute schema check actually binds in Postgres: a section
+    written blank (not `NULL`) is refused — the same "given must not be
+    blank" rule `Standing.__post_init__` asserts in the domain layer,
+    checked here as a database property rather than only a Python one."""
+    run_migrations(pg_url)
+    engine = sa.create_engine(sync_url_for(pg_url))
+    try:
+        with engine.connect() as conn, pytest.raises(Exception, match="check"):
+            conn.execute(sa.text(
+                "INSERT INTO standing (platform, conversation_id, body, "
+                "fold_count, updated_at, hold_open) VALUES "
+                "('signal', 'blank-0076', 'a position', 1, 1000, '   ')"
+            ))
+            conn.commit()
+    finally:
+        engine.dispose()
+
+
 def test_0067_keys_a_pre_existing_summons_row_on_a_legacy_message_id(pg_url):
     """design/instagram-adoption/19, the 2026-09-26 intake: a row the retired
     `GET /mentions` poller wrote has no card, so 0067 backfills its new
