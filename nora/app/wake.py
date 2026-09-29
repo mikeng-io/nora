@@ -100,6 +100,7 @@ class WakeEvaluator:
         pending_limit: int = DEFAULT_PENDING_LIMIT,
         settle_seconds: float | None = None,
         clock: Callable[[], float] = time.time,
+        on_wake: Callable[[str, UnitView, int], Any] | None = None,
     ) -> None:
         """`settle_seconds` (default: twice `store_timeout_seconds`) is how
         far behind the clock the pending read looks. Ids are assigned at
@@ -110,7 +111,30 @@ class WakeEvaluator:
         timeout, so a stimulus recorded before `now - settle` has committed or
         failed; the read takes only those, and the wake's `at_ms` — the
         watermark's time bound — is that cutoff, so a stimulus recorded after
-        it stays pending whatever its id."""
+        it stays pending whatever its id.
+
+        `on_wake` (migration step 3a-ii, `[cognition] session_mode`): an
+        OPTIONAL extension point, called with `(unit, view, wake_id)` right
+        after a would-wake is recorded, and awaited if it returns an
+        awaitable — never imported by name, never typed to a concrete
+        collaborator, so this module's own `nora` imports stay exactly
+        `{nora.domain.ports, nora.domain.stimuli}`
+        (`tests/architecture/test_the_wake_evaluator_cannot_act.py`'s own
+        invariant, UNCHANGED by this addition on purpose: the evaluator
+        still imports nothing that can act, it only offers a slot the
+        composition root may fill with something that does).
+        `session_mode = "off"` is exactly "the composition root never
+        passes `on_wake`" — a `None` here makes `tick` behave byte-identically
+        to before this parameter existed, which is what makes "off" cost
+        zero model calls a property of the WIRING rather than of a runtime
+        flag this module would otherwise have to check. Scheduled as a
+        background task (`asyncio.create_task`), never awaited inline:
+        one session's model-call latency must not slow the NEXT unit's
+        would-wake read in the same tick, and the evaluator's own brakes
+        already bound how many units can be in flight at once — a second,
+        independent semaphore is the caller's concern if it wants a tighter
+        bound on ACTUAL concurrent model calls than the shadow accounting
+        here already gives it."""
         self._store = store
         self._units = units
         self._policy = policy
@@ -125,6 +149,11 @@ class WakeEvaluator:
         self._settle_ms = int(
             (2 * store_timeout_seconds if settle_seconds is None else settle_seconds) * 1000
         )
+        self._on_wake = on_wake
+        #: Held so a background task is never garbage-collected mid-flight
+        #: (the classic "Task was destroyed but it is pending" loss) and so
+        #: tests can drain them deterministically instead of sleeping.
+        self._background: set[asyncio.Task[None]] = set()
 
     async def tick(self) -> list[int]:
         """Evaluate every unit; return the ids of the wake rows written."""
@@ -155,7 +184,35 @@ class WakeEvaluator:
             if wake_id is not None:
                 written.append(wake_id)
                 flying += 1
+                self._schedule_on_wake(view, wake_id)
         return written
+
+    def _schedule_on_wake(self, view: UnitView, wake_id: int) -> None:
+        if self._on_wake is None:
+            return
+        outcome = self._on_wake(view.unit, view, wake_id)
+        if not asyncio.iscoroutine(outcome):
+            return
+
+        async def _run() -> None:
+            try:
+                await outcome
+            except Exception:
+                log.exception(
+                    "cognition wake hook failed (unit=%s wake_id=%s)", view.unit, wake_id,
+                )
+                self._metrics.inc("nora_errors_total", stage="cognition_session")
+
+        task = asyncio.ensure_future(_run())
+        self._background.add(task)
+        task.add_done_callback(self._background.discard)
+
+    async def drain(self) -> None:
+        """Wait for every background `on_wake` task this evaluator has
+        scheduled so far. Tests only — production never awaits its own
+        background work, by design (see `on_wake`'s own docstring)."""
+        if self._background:
+            await asyncio.gather(*tuple(self._background), return_exceptions=True)
 
     def _floor_stimuli(self, unit: str, now_ms: int) -> list[NewStimulus]:
         """The floors whose instant passed within the grace, today's and

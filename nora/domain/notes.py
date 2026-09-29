@@ -36,7 +36,7 @@ Framework-free, per `nora/domain/`'s rule: stdlib and dataclasses only.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from xml.sax.saxutils import unescape
 
@@ -284,6 +284,21 @@ def note_handle(title: str) -> str:
     # paragraph above records for `&` — same defect, reached through the fix
     # for a different one.
     return one_line(unescape(title.strip(), _ATTR_ENTITIES)).casefold()
+
+
+def has_duplicate_open_title(title: str, open_titles: Sequence[str]) -> bool:
+    """Design 41 §7.2: an open title refuses a second note under the same
+    handle. Extracted from `nora.agent.tools`' `note_create` (the live verb)
+    so `nora.agent.cognition_dry_run.dry_run_note_create` (step 3a-ii's
+    review follow-up) runs the identical check rather than a second copy —
+    `30-cognition.md` §2's own rule, "a note ... written by cognition and one
+    written on a tag turn pass the same validator", extended to this
+    refusal. `open_titles` is READ-ONLY input the caller already fetched
+    (live: `book.standing(unit=...)`'s titles; shadow: the same read, done
+    by the session's own wiring) — this function makes no store call, the
+    same "prior is a parameter" shape every check in this tree uses."""
+    wanted = note_handle(title)
+    return any(note_handle(t) == wanted for t in open_titles)
 
 
 #: What `escape_attr` writes and `escape` does not, so `note_handle` decodes the

@@ -3868,6 +3868,100 @@ IDX_COGNITION_WOULD_WRITE_UNIT_RECORDED = sa.Index(
     COGNITION_WOULD_WRITE.c.unit, COGNITION_WOULD_WRITE.c.recorded_at,
 )
 
+# Migration step 3a-ii (70-migration.md §2 row 3a-ii): one row per
+# `wake_at`/`wake_move`/`wake_cancel` call, shadow. Append-only, like every
+# table on this page: a self-wake's history is its own rows, not a row
+# revised in place (20-observe.md §3: "versioned transitions, logged").
+# `session_id` DOES carry a foreign key (unlike `wake_id` on
+# `cognition_session`): this table is new at 3a-ii and was never truncated
+# by the contract suite that forced `wake_id` FK-less, so nothing here
+# reproduces that failure.
+COGNITION_SELF_WAKE = sa.Table(
+    "cognition_self_wake",
+    METADATA,
+    sa.Column("id", sa.BigInteger, sa.Identity(always=False), primary_key=True),
+    sa.Column(
+        "session_id", sa.BigInteger,
+        sa.ForeignKey("cognition_session.id"), nullable=True,
+    ),
+    sa.Column("unit", sa.Text, nullable=False),
+    sa.Column("verb", sa.Text, nullable=False),
+    sa.Column("wake_ref", sa.Text, nullable=True),
+    sa.Column("transition", sa.Text, nullable=False),
+    sa.Column("subject_rows", pg.JSONB, nullable=False),
+    sa.Column("why", sa.Text, nullable=False),
+    sa.Column("at_ms", sa.BigInteger, nullable=True),
+    sa.Column("outcome", sa.Text, nullable=False),
+    sa.Column("refusal_reason", sa.Text),
+    sa.Column("refusal_detail", sa.Text),
+    sa.Column("stimulus_id", sa.BigInteger),
+    sa.Column("supersedes", sa.Text),
+    _recorded_at(),
+    sa.CheckConstraint(
+        "verb IN ('wake_at', 'wake_move', 'wake_cancel')",
+        name="ck_cognition_self_wake_verb",
+    ),
+    sa.CheckConstraint(
+        "transition IN ('created', 'moved', 'cancelled')",
+        name="ck_cognition_self_wake_transition",
+    ),
+    sa.CheckConstraint(
+        "outcome IN ('recorded', 'refused')", name="ck_cognition_self_wake_outcome",
+    ),
+    sa.CheckConstraint(
+        "(outcome = 'recorded') OR (refusal_reason IS NOT NULL)",
+        name="ck_cognition_self_wake_outcome_shape",
+    ),
+)
+
+IDX_COGNITION_SELF_WAKE_UNIT_REF = sa.Index(
+    "idx_cognition_self_wake_unit_ref",
+    COGNITION_SELF_WAKE.c.unit, COGNITION_SELF_WAKE.c.wake_ref,
+)
+
+# Migration step 3a-ii: `remind`/`remind_move`/`remind_cancel`, mirrored and
+# held (30-cognition.md §2: "every reminder cognition writes is mirrored to
+# a review channel and held"). Never fired, never sent — see
+# `tests/architecture/test_cognition_shadow_cannot_write_or_send.py`.
+COGNITION_REMIND_MIRROR = sa.Table(
+    "cognition_remind_mirror",
+    METADATA,
+    sa.Column("id", sa.BigInteger, sa.Identity(always=False), primary_key=True),
+    sa.Column(
+        "session_id", sa.BigInteger,
+        sa.ForeignKey("cognition_session.id"), nullable=True,
+    ),
+    sa.Column("unit", sa.Text, nullable=False),
+    sa.Column("verb", sa.Text, nullable=False),
+    sa.Column("reminder_ref", sa.Text, nullable=True),
+    sa.Column("platform", sa.Text, nullable=False),
+    sa.Column("conversation_id", sa.Text, nullable=False),
+    sa.Column("intent", sa.Text),
+    sa.Column("subject_rows", pg.JSONB, nullable=False),
+    sa.Column("at_ms", sa.BigInteger),
+    sa.Column("why", sa.Text),
+    sa.Column("outcome", sa.Text, nullable=False),
+    sa.Column("refusal_reason", sa.Text),
+    sa.Column("refusal_detail", sa.Text),
+    _recorded_at(),
+    sa.CheckConstraint(
+        "verb IN ('remind', 'remind_move', 'remind_cancel')",
+        name="ck_cognition_remind_mirror_verb",
+    ),
+    sa.CheckConstraint(
+        "outcome IN ('recorded', 'refused')", name="ck_cognition_remind_mirror_outcome",
+    ),
+    sa.CheckConstraint(
+        "(outcome = 'recorded') OR (refusal_reason IS NOT NULL)",
+        name="ck_cognition_remind_mirror_outcome_shape",
+    ),
+)
+
+IDX_COGNITION_REMIND_MIRROR_UNIT_REF = sa.Index(
+    "idx_cognition_remind_mirror_unit_ref",
+    COGNITION_REMIND_MIRROR.c.unit, COGNITION_REMIND_MIRROR.c.reminder_ref,
+)
+
 SOURCE_HEALTH = sa.Table(
     "source_health",
     METADATA,

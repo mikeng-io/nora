@@ -46,13 +46,13 @@ class Clock:
         self.ms += int(seconds * 1000)
 
 
-def _setup(*, units=("nora",), policy=POLICY, floors=(), start=T, settle=0.0):
+def _setup(*, units=("nora",), policy=POLICY, floors=(), start=T, settle=0.0, on_wake=None):
     store = InMemoryStimulusStore()
     clock = Clock(start)
     metrics = Metrics()
     ev = WakeEvaluator(
         store=store, units=lambda: units, policy=policy, metrics=metrics,
-        floors=floors, tz=HK, clock=clock, settle_seconds=settle,
+        floors=floors, tz=HK, clock=clock, settle_seconds=settle, on_wake=on_wake,
     )
     return ev, store, clock, metrics
 
@@ -355,3 +355,60 @@ async def test_an_id_committed_after_a_higher_one_is_not_consumed_unseen():
     await ev.tick()
     assert [w.stimulus_count for w in store.wakes] == [2]
     assert store.wakes[0].at_ms == clock.ms - 5 * S   # the cutoff is the time bound
+
+
+# ── the on_wake hook (migration step 3a-ii) ─────────────────────────────────
+
+
+async def test_on_wake_is_never_called_when_none_the_off_wiring():
+    """`session_mode = "off"` is exactly "the composition root never passes
+    `on_wake`" — this is the evaluator-level half of that property: with no
+    hook, a tick behaves byte-identically to before the parameter existed."""
+    ev, store, clock, _ = _setup(policy=WakePolicy(quiet_seconds=0))
+    await _say(store, clock)
+    clock.advance(1)
+    assert await ev.tick() != []
+    await ev.drain()  # no-op: nothing was ever scheduled
+
+
+async def test_on_wake_is_called_once_per_would_wake_with_the_wake_id():
+    calls = []
+
+    async def hook(unit, view, wake_id):
+        calls.append((unit, wake_id))
+
+    ev, store, clock, _ = _setup(policy=WakePolicy(quiet_seconds=0), on_wake=hook)
+    await _say(store, clock)
+    clock.advance(1)
+    wake_ids = await ev.tick()
+    await ev.drain()
+    assert len(wake_ids) == 1
+    assert calls == [("nora", wake_ids[0])]
+
+
+async def test_on_wake_a_failing_hook_is_caught_and_counted_never_taking_the_tick_down():
+    async def hook(unit, view, wake_id):
+        raise RuntimeError("a session blew up")
+
+    ev, store, clock, metrics = _setup(policy=WakePolicy(quiet_seconds=0), on_wake=hook)
+    await _say(store, clock)
+    clock.advance(1)
+    wake_ids = await ev.tick()  # the tick itself must not raise
+    await ev.drain()
+    assert wake_ids != []
+    assert metrics.get("nora_errors_total", stage="cognition_session") == 1
+
+
+async def test_on_wake_a_sync_hook_with_no_awaitable_return_is_a_no_op():
+    calls = []
+
+    def hook(unit, view, wake_id):
+        calls.append(wake_id)
+        # returns None, not a coroutine — must not be scheduled or awaited
+
+    ev, store, clock, _ = _setup(policy=WakePolicy(quiet_seconds=0), on_wake=hook)
+    await _say(store, clock)
+    clock.advance(1)
+    await ev.tick()
+    await ev.drain()
+    assert len(calls) == 1

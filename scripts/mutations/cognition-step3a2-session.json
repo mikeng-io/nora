@@ -1,0 +1,163 @@
+[
+ {
+  "name": "cognition_pace: wake_at actually refuses with no subject rows",
+  "file": "nora/domain/cognition_pace.py",
+  "old": "    if not subject_rows:\n        return PaceRefusal(\"no_subject\", \"wake_at needs at least one subject row\"), None",
+  "new": "    if False:\n        return PaceRefusal(\"no_subject\", \"wake_at needs at least one subject row\"), None",
+  "target": "tests/unit/test_cognition_pace.py -k test_wake_at_refuses_with_no_subject_rows"
+ },
+ {
+  "name": "cognition_pace: wake_at actually enforces the cooldown as a lower horizon bound",
+  "file": "nora/domain/cognition_pace.py",
+  "old": "    if horizon_seconds < cooldown_seconds:\n        return (\n            PaceRefusal(\n                \"horizon_too_soon\",",
+  "new": "    if False:\n        return (\n            PaceRefusal(\n                \"horizon_too_soon\",",
+  "target": "tests/unit/test_cognition_pace.py -k test_wake_at_refuses_a_horizon_inside_the_cooldown"
+ },
+ {
+  "name": "cognition_pace: wake_at actually enforces the 7-day horizon ceiling",
+  "file": "nora/domain/cognition_pace.py",
+  "old": "    if horizon_seconds > max_horizon_seconds:\n        return (\n            PaceRefusal(\n                \"horizon_too_far\",",
+  "new": "    if False:\n        return (\n            PaceRefusal(\n                \"horizon_too_far\",",
+  "target": "tests/unit/test_cognition_pace.py -k test_wake_at_refuses_a_horizon_past_seven_days"
+ },
+ {
+  "name": "cognition_pace: wake_at actually counts a supersede as freeing its own slot",
+  "file": "nora/domain/cognition_pace.py",
+  "old": "    effective_count = len(pending) - (1 if supersedes is not None else 0) + 1",
+  "new": "    effective_count = len(pending) + 1",
+  "target": "tests/unit/test_cognition_pace.py -k test_wake_at_with_five_pending_still_admits_a_supersede"
+ },
+ {
+  "name": "cognition_pace: wake_at actually refuses past max_self_wakes",
+  "file": "nora/domain/cognition_pace.py",
+  "old": "    if effective_count > max_self_wakes:",
+  "new": "    if False:",
+  "target": "tests/unit/test_cognition_pace.py -k test_wake_at_refuses_past_max_self_wakes"
+ },
+ {
+  "name": "cognition_pace: wake_move actually refuses an unknown wake_ref",
+  "file": "nora/domain/cognition_pace.py",
+  "old": "    row = next((p for p in pending if p.wake_ref == wake_ref), None)\n    if row is None:\n        return PaceRefusal(\"not_found\", f\"no pending self-wake {wake_ref!r}\")\n    if (\n        created_by_session_id is not None\n        and row.created_by_session_id is not None\n        and row.created_by_session_id != created_by_session_id\n    ):\n        return PaceRefusal(\"not_own\", \"this self-wake was not created by this session\")\n    horizon_seconds = (at_ms - now_ms) / 1000.0",
+  "new": "    row = next((p for p in pending if p.wake_ref == wake_ref), None)\n    if False:\n        return PaceRefusal(\"not_found\", f\"no pending self-wake {wake_ref!r}\")\n    if (\n        created_by_session_id is not None\n        and row.created_by_session_id is not None\n        and row.created_by_session_id != created_by_session_id\n    ):\n        return PaceRefusal(\"not_own\", \"this self-wake was not created by this session\")\n    horizon_seconds = (at_ms - now_ms) / 1000.0",
+  "target": "tests/unit/test_cognition_pace.py -k test_wake_move_refuses_an_unknown_ref"
+ },
+ {
+  "name": "cognition_pace: wake_move and wake_cancel actually refuse a self-wake this session did not create",
+  "file": "nora/domain/cognition_pace.py",
+  "old": "    if (\n        created_by_session_id is not None\n        and row.created_by_session_id is not None\n        and row.created_by_session_id != created_by_session_id\n    ):\n        return PaceRefusal(\"not_own\", \"this self-wake was not created by this session\")\n    horizon_seconds = (at_ms - now_ms) / 1000.0",
+  "new": "    if False:\n        return PaceRefusal(\"not_own\", \"this self-wake was not created by this session\")\n    horizon_seconds = (at_ms - now_ms) / 1000.0",
+  "target": "tests/unit/test_cognition_pace.py -k test_wake_move_refuses_a_self_wake_created_by_another_session"
+ },
+ {
+  "name": "cognition_pace: wake_cancel actually admits its own pending self-wake",
+  "file": "nora/domain/cognition_pace.py",
+  "old": "def check_wake_cancel(\n    *, wake_ref: str, pending: Sequence[PendingSelfWake],\n    created_by_session_id: int | None,\n) -> PaceRefusal | None:\n    \"\"\"`wake_cancel(wake_id, why)`. Same ownership rule as `wake_move`.\"\"\"\n    row = next((p for p in pending if p.wake_ref == wake_ref), None)\n    if row is None:\n        return PaceRefusal(\"not_found\", f\"no pending self-wake {wake_ref!r}\")",
+  "new": "def check_wake_cancel(\n    *, wake_ref: str, pending: Sequence[PendingSelfWake],\n    created_by_session_id: int | None,\n) -> PaceRefusal | None:\n    \"\"\"`wake_cancel(wake_id, why)`. Same ownership rule as `wake_move`.\"\"\"\n    row = next((p for p in pending if p.wake_ref == wake_ref), None)\n    if True:\n        return PaceRefusal(\"not_found\", f\"no pending self-wake {wake_ref!r}\")",
+  "target": "tests/unit/test_cognition_pace.py -k test_wake_cancel_admits_its_own_pending_self_wake"
+ },
+ {
+  "name": "cognition_remind: remind actually refuses with no subject rows",
+  "file": "nora/domain/cognition_remind.py",
+  "old": "    if not subject_rows:\n        return RemindRefusal(\"no_citations\", \"a reminder must cite at least one row\")",
+  "new": "    if False:\n        return RemindRefusal(\"no_citations\", \"a reminder must cite at least one row\")",
+  "target": "tests/unit/test_cognition_remind.py -k test_remind_refuses_with_no_subject_rows"
+ },
+ {
+  "name": "cognition_remind: remind actually refuses a bad intent",
+  "file": "nora/domain/cognition_remind.py",
+  "old": "    if intent not in INTENTS:\n        return RemindRefusal(\"bad_intent\", f\"intent must be one of {INTENTS}\")",
+  "new": "    if False:\n        return RemindRefusal(\"bad_intent\", f\"intent must be one of {INTENTS}\")",
+  "target": "tests/unit/test_cognition_remind.py -k test_remind_refuses_a_bad_intent"
+ },
+ {
+  "name": "cognition_remind: remind actually dedupes on room AND subject rows, not room alone",
+  "file": "nora/domain/cognition_remind.py",
+  "old": "    duplicate = any(\n        p.platform == platform and p.conversation_id == conversation_id\n        and set(p.subject_rows) == set(subject_rows)\n        for p in pending\n    )",
+  "new": "    duplicate = any(\n        p.platform == platform and p.conversation_id == conversation_id\n        for p in pending\n    )",
+  "target": "tests/unit/test_cognition_remind.py -k test_remind_admits_the_same_subject_in_a_different_room"
+ },
+ {
+  "name": "cognition_remind: remind_move/remind_cancel actually refuse a reminder this session did not write",
+  "file": "nora/domain/cognition_remind.py",
+  "old": "    if (\n        created_by_session_id is not None\n        and row.created_by_session_id is not None\n        and row.created_by_session_id != created_by_session_id\n    ):\n        return RemindRefusal(\n            \"not_own\",",
+  "new": "    if False:\n        return RemindRefusal(\n            \"not_own\",",
+  "target": "tests/unit/test_cognition_remind.py -k test_remind_move_refuses_a_reminder_this_session_did_not_write"
+ },
+ {
+  "name": "cognition_compare: a proactive act actually matches at most one mirrored act",
+  "file": "nora/domain/cognition_compare.py",
+  "old": "            matched.append((hit, p))\n            remaining.remove(hit)",
+  "new": "            matched.append((hit, p))",
+  "target": "tests/unit/test_cognition_compare.py -k test_a_proactive_act_matches_at_most_one_mirrored_act"
+ },
+ {
+  "name": "cognition_compare: a different room actually never matches, same note id or not",
+  "file": "nora/domain/cognition_compare.py",
+  "old": "            (m for m in remaining\n             if m.platform == p.platform and m.conversation_id == p.conversation_id\n             and p.note_id in m.subject_rows),",
+  "new": "            (m for m in remaining\n             if p.note_id in m.subject_rows),",
+  "target": "tests/unit/test_cognition_compare.py -k test_a_different_room_never_matches_even_with_the_same_note_id"
+ },
+ {
+  "name": "notes: has_duplicate_open_title actually calls note_handle on both sides",
+  "file": "nora/domain/notes.py",
+  "old": "    wanted = note_handle(title)\n    return any(note_handle(t) == wanted for t in open_titles)",
+  "new": "    wanted = note_handle(title)\n    return any(t == wanted for t in open_titles)",
+  "target": "tests/unit/test_cognition_dry_run.py -k test_note_create_refuses_a_duplicate_open_title_the_same_way_the_live_verb_does"
+ },
+ {
+  "name": "gatherings: still_open_gatherings actually keeps a dateless event open",
+  "file": "nora/domain/gatherings.py",
+  "old": "    return [e for e in events if e.when is None or e.when >= now]",
+  "new": "    return [e for e in events if e.when is not None and e.when >= now]",
+  "target": "tests/unit/test_cognition_dry_run.py -k test_event_propose_refuses_two_open_proposed_events_the_same_way_the_live_verb_does"
+ },
+ {
+  "name": "gatherings: still_open_gatherings actually drops an event already in the past",
+  "file": "nora/domain/gatherings.py",
+  "old": "    return [e for e in events if e.when is None or e.when >= now]",
+  "new": "    return [e for e in events if True]",
+  "target": "tests/unit/test_cognition_dry_run.py -k test_event_propose_ignores_open_events_already_in_the_past"
+ },
+ {
+  "name": "cognition_dry_run: event_propose actually refuses two-or-more still-open proposed events",
+  "file": "nora/agent/cognition_dry_run.py",
+  "old": "    if len(still_open) >= 2:\n        write = WouldWrite(\n            tier=\"event\", verb=\"event_propose\", platform=platform,\n            conversation_id=conversation_id, args=args, outcome=\"refused\",\n            refusal_reason=\"ambiguous_open_gatherings\",",
+  "new": "    if False:\n        write = WouldWrite(\n            tier=\"event\", verb=\"event_propose\", platform=platform,\n            conversation_id=conversation_id, args=args, outcome=\"refused\",\n            refusal_reason=\"ambiguous_open_gatherings\",",
+  "target": "tests/unit/test_cognition_dry_run.py -k test_event_propose_refuses_two_open_proposed_events_the_same_way_the_live_verb_does"
+ },
+ {
+  "name": "cognition_dry_run: note_create actually refuses a duplicate open title",
+  "file": "nora/agent/cognition_dry_run.py",
+  "old": "    if has_duplicate_open_title(title, open_titles):\n        write = WouldWrite(\n            tier=\"note\", verb=\"note_create\", platform=platform,\n            conversation_id=conversation_id, args=args, outcome=\"refused\",\n            refusal_reason=\"duplicate_title\",",
+  "new": "    if False:\n        write = WouldWrite(\n            tier=\"note\", verb=\"note_create\", platform=platform,\n            conversation_id=conversation_id, args=args, outcome=\"refused\",\n            refusal_reason=\"duplicate_title\",",
+  "target": "tests/unit/test_cognition_dry_run.py -k test_note_create_refuses_a_duplicate_open_title_the_same_way_the_live_verb_does"
+ },
+ {
+  "name": "cognition_session: an empty agenda actually makes no model call",
+  "file": "nora/app/cognition_session.py",
+  "old": "        if situation.agenda.is_empty:\n            self._inc(\"nora_cognition_session_skipped_total\", reason=\"empty_agenda\")\n            return None",
+  "new": "        if False:\n            self._inc(\"nora_cognition_session_skipped_total\", reason=\"empty_agenda\")\n            return None",
+  "target": "tests/unit/test_cognition_session_runner.py -k test_an_empty_agenda_makes_no_model_call"
+ },
+ {
+  "name": "cognition_session: session_mode off actually makes no model call",
+  "file": "nora/app/cognition_session.py",
+  "old": "        if self._session_mode != \"shadow\":\n            return None",
+  "new": "        if False:\n            return None",
+  "target": "tests/unit/test_cognition_session_writes_nothing_live.py -k test_session_mode_off_never_constructs_a_live_read_either"
+ },
+ {
+  "name": "cognition_session: an item never closed by the model is actually closed waiting, not silently dropped",
+  "file": "nora/app/cognition_session.py",
+  "old": "            outcome = close_or_strike(\n                item, item_index=index, reason=\"waiting\", max_strikes=self._max_strikes,\n            )\n            await self._record_close(state, outcome)",
+  "new": "            outcome = close_or_strike(\n                item, item_index=index, reason=\"waiting\", max_strikes=self._max_strikes,\n            )",
+  "target": "tests/unit/test_cognition_session_runner.py -k test_an_item_never_closed_by_the_model_is_closed_waiting_by_code"
+ },
+ {
+  "name": "wake: on_wake actually never schedules a plain (non-coroutine) return value",
+  "file": "nora/app/wake.py",
+  "old": "        if not asyncio.iscoroutine(outcome):\n            return",
+  "new": "        if False:\n            return",
+  "target": "tests/unit/test_wake_evaluator.py -k test_on_wake_a_sync_hook_with_no_awaitable_return_is_a_no_op"
+ }
+]

@@ -16,11 +16,15 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.domain.ports import (
+    NewCognitionPace,
+    NewCognitionRemindMirror,
     NewCognitionSession,
     NewCognitionSessionClose,
     NewCognitionWouldWrite,
 )
 from nora.infra.sql.schema import (
+    COGNITION_REMIND_MIRROR,
+    COGNITION_SELF_WAKE,
     COGNITION_SESSION,
     COGNITION_SESSION_CLOSE,
     COGNITION_WOULD_WRITE,
@@ -108,6 +112,60 @@ class SqlCognitionDryRunStore:
                 recorded_at=_at(recorded_at_ms),
             )
             .returning(COGNITION_WOULD_WRITE.c.id)
+        )
+        async with self._engine.begin() as conn:
+            row = (await conn.execute(stmt)).one()
+        return int(row.id)
+
+    async def record_pace(
+        self, *, pace: NewCognitionPace, recorded_at_ms: int,
+    ) -> int:
+        stmt = (
+            sa.insert(COGNITION_SELF_WAKE)
+            .values(
+                session_id=pace.session_id,
+                unit=pace.unit,
+                verb=pace.verb,
+                wake_ref=pace.wake_ref,
+                transition=pace.transition,
+                subject_rows=_json(list(pace.subject_rows)),
+                why=pace.why,
+                at_ms=pace.at_ms,
+                outcome=pace.outcome,
+                refusal_reason=pace.refusal_reason,
+                refusal_detail=pace.refusal_detail,
+                stimulus_id=pace.stimulus_id,
+                supersedes=pace.supersedes,
+                recorded_at=_at(recorded_at_ms),
+            )
+            .returning(COGNITION_SELF_WAKE.c.id)
+        )
+        async with self._engine.begin() as conn:
+            row = (await conn.execute(stmt)).one()
+        return int(row.id)
+
+    async def record_remind_mirror(
+        self, *, mirror: NewCognitionRemindMirror, recorded_at_ms: int,
+    ) -> int:
+        stmt = (
+            sa.insert(COGNITION_REMIND_MIRROR)
+            .values(
+                session_id=mirror.session_id,
+                unit=mirror.unit,
+                verb=mirror.verb,
+                reminder_ref=mirror.reminder_ref,
+                platform=mirror.platform,
+                conversation_id=mirror.conversation_id,
+                intent=mirror.intent,
+                subject_rows=_json(list(mirror.subject_rows)),
+                at_ms=mirror.at_ms,
+                why=mirror.why,
+                outcome=mirror.outcome,
+                refusal_reason=mirror.refusal_reason,
+                refusal_detail=mirror.refusal_detail,
+                recorded_at=_at(recorded_at_ms),
+            )
+            .returning(COGNITION_REMIND_MIRROR.c.id)
         )
         async with self._engine.begin() as conn:
             row = (await conn.execute(stmt)).one()

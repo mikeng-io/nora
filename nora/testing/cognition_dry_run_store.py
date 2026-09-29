@@ -13,6 +13,8 @@ from __future__ import annotations
 import itertools
 
 from nora.domain.ports import (
+    NewCognitionPace,
+    NewCognitionRemindMirror,
     NewCognitionSession,
     NewCognitionSessionClose,
     NewCognitionWouldWrite,
@@ -24,9 +26,13 @@ class InMemoryCognitionDryRunStore:
         self._session_ids = itertools.count(1)
         self._close_ids = itertools.count(1)
         self._write_ids = itertools.count(1)
+        self._pace_ids = itertools.count(1)
+        self._remind_ids = itertools.count(1)
         self.sessions: list[tuple[int, NewCognitionSession, int]] = []
         self.closes: list[tuple[int, NewCognitionSessionClose, int]] = []
         self.would_writes: list[tuple[int, NewCognitionWouldWrite, int]] = []
+        self.paces: list[tuple[int, NewCognitionPace, int]] = []
+        self.remind_mirrors: list[tuple[int, NewCognitionRemindMirror, int]] = []
 
     async def record_session(
         self, *, session: NewCognitionSession, recorded_at_ms: int,
@@ -48,6 +54,20 @@ class InMemoryCognitionDryRunStore:
         write_id = next(self._write_ids)
         self.would_writes.append((write_id, write, recorded_at_ms))
         return write_id
+
+    async def record_pace(
+        self, *, pace: NewCognitionPace, recorded_at_ms: int,
+    ) -> int:
+        pace_id = next(self._pace_ids)
+        self.paces.append((pace_id, pace, recorded_at_ms))
+        return pace_id
+
+    async def record_remind_mirror(
+        self, *, mirror: NewCognitionRemindMirror, recorded_at_ms: int,
+    ) -> int:
+        mirror_id = next(self._remind_ids)
+        self.remind_mirrors.append((mirror_id, mirror, recorded_at_ms))
+        return mirror_id
 
     async def aclose(self) -> None:
         return None

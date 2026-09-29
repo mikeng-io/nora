@@ -167,6 +167,11 @@ APPEND_ONLY: dict[str, str] = {
     "cognition_session": "recorded_at",
     "cognition_session_close": "recorded_at",
     "cognition_would_write": "recorded_at",
+    # Step 3a-ii (70-migration.md §2 row 3a-ii): the pace verbs
+    # (`wake_at`/`wake_move`/`wake_cancel`) and the mirrored, held `remind`
+    # family. Each transition is its own row, never revised.
+    "cognition_self_wake": "recorded_at",
+    "cognition_remind_mirror": "recorded_at",
 }
 
 #: Changes in place today and migrates at a later step (70 §5). Not

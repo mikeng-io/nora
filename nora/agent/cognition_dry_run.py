@@ -52,14 +52,20 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import asdict, replace
+from datetime import UTC, datetime
 
 from nora.domain.cognition_write import WouldWrite, stale_event_base
 from nora.domain.gatherings import (
     Gathering,
     InvalidEventFieldModeError,
+    still_open_gatherings,
 )
 from nora.domain.note_body import NoteBodyError, Shown, parse_note_body
-from nora.domain.notes import NoteCreationProposal, NoteRevisionProposal
+from nora.domain.notes import (
+    NoteCreationProposal,
+    NoteRevisionProposal,
+    has_duplicate_open_title,
+)
 from nora.domain.ports import CognitionDryRunStore, NewCognitionWouldWrite
 from nora.domain.standing import Standing, WorkingSetItem
 from nora.domain.standing_revise import check_mode, check_schema, check_stale_base
@@ -101,11 +107,21 @@ async def dry_run_note_create(
     uncertainty: str, closing_condition: str, body: str, established_by: str,
     now_ms: int, anchor_date: int | None = None,
     anchor_entity_ids: tuple[str, ...] = (), shown: Shown, revisit_at: int | None = None,
+    open_titles: tuple[str, ...] = (),
 ) -> WouldWrite:
     """`note_create` in shadow. Args mirror
     `nora.domain.notes.NoteCreationProposal` plus `established_by`/`now_ms`
     (provenance the live verb stamps, not part of the proposal's own
-    invariants) and `shown` (the body's schema check, `parse_note_body`)."""
+    invariants) and `shown` (the body's schema check, `parse_note_body`).
+
+    `open_titles` (review follow-up on #625's step 3a-i): the unit's
+    currently-open note titles, READ-ONLY input the caller already fetched
+    the way the live verb does (`book.standing(unit=...)`,
+    `nora.agent.tools.note_create`) — this function makes no store call
+    itself. Checked with the exact function the live verb calls
+    (`nora.domain.notes.has_duplicate_open_title`), so a duplicate title is
+    refused here exactly as it would be on a tag turn (design 41 §7.2,
+    `30-cognition.md` §2's "same validator" rule)."""
     args: dict[str, object] = {
         "title": title, "description": description, "uncertainty": uncertainty,
         "closing_condition": closing_condition, "body": body,
@@ -119,6 +135,14 @@ async def dry_run_note_create(
             tier="note", verb="note_create", platform=platform,
             conversation_id=conversation_id, args=args, outcome="refused",
             refusal_reason=exc.rule, refusal_detail=str(exc),
+        )
+        return await _record(ledger, session_id=session_id, unit=unit, write=write, now_ms=now_ms)
+    if has_duplicate_open_title(title, open_titles):
+        write = WouldWrite(
+            tier="note", verb="note_create", platform=platform,
+            conversation_id=conversation_id, args=args, outcome="refused",
+            refusal_reason="duplicate_title",
+            refusal_detail="a note with that title is already open",
         )
         return await _record(ledger, session_id=session_id, unit=unit, write=write, now_ms=now_ms)
     try:
@@ -221,7 +245,8 @@ def _event_candidate(event: Gathering) -> dict[str, object]:
 async def dry_run_event_propose(
     *, ledger: CognitionDryRunStore, session_id: int | None, unit: str,
     platform: str, conversation_id: str, now_ms: int,
-    build: type[Gathering] = Gathering, **event_kwargs: object,
+    build: type[Gathering] = Gathering, open_proposed_events: Sequence[Gathering] = (),
+    now: datetime | None = None, **event_kwargs: object,
 ) -> WouldWrite:
     """`event_propose` in shadow. `event_kwargs` are `Gathering`'s own
     constructor arguments (`id`, `title`, `created_by`, `when`, `status`,
@@ -229,11 +254,30 @@ async def dry_run_event_propose(
     signature further than `Gathering.__post_init__` already does; the
     caller (a session wiring, or a test) builds the row the way
     `GatheringService.create_event` builds one today, then hands it here
-    instead of `self._store.create(event)`."""
+    instead of `self._store.create(event)`.
+
+    `open_proposed_events` (review follow-up on #625's step 3a-i): the
+    conversation's already-`PROPOSED` events, READ-ONLY input the caller
+    fetched the way the live verb does (`list_events(status=PROPOSED)`) —
+    this function makes no store call. Checked with the exact function the
+    live verb calls (`nora.domain.gatherings.still_open_gatherings`,
+    `GatheringService.create_event`'s I1 backstop), refusing exactly as it
+    would when two or more are still open. `now` defaults to `now_ms`
+    converted, matching the live verb's own clock argument."""
     args = {
         k: (str(v) if hasattr(v, "isoformat") or k in ("id",) else v)
         for k, v in event_kwargs.items()
     }
+    clock = now if now is not None else datetime.fromtimestamp(now_ms / 1000, tz=UTC)
+    still_open = still_open_gatherings(open_proposed_events, now=clock)
+    if len(still_open) >= 2:
+        write = WouldWrite(
+            tier="event", verb="event_propose", platform=platform,
+            conversation_id=conversation_id, args=args, outcome="refused",
+            refusal_reason="ambiguous_open_gatherings",
+            refusal_detail=f"{len(still_open)} open proposed events for {conversation_id}",
+        )
+        return await _record(ledger, session_id=session_id, unit=unit, write=write, now_ms=now_ms)
     try:
         event = build(conversation_id=conversation_id, unit_id=unit, **event_kwargs)
     except InvalidEventFieldModeError as exc:

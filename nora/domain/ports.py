@@ -1038,6 +1038,68 @@ class CognitionDryRunStore(Protocol):
         """Append one would-write row and return its id."""
         ...
 
+    async def record_pace(
+        self, *, pace: NewCognitionPace, recorded_at_ms: int,
+    ) -> int:
+        """Append one pace-verb transition (`wake_at`/`wake_move`/
+        `wake_cancel`, step 3a-ii) and return its id."""
+        ...
+
+    async def record_remind_mirror(
+        self, *, mirror: NewCognitionRemindMirror, recorded_at_ms: int,
+    ) -> int:
+        """Append one mirrored `remind`/`remind_move`/`remind_cancel` call
+        (step 3a-ii, 30-cognition.md §2: "every reminder cognition writes is
+        mirrored to a review channel and held") and return its id."""
+        ...
+
+
+@dataclass(frozen=True)
+class NewCognitionPace:
+    """One pace-verb call (`wake_at`/`wake_move`/`wake_cancel`,
+    design/cognition-loop/20-observe.md §3's self-wakes), as recorded.
+    `wake_ref` is the stable id a `wake_at` call mints and every later
+    `wake_move`/`wake_cancel` on the same self-wake names; `None` only on a
+    `wake_at` call that was itself refused before a ref existed. `stimulus_id`
+    is the `self` stimulus row this pace call appended to the unit's
+    `stimulus` table (20 §3: "it writes a `self` signal due at `at`"), `None`
+    on `wake_move`/`wake_cancel` (no new stimulus) or a refusal."""
+
+    session_id: int | None
+    unit: str
+    verb: str
+    wake_ref: str | None
+    transition: str
+    subject_rows: tuple[str, ...]
+    why: str
+    at_ms: int | None
+    outcome: str
+    refusal_reason: str | None = None
+    refusal_detail: str | None = None
+    stimulus_id: int | None = None
+    supersedes: str | None = None
+
+
+@dataclass(frozen=True)
+class NewCognitionRemindMirror:
+    """One `remind`/`remind_move`/`remind_cancel` call, mirrored and held
+    (never sent, never fired) — design/cognition-loop/30-cognition.md §2 and
+    the migration's "shadow before cut-over" rule."""
+
+    session_id: int | None
+    unit: str
+    verb: str
+    reminder_ref: str | None
+    platform: str
+    conversation_id: str
+    intent: str | None
+    subject_rows: tuple[str, ...]
+    at_ms: int | None
+    why: str | None
+    outcome: str
+    refusal_reason: str | None = None
+    refusal_detail: str | None = None
+
     async def aclose(self) -> None: ...
 
 

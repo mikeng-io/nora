@@ -366,6 +366,19 @@ APPEND: dict[str, Callable[[int], dict[str, Any]]] = {
         "args": {"where_it_stands": f"pos {n}"}, "outcome": "would_commit",
         "candidate": {"body": f"pos {n}"},
     },
+    # Step 3a-ii: the pace verbs and the mirrored, held `remind` family.
+    # `session_id` left unset (null, FK-nullable) for the same reason as
+    # `cognition_session_close`/`cognition_would_write` above.
+    "cognition_self_wake": lambda n: {
+        "unit": "u", "verb": "wake_at", "wake_ref": f"w{n}", "transition": "created",
+        "subject_rows": [f"event:{n}"], "why": "check the venue again", "at_ms": MS0 + n,
+        "outcome": "recorded",
+    },
+    "cognition_remind_mirror": lambda n: {
+        "unit": "u", "verb": "remind", "reminder_ref": f"r{n}",
+        "platform": "signal", "conversation_id": "g0", "intent": "tell",
+        "subject_rows": [f"note:{n}"], "at_ms": MS0 + n, "outcome": "recorded",
+    },
 }
 
 

@@ -283,3 +283,76 @@ def test_would_write_refuses_a_refusal_carrying_no_reason():
             conversation_id="room-a", args={}, outcome="refused",
             refusal_reason=None,
         )
+
+
+# -- review follow-up on #625's step 3a-i: validation parity ---------------
+
+async def test_note_create_refuses_a_duplicate_open_title_the_same_way_the_live_verb_does():
+    """`nora.agent.tools.note_create` refuses design 41 §7.2's duplicate
+    open title by calling `nora.domain.notes.has_duplicate_open_title` —
+    the dry run calls the SAME function against `open_titles`, its own
+    READ-ONLY input, rather than a second copy of the comparison."""
+    ledger = InMemoryCognitionDryRunStore()
+    write = await dry_run_note_create(
+        ledger=ledger, session_id=1, unit="unit-1", platform="signal",
+        conversation_id="room-a", title="Dinner plans", description="d",
+        uncertainty="u", closing_condition="c", body=CONFORMANT_BODY,
+        established_by="cognition", now_ms=1000, anchor_date=20261003, shown=SHOWN,
+        open_titles=("dinner PLANS",),
+    )
+    assert write.outcome == "refused"
+    assert write.refusal_reason == "duplicate_title"
+    assert len(ledger.would_writes) == 1
+
+
+async def test_note_create_with_no_matching_open_title_still_would_commit():
+    ledger = InMemoryCognitionDryRunStore()
+    write = await dry_run_note_create(
+        ledger=ledger, session_id=1, unit="unit-1", platform="signal",
+        conversation_id="room-a", title="Dinner plans", description="d",
+        uncertainty="u", closing_condition="c", body=CONFORMANT_BODY,
+        established_by="cognition", now_ms=1000, anchor_date=20261003, shown=SHOWN,
+        open_titles=("something else entirely",),
+    )
+    assert write.outcome == "would_commit"
+
+
+async def test_event_propose_refuses_two_open_proposed_events_the_same_way_the_live_verb_does():
+    """`GatheringService.create_event`'s I1 backstop
+    (`AmbiguousOpenGatheringsError`): two-or-more STILL-OPEN proposed events
+    already exist for the conversation. The dry run calls the same
+    `nora.domain.gatherings.still_open_gatherings` filter against
+    `open_proposed_events`, its own READ-ONLY input."""
+    ledger = InMemoryCognitionDryRunStore()
+    open_events = (
+        _gathering(when=None), _gathering(when=None),
+    )
+    write = await dry_run_event_propose(
+        ledger=ledger, session_id=1, unit="unit-1", platform="signal",
+        conversation_id="room-a", now_ms=1000, id=uuid.uuid4(), title="dinner",
+        created_by="p_ada", when=None, venue_text=None, venue_place_id=None,
+        venue_name=None, venue_address=None, venue_rating=None,
+        venue_price_level="", venue_maps_url=None, venue_resolved_at=None,
+        status=GatheringStatus.PROPOSED, reminder_id=None,
+        created_at=datetime(2026, 9, 29, tzinfo=UTC), open_proposed_events=open_events,
+    )
+    assert write.outcome == "refused"
+    assert write.refusal_reason == "ambiguous_open_gatherings"
+
+
+async def test_event_propose_ignores_open_events_already_in_the_past():
+    """I1's own fix: a PROPOSED event that already happened does not count
+    toward the ambiguity backstop."""
+    ledger = InMemoryCognitionDryRunStore()
+    past = datetime(2020, 1, 1, tzinfo=UTC)
+    open_events = (_gathering(when=past), _gathering(when=past))
+    write = await dry_run_event_propose(
+        ledger=ledger, session_id=1, unit="unit-1", platform="signal",
+        conversation_id="room-a", now_ms=1_700_000_000_000, id=uuid.uuid4(),
+        title="dinner", created_by="p_ada", when=None, venue_text=None,
+        venue_place_id=None, venue_name=None, venue_address=None, venue_rating=None,
+        venue_price_level="", venue_maps_url=None, venue_resolved_at=None,
+        status=GatheringStatus.PROPOSED, reminder_id=None,
+        created_at=datetime(2026, 9, 29, tzinfo=UTC), open_proposed_events=open_events,
+    )
+    assert write.outcome == "would_commit"

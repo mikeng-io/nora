@@ -1,0 +1,20 @@
+{
+  "type": "feature",
+  "summary": "Nora's Cognition adaptor gains a real session loop, self-wakes, a mirrored `remind`, and a compare tool — all still shadow, none of it live.",
+  "details": [
+    "A CognitionSessionRunner turns each would-wake the (already-shadow) wake evaluator records into ONE session: it builds the situation and agenda, records the session row, hands the session the dry-run write verbs plus the pace and mirrored-remind verbs as its only tools, and runs a model call through the existing config/alias mechanism (nora.app.cognition_agent_runner.LiveCognitionAgentRunner).",
+    "Single-flight, the cooldown and the cross-unit concurrency bound are inherited unchanged from the wake evaluator's own brakes (a would-wake already occupies a session slot); this step adds no second copy of that arithmetic.",
+    "wake_at/wake_move/wake_cancel: recorded in cognition_self_wake, with wake_at/wake_move appending a `self` stimulus the wake evaluator already knows how to trigger on. Guards: at most 5 pending self-wakes per unit, a subject overlap supersedes a pending one rather than refusing, a horizon between the unit's cooldown and 7 days.",
+    "remind/remind_move/remind_cancel: recorded in cognition_remind_mirror, mirrored and held -- never sent, never reaches the fire path or a live reminders row.",
+    "`nora cognition compare --since <ISO> [--until <ISO>]`: matched / cognition-only / proactive-only, comparing cognition's mirrored remind calls against the live proactive pass's own decisions over a window, keyed on note id and room.",
+    "Review follow-ups from step 3a-i (#625): dry_run_note_create now refuses a duplicate open title and dry_run_event_propose now refuses two-or-more already-open proposed events, each calling the exact function the live verb calls (extracted to nora.domain.notes.has_duplicate_open_title and nora.domain.gatherings.still_open_gatherings) rather than a second copy; cognition_session_close.session_id and cognition_would_write.session_id now carry a real foreign key to cognition_session.id (wake_id stays FK-less, for the reason step 3a-i's migration already states).",
+    "13 synthetic tool_selection cases for the Cognition catalogue (evals/corpora/tool_selection_cognition.yaml), collected and censused; running them live needs a registered `cognition` Dreamer adaptor, which this step does not add.",
+    "New append-only tables: cognition_self_wake, cognition_remind_mirror."
+  ],
+  "limitations": [
+    "The composition root does not yet construct a real CognitionSessionRunner or pass its on_wake to the live WakeEvaluator -- the runner, the production agent-runner wiring, and the wake evaluator's optional on_wake hook all exist and are tested (unit, contract, behavioural, architecture), but nothing in nora.app.composition wires them together yet. An operator setting [cognition] session_mode = \"shadow\" today still runs no session, because nothing calls WakeEvaluator with on_wake set.",
+    "LiveCognitionAgentRunner (the production Strands wiring) has not been exercised against a live model in this branch's own tests -- every session test drives a scripted fake agent runner, per this step's own instruction not to run a live-model eval.",
+    "The mirrored-remind comparison's match key is a note id; a mirrored remind whose subject rows never include a note id (an event- or co-location-anchored one) can never match a proactive row by construction, so it always reports cognition_only -- a stated approximation, not a bug in the comparison.",
+    "Read tools, doctrine text, skill text and the live-read seams (open note titles, open proposed events, prior standing, pending self-wakes, pending mirrored reminders) are all constructor arguments the composition root must supply; none is built by this step."
+  ]
+}
