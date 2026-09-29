@@ -27,7 +27,7 @@ def test_config_example_exists_and_parses():
         "speech", "social",
         "notes", "culture", "standing", "music", "image_gen",
         "version", "engagement", "participation", "relevance_gate", "reaction",
-        "doctrine", "dreamer", "cognition", "lineage", "record_query",
+        "doctrine", "dreamer", "cognition", "assess", "lineage", "record_query",
         "identity_file", "policy_file",
         "obs", "evals", "tools",
     }

@@ -3379,6 +3379,74 @@ class CognitionConfig(BaseModel):
         return value
 
 
+class AssessConfig(BaseModel):
+    """The Assess adaptor (design/cognition-loop/30-cognition.md §6,
+    70-migration.md §2 row 3): the nightly, deterministic data-quality
+    checks, and the model-read measures (a cheap reader, lessons drift) 30
+    §6 lists beside them.
+
+    **Ships OFF** (`mode = "off"`), the `[cognition]`/`[lineage]` shape: a
+    new subsystem does not switch itself on. **Assess writes no tier** ([15](
+    15-map.md) §6, [55](55-self.md) §1): it is refused nothing by this flag
+    that a write verb would need, because it holds none — off means `nora
+    assess run-nightly` (`nora.app.assess_run`) is refused, never that a read
+    it would have done was skipped silently (R-27: a refusal is
+    `unavailable`, not a quiet `nothing_found`).
+
+    `mode = "on"` runs the deterministic checks (`nora.app.assess_dq`) and
+    records `assess_report` rows and `nora_dq_failures_total{check}`. There
+    is no `"shadow"` here unlike `[cognition]`: a report is never live effect
+    — nothing reads an `assess_report` row on a turn — so there is nothing a
+    shadow mode would still be withholding.
+
+    The model-read measures (the cheap reader over citations, lessons
+    drift and churn, §6) are NOT run by this flag yet: they need a live
+    model call this repo's eval discipline keeps out of `make gate`
+    (`nora-eval`'s own boundary), so they ship as a separate, explicitly
+    invoked path once the Cognition adaptor's sessions exist to sample
+    (step 3+, `70-migration.md`'s own sequencing). Their gates —
+    precision/recall, false-derivation rate, unasked-act rate — are
+    declared now as `evals.corpora_assess`'s corpora, run offline
+    (`nora-eval`), never by this flag.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    mode: Literal["off", "on"] = "off"
+    #: Local wall-clock "HH:MM" the operator's cron/systemd timer targets;
+    #: read by the CLI's own help text only — nothing here schedules a run,
+    #: the same boundary `[cognition] time_floors` draws for the wake
+    #: evaluator's daily floors versus what fires them.
+    nightly_at: str = "03:00"
+    timezone: str = "Asia/Hong_Kong"
+    #: How far back `rollup_incremental_vs_batch` (`nora.app.assess_dq`)
+    #: rebuilds when asked to: a window, not the whole Record, because a
+    #: full rebuild's cost is what 25-rollup.md §2's own caveat measures
+    #: before recommending one on the deploy path.
+    rollup_diff_window_seconds: float = Field(default=86_400.0, gt=0)
+    store_timeout_seconds: float = Field(default=5.0, gt=0)
+
+    @field_validator("nightly_at")
+    @classmethod
+    def _nightly_at_is_wall_clock(cls, value: str) -> str:
+        hh, _, mm = value.partition(":")
+        if not (hh.isdigit() and mm.isdigit() and len(mm) == 2
+                and 0 <= int(hh) < 24 and 0 <= int(mm) < 60):
+            raise ValueError(f"nightly_at {value!r} is not HH:MM")
+        return value
+
+    @field_validator("timezone")
+    @classmethod
+    def _zone_exists(cls, value: str) -> str:
+        from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+        try:
+            ZoneInfo(value)
+        except (ZoneInfoNotFoundError, ValueError) as exc:
+            raise ValueError(f"unknown timezone {value!r}") from exc
+        return value
+
+
 class LineageConfig(BaseModel):
     """Lineage at assembly (design/cognition-loop/10-tiers.md §3, migration
     step 2): whether the pushed blocks that render derived rows (`<notes>`,
@@ -3738,6 +3806,9 @@ class Config(BaseModel):
     # Optional and defaulted — see `CognitionConfig`. Ships OFF: no stimulus
     # is written and no wake evaluator runs until the operator sets `mode`.
     cognition: CognitionConfig = CognitionConfig()
+    # Optional and defaulted — see `AssessConfig`. Ships OFF: `nora assess
+    # run-nightly` is refused and nothing is written to `assess_report`.
+    assess: AssessConfig = AssessConfig()
     # Optional and defaulted — see `LineageConfig`. Ships OFF.
     lineage: LineageConfig = LineageConfig()
     # Optional and defaulted — see `RecordQueryConfig`. Ships OFF.

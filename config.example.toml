@@ -2269,6 +2269,21 @@ timezone = "Asia/Hong_Kong"
 floor_grace_seconds = 3600
 store_timeout_seconds = 5
 
+# The Assess adaptor (design/cognition-loop/30-cognition.md §6,
+# 70-migration.md §2 row 3): reports and metrics only, never a tier write.
+# Ships OFF — `nora assess run-nightly` is refused until this is "on". The
+# model-read measures (a cheap reader, lessons drift) are not gated here;
+# they ship separately once the Cognition adaptor's sessions exist to sample.
+[assess]
+mode = "off"
+# Documentation only: nothing here schedules a run, the operator's own
+# cron/systemd timer does, the same boundary [cognition] time_floors draws.
+nightly_at = "03:00"
+timezone = "Asia/Hong_Kong"
+# How far back the Rollup incremental-vs-batch check rebuilds when asked.
+rollup_diff_window_seconds = 86400
+store_timeout_seconds = 5
+
 
 [obs.logging]
 level = "INFO"

@@ -3942,3 +3942,33 @@ DEPLOY_REVISION = sa.Table(
         name="deploy_revision_manifest_status_check",
     ),
 )
+
+# `assess_report` — the Assess adaptor's one store (design/cognition-loop/
+# 30-cognition.md §6, 15-map.md §6, 70-migration.md §2 row 3, migration step
+# 3): reports and metrics only, never a tier. Append-only, `nora/domain/
+# assess.py`'s `AssessReport`/`DqCheckResult` written out as JSONB: one row
+# per nightly (or per-session, later) run, `results` the array of per-check
+# outcomes (`check`, `status`, `failing`, `sample`, `detail`), so a run's
+# whole shape is one row and a history question ("how has check X trended")
+# is a read of this table ordered by `run_at_ms`, never a rewrite of one.
+ASSESS_REPORT = sa.Table(
+    "assess_report",
+    METADATA,
+    sa.Column("id", sa.BigInteger, sa.Identity(always=False), primary_key=True),
+    sa.Column("kind", sa.Text, nullable=False),
+    sa.Column("run_at_ms", sa.BigInteger, nullable=False),
+    sa.Column(
+        "results", pg.JSONB, nullable=False, server_default=sa.text("'[]'::jsonb"),
+    ),
+    _recorded_at(),
+    sa.CheckConstraint(
+        "kind IN ('nightly_dq')", name="ck_assess_report_kind",
+    ),
+    sa.CheckConstraint(
+        "jsonb_typeof(results) = 'array'", name="ck_assess_report_results_shape",
+    ),
+)
+
+IDX_ASSESS_REPORT_KIND_RUN = sa.Index(
+    "idx_assess_report_kind_run", ASSESS_REPORT.c.kind, ASSESS_REPORT.c.run_at_ms,
+)
