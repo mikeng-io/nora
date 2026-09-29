@@ -53,6 +53,6 @@
   "file": "nora/domain/cognition_session.py",
   "old": "    if reason not in (\"written\", \"no_change\", \"waiting\", \"covered\"):\n        raise ValueError(f\"not a session close reason: {reason!r}\")",
   "new": "    if False:\n        raise ValueError(f\"not a session close reason: {reason!r}\")",
-  "target": "tests/unit/test_cognition_session.py -k test_close_or_strike_refuses_an_unknown_reason"
+  "target": "tests/unit/test_cognition_session.py -k test_close_or_strike_refuses_struck_as_a_caller_supplied_reason"
  }
 ]
