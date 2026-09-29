@@ -1,0 +1,14 @@
+{
+  "type": "feat",
+  "summary": "Nora's Cognition adaptor gains its session and agenda, and dry-run versions of its note, event and Standing write verbs — none of it live yet.",
+  "details": [
+    "Code groups a unit's pending stimuli into agenda items, each bound to the room it came from (or the unit's home room for a rollup, time, self, social or play stimulus), orders them by a deterministic surprise score, and hands at most 12 at a time.",
+    "note_create, note_update, event_propose, event_revise, event_set_status and standing_revise each have a dry-run counterpart that runs the exact same validation the live verb runs and records a would-write row instead of committing — nothing is ever written to a note, event or Standing store from these paths.",
+    "New config: [cognition] session_mode (off/shadow, ships off; shadow requires mode = \"shadow\" too), max_items, max_strikes.",
+    "New append-only tables: cognition_session, cognition_session_close, cognition_would_write."
+  ],
+  "limitations": [
+    "No live loop runs a session yet: nothing calls these builders or dry-run verbs from the wake evaluator's would-wakes. Wiring that loop, the pace verbs and self-wakes, the act (remind) mirror against the live proactive pass, and tool_selection on the cognition catalogue are step 3a-ii.",
+    "A note dry run assumes its body's [#n] citations are already resolved against the session's shown window; the tag path's own [#n]-to-row-id remap (resolve_positions) is a detail of how a turn's window is built, not exercised here."
+  ]
+}
