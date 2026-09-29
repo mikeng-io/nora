@@ -3760,6 +3760,102 @@ IDX_COGNITION_WAKE_UNIT_MODE_ID = sa.Index(
 # Append-only. `scope` is the circle for a poll, "" for an adapter; `outcome`
 # is the poll's read status (`ok`, `challenge`, `empty_circle`, ...) or the
 # adapter's new state (`up`, `stale`, `degraded`, `down`, `unknown`).
+# `cognition_session` / `cognition_session_close` / `cognition_would_write`:
+# migration step 3a (design/cognition-loop/70-migration.md §2 row 3a). Every
+# row is written once and never updated — a session is replayable from its
+# own `situation`/`agenda` JSON (30-cognition.md §1) plus the stores as of
+# its start, so nothing here is a cache to keep current. `mode` is only ever
+# `'shadow'` at this step: a `live` value arrives with cut-over (step 4),
+# the same shape `cognition_wake`'s own `ck_cognition_wake_mode` takes today.
+COGNITION_SESSION = sa.Table(
+    "cognition_session",
+    METADATA,
+    sa.Column("id", sa.BigInteger, sa.Identity(always=False), primary_key=True),
+    sa.Column("unit", sa.Text, nullable=False),
+    sa.Column("mode", sa.Text, nullable=False),
+    sa.Column("wake_id", sa.BigInteger, sa.ForeignKey("cognition_wake.id")),
+    sa.Column("started_at_ms", sa.BigInteger, nullable=False),
+    sa.Column("from_stimulus_id", sa.BigInteger, nullable=False),
+    sa.Column("through_stimulus_id", sa.BigInteger, nullable=False),
+    sa.Column("situation", pg.JSONB, nullable=False),
+    sa.Column("agenda", pg.JSONB, nullable=False),
+    sa.Column("doctrine_sha256", sa.Text),
+    sa.Column(
+        "skill_versions", pg.JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"),
+    ),
+    sa.Column("config_revision_id", sa.BigInteger),
+    sa.Column("model_id", sa.Text),
+    sa.Column("model_route", sa.Text),
+    _recorded_at(),
+    sa.CheckConstraint("mode IN ('shadow')", name="ck_cognition_session_mode"),
+)
+
+IDX_COGNITION_SESSION_UNIT_ID = sa.Index(
+    "idx_cognition_session_unit_id", COGNITION_SESSION.c.unit, COGNITION_SESSION.c.id,
+)
+
+# One row per agenda item's close (30-cognition.md §2): `written`,
+# `no_change`, `waiting`, `covered`, or code's own `struck` at `max_strikes`.
+COGNITION_SESSION_CLOSE = sa.Table(
+    "cognition_session_close",
+    METADATA,
+    sa.Column("id", sa.BigInteger, sa.Identity(always=False), primary_key=True),
+    sa.Column(
+        "session_id", sa.BigInteger, sa.ForeignKey("cognition_session.id"), nullable=False,
+    ),
+    sa.Column("item_index", sa.Integer, nullable=False),
+    sa.Column("kind", sa.Text, nullable=False),
+    sa.Column("reason", sa.Text, nullable=False),
+    sa.Column("strike", sa.Integer, nullable=False, server_default=sa.text("0")),
+    _recorded_at(),
+    sa.CheckConstraint(
+        "reason IN ('written', 'no_change', 'waiting', 'covered', 'struck')",
+        name="ck_cognition_session_close_reason",
+    ),
+)
+
+IDX_COGNITION_SESSION_CLOSE_SESSION = sa.Index(
+    "idx_cognition_session_close_session", COGNITION_SESSION_CLOSE.c.session_id,
+)
+
+# One row per write-verb call in shadow (`nora.domain.cognition_write.
+# WouldWrite`, as recorded): what it would have done, never what it did.
+COGNITION_WOULD_WRITE = sa.Table(
+    "cognition_would_write",
+    METADATA,
+    sa.Column("id", sa.BigInteger, sa.Identity(always=False), primary_key=True),
+    sa.Column("session_id", sa.BigInteger, sa.ForeignKey("cognition_session.id")),
+    sa.Column("unit", sa.Text, nullable=False),
+    sa.Column("tier", sa.Text, nullable=False),
+    sa.Column("verb", sa.Text, nullable=False),
+    sa.Column("platform", sa.Text, nullable=False),
+    sa.Column("conversation_id", sa.Text, nullable=False),
+    sa.Column("args", pg.JSONB, nullable=False),
+    sa.Column("outcome", sa.Text, nullable=False),
+    sa.Column("refusal_reason", sa.Text),
+    sa.Column("refusal_detail", sa.Text),
+    sa.Column("candidate", pg.JSONB),
+    sa.Column("base_revision_id", sa.Text),
+    _recorded_at(),
+    sa.CheckConstraint("tier IN ('note', 'event', 'standing')", name="ck_cognition_would_write_tier"),
+    sa.CheckConstraint(
+        "outcome IN ('would_commit', 'refused')", name="ck_cognition_would_write_outcome",
+    ),
+    sa.CheckConstraint(
+        "(outcome = 'would_commit' AND candidate IS NOT NULL) "
+        "OR (outcome = 'refused' AND refusal_reason IS NOT NULL)",
+        name="ck_cognition_would_write_outcome_shape",
+    ),
+)
+
+IDX_COGNITION_WOULD_WRITE_SESSION = sa.Index(
+    "idx_cognition_would_write_session", COGNITION_WOULD_WRITE.c.session_id,
+)
+IDX_COGNITION_WOULD_WRITE_UNIT_RECORDED = sa.Index(
+    "idx_cognition_would_write_unit_recorded",
+    COGNITION_WOULD_WRITE.c.unit, COGNITION_WOULD_WRITE.c.recorded_at,
+)
+
 SOURCE_HEALTH = sa.Table(
     "source_health",
     METADATA,

@@ -944,6 +944,103 @@ class StimulusStore(Protocol):
     async def aclose(self) -> None: ...
 
 
+@dataclass(frozen=True)
+class NewCognitionSession:
+    """A session's provenance, as recorded before any write verb is called
+    (design/cognition-loop/30-cognition.md §1: "a session is replayable").
+    `situation`/`agenda` are the JSON shapes `nora.domain.cognition_session`'s
+    `Situation.as_dict`/`AgendaItem.as_dict` build; this port does not parse
+    them back."""
+
+    unit: str
+    mode: str
+    started_at_ms: int
+    from_stimulus_id: int
+    through_stimulus_id: int
+    situation: dict[str, object]
+    agenda: dict[str, object]
+    doctrine_sha256: str | None = None
+    skill_versions: dict[str, object] = field(default_factory=dict)
+    config_revision_id: int | None = None
+    model_id: str | None = None
+    model_route: str | None = None
+    wake_id: int | None = None
+
+
+@dataclass(frozen=True)
+class NewCognitionSessionClose:
+    """One agenda item's close, `nora.domain.cognition_session.CloseOutcome`
+    as stored."""
+
+    session_id: int
+    item_index: int
+    kind: str
+    reason: str
+    strike: int = 0
+
+
+@dataclass(frozen=True)
+class NewCognitionWouldWrite:
+    """A `nora.domain.cognition_write.WouldWrite`, addressed to a session
+    and a unit — the port's own copy of the same fields rather than an
+    import of the domain dataclass, matching `NewStimulus`/`Stimulus` next
+    door: the domain type is what code BUILDS, the port type is what a store
+    PERSISTS, and they are allowed to diverge without either changing the
+    other's shape."""
+
+    session_id: int | None
+    unit: str
+    tier: str
+    verb: str
+    platform: str
+    conversation_id: str
+    args: dict[str, object]
+    outcome: str
+    refusal_reason: str | None = None
+    refusal_detail: str | None = None
+    candidate: dict[str, object] | None = None
+    base_revision_id: str | None = None
+
+
+@runtime_checkable
+class CognitionDryRunStore(Protocol):
+    """`cognition_session`, `cognition_session_close` and
+    `cognition_would_write` (design/cognition-loop/70-migration.md step 3a).
+    All three append-only (10-tiers.md §8): a session is one row written at
+    its start, never revised; a close and a would-write are each their own
+    row. Implementations: `nora.infra.sql.cognition_dry_run.
+    SqlCognitionDryRunStore`, `nora.testing.cognition_dry_run_store.
+    InMemoryCognitionDryRunStore`, bound by
+    `tests/contract/test_cognition_dry_run_store_contract.py`.
+
+    **Never called outside `[cognition] session_mode = "shadow"`.** This
+    port exists so shadow has somewhere to write instead of a live tier
+    store — see `nora.agent.cognition_dry_run` for the wrappers that call
+    it and `tests/architecture/test_cognition_shadow_cannot_write_or_send.py`
+    for what a module reachable from shadow may import.
+    """
+
+    async def record_session(
+        self, *, session: NewCognitionSession, recorded_at_ms: int,
+    ) -> int:
+        """Append the session row and return its id."""
+        ...
+
+    async def record_close(
+        self, *, close: NewCognitionSessionClose, recorded_at_ms: int,
+    ) -> int:
+        """Append one agenda item's close row and return its id."""
+        ...
+
+    async def record_would_write(
+        self, *, write: NewCognitionWouldWrite, recorded_at_ms: int,
+    ) -> int:
+        """Append one would-write row and return its id."""
+        ...
+
+    async def aclose(self) -> None: ...
+
+
 #: How a source's health row came about: a `poll` it made, or a `transition`
 #: of an adapter's state observed by the sampler.
 SourceHealthEvent = Literal["poll", "transition"]
