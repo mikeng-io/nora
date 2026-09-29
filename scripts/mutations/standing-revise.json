@@ -44,15 +44,15 @@
  {
   "name": "standing-revise: a tag fold actually increments fold_count",
   "file": "nora/infra/sql/standing_revise.py",
-  "old": "            (prior.fold_count + 1) if increments_fold_count else prior.fold_count\n        ) if prior is not None else (1 if increments_fold_count else 0),",
-  "new": "            prior.fold_count\n        ) if prior is not None else (1 if increments_fold_count else 0),",
+  "old": "                (prior.fold_count + 1) if increments_fold_count else prior.fold_count\n            ) if prior is not None else (1 if increments_fold_count else 0),",
+  "new": "                prior.fold_count\n            ) if prior is not None else (1 if increments_fold_count else 0),",
   "target": "tests/unit/test_standing_revise.py -k test_increments_fold_count_is_the_one_thing_that_differs_between_callers"
  },
  {
   "name": "standing-revise: a rollup fold actually leaves fold_count unchanged (D3)",
   "file": "nora/infra/sql/standing_revise.py",
-  "old": "            (prior.fold_count + 1) if increments_fold_count else prior.fold_count\n        ) if prior is not None else (1 if increments_fold_count else 0),",
-  "new": "            prior.fold_count + 1\n        ) if prior is not None else (1 if increments_fold_count else 0),",
+  "old": "                (prior.fold_count + 1) if increments_fold_count else prior.fold_count\n            ) if prior is not None else (1 if increments_fold_count else 0),",
+  "new": "                prior.fold_count + 1\n            ) if prior is not None else (1 if increments_fold_count else 0),",
   "target": "tests/unit/test_standing_revise.py -k test_increments_fold_count_is_the_one_thing_that_differs_between_callers"
  },
  {
@@ -72,8 +72,8 @@
  {
   "name": "standing-revise: the two new sections actually round-trip to the store",
   "file": "nora/infra/sql/standing_revise.py",
-  "old": "        hold_open=hold_open,\n        i_owe=i_owe,",
-  "new": "        hold_open=None,\n        i_owe=None,",
+  "old": "            hold_open=hold_open,\n            i_owe=i_owe,",
+  "new": "            hold_open=None,\n            i_owe=None,",
   "target": "tests/unit/test_standing_revise.py -k test_hold_open_and_i_owe_round_trip_through_the_verb"
  },
  {
