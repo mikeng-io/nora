@@ -3773,7 +3773,12 @@ COGNITION_SESSION = sa.Table(
     sa.Column("id", sa.BigInteger, sa.Identity(always=False), primary_key=True),
     sa.Column("unit", sa.Text, nullable=False),
     sa.Column("mode", sa.Text, nullable=False),
-    sa.Column("wake_id", sa.BigInteger, sa.ForeignKey("cognition_wake.id")),
+    # NOT a foreign key, deliberately: `cognition_wake` is TRUNCATEd between
+    # runs of `tests/contract/test_stimulus_store_contract.py`, and Postgres
+    # refuses to truncate a table another table's FK references (found: it
+    # broke that suite outright). `wake_id` is provenance the operator reads,
+    # not a referential-integrity boundary this table needs to hold.
+    sa.Column("wake_id", sa.BigInteger),
     sa.Column("started_at_ms", sa.BigInteger, nullable=False),
     sa.Column("from_stimulus_id", sa.BigInteger, nullable=False),
     sa.Column("through_stimulus_id", sa.BigInteger, nullable=False),
@@ -3800,9 +3805,14 @@ COGNITION_SESSION_CLOSE = sa.Table(
     "cognition_session_close",
     METADATA,
     sa.Column("id", sa.BigInteger, sa.Identity(always=False), primary_key=True),
-    sa.Column(
-        "session_id", sa.BigInteger, sa.ForeignKey("cognition_session.id"), nullable=False,
-    ),
+    # Nullable, no foreign key — the same choice `cognition_would_write.
+    # session_id` makes next door: a close row constructed directly (a
+    # test, or a future caller with no session row of its own) still has
+    # somewhere to land, and this table's own snapshot-restore fixture
+    # (tests/integration/test_snapshot_holds_what_was_held.py) appends each
+    # APPEND-ONLY table's row independently, with no ordering guarantee
+    # that a session row for a given id already exists.
+    sa.Column("session_id", sa.BigInteger, nullable=True),
     sa.Column("item_index", sa.Integer, nullable=False),
     sa.Column("kind", sa.Text, nullable=False),
     sa.Column("reason", sa.Text, nullable=False),
@@ -3824,7 +3834,7 @@ COGNITION_WOULD_WRITE = sa.Table(
     "cognition_would_write",
     METADATA,
     sa.Column("id", sa.BigInteger, sa.Identity(always=False), primary_key=True),
-    sa.Column("session_id", sa.BigInteger, sa.ForeignKey("cognition_session.id")),
+    sa.Column("session_id", sa.BigInteger, nullable=True),
     sa.Column("unit", sa.Text, nullable=False),
     sa.Column("tier", sa.Text, nullable=False),
     sa.Column("verb", sa.Text, nullable=False),

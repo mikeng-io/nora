@@ -347,6 +347,25 @@ APPEND: dict[str, Callable[[int], dict[str, Any]]] = {
         "kind": "nightly_dq", "run_at_ms": MS0 + n,
         "results": [{"check": "unresolved_citations", "status": "ok"}],
     },
+    # Step 3a (0078_cognition_session): the Cognition adaptor's session and
+    # its dry-run write verbs. `session_id` on the other two is left unset
+    # (nullable, no FK — see the migration's own FOREIGN KEYS paragraph):
+    # this fixture appends each table's row independently, with no ordering
+    # guarantee that a session row for a given id already exists.
+    "cognition_session": lambda n: {
+        "unit": "u", "mode": "shadow", "started_at_ms": MS0 + n,
+        "from_stimulus_id": 0, "through_stimulus_id": n,
+        "situation": {"unit": "u"}, "agenda": {"items": []},
+    },
+    "cognition_session_close": lambda n: {
+        "item_index": 0, "kind": "message", "reason": "written",
+    },
+    "cognition_would_write": lambda n: {
+        "unit": "u", "tier": "standing", "verb": "standing_revise",
+        "platform": "signal", "conversation_id": "g0",
+        "args": {"where_it_stands": f"pos {n}"}, "outcome": "would_commit",
+        "candidate": {"body": f"pos {n}"},
+    },
 }
 
 

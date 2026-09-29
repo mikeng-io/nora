@@ -122,12 +122,9 @@ ADD CONSTRAINT assess_report_pkey PRIMARY KEY (id);
 ADD CONSTRAINT citation_edge_unique UNIQUE (citing_store, citing_key, cited_store, cited_id);
 ADD CONSTRAINT citation_pkey PRIMARY KEY (id);
 ADD CONSTRAINT cognition_session_close_pkey PRIMARY KEY (id);
-ADD CONSTRAINT cognition_session_close_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.cognition_session(id);
 ADD CONSTRAINT cognition_session_pkey PRIMARY KEY (id);
-ADD CONSTRAINT cognition_session_wake_id_fkey FOREIGN KEY (wake_id) REFERENCES public.cognition_wake(id);
 ADD CONSTRAINT cognition_wake_pkey PRIMARY KEY (id);
 ADD CONSTRAINT cognition_would_write_pkey PRIMARY KEY (id);
-ADD CONSTRAINT cognition_would_write_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.cognition_session(id);
 ADD CONSTRAINT compute_jobs_pkey PRIMARY KEY (id);
 ADD CONSTRAINT config_revision_pkey PRIMARY KEY (id);
 ADD CONSTRAINT consolidation_watermark_pkey PRIMARY KEY (consolidator_name, scope_id);
@@ -233,11 +230,8 @@ ALTER TABLE ONLY public.assess_report
 ALTER TABLE ONLY public.citation
 ALTER TABLE ONLY public.citation
 ALTER TABLE ONLY public.cognition_session
-ALTER TABLE ONLY public.cognition_session
-ALTER TABLE ONLY public.cognition_session_close
 ALTER TABLE ONLY public.cognition_session_close
 ALTER TABLE ONLY public.cognition_wake
-ALTER TABLE ONLY public.cognition_would_write
 ALTER TABLE ONLY public.cognition_would_write
 ALTER TABLE ONLY public.compute_jobs
 ALTER TABLE ONLY public.config_revision
@@ -1641,7 +1635,7 @@ sequence jsonb NOT NULL,
 sequence jsonb,
 series_anchor_at timestamp with time zone,
 series_id uuid,
-session_id bigint NOT NULL,
+session_id bigint,
 session_id bigint,
 sha256 text NOT NULL,
 sha256 text NOT NULL,

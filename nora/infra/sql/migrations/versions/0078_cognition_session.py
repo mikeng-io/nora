@@ -45,11 +45,21 @@ of them, so none gets a `row_history` trigger -- the row IS its own
 history, `cognition_wake`'s own precedent (0069/0070), `assess_report`'s
 (0077) one table over.
 
-FOREIGN KEYS point inward only (`cognition_session_close.session_id` and
-`cognition_would_write.session_id` -> `cognition_session.id`;
-`cognition_session.wake_id` -> `cognition_wake.id`) -- nothing outside this
-step's three tables references them, so nothing downstream breaks if a
-later step drops them at cut-over.
+NO FOREIGN KEYS, deliberately, on any of the three cross-references a first
+draft carried (`cognition_session.wake_id` -> `cognition_wake.id`;
+`cognition_session_close.session_id` and `cognition_would_write.session_id`
+-> `cognition_session.id`). Two independent reasons landed on the same
+answer: `cognition_wake` (step 1) is TRUNCATEd between runs of
+`tests/contract/test_stimulus_store_contract.py`, and Postgres refuses to
+truncate a table another table's FK references -- an FK on `wake_id` broke
+that suite outright when first tried; and
+`tests/integration/test_snapshot_holds_what_was_held.py`'s `APPEND` fixture
+appends each append-only table's row independently, with no ordering
+guarantee that a referenced session row already exists at the id a close
+or would-write row would need to name. All three columns are provenance
+the operator reads (which would-wake a session ran on; which session a
+close or a would-write belongs to), not referential-integrity boundaries
+these tables need to hold at this step.
 
 25 characters for the revision id: `alembic_version.version_num` is
 varchar(32), and `tests/architecture/test_migration_revision_fits_version_column.py`
@@ -78,10 +88,10 @@ def upgrade() -> None:
         sa.Column("id", sa.BigInteger, sa.Identity(always=False), primary_key=True),
         sa.Column("unit", sa.Text, nullable=False),
         sa.Column("mode", sa.Text, nullable=False),
-        sa.Column(
-            "wake_id", sa.BigInteger,
-            sa.ForeignKey("cognition_wake.id"), nullable=True,
-        ),
+        # NOT a foreign key: `cognition_wake` is TRUNCATEd between runs of
+        # tests/contract/test_stimulus_store_contract.py, and Postgres
+        # refuses to truncate a table another table's FK references.
+        sa.Column("wake_id", sa.BigInteger, nullable=True),
         sa.Column("started_at_ms", sa.BigInteger, nullable=False),
         sa.Column("from_stimulus_id", sa.BigInteger, nullable=False),
         sa.Column("through_stimulus_id", sa.BigInteger, nullable=False),
@@ -107,10 +117,9 @@ def upgrade() -> None:
     op.create_table(
         "cognition_session_close",
         sa.Column("id", sa.BigInteger, sa.Identity(always=False), primary_key=True),
-        sa.Column(
-            "session_id", sa.BigInteger,
-            sa.ForeignKey("cognition_session.id"), nullable=False,
-        ),
+        # Nullable, no foreign key — see the module docstring's FOREIGN KEYS
+        # paragraph.
+        sa.Column("session_id", sa.BigInteger, nullable=True),
         sa.Column("item_index", sa.Integer, nullable=False),
         sa.Column("kind", sa.Text, nullable=False),
         sa.Column("reason", sa.Text, nullable=False),
@@ -131,10 +140,7 @@ def upgrade() -> None:
     op.create_table(
         "cognition_would_write",
         sa.Column("id", sa.BigInteger, sa.Identity(always=False), primary_key=True),
-        sa.Column(
-            "session_id", sa.BigInteger,
-            sa.ForeignKey("cognition_session.id"), nullable=True,
-        ),
+        sa.Column("session_id", sa.BigInteger, nullable=True),
         sa.Column("unit", sa.Text, nullable=False),
         sa.Column("tier", sa.Text, nullable=False),
         sa.Column("verb", sa.Text, nullable=False),
