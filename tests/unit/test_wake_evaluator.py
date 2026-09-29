@@ -406,9 +406,17 @@ async def test_on_wake_a_sync_hook_with_no_awaitable_return_is_a_no_op():
         calls.append(wake_id)
         # returns None, not a coroutine — must not be scheduled or awaited
 
-    ev, store, clock, _ = _setup(policy=WakePolicy(quiet_seconds=0), on_wake=hook)
+    ev, store, clock, metrics = _setup(policy=WakePolicy(quiet_seconds=0), on_wake=hook)
     await _say(store, clock)
     clock.advance(1)
     await ev.tick()
     await ev.drain()
     assert len(calls) == 1
+    assert ev._background == set()
+    # A hook that returns a coroutine gets an error path if it raises
+    # (the test above); a plain `None` return scheduled and awaited would
+    # raise `TypeError: object NoneType can't be used in 'await' expression`
+    # inside the background task, caught the same way — so the only way to
+    # tell "never scheduled" apart from "scheduled and its error was caught"
+    # is that NEITHER a background task NOR an error is left behind.
+    assert metrics.get("nora_errors_total", stage="cognition_session") == 0

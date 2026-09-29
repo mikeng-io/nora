@@ -74,7 +74,7 @@
   "file": "nora/domain/cognition_remind.py",
   "old": "    duplicate = any(\n        p.platform == platform and p.conversation_id == conversation_id\n        and set(p.subject_rows) == set(subject_rows)\n        for p in pending\n    )",
   "new": "    duplicate = any(\n        p.platform == platform and p.conversation_id == conversation_id\n        for p in pending\n    )",
-  "target": "tests/unit/test_cognition_remind.py -k test_remind_admits_the_same_subject_in_a_different_room"
+  "target": "tests/unit/test_cognition_remind.py -k test_remind_admits_the_same_room_with_different_subject_rows"
  },
  {
   "name": "cognition_remind: remind_move/remind_cancel actually refuse a reminder this session did not write",

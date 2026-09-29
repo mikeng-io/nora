@@ -54,6 +54,22 @@ def test_remind_refuses_an_exact_duplicate_pending():
     assert refusal is not None and refusal.reason == "duplicate_pending"
 
 
+def test_remind_admits_the_same_room_with_different_subject_rows():
+    """The dedupe key is (room, subject rows) TOGETHER — a room match alone
+    must not refuse a genuinely different reminder in the same room."""
+    pending = (
+        PendingMirroredRemind(
+            reminder_ref="r1", platform="signal", conversation_id="room-a",
+            subject_rows=("note:1",), created_by_session_id=1,
+        ),
+    )
+    refusal = check_remind(
+        subject_rows=("note:2",), intent="tell", platform="signal",
+        conversation_id="room-a", pending=pending,
+    )
+    assert refusal is None
+
+
 def test_remind_admits_the_same_subject_in_a_different_room():
     pending = (
         PendingMirroredRemind(
