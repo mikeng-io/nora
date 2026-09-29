@@ -165,6 +165,17 @@ def test_close_or_strike_refuses_an_unknown_reason():
         close_or_strike(_item(), item_index=0, reason="nonsense")
 
 
+def test_close_or_strike_refuses_struck_as_a_caller_supplied_reason():
+    """`struck` is code's OWN close at `max_strikes`, never a session's
+    argument (`CLOSE_REASONS`'s docstring) — a caller asking to close
+    `struck` directly is refused even though `CloseOutcome` itself would
+    accept it as a value."""
+    import pytest
+
+    with pytest.raises(ValueError):
+        close_or_strike(_item(), item_index=0, reason="struck")
+
+
 def test_close_reasons_names_every_reason_the_schema_allows():
     assert set(CLOSE_REASONS) == {"written", "no_change", "waiting", "covered", "struck"}
 
@@ -182,6 +193,16 @@ def test_agenda_is_a_dataclass_not_a_mutable_list():
 
 
 def test_deferred_ids_are_sorted():
-    pending = [_stimulus(i, conversation_id=f"room-{i}") for i in (5, 1, 3, 2, 4)]
-    agenda = build_agenda(pending, home_room=HOME, max_items=1)
-    assert list(agenda.deferred_stimulus_ids) == sorted(agenda.deferred_stimulus_ids)
+    # Groups sort by their OWN oldest id (the surprise tie-break), not by
+    # every id they hold — so two deferred groups, each internally sorted,
+    # can still FLATTEN out of order: group "room-p" holds ids (5, 50),
+    # group "room-q" holds ids (6, 7); ordered by oldest id, "room-p" (5)
+    # comes before "room-q" (6), so the unsorted concatenation would read
+    # (5, 50, 6, 7) — only an explicit final sort produces (5, 6, 7, 50).
+    # Equal surprise across all three groups (two stimuli each), so the
+    # ordering tie-break — oldest id — is the only thing that decides rank.
+    kept = [_stimulus(1, conversation_id="room-a"), _stimulus(2, conversation_id="room-a")]
+    deferred_p = [_stimulus(5, conversation_id="room-p"), _stimulus(50, conversation_id="room-p")]
+    deferred_q = [_stimulus(6, conversation_id="room-q"), _stimulus(7, conversation_id="room-q")]
+    agenda = build_agenda(kept + deferred_p + deferred_q, home_room=HOME, max_items=1)
+    assert agenda.deferred_stimulus_ids == (5, 6, 7, 50)
