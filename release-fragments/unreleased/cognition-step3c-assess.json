@@ -1,0 +1,15 @@
+{
+  "type": "feature",
+  "summary": "An operator can now run nora assess run-nightly to check seven data-quality rules against Nora's derived stores and read the results back; the Assess adaptor writes reports only, never a tier, and ships off by default.",
+  "details": [
+    "nora assess run-nightly [--no-record] runs seven deterministic checks (unresolved citations, cross-room duplicate events, a Rollup rebuild diff, a happened event's place against its outing, sections past their age horizon, an induced line with no aggregate, event rows with empty lineage) and prints the result of each; unresolved_citations, cross_room_duplicate_events, happened_place_mismatch and empty_lineage_rows run for real today, sections_past_age_horizon and induced_line_no_aggregate report not_applicable until Character and Lessons ship (a later step), and the Rollup rebuild diff reports not_applicable unless a second build is supplied.",
+    "Results are written to a new assess_report row by default (--no-record prints without writing) and nora_dq_failures_total{check} counts a run whose check came back failing, once per check.",
+    "Off by default: the command is refused with a clear message until [assess] mode is set to \"on\" in config.toml.",
+    "Two labelled corpora (evals/corpora/assess_event.yaml, assess_note.yaml), 40 synthetic cases each including negatives, are added for later precision/recall measurement of event and note derivation once the Cognition adaptor exists to derive from; the corpus that opens the set is the register's dinner case, truncated to what exists before stories and memos ship."
+  ],
+  "limitations": [
+    "The Assess adaptor writes no tier and has no scheduled runtime hook yet: nightly means the operator's own cron or systemd timer calling the CLI command, not an automatic wake inside the Dreamer runtime.",
+    "The Rollup rebuild diff only diffs two already-computed builds; producing the second (a real rebuild) is left to the caller, because its cost on a deployment's full history is not yet measured.",
+    "The two corpora are loaded and validated by tests only; they are not yet run against a live model, because the Cognition adaptor's event/note write verbs have not shipped."
+  ]
+}

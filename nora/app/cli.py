@@ -52,6 +52,9 @@ from sqlalchemy.exc import ArgumentError
 
 from nora.agent.egress import scan_identifiers
 from nora.app import config_cli, report
+from nora.app.assess_run import AssessDisabledError
+from nora.app.assess_run import render as assess_render
+from nora.app.assess_run import run_nightly as assess_run_nightly
 from nora.app.events_backfill import backfill_unit_ids
 from nora.app.events_backfill import render as render_events_backfill
 from nora.app.memory_backfill import BackfillRefusedError, backfill_unit
@@ -370,6 +373,27 @@ def add_subcommands(
              "accidentally cascaded row; a dry run unless --apply)",
     )
     unforget.set_defaults(func=cmd_person_unforget)
+
+    # `assess run-nightly` (design/cognition-loop/30-cognition.md §6,
+    # 70-migration.md §2 row 3, DEC-240): the Assess adaptor's deterministic
+    # data-quality checks. WRITABLE engine like `events backfill-units`,
+    # because `--record` (the default) writes one `assess_report` row; the
+    # checks themselves never write a tier (`nora.app.assess_run`'s own
+    # docstring). Refused when `[assess] mode` is `"off"`.
+    assess = subparsers.add_parser(
+        "assess", parents=[parent], help="the Assess adaptor's reports (operator only)",
+    )
+    assess_sub = assess.add_subparsers(dest="assess_command", required=True)
+    run_nightly = assess_sub.add_parser(
+        "run-nightly", parents=[parent],
+        help="run every nightly data-quality check and print the report "
+             "(written to assess_report unless --no-record)",
+    )
+    run_nightly.add_argument(
+        "--no-record", action="store_true",
+        help="print the report without writing it",
+    )
+    run_nightly.set_defaults(func=cmd_assess_run_nightly)
 
     # `config` — the operator's safe config mutation surface (deploy
     # convention §4.5). See config_cli.py for the atomic-write and
@@ -787,6 +811,32 @@ async def cmd_person_unforget(args: argparse.Namespace) -> int:
     finally:
         await engine.dispose()
     return 0
+
+
+async def cmd_assess_run_nightly(args: argparse.Namespace) -> int:
+    """`nora assess run-nightly [--no-record]` (design/cognition-loop/
+    30-cognition.md §6, DEC-240). Refused with a clear message, not a stack
+    trace, when `[assess] mode` is `"off"` (`AssessDisabledError`). The
+    Rollup rebuild diff is not run from this command (`nora.app.assess_run`'s
+    own docstring: opt-in, a separate cost); it reports `not_applicable`.
+    Exit code is nonzero when ANY check came back `fail` OR `error` — a check
+    that raised is not a clean run either, and the operator paging on this
+    exit code must not read an errored check as a quiet night."""
+    cfg = _config(args)
+    engine = create_sql_engine(_database_url(cfg))
+    try:
+        try:
+            outcome = await assess_run_nightly(
+                engine, mode=cfg.assess.mode, record=not args.no_record,
+            )
+        except AssessDisabledError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+    finally:
+        await engine.dispose()
+    for line in assess_render(outcome.report):
+        print(line)
+    return 1 if outcome.report.failing_checks or outcome.report.errored_checks else 0
 
 
 async def cmd_measure_participation(args: argparse.Namespace) -> int:
