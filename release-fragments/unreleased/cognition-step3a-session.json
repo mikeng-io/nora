@@ -1,5 +1,5 @@
 {
-  "type": "feat",
+  "type": "feature",
   "summary": "Nora's Cognition adaptor gains its session and agenda, and dry-run versions of its note, event and Standing write verbs — none of it live yet.",
   "details": [
     "Code groups a unit's pending stimuli into agenda items, each bound to the room it came from (or the unit's home room for a rollup, time, self, social or play stimulus), orders them by a deterministic surprise score, and hands at most 12 at a time.",

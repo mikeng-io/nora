@@ -183,13 +183,13 @@ def test_close_reasons_names_every_reason_the_schema_allows():
 def test_agenda_is_a_dataclass_not_a_mutable_list():
     # Agenda/AgendaItem are frozen — a session's row is a fixed replay
     # input (30-cognition.md §1), never mutated after it is built.
+    import dataclasses
+
+    import pytest
+
     item = _item()
-    try:
+    with pytest.raises(dataclasses.FrozenInstanceError):
         item.strike = 5  # type: ignore[misc]
-    except Exception:
-        pass
-    else:
-        raise AssertionError("AgendaItem must be frozen")
 
 
 def test_deferred_ids_are_sorted():

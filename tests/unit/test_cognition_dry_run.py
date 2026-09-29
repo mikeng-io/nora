@@ -38,15 +38,15 @@ CONFORMANT_BODY = "## Decided\n- dinner is on (Ada) [1]\n## Open\n- which place 
 
 
 def _gathering(**overrides: object) -> Gathering:
-    base = dict(
-        id=uuid.uuid4(), conversation_id="room-a", title="dinner",
-        created_by="p_ada", when=None, venue_text=None, venue_place_id=None,
-        venue_name=None, venue_address=None, venue_rating=None,
-        venue_price_level="", venue_maps_url=None, venue_resolved_at=None,
-        status=GatheringStatus.PROPOSED, reminder_id=None,
-        created_at=datetime(2026, 9, 29, tzinfo=UTC), unit_id="unit-1",
-        head_revision_id=uuid.uuid4(),
-    )
+    base: dict[str, object] = {
+        "id": uuid.uuid4(), "conversation_id": "room-a", "title": "dinner",
+        "created_by": "p_ada", "when": None, "venue_text": None, "venue_place_id": None,
+        "venue_name": None, "venue_address": None, "venue_rating": None,
+        "venue_price_level": "", "venue_maps_url": None, "venue_resolved_at": None,
+        "status": GatheringStatus.PROPOSED, "reminder_id": None,
+        "created_at": datetime(2026, 9, 29, tzinfo=UTC), "unit_id": "unit-1",
+        "head_revision_id": uuid.uuid4(),
+    }
     base.update(overrides)
     return Gathering(**base)  # type: ignore[arg-type]
 

@@ -57,8 +57,6 @@ from nora.domain.cognition_write import WouldWrite, stale_event_base
 from nora.domain.gatherings import (
     Gathering,
     InvalidEventFieldModeError,
-    validate_event_field_confidence,
-    validate_event_field_mode,
 )
 from nora.domain.note_body import NoteBodyError, Shown, parse_note_body
 from nora.domain.notes import NoteCreationProposal, NoteRevisionProposal

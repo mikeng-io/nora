@@ -42,7 +42,7 @@ the wake evaluator makes) and the caller's own `now_ms`/`home_room`/
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from nora.domain.stimuli import Stimulus
 
@@ -288,7 +288,9 @@ def close_or_strike(
     if reason not in ("written", "no_change", "waiting", "covered"):
         raise ValueError(f"not a session close reason: {reason!r}")
     if reason != "waiting":
-        return CloseOutcome(item_index=item_index, kind=item.kind, reason=reason, strike=item.strike)
+        return CloseOutcome(
+            item_index=item_index, kind=item.kind, reason=reason, strike=item.strike,
+        )
     next_strike = item.strike + 1
     if next_strike >= max_strikes:
         return CloseOutcome(

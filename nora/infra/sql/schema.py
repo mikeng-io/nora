@@ -3837,7 +3837,9 @@ COGNITION_WOULD_WRITE = sa.Table(
     sa.Column("candidate", pg.JSONB),
     sa.Column("base_revision_id", sa.Text),
     _recorded_at(),
-    sa.CheckConstraint("tier IN ('note', 'event', 'standing')", name="ck_cognition_would_write_tier"),
+    sa.CheckConstraint(
+        "tier IN ('note', 'event', 'standing')", name="ck_cognition_would_write_tier",
+    ),
     sa.CheckConstraint(
         "outcome IN ('would_commit', 'refused')", name="ck_cognition_would_write_outcome",
     ),

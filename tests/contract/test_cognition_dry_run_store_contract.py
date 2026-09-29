@@ -73,13 +73,13 @@ async def store(request: Any) -> AsyncIterator[Any]:
 
 
 def _session(**overrides: object) -> NewCognitionSession:
-    base: dict[str, object] = dict(
-        unit="unit-1", mode="shadow", started_at_ms=NOW,
-        from_stimulus_id=0, through_stimulus_id=5,
-        situation={"unit": "unit-1"}, agenda={"items": []},
-        doctrine_sha256="abc123", skill_versions={"note": "v1"},
-        config_revision_id=None, model_id=None, model_route=None, wake_id=None,
-    )
+    base: dict[str, object] = {
+        "unit": "unit-1", "mode": "shadow", "started_at_ms": NOW,
+        "from_stimulus_id": 0, "through_stimulus_id": 5,
+        "situation": {"unit": "unit-1"}, "agenda": {"items": []},
+        "doctrine_sha256": "abc123", "skill_versions": {"note": "v1"},
+        "config_revision_id": None, "model_id": None, "model_route": None, "wake_id": None,
+    }
     base.update(overrides)
     return NewCognitionSession(**base)  # type: ignore[arg-type]
 
