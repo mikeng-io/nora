@@ -2927,6 +2927,20 @@ STANDING = sa.Table(
     # cascade (`nora.app.withdrawal`) when this room's position cites a
     # withdrawn Record item. NULL (supported) otherwise.
     sa.Column("unsupported_at", sa.BigInteger, nullable=True),
+    # THE SECTIONED SCHEMA (migration `0076_standing_sections`, step 3 row
+    # 3b): `I hold open` and `I owe` (`design/cognition-loop/12-schemas.md`
+    # §5), beside `body` (`Where it stands`) and `working_set` (`Found, not
+    # yet given`). NULLABLE — `NULL` is "not revised", the correct reading
+    # of every row this migration touches (additive, no backfill, the same
+    # argument `working_set`'s own column made in `0059`/`0065`). The CHECK
+    # mirrors `Standing.__post_init__`: a section given is never blank.
+    sa.Column("hold_open", sa.Text, nullable=True),
+    sa.Column("i_owe", sa.Text, nullable=True),
+    sa.CheckConstraint(
+        "(hold_open is null or length(btrim(hold_open)) > 0) "
+        "and (i_owe is null or length(btrim(i_owe)) > 0)",
+        name="standing_sections_are_not_blank_when_given_check",
+    ),
 )
 
 #: One position, as it stood at the moment a fold set it — the chain behind
@@ -3025,6 +3039,17 @@ STANDING_REVISION = sa.Table(
         name="standing_revision_working_set_fits_the_ceiling_check",
     ),
     *_derived("standing_revision", per_row=False),
+    # THE SAME two sections the head carries (migration
+    # `0076_standing_sections`, step 3 row 3b) — a revision holds a value
+    # the head held, `STANDING`'s own comment's argument, applied to these
+    # two columns the same way it already covers `body` and `working_set`.
+    sa.Column("hold_open", sa.Text, nullable=True),
+    sa.Column("i_owe", sa.Text, nullable=True),
+    sa.CheckConstraint(
+        "(hold_open is null or length(btrim(hold_open)) > 0) "
+        "and (i_owe is null or length(btrim(i_owe)) > 0)",
+        name="standing_revision_sections_are_not_blank_when_given_check",
+    ),
 )
 
 #: The as-of read: one room's revisions, newest first. `updated_at DESC` because

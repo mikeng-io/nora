@@ -44,7 +44,9 @@ written against.
 from __future__ import annotations
 
 import ast
+import dataclasses
 import inspect
+import typing
 from typing import NamedTuple
 
 from nora.agent import reasoning_strip
@@ -152,12 +154,67 @@ def _receivers(tree: ast.AST, entry: _Module) -> set[str]:
     return names - _NOT_A_STORE - {"self"}
 
 
+def _store_fields(annotation: object) -> set[str]:
+    """The dataclass field names on `annotation` whose OWN type is a `*Store`
+    collaborator (`StandingStore`, `RecordStore`, …) — this repo's own naming
+    convention for a store port (`nora.domain.ports`), so `wiring.store` is
+    recognised as reaching a real store the same way
+    `wiring.record_store.since_including_nora(...)` already is, without
+    hand-naming "wiring" or "store" literally. A field whose type is not
+    store-shaped (`display_name: str`, `store_timeout_seconds: float`)
+    contributes nothing — the distinction a hand-written name list would
+    have to get right by hand, and did not (`read_culture(timeout_seconds=
+    wiring.store_timeout_seconds)` matched a first draft of this walk)."""
+    if not dataclasses.is_dataclass(annotation):
+        return set()
+    out: set[str] = set()
+    for f in dataclasses.fields(annotation):
+        t = f.type
+        t_name = t if isinstance(t, str) else getattr(t, "__name__", "")
+        if t_name.endswith("Store"):
+            out.add(f.name)
+    return out
+
+
+def _container_receiver_fields(
+    entry: _Module, receivers: set[str],
+) -> dict[str, set[str]]:
+    """`{receiver name: store-shaped field names}` for a `"params"`-derived
+    module whose slot-held functions are handed a bundling object (`Wiring`)
+    rather than individual collaborators. Empty for an `"init"`-derived
+    module, and empty for a receiver whose annotation is not a dataclass
+    (`Standing | None`, `Sequence[TranscriptRow]`)."""
+    if entry.receivers_from != "params":
+        return {}
+    out: dict[str, set[str]] = {}
+    for name in entry.held:
+        fn = getattr(entry.module, name, None)
+        if fn is None:
+            continue
+        try:
+            hints = typing.get_type_hints(fn)
+        except (NameError, TypeError):
+            # An unresolved forward reference, or a `fn` that is not a
+            # function at all — nothing this walk can derive fields from,
+            # the same "contributes nothing" outcome as a plain-value
+            # parameter.
+            continue
+        for pname, ptype in hints.items():
+            if pname not in receivers:
+                continue
+            fields = _store_fields(ptype)
+            if fields:
+                out.setdefault(pname, set()).update(fields)
+    return out
+
+
 def _module_awaits(entry: _Module) -> list[tuple[str, bool]]:
     """`(receiver.method, bounded)` for every collaborator call awaited inside
     one module's slot-held functions."""
     tree = ast.parse(inspect.getsource(entry.module))  # type: ignore[arg-type]
     parents = _parents(tree)
     receivers = _receivers(tree, entry)
+    container_fields = _container_receiver_fields(entry, receivers)
 
     # For an `init`-derived module the call has to be INSIDE a held function,
     # because `self._store` is reachable from every method on the class. For a
@@ -183,6 +240,52 @@ def _module_awaits(entry: _Module) -> list[tuple[str, bool]]:
         if not isinstance(node, ast.Call):
             continue
         f = node.func
+        if isinstance(f, ast.Name) and f.id not in entry.held:
+            # `standing_revise` (design/cognition-loop/70-migration.md step 3
+            # row 3b) is a WRITE VERB: a plain function, not a method on a
+            # collaborator, that takes `store=` as a keyword and makes its
+            # own bounded store call inside itself
+            # (`nora.infra.sql.standing_revise`'s own docstring). A call
+            # shaped `f.value.id.attr` cannot see it — it is a bare `Name`
+            # call (`standing_revise(store=wiring.store, ...)` in
+            # `standing_event._fold_batch`) — so a collaborator handed as a
+            # KEYWORD ARGUMENT to an awaited bare-name call counts too, the
+            # same rule `test_the_slot_hold_counts_every_store_await_the_
+            # stage_makes` (`tests/unit/test_debrief.py`) already added for
+            # the debrief stage's own walk when this verb first moved the
+            # write behind it; without this branch the walk here went blind
+            # to it the same way (round five of the finding this file's own
+            # docstring already tells the history of).
+            if not _inside_held(node):
+                continue
+            bounded = _in_wait_for(node, parents)
+            if not (bounded or isinstance(parents.get(node), ast.Await)):
+                continue
+            for kw in node.keywords:
+                # Two shapes of "the receiver is a keyword argument": a bare
+                # name (`store=store`, debrief's own param) and one level of
+                # attribute access on a bundling object (`store=wiring.store`,
+                # `standing_event`'s — the collaborators arrive bundled in
+                # `Wiring` there, not as individual parameters). The second
+                # shape is checked against `container_fields`, the
+                # store-shaped fields `Wiring` actually declares, not against
+                # "is the base name a receiver" alone — that weaker check
+                # also matched `read_culture(timeout_seconds=wiring.
+                # store_timeout_seconds)`, a plain float, as though it were a
+                # collaborator.
+                if isinstance(kw.value, ast.Name) and kw.value.id in receivers:
+                    out.append((f"{f.id}({kw.arg}={kw.value.id})", bounded))
+                    break
+                if (isinstance(kw.value, ast.Attribute)
+                        and isinstance(kw.value.value, ast.Name)
+                        and kw.value.attr in container_fields.get(
+                            kw.value.value.id, set())):
+                    out.append((
+                        f"{f.id}({kw.arg}={kw.value.value.id}.{kw.value.attr})",
+                        bounded,
+                    ))
+                    break
+            continue
         if not isinstance(f, ast.Attribute):
             continue
         # `store.read(...)`, `wiring.record_store.since(...)` and

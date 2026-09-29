@@ -69,9 +69,22 @@ def render_standing(
     if standing is None or not standing.body.strip():
         return None
     written = _age(standing.updated_at, now or datetime.now().astimezone())
+    # The sectioned schema's other two sections (design/cognition-loop/
+    # 12-schemas.md §5, migration `0076_standing_sections`, step 3 row 3b):
+    # `I hold open` and `I owe`, appended only when a fold has revised them —
+    # `None` on every row this step migrates (no caller writes them yet,
+    # `nora.infra.sql.standing_revise`'s own module docstring), so this is a
+    # no-op for every row live today and the block is byte-identical to what
+    # it rendered before this step. `body` (`Where it stands`) is unchanged
+    # above it, which is what keeps an existing head's rendered facts intact.
+    body = escape(standing.body)
+    if standing.hold_open:
+        body = f"{body}\n\nI hold open: {escape(standing.hold_open)}"
+    if standing.i_owe:
+        body = f"{body}\n\nI owe: {escape(standing.i_owe)}"
     return ContextBlock(
         name="standing", attrs=(("written", written),),
-        body=escape(standing.body),
+        body=body,
     )
 
 

@@ -1,0 +1,15 @@
+{
+  "type": "change",
+  "summary": "The tag path's debrief fold and the ingest-triggered rollup fold now write room Standing through one shared write verb, standing_revise, instead of each constructing a row and writing it independently; room Standing also gains two new, currently-empty sections in its schema.",
+  "details": [
+    "nora.infra.sql.standing_revise.standing_revise (async, validates then writes) and nora.domain.standing_revise (the pure checks: reasoning mode, schema, base-revision concurrency) are the one write path room Standing has now. Both nora.engagement.stages.debrief and nora.ingest.stages.standing_event call it rather than building a Standing row and calling the store directly.",
+    "Room Standing's schema gains two optional sections, 'I hold open' and 'I owe' (Standing.hold_open / .i_owe, migration 0076_standing_sections), beside the existing 'Where it stands' (body) and 'Found, not yet given' (working_set). Both new sections are additive and nullable; no existing row is rewritten.",
+    "The write verb refuses a blank required section, a given-but-blank optional section, a reasoning mode outside deduced/abduced/said, or a stale base revision, before either caller's own overflow/screen/working-set checks reach the store.",
+    "The rendered <standing> prompt block appends the two new sections only when populated, so every existing head renders byte-identically to before this change."
+  ],
+  "limitations": [
+    "Neither the debrief objective nor the rollup fold asks the model for 'I hold open' or 'I owe' yet, so both stay empty on every row written today; turning the model on for them is a separate doctrine change with its own eval.",
+    "Both live callers pass a fixed reasoning mode (deduced); the verb does not yet pick abduced or said.",
+    "Per-section age/support (as_of, last_supported_at, support_count) stays at the row level for room Standing, deferred to the step that gives Character the same columns."
+  ]
+}

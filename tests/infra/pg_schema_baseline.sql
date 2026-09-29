@@ -506,8 +506,10 @@ CONSTRAINT standing_revision_confidence_is_a_level_check CHECK (((confidence IS 
 CONSTRAINT standing_revision_fold_count_is_not_negative_check CHECK ((fold_count >= 0)),
 CONSTRAINT standing_revision_lineage_shape_check CHECK ((jsonb_typeof(lineage) = 'object'::text)),
 CONSTRAINT standing_revision_reasoning_is_a_mode_check CHECK (((reasoning IS NULL) OR (reasoning = ANY (ARRAY['computed'::text, 'told'::text, 'deduced'::text, 'induced'::text, 'abduced'::text, 'said'::text])))),
+CONSTRAINT standing_revision_sections_are_not_blank_when_given_check CHECK ((((hold_open IS NULL) OR (length(btrim(hold_open)) > 0)) AND ((i_owe IS NULL) OR (length(btrim(i_owe)) > 0)))),
 CONSTRAINT standing_revision_source_is_fold_or_operator_check CHECK ((source = ANY (ARRAY['fold'::text, 'operator'::text]))),
 CONSTRAINT standing_revision_working_set_fits_the_ceiling_check CHECK (((jsonb_array_length(working_set) <= 20) AND (octet_length((working_set)::text) <= 2400)))
+CONSTRAINT standing_sections_are_not_blank_when_given_check CHECK ((((hold_open IS NULL) OR (length(btrim(hold_open)) > 0)) AND ((i_owe IS NULL) OR (length(btrim(i_owe)) > 0)))),
 CONSTRAINT standing_working_set_fits_the_ceiling_check CHECK (((jsonb_array_length(working_set) <= 20) AND (octet_length((working_set)::text) <= 2400)))
 CONSTRAINT tag_trace_outcome_check CHECK ((outcome = ANY (ARRAY['send_reply'::text, 'recovered'::text, 'silent'::text, 'vetoed'::text, 'timeout'::text, 'llm_error'::text])))
 CONSTRAINT turn_verdict_grounded_has_no_unsupported_check CHECK ((NOT (grounded AND (cardinality(unsupported) > 0)))),
@@ -1146,6 +1148,8 @@ head_revision_id uuid NOT NULL,
 head_revision_id uuid,
 hidden_at bigint,
 hits integer DEFAULT 0 NOT NULL
+hold_open text,
+hold_open text,
 home_ms bigint NOT NULL,
 homes_unknown text[] DEFAULT '{}'::text[] NOT NULL,
 hostname text DEFAULT ''::text NOT NULL,
@@ -1153,6 +1157,8 @@ hostname text DEFAULT ''::text NOT NULL,
 hostname text DEFAULT ''::text NOT NULL,
 hour_of_week integer NOT NULL,
 hour_of_week integer NOT NULL,
+i_owe text,
+i_owe text,
 id bigint CONSTRAINT signal_id_not_null NOT NULL,
 id bigint NOT NULL,
 id bigint NOT NULL,

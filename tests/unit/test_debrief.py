@@ -18,7 +18,7 @@ import json
 import pytest
 
 from nora.domain.models import DeliveryStatus, NormalizedMessage, TranscriptRow
-from nora.domain.standing import Standing, WorkingSetItem
+from nora.domain.standing import STANDING_BODY_CEILING_CHARS, Standing, WorkingSetItem
 from nora.domain.tag_trace import TagTrace
 from nora.engagement.stages import debrief
 from nora.obs.metrics import Metrics
@@ -647,6 +647,41 @@ async def test_a_hanging_store_write_cannot_hold_the_slot_forever():
     assert _counter(metrics, "nora_debrief_total", outcome="unavailable") == 1
 
 
+async def test_an_oversized_hold_open_reaching_the_write_is_refused_not_unavailable(
+    monkeypatch,
+):
+    """R-27 regression (PR #624 review): master built `Standing(...)` OUTSIDE
+    the `try` around the store write for exactly this reason — a
+    domain-invariant `ValueError` (a schema violation `__post_init__`
+    refuses on) is a REFUSAL, never a store failure, and must not be caught
+    by the `except Exception` below and counted `unavailable`. The branch
+    under review moved the construction into `standing_revise` and lost that
+    discipline in both callers.
+
+    Neither caller passes `hold_open`/`i_owe` today (the fold's objective
+    does not ask the model for them yet — `nora.domain.standing_revise`'s
+    module docstring) — so this reaches the invariant by wrapping the REAL
+    `standing_revise` and forcing an oversized `hold_open` onto the call
+    this stage makes, then runs every line of real validation and
+    construction the fix touches: `check_schema`'s ceiling check, and the
+    belt-and-suspenders `except ValueError` around `Standing(...)` in
+    `nora.infra.sql.standing_revise`.
+    """
+    real_standing_revise = debrief.standing_revise
+    too_long = "x" * (STANDING_BODY_CEILING_CHARS + 1)
+
+    async def _forcing_an_oversized_hold_open(**kwargs):
+        kwargs["hold_open"] = too_long
+        return await real_standing_revise(**kwargs)
+
+    monkeypatch.setattr(debrief, "standing_revise", _forcing_an_oversized_hold_open)
+    _, metrics = await _run()
+    assert _counter(metrics, "nora_debrief_total", outcome="unavailable") == 0
+    assert _counter(
+        metrics, "nora_debrief_total", outcome="refused_section_too_long",
+    ) == 1
+
+
 async def test_a_store_write_timeout_is_unavailable_and_never_timeout():
     """R-27, on the one series `[standing] timeout_seconds` is tuned against.
 
@@ -898,15 +933,32 @@ def test_the_slot_hold_counts_every_store_await_the_stage_makes():
         if not isinstance(node, ast.Call):
             continue
         f = node.func
-        if not (isinstance(f, ast.Attribute) and isinstance(f.value, ast.Name)):
-            continue
-        if f.value.id not in receivers:
-            continue
         parent = parents.get(node)
         bounded = _in_wait_for(node)
-        if not (bounded or isinstance(parent, ast.Await)):
-            continue          # not awaited at all — not a store call
-        calls.append((f"{f.value.id}.{f.attr}", bounded))
+        awaited = bounded or isinstance(parent, ast.Await)
+        if isinstance(f, ast.Attribute) and isinstance(f.value, ast.Name):
+            if f.value.id not in receivers or not awaited:
+                continue          # not awaited at all — not a store call
+            calls.append((f"{f.value.id}.{f.attr}", bounded))
+            continue
+        # `standing_revise` (design/cognition-loop/70-migration.md step 3 row
+        # 3b) is a WRITE VERB: a plain function, not a method on a
+        # collaborator, that takes `store=` as a keyword and makes exactly
+        # one bounded store call inside itself
+        # (`nora.infra.sql.standing_revise`'s own docstring). A call shaped
+        # `f.value.id.attr` cannot see it — it is `standing_revise(store=
+        # store, ...)`, a bare `Name` call — so a collaborator handed as a
+        # KEYWORD ARGUMENT to an awaited bare-name call counts too, the same
+        # "awaited, directly or via wait_for" rule above. This is what keeps
+        # the validator seeing the write after it moved behind the verb,
+        # rather than silently dropping one call the way v1's `wait_for`
+        # count and v2's hardcoded receiver list each went blind in their
+        # own way (this test's own docstring).
+        if isinstance(f, ast.Name) and awaited:
+            for kw in node.keywords:
+                if isinstance(kw.value, ast.Name) and kw.value.id in receivers:
+                    calls.append((f"{f.id}({kw.arg}={kw.value.id})", bounded))
+                    break
 
     named = [n for n, _ in calls]
     assert len(calls) == debrief.STORE_CALLS_PER_FOLD, (

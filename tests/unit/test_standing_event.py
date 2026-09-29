@@ -24,7 +24,7 @@ import time
 import pytest
 
 from nora.domain.models import NormalizedMessage
-from nora.domain.standing import Standing
+from nora.domain.standing import STANDING_BODY_CEILING_CHARS, Standing
 from nora.engagement.slots import ConversationSlots
 from nora.engagement.stages.debrief import Completion
 from nora.ingest.stages import standing_event
@@ -268,6 +268,41 @@ async def test_a_refused_fold_advances_neither_body_nor_watermark():
     # The rollup stops on the refusal — one fold attempted, none written.
     assert _counter(harness.metrics, "nora_standing_rollup_folds_total") == 0
     assert _counter(harness.metrics, "nora_debrief_total", outcome="malformed") == 1
+
+
+async def test_an_oversized_hold_open_reaching_the_write_is_refused_not_error(
+    monkeypatch,
+):
+    """R-27 regression (PR #624 review): master built `Standing(...)` outside
+    any `try` in this fold, the same way the tag path's debrief did — a
+    domain-invariant `ValueError` is a REFUSAL, never a store failure, and
+    must not be counted on the `except Exception` below as `error`. Moving
+    the construction into `standing_revise` lost that discipline here too.
+
+    This module's objective does not ask the model for `hold_open`/`i_owe`
+    yet, so the invariant is reached by wrapping the REAL `standing_revise`
+    and forcing an oversized `hold_open` onto the write this fold makes —
+    exercising the fix's real validation and construction path end to end.
+    """
+    too_long = "x" * (STANDING_BODY_CEILING_CHARS + 1)
+    real_standing_revise = standing_event.standing_revise
+
+    async def _forcing_an_oversized_hold_open(**kwargs):
+        kwargs["hold_open"] = too_long
+        return await real_standing_revise(**kwargs)
+
+    monkeypatch.setattr(
+        standing_event, "standing_revise", _forcing_an_oversized_hold_open,
+    )
+    store = FakeRecordStore()
+    await _seed(store, 200)
+    harness = _Harness(record_store=store)
+    await harness.run_one_spawn()
+    assert await harness.read_row() is None
+    assert _counter(harness.metrics, "nora_debrief_total", outcome="error") == 0
+    assert _counter(
+        harness.metrics, "nora_debrief_total", outcome="refused_section_too_long",
+    ) == 1
 
 
 async def test_the_watermark_gap_gauge_is_set_by_the_check():

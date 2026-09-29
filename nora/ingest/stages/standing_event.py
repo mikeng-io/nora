@@ -90,6 +90,7 @@ from nora.engagement.stages.debrief import (
 from nora.engagement.stages.debrief import (
     _working_set as _debrief_working_set,
 )
+from nora.infra.sql.standing_revise import standing_revise
 from nora.language.culture_render import read_culture
 from nora.obs.metrics import Metrics
 from nora.obs.tracing import TRACE_KIND, attached, span
@@ -463,33 +464,35 @@ async def _fold_batch(
         max_items=wiring.working_set_max_items,
         max_chars=wiring.working_set_max_chars, metrics=metrics,
     )
-    revised = Standing(
-        platform=platform,
-        conversation_id=conversation_id,
-        body=body,
-        # D3: rollup folds do NOT increment fold_count — that counter counts
-        # tag folds. Carried forward from the prior (0 on a first fold).
-        fold_count=prior.fold_count if prior is not None else 0,
-        updated_at=now_ms,
-        # The watermark advances to the LAST row this batch read (the rows are
-        # ascending, so `rows[-1]` is the furthest). Written in the SAME
-        # statement as the position (20-watermark-read.md).
-        last_folded_row_id=rows[-1].id,
-        # VALIDATED above via the shared `_debrief_working_set` — in
-        # practice this only ever CARRIES the prior forward (unchanged, or
-        # trimmed by a budget refusal back to the prior), since
-        # `shown_steps=frozenset()` means no candidate can ever be treated as
-        # new. Without this the field would default to `()` on every
-        # dataclass construction and a rollup fold would silently wipe
-        # whatever the tag fold had just written — the same "never by
-        # accident" argument `SqlStandingStore.write`'s upsert makes for
-        # `last_folded_row_id` above, applied to a field this path does not
-        # otherwise touch at all.
-        working_set=working_set,
-    )
+    # `standing_revise` (design/cognition-loop/70-migration.md step 3 row
+    # 3b): the SAME write verb the tag path's debrief now calls
+    # (`nora.engagement.stages.debrief`), so the head has one shape and one
+    # validator whichever fold wrote it. `increments_fold_count=False` is
+    # this path's one behavioural difference (D3, this module's own
+    # docstring): rollup folds carry `fold_count` forward unchanged rather
+    # than counting themselves.
+    #
+    # A domain-invariant refusal must never land in the `except Exception`
+    # below as `error` — that label is "the store did not respond", not "the
+    # candidate row was invalid" (R-27 regression, PR #624 review: this fold
+    # used to construct `Standing(...)` outside any `try`, the same way the
+    # tag path's debrief did, and lost that discipline when construction
+    # moved inside `standing_revise`). `standing_revise` now runs every check
+    # `Standing.__post_init__` would otherwise raise on — including the
+    # body-length ceiling on `hold_open`/`i_owe` — and returns a typed
+    # `Refusal` instead, so a schema violation is counted on the
+    # `if not revision.committed` branch below as `refused_*`, never here.
     try:
-        await asyncio.wait_for(
-            wiring.store.write(standing=revised),
+        revision = await asyncio.wait_for(
+            standing_revise(
+                store=wiring.store, prior=prior,
+                platform=platform, conversation_id=conversation_id,
+                where_it_stands=body,
+                last_folded_row_id=rows[-1].id,
+                working_set=working_set,
+                increments_fold_count=False,
+                now_ms=now_ms,
+            ),
             timeout=wiring.store_timeout_seconds,
         )
     except Exception:
@@ -497,6 +500,24 @@ async def _fold_batch(
         log.exception(
             "standing event fold: could not write the position (%s); the "
             "watermark did not advance", key,
+        )
+        return False
+    if not revision.committed:
+        # Refused by `standing_revise` (unreachable today on this call, for
+        # `debrief.py`'s own reason: `body` is already non-blank and
+        # `mode="deduced"` is always allowed) — counted rather than
+        # silently treated as written.
+        metrics.inc(
+            "nora_debrief_total",
+            outcome=(
+                f"refused_{revision.refusal.reason}" if revision.refusal
+                else "refused"
+            ),
+        )
+        log.warning(
+            "standing event fold: standing_revise refused the revision "
+            "(%s reason=%s); the watermark did not advance",
+            key, revision.refusal.reason if revision.refusal else "?",
         )
         return False
     return True
