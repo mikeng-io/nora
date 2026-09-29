@@ -481,4 +481,20 @@ Signal platform itself (`nora/platform/signal/`, `signal-cli`, the `signal`
 platform string, room platform names) is untouched: only the cognition-loop's
 own concept moved.
 
-Steps 2–8 remain design only.
+**Step 3a built 2026-09-29** (branch `mikeng-io/cognition-step3a`, DEC-241,
+migration `0078_cognition_session`, on step 3c's `0077_assess_report`): the
+session and agenda, pure (`nora.domain.cognition_session`), and dry-run
+versions of the note, event and Standing write verbs
+(`nora.agent.cognition_dry_run`, `nora.domain.cognition_write`) — every call
+runs the live verb's own validation and ends in exactly one
+`CognitionDryRunStore.record_would_write`, never a live store's mutating
+method. `[cognition] session_mode` (`off`/`shadow`, ships `off`, requires
+`mode = "shadow"`) is the switch a live loop will read; none exists yet.
+This row was split further than 3a/3b/3c into 3a-i (this build) and 3a-ii,
+because wiring an actual session that starts on the wake evaluator's
+would-wakes and calls a real model is its own scope: 3a-ii is the pace
+verbs and self-wakes in shadow, the `remind` act mirrored and held and read
+against the live proactive pass's decisions, and `tool_selection` on the
+cognition catalogue — the rest of this table's own 3a row.
+
+Step 3a-ii and steps 4–8 remain design only.

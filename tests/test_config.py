@@ -1921,3 +1921,45 @@ def test_a_floor_that_is_not_hh_mm_or_an_unknown_zone_refuses_to_start(toml_path
                                       'timezone = "Mars/Olympus"\nfloor_grace_seconds'))
     with pytest.raises(ConfigError):
         load(toml_path)
+
+
+# ── [cognition] session_mode (70-migration.md §2 row 3a, migration step 3a) ──
+
+
+def test_session_mode_ships_off_with_todays_behaviour(toml_path):
+    """A new subsystem does not switch itself on: the example file's default
+    is exactly the config a checkout had before this step existed — no
+    session ever runs, no model call this config did not already make."""
+    c = load(toml_path).cognition
+    assert c.session_mode == "off"
+    assert (c.max_items, c.max_strikes) == (12, 3)
+
+
+def test_session_mode_bare_default_is_off():
+    assert CognitionConfig().session_mode == "off"
+
+
+def test_session_mode_shadow_requires_the_evaluator_also_be_shadow(toml_path):
+    text = toml_path.read_text()
+    # mode stays "off", session_mode turns to "shadow": refused, a session
+    # has nothing to run on without the evaluator's would-wakes.
+    toml_path.write_text(_set_key(text, "session_mode", '"shadow"'))
+    with pytest.raises(ConfigError):
+        load(toml_path)
+
+
+def test_session_mode_shadow_is_accepted_once_the_evaluator_is_also_shadow(toml_path):
+    text = toml_path.read_text().replace(
+        '[cognition]\nmode = "off"', '[cognition]\nmode = "shadow"',
+    )
+    text = _set_key(text, "session_mode", '"shadow"')
+    toml_path.write_text(text)
+    c = load(toml_path).cognition
+    assert (c.mode, c.session_mode) == ("shadow", "shadow")
+
+
+def test_session_mode_refuses_a_value_outside_off_and_shadow(toml_path):
+    text = toml_path.read_text()
+    toml_path.write_text(_set_key(text, "session_mode", '"live"'))
+    with pytest.raises(ConfigError):
+        load(toml_path)
