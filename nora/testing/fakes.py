@@ -334,6 +334,24 @@ class FakeRecordStore:
         window = matching[-limit:] if limit > 0 else []
         return [self._transcript_row(r) for r in window]
 
+    async def media_rows(
+        self, *, conversation_id: str, since_ts: int, limit: int,
+    ) -> list[TranscriptRow]:
+        """Mirrors `SqlRecordStore.media_rows`: this conversation's human rows
+        that hold media, `ts >= since_ts`, newest first. Raises when
+        `fail_on_recent` is set, as the SQL store raises on a database error."""
+        if self.fail_on_recent:
+            raise RuntimeError("db down")
+        if limit <= 0:
+            return []
+        matching = [
+            r for r in self.rows
+            if r["conversation_id"] == conversation_id and r["ts"] >= since_ts
+            and not r["is_nora"] and r["media_json"] is not None
+        ]
+        matching.sort(key=lambda r: (r["ts"], r["id"]), reverse=True)
+        return [self._transcript_row(r) for r in matching[:limit]]
+
     async def recent_before(
         self, *, conversation_id: str, before_ts: int, limit: int,
     ) -> list[TranscriptRow]:
@@ -1143,13 +1161,27 @@ class FakeMediaObjectStore:
 
     async def search(
         self, *, query: str, limit: int = 20, sources: tuple[str, ...] = (),
+        since_ms: int = 0,
     ) -> tuple[MediaObject, ...]:
+        found = await self.lookup_search(
+            query=query, limit=limit, sources=sources, since_ms=since_ms,
+        )
+        return tuple(found.objects.values())
+
+    async def lookup_search(
+        self, *, query: str, limit: int = 20, sources: tuple[str, ...] = (),
+        since_ms: int = 0,
+    ) -> MediaLookup:
+        """Mirrors `SqlMediaObjectStore.lookup_search`: `fail=True` is
+        `available=False` with no objects, never an empty success."""
         if self.fail:
-            return ()
+            return MediaLookup(available=False, reason="store")
         words = [w.casefold() for w in query.split() if w]
         pool = self._newest_first(list(self.objs.values()))
         if sources:
             pool = [o for o in pool if o.source in sources]
+        if since_ms > 0:
+            pool = [o for o in pool if o.created_at_ms >= since_ms]
         if words:
             def matches(o: MediaObject) -> bool:
                 # All THREE comprehension fields plus the provenance text,
@@ -1164,7 +1196,7 @@ class FakeMediaObjectStore:
                 )
                 return all(any(w in h for h in haystacks) for w in words)
             pool = [o for o in pool if matches(o)]
-        return tuple(pool[:limit])
+        return MediaLookup(available=True, objects={o.sha256: o for o in pool[:limit]})
 
     async def get(self, *, sha256: str) -> MediaObject | None:
         if self.fail:

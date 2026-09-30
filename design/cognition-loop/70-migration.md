@@ -539,7 +539,7 @@ shutdown; the session rides the Dreamer's model and takes its budget from
 shadow week is the measurement, and the `tool_selection_cognition` eval runs
 first.
 
-**Step 3a gate instrument built 2026-10-01** (DEC-251; review B1, D5): `nora cognition compare
+**Step 3a gate instrument built 2026-10-01** (DEC-252; review B1, D5): `nora cognition compare
 --since ISO [--until ISO] [--unit U] [--tolerance-minutes N] [--json]` reports, per tier and per
 clocked writer (`note-candidates`, `note-curation`, `note-merge`, `event:tag`, `standing-debrief`,
 `standing-ingest-fold`, `culture`, `proactive`, `proactive-decide`), matched / cognition-only /
