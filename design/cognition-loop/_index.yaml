@@ -43,7 +43,8 @@ description: >
   rebuilt into versioned builds. Under all of it is one data model
   (05, operator 2026-10-01): five layers in one flow, each defined by who
   writes it, AUTHORED (humans) → RECORD (ingestion) → ROLLUP (code) →
-  NOTEBOOK (the Cognition loop only; entries citing the Record and Rollup,
+  NOTEBOOK (the subconscious only, one writer per tier: Cognition for
+  Register and Standing, the Character and Lessons adaptors for theirs; entries citing the Record and Rollup,
   never evidence) → VIEWS (per-reader slices assembled at read time through
   one path, never stored), with MEMORY (Honcho) beside the flow; the
   hierarchy Layer › Tier › Kind › Entry, a tier existing only inside the

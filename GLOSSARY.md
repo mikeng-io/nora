@@ -313,12 +313,12 @@ The most-used words in this repo, and none of them was here until 2026-09-08.
 **`design/cognition-loop/05-data-model.md` is canonical for the topology and
 the vocabulary** (DEC-249): five **layers** in one flow, each defined by who
 writes it, **Authored** (humans) → **Record** (ingestion) → **Rollup**
-(code) → **Notebook** (the Cognition loop only) → **Views** (assembled at read
+(code) → **Notebook** (the subconscious, one writer per tier) → **Views** (assembled at read
 time through one path, never stored), with **Memory** (Honcho) beside the
 flow; and the hierarchy **Layer › Tier › Kind › Entry**. A **tier** is a
 subdivision inside the Notebook only (Register, Character, Standing,
 Lessons); the Record and the Rollup are layers, not tiers.
-**`design/cognition-loop/10-tiers.md` is canonical for the two layers and four
+**`design/cognition-loop/10-tiers.md` is canonical for the Record and Rollup layers and the four
 tiers below and every word they use**; this section only resolves what
 collides with words already in use elsewhere in this file, and adds what had
 no entry.
@@ -377,9 +377,10 @@ Other words this bundle introduces:
   `Gathering` (above). Never the fire-turn occasion (code `Event`, DEC-139,
   see *occasion*, below).
 - **subconscious / conscious** — the operator's own words (潛意識 / 明意識,
-  `design/cognition-loop/55-self.md` §6) for the two layers of mind (not the data layers of `05-data-model.md`): the Dreamer's
+  `design/cognition-loop/55-self.md` §6) for the conscious and the subconscious: the Dreamer's
   four adaptors run underneath, always; the tag turn and the fire turn
-  speak. Not code names, and never "tier".
+  speak. Not code names, and never "tier" or "layer" (a layer is a data
+  layer, DEC-249).
 
 ## Doctrine — what was decided
 

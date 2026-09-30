@@ -48,7 +48,7 @@ Notebook holds what the unit's affairs, its people and Nora add up to:
 | a settled fact about the speaker alone | Memory, through `remember`: not the Notebook |
 | something to do at a time | a reminder: machinery, not the Notebook |
 
-**Amended by DEC-249**: every Notebook entry is written by the Cognition loop.
+**Amended by DEC-249**: every Notebook entry is written by the subconscious, one writer per tier; the Register's is Cognition.
 From the cut-over the tag path writes none of the three kinds above; a
 «記低» about the unit and a date, time or RSVP are strong cues that wake
 Cognition, which writes the note, memo or event ([05](05-data-model.md) §7).

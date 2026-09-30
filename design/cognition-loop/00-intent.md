@@ -112,7 +112,7 @@ state, never as a command ([55](55-self.md) §6).
 layers in one flow, each defined by who writes it: **Authored** (doctrine and
 config, humans only) → **Record** (raw observations, ingestion only) →
 **Rollup** (computed from the Record by code) → **Notebook** (Nora's
-judgement, written only by the Cognition loop, citing the Record and Rollup
+judgement, written only by the subconscious, one writer per tier, citing the Record and Rollup
 and never evidence itself) → **Views** (per-reader slices assembled at read
 time through one path, never stored), with **Memory** (Honcho) beside the
 flow. Nothing writes backwards: what she says is observed into the Record. The
@@ -222,7 +222,7 @@ decisions of 2026-09-28, binding:
 - **D11** Cognition may request, move and cancel its own next wakes
   (`wake_at`, `wake_move`, `wake_cancel`); code surfaces a pending self-wake
   whenever its subject changes and never cancels one itself.
-- **D12** Two layers: the adaptors are her subconscious, the speaking turns
+- **D12** The conscious and the subconscious: the adaptors are her subconscious, the speaking turns
   her conscious; the subconscious drives the conscious, and the conscious
   reaches the subconscious only as Record and shared state.
 
@@ -230,5 +230,5 @@ decisions of 2026-09-28, binding:
 (DEC-249, [05](05-data-model.md)): five layers (Authored, Record, Rollup,
 Notebook, Views) with Memory beside them; Layer › Tier › Kind › Entry, a tier
 inside the Notebook only; one entry; evidence only the Record and Rollup; the
-Cognition loop the Notebook's only writer; memo first on the entry, right
+subconscious the Notebook's only writer, one writer per tier; memo first on the entry, right
 after the shadow week.

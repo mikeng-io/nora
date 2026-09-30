@@ -1,7 +1,7 @@
 ---
 type: design
 title: "Data model — five layers, one flow, and the Notebook's entries"
-description: "The canonical topology the operator ruled on 2026-10-01: five layers in flow order, each defined by who writes it and how it is derived (Authored, Record, Rollup, Notebook, Views), with Memory (Honcho) beside the flow; the boundary rules between them; the vocabulary Layer › Tier › Kind › Entry, where a tier is a subdivision of the Notebook only. Then the Notebook in detail: one object, the entry, with one machinery; its four tiers and their kinds; citations into the Record and Rollup and links between entries; Views assembled at read time through one path; the Cognition loop as the Notebook's only writer, the speaking turns reading Views and raising stimuli; the flow; what is built; the convergence order; the questions left."
+description: "The canonical topology the operator ruled on 2026-10-01: five layers in flow order, each defined by who writes it and how it is derived (Authored, Record, Rollup, Notebook, Views), with Memory (Honcho) beside the flow; the boundary rules between them; the vocabulary Layer › Tier › Kind › Entry, where a tier is a subdivision of the Notebook only. Then the Notebook in detail: one object, the entry, with one machinery; its four tiers and their kinds; citations into the Record and Rollup and links between entries; Views assembled at read time through one path; the subconscious as the Notebook's writer, one writer per tier (Cognition fast, the Character and Lessons adaptors slow), the speaking turns reading Views and raising stimuli; the flow; what is built; the convergence order; the questions left."
 tags: [nora, data-model, topology, layers, notebook, views, entry, register, character, standing, lessons, lineage]
 timestamp: '2026-10-01'
 edges:
@@ -31,7 +31,7 @@ and how it is derived.
 | **Authored** | doctrine, the Dreamer's objectives and skills, `config.toml`, `policy.toml`, `identity.toml`, reference photos for faces | humans only | written by hand | versioned files, each load recorded ([70](70-migration.md) §5) | no: it is the law, not a claim about the world |
 | **Record** | raw observations: transcripts, audio, photos and what they show, reactions, edits, deletes, presence, social items, play, Nora's own sends and decisions | ingestion code only | observed | append-only; hidden on forget, never deleted ([10](10-tiers.md) §8) | **yes** |
 | **Rollup** | episodes and aggregates: stays, trips, co-locations, outings, a person's day, places, rhythm, ties, responses to her ([25](25-rollup.md)) | the Rollup builder, code only | computed from the Record, deterministic | rebuildable and disposable; versioned builds | **yes**, as computed from the Record |
-| **Notebook** | Nora's judgement: entries that aggregate what the Record and Rollup show, in four tiers (§2) | the Cognition loop only (§7) | judged by a model, citing the Record and Rollup | revised, withdrawn, versioned; hidden on forget | no |
+| **Notebook** | Nora's judgement: entries that aggregate what the Record and Rollup show, in four tiers (§2) | the subconscious, one writer per tier: Cognition (Register, Standing), the Character adaptor (Character), the Lessons adaptor (Lessons) (§7) | judged by a model, citing the Record and Rollup | revised, withdrawn, versioned; hidden on forget | no |
 | **Views** | per-reader slices: a turn's blocks, a session's agenda, a portal page | one assembly path, code (§6) | assembled at read time under lineage and withdrawal | **never stored** | no |
 
 **Beside the flow: Memory.** Honcho: per-person understanding, and what people
@@ -46,11 +46,14 @@ be read into Views, never copied into the Notebook and never cited.
 2. **Only the Record, and the Rollup computed from it, is evidence.** A
    Notebook entry cites them; it is never evidence itself, and a reference
    from one entry to another is a link, not a citation (§5).
-3. **One writer per layer**: humans for Authored, ingestion for the Record, the
-   Rollup builder for the Rollup, the Cognition loop for the Notebook, the one
-   assembly path for Views.
+3. **One writer per layer, and inside the Notebook one writer per tier**:
+   humans for Authored, ingestion for the Record, the Rollup builder for the
+   Rollup, the subconscious for the Notebook (Cognition for the Register and
+   Standing, the Character adaptor for Character, the Lessons adaptor for
+   Lessons), the one assembly path for Views. Assess writes nothing there: it
+   reports.
 4. **Speaking turns only read Views and speak.** To change the Notebook they
-   raise a stimulus, which wakes the Cognition loop (§7).
+   raise a stimulus, which wakes the subconscious (§7).
 5. **Scope is explicit on every row**: a person, a room, the unit or the
    workspace (DEC-214's hierarchy). The unit is the read boundary (DEC-231);
    lineage decides per room what a View may show ([10](10-tiers.md) §3).
@@ -179,7 +182,7 @@ worked through with synthetic people. Bo asks the room where to eat on Friday.
    evenings); Memory's `about(Cy)`, which says Cy is vegetarian, a
    per-person fact Memory holds; and the lesson "two options, not five".
 3. It decides in the turn: two places, one with vegetarian dishes, each with
-   why. If the unit settles on one, the Cognition loop later writes the event.
+   why. If the unit settles on one, Cognition later writes the event.
 
 A read across the Notebook, the Rollup and Memory, then a decision.
 
@@ -215,14 +218,18 @@ from the tree on 2026-10-01; each departure is a migration item, §9):
 | the clocked adaptors' prompts | note-candidates, the curator, note-merge, proactive, culture, the ingest Standing fold, the debrief | each module's own builder (`nora/language/note_candidates.py`, `nora/language/proactive.py`, `nora/language/culture.py`, `nora/ingest/stages/standing_event.py`, `nora/engagement/debrief_render.py`) | none: they read unit-wide and never speak | notes through the store's reads | retired with the adaptors at step 4 |
 | portal pages | a person | `nora/web/gatherings.py` (events they created or answered), `nora/web/documents.py` | none: participation-scoped | none: events are outside the cascade | no page for notes, memos, Character, Standing or lessons yet |
 
-## 7. The Notebook's writer, and how the speaking turns hand off
+## 7. The Notebook's writers, and how the speaking turns hand off
 
-The operator's model ([55](55-self.md) §6): **the subconscious thinks and
-writes the Notebook; the conscious speaks from it.** The Notebook's one writer
-is the **Cognition loop**: the Dreamer's adaptors, Cognition for the Register
-and Standing and its slow reflection adaptors for Character and Lessons
-([00](00-intent.md) D9). The speaking turns read Views and speak; to change
-the Notebook they raise a stimulus.
+The operator's model ([55](55-self.md) §6), the conscious and the
+subconscious (明意識 / 潛意識): **the subconscious thinks and writes the
+Notebook; the conscious speaks from it.** The subconscious writes it with
+**one writer per tier**, split by timescale ([00](00-intent.md) D9):
+**Cognition**, fast and per group (per unit, on stimuli), writes the Register
+and Standing; the **Character adaptor** and the **Lessons adaptor**, slow
+reflection over days, write Character and Lessons, each alone; **Assess**
+writes nothing in the Notebook, only reports. The conscious (the tag and fire
+turns) never writes the Notebook: it reads Views and speaks, and to change the
+Notebook it raises a stimulus.
 
 | tier · kind | written by | how a speaking turn hands off | the turn reads it (pushed · pulled) | timescale |
 |---|---|---|---|---|
@@ -249,7 +256,7 @@ RECORD (ingestion code) ──▶ ROLLUP (Rollup builder, code)
   │   └──── stimuli ◀──────────┘ ◀── hand-off from a speaking turn: «記低», the end of a tag turn
   │            │
   │            ▼  wake evaluator (code): about two minutes on a strong cue
-  │      COGNITION LOOP (the subconscious: the Dreamer's adaptors)
+  │      THE SUBCONSCIOUS (the Dreamer's adaptors; one writer per tier)
   │        Cognition ──▶ Register, Standing ──┐
   │        Character ──▶ Character            ├─▶ NOTEBOOK (entries) ──cite──▶ Record, Rollup
   │        Lessons   ──▶ Lessons              ┘        │ links between entries
@@ -278,7 +285,7 @@ MEMORY (Honcho, beside the flow): fed from the Record; `remember`; read into Vie
 | Register · memo; Character · person, unit, Nora; Standing · unit, person; Lessons · lesson | not built | | | | | |
 
 Every table above keeps `row_history` (DEC-232). Built writers other than the
-Cognition loop: the tag turn's `note_create`, `note_update` and event verbs,
+subconscious: the tag turn's `note_create`, `note_update` and event verbs,
 and the debrief through `standing_revise` (DEC-239). The `reasoning` column
 holds [10](10-tiers.md) §4's six modes (a database CHECK; `standing_revise`
 takes `deduced`, `abduced` or `said`), finer than the entry's two-value basis
@@ -329,7 +336,7 @@ verbs (DEC-237); history capture (DEC-232); the cascade (DEC-238);
 
 ## 10. Questions for the operator
 
-Open, each with a recommendation:
+Open: the operator has not ruled. Each has a recommendation:
 
 | # | question | recommendation |
 |---|---|---|

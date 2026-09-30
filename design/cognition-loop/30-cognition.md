@@ -132,14 +132,14 @@ path, the fire path and, since DEC-212, the public summons.
 **Self-wakes are not acts** ([20](20-observe.md) §3 defines the pace verbs,
 their guards and their surfacing).
 
-**Which layer holds what** ([55](55-self.md) §6). The pace verbs and `remind_move`/`remind_cancel` belong to
+**Which holds what, the conscious or the subconscious** ([55](55-self.md) §6). The pace verbs and `remind_move`/`remind_cancel` belong to
 the subconscious only: no tag or fire turn holds them, and neither can read
 an agenda or a pending self-wake. `remind` is the bridge: Cognition holds it
-to reach the conscious layer, and the tag turn holds it for a reminder a
+to reach the conscious, and the tag turn holds it for a reminder a
 person asks for. The write verbs on the Register and room Standing are held
-by both layers; that is shared state, not a command. **Amended by DEC-249**
-([05](05-data-model.md) §7): from the cut-over only the Cognition loop writes
-the Notebook, and the tag turn hands off through a strong-cue stimulus
+by both the conscious and the subconscious; that is shared state, not a command. **Amended by DEC-249**
+([05](05-data-model.md) §7): from the cut-over only the subconscious writes
+the Notebook (one writer per tier), and the tag turn hands off through a strong-cue stimulus
 instead of holding these write verbs.
 
 **The grant.** The runtime's ceiling today is "may look, may not act": every

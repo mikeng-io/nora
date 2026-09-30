@@ -21,7 +21,7 @@ only**: Register, Character, Standing, Lessons. The Record and the Rollup are
 layers, not tiers; this node keeps its filename and describes them because
 the Notebook's rules are cut against them.
 
-**This node is canonical for** the Notebook's tiers and the two layers they
+**This node is canonical for** the Notebook's tiers and the Record and Rollup layers they
 cite: their questions, columns, modes, keys and words. Every other node, the
 GLOSSARY and every objective or skill uses these words with exactly these
 meanings; a new word for any of these things is a defect. The rules below
@@ -36,12 +36,12 @@ The first two rows are layers; the other four are the Notebook's tiers.
 |---|---|---|---|---|
 | **Record** (layer) | *what was observed?* | messages (hers included) with their edits, deletes and reactions; her loop decisions and reminder results; presence fixes and the collector's polls; social items; play samples; perceptions of media (what it shows, whose face); face labels and `character_dispute` items | **code**: ingestion ([20](20-observe.md)); the decision log and the fire path for her own acts; two tag-path recording verbs, `face_label` and `character_dispute`, each recording what one person said as an item authored by that person and citing their message | none: observed (a perception carries its model's confidence) |
 | **Rollup** (layer) | *what does the Record add up to over an interval?* | **episodes** (bounded happenings: a stay, a trip, a co-location, a face co-appearance, an outing, a play session, a person's day, a `response` to her send) and **aggregates** (counts, patterns and clusters over a window: place, rhythm, tie, play profile) | **code only**: a pure function of the Record up to a logical watermark ([25](25-rollup.md)) | **computed** |
-| **Register** | *what is the state of the unit's affairs?* | **note** (open, closes), **memo** (settled, kept), **event** (dated, attended) | the Cognition adaptor and the tag path, through write verbs; the Cognition loop alone after the cut-over (DEC-249) | **told**, **deduced**, **abduced** |
+| **Register** | *what is the state of the unit's affairs?* | **note** (open, closes), **memo** (settled, kept), **event** (dated, attended) | the Cognition adaptor and the tag path, through write verbs; the Cognition adaptor alone after the cut-over (DEC-249) | **told**, **deduced**, **abduced** |
 | **Character** | *what is this entity like, and how does it behave?* | one account per entity: a **person**, a **room**, the **unit**, **Nora** | the Character adaptor only, through `character_revise` | **induced** |
 | **Lessons** | *what has Nora learned about how to act here?* | per unit, **lessons**: short prescriptive lines of learned practice, each with the outcomes that taught it ([12](12-schemas.md) §4a) | the Lessons adaptor only, through `lesson_write` and `lesson_retire`; the operator's rollback on the portal goes through `lesson_retire` | **induced**, from outcomes |
-| **Standing** | *where does Nora stand?* | her held position toward a **room**, the **unit**, a **person** | the Cognition adaptor and the tag-path debrief, through `standing_revise`; the Cognition loop alone after the cut-over (DEC-249) | **deduced**, **abduced**, **said** |
+| **Standing** | *where does Nora stand?* | her held position toward a **room**, the **unit**, a **person** | the Cognition adaptor and the tag-path debrief, through `standing_revise`; the Cognition adaptor alone after step 4 (DEC-249) | **deduced**, **abduced**, **said** |
 
-Outside these, and neither these two layers nor a tier:
+Outside these, and neither the Record, the Rollup nor a tier:
 
 - **Doctrine** — authored by the operator (`nora/doctrine/`). Never derived,
   never changed by Nora in whole or in part, changed only when the humans
@@ -99,7 +99,9 @@ And the words that name processes, never stores:
    belongs to exactly one tier (the pace verbs write the stimulus table, no
    tier). The exceptions are `character_revise` and `lesson_write`, which
    may also write a tension row. **Amended by DEC-249** ([05](05-data-model.md)
-   §7): the Cognition loop is the only writer of the Notebook's four tiers. The tag
+   §7): the subconscious writes the Notebook, one writer per tier: Cognition
+   the Register and Standing, the Character adaptor Character, the Lessons
+   adaptor Lessons; Assess writes none. The tag
    path's Register writes and the debrief's Standing write, named in §1,
    move behind Cognition at or after the cut-over; the tag turn hands off
    through a strong-cue stimulus instead ([05](05-data-model.md) §9, E2).
@@ -266,7 +268,7 @@ machinery ([05](05-data-model.md) §4).
 |---|---|---|
 | **layer** | one of the five of [05](05-data-model.md) §1, defined by who writes it and how it is derived: Authored, Record, Rollup, Notebook, Views; Memory sits beside them | a tier; a prompt block |
 | **Authored** | the layer humans write: doctrine, the Dreamer's objectives and skills, the config files | anything a model writes |
-| **Notebook** | the layer of Nora's judgement: entries in four tiers, written only by the Cognition loop, citing the Record and Rollup, never evidence ([05](05-data-model.md)) | the Record; Memory |
+| **Notebook** | the layer of Nora's judgement: entries in four tiers, written only by the subconscious (one writer per tier), citing the Record and Rollup, never evidence ([05](05-data-model.md)) | the Record; Memory |
 | **Views** | the layer of per-reader slices, assembled at read time under lineage and withdrawal through one assembly path, never stored ([05](05-data-model.md) §6) | a store; a cache; a SQL view |
 | **Memory** | Honcho, beside the layers: per-person understanding and what people say about themselves; read into Views, never copied into the Notebook | any store of ours |
 | **tier** | a subdivision inside the Notebook only, by what it is about: Register, Character, Standing, Lessons | the Record or the Rollup (layers) |
@@ -274,7 +276,6 @@ machinery ([05](05-data-model.md) §4).
 | **entry** | one Notebook row: scope, subject, kind, body, citations, basis, confidence, visibility, lifecycle, revisions ([05](05-data-model.md) §3) | a Record item; a log line |
 | **basis** | an entry's `observed` or `inferred`, beside its confidence ([05](05-data-model.md) §3) | a reasoning mode (§4), its finer grain |
 | **link** | a typed reference from one entry to another; never evidence ([05](05-data-model.md) §5) | a citation |
-| **Cognition loop** | the Notebook's one writer: the Dreamer's adaptors (Cognition, and the Character and Lessons adaptors beside it) | the Cognition adaptor alone; a tier |
 | **Record** | the observed layer | a database row in general |
 | **Rollup** | the computed layer | a model's summary; Standing's fold of folds (below) |
 | **episode** | a Rollup row for one bounded happening, with a start, an end and participants | a raw ingested item (Graphiti's episode); an interaction exemplar (LangMem's) |
@@ -329,8 +330,8 @@ machinery ([05](05-data-model.md) §4).
 | **self-wake** | a `self` stimulus Cognition writes with `wake_at`, due when it forecasts the subject next needs a look; inward, nothing leaves ([20](20-observe.md) §3) | a reminder (outward, to a room) |
 | **reminder** | a row holding what is to be done in a room and when; every act is one | a note |
 | **brief** | what a reminder cognition writes carries: an intent (`tell` or `ask`) and the subject rows, never prose | the words she will say |
-| **subconscious** | the operator's name (潛意識) for the Dreamer's adaptors, always running underneath ([55](55-self.md) §6); not a code name | a tier; memory |
-| **conscious** | the operator's name (明意識) for the turns that speak: the tag turn and the fire turn; not a code name | a tier |
+| **subconscious** | the operator's name (潛意識) for the Dreamer's adaptors, always running underneath ([55](55-self.md) §6); not a code name | a tier; memory; a data layer |
+| **conscious** | the operator's name (明意識) for the turns that speak: the tag turn and the fire turn; not a code name | a tier; a data layer |
 | **tag path** | the turn a tag starts; the reflex | cognition |
 | **fire path** | `FirePath.speak` (`nora/app/fire.py`), the turn a due row starts; one of the senders of R-1b | a background session |
 | **unit** | the social unit a room belongs to (DEC-105); the key of everything derived | a Honcho named scope (how memory stores it); a "circle" |

@@ -26,7 +26,7 @@ The layers are [05](05-data-model.md) §1's (DEC-249); "Live" is part of what a 
 | **Memory** (beside the flow) | Honcho concluded it | representation (Nora → person), self card (Nora → Nora), peer card, `remember` conclusions | Honcho; `remember` |
 | **Operator-only** (outside the flow) | for the operator, never for her | tension rows ([55](55-self.md) §4); assess reports | the Character and Lessons adaptors; the Assess adaptor |
 
-The Notebook is written only by the Cognition loop from the cut-over
+The Notebook is written only by the subconscious, one writer per tier, from the cut-over
 (DEC-249); until then the tag path and the debrief also write it, as the row
 says.
 
@@ -179,7 +179,7 @@ flowchart BT
 Solid arrows are writes, reads and stimuli; dotted arrows are citations,
 which only point down. What she says becomes Record and raises no stimulus
 ([20](20-observe.md) §3). Every adaptor reads the tiers and blocks it needs;
-the read arrows are left out. The two layers are the operator's model
+the read arrows are left out. The conscious and the subconscious are the operator's model
 ([55](55-self.md) §6): the subconscious drives the conscious, through the
 pushed blocks and `remind`; the conscious reaches the subconscious only as
 Record and as ordinary Register and Standing writes.
