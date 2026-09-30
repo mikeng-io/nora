@@ -1,0 +1,30 @@
+[
+  {
+    "name": "the fire turn's culture read stops dropping a withdrawn account",
+    "file": "nora/app/fire.py",
+    "old": "        # WITHDRAWAL, the tag path's rule (`nora.domain.withdrawal`).\n        return render_supported(found)\n\n    async def _read_standing",
+    "new": "        return found\n\n    async def _read_standing",
+    "target": "tests/unit/test_fire_path.py -k test_a_withdrawn_standing_and_culture_do_not_render_in_a_fire_turn"
+  },
+  {
+    "name": "the fire turn's standing read stops dropping a withdrawn position",
+    "file": "nora/app/fire.py",
+    "old": "        # WITHDRAWAL, the tag path's rule (`nora.domain.withdrawal`).\n        return render_supported(found)\n\n    async def run(",
+    "new": "        return found\n\n    async def run(",
+    "target": "tests/unit/test_fire_path.py -k test_a_withdrawn_standing_and_culture_do_not_render_in_a_fire_turn"
+  },
+  {
+    "name": "the shared rule stops dropping a withdrawn head (both paths)",
+    "file": "nora/domain/withdrawal.py",
+    "old": "    if found is not None and found.unsupported_at is not None:",
+    "new": "    if False:",
+    "target": "tests/unit/test_fire_path.py -k test_a_withdrawn_standing_and_culture_do_not_render_in_a_fire_turn"
+  },
+  {
+    "name": "the shared rule drops every head, supported ones too",
+    "file": "nora/domain/withdrawal.py",
+    "old": "    if found is not None and found.unsupported_at is not None:",
+    "new": "    if found is not None:",
+    "target": "tests/unit/test_fire_path.py -k test_a_supported_standing_and_culture_do_render_in_a_fire_turn"
+  }
+]

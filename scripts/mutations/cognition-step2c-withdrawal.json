@@ -30,14 +30,14 @@
   {
     "name": "the standing block actually stops rendering an unsupported position",
     "file": "nora/engagement/context.py",
-    "old": "        if found is not None and found.unsupported_at is not None:\n            return None\n        return found\n\n    async def _notes",
+    "old": "        return render_supported(found)\n\n    async def _notes",
     "new": "        return found\n\n    async def _notes",
     "target": "tests/unit/test_engagement_context.py -k test_an_unsupported_standing_position_does_not_render"
   },
   {
     "name": "the culture block actually stops rendering an unsupported account",
     "file": "nora/engagement/context.py",
-    "old": "        if found is not None and found.unsupported_at is not None:\n            return None\n        return found\n\n    async def _presence",
+    "old": "        return render_supported(found)\n\n    async def _presence",
     "new": "        return found\n\n    async def _presence",
     "target": "tests/unit/test_engagement_context.py -k test_an_unsupported_culture_account_does_not_render"
   },
