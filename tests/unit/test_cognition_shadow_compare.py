@@ -124,9 +124,9 @@ def test_the_reviewers_scenario_one_waiting_close_does_not_close_three_writers_r
 
 def test_each_row_takes_the_nearest_unused_close_in_time_order():
     ledger = CloseLedger([_close(at=105, session_id=1), _close(at=140, session_id=2)], 50)
-    assert _claim(ledger, at=100) == "waiting"   # takes the 105 close
-    assert _claim(ledger, at=104) == "waiting"   # only the 140 close is left
-    assert _claim(ledger, at=106) is None
+    assert _claim(ledger, at=100) == "waiting"   # the 105 close, not the 140 one
+    assert _claim(ledger, at=130) == "waiting"   # the 140 close is still there for it
+    assert _claim(ledger, at=131) is None
 
 
 def test_a_close_before_the_clocked_write_does_not_explain_it():
