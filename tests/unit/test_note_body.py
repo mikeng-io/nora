@@ -25,6 +25,7 @@ from nora.domain.note_body import (
     cited_ids_in,
     parse_note_body,
     rollup_key,
+    rollup_keys_in,
 )
 
 SHOWN = Shown(
@@ -241,6 +242,19 @@ def test_a_rollup_row_the_write_did_not_read_is_refused():
     assert _refused(
         "## Decided\n## Open\n- where [rollup(stay|p_ada|a/b)]\n", shown=WITH_KEYS,
     ) == "unknown_rollup_key"
+
+
+def test_a_group_mixing_ids_and_rollup_keys_yields_both_and_a_key_s_commas_are_not_ids():
+    """The edge and the lineage of a note are read from these two (#663): the
+    messages of a mixed group were missed by the ids-only pattern, and a key
+    carries commas (`colocation|u|p_ada,p_ben|...`) that must not be split."""
+    coloc = rollup_key("colocation", "u|p_ada,p_ben", "2026-10-01T09:00:00+08:00",
+                       "2026-10-01T11:00:00+08:00")
+    text = f"- a [4812, rollup({KEY})]\n- b [rollup({coloc}), 7]\n- c [rollup({KEY})] [9]"
+    assert cited_ids_in(text) == {4812, 7, 9}
+    assert rollup_keys_in(text) == {KEY, coloc}
+    assert rollup_keys_in("a legacy body [12] with [no key] rollup(stay|x|a/b)") == frozenset()
+    assert cited_ids_in("[rollup(stay|p_ada|a/b), x]") == frozenset()
 
 
 def test_a_rollup_row_does_not_say_who_said_a_line():

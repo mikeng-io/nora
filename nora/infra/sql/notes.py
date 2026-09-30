@@ -109,7 +109,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from nora.domain.lineage import Lineage, note_revision_lineage, room_key
-from nora.domain.note_body import cited_ids_in
+from nora.domain.note_body import cited_ids_in, rollup_keys_in
 from nora.domain.notes import (
     CANDIDATE_CREATED,
     CANDIDATE_PENDING,
@@ -138,6 +138,7 @@ from nora.domain.reminders import (
     ReminderState,
 )
 from nora.infra.sql.citation import record_citations
+from nora.infra.sql.event_evidence import rollup_lineage
 from nora.infra.sql.schema import (
     MESSAGES,
     NOTE,
@@ -181,7 +182,7 @@ _MESSAGE_ID_MAX = 2**31 - 1
 
 
 async def _revision_lineage(
-    conn: AsyncConnection, *, body: str, origin: str, first: bool,
+    conn: AsyncConnection, *, body: str, origin: str, first: bool, unit: str,
     evidence_room: str | None = None,
 ) -> tuple[Lineage, int | None]:
     """A revision's lineage and `as_of`, from the messages its body cites
@@ -202,9 +203,15 @@ async def _revision_lineage(
         rooms = {r.id: room_key(r.platform, r.conversation_id) for r in rows}
         newest = max((r.ts for r in rows), default=None)
     origin_key = await _room_key_of(conn, origin)
+    # A Rollup row the body cites brings its own lineage (`rollup_lineage`,
+    # shared with the event store: one resolution of a key, in `unit`).
+    rollups = {
+        key: await rollup_lineage(conn, key=key, unit=unit)
+        for key in sorted(rollup_keys_in(body))
+    }
     lineage = note_revision_lineage(
         cited=cited, rooms=rooms, origin=origin, origin_key=origin_key,
-        first=first, evidence_room=evidence_room,
+        first=first, evidence_room=evidence_room, rollup_lineages=rollups,
     )
     return lineage, newest
 
@@ -512,6 +519,7 @@ class SqlNoteStore:
         was raised in and on every room it cites."""
         lineage, cited_at = await _revision_lineage(
             conn, body=revision.body, origin=note.established_in, first=True,
+            unit=note.unit,
         )
         as_of = cited_at if cited_at is not None else revision.written_at
         derived = {
@@ -746,7 +754,7 @@ class SqlNoteStore:
             origin, held, held_as_of = head
             lineage, cited_at = await _revision_lineage(
                 conn, body=revision.body, origin=origin, first=False,
-                evidence_room=evidence_room,
+                evidence_room=evidence_room, unit=unit,
             )
             as_of = cited_at if cited_at is not None else revision.written_at
             derived = {"lineage": lineage.to_json(), "as_of": as_of}
@@ -1531,7 +1539,7 @@ class SqlNoteStore:
             if survivor is not None:
                 origin, held, held_as_of = survivor
                 lineage, cited_at = await _revision_lineage(
-                    conn, body=revision.body, origin=origin, first=False,
+                    conn, body=revision.body, origin=origin, first=False, unit=unit,
                 )
                 as_of = cited_at if cited_at is not None else revision.written_at
                 derived = {"lineage": lineage.to_json(), "as_of": as_of}

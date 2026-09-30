@@ -46,9 +46,10 @@ list, resolves to nobody in `identity.toml`, and would otherwise be reported as
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass
 
-from ..domain.models import PersonRef
+from ..domain.models import PersonRef, TranscriptRow
 from ..domain.ports import Roster, RosterSource
 from ..persons import Persons
 
@@ -135,6 +136,23 @@ def _names_of(person: PersonRef) -> frozenset[str]:
     return frozenset(key for c in candidates if (key := _key(c)))
 
 
+def trigger_message_ids(
+    transcript: Sequence[TranscriptRow], *, sender_id: str, timestamp: int,
+) -> tuple[int, ...]:
+    """The Record ids of the message a tag answers, found in the window the
+    prompt was built from: a row that is not Nora's, from the tagger's platform
+    id, at the message's own timestamp. Empty when the row is not in the window
+    (the tag's own message is the newest row, so this is the case of a window
+    read that failed or was cut to nothing): a write then cites nothing and keeps
+    its room-only lineage. Never guesses a nearby row: a wrong id would put an
+    edge to a message that did not raise the turn, and the cascade would then
+    withdraw an event for the wrong person's deletion."""
+    return tuple(
+        r.id for r in transcript
+        if not r.is_nora and r.sender_id == sender_id and r.ts == timestamp
+    )
+
+
 class Room:
     """One tag's conversation, resolved to people. Constructed fresh per tag.
 
@@ -155,7 +173,9 @@ class Room:
         tagger: PersonRef | None = None,
         self_ids: frozenset[str] = frozenset(),
         tagger_card_injected: bool = False,
+        trigger_message_ids: tuple[int, ...] = (),
     ) -> None:
+        self._trigger_message_ids = tuple(trigger_message_ids)
         self._platform = platform
         self._conversation_id = conversation_id
         self._roster_source = roster_source
@@ -180,6 +200,16 @@ class Room:
         drift.
         """
         return self._platform
+
+    @property
+    def trigger_message_ids(self) -> tuple[int, ...]:
+        """The Record ids of the message(s) that raised this turn (`messages.id`),
+        read by the event verbs so an event a tag turn writes cites what it rests
+        on (10 §2 rule 7: the withdrawal cascade can only reach a row through an
+        edge). Empty when the turn was not raised by a Record message (the fire
+        path) or the row is not in the window: the write then keeps the room-only
+        lineage and records no edge, as it did before."""
+        return self._trigger_message_ids
 
     @property
     def tagger(self) -> PersonRef | None:

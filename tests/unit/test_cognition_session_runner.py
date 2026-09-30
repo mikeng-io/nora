@@ -94,7 +94,7 @@ def _runner(
         home_rooms={"unit-1": HOME}, read_tools_for=lambda unit, rooms: [],
         skill_text_for=lambda kinds: "", grounder=EmptyGrounder(), doctrine_text="DOCTRINE",
         doctrine_sha256="sha", open_note_titles=_async_const(()),
-        open_proposed_events=_async_const2(()), prior_standing=_async_const2(None),
+        open_events=_async_const2(()), prior_standing=_async_const2(None),
         pending_self_wakes=_async_const(()), pending_mirrored_reminds=_async_const(()),
         session_mode=session_mode, budget=BUDGET, cooldown_seconds=300.0, max_items=12,
         max_strikes=3, mint_ref=_counting_ref(), clock=lambda: NOW / 1000,

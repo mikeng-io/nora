@@ -3059,3 +3059,28 @@ async def test_the_debrief_is_handed_the_account_the_turn_read(monkeypatch):
 
     assert len(spy.calls) == 1
     assert spy.calls[0]["culture"] is account
+
+
+# ---------------------------------------------------------------------------
+# The Room a tag builds carries the Record row that raised it, so an event the
+# turn writes cites it (the review of PR #669; `Room.trigger_message_ids`).
+# ---------------------------------------------------------------------------
+
+
+async def test_the_tag_s_room_carries_the_record_row_of_the_message_that_raised_it():
+    seen: list = []
+
+    class _Spy(ToolRegistry):
+        def surface(self, **kw):
+            seen.append(kw["room"])
+            return super().surface(**kw)
+
+    audit = FakeRecordStore()
+    await audit.append(message=_msg("g1", "+852222"), person_id=None)      # someone else's
+    mine = await audit.append(message=_msg(), person_id=None)
+    pipeline, _metrics, _audit, _memory, background = _build_pipeline(
+        audit=audit, tool_registry=_Spy(),
+    )
+    await pipeline.run(_request())
+    await _drain(background)
+    assert [r.trigger_message_ids for r in seen] == [(mine,)]

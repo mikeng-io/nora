@@ -127,6 +127,7 @@ async def _session(
     cooldown: float = 300.0, own_sends: Mapping[int, tuple[RecordItem, ...]] | None = None,
     extra: tuple[Stimulus, ...] = (),
     pending_reminds: tuple[PendingMirroredRemind, ...] = (),
+    events: tuple[Any, ...] = (),
 ) -> tuple[InMemoryCognitionDryRunStore, Any]:
     store = InMemoryCognitionDryRunStore()
     stimuli = InMemoryStimulusStore(ledger=store)
@@ -154,7 +155,7 @@ async def _session(
         )) if records != {}
         else EmptyGrounder(),
         doctrine_text="D", doctrine_sha256=None, open_note_titles=_const(()),
-        open_proposed_events=_const(()), prior_standing=_const(head),
+        open_events=_const(events), prior_standing=_const(head),
         pending_self_wakes=_const(()), pending_mirrored_reminds=_const(pending_reminds),
         session_mode="shadow", budget=BUDGET, cooldown_seconds=cooldown, max_items=12,
         max_strikes=3, clock=lambda: NOW / 1000, roster_of=roster_of,

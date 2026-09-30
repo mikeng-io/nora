@@ -212,7 +212,7 @@ def _runner(
         skill_text_for=kw.pop("skill_text_for", lambda kinds: ""),
         grounder=grounder or EmptyGrounder(),
         doctrine_text="FIXED", doctrine_sha256="fixed-sha",
-        open_note_titles=const, open_proposed_events=const, prior_standing=const,
+        open_note_titles=const, open_events=const, prior_standing=const,
         pending_self_wakes=const, pending_mirrored_reminds=const,
         session_mode="shadow",
         budget=AdaptorBudget(turns=4, total_tokens=1000, output_tokens=100, timeout_seconds=30),

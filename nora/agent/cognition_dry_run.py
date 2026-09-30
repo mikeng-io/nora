@@ -56,11 +56,15 @@ from datetime import UTC, datetime
 
 from nora.domain.cognition_write import WouldWrite, stale_event_base
 from nora.domain.gatherings import (
+    TERMINAL_STATUSES,
+    FieldMeta,
     Gathering,
+    GatheringStatus,
     InvalidEventFieldModeError,
+    merge_field_meta,
     still_open_gatherings,
 )
-from nora.domain.note_body import NoteBodyError, Shown, parse_note_body
+from nora.domain.note_body import NoteBodyError, Shown, check_citations, parse_note_body
 from nora.domain.notes import (
     NoteCreationProposal,
     NoteRevisionProposal,
@@ -226,6 +230,16 @@ async def dry_run_note_update(
 # event
 # --------------------------------------------------------------------------
 
+#: The event field each `Gathering` column a write can change states (12 §3's
+#: "what, start, end, place, people, status"; `nora.domain.gatherings.EVENT_PARTS`):
+#: the part a citation, a lineage section and a stated reasoning attach to.
+_PART_OF: dict[str, str] = dict(zip(
+    ("title", "when", "end", "venue_text", "people", "status"),
+    ("what", "start", "end", "place", "people", "status"),
+    strict=True,
+))
+
+
 def _event_candidate(event: Gathering) -> dict[str, object]:
     row = asdict(event)
     row["id"] = str(event.id)
@@ -242,9 +256,27 @@ def _event_candidate(event: Gathering) -> dict[str, object]:
     return row
 
 
+def _checked_evidence(
+    *, verb: str, reasoning: str, confidence: str, cited_ids: Sequence[str], shown: Shown,
+    parts: Sequence[str], may_be_uncited: bool,
+) -> tuple[tuple[FieldMeta, ...], tuple[int, ...], tuple[str, ...]]:
+    """What an event write states and rests on, held to what the session saw
+    (30 §3 checks 1 and 5). Raises `InvalidEventFieldModeError` for a mode or a
+    confidence the tier does not allow and `NoteBodyError` for a citation it was
+    not shown, exactly the two the note verbs raise. `may_be_uncited` is the
+    one write whose evidence is the clock: `lapsed`, the date passing with
+    nothing agreed (40 §3), which no row carries."""
+    meta = tuple(FieldMeta(field=p, reasoning=reasoning, confidence=confidence) for p in parts)
+    if not cited_ids and may_be_uncited:
+        return meta, (), ()
+    ids, keys = check_citations(cited_ids, shown, what=verb)
+    return meta, ids, keys
+
+
 async def dry_run_event_propose(
     *, ledger: CognitionDryRunStore, session_id: int | None, unit: str,
-    platform: str, conversation_id: str, now_ms: int,
+    platform: str, conversation_id: str, now_ms: int, shown: Shown,
+    reasoning: str, confidence: str, cited_ids: Sequence[str],
     build: type[Gathering] = Gathering, open_proposed_events: Sequence[Gathering] = (),
     now: datetime | None = None, **event_kwargs: object,
 ) -> WouldWrite:
@@ -255,6 +287,19 @@ async def dry_run_event_propose(
     caller (a session wiring, or a test) builds the row the way
     `GatheringService.create_event` builds one today, then hands it here
     instead of `self._store.create(event)`.
+
+    `status` is `staged` or `proposed` (30 §2: "`event_propose` (status
+    `staged` or `proposed`)"); any other is refused `bad_status`, an event
+    is born early in its lifecycle.
+
+    `reasoning` (`told`, `deduced` or `abduced`), `confidence` and `cited_ids`
+    (message ids and `rollup(...)` keys) are what 40 §4 says every field
+    carries; `cited_ids` are held to `shown` as a note's are. **An abduced value
+    is STORED, with its mode** (40 §4, 10 §2 rule 4): the field is written like
+    any other and its `FieldMeta.reasoning` says `abduced`, which is what makes
+    every reader render it as a question (`nora.domain.gatherings.render_field`)
+    and what no later assent changes: only a write that restates the field, on
+    its own citations, can.
 
     `open_proposed_events` (review follow-up on #625's step 3a-i): the
     conversation's already-`PROPOSED` events, READ-ONLY input the caller
@@ -268,32 +313,55 @@ async def dry_run_event_propose(
         k: (str(v) if hasattr(v, "isoformat") or k in ("id",) else v)
         for k, v in event_kwargs.items()
     }
+    args |= {"reasoning": reasoning, "confidence": confidence, "cited_ids": list(cited_ids)}
+
+    async def refuse(reason: str, detail: str | None = None) -> WouldWrite:
+        write = WouldWrite(
+            tier="event", verb="event_propose", platform=platform,
+            conversation_id=conversation_id, args=args, outcome="refused",
+            refusal_reason=reason, refusal_detail=detail,
+        )
+        return await _record(ledger, session_id=session_id, unit=unit, write=write, now_ms=now_ms)
+
     clock = now if now is not None else datetime.fromtimestamp(now_ms / 1000, tz=UTC)
     still_open = still_open_gatherings(open_proposed_events, now=clock)
     if len(still_open) >= 2:
-        write = WouldWrite(
-            tier="event", verb="event_propose", platform=platform,
-            conversation_id=conversation_id, args=args, outcome="refused",
-            refusal_reason="ambiguous_open_gatherings",
-            refusal_detail=f"{len(still_open)} open proposed events for {conversation_id}",
+        return await refuse(
+            "ambiguous_open_gatherings",
+            f"{len(still_open)} open proposed events for {conversation_id}",
         )
-        return await _record(ledger, session_id=session_id, unit=unit, write=write, now_ms=now_ms)
+    if event_kwargs.get("status") not in (GatheringStatus.STAGED, GatheringStatus.PROPOSED):
+        return await refuse("bad_status", "an event is proposed or staged, nothing later")
+    stated = {
+        "title": event_kwargs.get("title"), "when": event_kwargs.get("when"),
+        "venue_text": event_kwargs.get("venue_text"), "status": event_kwargs["status"],
+    }
+    stated = {k: v for k, v in stated.items() if v is not None}
+    try:
+        meta, _ids, _keys = _checked_evidence(
+            verb="event_propose", reasoning=reasoning, confidence=confidence,
+            cited_ids=cited_ids, shown=shown,
+            parts=[_PART_OF[k] for k in stated], may_be_uncited=False,
+        )
+    except InvalidEventFieldModeError as exc:
+        return await refuse(f"bad_{exc.field}", str(exc))
+    except NoteBodyError as exc:
+        return await refuse(exc.rule, str(exc))
     try:
         event = build(
-            conversation_id=conversation_id, unit_id=unit,
+            conversation_id=conversation_id, unit_id=unit, reasoning=reasoning,
+            confidence=confidence, field_meta=meta,
             **event_kwargs,  # type: ignore[arg-type]
         )
     except InvalidEventFieldModeError as exc:
-        write = WouldWrite(
-            tier="event", verb="event_propose", platform=platform,
-            conversation_id=conversation_id, args=args, outcome="refused",
-            refusal_reason=f"bad_{exc.field}", refusal_detail=str(exc),
-        )
-        return await _record(ledger, session_id=session_id, unit=unit, write=write, now_ms=now_ms)
+        return await refuse(f"bad_{exc.field}", str(exc))
+    candidate = _event_candidate(event) | {
+        "cited_ids": list(cited_ids), "evidence_parts": [m.field for m in meta],
+    }
     write = WouldWrite(
         tier="event", verb="event_propose", platform=platform,
         conversation_id=conversation_id, args=args, outcome="would_commit",
-        candidate=_event_candidate(event),
+        candidate=candidate,
     )
     return await _record(ledger, session_id=session_id, unit=unit, write=write, now_ms=now_ms)
 
@@ -301,45 +369,70 @@ async def dry_run_event_propose(
 async def dry_run_event_revise(
     *, ledger: CognitionDryRunStore, session_id: int | None, unit: str,
     platform: str, conversation_id: str, current: Gathering | None,
-    base_revision_id: str | None, now_ms: int, **field_changes: object,
+    base_revision_id: str | None, now_ms: int, shown: Shown, reasoning: str,
+    confidence: str, cited_ids: Sequence[str], verb: str = "event_revise",
+    **field_changes: object,
 ) -> WouldWrite:
     """`event_revise` in shadow. `current` is the row the caller already
     read (the same "prior is a parameter" choice `standing_revise` makes,
-    §3b): this function never reads a store."""
-    args = {"base_revision_id": base_revision_id, **field_changes}
+    §3b): this function never reads a store.
+
+    The fields `field_changes` names are the fields this write states, each
+    with `reasoning` and `confidence`, resting on `cited_ids` (held to `shown`
+    as a note's are; a move to `lapsed` alone may cite nothing, the date
+    passing is no row). Fields it leaves alone keep what they carried. **An
+    abduced value is stored with its mode**, as `event_propose` says."""
+    args = {
+        "base_revision_id": base_revision_id, **field_changes, "reasoning": reasoning,
+        "confidence": confidence, "cited_ids": list(cited_ids),
+    }
     current_head = None if current is None else (
         None if current.head_revision_id is None else str(current.head_revision_id)
     )
+
+    async def refuse(reason: str, detail: str | None = None) -> WouldWrite:
+        write = WouldWrite(
+            tier="event", verb=verb, platform=platform,
+            conversation_id=conversation_id, args=args, outcome="refused",
+            refusal_reason=reason, refusal_detail=detail,
+            base_revision_id=base_revision_id,
+        )
+        return await _record(ledger, session_id=session_id, unit=unit, write=write, now_ms=now_ms)
+
     if current is None:
-        write = WouldWrite(
-            tier="event", verb="event_revise", platform=platform,
-            conversation_id=conversation_id, args=args, outcome="refused",
-            refusal_reason="not_found", base_revision_id=base_revision_id,
-        )
-        return await _record(ledger, session_id=session_id, unit=unit, write=write, now_ms=now_ms)
+        return await refuse("not_found")
     if stale_event_base(base_revision_id=base_revision_id, current_head_revision_id=current_head):
-        write = WouldWrite(
-            tier="event", verb="event_revise", platform=platform,
-            conversation_id=conversation_id, args=args, outcome="refused",
-            refusal_reason="stale_base",
-            refusal_detail=f"current head is {current_head!r}",
-            base_revision_id=base_revision_id,
+        return await refuse("stale_base", f"current head is {current_head!r}")
+    if current.status in TERMINAL_STATUSES:
+        # 40 §3: only a status BEFORE `happened` may be revised.
+        return await refuse(
+            "terminal_status", f"the event is {current.status}; nothing moves it on",
         )
-        return await _record(ledger, session_id=session_id, unit=unit, write=write, now_ms=now_ms)
     try:
-        updated = replace(current, **field_changes)  # type: ignore[arg-type]
-    except InvalidEventFieldModeError as exc:
-        write = WouldWrite(
-            tier="event", verb="event_revise", platform=platform,
-            conversation_id=conversation_id, args=args, outcome="refused",
-            refusal_reason=f"bad_{exc.field}", refusal_detail=str(exc),
-            base_revision_id=base_revision_id,
+        meta, _ids, _keys = _checked_evidence(
+            verb=verb, reasoning=reasoning, confidence=confidence, cited_ids=cited_ids,
+            shown=shown, parts=[_PART_OF[k] for k in field_changes],
+            may_be_uncited=str(field_changes.get("status")) == GatheringStatus.LAPSED,
         )
-        return await _record(ledger, session_id=session_id, unit=unit, write=write, now_ms=now_ms)
+    except InvalidEventFieldModeError as exc:
+        return await refuse(f"bad_{exc.field}", str(exc))
+    except NoteBodyError as exc:
+        return await refuse(exc.rule, str(exc))
+    try:
+        updated = replace(
+            current, **field_changes,  # type: ignore[arg-type]
+            reasoning=reasoning, confidence=confidence,
+            field_meta=merge_field_meta(current.field_meta, meta),
+        )
+    except InvalidEventFieldModeError as exc:
+        return await refuse(f"bad_{exc.field}", str(exc))
+    candidate = _event_candidate(updated) | {
+        "cited_ids": list(cited_ids), "evidence_parts": [m.field for m in meta],
+    }
     write = WouldWrite(
-        tier="event", verb="event_revise", platform=platform,
+        tier="event", verb=verb, platform=platform,
         conversation_id=conversation_id, args=args, outcome="would_commit",
-        candidate=_event_candidate(updated), base_revision_id=base_revision_id,
+        candidate=candidate, base_revision_id=base_revision_id,
     )
     return await _record(ledger, session_id=session_id, unit=unit, write=write, now_ms=now_ms)
 
@@ -347,13 +440,17 @@ async def dry_run_event_revise(
 async def dry_run_event_set_status(
     *, ledger: CognitionDryRunStore, session_id: int | None, unit: str,
     platform: str, conversation_id: str, current: Gathering | None, status: str,
-    base_revision_id: str | None, now_ms: int,
+    base_revision_id: str | None, now_ms: int, shown: Shown, reasoning: str,
+    confidence: str, cited_ids: Sequence[str],
 ) -> WouldWrite:
-    """`event_set_status` in shadow."""
+    """`event_set_status` in shadow: `event_revise` over the `status` field
+    alone, recorded under its own verb name."""
     return await dry_run_event_revise(
         ledger=ledger, session_id=session_id, unit=unit, platform=platform,
         conversation_id=conversation_id, current=current,
-        base_revision_id=base_revision_id, now_ms=now_ms, status=status,
+        base_revision_id=base_revision_id, now_ms=now_ms, shown=shown,
+        reasoning=reasoning, confidence=confidence, cited_ids=cited_ids,
+        verb="event_set_status", status=status,
     )
 
 

@@ -34,14 +34,18 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from nora.domain.gatherings import (
     RSVP,
     DuplicateGatheringError,
+    EventEvidence,
     EventRevision,
     Gathering,
     GatheringStatus,
     RSVPResponse,
     StaleEventRevisionError,
+    field_meta_from_json,
+    field_meta_to_json,
     normalise_gathering,
 )
 from nora.domain.lineage import Lineage
+from nora.infra.sql.event_evidence import apply_evidence
 from nora.infra.sql.schema import EVENT_REVISION, EVENT_RSVPS, EVENTS
 
 # PostgreSQL SQLSTATE 23505, unique_violation — matched exactly, the same
@@ -79,6 +83,8 @@ def _row_to_event(r: Row[Any]) -> Gathering:
             as_of=r.as_of,
             exclude_persons=tuple(r.exclude_persons or ()),
             head_revision_id=r.head_revision_id,
+            field_meta=field_meta_from_json(r.field_meta),
+            unsupported_at=r.unsupported_at,
         )
     )
 
@@ -107,6 +113,7 @@ def _row_to_revision(r: Row[Any]) -> EventRevision:
         body=r.body,
         written_by=r.written_by,
         written_at=r.written_at,
+        field_meta=field_meta_from_json(r.field_meta),
     )
 
 
@@ -146,6 +153,10 @@ def _event_values(event: Gathering) -> dict[str, Any]:
         "as_of": event.as_of,
         "exclude_persons": list(event.exclude_persons),
         "head_revision_id": event.head_revision_id,
+        "field_meta": field_meta_to_json(event.field_meta),
+        # `unsupported_at` is deliberately NOT written: only the withdrawal
+        # cascade sets it, and an update built from a row read before a cascade
+        # must not put the mark back to NULL.
     }
 
 
@@ -173,6 +184,7 @@ def _revision_values(revision: EventRevision) -> dict[str, Any]:
         "body": revision.body,
         "written_by": revision.written_by,
         "written_at": revision.written_at,
+        "field_meta": field_meta_to_json(revision.field_meta),
     }
 
 
@@ -188,7 +200,7 @@ def _revision_of(event: Gathering, *, parent_revision_id: UUID | None) -> EventR
         venue_maps_url=event.venue_maps_url, people=event.people,
         reasoning=event.reasoning, confidence=event.confidence,
         lineage=event.lineage, as_of=event.as_of, body=None,
-        written_by="tag", written_at=event.created_at,
+        written_by="tag", written_at=event.created_at, field_meta=event.field_meta,
     )
 
 
@@ -198,12 +210,19 @@ class SqlGatheringStore:
     def __init__(self, engine: AsyncEngine) -> None:
         self._engine = engine
 
-    async def create(self, event: Gathering) -> Gathering:
+    async def create(
+        self, event: Gathering, *, evidence: EventEvidence | None = None,
+    ) -> Gathering:
         row = normalise_gathering(event)
-        revision = _revision_of(row, parent_revision_id=None)
-        row_with_head = _replace(row, head_revision_id=revision.id)
         try:
             async with self._engine.begin() as conn:
+                if evidence is not None:
+                    lineage, as_of = await apply_evidence(
+                        conn, event=row, held=row.lineage, evidence=evidence,
+                    )
+                    row = _replace(row, lineage=lineage, as_of=as_of)
+                revision = _revision_of(row, parent_revision_id=None)
+                row_with_head = _replace(row, head_revision_id=revision.id)
                 await conn.execute(
                     sa.insert(EVENTS).values(**_event_values(row_with_head)),
                 )
@@ -222,8 +241,28 @@ class SqlGatheringStore:
             row = (await conn.execute(stmt)).one_or_none()
         return None if row is None else _row_to_event(row)
 
+    async def get_by_reminder(self, reminder_id: UUID) -> Gathering | None:
+        stmt = sa.select(EVENTS).where(EVENTS.c.reminder_id == reminder_id)
+        async with self._engine.connect() as conn:
+            row = (await conn.execute(stmt)).first()
+        return None if row is None else _row_to_event(row)
+
+    async def unsupported_reminder_ids(
+        self, reminder_ids: Sequence[UUID],
+    ) -> frozenset[UUID]:
+        if not reminder_ids:
+            return frozenset()
+        stmt = sa.select(EVENTS.c.reminder_id).where(
+            EVENTS.c.reminder_id.in_(list(reminder_ids)),
+            EVENTS.c.unsupported_at.is_not(None),
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+        return frozenset(r.reminder_id for r in rows)
+
     async def list_for_conversation(
         self, *, conversation_id: str, status: GatheringStatus | None = None,
+        include_unsupported: bool = False,
     ) -> Sequence[Gathering]:
         stmt = (
             sa.select(EVENTS)
@@ -232,11 +271,15 @@ class SqlGatheringStore:
         )
         if status is not None:
             stmt = stmt.where(EVENTS.c.status == status.value)
+        if not include_unsupported:
+            stmt = stmt.where(EVENTS.c.unsupported_at.is_(None))
         async with self._engine.connect() as conn:
             rows = (await conn.execute(stmt)).all()
         return [_row_to_event(r) for r in rows]
 
-    async def list_for_person(self, *, person_id: str) -> Sequence[Gathering]:
+    async def list_for_person(
+        self, *, person_id: str, include_unsupported: bool = False,
+    ) -> Sequence[Gathering]:
         rsvpd = sa.select(EVENT_RSVPS.c.event_id).where(
             EVENT_RSVPS.c.person_id == person_id,
         )
@@ -248,17 +291,20 @@ class SqlGatheringStore:
             ))
             .order_by(EVENTS.c.created_at)
         )
+        if not include_unsupported:
+            stmt = stmt.where(EVENTS.c.unsupported_at.is_(None))
         async with self._engine.connect() as conn:
             rows = (await conn.execute(stmt)).all()
         return [_row_to_event(r) for r in rows]
 
     async def update(
         self, event: Gathering, *, base_revision_id: UUID | None = None,
+        evidence: EventEvidence | None = None,
     ) -> Gathering:
         row = normalise_gathering(event)
         async with self._engine.begin() as conn:
             current = (await conn.execute(
-                sa.select(EVENTS.c.head_revision_id)
+                sa.select(EVENTS.c.head_revision_id, EVENTS.c.lineage)
                 .where(EVENTS.c.id == row.id)
                 .with_for_update(),
             )).one_or_none()
@@ -269,6 +315,14 @@ class SqlGatheringStore:
                     sa.select(EVENTS).where(EVENTS.c.id == row.id),
                 )).one())
                 raise StaleEventRevisionError(row.id, stale)
+            if evidence is not None:
+                # The lineage the row holds NOW (read under the lock), not the
+                # caller's copy: a concurrent write's sections are not undone.
+                lineage, as_of = await apply_evidence(
+                    conn, event=row, held=Lineage.from_json(current.lineage),
+                    evidence=evidence,
+                )
+                row = _replace(row, lineage=lineage, as_of=as_of)
             revision = _revision_of(row, parent_revision_id=current.head_revision_id)
             await conn.execute(
                 sa.insert(EVENT_REVISION).values(**_revision_values(revision)),
@@ -352,7 +406,7 @@ class SqlGatheringStore:
                     EVENTS.c.conversation_id.in_(room_ids),
                 ),
             )
-        stmt = sa.select(EVENTS).where(unit_clause)
+        stmt = sa.select(EVENTS).where(unit_clause, EVENTS.c.unsupported_at.is_(None))
         if place:
             needle = f"%{place}%"
             stmt = stmt.where(sa.or_(

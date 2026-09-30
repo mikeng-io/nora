@@ -68,6 +68,7 @@ from nora.app.cognition_wiring import (
     CognitionShutdown,
     build_cognition_runner,
     cognition_budget,
+    open_events_reader,
     read_surface,
     require_session_hook,
     units_with_home_rooms,
@@ -95,7 +96,6 @@ from nora.domain.computer_leases import ComputerLeases
 from nora.domain.computer_sessions import ComputerSessionStore
 from nora.domain.decision_log import DecisionLogRecorder
 from nora.domain.documents import DocumentStore, RoomKey
-from nora.domain.gatherings import GatheringStatus
 from nora.domain.media_join import MediaJoin
 from nora.domain.models import PersonRef
 from nora.domain.ports import (
@@ -231,6 +231,7 @@ from .fire import (
     relay_occasion,
     reminder_occasion,
 )
+from .gathering_screen import GatheringScreen
 from .gatherings import GatheringService
 from .heartbeat import HeartbeatLoop, publish_idle_gauge, recover
 from .participation import ParticipationTrigger
@@ -3455,6 +3456,10 @@ async def build_dependencies(
             # was switched off in between — and with no screen the loop
             # fails such a row rather than firing it unscreened.
             proactive=proactive_screen,
+            # A gathering whose evidence was withdrawn is not announced: the
+            # reminder carries the event's title and the fire turn never reads
+            # the event, so this is the read that makes the cascade reach it.
+            gatherings=GatheringScreen(events=event_store),
         )
         background.spawn(heartbeat.run())
     if announcing and fire_path is not None:
@@ -4536,10 +4541,7 @@ async def build_dependencies(
                     return ()
                 return await note_store.standing(unit=unit)
 
-            async def _proposed_events(conversation_id: str) -> Sequence[Any]:
-                return await event_store.list_for_conversation(
-                    conversation_id=conversation_id, status=GatheringStatus.PROPOSED,
-                )
+            _open_events = open_events_reader(event_store)
 
             # The unit -> its rooms' every id form, for the grounding read: a
             # stimulus naming a room outside its unit is never read (DEC-231).
@@ -4556,7 +4558,7 @@ async def build_dependencies(
             }
 
             async def _room_events(unit: str, conversation_id: str) -> Sequence[Any]:
-                return await _proposed_events(conversation_id)
+                return await _open_events(conversation_id)
 
             grounder = build_grounder(
                 # NOT `tool_registry`'s `record`, which is None unless `[record_query]
@@ -4578,7 +4580,7 @@ async def build_dependencies(
                 retry=factory.build_retry_policy(timeout_seconds=tier.timeout_seconds),
                 metrics=metrics, tools=dream_tools, instructions=dreamer_instructions,
                 dry_run_store=dry_run_store, stimulus_store=stimulus_store,
-                note_titles=_note_titles, proposed_events_in=_proposed_events,
+                note_titles=_note_titles, open_events_in=_open_events,
                 # The HEAD with its `standing_revision` id: the token a
                 # `standing_revise` base is checked against (M6, DEC-250).
                 standing_of=lambda platform, conversation_id: standing_store.read_head(

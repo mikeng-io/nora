@@ -1,0 +1,6 @@
+{
+  "type": "none",
+  "reason": "an operator-only read command for the shadow week; no user-facing behaviour changes",
+  "details": [],
+  "limitations": []
+}

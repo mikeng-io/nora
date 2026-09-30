@@ -273,7 +273,7 @@ class CognitionSessionOutcome:
 # ---------------------------------------------------------------------------
 
 OpenNoteTitles = Callable[[str], Awaitable[Sequence[str]]]
-OpenProposedEvents = Callable[[str, str], Awaitable[Sequence[Gathering]]]
+OpenEvents = Callable[[str, str], Awaitable[Sequence[Gathering]]]
 #: `(platform, conversation_id)` -> the room's Standing head WITH the id of the
 #: `standing_revision` row that is it (`SqlStandingStore.read_head`): the token a
 #: `standing_revise` call asserts as its base (M6, DEC-250).
@@ -476,7 +476,7 @@ class CognitionSessionRunner:
         agent_runner: CognitionAgentRunner, home_rooms: Mapping[str, Room],
         read_tools_for: ReadToolsFor, skill_text_for: SkillsFor, grounder: Grounder,
         doctrine_text: str, doctrine_sha256: str | None,
-        open_note_titles: OpenNoteTitles, open_proposed_events: OpenProposedEvents,
+        open_note_titles: OpenNoteTitles, open_events: OpenEvents,
         prior_standing: PriorStanding, pending_self_wakes: PendingSelfWakes,
         pending_mirrored_reminds: PendingMirroredReminds,
         session_mode: str, budget: AdaptorBudget, cooldown_seconds: float,
@@ -548,7 +548,7 @@ class CognitionSessionRunner:
         self._tz = tz
         self._skill_versions_for = skill_versions_for
         self._open_note_titles = open_note_titles
-        self._open_proposed_events = open_proposed_events
+        self._open_events = open_events
         self._prior_standing = prior_standing
         self._roster_of = roster_of
         self._nora_names = frozenset(nora_names)
@@ -1337,7 +1337,10 @@ class CognitionSessionRunner:
             return wrote(platform, conversation_id, write, item)
 
         async def event_propose(
-            title: str, when: str = "", venue_text: str = "", room: str = "",
+            title: str, reasoning: Literal["told", "deduced", "abduced"],
+            confidence: Literal["low", "medium", "high"], cited_ids: list[str],
+            when: str = "", venue_text: str = "",
+            status: Literal["staged", "proposed"] = "proposed", room: str = "",
             item: int | None = None,
         ) -> dict[str, object]:
             """Propose a NEW gathering in a room, returning its id. Call this
@@ -1346,14 +1349,28 @@ class CognitionSessionRunner:
             instead of creating a second one. In this run the write is
             recorded, not committed.
 
+            Every field you give rests on the rows you cite. An `abduced` value
+            (your best explanation of something nobody said) is written as
+            abduced and is put to the room as a question, and a yes to it later
+            does not make it told.
+
             Returns `status`: ok or refused, with a `reason` and `detail` when
             refused.
 
             Args:
                 title: What the gathering is, in their words.
+                reasoning: How you reached what you give: `told` (a person said
+                    it, or members agreed among themselves), `deduced` (it
+                    follows from rows you hold) or `abduced`.
+                confidence: How sure you are: low, medium or high.
+                cited_ids: The rows it rests on, at least one: message ids you
+                    were shown or read, as digits, and Rollup rows you read, as
+                    rollup(kind|subject|from/to).
                 when: Optional. ISO 8601 with an offset, the first moment it is
                     for. Work out relative time yourself.
                 venue_text: Optional. The place, the way it was said.
+                status: `proposed` when the room is settling it, `staged` when
+                    you only suspect it is an event.
                 room: Optional when the agenda is one room, required when it
                     spans several. The room the gathering is in, as
                     `platform:conversation_id` from the agenda.
@@ -1369,39 +1386,64 @@ class CognitionSessionRunner:
             if when and due is None:
                 return {"status": "refused", "reason": "bad_when",
                         "detail": "when must be ISO 8601 with an offset"}
+            shown = await shown_for(platform, conversation_id, "")
+            if isinstance(shown, dict):
+                return shown
             created = datetime.fromtimestamp(now_ms / 1000, tz=UTC)
-            open_events = await self._open_proposed_events(unit, conversation_id)
+            # The backstop counts PROPOSED events only: a staged one is a guess
+            # and a confirmed one is settled, neither is a second open proposal.
+            proposed = [
+                e for e in await self._open_events(unit, conversation_id)
+                if e.status is GatheringStatus.PROPOSED
+            ]
             write = await dry_run_event_propose(
                 ledger=self._store, session_id=state.session_id, unit=unit,
                 platform=platform, conversation_id=conversation_id, now_ms=now_ms,
-                open_proposed_events=tuple(open_events),
+                shown=shown, reasoning=reasoning, confidence=confidence,
+                cited_ids=cited_ids, open_proposed_events=tuple(proposed),
                 id=uuid.uuid4(), title=title, created_by=established_by, when=due,
                 venue_text=venue_text or None, venue_place_id=None, venue_name=None,
                 venue_address=None, venue_rating=None, venue_price_level="",
                 venue_maps_url=None, venue_resolved_at=None,
-                status=GatheringStatus.PROPOSED, reminder_id=None, created_at=created,
+                status=GatheringStatus(status), reminder_id=None, created_at=created,
             )
             return wrote(platform, conversation_id, write, item)
 
         async def _current_event(
             conversation_id: str, event_id: str,
         ) -> Gathering | None:
-            open_events = await self._open_proposed_events(unit, conversation_id)
+            # Every event still open (staged, proposed, confirmed), so a
+            # confirmed one can move on to happened or cancelled (M4).
+            open_events = await self._open_events(unit, conversation_id)
             return next((e for e in open_events if str(e.id) == event_id), None)
 
         async def event_revise(
-            event_id: str, when: str = "", venue_text: str = "",
+            event_id: str, reasoning: Literal["told", "deduced", "abduced"],
+            confidence: Literal["low", "medium", "high"], cited_ids: list[str],
+            when: str = "", venue_text: str = "",
             base_revision_id: str = "", room: str = "", item: int | None = None,
         ) -> dict[str, object]:
-            """Change the time or venue of an event ALREADY proposed in a room.
-            Call this when an open event's details are settled or change. In
-            this run the write is recorded, not committed.
+            """Change the time or venue of an event that is still open in a
+            room (staged, proposed or confirmed). Call this when an open
+            event's details are settled or change. In this run the write is
+            recorded, not committed.
+
+            What you change rests on the rows you cite, and an `abduced` value
+            is written as abduced and put as a question. One write has one
+            reasoning: if the time and the place rest on different evidence,
+            make two writes.
 
             Returns `status`: ok or refused, with a `reason` and `detail` when
             refused.
 
             Args:
                 event_id: The event's id.
+                reasoning: How you reached what you change: `told`, `deduced`
+                    or `abduced`, as event_propose says.
+                confidence: How sure you are: low, medium or high.
+                cited_ids: The rows it rests on, at least one: message ids as
+                    digits, Rollup rows as rollup(kind|subject|from/to), each
+                    one you were shown or read.
                 when: Optional. ISO 8601 with an offset.
                 venue_text: Optional. The place, the way it was said.
                 base_revision_id: Optional. The event's `head_revision_id` your
@@ -1418,7 +1460,7 @@ class CognitionSessionRunner:
             if isinstance(resolved, dict):
                 return resolved
             (platform, conversation_id), item = resolved
-            changes: dict[str, object] = {}
+            changes: dict[str, Any] = {}
             if when:
                 due = _parse_when(when)
                 if due is None:
@@ -1430,21 +1472,35 @@ class CognitionSessionRunner:
             if not changes:
                 return {"status": "refused", "reason": "nothing_to_change",
                         "detail": "give a `when` or a `venue_text`"}
+            shown = await shown_for(platform, conversation_id, "")
+            if isinstance(shown, dict):
+                return shown
             current = await _current_event(conversation_id, event_id)
             write = await dry_run_event_revise(
                 ledger=self._store, session_id=state.session_id, unit=unit,
                 platform=platform, conversation_id=conversation_id, current=current,
-                base_revision_id=base_revision_id or None, now_ms=now_ms, **changes,
+                base_revision_id=base_revision_id or None, now_ms=now_ms, shown=shown,
+                reasoning=reasoning, confidence=confidence, cited_ids=cited_ids,
+                **changes,
             )
             return wrote(platform, conversation_id, write, item)
 
         async def event_set_status(
             event_id: str, status: Literal["confirmed", "cancelled", "happened", "lapsed"],
+            reasoning: Literal["told", "deduced", "abduced"],
+            confidence: Literal["low", "medium", "high"], cited_ids: list[str],
             base_revision_id: str = "", room: str = "", item: int | None = None,
         ) -> dict[str, object]:
-            """Move an event already proposed in a room to a new state. Call
-            this when the room confirms it, says it happened, or says it is
-            off. In this run the write is recorded, not committed.
+            """Move an event that is still open in a room (staged, proposed or
+            confirmed) to a new state. Call this when the room confirms it,
+            says it happened, or says it is off. In this run the write is
+            recorded, not committed.
+
+            The move rests on the rows you cite; an `abduced` one is written as
+            abduced and put as a question ("did it happen?"). A move to `lapsed`
+            (the date passed with nothing agreed) may cite nothing, since the
+            evidence is the clock. Only a status before `happened` moves: an
+            event that happened, was cancelled or lapsed stays as it is.
 
             Returns `status`: ok or refused, with a `reason` and `detail` when
             refused.
@@ -1452,6 +1508,12 @@ class CognitionSessionRunner:
             Args:
                 event_id: The event's id.
                 status: The state to move it to.
+                reasoning: How you reached it: `told`, `deduced` or `abduced`,
+                    as event_propose says.
+                confidence: How sure you are: low, medium or high.
+                cited_ids: The rows it rests on: message ids as digits, Rollup
+                    rows as rollup(kind|subject|from/to), each one you were
+                    shown or read.
                 base_revision_id: Optional. The event's `head_revision_id` your
                     last read of it showed. Leave it out to write regardless
                     of what changed since.
@@ -1471,11 +1533,15 @@ class CognitionSessionRunner:
             except ValueError:
                 return {"status": "refused", "reason": "bad_status",
                         "detail": "use confirmed, cancelled, happened or lapsed"}
+            shown = await shown_for(platform, conversation_id, "")
+            if isinstance(shown, dict):
+                return shown
             current = await _current_event(conversation_id, event_id)
             write = await dry_run_event_set_status(
                 ledger=self._store, session_id=state.session_id, unit=unit,
                 platform=platform, conversation_id=conversation_id, current=current,
                 status=parsed, base_revision_id=base_revision_id or None, now_ms=now_ms,
+                shown=shown, reasoning=reasoning, confidence=confidence, cited_ids=cited_ids,
             )
             return wrote(platform, conversation_id, write, item)
 
