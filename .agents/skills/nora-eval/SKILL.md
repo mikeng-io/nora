@@ -58,15 +58,8 @@ subject's model comes from the deployment's `config.toml`; there is no `--model`
 flag. The dev-machine tunnel recipe with `--model` belonged to the deleted
 `evals.run` harness.
 
-`nora_eval`/`nora_eval_blank` are SHARED with every other session on the host:
-a run refuses only if the source is AHEAD of this checkout's own head
-(refresh it with `make eval-source` or switch branch — a source BEHIND head
-runs, and a read that actually hits a column it lacks refuses just as
-clearly), and a divergent template migrates a private per-run copy rather
-than the shared one, swept at startup if a killed run (or SIGTERM) left one
-behind — fixed 2026-09-25 after an ahead branch upgraded `nora_eval_blank`
-and broke every other session's seeding
-(`design/evaluation/11-the-sandbox-rebuild.md` §1.10).
+`nora_eval`/`nora_eval_blank` are SHARED with every other session on the host
+(`reference.md` "The shared source": when a run refuses, what a divergent template does).
 
 ## Procedure
 
@@ -80,12 +73,17 @@ and broke every other session's seeding
    ```
    Check: you can say, per open issue, whether it biases the corpus you will run.
 
-2. **Nothing in flight.** One run per host: a second competes for the gateway and,
-   while #462 is open, reads the first run's memory writes.
+2. **Take the host's eval lock, then check nothing is in flight.** One run per
+   host: a second competes for the gateway and, while #462 is open, reads the
+   first run's memory writes. A `pgrep` alone is a race: on 2026-10-01 two
+   sessions both ran `tool_selection --sample 5` (434 calls an arm) and both
+   slowed. Hold `/tmp/nora-eval.lock` for the run, as `nora-deploy` does its own:
    ```bash
    ssh norty 'pgrep -af "[p]ython.*-m evals"; pgrep -af "[r]efresh_eval_clone"'
    ```
-   Check: no output. The `[p]` keeps pgrep from matching its own ssh command line.
+   Check: no output, then step 7 launches under `flock -w 900 9` on the lock. A
+   `LOCK_TIMEOUT` (rc 75) means another session's run is live: wait for its rc
+   file, never start beside it and never kill its pid.
 
 3. **Put each arm's checkout at its exact ref.** The eval worktree is a separate
    checkout; an unpulled run measures old code and reads exactly like success
@@ -143,6 +141,7 @@ and broke every other session's seeding
    what the subject reads):
    ```bash
    ssh norty bash -s <<'EOF'
+   exec 9>/tmp/nora-eval.lock; flock -w 900 9 || { echo "LOCK_TIMEOUT" > /tmp/eval-<arm>.rc; exit 75; }
    cd ~/workspace/nora-wt-eval-rebuild || exit 1
    set -a; . ~/workspace/nora/.env; set +a
    ~/.local/bin/uv run python -m evals relevance_gate --sample 5 \
@@ -155,26 +154,12 @@ and broke every other session's seeding
    refused before spending (read why).
    Output is block-buffered under a redirect: wait for exit, do not tail.
 
-8. **Read the log honestly.**
-   - The first line names the config the subject was rebuilt from; the census line
-     per corpus counts parked cases (never run) and unanchored ones (they ERROR).
-   - Per case: PASS or FAIL only when every draw agreed; UNSTABLE prints the split
-     `[p pass / f fail / e error]`. ERROR is never PASS. A case read stable at n=3
-     later failed 1 of 4 draws (2026-09-22): report n with every number.
-   - `spend:` per corpus: calls, input (cached, fresh), output. `TRUNCATED` means a
-     call hit its ceiling and that draw measured a cut-off output.
-   - While #462 is open, draws on a memory-reading entry point (tag,
-     participation, proactive_act, dreamer with memory tools) are correlated:
-     call the result a direction, not a rate, and treat a "you already asked"
-     FAIL as #462 before calling it a model defect.
-   - Judged corpora: the judge's source is bound to the window her turn
-     rendered since #459 (fixed 2026-09-25): a judged number from an older
-     build is not a baseline; compare only against a before arm run now.
-   - A case that speaks (tag, participation, proactive_act) anchored in a Discord
-     room ERRORs; Discord's adapter is off in the sandbox (2026-09-21).
-   - A FAIL is the end of the run, not a reason for more samples: go back to
-     "An eval confirms a fix" and read the case's input, anchor and expectation.
-     A wrong expectation fails every draw and measures the anchor, not the model.
+8. **Read the log honestly.** Per case PASS/FAIL only when every draw agreed;
+   UNSTABLE prints `[p pass / f fail / e error]`; ERROR is never PASS; report n with
+   every number (`reference.md` "Reading the log": census, spend, TRUNCATED, #462,
+   judged baselines, Discord anchors). A FAIL is the end of the run, not a reason
+   for more samples: go back to "An eval confirms a fix" and read the case's input,
+   anchor and expectation. A wrong expectation fails every draw.
    Check: every number you will quote has its n, draw split and arm beside it.
 
 9. **Write it into the PR body** (a `What` block, per `CONTRIBUTING.md`):
@@ -187,6 +172,22 @@ and broke every other session's seeding
    Biases: #462 open (draws correlated), <others from step 1>.
    ```
    Check: a reader can re-run the exact command on the same shas.
+
+## Delegating a run
+
+A delegated agent told "run the eval if you can" burns tokens waiting (2026-10-01:
+hours of poll loops, a second arm queued before the first was read). The brief
+carries the budget and the ending:
+
+- State cases x n x arms x ~211s (judged); the agent stops at it and reports.
+- Launch with `run_in_background` (Tool notes) and END the turn. No sleep-polling,
+  no holding a subagent open: the parent reads `/tmp/eval-<arm>.rc` at the
+  computed finish, then the log.
+- A brand-new tool has no before arm that can pass: that arm only proves the arms
+  differ (step 5). Spend draws on the after arm and the negatives.
+- A positive failing every draw (`0 pass / 5 fail`) is an input or budget defect:
+  read `--print-input CASE`, the expectation, and the tool-call and turn budgets
+  BEFORE queueing another case.
 
 ## Adding a case
 
