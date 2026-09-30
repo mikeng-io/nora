@@ -1,16 +1,23 @@
-"""`nora cognition compare --since <ISO>` (migration step 3a-ii,
+"""`nora cognition compare` (migration step 3a, review B1/D5,
 `nora.app.cli.cmd_cognition_compare`). Everything below `_config` and
-`cognition_run_compare` is faked — no config file, no database — the one
-fact under test is the CLI's own plumbing: window parsing, exit code, and
-that it prints the counts `nora.app.cognition_compare.render` produces."""
+`cognition_run_shadow_compare` is faked: no config file, no database. The facts
+under test are the CLI's own plumbing: window parsing, the exit code (1 only
+for an ERROR tier), the `--json` form, and that `--unit` names a real unit."""
 
 from __future__ import annotations
 
+import json
 from argparse import Namespace
 from types import SimpleNamespace
 
+import pytest
+
 import nora.app.cli as cli
-from nora.domain.cognition_compare import CompareResult, MirroredAct, ProactiveAct
+from nora.domain.cognition_shadow_compare import (
+    ShadowReport,
+    TierResult,
+    WriterVerdict,
+)
 
 
 class _FakeEngine:
@@ -18,47 +25,67 @@ class _FakeEngine:
         pass
 
 
-async def _run(monkeypatch, capsys, *, since="2026-09-29T00:00:00+08:00", until=None):
+def _report(*, error: bool = False) -> ShadowReport:
+    tier = (
+        TierResult.errored("note", "OperationalError") if error else TierResult(
+            tier="note", status="compared",
+            writers=(WriterVerdict(writer="note-candidates", status="compared", matched=14),),
+        )
+    )
+    return ShadowReport(since_ms=0, until_ms=1000, tolerance_ms=60_000, unit=None, tiers=(tier,))
+
+
+async def _run(monkeypatch, capsys, *, since="2026-09-29T00:00:00+08:00", until=None,
+               as_json=False, error=False, unit=None, tolerance=360):
+    seen: dict = {}
     monkeypatch.setattr(cli, "_config", lambda args: SimpleNamespace())
     monkeypatch.setattr(cli, "_database_url", lambda cfg: "postgresql://unused")
     monkeypatch.setattr(cli, "create_sql_engine", lambda url: _FakeEngine())
+    monkeypatch.setattr(cli, "_room_directory", lambda cfg, u: cli.RoomDirectory({}, {}))
 
-    m = MirroredAct(
-        reminder_ref="r1", platform="signal", conversation_id="room-a",
-        subject_rows=("note:n1",), at_ms=1000,
+    async def _fake(engine, window, *, tolerance_ms, unit, directory):
+        seen.update(window=window, tolerance_ms=tolerance_ms, unit=unit)
+        return _report(error=error)
+
+    monkeypatch.setattr(cli, "cognition_run_shadow_compare", _fake)
+    args = Namespace(
+        config="unused.toml", since=since, until=until, unit=unit,
+        tolerance_minutes=tolerance, json=as_json,
     )
-    p = ProactiveAct(
-        reminder_id="p1", platform="signal", conversation_id="room-a",
-        note_id="note:n1", at_ms=1000,
-    )
-
-    async def _fake_run_compare(engine, window):
-        return CompareResult(matched=((m, p),), cognition_only=(), proactive_only=())
-
-    monkeypatch.setattr(cli, "cognition_run_compare", _fake_run_compare)
-    args = Namespace(config="unused.toml", since=since, until=until)
     rc = await cli.cmd_cognition_compare(args)
-    return rc, capsys.readouterr().out
+    return rc, capsys.readouterr().out, seen
 
 
-async def test_exit_code_is_always_zero(monkeypatch, capsys):
-    rc, _ = await _run(monkeypatch, capsys)
+async def test_a_compared_report_exits_zero_and_prints_a_verdict_per_writer(monkeypatch, capsys):
+    rc, out, _ = await _run(monkeypatch, capsys)
     assert rc == 0
+    assert "note-candidates: 14 matched" in out
 
 
-async def test_prints_the_counts(monkeypatch, capsys):
-    _, out = await _run(monkeypatch, capsys)
-    assert "matched:         1" in out
-    assert "cognition_only:  0" in out
-    assert "proactive_only:  0" in out
+async def test_an_error_tier_exits_one_and_says_error_not_zero(monkeypatch, capsys):
+    rc, out, _ = await _run(monkeypatch, capsys, error=True)
+    assert rc == 1
+    assert "note-candidates: ERROR (OperationalError)" in out
+    assert "0 matched" not in out
 
 
-async def test_a_naive_since_is_refused(monkeypatch, capsys):
-    monkeypatch.setattr(cli, "_config", lambda args: SimpleNamespace())
-    args = Namespace(config="unused.toml", since="2026-09-29T00:00:00", until=None)
-    try:
-        await cli.cmd_cognition_compare(args)
-        raised = False
-    except cli.CliError:
-        raised = True
-    assert raised
+async def test_json_is_one_parseable_object_with_the_verdicts(monkeypatch, capsys):
+    rc, out, _ = await _run(monkeypatch, capsys, as_json=True)
+    data = json.loads(out)
+    assert rc == 0 and data["status"] == "compared"
+    assert data["verdicts"][0].startswith("note-candidates: 14 matched")
+
+
+async def test_the_tolerance_and_unit_reach_the_read(monkeypatch, capsys):
+    _, _, seen = await _run(monkeypatch, capsys, unit="u", tolerance=90)
+    assert seen["tolerance_ms"] == 90 * 60_000 and seen["unit"] == "u"
+
+
+@pytest.mark.parametrize("since,until,tolerance", [
+    ("2026-09-29T00:00:00", None, 360),                               # naive
+    ("2026-09-29T00:00:00+08:00", "2026-09-28T00:00:00+08:00", 360),  # until before since
+    ("2026-09-29T00:00:00+08:00", None, -1),                          # negative tolerance
+])
+async def test_a_bad_window_or_tolerance_is_refused(monkeypatch, capsys, since, until, tolerance):
+    with pytest.raises(cli.CliError):
+        await _run(monkeypatch, capsys, since=since, until=until, tolerance=tolerance)

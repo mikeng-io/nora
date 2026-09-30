@@ -56,8 +56,7 @@ from nora.app.assess_run import AssessDisabledError
 from nora.app.assess_run import render as assess_render
 from nora.app.assess_run import run_nightly as assess_run_nightly
 from nora.app.cognition_compare import CompareWindow
-from nora.app.cognition_compare import render as cognition_compare_render
-from nora.app.cognition_compare import run_compare as cognition_run_compare
+from nora.app.cognition_compare import run_shadow_compare as cognition_run_shadow_compare
 from nora.app.events_backfill import backfill_unit_ids
 from nora.app.events_backfill import render as render_events_backfill
 from nora.app.memory_backfill import BackfillRefusedError, backfill_unit
@@ -84,6 +83,9 @@ from nora.app.person_forget import (
     unforget_person,
 )
 from nora.config import Config, ConfigError, load
+from nora.domain.cognition_shadow_compare import RoomDirectory, room_id
+from nora.domain.cognition_shadow_compare import render_text as shadow_render_text
+from nora.domain.cognition_shadow_compare import report_json as shadow_report_json
 from nora.domain.media_join import MediaJoin
 from nora.domain.models import UnattributedRow
 from nora.domain.participation_measures import Refusal
@@ -408,8 +410,8 @@ def add_subcommands(
     cognition_sub = cognition.add_subparsers(dest="cognition_command", required=True)
     compare = cognition_sub.add_parser(
         "compare", parents=[parent],
-        help="cognition's mirrored `remind` calls vs the live proactive "
-             "pass's decisions, over a window",
+        help="the shadow session's would-writes vs every live clocked writer, "
+             "per tier and per writer, over a window",
     )
     compare.add_argument(
         "--since", required=True,
@@ -418,6 +420,17 @@ def add_subcommands(
     compare.add_argument(
         "--until", default=None,
         help="ISO 8601, timezone-aware; defaults to now",
+    )
+    compare.add_argument(
+        "--unit", default=None, help="only this unit's rooms and rows (a policy.toml unit)",
+    )
+    compare.add_argument(
+        "--tolerance-minutes", type=int, default=360,
+        help="a clocked write and a would-write match only within this many minutes "
+             "(default 360); also how near a close must be to explain a clocked-only row",
+    )
+    compare.add_argument(
+        "--json", action="store_true", help="the machine-readable report, one JSON object",
     )
     compare.set_defaults(func=cmd_cognition_compare)
 
@@ -866,24 +879,63 @@ async def cmd_assess_run_nightly(args: argparse.Namespace) -> int:
 
 
 async def cmd_cognition_compare(args: argparse.Namespace) -> int:
-    """`nora cognition compare --since <ISO> [--until <ISO>]` (migration
-    step 3a-ii). Read-only: it never fires a reminder, never writes a row.
-    Exit code is always 0 — a difference between the two arms is the
-    finding this command exists to surface, not a failure."""
+    """`nora cognition compare --since <ISO> [--until <ISO>] [--unit U]
+    [--tolerance-minutes N] [--json]` (migration step 3a, review B1/D5): the
+    shadow session's would-writes against every live clocked writer, per tier
+    and per writer, plus the proactive pass. Read-only: it never fires a
+    reminder and never writes a row. A difference between the arms is the
+    finding, so it is not a failure; exit 1 only when a tier could not be read
+    (ERROR, never zero). It prints counts and does not decide the gate."""
     cfg = _config(args)
     since = _cutover(args.since)
     until = _cutover(args.until) if args.until else datetime.now(UTC)
+    if until <= since:
+        raise CliError("--until must be after --since")
+    if args.tolerance_minutes < 0:
+        raise CliError("--tolerance-minutes must not be negative")
     window = CompareWindow(
         since_ms=int(since.timestamp() * 1000), until_ms=int(until.timestamp() * 1000),
     )
+    directory = _room_directory(cfg, args.unit)
     engine = create_sql_engine(_database_url(cfg))
     try:
-        result = await cognition_run_compare(engine, window)
+        report = await cognition_run_shadow_compare(
+            engine, window, tolerance_ms=args.tolerance_minutes * 60_000,
+            unit=args.unit, directory=directory,
+        )
     finally:
         await engine.dispose()
-    for line in cognition_compare_render(result, window):
-        print(line)
-    return 0
+    if args.json:
+        print(json.dumps(shadow_report_json(report, directory), indent=2, sort_keys=True))
+    else:
+        for line in shadow_render_text(report, directory):
+            print(line)
+    return 1 if report.any_error else 0
+
+
+def _room_directory(cfg: Config, unit: str | None) -> RoomDirectory:
+    """Labels and unit membership from policy.toml. Labels are cosmetic, but
+    `--unit` filters by them, so an unreadable policy or an unknown unit is a
+    refusal there rather than an empty filter that reads as zero."""
+    try:
+        policy = _policy(cfg)
+    except CliError:
+        if unit is not None:
+            raise
+        return RoomDirectory(labels={}, unit_rooms={})
+    labels: dict[str, str] = {}
+    unit_rooms: dict[str, set[str]] = {}
+    for conv in policy.conversations:
+        for cid in conv.ids:
+            bare = room_id(cid)
+            if conv.label:
+                labels[bare] = conv.label
+            unit_rooms.setdefault(conv.unit, set()).add(bare)
+    if unit is not None and unit not in unit_rooms:
+        raise CliError(f"--unit {unit!r} names no room in policy.toml")
+    return RoomDirectory(
+        labels=labels, unit_rooms={u: frozenset(r) for u, r in unit_rooms.items()},
+    )
 
 
 async def cmd_measure_participation(args: argparse.Namespace) -> int:

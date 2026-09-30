@@ -12,8 +12,11 @@ own shape for "read what already happened and report it".
 
 from __future__ import annotations
 
+import json
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import Any, TypeVar
 
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncEngine
@@ -26,7 +29,34 @@ from nora.domain.cognition_compare import (
     compare,
     resolve_chains,
 )
-from nora.infra.sql.schema import COGNITION_REMIND_MIRROR, REMINDERS
+from nora.domain.cognition_shadow_compare import (
+    CLOSING_REASONS,
+    ClockedWrite,
+    Close,
+    CognitionWrite,
+    Refusal,
+    RoomDirectory,
+    ShadowReport,
+    TierResult,
+    act_tier,
+    compare_tier,
+    room_id,
+    standing_writer,
+)
+from nora.infra.sql.schema import (
+    COGNITION_REMIND_MIRROR,
+    COGNITION_SESSION,
+    COGNITION_SESSION_CLOSE,
+    COGNITION_WOULD_WRITE,
+    CULTURE_REVISION,
+    DECISION_LOG,
+    EVENT_REVISION,
+    EVENTS,
+    NOTE,
+    NOTE_REVISION,
+    REMINDERS,
+    STANDING_REVISION,
+)
 
 
 @dataclass(frozen=True)
@@ -140,3 +170,313 @@ def _at(ms: int) -> datetime:
 
 def _iso(ms: int) -> str:
     return _at(ms).isoformat()
+
+
+# ---------------------------------------------------------------------------
+# The shadow week, per tier and per clocked writer (review B1, D5). Every read
+# below is a plain SELECT; nothing here writes.
+# ---------------------------------------------------------------------------
+
+_T = TypeVar("_T")
+
+
+def _ms(dt: datetime) -> int:
+    return int(dt.timestamp() * 1000)
+
+
+def _obj(raw: Any) -> dict[str, Any]:
+    """A `jsonb` column as a dict. asyncpg returns text without a codec, and the
+    session tables hold some rows written as a JSON string inside the jsonb
+    (m1, 2026-09-30): both read."""
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except ValueError:
+            return {}
+    return raw if isinstance(raw, dict) else {}
+
+
+def _anchor(date: Any, entities: Any) -> tuple[int | None, tuple[str, ...]]:
+    return (
+        int(date) if isinstance(date, int) else None,
+        tuple(sorted({str(e) for e in (entities or ())})),
+    )
+
+
+async def read_would_writes(
+    engine: AsyncEngine, *, since_ms: int, until_ms: int, unit: str | None,
+) -> tuple[list[CognitionWrite], list[Refusal]]:
+    t = COGNITION_WOULD_WRITE
+    stmt = sa.select(
+        t.c.id, t.c.session_id, t.c.tier, t.c.verb, t.c.platform, t.c.conversation_id,
+        t.c.args, t.c.outcome, t.c.candidate, t.c.recorded_at,
+    ).where(t.c.recorded_at >= _at(since_ms), t.c.recorded_at < _at(until_ms))
+    if unit is not None:
+        stmt = stmt.where(t.c.unit == unit)
+    async with engine.connect() as conn:
+        rows = (await conn.execute(stmt.order_by(t.c.id))).all()
+    writes: list[CognitionWrite] = []
+    refusals: list[Refusal] = []
+    for r in rows:
+        at = _ms(r.recorded_at)
+        if r.outcome != "would_commit":
+            refusals.append(Refusal(tier=r.tier, room=r.conversation_id, at_ms=at))
+            continue
+        cand, args = _obj(r.candidate), _obj(r.args)
+        key, anchor, title = "", None, ""
+        if r.verb == "note_update":
+            key = str(cand.get("note_id") or args.get("note_id") or "")
+        elif r.verb in ("event_revise", "event_set_status"):
+            key = str(cand.get("id") or "")
+        elif r.verb == "note_create":
+            anchor = _anchor(cand.get("anchor_date"), cand.get("anchor_entity_ids"))
+        elif r.verb == "event_propose":
+            title = str(cand.get("title") or "")
+        writes.append(CognitionWrite(
+            id=str(r.id), session_id=r.session_id, tier=r.tier, verb=r.verb,
+            room=r.conversation_id, at_ms=at, key=key, anchor=anchor, title=title,
+        ))
+    return writes, refusals
+
+
+async def read_closes(
+    engine: AsyncEngine, *, since_ms: int, until_ms: int, unit: str | None,
+) -> tuple[list[Close], int]:
+    """The explaining closes, and how many had an agenda this could not read
+    (they explain nothing)."""
+    c, s = COGNITION_SESSION_CLOSE, COGNITION_SESSION
+    stmt = sa.select(c.c.session_id, c.c.item_index, c.c.reason, c.c.recorded_at, s.c.agenda).join(
+        s, s.c.id == c.c.session_id,
+    ).where(
+        c.c.reason.in_(CLOSING_REASONS),
+        c.c.recorded_at >= _at(since_ms), c.c.recorded_at < _at(until_ms),
+    )
+    if unit is not None:
+        stmt = stmt.where(s.c.unit == unit)
+    async with engine.connect() as conn:
+        rows = (await conn.execute(stmt.order_by(c.c.id))).all()
+    closes: list[Close] = []
+    unreadable = 0
+    for r in rows:
+        items = _obj(r.agenda).get("items")
+        item = (
+            items[r.item_index]
+            if isinstance(items, list) and 0 <= r.item_index < len(items) else None
+        )
+        cid = item.get("conversation_id") if isinstance(item, dict) else None
+        if not isinstance(cid, str) or not cid:
+            unreadable += 1
+            continue
+        closes.append(Close(
+            session_id=r.session_id, room=cid, reason=r.reason, at_ms=_ms(r.recorded_at),
+        ))
+    return closes, unreadable
+
+
+async def read_clocked_notes(
+    engine: AsyncEngine, *, since_ms: int, until_ms: int, unit: str | None,
+) -> list[ClockedWrite]:
+    """Note revisions by a clocked adaptor (`established_by = dream:<writer>:...`).
+    The tag path (`tag:`) and live cognition (`cognition:`) are not clocked
+    writers and are not read."""
+    rev = NOTE_REVISION
+    stmt = sa.select(
+        rev.c.id, rev.c.note_id, rev.c.parent_revision_id, rev.c.recorded_at, rev.c.established_by,
+        NOTE.c.established_in, NOTE.c.anchor_date, NOTE.c.anchor_entity_ids,
+    ).join(NOTE, NOTE.c.id == rev.c.note_id).where(
+        rev.c.recorded_at >= _at(since_ms), rev.c.recorded_at < _at(until_ms),
+        rev.c.established_by.like("dream:%"),
+    )
+    if unit is not None:
+        stmt = stmt.where(NOTE.c.unit == unit)
+    async with engine.connect() as conn:
+        rows = (await conn.execute(stmt.order_by(rev.c.recorded_at, rev.c.id))).all()
+    return [
+        ClockedWrite(
+            writer=r.established_by.split(":")[1], tier="note", id=str(r.id),
+            room=r.established_in, at_ms=_ms(r.recorded_at), key=str(r.note_id),
+            create=r.parent_revision_id is None,
+            anchor=_anchor(r.anchor_date, r.anchor_entity_ids),
+        )
+        for r in rows
+    ]
+
+
+async def read_clocked_events(
+    engine: AsyncEngine, *, since_ms: int, until_ms: int, unit: str | None,
+) -> list[ClockedWrite]:
+    rev = EVENT_REVISION
+    stmt = sa.select(
+        rev.c.id, rev.c.event_id, rev.c.parent_revision_id, rev.c.title, rev.c.written_by,
+        rev.c.recorded_at, EVENTS.c.conversation_id,
+    ).join(EVENTS, EVENTS.c.id == rev.c.event_id).where(
+        rev.c.recorded_at >= _at(since_ms), rev.c.recorded_at < _at(until_ms),
+        rev.c.written_by != "backfill",
+    )
+    if unit is not None:
+        stmt = stmt.where(EVENTS.c.unit_id == unit)
+    async with engine.connect() as conn:
+        rows = (await conn.execute(stmt.order_by(rev.c.recorded_at, rev.c.id))).all()
+    return [
+        ClockedWrite(
+            writer=f"event:{r.written_by}", tier="event", id=str(r.id), room=r.conversation_id,
+            at_ms=_ms(r.recorded_at), key=str(r.event_id), create=r.parent_revision_id is None,
+            title=r.title,
+        )
+        for r in rows
+    ]
+
+
+async def read_clocked_standing(
+    engine: AsyncEngine, *, since_ms: int, until_ms: int, rooms: frozenset[str] | None,
+) -> list[ClockedWrite]:
+    t = STANDING_REVISION
+    previous = sa.func.lag(t.c.fold_count).over(
+        partition_by=(t.c.platform, t.c.conversation_id), order_by=(t.c.recorded_at, t.c.id),
+    )
+    inner = sa.select(
+        t.c.id, t.c.platform, t.c.conversation_id, t.c.fold_count, t.c.source, t.c.recorded_at,
+        previous.label("previous_fold_count"),
+    ).subquery()
+    stmt = sa.select(inner).where(
+        inner.c.source == "fold",
+        inner.c.recorded_at >= _at(since_ms), inner.c.recorded_at < _at(until_ms),
+    ).order_by(inner.c.recorded_at, inner.c.id)
+    async with engine.connect() as conn:
+        rows = (await conn.execute(stmt)).all()
+    return [
+        ClockedWrite(
+            writer=standing_writer(
+                fold_count=r.fold_count, previous_fold_count=r.previous_fold_count,
+            ),
+            tier="standing", id=str(r.id), room=r.conversation_id, at_ms=_ms(r.recorded_at),
+            key=room_id(r.conversation_id),
+        )
+        for r in rows if rooms is None or room_id(r.conversation_id) in rooms
+    ]
+
+
+async def read_clocked_culture(
+    engine: AsyncEngine, *, since_ms: int, until_ms: int, rooms: frozenset[str] | None,
+) -> list[ClockedWrite]:
+    t = CULTURE_REVISION
+    stmt = sa.select(t.c.id, t.c.culture_key, t.c.recorded_at).where(
+        t.c.recorded_at >= _at(since_ms), t.c.recorded_at < _at(until_ms),
+    ).order_by(t.c.recorded_at, t.c.id)
+    async with engine.connect() as conn:
+        rows = (await conn.execute(stmt)).all()
+    return [
+        ClockedWrite(
+            writer="culture", tier="culture", id=str(r.id), room=r.culture_key,
+            at_ms=_ms(r.recorded_at),
+        )
+        for r in rows if rooms is None or room_id(r.culture_key) in rooms
+    ]
+
+
+async def read_proactive_decisions(
+    engine: AsyncEngine, window: CompareWindow, *, unit: str | None,
+) -> tuple[ProactiveAct, ...]:
+    """`decision_log` rows where the proactive decide turn chose to remind."""
+    t = DECISION_LOG
+    stmt = sa.select(t.c.id, t.c.platform, t.c.conversation_id, t.c.note_id, t.c.recorded_at).where(
+        t.c.writer == "proactive_decide", t.c.verdict == "remind",
+        t.c.recorded_at >= _at(window.since_ms), t.c.recorded_at < _at(window.until_ms),
+    )
+    if unit is not None:
+        stmt = stmt.where(t.c.unit == unit)
+    async with engine.connect() as conn:
+        rows = (await conn.execute(stmt.order_by(t.c.recorded_at, t.c.id))).all()
+    return tuple(
+        ProactiveAct(
+            reminder_id=str(r.id), platform=r.platform, conversation_id=r.conversation_id,
+            note_id=r.note_id or "", at_ms=_ms(r.recorded_at),
+        )
+        for r in rows
+    )
+
+
+async def _try(call: Awaitable[_T]) -> tuple[_T | None, str | None]:
+    """Fail closed: a source that cannot be read is an ERROR carrying only the
+    exception's class name (a message can quote a row), never an empty read."""
+    try:
+        return await call, None
+    except Exception as exc:  # noqa: BLE001 - any failure is this source's ERROR
+        return None, type(exc).__name__
+
+
+def _in_rooms(act: Any, rooms: frozenset[str] | None) -> bool:
+    return rooms is None or room_id(act.conversation_id) in rooms
+
+
+async def run_shadow_compare(
+    engine: AsyncEngine, window: CompareWindow, *, tolerance_ms: int, unit: str | None,
+    directory: RoomDirectory,
+) -> ShadowReport:
+    rooms = directory.rooms_of(unit) if unit is not None else None
+    lo, hi = window.since_ms - tolerance_ms, window.until_ms + tolerance_ms
+    common: dict[str, Any] = {"tolerance_ms": tolerance_ms, "since_ms": window.since_ms,
+                              "until_ms": window.until_ms}
+    written, err_written = await _try(
+        read_would_writes(engine, since_ms=lo, until_ms=hi, unit=unit),
+    )
+    closed, err_closed = await _try(read_closes(engine, since_ms=lo, until_ms=hi, unit=unit))
+    err_cognition = err_written or err_closed
+    closes: list[Close] = closed[0] if closed else []
+    unreadable = closed[1] if closed else 0
+    close_note = (
+        (f"{unreadable} close row(s) had an unreadable agenda and explain nothing",)
+        if unreadable else ()
+    )
+    tiers: list[TierResult] = []
+
+    readers: dict[str, Callable[[], Awaitable[list[ClockedWrite]]]] = {
+        "note": lambda: read_clocked_notes(engine, since_ms=lo, until_ms=hi, unit=unit),
+        "event": lambda: read_clocked_events(engine, since_ms=lo, until_ms=hi, unit=unit),
+        "standing": lambda: read_clocked_standing(engine, since_ms=lo, until_ms=hi, rooms=rooms),
+    }
+    for tier, reader in readers.items():
+        clocked, err_clocked = await _try(reader())
+        error = err_cognition or err_clocked
+        if error is not None or written is None or clocked is None:
+            tiers.append(TierResult.errored(tier, error or "unreadable"))
+            continue
+        tiers.append(compare_tier(
+            tier, cognition=[c for c in written[0] if c.tier == tier], refusals=written[1],
+            clocked=clocked, closes=closes, notes=close_note, **common,
+        ))
+
+    culture, err_culture = await _try(
+        read_clocked_culture(engine, since_ms=lo, until_ms=hi, rooms=rooms),
+    )
+    if err_culture is not None or culture is None:
+        tiers.append(TierResult.errored("culture", err_culture or "unreadable"))
+    else:
+        tiers.append(compare_tier(
+            "culture", cognition=[], refusals=[], clocked=culture, closes=[], explainable=False,
+            notes=(
+                "cognition has no culture verb: every clocked write is clocked-only "
+                "by construction",
+            ),
+            **common,
+        ))
+
+    mirrored, err_mirror = await _try(read_mirrored(engine, window))
+    proactive, err_proactive = await _try(read_proactive(engine, window))
+    decisions, err_decisions = await _try(read_proactive_decisions(engine, window, unit=unit))
+    mirrored = tuple(m for m in (mirrored or ()) if _in_rooms(m, rooms))
+    for tier, live, err_live in (
+        ("act", proactive, err_proactive), ("act-decision", decisions, err_decisions),
+    ):
+        error = err_mirror or err_live or err_closed
+        if error is not None or live is None:
+            tiers.append(TierResult.errored(tier, error or "unreadable"))
+            continue
+        tiers.append(act_tier(
+            tier, compare(mirrored, tuple(a for a in live if _in_rooms(a, rooms))),
+            closes=closes, tolerance_ms=tolerance_ms, extra_notes=close_note,
+        ))
+    return ShadowReport(
+        since_ms=window.since_ms, until_ms=window.until_ms, tolerance_ms=tolerance_ms,
+        unit=unit, tiers=tuple(tiers),
+    )
