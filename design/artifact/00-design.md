@@ -1,13 +1,23 @@
 ---
 type: design
 title: "Documents: json-render specs, stored by Nora and opened in the portal"
-description: "Early study. What Smith called an artifact becomes a document: a small JSON spec over a closed catalog of shadcn components (json-render), validated in Nora's container, stored in Postgres, listed and opened inside the signed-in web app with the portal's own theme. Retires Drop's artifact half. The sandbox side (computer_export, retiring make_artifact and Smith) belongs to design/sandbox-runtime."
+description: "Early study. What Smith called an artifact becomes a document: a small JSON spec over a closed catalog of shadcn components (json-render), validated in Nora's container, stored in Postgres, listed and opened inside the signed-in web app with the portal's own theme. Retires Drop's artifact half. The sandbox side (files only, never a page; retiring make_artifact and Smith) belongs to design/sandbox-runtime."
 tags: [nora, documents, artifact, json-render, shadcn, react, portal, drop, skill]
 timestamp: '2026-09-30'
 status: draft
 ---
 
 # Documents
+
+> **Amended 2026-10-01 (coordinator decision, sandbox session; Miles's ruling).** Publishing a document is
+> **`document_publish(spec | path, title?, document_id?)`, a document tool of this session's**, not
+> `computer_export(to="document")`. `computer_export` never had that option and never publishes a page: as of
+> the sandbox session's #649 `html` is refused and `link` only carries files (CSV, PDF, PNG); design/sandbox-runtime
+> §6 records it (#650). `path` is read through that session's audited workspace-read helper, never through
+> `SandboxRuntime.fetch` directly (that would bypass `computer_events`, the room lease and the scope derivation),
+> and the inline `spec` form is built first. The must-have rule lives in `document_publish`'s own description and
+> in doctrine. This note supersedes every `computer_export` mention below that predates it; the older text is
+> left, marked, where it records how the design got here.
 
 Status: **early study; direction set by the operator 2026-09-30; open decisions at the end.**
 
@@ -28,11 +38,13 @@ This session owns **what a document is, how it is checked, stored and shown.** T
 session (`design/sandbox-runtime/00-design.md` §6) owns **how bytes leave the VM** and
 retiring `make_artifact`, Smith and `LocalDockerBackend`.
 
-The one contract between them, which that session's §6 must change to match:
+The one contract between them (amended 2026-10-01, see the note at the top):
 
-> `computer_export(path, to="document", title?, document_id?)` takes a spec file,
-> Nora checks and stores it, and the result is `{status, document_id, url}` where `url`
-> is a portal path. Its `to="link"` (Drop) goes away for this case.
+> `document_publish(spec | path, title?, document_id?)` is this session's tool. Nora checks and
+> stores the document and the result is `{status, document_id, url}` where `url` is a portal path, or
+> structured findings on a refusal. `path` is a spec file the model generated in the computer's workspace,
+> read through the sandbox session's audited helper. The computer produces files and numbers; it never
+> publishes a page.
 
 ## 3. Why the present shape fails (read from the tree, 2026-09-30)
 
@@ -56,10 +68,10 @@ The one contract between them, which that session's §6 must change to match:
 
 ```text
 Nora (skill: document-creation)
-  │  writes spec.json in the workspace (VM)           ← the model's only authored output
+  │  writes the spec: inline, or as spec.json in the workspace (VM)   ← the model's only authored output
   ▼
-computer_export(path, to="document")                  ← sandbox session
-  │  bytes out of the VM
+document_publish(spec | path)                         ← this session's tool
+  │  inline, or bytes out of the VM through the sandbox session's audited helper
   ▼
 Nora container: document-check                        ← §7
   │  parse · schema · rules · sha256 computed here
@@ -218,11 +230,12 @@ Replaces Smith's doctrine and six skills for this case. Short, because the catal
 - the data-shape → `Chart.kind` table;
 - "write `spec.json`; do not write HTML";
 - the catalog prompt fragment, **generated from the catalog**;
-- export, read the findings if the check refuses it, fix the file and export again (there is no
-  checker inside the VM; see §23).
+- publish with `document_publish`, read the findings if the check refuses it, fix the spec and publish
+  again (there is no checker inside the VM; see §23).
 
-Per the sandbox design's must-have rule, the one-line rule also lives in doctrine and in
-`computer_export`'s description, since `image-generation` was skipped 3 times in 6 live turns.
+The must-have rule lives in `document_publish`'s own description and in doctrine, not only in the
+skill, since `image-generation` was skipped 3 times in 6 live turns (amended 2026-10-01: it used to
+name `computer_export`'s description).
 Per `context-framing-beats-capability-listing`, the skill first says **what the model is
 producing and what reads it** (a spec rendered by a fixed viewer inside the portal), then
 lists components.
@@ -239,7 +252,7 @@ lists components.
 | **S5** | `document-creation` skill against the catalog | eval: a fixed brief set yields specs that pass the checker, n ≥ 10 per brief |
 | **S6** | Retire Drop's artifact half (decision 6 first) | compose and tests read back clean |
 
-S4 waits on the sandbox session's `computer_export` only for wiring.
+S4 needs nothing from the sandbox session; the `path` form of `document_publish` waits on its audited workspace-read helper (amended 2026-10-01: this used to wait on `computer_export`).
 
 ## 12. Open decisions
 
@@ -391,7 +404,7 @@ to present."
    and every later revision compute on those facts and never re-research (CMS: interpret once).
 3. She writes `spec.json` in the workspace: nested sections, prose as Markdown, coordinates for the
    map, a `Sources` block listing each URL with its as-of date.
-4. The checker validates and extracts search text; `computer_export(to="document")` stores it.
+4. `document_publish` runs the checker, extracts the search text and stores it (amended 2026-10-01).
 5. She replies in the room with the portal link. A revision edits the same spec and keeps the id.
 
 **Where it breaks today, and what that decides.** A December trip is heavy research: it will not
@@ -744,9 +757,10 @@ reasons above, and revisit at the W4 visibility work, when the audience becomes 
 **No VM-side checker.** §10 had the skill run a local check (`nora-artifact-check`) before export.
 Dropped. The authoritative check has to run in Nora's container, because the VM is untrusted, so a
 second copy inside the VM would be another implementation to keep in step with it, and two validators
-reading one schema already cost three disagreements (§22). Instead `computer_export(to="document")`
-runs the one check and returns **structured findings** on a refusal (a path into the document, what
-was wrong, which rule). Nora fixes the file with `computer_edit` and exports again. The skill says so.
+reading one schema already cost three disagreements (§22). Instead `document_publish` (amended 2026-10-01:
+this said `computer_export(to="document")`) runs the one check and returns **structured findings** on a
+refusal (a path into the document, what was wrong, which rule). Nora fixes the spec, or the workspace file
+with `computer_edit`, and publishes again. The skill says so.
 The catalog's JSON Schema and the prompt fragment still ship to the model as text; only a runnable
 copy of the checker is not shipped.
 
@@ -758,6 +772,71 @@ that lands on the selected tab (the first version made every tab a stop). The e2
 behaviour instead of the `tabindex` attributes the hand-written version happened to set.
 
 **Who builds what from here.** W3 (the checker, with structured findings) and W4 (the `documents`
-table, visibility by room, the read API) are next and are this session's. `computer_export` and the
-`to="document"` change are the sandbox session's; the findings shape is the contract between them
-and is specified in the W3 PR, not in their file.
+table, visibility by room, the read API) are next and are this session's. Amended 2026-10-01: there is no `to="document"` change on the sandbox
+side; `document_publish` is this session's tool, and the only thing crossing the boundary is the audited
+workspace-read helper behind its `path` form.
+
+## 24. The checker (W3) and its review (2026-10-01)
+
+`nora/documents/check.py` judges every document in Nora's container: shape (size, UTF-8, JSON without
+NaN, Infinity or a duplicate key, node, depth and width counts with an explicit stack, no control
+character), the generated schema, then the rules the schema cannot state. It returns `ok`, `refused`
+with structured findings, or `error`, never collapsed. On success it returns the title, the plain
+search text, the canonical form and its sha256. The reviewer from PR #644 attacked it (PR #648); the
+bytes path never said `ok` wrongly, but it found one CPU bug and several gaps, all reproduced first.
+
+| # | Finding | Fix | Proven by |
+|---|---|---|---|
+| 1 | **Quadratic `_LINK` regex**: twelve Markdown nodes of 20,000 `[` (240 KB, under the cap) cost 9.5 s of CPU before being refused, because extraction ran before the text cap. | Linear patterns (a class that excludes its own delimiter); the text cap is checked as the text grows. | test under 2 s; 9 of the 10 new tests fail on the first version. |
+| 2 | **A dict skipped every guard the bytes path has**: NaN passed (then a canonical form that is not JSON), a dict subclass lying to `.get` hid 1,000 nodes (`nodes=1`), a 100,000-deep list in props was `error`, no size cap. | Every input is written to JSON first and judged as bytes: one path. | tests for NaN, the lying subclass, deep props, size and a set. |
+| 3 | **A lone surrogate was `error`**, so the model could not fix its file. | Refused with `unpaired_surrogate` and the path (or `encoding` for a Python string). | test. |
+| 4 | **NUL and control characters reached `ok`** and would be refused by Postgres `text` and `jsonb` later. | Refused (`control_character`, with the path) in every string and key; tab, newline and CRLF stay legal. | test. |
+| 5 | **One document had several hashes**: `2` and `2.0`, `-0.0` and `0`, an NFD and an NFC title. | Normalise before hashing: NFC on every string and key, integral floats as ints, `-0.0` as `0`; the title is returned NFC. | test. |
+| 6 | **Findings read as schema-speak or echoed input**: a regex dump for an Image URL, the Mermaid source then a cut-off pattern, a Tabs mistake with the useful line last, an enum list cut mid-word, and up to 200 characters of a hostile key echoed back. | A sentence per rule in document terms, a plain reason for each pattern, a wrong `type` first, and content echoed back capped at 40 characters. | 10 realistic mistakes asserted, plus a prompt-injection-shaped key. |
+| 7 | **A wheel would ship without the schema**, so every check would answer `error`. | `documents/*.json` and `documents/*.md` in the package data. | test against `pyproject.toml`. |
+| 8 | **"Imports nothing of ours" was only a comment**: the layers contract stops a listed layer, and `nora.persons`, `nora.tag` and `nora.web` are outside the list. | A forbidden contract naming every other top-level package. | `lint-imports` reports the break when `check.py` imports `nora.persons`, and is clean after. |
+| 9 | **Search text gaps**: Chart `unit` missing; bare URLs, autolinks and reference targets leaked in; Mermaid keywords and `classDef` colours leaked in. | Extraction updated for each. | tests. |
+
+**Left as found, deliberately.** Python is stricter than the TypeScript `parseDocument` (a Card in a
+Card, a short table row and a 2026-02-30 `asOf` are refused here and accepted there). That is safe only
+while every stored document has passed this checker, which is the W4 requirement: nothing is stored
+except through `check_document`. The node cap cannot be stated in JSON Schema and stays a rule here.
+
+**One test attempt that proved nothing, recorded.** A mutation of the "error is never `ok`" rule did
+not apply (`ruff format` had rewrapped the line), so its green run was not evidence; it was redone
+against the real source and then turned a named test red.
+
+### Second pass on the checker (same day): a regression the fix introduced
+
+Re-run against the fixes, every earlier finding held, and the reviewer found that **the fix itself
+had introduced a wrong `ok`** plus one pattern still slow.
+
+| # | Finding | Fix | Proven by |
+|---|---|---|---|
+| 10 | **Normalisation ran after validation.** A Badge of U+0958 x 40 passed, and its stored NFC form was 80 characters; a Mermaid source with U+212A and U+037E passed, and NFC made it `clicK B "…"` and `;`. The checker's own canonical output then failed its own schema and the portal's. | Normalise **first** (iteratively, because the structure is not yet bounded), then judge the normalised form. Two keys equal after NFC are refused instead of one silently replacing the other. | the stored form is re-checked and passes with the same hash; the two inputs are refused. |
+| 11 | **`_AUTOLINK` was still quadratic** (`<a:` repeated: 15.8x for a 4x input). | A class that excludes `<`. | a doubling test over 16 adversarial units and both extraction functions; it fails on the previous version at exactly `<a:`. |
+| 12 | A dict whose `items()` raises was `error`, not a refusal. | Any failure while writing the input as JSON is a `json` refusal. | test. |
+| 13 | **Bidi overrides (U+202A-202E, U+2066-2069)** passed: a title can display reversed. | Refused in every string and key. Zero-width characters, NEL, U+2028 and private-use stay legal (harmless here). | test. |
+| 14 | **ESC in a Code block was refused**, though a runbook pastes terminal output. | Colour and cursor sequences are stripped from a Code block's `text` only; any other ESC, and ESC anywhere else, is still refused. | test. |
+| 15 | The isolation contract named 20 of 22 packages (`nora.persons_file`, `nora.dreamer` missing). | Added, and a test builds the list from `ls nora` so a new package fails it. | the test failed first, naming both. |
+| 16 | The unknown-keys message did not say how many. | "(and 9995 more)". | test. |
+
+Not changed: a dict subclass that lies in `items()` is judged on what it wrote, so callers store
+`Checked.canonical`, never the object they passed in (documented on `_to_bytes`).
+
+### Third pass on the checker (same day): the same bug class, twice; now guarded as a class
+
+The reviewer's third pass found that **`_strip_ansi` had the same flaw as the NFC ordering**: it ran
+after normalisation and the schema, so a Code block that was only a colour code passed `minLength` as an
+empty string (and failed its own re-check), and stripping joined characters that NFC had not seen side
+by side, so one document had two hashes. Both regressions were a step that changes a string after it was
+judged.
+
+| # | Finding | Fix | Proven by |
+|---|---|---|---|
+| 17 | `_strip_ansi` after the schema and NFC. | Strip right after the character scan, before normalising and validating, on a tree nothing is assumed about yet. | a test on the emptied text and the joined jamo, red on the previous version. |
+| 18 | The invariant was checked only case by case. | **A property test**: a seeded fuzz of 1,500 documents over characters that normalise, compose, grow or strip (combining marks, jamo, singletons, ESC sequences, bidi, NUL, CJK) through seven string-carrying components; whenever the verdict is `ok` the stored form re-checks `ok` with the same hash and canonical form, and nothing raises. | It fails on the version before the NFC fix (`bd3f8270`) and on the one before this fix (`6642e7a7`), each found by the fuzz and not by a hand-written case. Two first drafts of it were not good enough, and are recorded: it passed on `bd3f8270` because no string sat at a length limit (a boundary kind was added), and after that it passed on `6642e7a7` because adding a kind reshuffled one shared random stream and stopped generating the colour-code cases. Each kind now has its own generator and seed. |
+
+The pipeline is now, in this order and for this reason: parse, shape, characters, strip terminal codes,
+normalise, schema, rules, then text and the canonical form. Every step that changes a string runs
+before the step that judges it, so what is stored is what was judged.
