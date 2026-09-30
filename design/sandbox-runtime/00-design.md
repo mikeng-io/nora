@@ -429,14 +429,35 @@ This totals about 9 days. The figures are estimates, not measured.
 | **nora-computer VM** | `computerd`, files under `/workspace/<room>`, processes, toolchains, Chromium + profiles |
 | **never in the VM** | Nora's model key, a Drop credential, any route to Honcho/Postgres/RustFS/Drop, the docker or sbx sockets |
 
-## 12. Audit
+## 12. Audit: a complete trail, Postgres as the record
 
-`computer_events` in Postgres: `ts, room, turn, tool, command or path, status,
-exit_code, duration, bytes, output_key, sha256`. It is written by Nora's
-port, not by `computerd`. sbx's `policy log --json` is pulled in for network
-events, and each Langfuse span carries the event id. Any claim about what ran
-or what was published re-derives from the table plus Drop's `artifacts` row,
-never from the model's account.
+**Operator requirement (2026-09-30): every operation is recorded in the DB,
+with who, when, how and what, as a full trail for auditing.**
+
+- **Audit is not tracing.** Traces (OTel into Langfuse, or Jaeger) can be
+  sampled, dropped by a failing exporter, and purged after days. Audit rows
+  are complete, append-only (a trigger refuses UPDATE and DELETE), kept, and
+  written in the same code path as the operation. Each row carries the OTel
+  `trace_id` and `span_id`, so a row opens its trace. Nothing extra is
+  deployed: tracing is what exists today, and the audit is one table.
+- **`computer_events`, one row per operation:**
+  - **who:** actor (`tag`, `fire`, `cognition`, `dreamer:<adaptor>`,
+    `operator`), requesting person, platform, room, turn;
+  - **when:** started and finished;
+  - **how:** tool, path (`direct`, or `subagent` from S4), trace and span ids;
+  - **what:** the full request (the whole command, the whole edit text); the
+    result (status, exit code, reason, sizes, sha256s); the full output and
+    read content in RustFS through `BlobStore`, referenced by key and sha256,
+    so the row stays small and nothing is dropped; and a write's or edit's
+    file sha256 before and after.
+- **Written by Nora's side,** never by computerd: the VM is the less-trusted
+  party, and its own logs are evidence, not the record.
+- **Coverage by stage.** S2b-1 covers the four tools. S2b-2 adds session
+  transitions, lease acquire, pre-emption and cancel, and lifecycle events
+  (create, recreate, computerd restart, token rotation), plus sbx's
+  `policy log --json` egress records. S3 adds import and export. S4 adds
+  every browser sub-agent step (action, element, URL, screenshot key). An
+  operation with no row is a gap in the trail, and is treated as a defect.
 
 ## 13. Sequence
 
