@@ -20,13 +20,13 @@ The layers are [05](05-data-model.md) §1's (DEC-249); "Live" is part of what a 
 |---|---|---|---|
 | **Authored** | a person decided it | doctrine (`nora/doctrine/`); the Dreamer doctrine and skills; `<room>` and `policy.toml`; `identity.toml`; reference photos for faces ([60](60-faces.md) §2) | the operator |
 | **Live** (assembled into Views) | computed for this turn, never stored | the clock; her platform status (which platforms are up); the tool catalogue | code, per turn |
-| **Record** | it happened and was seen | messages with edits, deletes and reactions; her own sends and decisions; presence fixes and collector polls; social items; play samples; perceptions (what media shows, whose face); face labels and templates; `character_dispute` items | code (ingestion; the decision log and the fire path for her own acts; the tag path's `face_label` and `character_dispute`, authored by the person) |
-| **Rollup** | code computed it from the Record | episodes: stay, trip, co-location, face co-appearance, outing, play session, daybook, response · aggregates: place, occupancy, rhythm, corridor and trip speeds, tie, play profile ([25](25-rollup.md)); anomalies are computed on read, not stored | code only |
+| **Record** | it happened and was seen | messages with edits, deletes and reactions; her own sends and decisions; presence fixes and collector polls; social items; play samples; perceptions (what media shows, whose face); face labels; `character_dispute` items; her tool calls and their results; her artifacts | code, at the moment it happens: ingestion for what others do; the turn and fire paths for her own sends, acts, tool calls and artifacts; the recording verbs `face_label` and `character_dispute` for a person's statement, authored by that person ([05](05-data-model.md) §1) |
+| **Rollup** | code computed it from the Record | episodes: stay, trip, co-location, face co-appearance, outing, play session, daybook, response · aggregates: place, occupancy, rhythm, corridor and trip speeds, tie, play profile ([25](25-rollup.md)); face templates; anomalies are computed on read, not stored | code only |
 | **Notebook**: its tiers **Register**, **Character**, **Lessons**, **Standing** | an adaptor concluded it: entries that cite the Record and Rollup and are never evidence ([05](05-data-model.md) §3) | Register: note, memo, event · Character: person, room (culture), unit (culture), Nora · Lessons: the unit's lessons · Standing: room, unit, person | Register: the Cognition adaptor and the tag path · Character: the Character adaptor only · Lessons: the Lessons adaptor only · Standing: the Cognition adaptor and the debrief |
 | **Memory** (beside the flow) | Honcho concluded it | representation (Nora → person), self card (Nora → Nora), peer card, `remember` conclusions | Honcho; `remember` |
 | **Operator-only** (outside the flow) | for the operator, never for her | tension rows ([55](55-self.md) §4); assess reports | the Character and Lessons adaptors; the Assess adaptor |
 
-The Notebook is written only by the subconscious, one writer per tier, from the cut-over
+The Notebook is written only by the subconscious, one writer per tier, at or right after the cut-over
 (DEC-249); until then the tag path and the debrief also write it, as the row
 says.
 
@@ -177,7 +177,7 @@ flowchart BT
 ```
 
 Solid arrows are writes, reads and stimuli; dotted arrows are citations,
-which only point down. What she says becomes Record and raises no stimulus
+which only reach the Record and the Rollup (links between entries point down, [10](10-tiers.md) §2). What she says becomes Record and raises no stimulus
 ([20](20-observe.md) §3). Every adaptor reads the tiers and blocks it needs;
 the read arrows are left out. The conscious and the subconscious are the operator's model
 ([55](55-self.md) §6): the subconscious drives the conscious, through the
