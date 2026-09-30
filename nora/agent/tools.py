@@ -130,6 +130,7 @@ from ..domain.media import (
     MediaObject,
     VideoReadingKey,
     born_in_room,
+    handle_hex,
     label_from_media_type,
     resolve_media_type,
     sniff_media_type,
@@ -2569,17 +2570,9 @@ def _owner_name(persons, person_id: str, *, ai_peer: str = "") -> str:
 
 
 def _handle_hex(raw: str) -> str:
-    """The hex handle inside whatever the model passed — `a3f2c1`, `[image a3f2c1]`
-    or a full sha256 all reduce to the same lowercase hex run.
-
-    The model is shown `[image a3f2c1]` in the transcript (DEC-43) and may quote
-    any of those forms back. The last whitespace token, stripped of brackets and
-    reduced to its hex characters, is the handle; anything shorter than the
-    rendered handle width is not one.
-    """
-    token = raw.strip().strip("[]").split()
-    tail = token[-1] if token else ""
-    return "".join(c for c in tail.lower() if c in "0123456789abcdef")
+    """`nora.domain.media.handle_hex`: one parse for every tool that takes a
+    media code, and for `resolve_room_media`."""
+    return handle_hex(raw)
 
 
 def _is_external_reference(raw: str) -> bool:

@@ -1188,6 +1188,15 @@ class FakeMediaObjectStore:
         hits = [o for o in self.objs.values() if o.sha256.startswith(handle)]
         return tuple(self._newest_first(hits)[:limit])
 
+    async def lookup_prefix(self, *, handle: str, limit: int = 100) -> MediaLookup:
+        """Mirrors `SqlMediaObjectStore.lookup_prefix`: `fail=True` is
+        `available=False` with no objects, never an empty success."""
+        if self.fail:
+            return MediaLookup(available=False, reason="store")
+        hits = [o for o in self.objs.values() if o.sha256.startswith(handle)]
+        return MediaLookup(available=True,
+                           objects={o.sha256: o for o in self._newest_first(hits)[:limit]})
+
 
 class FakeReverseGeocoder:
     """In-memory `ReverseGeocoder`, bound to the Google and HK-gov backends by

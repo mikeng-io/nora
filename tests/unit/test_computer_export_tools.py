@@ -588,11 +588,37 @@ async def test_a_kept_image_gets_a_code_that_resolves_only_in_its_room(persons):
                                     conversation_id=GROUP)
     there = await resolve_room_media(world.media, code=code, platform="signal",
                                      conversation_id=OTHER_GROUP)
-    assert [o.sha256 for o in here] == [hashlib.sha256(CHART).hexdigest()]
-    assert (here[0].source, here[0].title) == ("computer", "Power use")
-    assert there == ()
+    [obj] = here.objects.values()
+    assert obj.sha256 == hashlib.sha256(CHART).hexdigest()
+    assert (obj.source, obj.title) == ("computer", "Power use")
+    assert (there.available, dict(there.objects)) == (True, {})
     _, finished = _two_rows(world, "computer_export")
     assert finished.result["code"] == code
+
+
+@pytest.mark.parametrize("form", ["{code}", "[image {code}]", "image {code}", "  {code} "])
+async def test_a_kept_images_code_resolves_in_every_form_the_model_quotes(persons, form):
+    """FALSIFIER (review S2): the code is the LAST token's hex. Taking every
+    hex character, `[image a3f2c1]` became `ea3f2c1` (the label's `e` and
+    `a` joined it) and resolved to nothing."""
+    world = _World()
+    world.put(GROUP, "out/chart.png", CHART)
+    code = (await _tools(world, persons)["computer_export"](
+        path="out/chart.png", to="keep"))["code"]
+    got = await resolve_room_media(world.media, code=form.format(code=code),
+                                   platform="signal", conversation_id=GROUP)
+    assert list(got.objects) == [hashlib.sha256(CHART).hexdigest()]
+
+
+async def test_an_unreadable_index_is_unavailable_never_no_such_picture(persons):
+    """FALSIFIER (review S2): `by_prefix` answers an empty tuple when the
+    database is down, which reads as «no such picture». The resolver uses
+    the read that says it could not read."""
+    world = _World()
+    world.media.fail = True
+    got = await resolve_room_media(world.media, code="a3f2c1", platform="signal",
+                                   conversation_id=GROUP)
+    assert got.available is False and dict(got.objects) == {}
 
 
 async def test_a_kept_non_image_gets_no_code(persons):
