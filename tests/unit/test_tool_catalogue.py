@@ -47,9 +47,9 @@ ENC = tiktoken.get_encoding("cl100k_base")
 # existing line changed. 2,250 holds these and roughly two more lines.
 #
 # RE-SET 2026-10-01, 2,250 -> 2,300, for TWO NEW TOOLS, not for drift: the
-# Cognition session's `rollup_read` (38 tokens) and `standing_read` (26), on the
-# block above (2,177 over 68 lines with the computer's four; the merge added one more): total 2,280 over
-# 71 at a mean of 32.1, under `MEAN_CEILING`. No existing line changed. Both are
+# Cognition session's `rollup_read` (38 tokens) and `standing_read` (26) on top
+# of master's block (2,216 over 69 lines): total 2,280 over 71 at a
+# mean of 32.1, under `MEAN_CEILING`. No existing line changed. Both are
 # Dreamer-only (`DREAMER_LOOP_TOOLS`) yet the catalogue lists every registered
 # tool (`test_every_registered_tool_has_a_catalogue_line`), so a tag turn pays
 # their lines; whether the catalogue should be scoped is a separate question.
