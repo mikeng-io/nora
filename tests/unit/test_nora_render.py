@@ -6,13 +6,14 @@ exercised by building the image and running it with `--network=none` (the PR
 says how). What is pinned here is what the gate can hold without them: a chart
 is drawn from its data and refuses data that does not fit, nothing renders a
 page (`markdown` and `report` are gone: documents are the document path's),
-and `map` fails closed (exit 3, nothing written) without the network and the
-key it needs.
+there is no map renderer (maps are the document path's), and a chart's PNG
+fails closed (exit 3, nothing written) without librsvg.
 """
 
 from __future__ import annotations
 
 import importlib.util
+import shutil
 import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -49,6 +50,7 @@ def test_a_chart_is_only_ever_a_picture(render, tmp_path):
     src = tmp_path / "c.json"
     src.write_text('{"x": ["a"], "series": [{"values": [1]}]}')
     assert _run(render, "chart", src, tmp_path / "c.html") == 2
+    assert _run(render, "chart", src, tmp_path / "c.pdf") == 2
     assert not (tmp_path / "c.html").exists()
 
 
@@ -79,14 +81,32 @@ def test_a_chart_refuses_data_that_does_not_fit(render, tmp_path, body):
     assert not out.exists()
 
 
-def test_a_map_without_its_network_and_key_fails_closed(render, tmp_path, monkeypatch, capsys):
-    monkeypatch.delenv("GOOGLE_MAPS_API_KEY", raising=False)
+def test_there_is_no_map_renderer(render, tmp_path):
+    """Maps are the document path's (ADR 0020); one here needed Google egress
+    and a secret in the VM."""
     src = tmp_path / "m.json"
     src.write_text('{"points": [{"lat": 22.28, "lng": 114.19}]}')
-    out = tmp_path / "m.png"
-    assert _run(render, "map", src, out) == 3
-    assert not out.exists()
-    assert "maps.googleapis.com" in capsys.readouterr().err
+    with pytest.raises(SystemExit):
+        render.run(["map", str(src), str(tmp_path / "m.png")])
+    assert not (tmp_path / "m.png").exists()
+
+
+@pytest.mark.skipif(shutil.which("rsvg-convert") is None,
+                    reason="no librsvg here; the computer image installs it")
+def test_a_chart_can_be_a_png(render, tmp_path):
+    src = tmp_path / "use.csv"
+    src.write_text("month,kWh\nJan,10\nFeb,12\n")
+    out = tmp_path / "use.png"
+    assert _run(render, "chart", src, out) == 0
+    assert out.read_bytes().startswith(b"\x89PNG")
+
+
+def test_a_chart_png_without_librsvg_fails_closed(render, tmp_path, monkeypatch):
+    monkeypatch.setattr(render.shutil, "which", lambda name: None)
+    src = tmp_path / "use.csv"
+    src.write_text("month,kWh\nJan,10\n")
+    assert _run(render, "chart", src, tmp_path / "use.png") == 3
+    assert not (tmp_path / "use.png").exists()
 
 
 def test_a_missing_input_is_an_input_error(render, tmp_path):

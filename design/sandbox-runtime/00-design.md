@@ -218,7 +218,8 @@ round 2).
 > own skill; there is no `document-creation` skill over the computer. What
 > survives here: `computer_export` sends FILES (images, charts, CSV, PDF,
 > data), never a web page; an SVG is attached or kept, never linked; and
-> `nora-render` keeps `chart`, `mermaid` and `map`, which make pictures.
+> `nora-render` keeps `chart` and `mermaid`, which make pictures (maps are
+> the document path's, so the VM needs no Google host and no Maps key).
 
 **Today:**
 

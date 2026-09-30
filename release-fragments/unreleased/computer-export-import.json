@@ -1,6 +1,6 @@
 {
   "type": "feature",
-  "summary": "Nora can send files out of her computer (as a Drop link, as an attachment in the room, or kept privately) and copy a file someone sent into it, and she can draw charts, diagrams and maps there with nora-render.",
+  "summary": "Nora can send files out of her computer (as a Drop link, as an attachment in the room, or kept privately) and copy a file someone sent into it, and she can draw charts and diagrams there with nora-render.",
   "details": [
     "computer_export sends files, never web pages: pictures, PDF, CSV, markdown, text and JSON. Every file is checked on Nora's side first: a 25 MB cap, a sha256 computed on the bytes she received, and a type read from the bytes themselves.",
     "An HTML page is refused whatever its name, and an SVG may be attached or kept but never published as a link.",
@@ -11,7 +11,6 @@
     "The computer-use runtime skill carries the judgement: when to use the computer, projects, long jobs, files in and out, and that a document's page is not the computer's to write."
   ],
   "limitations": [
-    "nora-render map needs maps.googleapis.com and the Maps key in the VM, which are not allowed yet; chart and mermaid work offline.",
     "make_artifact and Smith still exist until S3b; an artifact Smith made cannot be revised through computer_export.",
     "The VM image must be rebuilt (nora-computer build) for nora-render to exist on the computer."
   ]

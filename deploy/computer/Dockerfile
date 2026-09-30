@@ -34,19 +34,18 @@ RUN python3 -m venv /opt/computerd/venv \
         -r /opt/computerd/requirements.txt
 
 # nora-render (design/sandbox-runtime §5, S3a): Smith's image renderers as
-# one CLI, `nora-render chart|mermaid|map IN OUT` (render/nora_render.py),
+# one CLI, `nora-render chart|mermaid IN OUT` (render/nora_render.py),
 # standard-library Python on the image's python3. Each makes a picture, never
-# a page: documents are the document path's (ADR 0020). mermaid-cli comes
-# by `npm ci` from render/package-lock.json, whose integrity hashes pin every
-# package; its postinstall fetches the Chromium it draws with, at build time,
-# into /opt/nora-render/puppeteer (the libraries below are what that Chromium
-# links against). At run time only `map` reaches the network
-# (maps.googleapis.com, refused by the deny-all policy until the operator
-# allows it: README.md).
+# a page: documents are the document path's (ADR 0020). librsvg's
+# rsvg-convert turns a chart's SVG into a PNG. mermaid-cli comes by `npm ci`
+# from render/package-lock.json, whose integrity hashes pin every package;
+# its postinstall fetches the Chromium it draws with, at build time, into
+# /opt/nora-render/puppeteer (the libraries below are what that Chromium
+# links against). Nothing here reaches the network at run time.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         libasound2t64 libatk-bridge2.0-0t64 libatk1.0-0t64 libcairo2 libcups2t64 \
         libdrm2 libgbm1 libnss3 libpango-1.0-0 libxcomposite1 libxdamage1 \
-        libxfixes3 libxkbcommon0 libxrandr2 \
+        libxfixes3 libxkbcommon0 libxrandr2 librsvg2-bin \
     && rm -rf /var/lib/apt/lists/*
 COPY render/package.json render/package-lock.json /opt/nora-render/
 RUN cd /opt/nora-render \

@@ -51,33 +51,16 @@ Under sbx a TCP connect succeeds to any address, so health is always an HTTP
 body from `/v1/health`, never a port check.
 
 
-## nora-render and the network
+## nora-render
 
-`nora-render chart|mermaid|map IN OUT` (`render/`) is Smith's image
-renderers as one CLI: each makes a picture (SVG or PNG), never a page. A
-document is the document path's (ADR 0020), not the computer's. Measured
-2026-10-01 in a throwaway `docker run --network=none` of this image:
-
-| renderer | needs | offline |
-|---|---|---|
-| `chart` | nothing (standard-library Python) | yes |
-| `mermaid` | mermaid-cli and its Chromium, both in the image | yes |
-| `map` (Smith's `render_map` and `geocode_address`) | `maps.googleapis.com:443` and `GOOGLE_MAPS_API_KEY` | no: exits 3 |
-
-`map` stays refused until the operator allows its one host and gives the VM
-the key as an sbx placeholder (the real key never enters the VM; sbx's proxy
-substitutes it on requests to that host only):
-
-```bash
-sbx secret set-custom --sandbox nora-computer --host maps.googleapis.com \
-    --env GOOGLE_MAPS_API_KEY --value "$(grep ^GOOGLE_MAPS_API_KEY= ~/workspace/nora/.env | cut -d= -f2-)"
-sbx policy allow network maps.googleapis.com:443
-```
-
-Read back: `sbx policy log nora-computer` shows the host allowed, and a
-`nora-render map` of `{"points": [{"lat": 22.28, "lng": 114.19}]}` exits 0.
-Which env var holds the key on the host is `[route] api_key_env` in
-`config.toml`; check it before copying the line above.
+`nora-render chart|mermaid IN OUT` (`render/`) is Smith's image renderers as
+one CLI: each makes a picture (SVG, or PNG for a link or the chat), never a
+page. A document, maps included, is the document path's (ADR 0020), not the
+computer's. Both run offline: `chart` is standard-library Python (its PNG
+through librsvg's `rsvg-convert`), and `mermaid` is mermaid-cli with its own
+Chromium, both in the image. Measured 2026-10-01 in a throwaway `docker run
+--network=none`. There is no map renderer, so the computer needs no Google
+host allowed and no Maps key.
 
 ## Upgrading from the S2a timer (once)
 

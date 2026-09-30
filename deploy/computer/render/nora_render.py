@@ -2,22 +2,19 @@
 (design/sandbox-runtime §5; S3a). Each makes a FILE, a picture, never a
 page: a document people open is the document path's (ADR 0020), not this.
 
-    nora-render chart   IN.json|IN.csv OUT.svg   a bar or line chart
-    nora-render mermaid IN.mmd OUT.svg|OUT.png   a diagram
-    nora-render map     IN.json OUT.png          a static map
+    nora-render chart   IN.json|IN.csv OUT.svg|OUT.png   a bar or line chart
+    nora-render mermaid IN.mmd OUT.svg|OUT.png           a diagram
 
-A chart is static SVG drawn here from the data, and a diagram is drawn by
-mermaid-cli in a local headless Chromium: neither carries a live library.
-
-The computer's network is deny-all. `chart` and `mermaid` run offline;
-`map` needs `maps.googleapis.com` (Geocoding for an address, Static Maps for
-the picture) and `GOOGLE_MAPS_API_KEY`, which the VM only sees as an sbx
-placeholder the proxy fills in on requests to that host. Without both it
-exits 3 and says so; nothing else is attempted.
+A chart is static SVG drawn here from the data (a PNG is that SVG rasterised
+by librsvg), and a diagram is drawn by mermaid-cli in a local headless
+Chromium: neither carries a live library, and both run offline on the
+computer's deny-all network. A PNG is what goes out as a link or into chat;
+an SVG is never a link. There is no map renderer: maps are the document
+path's (ADR 0020), and one here needed Google egress and a secret.
 
 Exit codes: 0 done; 2 the input is wrong (the message says what to fix);
-3 a renderer needs something the computer does not have (the network, a key,
-the diagram tool). Standard library only: it runs on the image's python3.
+3 a renderer needs a tool the computer does not have. Standard library only:
+it runs on the image's python3.
 """
 
 from __future__ import annotations
@@ -28,21 +25,13 @@ import html
 import io
 import json
 import math
-import os
 import shutil
 import subprocess
 import sys
 import tempfile
-import urllib.error
-import urllib.parse
-import urllib.request
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
-
-GEOCODE_URL = "https://maps.googleapis.com/maps/api/geocode/json"
-STATIC_MAPS_URL = "https://maps.googleapis.com/maps/api/staticmap"
-MAPS_HOST = "maps.googleapis.com"
 
 #: The series colours: the shell's ink first, then four that stay apart in
 #: both light and dark (the page itself is greyscale; a chart needs to tell
@@ -231,56 +220,21 @@ def render_chart_svg(spec: dict[str, Any]) -> str:
     return "".join(out)
 
 
-# -- maps (network) -----------------------------------------------------------------
-
-
-def _get(url: str, params: dict[str, str]) -> bytes:
-    key = os.environ.get("GOOGLE_MAPS_API_KEY", "")
-    if not key:
-        raise MissingCapabilityError(
-            f"map needs GOOGLE_MAPS_API_KEY and network access to {MAPS_HOST}, "
-            "which this computer does not have"
-        )
-    query = urllib.parse.urlencode({**params, "key": key})
-    try:
-        with urllib.request.urlopen(f"{url}?{query}", timeout=20) as response:  # noqa: S310
-            return response.read()
-    except (urllib.error.URLError, TimeoutError, OSError) as exc:
-        raise MissingCapabilityError(
-            f"map could not reach {MAPS_HOST} ({type(exc).__name__}): the computer's "
-            "network does not allow it"
-        ) from exc
-
-
-def _geocode(address: str) -> tuple[float, float]:
-    reply = json.loads(_get(GEOCODE_URL, {"address": address}))
-    if reply.get("status") != "OK" or not reply.get("results"):
-        raise InputError(f"could not find {address!r} on the map ({reply.get('status')})")
-    location = reply["results"][0]["geometry"]["location"]
-    return float(location["lat"]), float(location["lng"])
-
-
-def render_map_png(spec: dict[str, Any]) -> bytes:
-    """`{"title", "points": [{"lat", "lng"} or {"address"}, ...]}` to a
-    static map picture, fetched once and embedded, never a live map."""
-    points = spec.get("points")
-    if not isinstance(points, list) or not points:
-        raise InputError("a map needs points: [{lat, lng} or {address}]")
-    coords = []
-    for point in points:
-        if not isinstance(point, dict):
-            raise InputError("each point is {lat, lng} or {address}")
-        if "lat" in point and "lng" in point:
-            coords.append((float(point["lat"]), float(point["lng"])))
-        elif isinstance(point.get("address"), str):
-            coords.append(_geocode(point["address"]))
-        else:
-            raise InputError("each point is {lat, lng} or {address}")
-    markers = "|".join(f"{lat:.6f},{lng:.6f}" for lat, lng in coords)
-    return _get(STATIC_MAPS_URL, {"size": "640x400", "scale": "2", "markers": markers})
-
-
-# -- the CLI --------------------------------------------------------------------------
+def rasterise(svg: str) -> bytes:
+    """An SVG drawn here as a PNG, by librsvg's `rsvg-convert` (in the
+    image), offline."""
+    rsvg = shutil.which("rsvg-convert")
+    if rsvg is None:
+        raise MissingCapabilityError("rsvg-convert (librsvg) is not installed on this computer")
+    ran = subprocess.run(  # noqa: S603 - fixed argv; the SVG was drawn here
+        [rsvg, "--format", "png", "--zoom", "2", "--background-color", "white"],
+        input=svg.encode("utf-8"), capture_output=True, timeout=60, check=False,
+    )
+    if ran.returncode != 0 or not ran.stdout.startswith(b"\x89PNG"):
+        raise MissingCapabilityError("the chart could not be rasterised: "
+                                     + (ran.stderr.decode("utf-8", "replace").strip()[-300:]
+                                        or "no reason"))
+    return ran.stdout
 
 
 def _write(out: Path, data: str | bytes) -> None:
@@ -294,10 +248,9 @@ def _write(out: Path, data: str | bytes) -> None:
 def run(argv: Sequence[str]) -> int:
     parser = argparse.ArgumentParser(prog="nora-render", description=__doc__.split("\n\n")[0])
     sub = parser.add_subparsers(dest="kind", required=True)
-    for kind in ("mermaid", "map"):
-        cmd = sub.add_parser(kind)
-        cmd.add_argument("input", type=Path)
-        cmd.add_argument("output", type=Path)
+    mermaid = sub.add_parser("mermaid")
+    mermaid.add_argument("input", type=Path)
+    mermaid.add_argument("output", type=Path)
     chart = sub.add_parser("chart")
     chart.add_argument("input", type=Path)
     chart.add_argument("output", type=Path)
@@ -319,13 +272,12 @@ def run(argv: Sequence[str]) -> int:
         elif args.kind == "chart":
             spec = (_chart_spec_csv(text, args.type, args.title)
                     if src.suffix.lower() == ".csv" else _json_spec(text))
-            if suffix != ".svg":
-                raise InputError("a chart is written as OUT.svg")
-            _write(out, render_chart_svg(spec))
-        else:
-            if suffix != ".png":
-                raise InputError("a map is written as OUT.png")
-            _write(out, render_map_png(_json_spec(text, "map")))
+            if suffix == ".svg":
+                _write(out, render_chart_svg(spec))
+            elif suffix == ".png":
+                _write(out, rasterise(render_chart_svg(spec)))
+            else:
+                raise InputError("a chart is written as OUT.svg or OUT.png")
     except InputError as exc:
         print(f"nora-render {args.kind}: {exc}", file=sys.stderr)
         return 2
