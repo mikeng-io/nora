@@ -410,3 +410,15 @@ def test_a_key_whose_default_cannot_be_resolved_is_not_silently_passed():
         "a runtime-keyed container has no static default to compare against"
     )
     assert config_default("participation.reasoning_effort") == "none"
+
+
+def test_compute_is_forced_off_in_the_subject():
+    """A host-run subject cannot run Smith's containers, and since #631 a
+    deployment with `[compute] enabled` refused to compose at all (the model
+    URL the subject hands a job is 127.0.0.1, off the compute-egress
+    allowlist): every corpus ERRORed. Forced off, the subject composes and
+    `make_artifact` answers `unavailable`."""
+    from evals.subject_config import ALLOWED_TO_DIFFER, FORCE_OFF
+
+    assert "compute.enabled" in FORCE_OFF
+    assert "compute.enabled" in ALLOWED_TO_DIFFER

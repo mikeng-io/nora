@@ -1,0 +1,1 @@
+{"type": "none", "reason": "Eval harness fix: the subject config forces [compute] off, so eval runs compose again after #631; no production behaviour changes.", "details": [], "limitations": []}
