@@ -11,6 +11,7 @@ import os
 import tomllib
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlsplit
 
 from pydantic import (
     BaseModel,
@@ -3758,6 +3759,36 @@ class DocumentsConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     enabled: bool = False
+    # The web app's public origin (`https://nora.67.zone`), so a published document can
+    # be handed to the room as a link. EMPTY = no link is ever built or shown: she says
+    # where to find the document by title instead, and never prints a path or a host.
+    # An origin only: no path, query, fragment or credentials. The link carries the
+    # document's 12-hex handle, never its UUID (a UUID in a reply is blocked at egress).
+    public_url: str = ""
+
+    @field_validator("public_url")
+    @classmethod
+    def _public_url_is_an_origin(cls, value: str) -> str:
+        if not value:
+            return value
+        parts = urlsplit(value)
+        bad = (
+            parts.scheme not in ("http", "https")
+            or not parts.hostname
+            or parts.username is not None
+            or parts.password is not None
+            or parts.path not in ("", "/")
+            or parts.query
+            or parts.fragment
+            or any(c.isspace() for c in value)
+        )
+        if bad:
+            msg = (
+                "[documents] public_url must be an origin like https://nora.67.zone "
+                "(scheme and host, optional port; no path, query, fragment or login)"
+            )
+            raise ValueError(msg)
+        return f"{parts.scheme}://{parts.netloc}"
 
 
 class LoggingConfig(BaseModel):

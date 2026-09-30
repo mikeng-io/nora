@@ -1040,3 +1040,33 @@ cannot be smaller than roughly 135 tokens before any title. The description is a
 (`metadata.documents`, refused on a subject with `[documents]` off) and named nowhere in the message or the
 transcript; the case asks for `document_read` on its id. The before arm is the commit that adds the case
 and the seeding without the block; the after arm adds the block.
+
+## 30. A link to a document in her reply (2026-10-01)
+
+**The gap, measured live.** The first real document was published and her reply carried no link. Egress
+blocks any UUID in a reply (`nora/agent/egress.py`, a floor at every exit), the skill told her to name
+the title only, and the operator expected a link. The floor stays.
+
+**The handle.** A link carries the first 12 hex digits of the document id, no dashes (`handle_of`,
+`nora/domain/documents.py`): it is not a UUID, so the whole link passes the identifier scan and the reply
+scan (tested against the real scans over 200 random ids, with a UUID as the control that still blocks).
+`[documents] public_url` (an origin only: scheme and host, optional port; no path, query, fragment or
+login; default empty) gives the link `<public_url>/documents/<handle>`. **Empty means no link at all**:
+the tool result carries no `url`, no path and no host, and its note tells her plainly there is no link
+yet and that the document is under Documents by its title; she never prints a relative path or a host she
+invented (the skill says the same).
+
+**Resolution is visibility first, then the prefix.** `get_visible_by_handle` (store, fake, and
+`GET /app/v1/documents/<handle>`) matches the prefix among the documents the viewer may read and
+nowhere else. Zero matches, more than one (a collision is refused, never picked), a handle outside the
+reader's visibility and a string that is not a handle are the same single 404 (or 400 for a string that
+is neither a handle nor an id, decided before any lookup), so the answer is no oracle for a document the
+viewer may not see or for an ambiguity. 48 bits is an address, not a secret: the page is signed in and
+the viewer rule is unchanged. A full UUID keeps working; the picture route keeps the full id (the page
+passes the resolved id to it). The handle reaches SQL only after `is_handle` (`[0-9a-f]{12}`) and the
+LIKE is autoescaped: each is shown load-bearing by reverting it (an empty handle would match every
+document).
+
+**Not changed.** Egress, doctrine, the `<documents>` block's content (its note now says a reply carries
+the link a publish returned, or the title). Live step: set `[documents] public_url` to the web app's
+origin (its `AUTH_URL`) through nora-deploy step 5.

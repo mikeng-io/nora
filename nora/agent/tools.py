@@ -14523,12 +14523,23 @@ Args:
         rules = [f.rule for f in out.findings]
         if out.status == "ok":
             _record(metrics, tool, "ok", revision=out.revision)
+            if not out.url:
+                # No public origin is configured: there is no link, and she must not
+                # invent one (a path or a host she made up would point nowhere).
+                return {
+                    "status": "ok", "document_id": str(out.document_id),
+                    "revision": out.revision,
+                    "note": "Stored. You have no link to give yet. Say you made it and "
+                            "that it is under Documents in the web app, found by its "
+                            "title, for people signed in. Never write a path, a host or "
+                            "the `document_id` in a reply.",
+                }
             return {
                 "status": "ok", "document_id": str(out.document_id),
                 "revision": out.revision, "url": out.url,
-                "note": "Stored. Say you made it and that it is under Documents in "
-                        "the web app, for people signed in. Do not say it is a link "
-                        "anyone can open, and do not paste the path as a link.",
+                "note": "Stored. Give the room this `url` verbatim on its own line: it "
+                        "opens the document in the web app for people signed in, not "
+                        "for anyone else. Never write the `document_id` in a reply.",
             }
         if out.status == "conflict":
             _record(metrics, tool, "bad_arguments", reason="conflict")
@@ -14596,8 +14607,10 @@ Args:
         body = json.dumps(out.spec, ensure_ascii=False, separators=(",", ":"))
         result: dict[str, Any] = {
             "status": "ok", "document_id": str(out.document_id),
-            "revision": out.revision, "title": out.title, "url": out.url,
+            "revision": out.revision, "title": out.title,
         }
+        if out.url:  # no public origin configured = no link, and none is invented
+            result["url"] = out.url
         if len(body) > _DOCUMENT_READ_CHARS:
             return {**result,
                     "note": "It is too large to show here, so `spec` is left out. "

@@ -41,7 +41,7 @@ from uuid import UUID, uuid4
 
 from nora.documents import catalog_prompt
 from nora.documents.check import Checked, Finding, check_document
-from nora.domain.documents import DocumentStore, RevisionIn, RoomKey
+from nora.domain.documents import DocumentStore, RevisionIn, RoomKey, handle_of
 from nora.domain.media import code_matches, parse_media_type, resolve_room_media, room_sightings
 from nora.domain.ports import MediaObjectStore, RecordStore
 from nora.policy import Policy
@@ -122,6 +122,7 @@ class DocumentService:
         is_person: Callable[[str], bool],
         new_id: Callable[[], UUID] = uuid4,
         now_ms: Callable[[], int] = _wall_ms,
+        public_url: str = "",
     ) -> None:
         self._store = store
         self._records = records
@@ -136,6 +137,8 @@ class DocumentService:
         self._is_person = is_person
         self._new_id = new_id
         self._now_ms = now_ms
+        # Empty means no link is ever built (`[documents] public_url`).
+        self._public_url = public_url.rstrip("/")
 
     # ------------------------------------------------------------------ media
     async def _sightings(self, platform: str, conversation_id: str, code: str) -> set[str] | None:
@@ -249,7 +252,19 @@ class DocumentService:
             revision=current.summary.revision,
             title=current.summary.title,
             spec=current.spec,
-            url=f"/documents/{document_id}",
+            url=self._link(document_id),
+        )
+
+    def _link(self, document_id: UUID) -> str:
+        """The link to hand the room, or "" when there is no public origin. It carries the
+        12-hex handle, never the UUID, so it passes egress whole."""
+        if not self._public_url:
+            return ""
+        return f"{self._public_url}/documents/{handle_of(document_id)}"
+
+    def _ok(self, document_id: UUID, revision: int) -> PublishResult:
+        return PublishResult(
+            "ok", document_id=document_id, revision=revision, url=self._link(document_id)
         )
 
     # ---------------------------------------------------------------- publish
@@ -325,7 +340,7 @@ class DocumentService:
                     created_by=person_id,
                     revision=revision,
                 )
-                return _ok(made.summary.id, made.summary.revision)
+                return self._ok(made.summary.id, made.summary.revision)
             current = await self._store.get(document_id=document_id)
             # A document in another room is answered exactly like one that does not exist:
             # a model in room B must not learn that an id is a document in room A (the read
@@ -365,19 +380,13 @@ class DocumentService:
             )
         if outcome.status == "not_found" or outcome.document is None:
             return _no_such_document()
-        return _ok(document_id, outcome.document.summary.revision)
+        return self._ok(document_id, outcome.document.summary.revision)
 
 
 def _no_such_document() -> PublishResult:
     return PublishResult(
         "refused",
         findings=(Finding("", "no_such_document", "no document with that id in this room"),),
-    )
-
-
-def _ok(document_id: UUID, revision: int) -> PublishResult:
-    return PublishResult(
-        "ok", document_id=document_id, revision=revision, url=f"/documents/{document_id}"
     )
 
 

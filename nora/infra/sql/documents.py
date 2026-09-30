@@ -29,6 +29,7 @@ from nora.domain.documents import (
     StoredDocument,
     VisiblePage,
     ensure_utc_document,
+    is_handle,
 )
 from nora.infra.sql.schema import DOCUMENT_REVISION, DOCUMENTS
 
@@ -265,6 +266,25 @@ class SqlDocumentStore:
         async with self._engine.connect() as conn:
             row = (await conn.execute(stmt)).first()
         return None if row is None else _stored(row)
+
+    async def get_visible_by_handle(
+        self, *, handle: str, person_id: str, rooms: frozenset[RoomKey]
+    ) -> StoredDocument | None:
+        if not is_handle(handle):  # nothing else ever reaches the query
+            return None
+        stmt = (
+            _current()
+            .where(
+                _visible(person_id, rooms),
+                sa.func.replace(sa.cast(_D.id, sa.Text), "-", "").startswith(
+                    handle, autoescape=True
+                ),
+            )
+            .limit(2)  # two is already "ambiguous"; never read more
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+        return _stored(rows[0]) if len(rows) == 1 else None
 
     async def _one(self, conn: AsyncConnection, document_id: UUID) -> StoredDocument | None:
         row = (await conn.execute(_current().where(_D.id == document_id))).first()

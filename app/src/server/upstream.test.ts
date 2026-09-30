@@ -30,6 +30,11 @@ describe("resolveUpstream", () => {
     );
     expect(ok(["documents", id], "personId=ken", "jo")).toBe(`/app/v1/documents/${id}?personId=jo`);
     expect(resolveUpstream(["documents", "not-a-uuid"], q(), "jo")).toEqual({ ok: false, status: 404 });
+    // A link's 12-hex handle is forwarded as is; nothing else that is not an id is.
+    expect(ok(["documents", "9e1d2c3b4a5f"], "personId=ken", "jo")).toBe("/app/v1/documents/9e1d2c3b4a5f?personId=jo");
+    for (const bad of ["9E1D2C3B4A5F", "9e1d2c3b4a5", "9e1d2c3b4a5fa", "9e1d2c3b4a5%", "9e1d2c3b-4a5f", "../events"]) {
+      expect(resolveUpstream(["documents", bad], q(), "jo"), bad).toEqual({ ok: false, status: 404 });
+    }
     // The browser's own personId is never the viewer.
     expect(ok(["documents"], "personId=ken", "jo")).not.toContain("ken");
   });

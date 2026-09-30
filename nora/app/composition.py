@@ -1448,6 +1448,7 @@ async def build_dependencies(
         media_window=cfg.store.context_window + LOAD_TRANSCRIPT_MAX,
         room_ids=_room_ids_of(allowlist),
         is_person=persons.by_person.__contains__,
+        public_url=cfg.documents.public_url,
     )
     # `<documents>` (design/artifact §29): the one reader the tag path and the fire path
     # share. `None` while `[documents]` is off, so no room renders the block (the same

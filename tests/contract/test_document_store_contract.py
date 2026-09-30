@@ -6,11 +6,11 @@ from __future__ import annotations
 
 import asyncio
 from typing import Any
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 
-from nora.domain.documents import DocumentExistsError, RevisionIn
+from nora.domain.documents import DocumentExistsError, RevisionIn, handle_of, is_handle
 from nora.infra.sql.documents import SqlDocumentStore
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.migrations_runner import run_migrations
@@ -367,3 +367,82 @@ async def test_list_room_is_bounded_by_its_limit_and_empty_for_nothing(store):
     assert len(await store.list_room(platform="signal", conversation_ids=ids, limit=3)) == 3
     assert await store.list_room(platform="signal", conversation_ids=ids, limit=0) == ()
     assert await store.list_room(platform="signal", conversation_ids=frozenset(), limit=5) == ()
+
+
+# --------------------------------------------------------------------- the link's handle
+PREFIX = "0123456789ab"  # the 12 hex digits two test documents share
+
+
+def _with_prefix(tail: str) -> UUID:
+    """A document id whose handle is PREFIX, the rest chosen by `tail` (20 hex digits)."""
+    hex32 = PREFIX + tail.ljust(20, "0")
+    return UUID(hex32)
+
+
+async def _make_id(store, document_id, *, created_by="ken", room=ROOM, title="Weekend"):
+    await store.create(
+        document_id=document_id, platform=room[0], conversation_id=room[1],
+        created_by=created_by, revision=_rev(title),
+    )
+    return document_id
+
+
+async def test_a_handle_resolves_the_current_revision_of_a_document_the_person_reads(store):
+    doc = await _make_id(store, _with_prefix("a"), title="First")
+    await _revise(store, doc, base=1, title="Second")
+    got = await store.get_visible_by_handle(
+        handle=handle_of(doc), person_id="ken", rooms=frozenset()
+    )
+    assert got is not None and got.summary.id == doc
+    assert got.summary.revision == 2 and got.summary.title == "Second"
+
+
+async def test_a_handle_is_chosen_among_what_the_person_may_read_only(store):
+    # Two documents share the 12-hex handle. Ken reads only the first: the prefix is
+    # resolved AFTER visibility, so Ken gets his own and Mei's never collides with it.
+    mine = await _make_id(store, _with_prefix("1"), created_by="ken", room=ROOM)
+    theirs = await _make_id(store, _with_prefix("2"), created_by="mei", room=OTHER_ROOM)
+    handle = handle_of(mine)
+    assert handle == handle_of(theirs)
+    ken = await store.get_visible_by_handle(handle=handle, person_id="ken", rooms=frozenset())
+    mei = await store.get_visible_by_handle(handle=handle, person_id="mei", rooms=frozenset())
+    assert ken is not None and ken.summary.id == mine
+    assert mei is not None and mei.summary.id == theirs
+    # Somebody who reads neither learns nothing: the same None as no such handle.
+    nobody = await store.get_visible_by_handle(handle=handle, person_id="zoe", rooms=frozenset())
+    nothing = await store.get_visible_by_handle(handle="f" * 12, person_id="zoe", rooms=frozenset())
+    assert nobody is None and nothing is None
+
+
+async def test_a_handle_two_readable_documents_share_is_refused_never_picked(store):
+    await _make_id(store, _with_prefix("1"), created_by="ken", room=ROOM)
+    await _make_id(store, _with_prefix("2"), created_by="mei", room=ROOM)
+    # Ken reads both (a room that names him, and he made one): ambiguous, so none.
+    got = await store.get_visible_by_handle(
+        handle=PREFIX, person_id="ken", rooms=frozenset({ROOM})
+    )
+    assert got is None
+
+
+async def test_a_handle_in_a_room_the_person_no_longer_reads_is_not_found(store):
+    doc = await _make_id(store, _with_prefix("3"), created_by="mei", room=ROOM)
+    assert (await store.get_visible_by_handle(
+        handle=handle_of(doc), person_id="ken", rooms=frozenset({ROOM})
+    )) is not None
+    assert (await store.get_visible_by_handle(
+        handle=handle_of(doc), person_id="ken", rooms=frozenset()
+    )) is None
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "", "0123456789a", "0123456789abc", "0123456789AB", "0123456789a%", "0123456789a_",
+        "%", "_" * 12, "0123456789-b", "' OR 1=1 --", "0123456789ab\n", "０１２３４５６７８９ａｂ",
+    ],
+)
+async def test_what_is_not_a_handle_never_reaches_the_query_and_matches_nothing(store, bad):
+    await _make_id(store, _with_prefix("4"), created_by="ken")
+    assert not is_handle(bad)
+    got = await store.get_visible_by_handle(handle=bad, person_id="ken", rooms=frozenset())
+    assert got is None

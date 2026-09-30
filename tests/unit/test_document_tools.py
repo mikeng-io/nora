@@ -13,9 +13,11 @@ import json
 from typing import Any, ClassVar
 from uuid import UUID, uuid4
 
+from nora.agent.egress import scan_identifiers, scan_reply
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
 from nora.app.documents_service import DocumentService
+from nora.domain.documents import handle_of
 from nora.domain.models import PersonRef
 from nora.obs.metrics import Metrics
 from nora.testing import FakeDocumentStore, FakeMediaObjectStore, FakeMemoryStore, FakeRosterSource
@@ -38,7 +40,9 @@ class _Persons:
         return None
 
 
-def _service(store: FakeDocumentStore | None = None) -> DocumentService:
+def _service(
+    store: FakeDocumentStore | None = None, *, public_url: str = ""
+) -> DocumentService:
     return DocumentService(
         store=store or FakeDocumentStore(),
         records=_Rows(),
@@ -46,6 +50,7 @@ def _service(store: FakeDocumentStore | None = None) -> DocumentService:
         media_window=50,
         room_ids=lambda platform, cid: frozenset({cid}),
         is_person=lambda person_id: person_id == "miles",
+        public_url=public_url,
     )
 
 
@@ -95,18 +100,57 @@ def _doc(title: str = "December in Tokyo") -> dict[str, Any]:
     return {"version": 1, "root": page}
 
 
-async def test_a_good_spec_is_stored_and_answered_with_its_id_revision_and_path() -> None:
+async def test_a_good_spec_is_stored_and_answered_with_its_id_and_revision() -> None:
     store = FakeDocumentStore()
     out = await _tools(_service(store))["document_publish"](spec=_doc())
     assert out["status"] == "ok" and out["revision"] == 1
-    assert out["url"] == f"/documents/{out['document_id']}"
-    assert "anyone can open" in out["note"]
     stored = (
         await store.list_visible(person_id="miles", rooms=frozenset(), limit=10, offset=0)
     ).items
     assert [d.created_by for d in stored] == ["miles"]
     doc = await store.get(document_id=UUID(out["document_id"]))
     assert doc is not None and doc.written_by.startswith("tag:")
+
+
+async def test_with_no_public_url_the_result_carries_no_link_and_says_so() -> None:
+    # Empty `[documents] public_url`: no url, no path, no host, and the note tells her
+    # plainly there is no link yet and where to find it (Documents, by title).
+    out = await _tools(_service())["document_publish"](spec=_doc())
+    assert out["status"] == "ok"
+    assert "url" not in out
+    note = out["note"]
+    assert "no link to give yet" in note and "Documents" in note and "title" in note
+    assert "http" not in note and "/documents/" not in note
+    tools = _tools(_service())
+    made = await tools["document_publish"](spec=_doc())
+    seen = await tools["document_read"](document_id=made["document_id"])
+    assert seen["status"] == "ok" and "url" not in seen
+
+
+async def test_with_a_public_url_the_result_carries_the_handle_link_and_no_uuid() -> None:
+    tools = _tools(_service(public_url="https://nora.example"))
+    out = await tools["document_publish"](spec=_doc())
+    handle = handle_of(UUID(out["document_id"]))
+    assert out["url"] == f"https://nora.example/documents/{handle}"
+    assert out["document_id"] not in out["url"]  # the link never carries the UUID
+    assert "verbatim" in out["note"] and "own line" in out["note"]
+    assert "document_id" in out["note"]  # the rule: never write it in a reply
+    read = await tools["document_read"](document_id=out["document_id"])
+    assert read["url"] == out["url"]
+
+
+def test_the_link_passes_egress_whole_and_the_uuid_does_not() -> None:
+    # The floor stays: a UUID in a reply is blocked. The handle link is not a UUID, so the
+    # whole sentence she would send passes the identifier scan and the reply scan.
+    for _ in range(200):
+        document_id = uuid4()
+        link = f"https://nora.example/documents/{handle_of(document_id)}"
+        reply = f"我整咗「星期六 Packing List」，喺度睇：\n{link}\n"
+        assert scan_identifiers(reply) is None, link
+        assert scan_reply(reply) is None, link
+        assert scan_reply(f"id {document_id}") == "uuid"  # the control: egress is unchanged
+    worst = "https://nora.67.zone/documents/" + "0123456789ab"
+    assert scan_reply(worst) is None
 
 
 async def test_a_spec_sent_as_json_text_is_accepted_too() -> None:

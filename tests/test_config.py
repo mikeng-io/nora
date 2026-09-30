@@ -12,6 +12,7 @@ from nora.config import (
     CognitionConfig,
     Config,
     ConfigError,
+    DocumentsConfig,
     DreamBudgetConfig,
     DreamerConfig,
     LimitsConfig,
@@ -2104,3 +2105,44 @@ def test_a_cognition_block_that_sets_a_call_ceiling_refuses_to_load(toml_path, k
         toml_path.write_text(text.replace(marker, marker + key, 1))
     with pytest.raises(ConfigError, match="no call ceiling of any kind"):
         load(toml_path)
+
+
+# --------------------------------------------------------- [documents] public_url
+def test_documents_public_url_defaults_to_no_link_and_the_example_ships_it_empty(
+    example_config_path,
+) -> None:
+    assert DocumentsConfig().public_url == ""
+    example = tomllib.loads(example_config_path.read_text())
+    assert example["documents"]["public_url"] == ""
+
+
+@pytest.mark.parametrize(
+    ("given", "kept"),
+    [
+        ("https://nora.67.zone", "https://nora.67.zone"),
+        ("https://nora.67.zone/", "https://nora.67.zone"),
+        ("http://localhost:3000", "http://localhost:3000"),
+    ],
+)
+def test_documents_public_url_accepts_an_origin_and_drops_a_trailing_slash(given, kept) -> None:
+    assert DocumentsConfig(public_url=given).public_url == kept
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "nora.67.zone",  # no scheme
+        "javascript:alert(1)",
+        "ftp://nora.67.zone",
+        "https://",
+        "https://nora.67.zone/app",  # a path
+        "https://nora.67.zone/?x=1",
+        "https://nora.67.zone/#frag",
+        "https://user:pw@nora.67.zone",  # credentials
+        "https://nora.67.zone extra",
+        "//nora.67.zone",
+    ],
+)
+def test_documents_public_url_refuses_anything_that_is_not_an_origin(bad) -> None:
+    with pytest.raises(ValidationError):
+        DocumentsConfig(public_url=bad)

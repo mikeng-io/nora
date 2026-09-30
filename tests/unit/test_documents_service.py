@@ -111,6 +111,7 @@ def _service(
     fail_rows: bool = False,
     history: dict[str, list[tuple[int, dict[str, Any]]]] | None = None,
     filler: int = 0,
+    public_url: str = "",
 ) -> tuple[DocumentService, FakeDocumentStore]:
     store = store or FakeDocumentStore()
     svc = DocumentService(
@@ -125,6 +126,7 @@ def _service(
         ),
         is_person=lambda person_id: person_id in {"ken", "mei"},
         now_ms=lambda: NOW,
+        public_url=public_url,
     )
     return svc, store
 
@@ -153,11 +155,11 @@ async def _publish(svc: DocumentService, raw: Any, *, room=ROOM, **kw: Any):
 
 
 # ------------------------------------------------------------------- publishing
-async def test_a_good_document_is_stored_and_answered_with_its_portal_path() -> None:
+async def test_a_good_document_is_stored_and_answered_with_no_link_when_no_origin_is_set() -> None:
     svc, store = _service()
     result = await _publish(svc, _doc({"type": "Markdown", "props": {"text": "hi"}}))
     assert result.status == "ok" and result.revision == 1
-    assert result.url == f"/documents/{result.document_id}"
+    assert result.url == ""  # no `public_url`: no path, no host, nothing to paste
     stored = await store.get(document_id=result.document_id)
     assert stored is not None
     assert stored.summary.title == "Saturday"
@@ -379,7 +381,7 @@ async def test_a_room_reads_its_own_document_at_the_current_revision() -> None:
     )
     assert read.status == "ok" and read.revision == 2 and read.title == "v2"
     assert read.spec is not None and read.spec["root"]["props"]["title"] == "v2"
-    assert read.url == f"/documents/{first.document_id}"
+    assert read.url == ""
 
 
 async def test_another_rooms_document_reads_exactly_like_an_unknown_one() -> None:
@@ -554,3 +556,19 @@ def test_a_room_that_admits_everyone_names_nobody() -> None:
 @pytest.mark.parametrize("person", ["", "KEN", "ken "])
 def test_a_person_id_is_matched_exactly(person: str) -> None:
     assert rooms_named(_policy(), person) == frozenset()
+
+
+async def test_with_a_public_url_the_link_is_the_origin_and_the_handle_never_the_uuid() -> None:
+    svc, _ = _service(public_url="https://nora.example/")  # a trailing slash is dropped
+    made = await _publish(svc, _doc(title="v1"))
+    handle = made.document_id.hex[:12]
+    assert made.url == f"https://nora.example/documents/{handle}"
+    assert str(made.document_id) not in made.url and made.document_id.hex not in made.url
+    read = await svc.read(
+        platform=ROOM[0], conversation_id=ROOM[1], document_id=made.document_id
+    )
+    assert read.url == made.url
+    revised = await _publish(
+        svc, _doc(title="v2"), document_id=made.document_id, base_revision=1
+    )
+    assert revised.url == made.url  # one document, one link, whatever its revision
