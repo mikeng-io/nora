@@ -185,10 +185,13 @@ async def test_a_read_never_opens_a_session():
 
 @pytest.mark.parametrize("max_bytes", [0, -1])
 async def test_a_cap_that_is_not_positive_is_denied(max_bytes):
-    reader, runtime, _ = _reader()
+    """Refused before anything: the computer is never asked, nothing is
+    recorded as a read."""
+    reader, runtime, events = _reader(runtime=_CountingRuntime())
     _put(runtime, ROOM, "projects/p/doc.json", SPEC)
     got = await _read(reader, max_bytes=max_bytes)
     assert got.status is SandboxStatus.DENIED and got.data == b""
+    assert runtime.fetches == 0 and events.events == []
 
 
 async def test_it_never_raises_and_still_writes_both_rows():
