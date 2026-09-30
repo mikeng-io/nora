@@ -218,6 +218,49 @@ class SqlRecordQuery:
                 out.append(RecordRefHit("message_delete", rid, hits[mid]))
         return tuple(out)
 
+    async def own_sends(
+        self, rooms: Sequence[tuple[str, str]], *, start_ms: int, end_ms: int, limit: int,
+    ) -> tuple[RecordHit, ...]:
+        """Nora's OWN delivered sends in these rooms over `[start_ms, end_ms)`,
+        oldest first, at most the `limit` newest (D1, DEC-245): what a session's
+        agenda shows beside the messages that raised it, so it can tell what
+        they are answering. Only rows `messages` marks hers and `sent` (a queued
+        or failed send never reached the room); the same select as every
+        transcript read, so a hidden row is absent and an unsent one is marked
+        deleted. The caller's rooms are the whole boundary, as for `query`."""
+        if not rooms or limit <= 0 or end_ms <= start_ms:
+            return ()
+        in_rooms = sa.or_(*(
+            sa.and_(MESSAGES.c.platform == platform, MESSAGES.c.conversation_id == cid)
+            for platform, cid in rooms
+        ))
+        stmt = (
+            transcript_select()
+            .add_columns(MESSAGES.c.platform, MESSAGES.c.conversation_id)
+            .where(
+                in_rooms, MESSAGES.c.ts >= start_ms, MESSAGES.c.ts < end_ms,
+                MESSAGES.c.is_nora == 1, MESSAGES.c.delivery_status == "sent",
+            )
+            .order_by(MESSAGES.c.ts.desc(), MESSAGES.c.id.desc())
+            .limit(limit)
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+            ids = [r.id for r in rows]
+            reactions = await self._reactions(conn, ids)
+            gone = await self._deleted(conn, ids)
+        return tuple(sorted(
+            (
+                RecordHit(
+                    platform=r.platform, conversation_id=r.conversation_id,
+                    row=transcript_row(r), reactions=reactions.get(r.id, ()),
+                    deleted=r.id in gone,
+                )
+                for r in rows
+            ),
+            key=lambda h: (h.row.ts, h.row.id),
+        ))
+
     @staticmethod
     async def _reactions(
         conn: Any, ids: list[int],

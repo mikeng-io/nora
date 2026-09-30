@@ -502,3 +502,56 @@ async def test_by_refs_with_nothing_to_read_reads_nothing(engine, said):
     assert await store.by_refs([], [("signal", "ROOM-A")]) == ()
     assert await store.by_refs([("messages", said["a_camp"])], []) == ()
     assert await store.by_refs([("messages", 10**9)], [("signal", "ROOM-A")]) == ()
+
+
+# ---- `own_sends`: Nora's own delivered sends, for a session's grounding (D1, DEC-245) ------
+
+
+async def _nora(engine, room, ts, body, *, status="sent", platform="signal"):
+    mid = await _say(engine, platform=platform, room=room, person=None, sender="nora",
+                     ts=ts, body=body, is_nora=True)
+    async with engine.begin() as conn:
+        await conn.execute(sa.text("UPDATE messages SET delivery_status = :s WHERE id = :id"),
+                           {"s": status, "id": mid})
+    return mid
+
+
+async def test_own_sends_are_her_delivered_rows_in_the_rooms_and_window_only(engine, said):
+    inside = await _nora(engine, "ROOM-A", T0 + 10_000, "her line")
+    later = await _nora(engine, "ROOM-A", T0 + 20_000, "her later line")
+    await _nora(engine, "ROOM-A", T0 + 11_000, "queued, never sent", status="pending")
+    await _nora(engine, "ROOM-A", T0 + 12_000, "failed to send", status="failed")
+    await _nora(engine, "ROOM-A", T0 - 5_000, "before the window")
+    await _nora(engine, "ROOM-B", T0 + 10_500, "another room", platform="discord")
+    hidden = await _nora(engine, "ROOM-A", T0 + 13_000, "hidden by a forget")
+    async with engine.begin() as conn:
+        await conn.execute(sa.text("UPDATE messages SET hidden_at = 1 WHERE id = :id"),
+                           {"id": hidden})
+    hits = await SqlRecordQuery(engine).own_sends(
+        [("signal", "ROOM-A")], start_ms=T0, end_ms=T0 + 60_000, limit=10,
+    )
+    # oldest first; a person's message (the `said` rows) is never one of hers
+    assert [h.row.id for h in hits] == [inside, later]
+    assert all(h.row.is_nora and h.platform == "signal" for h in hits)
+
+
+async def test_own_sends_keep_the_newest_when_the_limit_cuts_and_mark_an_unsent_one_deleted(
+    engine, said,
+):
+    ids = [await _nora(engine, "ROOM-A", T0 + 10_000 + i, f"line {i}") for i in range(4)]
+    async with engine.begin() as conn:
+        await conn.execute(sa.text(
+            "INSERT INTO message_delete (message_id, sender_id, ts) VALUES (:id, 'nora', :ts)"
+        ), {"id": ids[3], "ts": T0 + 30_000})
+    hits = await SqlRecordQuery(engine).own_sends(
+        [("signal", "ROOM-A")], start_ms=T0, end_ms=T0 + 60_000, limit=2,
+    )
+    assert [h.row.id for h in hits] == ids[2:]
+    assert [h.deleted for h in hits] == [False, True]
+
+
+async def test_own_sends_with_nothing_to_read_reads_nothing(engine, said):
+    store = SqlRecordQuery(engine)
+    assert await store.own_sends([], start_ms=T0, end_ms=T0 + 1, limit=5) == ()
+    assert await store.own_sends([("signal", "ROOM-A")], start_ms=T0, end_ms=T0, limit=5) == ()
+    assert await store.own_sends([("signal", "ROOM-A")], start_ms=T0, end_ms=T0 + 9, limit=0) == ()
