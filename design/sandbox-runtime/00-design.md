@@ -1,7 +1,7 @@
 ---
 type: design
 title: "Nora's computer — a coding agent's toolkit, executed in a microVM"
-description: "Early study. Nora stays a trusted container; the computer-use tools run in one persistent Docker Sandboxes (sbx) microVM that serves a small HTTP API (computerd) with Nora as its only client. A host unit owns lifecycle. Smith and the make_artifact tool are retired: artifacts become a runtime skill over the computer tools, published by computer_export(to=link) through the existing ArtifactIngest port to Drop, revised in place from a persistent workspace. Threat model follows content, not users. Includes the live exposure and two sbx spike rounds, all measured 2026-09-30."
+description: "Early study. Nora stays a trusted container; the computer-use tools run in one persistent Docker Sandboxes (sbx) microVM that serves a small HTTP API (computerd) with Nora as its only client. A host unit owns lifecycle. Smith and the make_artifact tool are to be retired (pending open decision 4 for the async path): artifacts become a runtime skill over the computer tools, published by computer_export(to=link) through the existing ArtifactIngest port to Drop, revised in place from a persistent workspace. Threat model follows content, not users. Includes the live exposure and two sbx spike rounds, all measured 2026-09-30."
 tags: [nora, compute, sandbox, sbx, computer-use, smith, drop, rustfs]
 timestamp: '2026-09-30'
 status: draft
@@ -9,7 +9,7 @@ status: draft
 
 # Nora's computer
 
-Status: **early study for computer use; nothing decided.** Operator direction
+Status: **early study for computer use; direction set, open decisions listed at the end.** Operator direction
 (2026-09-30):
 
 - **Nora remains a container** and stays the trusted control plane. She is
@@ -20,7 +20,8 @@ Status: **early study for computer use; nothing decided.** Operator direction
 - **Smith is deprecated, and `make_artifact` becomes a skill** (`document-creation`)
   over the computer tools, with Drop behind `computer_export` (§6).
 - **Target runtime: Docker Sandboxes (sbx)**, behind a `SandboxRuntime` port;
-  spike round 2 passed (§9), and the login is open decision 1.
+  spike round 2 passed every gate it tested, three untested (§9); the login
+  was accepted as a dependency (ADR 0019).
 - **Files: RustFS is reused** through Drop for published artifacts and
   through the `BlobStore` port for private exports. The VM's disk is the
   working disk.
@@ -56,7 +57,7 @@ It keeps these rules:
 It drops these, compared with the first draft: lease fencing, host btrfs
 snapshots, a mandatory worker between Nora and every command, and a home-made
 egress proxy. Tool output enters Nora's context as a tagged block that says
-what it is and where it came from (ADR 0012/0013), the same risk class
+what it is and where it came from (ADR 0012; ADR 0013 `a-block-says-what-it-is-and-its-type-says-it`), the same risk class
 `web_fetch` and `x_read` already carry.
 
 **Why not run Nora herself in the microVM?** A VM around Nora protects norty
@@ -122,10 +123,11 @@ class SandboxRuntime(Protocol):
     async def read(self, scope: Scope, path: str, *, offset: int = 0, limit: int = 2000) -> FileResult: ...
     async def write(self, scope: Scope, path: str, data: bytes) -> OpResult: ...
     async def edit(self, scope: Scope, path: str, old: str, new: str) -> OpResult: ...
-    async def files(self, scope: Scope, pattern: str = "**/*") -> ListResult: ...
+    async def files(self, scope: Scope, pattern: str = "**/*") -> ListResult: ...   # Nora's code only (state, export); no model tool
     async def fetch(self, scope: Scope, path: str, *, max_bytes: int) -> BytesResult: ...  # out of the VM
     async def put(self, scope: Scope, path: str, data: bytes) -> OpResult: ...            # into the VM
-    async def browse(self, scope: Scope, action: BrowserAction) -> BrowserResult: ...
+    # S4: the browser is reached over a CDP proxy through computerd; the
+    # sub-agent's steps travel there, not through a port method per action (§14).
     async def status(self) -> RuntimeStatus: ...
 ```
 
@@ -156,7 +158,7 @@ VM is the boundary.
 | tool | does |
 |---|---|
 | `computer_run(command, timeout?)` | bash in the room's workspace: python/uv, node, git, ffmpeg, curl. Listing and search (`ls`, `find`, `rg`) go here too |
-| `computer_read(path, offset?)` | text as a tagged, bounded block; instead of `cat` for a file you will act on. Later: images to her vision path |
+| `computer_read(path, offset?, limit?)` | text as a tagged, bounded block; instead of `cat` for a file you will act on. Later: images to her vision path |
 | `computer_write(path, content)` | a whole file, byte for byte, with no shell quoting; instead of a heredoc or `echo` |
 | `computer_edit(path, old, new)` | one exact replacement, refused when `old` is missing or ambiguous; instead of `sed` |
 | `computer_browse(objective, session?)` | S4: one call delegates a whole browser task to a sub-agent (§14) |
@@ -181,7 +183,7 @@ after the tools, written against the failures real tasks show (ADR 0016).
 the operator judged the environment semi-trusted, and the audit log (§12) is
 the required control.
 
-`make_artifact` is **no longer a tool**. It becomes the `document-creation` runtime
+`make_artifact` is **to stop being a tool** (S3; the async path pending open decision 4). It becomes the `document-creation` runtime
 skill (§6).
 
 - **Stay as they are:** `web_fetch`, `calculate`, `generate_image` and
@@ -233,7 +235,7 @@ over the computer tools, so it becomes the `document-creation` runtime skill (AD
 - write the source compactly (markdown, data, a small template), not
   hand-written HTML;
 - render with `nora-render`;
-- check the output (`computer_read` / a screenshot);
+- check the output (`computer_read`; a rendered screenshot once S4 lands);
 - `computer_export(path, to="link")`.
 
 Revising an artifact is the same skill with `artifact_id`.
@@ -290,7 +292,7 @@ computer_export(path, to="link", title, artifact_id?)
 - **Drop stays the single writer** of the artifacts bucket in RustFS and of
   the `artifacts` table, and the only public server (`/drop/{slug}` with its
   existing hardening). Nothing else writes RustFS for published artifacts.
-- **Retired:** `POST /api/tokens` (its only caller is
+- **To retire in S3:** `POST /api/tokens` (its only caller is
   `LocalDockerBackend._mint_token`), Drop's membership of `nora-compute`, and
   `url.txt`/`summary.txt`. The sha256 Nora computed is the provenance, so the
   VM's claim about what it built is never trusted.
@@ -409,14 +411,16 @@ week.
 | step | estimate |
 |---|---|
 | token-expiry test + Chromium RSS | 0.5 day |
-| image + `computerd` (run/read/write/edit/files/fetch/put/browse) | 2 days |
+| image + `computerd` (run/read/write/edit/files/fetch/put; browse is S4) | 2 days |
 | lifecycle unit (ensure, idle-stop, recreate, health) | 0.5 day |
 | `SandboxRuntime` port, `ComputerdRuntime`, fake + contract suite | 1 day |
 | tools + manifest table + `tool_selection` before/after | 2 days |
 | `computer_export` (link/chat/keep) on `ArtifactIngest`; `document-creation` skill + doctrine line | 1 day |
 | retire Smith, `make_artifact`, `LocalDockerBackend`, `/api/tokens`, `nora-compute`, `docker.sock`, and the ComputeJob path. The last one reaches further than the tool: `ComputeBackend`, `compute_poller.py`, `compute_jobs` + migrations, `fire.py`'s compute occasions, `agent/relay.py` and `registry.py`, `subject/knowledge.py`, the `nora_compute_jobs_delivered_total` metric, and their tests | 2 days |
 
-This totals about 9 days. The figures are estimates, not measured.
+This totals about 9 days for the core (S2a to S3). It excludes the audit
+trail (§12), sessions (§15) and the browser (S4), which are sized when they
+are built. The figures are estimates, not measured.
 
 ## 11. Inside vs outside
 
@@ -467,16 +471,15 @@ with who, when, how and what, as a full trail for auditing.**
   give Smith its own key. Falsifier: rerun the §0 probe, and every
   non-allowlisted row is refused.
 - **S1:** the token-expiry test and Chromium RSS (the spike's untested rows).
-- **S2:** image + `computerd` + lifecycle unit + port; `computer_run` and the
-  file tools behind `[computer] enabled`.
-- **S3:** `computer_export` on `ArtifactIngest` + the `document-creation` skill;
-  `make_artifact`, Smith, `LocalDockerBackend`, the ComputeJob machinery,
-  `/api/tokens` and `docker.sock` removed. Measure `output_tokens` on the
-  first real artifact turns.
+- **S2a:** image + `computerd` + lifecycle unit + port, inert (landed, #636).
 - **S2b-1:** the four tools, `[computer]` config, `computer_events` (the
   audit), the per-command limits slot.
 - **S2b-2:** sessions (§15): the observed-state read, `computer_sessions`, the
-  `<computer>` block, the per-room lock.
+  `<computer>` block, leases, pre-emption and concurrency.
+- **S3:** `computer_export` on `ArtifactIngest` + the `document-creation` skill.
+  Then retire `make_artifact`, Smith, `LocalDockerBackend`, `/api/tokens` and
+  `docker.sock`, and the ComputeJob machinery if open decision 4 says so.
+  Measure `output_tokens` on the first real artifact turns.
 - **S4:** the browser spike (§14), then `computer_browse`, then persistent
   browser profiles per room.
 
@@ -541,7 +544,8 @@ holds. Not remembering is the default, and a turn that is not told acts as if
 nothing is there.
 
 **Why not a Standing-style fold.** A model-written fold over the history is
-how a Standing fold lost open plans (2026-09-26), and half-finished work is
+how earlier Standing folds dropped open plans (at least 10 of 206 folds,
+`design/standing-compact/40-open-plans.md`), and half-finished work is
 exactly what a session exists to keep. So what is *observed* is kept apart
 from what is *intended*, and neither is rewritten by a model.
 
@@ -566,7 +570,7 @@ from what is *intended*, and neither is rewritten by a model.
      rewrite them.
    - A session untouched past its expiry closes. One whose tab or tmux session
      is gone is marked stale. An abandoned task stops appearing.
-3. **The `<computer>` block**, one renderer (ADR 0012, 0013), with an age on
+3. **The `<computer>` block**, one renderer (ADR 0012; ADR 0013 `a-block-says-what-it-is…`), with an age on
    every line:
    ```text
    <computer room-workspace>
@@ -607,8 +611,8 @@ from what is *intended*, and neither is rewritten by a model.
      one.** Proposed: the background side may observe, check a running job,
      and resume a session a live turn started. It may not start new work with
      side effects on its own initiative until that is measured and decided.
-     This follows the rule that social reads do not run in a turn nobody
-     asked for (DEC-201).
+     This follows DEC-201's refusal of LinkedIn reads in fire and Dreamer
+     turns: an action with an outside effect waits for a live request.
 
 The block renders only in rooms that have used the computer, so every other
 room's prompt is unchanged. How to measure it: a turn that follows an open
