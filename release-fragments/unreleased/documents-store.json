@@ -1,0 +1,1 @@
+{"type": "none", "reason": "Nothing publishes a document yet: the store, the publish service and the read API exist but no tool, portal page or skill calls them, so no one can reach them.", "details": [], "limitations": []}

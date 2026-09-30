@@ -132,6 +132,10 @@ HISTORY_TABLES: dict[str, tuple[str, ...]] = {
 #: time; the others gained `recorded_at` in `0068`.
 APPEND_ONLY: dict[str, str] = {
     "note_revision": "recorded_at",
+    # ADR 0020 (0084_documents): a document's identity and one snapshot per revision,
+    # neither ever updated; the current document is the highest revision.
+    "documents": "recorded_at",
+    "document_revision": "recorded_at",
     "standing_revision": "recorded_at",
     "culture_revision": "recorded_at",
     "decision_log": "recorded_at",

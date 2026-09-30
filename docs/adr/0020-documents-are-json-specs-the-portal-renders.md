@@ -75,9 +75,9 @@ which serves it on a public URL. Read from the tree and from norty on 2026-09-30
 - **A heavier portal.** `mermaid` and MapLibre load on demand, but the portal now ships both.
 - **Old public links stop being the model.** The 4 existing HTML documents need a decision
   (keep Drop read-only until they expire is the working answer).
-- **The checker is not built yet.** Until it is, the schema exists and nothing enforces it on
-  a model's output. The renderer validates every document before drawing it, so a bad one is
-  reported, not shown.
+- **Nothing publishes a document yet.** The checker, the store and the read API exist
+  (W3, W4a) but no tool calls them. The renderer validates every document before drawing it,
+  so a bad one is reported, not shown.
 - **The portal sends no Content-Security-Policy** (`app/next.config.ts`). Documents rely on the
   schema, the renderer's own checks and the Mermaid source rule; a CSP for the document route would
   be a second wall and is not built here.
