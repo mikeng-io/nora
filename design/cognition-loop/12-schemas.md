@@ -42,7 +42,7 @@ held by one parser per kind, each called by the write verb before commit:
 4. **Names are names the input showed; dates are absolute.**
 5. **Some sections are code-written** (history, folds, ages) and a model never
    writes them. History is rendered from the revision chain; the head a
-   block shows is a view over that chain, never a row updated in place
+   block shows is derived from that chain, never a row updated in place
    ([10](10-tiers.md) §8).
 6. **Refused, never repaired**, beyond whitespace. The refusal names the rule
    (a closed vocabulary, one counter label per rule) and is answered to the
@@ -64,7 +64,7 @@ has two homes.
 
 | section | required | holds |
 |---|---|---|
-| `Kept` | yes | the settled thing, one line per claim, attributed and cited; a value the room settled is kept as said, a password included ([30](30-cognition.md) §3, D5) |
+| `Kept` | yes | the settled thing, one line per claim, cited (who settled it is read from the cited message when a View renders it, never stored: DEC-249); a value the room settled is kept as said, a password included ([30](30-cognition.md) §3, D5) |
 | `Conditions` | no | when it holds, exceptions ("only on weekdays") |
 | `Superseded` | code | earlier versions, with when they changed |
 
