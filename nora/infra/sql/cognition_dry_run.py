@@ -35,7 +35,7 @@ def _at(ms: int) -> datetime:
     return datetime.fromtimestamp(ms / 1000, tz=UTC)
 
 
-def _json(value: dict[str, Any]) -> str:
+def _json(value: dict[str, Any] | list[Any]) -> str:
     return json.dumps(value)
 
 

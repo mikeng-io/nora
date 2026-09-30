@@ -279,7 +279,10 @@ async def dry_run_event_propose(
         )
         return await _record(ledger, session_id=session_id, unit=unit, write=write, now_ms=now_ms)
     try:
-        event = build(conversation_id=conversation_id, unit_id=unit, **event_kwargs)
+        event = build(
+            conversation_id=conversation_id, unit_id=unit,
+            **event_kwargs,  # type: ignore[arg-type]
+        )
     except InvalidEventFieldModeError as exc:
         write = WouldWrite(
             tier="event", verb="event_propose", platform=platform,
@@ -406,7 +409,7 @@ async def dry_run_standing_revise(
             base_revision_id=None if base_revision_id is None else str(base_revision_id),
         )
         return await _record(ledger, session_id=session_id, unit=unit, write=write, now_ms=now_ms)
-    candidate = {
+    candidate: dict[str, object] = {
         "platform": platform, "conversation_id": conversation_id,
         "body": where_it_stands, "hold_open": hold_open, "i_owe": i_owe,
         "fold_count": (prior.fold_count + 1) if prior is not None else 1,
