@@ -321,6 +321,16 @@ APPEND: dict[str, Callable[[int], dict[str, Any]]] = {
         "trace_id": "", "span_id": "", "status": "ok",
         "request": {"command": f"echo {n}"},
     },
+    # ADR 0020 (0083_documents): a document's identity and one snapshot per revision.
+    "documents": lambda n: {
+        "id": _uuid("doc", n), "platform": "signal", "conversation_id": "g1",
+        "created_by": "ken",
+    },
+    "document_revision": lambda n: {
+        "document_id": _uuid("doc", n), "revision": 1, "title": f"doc {n}",
+        "spec": {"version": 1}, "text": f"doc {n}", "sha256": f"{n:064x}",
+        "written_by": "tag",
+    },
     "revision_blob": lambda n: {"sha256": f"{n:064x}", "content": f"text {n}"},
     "doctrine_revision": lambda n: {
         "corpus": "doctrine", "content_sha256": f"{n:064x}", "files": {}, "loaded_at": T0,

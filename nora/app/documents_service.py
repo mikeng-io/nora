@@ -1,0 +1,286 @@
+"""Publishing a document, and who may read one (ADR 0020, design/artifact §5, §16).
+
+`DocumentService.publish` is the ONE path a model-written document takes into the
+store, and the order is the point, because each step decides what the next may trust:
+
+1. `check_document` judges the bytes (`nora.documents.check`). A refusal carries
+   findings; a failure of the checker itself is `unavailable`, never a pass.
+2. Every `Image` names a picture by a media code. The code is resolved WITHIN THIS
+   ROOM and to exactly one picture, then rewritten to that picture's full sha256:
+   the stored document holds content addresses, never the short code a model typed.
+3. The rewritten document is checked AGAIN, so what is stored is what was judged, and
+   its canonical form, hash and search text are the ones the checker computed.
+4. A new document or a new revision is written. A revision must be made in the room
+   the document was made in, so a room can never overwrite another room's document.
+
+MEDIA IN A ROOM. A code resolves against the pictures in view in that room, the way
+`media_fetch` resolves one: the room's own message rows (`messages.media_json`, which
+is where an inbound photo lives, and is the same-room rule for free: a photo sent to
+room A is not in room B's rows), and the media index rows born in this room
+(`provenance.platform` and `provenance.conversation_id`: a picture Nora generated, or
+one the computer registered). A code that matches nothing is refused; a code that
+matches more than one picture is refused and the model is told to use a longer one. It
+never picks. A row with no room on it (a sticker, a comprehension-born row) cannot be
+placed, so it never resolves: the rule fails closed.
+
+`rooms_named` answers the other question, for the read side: which rooms name a
+person, from the CURRENT policy, so a removal revokes access. A `persons = "*"` room
+names nobody (the policy cannot say who is in it), so only a document's creator reads
+what was made there.
+"""
+
+from __future__ import annotations
+
+import copy
+import json
+import re
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass
+from typing import Any, Literal, Protocol
+from uuid import UUID, uuid4
+
+from nora.documents.check import Checked, Finding, check_document
+from nora.domain.documents import DocumentStore, RevisionIn, RoomKey
+from nora.domain.ports import MediaObjectStore
+from nora.policy import Policy
+
+_HEX = re.compile(r"^[0-9a-f]{6,64}$")
+_HANDLES_SHOWN = 5
+
+
+class _Transcript(Protocol):
+    """The one read of the record store this service makes: the room's recent rows,
+    each carrying `media_json`."""
+
+    async def recent(self, *, conversation_id: str, limit: int) -> Sequence[Any]: ...
+
+
+@dataclass(frozen=True, slots=True)
+class PublishResult:
+    """`ok` carries the id, revision and portal path. `refused` carries findings the
+    model can act on. `conflict` means someone revised the document a moment ago.
+    `unavailable` means nothing is known to have been stored; say so, never "done"."""
+
+    status: Literal["ok", "refused", "conflict", "unavailable"]
+    document_id: UUID | None = None
+    revision: int = 0
+    url: str = ""
+    findings: tuple[Finding, ...] = ()
+    note: str = ""
+
+
+def rooms_named(policy: Policy, person_id: str) -> frozenset[RoomKey]:
+    """Every `(platform, conversation_id)` whose room names `person_id`, every id a
+    room answers to included. A `"*"` room is left out: it names nobody."""
+    return frozenset(
+        (convo.platform, cid)
+        for convo in policy.conversations
+        if convo.persons is not None and person_id in convo.persons
+        for cid in convo.ids
+    )
+
+
+def _images(document: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
+    """Every Image node and its JSON Pointer. Iterative: the document has passed the
+    checker, so depth is bounded, but nothing here needs to rely on that."""
+    found: list[tuple[str, dict[str, Any]]] = []
+    stack: list[tuple[dict[str, Any], str]] = [(document["root"], "/root")]
+    while stack:
+        node, where = stack.pop()
+        if node.get("type") == "Image":
+            found.append((where, node))
+        for index, child in enumerate(node.get("children") or []):
+            stack.append((child, f"{where}/children/{index}"))
+    return sorted(found, key=lambda pair: pair[0])
+
+
+class DocumentService:
+    def __init__(
+        self,
+        *,
+        store: DocumentStore,
+        records: _Transcript,
+        media: MediaObjectStore,
+        media_window: int,
+        new_id: Callable[[], UUID] = uuid4,
+    ) -> None:
+        self._store = store
+        self._records = records
+        self._media = media
+        self._window = media_window
+        self._new_id = new_id
+
+    # ------------------------------------------------------------------ media
+    async def _sightings(self, platform: str, conversation_id: str, code: str) -> set[str] | None:
+        """The distinct full sha256 of every picture in this room whose sha256
+        starts with `code`, or `None` when the room could not be read."""
+        found: set[str] = set()
+        try:
+            rows = await self._records.recent(conversation_id=conversation_id, limit=self._window)
+            for row in rows:
+                if not getattr(row, "media_json", None):
+                    continue
+                try:
+                    blobs = json.loads(row.media_json)
+                except (ValueError, TypeError):
+                    continue
+                for blob in blobs if isinstance(blobs, list) else ():
+                    sha = str(blob.get("sha256", "")) if isinstance(blob, dict) else ""
+                    if sha.startswith(code):
+                        found.add(sha)
+            for obj in await self._media.by_prefix(handle=code, limit=20):
+                born = obj.provenance or {}
+                if (
+                    obj.source in ("generated", "inbound", "computer")
+                    and born.get("platform") == platform
+                    and born.get("conversation_id") == conversation_id
+                    and obj.sha256.startswith(code)
+                ):
+                    found.add(obj.sha256)
+        except Exception:  # noqa: BLE001 - a store that is down is `unavailable`, not a guess
+            return None
+        return found
+
+    async def _resolve(
+        self, platform: str, conversation_id: str, document: dict[str, Any]
+    ) -> tuple[dict[str, Any], tuple[str, ...], list[Finding], bool]:
+        """Rewrite every Image's code to its full sha256. Returns the rewritten
+        document, the shas it names, the findings, and whether a store was down."""
+        rewritten = copy.deepcopy(document)
+        findings: list[Finding] = []
+        named: list[str] = []
+        cache: dict[str, str | None] = {}
+        for where, node in _images(rewritten):
+            code = str(node["props"].get("media", ""))
+            path = f"{where}/props/media"
+            if not _HEX.match(code):
+                findings.append(
+                    Finding(path, "media_code", "must be a media code: 6 to 64 hex characters")
+                )
+                continue
+            if code not in cache:
+                seen = await self._sightings(platform, conversation_id, code)
+                if seen is None:
+                    return document, (), [], True
+                if len(seen) == 1:
+                    cache[code] = next(iter(seen))
+                else:
+                    cache[code] = None
+                    shown = ", ".join(sorted(s[:8] for s in seen)[:_HANDLES_SHOWN])
+                    if not seen:
+                        message = f"no picture with code {code} in this room's recent messages"
+                        findings.append(Finding(path, "media_unknown", message))
+                    else:
+                        message = (
+                            f"{code} matches {len(seen)} pictures in this room ({shown}); "
+                            "use a longer code"
+                        )
+                        findings.append(Finding(path, "media_ambiguous", message))
+                    continue
+            sha = cache[code]
+            if sha is None:
+                findings.append(
+                    Finding(path, "media_unknown", f"no single picture for code {code}")
+                )
+            else:
+                node["props"]["media"] = sha
+                named.append(sha)
+        return rewritten, tuple(sorted(set(named))), findings, False
+
+    # ---------------------------------------------------------------- publish
+    async def publish(
+        self,
+        *,
+        platform: str,
+        conversation_id: str,
+        person_id: str,
+        raw: bytes | str | dict[str, Any],
+        written_by: str,
+        document_id: UUID | None = None,
+    ) -> PublishResult:
+        checked = check_document(raw)
+        if checked.status == "error":
+            return PublishResult(
+                "unavailable", note="The document could not be checked, so it was not saved."
+            )
+        if not checked.ok or checked.document is None:
+            return PublishResult("refused", findings=checked.findings)
+
+        rewritten, media, findings, down = await self._resolve(
+            platform, conversation_id, checked.document
+        )
+        if down:
+            return PublishResult(
+                "unavailable", note="The room's pictures could not be read, so nothing was saved."
+            )
+        if findings:
+            return PublishResult("refused", findings=tuple(findings))
+        final: Checked = check_document(rewritten)
+        if not final.ok or final.document is None:
+            return PublishResult(
+                "unavailable", note="The document could not be re-checked, so it was not saved."
+            )
+        revision = RevisionIn(
+            title=final.title,
+            spec=final.document,
+            text=final.text,
+            sha256=final.sha256,
+            media=media,
+            written_by=written_by,
+        )
+
+        try:
+            if document_id is None:
+                made = await self._store.create(
+                    document_id=self._new_id(),
+                    platform=platform,
+                    conversation_id=conversation_id,
+                    created_by=person_id,
+                    revision=revision,
+                )
+                return _ok(made.summary.id, made.summary.revision)
+            current = await self._store.get(document_id=document_id)
+            if current is None:
+                return PublishResult(
+                    "refused",
+                    findings=(Finding("", "no_such_document", "no document with that id"),),
+                )
+            if (current.summary.platform, current.summary.conversation_id) != (
+                platform,
+                conversation_id,
+            ):
+                return PublishResult(
+                    "refused",
+                    findings=(
+                        Finding("", "not_in_this_room", "that document was made in another room"),
+                    ),
+                )
+            outcome = await self._store.add_revision(
+                document_id=document_id,
+                base_revision=current.summary.revision,
+                revision=revision,
+            )
+        except Exception:  # noqa: BLE001 - a store that is down is `unavailable`
+            return PublishResult(
+                "unavailable", note="The document could not be saved; nothing was stored."
+            )
+        if outcome.status == "conflict":
+            return PublishResult(
+                "conflict",
+                document_id=document_id,
+                note="Someone revised this document a moment ago. Read it again and publish again.",
+            )
+        if outcome.status == "not_found" or outcome.document is None:
+            return PublishResult(
+                "refused", findings=(Finding("", "no_such_document", "no document with that id"),)
+            )
+        return _ok(document_id, outcome.document.summary.revision)
+
+
+def _ok(document_id: UUID, revision: int) -> PublishResult:
+    return PublishResult(
+        "ok", document_id=document_id, revision=revision, url=f"/documents/{document_id}"
+    )
+
+
+__all__ = ["DocumentService", "PublishResult", "rooms_named"]

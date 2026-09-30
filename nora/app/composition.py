@@ -59,7 +59,7 @@ from nora.agent.telemetry import (
     start_raw_model_span,
 )
 from nora.agent.telemetry import timed as telemetry_timed
-from nora.agent.tools import NATIVE_TOOLS, OriginRoom
+from nora.agent.tools import LOAD_TRANSCRIPT_MAX, NATIVE_TOOLS, OriginRoom
 from nora.agent.whereis import Circle, check_disclosure_invariant, circles_from_persons
 from nora.app.cognition_grounding import build_grounder
 from nora.app.cognition_session import CognitionSessionRunner
@@ -74,6 +74,7 @@ from nora.app.cognition_wiring import (
     units_with_home_rooms,
 )
 from nora.app.computer_sweeper import ComputerSessionSweeper, SweepRules
+from nora.app.documents_service import DocumentService, rooms_named
 from nora.app.memory_routing import (
     MemoryRoutingError,
     build_workspace_router,
@@ -93,6 +94,7 @@ from nora.domain.computer_events import ComputerEventStore
 from nora.domain.computer_leases import ComputerLeases
 from nora.domain.computer_sessions import ComputerSessionStore
 from nora.domain.decision_log import DecisionLogRecorder
+from nora.domain.documents import DocumentStore, RoomKey
 from nora.domain.gatherings import GatheringStatus
 from nora.domain.media_join import MediaJoin
 from nora.domain.models import PersonRef
@@ -139,6 +141,7 @@ from nora.infra.sql.computer_events import SqlComputerEventStore
 from nora.infra.sql.computer_sessions import SqlComputerSessionStore
 from nora.infra.sql.culture import SqlCultureStore
 from nora.infra.sql.decision_log import SqlDecisionLogStore
+from nora.infra.sql.documents import SqlDocumentStore
 from nora.infra.sql.dream_schedule import SqlDreamScheduleClock
 from nora.infra.sql.gatherings import SqlGatheringStore
 from nora.infra.sql.language import SqlLanguageStore
@@ -1054,6 +1057,13 @@ class Dependencies:
     # portal's own-memory page. A callable for `resolve_voice_room`'s reason:
     # `nora.web` never sees a `Policy`.
     workspaces_of: Callable[[str], tuple[str, ...]]
+    # Documents (ADR 0020): the store the portal reads, the service that publishes into
+    # it (the `document_publish` tool's collaborator), and person_id -> the rooms whose
+    # `persons` name them, from the CURRENT policy, for the same reason as
+    # `workspaces_of`: `nora.web` never sees a `Policy`.
+    documents: DocumentStore
+    document_service: DocumentService
+    rooms_of: Callable[[str], frozenset[RoomKey]]
     assembler: ContextAssembler
     ingest: IngestPipeline
     engagement: EngagementPipeline
@@ -1419,6 +1429,14 @@ async def build_dependencies(
     # `media_fetch` serves it. One instance, `engine` reused for the reason
     # every other store here reuses it (one pool, one lifecycle).
     media_objects = SqlMediaObjectStore(engine)
+    documents_store: DocumentStore = SqlDocumentStore(engine)
+    # The window scanned for a picture's marker code is the one `media_fetch` scans: the
+    # prefill plus `load_transcript`'s reach, so any picture she can still see resolves
+    # and an older one is honestly not found.
+    document_service = DocumentService(
+        store=documents_store, records=audit, media=media_objects,
+        media_window=cfg.store.context_window + LOAD_TRANSCRIPT_MAX,
+    )
     # ONE media join for the whole process (issue #116, operator 2026-09-08),
     # handed to every transcript builder there is: the tag assembler, the fire
     # path, the tag-path debrief, the standing event fold, the note tier's two
@@ -4552,6 +4570,8 @@ async def build_dependencies(
         policy=policy, assembler=assembler, ingest=ingest, engagement=engagement,
         resolve_voice_room=_voice_room_of(allowlist),
         workspaces_of=functools.partial(workspaces_of_person, allowlist),
+        documents=documents_store, document_service=document_service,
+        rooms_of=functools.partial(rooms_named, allowlist),
         dispatcher=dispatcher, adapter=adapter, registry=registry,
         participation_trigger=participation_trigger,
         relevance_gate=gate,

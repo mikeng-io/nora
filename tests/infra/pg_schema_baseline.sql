@@ -127,6 +127,8 @@ $$;
 );
 );
 );
+);
+);
 ADD CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num);
 ADD CONSTRAINT analytics_watermark_pkey PRIMARY KEY (deriver_name, subject_id);
 ADD CONSTRAINT artifacts_pkey PRIMARY KEY (id);
@@ -155,6 +157,7 @@ ADD CONSTRAINT culture_revision_pkey PRIMARY KEY (id);
 ADD CONSTRAINT decision_log_pkey PRIMARY KEY (id);
 ADD CONSTRAINT deploy_revision_pkey PRIMARY KEY (id);
 ADD CONSTRAINT doctrine_revision_pkey PRIMARY KEY (id);
+ADD CONSTRAINT documents_pkey PRIMARY KEY (id);
 ADD CONSTRAINT dream_schedule_state_pkey PRIMARY KEY (adaptor_name, scope_id);
 ADD CONSTRAINT embedding_pkey PRIMARY KEY (kind, row_key);
 ADD CONSTRAINT event_revision_event_id_fkey FOREIGN KEY (event_id) REFERENCES public.events(id);
@@ -208,6 +211,7 @@ ADD CONSTRAINT note_replaced_by_fkey FOREIGN KEY (replaced_by) REFERENCES public
 ADD CONSTRAINT note_revision_note_id_fkey FOREIGN KEY (note_id) REFERENCES public.note(id);
 ADD CONSTRAINT note_revision_pkey PRIMARY KEY (id);
 ADD CONSTRAINT participation_window_state_pkey PRIMARY KEY (platform, conversation_id);
+ADD CONSTRAINT pk_document_revision PRIMARY KEY (document_id, revision);
 ADD CONSTRAINT presence_corridor_speed_pkey PRIMARY KEY (subject_id, corridor_id, hour_of_week);
 ADD CONSTRAINT presence_corridors_pkey PRIMARY KEY (id);
 ADD CONSTRAINT presence_derived_places_pkey PRIMARY KEY (id);
@@ -278,6 +282,8 @@ ALTER TABLE ONLY public.culture_revision
 ALTER TABLE ONLY public.decision_log
 ALTER TABLE ONLY public.deploy_revision
 ALTER TABLE ONLY public.doctrine_revision
+ALTER TABLE ONLY public.document_revision
+ALTER TABLE ONLY public.documents
 ALTER TABLE ONLY public.dream_schedule_state
 ALTER TABLE ONLY public.embedding
 ALTER TABLE ONLY public.event_revision
@@ -481,6 +487,8 @@ CONSTRAINT ck_computer_sessions_expiry CHECK ((((status = 'open'::text) AND (exp
 CONSTRAINT ck_computer_sessions_status CHECK ((status = ANY (ARRAY['expired'::text, 'open'::text])))
 CONSTRAINT ck_corridor_speed_how CHECK (((hour_of_week >= 0) AND (hour_of_week < 168)))
 CONSTRAINT ck_derived_places_kind CHECK ((kind = ANY (ARRAY['home'::text, 'work'::text, 'unlabeled'::text])))
+CONSTRAINT ck_document_revision_positive CHECK ((revision >= 1)),
+CONSTRAINT ck_document_revision_sha256 CHECK ((sha256 ~ '^[0-9a-f]{64}$'::text))
 CONSTRAINT ck_event_revision_confidence_is_a_level CHECK (((confidence IS NULL) OR (confidence = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])))),
 CONSTRAINT ck_event_revision_lineage_shape CHECK ((jsonb_typeof(lineage) = 'object'::text)),
 CONSTRAINT ck_event_revision_reasoning_is_a_mode CHECK (((reasoning IS NULL) OR (reasoning = ANY (ARRAY['told'::text, 'deduced'::text, 'abduced'::text])))),
@@ -637,6 +645,8 @@ CREATE INDEX idx_culture_revision_key_written ON public.culture_revision USING b
 CREATE INDEX idx_decision_log_conv_ts ON public.decision_log USING btree (conversation_id, ts DESC, id DESC);
 CREATE INDEX idx_decision_log_unit_ts ON public.decision_log USING btree (unit, ts DESC, id DESC);
 CREATE INDEX idx_doctrine_revision_corpus_loaded ON public.doctrine_revision USING btree (corpus, loaded_at);
+CREATE INDEX idx_documents_creator ON public.documents USING btree (created_by);
+CREATE INDEX idx_documents_room ON public.documents USING btree (platform, conversation_id);
 CREATE INDEX idx_embedding_scope ON public.embedding USING btree (kind, scope);
 CREATE INDEX idx_embedding_v1024 ON public.embedding USING hnsw (v1024 public.vector_cosine_ops);
 CREATE INDEX idx_event_revision_event ON public.event_revision USING btree (event_id, recorded_at);
@@ -714,6 +724,8 @@ CREATE TABLE public.culture_revision (
 CREATE TABLE public.decision_log (
 CREATE TABLE public.deploy_revision (
 CREATE TABLE public.doctrine_revision (
+CREATE TABLE public.document_revision (
+CREATE TABLE public.documents (
 CREATE TABLE public.dream_schedule_state (
 CREATE TABLE public.embedding (
 CREATE TABLE public.event_revision (
@@ -1230,6 +1242,7 @@ conversation_id text NOT NULL,
 conversation_id text NOT NULL,
 conversation_id text NOT NULL,
 conversation_id text NOT NULL,
+conversation_id text NOT NULL,
 conversation_id text,
 conversation_type text NOT NULL,
 conversation_type text NOT NULL,
@@ -1260,6 +1273,7 @@ created_at timestamp with time zone NOT NULL,
 created_at timestamp with time zone NOT NULL,
 created_at_ms bigint NOT NULL,
 created_by text NOT NULL,
+created_by text NOT NULL,
 created_by_tag text NOT NULL,
 cues text[] DEFAULT '{}'::text[] CONSTRAINT signal_cues_not_null NOT NULL,
 culture_key text NOT NULL,
@@ -1285,6 +1299,7 @@ disputed_tag_id text,
 distance_m double precision NOT NULL,
 distinct_speakers integer DEFAULT 0 NOT NULL,
 doctrine_sha256 text,
+document_id uuid NOT NULL,
 due_at timestamp with time zone NOT NULL,
 due_ms bigint,
 duplicate_id uuid NOT NULL,
@@ -1425,6 +1440,7 @@ id uuid NOT NULL,
 id uuid NOT NULL,
 id uuid NOT NULL,
 id uuid NOT NULL,
+id uuid NOT NULL,
 image jsonb NOT NULL,
 image_id text,
 instruction_sha256 text NOT NULL,
@@ -1518,6 +1534,7 @@ logical_now_ms bigint NOT NULL,
 manifest_status text NOT NULL,
 mean_arrival_minute double precision,
 mean_departure_minute double precision,
+media text[] DEFAULT '{}'::text[] NOT NULL,
 media_id text NOT NULL,
 media_json text,
 media_type text DEFAULT ''::text NOT NULL,
@@ -1660,6 +1677,7 @@ platform text NOT NULL,
 platform text NOT NULL,
 platform text NOT NULL,
 platform text NOT NULL,
+platform text NOT NULL,
 platform text,
 platform_message_id text,
 pos_id bigint NOT NULL,
@@ -1709,6 +1727,8 @@ recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL
 recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL
 recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL
 recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL
+recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL
+recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
 recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
 recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
 recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
@@ -1776,6 +1796,7 @@ result_url text,
 results jsonb DEFAULT '[]'::jsonb NOT NULL,
 retire_reason text,
 retired_at bigint,
+revision integer NOT NULL,
 revisit_at bigint,
 rooms jsonb NOT NULL,
 row_key jsonb NOT NULL,
@@ -1822,6 +1843,7 @@ sha256 text NOT NULL,
 sha256 text NOT NULL,
 sha256 text NOT NULL,
 sha256 text NOT NULL,
+sha256 text NOT NULL,
 shortcode text NOT NULL,
 situation jsonb NOT NULL,
 size bigint DEFAULT '0'::bigint NOT NULL,
@@ -1836,6 +1858,7 @@ source text NOT NULL,
 source_excerpt text,
 source_url text,
 span_id text NOT NULL,
+spec jsonb NOT NULL,
 speed_kmh double precision
 started_at timestamp with time zone NOT NULL,
 started_at timestamp with time zone NOT NULL,
@@ -1908,11 +1931,13 @@ task text NOT NULL,
 task_sha256 text DEFAULT ''::text NOT NULL,
 text text NOT NULL,
 text text NOT NULL,
+text text NOT NULL,
 through_ms bigint DEFAULT 0 NOT NULL,
 through_stimulus_id bigint CONSTRAINT cognition_wake_through_signal_id_not_null NOT NULL,
 through_stimulus_id bigint NOT NULL,
 tier text NOT NULL,
 title text DEFAULT ''::text NOT NULL,
+title text NOT NULL,
 title text NOT NULL,
 title text NOT NULL,
 title text NOT NULL,
@@ -2038,5 +2063,6 @@ written_at bigint NOT NULL,
 written_at bigint NOT NULL,
 written_at timestamp with time zone NOT NULL,
 written_by text DEFAULT 'tag'::text NOT NULL,
+written_by text NOT NULL,
 || ' would bypass row_history; delete the rows (they are kept as history) '
 || 'or SET LOCAL nora.row_history = ''off'' deliberately';

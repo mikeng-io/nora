@@ -39,11 +39,11 @@ import json
 import math
 import re
 import unicodedata
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import ValidationError
@@ -242,12 +242,16 @@ def _describe(error: ValidationError) -> str:
     """A rule in document terms. The offending content is named, never repeated at
     length: a finding goes back to a model, and a long echo of a hostile value is a
     way to hand it instructions (review, 2026-10-01)."""
-    rule, want, got = str(error.validator), error.validator_value, error.instance
+    # The stubs type these as `Any | Unset`; a ValidationError raised by iter_errors always
+    # carries all three, so they are read as plain values.
+    rule = str(error.validator)
+    want = cast(Any, error.validator_value)
+    got = cast(Any, error.instance)
     last = str(error.absolute_path[-1]) if error.absolute_path else ""
     if rule == "required":
         return "missing " + ", ".join(sorted(set(want) - set(got)))
     if rule == "additionalProperties":
-        known = set((error.schema or {}).get("properties", {}))
+        known = set(cast(Mapping[str, Any], error.schema).get("properties", {}))
         unknown = sorted(k for k in got if k not in known)
         shown = ", ".join(_clip(k) for k in unknown[:5])
         more = f" (and {len(unknown) - 5} more)" if len(unknown) > 5 else ""
