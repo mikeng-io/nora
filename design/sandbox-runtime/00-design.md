@@ -212,6 +212,30 @@ round 2).
 
 ## 6. `make_artifact` ↔ Drop
 
+> **Amended 2026-10-01 (operator; boundary with ADR 0020).** Documents are
+> not this design's job any more. A document is a JSON spec the portal renders
+> (`docs/adr/0020-documents-are-json-specs-the-portal-renders.md`,
+> `design/artifact/`), published by the document tool and composed under the
+> document skill. The computer only computes and produces FILES. So in the text
+> below:
+>
+> - the `document-creation` skill, `nora-render report`/`markdown`/`map` and
+>   the doctrine line are withdrawn; `computer-use` is the only skill here, and
+>   `nora-render` keeps chart and mermaid, as PNGs for chat;
+> - `computer_export(to="link")` carries files (CSV, PDF, images), never a page:
+>   `html` is refused, and `svg` cannot go to `link`;
+> - `computer_export(to="keep")` of an image registers a MediaObject in the room
+>   and returns its media code, which a document's Image block can name;
+> - the document tool reads a spec file from the workspace only through an
+>   audited helper (a `computer_events` row, the room lease), never through
+>   `SandboxRuntime.fetch` directly;
+> - "15 artifacts" is 15 `artifacts` rows, of which 4 are documents (read on
+>   norty, 2026-09-30).
+>
+> Retiring `make_artifact`, Smith and the `docker.sock` mount (S3b) waits until
+> both paths are live: a document published through the document tool, and a
+> file sent through `computer_export`.
+
 **Today:**
 
 - Smith runs inside the sandbox holding a per-job Drop token (minted by
