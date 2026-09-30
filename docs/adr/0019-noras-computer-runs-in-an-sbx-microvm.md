@@ -5,7 +5,7 @@
 - **Replaces, in stages:** Smith's per-job containers (`LocalDockerBackend`,
   `nora/compute/smith/`). This ADR ships the computer; the tools and Smith's
   retirement follow in design/sandbox-runtime §13 (S2b, S3).
-- **Index:** a DEC number is taken at merge.
+- **Index:** DEC-243
 
 ## Context
 
