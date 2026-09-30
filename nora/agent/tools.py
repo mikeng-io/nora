@@ -5307,10 +5307,12 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         return state_time(moment)
 
     async def calculate(expression: str) -> dict:
-        """Work out a number exactly. Use this for ALL arithmetic, however easy
-        it looks: call it whenever a number needs computing.
+        """Work out a number exactly from one expression. Call this for all
+        arithmetic on a few numbers, however easy it looks.
 
-        Never state a computed number that did not come from here. It checks the
+        Never state a computed number that did not come from a tool: this one,
+        or computer_run for data work (many values, statistics, fitting, a
+        file). This one checks the
         arithmetic, not the question: divide by 5 when six people ate and you get
         an exact answer to the wrong sum, so count first.
 
@@ -12773,9 +12775,9 @@ Args:
             _record(metrics, tool, "unavailable")
 
     async def computer_run(command: str, timeout_seconds: int | None = None) -> dict:
-        """Run a bash command in this conversation's workspace on your own
-        computer. Call this when a task needs code run, or files listed or
-        searched (ls, find, rg).
+        """Run a bash command on your own computer, in this room's workspace.
+        Call this for data work (statistics, fitting, parsing), code, or
+        finding files.
 
         Returns `status`: ok, refused or unavailable, with a `note` on how to read it.
         - ok: it ran. `exit_code` says how; non-zero means the command failed,
