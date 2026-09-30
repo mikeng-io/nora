@@ -110,6 +110,15 @@ export function passiveSvg(svg: string): string | null {
   return svg;
 }
 
+// `mermaid.render` builds its SVG in a node appended to <body> (`d` + the id, and
+// the id itself once drawn) and leaves it there when it fails. Take both away.
+let runs = 0;
+
+function removeMermaidScratch(id: string) {
+  document.getElementById(`d${id}`)?.remove();
+  document.getElementById(id)?.remove();
+}
+
 export function MermaidBlock({ source, caption }: { source: string; caption: string }) {
   const id = "mmd" + useId().replace(/[^a-zA-Z0-9]/g, "");
   const theme = useThemeName();
@@ -118,6 +127,11 @@ export function MermaidBlock({ source, caption }: { source: string; caption: str
 
   useEffect(() => {
     let live = true;
+    // One id per RUN, not per component: React's dev double-invoke (and any
+    // re-render on a theme change) would otherwise have two draws share a scratch
+    // node, and one's cleanup would delete the other's mid-draw (measured: the
+    // diagram then never appeared).
+    const run = `${id}r${++runs}`;
     setFailed(false);
     (async () => {
       // Before mermaid sees it: it draws into the live page, so a request made
@@ -129,6 +143,12 @@ export function MermaidBlock({ source, caption }: { source: string; caption: str
       mermaid.initialize({
         startOnLoad: false,
         securityLevel: "strict",
+        // Both are "secure" keys a source cannot override. Without the first,
+        // a failed parse appends a visible error graphic to <body>, outside the
+        // figure (review, third pass). The second bounds drawing time: 450 edges
+        // among 30 nodes froze the page for 3.4 s.
+        suppressErrorRendering: true,
+        maxEdges: 100,
         theme: "base",
         // v12 moved this to the top level; the flowchart-level key no longer applies.
         htmlLabels: false,
@@ -147,11 +167,13 @@ export function MermaidBlock({ source, caption }: { source: string; caption: str
           noteTextColor: cssVar("--ink"),
         },
       });
-      const out = await mermaid.render(id, source);
+      const out = await mermaid.render(run, source);
       const safe = passiveSvg(out.svg);
       if (!safe) throw new Error("the diagram is not passive");
       if (live) setSvg(safe);
-    })().catch(() => live && setFailed(true));
+    })()
+      .catch(() => live && setFailed(true))
+      .finally(() => removeMermaidScratch(run));
     return () => {
       live = false;
     };

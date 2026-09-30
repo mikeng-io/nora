@@ -706,3 +706,34 @@ wall (`passiveSvg`) and a Content-Security-Policy for the document route are the
 allowlist misses, and only the first exists today. If a third pass still finds a channel, the next
 step is to stop drawing model-written Mermaid in the page (render it to an image in the sandbox)
 rather than lengthen the list.
+
+### Third pass: no channel found, two real defects, one conclusion
+
+The reviewer was resumed a third time with one question: can any source the allowlist accepts still
+make a third-party request, add an active element or change config when drawn? **57 attempts across
+all ten allowed diagram types, drawn by mermaid 12.0.0 in Chromium with `evil.example` routed, found
+none.** Start-rule near misses (`flowchart-elk`, `graph-foo`, `flowchartX`), `@` and `{` split by a
+newline, HTML and entities in every label kind, `todayMarker` with `image()` and `cross-fade()`,
+`rect rgb()`, `::icon()` and `:::` all came back inert. It did find two defects of its own:
+
+| # | Finding | Fix | Proven by |
+|---|---|---|---|
+| 15 | **A failed draw leaves a visible error graphic in `<body>`**, outside the figure (six accepted sources did). | `suppressErrorRendering: true` (a secure key a source cannot override) and each draw removes its own scratch nodes. | e2e: four leftovers without the fix (red), none with it. |
+| 16 | **A dense diagram froze the page for 3.4 s** (450 edges among 30 nodes, 3,612 characters). | `maxEdges: 100`, also a secure key. | e2e: both failing cases reach their fallback in about 320 ms and a round trip into the page answers in under a second. |
+
+**One regression of my own, caught by the existing e2e.** Removing scratch nodes in the effect's
+cleanup let React's dev double-invoke delete a node another draw was still using, and the diagram
+never appeared. Each draw now has its own id and only cleans up after it settles.
+
+**The reviewer's conclusion, recorded.** Drawing model-written Mermaid in the page is defensible
+only conditionally. The weakness is structural: mermaid inserts its SVG into the live page before
+any output check, so the only barrier is predicting its grammar from outside, and that prediction
+failed twice. Rendering in the sandbox to a static SVG or PNG would remove the whole class, the
+error-path leak and the freeze, at the cost of a render step per document and no live theme switch.
+The decision here is to ship the allowlist with mermaid **pinned to an exact version** (a test
+asserts it) and the hostile-source e2e and corpus as the re-run on every upgrade, and to **move to
+sandbox rendering if a third bypass is found or before documents are visible to anyone outside the
+rooms they came from.** Recorded as an open decision below.
+
+**Open decision 9.** Render Mermaid in the sandbox instead of the page? Recommend not yet, for the
+reasons above, and revisit at the W4 visibility work, when the audience becomes real.

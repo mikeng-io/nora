@@ -113,3 +113,14 @@ describe("the demo documents", () => {
     expect(documentSchema.safeParse({ ...DEMOS.trip, extra: 1 }).success).toBe(false);
   });
 });
+
+describe("mermaid is pinned, because the source allowlist is written against its grammar", () => {
+  // Every mermaid release can add a statement or a separator the allowlist has
+  // not seen (two review passes found four such channels). A caret or a tilde
+  // would let an install pick one up unreviewed; the hostile-source e2e and the
+  // corpus are what to re-run on each deliberate upgrade.
+  it("is an exact version in package.json", () => {
+    const pkg = JSON.parse(readFileSync(fileURLToPath(new URL("../../../package.json", import.meta.url)), "utf8"));
+    expect(pkg.dependencies.mermaid).toMatch(/^\d+\.\d+\.\d+$/);
+  });
+});

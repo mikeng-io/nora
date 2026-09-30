@@ -165,3 +165,22 @@ test("tabs follow the ARIA pattern: one tab stop, arrows move, panels are labell
   await page.keyboard.press("Home");
   await expect(first).toBeFocused();
 });
+
+test("a diagram that fails leaves nothing on the page and a dense one does not freeze it", async ({ page }) => {
+  await signIn(page);
+  await page.goto("/en/documents/spike?demo=mermaid-fail");
+  const started = Date.now();
+  // Both end in the open fallback, inside their own figure.
+  for (const name of ["unparseable", "dense"]) {
+    await expect(page.locator(`[data-case=${name}] [role=note]`)).toBeVisible({ timeout: 15_000 });
+  }
+  // 450 edges used to hold the main thread for 3.4 s; maxEdges refuses it at once.
+  expect(Date.now() - started).toBeLessThan(5_000);
+  // mermaid's scratch nodes and its error graphic are not left in <body>.
+  await expect(page.locator("body > [id^=dmmd], body > svg[aria-roledescription=error], #root-error")).toHaveCount(0);
+  await expect(page.locator("[aria-roledescription=error]")).toHaveCount(0);
+  // The main thread is free: a round trip into the page answers at once.
+  const t = Date.now();
+  await page.evaluate(() => 1);
+  expect(Date.now() - t).toBeLessThan(1_000);
+});

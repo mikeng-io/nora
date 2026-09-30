@@ -61,7 +61,20 @@ const IMAGE_DOC: DocumentSpec = {
   },
 };
 
+// Not hostile, just bad: a source mermaid cannot parse (it used to leave an
+// error graphic on the page), and one dense enough to freeze the page.
+const DENSE = "flowchart LR\n" + Array.from({ length: 450 }, (_, k) => `n${k % 30}-->n${(k * 7 + 1) % 30}`).join("\n");
+const UNPARSEABLE = 'flowchart TD\n  A["secret label"]-->\n  -->-->';
+
 export function DocumentsSpike({ demo }: { demo: string }) {
+  if (demo === "mermaid-fail") {
+    return (
+      <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-4 py-6" data-testid="spike">
+        <div data-case="unparseable"><MermaidBlock source={UNPARSEABLE} caption="does not parse" /></div>
+        <div data-case="dense"><MermaidBlock source={DENSE} caption="too dense" /></div>
+      </div>
+    );
+  }
   if (demo === "invalid") {
     // A document the schema refuses: the viewer must say so, not draw it.
     return (
