@@ -11,6 +11,7 @@ lifetime becomes a number you read off that file instead of an anecdote.
 
 from __future__ import annotations
 
+import fcntl
 import json
 import logging
 import os
@@ -307,6 +308,20 @@ class Probe:
 
     # ---- one run ----------------------------------------------------------
     def run_once(self) -> tuple[str, dict[str, Any]]:
+        """One run, exclusive: a second run (a hand-started one beside the
+        timer) would see the first's stop marker, «recover» a bridge that is
+        about to be stopped, clear the marker, and strand it. So a run that
+        cannot take the lock does nothing and reports ERROR."""
+        lock_path = self._cfg.state_file.parent / "probe.lock"
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(lock_path, "a") as lock:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                return "ERROR", {"ts": self._now().isoformat(), "error": "probe_already_running"}
+            return self._run_locked()
+
+    def _run_locked(self) -> tuple[str, dict[str, Any]]:
         now = self._now()
         carry = self._last_carry()
         record: dict[str, Any] = {"ts": now.isoformat()}

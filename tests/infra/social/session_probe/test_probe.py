@@ -584,3 +584,18 @@ def test_failed_delivery_is_not_marked_sent_so_it_retries(world, bridge_dir, tmp
     world.now = NOW + timedelta(minutes=10)
     p.run_once()
     assert len(world.sent) == 1
+
+
+def test_a_second_run_under_the_lock_does_nothing_and_is_error(world, bridge_dir, tmp_path):
+    import fcntl
+
+    p, cfg = make(world, bridge_dir, tmp_path)
+    cfg.state_file.parent.mkdir(parents=True, exist_ok=True)
+    with open(cfg.state_file.parent / "probe.lock", "a") as held:
+        fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        world.calls.clear()
+        verdict, record = p.run_once()
+    assert verdict == "ERROR"
+    assert record["error"] == "probe_already_running"
+    assert world.calls == []  # no docker, no opencli, no state line: nothing was touched
+    assert not cfg.state_file.exists()

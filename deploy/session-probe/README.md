@@ -44,6 +44,10 @@ It never logs in to anything. A dead session in Chrome needs a human in VNC.
      state file, and removes it only after `docker start` returns rc 0. A
      crash, a timed-out stop (rc 124, which the daemon may still finish), a
      failed start, or a failed start after a failed write all leave the marker.
+     Runs are exclusive (`probe.lock` beside the state file): a run started by
+     hand while the timer's run is going exits ERROR `probe_already_running`
+     and touches nothing. To keep the bridge stopped on purpose, delete
+     `bridge-stopped-by-probe` first, or the next run will start it.
      compose has `restart: unless-stopped`, so docker will not revive a
      stopped container by itself, and later health reads would only say
      «unreachable».
