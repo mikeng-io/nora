@@ -130,16 +130,16 @@ conscious barely drives the subconscious.**
   cannot start or steer a session. That her own messages raise no stimulus
   ([20](20-observe.md) §3) is a consequence of this rule.
 
-**The layers over the data model** ([05](05-data-model.md) §8). The
-subconscious owns every family of entries: Cognition owns Affairs (note, memo,
-event) and Positions (Standing), the Character adaptor Portraits, the Lessons
-adaptor Lessons; each thinks and writes the notebook on its own timescale. The
-conscious speaks from it, reading a mart cut for its room at read time
-([05](05-data-model.md) §7): pushed indices (`<notes>`, `<memos>`, `<events>`,
-`culture`, `standing`, `self`, `lessons`) and pulled reads (`note_read`,
-`memo_read`, `event_search`, `character_read`, `standing_read`). Its own
-writes enter as shared entries through the owners' verbs, never as commands:
-the tag turn writes the Affairs it was told, «記低» about the unit becomes a
-memo and about the speaker stays `remember`, and the debrief revises the
-room's Standing. Whether that is one writer per family or two is
-[05](05-data-model.md) §11 Q3.
+**The layers over the data model** ([05](05-data-model.md) §7, DEC-249).
+The subconscious is the only writer of the warehouse: Cognition writes the
+Register and Standing, the Character adaptor Character, the Lessons adaptor
+Lessons. The conscious speaks from it, reading a mart cut for its room at
+read time ([05](05-data-model.md) §6): pushed indices (`<notes>`, `<memos>`,
+`<events>`, `culture`, `standing`, `self`, `lessons`) and pulled reads
+(`note_read`, `memo_read`, `event_search`, `character_read`, `standing_read`).
+It writes nothing there: it hands off. A «記低» about the unit is a strong
+cue, and the end of a tag turn raises a hand-off stimulus in place of the
+debrief, each waking Cognition in about two minutes; a «記低» about the
+speaker stays `remember`, into memory. So the conscious reaches the
+subconscious only as Record and stimuli, which is the direction rule above,
+now without the shared writes it allowed.

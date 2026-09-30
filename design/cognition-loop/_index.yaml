@@ -40,12 +40,12 @@ description: >
   into an eval sandbox; memory (Honcho) is the exception. Every Register, Character, Lessons and Standing row is structured
   Markdown with a fixed schema in a revision chain; the Rollup is typed and
   rebuilt into versioned builds. Under all of it is one data model
-  (05, operator 2026-10-01): OBSERVED data (Record, Rollup) is the evidence;
-  AUTHORED data is one object, the entry, in four families (Affairs,
-  Portraits, Positions, Lessons), which cites the evidence and is never
-  evidence itself; references are the edges, stored relationally, and no
-  knowledge graph is built; each consumer reads a mart, a slice assembled
-  at read time through one path. The Dreamer runtime is kept and its scheduling half replaced; the
+  (05, operator 2026-10-01): the LAKE (Record and Rollup) is what happened
+  and the only evidence; MEMORY (Honcho) holds per-person facts; the
+  WAREHOUSE is the entries (Register, Character, Standing, Lessons), each
+  referencing the lake for audit, written only by the subconscious, read by
+  every consumer through a mart assembled at read time by one path; no
+  knowledge graph is built. The Dreamer runtime is kept and its scheduling half replaced; the
   proactive adaptor becomes the loop's act step.
 status: proposed
 governance: operator-directed

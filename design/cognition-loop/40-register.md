@@ -33,23 +33,27 @@ alone → `remember` (memory); settled and about the unit, someone else or
 the world → memo; not settled and must not be dropped → note; dated and
 attended → event; should happen at a time → a reminder.
 
-**The same rule over the families** ([05](05-data-model.md) §5). First by
-what the statement is about and what it states:
+**The same rule over the tiers** ([05](05-data-model.md) §4). Raw statements
+stay in the lake and per-person facts in memory; the warehouse holds what the
+unit's affairs, its people and Nora add up to:
 
-| the statement | family · kind |
+| the thing | where it goes |
 |---|---|
-| what the group is doing, still open | Affairs · note |
-| what the group is doing, settled, to keep | Affairs · memo |
-| what the group is doing, dated, people attend | Affairs · event |
-| what a person, a room, the unit or Nora is like (induced from many instances, never from one) | Portraits · character (the Character adaptor only) |
-| where Nora stands toward a room, the unit or a person | Positions · standing |
-| how Nora should act here, learned from outcomes | Lessons · lesson (the Lessons adaptor only) |
-| a settled fact about the speaker alone | memory, through `remember`: not an entry ([05](05-data-model.md) §11 Q5) |
-| something to do at a time | a reminder: machinery, not an entry |
+| the unit's affairs, still open | Register · note |
+| the unit's affairs, settled, to keep | Register · memo |
+| the unit's affairs, dated, people attend | Register · event |
+| what a person, a room, the unit or Nora is like, from many instances | Character (the Character adaptor only) |
+| where Nora stands toward a room, the unit or a person | Standing |
+| how Nora should act here, learned from outcomes | Lessons (the Lessons adaptor only) |
+| a settled fact about the speaker alone | memory, through `remember`: not the warehouse |
+| something to do at a time | a reminder: machinery, not the warehouse |
 
-Every entry, whatever its family, cites the observed items it rests on and
-states how it is known; the tag path writes only the Affairs rows it was told
-and the debrief's room Standing ([05](05-data-model.md) §8).
+**Amended by DEC-249**: every warehouse row is written by the subconscious.
+From the cut-over the tag path writes none of the three kinds above; a
+«記低» about the unit and a date, time or RSVP are strong cues that wake
+Cognition, which writes the note, memo or event ([05](05-data-model.md) §7).
+The mentions below of a tag-path `memo_write` and tag-path event writes
+describe the design before that ruling.
 
 ## 2. Memo
 

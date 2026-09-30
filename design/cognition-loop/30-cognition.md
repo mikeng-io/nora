@@ -104,7 +104,10 @@ the subconscious only: no tag or fire turn holds them, and neither can read
 an agenda or a pending self-wake. `remind` is the bridge: Cognition holds it
 to reach the conscious layer, and the tag turn holds it for a reminder a
 person asks for. The write verbs on the Register and room Standing are held
-by both layers; that is shared state, not a command.
+by both layers; that is shared state, not a command. **Amended by DEC-249**
+([05](05-data-model.md) §7): from the cut-over only the subconscious writes
+the warehouse, and the tag turn hands off through a strong-cue stimulus
+instead of holding these write verbs.
 
 **The grant.** The runtime's ceiling today is "may look, may not act": every
 read verb and one act verb (DEC-162). A new DEC at step 0 extends it by
@@ -301,7 +304,9 @@ cut-over ([70](70-migration.md)).
 
 - **The tag path** — the reflex. It answers when called, reads what cognition
   wrote, writes through the same verbs, and its debrief keeps revising the
-  room's Standing inside the reply slot, through `standing_revise`.
+  room's Standing inside the reply slot, through `standing_revise`. Both writes
+  move behind Cognition at or after the cut-over (DEC-249,
+  [05](05-data-model.md) §9 E2).
 - **The slow adaptors and Assess** — Character, Lessons and Assess are other
   jobs on other timescales ([00](00-intent.md) §3,
   [50](50-character-and-standing.md) §6). Cognition reads what they write.

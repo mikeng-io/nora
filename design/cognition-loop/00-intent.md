@@ -108,18 +108,22 @@ state, never as a command ([55](55-self.md) §6).
   adaptors wrote, and writes the Register and room Standing through the same
   verbs.
 
-**The data model under all of it** ([05](05-data-model.md), operator
-2026-10-01). There are two kinds of data. *Observed* data is what happened,
-recorded and computed by code: the Record and the Rollup, the evidence.
-*Authored* data is what is written about what happened: notes, memos, events,
-Character (culture included), Standing and Lessons, and it is never evidence.
-Every authored item is one object, the **entry**, which cites the observed
-items it rests on and says how it is known and how sure it is, so no bare fact
-is stored and no knowledge graph is built. Entries fall into four families by
-what they are about and what they state: Affairs (the Register), Portraits
-(Character), Positions (Standing) and Lessons. The subconscious writes them;
-the conscious speaks from them, each consumer reading a slice cut for its room
-at read time through one assembly path (a **mart**).
+**The data model** ([05](05-data-model.md), operator 2026-10-01). The
+**lake** is what happened, raw: the Record (transcripts, audio, photos,
+reactions, presence) and the Rollup code computes from it. **Memory** (Honcho)
+holds per-person facts, including what people say about themselves. The
+**warehouse** is what Nora makes of it: the Register (note, memo, event),
+Character (culture included), Standing and Lessons, each row one **entry**
+that references the lake for audit, says whether it was observed or inferred
+and how sure, links to other entries, and is never evidence itself. Nothing is
+a knowledge graph. **Only the subconscious writes the warehouse**; the
+conscious turns speak from it and hand off (a «記低» or the end of a tag turn
+is a strong-cue stimulus that wakes Cognition), and each consumer reads a
+**mart**, a slice assembled at read time through one path.
+
+**Amended 2026-10-01 (DEC-249):** the tag path's Register writes and the
+debrief's Standing write, described in this section and in D9 and D12, move
+behind Cognition at or after the cut-over ([05](05-data-model.md) §9, E2).
 
 ## 4. One agent, not a conductor over agents
 
@@ -222,7 +226,7 @@ decisions of 2026-09-28, binding:
   her conscious; the subconscious drives the conscious, and the conscious
   reaches the subconscious only as Record and shared state.
 
-**2026-10-01 — the data model agreed** (DEC-249, [05](05-data-model.md)):
-observed and authored data, one entry, four families, references as the
-edges, marts at read time. Its conflicts with this bundle and with the built
-code are open questions for the operator in [05](05-data-model.md) §11.
+**2026-10-01 — the data model agreed and corrected the same day** (DEC-249,
+[05](05-data-model.md)): the warehouse only, beside the lake and memory; one
+entry; evidence only the lake; the subconscious the only writer; memo first on
+the entry, right after the shadow week; the tier names kept.
