@@ -75,6 +75,35 @@ async def test_recent_before_takes_the_newest_strictly_before_the_bound(store):
     assert await store.recent_before(conversation_id="g1", before_ts=40, limit=0) == []
 
 
+def _with_media(conv="g1", ts=1, sha="ab" * 32, sender="+852111") -> NormalizedMessage:
+    return dataclasses.replace(
+        _msg(conv=conv, ts=ts, sender=sender),
+        media_blobs=(MediaBlob(sha256=sha, media_type="image/jpeg", size=4),),
+    )
+
+
+async def test_media_rows_reach_past_the_recent_window_newest_first(store):
+    """The reason `media_rows` exists: a photo that has scrolled out of
+    `recent` is still a row. Scoped to the conversation, human rows with media
+    only, bounded below by `since_ts` (inclusive), newest first."""
+    await store.append(message=_with_media(ts=10, sha="01" * 32))
+    await store.append(message=_with_media(ts=20, sha="02" * 32))
+    await store.append(message=_with_media(ts=30, sha="03" * 32))
+    for i in range(5):                       # text-only rows push the photos out
+        await store.append(message=_msg(ts=40 + i))
+    await store.append(message=_with_media(conv="g2", ts=25, sha="04" * 32))
+    await store.append(message=_with_media(ts=35, sha="05" * 32), is_nora=True)
+    assert [r.ts for r in await store.recent(conversation_id="g1", limit=3)] == [42, 43, 44]
+
+    rows = await store.media_rows(conversation_id="g1", since_ts=20, limit=10)
+    assert [r.ts for r in rows] == [30, 20]
+    assert all(r.media_json for r in rows)
+    assert [r.ts for r in await store.media_rows(conversation_id="g1", since_ts=0, limit=2)] \
+        == [30, 20]
+    assert await store.media_rows(conversation_id="g1", since_ts=0, limit=0) == []
+    assert await store.media_rows(conversation_id="nope", since_ts=0, limit=5) == []
+
+
 async def test_recent_is_scoped_to_the_conversation(store):
     await store.append(message=_msg(conv="g1", body="a"))
     await store.append(message=_msg(conv="g2", body="b"))

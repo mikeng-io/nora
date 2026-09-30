@@ -784,6 +784,20 @@ class RecordStore(Protocol):
 
     async def recent(self, *, conversation_id: str, limit: int) -> list[TranscriptRow]: ...
 
+    async def media_rows(
+        self, *, conversation_id: str, since_ts: int, limit: int,
+    ) -> list[TranscriptRow]:
+        """The rows of ONE conversation that carry media Nora holds, sent by
+        somebody other than her, with `ts >= since_ts`, NEWEST first, at most
+        `limit`. Not a window read: a photo that has scrolled out of `recent`
+        is still a row here, which is the reason it exists (`media_search`'s
+        room scope). The conversation is the caller's own, never a model
+        argument. Raises when the database cannot be read (a caller maps that
+        to `unavailable`); a non-positive `limit` answers `[]` without a
+        query. Hidden (withdrawn) rows are excluded, as in every transcript
+        read."""
+        ...
+
     async def recent_before(
         self, *, conversation_id: str, before_ts: int, limit: int,
     ) -> list[TranscriptRow]:
@@ -1453,8 +1467,20 @@ class MediaObjectStore(Protocol):
 
     async def search(
         self, *, query: str, limit: int = 20,
-        sources: tuple[str, ...] = (),
+        sources: tuple[str, ...] = (), since_ms: int = 0,
     ) -> tuple[MediaObject, ...]: ...
+
+    async def lookup_search(
+        self, *, query: str, limit: int = 20,
+        sources: tuple[str, ...] = (), since_ms: int = 0,
+    ) -> MediaLookup:
+        """`search` with the availability axis `lookup` and `lookup_prefix`
+        have: the matches newest first (the mapping keeps that order), or
+        `available=False` and no objects when the index could not be read.
+        `search` collapses the two into `()`, so a tool built on it would say
+        «nothing matched» for a database that was down. `since_ms` keeps only
+        objects created at or after it (0 is no bound). Never raises."""
+        ...
 
     async def get(self, *, sha256: str) -> MediaObject | None: ...
 
