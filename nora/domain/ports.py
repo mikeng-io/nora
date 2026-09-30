@@ -1920,13 +1920,9 @@ class SandboxRuntime(Protocol):
     async def state(self, *, scope: str) -> StateResult:
         """What the computer holds for `scope` now: its newest files and its
         tmux sessions (design/sandbox-runtime §15.1). Read fresh on every
-        call, never cached, so it cannot go stale. Takes no lock."""
-        ...
-
-    async def tmux_kill(self, *, scope: str, name: str) -> OpResult:
-        """End one tmux session of `scope` by its exact name: `ok`, or
-        `nothing_found` when there is none by that name. Only the sweeper
-        calls it, and only on a session with nothing running in it."""
+        call; a caller may keep it for seconds (`ComputerContextReader`).
+        Takes no lock. There is deliberately no method that ends a tmux
+        session or deletes a file: nothing on Nora's side destroys work."""
         ...
 
 

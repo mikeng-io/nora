@@ -1,6 +1,7 @@
 """The computer session sweeper (design/sandbox-runtime §15.2), on fakes and a
-fake clock: when a session expires and why, what it kills and what it never
-touches, and that it cannot see is never read as «nothing running»."""
+fake clock: when a session expires and why, that it never ends a job or
+deletes anything, and that what it cannot see is never read as «nothing
+running»."""
 
 from __future__ import annotations
 
@@ -75,8 +76,9 @@ async def test_the_sweeper_never_deletes_anything(world):
     assert runtime.files_by_scope == before_files
     assert list(sessions.sessions) == [s.id]
     assert len(events.events) == 1  # appended, nothing removed
-    # The one destructive act: a tmux shell with nothing running in it.
-    assert runtime.killed == [(SCOPE, "shell")]
+    # Not even an idle tmux shell is ended: expiry is a row and a status.
+    assert set(runtime.tmux_by_scope[SCOPE]) == {"shell"}
+    assert events.events[0].result["tmux_left"] == ["shell"]
     # No command at all: `run` is the only way the port could remove a file.
     assert runtime.run_calls == []
 
@@ -92,7 +94,6 @@ async def test_a_running_tmux_job_keeps_it_open_then_is_flagged_never_killed(wor
     clock.at = T0 + timedelta(days=7)
     assert await sweeper.sweep_once() == 1
     assert sessions.sessions[s.id].expired_reason == "running_past_limit"
-    assert runtime.killed == []
     assert set(runtime.tmux_by_scope[SCOPE]) == {"scrape", "shell"}
     [row] = events.events
     assert row.result["flagged_running_tmux"] == ["scrape"]
@@ -112,10 +113,10 @@ async def test_it_expires_when_every_held_resource_is_gone(world):
     assert await sweeper.sweep_once() == 0  # still within the idle-after window
     clock.at = T0 + timedelta(minutes=31)
     assert await sweeper.sweep_once() == 1
-    assert sessions.sessions[s.id].expired_reason == "resources_gone"
+    assert sessions.sessions[s.id].expired_reason == "jobs_ended"
 
 
-async def test_a_session_that_never_held_anything_is_not_resources_gone(world):
+async def test_a_session_that_never_held_anything_is_not_jobs_ended(world):
     clock, _, sessions, _, _, _, sweeper = world
     s = await _open(sessions)
     clock.at = T0 + timedelta(hours=2)

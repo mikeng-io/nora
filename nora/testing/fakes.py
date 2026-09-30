@@ -1718,10 +1718,12 @@ class FakeComputerEventStore:
 
     async def recent(
         self, *, conversation_id: str, since: datetime, limit: int,
+        platform: str | None = None,
     ) -> list[ComputerEvent]:
         rows = [
             e for e in self.events
             if e.conversation_id == conversation_id and e.created_at >= since
+            and (platform is None or e.platform == platform)
         ]
         rows.sort(key=lambda e: e.created_at, reverse=True)
         return rows[:limit]
@@ -1745,8 +1747,8 @@ class FakeComputerSessionStore:
 
     async def continue_or_open(
         self, *, platform: str, conversation_id: str, scope: str, objective: str,
-        actor: str, tag_id: str, now: datetime,
-    ) -> tuple[ComputerSession, bool]:
+        actor: str, tag_id: str, now: datetime, open_new: bool = True,
+    ) -> tuple[ComputerSession, bool] | None:
         self._check()
         now = ensure_utc_event(now, field="now")
         for sid, s in self.sessions.items():
@@ -1755,6 +1757,8 @@ class FakeComputerSessionStore:
                                   last_activity_at=max(s.last_activity_at, now))
                 self.sessions[sid] = touched
                 return touched, False
+        if not open_new:
+            return None
         opened = normalise_session(ComputerSession(
             id=uuid4(), platform=platform, conversation_id=conversation_id, scope=scope,
             objective=objective, status=OPEN, created_at=now, updated_at=now,
@@ -1992,7 +1996,8 @@ class FakeSandboxRuntime:
     sessions exist only when a test starts one with `start_tmux`: the fake
     runs nothing, so a `run("tmux new ...")` starts none. `tmux_unknown =
     True` is computerd without a tmux it can list (`tmux` None). There is
-    deliberately no delete of any kind: nothing on Nora's side removes a file.
+    deliberately no delete and no kill of any kind: nothing on Nora's side
+    removes a file or ends a job.
     """
 
     def __init__(self, *, clock: Callable[[], datetime] | None = None) -> None:
@@ -2000,7 +2005,6 @@ class FakeSandboxRuntime:
         self.mtimes: dict[str, dict[str, datetime]] = {}
         self.tmux_by_scope: dict[str, dict[str, TmuxSession]] = {}
         self.tmux_unknown = False
-        self.killed: list[tuple[str, str]] = []
         self._clock = clock or (lambda: datetime.now(UTC))
         self._last_mtime: datetime | None = None
         self.runs: list[tuple[str, str]] = []
@@ -2151,18 +2155,6 @@ class FakeSandboxRuntime:
             status=SandboxStatus.OK, files=tuple(visible[:FAKE_MAX_STATE_FILES]),
             tmux=tmux, tmux_reason="tmux is not installed" if tmux is None else None,
         )
-
-    async def tmux_kill(self, *, scope: str, name: str) -> OpResult:
-        if (refusal := self._refusal(scope)) is not None:
-            return OpResult(status=refusal, reason="fake refusal")
-        if not re.fullmatch(r"[^\x00-\x1f\x7f:.]{1,128}", name):
-            return OpResult(status=SandboxStatus.DENIED, reason="not a tmux session name")
-        if self.tmux_unknown:
-            return OpResult(status=SandboxStatus.UNAVAILABLE, reason="tmux is not installed")
-        if self.tmux_by_scope.get(scope, {}).pop(name, None) is None:
-            return OpResult(status=SandboxStatus.NOTHING_FOUND, reason="no such tmux session")
-        self.killed.append((scope, name))
-        return OpResult(status=SandboxStatus.OK)
 
     def _stamp(self) -> datetime:
         now = self._clock()

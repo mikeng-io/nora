@@ -11,7 +11,7 @@ changes exactly one match or refuses; caps are `denied`; a write reads back
 byte for byte, with the sha256 of what was written. The observed-state read
 (`state`, design §15.1) lists the newest files newest first and hides what
 no one would name; tmux sessions are per room, a job reads as running and a
-shell at its prompt does not, and a kill takes one exact name.
+shell at its prompt does not.
 
 The tmux half needs a real `tmux` for the computerd side and is SKIPPED
 where there is none (the Mac this repo is developed on has none); the image
@@ -275,7 +275,6 @@ async def test_state_caps_the_file_list_at_fifty(runtime):
 @pytest.mark.parametrize("scope", ["Room-A", "../x", ""])
 async def test_state_refuses_a_scope_that_is_not_a_hex_key(runtime, scope):
     assert (await runtime.state(scope=scope)).status is SandboxStatus.DENIED
-    assert (await runtime.tmux_kill(scope=scope, name="job")).status is SandboxStatus.DENIED
 
 
 async def test_a_tmux_job_is_listed_as_running_and_a_shell_is_not(runtime):
@@ -294,21 +293,3 @@ async def test_tmux_sessions_are_per_room(runtime):
     await start_job(runtime, SCOPE, "mine", running=True)
     other = await runtime.state(scope=OTHER)
     assert other.tmux == ()
-    assert (await runtime.tmux_kill(scope=OTHER, name="mine")).status \
-        is SandboxStatus.NOTHING_FOUND
-
-
-async def test_a_kill_ends_exactly_the_named_session(runtime):
-    needs_tmux(runtime)
-    await start_job(runtime, SCOPE, "job", running=True)
-    await start_job(runtime, SCOPE, "job2", running=True)
-    assert (await runtime.tmux_kill(scope=SCOPE, name="job")).status is SandboxStatus.OK
-    state = await runtime.state(scope=SCOPE)
-    assert [t.name for t in state.tmux or ()] == ["job2"]
-    assert (await runtime.tmux_kill(scope=SCOPE, name="job")).status \
-        is SandboxStatus.NOTHING_FOUND
-
-
-@pytest.mark.parametrize("name", ["", "a:b", "a.b", "x\ny"])
-async def test_a_kill_refuses_a_name_tmux_cannot_hold(runtime, name):
-    assert (await runtime.tmux_kill(scope=SCOPE, name=name)).status is SandboxStatus.DENIED

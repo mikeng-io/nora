@@ -40,6 +40,15 @@ class _Line:
     at: datetime | None  # None: a summary line, never dropped by the ceiling
 
 
+#: Why a task stopped, in words that cannot be read as work lost: an expiry
+#: never deletes a file or ends a job.
+_WHY_STOPPED = {
+    "idle": "no activity; files kept",
+    "jobs_ended": "its tmux jobs ended; files kept",
+    "running_past_limit": "no activity for days while a job ran; the job was left running",
+}
+
+
 def estimate_tokens(text: str) -> int:
     """A deliberately high token estimate: ASCII runs about four characters a
     token (counted as three), anything else about one."""
@@ -59,8 +68,8 @@ def _session(line: SessionLine, now: datetime, *, lapsed: bool) -> _Line:
     s = line.session
     objective = f'"{s.objective}"' if s.objective else "(no message)"
     if lapsed:
-        head = (f"lapsed task, stopped {age(s.expired_at or s.updated_at, now)}"
-                f" ({(s.expired_reason or '').replace('_', ' ')})")
+        why = _WHY_STOPPED.get(s.expired_reason or "", "stopped")
+        head = f"lapsed task, stopped {age(s.expired_at or s.updated_at, now)} ({why})"
     else:
         head = f"open task, {line.shown}, last active {age(s.last_activity_at, now)}"
     progress = (progress_text(line.progress, now=now) if line.progress is not None
@@ -136,10 +145,11 @@ def render_computer(view: ComputerView | None) -> ContextBlock | None:
 def _within_ceiling(lines: list[_Line], max_tokens: int, now: datetime) -> list[_Line]:
     """Drop the oldest item lines until the body fits, then say so."""
     def cost(kept: list[_Line], dropped: list[_Line]) -> int:
-        text = "\n".join(line.text for line in kept)
+        # Measured on what is SENT: escaped and collapsed, `&` as `&amp;`.
+        texts = [line.text for line in kept]
         if dropped:
-            text += "\n" + _older(dropped, now).text
-        return estimate_tokens(text)
+            texts.append(_older(dropped, now).text)
+        return estimate_tokens(render_bullets(texts, mark=""))
 
     kept: list[_Line] = list(lines)
     dropped: list[_Line] = []

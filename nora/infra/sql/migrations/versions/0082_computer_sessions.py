@@ -70,7 +70,7 @@ def upgrade() -> None:
         ),
         sa.CheckConstraint(
             "expired_reason IS NULL OR expired_reason IN "
-            "('idle', 'resources_gone', 'running_past_limit')",
+            "('idle', 'jobs_ended', 'running_past_limit')",
             name="ck_computer_sessions_expired_reason",
         ),
         sa.CheckConstraint(_ACTORS_0082, name="ck_computer_sessions_actor"),

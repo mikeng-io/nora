@@ -213,10 +213,20 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     # (`nora.domain.computer_sessions.EXPIRY_REASONS`). `running_past_limit`
     # is the flag: a tmux job still running after `max_running_days` without
     # a computer call, left running for a person to look at.
+    # design/sandbox-runtime §15.3: a `<computer>` block rendered from the
+    # database alone because the machine read missed its budget (timeout) or
+    # the computer answered unavailable. The reply was not held for it.
+    _CounterSpec(
+        "nora_computer_context_machine_unread_total",
+        "<computer> blocks rendered without the live machine state, by reason "
+        "(timeout: past [computer.context] read_timeout_seconds; unavailable: "
+        "the computer answered unavailable).",
+        ("reason",),
+    ),
     _CounterSpec(
         "nora_computer_session_expiries_total",
         "Computer sessions the sweeper expired, by reason (idle, "
-        "resources_gone, running_past_limit: a job still running past "
+        "jobs_ended, running_past_limit: a job still running past "
         "max_running_days, flagged and not killed).",
         ("reason",),
     ),

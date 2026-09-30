@@ -905,8 +905,9 @@ enabled = false
 # the room is running; a running job keeps it open up to max_running_days of
 # no calls, after which it expires with the job flagged in the audit and left
 # running. It also expires when every tmux session it was seen holding is
-# gone and the room has been idle for idle_after_minutes. Expiry NEVER deletes
-# a file, a profile or an audit row. An expired session is shown as lapsed
+# gone and the room has been idle for idle_after_minutes. Expiry is a database
+# state change and an audit row: it NEVER ends a tmux job and NEVER deletes a
+# file, a profile or an audit row. An expired session is shown as lapsed
 # for lapsed_visible_hours; it is not resumed, the next call opens a new one.
 # idle_after_minutes is also when an open session with no call and no running
 # job is shown idle rather than active.
@@ -925,6 +926,9 @@ enabled = false
 # capped, with a "+N more" line; files count only when changed within
 # recent_file_days. max_tokens is the block body's ceiling (estimated high):
 # past it the oldest lines are dropped first, with a line saying how many.
+# The machine read never holds a reply: past read_timeout_seconds the block
+# renders from the database alone and says the machine could not be read. A
+# good read is kept per room for state_cache_seconds.
 # [computer.context]
 # active_days = 7
 # recent_file_days = 7
@@ -934,6 +938,8 @@ enabled = false
 # max_files = 8
 # max_runs = 5
 # max_tokens = 400
+# read_timeout_seconds = 1.5
+# state_cache_seconds = 30
 
 # The presence collector (design/19, DEC-54/55) — a SEPARATE process,
 # `python -m nora.presence`, that records circle members' distinct location

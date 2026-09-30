@@ -9,11 +9,12 @@ endpoint) and the session's own `last_activity_at` (every computer call in
 the room moves it):
 
 - **idle**: no computer call for `idle_expiry_hours` and no tmux job in the
-  room running. Its idle tmux shells are killed (nothing runs in them).
+  room running (a pane runs a job when its command is not a shell OR its
+  shell has any child, computerd's `pane_running`).
 - **running past the limit**: a tmux job still runs, but no call for
   `max_running_days`. Expired, the job FLAGGED in the audit row and a
   counter, and never killed.
-- **resources gone**: the session was seen holding tmux sessions, none is
+- **jobs ended**: the session was seen holding tmux sessions, none is
   left, and there has been no call for `idle_after_minutes`.
 
 Otherwise it stays open. Fail-closed on what it cannot see: a room whose
@@ -26,10 +27,12 @@ in flight holds the lease and the sweeper defers; a call that lands between
 the read and the write moves `last_activity_at` and the set fails. Each one
 writes ONE `computer_events` row, actor `sweeper`.
 
-**It never deletes anything**: not a file (the runtime it holds has no
-delete), not a session row (expiry is a status), not an audit row (the
-table refuses it). The only destructive act is `tmux kill-session` on a
-tmux session with nothing running in it.
+**It never destroys anything** (operator, 2026-09-30: never destroy work).
+An expiry is a database state change and one audit row, nothing else: no
+tmux session is killed (a shell with a child running reads as idle to a
+naive check, so killing is never safe), no file is deleted (the runtime it
+holds offers neither), no session row is deleted (expiry is a status), no
+audit row is changed (the table refuses it). It runs no command at all.
 """
 
 from __future__ import annotations
@@ -104,7 +107,7 @@ class ComputerSessionSweeper:
                 return "running_past_limit"
             return None
         if session.held_tmux and not tmux and idle >= self._rules.idle_after:
-            return "resources_gone"
+            return "jobs_ended"
         return None
 
     async def _sweep(self, session: ComputerSession, state: StateResult, now: datetime) -> bool:
@@ -128,18 +131,10 @@ class ComputerSessionSweeper:
             )
             if done is None:
                 return False  # continued, or expired, since the read
-            killed: list[str] = []
-            failed: list[str] = []
+            # Flagged, never killed: a job still running when the session
+            # expires is reported in the audit row for a person to look at.
             flagged = [t.name for t in tmux if t.running]
-            if reason != "running_past_limit":
-                # Only a tmux session with nothing running in it.
-                for t in tmux:
-                    if t.running:
-                        continue
-                    result = await self._runtime.tmux_kill(scope=session.scope, name=t.name)
-                    (killed if result.status is SandboxStatus.OK else failed).append(t.name)
-                flagged = []
-            else:
+            if reason == "running_past_limit":
                 log.warning("computer session %s expired with %d tmux job(s) still "
                             "running past max_running_days; left running",
                             session.id, len(flagged))
@@ -147,8 +142,8 @@ class ComputerSessionSweeper:
             await self._audit(done, now=now, result={
                 "transition": "expired", "reason": reason,
                 "idle_seconds": int((now - session.last_activity_at).total_seconds()),
-                "killed_tmux": killed, "kill_failed_tmux": failed,
                 "flagged_running_tmux": flagged,
+                "tmux_left": [t.name for t in tmux],
             })
             return True
         finally:

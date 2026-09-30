@@ -71,14 +71,16 @@ STORED_STATUSES: frozenset[str] = frozenset({OPEN, EXPIRED})
 
 #: Why the sweeper expired a session (`ComputerSession.expired_reason`).
 #: `idle`: no computer call for the idle expiry and no tmux job running.
-#: `resources_gone`: every tmux session it was seen holding is gone and the
+#: `jobs_ended`: every tmux session it was seen holding is gone and the
 #: room is idle. `running_past_limit`: a tmux job still runs, but nothing
 #: has called the computer for `max_running_days`; the job is flagged in
 #: the audit row and NOT killed.
-EXPIRY_REASONS: frozenset[str] = frozenset({"idle", "resources_gone", "running_past_limit"})
+EXPIRY_REASONS: frozenset[str] = frozenset({"idle", "jobs_ended", "running_past_limit"})
 
 #: What a reader is shown (`shown_status`).
-ShownStatus = Literal["active", "idle", "lapsed", "expired"]
+#: `running unknown`: open, no recent call, and whether a job still runs
+#: could not be read; never shown as `idle` then (unknown is not none).
+ShownStatus = Literal["active", "idle", "running unknown", "lapsed", "expired"]
 
 #: The objective is the triggering message, cut to this many characters.
 OBJECTIVE_CHARS = 80
@@ -151,17 +153,18 @@ def normalise_session(session: ComputerSession) -> ComputerSession:
 
 def shown_status(
     session: ComputerSession, *, now: datetime, idle_after: timedelta,
-    lapsed_visible: timedelta, tmux_running: bool,
+    lapsed_visible: timedelta, tmux_running: bool | None,
 ) -> ShownStatus:
     """What a reader is told the session is. `tmux_running` is whether a
-    tmux job in the session's room is running now (False when unknown: the
-    status then rests on activity alone)."""
+    tmux job in the session's room is running now, None when the machine
+    could not be read: an open session with no recent call is then
+    `running unknown`, never `idle`."""
     if session.status == EXPIRED:
         expired_at = session.expired_at or session.updated_at
         return "lapsed" if now - expired_at <= lapsed_visible else "expired"
     if now - session.last_activity_at <= idle_after or tmux_running:
         return "active"
-    return "idle"
+    return "running unknown" if tmux_running is None else "idle"
 
 
 @dataclass(frozen=True)
@@ -259,11 +262,13 @@ class ComputerSessionStore(Protocol):
 
     async def continue_or_open(
         self, *, platform: str, conversation_id: str, scope: str, objective: str,
-        actor: str, tag_id: str, now: datetime,
-    ) -> tuple[ComputerSession, bool]:
+        actor: str, tag_id: str, now: datetime, open_new: bool = True,
+    ) -> tuple[ComputerSession, bool] | None:
         """The room's open session, its `last_activity_at` and `updated_at`
-        moved to `now`; or, when there is none, a new one opened with
-        `objective`. True when it was opened by this call. Atomic: two
+        moved to `now`; or, when there is none and `open_new`, a new one
+        opened with `objective`. True when it was opened by this call. None
+        when there is none and `open_new` is false: a background actor only
+        continues a session a live turn opened (design §15.4). Atomic: two
         concurrent calls in one room get ONE session between them."""
         ...
 

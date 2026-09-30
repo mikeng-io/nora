@@ -45,8 +45,10 @@ What it guarantees, whatever the caller sends:
 - **What the computer holds, read fresh** (`/v1/state`, design §15.1): a
   scope's newest files (path, size, mtime; never through a link) and its
   tmux sessions, listed as the scope's own user on the scope's own socket,
-  which is where every `run` puts a `tmux new`. `/v1/tmux-kill` ends one of
-  them by exact name. Nothing here deletes a file.
+  which is where every `run` puts a `tmux new`. A session is `running` when
+  a pane runs a non-shell command OR its process has any child: a `bash
+  train.sh`, a `bash -c` chain or a backgrounded server all show `bash` as
+  the foreground command. Nothing here kills a session or deletes a file.
 
 Dependencies: the standard library and aiohttp, nothing from `nora`.
 """
@@ -97,14 +99,15 @@ MAX_STATE_WALK = 20_000
 STATE_SKIP_DIRS = frozenset({"node_modules", "__pycache__"})
 TMUX_SECONDS = 10.0
 TMUX_SESSIONS_FORMAT = "#{session_name}\t#{session_created}\t#{session_attached}"
-TMUX_PANES_FORMAT = "#{session_name}\t#{pane_dead}\t#{pane_current_command}"
+TMUX_PANES_FORMAT = (
+    "#{session_name}\t#{pane_dead}\t#{pane_current_command}\t#{pane_pid}"
+)
 # A pane whose foreground command is one of these is waiting at a prompt:
 # nothing is running in it.
 IDLE_COMMANDS = frozenset({"bash", "sh", "dash", "zsh", "fish", "login"})
 # What tmux prints when there is no server on the socket: nothing is running.
 TMUX_NO_SERVER = ("no server running", "error connecting", "no such file or directory",
                   "connection refused")
-TMUX_NAME_RE = re.compile(r"^[^\x00-\x1f\x7f:.]{1,128}$")
 
 # The token this process was started with never reaches a child process.
 TOKEN_ENV = "COMPUTERD_TOKEN"  # noqa: S105 - the variable NAME, not a secret
@@ -187,6 +190,7 @@ class Computer:
     def __init__(
         self, *, root: Path, token: str, isolate_scopes: bool = True,
         tmux_root: Path | None = None, tmux_bin: str = "tmux",
+        proc_root: Path = Path("/proc"),
     ) -> None:
         if not token:
             raise ValueError("computerd needs a non-empty token")
@@ -202,6 +206,7 @@ class Computer:
         # because a Unix socket path is capped near 104 bytes.
         self.tmux_root = tmux_root if tmux_root is not None else root / ".tmux"
         self.tmux_bin = tmux_bin
+        self.proc_root = proc_root
         self.tmux_root.mkdir(mode=0o755, parents=True, exist_ok=True)
         if stat.S_ISLNK(os.lstat(self.tmux_root).st_mode):
             raise ValueError(f"{self.tmux_root} is a link; refusing to start")
@@ -570,9 +575,12 @@ class Computer:
         if prc != 0:
             return {"tmux": None, "tmux_reason": f"tmux exited {prc}: {perr.strip()[:200]}"}
         running: set[str] = set()
+        parents = await asyncio.to_thread(child_parents, self.proc_root)
         for line in pout.splitlines():
             parts = line.split("\t")
-            if len(parts) == 3 and parts[1] != "1" and parts[2] not in IDLE_COMMANDS:
+            if len(parts) == 4 and pane_running(
+                dead=parts[1] == "1", command=parts[2], pid=_int(parts[3], 0), parents=parents,
+            ):
                 running.add(parts[0])
         sessions: list[dict[str, Any]] = []
         for line in out.splitlines():
@@ -588,25 +596,41 @@ class Computer:
         files = await asyncio.to_thread(self.recent_files, scope)
         return {"status": "ok", **files, **await self.tmux_sessions(scope)}
 
-    async def tmux_kill(self, scope: str, body: dict[str, Any]) -> dict[str, Any]:
-        """Kill one of the scope's tmux sessions by its exact name (`=name`,
-        so a prefix never matches another). Only the scope's own server is
-        reachable: the socket is the scope's."""
-        name = body.get("name")
-        if not isinstance(name, str) or not TMUX_NAME_RE.match(name):
-            raise RefusedError("name must be a tmux session name")
+
+def child_parents(proc_root: Path) -> frozenset[int]:
+    """Every pid that has at least one child, read from `/proc/<pid>/stat`
+    (field 4 is the parent). Empty when there is no `/proc` (not Linux): a
+    pane is then running only by its foreground command."""
+    parents: set[int] = set()
+    try:
+        entries = list(os.scandir(proc_root))
+    except OSError:
+        return frozenset()
+    for entry in entries:
+        if not entry.name.isdigit():
+            continue
         try:
-            rc, _, err = await self._tmux(scope, "kill-session", "-t", f"={name}")
-        except FileNotFoundError:
-            return {"status": "unavailable", "reason": "tmux is not installed"}
-        except (TimeoutError, OSError) as exc:
-            return {"status": "unavailable", "reason": f"{type(exc).__name__}: {exc}"}
-        if rc == 0:
-            return {"status": "ok"}
-        lowered = err.lower()
-        if "can't find session" in lowered or any(m in lowered for m in TMUX_NO_SERVER):
-            return {"status": "nothing_found", "reason": "no such tmux session"}
-        return {"status": "unavailable", "reason": f"tmux exited {rc}: {err.strip()[:200]}"}
+            with open(os.path.join(entry.path, "stat"), encoding="utf-8",
+                      errors="replace") as f:
+                raw = f.read()
+        except OSError:
+            continue
+        # `pid (comm) state ppid ...`; comm may hold spaces and parentheses,
+        # so split after the LAST `)`.
+        fields = raw[raw.rfind(")") + 1:].split()
+        if len(fields) >= 2 and fields[1].isdigit():
+            parents.add(int(fields[1]))
+    return frozenset(parents)
+
+
+def pane_running(*, dead: bool, command: str, pid: int, parents: frozenset[int]) -> bool:
+    """A pane is running a job when it is alive and either its foreground
+    command is not a shell at a prompt, or its process has ANY child. The
+    second catches what the first cannot: `bash train.sh`, `bash -c 'a && b'`
+    and a server backgrounded from the shell all show `bash` in front."""
+    if dead:
+        return False
+    return command not in IDLE_COMMANDS or pid in parents
 
 
 def _previous_sha256(dfd: int, name: str) -> str | None:
@@ -675,10 +699,10 @@ def _limit(raw: Any, ceiling: int, *, default: int | None = None) -> int:
 
 def create_app(
     *, root: Path, token: str, isolate_scopes: bool = True,
-    tmux_root: Path | None = None, tmux_bin: str = "tmux",
+    tmux_root: Path | None = None, tmux_bin: str = "tmux", proc_root: Path = Path("/proc"),
 ) -> web.Application:
     computer = Computer(root=root, token=token, isolate_scopes=isolate_scopes,
-                        tmux_root=tmux_root, tmux_bin=tmux_bin)
+                        tmux_root=tmux_root, tmux_bin=tmux_bin, proc_root=proc_root)
     file_ops: dict[str, Callable[[str, dict[str, Any]], Any]] = {
         "read": computer.read, "write": computer.write, "edit": computer.edit,
         "files": computer.files, "fetch": computer.fetch,
@@ -724,8 +748,6 @@ def create_app(
                 return answer(await computer.run(scope, body))
             if op == "state":
                 return answer(await computer.state(scope, body))
-            if op == "tmux-kill":
-                return answer(await computer.tmux_kill(scope, body))
             handler = file_ops.get(op)
             if handler is None:
                 return web.json_response({"status": "unknown operation"}, status=404)

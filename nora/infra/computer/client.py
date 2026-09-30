@@ -246,9 +246,6 @@ class ComputerdRuntime:
             )
         return await _guard(body, lambda why: StateResult(SandboxStatus.UNAVAILABLE, reason=why))
 
-    async def tmux_kill(self, *, scope: str, name: str) -> OpResult:
-        return await self._op("tmux-kill", {"scope": scope, "name": name}, None)
-
     # -- plumbing ---------------------------------------------------------
 
     async def _op(self, op: str, payload: dict[str, Any], sent: str | None) -> OpResult:

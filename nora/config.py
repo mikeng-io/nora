@@ -2223,8 +2223,9 @@ class ComputerSessionsConfig(BaseModel):
     the room is running; a running job keeps it open up to
     `max_running_days` of no calls, after which it expires with the job
     flagged in the audit and left running. It also expires when every tmux
-    session it was seen holding is gone and the room is idle. Expiry never
-    deletes a file, a profile or an audit row. An expired session is shown as
+    session it was seen holding is gone and the room is idle. Expiry is a
+    database state change and an audit row: it never ends a tmux job and
+    never deletes a file, a profile or an audit row. An expired session is shown as
     lapsed for `lapsed_visible_hours`. `idle_after_minutes` is when an open
     session with no call and no running job is shown `idle` rather than
     `active`. The sweeper runs every `sweep_interval_seconds`.
@@ -2250,6 +2251,11 @@ class ComputerContextConfig(BaseModel):
     changed within `recent_file_days`. `max_tokens` is the whole block's
     ceiling, estimated conservatively: past it the oldest lines are dropped
     first, with a line saying how many.
+
+    The machine read must never hold a reply: it gets `read_timeout_seconds`,
+    after which the block renders from the database alone and says the
+    machine could not be read. A successful read is kept per room for
+    `state_cache_seconds`, so consecutive turns do not each ask the VM.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -2262,6 +2268,8 @@ class ComputerContextConfig(BaseModel):
     max_files: int = Field(default=8, ge=0)
     max_runs: int = Field(default=5, ge=0)
     max_tokens: int = Field(default=400, gt=0)
+    read_timeout_seconds: float = Field(default=1.5, gt=0)
+    state_cache_seconds: float = Field(default=30.0, ge=0)
 
 
 class ComputerConfig(BaseModel):
