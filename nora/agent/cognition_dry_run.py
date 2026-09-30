@@ -371,7 +371,7 @@ async def dry_run_standing_revise(
 ) -> WouldWrite:
     """`standing_revise` in shadow. `base_revision_id` is the
     `standing_revision.id` the session's `standing_read` showed and
-    `prior_revision_id` the id of the row that is the head now (M6, DEC-249):
+    `prior_revision_id` the id of the row that is the head now (M6, DEC-250):
     the caller read both with `prior`, this function reads nothing. Calls the
     exact three pure checks `nora.infra.sql.standing_revise.standing_revise`
     (the LIVE verb) calls,

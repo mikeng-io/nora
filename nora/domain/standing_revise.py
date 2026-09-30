@@ -147,7 +147,7 @@ def check_stale_base(
     current revision is refused `stale_base`, with the current row."
 
     The token is `standing_revision.id`, the id `standing_read` shows as
-    `revision` (M6, DEC-249). It was `fold_count` until then, and that counter
+    `revision` (M6, DEC-250). It was `fold_count` until then, and that counter
     does not move when the ingest fold rewrites the head (`increments_fold_count`
     is False there), so a revision made between a read and a write passed as
     fresh. Every write to the head appends a `standing_revision` row in the same

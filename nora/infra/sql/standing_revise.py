@@ -91,7 +91,7 @@ async def standing_revise(
     a mismatched key silently corrupts.
 
     `base_revision_id` and `prior_revision_id` are `standing_revision.id`s
-    (M6, DEC-249): the token the caller read, and the id of the row that IS the
+    (M6, DEC-250): the token the caller read, and the id of the row that IS the
     head now (`StandingHead.revision_id`, which the caller read with `prior`).
     Both None, the two folds today, asserts nothing.
 

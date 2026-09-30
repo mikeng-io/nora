@@ -276,7 +276,7 @@ OpenNoteTitles = Callable[[str], Awaitable[Sequence[str]]]
 OpenProposedEvents = Callable[[str, str], Awaitable[Sequence[Gathering]]]
 #: `(platform, conversation_id)` -> the room's Standing head WITH the id of the
 #: `standing_revision` row that is it (`SqlStandingStore.read_head`): the token a
-#: `standing_revise` call asserts as its base (M6, DEC-249).
+#: `standing_revise` call asserts as its base (M6, DEC-250).
 PriorStanding = Callable[[str, str], Awaitable[StandingHead | None]]
 #: `(platform, conversation_id)` -> the room's roster, roster name -> person id,
 #: or None when it cannot be read (an ERROR, never an empty room): what a note's

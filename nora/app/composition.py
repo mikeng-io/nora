@@ -4568,7 +4568,7 @@ async def build_dependencies(
                 dry_run_store=dry_run_store, stimulus_store=stimulus_store,
                 note_titles=_note_titles, proposed_events_in=_proposed_events,
                 # The HEAD with its `standing_revision` id: the token a
-                # `standing_revise` base is checked against (M6, DEC-249).
+                # `standing_revise` base is checked against (M6, DEC-250).
                 standing_of=lambda platform, conversation_id: standing_store.read_head(
                     platform=platform, conversation_id=conversation_id,
                 ),
