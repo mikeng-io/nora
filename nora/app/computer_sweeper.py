@@ -154,7 +154,9 @@ class ComputerSessionSweeper:
         finally:
             self._leases.release(lease)
 
-    async def _audit(self, session: ComputerSession, *, now: datetime, result: dict) -> None:
+    async def _audit(
+        self, session: ComputerSession, *, now: datetime, result: dict[str, object],
+    ) -> None:
         try:
             await self._events.append(ComputerEvent(
                 id=uuid.uuid4(), operation_id=uuid.uuid4(), phase="finished",

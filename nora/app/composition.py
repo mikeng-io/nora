@@ -88,6 +88,7 @@ from nora.doctrine.loader import Doctrine, DoctrineError, DoctrineStore
 from nora.domain.cognition_render import RenderBudget
 from nora.domain.compute import ComputeJobStore
 from nora.domain.computer import ComputerToolSettings
+from nora.domain.computer_context import ComputerContextCaps
 from nora.domain.computer_events import ComputerEventStore
 from nora.domain.computer_leases import ComputerLeases
 from nora.domain.computer_sessions import ComputerSessionStore
@@ -119,6 +120,7 @@ from nora.domain.quote_window import QuoteWindow
 from nora.domain.reminders import ReminderCaps, ReminderStore
 from nora.domain.stimuli import WakeHook, WakePolicy
 from nora.domain.tool_call_log import ToolCallLogStore
+from nora.engagement.computer_context import ComputerContextReader
 from nora.engagement.pipeline import EngagementPipeline
 from nora.engagement.self_presence import PresenceReader
 from nora.engagement.slots import ConversationSlots
@@ -1358,6 +1360,32 @@ async def build_dependencies(
     # in-process lock a lock (one Nora process; `ComputerLeases` says so).
     computer_sessions: ComputerSessionStore = SqlComputerSessionStore(engine)
     computer_leases = ComputerLeases()
+    # The runtime: `ComputerdRuntime`, built ONLY when `[computer] enabled`
+    # (see the settings below for the rest of `[computer]`). Built here,
+    # before the assembler, because `<computer>` reads it on every turn.
+    computer: SandboxRuntime | None = None
+    if cfg.computer.enabled:
+        from nora.infra.computer.client import ComputerdRuntime
+
+        computer = ComputerdRuntime(
+            base_url=cfg.computer.base_url, token=_computer_token(cfg),
+            timeout_seconds=cfg.computer.request_timeout_seconds,
+            max_output_chars=cfg.computer.max_output_chars,
+        )
+    # `<computer>` (design/sandbox-runtime §15.3): the one reader the tag
+    # path and the fire path share. `None` while `[computer]` is off, so no
+    # room renders the block.
+    computer_context: ComputerContextReader | None = None
+    if computer is not None:
+        computer_context = ComputerContextReader(
+            sessions=computer_sessions, events=computer_events, runtime=computer,
+            caps=ComputerContextCaps(
+                **cfg.computer.context.model_dump(),
+                idle_after=timedelta(minutes=cfg.computer.sessions.idle_after_minutes),
+                lapsed_visible=timedelta(hours=cfg.computer.sessions.lapsed_visible_hours),
+            ),
+            clock=lambda: datetime.now(UTC), metrics=metrics,
+        )
     # Issue #325's durable half (`reasoning_strip_log`, migration 0057, ADR
     # 0013), REUSING `engine` for the same reason the three stores above do.
     # UNCONDITIONAL and behind no flag: an instrument that is off by default
@@ -1950,6 +1978,9 @@ async def build_dependencies(
         quote_window=quote_window,
         presence=presence_reader,
         culture=culture_reader,
+        # `<computer>` (design/sandbox-runtime §15.3): `None` while
+        # `[computer]` is off; the same reader the fire path gets.
+        computer=computer_context,
     )
 
     def _spawn(coro: Coroutine[Any, Any, None]) -> None:
@@ -2737,15 +2768,7 @@ async def build_dependencies(
     # computer tool answers `unavailable` (R-5). `ComputerToolSettings` is the
     # conversion point from config to a domain value (`nora.agent` may not
     # read `nora.config`), the `ReminderCaps` shape.
-    computer: SandboxRuntime | None = None
-    if cfg.computer.enabled:
-        from nora.infra.computer.client import ComputerdRuntime
-
-        computer = ComputerdRuntime(
-            base_url=cfg.computer.base_url, token=_computer_token(cfg),
-            timeout_seconds=cfg.computer.request_timeout_seconds,
-            max_output_chars=cfg.computer.max_output_chars,
-        )
+    # (`computer`, the runtime, is built above, beside its session store.)
     computer_settings = ComputerToolSettings(
         run_timeout_seconds=cfg.computer.run_timeout_seconds,
         max_run_timeout_seconds=cfg.computer.max_run_timeout_seconds,
@@ -3260,6 +3283,9 @@ async def build_dependencies(
             # `<presence>` — the SAME reader the tag path's assembler holds, so
             # a participation turn or a reminder knows where it is the way a
             # tag does (design/self-awareness/02).
+            # `<computer>` (design/sandbox-runtime §15.3), the reader the tag
+            # path's assembler holds; `None` while `[computer]` is off.
+            computer=computer_context,
             presence=presence_reader,
             # The note tier (design/dreamer-agent-loop/35 Phase 2) — S5's
             # precedent one tier later: the participation determination grounds

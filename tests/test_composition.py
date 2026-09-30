@@ -2230,10 +2230,13 @@ async def test_units_without_a_home_room_stay_in_the_evaluator_and_are_gauged(cf
     assert "wedding" in list(deps.wake_evaluator._units())
 
 
-async def test_the_computer_sweeper_is_built_only_while_the_computer_is_on(cfg, monkeypatch):
+async def test_computer_sweeper_and_block_exist_only_while_on(cfg, monkeypatch):
     """Design/sandbox-runtime §15.2: composition builds the session sweeper
     (and `__main__` spawns its loop) only under `[computer] enabled`."""
-    assert (await build_dependencies(cfg)).computer_sweeper is None
+    off = await build_dependencies(cfg)
+    assert off.computer_sweeper is None
+    # `<computer>` likewise: no reader, so no room renders the block.
+    assert off.assembler._computer_reader is None
     monkeypatch.setenv(cfg.computer.token_env, "t")
     on = override_config(cfg, {
         "computer.enabled": True, "heartbeat.enabled": False,
@@ -2242,3 +2245,4 @@ async def test_the_computer_sweeper_is_built_only_while_the_computer_is_on(cfg, 
     deps = await build_dependencies(on)
     assert deps.computer_sweeper is not None
     assert deps.computer_sweep_seconds == 42.0
+    assert deps.assembler._computer_reader is not None

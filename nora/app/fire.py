@@ -87,6 +87,7 @@ from nora.doctrine.loader import DoctrineStore
 from nora.domain import audience as audience_names
 from nora.domain.blocks import RowStyle, render_rows
 from nora.domain.compute import ComputeJob
+from nora.domain.computer_context import ComputerView
 from nora.domain.culture import CultureRevision
 from nora.domain.decision_log import (
     PARTICIPATION_DECISION_WRITERS,
@@ -127,6 +128,7 @@ from nora.domain.standing import (
 )
 from nora.domain.tool_call_log import ToolCallLogStore
 from nora.domain.turn_deadline import turn_deadline
+from nora.engagement.computer_context import ComputerContextReader
 from nora.engagement.context import StandingNotesReader
 from nora.engagement.mentions import MentionRenderer
 from nora.engagement.self_presence import PresenceReader
@@ -783,6 +785,9 @@ class FirePath:
         decisions: DecisionLogRecorder | None = None,
         presence: PresenceReader | None = None,
         lineage: LineagePolicy | None = None,
+        # `<computer>` (design/sandbox-runtime §15.3): the SAME reader the tag
+        # path's assembler holds. `None` while `[computer]` is off.
+        computer: ComputerContextReader | None = None,
     ) -> None:
         # S5 (15-roadmap §6.3): `<standing>` renders on the fire path too.
         #
@@ -824,6 +829,7 @@ class FirePath:
         # window.
         #
         # `None` while `[culture] enabled = false`, the shipped default.
+        self._computer = computer
         self._culture = culture
         # BOUNDED, for the reason the debrief stage's own store calls are:
         # the heartbeat holds this conversation's slot around the whole fire
@@ -1120,12 +1126,13 @@ class FirePath:
         # Each helper keeps its own fail-soft handling and none raises, which
         # is what makes one `gather` safe: an exception would otherwise cancel
         # its siblings and take the turn down with it.
-        standing, culture, notes, decisions, presence = await asyncio.gather(
+        standing, culture, notes, decisions, presence, computer = await asyncio.gather(
             self._read_standing(occasion),
             self._read_culture(occasion),
             self._read_notes(occasion, unit),
             self._read_decisions(occasion, unit),
             self._read_presence(occasion),
+            self._read_computer(occasion),
         )
         return TagContext(
             tag_id=uuid.uuid4().hex,
@@ -1141,6 +1148,7 @@ class FirePath:
             notes=notes,
             decisions=decisions,
             presence=presence,
+            computer=computer,
             room_members=self._room_members(occasion),
             lineage_room=(
                 self._lineage.render_room(
@@ -1158,6 +1166,15 @@ class FirePath:
             return ()
         conv = self._policy.conversation(occasion.platform, occasion.conversation_id)
         return self._persons.room_members(conv.persons) if conv is not None else ()
+
+    async def _read_computer(self, occasion: Event) -> ComputerView | None:
+        """`<computer>` for this occasion's room, or `None` (no reader, or a
+        room not using the computer). The reader never raises."""
+        if self._computer is None:
+            return None
+        return await self._computer.read(
+            platform=occasion.platform, conversation_id=occasion.conversation_id,
+        )
 
     async def _read_presence(self, occasion: Event) -> Presence | None:
         """Where she is for this occasion's room, read now, or `None` with no

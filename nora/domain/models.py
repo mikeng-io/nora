@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Literal
 
+from .computer_context import ComputerView
 from .culture import CultureRevision
 from .decision_log import DecisionRow
 from .lineage import RenderRoom
@@ -615,6 +616,13 @@ class TagContext:
     # this room. `None` (an offline harness, a caller with no policy) is
     # `mode = "off"`: every block as before.
     lineage_room: RenderRoom | None = None
+    # `<computer>` (design/sandbox-runtime §15.3): what is on her computer
+    # for this room, read fresh at turn start from the machine and the
+    # audit by `ComputerContextReader`, never a fold. `None` while
+    # `[computer]` is off, in a room that has not used the computer within
+    # `active_days` and has no open or lapsed task, and in every harness
+    # that wires no reader: the block then renders nothing.
+    computer: ComputerView | None = None
 
 
 @dataclass(frozen=True)
