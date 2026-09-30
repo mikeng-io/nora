@@ -244,10 +244,35 @@ async def test_standing_revise_refuses_a_stale_base_with_the_current_row():
     write = await dry_run_standing_revise(
         ledger=ledger, session_id=1, unit="unit-1", platform="signal",
         conversation_id="room-a", prior=prior, where_it_stands="now here",
-        base_revision_id=1, now_ms=1000,
+        base_revision_id="41", prior_revision_id="42", now_ms=1000,
     )
     assert write.outcome == "refused"
     assert write.refusal_reason == "stale_base"
+    assert write.base_revision_id == "41"
+
+
+async def test_standing_revise_stale_base_is_the_revision_id_not_the_fold_count():
+    """M6: the ingest fold rewrites the head WITHOUT moving `fold_count`, so a
+    base taken as the fold count passed as fresh over a changed position. The
+    token is the `standing_revision.id`: equal fold counts, different ids, is
+    stale; the same id is fresh."""
+    ledger = InMemoryCognitionDryRunStore()
+    prior = Standing(
+        platform="signal", conversation_id="room-a", body="rewritten by the fold",
+        fold_count=3, updated_at=900,
+    )
+    stale = await dry_run_standing_revise(
+        ledger=ledger, session_id=1, unit="unit-1", platform="signal",
+        conversation_id="room-a", prior=prior, where_it_stands="mine",
+        base_revision_id="17", prior_revision_id="18", now_ms=1000,
+    )
+    fresh = await dry_run_standing_revise(
+        ledger=ledger, session_id=1, unit="unit-1", platform="signal",
+        conversation_id="room-a", prior=prior, where_it_stands="mine",
+        base_revision_id="18", prior_revision_id="18", now_ms=1000,
+    )
+    assert (stale.outcome, stale.refusal_reason) == ("refused", "stale_base")
+    assert fresh.outcome == "would_commit"
 
 
 async def test_standing_revise_would_commit_increments_the_would_be_fold_count():
@@ -259,7 +284,7 @@ async def test_standing_revise_would_commit_increments_the_would_be_fold_count()
     write = await dry_run_standing_revise(
         ledger=ledger, session_id=1, unit="unit-1", platform="signal",
         conversation_id="room-a", prior=prior, where_it_stands="now here",
-        base_revision_id=3, now_ms=1000,
+        base_revision_id="9", prior_revision_id="9", now_ms=1000,
     )
     assert write.outcome == "would_commit"
     assert write.candidate["fold_count"] == 4

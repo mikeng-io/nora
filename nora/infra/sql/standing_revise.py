@@ -17,7 +17,7 @@ producing the CANDIDATE row a write verb then checks. What moves into this
 module is the part `design/cognition-loop/30-cognition.md` §2 lists as
 "enforced by code on every write verb": the schema check and the mode check
 (`nora.domain.standing_revise.check_schema`/`check_mode`), and the
-concurrency check (`check_stale_base`).
+concurrency check (`check_stale_base`, on `standing_revision.id`).
 
 **`prior` is a PARAMETER, not a read this function makes.** Both callers
 already read the room's current Standing before this verb is ever reached —
@@ -75,7 +75,8 @@ async def standing_revise(
     mode: str = "deduced",
     last_folded_row_id: int | None,
     increments_fold_count: bool = True,
-    base_revision_id: int | None = None,
+    base_revision_id: str | None = None,
+    prior_revision_id: str | None = None,
     now_ms: int | None = None,
 ) -> Revision:
     """Validate, then write, one room Standing revision.
@@ -88,6 +89,11 @@ async def standing_revise(
     `fold_count`, and `fold_count`/`last_folded_row_id` are exactly the two
     columns `SqlStandingStore.write_if_unchanged`'s docstring already warns
     a mismatched key silently corrupts.
+
+    `base_revision_id` and `prior_revision_id` are `standing_revision.id`s
+    (M6, DEC-250): the token the caller read, and the id of the row that IS the
+    head now (`StandingHead.revision_id`, which the caller read with `prior`).
+    Both None, the two folds today, asserts nothing.
 
     `mode` defaults `"deduced"`: both of today's callers synthesise a
     position from the conversation they just read, which is what `deduced`
@@ -125,7 +131,7 @@ async def standing_revise(
         return Revision(committed=False, standing=None, refusal=mode_refusal)
     stale_refusal = check_stale_base(
         base_revision_id=base_revision_id,
-        current_fold_count=prior.fold_count if prior is not None else None,
+        current_revision_id=prior_revision_id,
     )
     if stale_refusal is not None:
         return Revision(committed=False, standing=prior, refusal=stale_refusal)

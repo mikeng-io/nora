@@ -24,6 +24,7 @@ from nora.domain.note_body import (
     ShownMessage,
     cited_ids_in,
     parse_note_body,
+    rollup_key,
 )
 
 SHOWN = Shown(
@@ -213,6 +214,47 @@ def test_cited_ids_are_read_off_any_head_even_one_that_does_not_parse():
     assert cited_ids_in(CONFORMANT) == {4812, 4815, 4816, 4817, 4818, 4820}
     assert cited_ids_in("Ada wants dim sum. Later [12,13] and [ 14 ].") == {12, 13, 14}
     assert cited_ids_in("a legacy body with no citations [#4] [x]") == frozenset()
+
+
+# --- a Rollup key is a citation (30 §3 check 1, m4) --------------------------
+
+KEY = rollup_key("stay", "p_ada", "2026-10-01T09:00:00+08:00", "2026-10-01T11:00:00+08:00")
+WITH_KEYS = Shown(
+    rendered=SHOWN.rendered, roster=SHOWN.roster, nora_names=SHOWN.nora_names,
+    rollup_keys=frozenset({KEY}),
+)
+
+
+def test_a_line_may_cite_a_rollup_row_the_write_read():
+    body = parse_note_body(
+        f"## Decided\n## Open\n- whether Ada is home by six [rollup({KEY})]\n"
+        f"- which restaurant [4812, rollup({KEY})]\n",
+        shown=WITH_KEYS,
+    )
+    lines = body.section("Open").lines
+    assert lines[0].rollup_keys == (KEY,) and lines[0].ids == ()
+    assert lines[1].rollup_keys == (KEY,) and lines[1].ids == (4812,)
+
+
+def test_a_rollup_row_the_write_did_not_read_is_refused():
+    assert _refused(f"## Decided\n## Open\n- where [rollup({KEY})]\n") == "unknown_rollup_key"
+    assert _refused(
+        "## Decided\n## Open\n- where [rollup(stay|p_ada|a/b)]\n", shown=WITH_KEYS,
+    ) == "unknown_rollup_key"
+
+
+def test_a_rollup_row_does_not_say_who_said_a_line():
+    """A Rollup row is who was where, never who said what: an attributed line
+    resting only on one would name an author nothing shows."""
+    assert _refused(
+        f"## Decided\n- dinner is on (Ada) [rollup({KEY})]\n## Open\n- y [4812]\n",
+        shown=WITH_KEYS,
+    ) == "misattributed"
+
+
+def test_a_malformed_citation_group_is_still_uncited():
+    assert _refused("## Decided\n## Open\n- where [rollup(]\n", shown=WITH_KEYS) == "uncited"
+    assert _refused("## Decided\n## Open\n- where [4812, x]\n") == "uncited"
 
 
 def test_every_rule_is_asserted_by_a_test_here():

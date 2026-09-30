@@ -44,8 +44,9 @@ from nora.agent.dreamer import (
 )
 from nora.domain.cognition_session import COGNITION_ADAPTOR, Room
 from nora.domain.gatherings import Gathering
+from nora.domain.note_body import NORA_NAMES
 from nora.domain.ports import CognitionDryRunStore, StimulusStore
-from nora.domain.standing import Standing
+from nora.domain.standing import StandingHead
 
 log = logging.getLogger("nora.app.cognition_wiring")
 
@@ -331,7 +332,9 @@ def build_cognition_runner(
     stimulus_store: StimulusStore,
     note_titles: Callable[[str], Awaitable[Sequence[str]]],
     proposed_events_in: Callable[[str], Awaitable[Sequence[Gathering]]],
-    standing_of: Callable[[str, str], Awaitable[Standing | None]],
+    standing_of: Callable[[str, str], Awaitable[StandingHead | None]],
+    roster_of: Callable[[str, str], Awaitable[Mapping[str, str] | None]] | None = None,
+    nora_names: frozenset[str] = NORA_NAMES,
     homes: Mapping[str, Any],
     units: Sequence[str],
     skills: AgendaSkills,
@@ -355,7 +358,7 @@ def build_cognition_runner(
         # The READ tools' argument names only. The registry's table also holds
         # the tag path's `note_create`, `note_update` and `remind`, whose
         # arguments differ from the session's own verbs of the same names
-        # (`room`, `at_ms`, ...), and R-99 would veto every call to them.
+        # (`room`, `at`, ...), and R-99 would veto every call to them.
         # Plus `room`: the routed tools of an agenda spanning several rooms
         # take it (`nora.agent.room_routing`), and R-99 would veto an
         # argument the table does not list.
@@ -383,7 +386,7 @@ def build_cognition_runner(
     async def open_events(unit: str, conversation_id: str) -> Sequence[Gathering]:
         return await proposed_events_in(conversation_id)
 
-    async def prior(platform: str, conversation_id: str) -> Standing | None:
+    async def prior(platform: str, conversation_id: str) -> StandingHead | None:
         return await standing_of(platform, conversation_id)
 
     async def self_wakes(unit: str, since_ms: int) -> Any:
@@ -409,6 +412,7 @@ def build_cognition_runner(
         tz=ZoneInfo(cfg.cognition.timezone),
         model_window_tokens=cfg.cognition.model_window_tokens,
         overflow_window_fraction=cfg.cognition.overflow_window_fraction,
+        roster_of=roster_of, nora_names=nora_names,
     )
 
 
