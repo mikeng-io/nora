@@ -970,5 +970,37 @@ checks the session, refuses any id that is not a UUID or sha that is not 64 lowe
 request, sends the SESSION's person id (never the browser's), passes on only a raster content type, repeats the headers, and reads a `400` from Nora (the two sides
 disagreeing about who the viewer is) as `503`, never «not found». `Dependencies` gains `blobs` for this (57 fields).
 
-**Not built here.** Search (⌘K, trigram), the skill, revision history. `[documents] enabled` stays off:
+**Not built here.** Search (⌘K, trigram), the skill (§28), revision history. `[documents] enabled` stays off:
 until it is on, nothing publishes, so the pages are empty for everyone.
+
+## 28. W7: the `document-creation` skill (2026-10-01)
+
+**Placement (ADR 0016 §1).** The must-have rule (a document is a JSON spec, never HTML) is in
+`document_publish`'s description and in one `conduct.md` paragraph, so it holds on a turn that never
+loads the skill. The skill is judgement for a domain most turns do not touch: whether something is a
+document at all, how to write one for a reader who was not in the chat, where pictures and numbers come
+from, changing one safely, and what to tell the room. It does not restate the catalog: the no-spec call
+of `document_publish` returns the components and a complete example, so the skill tells her to read
+that first and carries no example of its own. **No named scenario** (the skill is checked against
+`trip`, `itinerary`, `holiday` and the like in `tests/test_skill_content.py`): the catalog's own example
+is where a concrete document lives.
+
+**One skill each** (coordinator, 2026-10-01): `computer-use` is the computer's, this one is the
+document path's, never combined. The skill says a document is never a file and the computer never
+publishes a page; the computer's skill says the reverse.
+
+**The pointer.** `document_publish` now says «Load the document-creation skill before you write one»;
+`tests/architecture/test_tool_text_names_only_shipped_skills.py` holds that the skill ships. `skills`
+stays at budget 2 (a message spanning three domains is the measured reason to raise it, not the
+directory size).
+
+**Cost, stated.** The skill is listed in her `<available_skills>` block whatever `[documents]` says,
+as `computer-use` is whatever `[computer]` says: about 78 tokens a turn while documents are off.
+Withholding a skill with its feature would change the shared factory and the portal's skill list;
+not built, because the listing alone does nothing without the tools.
+
+**Eval.** Two cases join the five: a short question that stays a chat answer, and `document_read`
+before any `document_publish` when changing a document (an ORDER criterion, on an id no sandbox holds,
+so it measures reading first, not finding the id). The subject for the documents-on arm is the
+deployment's config with `[documents] enabled = true`, passed as `--deployment-config`: nothing in the
+live config changes and `materialise()` still compares the generated config with the file it was given.
