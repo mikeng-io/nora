@@ -29,6 +29,7 @@ raises nothing, writes nothing to the fake live store, and sends nothing.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
 
 from nora.app.cognition_session import (
@@ -115,14 +116,18 @@ class ScriptedAgentRunner:
         )
         await by_name["standing_revise"](where_it_stands="dinner is on")
         await by_name["wake_at"](
-            subject_rows=["event:1"], at_ms=NOW + 3_600_000, why="check the venue",
+            subject_rows=["event:1"], at=_iso(NOW + 3_600_000), why="check the venue",
         )
         await by_name["remind"](
-            room_platform="signal", room_conversation_id="home-room", intent="tell",
-            subject_rows=["note:1"], at_ms=NOW + 60_000,
+            room="signal:home-room", intent="tell",
+            subject_rows=["note:1"], at=_iso(NOW + 60_000),
         )
         await by_name["close"](item_index=0, reason="written")
         return CognitionRunResult(stop_reason="end_turn")
+
+
+def _iso(ms: int) -> str:
+    return datetime.fromtimestamp(ms / 1000, UTC).isoformat()
 
 
 def _pending(unit: str) -> tuple[Stimulus, ...]:
