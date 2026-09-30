@@ -529,12 +529,20 @@ def create_app(*, root: Path, token: str, isolate_scopes: bool = True) -> web.Ap
     return app
 
 
-def main() -> None:
+def build_parser() -> argparse.ArgumentParser:
+    """computerd's command line. A function so a test can check that the
+    flags `deploy/computer/nora-computer` passes are ones this accepts: a
+    removed flag there makes computerd exit at start, and the computer is
+    down until someone reads its log."""
     parser = argparse.ArgumentParser(description="computerd, the API of Nora's computer")
     parser.add_argument("--root", default="/workspace")
     parser.add_argument("--host", default="0.0.0.0")  # noqa: S104 - inside the VM; sbx publishes it
     parser.add_argument("--port", type=int, default=80)
-    args = parser.parse_args()
+    return parser
+
+
+def main() -> None:
+    args = build_parser().parse_args()
     token = os.environ.get(TOKEN_ENV, "")
     app = create_app(root=Path(args.root), token=token)
     web.run_app(app, host=args.host, port=args.port)

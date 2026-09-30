@@ -15,7 +15,7 @@ from aiohttp.test_utils import TestServer
 
 from nora.domain.computer import SandboxStatus, computer_scope
 from nora.infra.computer.client import ComputerdRuntime
-from tests.contract.test_sandbox_runtime_contract import TOKEN, load_computerd
+from tests.contract.test_sandbox_runtime_contract import COMPUTERD, TOKEN, load_computerd
 
 SCOPE = computer_scope("signal", "room-a")
 
@@ -288,3 +288,17 @@ async def test_computerd_accepts_and_ignores_the_limits_slot(served):
                             limits={"cpu_seconds": 1, "max_processes": 1})
     assert got.status is SandboxStatus.OK
     assert got.stdout == "ran\n"
+
+
+def test_the_lifecycle_script_starts_computerd_with_flags_it_accepts():
+    """`nora-computer ensure` once passed `--run-as computer` after computerd
+    dropped that flag: computerd exited at start and the computer stayed down.
+    Parse the script's own computerd command line with computerd's parser."""
+    import re
+    import shlex
+
+    script = (COMPUTERD.parent / "nora-computer").read_text()
+    match = re.search(r"computerd\.py((?:\s*\\\n)?[^>&']*)>", script)
+    assert match, "nora-computer no longer starts computerd.py where expected"
+    argv = shlex.split(match.group(1).replace("\\\n", " "))
+    load_computerd().build_parser().parse_args(argv)  # SystemExit on an unknown flag

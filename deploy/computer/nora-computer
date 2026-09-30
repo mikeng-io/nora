@@ -118,14 +118,14 @@ cmd_ensure() {
         sbx exec -u root "$NAME" pkill -f /opt/computerd/computerd.py </dev/null || true
         sleep 1
     fi
-    # As root, so commands (run as `computer`) cannot read its token, kill it
-    # or take its port 80. `-e COMPUTERD_TOKEN` passes the value from this
+    # As root, so commands (each room's as its own user) cannot read its
+    # token, kill it or take its port 80. `-e COMPUTERD_TOKEN` passes the value from this
     # environment, so it never appears on a command line. `sbx exec` also
     # starts a stopped sandbox.
     log "starting computerd"
     sbx exec -u root -e COMPUTERD_TOKEN "$NAME" bash -c \
         'nohup /opt/computerd/venv/bin/python /opt/computerd/computerd.py \
-            --root /workspace --port 80 --run-as computer >/var/log/computerd.log 2>&1 &' \
+            --root /workspace --port 80 >/var/log/computerd.log 2>&1 &' \
         </dev/null || { log "exec failed"; exit 8; }
     for _ in 1 2 3 4 5 6 7 8 9 10; do
         if healthy && authorised; then log "computerd healthy"; exit 0; fi
