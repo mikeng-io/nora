@@ -143,6 +143,12 @@ class MusicPlayerManager:
         # The previous liveness reading per guild — the position DELTA is the
         # measurement, so one sample is never enough to call a track wedged.
         self._last_reading: dict[str, PlaybackReading] = {}
+        # guild -> the playback whose `track-finished` already drove an advance.
+        # The sidecar outbox retries an unanswered delivery; the retry names the
+        # SAME playback and would otherwise pass the staleness probe while the
+        # first advance's play POST is out (lock released, expected id not yet
+        # moved) and advance a second time. One entry per live guild.
+        self._finish_consumed: dict[str, str] = {}
         self._liveness_task: asyncio.Task[None] | None = None
         self._notify: dict[str, Notify] = {}
         # The stale-stream retry budget: guild -> (locator, attempts spent).
@@ -282,9 +288,17 @@ class MusicPlayerManager:
                     guild_id, playback_id,
                 )
                 return False
+            if playback_id is not None and self._finish_consumed.get(guild_id) == playback_id:
+                log.info(
+                    "track-finished for guild %s ignored: playback %s already "
+                    "drove an advance (a retried delivery)", guild_id, playback_id,
+                )
+                return False
             player = self._players.get(guild_id)
             if player is None:
                 return False
+            if playback_id is not None:
+                self._finish_consumed[guild_id] = playback_id
             # A track that ended on its own clears whatever retry budget it
             # spent, so a later failure on a DIFFERENT track starts fresh.
             self._stream_retries.pop(guild_id, None)
@@ -454,8 +468,10 @@ class MusicPlayerManager:
         out of range" — same single-outcome shape `pause`/`resume` already
         use for their one way to fail; a caller wanting the distinction has
         `status()` to check first."""
-        player = self._players.get(guild_id)
-        return None if player is None else await player.top(position)
+        lock = self._guild_locks.setdefault(guild_id, asyncio.Lock())
+        async with lock:
+            player = self._players.get(guild_id)
+            return None if player is None else await player.top(position)
 
     async def set_volume(self, guild_id: str, volume: float) -> bool | None:
         """`None` — no player exists for this guild at all, distinct from
@@ -681,7 +697,8 @@ class MusicPlayerManager:
             self._players[session.guild_id] = player
             self._notify[session.guild_id] = notify
             live_playback = getattr(voice, "playback_id", None)
-            if isinstance(live_playback, str) and live_playback:
+            adopted_live = isinstance(live_playback, str) and bool(live_playback)
+            if adopted_live:
                 log.info(
                     "boot resume for guild %s: the controller is already playing "
                     "(playback %s) — adopting the persisted track without replaying",
@@ -732,6 +749,10 @@ class MusicPlayerManager:
         # `_commit_and_finish` — see its docstring.
         if to_leave is not None:
             await to_leave.leave()
+        if adopted_live:
+            # The previous process already announced this track; adopting it
+            # is not a transition, so announcing again would post it twice.
+            return
         await self._notify_now_playing(session.guild_id, status)
 
     async def _get_or_create(

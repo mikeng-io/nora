@@ -100,6 +100,25 @@ def test_the_first_poll_cannot_call_a_track_wedged_on_a_frozen_position() -> Non
     ) is PlaybackVerdict.OK
 
 
+def test_a_new_playback_is_not_compared_against_the_previous_tracks_position() -> None:
+    """Live 2026-09-30: an autoplay advance left the old track's last reading
+    (195 s) as `previous`; the new track at 7 s read as a position that went
+    backwards, was judged WEDGED, and the song restarted from 0."""
+    old_track = _reading(status="playing", position_ms=195_680, playback_id="pb-old")
+    new_track = _reading(status="playing", position_ms=7_400, playback_id="pb-new")
+
+    verdict = judge_playback(previous=old_track, current=new_track, believed_playing=True)
+    assert verdict is PlaybackVerdict.OK
+
+
+def test_a_frozen_position_within_one_playback_is_still_WEDGED_with_ids() -> None:
+    """The guard must not blunt the real detection: same playback, no delta."""
+    frozen = _reading(status="playing", position_ms=50_000, playback_id="pb-1")
+
+    verdict = judge_playback(previous=frozen, current=frozen, believed_playing=True)
+    assert verdict is PlaybackVerdict.WEDGED
+
+
 def test_a_slot_stuck_at_starting_across_two_polls_is_WEDGED() -> None:
     """`starting` means accepted-but-no-sound. One poll is not evidence; two
     consecutive ones are — this is the 2026-09-21 signature seen from nora's
