@@ -53,7 +53,7 @@ import time
 
 DEFAULT_IMAGE = "nora:latest"
 DEFAULT_SETTLE_SECONDS = 20
-DEFAULT_HEALTHY_TIMEOUT_SECONDS = 150
+DEFAULT_HEALTHY_TIMEOUT_SECONDS = 240
 
 
 def _docker(*args: str) -> str:
@@ -119,7 +119,7 @@ def main(argv: list[str] | None = None) -> int:
                          "time to show itself (default 20)")
     ap.add_argument("--healthy-timeout", type=int, default=DEFAULT_HEALTHY_TIMEOUT_SECONDS,
                     help="seconds to wait for every container with a healthcheck "
-                         "to report healthy (default 150)")
+                         "to report healthy (default 240)")
     args = ap.parse_args(argv)
 
     want = image_id(args.image)

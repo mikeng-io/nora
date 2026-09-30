@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from nora.config import LLMConfig, load
+from nora.config import Config, LLMConfig, load
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -518,37 +518,70 @@ def test_env_example_names_the_secret():
     assert "OMNIROUTE_API_KEY" in (ROOT / ".env.example").read_text()
 
 
-def test_every_secret_name_the_config_defaults_reaches_the_container_that_reads_it():
+def test_every_secret_name_the_config_defaults_reaches_the_container_that_reads_it(
+    tmp_path, monkeypatch,
+):
     """A `*_env` field names the variable a secret arrives in, and compose
     passes an explicit list, not the whole `.env`. `NORA_COMPUTER_TOKEN` was in
     `.env` but not in `nora`'s list, so the first `[computer] enabled` deploy
-    crash-looped nora (2026-09-30); `HKGOV_MAPS_TOKEN` was missing from
-    `presence` the same way. Every default name must reach its reader."""
+    crash-looped nora (2026-09-30); `HKGOV_MAPS_TOKEN` was never passed either.
+
+    The names come from TWO walks, because each misses what the other sees:
+    the example config LOADED through the model (so dict and list sections
+    such as `[tools.mcp.*]` and required fields such as `llm.api_key_env`
+    are present), and each optional top-level section's own default,
+    factories included (so a section the example leaves out is present
+    too). Every non-empty name
+    must reach the service that reads it."""
     import yaml
     from pydantic import BaseModel
 
-    from nora.config import Config
+    def names(value, prefix=""):
+        if isinstance(value, BaseModel):
+            for field in type(value).model_fields:
+                yield from names(getattr(value, field), f"{prefix}{field}.")
+        elif isinstance(value, dict):
+            for key, item in value.items():
+                yield from names(item, f"{prefix}{key}.")
+        elif isinstance(value, (list, tuple)):
+            for n, item in enumerate(value):
+                yield from names(item, f"{prefix}{n}.")
+        elif prefix.rstrip(".").endswith("_env") and isinstance(value, str) and value:
+            yield prefix.rstrip("."), value
 
-    def names(model_cls, prefix=""):
-        for field, info in model_cls.model_fields.items():
-            if isinstance(info.default, BaseModel):
-                yield from names(type(info.default), f"{prefix}{field}.")
-            elif field.endswith("_env") and isinstance(info.default, str) and info.default:
-                yield f"{prefix}{field}", info.default
+    monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
+    dst = tmp_path / "config.toml"
+    shutil.copy(ROOT / "config.example.toml", dst)
+    found = dict(names(load(dst)))
+    # Each top-level section's own default too, factories included: a section
+    # the example leaves out still ships its defaults. (A bare `Config()`
+    # does not construct; ten fields are required.)
+    for field, info in Config.model_fields.items():
+        if not info.is_required():
+            found.update(names(info.get_default(call_default_factory=True), f"{field}."))
+    assert "computer.token_env" in found and "llm.api_key_env" in found, (
+        "the walk no longer reaches sections it must: " + ", ".join(sorted(found))
+    )
 
     compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text())
 
     def passed(service):
         return {e.split("=", 1)[0] for e in compose["services"][service]["environment"]}
 
-    # Who reads each secret. Default: nora. The presence collector talks to
-    # Life360 only; geocoding (Google or HK-gov) runs in nora (`where_is`), so
-    # the collector deliberately has no Maps key (docker-compose.yml says so).
-    readers = {"presence.client_credential_env": ("presence",)}
+    # Who reads each secret. Default: nora. The presence collector reads only
+    # the Life360 login; geocoding (Google or HK-gov) runs in nora
+    # (`where_is`), so the collector deliberately has no Maps key.
+    def readers(key):
+        if key.startswith("presence.") and key.split(".")[-1] in (
+            "client_credential_env", "username_env", "password_env", "auth_token_env",
+        ):
+            return ("presence",)
+        return ("nora",)
+
     missing = [
         f"{key} -> {name} (service {service})"
-        for key, name in names(Config)
-        for service in readers.get(key, ("nora",))
+        for key, name in sorted(found.items())
+        for service in readers(key)
         if name not in passed(service)
     ]
     assert not missing, (

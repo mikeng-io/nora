@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-SCRIPT = Path(__file__).parents[1] / "scripts" / "verify-deploy.py"
+SCRIPT = Path(__file__).parents[2] / "scripts" / "verify-deploy.py"
 
 
 def _load():

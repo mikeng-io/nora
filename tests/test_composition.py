@@ -310,7 +310,7 @@ async def test_a_valid_key_turns_media_custody_on_with_an_encrypting_store(cfg, 
     """A base64 32-byte key present in the named env var is what wires the
     MediaSourceRegistry (Signal + Discord) + the encrypting FilesystemBlobStore
     into the pipeline."""
-    monkeypatch.setenv("NORA_MEDIA_KEY", base64.b64encode(os.urandom(32)).decode())
+    monkeypatch.setenv("MEDIA_ENCRYPTION_KEY", base64.b64encode(os.urandom(32)).decode())
     deps = await build_dependencies(cfg)
     assert isinstance(deps.ingest._media_sources, MediaSourceRegistry)
     assert isinstance(deps.ingest._media_sources.for_platform("signal"), SignalMediaSource)
@@ -372,7 +372,7 @@ async def test_rustfs_disabled_keeps_the_filesystem_store(cfg, monkeypatch):
     """`[media.rustfs].enabled` defaults False (DEC-136) — a config.toml
     written before this existed must keep writing to the filesystem exactly
     as before, with no new failure mode to configure around."""
-    monkeypatch.setenv("NORA_MEDIA_KEY", base64.b64encode(os.urandom(32)).decode())
+    monkeypatch.setenv("MEDIA_ENCRYPTION_KEY", base64.b64encode(os.urandom(32)).decode())
     deps = await build_dependencies(cfg)
     assert isinstance(deps.ingest._blobs, FilesystemBlobStore)
 
@@ -383,7 +383,7 @@ async def test_rustfs_enabled_with_no_endpoint_falls_back_to_the_filesystem(
     """`enabled = true` with a blank endpoint is a misconfiguration, not a
     startup failure — media is a bonus (the section's own docstring), so this
     degrades to the same filesystem store an unset key already degrades to."""
-    monkeypatch.setenv("NORA_MEDIA_KEY", base64.b64encode(os.urandom(32)).decode())
+    monkeypatch.setenv("MEDIA_ENCRYPTION_KEY", base64.b64encode(os.urandom(32)).decode())
     deps = await build_dependencies(
         override_config(cfg, {"media.rustfs.enabled": True})
     )
@@ -394,7 +394,7 @@ async def test_rustfs_enabled_with_unresolved_credentials_falls_back(cfg, monkey
     """`endpoint` set but the named credential env vars are not exported —
     the same "a bonus feature never crashes the daemon" posture as a
     misconfigured encryption key."""
-    monkeypatch.setenv("NORA_MEDIA_KEY", base64.b64encode(os.urandom(32)).decode())
+    monkeypatch.setenv("MEDIA_ENCRYPTION_KEY", base64.b64encode(os.urandom(32)).decode())
     deps = await build_dependencies(override_config(cfg, {
         "media.rustfs.enabled": True,
         "media.rustfs.endpoint": "http://rustfs:9000",
@@ -410,7 +410,7 @@ async def test_rustfs_enabled_and_reachable_wires_a_rustfs_blob_store(
     about ITS behaviour (put/get, dedup, encryption-through) is already
     covered by tests/contract/test_blob_store_contract.py; this test is only
     about the WIRING decision."""
-    monkeypatch.setenv("NORA_MEDIA_KEY", base64.b64encode(os.urandom(32)).decode())
+    monkeypatch.setenv("MEDIA_ENCRYPTION_KEY", base64.b64encode(os.urandom(32)).decode())
     monkeypatch.setenv("RUSTFS_ACCESS_KEY_TEST", RUSTFS_TEST_USER)
     monkeypatch.setenv("RUSTFS_SECRET_KEY_TEST", RUSTFS_TEST_PASSWORD)
     endpoint = (
@@ -435,7 +435,7 @@ async def test_rustfs_unreachable_at_startup_falls_back_rather_than_crashing(
     ingest pipeline's own per-message protection exists
     (nora.ingest.stages.media._take), so an unhandled exception here would
     take the whole daemon down over a bonus feature."""
-    monkeypatch.setenv("NORA_MEDIA_KEY", base64.b64encode(os.urandom(32)).decode())
+    monkeypatch.setenv("MEDIA_ENCRYPTION_KEY", base64.b64encode(os.urandom(32)).decode())
     monkeypatch.setenv("RUSTFS_ACCESS_KEY_TEST", "irrelevant")
     monkeypatch.setenv("RUSTFS_SECRET_KEY_TEST", "irrelevant")
     deps = await build_dependencies(override_config(cfg, {
@@ -452,14 +452,14 @@ async def test_rustfs_unreachable_at_startup_falls_back_rather_than_crashing(
 async def test_a_malformed_key_degrades_to_off_rather_than_crashing(cfg, monkeypatch):
     """The deliberate asymmetry with the LLM key: media is a bonus, so a bad key
     is custody OFF (warned), never a startup failure and never plaintext."""
-    monkeypatch.setenv("NORA_MEDIA_KEY", "not-a-valid-base64-32-byte-key!!")
+    monkeypatch.setenv("MEDIA_ENCRYPTION_KEY", "not-a-valid-base64-32-byte-key!!")
     deps = await build_dependencies(cfg)
     assert deps.ingest._media_sources is None
     assert deps.ingest._blobs is None
 
 
 async def test_media_disabled_is_off_even_with_a_valid_key(cfg, monkeypatch):
-    monkeypatch.setenv("NORA_MEDIA_KEY", base64.b64encode(os.urandom(32)).decode())
+    monkeypatch.setenv("MEDIA_ENCRYPTION_KEY", base64.b64encode(os.urandom(32)).decode())
     deps = await build_dependencies(override_config(cfg, {"media.enabled": False}))
     assert deps.ingest._media_sources is None
     assert deps.ingest._blobs is None
