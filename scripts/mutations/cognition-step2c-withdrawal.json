@@ -37,8 +37,8 @@
   {
     "name": "the culture block actually stops rendering an unsupported account",
     "file": "nora/engagement/context.py",
-    "old": "        return render_supported(found)\n\n    async def _presence",
-    "new": "        return found\n\n    async def _presence",
+    "old": "        return render_supported(found)\n\n    async def _computer",
+    "new": "        return found\n\n    async def _computer",
     "target": "tests/unit/test_engagement_context.py -k test_an_unsupported_culture_account_does_not_render"
   },
   {
