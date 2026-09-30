@@ -16,7 +16,7 @@
  {
   "name": "major 1: the backoff is the plain cooldown, never longer",
   "file": "nora/domain/stimuli.py",
-  "old": "    return max(cooldown, min(cap, cooldown * 2 ** min(failures - 1, 40)))",
+  "old": "    return int(max(cooldown, min(cap, cooldown * 2 ** min(failures - 1, 40))))",
   "new": "    return cooldown",
   "target": "tests/unit/test_cognition_failure_backoff.py::test_an_always_failing_agenda_without_the_fix_is_288_sessions_a_day tests/unit/test_cognition_failure_backoff.py::test_an_always_failing_static_agenda_stops_after_five_sessions tests/unit/test_cognition_failure_backoff.py::test_an_always_failing_chatty_room_is_10_sessions_on_day_one_and_4_a_day_after tests/unit/test_cognition_failure_backoff.py::test_a_closed_session_resets_the_backoff_and_the_strike_count"
  },

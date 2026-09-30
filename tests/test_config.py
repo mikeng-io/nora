@@ -2040,9 +2040,9 @@ def _write(path, text):
 
 
 def test_the_failure_backoff_and_grounding_keys_load_with_their_documented_defaults(toml_path):
-    c = load(toml_path).cognition
-    assert (c.backoff_max_seconds, c.max_consecutive_failures) == (21600.0, 5)
-    assert (c.record_chars, c.message_chars, c.register_lines) == (8000, 400, 40)
+    for c in (load(toml_path).cognition, CognitionConfig()):     # the template AND the bare default
+        assert (c.backoff_max_seconds, c.max_consecutive_failures) == (21600.0, 5)
+        assert (c.record_chars, c.message_chars, c.register_lines) == (8000, 400, 40)
 
 
 def test_session_mode_refuses_a_value_outside_off_and_shadow(toml_path):
