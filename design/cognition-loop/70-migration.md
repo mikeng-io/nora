@@ -62,6 +62,24 @@ bypass is the session setting the snapshot's seeding and test resets use.
 | 7 | **Memos** | the memo table, `memo_write`/`memo_withdraw`/`memo_read`, `<memos>`, the «記低» routing, the key-shape exemption | the memo corpus meets its gates; `tool_selection` before and after; the dinner case whole |
 | 8 | **Character, Lessons and Standing** (whole) | the Character adaptor generalised to the unit, persons and Nora; unit and person Standing, sectioned with per-section support and age; `character_read`, `standing_read`; the `self` block (her whole Character · Nora, capped, below the doctrine), and `self_card` out of the prompt; Honcho pushed as `explicit` plus the peer card; the correction portal and `character_dispute`; tension rows and their page; the rebuild-drift metric; **the Lessons adaptor**: `lesson_write`/`lesson_retire`, the `lessons` block, the size cap, the doctrine-conflict check, the portal page with rollback by id, Character · Nora's `What lands and what does not` moved into Lessons | a labelled set of accounts judged against the Record they cite; a labelled set of lessons (including ones that would loosen doctrine, which must become tension rows); the lesson drift and churn baselines |
 
+**The data model's convergence** ([05](05-data-model.md) §10, operator
+2026-10-01, DEC-249). The steps above build kinds; the data model says which
+storage they land on. **Memo is the first kind built on the entry** (the entry
+store and chain, the widened `citation` table, `about` and `links`, the
+generic verbs, and the one mart builder serving `<memos>` and `memo_read`);
+**Portraits (person, unit, Nora), Lessons and unit and person Standing are
+born on it** at step 8; **culture, room Standing, events and notes converge
+as they are touched**, each only under render parity, their tables kept.
+Where memo sits among the steps (step 7, or after step 4 and before 5–6) and
+whether culture moves at step 4 or step 8 are open ([05](05-data-model.md)
+§11 Q7, Q8). **Step 4 needs from it**: the owner rule for Affairs and
+Positions (Q3); citation edges on events before Cognition revises them live
+(today events are outside the cascade); and the Cognition grounding and the
+tag turn's blocks agreeing on withdrawal and lineage for the same rows.
+**Nothing live changes shape before its kind converges**: the debrief and
+ingest fold through `standing_revise` (DEC-239), the tag path's note and event
+verbs, the `<notes>` and `standing` blocks, history capture, the cascade.
+
 **`nora snapshot --at T`** builds an eval sandbox holding Nora as of T. It
 extends `nora/infra/sql/snapshot.py`, which today makes five reads for one
 room at one instant (the transcript, standing through `read_as_of`, culture,
@@ -170,6 +188,7 @@ rule 4); DEC-213 (note body schema).
 | strands-agents 1.50.2 → 1.57.1 | its own PR, measured before and after |
 | game-specific sources (CS2, Valorant, Apex) | after step 5; each a source feeding play samples |
 | DEC numbers | taken at merge (`nora-decision`) |
+| the data model's open questions (the mode words, computed on entries, one writer per family, entry-to-entry citation, a person's own facts, family names, memo's step, culture's step, one mart path, documents, the portal's events page, "authored") | the operator; listed in [05](05-data-model.md) §11 |
 | populating `I hold open` and `I owe` from the model (step 3b, DEC-239) | a doctrine change to `nora/dreamer/objectives/standing-debrief.md` asking for the two new JSON keys, gated by its own eval read-back (`AGENTS.md`, gate-prompt-changes-need-the-eval-suite) — not this migration step, which ships the schema, the write verb and the render but leaves both sections `None` on every row it writes |
 | per-section `as_of`/`last_supported_at`/`support_count` on room Standing (12-schemas.md §8) | step 3b keeps these at the ROW level (unchanged from before this step); per-section age is deferred to whichever step gives Character the same columns (step 8), so room Standing gets it once rather than twice |
 | `standing_revise`'s `mode` argument for the two live callers (step 3b) | both default `"deduced"` today (no caller yet asserts `abduced` or `said`); revisited once the debrief/rollup objectives are taught to pick a mode themselves, alongside the `I hold open`/`I owe` population row above |

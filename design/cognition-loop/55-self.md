@@ -129,3 +129,17 @@ conscious barely drives the subconscious.**
   `wake_cancel`), cannot read or edit an agenda or a pending self-wake, and
   cannot start or steer a session. That her own messages raise no stimulus
   ([20](20-observe.md) §3) is a consequence of this rule.
+
+**The layers over the data model** ([05](05-data-model.md) §8). The
+subconscious owns every family of entries: Cognition owns Affairs (note, memo,
+event) and Positions (Standing), the Character adaptor Portraits, the Lessons
+adaptor Lessons; each thinks and writes the notebook on its own timescale. The
+conscious speaks from it, reading a mart cut for its room at read time
+([05](05-data-model.md) §7): pushed indices (`<notes>`, `<memos>`, `<events>`,
+`culture`, `standing`, `self`, `lessons`) and pulled reads (`note_read`,
+`memo_read`, `event_search`, `character_read`, `standing_read`). Its own
+writes enter as shared entries through the owners' verbs, never as commands:
+the tag turn writes the Affairs it was told, «記低» about the unit becomes a
+memo and about the speaker stays `remember`, and the debrief revises the
+room's Standing. Whether that is one writer per family or two is
+[05](05-data-model.md) §11 Q3.

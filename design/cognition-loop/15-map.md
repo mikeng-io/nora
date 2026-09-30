@@ -20,9 +20,15 @@ edges:
 | **Live** | computed for this turn, never stored | the clock; her platform status (which platforms are up); the tool catalogue | code, per turn |
 | **Record** | it happened and was seen | messages with edits, deletes and reactions; her own sends and decisions; presence fixes and collector polls; social items; play samples; perceptions (what media shows, whose face); face labels and templates; `character_dispute` items | code (ingestion; the decision log and the fire path for her own acts; the tag path's `face_label` and `character_dispute`, authored by the person) |
 | **Rollup** | code computed it from the Record | episodes: stay, trip, co-location, face co-appearance, outing, play session, daybook, response · aggregates: place, occupancy, rhythm, corridor and trip speeds, tie, play profile ([25](25-rollup.md)); anomalies are computed on read, not stored | code only |
-| **Register**, **Character**, **Lessons**, **Standing** | an adaptor concluded it | Register: note, memo, event · Character: person, room (culture), unit (culture), Nora · Lessons: the unit's lessons · Standing: room, unit, person | Register: the Cognition adaptor and the tag path · Character: the Character adaptor only · Lessons: the Lessons adaptor only · Standing: the Cognition adaptor and the debrief |
+| **Register**, **Character**, **Lessons**, **Standing** | an adaptor concluded it: authored entries, never evidence ([05](05-data-model.md) §4) | Register: note, memo, event · Character: person, room (culture), unit (culture), Nora · Lessons: the unit's lessons · Standing: room, unit, person | Register: the Cognition adaptor and the tag path · Character: the Character adaptor only · Lessons: the Lessons adaptor only · Standing: the Cognition adaptor and the debrief |
 | **memory** | Honcho concluded it | representation (Nora → person), self card (Nora → Nora), peer card, `remember` conclusions | Honcho; `remember` |
 | **Operator-only** | for the operator, never for her | tension rows ([55](55-self.md) §4); assess reports | the Character and Lessons adaptors; the Assess adaptor |
+
+In the data model ([05](05-data-model.md) §2) the Record and the Rollup are
+**observed** data, the evidence, and the four derived tiers are **authored**
+data, entries about the evidence. The first row of this table uses
+"Authored" for what the operator writes (doctrine, config): the same word for
+a different thing, left for the operator ([05](05-data-model.md) §11 Q12).
 
 ## 2. The operator's analogy, laid out
 
@@ -32,10 +38,11 @@ edges:
 | extract / enrich | ingestion and perception ([20](20-observe.md), [60](60-faces.md)) |
 | transform, deterministic | **Rollup** ([25](25-rollup.md)) |
 | transform, judged | the Dreamer's adaptors ([00](00-intent.md) §3) writing Register, Character, Lessons, Standing |
-| warehouse | Rollup + Register + Character + Lessons + Standing |
+| warehouse | Rollup + entries (Register, Character, Lessons, Standing): observed data and what is authored about it ([05](05-data-model.md) §2) |
 | row-level security | **lineage** and `exclude_persons`, applied at assembly ([10](10-tiers.md) §3) |
-| dashboard | small indices pushed into every prompt (§3) |
-| queries | read tools (§4) |
+| **mart** | a per-consumer read view, assembled at read time, never stored, under lineage for the consumer's room and with withdrawal applied, through one builder: the tag and fire turns' pushed blocks (§3), the Cognition session's grounded agenda, portal pages, later recommendations ([05](05-data-model.md) §7, which lists today's assemblers and where they depart from one path) |
+| dashboard, analyst | the conscious turn, which speaks from its mart, and the Cognition session, which thinks with its own |
+| queries | read tools (§4), each a mart cut on demand |
 | action | the act verb and the fire path |
 
 ## 3. Context pushed into the prompt: small indices only
@@ -108,7 +115,12 @@ Every read tool applies lineage for the room its turn or agenda item is bound
 to. Cognition has no room of its own: each agenda item binds one, and that
 item's room-scoped reads resolve through it ([30](30-cognition.md) §1).
 
-## 5. The graph
+## 5. The flow, drawn as a graph
+
+A graph here is a way of reading the typed references between rows (cites,
+about, links), not a store: nothing is a knowledge graph, and the storage is
+relational ([05](05-data-model.md) §6, [80](80-prior-art.md) §5). The data
+model's own flow, with the marts, is [05](05-data-model.md) §9.
 
 ```mermaid
 flowchart BT

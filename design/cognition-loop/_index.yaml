@@ -39,7 +39,13 @@ description: >
   append-only in system time, so Nora as of any past moment can be restored
   into an eval sandbox; memory (Honcho) is the exception. Every Register, Character, Lessons and Standing row is structured
   Markdown with a fixed schema in a revision chain; the Rollup is typed and
-  rebuilt into versioned builds. The Dreamer runtime is kept and its scheduling half replaced; the
+  rebuilt into versioned builds. Under all of it is one data model
+  (05, operator 2026-10-01): OBSERVED data (Record, Rollup) is the evidence;
+  AUTHORED data is one object, the entry, in four families (Affairs,
+  Portraits, Positions, Lessons), which cites the evidence and is never
+  evidence itself; references are the edges, stored relationally, and no
+  knowledge graph is built; each consumer reads a mart, a slice assembled
+  at read time through one path. The Dreamer runtime is kept and its scheduling half replaced; the
   proactive adaptor becomes the loop's act step.
 status: proposed
 governance: operator-directed
@@ -66,6 +72,7 @@ origin: >
   00-intent.
 members:
   - 00-intent.md
+  - 05-data-model.md
   - 10-tiers.md
   - 12-schemas.md
   - 15-map.md
@@ -79,6 +86,12 @@ members:
   - 70-migration.md
   - 80-prior-art.md
 edges:
+  - {src: 00-intent, dst: 05-data-model, rel: sequences, provenance: asserted}
+  - {src: 05-data-model, dst: 10-tiers, rel: sequences, provenance: asserted}
+  - {src: 05-data-model, dst: 15-map, rel: motivates, provenance: asserted}
+  - {src: 05-data-model, dst: 55-self, rel: depends_on, provenance: asserted}
+  - {src: 05-data-model, dst: 70-migration, rel: motivates, provenance: asserted}
+  - {src: 80-prior-art, dst: 05-data-model, rel: informs, provenance: asserted}
   - {src: 00-intent, dst: 10-tiers, rel: sequences, provenance: asserted}
   - {src: 10-tiers, dst: 20-observe, rel: sequences, provenance: asserted}
   - {src: 20-observe, dst: 25-rollup, rel: sequences, provenance: asserted}

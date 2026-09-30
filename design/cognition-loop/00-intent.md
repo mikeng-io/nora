@@ -108,6 +108,19 @@ state, never as a command ([55](55-self.md) §6).
   adaptors wrote, and writes the Register and room Standing through the same
   verbs.
 
+**The data model under all of it** ([05](05-data-model.md), operator
+2026-10-01). There are two kinds of data. *Observed* data is what happened,
+recorded and computed by code: the Record and the Rollup, the evidence.
+*Authored* data is what is written about what happened: notes, memos, events,
+Character (culture included), Standing and Lessons, and it is never evidence.
+Every authored item is one object, the **entry**, which cites the observed
+items it rests on and says how it is known and how sure it is, so no bare fact
+is stored and no knowledge graph is built. Entries fall into four families by
+what they are about and what they state: Affairs (the Register), Portraits
+(Character), Positions (Standing) and Lessons. The subconscious writes them;
+the conscious speaks from them, each consumer reading a slice cut for its room
+at read time through one assembly path (a **mart**).
+
 ## 4. One agent, not a conductor over agents
 
 **The topology refines this, and does not reverse it.** Orient, decide and
@@ -208,3 +221,8 @@ decisions of 2026-09-28, binding:
 - **D12** Two layers: the adaptors are her subconscious, the speaking turns
   her conscious; the subconscious drives the conscious, and the conscious
   reaches the subconscious only as Record and shared state.
+
+**2026-10-01 — the data model agreed** (DEC-249, [05](05-data-model.md)):
+observed and authored data, one entry, four families, references as the
+edges, marts at read time. Its conflicts with this bundle and with the built
+code are open questions for the operator in [05](05-data-model.md) §11.

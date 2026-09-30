@@ -24,12 +24,21 @@ revision chain the culture store already has, design/culture-tier/).
 | entity | the account holds | evidence it reads |
 |---|---|---|
 | **person** | how they talk, what they care about, how they decide, whom they are close to, what they reliably do (organise, cancel, turn up late) | the Record (their messages, social items), the Rollup (presence patterns, tie, play profile), the Register (events attended, commitments kept); memory as a hint only |
-| **room** (its culture) | how the room talks and decides, what it calls itself | the room's Record, the Register, its members' Characters |
-| **unit** (its culture) | what the unit is, across its rooms | the rooms' cultures, the Register |
+| **room** (its culture: the room's portrait) | how the room talks and decides, what it calls itself | the room's Record, the Register, its members' Characters |
+| **unit** (its culture: the unit's portrait) | what the unit is, across its rooms | the rooms' cultures, the Register |
 | **Nora** | what she is like in this unit, as its people have met her | her Record rows **paired with the responses to them**; never her rows alone |
 
 `character_revise` for a person refuses anyone who is not a listed person of
 the unit's rooms.
+
+**In the data model** ([05](05-data-model.md) §5) every account is a
+Portraits entry: culture is the portrait of a room or the unit, built on the
+same entry machinery as a person's or Nora's, with the same citations,
+lineage, revisions and withdrawal. Standing is the Positions family and
+Lessons its own. The "evidence it reads" column above names the Register and
+other Characters: under the data model those are read as context and linked,
+while what an account *cites* as evidence is observed data; which reading
+holds is [05](05-data-model.md) §11 Q4.
 
 Character is descriptive. What Nora has learned to *do* in a unit ("two
 options, not five") is a lesson, in the Lessons tier ([10](10-tiers.md) §1,

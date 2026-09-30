@@ -33,6 +33,24 @@ alone → `remember` (memory); settled and about the unit, someone else or
 the world → memo; not settled and must not be dropped → note; dated and
 attended → event; should happen at a time → a reminder.
 
+**The same rule over the families** ([05](05-data-model.md) §5). First by
+what the statement is about and what it states:
+
+| the statement | family · kind |
+|---|---|
+| what the group is doing, still open | Affairs · note |
+| what the group is doing, settled, to keep | Affairs · memo |
+| what the group is doing, dated, people attend | Affairs · event |
+| what a person, a room, the unit or Nora is like (induced from many instances, never from one) | Portraits · character (the Character adaptor only) |
+| where Nora stands toward a room, the unit or a person | Positions · standing |
+| how Nora should act here, learned from outcomes | Lessons · lesson (the Lessons adaptor only) |
+| a settled fact about the speaker alone | memory, through `remember`: not an entry ([05](05-data-model.md) §11 Q5) |
+| something to do at a time | a reminder: machinery, not an entry |
+
+Every entry, whatever its family, cites the observed items it rests on and
+states how it is known; the tag path writes only the Affairs rows it was told
+and the debrief's room Standing ([05](05-data-model.md) §8).
+
 ## 2. Memo
 
 Title, body (the [12](12-schemas.md) §3 memo schema, restated whole on
