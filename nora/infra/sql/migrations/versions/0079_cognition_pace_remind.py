@@ -49,23 +49,34 @@ avoid). Every place in this tree that TRUNCATEs `cognition_session` now
 also names these two tables in the same statement, or the truncate is
 refused outright (see the contract test's own comment).
 
-THE SESSION LIFECYCLE (review of #627). Three more append-only tables, none
-with a foreign key (a session id may be appended by a restore fixture before
-its session, and `wake_id` already set the precedent):
+THE WAKE LIFECYCLE (reviews of #627, DEC-242). A tracked wake's fate is ONE
+durable fact, keyed by the WAKE (a wake whose session row was never written
+still has exactly one); none of these three tables carries a foreign key (a
+restore fixture appends each independently, and `wake_id` already set the
+precedent):
 
-`cognition_session_end`: one row when a session ends (`closed`, `failed`,
-`timeout`, `cancelled`); a session row with none is in flight. Only `closed`
-advances the unit's watermark (20 §3: «a failed session does not advance
-it»), which the stimulus store's `view` reads.
+`cognition_wake.tracked` (new column, 0 for every step-1 row): the wake was
+written with a session hook wired, so it awaits an outcome and EXPIRES (read
+as failed) with none past `[cognition] session_timeout_seconds`.
 
-`cognition_carry`: a stimulus a closed session returned to the next agenda
-with a strike (30 §2), or released or struck; the newest row per
-`(unit, stimulus_id)` is current.
+`cognition_wake_outcome`: at most one row per wake (`closed`, `failed`,
+`timeout`, `cancelled`; the first stands). Only `closed` advances the unit's
+watermark (20 §3: «a failed session does not advance it»).
+
+`cognition_carry`: a stimulus a CLOSED wake returned to the next agenda with a
+strike (30 §2), or released or struck; written in the transaction that writes
+the `closed` outcome, and counted only for a `closed` wake. The newest counted
+row per `(unit, stimulus_id)` is current.
 
 `stimulus_retraction`: a `self` stimulus taken back when its self-wake is
-cancelled, moved or superseded, so the evaluator never wakes on it.
-`cognition_self_wake` also admits the `fired` transition and the code-only
-`wake_fire` verb (a session picking a due self-wake up frees its slot).
+cancelled, moved or superseded; no read counts it. `cognition_self_wake` also
+admits the `fired` transition and the code-only `wake_fire` verb (a session
+picking a due self-wake up frees its slot).
+
+Two indexes serve the new reads: `idx_stimulus_unit_self_item` (the `self`
+stimuli standing for one wake_ref, for a retract by ref) and
+`idx_cognition_self_wake_unit_recorded` (the bounded pending read and the
+per-day count).
 
 Revision ID: 0079_cognition_pace_remind
 Revises: 0078_cognition_session
@@ -180,10 +191,17 @@ def upgrade() -> None:
         "cognition_remind_mirror", ["unit", "reminder_ref"],
     )
 
+    op.add_column(
+        "cognition_wake",
+        sa.Column("tracked", sa.Integer, nullable=False, server_default=sa.text("0")),
+    )
+
     op.create_table(
-        "cognition_session_end",
+        "cognition_wake_outcome",
         sa.Column("id", sa.BigInteger, sa.Identity(always=False), primary_key=True),
-        sa.Column("session_id", sa.BigInteger, nullable=False),
+        sa.Column("wake_id", sa.BigInteger, nullable=False),
+        sa.Column("unit", sa.Text, nullable=False),
+        sa.Column("session_id", sa.BigInteger, nullable=True),
         sa.Column("outcome", sa.Text, nullable=False),
         sa.Column("detail", sa.Text, nullable=False, server_default=sa.text("''")),
         sa.Column("at_ms", sa.BigInteger, nullable=False),
@@ -193,11 +211,11 @@ def upgrade() -> None:
         ),
         sa.CheckConstraint(
             "outcome IN ('closed', 'failed', 'timeout', 'cancelled')",
-            name="ck_cognition_session_end_outcome",
+            name="ck_cognition_wake_outcome_outcome",
         ),
     )
     op.create_index(
-        "uq_cognition_session_end_session", "cognition_session_end", ["session_id"],
+        "uq_cognition_wake_outcome_wake", "cognition_wake_outcome", ["wake_id"],
         unique=True,
     )
 
@@ -209,6 +227,7 @@ def upgrade() -> None:
         sa.Column("strike", sa.Integer, nullable=False),
         sa.Column("state", sa.Text, nullable=False),
         sa.Column("waits", sa.Integer, nullable=False, server_default=sa.text("0")),
+        sa.Column("wake_id", sa.BigInteger, nullable=False),
         sa.Column("session_id", sa.BigInteger),
         sa.Column(
             "recorded_at", sa.DateTime(timezone=True), nullable=False,
@@ -238,17 +257,30 @@ def upgrade() -> None:
         "uq_stimulus_retraction_stimulus", "stimulus_retraction", ["stimulus_id"],
         unique=True,
     )
+    op.create_index(
+        "idx_stimulus_unit_self_item", "stimulus", ["unit", "item"],
+        postgresql_where=sa.text("kind = 'self'"),
+    )
+    op.create_index(
+        "idx_cognition_self_wake_unit_recorded", "cognition_self_wake",
+        ["unit", "recorded_at"],
+    )
 
 
 def downgrade() -> None:
+    op.drop_index(
+        "idx_cognition_self_wake_unit_recorded", table_name="cognition_self_wake",
+    )
+    op.drop_index("idx_stimulus_unit_self_item", table_name="stimulus")
     op.drop_index("uq_stimulus_retraction_stimulus", table_name="stimulus_retraction")
     op.drop_table("stimulus_retraction")
     op.drop_index("idx_cognition_carry_unit_stimulus", table_name="cognition_carry")
     op.drop_table("cognition_carry")
     op.drop_index(
-        "uq_cognition_session_end_session", table_name="cognition_session_end",
+        "uq_cognition_wake_outcome_wake", table_name="cognition_wake_outcome",
     )
-    op.drop_table("cognition_session_end")
+    op.drop_table("cognition_wake_outcome")
+    op.drop_column("cognition_wake", "tracked")
 
     op.drop_index(
         "idx_cognition_remind_mirror_unit_ref", table_name="cognition_remind_mirror",

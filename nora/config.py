@@ -3380,12 +3380,14 @@ class CognitionConfig(BaseModel):
     max_items: int = Field(default=12, ge=1)
     #: 30-cognition.md §2: "starting at 3".
     max_strikes: int = Field(default=3, ge=1)
-    # DEC-242 (review of #627). The hard wall clock of ONE real session (30 §5:
-    # `AdaptorBudget`'s single timeout): the session runner cancels the model
-    # loop at it and records the session `timeout`; the wake evaluator treats a
-    # session row with no end row older than this as dead. Replaces the
-    # assumption `shadow_session_seconds` makes for a session hook that is
-    # wired; `shadow_session_seconds` stays for `session_mode = "off"`.
+    # DEC-242 (reviews of #627). How long a TRACKED wake may stay OPEN (no
+    # outcome row) before it is EXPIRED and read as failed: its unit stops
+    # being in flight and its stimuli are pending again. The session's own
+    # wall clock (`AdaptorBudget.timeout_seconds`, 30 §5) must end at least
+    # `nora.app.cognition_session.SESSION_TIMEOUT_MARGIN_SECONDS` before it
+    # (the runner refuses to start otherwise). Replaces the assumption
+    # `shadow_session_seconds` makes for a session hook that is wired;
+    # `shadow_session_seconds` stays for `session_mode = "off"`.
     session_timeout_seconds: float = Field(default=900.0, gt=0)
     #: 20 §3: "at most `max_self_wakes` pending per unit (starting at 5)".
     max_self_wakes: int = Field(default=5, ge=1)

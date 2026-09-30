@@ -2322,14 +2322,17 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     _CounterSpec(
         "nora_cognition_session_skipped_total",
         "Would-wakes on which no Cognition session ran, by reason "
-        "(no_home_room / empty_agenda). No model call is made on either.",
+        "(no_home_room, also recorded failed so its stimuli stay pending / "
+        "empty_agenda). No model call is made on either.",
         ("reason",),
     ),
     _CounterSpec(
         "nora_cognition_session_ended_total",
-        "Cognition sessions that ended, by outcome (closed / failed / timeout "
-        "/ cancelled). Only closed advances the unit's watermark; the other "
-        "three return the session's stimuli to pending (20 §3).",
+        "Tracked Cognition wakes whose outcome this process wrote, by outcome "
+        "(closed / failed / timeout / cancelled). Only closed advances the "
+        "unit's watermark; the other three return the wake's stimuli to "
+        "pending (20 §3). A wake that expires with no outcome (a crash, a "
+        "failed write) is not counted here: it is read as failed.",
         ("outcome",),
     ),
     _CounterSpec(

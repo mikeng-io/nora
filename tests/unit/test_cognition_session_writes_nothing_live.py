@@ -70,7 +70,7 @@ class ExplodingLiveStore:
         self.read_calls += 1
         return None
 
-    async def pending_self_wakes(self, unit: str) -> tuple[Any, ...]:
+    async def pending_self_wakes(self, unit: str, since_ms: int) -> tuple[Any, ...]:
         self.read_calls += 1
         return ()
 
@@ -144,13 +144,14 @@ async def test_a_scripted_session_writes_nothing_to_a_live_store_and_sends_nothi
         open_note_titles=live.open_note_titles, open_proposed_events=live.open_proposed_events,
         prior_standing=live.prior_standing, pending_self_wakes=live.pending_self_wakes,
         pending_mirrored_reminds=live.pending_mirrored_reminds, session_mode="shadow",
-        budget=BUDGET, cooldown_seconds=300.0, max_items=12, max_strikes=3,
+        budget=BUDGET, cooldown_seconds=300.0, units=("unit-1",),
+        session_timeout_seconds=900.0, max_items=12, max_strikes=3,
     )
     view = UnitView(
         unit="unit-1", pending=_pending("unit-1"), last_activity_ms=None, last_wake=None,
     )
 
-    outcome = await runner.on_wake(unit="unit-1", view=view, now_ms=NOW)
+    outcome = await runner.on_wake(unit="unit-1", view=view, now_ms=NOW, wake_id=1)
 
     # The model ran exactly once, and every write it tried landed only in
     # the dry-run ledger — the exploding live store's write methods were
@@ -181,13 +182,14 @@ async def test_session_mode_off_never_constructs_a_live_read_either():
         open_note_titles=live.open_note_titles, open_proposed_events=live.open_proposed_events,
         prior_standing=live.prior_standing, pending_self_wakes=live.pending_self_wakes,
         pending_mirrored_reminds=live.pending_mirrored_reminds, session_mode="off",
-        budget=BUDGET, cooldown_seconds=300.0, max_items=12, max_strikes=3,
+        budget=BUDGET, cooldown_seconds=300.0, units=("unit-1",),
+        session_timeout_seconds=900.0, max_items=12, max_strikes=3,
     )
     view = UnitView(
         unit="unit-1", pending=_pending("unit-1"), last_activity_ms=None, last_wake=None,
     )
 
-    outcome = await runner.on_wake(unit="unit-1", view=view, now_ms=NOW)
+    outcome = await runner.on_wake(unit="unit-1", view=view, now_ms=NOW, wake_id=1)
 
     assert outcome is None
     assert agent.calls == 0

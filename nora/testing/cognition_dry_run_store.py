@@ -19,9 +19,9 @@ from nora.domain.ports import (
     NewCognitionRemindMirror,
     NewCognitionSession,
     NewCognitionSessionClose,
-    NewCognitionSessionEnd,
     NewCognitionWouldWrite,
 )
+from nora.testing.stimuli import live_stimulus
 
 
 class InMemoryCognitionDryRunStore:
@@ -36,14 +36,22 @@ class InMemoryCognitionDryRunStore:
         self.would_writes: list[tuple[int, NewCognitionWouldWrite, int]] = []
         self.paces: list[tuple[int, NewCognitionPace, int]] = []
         self.remind_mirrors: list[tuple[int, NewCognitionRemindMirror, int]] = []
-        self._end_ids = itertools.count(1)
-        self.ends: list[tuple[int, NewCognitionSessionEnd, int]] = []
-        #: Set to make `record_session_end` raise, as a database outage does.
-        self.fail_session_end = False
+        #: The retracted stimulus ids of the database this ledger shares with
+        #: an `InMemoryStimulusStore(ledger=self)`: ONE set, as the SQL twins
+        #: read one `stimulus_retraction` table.
+        self.retracted: set[int] = set()
+        #: Method names that raise, as a database outage does
+        #: (`"record_session"`, `"record_pace"`, ...).
+        self.fail_on: set[str] = set()
+
+    def _check(self, method: str) -> None:
+        if method in self.fail_on:
+            raise RuntimeError(f"ledger unavailable ({method})")
 
     async def record_session(
         self, *, session: NewCognitionSession, recorded_at_ms: int,
     ) -> int:
+        self._check("record_session")
         session_id = next(self._session_ids)
         self.sessions.append((session_id, session, recorded_at_ms))
         return session_id
@@ -65,6 +73,7 @@ class InMemoryCognitionDryRunStore:
     async def record_pace(
         self, *, pace: NewCognitionPace, recorded_at_ms: int,
     ) -> int:
+        self._check("record_pace")
         pace_id = next(self._pace_ids)
         self.paces.append((pace_id, pace, recorded_at_ms))
         return pace_id
@@ -76,26 +85,19 @@ class InMemoryCognitionDryRunStore:
         self.remind_mirrors.append((mirror_id, mirror, recorded_at_ms))
         return mirror_id
 
-    async def record_session_end(
-        self, *, end: NewCognitionSessionEnd, recorded_at_ms: int,
-    ) -> int:
-        if self.fail_session_end:
-            raise RuntimeError("ledger unavailable")
-        for end_id, existing, _ in self.ends:
-            if existing.session_id == end.session_id:
-                return end_id
-        end_id = next(self._end_ids)
-        self.ends.append((end_id, end, recorded_at_ms))
-        return end_id
-
-    async def pending_self_wakes(self, *, unit: str) -> Sequence[PendingSelfWake]:
+    async def pending_self_wakes(
+        self, *, unit: str, since_ms: int,
+    ) -> Sequence[PendingSelfWake]:
+        mine = [(p, at) for _, p, at in self.paces if p.unit == unit]
+        recent = {p.wake_ref for p, at in mine if at >= since_ms and p.wake_ref is not None}
         return fold_self_wakes([
             PaceRow(
                 wake_ref=p.wake_ref, transition=p.transition, outcome=p.outcome,
                 subject_rows=p.subject_rows, session_id=p.session_id,
                 stimulus_id=p.stimulus_id, at_ms=p.at_ms, supersedes=p.supersedes,
+                retracted=not live_stimulus(self.retracted, p.stimulus_id),
             )
-            for _, p, _ in self.paces if p.unit == unit
+            for p, _ in mine if p.wake_ref in recent
         ])
 
     async def count_self_wakes_created(self, *, unit: str, since_ms: int) -> int:

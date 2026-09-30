@@ -136,14 +136,15 @@ async def specs() -> dict[str, dict[str, Any]]:
         pending_self_wakes=_const(()), pending_mirrored_reminds=_const(()),
         session_mode="shadow",
         budget=AdaptorBudget(turns=1, total_tokens=1, output_tokens=1, timeout_seconds=5),
-        cooldown_seconds=300, max_items=12, max_strikes=3,
+        cooldown_seconds=300, units=("u",), session_timeout_seconds=900.0,
+        max_items=12, max_strikes=3,
     )
     pending = (Stimulus(
         id=1, unit="u", kind="message", item="message", ref="messages:1", at_ms=NOW,
         recorded_at_ms=NOW, platform="signal", conversation_id="home",
     ),)
     view = UnitView(unit="u", pending=pending, last_activity_ms=None, last_wake=None)
-    await asyncio.wait_for(runner.on_wake(unit="u", view=view, now_ms=NOW), 5)
+    await asyncio.wait_for(runner.on_wake(unit="u", view=view, now_ms=NOW, wake_id=1), 5)
     return {t.tool_name: t.tool_spec for t in as_strands_tools(spy.tools)}
 
 

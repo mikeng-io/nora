@@ -49,6 +49,7 @@ from nora.domain.stimuli import (
     NewWake,
     UnitView,
     Verdict,
+    WakeGuard,
     WakeHook,
     WakeMode,
     WakePolicy,
@@ -132,14 +133,19 @@ class WakeEvaluator:
         its unit for `session_seconds`.
 
         **With a hook the brakes count REAL sessions** (20 §3: single-flight
-        and `max_concurrent_sessions`): a unit is in flight while its task is
-        alive in this process or its newest session row has no end row and is
-        younger than `session_timeout_seconds` (a restart recomputes it from
-        the rows), and it cools down from the session's END. The watermark
-        is the newest wake whose session did not fail, so a failed, timed-out
-        or cancelled session's stimuli are pending again (see
-        `nora.domain.stimuli`). A hook that raises is logged, counted and
-        contained: it never aborts the tick for another unit."""
+        and `max_concurrent_sessions`; `nora.domain.stimuli`'s state
+        machine). Every wake is written `tracked`; a unit is in flight while
+        its task is alive in this process or its newest wake is OPEN (no
+        outcome row, younger than `session_timeout_seconds`; a restart
+        recomputes it from the rows), whether or not a session row was ever
+        written, and it cools down from the outcome. The watermark is the
+        newest wake that did not fail or expire, so a failed, timed-out,
+        cancelled or never-recorded session's stimuli are pending again. The
+        wake row is written under a `WakeGuard`: if, between this tick's read
+        and its write, the unit's newest wake or its outcome changed, nothing
+        is written and the unit is read again next tick. A hook that raises is
+        logged, counted and contained: it never aborts the tick for another
+        unit."""
         self._store = store
         self._units = units
         self._policy = policy
@@ -234,9 +240,12 @@ class WakeEvaluator:
 
     async def cancel_in_flight(self) -> None:
         """Cancel every session task this evaluator started and wait for them
-        to unwind (shutdown). The hook records its own session `cancelled`
-        while it unwinds (`CognitionSessionRunner.on_wake`), so a session
-        never disappears with its row still reading «in flight»."""
+        to unwind (shutdown). The hook records its wake `cancelled` while it
+        unwinds (`CognitionSessionRunner.on_wake`); a task cancelled before
+        its first step writes nothing, and its wake stays OPEN until it
+        expires, which reads as failed: its stimuli are never consumed
+        unseen. The composition root must call this at shutdown (DEC-242,
+        open choice (a))."""
         tasks = tuple(self._background)
         for task in tasks:
             task.cancel()
@@ -314,13 +323,14 @@ class WakeEvaluator:
         for s in view.pending:
             items[f"{s.kind}:{s.item}"] = items.get(f"{s.kind}:{s.item}", 0) + 1
             cues.update(s.cues)
+        tracked = self._on_wake is not None
         wake = NewWake(
             unit=view.unit, mode=self._mode, reason=reason,
             from_stimulus_id=mark.through_stimulus_id,
             through_stimulus_id=verdict.through_stimulus_id,
             stimulus_count=verdict.stimulus_count, eligible_count=verdict.eligible_count,
             oldest_pending_ms=verdict.oldest_pending_ms,
-            cut_cooldown=verdict.cut_cooldown, at_ms=at_ms,
+            cut_cooldown=verdict.cut_cooldown, at_ms=at_ms, tracked=tracked,
             detail={
                 "items": items,
                 "cues": sorted(cues),
@@ -328,14 +338,32 @@ class WakeEvaluator:
                 "rooms": len({s.conversation_id for s in view.pending if s.conversation_id}),
             },
         )
+        # Tracked: the write re-checks, under the unit's lock, that the view
+        # this verdict came from still holds (`WakeGuard`).
+        guard = None
+        if tracked:
+            last = view.last_wake
+            guard = WakeGuard(
+                last_wake_id=None if last is None else last.id,
+                last_outcome=None if view.last_session is None else view.last_session.outcome,
+            )
         try:
             wake_id = await asyncio.wait_for(
-                self._store.record_wake(wake=wake, recorded_at_ms=int(self._clock() * 1000)),
+                self._store.record_wake(
+                    wake=wake, recorded_at_ms=int(self._clock() * 1000), guard=guard,
+                ),
                 timeout=self._timeout,
             )
         except Exception:
             log.exception("wake evaluator: could not record a would-wake for %s", view.unit)
             self._metrics.inc("nora_errors_total", stage="cognition_wake")
+            return None
+        if wake_id is None:
+            log.info(
+                "wake evaluator: %s changed between its read and its write; read again "
+                "next tick", view.unit,
+            )
+            self._metrics.inc("nora_cognition_wake_deferred_total", brake="single_flight")
             return None
         self._metrics.inc(
             "nora_cognition_wake_total", reason=reason, mode=self._mode,

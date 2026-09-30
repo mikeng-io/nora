@@ -78,14 +78,27 @@ class PaceRow:
     stimulus_id: int | None = None
     at_ms: int | None = None
     supersedes: str | None = None
+    #: The row's `stimulus_id` has been retracted (the store reads it with its
+    #: one retraction predicate; this module does not read).
+    retracted: bool = False
+
+
+#: How far back `pending_self_wakes` reads a unit's transitions: the horizon a
+#: self-wake may be set or moved to, plus a day. A ref with no transition in
+#: that window is a day past its latest due time: fired, or stranded by a unit
+#: that could not wake, and in neither case still worth a pending slot.
+PENDING_WINDOW_SECONDS = DEFAULT_MAX_HORIZON_SECONDS + 24 * 3600.0
 
 
 def fold_self_wakes(rows: Sequence[PaceRow]) -> tuple[PendingSelfWake, ...]:
     """The LIVE pending self-wakes from a unit's transition rows, oldest
     first. Per `wake_ref` the newest transition decides: `created` and `moved`
     are pending; `cancelled` and `fired` are not; a `created` row that names a
-    `supersedes` ends the ref it displaces. A refused row changes nothing."""
+    `supersedes` ends the ref it displaces. A refused row changes nothing. A
+    ref whose standing stimulus was retracted is not pending (a cancel whose
+    ledger row failed to write after its retraction did)."""
     live: dict[str, PendingSelfWake] = {}
+    retracted: dict[str, bool] = {}
     for row in rows:
         if row.outcome != "recorded" or row.wake_ref is None:
             continue
@@ -95,6 +108,7 @@ def fold_self_wakes(rows: Sequence[PaceRow]) -> tuple[PendingSelfWake, ...]:
                 created_by_session_id=row.session_id, stimulus_id=row.stimulus_id,
                 at_ms=row.at_ms,
             )
+            retracted[row.wake_ref] = row.retracted
             if row.supersedes is not None:
                 live.pop(row.supersedes, None)
         elif row.transition == "moved":
@@ -105,9 +119,10 @@ def fold_self_wakes(rows: Sequence[PaceRow]) -> tuple[PendingSelfWake, ...]:
                     created_by_session_id=was.created_by_session_id,
                     stimulus_id=row.stimulus_id, at_ms=row.at_ms,
                 )
+                retracted[row.wake_ref] = row.retracted
         elif row.transition in ("cancelled", "fired"):
             live.pop(row.wake_ref, None)
-    return tuple(live.values())
+    return tuple(w for ref, w in live.items() if not retracted.get(ref, False))
 
 
 @dataclass(frozen=True, slots=True)

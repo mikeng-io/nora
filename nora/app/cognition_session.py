@@ -12,18 +12,27 @@ still asserts the belt-and-braces check below, in case a future composition
 root wires the hook unconditionally). `"shadow"` runs one session per
 would-wake the evaluator (`nora.app.wake.WakeEvaluator`) records.
 
-**A session has a lifecycle, and the brakes read it** (20 §3, DEC-242). A
-session is IN FLIGHT from its `cognition_session` row until its
-`cognition_session_end` row, and the evaluator's single-flight and
-`max_concurrent_sessions` count that, not a wake's age. It ends exactly one
-way: `closed` (the model loop returned and every item was closed or returned
-to the next agenda with a strike), or `failed` / `timeout` / `cancelled`.
-Only `closed` advances the unit's watermark; the others leave their stimuli
-pending («a failed session does not advance it»), and a failure is RAISED
-after it is recorded, never returned as if it were a session that ran. The
-session's wall clock is `budget.timeout_seconds` (30 §5), enforced here by
-cancelling the model loop; `shutdown` cancels the sessions still in flight
-and records them `cancelled`.
+**A wake has one fate, and the brakes read it** (20 §3, DEC-242;
+`nora.domain.stimuli`'s state machine). The evaluator writes the wake row
+`tracked`; from then until its ONE `cognition_wake_outcome` row the wake is
+OPEN (its unit in flight, its range claimed), and with no outcome past
+`session_timeout_seconds` it is EXPIRED, read as failed. Every path out of
+`on_wake` writes that outcome, keyed by the WAKE, so an exit before the
+session row exists (a missing home room, `build_situation` or
+`record_session` raising, a cancel before the first step) is recorded
+`failed`/`cancelled` like any other; a kill, or an outcome write that itself
+fails, leaves the wake OPEN until it expires, which is the same fate, later.
+It ends exactly one way: `closed` (the model loop returned and every item was
+closed or returned to the next agenda with a strike), written in ONE
+transaction with those carry rows, or `failed` / `timeout` / `cancelled`,
+with none. Only `closed` advances the unit's watermark; the others leave their
+stimuli pending («a failed session does not advance it»), and a failure is
+RAISED after it is recorded, never returned as if it were a session that ran.
+The session's wall clock is `budget.timeout_seconds` (30 §5), enforced here by
+cancelling the model loop, and held at least `SESSION_TIMEOUT_MARGIN_SECONDS`
+under the wake's own timeout (the constructor refuses otherwise) so a session
+records its outcome before its wake can expire; `shutdown` cancels the
+sessions still in flight and records them `cancelled`.
 
 **What a session gets** (30-cognition.md §1-§2): the situation and agenda
 (`nora.domain.cognition_session.build_situation`, already pure and already
@@ -54,7 +63,7 @@ import asyncio
 import logging
 import time
 import uuid
-from collections.abc import Awaitable, Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Literal, Protocol
@@ -80,6 +89,7 @@ from nora.agent.cognition_remind_mirror import (
 )
 from nora.domain.cognition_pace import (
     DEFAULT_MAX_SELF_WAKES_PER_DAY,
+    PENDING_WINDOW_SECONDS,
     PaceAnswer,
     PendingSelfWake,
 )
@@ -99,7 +109,8 @@ from nora.domain.ports import (
     NewCarry,
     NewCognitionSession,
     NewCognitionSessionClose,
-    NewCognitionSessionEnd,
+    NewWakeOutcome,
+    RecordedOutcome,
     StimulusStore,
 )
 from nora.domain.standing import Standing
@@ -133,6 +144,44 @@ class SessionTimeoutError(Exception):
     """The session's wall clock (`AdaptorBudget.timeout_seconds`) ran out and
     the model loop was cancelled. Its own class so a `TimeoutError` a store
     raised is never mistaken for it."""
+
+
+class SessionExpiredError(Exception):
+    """The session ran to its end, but its wake had already expired and a
+    later wake had taken its stimuli: the store recorded it `timeout` and
+    wrote none of its carries (`StimulusStore.record_outcome`)."""
+
+
+class MissingHomeRoomError(ValueError):
+    """A unit the evaluator may wake has no home room: refused when the runner
+    is built, not discovered one wake at a time."""
+
+
+#: How far under the wake's own `session_timeout_seconds` the session's wall
+#: clock must stay: the time between the wake row and the model loop (the
+#: situation, the session row, the tools) and after it (the settle write). A
+#: session still running when its wake expires would close into a range a
+#: later wake may already hold (the store refuses that close; this keeps it
+#: from happening in the ordinary case).
+SESSION_TIMEOUT_MARGIN_SECONDS = 60.0
+
+
+def check_session_timeouts(budget_timeout_seconds: float, session_timeout_seconds: float) -> None:
+    """Refuse a session wall clock that does not end at least
+    `SESSION_TIMEOUT_MARGIN_SECONDS` before the wake's timeout."""
+    if budget_timeout_seconds > session_timeout_seconds - SESSION_TIMEOUT_MARGIN_SECONDS:
+        raise ValueError(
+            f"the session budget's timeout ({budget_timeout_seconds:g}s) must end at least "
+            f"{SESSION_TIMEOUT_MARGIN_SECONDS:g}s before [cognition] session_timeout_seconds "
+            f"({session_timeout_seconds:g}s), or a session can outlive its wake",
+        )
+
+
+def check_home_rooms(units: Collection[str], home_rooms: Mapping[str, Room]) -> None:
+    """Every unit the evaluator may wake has a home room."""
+    missing = sorted(u for u in units if u not in home_rooms)
+    if missing:
+        raise MissingHomeRoomError(f"no home room configured for unit(s) {missing}")
 
 
 def default_mint_ref() -> str:
@@ -202,7 +251,9 @@ class CognitionSessionOutcome:
 OpenNoteTitles = Callable[[str], Awaitable[Sequence[str]]]
 OpenProposedEvents = Callable[[str, str], Awaitable[Sequence[Gathering]]]
 PriorStanding = Callable[[str, str], Awaitable[Standing | None]]
-PendingSelfWakes = Callable[[str], Awaitable[Sequence[PendingSelfWake]]]
+#: `(unit, since_ms)`: the unit's pending self-wakes, reading only refs with a
+#: transition at or after `since_ms` (`CognitionDryRunStore.pending_self_wakes`).
+PendingSelfWakes = Callable[[str, int], Awaitable[Sequence[PendingSelfWake]]]
 PendingMirroredReminds = Callable[[str], Awaitable[Sequence[PendingMirroredRemind]]]
 SelfWakesCreatedSince = Callable[[str, int], Awaitable[int]]
 ReadToolsFor = Callable[[str, Room], list[Any]]
@@ -216,6 +267,7 @@ class _RunState:
     `max_concurrent_sessions`) never share it."""
 
     session_id: int
+    wake_id: int
     unit: str
     now_ms: int
     items_by_index: dict[int, AgendaItem]
@@ -303,6 +355,7 @@ class CognitionSessionRunner:
         prior_standing: PriorStanding, pending_self_wakes: PendingSelfWakes,
         pending_mirrored_reminds: PendingMirroredReminds,
         session_mode: str, budget: AdaptorBudget, cooldown_seconds: float,
+        units: Collection[str], session_timeout_seconds: float,
         max_items: int, max_strikes: int, max_self_wakes: int = 5,
         max_self_wakes_per_day: int = DEFAULT_MAX_SELF_WAKES_PER_DAY,
         self_wakes_created_since: SelfWakesCreatedSince | None = None,
@@ -316,7 +369,15 @@ class CognitionSessionRunner:
         `ToolRegistry.read_only_tools()`); empty, the default, refuses every
         read tool: a session with no declared read surface has none.
         `self_wakes_created_since`: how many `wake_at` calls the unit made
-        since an instant (the per-day cap); None reads the dry-run store."""
+        since an instant (the per-day cap); None reads the dry-run store.
+
+        `units` (every unit the evaluator may wake) must each have a home room
+        and `budget.timeout_seconds` must end `SESSION_TIMEOUT_MARGIN_SECONDS`
+        before `session_timeout_seconds` (the evaluator's
+        `WakePolicy.session_timeout_seconds`, the wake's own clock): both are
+        refused HERE, at startup, not discovered per wake."""
+        check_home_rooms(units, home_rooms)
+        check_session_timeouts(budget.timeout_seconds, session_timeout_seconds)
         self._store = dry_run_store
         self._stimuli = stimulus_store
         self._agent_runner = agent_runner
@@ -346,8 +407,12 @@ class CognitionSessionRunner:
         self._metrics = metrics
         self._mint_ref = mint_ref
         self._clock = clock
-        #: Session id -> the task running it, for `shutdown`.
+        #: Wake id -> the task running its session, for `shutdown`.
         self._tasks: dict[int, asyncio.Task[Any]] = {}
+        #: Outcome writes shielded from a second cancel (a `shutdown` and the
+        #: evaluator's `cancel_in_flight` both cancelling one task), held so
+        #: they are not garbage-collected while they finish.
+        self._finishing: set[asyncio.Task[Any]] = set()
         #: One lock per unit around a pace or remind call's read-check-write:
         #: the model may issue two in one turn, and the pending cap and the
         #: dedupe rule are only sound if each sees the other's row.
@@ -366,103 +431,141 @@ class CognitionSessionRunner:
     def _lock(self, unit: str) -> asyncio.Lock:
         return self._locks.setdefault(unit, asyncio.Lock())
 
+    def _now_ms(self) -> int:
+        return int(self._clock() * 1000)
+
     async def on_wake(
-        self, *, unit: str, view: UnitView, now_ms: int, wake_id: int | None = None,
+        self, *, unit: str, view: UnitView, now_ms: int, wake_id: int,
     ) -> CognitionSessionOutcome | None:
         """Called by the wake evaluator's hook on every would-wake it
         records (`WakeHook`). Returns `None` on every path that makes no model
-        call; RAISES, after recording the session ended, on every path that
-        began one and did not close."""
+        call; RAISES, after recording the wake's outcome, on every path that
+        did not close. Every path writes the wake's outcome (or, if that write
+        fails, leaves the wake OPEN until it expires): nothing here returns
+        with the wake's stimuli consumed and unseen."""
         if self._session_mode != "shadow":
+            # Belt and braces only (the module docstring): a wake no session
+            # will run is released, not left to expire and re-wake forever.
+            await self._finish(wake_id, unit, None, "failed", "session_mode is not shadow")
             return None
-        home_room = self._home_rooms.get(unit)
-        if home_room is None:
-            log.warning("cognition session: no home room configured for unit %s", unit)
-            self._inc("nora_cognition_session_skipped_total", reason="no_home_room")
-            return None
-        situation = build_situation(
-            unit=unit, pending=view.pending, home_room=home_room, now_ms=now_ms,
-            last_session_ms=view.last_activity_ms, max_items=self._max_items,
-            strikes=view.carry,
-        )
-        if situation.agenda.is_empty:
-            self._inc("nora_cognition_session_skipped_total", reason="empty_agenda")
-            return None
-
-        session = NewCognitionSession(
-            unit=unit, mode="shadow", started_at_ms=now_ms,
-            from_stimulus_id=min(s.id for s in view.pending),
-            through_stimulus_id=max(s.id for s in view.pending),
-            situation=situation.as_dict(),
-            agenda={
-                "items": [i.as_dict() for i in situation.agenda.items],
-                "deferred_stimulus_ids": list(situation.agenda.deferred_stimulus_ids),
-            },
-            doctrine_sha256=self._doctrine_sha256, skill_versions={},
-            config_revision_id=None, model_id=self._model_id,
-            model_route=self._model_route, wake_id=wake_id,
-        )
-        session_id = await self._store.record_session(session=session, recorded_at_ms=now_ms)
-        self._inc("nora_cognition_session_total", mode="shadow")
-
         task = asyncio.current_task()
         if task is not None:
-            self._tasks[session_id] = task
+            self._tasks[wake_id] = task
+        session_id: int | None = None
         try:
+            home_room = self._home_rooms.get(unit)
+            if home_room is None:
+                self._inc("nora_cognition_session_skipped_total", reason="no_home_room")
+                raise MissingHomeRoomError(f"no home room configured for unit {unit!r}")
+            situation = build_situation(
+                unit=unit, pending=view.pending, home_room=home_room, now_ms=now_ms,
+                last_session_ms=view.last_activity_ms, max_items=self._max_items,
+                strikes=view.carry,
+            )
+            if situation.agenda.is_empty:
+                self._inc("nora_cognition_session_skipped_total", reason="empty_agenda")
+                await self._finish(wake_id, unit, None, "closed", "empty agenda")
+                return None
+
+            session = NewCognitionSession(
+                unit=unit, mode="shadow", started_at_ms=now_ms,
+                from_stimulus_id=min(s.id for s in view.pending),
+                through_stimulus_id=max(s.id for s in view.pending),
+                situation=situation.as_dict(),
+                agenda={
+                    "items": [i.as_dict() for i in situation.agenda.items],
+                    "deferred_stimulus_ids": list(situation.agenda.deferred_stimulus_ids),
+                },
+                doctrine_sha256=self._doctrine_sha256, skill_versions={},
+                config_revision_id=None, model_id=self._model_id,
+                model_route=self._model_route, wake_id=wake_id,
+            )
+            session_id = await self._store.record_session(
+                session=session, recorded_at_ms=now_ms,
+            )
+            self._inc("nora_cognition_session_total", mode="shadow")
             return await self._run_session(
                 unit=unit, view=view, situation=situation, session_id=session_id,
-                now_ms=now_ms,
+                wake_id=wake_id, now_ms=now_ms,
             )
         except asyncio.CancelledError:
-            await self._end(session_id, "cancelled", "the session task was cancelled")
+            await self._shielded_finish(
+                wake_id, unit, session_id, "cancelled", "the session task was cancelled",
+            )
+            raise
+        except SessionExpiredError:
             raise
         except SessionTimeoutError as exc:
-            await self._end(session_id, "timeout", str(exc))
+            await self._finish(wake_id, unit, session_id, "timeout", str(exc))
             raise
         except Exception as exc:
-            log.exception("cognition session failed (unit=%s session=%s)", unit, session_id)
-            await self._end(session_id, "failed", f"{type(exc).__name__}: {exc}"[:500])
+            log.exception("cognition session failed (unit=%s wake=%s)", unit, wake_id)
+            await self._finish(
+                wake_id, unit, session_id, "failed", f"{type(exc).__name__}: {exc}"[:500],
+            )
             raise
         finally:
-            self._tasks.pop(session_id, None)
+            self._tasks.pop(wake_id, None)
 
     async def shutdown(self) -> None:
         """Cancel every session still in flight and wait for it to record
-        itself `cancelled`. A session must not vanish with its row still
-        reading «in flight»."""
+        itself `cancelled`. A session must not vanish with its wake still
+        reading «in flight» when it could have said otherwise."""
         tasks = tuple(self._tasks.values())
         for task in tasks:
             task.cancel()
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
+        if self._finishing:
+            await asyncio.gather(*tuple(self._finishing), return_exceptions=True)
 
-    async def _end(self, session_id: int, outcome: str, detail: str) -> None:
-        """Record how the session ended, at the REAL clock: the cooldown runs
+    async def _shielded_finish(
+        self, wake_id: int, unit: str, session_id: int | None, outcome: str, detail: str,
+    ) -> None:
+        """`_finish`, shielded: a SECOND cancel (a `shutdown` and the
+        evaluator's `cancel_in_flight` both cancelling this task) interrupts
+        the wait, never the write."""
+        write = asyncio.ensure_future(self._finish(wake_id, unit, session_id, outcome, detail))
+        self._finishing.add(write)
+        write.add_done_callback(self._finishing.discard)
+        await asyncio.shield(write)
+
+    async def _finish(
+        self, wake_id: int, unit: str, session_id: int | None, outcome: str, detail: str,
+        carries: Sequence[NewCarry] = (),
+    ) -> RecordedOutcome | None:
+        """Record the wake's outcome, at the REAL clock: the cooldown runs
         from here, not from the wake, so a long session is not already
-        «cooled» when it finishes. A write that fails is logged and left: a
-        session row with no end row is in flight until it times out, and dead
-        after — it never advances the watermark."""
-        ended_ms = int(self._clock() * 1000)
+        «cooled» when it finishes. A failure outcome whose write fails is
+        logged and left: the wake stays OPEN until it expires, which reads as
+        failed, and it never advances the watermark. A `closed` write that
+        fails RAISES (its caller records `failed` instead)."""
+        ended_ms = self._now_ms()
         try:
-            await self._store.record_session_end(
-                end=NewCognitionSessionEnd(
-                    session_id=session_id, outcome=outcome, at_ms=ended_ms, detail=detail,
+            recorded = await self._stimuli.record_outcome(
+                outcome=NewWakeOutcome(
+                    wake_id=wake_id, unit=unit, outcome=outcome, at_ms=ended_ms,
+                    detail=detail, session_id=session_id,
                 ),
-                recorded_at_ms=ended_ms,
+                carries=carries, recorded_at_ms=ended_ms,
             )
         except Exception:
-            log.exception("could not record the end of cognition session %s", session_id)
+            if outcome == "closed":
+                raise
+            log.exception("could not record the outcome of cognition wake %s", wake_id)
             self._inc("nora_errors_total", stage="cognition_session")
-            return
-        self._inc("nora_cognition_session_ended_total", outcome=outcome)
+            return None
+        if recorded.written:
+            self._inc("nora_cognition_session_ended_total", outcome=recorded.outcome)
+        return recorded
 
     async def _run_session(
         self, *, unit: str, view: UnitView, situation: Situation, session_id: int,
-        now_ms: int,
+        wake_id: int, now_ms: int,
     ) -> CognitionSessionOutcome:
         items = situation.agenda.items
         state = _RunState(
-            session_id=session_id, unit=unit, now_ms=now_ms,
+            session_id=session_id, wake_id=wake_id, unit=unit, now_ms=now_ms,
             items_by_index=dict(enumerate(items)),
             rooms={_room_key(i.room): (i.room.platform, i.room.conversation_id) for i in items},
             cited_ids=_message_ids(view.pending),
@@ -487,8 +590,19 @@ class CognitionSessionRunner:
                 f"the session ran past its {self._budget.timeout_seconds:g}s wall clock",
             ) from exc
 
-        await self._settle(state=state, situation=situation, view=view)
-        await self._end(session_id, "closed", result.stop_reason or "")
+        carries = await self._settle(state=state, situation=situation, view=view)
+        recorded = await self._finish(
+            wake_id, unit, session_id, "closed", result.stop_reason or "", carries=carries,
+        )
+        if recorded is None or recorded.outcome != "closed":
+            raise SessionExpiredError(
+                f"wake {wake_id} was recorded "
+                f"{'nothing' if recorded is None else recorded.outcome!r}, not closed: "
+                "it expired and a later wake took its stimuli",
+            )
+        for carry in carries:
+            self._inc("nora_cognition_carry_total", state=carry.state)
+        await self._record_fired(state=state, situation=situation, view=view)
         return CognitionSessionOutcome(
             session_id=session_id, items=len(items), closed=tuple(state.closes),
             stop_reason=result.stop_reason,
@@ -496,14 +610,16 @@ class CognitionSessionRunner:
 
     async def _settle(
         self, *, state: _RunState, situation: Situation, view: UnitView,
-    ) -> None:
+    ) -> list[NewCarry]:
         """What a session that ran to its end leaves behind (30 §2): every item
         the model did not close closes `waiting` with a strike (or `struck` at
         `max_strikes`); a waiting or struck item's stimuli, and the ones past
         `max_items`, are RETURNED to the next agenda as carry rows, because the
-        watermark now moves past them; a self-wake that was due is recorded
-        `fired`. Written only after the model loop returned: a session that
-        failed leaves none of it, and its stimuli are still pending."""
+        watermark now moves past them. The carries are RETURNED, not written:
+        they land in the same transaction as the wake's `closed` outcome, or
+        not at all. A strike is the ITEM's (every stimulus of an item shares
+        it, `build_agenda` groups by it), so a fresh stimulus never inherits
+        the strike of a returning one."""
         items = situation.agenda.items
         for index, item in enumerate(items):
             if index in state.closed_indices:
@@ -513,49 +629,55 @@ class CognitionSessionRunner:
             )
             await self._record_close(state, outcome)
 
+        carries: list[NewCarry] = []
+
+        def carry(sid: int, strike: int, carry_state: str, *, waits: bool = False) -> None:
+            carries.append(NewCarry(
+                unit=state.unit, stimulus_id=sid, strike=strike, state=carry_state,
+                session_id=state.session_id, waits=waits,
+            ))
+
         by_index = {c.item_index: c for c in state.closes}
         for index, item in enumerate(items):
             close = by_index[index]
             for sid in item.stimulus_ids:
                 if close.reason == "waiting":
-                    await self._carry(state, sid, close.strike, "carried", waits=True)
+                    carry(sid, close.strike, "carried", waits=True)
                 elif close.reason == "struck":
-                    await self._carry(state, sid, close.strike, "struck")
+                    carry(sid, close.strike, "struck")
                 elif sid in view.carry:
-                    await self._carry(state, sid, view.carry[sid], "released")
+                    carry(sid, view.carry[sid], "released")
 
         for sid in situation.agenda.deferred_stimulus_ids:
             strike = view.carry.get(sid, 0) + 1
-            await self._carry(
-                state, sid, strike, "struck" if strike >= self._max_strikes else "carried",
-            )
+            carry(sid, strike, "struck" if strike >= self._max_strikes else "carried")
+        return carries
 
+    async def _record_fired(
+        self, *, state: _RunState, situation: Situation, view: UnitView,
+    ) -> None:
+        """A self-wake on the agenda of a session that CLOSED is recorded
+        `fired` (it frees its pending slot). After the close, never before: a
+        session that did not close has not seen it, and its stimulus is
+        pending again. A failed write is logged; the wake then reads pending
+        until its ref leaves the ledger's read window."""
         by_id = {s.id: s for s in view.pending}
         fired: set[str] = set()
-        for item in items:
+        for item in situation.agenda.items:
             if item.kind != "self":
                 continue
             for sid in item.stimulus_ids:
                 row = by_id.get(sid)
                 if row is not None and row.kind == "self" and row.item not in fired:
                     fired.add(row.item)
-                    await dry_run_wake_fire(
-                        ledger=self._store, session_id=state.session_id, unit=state.unit,
-                        wake_ref=row.item, now_ms=state.now_ms,
-                    )
-
-    async def _carry(
-        self, state: _RunState, stimulus_id: int, strike: int, carry_state: str,
-        *, waits: bool = False,
-    ) -> None:
-        await self._stimuli.record_carry(
-            carry=NewCarry(
-                unit=state.unit, stimulus_id=stimulus_id, strike=strike, state=carry_state,
-                session_id=state.session_id, waits=waits,
-            ),
-            recorded_at_ms=state.now_ms,
-        )
-        self._inc("nora_cognition_carry_total", state=carry_state)
+                    try:
+                        await dry_run_wake_fire(
+                            ledger=self._store, session_id=state.session_id,
+                            unit=state.unit, wake_ref=row.item, now_ms=self._now_ms(),
+                        )
+                    except Exception:
+                        log.exception("could not record self-wake %s fired", row.item)
+                        self._inc("nora_errors_total", stage="cognition_session")
 
     async def _record_close(self, state: _RunState, outcome: CloseOutcome) -> None:
         await self._store.record_close(
@@ -912,13 +1034,17 @@ class CognitionSessionRunner:
                 why: The reason you ask, in a sentence.
             """
             async with self._lock(unit):
-                pending = await self._pending_self_wakes(unit)
-                created_today = await self._created_since(unit, now_ms - _DAY_MS)
+                # The REAL clock, not the session's start: a session can run
+                # for minutes, and the per-day window and the horizon are
+                # about when this call is made.
+                call_ms = self._now_ms()
+                pending = await self._pending(unit, call_ms)
+                created_today = await self._created_since(unit, call_ms - _DAY_MS)
                 wake_ref = self._mint_ref()
                 answer = await dry_run_wake_at(
                     ledger=self._store, stimuli=self._stimuli, session_id=state.session_id,
                     unit=unit, subject_rows=subject_rows, at_ms=at_ms, why=why,
-                    now_ms=now_ms, wake_ref=wake_ref,
+                    now_ms=call_ms, wake_ref=wake_ref,
                     cooldown_seconds=self._cooldown_seconds, pending=pending,
                     max_self_wakes=self._max_self_wakes, created_today=created_today,
                     max_self_wakes_per_day=self._max_self_wakes_per_day,
@@ -938,11 +1064,12 @@ class CognitionSessionRunner:
                 why: The reason you move it.
             """
             async with self._lock(unit):
-                pending = await self._pending_self_wakes(unit)
+                call_ms = self._now_ms()
+                pending = await self._pending(unit, call_ms)
                 answer = await dry_run_wake_move(
                     ledger=self._store, stimuli=self._stimuli,
                     session_id=state.session_id, unit=unit, wake_ref=wake_id, at_ms=at_ms,
-                    why=why, now_ms=now_ms, cooldown_seconds=self._cooldown_seconds,
+                    why=why, now_ms=call_ms, cooldown_seconds=self._cooldown_seconds,
                     pending=pending, created_by_session_id=None,
                 )
             return _answer(answer)
@@ -958,11 +1085,12 @@ class CognitionSessionRunner:
                 why: The reason you cancel it.
             """
             async with self._lock(unit):
-                pending = await self._pending_self_wakes(unit)
+                call_ms = self._now_ms()
+                pending = await self._pending(unit, call_ms)
                 answer = await dry_run_wake_cancel(
                     ledger=self._store, stimuli=self._stimuli,
                     session_id=state.session_id, unit=unit, wake_ref=wake_id, why=why,
-                    now_ms=now_ms, pending=pending, created_by_session_id=None,
+                    now_ms=call_ms, pending=pending, created_by_session_id=None,
                 )
             return _answer(answer)
 
@@ -1060,6 +1188,13 @@ class CognitionSessionRunner:
     # the normal case («she keeps, moves or cancels them», 20 §3): a wake set
     # last session could never be cancelled this one.
 
+    async def _pending(self, unit: str, now_ms: int) -> Sequence[PendingSelfWake]:
+        """The unit's pending self-wakes, read over a BOUNDED window (a ref
+        silent for longer than the horizon plus a day is past due)."""
+        return await self._pending_self_wakes(
+            unit, now_ms - int(PENDING_WINDOW_SECONDS * 1000),
+        )
+
     async def _created_since(self, unit: str, since_ms: int) -> int:
         if self._self_wakes_created_since is not None:
             return await self._self_wakes_created_since(unit, since_ms)
@@ -1071,8 +1206,20 @@ def _render_agenda(items: Sequence[AgendaItem]) -> str:
     never a conclusion (30-cognition.md §1), matching `AgendaItem.summary`'s
     own construction. Each line names its room, so a write that takes a
     `room` can name the one it means."""
-    lines = [f"{i}. {item.summary} [room {_room_key(item.room)}]" for i, item in enumerate(items)]
+    lines = [
+        f"{i}. {item.summary}{_returning(item.strike)} [room {_room_key(item.room)}]"
+        for i, item in enumerate(items)
+    ]
     return "\n".join(lines)
+
+
+def _returning(strike: int) -> str:
+    """A returning item says so: without it two items of one room (the fresh
+    messages and the ones an earlier session left open) read the same."""
+    if strike <= 0:
+        return ""
+    noun = "session" if strike == 1 else "sessions"
+    return f" (returning: left open by {strike} earlier {noun})"
 
 
 def now_utc(ms: int) -> datetime:

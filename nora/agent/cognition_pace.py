@@ -6,6 +6,21 @@ evaluator (`nora.app.wake.WakeEvaluator`, step 1) picks up with no change of
 its own, because `nora.domain.stimuli._trigger` already fires on any
 pending `self`-kind stimulus (20 §3's wake table, row "self").
 
+**Write order, so no failure loses a self-wake or leaves one that fires
+after it was called off** (DEC-242, second review of #627). A self-wake is
+live while a `self` stimulus stands for its `wake_ref` (`item`) unretracted;
+the ledger row is its bookkeeping. `wake_at` appends, then records; if the
+record fails the new stimulus is retracted before the error is raised, so no
+stimulus fires that the ledger never knew of. `wake_move` APPENDS the new
+stimulus, then retracts every other one standing for the ref (by ref, so a
+straggler an earlier failure left is taken too), then records: a failure
+before the retract leaves the old time live (and the new one is taken back), a
+failure after it leaves the new time live, and never neither. `wake_cancel`
+retracts, then records: a failed record leaves a ledger row that reads
+pending while its stimulus is retracted, which `fold_self_wakes` reads as not
+pending. A superseding `wake_at` retracts the displaced ref only after its own
+row is recorded.
+
 **A self-wake is not an act.** Nothing here ever reaches a room: `wake_at`
 writes a `self` signal, `wake_move`/`wake_cancel` only ever touch that
 signal's own bookkeeping row. See `tests/architecture/
@@ -15,7 +30,9 @@ module is and is not allowed to reach.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Sequence
+from typing import Any
 
 from nora.domain.cognition_pace import (
     DEFAULT_MAX_SELF_WAKES_PER_DAY,
@@ -28,21 +45,9 @@ from nora.domain.cognition_pace import (
 from nora.domain.ports import CognitionDryRunStore, NewCognitionPace, StimulusStore
 from nora.domain.stimuli import NewStimulus
 
+log = logging.getLogger("nora.agent.cognition_pace")
+
 __all__ = ["dry_run_wake_at", "dry_run_wake_cancel", "dry_run_wake_fire", "dry_run_wake_move"]
-
-
-async def _retract(
-    stimuli: StimulusStore, *, unit: str, stimulus_id: int | None, reason: str, now_ms: int,
-) -> None:
-    """Retract the `self` stimulus a cancelled, moved or superseded self-wake
-    left behind, so the evaluator's pending read never counts it (20 §3: a
-    cancelled self-wake must not fire). Nothing to retract when the row never
-    had a stimulus."""
-    if stimulus_id is None:
-        return
-    await stimuli.retract(
-        unit=unit, stimulus_id=stimulus_id, reason=reason, recorded_at_ms=now_ms,
-    )
 
 
 async def _record(
@@ -62,6 +67,41 @@ async def _record(
         recorded_at_ms=now_ms,
     )
     return PaceAnswer(row_id, refusal_reason, refusal_detail)
+
+
+async def _take_back(
+    stimuli: StimulusStore, *, unit: str, stimulus_id: int | None, now_ms: int,
+) -> None:
+    """Retract a stimulus this call appended and could not account for. A
+    failure here is swallowed: the caller raises the error that brought it
+    here, which is the one the model and the log should see."""
+    if stimulus_id is None:
+        return
+    try:
+        await stimuli.retract(
+            unit=unit, stimulus_id=stimulus_id, reason="unrecorded", recorded_at_ms=now_ms,
+        )
+    except Exception:
+        log.exception("could not take back self stimulus %s", stimulus_id)
+
+
+async def _record_or_take_back(
+    ledger: CognitionDryRunStore, stimuli: StimulusStore, *, new_stimulus_id: int | None,
+    **record: Any,
+) -> PaceAnswer:
+    """`_record` a transition that just appended `new_stimulus_id`; if the
+    record fails, the stimulus is retracted before the error is raised, so a
+    self-wake the ledger never knew of cannot fire."""
+    try:
+        return await _record(
+            ledger, outcome="recorded", stimulus_id=new_stimulus_id, **record,
+        )
+    except Exception:
+        await _take_back(
+            stimuli, unit=record["unit"], stimulus_id=new_stimulus_id,
+            now_ms=record["now_ms"],
+        )
+        raise
 
 
 async def dry_run_wake_at(
@@ -95,20 +135,21 @@ async def dry_run_wake_at(
         ),
         recorded_at_ms=now_ms,
     )
+    answer = await _record_or_take_back(
+        ledger, stimuli, new_stimulus_id=stimulus_id, session_id=session_id, unit=unit,
+        verb="wake_at", wake_ref=wake_ref, transition="created", subject_rows=subject_rows,
+        why=why, at_ms=at_ms, now_ms=now_ms, supersedes=supersedes,
+    )
     if supersedes is not None:
         # The displaced self-wake's stimulus is retracted (20 §3: a new
         # self-wake sharing a subject row SUPERSEDES the pending one), or it
-        # would still fire beside its replacement.
-        displaced = next((p for p in pending if p.wake_ref == supersedes), None)
-        await _retract(
-            stimuli, unit=unit, reason="superseded", now_ms=now_ms,
-            stimulus_id=None if displaced is None else displaced.stimulus_id,
+        # would still fire beside its replacement. After the record: a failed
+        # record must not take the old one away with the new.
+        await stimuli.retract_self(
+            unit=unit, wake_ref=supersedes, keep=None, reason="superseded",
+            recorded_at_ms=now_ms,
         )
-    return await _record(
-        ledger, session_id=session_id, unit=unit, verb="wake_at", wake_ref=wake_ref,
-        transition="created", subject_rows=subject_rows, why=why, at_ms=at_ms,
-        now_ms=now_ms, outcome="recorded", stimulus_id=stimulus_id, supersedes=supersedes,
-    )
+    return answer
 
 
 async def dry_run_wake_move(
@@ -129,13 +170,10 @@ async def dry_run_wake_move(
             now_ms=now_ms, outcome="refused", refusal_reason=refusal.reason,
             refusal_detail=refusal.detail,
         )
-    # The OLD stimulus is retracted: a move replaces the due time, it does not
-    # add a second wake at the old one (20 §3: «versioned transitions»).
-    old = next((p for p in pending if p.wake_ref == wake_ref), None)
-    await _retract(
-        stimuli, unit=unit, reason="moved", now_ms=now_ms,
-        stimulus_id=None if old is None else old.stimulus_id,
-    )
+    # APPEND the new due time first, then retract the old one: a move
+    # replaces the due time, it does not add a second wake at the old one
+    # (20 §3: «versioned transitions»), and a failure between the two must
+    # leave one of them live, never neither.
     stimulus_id = await stimuli.append(
         stimulus=NewStimulus(
             unit=unit, kind="self", item=wake_ref, ref=f"self:{wake_ref}:{at_ms}",
@@ -143,6 +181,14 @@ async def dry_run_wake_move(
         ),
         recorded_at_ms=now_ms,
     )
+    try:
+        await stimuli.retract_self(
+            unit=unit, wake_ref=wake_ref, keep=stimulus_id, reason="moved",
+            recorded_at_ms=now_ms,
+        )
+    except Exception:
+        await _take_back(stimuli, unit=unit, stimulus_id=stimulus_id, now_ms=now_ms)
+        raise
     return await _record(
         ledger, session_id=session_id, unit=unit, verb="wake_move", wake_ref=wake_ref,
         transition="moved", subject_rows=subject_rows, why=why, at_ms=at_ms,
@@ -163,10 +209,9 @@ async def dry_run_wake_cancel(
     )
     outcome = "refused" if refusal is not None else "recorded"
     if refusal is None:
-        row = next((p for p in pending if p.wake_ref == wake_ref), None)
-        await _retract(
-            stimuli, unit=unit, reason="cancelled", now_ms=now_ms,
-            stimulus_id=None if row is None else row.stimulus_id,
+        await stimuli.retract_self(
+            unit=unit, wake_ref=wake_ref, keep=None, reason="cancelled",
+            recorded_at_ms=now_ms,
         )
     return await _record(
         ledger, session_id=session_id, unit=unit, verb="wake_cancel", wake_ref=wake_ref,

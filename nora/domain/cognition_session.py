@@ -211,25 +211,26 @@ def build_agenda(
     the group's oldest stimulus id, so the ordering is a pure function of its
     input — no dict-iteration-order dependency), and cap at `max_items`.
     `strikes` maps a stimulus id a CLOSED session returned to this agenda onto
-    its strike (`UnitView.carry`, 30 §2); an item's strike is the greatest of
-    its stimuli's, so a returning item is not read as new. The
+    its strike (`UnitView.carry`, 30 §2). A strike belongs to an ITEM: the
+    strike is part of the grouping key, so a returning item stays its own item
+    with its own count and a fresh stimulus of the same room never joins it
+    (it would inherit a strike it never earned, and be struck with it). The
     caller passes `pending` as the stimuli one wake claims (its
     `through_stimulus_id` range, already computed by
     `nora.domain.stimuli.decide`); this function claims nothing itself.
     """
     carried = strikes or {}
-    groups: dict[tuple[str, Room, str], list[Stimulus]] = {}
+    groups: dict[tuple[str, Room, str, int], list[Stimulus]] = {}
     for stimulus in pending:
-        key = _group_key(stimulus, home_room=home_room)
+        key = (*_group_key(stimulus, home_room=home_room), carried.get(stimulus.id, 0))
         groups.setdefault(key, []).append(stimulus)
 
     items: list[AgendaItem] = []
-    for (kind, room, item_key), rows in groups.items():
+    for (kind, room, item_key, strike), rows in groups.items():
         ids = tuple(sorted(s.id for s in rows))
         cues = tuple(sorted({cue for s in rows for cue in s.cues}))
         summary = _summary(kind, room, item_key, len(rows))
         surprise = _surprise(kind, cues, len(rows))
-        strike = max((carried.get(i, 0) for i in ids), default=0)
         items.append(AgendaItem(
             kind=kind, room=room, summary=summary,
             stimulus_ids=ids, cues=cues, surprise=surprise, strike=strike,
