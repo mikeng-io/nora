@@ -72,6 +72,10 @@ git log --oneline -1
 NORA_GIT_SHA=$(git rev-parse HEAD) NORA_BUILT_AT=$(date -u +%FT%TZ) docker compose build nora > /tmp/nora-build.log 2>&1; BUILD_RC=$?
 echo "BUILD_RC=$BUILD_RC"; grep -E 'Built|ERROR' /tmp/nora-build.log | tail -n 3
 [ "$BUILD_RC" = 0 ] || exit 6
+cp config.toml /tmp/config.live-check.toml || exit 14   # never bind-mount from the checkout
+docker run --rm -v /tmp/config.live-check.toml:/tmp/live.toml:ro --entrypoint /app/.venv/bin/nora nora:latest \
+  config validate --config /tmp/live.toml </dev/null; CFG_RC=$?
+echo "CFG_RC=$CFG_RC"; [ "$CFG_RC" = 0 ] || { echo "LIVE_CONFIG_REFUSED_BY_NEW_IMAGE"; exit 14; }
 docker compose up -d --force-recreate nora presence analytics; UP_RC=$?
 echo "UP_RC=$UP_RC"; [ "$UP_RC" = 0 ] || exit 7
 python3 scripts/verify-deploy.py; VD_RC=$?
@@ -90,23 +94,18 @@ is tagged and logged, so a failed one is never a rollback target (step 6). On fa
 
 - `LOCK_TIMEOUT` / `UNLOCKED_DEPLOY_RUNNING`: another deploy is live. Wait,
   then rerun; never kill it.
+- `LIVE_CONFIG_REFUSED_BY_NEW_IMAGE`: master changed a config key the live file
+  still has; nothing was recreated. Fix it through step 5, then rerun (reference.md).
 - `CHECKOUT_NOT_CLEAN`: the checkout holds another session's work (22 and 7
   unpushed commits, 2026-09-09). Push it first
   (`git push origin HEAD:refs/heads/mikeng-io/<slug>`), land it by PR, rerun.
   Never `reset`, never force.
-- `FETCH_FAILED` with `Permission denied (publickey)`: rerun with `ssh -A`.
-- `FF_FAILED` on untracked files in the way: move them aside and tell the
-  operator; never `git clean` (they may be someone's).
-- `UP_RC` nonzero with `container name ... is already in use`: step 7.
+- `FETCH_FAILED`, `FF_FAILED`, `UP_RC` nonzero: reference.md, Other step 3 failures.
 - `VD_RC=1`: `STALE` names a container to recreate, `DOWN` says
   `docker logs <name> --tail 30`. Fix and rerun `verify-deploy.py` until 0.
   `VD_RC=2`: no container declares `nora:latest`.
 
-Other images: ADD the service to the build and up lines (voice:
-`nora voice-sidecar voice-wake` together). `verify-deploy.py` sees only
-`nora:latest`, so read each other image back per container, as
-`docs/runbook.md` 3b shows: `docker inspect --format '{{.Image}}' <svc>` must
-equal `docker image inspect <svc-image> --format '{{.Id}}'`.
+Other images (voice, the rest): reference.md, Other images.
 
 Then prove THIS change works: the one metric, row, trace or log line that only
 the new code produces (nora-readback). The deploy is not done without it.
