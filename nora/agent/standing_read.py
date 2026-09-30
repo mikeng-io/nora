@@ -65,7 +65,10 @@ def render_standing(head: StandingHead, target: RenderRoom) -> tuple[dict[str, A
         ) if present and not allowed[name]
     )
     if out:
+        # `revision` is ABSENT, not null, when no revision IS the head: a null
+        # would read as a token of «no revision», an absent key as «none stated».
         out = {
-            "revision": head.revision_id, "updated": iso(standing.updated_at), **out,
+            **({"revision": head.revision_id} if head.revision_id is not None else {}),
+            "updated": iso(standing.updated_at), **out,
         }
     return out, withheld

@@ -2845,6 +2845,14 @@ _ROLLUP_SUBJECT = (
     "Name a person here. stay, trip and daybook take one name; colocation, "
     "outing and tie take one or several, separated by commas."
 )
+_ROLLUP_KIND = (
+    "That is not a rollup kind. Use stay, trip, daybook, colocation, outing or "
+    "tie."
+)
+_ROLLUP_EVERYONE = (
+    "«everyone» stands for the whole room and takes no other name beside it. "
+    "Give either everyone or the names, not both."
+)
 _ROLLUP_NO_PERSON = (
     "Nobody in this conversation goes by that. Check the name with "
     "lookup_person; do not guess who was meant."
@@ -5014,7 +5022,7 @@ def build_tool_specs(
             return {"status": "unavailable", "note": _ROLLUP_TIME}
         if kind not in ROLLUP_READ_KINDS:
             _record(metrics, "rollup_read", "unavailable", reason="kind")
-            return {"status": "unavailable", "note": _ROLLUP_SUBJECT}
+            return {"status": "unavailable", "note": _ROLLUP_KIND}
         bound = await _lineage_target("rollup_read")
         if bound is None:
             return {"status": "unavailable", "note": _ROLLUP_OFF}
@@ -5027,9 +5035,19 @@ def build_tool_specs(
         if not names or (kind in ("stay", "trip", "daybook") and len(names) > 1):
             _record(metrics, "rollup_read", "unavailable", reason="subject")
             return {"status": "unavailable", "note": _ROLLUP_SUBJECT}
+        if everyone and len(names) > 1:
+            _record(metrics, "rollup_read", "unavailable", reason="subject")
+            return {"status": "unavailable", "note": _ROLLUP_EVERYONE}
         people: list[PersonRef] = []
         if everyone:
             people = list(view.people)
+            if not people:
+                # A room with nobody resolved is not «every person»: an empty
+                # subject set would reach the store as no filter at all. The
+                # store refuses it too (`SqlRollupRead.read`), so neither layer
+                # alone can turn «nobody» into «all».
+                _record(metrics, "rollup_read", "nothing_found", reason="subject")
+                return {"status": "nothing_found", "note": _ROLLUP_NO_PERSON}
         for name in [] if everyone else names:
             matches = view.find(name)
             if not matches:

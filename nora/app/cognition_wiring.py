@@ -163,8 +163,9 @@ def read_surface(*, read_only: frozenset[str], enabled_flags: Collection[str]) -
 #: where a tag turn's number already covers one item it is kept, and where it
 #: does not (`event_search` reads a place, then a date, then a person) it is
 #: raised. `[dreamer.budgets.cognition.tool_calls]` overrides any line (and
-#: `config.example.toml` states the same table, held equal by
-#: `tests/unit/test_cognition_budgets.py`). A number here is a starting guess a
+#: `config.example.toml` states the same table, pinned by
+#: `tests/test_config.py` (the template) and `tests/test_composition.py`
+#: (the built agent's ceilings)). A number here is a starting guess a
 #: shadow week sizes: a ceiling is not a reservation, so headroom costs
 #: nothing until a session spends it.
 COGNITION_TOOL_CALLS_PER_ITEM: Mapping[str, int] = {

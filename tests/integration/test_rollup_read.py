@@ -420,3 +420,64 @@ async def test_every_call_is_counted_by_its_status(engine, built, tmp_path):
     await _call(tool, kind="daybook", subject="Ada", interval="nope")
     for status in ("ok", "nothing_found", "unavailable"):
         assert metrics.get("nora_tool_calls_total", tool="rollup_read", status=status) == 1
+
+
+# ---- an empty subject is never «everyone» (review of #647, M2) -----------------------------------
+
+def _permissive(monkeypatch):
+    """Lineage that shows every row, so it cannot mask a filter that went missing:
+    what these tests measure is the subject filter and nothing after it."""
+    monkeypatch.setattr("nora.agent.tools.visible_rows", lambda rows, target: (list(rows), 0))
+
+
+_NOBODY_HERE = FakeRosterSource(groups={"group-1": ()})
+_ONLY_AN_UNMAPPED_ACCOUNT = FakeRosterSource(groups={"group-1": (frozenset({"+85299999999"}),)})
+
+
+@pytest.mark.parametrize("roster, why", [
+    (_NOBODY_HERE, "a roster with nobody in it"),
+    (_ONLY_AN_UNMAPPED_ACCOUNT, "one account no identity.toml block names"),
+])
+@pytest.mark.parametrize("kind", ["stay", "trip", "daybook", "colocation", "outing", "tie"])
+async def test_everyone_in_a_room_with_no_resolved_people_is_nothing_found_not_every_row(
+    engine, built, tmp_path, monkeypatch, kind, roster, why,
+):
+    _permissive(monkeypatch)
+    tool = _tool(engine, tmp_path, roster=roster)
+    result = await _call(tool, kind=kind, subject="everyone", interval=f"{DAY0}/{DAY1}")
+    assert result["status"] == "nothing_found", why
+    assert "rows" not in result, why
+
+
+async def test_a_named_person_alone_narrows_the_read_with_lineage_out_of_the_way(
+    engine, built, tmp_path, monkeypatch,
+):
+    """The subject filter, measured without lineage: Ada's daybook and only Ada's."""
+    _permissive(monkeypatch)
+    everyone = await _call(_tool(engine, tmp_path), kind="daybook", subject="everyone",
+                           interval=f"{DAY0}/{DAY1}")
+    ada = await _call(_tool(engine, tmp_path), kind="daybook", subject="Ada",
+                      interval=f"{DAY0}/{DAY1}")
+    assert {r["who"] for r in everyone["rows"]} == {"Ada", "Ben"}
+    assert ada["status"] == "ok" and {r["who"] for r in ada["rows"]} == {"Ada"}
+
+
+@pytest.mark.parametrize("kind", ["stay", "trip", "daybook", "colocation", "outing", "tie"])
+async def test_the_store_refuses_an_empty_subject_set_it_never_reads_it_as_all(
+    engine, built, kind,
+):
+    with pytest.raises(ValueError, match="at least one subject"):
+        await SqlRollupRead(engine).read(_q(kind, subjects=()))
+
+
+async def test_everyone_beside_a_name_is_refused_not_guessed_at(engine, built, tmp_path):
+    result = await _call(_tool(engine, tmp_path), kind="colocation",
+                         subject="everyone, Ada", interval=DAY0)
+    assert result["status"] == "unavailable" and "everyone" in result["note"]
+    assert "rows" not in result
+
+
+async def test_a_kind_that_is_not_one_says_which_kinds_there_are(engine, built, tmp_path):
+    result = await _call(_tool(engine, tmp_path), kind="place", subject="Ada", interval=DAY0)
+    assert result["status"] == "unavailable"
+    assert "not a rollup kind" in result["note"] and "daybook" in result["note"]

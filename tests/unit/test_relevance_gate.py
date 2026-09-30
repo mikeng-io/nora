@@ -1210,7 +1210,7 @@ def test_the_digest_is_derived_from_the_registry_and_read_only():
 
     # Minus the loader (design/tool-catalogue/02): read-only, but registry
     # plumbing — whether it can LOAD a tool is never whether an answer exists.
-    # And minus the two reads only a Dreamer loop holds (DEC-245): what a
+    # And minus the two reads only a Dreamer loop holds (DEC-246): what a
     # reply cannot call is never «something she can serve» to the gate.
     from nora.agent.surface import DREAMER_LOOP_TOOLS
 

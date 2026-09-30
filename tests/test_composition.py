@@ -1121,6 +1121,38 @@ async def test_every_wired_adaptor_stays_inside_the_read_only_ceiling(cfg, tmp_p
         ), adaptor.name
 
 
+async def test_only_the_cognition_session_holds_rollup_read_and_standing_read(cfg, tmp_path):
+    """Enumerates EVERY live adaptor's final tool list with every tier switched on
+    and asserts the two Cognition reads appear for the Cognition session alone
+    (review of #647, M1: the note-candidates grant is derived from the read-only
+    ceiling and had silently gained both)."""
+    from nora.agent.surface import DREAMER_LOOP_TOOLS
+
+    (tmp_path / "policy.toml").write_text(_HOME_POLICY)
+    deps = await build_dependencies(override_config(cfg, {
+        "dreamer.enabled": True, "notes.enabled": True,
+        "notes.curator_enabled": True, "notes.candidates_enabled": True,
+        "notes.merge_mode": "shadow", "culture.enabled": True,
+        "cognition.mode": "shadow", "cognition.session_mode": "shadow",
+    }))
+
+    by_name = {a.name: a for a in deps.dream_adaptors}
+    assert set(by_name) == {
+        "note-curation", "note-candidates", "note-merge", "culture", "proactive",
+    }, "an adaptor added or gated off changes what this test enumerates"
+    holders = {name for name, a in by_name.items() if a.tools & DREAMER_LOOP_TOOLS}
+    assert holders == set(), f"adaptors holding a Cognition-only read: {holders}"
+    assert deps.cognition_runner is not None
+    assert DREAMER_LOOP_TOOLS <= deps.cognition_runner._read_only_tools, (
+        "the enumeration must find the tools where they belong, or it proves nothing"
+    )
+    # and the derivation that caught it: the candidates grant names both as withheld
+    from nora.language.note_candidates import WITHHELD_TOOLS, granted_tools
+
+    assert DREAMER_LOOP_TOOLS <= set(WITHHELD_TOOLS)
+    assert not granted_tools(frozenset(DREAMER_LOOP_TOOLS | {"now"})) & DREAMER_LOOP_TOOLS
+
+
 async def test_unit_scopes_are_the_allowlists_units_deduplicated(cfg):
     """Two rooms of one unit are ONE unit of work, not two — which is the
     whole reason a unit-keyed adaptor could not ride the per-scope
@@ -2085,7 +2117,7 @@ async def test_session_mode_shadow_builds_one_runner_and_hands_its_hook_to_the_e
     assert agent._memory_tools == MEMORY_TOOLS
     assert agent._read_tool_budgets["note_read"] > 0
     assert set(agent._read_tool_budgets) <= runner._read_only_tools
-    # PR B (DEC-245): the two new reads are wired and BUILT through the real
+    # PR B (DEC-246): the two new reads are wired and BUILT through the real
     # registry (a tool whose read the composition root did not hand the registry
     # is withheld from every surface and would be «wired» in name only), and the
     # ceilings are the per-ITEM allowances a session scales by its agenda.
@@ -2131,7 +2163,7 @@ async def test_the_sessions_read_tools_are_the_catalogue_less_what_a_flag_withho
     assert "record_query" in on.cognition_runner._read_only_tools
     wired = off.cognition_runner._read_only_tools
     assert {"note_read", "about", "where_been", "event_search"} <= wired
-    assert {"rollup_read", "standing_read"} <= wired                    # PR B, DEC-245
+    assert {"rollup_read", "standing_read"} <= wired                    # PR B, DEC-246
     assert not {"memo_read", "character_read", "social_items"} & wired  # not built yet
     # Built for a real room they are real, read-only tools, and only wired ones.
     built = on.cognition_runner._read_tools_for("friends", [Room("signal", "g1")])
@@ -2143,7 +2175,7 @@ async def test_the_sessions_read_tools_are_the_catalogue_less_what_a_flag_withho
 async def test_a_cognition_budget_with_no_tool_calls_runs_on_the_per_item_defaults(
     cfg, tmp_path,
 ):
-    """M12 (DEC-245): the template states the per-item table, but a deployment
+    """M12 (DEC-246): the template states the per-item table, but a deployment
     that carries a bare `[dreamer.budgets.cognition]` block must not fall back to
     a tag turn's numbers (`event_search` 1). The code's own defaults are the
     layer under the operator's word."""

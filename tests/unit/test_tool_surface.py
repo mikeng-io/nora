@@ -374,7 +374,7 @@ async def test_a_name_off_the_shelf_is_left_unknown():
     assert any("Unknown tool" in r.get("text", "") for r in model.results)
 
 
-# ---- the two Dreamer-only reads of PR B (DEC-245) -----------------------------------------
+# ---- the two Dreamer-only reads of PR B (DEC-246) -----------------------------------------
 
 _LOOP_ONLY = ("rollup_read", "standing_read")
 

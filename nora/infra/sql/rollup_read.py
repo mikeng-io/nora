@@ -53,6 +53,11 @@ class SqlRollupRead:
         self._engine = engine
 
     async def read(self, q: RollupReadQuery) -> RollupRead:
+        if not q.subjects:
+            # NEVER «all»: a unit row filter that is skipped when its subject
+            # set is empty turns «nobody» into «everybody in the unit» (#647
+            # M2). The caller names whom it means; an empty set is a bug there.
+            raise ValueError("rollup_read needs at least one subject")
         async with self._engine.connect() as conn:
             build = (await conn.execute(
                 sa.select(ROLLUP_BUILD.c.id, ROLLUP_BUILD.c.through_ms)
@@ -96,8 +101,7 @@ class SqlRollupRead:
             table.c.build_id == current_build_id(), table.c.unit == q.unit,
             table.c.valid_from_ms < q.end_ms, table.c.valid_to_ms >= q.start_ms,
         ]
-        if q.subjects:
-            where.append(_involves(q, table))
+        where.append(_involves(q, table))
         return sa.select(table).where(*where).order_by(table.c.valid_from_ms, table.c.id)
 
     @staticmethod
@@ -113,7 +117,7 @@ class SqlRollupRead:
             stmt = stmt.select_from(join)
         return stmt.where(
             table.c.build_id == current_build_id(),
-            table.c.subject_id.in_(q.subjects or ("",)),
+            table.c.subject_id.in_(q.subjects),
             start < q.end_ms, end >= q.start_ms,
         ).order_by(start, table.c.id)
 

@@ -76,3 +76,19 @@ def test_a_row_carries_the_key_a_note_cites_it_by():
     row = render_row(_stay(), name_of=lambda s: "Ada", room_label=lambda k: k)
     assert (row["kind"], row["subject"]) == ("stay", "a")
     assert row["from"] == iso(HKT_MIDNIGHT) and row["to"] == iso(HKT_MIDNIGHT + 3_600_000)
+
+
+# ---- two rooms under one label keep both counts (review of #647, M4) -----------------------
+
+def test_two_rooms_with_one_label_are_both_counted_never_one_overwriting_the_other():
+    from nora.agent.rollup_read import _rooms_by_label
+
+    labels = {"signal:a": "Family", "signal:b": "Family", "signal:c": "another room",
+              "signal:d": "another room", "signal:e": "Work"}
+    out = _rooms_by_label(
+        {"signal:a": 3, "signal:b": 5, "signal:c": 1, "signal:d": 2, "signal:e": 7},
+        labels.__getitem__,
+    )
+    assert out == {"Family": 3, "Family (2)": 5, "another room": 1,
+                   "another room (2)": 2, "Work": 7}
+    assert sum(out.values()) == 18

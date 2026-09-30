@@ -212,7 +212,7 @@ unit's rooms was `up` throughout. Withheld deviations are counted
   Character line about routine or closeness cites the rhythm or the tie
   ([10](10-tiers.md) §2 rule 5).
 
-**As built (step 3, PR B, DEC-245).** `rollup_read` reads the current build
+**As built (step 3, PR B, DEC-246).** `rollup_read` reads the current build
 for the calling room's unit (`nora/infra/sql/rollup_read.py`) and renders
 each row with its citation key, a `through` stamp and no coordinate
 (`nora/agent/rollup_read.py`). Kinds: stay, trip, daybook, colocation,

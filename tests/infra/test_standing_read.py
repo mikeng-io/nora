@@ -197,6 +197,17 @@ async def test_the_tool_shows_the_sections_and_the_revision_it_stands_at(engine,
     assert "note" not in result
 
 
+async def test_a_head_with_no_revision_omits_the_key_not_null(engine, tmp_path):
+    """DEC-246: `revision` is ABSENT when no revision IS the head; a null would
+    read as a token."""
+    await SqlStandingStore(engine).write(standing=_standing())
+    async with engine.begin() as conn:
+        await conn.execute(sa.delete(STANDING_REVISION))
+    result = await _call(_tool(engine, tmp_path))
+    assert result["status"] == "ok" and result["where_it_stands"] == "They plan a dinner."
+    assert "revision" not in result
+
+
 async def test_an_unsupported_head_is_not_returned(engine, tmp_path):
     """Withdrawal (10 §2 rule 7): the cascade marked the position unsupported,
     so none of its words reach the session, in any section."""

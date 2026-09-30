@@ -23,7 +23,7 @@ unlabelled (design 27 §3.4), never guessed.
 from __future__ import annotations
 
 import re
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
@@ -99,6 +99,25 @@ def _place(kind: str | None, label: str | None, saved: bool) -> str:
     return f"{what} near {label}" if label else what
 
 
+def _rooms_by_label(
+    counts: Mapping[str, int], room_label: Callable[[str], str],
+) -> dict[str, int]:
+    """Message counts by room LABEL. Two rooms can share a label (two «Family»
+    groups; every room this one may not name is «another room»), and a dict
+    keyed on the label would silently drop one count. A repeat gets a short
+    ordinal, in key order so the same row renders the same way twice."""
+    out: dict[str, int] = {}
+    for key, n in sorted(counts.items()):
+        label = room_label(key)
+        if label in out:
+            i = 2
+            while f"{label} ({i})" in out:
+                i += 1
+            label = f"{label} ({i})"
+        out[label] = n
+    return out
+
+
 def render_row(
     row: RollupReadRow, *, name_of: Callable[[str], str],
     room_label: Callable[[str], str],
@@ -140,7 +159,7 @@ def render_row(
             "home_mins": round(f["home_ms"] / 60_000),
             "together_mins": round(f["colocation_ms"] / 60_000),
             "outings": f["outings"], "messages": f["messages"], "reactions": f["reactions"],
-            "rooms": {room_label(k): n for k, n in sorted(f["rooms"].items())},
+            "rooms": _rooms_by_label(f["rooms"], room_label),
         }
         if f["with_persons"]:
             out["with"] = [name_of(p) for p in f["with_persons"]]
