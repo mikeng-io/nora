@@ -46,6 +46,17 @@ TICK = 30
 DAY_TICKS = 86_400 // TICK
 
 
+async def _until_calls(rig: Rig, calls: int) -> None:
+    """Tick until the model has been called `calls` times, at most 10 days of
+    simulated time: a run that stops calling (a strike, a wedge) FAILS here
+    instead of spinning."""
+    for _ in range(10 * DAY_TICKS):
+        if rig.agent.calls >= calls:
+            return
+        await _run(rig, ticks=1, chatty=False)
+    raise AssertionError(f"only {rig.agent.calls} of {calls} sessions ran in 10 days")
+
+
 async def _run(rig: Rig, *, ticks: int, chatty: bool) -> None:
     """`ticks` evaluator ticks, 30 s apart. `chatty`: a new message every 60 s,
     so there is always something pending (the worst case for a retry loop)."""
@@ -255,6 +266,7 @@ async def test_twenty_infrastructure_failures_back_off_to_the_cap_and_strike_not
     began = rig.clock.ms
     while rig.agent.calls < 21:
         await _run(rig, ticks=1, chatty=False)
+        assert rig.stimuli.retracted == set(), "an infrastructure failure struck a stimulus"
         assert rig.clock.ms - began < 10 * 86_400_000, "the loop is not converging"
     await rig.settle()
     assert rig.ends() == ["failed"] * 20 + ["closed"]
@@ -289,8 +301,7 @@ async def test_one_agenda_failure_among_infrastructure_ones_is_not_a_strike():
     rig = _rig(agent=ScriptedAgent(script=[overflow, boom, boom, boom, boom, boom, boom]))
     for _ in range(3):
         await rig.say()
-    while rig.agent.calls < 7:
-        await _run(rig, ticks=1, chatty=False)
+    await _until_calls(rig, 7)
     assert rig.stimuli.retracted == set()
     view = await rig.stimuli.view(unit="u1", mode="shadow", now_ms=rig.clock.ms, limit=100)
     assert (view.failures, view.agenda_failures) == (7, 1)
@@ -299,6 +310,5 @@ async def test_one_agenda_failure_among_infrastructure_ones_is_not_a_strike():
 async def test_the_session_runner_records_why_it_failed():
     rig = _rig(agent=ScriptedAgent(script=[boom, overflow]))
     await rig.say()
-    while rig.agent.calls < 2:
-        await _run(rig, ticks=1, chatty=False)
+    await _until_calls(rig, 2)
     assert [o.cause for _, o in sorted(rig.stimuli.outcomes.items())] == ["infra", "agenda"]
