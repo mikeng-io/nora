@@ -12,6 +12,7 @@ from __future__ import annotations
 import tiktoken
 
 from nora.agent.registry import ToolRegistry
+from nora.agent.surface import DREAMER_ONLY_TOOLS, ToolScope
 from nora.agent.tools import HOT_TOOLS, LOADER_TOOL, NATIVE_TOOLS
 
 ENC = tiktoken.get_encoding("cl100k_base")
@@ -50,9 +51,12 @@ ENC = tiktoken.get_encoding("cl100k_base")
 # Cognition session's `rollup_read` (38 tokens) and `standing_read` (26) on top
 # of master's block (2,216 over 69 lines): total 2,280 over 71 at a
 # mean of 32.1, under `MEAN_CEILING`. No existing line changed. Both are
-# Dreamer-only (`DREAMER_LOOP_TOOLS`) yet the catalogue lists every registered
-# tool (`test_every_registered_tool_has_a_catalogue_line`), so a tag turn pays
-# their lines; whether the catalogue should be scoped is a separate question.
+# Dreamer-only (`DREAMER_LOOP_TOOLS`): `ToolScope.admits` keeps them off every
+# tag turn's tools and catalogue, so a tag turn pays NOTHING for their lines.
+# They were counted only because `ToolRegistry.tool_catalogue()` lists every
+# registered tool (`test_every_registered_tool_has_a_catalogue_line`), which is
+# not what any turn is shown. (The sentence that stood here, «a tag turn pays
+# their lines», was wrong, and raised the ceiling for a cost nobody pays.)
 #
 # RE-SET 2026-10-01 again, 2,300 -> 2,400, for TWO MORE NEW TOOLS, not for
 # drift: S3a (design/sandbox-runtime §6, §7) adds `computer_export` (32
@@ -67,7 +71,20 @@ ENC = tiktoken.get_encoding("cl100k_base")
 # changed. Both ship withheld (`[documents] enabled = false`), so a live turn
 # pays nothing for them until the portal pages exist. 2,500 holds these and
 # roughly two more lines.
+#
+# MEASURED 2026-10-01 against what a tag turn is actually shown (fix PR C, review
+# of 2026-09-30, minor 3): the ceiling is asserted over the LARGEST PER-PLATFORM
+# tag catalogue (`_tag_catalogue`: the registered tools `ToolScope` admits for
+# a tag turn, every optional tool wired). That is Discord's, 2,310 tokens over
+# 72 lines; Signal, WhatsApp and Instagram are 2,150 over 66. 2,250 does NOT hold
+# Discord's (by 60), so it is not restored; 2,500 stays, which is the ceiling
+# from the row above and leaves 190 over the real block, about five lines.
 BLOCK_CEILING = 2_500
+
+#: The platforms a tag turn runs on. The catalogue differs only by the tools
+#: scoped to one (`DISCORD_ONLY_TOOLS`) and by the Dreamer-only ones, which no
+#: tag turn admits.
+TAG_PLATFORMS = ("signal", "discord", "whatsapp", "instagram")
 
 # The per-line ceiling, and it was REVISED after measurement. The bundle
 # asserted 20 from an estimate; rendering the real thing put eleven lines
@@ -93,6 +110,13 @@ def _lines() -> list[str]:
     return ToolRegistry().tool_catalogue().splitlines()
 
 
+def _tag_catalogue(platform: str) -> list[str]:
+    """The catalogue lines a TAG turn on `platform` is shown: every registered
+    tool its scope admits, never a Dreamer-only one."""
+    scope = ToolScope(platform=platform, dreamer=False)
+    return [line for line in _lines() if scope.admits(line.split(" — ")[0][2:])]
+
+
 def test_every_registered_tool_has_a_catalogue_line():
     """The catalogue is the ONLY thing telling the model a tool exists once the
     schemas are deferred. A tool missing from it is a capability that silently
@@ -116,13 +140,26 @@ def test_every_line_carries_a_description():
 
 
 def test_the_catalogue_stays_an_index_and_not_a_second_copy_of_the_schemas():
-    """Gate 2a. Re-pointing this at a larger number instead of fixing the lines
-    is how the block becomes the thing it replaced."""
-    total = len(ENC.encode("\n".join(_lines())))
+    """Gate 2a, over what a tag turn pays: the LARGEST per-platform catalogue.
+    Re-pointing this at a larger number instead of fixing the lines is how the
+    block becomes the thing it replaced."""
+    sizes = {p: len(ENC.encode("\n".join(_tag_catalogue(p)))) for p in TAG_PLATFORMS}
+    platform, total = max(sizes.items(), key=lambda kv: kv[1])
     assert total <= BLOCK_CEILING, (
-        f"catalogue is {total} tokens, ceiling {BLOCK_CEILING}. Lines are being "
-        "written as descriptions — fix the lines, not the ceiling."
+        f"the {platform} tag catalogue is {total} tokens, ceiling {BLOCK_CEILING} "
+        f"({sizes}). Lines are being written as descriptions — fix the lines, not "
+        "the ceiling."
     )
+
+
+def test_a_tag_catalogue_holds_no_dreamer_only_line():
+    """The ceiling is measured over a tag turn's lines, so a Dreamer-only tool
+    must not be among them: if it were, the block would be paid where it is not
+    meant to be, and the comment above would be true after all."""
+    for platform in TAG_PLATFORMS:
+        named = {line.split(" — ")[0][2:] for line in _tag_catalogue(platform)}
+        assert not named & DREAMER_ONLY_TOOLS, (platform, named & DREAMER_ONLY_TOOLS)
+    assert len(_tag_catalogue("discord")) > len(_tag_catalogue("signal"))
 
 
 def test_no_single_line_has_become_a_description():

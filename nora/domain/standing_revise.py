@@ -141,30 +141,37 @@ def check_schema(
 
 
 def check_stale_base(
-    *, base_revision_id: int | None, current_fold_count: int | None,
+    *, base_revision_id: str | None, current_revision_id: str | None,
 ) -> Refusal | None:
     """`30-cognition.md` §3 rule 6: "A `base_revision_id` that is not the
     current revision is refused `stale_base`, with the current row."
 
-    Room Standing's revision counter is `fold_count` (the plain count of
-    folds written onto the head, `nora.domain.standing.Standing.fold_count`)
-    — there is no separate revision id on this tier, and adding one would be
-    a second counter a caller could disagree with the first about.
+    The token is `standing_revision.id`, the id `standing_read` shows as
+    `revision` (M6, DEC-250). It was `fold_count` until then, and that counter
+    does not move when the ingest fold rewrites the head (`increments_fold_count`
+    is False there), so a revision made between a read and a write passed as
+    fresh. Every write to the head appends a `standing_revision` row in the same
+    transaction (`SqlStandingStore.write`), so its id changes whenever the head
+    does.
+
     `base_revision_id=None` means the caller is not asserting a base at all
-    (both today's callers, serialized through `ConversationSlots` and so
-    never racing each other) and always passes.
+    (both of today's folds, serialized through `ConversationSlots` and so never
+    racing each other) and always passes. A base against a head that has no
+    revision id (no head, or a head the chain does not end at) is stale: a token
+    that names nothing cannot be the current one.
     """
     if base_revision_id is None:
         return None
-    if current_fold_count is None:
+    if current_revision_id is None:
         return Refusal(
             reason="stale_base",
-            detail="no revision exists yet for this room",
+            detail="this room's Standing has no revision to write against; "
+                   "read it again",
         )
-    if base_revision_id != current_fold_count:
+    if base_revision_id != current_revision_id:
         return Refusal(
             reason="stale_base",
             detail=f"base_revision_id={base_revision_id} but the current "
-                   f"revision is {current_fold_count}",
+                   f"revision is {current_revision_id}",
         )
     return None

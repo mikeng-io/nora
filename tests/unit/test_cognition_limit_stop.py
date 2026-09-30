@@ -24,6 +24,7 @@ from tests.unit.test_cognition_session_lifecycle import (
     ScriptedAgent,
     _rig,
     close_written,
+    iso,
 )
 
 
@@ -135,11 +136,11 @@ async def test_a_rerun_after_a_limit_stop_duplicates_neither_a_self_wake_nor_a_r
         by = {t.__name__: t for t in tools if hasattr(t, "__name__")}
         rig = holder[0]
         answers.append(await by["wake_at"](
-            subject_rows=["event:1"], at_ms=rig.clock.ms + 3_600_000, why="venue",
+            subject_rows=["event:1"], at=iso(rig.clock.ms + 3_600_000), why="venue",
         ))
         answers.append(await by["remind"](
-            room_platform="signal", room_conversation_id="room-a", intent="tell",
-            subject_rows=["event:1"], at_ms=rig.clock.ms + 7_200_000,
+            room="signal:room-a", intent="tell",
+            subject_rows=["event:1"], at=iso(rig.clock.ms + 7_200_000),
         ))
         return CognitionRunResult(stop_reason="limit_turns")
 

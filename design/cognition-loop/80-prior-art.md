@@ -1,7 +1,7 @@
 ---
 type: design
 title: "Prior art — Honcho, Graphiti/Zep, Letta, Generative Agents, Mem0; what Nora adopts, what it refuses, and the boundary with Honcho"
-description: "What each memory system does from raw input to derived memory, read from source on 2026-09-28; the mapping to Nora's tiers; the word collisions and how this bundle avoids them; the adopted mechanisms (retraction cascade, decay and reinforcement, transaction time everywhere and valid time only where intrinsic, hybrid search, contradiction as a row, a learning loop below fixed law); the refused ones (model-extracted triples, rewriting old rows, agent-written doctrine or skills); and where Honcho stops and Nora's tiers start."
+description: "What each memory system does from raw input to derived memory, read from source on 2026-09-28; the mapping to Nora's layers and tiers; the word collisions and how this bundle avoids them; the adopted mechanisms (retraction cascade, decay and reinforcement, transaction time everywhere and valid time only where intrinsic, hybrid search, contradiction as a row, a learning loop below fixed law); the refused ones (model-extracted triples, rewriting old rows, agent-written doctrine or skills); and where Honcho stops and Nora's tiers start."
 tags: [nora, prior-art, honcho, graphiti, zep, letta, generative-agents, mem0, memory, terminology]
 timestamp: '2026-09-28'
 edges:
@@ -113,7 +113,7 @@ is also a background job: nobody tagged her when it runs.
    learning loop,
    https://hermes-agent.nousresearch.com/docs/user-guide/features/memory):
    a harness layer of learned practice above an immutable core, bounded in
-   size and consolidated when full. Nora's Lessons are this layer, with
+   size and consolidated when full. Nora's Lessons tier is this, with
    doctrine as the core ([10](10-tiers.md) §1, [50](50-character-and-standing.md) §6).
    Added at the operator's direction on 2026-09-28; not read from source in
    this revision. The known failure is drift toward what earns engagement
@@ -133,7 +133,7 @@ is also a background job: nobody tagged her when it runs.
   learning, LangMem prompt optimisation, applied to the authored layer):
   doctrine ([55](55-self.md) §3) and `nora/skills/` (ADR 0016,
   docs/adr/0016-skill-policy.md) are authored and never hers to write. Lessons (§4 item 8) are not this: they are her own
-  bounded layer below doctrine, capped, cited to outcomes, refused where they
+  bounded, below doctrine, capped, cited to outcomes, refused where they
   would loosen doctrine, visible to the operator and reversible by id.
 - **Precomputing answers to predicted questions** (sleep-time compute's
   headline): it pays only when questions are predictable; Nora's value is the

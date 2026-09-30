@@ -1,6 +1,6 @@
 ---
 type: design
-title: "Self — what her adaptors build, where her growth lives, and her two layers"
+title: "Self — what her adaptors build, where her growth lives, and the conscious and the subconscious"
 description: "Cognition is not a tier: it is the loop; what it builds is Register, Character, Lessons and Standing. Her identity is the part of all state that is about her: given (doctrine), done (her Record), digested (her Character), learned (her Lessons) and held (her Standing). Growth is those changing and every turn reading them. Doctrine is the law: she never changes it, in whole or in part, and it changes only when the humans all agree. Her growth lives only in her own blocks, which render below the doctrine; where they disagree the doctrine is followed and a tension row records it for the operator."
 tags: [nora, self, identity, cognition, growth, doctrine, character]
 timestamp: '2026-09-28'
@@ -26,7 +26,7 @@ have with her and with each other.
 
 ## 2. Her identity is the slice of state that is about her
 
-| layer | what it says about her | kind | changes how |
+| facet | what it says about her | where it lives | changes how |
 |---|---|---|---|
 | **given** | who she is meant to be: constraints, voice, conduct | Doctrine (authored) | only when the humans all agree |
 | **done** | what she said and decided, and what happened after | Record (her sends, `loop_decisions`, reminders' outcomes) | every act |
@@ -103,7 +103,7 @@ Tension is outside the tiers ([10](10-tiers.md) §1; [15](15-map.md) §1 and
   reads the other.
 - **Doctrine wins**, and a disagreement becomes a tension row, never a change.
 
-## 6. Two layers, like a person
+## 6. The conscious and the subconscious, like a person
 
 The operator's model (2026-09-28), not a code name:
 
@@ -125,7 +125,23 @@ conscious barely drives the subconscious.**
 - **Conscious → subconscious**: only indirectly. What she says and how people
   respond is Record a later session may read; the tag path's ordinary
   Register writes and the debrief's Standing are shared state, not a
-  command. The conscious layer holds no pace verb (`wake_at`, `wake_move`,
+  command. The conscious holds no pace verb (`wake_at`, `wake_move`,
   `wake_cancel`), cannot read or edit an agenda or a pending self-wake, and
   cannot start or steer a session. That her own messages raise no stimulus
   ([20](20-observe.md) §3) is a consequence of this rule.
+
+**The conscious and the subconscious over the data model**
+([05](05-data-model.md) §7, DEC-249). The subconscious writes the Notebook,
+one writer per tier, split by timescale: Cognition, fast and per group,
+writes the Register and Standing; the Character adaptor and the Lessons
+adaptor, slow reflection, write Character and Lessons; Assess writes nothing
+there, only reports. The conscious reads Views cut for its room at read time
+([05](05-data-model.md) §6): pushed indices (`<notes>`, `<memos>`, `<events>`,
+`culture`, `standing`, `self`, `lessons`) and pulled reads (`note_read`,
+`memo_read`, `event_search`, `character_read`, `standing_read`). It never
+writes the Notebook: it hands off. A «記低» about the unit is a strong cue,
+and the end of a tag turn raises a hand-off stimulus in place of the debrief
+(its Standing write moves behind Cognition at step 4), each waking Cognition
+in about two minutes; a «記低» about the speaker stays `remember`, into
+Memory. So the conscious reaches the subconscious only as Record and stimuli,
+which is the direction rule above, now without the shared writes it allowed.

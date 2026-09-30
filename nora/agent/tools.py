@@ -157,6 +157,7 @@ from ..domain.models import (
     strip_mention_placeholders,
 )
 from ..domain.note_body import (
+    NORA_NAMES,
     NoteBodyError,
     Shown,
     ShownMessage,
@@ -5134,14 +5135,20 @@ def build_tool_specs(
         """The hits in `load_transcript`'s one shape (`_transcript_messages`),
         each named with its room, its reactions and whether it was deleted.
         A deleted message keeps its place and loses its words: its author
-        took them back (the withdrawal cascade that hides it is step 2c)."""
+        took them back (the withdrawal cascade that hides it is step 2c).
+
+        Each row carries its number `n` ONLY for the Cognition session, the
+        citation handle a note's line rests on (DEC-250, #663 review major 2);
+        never on a tag turn or any other pass (R-18)."""
         names = {
             (r.platform, cid): (r.label or platform_name(r.platform))
             for r in rooms for cid in r.ids
         }
         out: list[dict] = []
         for hit, row in zip(hits, rows, strict=True):
-            item = _transcript_messages([row], now=now)[0][0]
+            item = _transcript_messages(
+                [row], now=now, with_ids=dream_adaptor == COGNITION_ADAPTOR,
+            )[0][0]
             item = {"room": names.get((hit.platform, hit.conversation_id), ""), **item}
             if hit.reactions:
                 item["reactions"] = dict(hit.reactions)
@@ -12582,7 +12589,7 @@ Args:
                     ref.name: pid
                     for pid, ref in getattr(persons, "by_person", {}).items()
                 },
-                nora_names=frozenset({"Nora"}),
+                nora_names=NORA_NAMES,
             ))
         except NoteBodyError as refused:
             _record(metrics, tool, "refused", reason="schema", rule=refused.rule)

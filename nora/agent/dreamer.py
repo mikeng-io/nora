@@ -628,7 +628,7 @@ UNIT_SAFE_TOOLS: frozenset[str] = frozenset({
     # conversation (the store records platform/conversation as provenance,
     # but a lookup is a global search of her own creations, never
     # conversation-scoped like `load_transcript`). That is its default scope.
-    # Its `room` scope (DEC-248) reads the BOUND room only, so a run with a
+    # Its `room` scope (DEC-251) reads the BOUND room only, so a run with a
     # home room reads that room and a run with none answers `unavailable`.
     "media_search",
     # Admitted with the supplied key path (32 §3.4): the note tier's two
