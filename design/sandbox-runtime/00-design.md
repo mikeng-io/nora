@@ -1,7 +1,7 @@
 ---
 type: design
 title: "Nora's computer — a coding agent's toolkit, executed in a microVM"
-description: "Early study. Nora stays a trusted container; the computer-use tools run in one persistent Docker Sandboxes (sbx) microVM that serves a small HTTP API (computerd) with Nora as its only client. A host unit owns lifecycle. Smith and the make_artifact tool are to be retired (pending open decision 4 for the async path): artifacts become a runtime skill over the computer tools, published by computer_export(to=link) through the existing ArtifactIngest port to Drop, revised in place from a persistent workspace. Threat model follows content, not users. Includes the live exposure and two sbx spike rounds, all measured 2026-09-30."
+description: "Early study. Nora stays a trusted container; the computer-use tools run in one persistent Docker Sandboxes (sbx) microVM that serves a small HTTP API (computerd) with Nora as its only client. A host unit owns lifecycle. Smith and the make_artifact tool are to be retired; the deferred-job outbox stays for delegate_task (decision 4, 2026-09-30): artifacts become a runtime skill over the computer tools, published by computer_export(to=link) through the existing ArtifactIngest port to Drop, revised in place from a persistent workspace. Threat model follows content, not users. Includes the live exposure and two sbx spike rounds, all measured 2026-09-30."
 tags: [nora, compute, sandbox, sbx, computer-use, smith, drop, rustfs]
 timestamp: '2026-09-30'
 status: draft
@@ -183,7 +183,7 @@ after the tools, written against the failures real tasks show (ADR 0016).
 the operator judged the environment semi-trusted, and the audit log (§12) is
 the required control.
 
-`make_artifact` is **to stop being a tool** (S3; the async path pending open decision 4). It becomes the `document-creation` runtime
+`make_artifact` is **to stop being a tool** (S3). The deferred-job outbox and its poller stay, as the delivery path for a future `delegate_task` (decision 4). It becomes the `document-creation` runtime
 skill (§6).
 
 - **Stay as they are:** `web_fetch`, `calculate`, `generate_image` and
@@ -255,11 +255,11 @@ Revising an artifact is the same skill with `artifact_id`.
   - 4 of them outran the 15 s sync window and finished a mean 43 s later (max
     80 s done, 151 s failed).
   - The tag turn cap is 360 s and 20 model turns.
-  - So the async path is not justified by evidence. Removing it retires
-    `ComputeBackend`, `ComputeJobPoller`, `compute_jobs` and the sync-window
-    logic, because `make_artifact` is their only user.
-  - If long builds appear, a generic background task (not artifact-specific)
-    is the thing to add.
+  - So artifacts do not need the async path (measured, small n = 15). The
+    sync-window logic goes with `make_artifact`.
+  - The job outbox, `ComputeJobPoller` and `compute_jobs` **stay**
+    (decision 4): a future `delegate_task`, a generic background sub-agent,
+    needs exactly that launch-now, deliver-later, survive-a-restart path.
 - **The ceiling that binds is output tokens, not time.** The live loop budget
   is 12,000 output tokens per tag (`[llm.budgets]`), and that ceiling binds
   silently. Nora writing a full HTML report inline would spend most of it.
@@ -416,9 +416,9 @@ week.
 | `SandboxRuntime` port, `ComputerdRuntime`, fake + contract suite | 1 day |
 | tools + manifest table + `tool_selection` before/after | 2 days |
 | `computer_export` (link/chat/keep) on `ArtifactIngest`; `document-creation` skill + doctrine line | 1 day |
-| retire Smith, `make_artifact`, `LocalDockerBackend`, `/api/tokens`, `nora-compute`, `docker.sock`, and the ComputeJob path. The last one reaches further than the tool: `ComputeBackend`, `compute_poller.py`, `compute_jobs` + migrations, `fire.py`'s compute occasions, `agent/relay.py` and `registry.py`, `subject/knowledge.py`, the `nora_compute_jobs_delivered_total` metric, and their tests | 2 days |
+| retire Smith, `make_artifact`, `LocalDockerBackend`, `/api/tokens`, `nora-compute` and `docker.sock`. The job outbox, poller and `compute_jobs` STAY for `delegate_task` (decision 4); only the Smith-specific `ComputeBackend` adapter goes | 1 day |
 
-This totals about 9 days for the core (S2a to S3). It excludes the audit
+This totals about 8 days for the core (S2a to S3). It excludes the audit
 trail (§12), sessions (§15) and the browser (S4), which are sized when they
 are built. The figures are estimates, not measured.
 
@@ -478,7 +478,9 @@ with who, when, how and what, as a full trail for auditing.**
   `<computer>` block, leases, pre-emption and concurrency.
 - **S3:** `computer_export` on `ArtifactIngest` + the `document-creation` skill.
   Then retire `make_artifact`, Smith, `LocalDockerBackend`, `/api/tokens` and
-  `docker.sock`, and the ComputeJob machinery if open decision 4 says so.
+  `docker.sock`. The job outbox, its poller and `compute_jobs` stay as the
+  delivery path for a future `delegate_task` (background sub-agent,
+  decision 4).
   Measure `output_tokens` on the first real artifact turns.
 - **S4:** the browser spike (§14), then `computer_browse`, then persistent
   browser profiles per room.
@@ -564,12 +566,38 @@ from what is *intended*, and neither is rewritten by a model.
      `status` (done / paused / blocked / failed), `objective`, `progress`,
      `next_step`, evidence (screenshot keys, file sha256s) and where it
      stopped (tab URL, tmux name).
-   - Code writes that into a row keyed by room, with provenance (tag id,
+   - Code writes that into a row keyed by session id (the room is an
+     attribute; a room can hold several sessions), with provenance (tag id,
      time). The model fills in one task's result and never folds the history.
    - The rows live in Nora's Postgres, not the VM, where a hostile page could
      rewrite them.
-   - A session untouched past its expiry closes. One whose tab or tmux session
-     is gone is marked stale. An abandoned task stops appearing.
+   - **What a session is** (decision 5): one task in progress across turns,
+     like a ticket. It is not the machine, a room's workspace, or a browser
+     profile, which all persist. It holds a project folder, a tmux name and
+     a browser tab or context while it is open.
+   - **States:** `active`, `paused`, `blocked` (on a person), `done`, `failed`
+     and `expired`. `done` and `failed` are terminal.
+   - **Expiry** is done by a sweeper on Nora's side, the prune/recover loop
+     shape.
+     - A session expires when it has had no audit event for
+       `idle_expiry_hours` **and** nothing it owns is running. A live tmux job
+       keeps it open, up to `max_running_days`, after which the job is
+       flagged, not killed. It also expires when every resource it held is
+       gone (checked against computerd's live state).
+     - On expiry, a compare-and-set moves it to `expired` with a reason, and
+       its lease is released. Its browser tab or context is closed, and its
+       tmux session is killed only if nothing is running in it. A final audit
+       row records `actor = sweeper`.
+     - **Files, project folders, logged-in profiles and audit rows are never
+       deleted.**
+   - **Lapsed, not lost.** For `lapsed_visible_hours` after expiry, the
+     `<computer>` block still shows it as lapsed, with where it stopped, so
+     Nora can answer about it. It stays resumable from its saved progress and
+     next step. **No automatic message** is sent; a nudge would be proactive
+     speech, a separate decision on its own path.
+   - **Configurable** (operator, 2026-09-30): `[computer.sessions]` in
+     `config.toml`: `idle_expiry_hours = 24`, `max_running_days = 7`,
+     `lapsed_visible_hours = 24`, and `sweep_interval_seconds`.
 3. **The `<computer>` block**, one renderer (ADR 0012; ADR 0013 `a-block-says-what-it-is…`), with an age on
    every line:
    ```text
@@ -584,7 +612,7 @@ from what is *intended*, and neither is rewritten by a model.
    callers want the computer: the *conscious* path (a tag turn, someone waiting
    on a reply) and the *subconscious* one (the Cognition and Dreamer passes,
    which run with nobody waiting). The rules:
-   - **Every call carries its actor** (`tag`, `cognition`, `dreamer:<adaptor>`),
+   - **Every call carries its actor** (`tag`, `fire`, `cognition`, `dreamer:<adaptor>`),
      both in `computer_events` and on `computer_sessions`, so what ran on whose
      behalf re-derives from the rows.
    - **Lock the thing being changed, not the room.** Each session owns its
@@ -607,26 +635,38 @@ from what is *intended*, and neither is rewritten by a model.
      context, so work on it is serialised per profile. A cap of 2 concurrent
      runs matches the VM's 2 vCPUs. Background runs are `nice`d below live
      ones.
-   - **What the subconscious may do is a policy question, not a technical
-     one.** Proposed: the background side may observe, check a running job,
-     and resume a session a live turn started. It may not start new work with
-     side effects on its own initiative until that is measured and decided.
-     This follows DEC-201's refusal of LinkedIn reads in fire and Dreamer
-     turns: an action with an outside effect waits for a live request.
+   - **What the subconscious may do: the line is containment, not
+     capability** (decision 6, operator 2026-09-30). Technically the
+     background loops can do anything a live turn can, through the same
+     tools.
+     - **Inside the VM, allowed on their own initiative:** run code, write
+       files, install from the allowed mirrors, continue or finish a
+       session. Deny-all egress keeps those effects on the machine.
+     - **Outside the VM, only when a person asked in that turn:** browsing
+       the live web, using a logged-in profile, exporting to a room or a Drop
+       link. This follows DEC-201's refusal of LinkedIn reads in fire and
+       Dreamer turns: an action with an outside effect waits for a live
+       request.
+     - Every call is audited with its actor, so what the background did is
+       reviewable.
 
 The block renders only in rooms that have used the computer, so every other
 room's prompt is unchanged. How to measure it: a turn that follows an open
 session names it, and does not restart the task from scratch.
 
+## Decisions (operator)
+
+1. **Accepted, 2026-09-30:** a Docker account login is a dependency (ADR 0019,
+   DEC-243).
+4. **Decided, 2026-09-30:** retire `make_artifact`, Smith, `LocalDockerBackend`,
+   `/api/tokens` and `docker.sock`. **Keep** the job outbox, poller and
+   `compute_jobs` as the delivery path for a future `delegate_task`.
+5. **Decided, 2026-09-30:** a session is one task across turns (§15.2). It
+   expires on inactivity or on its resources being gone, and never deletes
+   work. The numbers live in `[computer.sessions]` in `config.toml`.
+6. **Decided, 2026-09-30:** the containment line (§15.4).
+
 ## Open decisions (operator)
 
-1. Is a Docker account login acceptable as a dependency of Nora's computer?
 2. One VM with a directory per room (proposed), or one VM per room?
 3. Which accounts, if any, may stay logged in inside the browser?
-4. Retire the ComputeJob async path with `make_artifact` (proposed, per the
-   measured durations), or keep it for a future background task?
-5. Session expiry: how long an untouched `computer_sessions` row stays open
-   (proposed 24 h, and closed at once when its tab or tmux is gone).
-6. What the background loops (Cognition, Dreamer) may do on the computer:
-   proposed observe, check and resume only, with no new side-effecting work
-   of their own until measured (§15.4).
