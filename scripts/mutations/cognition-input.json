@@ -102,7 +102,7 @@
     "file": "nora/app/cognition_grounding.py",
     "old": "        mine = [h for h in read[room] if h.row.ts >= start][-limit:]",
     "new": "        mine = list(read[room])[-limit:]",
-    "target": "tests/unit/test_cognition_grounding.py -k the_window_opens_a_lookback"
+    "target": "tests/unit/test_cognition_grounding.py -k windows_are_per_item"
   },
   {
     "name": "render: her own send is marked as hers",
@@ -116,7 +116,7 @@
     "file": "nora/domain/cognition_render.py",
     "old": "        if rec.room == item.room:\n            lines.append((rec.at_ms, rec.message_id, _own_line(",
     "new": "        if True:\n            lines.append((rec.at_ms, rec.message_id, _own_line(",
-    "target": "tests/unit/test_cognition_grounding.py -k only_her_sends_in_the_items_own_room"
+    "target": "tests/unit/test_cognition_grounding.py -k another_room_is_never_rendered"
   },
   {
     "name": "render: a rollup line names the person from its ref",
