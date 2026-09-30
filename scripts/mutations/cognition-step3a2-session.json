@@ -214,7 +214,7 @@
   "file": "nora/infra/sql/stimuli.py",
   "old": "    if stale_before_ms is None:\n        return ended_badly",
   "new": "    if True:\n        return ended_badly",
-  "target": "tests/contract/test_stimulus_session_lifecycle_contract.py -k 'test_a_tracked_wake_with_no_outcome_is_open_then_expired_past_the_timeout or test_an_expired_wake_under_a_closed_one_is_skipped_by_the_mark'"
+  "target": "tests/contract/test_stimulus_session_lifecycle_contract.py::test_a_tracked_wake_with_no_outcome_is_open_then_expired_past_the_timeout tests/contract/test_stimulus_session_lifecycle_contract.py::test_an_expired_wake_under_a_closed_one_is_skipped_by_the_mark"
  },
  {
   "name": "stimuli: single-flight actually reads the real session, not the wake's age",
