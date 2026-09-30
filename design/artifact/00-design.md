@@ -1,13 +1,23 @@
 ---
 type: design
 title: "Documents: json-render specs, stored by Nora and opened in the portal"
-description: "Early study. What Smith called an artifact becomes a document: a small JSON spec over a closed catalog of shadcn components (json-render), validated in Nora's container, stored in Postgres, listed and opened inside the signed-in web app with the portal's own theme. Retires Drop's artifact half. The sandbox side (computer_export, retiring make_artifact and Smith) belongs to design/sandbox-runtime."
+description: "Early study. What Smith called an artifact becomes a document: a small JSON spec over a closed catalog of shadcn components (json-render), validated in Nora's container, stored in Postgres, listed and opened inside the signed-in web app with the portal's own theme. Retires Drop's artifact half. The sandbox side (files only, never a page; retiring make_artifact and Smith) belongs to design/sandbox-runtime."
 tags: [nora, documents, artifact, json-render, shadcn, react, portal, drop, skill]
 timestamp: '2026-09-30'
 status: draft
 ---
 
 # Documents
+
+> **Amended 2026-10-01 (coordinator decision, sandbox session; Miles's ruling).** Publishing a document is
+> **`document_publish(spec | path, title?, document_id?)`, a document tool of this session's**, not
+> `computer_export(to="document")`. `computer_export` never had that option and never publishes a page: as of
+> the sandbox session's #649 `html` is refused and `link` only carries files (CSV, PDF, PNG); design/sandbox-runtime
+> §6 records it (#650). `path` is read through that session's audited workspace-read helper, never through
+> `SandboxRuntime.fetch` directly (that would bypass `computer_events`, the room lease and the scope derivation),
+> and the inline `spec` form is built first. The must-have rule lives in `document_publish`'s own description and
+> in doctrine. This note supersedes every `computer_export` mention below that predates it; the older text is
+> left, marked, where it records how the design got here.
 
 Status: **early study; direction set by the operator 2026-09-30; open decisions at the end.**
 
@@ -28,11 +38,13 @@ This session owns **what a document is, how it is checked, stored and shown.** T
 session (`design/sandbox-runtime/00-design.md` §6) owns **how bytes leave the VM** and
 retiring `make_artifact`, Smith and `LocalDockerBackend`.
 
-The one contract between them, which that session's §6 must change to match:
+The one contract between them (amended 2026-10-01, see the note at the top):
 
-> `computer_export(path, to="document", title?, document_id?)` takes a spec file,
-> Nora checks and stores it, and the result is `{status, document_id, url}` where `url`
-> is a portal path. Its `to="link"` (Drop) goes away for this case.
+> `document_publish(spec | path, title?, document_id?)` is this session's tool. Nora checks and
+> stores the document and the result is `{status, document_id, url}` where `url` is a portal path, or
+> structured findings on a refusal. `path` is a spec file the model generated in the computer's workspace,
+> read through the sandbox session's audited helper. The computer produces files and numbers; it never
+> publishes a page.
 
 ## 3. Why the present shape fails (read from the tree, 2026-09-30)
 
@@ -56,10 +68,10 @@ The one contract between them, which that session's §6 must change to match:
 
 ```text
 Nora (skill: document-creation)
-  │  writes spec.json in the workspace (VM)           ← the model's only authored output
+  │  writes the spec: inline, or as spec.json in the workspace (VM)   ← the model's only authored output
   ▼
-computer_export(path, to="document")                  ← sandbox session
-  │  bytes out of the VM
+document_publish(spec | path)                         ← this session's tool
+  │  inline, or bytes out of the VM through the sandbox session's audited helper
   ▼
 Nora container: document-check                        ← §7
   │  parse · schema · rules · sha256 computed here
@@ -218,11 +230,12 @@ Replaces Smith's doctrine and six skills for this case. Short, because the catal
 - the data-shape → `Chart.kind` table;
 - "write `spec.json`; do not write HTML";
 - the catalog prompt fragment, **generated from the catalog**;
-- export, read the findings if the check refuses it, fix the file and export again (there is no
-  checker inside the VM; see §23).
+- publish with `document_publish`, read the findings if the check refuses it, fix the spec and publish
+  again (there is no checker inside the VM; see §23).
 
-Per the sandbox design's must-have rule, the one-line rule also lives in doctrine and in
-`computer_export`'s description, since `image-generation` was skipped 3 times in 6 live turns.
+The must-have rule lives in `document_publish`'s own description and in doctrine, not only in the
+skill, since `image-generation` was skipped 3 times in 6 live turns (amended 2026-10-01: it used to
+name `computer_export`'s description).
 Per `context-framing-beats-capability-listing`, the skill first says **what the model is
 producing and what reads it** (a spec rendered by a fixed viewer inside the portal), then
 lists components.
@@ -239,7 +252,7 @@ lists components.
 | **S5** | `document-creation` skill against the catalog | eval: a fixed brief set yields specs that pass the checker, n ≥ 10 per brief |
 | **S6** | Retire Drop's artifact half (decision 6 first) | compose and tests read back clean |
 
-S4 waits on the sandbox session's `computer_export` only for wiring.
+S4 needs nothing from the sandbox session; the `path` form of `document_publish` waits on its audited workspace-read helper (amended 2026-10-01: this used to wait on `computer_export`).
 
 ## 12. Open decisions
 
@@ -391,7 +404,7 @@ to present."
    and every later revision compute on those facts and never re-research (CMS: interpret once).
 3. She writes `spec.json` in the workspace: nested sections, prose as Markdown, coordinates for the
    map, a `Sources` block listing each URL with its as-of date.
-4. The checker validates and extracts search text; `computer_export(to="document")` stores it.
+4. `document_publish` runs the checker, extracts the search text and stores it (amended 2026-10-01).
 5. She replies in the room with the portal link. A revision edits the same spec and keeps the id.
 
 **Where it breaks today, and what that decides.** A December trip is heavy research: it will not
@@ -744,9 +757,10 @@ reasons above, and revisit at the W4 visibility work, when the audience becomes 
 **No VM-side checker.** §10 had the skill run a local check (`nora-artifact-check`) before export.
 Dropped. The authoritative check has to run in Nora's container, because the VM is untrusted, so a
 second copy inside the VM would be another implementation to keep in step with it, and two validators
-reading one schema already cost three disagreements (§22). Instead `computer_export(to="document")`
-runs the one check and returns **structured findings** on a refusal (a path into the document, what
-was wrong, which rule). Nora fixes the file with `computer_edit` and exports again. The skill says so.
+reading one schema already cost three disagreements (§22). Instead `document_publish` (amended 2026-10-01:
+this said `computer_export(to="document")`) runs the one check and returns **structured findings** on a
+refusal (a path into the document, what was wrong, which rule). Nora fixes the spec, or the workspace file
+with `computer_edit`, and publishes again. The skill says so.
 The catalog's JSON Schema and the prompt fragment still ship to the model as text; only a runnable
 copy of the checker is not shipped.
 
@@ -758,9 +772,9 @@ that lands on the selected tab (the first version made every tab a stop). The e2
 behaviour instead of the `tabindex` attributes the hand-written version happened to set.
 
 **Who builds what from here.** W3 (the checker, with structured findings) and W4 (the `documents`
-table, visibility by room, the read API) are next and are this session's. `computer_export` and the
-`to="document"` change are the sandbox session's; the findings shape is the contract between them
-and is specified in the W3 PR, not in their file.
+table, visibility by room, the read API) are next and are this session's. Amended 2026-10-01: there is no `to="document"` change on the sandbox
+side; `document_publish` is this session's tool, and the only thing crossing the boundary is the audited
+workspace-read helper behind its `path` form.
 
 ## 24. The checker (W3) and its review (2026-10-01)
 
