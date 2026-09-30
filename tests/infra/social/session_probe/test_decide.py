@@ -183,3 +183,42 @@ def test_counter_sequence_across_an_unreadable_run_still_reaches_the_cap() -> No
         last = chrome_hash if chrome_hash is not None else last
         seen.append(n)
     assert seen == [1, 2, 3, 3, 4]
+
+
+# ---- disconnected: authenticated by the bridge, refused by Instagram -------
+
+def test_disconnected_with_a_differing_cookie_syncs() -> None:
+    actions = decide(snap(bridge="disconnected", differs=True))
+    assert actions == [SyncBridge(1)]
+    assert verdict(actions) == "FAIL"
+
+
+def test_disconnected_with_the_same_cookie_alerts_and_does_not_sync() -> None:
+    actions = decide(snap(bridge="disconnected", differs=False))
+    assert actions == [Alert("instagram", "bridge_disconnected_same_cookie")]
+
+
+def test_disconnected_sync_is_capped_at_three() -> None:
+    assert decide(snap(bridge="disconnected", differs=True, attempts=2)) == [SyncBridge(3)]
+    assert decide(snap(bridge="disconnected", differs=True, attempts=3)) == [
+        Capped(3), Alert("instagram", "sync_capped")]
+
+
+def test_disconnected_without_a_usable_chrome_session_does_not_sync() -> None:
+    actions = decide(snap(ch=chrome(instagram=None), bridge="disconnected", differs=True))
+    assert actions == [Alert("instagram", "chrome_session_missing")]
+
+
+def test_counter_does_not_reset_for_a_disconnected_bridge() -> None:
+    assert next_attempts(2, "aaaaaaaa", "aaaaaaaa", "disconnected", True) == 3
+    assert next_attempts(2, "aaaaaaaa", "aaaaaaaa", "disconnected", False) == 2
+
+
+def test_counter_does_not_reset_for_authenticated_but_not_connected() -> None:
+    # the first, not yet debounced, disconnected run reaches decide as authenticated
+    assert next_attempts(2, "aaaaaaaa", "aaaaaaaa", "authenticated", False, False) == 2
+
+
+def test_counter_resets_only_when_authenticated_and_connected() -> None:
+    assert next_attempts(2, "aaaaaaaa", "aaaaaaaa", "authenticated", False, True) == 0
+    assert next_attempts(2, "aaaaaaaa", "aaaaaaaa", "authenticated", False, None) == 0

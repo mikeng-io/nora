@@ -14,15 +14,31 @@ It never logs in to anything. A dead session in Chrome needs a human in VNC.
 
 1. Copies Chrome's `Cookies` SQLite file to a temp path, reads it, deletes the
    copy, and decrypts the `v10` values. Values are never logged.
-2. Reads the bridge's `session` field with `docker exec instagram-bridge curl
+2. Reads the bridge's `session` and `connected` fields with `docker exec instagram-bridge curl
    http://127.0.0.1:18082/health` (the bridge publishes no host port).
    `/health` answers **200 in every session state by contract**
    (`deploy/instagram-bridge/internal/domain/entities.go`), so the probe reads
-   the body, never the status code.
+   the body, never the status code. `session: "authenticated"` with
+   `connected: false` is a bridge whose realtime socket Instagram refuses
+   (`4003 Unauthorized 401`) while its own state still says authenticated (the
+   2026-09-29 failure). Seen on **two consecutive runs** it becomes the session
+   `disconnected` (one run is only recorded: a bridge that just restarted is
+   briefly disconnected); `bridge_disconnected_runs` in `carry` counts the
+   streak and resets on any run that is connected, unreachable or not
+   authenticated, and after the probe's own restart (the fresh boot is
+   disconnected for a moment too). **Known trade-off:** the bridge stays
+   `authenticated` while it merely cannot reach Instagram, so a network outage
+   that spans two runs 10 minutes apart, with Chrome's cookie differing from
+   the bridge's (the normal state after any re-login in Chrome), makes the
+   probe replace the bridge's jar with Chrome's. Both are the same account and
+   the old jar is kept as `cookies.json.bak-*`; the worst case is Chrome's
+   cookie already being revoked, which ends as an alert.
 3. At most once an hour per network (with jitter), runs the read-only
-   `opencli <instagram|twitter|linkedin> whoami`. HTTP 429 is recorded as
-   ERROR, not «logged out». The time of the last check is carried in the state
-   file, so the 10-minute timer does not repeat it.
+   `opencli <twitter|linkedin> whoami`. HTTP 429 is recorded as ERROR, not
+   «logged out». The time of the last check is carried in the state file, so
+   the 10-minute timer does not repeat it. **Instagram has no such check**: its
+   `whoami` answered 429 every time, and the bridge's `/health` plus the cookie
+   comparison is the Instagram signal.
 4. **First, recovery**: if the marker exists, runs `docker start` (idempotent)
    before reading health. rc 0 removes the marker (`recovery_start: "ok"` in
    the run's line). A failure keeps it, records `recovery_start:
@@ -34,7 +50,7 @@ It never logs in to anything. A dead session in Chrome needs a human in VNC.
    is read after the start, so it may still say unreachable for a few seconds
    while the bridge boots.
 5. Decides (`nora/infra/social/session_probe/decide.py`, pure) and acts:
-   - bridge `logged_out`/`checkpointed` and Chrome's Instagram cookie differs:
+   - bridge `logged_out`/`checkpointed`/`disconnected` and Chrome's Instagram cookie differs:
      **SYNC** — `docker stop instagram-bridge` (its shutdown flushes its old
      jar over `cookies.json`, so the write must come after), back up
      `cookies.json` (last 5 kept), merge Chrome's cookies over it, atomic
@@ -51,7 +67,8 @@ It never logs in to anything. A dead session in Chrome needs a human in VNC.
      compose has `restart: unless-stopped`, so docker will not revive a
      stopped container by itself, and later health reads would only say
      «unreachable».
-   - **CAPPED** after 3 consecutive syncs that did not reach `authenticated`:
+   - **CAPPED** after 3 consecutive syncs that did not reach `authenticated`
+     and connected:
      no more restarts, an alert instead. A changed Chrome cookie (a human
      logged in again) restarts the count.
 6. Appends ONE JSON line to the state file.
@@ -87,7 +104,9 @@ jq -c '[.ts,.verdict,.bridge_session,.newer_sessionid,(.decisions|map(.action)|j
    ~/.local/state/nora/session-probe.jsonl | tail -n 30
 ```
 
-Fields: `verdict` (PASS / FAIL / ERROR), `bridge_session`, `chrome` (per network:
+Fields: `verdict` (PASS / FAIL / ERROR), `bridge_session` (`disconnected`
+only after the two-run debounce), `bridge_connected` (bool, or null when
+/health carried none or the bridge was unreachable), `chrome` (per network:
 cookie `created` / `expires`), `instagram_sessionid.{chrome,bridge}` (sha256
 prefixes, 8 hex), `newer_sessionid` (`chrome` / `bridge` / `same` / `unknown`,
 by Chrome's creation time against the jar's mtime), `live`, `decisions`,
@@ -97,7 +116,7 @@ between changes.
 
 Exit codes: 0 PASS, 1 FAIL (unit still counts as success), 2 ERROR (unit
 fails). ERROR means the probe could not measure something (Chrome DB
-unreadable, bridge unreachable, an opencli error or 429). It is never a PASS.
+unreadable, bridge unreachable, an x/linkedin opencli error or 429). It is never a PASS.
 
 ## What an ALERT means
 
@@ -110,6 +129,7 @@ Alerts go to the Discord review channel through `deploy/alert-bridge`
 | `chrome_session_missing` / `_expired` / `_near_expiry` (<72h) | Chrome itself has no live session for that network |
 | `live_check_logged_out` | Chrome has a cookie but the site says logged out |
 | `bridge_logged_out_same_cookie` / `bridge_checkpointed_same_cookie` | the bridge already has Chrome's exact cookie and is still refused; a sync cannot help |
+| `bridge_disconnected_same_cookie` | the bridge says authenticated but has stayed disconnected for two runs, and already holds Chrome's exact cookie; a sync cannot help |
 | `bridge_stopped_by_probe_start_failed` | the probe stopped the bridge and `docker start` failed (this run or a recovery run); the marker stays until a start succeeds, so start it by hand |
 | `sync_capped` | 3 syncs in a row did not restore the bridge; the probe stopped restarting it |
 

@@ -56,10 +56,13 @@ from .runner import Runner
 log = logging.getLogger("nora.session_probe")
 
 _BRIDGE_SESSIONS = ("authenticated", "checkpointed", "logged_out")
-#: opencli site name per network (X is `twitter` in OpenCLI 1.8.7).
-OPENCLI_SITE: dict[Network, str] = {
-    "instagram": "instagram", "x": "twitter", "linkedin": "linkedin",
-}
+#: opencli site name per network (X is `twitter` in OpenCLI 1.8.7). Instagram
+#: has none on purpose: `whoami` answers HTTP 429 every time, and the bridge's
+#: own /health plus the cookie comparison is the Instagram liveness signal.
+OPENCLI_SITE: dict[Network, str] = {"x": "twitter", "linkedin": "linkedin"}
+#: Consecutive runs a bridge must read `authenticated` + `connected: false`
+#: before it counts as `disconnected` (a restarting bridge is briefly so).
+DISCONNECTED_RUNS = 2
 _LOGGED_OUT_TEXT = re.compile(r"not logged in|log ?in required|logged.?out", re.I)
 _RATE_LIMIT_TEXT = re.compile(r"\b429\b|too many requests|rate.?limit", re.I)
 KEEP_BACKUPS = 5
@@ -139,20 +142,24 @@ class Probe:
             fh.write(json.dumps(record, sort_keys=True) + "\n")
 
     # ---- measurements -----------------------------------------------------
-    def _bridge_health(self) -> BridgeSession:
+    def _bridge_health(self) -> tuple[BridgeSession, bool | None]:
+        """(raw session, `connected` when /health carries a boolean)."""
         res = self._run(
             ["docker", "exec", self._cfg.container, "curl", "-sS", "-m", "5",
              f"http://127.0.0.1:{self._cfg.bridge_port}/health"],
             15.0, None,
         )
         if res.rc != 0:
-            return "unreachable"
+            return "unreachable", None
         try:
             body = json.loads(res.stdout)
             session = body["session"]
-        except (ValueError, KeyError, TypeError):
-            return "unreachable"
-        return session if session in _BRIDGE_SESSIONS else "unreachable"
+            connected = body.get("connected")
+        except (ValueError, KeyError, TypeError, AttributeError):
+            return "unreachable", None
+        if session not in _BRIDGE_SESSIONS:
+            return "unreachable", None
+        return session, connected if isinstance(connected, bool) else None
 
     def _bridge_jar(self) -> dict[str, str]:
         """The bridge's cookies.json, or {} when missing/corrupt (which reads
@@ -181,7 +188,7 @@ class Probe:
         results: dict[Network, LiveCheck] = {}
         last = carry.get("last_live_check") or {}
         for net in NETWORKS:
-            if cookies.get(net) is None:
+            if net not in OPENCLI_SITE or cookies.get(net) is None:
                 continue  # nothing to verify; the missing cookie is its own alert
             try:
                 prev = datetime.fromisoformat(last[net]) if net in last else None
@@ -335,7 +342,17 @@ class Probe:
         except CookieError as exc:
             chrome = ChromeState(False, {})
             record["chrome_error"] = str(exc)
-        bridge_session = self._bridge_health()
+        raw_session, bridge_connected = self._bridge_health()
+        bridge_session: BridgeSession = raw_session
+        # A bridge that says `authenticated` while its realtime socket is down
+        # is only `disconnected` once that has held for DISCONNECTED_RUNS runs.
+        if raw_session == "authenticated" and bridge_connected is False:
+            disconnected_runs = int(carry.get("bridge_disconnected_runs", 0)) + 1
+            if disconnected_runs >= DISCONNECTED_RUNS:
+                bridge_session = "disconnected"
+        else:
+            disconnected_runs = 0
+        carry["bridge_disconnected_runs"] = disconnected_runs
 
         chrome_sid = session_value(chrome_cookies, "instagram")
         chrome_fp = fingerprint(chrome_sid) if chrome_sid else None
@@ -352,6 +369,7 @@ class Probe:
         record["instagram_sessionid"] = {"chrome": chrome_fp, "bridge": bridge_fp}
         record["newer_sessionid"] = self._newer(chrome, chrome_fp, bridge_fp)
         record["bridge_session"] = bridge_session
+        record["bridge_connected"] = bridge_connected
 
         live = self._due_live(carry, dict(chrome.cookies), now) if chrome.readable else {}
         record["live"] = {n: r.value for n, r in live.items()}
@@ -370,6 +388,10 @@ class Probe:
                 if sync_result != "ok":
                     actions.append(ErrorAction(f"sync_{sync_result}"))
         record["sync"] = sync_result
+        if sync_result == "ok":
+            # The probe just restarted the bridge: it is disconnected again for
+            # a moment, and that is the debounce's whole reason. Count afresh.
+            carry["bridge_disconnected_runs"] = 0
 
         v = verdict(actions)
         record["decisions"] = [_describe(a) for a in actions]
@@ -377,7 +399,7 @@ class Probe:
         record["alerts_sent"] = self._emit_alerts(actions, carry, now)
         carry["attempts"] = next_attempts(
             history.consecutive_sync_attempts, carry.get("chrome_hash"), chrome_fp,
-            bridge_session, synced,
+            bridge_session, synced, bridge_connected,
         )
         if chrome_fp is not None:  # an unreadable run never erases the last known hash
             carry["chrome_hash"] = chrome_fp
@@ -411,6 +433,8 @@ _HUMAN = {
     "a sync cannot help, log in again in Chrome over VNC",
     "bridge_checkpointed_same_cookie": "bridge is checkpointed and holds Chrome's cookie; "
     "clear the challenge by hand",
+    "bridge_disconnected_same_cookie": "bridge says authenticated but its realtime socket has "
+    "stayed disconnected and it already holds Chrome's cookie; log in again in Chrome over VNC",
 }
 
 
