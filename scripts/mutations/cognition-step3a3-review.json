@@ -37,8 +37,8 @@
  {
   "name": "major 1: a closed wake does not reset the failure streak",
   "file": "nora/domain/stimuli.py",
-  "old": "        if state is None or state.state == \"closed\":\n            break",
-  "new": "        if state is None:\n            break",
+  "old": "        if state is None or state.state == \"closed\":\n            break\n        if state.state == \"running\" or state.outcome == \"cancelled\":\n            continue",
+  "new": "        if state is None:\n            break\n        if state.state == \"running\" or state.outcome == \"cancelled\":\n            continue",
   "target": "tests/unit/test_cognition_failure_backoff.py::test_the_streak_counts_failed_and_timed_out_and_only_a_closed_wake_resets_it tests/unit/test_cognition_failure_backoff.py::test_a_closed_session_resets_the_backoff_and_the_strike_count"
  },
  {
@@ -58,15 +58,15 @@
  {
   "name": "major 1 (sql store): the view carries no failure streak",
   "file": "nora/infra/sql/stimuli.py",
-  "old": "            failures=failures, failed_mark=failed_mark,",
-  "new": "            failures=0, failed_mark=None,",
+  "old": "            failures=failures, agenda_failures=agenda_failures, failed_mark=failed_mark,",
+  "new": "            failures=0, agenda_failures=0, failed_mark=None,",
   "target": "tests/contract/test_stimulus_session_lifecycle_contract.py::test_consecutive_failures_and_the_mark_of_the_newest_failed_wake[memory] tests/contract/test_stimulus_session_lifecycle_contract.py::test_consecutive_failures_and_the_mark_of_the_newest_failed_wake[sql]"
  },
  {
   "name": "major 1 (memory double): the view carries no failure streak",
   "file": "nora/testing/stimuli.py",
-  "old": "            failures=failures, failed_mark=failed_mark,",
-  "new": "            failures=0, failed_mark=None,",
+  "old": "            failures=failures, agenda_failures=agenda_failures, failed_mark=failed_mark,",
+  "new": "            failures=0, agenda_failures=0, failed_mark=None,",
   "target": "tests/contract/test_stimulus_session_lifecycle_contract.py::test_consecutive_failures_and_the_mark_of_the_newest_failed_wake[memory] tests/contract/test_stimulus_session_lifecycle_contract.py::test_consecutive_failures_and_the_mark_of_the_newest_failed_wake[sql]"
  },
  {
