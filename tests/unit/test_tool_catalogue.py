@@ -38,7 +38,14 @@ ENC = tiktoken.get_encoding("cl100k_base")
 # left had been spent by tools added since, one line each. 2,100 holds this
 # line and roughly two more; the next tool that needs more re-sets this with
 # its own line count, never a line rewritten to fit.
-BLOCK_CEILING = 2_100
+#
+# RE-SET 2026-09-30, 2,100 -> 2,250, for FOUR NEW TOOLS, not for drift:
+# Nora's computer (design/sandbox-runtime §4, DEC-243) adds `computer_run`
+# (39 tokens), `computer_read` (30), `computer_write` (31) and
+# `computer_edit` (29), 132 tokens on a block measured at 2,045 over 64
+# lines, total 2,177 over 68 at a mean of 31.1, under `MEAN_CEILING`. No
+# existing line changed. 2,250 holds these and roughly two more lines.
+BLOCK_CEILING = 2_250
 
 # The per-line ceiling, and it was REVISED after measurement. The bundle
 # asserted 20 from an estimate; rendering the real thing put eleven lines

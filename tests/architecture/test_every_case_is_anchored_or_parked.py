@@ -52,6 +52,10 @@ FIRST_ROW_MS = 1_785_928_686_349
 #: rejected as a parking reason — they load, run, and ERROR until it does.
 #: Adding a name here is a decision; removing one is the seam landing.
 UNANCHORED_BY_DESIGN = {
+    # Blocked on S2b-2's <computer> block (design/sandbox-runtime §15), a seam
+    # this work owes: a correct `computer_read` turn needs to know the file
+    # exists, and an anchor carries no workspace state.
+    "tool_selection": {"route_computer_read_named_file"},
     "being_contradicted": {"real_evidence_may_overturn"},
     # Blocked on the DISCORD ADAPTER divergence (§1.2), which is also a seam
     # this rebuild owes: their premise exists only in a Discord room, and a
@@ -161,7 +165,7 @@ def test_a_case_that_speaks_anchors_where_an_adapter_is_wired(name: str) -> None
 
 
 def test_the_whole_corpus_is_accounted_for() -> None:
-    """234 cases, every one in exactly one state. The number is the corpus
+    """269 cases, every one in exactly one state. The number is the corpus
     as ported on 2026-09-20 (150), plus `tool_selection`'s 16 S2 routing cases
     (2026-09-23, design/tool-catalogue §2c), plus its 4 per-network social
     routing cases (2026-09-24, design/instagram-adoption/18, P5) and P11's 4
@@ -238,9 +242,15 @@ def test_the_whole_corpus_is_accounted_for() -> None:
     corpus's 13 (2026-09-29, migration step 3a-ii: the Cognition catalogue's
     own confusable pairs — note_create/update, event_propose/revise/
     set_status, wake_at/move/cancel, remind/move/cancel, close, and
-    record_query/rollup_read one layer over); a change to it
+    record_query/rollup_read one layer over), plus `tool_selection`'s 6
+    computer cases (2026-09-30, design/sandbox-runtime §4, DEC-243: two
+    `computer_run` data tasks against `calculate` (a regression with a
+    p-value, a CSV table), three negatives where maths, a web page and a
+    picture must NOT reach `computer_run`, and a named-file `computer_read`
+    left UNANCHORED until S2b-2's <computer> block; the positives measure the
+    `[computer] enabled` arm only); a change to it
     is a change to what the suite claims to measure and belongs in a commit that
     says so. Recomputed with `census()` at each merge, never summed."""
     totals = [census(n) for n in CORPORA]
-    assert sum(c.total for c in totals) == 263
-    assert sum(c.active + c.parked for c in totals) == 263
+    assert sum(c.total for c in totals) == 269
+    assert sum(c.active + c.parked for c in totals) == 269

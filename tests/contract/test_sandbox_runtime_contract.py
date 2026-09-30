@@ -76,6 +76,21 @@ async def test_a_write_reads_back_byte_for_byte(runtime):
     assert read.lines_total == 2
 
 
+async def test_a_write_and_an_edit_report_what_the_file_held_before(runtime):
+    """The audit's before and after (design/sandbox-runtime §12): a new file
+    has no `previous_sha256`; an overwrite and an edit report the sha256 of
+    the bytes they replaced."""
+    first = await runtime.write_text(scope=SCOPE, path="p/a.txt", content="one\n")
+    assert first.status is SandboxStatus.OK
+    assert first.previous_sha256 is None
+    second = await runtime.write_text(scope=SCOPE, path="p/a.txt", content="two\n")
+    assert second.previous_sha256 == hashlib.sha256(b"one\n").hexdigest()
+    edited = await runtime.edit(scope=SCOPE, path="p/a.txt", old="two", new="three")
+    assert edited.status is SandboxStatus.OK
+    assert edited.previous_sha256 == hashlib.sha256(b"two\n").hexdigest()
+    assert edited.sha256 == hashlib.sha256(b"three\n").hexdigest()
+
+
 async def test_a_missing_file_is_nothing_found_not_an_empty_ok(runtime):
     for result in (
         await runtime.read(scope=SCOPE, path="nope.txt"),

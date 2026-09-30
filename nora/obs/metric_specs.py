@@ -196,6 +196,17 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         ("reason", "platform", "audience"),
     ),
     _CounterSpec("nora_guard_vetoes_total", "ReplyGuard vetoes, by rule.", ("rule",)),
+    # design/sandbox-runtime §12: a `computer_events` append that failed.
+    # The tool still answers (the audit must not cost the turn), so this
+    # counter is the only place a missing audit row shows up. Should be zero.
+    _CounterSpec(
+        "nora_computer_audit_failures_total",
+        "computer_events audit writes that failed, by computer tool and stage "
+        "(blob: a full input or output could not be put in the blob store, the "
+        "row says so; row: the audit row itself was not appended). The tool "
+        "call itself still answered.",
+        ("tool", "stage"),
+    ),
     _CounterSpec(
         "nora_tool_call_log_writes_total",
         "ToolCallLog write attempts (R-48), by tool and outcome (ok / failed).",
