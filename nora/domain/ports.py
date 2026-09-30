@@ -1371,7 +1371,10 @@ class MediaSource(Protocol):
 @runtime_checkable
 class BlobStore(Protocol):
     """Content-addressed byte custody. `put` returns the key it computed; there
-    is no `delete` on this port — see module docstring."""
+    is no `delete` on this port — see module docstring. Keys are referenced
+    from media rows AND from the computer audit (`computer_events.request`,
+    `.output_ref`); any future GC must keep every referenced key
+    (`nora/infra/blobs/__init__.py`)."""
 
     async def put(self, *, data: bytes) -> str: ...
 
@@ -1889,7 +1892,15 @@ class SandboxRuntime(Protocol):
     R-27 without a try/except.
     """
 
-    async def run(self, *, scope: str, command: str, timeout_s: float) -> RunResult: ...
+    async def run(
+        self, *, scope: str, command: str, timeout_s: float,
+        limits: Mapping[str, int] | None = None,
+    ) -> RunResult:
+        """`limits` is the RESERVED per-command resource slot (`[computer]
+        limits`): sent only when it names at least one limit, and ignored by
+        computerd today (operator 2026-09-30: the computer is semi-trusted,
+        so no limits are applied)."""
+        ...
 
     async def read(
         self, *, scope: str, path: str, offset: int = 0, limit: int | None = None,

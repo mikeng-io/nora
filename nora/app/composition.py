@@ -86,6 +86,8 @@ from nora.config import Config, DreamBudgetConfig
 from nora.doctrine.loader import Doctrine, DoctrineError, DoctrineStore
 from nora.domain.cognition_render import RenderBudget
 from nora.domain.compute import ComputeJobStore
+from nora.domain.computer import ComputerToolSettings
+from nora.domain.computer_events import ComputerEventStore
 from nora.domain.decision_log import DecisionLogRecorder
 from nora.domain.gatherings import GatheringStatus
 from nora.domain.media_join import MediaJoin
@@ -103,6 +105,7 @@ from nora.domain.ports import (
     RecordStore,
     ReverseGeocoder,
     RosterSource,
+    SandboxRuntime,
     SearchProvider,
     SocialProvider,
     Speaker,
@@ -127,6 +130,7 @@ from nora.infra.sql import SqlRecordStore, create_sql_engine, run_migrations
 from nora.infra.sql.announcements import SqlAnnouncementLog
 from nora.infra.sql.cognition_dry_run import SqlCognitionDryRunStore
 from nora.infra.sql.compute_jobs import SqlComputeJobStore
+from nora.infra.sql.computer_events import SqlComputerEventStore
 from nora.infra.sql.culture import SqlCultureStore
 from nora.infra.sql.decision_log import SqlDecisionLogStore
 from nora.infra.sql.dream_schedule import SqlDreamScheduleClock
@@ -951,6 +955,24 @@ def _check_compute_secrets(
         )
 
 
+def _computer_token(cfg: Config) -> str:
+    """computerd's bearer token, checked at BOOT when `[computer] enabled`:
+    the `_check_compute_secrets` discipline (R-5: refuse to start rather than
+    run in a state that looks like working). Without it an empty token would
+    start the daemon cleanly and then answer every computer call
+    `unavailable` (computerd's 401), in front of the group, for a fault only
+    the operator can fix."""
+    token = os.environ.get(cfg.computer.token_env, "")
+    if not token.strip():
+        raise StartupError(
+            f"[computer] enabled = true but {cfg.computer.token_env} is unset or "
+            "empty: it is computerd's bearer token (the value lives in .env, "
+            "DEC-8). Starting without it would fail every computer call; "
+            "refusing to start"
+        )
+    return token
+
+
 def _check_compute_egress(cfg: Config) -> None:
     """The endpoints a compute job is handed must be ones `compute-egress`
     lets it reach, checked at BOOT for `_check_compute_secrets`' reason: a job
@@ -1316,6 +1338,11 @@ async def build_dependencies(
     # deliver.build); the THIRD — ToolRegistry(...) below, for
     # recall_lookups — is Task 7's own wiring.
     tool_call_log_store: ToolCallLogStore = SqlToolCallLogStore(engine)
+    # The computer audit log (design/sandbox-runtime §12, DEC-243). Built
+    # UNCONDITIONALLY, like `tool_call_log_store`: the computer tools write a
+    # row on every call, `unavailable` included, so a call made while
+    # `[computer]` is off is audited too. Only the runtime is behind the flag.
+    computer_events: ComputerEventStore = SqlComputerEventStore(engine)
     # Issue #325's durable half (`reasoning_strip_log`, migration 0057, ADR
     # 0013), REUSING `engine` for the same reason the three stores above do.
     # UNCONDITIONAL and behind no flag: an instrument that is off by default
@@ -2690,6 +2717,27 @@ async def build_dependencies(
                 _compute_workspace_host_root(cfg) / COMPUTE_WORKSPACE_DIRNAME
             ),
         )
+    # Nora's computer (design/sandbox-runtime, DEC-243): `ComputerdRuntime`,
+    # built ONLY when `[computer] enabled`. Off leaves it `None` and every
+    # computer tool answers `unavailable` (R-5). `ComputerToolSettings` is the
+    # conversion point from config to a domain value (`nora.agent` may not
+    # read `nora.config`), the `ReminderCaps` shape.
+    computer: SandboxRuntime | None = None
+    if cfg.computer.enabled:
+        from nora.infra.computer.client import ComputerdRuntime
+
+        computer = ComputerdRuntime(
+            base_url=cfg.computer.base_url, token=_computer_token(cfg),
+            timeout_seconds=cfg.computer.request_timeout_seconds,
+            max_output_chars=cfg.computer.max_output_chars,
+        )
+    computer_settings = ComputerToolSettings(
+        run_timeout_seconds=cfg.computer.run_timeout_seconds,
+        max_run_timeout_seconds=cfg.computer.max_run_timeout_seconds,
+        max_output_chars=cfg.computer.max_output_chars,
+        max_read_chars=cfg.computer.max_read_chars,
+        limits=cfg.computer.limits.as_pairs(),
+    )
     # `nora.agent` may not import `nora.config` (import-linter's "only app and
     # __main__ read config") — this is the conversion point, the same shape
     # `ReminderCaps(**cfg.reminders.model_dump())` already uses just below.
@@ -2877,6 +2925,10 @@ async def build_dependencies(
         # first two: EngagementPipeline/FirePath, via `deliver.build`) —
         # `recall_lookups`'s own collaborator, tool-recall-log spec §4.
         tool_call_log_store=tool_call_log_store,
+        # Nora's computer: `computer` is `None` whenever `[computer] enabled`
+        # is false; the audit store is always wired (see where it is built).
+        computer=computer, computer_events=computer_events,
+        computer_settings=computer_settings,
         # §9's caps as the DOMAIN value, the SAME `reminder_caps` instance
         # `GatheringService` was built with above — see that variable's own
         # comment for why they must not be two separately constructed copies.

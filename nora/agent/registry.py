@@ -35,6 +35,8 @@ from typing import Any
 from strands.tools.decorator import FunctionToolMetadata
 
 from ..domain.compute import ComputeJobStore
+from ..domain.computer import ComputerToolSettings
+from ..domain.computer_events import ComputerEventStore
 from ..domain.media_join import MediaJoin
 from ..domain.models import PersonRef, TranscriptRow
 from ..domain.ports import (
@@ -46,6 +48,7 @@ from ..domain.ports import (
     MediaObjectStore,
     MusicToolBridge,
     ParkingProvider,
+    SandboxRuntime,
     SearchProvider,
     SocialProvider,
     SteamPresenceProvider,
@@ -73,6 +76,7 @@ from .room import Room
 from .shelf_hook import ShelfLoader
 from .surface import ToolScope, ToolShelf, ToolSurface
 from .tools import (
+    COMPUTER_TOOLS,
     HOT_TOOLS,
     LOADER_TOOL,
     NATIVE_TOOL_BUDGETS,
@@ -198,6 +202,14 @@ class ToolRegistry:
         compute_backend: ComputeBackend | None = None,
         compute_jobs: ComputeJobStore | None = None,
         tool_call_log_store: ToolCallLogStore | None = None,
+        # Nora's computer (design/sandbox-runtime, DEC-243): the runtime is
+        # `None` whenever `[computer] enabled` is false, and every computer
+        # tool then answers `unavailable`. `computer_events` is the audit
+        # store, built unconditionally by the composition root so an
+        # `unavailable` call is audited too; `computer_settings` the bounds.
+        computer: SandboxRuntime | None = None,
+        computer_events: ComputerEventStore | None = None,
+        computer_settings: ComputerToolSettings | None = None,
         clock: Callable[[], datetime] = utc_now,
         mcp_tools: Mapping[str, McpToolGroup] | None = None,
         versions: VersionManifest | None = None,
@@ -225,8 +237,13 @@ class ToolRegistry:
         # Record read (`[record_query] enabled = false`, the shipped default).
         # Withheld from every surface and from the gate's digest, so an
         # unconfigured tool costs no prompt and cannot be routed to.
+        # The four computer tools likewise without a runtime (`[computer]
+        # enabled = false`, the shipped default): they could only answer
+        # `unavailable`, so offering them would spend prompt on a tool the
+        # model can route to and never use.
         self._withheld: frozenset[str] = (
-            frozenset() if record is not None else frozenset({"record_query"})
+            (frozenset() if record is not None else frozenset({"record_query"}))
+            | (frozenset() if computer is not None else COMPUTER_TOOLS)
         )
         self._transit = transit if transit is not None else TransitClient()
         # `parking` is keyless like `transit` — the TD open-data feed needs no
@@ -407,6 +424,9 @@ class ToolRegistry:
         # wired the tool-recall log, which is what makes `recall_lookups`
         # answer `unavailable` (R-5) rather than crash.
         self._tool_call_log_store = tool_call_log_store
+        self._computer = computer
+        self._computer_events = computer_events
+        self._computer_settings = computer_settings
         # §9's three anti-runaway caps, as the DOMAIN value — never
         # `nora.config.RemindersConfig`. Import-linter's "only app and __main__
         # read config" contract names `nora.agent` as a source module and
@@ -1019,6 +1039,8 @@ class ToolRegistry:
             reaction_picker=self._reaction,
             compute_backend=self._compute_backend, compute_jobs=self._compute_jobs,
             tool_call_log_store=self._tool_call_log_store,
+            computer=self._computer, computer_events=self._computer_events,
+            computer_settings=self._computer_settings,
             music=self._music,
             online_source=self._online, voice_source=self._voice,
             presence=self._discord_presence,

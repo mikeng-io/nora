@@ -298,6 +298,17 @@ services:
       #   instead, so there's one bearer value for the whole mint/register
       #   path, not two names for what has to be the same shared secret).
       - NORA_DROP_TOKEN=${NORA_DROP_TOKEN:-}
+      #   NORA_COMPUTER_TOKEN   — computerd's bearer token ([computer].token_env,
+      #   design/sandbox-runtime, DEC-243). Nora refuses to start with
+      #   [computer] enabled and this empty: it was missing here on
+      #   2026-09-30 and the first enable crash-looped nora for about three
+      #   minutes. tests/test_env_template.py now checks every *_env name.
+      - NORA_COMPUTER_TOKEN=${NORA_COMPUTER_TOKEN:-}
+      #   HKGOV_MAPS_TOKEN      — [presence].hkgov_token_env, the optional
+      #   HK-government reverse geocoder that `where_is` uses (reverse-geocoding
+      #   runs here, not in the collector). Found unpassed on 2026-09-30 by the
+      #   same check; empty keeps today's behaviour.
+      - HKGOV_MAPS_TOKEN=${HKGOV_MAPS_TOKEN:-}
       #   TAVILY_API_KEY / EXA_API_KEY — the `web_search`/`web_fetch` tools.
       #   BOTH are passed and only the one named by `[search.<provider>]
       #   api_key_env` is ever read (DEC-157), so flipping `[search] provider`

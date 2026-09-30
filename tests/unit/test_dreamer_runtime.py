@@ -815,6 +815,11 @@ def test_every_read_only_tool_is_classified_unit_safe_or_room_scoped():
         # limit), so they are not unit-safe. Room-scoped is the fail-closed
         # side.
         "linkedin_read", "linkedin_search",
+        # `computer_read` (design/sandbox-runtime §4) reads the ROOM's own
+        # workspace, keyed on the room's (platform, conversation_id); a
+        # unit-keyed tick's synthetic room has no workspace of its own, and
+        # nobody has decided a background loop may read one. Fail-closed.
+        "computer_read",
     }
     # The unit-safe half is `UNIT_SAFE_TOOLS` itself, read from the
     # module. Since design/dreamer-agent-loop/32 §3.4 that set includes the

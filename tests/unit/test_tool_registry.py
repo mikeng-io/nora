@@ -3,18 +3,21 @@ one place that builds them for a tag, adapted to Strands tool objects."""
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
+
+import pytest
 
 from nora.agent import factory
 from nora.agent.guards import Deliverer, ReplyGuard
 from nora.agent.mcp import McpToolGroup
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
-from nora.agent.tools import LOADER_TOOL, NATIVE_TOOL_BUDGETS
+from nora.agent.tools import COMPUTER_TOOLS, LOADER_TOOL, NATIVE_TOOL_BUDGETS
 from nora.doctrine.loader import Doctrine
 from nora.domain.models import ConversationTarget
 from nora.obs.metrics import Metrics
-from nora.testing import FakeMemoryStore
+from nora.testing import FakeMemoryStore, FakeSandboxRuntime
 from tests.fakes import SinkSender
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -76,6 +79,38 @@ def test_record_query_is_offered_only_when_its_record_read_is_wired():
     assert "record_query" in on.capability_digest()
 
 
+def _surface(registry: ToolRegistry, *, defer: bool):
+    return registry.surface(
+        store=_FakeStore(), conversation_id="g1", conversation_type="group",
+        persons=_FakePersons(), honcho=FakeMemoryStore(), deliverer=_deliverer(),
+        metrics=Metrics(), room=_room(), defer=defer,
+    )
+
+
+@pytest.mark.parametrize("defer", [False, True])
+def test_the_computer_tools_are_offered_only_when_a_computer_is_wired(defer):
+    """`[computer] enabled = false` (the shipped default) builds the registry
+    with no runtime, and then no turn's tools, shelf, catalogue or gate digest
+    carries a computer tool: they could only answer `unavailable`. Wired, all
+    four are offered (deferred, so on the shelf and in the catalogue)."""
+    def catalogued(surface) -> set[str]:
+        # `- name — ...` for a shelved tool, `* name — ...` for a resident one.
+        return {m.group(1) for line in surface.catalogue.splitlines()
+                if (m := re.match(r"[-*] (\w+) ", line))}
+
+    off = _surface(ToolRegistry(), defer=defer)
+    assert COMPUTER_TOOLS.isdisjoint(off.admitted | catalogued(off))
+    assert COMPUTER_TOOLS.isdisjoint(set(off.shelf.names()))
+    assert "computer_read" not in ToolRegistry().capability_digest()
+    on_registry = ToolRegistry(computer=FakeSandboxRuntime())
+    on = _surface(on_registry, defer=defer)
+    assert on.admitted >= COMPUTER_TOOLS
+    assert catalogued(on) >= COMPUTER_TOOLS
+    if defer:
+        assert set(on.shelf.names()) >= COMPUTER_TOOLS
+    assert "computer_read" in on_registry.capability_digest()
+
+
 def _built_tools(registry: ToolRegistry, *, dream_adaptor: str = "proactive") -> list:
     """The DECLARED surface, which is what every caller below asks about.
 
@@ -93,7 +128,7 @@ def _built_tools(registry: ToolRegistry, *, dream_adaptor: str = "proactive") ->
 
 
 def test_the_registry_exposes_every_declared_tool():
-    tools = _built_tools(ToolRegistry(record=_RECORD))
+    tools = _built_tools(ToolRegistry(record=_RECORD, computer=FakeSandboxRuntime()))
     assert {t.tool_name for t in tools} == {
         # DEC-146: the window-scoped rung below `load_transcript`.
         "who_said",
@@ -150,6 +185,8 @@ def test_the_registry_exposes_every_declared_tool():
         "event_search", "suggest_venue",
         # Nora Compute spec §4 (Task 5).
         "make_artifact",
+        # Nora's computer (design/sandbox-runtime §4, DEC-243).
+        "computer_run", "computer_read", "computer_write", "computer_edit",
         # DEC-97: what she is running, and what was in an earlier version.
         "version",
         # The note tier's four verbs (note-tier spec §5.2/§6).
@@ -240,6 +277,13 @@ def test_budgets_match_todays_table():
         # note describes for a recall verb — run once, notice a different
         # `limit` is needed, run once more.
         "recall_lookups": 2,
+        # Nora's computer (design/sandbox-runtime §4). `computer_run` 12: a
+        # write, run, read the error, fix, run again loop, twice in a turn.
+        # `computer_read` 8: a few files or one long file read on. `write` 8:
+        # a small project is several files. `edit` 8: patches across a few
+        # files, or a fix after a run.
+        "computer_run": 12, "computer_read": 8, "computer_write": 8,
+        "computer_edit": 8,
         # The one tool whose budget is sized by the QUESTION rather than by
         # cost: it is a pure function with no network and no clock, so four
         # calls are four model round trips and nothing else.
@@ -435,7 +479,7 @@ def test_adapting_produces_objects_the_agent_factory_accepts():
     model = factory.create_model_provider(
         model="deepseek-v4-flash", max_tokens=400, temperature=0.7, client=client,
     )
-    tools = _built_tools(ToolRegistry(record=_RECORD))
+    tools = _built_tools(ToolRegistry(record=_RECORD, computer=FakeSandboxRuntime()))
     agent = factory.create_agent(
         model=model, system_prompt="p", tools=tools, pre_fill=[],
         guard=ReplyGuard(conversation_id="g1", budgets=ToolRegistry().budgets(),
@@ -710,6 +754,9 @@ ACT_VERBS = frozenset({
     "remind", "cancel_reminder",
     "event_propose", "event_revise", "event_rsvp", "event_set_status",
     "make_artifact",
+    # design/sandbox-runtime §4: a command, a file write and a file edit all
+    # change the room's workspace.
+    "computer_run", "computer_write", "computer_edit",
     "send_reply", "send_to", "send_gif",
     # DEC-137: generation is an external side effect (provider call +
     # artifact hosting), never a read — the Dreamer may not generate.
@@ -786,6 +833,10 @@ READ_ONLY = frozenset({
     "instagram_read",
     # R-86 again (P11): a one-row vocabulary, and the same GET-only client.
     "instagram_search",
+    # design/sandbox-runtime §4: reads a file in the room's own workspace and
+    # writes nothing there (its audit row is a log of the call, like
+    # `_log_call`, not an effect of it). Eligible, not granted.
+    "computer_read",
 })
 
 

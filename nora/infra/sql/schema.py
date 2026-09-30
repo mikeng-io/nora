@@ -61,6 +61,10 @@ import sqlalchemy as sa
 from pgvector.sqlalchemy import Vector
 from sqlalchemy.dialects import postgresql as pg
 
+from nora.domain.computer_events import ACTORS as COMPUTER_ACTORS
+from nora.domain.computer_events import CALL_PATHS as COMPUTER_CALL_PATHS
+from nora.domain.computer_events import DREAMER_ACTOR_PREFIX
+from nora.domain.computer_events import PHASES as COMPUTER_PHASES
 from nora.domain.decision_log import REASON_MAX_CHARS, VERDICTS, WRITERS
 from nora.domain.facts import (
     FACT_PREDICATE_CEILING_CHARS,
@@ -4283,4 +4287,84 @@ ASSESS_REPORT = sa.Table(
 
 IDX_ASSESS_REPORT_KIND_RUN = sa.Index(
     "idx_assess_report_kind_run", ASSESS_REPORT.c.kind, ASSESS_REPORT.c.run_at_ms,
+)
+
+
+# `computer_events` — the computer audit log (design/sandbox-runtime §12,
+# DEC-243): two rows per computer tool call on every path, written by
+# Nora's tools, never by `computerd`. Who (`actor`, `requester_person_id`,
+# the room, the tag), when (`started_at`, `finished_at`), how (`tool`,
+# `path`, the OTel ids) and what (`request` the full input, `result`,
+# `output_ref` the full output's blob keys); `nora.domain.computer_events`.
+# Two rows per operation (`phase` started/finished, one `operation_id`).
+# Migration `0081_computer_events` adds a trigger refusing UPDATE and DELETE
+# (and TRUNCATE unless deliberately switched off, the `0068` guard's rule),
+# which METADATA cannot express; it guards against bugs, not the owner role.
+COMPUTER_EVENTS = sa.Table(
+    "computer_events",
+    METADATA,
+    sa.Column("id", pg.UUID(as_uuid=True), primary_key=True),
+    sa.Column("operation_id", pg.UUID(as_uuid=True), nullable=False),
+    sa.Column("phase", sa.Text, nullable=False),
+    sa.Column(
+        "created_at", sa.DateTime(timezone=True), nullable=False,
+        server_default=sa.text("now()"),
+    ),
+    sa.Column("started_at", sa.DateTime(timezone=True), nullable=False),
+    sa.Column("finished_at", sa.DateTime(timezone=True), nullable=True),
+    sa.Column("actor", sa.Text, nullable=False),
+    sa.Column("requester_person_id", sa.Text, nullable=True),
+    sa.Column("platform", sa.Text, nullable=False),
+    sa.Column("conversation_id", sa.Text, nullable=False),
+    sa.Column("conversation_type", sa.Text, nullable=False),
+    sa.Column("tag_id", sa.Text, nullable=False),
+    sa.Column("scope", sa.Text, nullable=False),
+    sa.Column("tool", sa.Text, nullable=False),
+    sa.Column("path", sa.Text, nullable=False),
+    sa.Column("trace_id", sa.Text, nullable=False),
+    sa.Column("span_id", sa.Text, nullable=False),
+    sa.Column("status", sa.Text, nullable=False),
+    sa.Column(
+        "request", pg.JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"),
+    ),
+    sa.Column(
+        "result", pg.JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"),
+    ),
+    sa.Column(
+        "output_ref", pg.JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"),
+    ),
+    # Both vocabularies read from `nora.domain.computer_events`, never
+    # restated: the migration froze the same sets on 2026-09-30.
+    sa.CheckConstraint(
+        f"actor IN ({', '.join(repr(a) for a in sorted(COMPUTER_ACTORS))}) "
+        f"OR (starts_with(actor, '{DREAMER_ACTOR_PREFIX}') "
+        f"AND length(actor) > {len(DREAMER_ACTOR_PREFIX)})",
+        name="ck_computer_events_actor",
+    ),
+    sa.CheckConstraint(
+        f"path IN ({', '.join(repr(p) for p in sorted(COMPUTER_CALL_PATHS))})",
+        name="ck_computer_events_path",
+    ),
+    sa.CheckConstraint(
+        f"phase IN ({', '.join(repr(p) for p in sorted(COMPUTER_PHASES))})",
+        name="ck_computer_events_phase",
+    ),
+    sa.CheckConstraint(
+        "(phase = 'started' AND finished_at IS NULL) OR "
+        "(phase = 'finished' AND finished_at IS NOT NULL "
+        "AND finished_at >= started_at)",
+        name="ck_computer_events_phase_times",
+    ),
+    sa.UniqueConstraint(
+        "operation_id", "phase", name="uq_computer_events_operation_phase",
+    ),
+)
+
+# An ascending composite, not `tool_call_log`'s hand-written `created_at DESC`
+# expression index: a btree scans backwards for `ORDER BY created_at DESC`
+# at the same cost, and a plain index is one Alembic autogenerate can see, so
+# it needs no `_DESC_EXPRESSION_INDEXES` exemption and no parity row.
+IDX_COMPUTER_EVENTS_CONV_TS = sa.Index(
+    "idx_computer_events_conv_ts",
+    COMPUTER_EVENTS.c.conversation_id, COMPUTER_EVENTS.c.created_at,
 )

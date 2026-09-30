@@ -585,7 +585,7 @@ enabled = true
 # var, never inline the secret). Host-injected, like OMNIROUTE_API_KEY. Generate:
 #   python -c "import os,base64;print(base64.b64encode(os.urandom(32)).decode())"
 # Empty (or the var unset) = custody OFF.
-encryption_key_env = "NORA_MEDIA_KEY"
+encryption_key_env = "MEDIA_ENCRYPTION_KEY"
 max_bytes = 104857600     # 100 MiB — Signal's own attachment ceiling
 timeout_seconds = 8.0     # ingest path: a wedged daemon costs seconds, never the message
 # Reading a stored image back through MiMo-V2.5 (the `media_fetch` tool, DEC-56).
@@ -863,6 +863,40 @@ enabled = false
 # mem_limit = "8g"            # docker-py's own containers.run mem_limit shape
 # nano_cpus = 2000000000      # billionths of a CPU core (2 vCPUs)
 # data_host_root_env = "NORA_DATA_HOST_ROOT"
+
+# Nora's computer (design/sandbox-runtime, DEC-243, ADR 0019): `computer_run`,
+# `computer_read`, `computer_write` and `computer_edit` against computerd in an
+# sbx microVM, one workspace per room.
+#
+# Ships INERT: every computer tool answers `unavailable` until this is on.
+# Turning it on lets model-authored bash run on a VM on this host, so it is an
+# operator decision every time, never something a missing section decides.
+#
+# Enabling it requires the computer VM running with computerd listening at
+# `base_url`, and its bearer token in .env under the name `token_env` gives
+# (DEC-8: the value never goes in this file). Nora REFUSES TO START with
+# `enabled = true` and that variable unset or empty, rather than answering
+# every call `unavailable` in front of the group.
+#
+# Every call is written to the `computer_events` table (the audit), whatever
+# it answers.
+[computer]
+enabled = false
+# base_url = "http://172.17.0.1:18765"
+# token_env = "NORA_COMPUTER_TOKEN"
+# request_timeout_seconds = 30   # every call except a run
+# run_timeout_seconds = 120      # a command's default timeout
+# max_run_timeout_seconds = 900  # the most a model may ask a command to run
+# max_output_chars = 8000        # a run's stdout, cut beyond this
+# max_read_chars = 20000         # one computer_read, cut beyond this
+#
+# Reserved: per-command resource limits. None is applied today (operator,
+# 2026-09-30: the computer is semi-trusted) and computerd ignores the field;
+# only the keys set here are sent, and only when at least one is.
+# [computer.limits]
+# cpu_seconds = 60
+# max_processes = 256
+# max_file_bytes = 1073741824
 
 # The presence collector (design/19, DEC-54/55) — a SEPARATE process,
 # `python -m nora.presence`, that records circle members' distinct location
