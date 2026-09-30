@@ -418,7 +418,7 @@ week.
 | `computer_export` (link/chat/keep) on `ArtifactIngest`; `document-creation` skill + doctrine line | 1 day |
 | retire Smith, `make_artifact`, `LocalDockerBackend`, `/api/tokens`, `nora-compute` and `docker.sock`. The job outbox, poller and `compute_jobs` STAY for `delegate_task` (decision 4); only the Smith-specific `ComputeBackend` adapter goes | 1 day |
 
-This totals about 9 days for the core (S2a to S3). It excludes the audit
+This totals about 8 days for the core (S2a to S3). It excludes the audit
 trail (§12), sessions (§15) and the browser (S4), which are sized when they
 are built. The figures are estimates, not measured.
 
@@ -566,7 +566,8 @@ from what is *intended*, and neither is rewritten by a model.
      `status` (done / paused / blocked / failed), `objective`, `progress`,
      `next_step`, evidence (screenshot keys, file sha256s) and where it
      stopped (tab URL, tmux name).
-   - Code writes that into a row keyed by room, with provenance (tag id,
+   - Code writes that into a row keyed by session id (the room is an
+     attribute; a room can hold several sessions), with provenance (tag id,
      time). The model fills in one task's result and never folds the history.
    - The rows live in Nora's Postgres, not the VM, where a hostile page could
      rewrite them.
@@ -611,7 +612,7 @@ from what is *intended*, and neither is rewritten by a model.
    callers want the computer: the *conscious* path (a tag turn, someone waiting
    on a reply) and the *subconscious* one (the Cognition and Dreamer passes,
    which run with nobody waiting). The rules:
-   - **Every call carries its actor** (`tag`, `cognition`, `dreamer:<adaptor>`),
+   - **Every call carries its actor** (`tag`, `fire`, `cognition`, `dreamer:<adaptor>`),
      both in `computer_events` and on `computer_sessions`, so what ran on whose
      behalf re-derives from the rows.
    - **Lock the thing being changed, not the room.** Each session owns its
