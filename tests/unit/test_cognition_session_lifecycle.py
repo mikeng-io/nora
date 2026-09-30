@@ -196,6 +196,7 @@ def _rig(
     read_only_tools: frozenset[str] = frozenset(), max_self_wakes: int = 5,
     max_self_wakes_per_day: int = 12,
     model_window_tokens: int | None = None, overflow_window_fraction: float = 0.8,
+    grounder: Any = None, person_known: Callable[[str], bool] | None = None,
     real_pending_reminds: bool = False,
 ) -> Rig:
     ledger = InMemoryCognitionDryRunStore()
@@ -219,7 +220,7 @@ def _rig(
         home_rooms=dict.fromkeys(units, HOME),
         read_tools_for=read_tools_for or (lambda unit, rooms: []),
         read_only_tools=read_only_tools,
-        skill_text_for=lambda kinds: "", grounder=EmptyGrounder(),
+        skill_text_for=lambda kinds: "", grounder=grounder or EmptyGrounder(),
         doctrine_text="DOCTRINE", doctrine_sha256="sha",
         open_note_titles=_const(()), open_proposed_events=_const(()),
         prior_standing=_const(None), pending_self_wakes=_pending,
@@ -232,7 +233,7 @@ def _rig(
         max_self_wakes=max_self_wakes, max_self_wakes_per_day=max_self_wakes_per_day,
         metrics=metrics, mint_ref=_counter(), clock=clock,
         model_window_tokens=model_window_tokens,
-        overflow_window_fraction=overflow_window_fraction,
+        overflow_window_fraction=overflow_window_fraction, person_known=person_known,
     )
     ev = WakeEvaluator(
         store=stimuli, units=lambda: units, policy=policy, metrics=metrics, tz=HK,
@@ -649,7 +650,8 @@ async def test_items_past_max_items_come_back_on_the_next_agenda_with_a_strike()
     _, second, _ = rig.ledger.sessions[1]
     (item,) = second.agenda["items"]  # type: ignore[misc]
     assert item["stimulus_ids"] == [3] and item["strike"] == 1  # type: ignore[index]
-    assert "room-c" in rig.agent.prompts[1]
+    assert item["conversation_id"] == "room-c"  # type: ignore[index]
+    assert "room-c" not in rig.agent.prompts[1]  # the prompt says the label, never the id
 
 
 async def test_an_unclosed_item_returns_with_a_strike_and_is_struck_at_max_strikes():
@@ -1012,8 +1014,15 @@ async def test_a_moved_self_wake_fires_once_at_the_new_time_and_never_at_the_old
     fired = [p for _, p, _ in rig.ledger.paces if p.transition == "fired"]
     assert [p.wake_ref for p in fired] == ["ref1"]
 
+    after_self = len(rig.stimuli.wakes)
     rig.clock.advance(3600)
-    assert await rig.tick() == []             # exactly once
+    # The self wake claimed only its own stimulus (D2), so the second message it
+    # found pending is still pending and wakes on its own once settled; what must
+    # not happen is a second self wake.
+    await rig.tick()
+    await rig.settle()
+    assert [w.reason for w in rig.stimuli.wakes[after_self:]] in ([], ["settled"])
+    assert await rig.tick() == []             # and nothing more, exactly once
     assert await rig.ledger.pending_self_wakes(unit="u1", since_ms=0) == ()
 
 

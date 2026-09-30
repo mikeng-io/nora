@@ -87,7 +87,7 @@ from nora.agent.cognition_remind_mirror import (
     dry_run_remind_cancel,
     dry_run_remind_move,
 )
-from nora.domain.cognition_ground import Grounding
+from nora.domain.cognition_ground import Grounding, rollup_status
 from nora.domain.cognition_pace import (
     DEFAULT_MAX_SELF_WAKES_PER_DAY,
     PENDING_WINDOW_SECONDS,
@@ -95,7 +95,7 @@ from nora.domain.cognition_pace import (
     PendingSelfWake,
 )
 from nora.domain.cognition_remind import PendingMirroredRemind, RemindAnswer
-from nora.domain.cognition_render import RenderBudget, render_agenda, room_key
+from nora.domain.cognition_render import RenderBudget, render_agenda, room_key, room_label
 from nora.domain.cognition_session import (
     Agenda,
     AgendaItem,
@@ -119,6 +119,7 @@ from nora.domain.ports import (
 from nora.domain.standing import Standing
 from nora.domain.stimuli import (
     LIMIT_STOP_REASONS,
+    NO_CAUSE,
     AgendaError,
     SessionLimitError,
     Stimulus,
@@ -409,6 +410,7 @@ class CognitionSessionRunner:
         skill_versions_for: SkillVersionsFor | None = None,
         tz: tzinfo = UTC, render_budget: RenderBudget | None = None,
         model_window_tokens: int | None = None, overflow_window_fraction: float = 0.8,
+        person_known: Callable[[str], bool] | None = None,
     ) -> None:
         """`doctrine_source`, when given, is read at the start of EVERY session
         and replaces `doctrine_text`/`doctrine_sha256` (which then serve only
@@ -430,6 +432,10 @@ class CognitionSessionRunner:
         `WakePolicy.session_timeout_seconds`, the wake's own clock): both are
         refused HERE, at startup, not discovered per wake.
 
+        `person_known(person_id)` is the roster question a Rollup stimulus is
+        judged readable by (`nora.domain.cognition_ground.rollup_status`); None
+        knows everyone, so only a ref that does not parse is unreadable.
+
         `model_window_tokens` (None: unknown) and `overflow_window_fraction`
         are what a context overflow is PROVEN against (DEC-244): without a
         known window no overflow is ever the agenda's, and every one is
@@ -442,6 +448,7 @@ class CognitionSessionRunner:
         self._home_rooms = home_rooms
         self._read_tools_for = read_tools_for
         self._grounder = grounder
+        self._person_known = person_known or (lambda _person_id: True)
         self._render_budget = render_budget or RenderBudget()
         self._read_only_tools = read_only_tools
         self._skill_text_for = skill_text_for
@@ -526,14 +533,66 @@ class CognitionSessionRunner:
             if home_room is None:
                 self._inc("nora_cognition_session_skipped_total", reason="no_home_room")
                 raise MissingHomeRoomError(f"no home room configured for unit {unit!r}")
+            # WHEN SHE LAST LOOKED is when the unit's last session ENDED, not the
+            # newest message (`view.last_activity_ms` is how active the room
+            # is): a clock line that says «you last looked» from a person's
+            # message time tells her the wrong span (#B2, DEC-245). None: no
+            # earlier session on record, or one that never ended.
+            last_looked_ms = (
+                None if view.last_session is None else view.last_session.ended_at_ms
+            )
+            # A Rollup stimulus a session cannot READ is not an agenda item
+            # (DEC-245): until `rollup_read` exists a session judges from the
+            # ref's fields alone, and an item it cannot read is one it would
+            # answer wrong at a rate nothing reports. Readability is decided
+            # from the stimulus and the roster (`rollup_status`), NEVER from
+            # what the grounder built: a readable rollup the agenda cut at
+            # `max_items` has no grounding line and is DEFERRED like any item.
+            # Two kinds of unreadable, two fates, both RECORDED on the session
+            # row (`agenda.skipped_stimulus_ids`) and counted:
+            #   malformed   the ref can never be read: consumed.
+            #   roster_miss a person the roster does not know YET: RETAINED, as a
+            #               carry row with `waits`, so it is never consumed
+            #               unseen and never raises the `rollup` trigger (a
+            #               waiting stimulus does not wake), and it is an agenda
+            #               item again in the first session after the roster
+            #               knows the person.
+            malformed: set[int] = set()
+            retained: set[int] = set()
+            for s in view.pending:
+                if s.kind != "rollup":
+                    continue
+                status = rollup_status(s, self._person_known)
+                if status == "malformed":
+                    malformed.add(s.id)
+                elif status == "roster_miss":
+                    retained.add(s.id)
+            skipped = frozenset(malformed | retained)
+            pending = [s for s in view.pending if s.id not in skipped]
+            if malformed:
+                self._inc("nora_cognition_stimuli_skipped_total", reason="unreadable_rollup")
+            if retained:
+                self._inc("nora_cognition_stimuli_skipped_total", reason="roster_miss_rollup")
+            retain_carries = [
+                NewCarry(
+                    unit=unit, stimulus_id=sid, strike=view.carry.get(sid, 0),
+                    state="carried", session_id=None, waits=True,
+                )
+                for sid in sorted(retained)
+            ]
             situation = build_situation(
-                unit=unit, pending=view.pending, home_room=home_room, now_ms=now_ms,
-                last_session_ms=view.last_activity_ms, max_items=self._max_items,
+                unit=unit, pending=pending, home_room=home_room, now_ms=now_ms,
+                last_session_ms=last_looked_ms, max_items=self._max_items,
                 strikes=view.carry,
             )
             if situation.agenda.is_empty:
                 self._inc("nora_cognition_session_skipped_total", reason="empty_agenda")
-                await self._finish(wake_id, unit, None, "closed", "empty agenda")
+                await self._finish(
+                    wake_id, unit, None, "closed",
+                    "empty agenda" if not skipped else
+                    f"empty agenda: {len(skipped)} rollup stimulus(es) unreadable",
+                    carries=retain_carries,
+                )
                 return None
 
             doctrine_text, doctrine_sha256 = self._doctrine()
@@ -542,12 +601,14 @@ class CognitionSessionRunner:
                 {} if self._skill_versions_for is None
                 else dict(self._skill_versions_for(kinds))
             )
-            # GROUNDED BEFORE ANYTHING IS RECORDED (30 §1, #637 review major 2):
-            # the Record rows that raised each item and the Register index
-            # lines. A read that fails raises here, so the wake is recorded
-            # `failed` and its stimuli stay pending: a session never runs on
-            # bare counts it cannot judge from.
-            grounding = await self._grounder(unit, situation.agenda.items, view.pending)
+            # GROUNDED AFTER THE SKIP, BEFORE ANYTHING IS RECORDED (30 §1, #637
+            # review major 2): the agenda is final, so the grounding's per-item
+            # index (her own sends) is the index the render reads, and an item
+            # promoted from `deferred` by a skip is grounded. A read that
+            # fails raises here, so the wake is recorded `failed` and its
+            # stimuli stay pending: a session never runs on bare counts it
+            # cannot judge from.
+            grounding = await self._grounder(unit, situation.agenda.items, pending)
             session = NewCognitionSession(
                 unit=unit, mode="shadow", started_at_ms=now_ms,
                 from_stimulus_id=min(s.id for s in view.pending),
@@ -556,6 +617,8 @@ class CognitionSessionRunner:
                 agenda={
                     "items": [i.as_dict() for i in situation.agenda.items],
                     "deferred_stimulus_ids": list(situation.agenda.deferred_stimulus_ids),
+                    "skipped_stimulus_ids": sorted(skipped),
+                    "retained_stimulus_ids": sorted(retained),
                 },
                 doctrine_sha256=doctrine_sha256, skill_versions=skill_versions,
                 config_revision_id=None, model_id=self._model_id,
@@ -568,7 +631,7 @@ class CognitionSessionRunner:
             return await self._run_session(
                 unit=unit, view=view, situation=situation, session_id=session_id,
                 wake_id=wake_id, now_ms=now_ms, doctrine_text=doctrine_text,
-                grounding=grounding,
+                grounding=grounding, retained=sorted(retained),
             )
         except asyncio.CancelledError:
             await self._shielded_finish(
@@ -684,7 +747,10 @@ class CognitionSessionRunner:
             recorded = await self._stimuli.record_outcome(
                 outcome=NewWakeOutcome(
                     wake_id=wake_id, unit=unit, outcome=outcome, at_ms=ended_ms,
-                    detail=detail, session_id=session_id, cause=cause,
+                    detail=detail, session_id=session_id,
+                    # A session that closed or was cancelled did not FAIL: it has
+                    # no cause (m2), never `infra`.
+                    cause=cause if outcome in ("failed", "timeout") else NO_CAUSE,
                 ),
                 carries=carries, recorded_at_ms=ended_ms,
             )
@@ -701,6 +767,7 @@ class CognitionSessionRunner:
     async def _run_session(
         self, *, unit: str, view: UnitView, situation: Situation, session_id: int,
         wake_id: int, now_ms: int, doctrine_text: str, grounding: Grounding,
+        retained: Sequence[int] = (),
     ) -> CognitionSessionOutcome:
         items = situation.agenda.items
         state = _RunState(
@@ -710,7 +777,9 @@ class CognitionSessionRunner:
             cited_ids=_message_ids(view.pending)
             | frozenset(r.message_id for r in grounding.records.values()),
         )
-        tools = await self._build_tools(unit=unit, state=state, now_ms=now_ms)
+        tools = await self._build_tools(
+            unit=unit, state=state, now_ms=now_ms, labels=grounding.room_labels,
+        )
         kinds = sorted({item.kind for item in items})
         system_prompt = doctrine_text + self._skill_text_for(kinds)
         prompt = render_agenda(
@@ -749,6 +818,15 @@ class CognitionSessionRunner:
             raise SessionLimitError(result.stop_reason or "")
 
         carries = await self._settle(state=state, situation=situation, view=view)
+        # A Rollup stimulus the roster cannot read YET is retained, not consumed
+        # (see `on_wake`): it waits, and returns as an item once it is readable.
+        carries.extend(
+            NewCarry(
+                unit=unit, stimulus_id=sid, strike=view.carry.get(sid, 0),
+                state="carried", session_id=session_id, waits=True,
+            )
+            for sid in retained
+        )
         recorded = await self._finish(
             wake_id, unit, session_id, "closed", result.stop_reason or "", carries=carries,
         )
@@ -919,6 +997,7 @@ class CognitionSessionRunner:
 
     async def _build_tools(
         self, *, unit: str, state: _RunState, now_ms: int,
+        labels: Mapping[str, str] | None = None,
     ) -> list[Any]:
         # EACH ITEM'S READS RESOLVE THROUGH ITS OWN ROOM (30 §1, DEC-231, R-21;
         # #637 review, major 3). One room on the agenda: that room's tools, as
@@ -934,10 +1013,15 @@ class CognitionSessionRunner:
         # home room.
         rooms = list(dict.fromkeys(item.room for item in state.items_by_index.values()))
         keys = [_room_key(r) for r in rooms]
+        # The prompt calls a room by its LABEL (m5); the id is what a tool's
+        # `room` argument takes, so it appears here, once, beside the label it
+        # belongs to, and nowhere in an item.
+        named = [room_label(r, labels or {}) for r in rooms]
         state.reads_note = (
-            f"Your read tools look through room {keys[0]}."
+            f"Your read tools look through room {named[0]}."
             if len(keys) == 1
-            else "Your read tools take a `room`, one of: " + ", ".join(keys)
+            else "Your read tools take a `room`, one of: "
+            + ", ".join(f"`{k}` ({n})" for k, n in zip(keys, named, strict=True))
             + ". Each read resolves through the room you name and shows only what that "
             "room may be shown; a room that is not listed is refused."
         )

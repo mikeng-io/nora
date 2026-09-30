@@ -743,3 +743,41 @@ async def test_a_remind_due_exactly_now_is_due_not_pending(stores):
         )
     pending = await ledger.pending_mirrored_reminds(unit=UNIT, now_ms=NOW + 100)
     assert [p.reminder_ref for p in pending] == ["after"]
+
+
+# ---- m2 (DEC-245): a wake that did not FAIL has no failure cause -------------
+
+@pytest.mark.parametrize("outcome", ["closed", "cancelled"])
+async def test_a_closed_or_cancelled_outcome_records_no_cause_whatever_the_caller_passes(
+    stores, outcome,
+):
+    """`closed` used to be stored `infra` (the column's default), so a session that
+    succeeded read as «the world failed» in every count of infra failures."""
+    stimuli, _ledger = stores
+    await _msgs(stimuli, 1)
+    wake = await _wake(stimuli, through=1)
+    await _close(stimuli, wake, outcome, cause="infra")
+    view = await _view(stimuli, stale_before_ms=NOW + 1)
+    assert view.last_session.cause == "none"
+
+
+@pytest.mark.parametrize(("outcome", "cause"), [
+    ("failed", "infra"), ("failed", "agenda"), ("timeout", "infra"), ("timeout", "agenda"),
+])
+async def test_a_failure_keeps_the_cause_it_was_written_with(stores, outcome, cause):
+    stimuli, _ledger = stores
+    await _msgs(stimuli, 1)
+    wake = await _wake(stimuli, through=1)
+    await _close(stimuli, wake, outcome, cause=cause)
+    view = await _view(stimuli, stale_before_ms=NOW + 1)
+    assert (view.last_session.state, view.last_session.cause) == ("failed", cause)
+
+
+@pytest.mark.parametrize("outcome", ["failed", "timeout"])
+async def test_a_failure_cannot_be_written_with_no_cause(stores, outcome):
+    stimuli, _ledger = stores
+    await _msgs(stimuli, 1)
+    wake = await _wake(stimuli, through=1)
+    with pytest.raises(ValueError, match="names its cause"):
+        await _close(stimuli, wake, outcome, cause="none")
+

@@ -104,6 +104,7 @@ class WakeEvaluator:
         clock: Callable[[], float] = time.time,
         on_wake: WakeHook | None = None,
         session_units: Callable[[], Collection[str]] | None = None,
+        floors_ready: bool = True,
     ) -> None:
         """`settle_seconds` (default: twice `store_timeout_seconds`) is how
         far behind the clock the pending read looks. Ids are assigned at
@@ -146,7 +147,15 @@ class WakeEvaluator:
         and its write, the unit's newest wake or its outcome changed, nothing
         is written and the unit is read again next tick. A hook that raises is
         logged, counted and contained: it never aborts the tick for another
-        unit."""
+        unit.
+
+        `floors_ready` (M8, DEC-245): False while no skill ships for the `time`
+        agenda kind (`AgendaSkills.by_kind`). A session woken by a daily floor
+        would be handed «a time stimulus is due: floor» and nothing to do about
+        it, and the item says nothing that grounds a judgement. So a unit whose
+        wakes start sessions raises NO floor while it is False; a unit that only
+        records would-wakes (no hook) still raises them, because sizing the floors
+        from a shadow week is what they are for."""
         self._store = store
         self._units = units
         self._policy = policy
@@ -163,6 +172,7 @@ class WakeEvaluator:
         )
         self._on_wake = on_wake
         self._session_units = session_units
+        self._floors_ready = floors_ready
         #: Held so a background task is never garbage-collected mid-flight
         #: (the classic "Task was destroyed but it is pending" loss) and so
         #: tests can drain them deterministically instead of sleeping.
@@ -211,7 +221,14 @@ class WakeEvaluator:
                 written.append(wake_id)
                 flying.add(view.unit)
                 if view.tracked:
-                    self._schedule_on_wake(view, wake_id, now_ms)
+                    # The session sees what the wake CLAIMED and nothing else
+                    # (D2): the stimuli it left pending are the next wake's.
+                    claimed = replace(
+                        view, pending=tuple(
+                            x for x in view.pending if x.id in verdict.claimed_ids
+                        ),
+                    )
+                    self._schedule_on_wake(claimed, wake_id, now_ms)
         return written
 
     def _schedule_on_wake(self, view: UnitView, wake_id: int, now_ms: int) -> None:
@@ -292,16 +309,18 @@ class WakeEvaluator:
 
     async def _read(self, unit: str, now_ms: int, cutoff_ms: int) -> UnitView | None:
         try:
-            for stimulus in self._floor_stimuli(unit, now_ms):
+            tracked = self._on_wake is not None and (
+                self._session_units is None or unit in set(self._session_units())
+            )
+            for stimulus in (
+                self._floor_stimuli(unit, now_ms) if self._floors_ready or not tracked else ()
+            ):
                 sid = await asyncio.wait_for(
                     self._store.append(stimulus=stimulus, recorded_at_ms=now_ms),
                     timeout=self._timeout,
                 )
                 if sid is not None:
                     self._metrics.inc("nora_stimulus_total", kind="time", cue="none")
-            tracked = self._on_wake is not None and (
-                self._session_units is None or unit in set(self._session_units())
-            )
             view = await asyncio.wait_for(
                 self._store.view(
                     unit=unit, mode=self._mode, now_ms=cutoff_ms, limit=self._limit,
@@ -313,7 +332,13 @@ class WakeEvaluator:
                 timeout=self._timeout,
             )
             live = unit in self._live and not self._live[unit].done()
-            return await self._strike_failed(replace(view, tracked=tracked, live=live), now_ms)
+            # M8: no skill for `time` yet, so a `time` stimulus that is ALREADY
+            # pending (raised before the gate, or by the previous deploy) must
+            # not wake a session either: not raising a floor is half of it.
+            inert = frozenset({"time"}) if tracked and not self._floors_ready else frozenset()
+            return await self._strike_failed(
+                replace(view, tracked=tracked, live=live, inert_kinds=inert), now_ms,
+            )
         except Exception:
             log.exception("wake evaluator: could not read unit %s; skipped this tick", unit)
             self._metrics.inc("nora_errors_total", stage="cognition_wake")
@@ -370,7 +395,8 @@ class WakeEvaluator:
         mark = view.watermark
         items: dict[str, int] = {}
         cues: set[str] = set()
-        for s in view.pending:
+        claimed = [s for s in view.pending if s.id in verdict.claimed_ids]
+        for s in claimed:
             items[f"{s.kind}:{s.item}"] = items.get(f"{s.kind}:{s.item}", 0) + 1
             cues.update(s.cues)
         tracked = view.tracked
@@ -384,9 +410,10 @@ class WakeEvaluator:
             detail={
                 "items": items,
                 "cues": sorted(cues),
-                "waits": sum(1 for s in view.pending if s.waits),
-                "rooms": len({s.conversation_id for s in view.pending if s.conversation_id}),
+                "waits": sum(1 for s in claimed if s.waits),
+                "rooms": len({s.conversation_id for s in claimed if s.conversation_id}),
             },
+            unclaimed_ids=verdict.unclaimed_ids,
         )
         # Tracked: the write re-checks, under the unit's lock, that the view
         # this verdict came from still holds (`WakeGuard`).

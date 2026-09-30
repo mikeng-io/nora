@@ -26,7 +26,7 @@ import psycopg
 import pytest
 import sqlalchemy as sa
 
-from nora.domain.stimuli import NewStimulus, NewWake
+from nora.domain.stimuli import NewStimulus, NewWake, WakeGuard
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.migrations_runner import run_migrations
 from nora.infra.sql.stimuli import SqlStimulusStore
@@ -67,7 +67,9 @@ async def store(request: Any) -> AsyncIterator[Any]:
         yield SqlStimulusStore(engine)
     finally:
         async with engine.begin() as conn:
-            await conn.execute(sa.text("truncate stimulus, cognition_wake restart identity"))
+            await conn.execute(sa.text(
+                "truncate stimulus, cognition_wake, stimulus_retraction restart identity"
+            ))
         await engine.dispose()
 
 
@@ -251,3 +253,325 @@ async def test_a_stimulus_recorded_after_the_wakes_time_bound_stays_pending_unde
     await store.record_wake(wake=_wake(early, NOW + 50), recorded_at_ms=NOW + 50)
     view = await store.view(unit=UNIT, mode="shadow", now_ms=NOW + 200, limit=100)
     assert [s.id for s in view.pending] == [late]
+
+
+# ---- D2: a wake claims a SET, so no stimulus is lost or taken twice ---------
+#
+# A `rollup`, `time` or `self` wake claims only its own kind (DEC-245). The
+# messages it leaves inside its range are listed on the wake row
+# (`unclaimed_ids`), and both stores must read them as pending exactly as the
+# SQL does. Every test below names what reverting the rule would break.
+
+
+def _kind(kind: str, ref: str, *, at: int = NOW, due: int | None = None) -> NewStimulus:
+    return NewStimulus(
+        unit=UNIT, kind=kind, item=kind, ref=ref, at_ms=at, due_ms=due,  # type: ignore[arg-type]
+        person_id="p1" if kind == "rollup" else None,
+    )
+
+
+async def test_a_wake_that_names_unclaimed_stimuli_leaves_exactly_those_pending(store):
+    m1 = await store.append(stimulus=_msg("messages:1"), recorded_at_ms=NOW)
+    r2 = await store.append(stimulus=_kind("rollup", "colocation|p1,p2|1"), recorded_at_ms=NOW)
+    m3 = await store.append(stimulus=_msg("messages:3"), recorded_at_ms=NOW)
+    wake = NewWake(
+        unit=UNIT, mode="shadow", reason="rollup", from_stimulus_id=0,
+        through_stimulus_id=r2, stimulus_count=1, eligible_count=1,
+        oldest_pending_ms=NOW, cut_cooldown=False, at_ms=NOW + 10,
+        unclaimed_ids=(m1,),
+    )
+    await store.record_wake(wake=wake, recorded_at_ms=NOW + 10)
+    view = await store.view(unit=UNIT, mode="shadow", now_ms=NOW + 20, limit=100)
+    # the rollup is consumed; the message BELOW its id stays pending, and so
+    # does the one above it (an ordinary id past the watermark)
+    assert [s.id for s in view.pending] == [m1, m3]
+    assert view.last_wake.unclaimed_ids == (m1,)
+    assert view.watermark.unclaimed == frozenset({m1})
+
+
+async def test_an_unclaimed_stimulus_is_taken_by_the_next_wake_and_only_once(store):
+    m1 = await store.append(stimulus=_msg("messages:1"), recorded_at_ms=NOW)
+    r2 = await store.append(stimulus=_kind("rollup", "colocation|p1,p2|1"), recorded_at_ms=NOW)
+    await store.record_wake(wake=NewWake(
+        unit=UNIT, mode="shadow", reason="rollup", from_stimulus_id=0,
+        through_stimulus_id=r2, stimulus_count=1, eligible_count=1, oldest_pending_ms=NOW,
+        cut_cooldown=False, at_ms=NOW + 10, unclaimed_ids=(m1,),
+    ), recorded_at_ms=NOW + 10)
+    await store.record_wake(wake=_wake(r2, NOW + 20), recorded_at_ms=NOW + 20)  # claims all
+    view = await store.view(unit=UNIT, mode="shadow", now_ms=NOW + 30, limit=100)
+    assert view.pending == ()
+    assert view.watermark.unclaimed == frozenset()
+
+
+async def test_a_retracted_unclaimed_stimulus_is_not_pending(store):
+    m1 = await store.append(stimulus=_msg("messages:1"), recorded_at_ms=NOW)
+    r2 = await store.append(stimulus=_kind("rollup", "colocation|p1,p2|1"), recorded_at_ms=NOW)
+    await store.record_wake(wake=NewWake(
+        unit=UNIT, mode="shadow", reason="rollup", from_stimulus_id=0,
+        through_stimulus_id=r2, stimulus_count=1, eligible_count=1, oldest_pending_ms=NOW,
+        cut_cooldown=False, at_ms=NOW + 10, unclaimed_ids=(m1,),
+    ), recorded_at_ms=NOW + 10)
+    await store.retract(unit=UNIT, stimulus_id=m1, reason="failed", recorded_at_ms=NOW + 11)
+    view = await store.view(unit=UNIT, mode="shadow", now_ms=NOW + 30, limit=100)
+    assert view.pending == ()
+
+
+@pytest.mark.parametrize("seed", range(8))
+async def test_a_random_run_of_wakes_claims_every_stimulus_exactly_once(store, seed):
+    """The load-bearing invariant of D2: drive `decide` and the store with a
+    seeded stream of message, rollup, time and self stimuli and a tick between
+    arrivals, record every wake with the claim `decide` made, and read the
+    claimed sets back: together they are EVERY stimulus, each once. A wake that
+    advanced the watermark over a message it did not claim would lose it; one
+    that forgot to advance would take it twice."""
+    import random
+
+    from nora.domain.stimuli import WakePolicy, decide
+
+    rng = random.Random(seed)
+    policy = WakePolicy(
+        quiet_seconds=60, cue_quiet_seconds=30, rollup_delay_seconds=0, batch_max=1000,
+        max_age_seconds=10**9, cooldown_seconds=0, session_seconds=0,
+    )
+    made: list[int] = []
+    claimed: list[int] = []
+    t = NOW
+
+    async def arrive() -> None:
+        kind = rng.choice(["message", "message", "rollup", "time", "self"])
+        n = len(made) + 1
+        if kind == "message":
+            stim = _msg(f"messages:{n}", at=t)
+        elif kind == "rollup":
+            stim = _kind("rollup", f"colocation|p1,p2|{n}", at=t)
+        elif kind == "time":
+            stim = _kind("time", f"floor:{n}", at=t, due=t + rng.choice([0, 30_000, 600_000]))
+        else:
+            stim = _kind("self", f"ref{n}", at=t, due=t + rng.choice([0, 90_000, 900_000]))
+        sid = await store.append(stimulus=stim, recorded_at_ms=t)
+        assert sid is not None
+        made.append(sid)
+
+    async def tick() -> bool:
+        view = await store.view(unit=UNIT, mode="shadow", now_ms=t, limit=1000)
+        verdict = decide(view, policy, t)
+        if verdict.reason is None:
+            return False
+        assert verdict.claimed_ids <= {s.id for s in view.pending}
+        await store.record_wake(wake=NewWake(
+            unit=UNIT, mode="shadow", reason=verdict.reason, from_stimulus_id=0,
+            through_stimulus_id=verdict.through_stimulus_id,
+            stimulus_count=verdict.stimulus_count, eligible_count=verdict.eligible_count,
+            oldest_pending_ms=verdict.oldest_pending_ms, cut_cooldown=False, at_ms=t,
+            unclaimed_ids=verdict.unclaimed_ids,
+        ), recorded_at_ms=t)
+        claimed.extend(sorted(verdict.claimed_ids))
+        return True
+
+    for _ in range(40):
+        for _ in range(rng.randint(0, 3)):
+            await arrive()
+        t += rng.randint(5, 400) * 1000
+        await tick()
+    for _ in range(60):                      # let everything become due and settle
+        t += 3_000_000
+        await tick()
+    final = await store.view(unit=UNIT, mode="shadow", now_ms=t, limit=1000)
+    assert final.pending == ()
+    assert sorted(claimed) == sorted(made)   # every stimulus, exactly once
+
+
+@pytest.mark.parametrize("seed", range(12))
+@pytest.mark.parametrize("limit", [3, 1000])
+async def test_tracked_wakes_that_fail_expire_or_carry_still_claim_every_stimulus(
+    store, seed, limit,
+):
+    """The same invariant under what production does to it (the strongest-tier
+    review of #646): TRACKED wakes (each awaits an outcome), 30% of which FAIL and
+    10% of which EXPIRE (no outcome row: a kill), closes that CARRY stimuli back
+    (waiting or not) and release them later, and a `limit` small enough to
+    TRUNCATE the read. A failed or expired wake claims nothing (the watermark falls
+    back over it); a closed one claims its set; so every stimulus is claimed by a
+    closing wake or is still pending, and one claimed twice was carried back.
+    Both stores run every seed; the SQL one is the one that has to hold."""
+    import random
+
+    from nora.domain.ports import NewCarry, NewWakeOutcome
+    from nora.domain.stimuli import WakeGuard, WakePolicy, decide
+
+    if hasattr(store, "_engine"):
+        async with store._engine.begin() as conn:
+            await conn.execute(sa.text(
+                "truncate stimulus, cognition_wake, cognition_wake_outcome, cognition_carry, "
+                "stimulus_retraction restart identity cascade"
+            ))
+    rng = random.Random(seed)
+    policy = WakePolicy(
+        quiet_seconds=60, cue_quiet_seconds=30, rollup_delay_seconds=0, batch_max=1000,
+        max_age_seconds=10**9, cooldown_seconds=0, session_seconds=0,
+    )
+    made: list[int] = []
+    closed_claims: list[int] = []
+    carried_ever: set[int] = set()
+    t = NOW
+
+    async def arrive() -> None:
+        kind = rng.choice(["message", "message", "rollup", "time", "self"])
+        n = len(made) + 1
+        if kind == "message":
+            stim = _msg(f"messages:{n}", at=t)
+        elif kind == "rollup":
+            stim = _kind("rollup", f"colocation|p1,p2|{n}", at=t)
+        elif kind == "time":
+            stim = _kind("time", f"floor:{n}", at=t, due=t + rng.choice([0, 30_000, 600_000]))
+        else:
+            stim = _kind("self", f"ref{n}", at=t, due=t + rng.choice([0, 90_000, 900_000]))
+        sid = await store.append(stimulus=stim, recorded_at_ms=t)
+        assert sid is not None
+        made.append(sid)
+
+    async def tick() -> None:
+        view = await store.view(unit=UNIT, mode="shadow", now_ms=t, limit=limit,
+                                stale_before_ms=t - 1)
+        assert len(view.pending) <= limit                      # bounded, in both stores
+        verdict = decide(view, policy, t)
+        if verdict.reason is None:
+            return
+        assert verdict.claimed_ids <= {s.id for s in view.pending}
+        wid = await store.record_wake(wake=NewWake(
+            unit=UNIT, mode="shadow", reason=verdict.reason, from_stimulus_id=0,
+            through_stimulus_id=verdict.through_stimulus_id,
+            stimulus_count=verdict.stimulus_count, eligible_count=verdict.eligible_count,
+            oldest_pending_ms=verdict.oldest_pending_ms, cut_cooldown=False, at_ms=t,
+            unclaimed_ids=verdict.unclaimed_ids, tracked=True,
+        ), recorded_at_ms=t, guard=WakeGuard(
+            last_wake_id=None if view.last_wake is None else view.last_wake.id,
+            last_outcome=None if view.last_session is None else view.last_session.outcome,
+        ))
+        assert wid is not None
+        roll = rng.random()
+        if roll < 0.10:
+            return                                              # expired: no outcome row
+        if roll < 0.40:
+            await store.record_outcome(outcome=NewWakeOutcome(
+                wake_id=wid, unit=UNIT, outcome="failed", at_ms=t + 1), recorded_at_ms=t + 1)
+            return
+        carries = []
+        for sid in sorted(verdict.claimed_ids):
+            if rng.random() < 0.2:
+                carried_ever.add(sid)
+                carries.append(NewCarry(unit=UNIT, stimulus_id=sid, strike=1, state="carried",
+                                        waits=rng.random() < 0.5))
+            elif sid in view.carry:
+                carries.append(NewCarry(unit=UNIT, stimulus_id=sid, strike=view.carry[sid],
+                                        state="released"))
+        await store.record_outcome(outcome=NewWakeOutcome(
+            wake_id=wid, unit=UNIT, outcome="closed", at_ms=t + 1), carries=carries,
+            recorded_at_ms=t + 1)
+        closed_claims.extend(sorted(verdict.claimed_ids))
+
+    for _ in range(40):
+        for _ in range(rng.randint(0, 3)):
+            await arrive()
+        t += rng.randint(5, 400) * 1000
+        await tick()
+    for _ in range(300):
+        t += 3_000_000
+        await tick()
+    final = await store.view(unit=UNIT, mode="shadow", now_ms=t, limit=1000, stale_before_ms=t)
+    lost = sorted(set(made) - set(closed_claims) - {s.id for s in final.pending})
+    twice = sorted({x for x in closed_claims if closed_claims.count(x) > 1} - carried_ever)
+    assert (lost, twice) == ([], [])
+
+
+@pytest.mark.parametrize("limit", [1, 2, 3])
+async def test_a_truncated_pending_read_is_the_same_bounded_oldest_first_list_in_both_stores(
+    store, limit,
+):
+    """Store parity (the strongest-tier review of #646): the in-memory view cut
+    unclaimed ids with `[:limit]` while SQL read them past the limit. Now the
+    range read, the carried and the unclaimed all sit under ONE bound, oldest
+    first, in both, so a truncated read can never hide an older stimulus behind a
+    newer one."""
+    from nora.domain.ports import NewCarry, NewWakeOutcome
+
+    ids = [await store.append(stimulus=_msg(f"messages:{i}"), recorded_at_ms=NOW)
+           for i in range(1, 6)]
+    r6 = await store.append(stimulus=_kind("rollup", "colocation|p1,p2|6"), recorded_at_ms=NOW)
+    wid = await store.record_wake(wake=NewWake(
+        unit=UNIT, mode="shadow", reason="rollup", from_stimulus_id=0,
+        through_stimulus_id=r6, stimulus_count=1, eligible_count=1, oldest_pending_ms=NOW,
+        cut_cooldown=False, at_ms=NOW + 10, unclaimed_ids=tuple(ids), tracked=True,
+    ), recorded_at_ms=NOW + 10, guard=WakeGuard(last_wake_id=None, last_outcome=None))
+    await store.record_outcome(
+        outcome=NewWakeOutcome(wake_id=wid, unit=UNIT, outcome="closed", at_ms=NOW + 11),
+        carries=[NewCarry(unit=UNIT, stimulus_id=r6, strike=1, state="carried")],
+        recorded_at_ms=NOW + 11,
+    )
+    view = await store.view(unit=UNIT, mode="shadow", now_ms=NOW + 30, limit=limit)
+    assert [s.id for s in view.pending] == [*ids, r6][:limit]
+
+
+async def test_a_wakes_detail_is_a_jsonb_object_and_an_old_string_row_still_reads(store):
+    """`record_wake` cast `json.dumps(detail)` to jsonb, so every row was a jsonb
+    STRING and `detail->'unclaimed'` read NULL in a query. It writes the object;
+    a row written the old way (a string) still reads, in both stores."""
+    m1 = await store.append(stimulus=_msg("messages:1"), recorded_at_ms=NOW)
+    r2 = await store.append(stimulus=_kind("rollup", "colocation|p1,p2|1"), recorded_at_ms=NOW)
+    await store.record_wake(wake=NewWake(
+        unit=UNIT, mode="shadow", reason="rollup", from_stimulus_id=0,
+        through_stimulus_id=r2, stimulus_count=1, eligible_count=1, oldest_pending_ms=NOW,
+        cut_cooldown=False, at_ms=NOW + 10, detail={"k": "v"}, unclaimed_ids=(m1,),
+    ), recorded_at_ms=NOW + 10)
+    view = await store.view(unit=UNIT, mode="shadow", now_ms=NOW + 30, limit=100)
+    assert view.watermark.unclaimed == frozenset({m1})
+    assert [s.id for s in view.pending] == [m1]
+    if not hasattr(store, "_engine"):
+        return
+    async with store._engine.begin() as conn:
+        typed = (await conn.execute(sa.text(
+            "SELECT jsonb_typeof(detail) AS d, jsonb_typeof(detail->'unclaimed') AS u "
+            "FROM cognition_wake ORDER BY id DESC LIMIT 1"
+        ))).one()
+        assert (typed.d, typed.u) == ("object", "array")
+        # A row as the old code wrote it: a jsonb string holding the JSON.
+        await conn.execute(sa.text(
+            "UPDATE cognition_wake SET detail = to_jsonb(detail::text) "
+            "WHERE id = (SELECT max(id) FROM cognition_wake)"
+        ))
+        old = (await conn.execute(sa.text(
+            "SELECT jsonb_typeof(detail) AS d FROM cognition_wake ORDER BY id DESC LIMIT 1"
+        ))).one()
+        assert old.d == "string"
+    view = await store.view(unit=UNIT, mode="shadow", now_ms=NOW + 30, limit=100)
+    assert view.watermark.unclaimed == frozenset({m1})
+    assert view.last_wake is not None and view.last_wake.detail == {"k": "v"}
+
+
+async def test_count_rollup_counts_a_persons_deviations_in_a_window_retracted_included(store):
+    def dev(ref: str, person: str, at: int, item: str = "deviation_silence") -> NewStimulus:
+        return NewStimulus(
+            unit=UNIT, kind="rollup", item=item, ref=ref, at_ms=at, person_id=person,
+        )
+
+    a = await store.append(
+        stimulus=dev("deviation|silence|p1|1", "p1", NOW + 10), recorded_at_ms=NOW,
+    )
+    await store.append(stimulus=dev("deviation|anomaly|p1|2", "p1", NOW + 20, "deviation_anomaly"),
+                       recorded_at_ms=NOW)
+    await store.append(stimulus=dev("deviation|silence|p2|3", "p2", NOW + 10), recorded_at_ms=NOW)
+    await store.append(stimulus=dev("colocation|p1,p2|4", "p1", NOW + 10, "colocation_start"),
+                       recorded_at_ms=NOW)
+    await store.append(stimulus=dev("deviation|silence|p1|5", "p1", NOW + 500), recorded_at_ms=NOW)
+    await store.retract(unit=UNIT, stimulus_id=a, reason="failed", recorded_at_ms=NOW)
+
+    async def count(person: str, lo: int, hi: int) -> int:
+        return await store.count_rollup(
+            unit=UNIT, person_id=person, item_prefix="deviation_", from_ms=lo, to_ms=hi,
+        )
+
+    assert await count("p1", NOW, NOW + 100) == 2          # both kinds; a struck one still counts
+    assert await count("p1", NOW, NOW + 600) == 3          # the window is half-open on its end
+    assert await count("p2", NOW, NOW + 100) == 1
+    assert await count("p1", NOW + 21, NOW + 100) == 0
+    assert await count("p9", NOW, NOW + 600) == 0
