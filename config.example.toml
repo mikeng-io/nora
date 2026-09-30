@@ -942,6 +942,7 @@ enabled = false
 # max_tmux = 5
 # max_files = 8
 # max_runs = 5
+# max_links = 3
 # max_tokens = 400
 # read_timeout_seconds = 1.5
 # state_cache_seconds = 30

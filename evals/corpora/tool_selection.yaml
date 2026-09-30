@@ -303,6 +303,67 @@ cases:
     metadata: {tools: [generate_image], not_tools: [computer_run]}
     snapshot: *room_a
 
+  # --- S3a: files in and out of the computer, and the two computer skills ------
+  # ON ARM ONLY, like the computer-positive cases above: with `[computer]` off
+  # the tools are withheld and these FAIL by construction.
+  #
+  # `make_artifact` still exists while S3a is live (it retires in S3b), so the
+  # export case names it in `not_tools`: the measurement is whether the
+  # computer path wins while both are offered, which is what S3b's retirement
+  # waits on. The `before`/`args_include` pair is the document-creation
+  # reach row ADR 0016 asks for: fails if `computer_export` runs before the
+  # first `skills` call, or the skill is never loaded. A correct turn also
+  # needs `nora-render` in the VM image the subject reaches; on an image
+  # without it the export may never happen, which grades the image, not the
+  # route (check `docker exec`/`sbx exec ... which nora-render` first).
+  - name: route_computer_export_link_loads_document_creation
+    entry: tag
+    expect: reply
+    mention: true
+    input: >-
+      幫我整份網頁報告，用棒形圖比較香港、台北、東京嘅每月平均氣溫（1月16/16/5，
+      4月22/22/14，7月29/30/26，10月26/25/19），整好俾條link我
+    metadata:
+      tools: [computer_export]
+      not_tools: [make_artifact]
+      before: {skills: [computer_export]}
+      args_include:
+        skills: ["document-creation"]
+    snapshot: *room_a
+
+  # computer-use's reach row. `computer_run`'s description says SHOULD, not
+  # MUST, so this can fail while the route is right: that is the number it
+  # exists to show.
+  - name: route_computer_run_loads_computer_use
+    entry: tag
+    expect: reply
+    mention: true
+    input: >-
+      write a python script on your computer that simulates rolling two dice
+      100000 times and tells me how often the total is 7, then run it
+    metadata:
+      tools: [computer_run]
+      not_tools: [calculate]
+      before: {skills: [computer_run]}
+      args_include:
+        skills: ["computer-use"]
+    snapshot: *room_a
+
+  # Import of a sent file. The anchor carries no attachment of this code, so
+  # a correct turn calls `computer_import` and gets an honest
+  # `nothing_found`: graded on the call, like the other tools here that
+  # answer `unavailable` in the sandbox. `media_fetch` is the sibling it
+  # could steal from (it reads a picture; it cannot put a file on the
+  # computer).
+  - name: route_computer_import_attachment
+    entry: tag
+    expect: reply
+    mention: true
+    input: >-
+      [file 3fa9c2] 呢個CSV放入你部電腦，用python計每個城市嘅平均溫度
+    metadata: {tools: [computer_import], not_tools: [media_fetch]}
+    snapshot: *room_a
+
   # --- the room tools (design/self-awareness/07) ----------------------------------
   # A same-domain pair (ADR 0015 §1), and each has a neighbour it could steal
   # from: `room_list` from `group_members` (who is HERE vs which rooms exist),

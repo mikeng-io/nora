@@ -31,6 +31,13 @@ _SCENARIOS: dict[str, tuple[str, ...]] = {
     # named occasion or subject is the closed set that fails its neighbour.
     "image-generation": ("birthday", "a logo", "meme", "watercolour", "watercolor",
                          "cat", "生日", "卡"),
+    # The computer skills (S3a) are about ANY task on the computer and ANY
+    # document; a named job or occasion is the closed set that fails its
+    # neighbour.
+    "computer-use": ("regression", "scrape", "trip", "osaka", "stock", "invoice",
+                     "旅行", "報告"),
+    "document-creation": ("trip", "itinerary", "budget", "invoice", "birthday",
+                          "wedding", "旅行", "行程"),
 }
 
 #: The scenarios that produced #227: a bare hostname and a question about a

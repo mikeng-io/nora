@@ -6,6 +6,8 @@ A deterministic window, never a model's fold, over `ComputerView`:
 - lapsed tasks (expired within `lapsed_visible`): `max_lapsed_sessions`;
 - tmux sessions: `max_tmux`, newest first, running or idle;
 - files changed within `recent_file_days`: `max_files`, newest first;
+- links the room made with `computer_export` (S3a): `max_links`, newest
+  first, each with the artifact_id that revises it under the same link;
 - recent commands: `max_runs`, the command cut to 80 characters, with its
   exit code.
 
@@ -126,6 +128,16 @@ def render_computer(view: ComputerView | None) -> ContextBlock | None:
         if len(view.files) > caps.max_files:
             lines.append(_more(len(view.files) - caps.max_files, "recent files",
                                min(f.mtime for f in view.files[caps.max_files:]), now))
+
+    for link in view.links[: caps.max_links]:
+        title = f'"{link.title}"' if link.title else "(untitled)"
+        made = "revised" if link.revised else "made"
+        lines.append(_Line(f"link {title} · artifact_id {link.artifact_id} · {link.url} · "
+                           f"from {link.path or '(unknown path)'} · {made} {age(link.at, now)}",
+                           link.at))
+    if len(view.links) > caps.max_links:
+        lines.append(_more(len(view.links) - caps.max_links, "links",
+                           min(link.at for link in view.links[caps.max_links:]), now))
 
     for r in view.runs[: caps.max_runs]:
         outcome = (f"exit {r.exit_code}" if r.exit_code is not None

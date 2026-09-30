@@ -34,6 +34,7 @@ from nora.domain.computer import SandboxStatus, StateResult, computer_scope
 from nora.domain.computer_context import (
     ComputerContextCaps,
     ComputerView,
+    LinkLine,
     RunLine,
     SessionLine,
 )
@@ -162,7 +163,8 @@ class ComputerContextReader:
         return ComputerView(
             now=now, caps=caps, open_sessions=tuple(open_lines),
             lapsed_sessions=tuple(lapsed_lines),
-            tmux=tmux, files=files, runs=_runs(rows), machine_read=machine_read,
+            tmux=tmux, files=files, runs=_runs(rows), links=_links(rows),
+            machine_read=machine_read,
         )
 
 
@@ -179,5 +181,29 @@ def _runs(rows: list[ComputerEvent]) -> tuple[RunLine, ...]:
         out.append(RunLine(
             command=cut(str(r.request.get("command", "")), COMMAND_CHARS),
             exit_code=exit_code, finished=done is not None, at=r.started_at,
+        ))
+    return tuple(out)
+
+
+def _links(rows: list[ComputerEvent]) -> tuple[LinkLine, ...]:
+    """The room's Drop links from `computer_export`'s rows, newest first, one
+    per artifact (its newest export): only an export that answered `ok`
+    with a link, so a refused or failed one never shows as a link."""
+    started = {r.operation_id: r for r in rows if r.phase == "started"}
+    out: list[LinkLine] = []
+    seen: set[str] = set()
+    for r in rows:  # newest first already
+        if r.tool != "computer_export" or r.phase != "finished" or r.status != "ok":
+            continue
+        artifact_id, url = r.result.get("artifact_id"), r.result.get("url")
+        if not isinstance(artifact_id, str) or not isinstance(url, str) or artifact_id in seen:
+            continue
+        seen.add(artifact_id)
+        asked = started.get(r.operation_id)
+        path = asked.request.get("path") if asked is not None else None
+        out.append(LinkLine(
+            artifact_id=artifact_id, url=url, title=str(r.result.get("title") or ""),
+            path=path if isinstance(path, str) else "",
+            revised=r.result.get("revised") is True, at=r.finished_at or r.created_at,
         ))
     return tuple(out)

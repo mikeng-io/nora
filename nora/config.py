@@ -2267,6 +2267,9 @@ class ComputerContextConfig(BaseModel):
     max_tmux: int = Field(default=5, ge=0)
     max_files: int = Field(default=8, ge=0)
     max_runs: int = Field(default=5, ge=0)
+    # The newest Drop links the room made (`computer_export`, S3a), each with
+    # the artifact_id a revision needs to keep the same link.
+    max_links: int = Field(default=3, ge=0)
     max_tokens: int = Field(default=400, gt=0)
     read_timeout_seconds: float = Field(default=1.5, gt=0)
     state_cache_seconds: float = Field(default=30.0, ge=0)

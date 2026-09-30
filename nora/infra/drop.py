@@ -14,14 +14,14 @@ mirroring `BlobStore.put`, not `LinkShortener`/`WeatherProvider`'s fail-soft
 `None`. `nora.testing.FakeArtifactIngest.fail` exists to make exactly this
 path testable by whatever future Compute tool calls through this port.
 
-**Zero callers in this repo yet.** Nora Drop spec §7a is explicit that the
-Compute layer this adapter is *for* is a separate, not-yet-built follow-on —
-this class exists so the `ArtifactIngest` Protocol has a real second
-implementation (CLAUDE.md: "a port never gains a second implementation ...
-without a shared contract suite both pass" — see
-`tests/contract/test_artifact_ingest_contract.py`) rather than staying a shape
-only `FakeArtifactIngest` exercises. It is not wired into any tool, the agent
-loop, or the composition root — that wiring is Compute's job, not this task's.
+**Its caller is `computer_export`** (design/sandbox-runtime §6, S3a): the
+composition root builds it on `[shortener]`'s Drop base URL and token when
+`[computer] enabled`, and the tool publishes a file only after validating it
+on Nora's side (size, sha256, a media type read off the bytes). Until then
+this class had no caller and existed so the `ArtifactIngest` Protocol had a
+real second implementation (see `tests/contract/test_artifact_ingest_contract.py`);
+Smith still reaches Drop directly with its own per-job token until it
+retires in S3b.
 
 **Multipart, not JSON, on the wire** — matching `deploy/drop/artifacts.py`'s
 own `POST /api/artifacts` request shape exactly (see that module's docstring

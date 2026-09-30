@@ -1,0 +1,17 @@
+{
+  "type": "feature",
+  "summary": "Nora can send files out of her computer (as a Drop link, as an attachment in the room, or kept privately) and copy a file someone sent into it, and she renders pages, charts and diagrams there with nora-render.",
+  "details": [
+    "computer_export checks every file on Nora's side before it leaves: a 25 MB cap, a sha256 computed on the bytes she received, and a type read from the bytes themselves (pages, pictures, PDF, CSV, markdown, text, JSON only).",
+    "A room can revise only a link it made itself; the link stays the same and opens the new version. Links and their ids show in the <computer> block.",
+    "A link or an attachment goes out only when somebody asked in that turn; fire turns and background passes may only keep a file.",
+    "computer_import copies an attachment from the conversation into inbox/ on her computer.",
+    "Every export and import writes two audit rows, and every export that reached its destination is recorded in the new computer_exports table.",
+    "Two runtime skills, computer-use and document-creation, carry the judgement; conduct.md tells her to load document-creation before making a document."
+  ],
+  "limitations": [
+    "nora-render map needs maps.googleapis.com and the Maps key in the VM, which are not allowed yet; the other renderers work offline.",
+    "make_artifact and Smith still exist until S3b; an artifact Smith made cannot be revised through computer_export.",
+    "The VM image must be rebuilt (nora-computer build) for nora-render to exist on the computer."
+  ]
+}
