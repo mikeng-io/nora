@@ -304,3 +304,79 @@ async def test_media_beyond_90_days_is_not_found(persons, world):
     out = await _fetch(persons, world)(code=PNG_SHA[:6])
     assert out["status"] == "nothing_found"
     assert (await _fetch(persons, world)(code="121212"))["status"] != "nothing_found"
+
+
+# ---- review of #661: the identifier screen covers the whole reading ---------
+
+PHONE = "+85290000101"
+
+
+def _read_with(world, sha, **fields):
+    base = {"title": "", "description": "", "content": ""}
+    base.update(fields)
+    world["media"].objs[sha] = MediaObject(
+        sha256=sha, media_type="image/jpeg", size=4, source="inbound", describe_model="m",
+        provenance={"conversation_id": ROOM_B}, created_at_ms=NOW_MS, **base)
+
+
+async def test_a_title_holding_an_identifier_is_withheld_with_the_rest(persons, world):
+    """B1: the title went out unscreened beside `withheld: True`."""
+    _read_with(world, DINNER, title=f"business card {PHONE}", description="a card on a table")
+    await _send(world, ROOM_B, DINNER)
+    out = await _room(persons, world)
+    entry = out["results"][0]
+    assert entry["withheld"] is True
+    assert "title" not in entry and "description" not in entry
+    assert PHONE not in json.dumps(out)
+
+
+async def test_a_withheld_reading_cannot_be_probed_one_query_at_a_time(persons, world):
+    """S5: matching on hidden text let a model confirm its digits."""
+    _read_with(world, DINNER, title="a card", content=f"call {PHONE} now")
+    _read_with(world, PARK, title="a park", description="a dinner in a park")
+    await _send(world, ROOM_B, DINNER)
+    await _send(world, ROOM_B, PARK)
+    for probe in (PHONE, "+8529775", "call"):
+        out = await _room(persons, world, query=probe)
+        assert [r["handle"] for r in out["results"]] != [DINNER[:6]], probe
+        assert all(r["handle"] != DINNER[:6] for r in out["results"]), probe
+    ok = await _room(persons, world, query="park")
+    assert [r["handle"] for r in ok["results"]] == [PARK[:6]]
+
+
+# ---- review of #661: the row cap is a signal, not a silent drop -------------
+
+
+async def test_a_code_behind_the_row_cap_is_unavailable_never_nothing_found(
+    persons, world, monkeypatch,
+):
+    """S3: a photo older than the cap's reach read as `nothing_found`."""
+    monkeypatch.setattr("nora.domain.media.ROOM_MEDIA_ROWS", 3)
+    await _send(world, ROOM_B, PNG_SHA, days_ago=60, media_type="image/png")
+    for i in range(5):
+        await _send(world, ROOM_B, f"{i + 1:02d}" * 32, days_ago=1 + i / 10)
+    await _bury(world, ROOM_B)
+    out = await _fetch(persons, world)(code=PNG_SHA[:6])
+    assert out["status"] == "unavailable" and "not exist" in out["note"]
+
+
+async def test_a_code_inside_the_row_cap_still_resolves_when_the_scan_truncated(
+    persons, world, monkeypatch,
+):
+    monkeypatch.setattr("nora.domain.media.ROOM_MEDIA_ROWS", 3)
+    _read(world, PNG_SHA, title="a dinner table", description="noodles")
+    await _send(world, ROOM_B, PNG_SHA, days_ago=0.5, media_type="image/png")
+    for i in range(5):
+        await _send(world, ROOM_B, f"{i + 1:02d}" * 32, days_ago=2 + i)
+    await _bury(world, ROOM_B)
+    assert (await _fetch(persons, world)(code=PNG_SHA[:6]))["status"] == "ok"
+
+
+async def test_room_search_says_when_older_media_was_not_searched(persons, world, monkeypatch):
+    monkeypatch.setattr("nora.domain.media.ROOM_MEDIA_ROWS", 3)
+    for i in range(5):
+        await _send(world, ROOM_B, f"{i + 1:02d}" * 32, days_ago=1 + i)
+    out = await _room(persons, world)
+    assert out["truncated"] is True and len(out["results"]) == 3
+    assert "NOT" in out["note"] and "did not reach" in out["note"]
+    assert "truncated" not in await _room(persons, world, days=1)

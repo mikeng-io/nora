@@ -37,7 +37,9 @@ ROOT = Path(__file__).resolve().parents[2]
 #: calling one of these on the audit store is handing rows to something, and
 #: since issue #116 those rows carry `[image a3f2c1]` where master carried the
 #: description — so it either joins or it renders less than master did.
-_TRANSCRIPT_READS = ("recent", "since", "since_including_nora", "unattributed")
+_TRANSCRIPT_READS = (
+    "recent", "since", "since_including_nora", "unattributed", "media_rows",
+)
 
 #: Modules that call one of the four above and are NOT transcript builders,
 #: each with the reason. **This is the allowlist, and the direction matters.**
@@ -50,7 +52,9 @@ _TRANSCRIPT_READS = ("recent", "since", "since_including_nora", "unattributed")
 #: Inverted, a new module reading the record store appears in the discovered
 #: set and has to be classified — joined, or exempted here with a sentence.
 _NOT_A_BUILDER = {
-    # `room_sightings` reads `media_json` for content addresses (which blob a
+    # `room_sightings` (the ONLY caller of `media_rows`; this test's mechanism
+    # is per module path, so the exemption cannot be narrowed to the function)
+    # reads `media_json` for content addresses (which blob a
     # room sent, and when), never a rendered transcript: no row body reaches a
     # model through it except a shared item's own link, read by `media_fetch`.
     "nora/domain/media.py": "resolves media codes from media_json, hands no transcript to a model",

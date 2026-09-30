@@ -128,6 +128,7 @@ from ..domain.media import (
     GifCandidate,
     MediaBlob,
     MediaObject,
+    RoomSightings,
     Sighting,
     VideoReadingKey,
     born_in_room,
@@ -3787,6 +3788,12 @@ _MEDIA_SEARCH_MAX_DAYS = ROOM_MEDIA_DAYS
 #: has no description (a video's reading is all `content`).
 _ROOM_EXCERPT_CHARS = 240
 _MS_PER_DAY = 86_400_000
+
+_TRUNCATED_CODE_NOTE = (
+    "This chat has more sent media than one lookup reads, so that code may be "
+    "older than what was searched. Say you could not check that far back, and "
+    "do not say it does not exist. Ask for a more recent photo."
+)
 
 _MEDIA_READING_NOTE = (
     "A vision model's notes on media somebody sent or linked, so you can see "
@@ -8173,7 +8180,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         answering means knowing what is IN a picture or a video.
 
         Pass exactly one: `code`, from an `[image ...]` or `[video ...]` marker
-        in view here, or `url`, an http(s) link to a picture or video found
+        in this chat, or `url`, an http(s) link to a picture or video found
         elsewhere. It cannot open a file; a voice note gives back what was said.
 
         Leave `question` empty for the stored reading (what it shows, all its
@@ -8328,10 +8335,11 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             # resolved-then-refused. Wrapped, because a tool never raises
             # into the loop (`test_a_tool_never_raises_...`).
             try:
-                seen = await room_sightings(
+                reach = await room_sightings(
                     store, conversation_id=bound_conversation_id,
                     now_ms=_now_ms(), window=_media_window,
                 )
+                seen = reach.sightings
             except Exception:
                 log.exception("media_fetch failed to read the transcript")
                 _record_media(metrics, "unavailable", reason="store")
@@ -8358,12 +8366,21 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 and (link := _shared_page_link(sg.cover_body))
             }
 
+            if not matches and reach.truncated:
+                # The scan stopped at its row cap: an older photo may exist
+                # that it never read, so this is «could not check», not «none».
+                _record_media(metrics, "unavailable", reason="truncated")
+                return {
+                    "status": "unavailable", "code": hex_handle,
+                    "note": _TRUNCATED_CODE_NOTE,
+                }
             if not matches:
                 _record_media(metrics, "nothing_found", candidates=0)
                 return {
                     "status": "nothing_found", "code": hex_handle,
-                    "note": "I don't see media with that code here. Say you "
-                            "can't find it rather than guessing what it was.",
+                    "note": "I don't see media sent in this chat in the last 90 "
+                            "days with that code. Say you can't find it rather "
+                            "than guessing what it was.",
                 }
             if len(matches) > 1:
                 # NEVER pick the first — two in-scope blobs sharing the
@@ -9302,10 +9319,11 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                         "plainly, and do not say there are no photos.",
             }
         try:
-            photos = room_photos(await room_sightings(
+            reach = await room_sightings(
                 store, conversation_id=bound_conversation_id,
                 now_ms=_now_ms(), days=span,
-            ))
+            )
+            photos = room_photos(reach.sightings)
             look = await index.lookup(
                 sha256s=tuple(p.sha256 for p in photos),
             )
@@ -9320,8 +9338,17 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         for photo in photos:
             obj = look.objects.get(photo.sha256)
             read = obj is not None and obj.comprehended
-            if not asked or (read and obj is not None and reading_matches(obj, query)):
-                results.append(_room_result(photo, obj))
+            # The SAME screen `media_fetch` serves through, over the whole
+            # reading (title, description, content, caveat) at once. A screened
+            # reading is never matched on either: matching it would let a model
+            # confirm hidden digits one query at a time.
+            hidden = obj is not None and read and (
+                scan_identifiers(_stored_reading(obj)) is not None
+            )
+            if not asked:
+                results.append(_room_result(photo, obj, hidden=hidden))
+            elif read and not hidden and obj is not None and reading_matches(obj, query):
+                results.append(_room_result(photo, obj, hidden=False))
             elif not read:
                 # A photo nothing has read cannot match words; count it so
                 # «no match» is not heard as «no such photo».
@@ -9341,32 +9368,45 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 f" {unread} photo(s) in this period have not been read yet, so "
                 "a word search could not match them. Say so if it matters."
             )
-        return {
+        out: dict[str, object] = {
             "status": "ok", "scope": "room", "days": span,
             "results": shown, "note": note,
         }
+        if reach.truncated:
+            # The row cap cut the read short: the newest items were searched
+            # and older ones were not, so an empty or short list is not «none».
+            out["truncated"] = True
+            out["note"] = (
+                f"{note} This chat has more sent media than one search reads, so "
+                "only the newest was searched and older media was NOT. Do not "
+                "say a photo does not exist; say the search did not reach that "
+                "far back."
+            )
+        return out
 
-    def _room_result(photo: Sighting, obj: MediaObject | None) -> dict[str, object]:
+    def _room_result(
+        photo: Sighting, obj: MediaObject | None, *, hidden: bool,
+    ) -> dict[str, object]:
         """One room photo for the model: its marker code, kind, when it was
-        sent and its stored reading. The reading goes through the same
-        identifier screen every serve of media does."""
+        sent and its stored reading, unless the reading failed the identifier
+        screen, in which case none of it (title included) is returned."""
         entry: dict[str, object] = {
             "handle": photo.handle,
             "kind": label_from_media_type(photo.media_type),
             "sent": _been_iso(photo.sent_ms),
         }
-        if obj is not None and obj.comprehended:
+        if obj is None or not obj.comprehended:
+            entry["read"] = False
+        elif hidden:
+            entry["withheld"] = True
+        else:
             entry["title"] = obj.title
             # A video's reading lives in `content` (timecoded) with an empty
             # `description`, so the excerpt falls back to it: without it the
             # model would see a clip that matched a word and nothing saying why.
             text = obj.description or obj.content[:_ROOM_EXCERPT_CHARS]
-            if scan_identifiers(text) is not None:
-                entry["withheld"] = True
-            elif text:
+            if text:
                 entry["description"] = text
-        else:
-            entry["read"] = False
         return entry
 
     async def media_send(handle: str) -> dict:
@@ -9378,7 +9418,8 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         unavailable, with a `note` on how to report it.
 
         Args:
-            handle: the media object's handle from `media_search`.
+            handle: the handle of your own stored media from `media_search`
+                (library scope). A photo somebody sent cannot be sent.
         """
         if media_store is None or blob_store is None:
             return {
@@ -14223,7 +14264,7 @@ Args:
         Returns `status`: ok, nothing_found, ambiguous, refused or
         unavailable, with a `note` on how to read it.
         - ok: copied; `path` is where it is in your workspace.
-        - nothing_found: nothing in view here has that code.
+        - nothing_found: nothing sent here in the last 90 days has that code.
         - ambiguous: more than one thing has it; ask which.
         - refused: it is too large.
         - unavailable: the file or the computer could not be reached.
@@ -14256,12 +14297,14 @@ Args:
             try:
                 hex_handle = _handle_hex(code)
                 matches: dict[str, tuple[str, str]] = {}
+                reach: RoomSightings | None = None
                 if len(hex_handle) >= HANDLE_CHARS and store is not None:
                     try:
-                        seen = await room_sightings(
+                        reach = await room_sightings(
                             store, conversation_id=bound_conversation_id,
                             now_ms=_now_ms(), window=_media_window,
                         )
+                        seen = reach.sightings
                     except Exception:
                         log.exception("computer_import failed to read the transcript")
                         outcome, row = "unavailable", {"code": hex_handle,
@@ -14273,11 +14316,19 @@ Args:
                         sha: (sg.media_type, sg.filename)
                         for sha, sg in code_matches(seen, hex_handle).items()
                     }
+                if not matches and reach is not None and reach.truncated:
+                    outcome, row = "unavailable", {"code": hex_handle,
+                                                   "reason": "search reach truncated"}
+                    return {"status": "unavailable", "reason": "the search was cut short",
+                            "note": "This chat has more sent media than one lookup reads, "
+                                    "so that code may be older than what was searched. Say "
+                                    "you could not check that far back; do not say it does "
+                                    "not exist."}
                 if not matches:
                     outcome, row = "nothing_found", {"code": hex_handle}
                     return {"status": "nothing_found", "code": hex_handle,
-                            "note": "Nothing in view here has that code. Say you can't find "
-                                    "it rather than guessing."}
+                            "note": "Nothing sent in this chat in the last 90 days has that "
+                                    "code. Say you can't find it rather than guessing."}
                 if len(matches) > 1:
                     outcome, row = "ambiguous", {"code": hex_handle,
                                                  "candidates": len(matches)}
