@@ -13,12 +13,22 @@ What each test would catch if the change were reverted is named in
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from nora.agent import factory
 from nora.agent.dream_guard import DreamGuard
 from nora.app.cognition_agent_runner import LiveCognitionAgentRunner
 from nora.app.cognition_session import AdaptorBudget
 from nora.obs.metrics import Metrics
-from tests.unit.test_dream_memory_budget import _After, _Before, _ScriptedModel, _Tools
+from tests.unit.test_dream_memory_budget import (
+    BUDGET,
+    _Adaptor,
+    _After,
+    _Before,
+    _runtime,
+    _ScriptedModel,
+    _Tools,
+)
 
 RULES = ("tool-budget", "memory-budget", "pass-budget", "R-7", "R-99")
 
@@ -44,6 +54,10 @@ def _budget(turns: int) -> AdaptorBudget:
         turns=turns, total_tokens=10_000_000, output_tokens=1_000_000,
         timeout_seconds=30.0,
     )
+
+
+def _vetoes_for(metrics: Metrics, adaptor: str, rule: str) -> float:
+    return metrics.get("nora_dream_guard_vetoes_total", adaptor=adaptor, rule=rule)
 
 
 def _vetoes(metrics: Metrics, rule: str) -> float:
@@ -136,6 +150,23 @@ def test_every_other_adaptor_keeps_its_per_tool_ceiling():
     message = _veto_after(guard, 4)
     assert message is not None
     assert "You already called about 4 time(s)" in message
+
+
+async def test_a_dreamer_adaptors_guard_built_by_the_dreamer_still_vetoes_per_tool():
+    """Through the REAL `DreamerRuntime._sample` (not a `DreamGuard` built by
+    hand): a non-cognition adaptor (`proactive`) asking `about` 30 times in one
+    pass is stopped at the tool's own ceiling, the call's body never runs past
+    it, and the veto is counted under the `tool-budget` rule. The pass-wide and
+    memory ceilings are lifted here so ONLY the per-tool one can be what binds."""
+    tools = _Tools(["about"])
+    model = _ScriptedModel(["about"] * 30 + [None])
+    budget = replace(BUDGET, turns=60, max_memory_calls=None, max_tool_calls=None)
+    runtime, metrics = _runtime(model, tools, budget=budget)
+
+    await runtime.run(adaptor=_Adaptor(frozenset(tools.read_only())), key="f", batch=())
+
+    assert 0 < len(tools.ran) < 30
+    assert _vetoes_for(metrics, "proactive", "tool-budget") >= 1
 
 
 def test_the_session_guard_is_the_same_class_with_the_ceiling_switched_off():

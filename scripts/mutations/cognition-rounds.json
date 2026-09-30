@@ -103,5 +103,61 @@
   "old": "budget=cognition_budget(cfg.dreamer.budget_for(COGNITION_ADAPTOR_NAME)),",
   "new": "budget=cognition_budget(DreamBudgetConfig()),",
   "target": "tests/test_composition.py::test_session_mode_shadow_builds_one_runner_and_hands_its_hook_to_the_evaluator"
+ },
+ {
+  "name": "a limit stop closes the session like any other end (strikes the unreached items)",
+  "file": "nora/app/cognition_session.py",
+  "old": "        if result.stop_reason in LIMIT_STOP_REASONS:",
+  "new": "        if False:",
+  "target": "tests/unit/test_cognition_limit_stop.py::test_a_session_that_stops_at_a_limit_is_failed_infra_and_strikes_nothing"
+ },
+ {
+  "name": "a limit stop is recorded failed with cause agenda (it would strike)",
+  "file": "nora/app/cognition_session.py",
+  "old": "            raise SessionLimitError(result.stop_reason or \"\")",
+  "new": "            raise AgendaError(result.stop_reason or \"\")",
+  "target": "tests/unit/test_cognition_limit_stop.py::test_a_session_that_stops_at_a_limit_is_failed_infra_and_strikes_nothing"
+ },
+ {
+  "name": "a limit stop is not counted under its reason",
+  "file": "nora/app/cognition_session.py",
+  "old": "            self._inc(\"nora_cognition_session_limit_total\", limit=result.stop_reason)\n",
+  "new": "",
+  "target": "tests/unit/test_cognition_limit_stop.py::test_a_session_that_stops_at_a_limit_is_failed_infra_and_strikes_nothing"
+ },
+ {
+  "name": "the limit reasons lose the output-token cap",
+  "file": "nora/domain/stimuli.py",
+  "old": "    \"limit_turns\", \"limit_total_tokens\", \"limit_output_tokens\",\n)",
+  "new": "    \"limit_turns\", \"limit_total_tokens\",\n)",
+  "target": "tests/unit/test_cognition_limit_stop.py::test_the_three_limit_reasons_are_the_three_strands_names"
+ },
+ {
+  "name": "a limit stop is recorded failed but the unit's backoff resets (recorded closed-like)",
+  "file": "nora/app/cognition_session.py",
+  "old": "            raise SessionLimitError(result.stop_reason or \"\")",
+  "new": "            await self._finish(wake_id, unit, session_id, \"closed\", \"limit\")\n            raise SessionLimitError(result.stop_reason or \"\")",
+  "target": "tests/unit/test_cognition_limit_stop.py::test_a_limit_stop_backs_the_unit_off_and_repeated_ones_grow_it"
+ },
+ {
+  "name": "an identical pending reminder is no longer refused on the re-run",
+  "file": "nora/domain/cognition_remind.py",
+  "old": "    if duplicate:\n        return RemindRefusal(",
+  "new": "    if False:\n        return RemindRefusal(",
+  "target": "tests/unit/test_cognition_limit_stop.py::test_a_rerun_after_a_limit_stop_duplicates_neither_a_self_wake_nor_a_reminder"
+ },
+ {
+  "name": "a re-run self-wake no longer retracts the one it supersedes",
+  "file": "nora/agent/cognition_pace.py",
+  "old": "    if supersedes is not None:\n        # The displaced",
+  "new": "    if False:\n        # The displaced",
+  "target": "tests/unit/test_cognition_limit_stop.py::test_a_rerun_after_a_limit_stop_duplicates_neither_a_self_wake_nor_a_reminder"
+ },
+ {
+  "name": "the Dreamer builds every adaptor's guard without per-tool ceilings",
+  "file": "nora/agent/dreamer.py",
+  "old": "            param_names=self._tools.tool_param_names(),\n        )\n        # One per SAMPLE",
+  "new": "            param_names=self._tools.tool_param_names(),\n            per_tool_ceilings=False,\n        )\n        # One per SAMPLE",
+  "target": "tests/unit/test_cognition_no_call_ceilings.py::test_a_dreamer_adaptors_guard_built_by_the_dreamer_still_vetoes_per_tool"
  }
 ]
