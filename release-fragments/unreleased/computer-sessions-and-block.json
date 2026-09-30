@@ -1,0 +1,14 @@
+{
+  "type": "change",
+  "summary": "Nora now keeps track of the work she does on her computer across turns, and sees it at the start of each turn in rooms that use it.",
+  "details": [
+    "Each run of computer work in a room is recorded as a task automatically, from the message that started it; she can list those tasks and how far each got.",
+    "In a room that used her computer in the last week, every turn shows her what is there: her open and recently stopped tasks, running jobs, recently changed files and her last commands, each with its age.",
+    "A task nobody touches for a day is closed; nothing on the computer is deleted when that happens.",
+    "After running a command she answers in her own words instead of pasting its raw output."
+  ],
+  "limitations": [
+    "A closed task cannot be resumed as it was; she starts it again when asked.",
+    "Only one task is open per room at a time."
+  ]
+}
