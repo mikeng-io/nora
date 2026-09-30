@@ -298,7 +298,7 @@ def test_the_lifecycle_script_starts_computerd_with_flags_it_accepts():
     import shlex
 
     script = (COMPUTERD.parent / "nora-computer").read_text()
-    match = re.search(r"computerd\.py((?:\s*\\\n)?[^>&']*)>", script)
+    match = re.search(r"computerd\.py((?:\s*\\\n)?[^<>&']*)[<>]", script)
     assert match, "nora-computer no longer starts computerd.py where expected"
     argv = shlex.split(match.group(1).replace("\\\n", " "))
     load_computerd().build_parser().parse_args(argv)  # SystemExit on an unknown flag

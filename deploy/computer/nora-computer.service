@@ -1,10 +1,18 @@
-# Keeps Nora's computer up (design/sandbox-runtime §2). A USER unit for the
-# account that ran `sbx login`; run by nora-computer.timer every minute.
+# Nora's computer (design/sandbox-runtime §2): the sbx microVM and computerd.
+# A USER unit for the account that ran `sbx login`. Long-running on purpose:
+# `nora-computer serve` holds computerd in a foreground `sbx exec` session,
+# and that open session is what keeps sbx from stopping the sandbox. If
+# computerd exits, the unit exits and systemd restarts it.
 # Install: deploy/computer/README.md.
 [Unit]
-Description=Nora's computer: ensure the sbx microVM and computerd are up
+Description=Nora's computer: the sbx microVM and computerd, held in the foreground
 
 [Service]
-Type=oneshot
-ExecStart=%h/workspace/nora/deploy/computer/nora-computer ensure
+Type=simple
+ExecStart=%h/workspace/nora/deploy/computer/nora-computer serve
+Restart=always
+RestartSec=5
 TimeoutStartSec=300
+
+[Install]
+WantedBy=default.target

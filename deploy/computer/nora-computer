@@ -4,12 +4,13 @@
 # Runs on the deploy host as the user that ran `sbx login`.
 #
 #   nora-computer build    build the image and load it into sbx as a template
-#   nora-computer ensure   VM exists, runs, publishes its port, computerd answers
+#   nora-computer serve    VM exists and publishes its port; computerd runs in the
+#                          foreground (systemd supervises it)
 #   nora-computer status   one line: sandbox state and computerd health
 #   nora-computer stop     stop the VM (files persist)
 #   nora-computer destroy  remove the VM and its disk
 #
-# `ensure` is idempotent and is what the timer runs every minute. Health is an
+# `serve` is what nora-computer.service runs, with Restart=always. Health is an
 # HTTP BODY from computerd: under sbx a TCP connect succeeds to any address,
 # so a connect check proves nothing (spike round 2).
 set -uo pipefail   # no -e: every step checks its own result and exits with a named code
@@ -98,40 +99,47 @@ cmd_build() {
     log "built and loaded $IMAGE"
 }
 
-cmd_ensure() {
-    load_token
-    # One ensure at a time: the timer and a hand-run must not race a create.
-    exec 9>"$LOCK"
-    flock -w 60 9 || { log "another ensure holds $LOCK"; exit 75; }
+# Create or start the sandbox and publish computerd's port. Idempotent.
+prepare() {
     if [ "$(sandbox_state)" = absent ]; then
         log "creating $NAME from $IMAGE"
         sbx create --name "$NAME" -m "$MEMORY" --cpus "$CPUS" -q --pull never -t "$IMAGE" shell \
             </dev/null || { log "create failed"; exit 6; }
     fi
+    # A published port survives a stop, and `sbx ports` lists nothing while
+    # the sandbox is stopped, so a publish can answer 409 "already
+    # published": that is the state we want, not a failure.
     if ! published; then
-        sbx ports "$NAME" --publish "$HOST_IP:$HOST_PORT:80" </dev/null >/dev/null \
-            || { log "publish failed"; exit 7; }
+        local out
+        out=$(sbx ports "$NAME" --publish "$HOST_IP:$HOST_PORT:80" </dev/null 2>&1) \
+            || echo "$out" | grep -q "already published" \
+            || { log "publish failed: $out"; exit 7; }
     fi
-    if healthy && authorised; then exit 0; fi
-    if healthy; then
-        log "computerd holds a stale token; restarting it"
-        sbx exec -u root "$NAME" pkill -f /opt/computerd/computerd.py </dev/null || true
-        sleep 1
-    fi
+}
+
+# The long-running mode systemd supervises (nora-computer.service,
+# Restart=always). computerd runs in the FOREGROUND of an `sbx exec` session,
+# and that open session is what keeps the sandbox running: sbx stops a
+# sandbox soon after its last exec session ends, whatever is still running in
+# the background (measured 2026-09-30: a nohup-started computerd left the
+# sandbox flapping stopped/started every minute; held in a foreground exec it
+# stayed running). If computerd exits, the exec ends, this process ends, and
+# systemd restarts it. A token change takes effect on
+# `systemctl --user restart nora-computer`.
+cmd_serve() {
+    load_token
+    exec 9>"$LOCK"
+    flock -w 60 9 || { log "another serve or prepare holds $LOCK"; exit 75; }
+    prepare
+    exec 9>&-
+    sbx exec -u root "$NAME" pkill -f /opt/computerd/computerd.py </dev/null >/dev/null 2>&1 || true
+    log "serving computerd in the foreground"
     # As root, so commands (each room's as its own user) cannot read its
-    # token, kill it or take its port 80. `-e COMPUTERD_TOKEN` passes the value from this
-    # environment, so it never appears on a command line. `sbx exec` also
-    # starts a stopped sandbox.
-    log "starting computerd"
-    sbx exec -u root -e COMPUTERD_TOKEN "$NAME" bash -c \
-        'nohup /opt/computerd/venv/bin/python /opt/computerd/computerd.py \
-            --root /workspace --port 80 >/var/log/computerd.log 2>&1 &' \
-        </dev/null || { log "exec failed"; exit 8; }
-    for _ in 1 2 3 4 5 6 7 8 9 10; do
-        if healthy && authorised; then log "computerd healthy"; exit 0; fi
-        sleep 1
-    done
-    log "computerd did not answer with the current token"; exit 9
+    # token, kill it or take its port 80. `-e COMPUTERD_TOKEN` passes the
+    # value from this environment, so it never appears on a command line.
+    exec sbx exec -u root -e COMPUTERD_TOKEN "$NAME" \
+        /opt/computerd/venv/bin/python /opt/computerd/computerd.py --root /workspace --port 80 \
+        </dev/null
 }
 
 cmd_status() {
@@ -143,9 +151,9 @@ cmd_status() {
 
 case "${1:-}" in
     build) cmd_build ;;
-    ensure) cmd_ensure ;;
+    serve) cmd_serve ;;
     status) cmd_status ;;
     stop) sbx stop "$NAME" </dev/null ;;
     destroy) sbx rm --force "$NAME" </dev/null ;;
-    *) echo "usage: nora-computer build|ensure|status|stop|destroy" >&2; exit 2 ;;
+    *) echo "usage: nora-computer build|serve|status|stop|destroy" >&2; exit 2 ;;
 esac
