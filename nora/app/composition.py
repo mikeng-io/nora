@@ -3921,7 +3921,8 @@ async def build_dependencies(
                 # for a different unit of work rather
                 # than one room's arrangements.
                 "note-candidates": AdaptorSchedule(
-                    min_interval_seconds=3600,
+                    # `[notes] candidates_interval_seconds`, default 3600.
+                    min_interval_seconds=cfg.notes.candidates_interval_seconds,
                     # 80, DOWN FROM 200 on 2026-09-08, and the reason is the
                     # objective's shape rather than a cost preference. v4
                     # asks for one verdict per message before the candidate
