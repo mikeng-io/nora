@@ -188,3 +188,38 @@ async def test_one_operation_has_at_most_one_row_per_phase(store):
     await store.append(_event(operation_id=op))
     with pytest.raises(Exception):  # noqa: B017 - IntegrityError (SQL), RuntimeError (fake)
         await store.append(_event(operation_id=op))
+
+
+async def test_a_sessions_rows_come_back_newest_first_and_only_its_own(store):
+    """`session_id` (migration `0082`) round-trips, and `for_session` reads
+    one session's rows, what its progress is derived from."""
+    session, other = uuid4(), uuid4()
+    t = datetime.now(UTC)
+    from datetime import timedelta
+    older = _event(session_id=session, created_at=t, started_at=t, finished_at=t)
+    newer = _event(session_id=session, created_at=t + timedelta(seconds=1),
+                   started_at=t + timedelta(seconds=1), finished_at=t + timedelta(seconds=1))
+    await store.append(older)
+    await store.append(newer)
+    await store.append(_event(session_id=other))
+    await store.append(_event())  # no session: a row from before 0082
+    rows = await store.for_session(session_id=session, limit=10)
+    assert [r.id for r in rows] == [newer.id, older.id]
+    assert {r.session_id for r in rows} == {session}
+
+
+async def test_the_sweeper_is_an_actor(store):
+    await store.append(_event(actor="sweeper", tool="computer_session",
+                              requester_person_id=None))
+    [got] = await store.recent(conversation_id="conv-1", since=EPOCH, limit=10)
+    assert got.actor == "sweeper"
+
+
+async def test_recent_can_be_narrowed_to_one_platform(store):
+    """Two networks can carry the same conversation id."""
+    await store.append(_event(platform="signal"))
+    await store.append(_event(platform="discord"))
+    rows = await store.recent(conversation_id="conv-1", since=EPOCH, limit=10,
+                              platform="discord")
+    assert [r.platform for r in rows] == ["discord"]
+    assert len(await store.recent(conversation_id="conv-1", since=EPOCH, limit=10)) == 2

@@ -2214,6 +2214,64 @@ class ComputerLimitsConfig(BaseModel):
         )
 
 
+class ComputerSessionsConfig(BaseModel):
+    """`[computer.sessions]` (design/sandbox-runtime §15.2, decision 5).
+
+    A session is one task on the computer in a room, opened and continued by
+    code on every computer call and expired by the sweeper. It expires when
+    no computer call has happened for `idle_expiry_hours` and no tmux job in
+    the room is running; a running job keeps it open up to
+    `max_running_days` of no calls, after which it expires with the job
+    flagged in the audit and left running. It also expires when every tmux
+    session it was seen holding is gone and the room is idle. Expiry is a
+    database state change and an audit row: it never ends a tmux job and
+    never deletes a file, a profile or an audit row. An expired session is shown as
+    lapsed for `lapsed_visible_hours`. `idle_after_minutes` is when an open
+    session with no call and no running job is shown `idle` rather than
+    `active`. The sweeper runs every `sweep_interval_seconds`.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    idle_expiry_hours: int = Field(default=24, gt=0)
+    max_running_days: int = Field(default=7, gt=0)
+    lapsed_visible_hours: int = Field(default=24, gt=0)
+    sweep_interval_seconds: float = Field(default=300.0, gt=0)
+    idle_after_minutes: int = Field(default=30, gt=0)
+
+
+class ComputerContextConfig(BaseModel):
+    """`[computer.context]`: the `<computer>` block (design/sandbox-runtime
+    §15.3), a deterministic window rebuilt each tag and fire turn from the
+    live machine and the database, never a model's fold.
+
+    Rendered only while `[computer] enabled` AND the room used the computer
+    within `active_days` or has an open or lapsed session; every other room
+    renders nothing. Each section is capped (`max_*`); files count only when
+    changed within `recent_file_days`. `max_tokens` is the whole block's
+    ceiling, estimated conservatively: past it the oldest lines are dropped
+    first, with a line saying how many.
+
+    The machine read must never hold a reply: it gets `read_timeout_seconds`,
+    after which the block renders from the database alone and says the
+    machine could not be read. A successful read is kept per room for
+    `state_cache_seconds`, so consecutive turns do not each ask the VM.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    active_days: int = Field(default=7, gt=0)
+    recent_file_days: int = Field(default=7, gt=0)
+    max_open_sessions: int = Field(default=5, gt=0)
+    max_lapsed_sessions: int = Field(default=3, ge=0)
+    max_tmux: int = Field(default=5, ge=0)
+    max_files: int = Field(default=8, ge=0)
+    max_runs: int = Field(default=5, ge=0)
+    max_tokens: int = Field(default=400, gt=0)
+    read_timeout_seconds: float = Field(default=1.5, gt=0)
+    state_cache_seconds: float = Field(default=30.0, ge=0)
+
+
 class ComputerConfig(BaseModel):
     """Nora's computer (design/sandbox-runtime, DEC-243, ADR 0019): the
     `computer_run`/`computer_read`/`computer_write`/`computer_edit` tools
@@ -2246,6 +2304,8 @@ class ComputerConfig(BaseModel):
     max_output_chars: int = Field(default=8000, gt=0)
     max_read_chars: int = Field(default=20000, gt=0)
     limits: ComputerLimitsConfig = ComputerLimitsConfig()
+    sessions: ComputerSessionsConfig = ComputerSessionsConfig()
+    context: ComputerContextConfig = ComputerContextConfig()
 
     @model_validator(mode="after")
     def _default_run_within_max(self) -> ComputerConfig:

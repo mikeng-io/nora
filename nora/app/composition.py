@@ -23,7 +23,7 @@ import logging
 import os
 from collections.abc import Awaitable, Callable, Collection, Coroutine, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
 from zoneinfo import ZoneInfo
@@ -73,6 +73,7 @@ from nora.app.cognition_wiring import (
     require_session_hook,
     units_with_home_rooms,
 )
+from nora.app.computer_sweeper import ComputerSessionSweeper, SweepRules
 from nora.app.memory_routing import (
     MemoryRoutingError,
     build_workspace_router,
@@ -87,7 +88,10 @@ from nora.doctrine.loader import Doctrine, DoctrineError, DoctrineStore
 from nora.domain.cognition_render import RenderBudget
 from nora.domain.compute import ComputeJobStore
 from nora.domain.computer import ComputerToolSettings
+from nora.domain.computer_context import ComputerContextCaps
 from nora.domain.computer_events import ComputerEventStore
+from nora.domain.computer_leases import ComputerLeases
+from nora.domain.computer_sessions import ComputerSessionStore
 from nora.domain.decision_log import DecisionLogRecorder
 from nora.domain.gatherings import GatheringStatus
 from nora.domain.media_join import MediaJoin
@@ -116,6 +120,7 @@ from nora.domain.quote_window import QuoteWindow
 from nora.domain.reminders import ReminderCaps, ReminderStore
 from nora.domain.stimuli import WakeHook, WakePolicy
 from nora.domain.tool_call_log import ToolCallLogStore
+from nora.engagement.computer_context import ComputerContextReader
 from nora.engagement.pipeline import EngagementPipeline
 from nora.engagement.self_presence import PresenceReader
 from nora.engagement.slots import ConversationSlots
@@ -131,6 +136,7 @@ from nora.infra.sql.announcements import SqlAnnouncementLog
 from nora.infra.sql.cognition_dry_run import SqlCognitionDryRunStore
 from nora.infra.sql.compute_jobs import SqlComputeJobStore
 from nora.infra.sql.computer_events import SqlComputerEventStore
+from nora.infra.sql.computer_sessions import SqlComputerSessionStore
 from nora.infra.sql.culture import SqlCultureStore
 from nora.infra.sql.decision_log import SqlDecisionLogStore
 from nora.infra.sql.dream_schedule import SqlDreamScheduleClock
@@ -1216,6 +1222,11 @@ class Dependencies:
     cognition_runner: CognitionSessionRunner | None = None
     cognition_shutdown: CognitionShutdown | None = None
     wake_tick_seconds: float = 30.0
+    # The computer session sweeper (design/sandbox-runtime §15.2): `None`
+    # unless `[computer] enabled`. `nora/__main__.py` spawns
+    # `runtime.computer_sweep_loop` on it every `sweep_seconds`.
+    computer_sweeper: ComputerSessionSweeper | None = None
+    computer_sweep_seconds: float = 300.0
     # Platform adapter health transitions as Record (20 §1). ALWAYS built:
     # it is Record, not a subsystem that acts, and «was the source healthy
     # for the span» must be answerable for the whole history, not only from
@@ -1343,6 +1354,38 @@ async def build_dependencies(
     # row on every call, `unavailable` included, so a call made while
     # `[computer]` is off is audited too. Only the runtime is behind the flag.
     computer_events: ComputerEventStore = SqlComputerEventStore(engine)
+    # Computer sessions (design/sandbox-runtime §15.2), derived by code on
+    # every computer call, and the process's ONE lease table (§15.4): one
+    # instance shared by every turn and the sweeper, which is what makes an
+    # in-process lock a lock (one Nora process; `ComputerLeases` says so).
+    computer_sessions: ComputerSessionStore = SqlComputerSessionStore(engine)
+    computer_leases = ComputerLeases()
+    # The runtime: `ComputerdRuntime`, built ONLY when `[computer] enabled`
+    # (see the settings below for the rest of `[computer]`). Built here,
+    # before the assembler, because `<computer>` reads it on every turn.
+    computer: SandboxRuntime | None = None
+    if cfg.computer.enabled:
+        from nora.infra.computer.client import ComputerdRuntime
+
+        computer = ComputerdRuntime(
+            base_url=cfg.computer.base_url, token=_computer_token(cfg),
+            timeout_seconds=cfg.computer.request_timeout_seconds,
+            max_output_chars=cfg.computer.max_output_chars,
+        )
+    # `<computer>` (design/sandbox-runtime §15.3): the one reader the tag
+    # path and the fire path share. `None` while `[computer]` is off, so no
+    # room renders the block.
+    computer_context: ComputerContextReader | None = None
+    if computer is not None:
+        computer_context = ComputerContextReader(
+            sessions=computer_sessions, events=computer_events, runtime=computer,
+            caps=ComputerContextCaps(
+                **cfg.computer.context.model_dump(),
+                idle_after=timedelta(minutes=cfg.computer.sessions.idle_after_minutes),
+                lapsed_visible=timedelta(hours=cfg.computer.sessions.lapsed_visible_hours),
+            ),
+            clock=lambda: datetime.now(UTC), metrics=metrics,
+        )
     # Issue #325's durable half (`reasoning_strip_log`, migration 0057, ADR
     # 0013), REUSING `engine` for the same reason the three stores above do.
     # UNCONDITIONAL and behind no flag: an instrument that is off by default
@@ -1935,6 +1978,9 @@ async def build_dependencies(
         quote_window=quote_window,
         presence=presence_reader,
         culture=culture_reader,
+        # `<computer>` (design/sandbox-runtime §15.3): `None` while
+        # `[computer]` is off; the same reader the fire path gets.
+        computer=computer_context,
     )
 
     def _spawn(coro: Coroutine[Any, Any, None]) -> None:
@@ -2722,21 +2768,15 @@ async def build_dependencies(
     # computer tool answers `unavailable` (R-5). `ComputerToolSettings` is the
     # conversion point from config to a domain value (`nora.agent` may not
     # read `nora.config`), the `ReminderCaps` shape.
-    computer: SandboxRuntime | None = None
-    if cfg.computer.enabled:
-        from nora.infra.computer.client import ComputerdRuntime
-
-        computer = ComputerdRuntime(
-            base_url=cfg.computer.base_url, token=_computer_token(cfg),
-            timeout_seconds=cfg.computer.request_timeout_seconds,
-            max_output_chars=cfg.computer.max_output_chars,
-        )
+    # (`computer`, the runtime, is built above, beside its session store.)
     computer_settings = ComputerToolSettings(
         run_timeout_seconds=cfg.computer.run_timeout_seconds,
         max_run_timeout_seconds=cfg.computer.max_run_timeout_seconds,
         max_output_chars=cfg.computer.max_output_chars,
         max_read_chars=cfg.computer.max_read_chars,
         limits=cfg.computer.limits.as_pairs(),
+        idle_after_minutes=cfg.computer.sessions.idle_after_minutes,
+        lapsed_visible_hours=cfg.computer.sessions.lapsed_visible_hours,
     )
     # `nora.agent` may not import `nora.config` (import-linter's "only app and
     # __main__ read config") — this is the conversion point, the same shape
@@ -2929,6 +2969,7 @@ async def build_dependencies(
         # is false; the audit store is always wired (see where it is built).
         computer=computer, computer_events=computer_events,
         computer_settings=computer_settings,
+        computer_sessions=computer_sessions, computer_leases=computer_leases,
         # §9's caps as the DOMAIN value, the SAME `reminder_caps` instance
         # `GatheringService` was built with above — see that variable's own
         # comment for why they must not be two separately constructed copies.
@@ -3242,6 +3283,9 @@ async def build_dependencies(
             # `<presence>` — the SAME reader the tag path's assembler holds, so
             # a participation turn or a reminder knows where it is the way a
             # tag does (design/self-awareness/02).
+            # `<computer>` (design/sandbox-runtime §15.3), the reader the tag
+            # path's assembler holds; `None` while `[computer]` is off.
+            computer=computer_context,
             presence=presence_reader,
             # The note tier (design/dreamer-agent-loop/35 Phase 2) — S5's
             # precedent one tier later: the participation determination grounds
@@ -3415,8 +3459,6 @@ async def build_dependencies(
     # `fire_path`: a summons speaks into no room. Spawned, never awaited;
     # `cancel_all` stops it at shutdown with every other background loop.
     if summons_wired and summons_runner is not None and social_subjects is not None:
-        from datetime import timedelta
-
         from nora.app.summons import SummonsOccasion
         from nora.app.summons_consumer import SummonsConsumer
         from nora.infra.social.summons_client import InstagramSummonsClient
@@ -4535,6 +4577,19 @@ async def build_dependencies(
         cognition_runner=cognition_runner,
         cognition_shutdown=cognition_shutdown,
         wake_tick_seconds=cfg.cognition.tick_seconds,
+        computer_sweeper=(
+            ComputerSessionSweeper(
+                sessions=computer_sessions, events=computer_events,
+                runtime=computer, leases=computer_leases,
+                rules=SweepRules(
+                    idle_expiry=timedelta(hours=cfg.computer.sessions.idle_expiry_hours),
+                    max_running=timedelta(days=cfg.computer.sessions.max_running_days),
+                    idle_after=timedelta(minutes=cfg.computer.sessions.idle_after_minutes),
+                ),
+                clock=lambda: datetime.now(UTC), metrics=metrics,
+            ) if computer is not None else None
+        ),
+        computer_sweep_seconds=cfg.computer.sessions.sweep_interval_seconds,
         health_recorder=AdapterHealthRecorder(
             log=SqlSourceHealthLog(engine), metrics=metrics,
             timeout_seconds=cfg.cognition.store_timeout_seconds,

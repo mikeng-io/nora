@@ -15,7 +15,12 @@ from aiohttp.test_utils import TestServer
 
 from nora.domain.computer import SandboxStatus, computer_scope
 from nora.infra.computer.client import ComputerdRuntime
-from tests.contract.test_sandbox_runtime_contract import COMPUTERD, TOKEN, load_computerd
+from tests.contract.test_sandbox_runtime_contract import (
+    COMPUTERD,
+    TOKEN,
+    load_computerd,
+    short_tmux_root,
+)
 
 SCOPE = computer_scope("signal", "room-a")
 
@@ -307,3 +312,77 @@ def test_the_lifecycle_script_starts_computerd_with_flags_it_accepts():
     assert match, "nora-computer no longer execs computerd.py where expected"
     argv = shlex.split(match.group(1).replace("\\\n", " "))
     load_computerd().build_parser().parse_args(argv)  # SystemExit on an unknown flag
+
+
+async def test_state_without_a_tmux_says_unknown_never_none_running(tmp_path):
+    """A computerd that cannot list tmux answers `tmux` None with a reason,
+    which a reader must take as UNKNOWN: the sweeper skips such a room
+    rather than expire a session a live job still holds."""
+    computerd = load_computerd()
+    server = TestServer(computerd.create_app(
+        root=tmp_path, token=TOKEN, tmux_root=short_tmux_root(),
+        tmux_bin="no-such-tmux-binary",
+    ))
+    await server.start_server()
+    try:
+        runtime = ComputerdRuntime(base_url=str(server.make_url("")), token=TOKEN)
+        await runtime.write_text(scope=SCOPE, path="a.txt", content="x")
+        state = await runtime.state(scope=SCOPE)
+        assert state.status is SandboxStatus.OK
+        assert [f.path for f in state.files] == ["a.txt"]
+        assert state.tmux is None and "not installed" in (state.tmux_reason or "")
+    finally:
+        await server.close()
+
+
+async def test_a_command_gets_its_rooms_own_tmux_directory(served):
+    """`tmux new` in a command and the state read must meet on one socket:
+    TMUX_TMPDIR is the room's directory under the tmux root, never the
+    shared default."""
+    runtime, _, _ = served
+    result = await runtime.run(scope=SCOPE, command="echo $TMUX_TMPDIR", timeout_s=10)
+    assert result.stdout.strip().endswith(f"/{SCOPE}")
+    # tmux runs a pane through SHELL; a scope user's login shell is nologin,
+    # so without this every `tmux new` dies at once (measured 2026-09-30).
+    shell = await runtime.run(scope=SCOPE, command="echo $SHELL", timeout_s=10)
+    assert shell.stdout.strip() == "/bin/bash"
+    other = computer_scope("signal", "room-b")
+    theirs = await runtime.run(scope=other, command="echo $TMUX_TMPDIR", timeout_s=10)
+    assert theirs.stdout.strip() != result.stdout.strip()
+
+
+def _fake_proc(root: Path, table: dict[int, int]) -> Path:
+    """A `/proc` with one `stat` per pid, `pid (comm) S ppid ...`, the comm
+    holding a space and a parenthesis as real ones can."""
+    for pid, ppid in table.items():
+        (root / str(pid)).mkdir(parents=True)
+        (root / str(pid) / "stat").write_text(f"{pid} (a (b) c) S {ppid} 1 1 0\n")
+    (root / "self").mkdir()
+    return root
+
+
+def test_a_shell_pane_with_a_child_counts_as_running(tmp_path):
+    """`bash train.sh`, a `bash -c` chain or a backgrounded server all show
+    `bash` as the pane's foreground command; the child is what says a job
+    is running (the sweeper and the block both read this)."""
+    computerd = load_computerd()
+    parents = computerd.child_parents(_fake_proc(tmp_path / "proc", {100: 1, 200: 100}))
+    assert parents == frozenset({1, 100})
+    running = computerd.pane_running
+    assert running(dead=False, command="bash", pid=100, parents=parents) is True
+    assert running(dead=False, command="bash", pid=300, parents=parents) is False
+    assert running(dead=False, command="python3", pid=300, parents=parents) is True
+    assert running(dead=True, command="python3", pid=100, parents=parents) is False
+
+
+def test_no_proc_means_no_children_never_a_crash(tmp_path):
+    assert load_computerd().child_parents(tmp_path / "missing") == frozenset()
+
+
+def test_computerd_has_no_way_to_end_a_tmux_session_or_delete_a_file():
+    """The operator's rule, 2026-09-30: never destroy work. Neither the
+    server nor the port offers a kill or a delete."""
+    from nora.domain.ports import SandboxRuntime
+    names = {n for n in dir(SandboxRuntime) if not n.startswith("_")}
+    assert not {n for n in names if "kill" in n or "delete" in n or "remove" in n}
+    assert "tmux-kill" not in COMPUTERD.read_text() and "kill-session" not in COMPUTERD.read_text()

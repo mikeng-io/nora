@@ -7,11 +7,11 @@ import fnmatch
 import hashlib
 import json
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import replace
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from nora.domain.compute import (
     ComputeJob,
@@ -27,8 +27,18 @@ from nora.domain.computer import (
     OpResult,
     RunResult,
     SandboxStatus,
+    StateFile,
+    StateResult,
+    TmuxSession,
 )
 from nora.domain.computer_events import ComputerEvent, normalise_computer_event
+from nora.domain.computer_sessions import (
+    EXPIRED,
+    OPEN,
+    ComputerSession,
+    ensure_utc_event,
+    normalise_session,
+)
 from nora.domain.media import (
     MediaBlob,
     MediaBytes,
@@ -1701,15 +1711,109 @@ class FakeComputerEventStore:
         """The `finished` rows, in order: what a test asserts outcomes on."""
         return [e for e in self.events if e.phase == "finished"]
 
+    async def for_session(self, *, session_id: UUID, limit: int) -> list[ComputerEvent]:
+        rows = [e for e in self.events if e.session_id == session_id]
+        rows.sort(key=lambda e: e.created_at, reverse=True)
+        return rows[:limit]
+
     async def recent(
         self, *, conversation_id: str, since: datetime, limit: int,
+        platform: str | None = None,
     ) -> list[ComputerEvent]:
         rows = [
             e for e in self.events
             if e.conversation_id == conversation_id and e.created_at >= since
+            and (platform is None or e.platform == platform)
         ]
         rows.sort(key=lambda e: e.created_at, reverse=True)
         return rows[:limit]
+
+
+class FakeComputerSessionStore:
+    """In-memory `ComputerSessionStore`, bound to
+    `nora.infra.sql.computer_sessions.SqlComputerSessionStore` by
+    `tests/contract/test_computer_session_store_contract.py`: one open
+    session per scope, `expire` a compare-and-set on `last_activity_at`,
+    nothing ever deleted. `fail = True` makes every call raise (a database
+    that is down)."""
+
+    def __init__(self) -> None:
+        self.sessions: dict[UUID, ComputerSession] = {}
+        self.fail = False
+
+    def _check(self) -> None:
+        if self.fail:
+            raise RuntimeError("fake computer_sessions failure")
+
+    async def continue_or_open(
+        self, *, platform: str, conversation_id: str, scope: str, objective: str,
+        actor: str, tag_id: str, now: datetime, open_new: bool = True,
+    ) -> tuple[ComputerSession, bool] | None:
+        self._check()
+        now = ensure_utc_event(now, field="now")
+        for sid, s in self.sessions.items():
+            if s.scope == scope and s.status == OPEN:
+                touched = replace(s, updated_at=max(s.updated_at, now),
+                                  last_activity_at=max(s.last_activity_at, now))
+                self.sessions[sid] = touched
+                return touched, False
+        if not open_new:
+            return None
+        opened = normalise_session(ComputerSession(
+            id=uuid4(), platform=platform, conversation_id=conversation_id, scope=scope,
+            objective=objective, status=OPEN, created_at=now, updated_at=now,
+            last_activity_at=now, actor=actor, created_by_tag=tag_id,
+        ))
+        self.sessions[opened.id] = opened
+        return opened, True
+
+    async def open_sessions(self, *, limit: int) -> list[ComputerSession]:
+        self._check()
+        rows = sorted((s for s in self.sessions.values() if s.status == OPEN),
+                      key=lambda s: s.last_activity_at)
+        return rows[:limit]
+
+    async def for_room(
+        self, *, platform: str, conversation_id: str, limit: int,
+    ) -> list[ComputerSession]:
+        self._check()
+        rows = sorted(
+            (s for s in self.sessions.values()
+             if s.platform == platform and s.conversation_id == conversation_id),
+            key=lambda s: s.last_activity_at, reverse=True,
+        )
+        return rows[:limit]
+
+    async def note_resources(
+        self, session_id: UUID, *, tmux: Sequence[str], now: datetime,
+    ) -> None:
+        self._check()
+        s = self.sessions.get(session_id)
+        if s is None or s.status != OPEN:
+            return
+        held = list(s.held_tmux)
+        merged = held + [n for n in dict.fromkeys(tmux) if n not in held]
+        if merged == held:
+            return
+        self.sessions[session_id] = replace(
+            s, stopped_at_detail={**s.stopped_at_detail, "tmux": merged[:20]},
+            updated_at=max(s.updated_at, ensure_utc_event(now, field="now")),
+        )
+
+    async def expire(
+        self, session_id: UUID, *, seen_last_activity_at: datetime, reason: str,
+        now: datetime,
+    ) -> ComputerSession | None:
+        self._check()
+        s = self.sessions.get(session_id)
+        seen = ensure_utc_event(seen_last_activity_at, field="seen_last_activity_at")
+        if s is None or s.status != OPEN or s.last_activity_at != seen:
+            return None
+        now = ensure_utc_event(now, field="now")
+        expired = replace(s, status=EXPIRED, expired_at=now, expired_reason=reason,
+                          updated_at=max(s.updated_at, now))
+        self.sessions[session_id] = expired
+        return expired
 
 
 class FakeSocialProvider:
@@ -1885,10 +1989,24 @@ class FakeSandboxRuntime:
     It cannot execute anything, so `run` answers what a test scripted with
     `script(command, result)`, and `ok` with exit 0 and no output otherwise.
     Set `down = True` for the computer-unreachable case.
+
+    The observed state (`state`) is what was written, with the mtime `clock`
+    gave each write (strictly increasing, as a filesystem's would be for
+    writes in sequence), dot-paths hidden as computerd hides them. tmux
+    sessions exist only when a test starts one with `start_tmux`: the fake
+    runs nothing, so a `run("tmux new ...")` starts none. `tmux_unknown =
+    True` is computerd without a tmux it can list (`tmux` None). There is
+    deliberately no delete and no kill of any kind: nothing on Nora's side
+    removes a file or ends a job.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, *, clock: Callable[[], datetime] | None = None) -> None:
         self.files_by_scope: dict[str, dict[str, bytes]] = {}
+        self.mtimes: dict[str, dict[str, datetime]] = {}
+        self.tmux_by_scope: dict[str, dict[str, TmuxSession]] = {}
+        self.tmux_unknown = False
+        self._clock = clock or (lambda: datetime.now(UTC))
+        self._last_mtime: datetime | None = None
         self.runs: list[tuple[str, str]] = []
         # Every `run` call as it arrived, refused ones included: what a test
         # reads to see the timeout and the reserved `limits` slot.
@@ -2004,11 +2122,46 @@ class FakeSandboxRuntime:
         key = _fake_path(path) or ""
         before = stored.get(key)
         stored[key] = data
+        self.mtimes.setdefault(scope, {})[key] = self._stamp()
         digest = hashlib.sha256(data).hexdigest()
         return OpResult(
             status=SandboxStatus.OK, size=len(data), sha256=digest,
             previous_sha256=hashlib.sha256(before).hexdigest() if before is not None else None,
         )
+
+    def start_tmux(
+        self, scope: str, name: str, *, running: bool = True,
+        created: datetime | None = None,
+    ) -> None:
+        self.tmux_by_scope.setdefault(scope, {})[name] = TmuxSession(
+            name=name, created=created or self._clock(), attached=False, running=running,
+        )
+
+    async def state(self, *, scope: str) -> StateResult:
+        if (refusal := self._refusal(scope)) is not None:
+            return StateResult(status=refusal, reason="fake refusal")
+        stamped = self.mtimes.get(scope, {})
+        visible = [
+            StateFile(path=p, size=len(d), mtime=stamped[p])
+            for p, d in self.files_by_scope.get(scope, {}).items()
+            if not any(part.startswith(".") for part in p.split("/"))
+            and not any(part in FAKE_STATE_SKIP_DIRS for part in p.split("/")[:-1])
+        ]
+        visible.sort(key=lambda f: (f.mtime, f.path), reverse=True)
+        tmux = None if self.tmux_unknown else tuple(
+            sorted(self.tmux_by_scope.get(scope, {}).values(), key=lambda t: t.created)
+        )
+        return StateResult(
+            status=SandboxStatus.OK, files=tuple(visible[:FAKE_MAX_STATE_FILES]),
+            tmux=tmux, tmux_reason="tmux is not installed" if tmux is None else None,
+        )
+
+    def _stamp(self) -> datetime:
+        now = self._clock()
+        if self._last_mtime is not None and now <= self._last_mtime:
+            now = self._last_mtime + timedelta(microseconds=1)
+        self._last_mtime = now
+        return now
 
     def _conflict(self, scope: str, path: str, *, reading: bool) -> SandboxStatus | None:
         """A file and a directory cannot share a path, as on a filesystem:
@@ -2033,6 +2186,8 @@ def _fake_matches(rel: str, pattern: str) -> bool:
     return pattern.startswith("**/") and fnmatch.fnmatch(rel, pattern[3:])
 
 FAKE_MAX_READ_CHARS = 200_000  # computerd's MAX_READ_CHARS
+FAKE_MAX_STATE_FILES = 50  # computerd's MAX_STATE_FILES
+FAKE_STATE_SKIP_DIRS = frozenset({"node_modules", "__pycache__"})  # STATE_SKIP_DIRS
 
 
 def _fake_path(path: str) -> str | None:
