@@ -52,7 +52,8 @@ _TRANSCRIPT_READS = (
 #: Inverted, a new module reading the record store appears in the discovered
 #: set and has to be classified — joined, or exempted here with a sentence.
 _NOT_A_BUILDER = {
-    # `room_sightings` (the ONLY caller of `media_rows`; this test's mechanism
+    # `room_sightings` (the ONLY caller of `media_rows`, shared by `media_fetch`, room
+    # search and the documents. Image resolver, which needs no entry itself; this test's mechanism
     # is per module path, so the exemption cannot be narrowed to the function)
     # reads `media_json` for content addresses (which blob a
     # room sent, and when), never a rendered transcript: no row body reaches a
@@ -67,10 +68,6 @@ _NOT_A_BUILDER = {
     # human reading `[image a3f2c1]` in a CLI table is not being told a photo
     # was never looked at; a model reading it in a prompt is.
     "nora/app/cli.py": "renders unattributed rows for an operator on the CLI",
-    # ADR 0020: `DocumentService` reads the room's recent rows ONLY to find which blob
-    # a media code names (`media_json` sha256s), so a picture can be stored in a
-    # document by content address. No body is rendered and nothing reaches a prompt.
-    "nora/app/documents_service.py": "reads media_json to resolve a code; renders no transcript",
     # The proactive adaptor's QUIET check (issue #136): `recent(limit=1)` per
     # room, and the only field read is `ts` — is the room still talking. No
     # body reaches a prompt from this read; the pass renders notes, Standing
