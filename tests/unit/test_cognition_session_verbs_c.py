@@ -753,7 +753,7 @@ def test_the_session_and_the_tag_path_go_by_one_set_of_names_for_nora():
 
     from nora.app.cognition_wiring import build_cognition_runner
 
-    assert NORA_NAMES == frozenset({"Nora"})
+    assert frozenset({"Nora"}) == NORA_NAMES
     for fn in (CognitionSessionRunner.__init__, build_cognition_runner):
         assert inspect.signature(fn).parameters["nora_names"].default is NORA_NAMES
     assert "nora_names=NORA_NAMES" in inspect.getsource(

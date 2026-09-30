@@ -1337,7 +1337,8 @@ class CognitionSessionRunner:
             return wrote(platform, conversation_id, write, item)
 
         async def event_propose(
-            title: str, when: str = "", venue_text: str = "", room: str = "", item: int | None = None,
+            title: str, when: str = "", venue_text: str = "", room: str = "",
+            item: int | None = None,
         ) -> dict[str, object]:
             """Propose a NEW gathering in a room, returning its id. Call this
             when a room wants to arrange something that is not open yet. If an
