@@ -24,7 +24,13 @@ from nora.domain.reasoning_strip import (
     STRIP_OUTCOMES,
     WRITE_OUTCOMES,
 )
-from nora.domain.stimuli import STIMULUS_KINDS, WAKE_BRAKES, WAKE_MODES, WAKE_REASONS
+from nora.domain.stimuli import (
+    LIMIT_STOP_REASONS,
+    STIMULUS_KINDS,
+    WAKE_BRAKES,
+    WAKE_MODES,
+    WAKE_REASONS,
+)
 from nora.domain.summons import (
     FOLLOW_UP_OUTCOMES,
     INTAKE_OUTCOMES,
@@ -2369,6 +2375,17 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "pending (20 §3). A wake that expires with no outcome (a crash, a "
         "failed write) is not counted here: it is read as failed.",
         ("outcome",),
+    ),
+    _CounterSpec(
+        "nora_cognition_session_limit_total",
+        "Cognition sessions whose model loop stopped at one of its bounds ("
+        + " / ".join(LIMIT_STOP_REASONS)
+        + "), by which. Each is recorded as a FAILED wake with cause infra "
+        "(nothing closed or struck, the stimuli stay pending, the failure "
+        "backoff applies), so it also counts in "
+        "nora_cognition_session_ended_total{outcome=failed}. A rising rate is "
+        "a session that cannot finish inside its bounds (DEC-247).",
+        ("limit",),
     ),
     _CounterSpec(
         "nora_cognition_carry_total",

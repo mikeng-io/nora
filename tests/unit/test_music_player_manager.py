@@ -21,6 +21,8 @@ import asyncio
 from collections.abc import Sequence
 from datetime import UTC, datetime
 
+import pytest
+
 from nora.domain.music import MusicSession
 from nora.domain.playback_liveness import PlaybackReading, PlaybackVerdict
 from nora.domain.ports import ResolvedTrack, TrackSource
@@ -547,6 +549,20 @@ async def test_top_is_none_when_no_player_exists_for_the_guild() -> None:
     assert await manager.top("guild-1", 1) is None
 
 
+async def test_top_waits_for_the_guild_lock_like_every_other_queue_mutation() -> None:
+    """`top()` reorders the queue an advance is popping from; without the guild
+    lock it could interleave with `prepare_advance`."""
+    manager, _notify = await _playing_a_and_b()
+    lock = manager._guild_locks.setdefault("guild-1", asyncio.Lock())  # type: ignore[attr-defined]
+
+    async with lock:
+        task = asyncio.ensure_future(manager.top("guild-1", 1))
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+        assert not task.done()
+    await task
+
+
 async def test_top_delegates_to_the_player_once_one_exists() -> None:
     manager = _manager({"track a": _TRACK_A, "track b": _TRACK_B})
     session = _FakeVoiceSession()
@@ -887,6 +903,29 @@ async def test_resume_persisted_session_reconnects_and_restarts_the_track() -> N
     assert notify.messages == ["Now playing: Track A — locator-a"]
 
 
+async def test_resume_persisted_session_does_not_reannounce_an_adopted_live_track() -> None:
+    """Live 2026-09-30: the old process already announced the track the
+    controller is still playing; adopting it is not a transition, so a second
+    "Now playing" for the same track was a duplicate."""
+    manager = _manager({"track a": _TRACK_A})
+    voice = _FakeVoiceSession()
+    voice.playback_id = "pb-live"
+    notify = _RecordingNotify()
+
+    async def connect() -> _FakeVoiceSession:
+        return voice
+
+    persisted = _persisted_session(
+        guild_id="guild-1", now_playing_source="youtube", now_playing_locator="locator-a",
+        now_playing_title="Track A", paused=False, volume=1.0,
+    )
+
+    await manager.resume_persisted_session(persisted, connect=connect, notify=notify)
+
+    assert voice.played == []  # adopted, not replayed
+    assert notify.messages == []
+
+
 async def test_resume_persisted_session_with_nothing_playing_advances_the_real_queue() -> None:
     """The session was persisted with nothing playing (queue empty at the
     time) -- resume just picks up whatever's queued now, or stays idle."""
@@ -1080,6 +1119,47 @@ async def test_a_track_end_for_a_superseded_playback_does_not_advance() -> None:
     assert status.now_playing.title == "Track A"  # the current track survived
     assert [t.title for t in status.queue] == ["Track B"]  # nothing popped
     assert notify.messages == []
+
+
+async def test_a_retried_track_finished_for_the_same_playback_advances_only_once() -> None:
+    """Live 2026-09-30: the sidecar outbox retried an unanswered `track-finished`
+    while the first advance's play POST was out (guild lock released, expected
+    playback id not yet moved), so the retry passed the staleness probe and
+    advanced a second time — two announcements, one song cut off. The probe
+    here never moves, which is exactly that window."""
+    manager, notify = await _playing_a_and_b(playback_probe=lambda _guild_id: "pb-1")
+
+    first = await manager.on_track_finished("guild-1", playback_id="pb-1")
+    retry = await manager.on_track_finished("guild-1", playback_id="pb-1")
+
+    assert first is True
+    assert retry is False
+    assert notify.messages == ["Now playing: Track B — locator-b"]
+
+
+async def test_a_finish_whose_advance_raised_is_retried_not_swallowed_as_a_duplicate() -> None:
+    """B7: a raising transition is left unconsumed so the outbox redelivers the
+    SAME playback. The once-per-playback mark must not turn that redelivery into
+    a "duplicate" — the queue would never advance and the room would go silent."""
+    manager, notify = await _playing_a_and_b(playback_probe=lambda _guild_id: "pb-1")
+    player = manager._players["guild-1"]  # type: ignore[attr-defined]
+    real = player.prepare_advance
+    calls = {"n": 0}
+
+    async def flaky():
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("store failure")
+        return await real()
+
+    player.prepare_advance = flaky  # type: ignore[method-assign]
+    with pytest.raises(RuntimeError):
+        await manager.on_track_finished("guild-1", playback_id="pb-1")
+
+    retry = await manager.on_track_finished("guild-1", playback_id="pb-1")
+
+    assert retry is True
+    assert notify.messages == ["Now playing: Track B — locator-b"]
 
 
 async def test_a_track_end_for_the_current_playback_advances() -> None:

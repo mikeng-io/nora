@@ -197,6 +197,7 @@ def _rig(
     max_self_wakes_per_day: int = 12,
     model_window_tokens: int | None = None, overflow_window_fraction: float = 0.8,
     grounder: Any = None, person_known: Callable[[str], bool] | None = None,
+    real_pending_reminds: bool = False,
 ) -> Rig:
     ledger = InMemoryCognitionDryRunStore()
     stimuli = InMemoryStimulusStore(ledger=ledger)
@@ -209,6 +210,11 @@ def _rig(
         await asyncio.sleep(0)  # a real store yields here; so must the double
         return rows
 
+    async def _reminds(unit: str) -> Any:
+        if not real_pending_reminds:
+            return ()
+        return await ledger.pending_mirrored_reminds(unit=unit, now_ms=int(clock() * 1000))
+
     runner = CognitionSessionRunner(
         dry_run_store=ledger, stimulus_store=stimuli, agent_runner=agent,
         home_rooms=dict.fromkeys(units, HOME),
@@ -218,7 +224,7 @@ def _rig(
         doctrine_text="DOCTRINE", doctrine_sha256="sha",
         open_note_titles=_const(()), open_proposed_events=_const(()),
         prior_standing=_const(None), pending_self_wakes=_pending,
-        pending_mirrored_reminds=_const(()), session_mode="shadow",
+        pending_mirrored_reminds=_reminds, session_mode="shadow",
         budget=AdaptorBudget(turns=4, total_tokens=1000, output_tokens=100,
                              timeout_seconds=timeout),
         cooldown_seconds=300.0, units=units,

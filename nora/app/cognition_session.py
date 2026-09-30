@@ -118,8 +118,10 @@ from nora.domain.ports import (
 )
 from nora.domain.standing import Standing
 from nora.domain.stimuli import (
+    LIMIT_STOP_REASONS,
     NO_CAUSE,
     AgendaError,
+    SessionLimitError,
     Stimulus,
     UnitView,
     WakeHook,
@@ -793,8 +795,8 @@ class CognitionSessionRunner:
                     system_prompt=system_prompt, prompt=prompt, tools=tools,
                     trace_attributes={
                         "cognition.unit": unit, "cognition.session_id": str(session_id),
-                        # The agenda's size: the runner scales its per-item call
-                        # ceilings by it (`ITEMS_ATTRIBUTE`, M12).
+                        # The agenda's size, for the trace (no call ceiling
+                        # scales by it: DEC-247).
                         "cognition.items": str(len(items)),
                     },
                 ),
@@ -804,6 +806,16 @@ class CognitionSessionRunner:
             raise SessionTimeoutError(
                 f"the session ran past its {self._budget.timeout_seconds:g}s wall clock",
             ) from exc
+
+        if result.stop_reason in LIMIT_STOP_REASONS:
+            # The loop RETURNED, but it was cut off at a bound (DEC-247), so it
+            # never decided what to do with the items it had not reached: a
+            # FAILED session, cause `infra`. No close, no strike, no carry (a
+            # `_settle` here would strike a human's message for the model's
+            # runaway), its stimuli stay pending and the failure backoff
+            # applies. Writes it already made stay as recorded.
+            self._inc("nora_cognition_session_limit_total", limit=result.stop_reason)
+            raise SessionLimitError(result.stop_reason or "")
 
         carries = await self._settle(state=state, situation=situation, view=view)
         # A Rollup stimulus the roster cannot read YET is retained, not consumed
@@ -879,8 +891,9 @@ class CognitionSessionRunner:
     async def _settle(
         self, *, state: _RunState, situation: Situation, view: UnitView,
     ) -> list[NewCarry]:
-        """What a session that ran to its end leaves behind (30 §2): every item
-        the model did not close closes `waiting` with a strike (or `struck` at
+        """What a session that ENDED (not one cut off at a bound: `_run_session`
+        raises `SessionLimitError` before this, DEC-247) leaves behind (30 §2):
+        every item the model did not close closes `waiting` with a strike (or `struck` at
         `max_strikes`); a waiting or struck item's stimuli, and the ones past
         `max_items`, are RETURNED to the next agenda as carry rows, because the
         watermark now moves past them. The carries are RETURNED, not written:

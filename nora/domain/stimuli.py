@@ -227,6 +227,29 @@ def stored_cause(outcome: str, cause: str) -> str:
     return NO_CAUSE if outcome in ("closed", "cancelled") else cause
 
 
+#: Strands' own `stop_reason`s for a loop cut off by its bounds (DEC-247):
+#: rounds, total tokens, output tokens. The loop RETURNS normally on each (no
+#: exception), so a caller that reads only «it returned» takes a session that
+#: never got to finish for one that did. Duplicated nowhere: the metric's label
+#: vocabulary and `nora.app.cognition_session` both read this.
+LIMIT_STOP_REASONS: tuple[str, ...] = (
+    "limit_turns", "limit_total_tokens", "limit_output_tokens",
+)
+
+
+class SessionLimitError(Exception):
+    """A session's loop stopped at one of its bounds (`LIMIT_STOP_REASONS`)
+    before it finished. Raised by the session runner so the wake is recorded
+    `failed`, and `classify_failure` calls it `infra`: a session that ran out
+    of rounds, tokens or time did not prove the agenda was at fault (a runaway
+    loop is the model's, and one run says nothing about the stimuli), so
+    nothing is struck and the stimuli stay pending (DEC-244, DEC-247)."""
+
+    def __init__(self, stop_reason: str) -> None:
+        super().__init__(f"the session stopped at its bound: {stop_reason}")
+        self.stop_reason = stop_reason
+
+
 class AgendaError(Exception):
     """A failure caused by the agenda itself, raised by code that has PROVED it
     deterministic for the input (`classify_failure` reads only this). Today

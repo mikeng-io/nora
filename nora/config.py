@@ -2986,6 +2986,17 @@ class DoctrineConfig(BaseModel):
         return self
 
 
+#: The Cognition session's loop bounds (DEC-247): rounds, tokens and time,
+#: each AT LEAST 10x the tag turn's (`[llm.limits]` turns 20, total_tokens
+#: 1_024_000, output_tokens 12_000 and `[llm] timeout_seconds` 360 on the live
+#: deployment, 2026-10-01). `config.example.toml` states the same four and
+#: `tests/test_config.py` holds them equal and above the 10x floor.
+COGNITION_TURNS = 200
+COGNITION_TOTAL_TOKENS = 10_240_000
+COGNITION_OUTPUT_TOKENS = 120_000
+COGNITION_TIMEOUT_SECONDS = 3600.0
+
+
 class DreamBudgetConfig(BaseModel):
     """One adaptor's ceiling on a single Dreamer run: three caps and a clock.
 
@@ -3059,11 +3070,9 @@ class DreamBudgetConfig(BaseModel):
     #: — a boot failure is the honest answer to it, the same posture
     #: `output_tokens = 0` gets by being `ge=1` above.
     #:
-    #: **For the `cognition` adaptor this number is PER AGENDA ITEM**, like
-    #: `max_tool_calls` below and every `tool_calls` entry: a session reads an
-    #: agenda one item after another, so its pass-wide memory ceiling is this
-    #: times the item count (`LiveCognitionAgentRunner._guard`). Raising it for
-    #: any other adaptor raises one pass's ceiling, as documented above.
+    #: **The `cognition` adaptor takes none of this** (DEC-247): a session has
+    #: no call ceiling, and the config refuses a cognition block that sets
+    #: this, `max_tool_calls` or `tool_calls`.
     max_memory_calls: int = Field(default=2, ge=1)
 
     #: **The per-adaptor delta over the per-tool call ceilings** — a tool name
@@ -3111,11 +3120,8 @@ class DreamBudgetConfig(BaseModel):
     #: loop/43 §4) -> `AdaptorBudget.max_tool_calls`. Unset is no pass-wide
     #: ceiling, which is every adaptor's behaviour before this field existed.
     #:
-    #: **For the `cognition` adaptor this number is PER AGENDA ITEM**: the
-    #: session's pass-wide ceiling is this times its agenda's item count, so a
-    #: ten-item agenda under `max_tool_calls = 60` may make 600 calls, not 60
-    #: (`nora.app.cognition_agent_runner.LiveCognitionAgentRunner._guard`).
-    #: Size it as «the calls one item may cost», never as a session total.
+    #: **The `cognition` adaptor takes none of this** (DEC-247), see
+    #: `max_memory_calls` above.
     max_tool_calls: int | None = Field(default=None, ge=1)
 
     @field_validator("tool_calls")
@@ -3443,6 +3449,16 @@ class DreamerConfig(BaseModel):
         own field defaults as the single answer to "what does an unconfigured
         adaptor get" — there is no second place to keep in step.
         """
+        if adaptor == "cognition" and adaptor not in self.budgets:
+            # The Cognition session's own code defaults (DEC-247), not the
+            # class's: a session is bounded by rounds, tokens and time at
+            # least 10x a tag turn's, never by the 6 turns / 40k a background
+            # pass gets.
+            return DreamBudgetConfig(
+                turns=COGNITION_TURNS, total_tokens=COGNITION_TOTAL_TOKENS,
+                output_tokens=COGNITION_OUTPUT_TOKENS,
+                timeout_seconds=COGNITION_TIMEOUT_SECONDS,
+            )
         return self.budgets.get(adaptor, DreamBudgetConfig())
 
 
@@ -3529,7 +3545,7 @@ class CognitionConfig(BaseModel):
     # (the runner refuses to start otherwise). Replaces the assumption
     # `shadow_session_seconds` makes for a session hook that is wired;
     # `shadow_session_seconds` stays for `session_mode = "off"`.
-    session_timeout_seconds: float = Field(default=900.0, gt=0)
+    session_timeout_seconds: float = Field(default=3900.0, gt=0)
     #: 20 §3: "at most `max_self_wakes` pending per unit (starting at 5)".
     max_self_wakes: int = Field(default=5, ge=1)
     #: DEC-242: a rolling-24 h cap on `wake_at` calls per unit, starting at 12.
@@ -4421,6 +4437,30 @@ class Config(BaseModel):
         return self
 
     @model_validator(mode="after")
+    def _cognition_has_no_call_ceilings(self) -> Config:
+        """`[dreamer.budgets.cognition]` names no per-tool, memory or pass-wide
+        call ceiling (DEC-247: a session is bounded by rounds, tokens and time,
+        never per tool). `max_memory_calls`, `max_tool_calls` and a
+        `tool_calls` table are fields of the SHARED budget class that every
+        other adaptor uses, so the class accepts them; this refuses them for
+        this one adaptor, where they would be inert (the guard holds no such
+        ceiling) and an operator would believe they bound something."""
+        block = self.dreamer.budgets.get("cognition")
+        if block is None:
+            return self
+        stale = sorted(
+            k for k in ("max_memory_calls", "max_tool_calls", "tool_calls")
+            if k in block.model_fields_set
+        )
+        if stale:
+            raise ValueError(
+                f"[dreamer.budgets.cognition] sets {', '.join(stale)}: a Cognition session "
+                "has no call ceiling of any kind (DEC-247); it is bounded by turns, "
+                "total_tokens, output_tokens and timeout_seconds. Delete the key(s)"
+            )
+        return self
+
+    @model_validator(mode="after")
     def _cognition_sessions_need_their_own_budget(self) -> Config:
         """`[cognition] session_mode = "shadow"` REFUSES to load without an
         explicit `[dreamer.budgets.cognition]` block (#637 review, minor 4).
@@ -4434,7 +4474,7 @@ class Config(BaseModel):
             raise ValueError(
                 "[cognition] session_mode = \"shadow\" needs an explicit "
                 "[dreamer.budgets.cognition] block: without one the session silently "
-                "runs on the class defaults (6 turns, 40k tokens, 120 s). Copy the block "
+                "runs on the code defaults (200 turns, 10.24M tokens, 3600 s). Copy the block "
                 "from config.example.toml or size your own"
             )
         return self
