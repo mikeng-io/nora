@@ -35,6 +35,11 @@ _SCENARIOS: dict[str, tuple[str, ...]] = {
     # is the closed set that fails its neighbour.
     "computer-use": ("regression", "scrape", "trip", "osaka", "stock", "invoice",
                      "旅行", "報告"),
+    # The document skill is about ANY document; a named one (a holiday plan, a
+    # report for a named person) is the closed set that fails its neighbour.
+    # `itinerary` is the TOOL's example and stays there.
+    "document-creation": ("trip", "itinerary", "holiday", "flight", "hotel", "tokyo",
+                          "budget", "birthday", "旅行", "行程", "報告"),
 }
 
 #: The scenarios that produced #227: a bare hostname and a question about a
@@ -1212,3 +1217,32 @@ def test_the_self_account_does_not_assert_a_deployment_it_cannot_read(
     assert "./nora/skills" not in compose, (
         "a skills bind-mount would change the deploy story this test is about")
     assert "COPY nora/ ./nora/" in (ROOT / "Dockerfile").read_text()
+
+
+def test_the_document_skill_names_only_tools_that_exist() -> None:
+    """A rule that tells her to call a tool she does not hold is a dead rule.
+
+    The skill names four tools by backtick; each must be a registered tool (a
+    rename would otherwise leave her following an instruction to nothing)."""
+    from nora.agent.tools import NATIVE_TOOLS
+
+    body = (SKILLS_DIR / "document-creation" / "SKILL.md").read_text(encoding="utf-8")
+    named = {"document_publish", "document_read", "media_fetch", "computer_export"}
+    for tool in named:
+        assert f"`{tool}`" in body, f"the skill stopped naming {tool}"
+        assert tool in NATIVE_TOOLS, f"the skill names {tool}, which is not a tool"
+
+
+def test_the_document_skill_never_asks_her_to_say_an_id() -> None:
+    """A reply carrying a bare UUID is blocked at egress (`nora.agent.egress`), and a
+    document's `url` is `/documents/<uuid>`: a skill that told her to give the url
+    made the turn fail silently (measured 2026-10-01, the documents-on routing arm:
+    3 of 5 draws ERROR, 6 `egress_blocked: uuid` lines, none on the arm before it)."""
+    from nora.agent.egress import scan_reply
+
+    body = " ".join(
+        (SKILLS_DIR / "document-creation" / "SKILL.md").read_text(encoding="utf-8").split()
+    )
+    assert "Never write the document's id or its path into a reply" in body
+    assert "give the `url`" not in body
+    assert scan_reply(body) is None, "the skill itself carries something egress would block"
