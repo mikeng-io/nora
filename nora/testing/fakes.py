@@ -41,6 +41,16 @@ from nora.domain.computer_sessions import (
     ensure_utc_event,
     normalise_session,
 )
+from nora.domain.documents import (
+    DocumentExistsError,
+    DocumentSummary,
+    RevisionIn,
+    RevisionOutcome,
+    RevisionRecord,
+    RoomKey,
+    StoredDocument,
+    VisiblePage,
+)
 from nora.domain.media import (
     MediaBlob,
     MediaBytes,
@@ -2271,3 +2281,107 @@ def _fake_path(path: str) -> str | None:
     if not parts or ".." in parts:
         return None
     return "/".join(parts)
+
+
+class FakeDocumentStore:
+    """In-memory `DocumentStore`. Bound to `nora.infra.sql.documents.SqlDocumentStore`
+    by `tests/contract/test_document_store_contract.py`: the same visibility rule,
+    the same compare-and-swap on the revision number, the same ordering.
+
+    Time is a counter, not the wall clock, so two writes never share an instant
+    and "most recently updated first" is decidable in a test."""
+
+    def __init__(self) -> None:
+        self._rooms: dict[UUID, tuple[str, str, str, datetime]] = {}
+        self._revisions: dict[UUID, list[tuple[RevisionIn, datetime]]] = {}
+        self._tick = 0
+
+    def _now(self) -> datetime:
+        self._tick += 1
+        return datetime(2026, 10, 1, tzinfo=UTC) + timedelta(microseconds=self._tick)
+
+    def _stored(self, document_id: UUID) -> StoredDocument | None:
+        head = self._rooms.get(document_id)
+        if head is None:
+            return None
+        platform, conversation_id, created_by, created_at = head
+        revision, recorded_at = self._revisions[document_id][-1]
+        number = len(self._revisions[document_id])
+        return StoredDocument(
+            summary=DocumentSummary(
+                id=document_id, platform=platform, conversation_id=conversation_id,
+                created_by=created_by, title=revision.title, revision=number,
+                created_at=created_at, updated_at=recorded_at,
+            ),
+            spec=json.loads(json.dumps(revision.spec)), text=revision.text,
+            sha256=revision.sha256, media=tuple(revision.media),
+            written_by=revision.written_by,
+        )
+
+    @staticmethod
+    def _sees(summary: DocumentSummary, person_id: str, rooms: frozenset[RoomKey]) -> bool:
+        return summary.created_by == person_id or (
+            summary.platform, summary.conversation_id
+        ) in rooms
+
+    async def create(
+        self, *, document_id: UUID, platform: str, conversation_id: str, created_by: str,
+        revision: RevisionIn,
+    ) -> StoredDocument:
+        if document_id in self._rooms:
+            raise DocumentExistsError(str(document_id))
+        now = self._now()
+        self._rooms[document_id] = (platform, conversation_id, created_by, now)
+        self._revisions[document_id] = [(revision, now)]
+        stored = self._stored(document_id)
+        if stored is None:
+            raise RuntimeError("unreachable: the document was just written")
+        return stored
+
+    async def add_revision(
+        self, *, document_id: UUID, base_revision: int, revision: RevisionIn
+    ) -> RevisionOutcome:
+        if document_id not in self._rooms:
+            return RevisionOutcome("not_found")
+        if len(self._revisions[document_id]) != base_revision:
+            return RevisionOutcome("conflict")
+        self._revisions[document_id].append((revision, self._now()))
+        return RevisionOutcome("ok", self._stored(document_id))
+
+    async def get(self, *, document_id: UUID) -> StoredDocument | None:
+        return self._stored(document_id)
+
+    async def history(self, *, document_id: UUID) -> tuple[RevisionRecord, ...]:
+        return tuple(
+            RevisionRecord(
+                revision=i, title=r.title, sha256=r.sha256, written_by=r.written_by,
+                recorded_at=at,
+            )
+            for i, (r, at) in enumerate(self._revisions.get(document_id, []), start=1)
+        )
+
+    async def list_visible(
+        self, *, person_id: str, rooms: frozenset[RoomKey], limit: int, offset: int
+    ) -> VisiblePage:
+        seen = [
+            d.summary for doc_id in self._rooms
+            if (d := self._stored(doc_id)) is not None
+            and self._sees(d.summary, person_id, rooms)
+        ]
+        seen.sort(key=lambda s: (-s.updated_at.timestamp(), str(s.id)))
+        # The same bounds as `SqlDocumentStore.list_visible`.
+        limit = min(max(limit, 0), 1_000)
+        offset = min(max(offset, 0), 2**31 - 1)
+        return VisiblePage(items=tuple(seen[offset : offset + limit] if limit > 0 else ()),
+                           total=len(seen))
+
+    async def get_visible(
+        self, *, document_id: UUID, person_id: str, rooms: frozenset[RoomKey]
+    ) -> StoredDocument | None:
+        stored = self._stored(document_id)
+        if stored is None or not self._sees(stored.summary, person_id, rooms):
+            return None
+        return stored
+
+    async def aclose(self) -> None:
+        return None

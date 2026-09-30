@@ -33,7 +33,7 @@ async def test_obtain_returns_the_production_graph(spec) -> None:
     """Same type, same builder, same field count as `nora/__main__.py` gets."""
     subject = await obtain(spec)
     assert isinstance(subject.deps, Dependencies)
-    assert len(dataclasses.fields(Dependencies)) == 53, (
+    assert len(dataclasses.fields(Dependencies)) == 56, (
         "Dependencies changed shape; the subject follows it automatically, but "
         "this number is here so a change is noticed rather than absorbed. "
         "38 -> 40 on 2026-09-17: `relevance_gate` and `fire_path`, the two "
@@ -72,7 +72,10 @@ async def test_obtain_returns_the_production_graph(spec) -> None:
         "subject reads to drive `tool_selection_cognition`. "
         "51 -> 53 on 2026-09-30: `computer_sweeper` and `computer_sweep_seconds`, "
         "the computer session sweeper and its interval (None unless `[computer] "
-        "enabled`; design/sandbox-runtime §15.2)."
+        "enabled`; design/sandbox-runtime §15.2). "
+        "53 -> 56 on 2026-10-01: `documents`, `document_service` and `rooms_of`, "
+        "the document store, its publish service and the person -> rooms callable "
+        "the portal's read API needs (ADR 0020)."
     )
 
 

@@ -23,6 +23,17 @@ describe("resolveUpstream", () => {
     expect(ok(["events", id], "personId=ken", "jo")).toBe(`/app/v1/events/${id}?personId=jo`);
   });
 
+  it("scopes documents to the session's person and forwards only page and pageSize", () => {
+    const id = "9c48dbf1-7c25-4467-84b3-ac9d8d61a584";
+    expect(ok(["documents"], "personId=ken&page=2&pageSize=10&evil=1", "jo")).toBe(
+      "/app/v1/documents?page=2&pageSize=10&personId=jo",
+    );
+    expect(ok(["documents", id], "personId=ken", "jo")).toBe(`/app/v1/documents/${id}?personId=jo`);
+    expect(resolveUpstream(["documents", "not-a-uuid"], q(), "jo")).toEqual({ ok: false, status: 404 });
+    // The browser's own personId is never the viewer.
+    expect(ok(["documents"], "personId=ken", "jo")).not.toContain("ken");
+  });
+
   it("answers a plan id that cannot be one as not found, before asking Nora", () => {
     // Nora answers a non-UUID id with 400, which the portal would show as
     // "couldn't check"; there is nothing to check.
@@ -71,6 +82,6 @@ describe("resolveUpstream", () => {
 
   it("names every self-scoped route explicitly", () => {
     const scoped = ROUTES.filter((r) => r.scope === "self").map((r) => r.pattern.join("/"));
-    expect(scoped).toEqual(["memory", "events", "events/:id"]);
+    expect(scoped).toEqual(["memory", "events", "events/:id", "documents", "documents/:id"]);
   });
 });

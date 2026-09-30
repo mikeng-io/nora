@@ -4504,3 +4504,65 @@ IDX_COMPUTER_EXPORTS_ROOM = sa.Index(
     "idx_computer_exports_room",
     COMPUTER_EXPORTS.c.conversation_id, COMPUTER_EXPORTS.c.created_at,
 )
+
+# `documents` and `document_revision` (ADR 0020, design/artifact/00-design.md §5,
+# migration `0084_documents`). Both are APPEND-ONLY: `documents` is the identity of a
+# document, written once (its `recorded_at` is when the document first existed), and
+# `document_revision` holds one full snapshot per revision. The current document is
+# the highest revision, so nothing is updated in place and nothing needs the row
+# history trigger; `nora.infra.sql.history.APPEND_ONLY` names `recorded_at` as the
+# system time of both. A revision written from a stale base collides on the primary
+# key `(document_id, revision)`, which is what makes two concurrent revisions safe.
+#
+# NO FOREIGN KEY from `document_revision.document_id` to `documents.id`, for the reason
+# `computer_events.session_id` has none: a snapshot restore copies append-only tables in
+# no promised order and a fixture that resets every table truncates them independently,
+# so a foreign key here would refuse a legitimate copy. `DocumentStore.create` writes the
+# identity and its first revision in one transaction, and `add_revision` only ever writes
+# for an id it has just found.
+#
+# `media` is the full sha256 of every picture the revision names, kept as a column so
+# that a blob sweep (design/18 §8, not built) can count documents among the rows that
+# keep a blob alive. `text` is the search text the checker extracted once.
+DOCUMENTS = sa.Table(
+    "documents",
+    METADATA,
+    sa.Column("id", pg.UUID(as_uuid=True), primary_key=True),
+    sa.Column("platform", sa.Text, nullable=False),
+    sa.Column("conversation_id", sa.Text, nullable=False),
+    sa.Column("created_by", sa.Text, nullable=False),
+    _recorded_at(),
+)
+IDX_DOCUMENTS_ROOM = sa.Index(
+    "idx_documents_room", DOCUMENTS.c.platform, DOCUMENTS.c.conversation_id,
+)
+IDX_DOCUMENTS_CREATOR = sa.Index("idx_documents_creator", DOCUMENTS.c.created_by)
+
+DOCUMENT_REVISION = sa.Table(
+    "document_revision",
+    METADATA,
+    sa.Column("document_id", pg.UUID(as_uuid=True), nullable=False),
+    sa.Column("revision", sa.Integer, nullable=False),
+    sa.Column("title", sa.Text, nullable=False),
+    sa.Column("spec", pg.JSONB, nullable=False),
+    sa.Column("text", sa.Text, nullable=False),
+    sa.Column("sha256", sa.Text, nullable=False),
+    sa.Column(
+        "media", pg.ARRAY(sa.Text), nullable=False, server_default=sa.text("'{}'::text[]"),
+    ),
+    sa.Column("written_by", sa.Text, nullable=False),
+    _recorded_at(),
+    sa.PrimaryKeyConstraint("document_id", "revision", name="pk_document_revision"),
+    sa.CheckConstraint("revision >= 1", name="ck_document_revision_positive"),
+    sa.CheckConstraint("sha256 ~ '^[0-9a-f]{64}$'", name="ck_document_revision_sha256"),
+    # Every element of `media` is a content address, and a spec is bounded: the checker
+    # caps a document at 256 KiB and the table says so too (review of PR 654: a raw
+    # insert accepted `'../../etc'` and a 5 MB spec).
+    sa.CheckConstraint(
+        "array_to_string(media, ',') ~ '^([0-9a-f]{64}(,[0-9a-f]{64})*)?$'",
+        name="ck_document_revision_media",
+    ),
+    sa.CheckConstraint(
+        "octet_length(spec::text) <= 1048576", name="ck_document_revision_spec_size",
+    ),
+)

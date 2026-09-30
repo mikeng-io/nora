@@ -40,6 +40,11 @@ export const ROUTES: RouteSpec[] = [
   { pattern: ["persons", ":personId"] },
   { pattern: ["events"], scope: "self" },
   { pattern: ["events", ":id"], scope: "self", params: { id: UUID } },
+  // Documents (ADR 0020): what the viewer created plus what was made in a room that
+  // names them. `scope: "self"` because the viewer decides what is visible, never
+  // the browser; Nora answers "not visible" exactly as "no such document".
+  { pattern: ["documents"], scope: "self", query: ["page", "pageSize"] },
+  { pattern: ["documents", ":id"], scope: "self", params: { id: UUID } },
   { pattern: ["presence"] },
   { pattern: ["presence", "places"] },
   { pattern: ["presence", "analytics", "places"] },
