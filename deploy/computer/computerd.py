@@ -660,8 +660,9 @@ def scope_processes(
     in `exclude` (the panes), which tmux's pane rule judges instead. A user
     job whose name merely starts with `tmux` counts like any other. Nothing
     is followed through a link: each `/proc/<pid>` is opened as a directory
-    with `O_NOFOLLOW` and its files read relative to it. A process that exits mid-read is skipped. Raises `OSError` when
-    `proc_root` itself cannot be listed."""
+    with `O_NOFOLLOW` and its files read relative to it. A process that
+    exits mid-read is skipped. Raises `OSError` when `proc_root` itself
+    cannot be listed."""
     boot = _boot_time(proc_root)
     ticks = os.sysconf("SC_CLK_TCK") if hasattr(os, "sysconf") else 100
     out: list[dict[str, Any]] = []
