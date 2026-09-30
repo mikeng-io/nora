@@ -227,18 +227,6 @@ services:
     # joins removed 2026-08-08, DEC-73 — web_search is Tavily, a public API.)
     networks: [nora]
     extra_hosts: ["host.docker.internal:host-gateway"]
-    # The Docker-socket bind mount below is necessary but not sufficient: the
-    # `nora` user (uid/gid 1000, this repo's own Dockerfile) is not a member of
-    # the HOST's `docker` group that owns the socket (`srw-rw---- root:docker`),
-    # so `docker.from_env()` fails with a bare PermissionError(13), not a
-    # docker-specific error. `group_add` puts the container process in that
-    # group by GID (Linux group membership is by number, not name, across the
-    # container/host boundary — there is no `docker` group inside the image at
-    # all). DOCKER_GID MUST match `getent group docker` on THIS host — it is
-    # not portable across hosts/distros, hence env-injected with this host's
-    # own value as the default rather than hardcoded with no override. Only
-    # load-bearing once `[compute] enabled = true`.
-    group_add: ["${DOCKER_GID:-973}"]
     # :9100 on loopback so deploy/watchdog.sh (host) still reads /health; the
     # in-container healthcheck below hits the container's own 127.0.0.1:9100.
     ports: ["127.0.0.1:9100:9100"]
@@ -362,24 +350,6 @@ services:
       # verifying B-2; first fix landed on the web portal by mistake and the
       # daemon still lacked it, caught by `docker compose config`).
       - MINIMAX_CN_API_KEY=${MINIMAX_CN_API_KEY:-}
-      #   NORA_DATA_HOST_ROOT   — the HOST-side path of the `./data` mount in
-      #   `volumes:` below, and the one value in this file that exists because
-      #   a path inside this container is NOT a path the Docker daemon can
-      #   resolve. `LocalDockerBackend` ([compute] enabled) bind-mounts a job's
-      #   workspace into Smith's sandbox container, and a bind SOURCE is
-      #   resolved by the daemon on the HOST filesystem — so handing it
-      #   `/app/data/compute-workspaces` (which is what `store.data_dir`
-      #   resolves to in here) makes the daemon silently create an empty
-      #   directory at that path on the host, and Smith never sees the
-      #   `task.txt` Nora wrote while Nora never sees Smith's `url.txt`. Every
-      #   job then fails with no exception and no error — the exact R-5 shape.
-      #   `:-` not `:?`: unset is fine for every deployment with `[compute]`
-      #   off (the shipped default), and the mount below falls back to the same
-      #   `./data` it always used. With `[compute] enabled = true`,
-      #   `nora.app.composition` REFUSES TO START unless this names an absolute
-      #   host path (it cannot verify it, so it fails closed at boot rather
-      #   than silently at job time in front of the group).
-      - NORA_DATA_HOST_ROOT=${NORA_DATA_HOST_ROOT:-}
       #   PULSE_MCP_TOKEN       — bearer token for the `pulse` MCP server
       #   ([tools.mcp.pulse], spec: docs/superpowers/specs/2026-08-08-mcp-tool-provider-design.md).
       #   Unset means `build_mcp_tools`'s `${env:PULSE_MCP_TOKEN}` interpolation
@@ -408,11 +378,10 @@ services:
       # can catch it; the timezone belongs in config.toml, read explicitly.
       - TZ=Asia/Hong_Kong
     volumes:
-      # `${NORA_DATA_HOST_ROOT:-./data}` and NOT a bare `./data`, so this bind
-      # source and the `NORA_DATA_HOST_ROOT` value handed to the process above
-      # are THE SAME EXPRESSION and cannot drift apart. See that variable's own
-      # comment for why the process needs to know its host-side path at all.
-      # Unset behaves exactly as the old `./data` did.
+      # `${NORA_DATA_HOST_ROOT:-./data}`: the host directory this bind mounts
+      # is overridable (the eval sandbox points it at a scratch directory).
+      # Unset behaves exactly as the old `./data` did. It is a compose-only
+      # variable: the process no longer reads it (S3b).
       - ${NORA_DATA_HOST_ROOT:-./data}:/app/data
       # OAuth state (DEC-137): the xAI access-token state file
       # (`./state/xai-oauth.json`) lives in the SAME repo-tree state dir
@@ -435,21 +404,6 @@ services:
       # save — which replaces the inode — keeps working, the same reason the
       # doctrine mount above survives one.
       - ./nora/dreamer:/app/nora/dreamer:ro
-      # The host Docker socket, so `LocalDockerBackend` (Nora Compute spec
-      # §2/§3, `[compute] enabled`) can call `docker.from_env()` to launch
-      # Smith's per-job sandbox containers. Named explicitly, not glossed
-      # over: this gives Nora's own container the ability to launch — and,
-      # transitively given Docker's own model, potentially escape into —
-      # arbitrary containers on the host, a real widening of this container's
-      # privilege beyond anything else this design has needed so far. This
-      # was not discussed anywhere in the original Nora Compute design
-      # conversation; it was raised as a Self-Review flag on the plan that
-      # added this wiring and escalated to the human before implementation,
-      # who ruled: proceed as specced (mount the socket directly, not a
-      # sidecar, not deferred). Inert while `[compute] enabled = false`
-      # (the shipped default) — the mount exists either way, but nothing in
-      # this process calls `docker.from_env()` until that flag is on.
-      - /var/run/docker.sock:/var/run/docker.sock
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9100/health"]
       interval: 30s
@@ -709,13 +663,7 @@ services:
     image: drop:latest
     container_name: drop
     restart: unless-stopped
-    # Two networks, deliberately (Nora Compute spec §5a): `nora` keeps drop
-    # reachable by Nora and able to reach Postgres/Valkey/RustFS, unchanged
-    # from the Drop spec. `nora-compute` is new and narrower -- only drop and
-    # Smith's per-job sandbox containers (Phase 2) ever join it, so Smith
-    # never gets network-level reachability to anything else on `nora`
-    # (Postgres, signal-cli, Valkey, RustFS) just by being able to reach drop.
-    networks: [nora, nora-compute]
+    networks: [nora]
     # Only the PUBLIC listener gets a host port (§6): `cloudflared` runs
     # `network_mode: host` in its own separate compose project and reaches
     # every backend via `localhost:<port>`, never by container DNS name, so
@@ -780,11 +728,6 @@ services:
       # is the primary one). Same shape as NORA_SHORTENER_TOKEN, a new,
       # separate value since `drop` is a different service.
       - NORA_DROP_TOKEN=${NORA_DROP_TOKEN:?set NORA_DROP_TOKEN in .env}
-      # Signs/verifies per-job scoped tokens (Nora Compute spec §5/§9) --
-      # separate from NORA_DROP_TOKEN (the master credential): a job's own
-      # token is minted and verified against THIS secret, never compared to
-      # the master token directly.
-      - DROP_JOB_TOKEN_SECRET=${DROP_JOB_TOKEN_SECRET:?set DROP_JOB_TOKEN_SECRET in .env}
     healthcheck:
       # Matches `nora`'s own healthcheck pattern (curl against /health).
       # Checks the public listener; both listeners are one process (see
@@ -795,29 +738,6 @@ services:
       interval: 30s
       timeout: 5s
       start_period: 20s
-      retries: 3
-
-  # compute-egress — the only way out of `nora-compute` (deploy/compute-egress/
-  # squid.conf holds the allowlist and why). `nora-compute` is internal, so
-  # Smith's per-job containers reach `drop` directly and OmniRoute, the OTLP
-  # collector and Google Maps through this proxy; LocalDockerBackend sets
-  # HTTP(S)_PROXY on each job to `http://compute-egress:3128`, a literal it
-  # pins the same way it pins the network name.
-  compute-egress:
-    image: ubuntu/squid@sha256:6a097f68bae708cedbabd6188d68c7e2e7a38cedd05a176e1cc0ba29e3bbe029
-    container_name: compute-egress
-    restart: unless-stopped
-    networks: [nora-compute, compute-egress]
-    # Squid resolves `host.docker.internal` for the two allowed host ports.
-    extra_hosts: ["host.docker.internal:host-gateway"]
-    volumes:
-      - ./deploy/compute-egress/squid.conf:/etc/squid/squid.conf:ro
-    healthcheck:
-      # Down, every compute job fails on a ProxyError; this makes it visible
-      # in `docker ps` before a job finds out.
-      test: ["CMD", "squid", "-k", "check"]
-      interval: 30s
-      timeout: 5s
       retries: 3
 
   # db — Nora's own PostgreSQL record store (design/20 §3). Reached as `db:5432`
@@ -1122,38 +1042,6 @@ networks:
   # SearXNG + Firecrawl network joins REMOVED (DEC-73, 2026-08-08): web_search is
   # Tavily (a public API reached over the default network), web_fetch is gone, so
   # Nora no longer calls the co-located SearXNG/Firecrawl containers.
-  nora-compute:
-    # EXPLICIT, and load-bearing: without a `name:` key Compose prefixes a
-    # network with the project name, so this one would really be created as
-    # `nora_nora-compute` (confirmed on this host: the sibling `nora:` network
-    # above is really `nora_nora`). `LocalDockerBackend` does NOT go through
-    # Compose — it calls the Docker daemon directly with
-    # `containers.run(..., network="nora-compute")`, a literal string that has
-    # no project name to prefix with — so the un-named form makes every single
-    # compute job die with a docker-py `NotFound` before its container ever
-    # starts. Naming the network is Compose's own documented opt-out of the
-    # prefix, and it is the half of this pair that is allowed to move: the
-    # backend's string is the fixed point.
-    name: nora-compute
-    # INTERNAL, with the bridge's IPv4 inhibited (S0, design/sandbox-runtime
-    # §0). Internal alone still left the gateway address on the bridge, and a
-    # probe from inside reached the host's sshd on it; inhibiting IPv4 removes
-    # that address, so a job reaches only `drop`, `compute-egress` and any
-    # other job running at the same time (ICC stays on: turning it off would
-    # also cut jobs off from `drop` and the proxy).
-    # Measured 2026-09-30 before this change: a job read Honcho unauthenticated
-    # and reached the host, the LAN and Tailscale.
-    internal: true
-    driver_opts:
-      com.docker.network.bridge.inhibit_ipv4: "true"
-  # compute-egress's outward leg: an ordinary bridge, joined only by the proxy.
-  compute-egress:
-    name: compute-egress
-  # Nora Compute spec §5a: only `drop` and Smith's per-job sandbox containers
-  # (Phase 2, LocalDockerBackend) ever join this network. Smith needs to reach
-  # `drop:8081` directly (its own per-job credential, Nora Compute spec §2/§3)
-  # without inheriting reachability to Postgres/signal-cli/Valkey/RustFS the
-  # way it would if it joined `nora` itself.
 
 volumes:
   prometheus-data:

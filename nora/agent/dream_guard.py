@@ -257,7 +257,7 @@ class DreamGuard(HookProvider):
         Pure and SDK-free. `tool_input` was accepted and unread until R-99
         (2026-09-25) — it is the raw input the model emitted, and it was
         already part of the signature so a rule that looks at arguments (the
-        shape R-45 and R-4 take on the tag path) could be added here without
+        shape R-4 takes on the tag path) could be added here without
         changing every call site and every test. R-99 is exactly that rule.
         """
         if not self._ledger.knows(tool_name):

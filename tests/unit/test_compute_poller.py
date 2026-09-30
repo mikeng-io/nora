@@ -241,7 +241,7 @@ async def test_a_held_slot_defers_the_delivery_and_says_so_in_the_series(
 async def test_boot_recovery_fails_pending_rows_a_restart_orphaned(fake_metrics):
     """The restart defect, at the seam that fixes it.
 
-    `LocalDockerBackend`'s job registry is IN-MEMORY, so a `PENDING` row that
+    An in-process backend's job registry is IN-MEMORY, so a `PENDING` row that
     survives any restart — a crash, a deploy, a config change — names a
     `backend_job_id` the new process has never heard of. Its `poll` answers
     `FAILED("unknown job_id")`, which the poller would claim, deliver, and

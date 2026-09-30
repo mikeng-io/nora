@@ -129,14 +129,6 @@ _ANY_MD_READER = "tests/architecture/test_doc_references_resolve.py"
 _MD_PREFIX_READERS: tuple[tuple[str, tuple[str, ...]], ...] = (
     # nora/skills/**/*.md is NOT listed here — it is handled by
     # `_ALWAYS_ALL_PREFIXES` above, before this table is ever consulted.
-    #
-    # nora/compute/smith/**/*.md (doctrine.md, the smith skills' own
-    # SKILL.md files) has its OWN test suite under nora/compute/smith/tests/,
-    # which is not on `testpaths` and is never collected by the tests/
-    # tree — checked 2026-09-25, no `tests/` module reads a
-    # `nora/compute/smith` path by name. Only the universal `.md` reader
-    # applies; naming that suite here would be a build-time guess this
-    # script cannot ground.
     (".agents/skills/", ("tests/architecture/test_agent_skills.py",)),
 )
 _MD_EXACT_READERS: tuple[tuple[str, tuple[str, ...]], ...] = (

@@ -246,11 +246,10 @@ RULE_TESTS = {
     # discipline R-37/R-37b hold for reminders, applied to the third
     # Occasion (DEC-99). The next free number after R-42.
     "R-43": "test_a_job_never_delivered_twice",
-    # R-45: a one-shot nudge, not a refusal — make_artifact called with
-    # context empty after place_info/route already ran this turn (DEC-101).
-    # R-44 was withdrawn 2026-08-14 (the prior occupant of this range); the
-    # next free number is R-45, not a reuse.
-    "R-45": "test_make_artifact_is_nudged_once_when_context_is_empty_after_gathering",
+    # R-45 was removed 2026-10-01 (S3b): its subject, the artifact tool's
+    # empty-context nudge, went with the tool. The DEC-101 index row carries the
+    # DEPRECATED banner; the rule is not renumbered. R-44 was withdrawn earlier
+    # (2026-08-14), so neither number is reused.
     # design/discord-integration/ — a reply leaves on the platform its tag
     # arrived on; an unroutable platform refuses rather than falling back.
     "R-46": "test_a_discord_tag_is_answered_on_discord_not_signal",

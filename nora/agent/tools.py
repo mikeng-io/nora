@@ -71,7 +71,6 @@ from nora.agent.security import looks_like_coordinate as _looks_like_coordinate
 from nora.agent.security import screen_and_resolve_place as _screen_and_resolve_place
 
 from ..domain.cognition_session import COGNITION_ADAPTOR
-from ..domain.compute import ComputeJob, ComputeJobState, ComputeJobStore
 from ..domain.computer import (
     ComputerToolSettings,
     SandboxStatus,
@@ -178,14 +177,12 @@ from ..domain.notes import (
 )
 from ..domain.ports import (
     ArtifactIngest,
-    ComputeBackend,
     DiscordPresenceSource,
     DiscordPresenceState,
     GifSource,
     ImageGenerator,
     ImageReference,
     ImageSize,
-    JobStatus,
     MediaObjectStore,
     MessageHits,
     MusicToolBridge,
@@ -385,7 +382,7 @@ class NativeTool:
     #
     # **The best argument for the field is the list it replaces.** The keystone
     # §4 hand-named six act verbs — `send_reply`, `send_to`, `send_gif`,
-    # `remind`, `cancel_reminder`, `make_artifact` — and was FOUR SHORT: the
+    # `remind`, `cancel_reminder` and one action verb since retired — and was FOUR SHORT: the
     # events family (`create_event`, `update_event`, `rsvp_event`,
     # `cancel_event`, DEC-117) had joined the table after the mental model
     # behind that list was formed. A plan copying the six verbatim would have
@@ -393,7 +390,7 @@ class NativeTool:
     # stale-catalogue failure exactly, and the fix is the same one: derive it.
     #
     # `terminal` is close and not sufficient — it marks turn-ENDING verbs
-    # (`send_reply`, `send_gif`), while `remind`/`send_to`/`make_artifact` act
+    # (`send_reply`, `send_gif`), while `remind`/`send_to` act
     # without ending anything.
     #
     # Defaults **False**, and the direction is the point: a tool that forgets
@@ -481,8 +478,7 @@ class NativeTool:
     #   * `"three_state"` — the tool's result carries the R-27 status axis.
     #     This is EVERY dict-returning tool on this table except the one below,
     #     verified against its actual return statements rather than derived from
-    #     `source_tier`: deriving would have missed `make_artifact` (an action
-    #     verb reporting outcome honestly), `send_to`, the events family and the
+    #     `source_tier`: deriving would have missed `send_to`, the events family and the
     #     music verbs, which are exactly the writes where the honesty axis
     #     matters. `calculate` is on it too — it looks like a pure function and
     #     it is, but it answers `ok`/`refused`, so it carries the axis.
@@ -1454,12 +1450,6 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
                            side_effect_state="confirmed", idempotency="non_idempotent",
                            retry="never",
                            output_contract="three_state", level=2),
-    # `level=1` (ADR 0015 §3): what + when + what comes back. «Tell them it will
-    # follow» rides in the `still_working` result's `note`.
-    "make_artifact": NativeTool(1,
-                                side_effect_state="unknown", idempotency="non_idempotent",
-                                retry="never",
-                                output_contract="three_state", level=1),
     # Nora's computer (design/sandbox-runtime §4, DEC-243): the coding-agent
     # set (Claude Code's Bash/Read/Write/Edit, Pi's core four). Listing and
     # search go through `computer_run` (`ls`, `find`, `rg`), operator
@@ -1892,16 +1882,6 @@ _ROOM_CONNECTION: Mapping[str, str] = {
     "unknown": "could not check",
 }
 _UNCHECKED = "could not check"
-
-# `make_artifact`'s sync poll window (Nora Compute spec §4): how long a call
-# waits inline for `ComputeBackend.poll` before falling to the slow path (a
-# durable `ComputeJob` row, delivered later by `ComputeJobPoller`). Module
-# constants, not `build_tool_specs` parameters, for the same reason
-# `LOAD_TRANSCRIPT_MAX` above is one: there is no per-deployment reason to
-# vary them, and a test that needs a shorter window monkeypatches these two
-# names directly rather than threading a new hook through production code.
-_SYNC_POLL_SECONDS = 15.0
-_SYNC_POLL_INTERVAL = 1.0
 
 # `recall_lookups`'s own clamp (tool-recall-log spec §4) — smaller than
 # `LOAD_TRANSCRIPT_MAX` (60) because a logged tool result is denser than
@@ -3472,13 +3452,6 @@ _FETCH_OFF: Mapping[str, object] = {
             "don't answer as if you had.",
 }
 
-# `make_artifact` with nothing to build on or nobody to deliver to. The same
-# sentence for both: the model has one thing to do either way.
-_ARTIFACT_OFF: Mapping[str, object] = {
-    "status": "unavailable",
-    "note": "I can't make files right now. Say so plainly, and do not promise one.",
-}
-
 # ADR 0015 §3: how to read a `web_search` / `web_fetch` result rides in the
 # result, per status, instead of in the description every call pays for. The
 # provider (`nora/infra/search`) answers `ok` and `nothing_found` without a
@@ -4320,8 +4293,6 @@ def build_tool_specs(
     versions=None,
     giphy_source: GifSource | None = None,
     reaction_picker: ReactionPicker | None = None,
-    compute_backend: ComputeBackend | None = None,
-    compute_jobs: ComputeJobStore | None = None,
     tool_call_log_store: ToolCallLogStore | None = None,
     # Nora's computer (design/sandbox-runtime, DEC-243): the runtime, its
     # audit store and its bounds. `computer=None` is `[computer]` off (and
@@ -4430,12 +4401,6 @@ def build_tool_specs(
     `version` answer `unavailable`, which is the same honest wiring-gap state
     `reminders=None` gives `remind`, and never `nothing_found`.
 
-    `compute_backend`/`compute_jobs` are `make_artifact`'s own pair, wired the
-    same honest way `reminders`/`reminder_caps` are: both `None` in the
-    offline/eval compositions and any composition that has not wired Nora
-    Compute, which is exactly what makes `make_artifact` answer `unavailable`
-    (R-5) rather than crash.
-
     `tool_call_log_store` is `recall_lookups`'s own collaborator (tool-recall-log
     spec §4), wired the identical way: `None` in the offline/eval compositions
     and any composition that has not wired the tool-recall log, which is what
@@ -4446,7 +4411,7 @@ def build_tool_specs(
     the SAME instance the composition root builds for the web dashboards (one
     pool, one lifecycle; the tool reads through the store only, never
     `nora.analytics` internals). Wired the honest way `reminders`/
-    `compute_backend` are: `None` in the offline/eval compositions and any
+    `versions` are: `None` in the offline/eval compositions and any
     composition that has not built the substrate, which is what makes
     `where_been` answer `unavailable` (R-5), never `nothing_found` — an
     unwired store is «I could not check», never «no derived pattern». The
@@ -12855,105 +12820,6 @@ Args:
         _record(metrics, "note_update", "ok", chars=len(body))
         return {"status": "ok", "title": note.title}
 
-    async def make_artifact(
-        task: str, context: list[dict] | None = None, artifact_id: str | None = None,
-    ) -> dict:
-        """Build or research something and hand back a link to it: a report, a
-        chart, a document. Use this when someone wants a FILE, not a chat answer.
-
-        It takes seconds to minutes, so the file may follow later.
-
-        Returns `status`: ok or unavailable. An ok carries the `url`, `failed`,
-        or `still_working` (which comes with a `note`).
-
-        Args:
-            task: what to build, in your own words: a clear, self-contained
-                brief. The compute job has no access to this conversation
-                beyond `task` and `context`, so include everything it needs
-                to know.
-            context: already-gathered facts relevant to THIS artifact: the
-                typed results of tools you already called this turn (a
-                place's rating, a route's duration), as a list of small
-                dicts. Copy the fields you already have; do not re-derive or
-                summarise them into prose first. Leave unset for a task with
-                nothing gathered.
-            artifact_id: set this to REVISE an existing artifact (from a
-                previous make_artifact result) rather than creating a new one.
-                Leave unset to create something new.
-        """
-        if compute_backend is None:
-            _record(metrics, "make_artifact", "unavailable")
-            return dict(_ARTIFACT_OFF)
-        # BEFORE `launch`, not after it. A job that outruns the sync window
-        # needs somewhere to persist and somebody to deliver to; without both,
-        # this call can only ever answer `unavailable` — so checking after
-        # launching means a container is already running for a result nobody
-        # will ever be told about, burning a concurrency slot and a Drop token
-        # until it times out. The cost of checking first is that a job which
-        # WOULD have finished inside the sync window is refused too, on a turn
-        # with no tagger — a version announcement, or a requester who has since
-        # left `identity.toml`. That is the right trade: nobody in either case
-        # is waiting on a file, and a refusal there is honest rather than lucky.
-        if compute_jobs is None or room.tagger is None:
-            _record(metrics, "make_artifact", "unavailable", reason="no_delivery_target")
-            return dict(_ARTIFACT_OFF)
-
-        job_id = await compute_backend.launch(task=task, artifact_id=artifact_id, context=context)
-        elapsed = 0.0
-        while elapsed < _SYNC_POLL_SECONDS:
-            result = await compute_backend.poll(job_id=job_id)
-            if result.status is not JobStatus.RUNNING:
-                break
-            await asyncio.sleep(_SYNC_POLL_INTERVAL)
-            elapsed += _SYNC_POLL_INTERVAL
-        else:
-            result = await compute_backend.poll(job_id=job_id)
-
-        if result.status is JobStatus.SUCCEEDED:
-            _record(metrics, "make_artifact", "ok")
-            return {"status": "ok", "url": result.url, "summary": result.summary}
-        if result.status is JobStatus.FAILED:
-            # `status="failed"` on the COUNTER, `{"status": "ok", "failed":
-            # True}` in the payload, and the two disagree on purpose. The
-            # payload is R-27's answer to the MODEL — the tool did run and its
-            # answer is trustworthy, it is the job that went wrong — while the
-            # counter answers "how did this call go" for whoever is watching
-            # the series, and a failed job counted as `ok` is invisible there.
-            # `failed=True` only ever reached the log line, so `status=ok` was
-            # the whole dimension a dashboard could see. A status outside
-            # R-27's three has precedent here — `remind`, `route` and
-            # `cancel_reminder` all count `refused` — so this is a fourth
-            # value of an existing vocabulary, not a new one.
-            _record(metrics, "make_artifact", "failed")
-            return {"status": "ok", "failed": True, "error": result.error}
-
-        # Still running past the sync window — fall to the slow path (Nora
-        # Compute spec §4). The delivery binding this needs was checked before
-        # `launch`, above. Provenance (context-channel spec §5): hashed HERE,
-        # not in `LocalDockerBackend`, because this closure already holds
-        # both `task` and `context` in hand, while `launch` returns only a
-        # bare `job_id` with no path back to a store.
-        task_sha256 = hashlib.sha256(task.encode("utf-8")).hexdigest()
-        context_sha256 = hashlib.sha256(
-            json.dumps(context or [], sort_keys=True).encode("utf-8")
-        ).hexdigest()
-        job = ComputeJob(
-            id=uuid.uuid4(), backend_job_id=job_id, task=task, artifact_id=artifact_id,
-            platform=room.platform, conversation_id=bound_conversation_id,
-            conversation_type=conversation_type,
-            requester_person_id=room.tagger.person_id,
-            created_at=now_fn(), state=ComputeJobState.PENDING,
-            completed_at=None, result_url=None, result_summary=None, error=None,
-            task_sha256=task_sha256, context_sha256=context_sha256,
-        )
-        await compute_jobs.create(job)
-        _record(metrics, "make_artifact", "ok", still_working=True)
-        return {
-            "status": "ok", "still_working": True,
-            "note": "It is still being built. Tell them you are working on it "
-                    "and that it will follow as a separate message once ready.",
-        }
-
     async def version(which: str = "") -> dict:
         """Read which version of you is running, and what was in it. Call this
         the moment somebody asks about YOU as software.
@@ -14689,7 +14555,6 @@ Args:
         _spec("note_create", note_create),
         _spec("note_update", note_update),
         _spec("remember", remember),
-        _spec("make_artifact", make_artifact),
         _spec("computer_run", computer_run),
         _spec("computer_read", computer_read),
         _spec("computer_write", computer_write),

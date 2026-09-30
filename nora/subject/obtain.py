@@ -91,9 +91,9 @@ _PLACEHOLDER_TOKEN_ENV = "NORA_EVAL_SUBJECT_DISCORD_TOKEN"  # noqa: S105
 #: whose absence downgrades a tool the deployment's Nora holds. Filled with
 #: `setdefault`, so the deploy host's real values always win.
 _CREDENTIALS_ENABLED_FEATURES_DEMAND = (
-    "NORA_DROP_TOKEN",          # [compute] — the per-job token it mints against
-    "GOOGLE_MAPS_API_KEY",      # [compute] map-rendering skill, and [route]
-    "OMNIROUTE_API_KEY",        # the model key Smith itself runs on
+    "NORA_DROP_TOKEN",          # [shortener] — the Drop credential
+    "GOOGLE_MAPS_API_KEY",      # [route]
+    "OMNIROUTE_API_KEY",        # the model key Nora herself runs on
 )
 
 #: One person, one room, `default = "deny"`. A caller that does not care about
@@ -358,26 +358,6 @@ def _baseline(cfg: Config, workdir: Path) -> Config:
     # (`design/evaluation/11-the-sandbox-rebuild.md` §1.2).
     for name in _CREDENTIALS_ENABLED_FEATURES_DEMAND:
         os.environ.setdefault(name, "eval-subject-placeholder")
-    # `NORA_DATA_HOST_ROOT` is the HOST-side path of the bind mount the
-    # deployment's docker daemon attaches — `[compute]` refuses to start
-    # without it, because an in-container path "silently resolves to an empty
-    # host directory". OUTSIDE a container there is no mount and the host path
-    # IS the local one, so the workdir is not a placeholder here: it is the
-    # correct answer. Run on the deploy host and compose's own value wins.
-    # SET, never `setdefault`. An audit found this unsound on exactly the host
-    # the first comment claimed it was right for: `store.data_dir` is the case
-    # workdir two lines above, and `_compute_workspace_host_root`'s contract
-    # (`composition.py:677`) is that this variable names the HOST-side path of
-    # the mount at `store.data_dir`. Let compose's value win and the pair is
-    # guaranteed to disagree — the daemon writes job files into the case
-    # workdir while the backend bind-mounts the DEPLOYMENT's data root into the
-    # sandbox container. That is fail-OPEN (the job finds no task file) plus an
-    # eval container mounting the deployment's data directory.
-    #
-    # The workdir is the correct answer here whatever the host: outside a
-    # container there is no mount, and inside one the subject's data_dir is
-    # this directory either way.
-    os.environ["NORA_DATA_HOST_ROOT"] = str(workdir.resolve())
     # `memory.workspace_id` — Honcho is the ONE store the sandbox database
     # does not isolate: it is an external service keyed by workspace, and the
     # deployment's workspace is where every real peer card lives. An eval

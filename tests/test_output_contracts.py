@@ -204,7 +204,7 @@ def test_every_dict_returning_tool_declares_an_output_contract(tool: str) -> Non
     ADR 0008 §3 as amended — every tool whose result carries the status axis
     declares one, DATA tools and action verbs alike. Deriving the set from
     `source_tier` was rejected precisely because it misses the action verbs
-    (`make_artifact`, `send_to`, the events family) where the honesty axis
+    (`send_to`, the events family) where the honesty axis
     matters most, so it is derived from the RETURN TYPE instead: a tool handing
     the model a dict is handing it a shape, whatever kind of verb it is.
     """
@@ -345,20 +345,6 @@ async def test_a_status_free_result_passes_its_own_contract() -> None:
     """ADR 0009 §2 at runtime — the assertion the superseded enum would fail."""
     payload = {"messages": []}
     tool = adapt(_adapted("messages", payload))
-    assert await tool._tool_func(thing="x") is payload
-
-
-async def test_make_artifacts_ok_plus_failed_shape_passes() -> None:
-    """The KNOWN wrinkle (ADR 0009 §4), accommodated rather than silently fixed.
-
-    `make_artifact` answers `{"status": "ok", "failed": True}` when the job
-    failed — the counter says failed and the payload says ok. Normalising it to
-    `unavailable` is a tool-surface behaviour change and is out of scope; what
-    this pins is that the contract does not BREAK it in the meantime, so the
-    wrinkle stays a flag for the operator rather than becoming an outage.
-    """
-    payload = {"status": "ok", "failed": True, "error": "boom"}
-    tool = adapt(_adapted("three_state", payload))
     assert await tool._tool_func(thing="x") is payload
 
 

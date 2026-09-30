@@ -32,19 +32,11 @@ def test_doctrine_read_boundary():
     the boundary this test protects (doctrine files have a single reader) is
     unchanged: `nora/doctrine/` is still reached through `DoctrineStore` alone.
 
-    `compute/smith/agent.py` is exempt too, for the same shape of reason:
-    `nora/compute/smith/doctrine.md` is SMITH's doctrine, not Nora's (Nora
-    Compute spec §3 — Smith is "a separate, neutral agent, not Nora in a
-    different mode," with its own persona file read at runtime the same
-    convention Nora's own persona already follows). It is read exactly once,
-    by Smith's own bootstrap script, inside Smith's own isolated sandbox
-    image/environment — never by anything that also touches Nora's doctrine.
     """
     allowed = {
         PKG / "doctrine" / "loader.py",
         PKG / "skills" / "loader.py",
         PKG / "instructions" / "frontmatter.py",
-        PKG / "compute" / "smith" / "agent.py",
         # `documents/catalog-prompt.md` is a GENERATED prompt fragment (the catalog a
         # model writes a document against), not a doctrine file; its one reader is
         # `nora.documents.catalog_prompt`, which reads nothing else.
@@ -115,22 +107,11 @@ def _imported_modules(path: Path) -> set[str]:
 # Allowlisted by PACKAGE, not by file path, so moving a module within agent/ or
 # splitting agent/tools.py into a package does not require editing this test.
 #
-# `compute` is Smith's entire tree (Nora Compute spec §3), not Nora's own
-# runtime: `nora/compute/smith/` bakes into a SEPARATE Docker image with its
-# own `pyproject.toml` pinning its own `strands-agents==1.50.2` (matched to,
-# but not shared with, the top-level `nora` package's copy) -- it never runs
-# inside Nora's own process or imports anything else from `nora`
-# (`nora/compute/smith/agent.py`'s own module docstring). Allowing the whole
-# package, not just that one file, mirrors this test's existing rationale for
-# `agent`: Smith growing a second module under `compute/` should not require
-# editing this test either.
-STRANDS_ALLOWED_PACKAGES = {"agent", "compute"}
+STRANDS_ALLOWED_PACKAGES = {"agent"}
 
 
 def test_strands_import_boundary():
-    """Only nora/agent/** (Nora's own loop) and nora/compute/** (Smith's
-    separate sandbox image, built and run outside Nora's own process) may
-    import strands."""
+    """Only nora/agent/** (Nora's own loop) may import strands."""
     offenders = []
     for path in _python_files():
         if "strands" not in _imported_modules(path):

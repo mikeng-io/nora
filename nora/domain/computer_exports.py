@@ -19,7 +19,7 @@ sent, not a file extension.
 path, sha256, artifact_id, url, turn"), and it is what makes a revision
 safe: `computer_export(..., artifact_id=X)` revises the Drop artifact X only
 when X's FIRST row belongs to the same room (`for_artifact`). An artifact
-this table has never seen (one Smith made through `make_artifact`, or one
+this table has never seen (one made before the computer existed, or one
 another room made) is refused, not revised.
 
 **The type rule** (`sniff_export_type`): read off the BYTES, never the

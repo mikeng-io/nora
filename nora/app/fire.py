@@ -484,7 +484,7 @@ def compute_occasion(job: ComputeJob, result: JobResult) -> Event:
     second thing built on this turn beside reminders.
 
     `body` is the job's own task description PLUS its result summary —
-    Smith's own account of what it built (Nora Compute spec §11: this text
+    the backend's own account of what it built (Nora Compute spec §11: this text
     passes R-18 like any other reply; the artifact bytes themselves do not).
     Nora composes the actual group-facing message from this in her own
     voice; this function only assembles what she is TOLD, not what she says.
@@ -556,7 +556,7 @@ def lost_job_occasion(job: ComputeJob) -> Event:
     """A job whose delivery was lost across a restart — the FIFTH `Event`.
 
     Boot recovery cannot know whether the container finished: its handle lives
-    in `LocalDockerBackend`'s in-memory registry and did not survive
+    in an in-process backend's in-memory registry and did not survive
     (`nora.app.compute_poller.recover`). So this must never say the job
     FAILED — that is a claim about a container nobody looked at, and it may
     well have built the thing perfectly.

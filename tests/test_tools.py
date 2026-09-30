@@ -197,8 +197,6 @@ def test_every_declared_tool_is_built(wiring):
         # The Event module (gatherings/RSVP/venue suggestions).
         "event_propose", "event_revise", "event_rsvp", "event_set_status",
         "event_search", "suggest_venue",
-        # Nora Compute spec §4 (Task 5).
-        "make_artifact",
         # Nora's computer (design/sandbox-runtime §4, DEC-243).
         "computer_run", "computer_read", "computer_write", "computer_edit",
         "computer_export", "computer_import", "computer_session_list",

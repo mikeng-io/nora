@@ -132,7 +132,6 @@ from nora.engagement.stages.debrief import Completion as DebriefCompletion
 from nora.engagement.stages.debrief import Wiring as DebriefWiring
 from nora.infra.blobs import FilesystemBlobStore, RustfsBlobStore
 from nora.infra.blobs.cipher import BlobCipher
-from nora.infra.compute.docker_backend import LocalDockerBackend, egress_refusal
 from nora.infra.honcho import HonchoClient
 from nora.infra.music import YtDlpSource
 from nora.infra.sql import SqlRecordStore, create_sql_engine, run_migrations
@@ -743,12 +742,6 @@ class _DebriefModelClient:
         )
 
 
-# The one subdirectory name a compute job's workspace lives under, appended to
-# BOTH the container-side root (`store.data_dir`) and the host-side root, so the
-# two paths handed to `LocalDockerBackend` cannot name different directories.
-COMPUTE_WORKSPACE_DIRNAME = "compute-workspaces"
-
-
 def _describe_models(cfg: Config) -> dict[str, str]:
     """Modality → the model that describes it, for every modality that CAN.
 
@@ -898,82 +891,9 @@ def _describe_max_bytes(cfg: Config) -> dict[str, int]:
     return resolved
 
 
-def _compute_workspace_host_root(cfg: Config) -> Path:
-    """The host-side path of whatever is bind-mounted at `store.data_dir`.
-
-    READ FROM THE ENVIRONMENT, and it cannot be anything else: `store.data_dir`
-    is resolved against the config file's own directory, so in the container it
-    is `/app/data` — a path the HOST Docker daemon, which resolves every
-    bind-mount source on the host filesystem, has never heard of. Handing it
-    that path does not error; the daemon creates an empty directory at
-    `/app/data/...` on the host and the job's sandbox finds no `task.txt`,
-    writes its result where nobody reads it, and reports nothing (R-5's exact
-    shape, at job time, in front of the group).
-
-    So this fails CLOSED at boot instead: unset, or set to a relative path
-    nothing can resolve, refuses to start. `docker-compose.yml` populates the
-    variable from the same expression it uses for the mount source itself.
-    """
-    raw = os.environ.get(cfg.compute.data_host_root_env, "").strip()
-    if not raw:
-        raise StartupError(
-            f"[compute] enabled = true but environment variable "
-            f"{cfg.compute.data_host_root_env} is not set — it must name the "
-            f"HOST-side path bind-mounted at {cfg.store.data_dir} (docker "
-            "compose sets it from the same expression as that mount), because "
-            "a sandbox workspace is bind-mounted by the host Docker daemon and "
-            "an in-container path silently resolves to an empty host directory; "
-            "refusing to start"
-        )
-    root = Path(raw)
-    if not root.is_absolute():
-        raise StartupError(
-            f"environment variable {cfg.compute.data_host_root_env} is "
-            f"{raw!r}, a relative path — the host Docker daemon resolves a "
-            "bind-mount source against nothing this process knows, so it must "
-            "be absolute; refusing to start"
-        )
-    return root
-
-
-def _check_compute_secrets(
-    *, drop_token: str, maps_key: str, model_api_key: str, cfg: Config,
-) -> None:
-    """Every credential a compute job cannot run without, checked at BOOT.
-
-    The `policy.toml` discipline (R-5: refuse to start rather than run in a
-    state that looks like working) applied to `[compute]`. Each of these is
-    read with a `""` default, so without this check an unset one starts the
-    daemon cleanly and then fails EVERY job — `LocalDockerBackend` mints its
-    Drop credential with an empty bearer token, or hands Smith an empty model
-    key — minutes later, in front of the group, as "it failed" with an error
-    string nobody can act on. A missing secret is an operator's problem and
-    belongs in the operator's terminal, not in the group chat.
-
-    All of them are named in ONE message rather than one-at-a-time, so an
-    operator setting up compute fixes the whole set in one pass.
-    """
-    missing = [
-        name for name, value in (
-            (cfg.shortener.token_env, drop_token),
-            (cfg.route.api_key_env, maps_key),
-            (cfg.llm.api_key_env, model_api_key),
-        ) if not value.strip()
-    ]
-    if missing:
-        raise StartupError(
-            "[compute] enabled = true but these environment variables are "
-            f"unset or empty: {', '.join(missing)} — a compute job needs the "
-            "drop credential it mints its per-job token against, the Google "
-            "Maps key its map-rendering skill uses, and the model key Smith "
-            "itself runs on. Starting without them would fail every job at "
-            "run time instead of here; refusing to start"
-        )
-
-
 def _computer_token(cfg: Config) -> str:
     """computerd's bearer token, checked at BOOT when `[computer] enabled`:
-    the `_check_compute_secrets` discipline (R-5: refuse to start rather than
+    the R-5 discipline (refuse to start rather than
     run in a state that looks like working). Without it an empty token would
     start the daemon cleanly and then answer every computer call
     `unavailable` (computerd's 401), in front of the group, for a fault only
@@ -987,24 +907,6 @@ def _computer_token(cfg: Config) -> str:
             "refusing to start"
         )
     return token
-
-
-def _check_compute_egress(cfg: Config) -> None:
-    """The endpoints a compute job is handed must be ones `compute-egress`
-    lets it reach, checked at BOOT for `_check_compute_secrets`' reason: a job
-    whose model URL is off the allowlist fails every time, in front of the
-    group, as a proxy 403. Tracing is checked only when it is forwarded."""
-    urls = [cfg.llm.base_url.rstrip("/") + "/chat/completions"]
-    if cfg.obs.tracing.enabled and cfg.obs.tracing.exporter == "otlp_http":
-        urls.append(cfg.obs.tracing.endpoint)
-    refusals = [r for r in (egress_refusal(u) for u in urls) if r]
-    if refusals:
-        raise StartupError(
-            "[compute] enabled = true but a compute job could not reach: "
-            + "; ".join(refusals)
-            + " — widen deploy/compute-egress/squid.conf and EGRESS_ALLOWLIST "
-            "together, or point the endpoint at an allowed one; refusing to start"
-        )
 
 
 @dataclass(frozen=True)
@@ -1358,12 +1260,12 @@ async def build_dependencies(
     # with the fake). The tick is the only part behind the flag.
     reminders: ReminderStore = SqlReminderStore(engine)
     # The compute-job outbox, REUSING `engine` for the same reason `reminders`
-    # does above. Built HERE, unconditionally, beside the other stores — the
-    # exact `reminders` argument applies again: `ToolRegistry` (below) needs
-    # `compute_jobs` for `make_artifact`'s slow path whether or not
-    # `[compute] enabled` is true, and boot recovery a few hundred lines down
-    # (beside `reminders`' own unconditional sweep) must find a store to sweep
-    # even when the poller itself is off. Only the poller's tick loop
+    # does above. Built HERE, unconditionally, beside the other stores: boot
+    # recovery a few hundred lines down (beside `reminders`' own unconditional
+    # sweep) must find a store to sweep even when the poller itself is off. No
+    # tool writes it today (S3b retired its only producer, the artifact tool); it
+    # is kept as the generic deferred-delivery outbox a future `delegate_task`
+    # writes (design/sandbox-runtime decision 4). Only the poller's tick loop
     # (`compute_backend`, further down) is behind the flag.
     compute_jobs: ComputeJobStore = SqlComputeJobStore(engine)
     # Second consumer wired here (EngagementPipeline/FirePath, via
@@ -2730,79 +2632,18 @@ async def build_dependencies(
         if maps_key:
             from nora.infra.geocode import GoogleGeocoder
             geocoder = GoogleGeocoder(api_key=maps_key, cache_store=geocode_cache_store)
-    # `LocalDockerBackend` (Nora Compute spec §2/§3), wired ONLY when
-    # `[compute] enabled` — the `[heartbeat]`-shaped gate: off leaves
-    # `compute_backend` None and `make_artifact` answers `unavailable` (R-5),
-    # never a silent no-op. It needs `docker.from_env()` to reach the HOST
-    # Docker daemon, which is why the socket is bind-mounted into this very
-    # container in docker-compose.yml — a named, already-ruled-on privilege
-    # widening (see that file's own comment beside the mount).
-    #
-    # Three collaborators are REUSED rather than re-resolved, each for the
-    # reason `nora/infra/compute/docker_backend.py`'s own docstring gives:
-    # `api_key`/`tier.base_url`/`tier.model` are the SAME OmniRoute triple
-    # Nora's own agent is configured with (Smith needs a model credential too,
-    # not a second provider story), and `cfg.shortener.base_url`/token are the
-    # SAME pair `LinkShortener` above resolves for `drop`'s internal
-    # listener — `LocalDockerBackend` mints its own per-job Drop token against
-    # that same listener. `google_maps_api_key` reads `[route].api_key_env`
-    # directly (not `route_client`'s own scoped `route_key`, which only exists
-    # inside that `if` block) — the SAME env var `render_map`, the skill that
-    # consumes it, already shares with the `route` tool.
+    # `ComputeBackend`: NO adapter ships. The per-job container backend was
+    # retired in S3b (design/sandbox-runtime decision 4); the port,
+    # `ComputeJobPoller`, `compute_jobs` and boot recovery stay
+    # as the generic deferred-delivery path a future `delegate_task` will
+    # plug an adapter into. Until one is assigned here the poller below is
+    # never built: wired, idle.
     compute_backend: ComputeBackend | None = None
-    if cfg.compute.enabled:
-        import docker
-
-        drop_token = os.environ.get(cfg.shortener.token_env, "")
-        maps_key = os.environ.get(cfg.route.api_key_env, "")
-        _check_compute_secrets(
-            drop_token=drop_token, maps_key=maps_key, model_api_key=api_key, cfg=cfg,
-        )
-        _check_compute_egress(cfg)
-        compute_backend = LocalDockerBackend(
-            docker_client=docker.from_env(),
-            drop_internal_url=cfg.shortener.base_url,
-            drop_master_token=drop_token,
-            model_api_key=api_key,
-            model_base_url=tier.base_url,
-            model_name=tier.model,
-            google_maps_api_key=maps_key,
-            sandbox_image=cfg.compute.sandbox_image,
-            job_timeout_seconds=cfg.compute.job_timeout_seconds,
-            max_concurrent_jobs=cfg.compute.max_concurrent_jobs,
-            mem_limit=cfg.compute.mem_limit,
-            nano_cpus=cfg.compute.nano_cpus,
-            # Reuses Nora's own [obs.tracing] section rather than a second
-            # [compute]-scoped one -- Smith's spans land in the SAME Langfuse
-            # project, under service.name="smith" (tracing.py) for filtering,
-            # not a separate destination an operator would have to configure
-            # twice. Only forwarded when the exporter is actually "otlp_http"
-            # -- "console"/"file" have no endpoint value meaningful to a
-            # process on the other side of the container boundary.
-            tracing_enabled=(
-                cfg.obs.tracing.enabled and cfg.obs.tracing.exporter == "otlp_http"
-            ),
-            tracing_endpoint=cfg.obs.tracing.endpoint,
-            tracing_headers=(
-                os.environ.get(cfg.obs.tracing.headers_env, "")
-                if cfg.obs.tracing.headers_env else ""
-            ),
-            # `store.data_dir`, the SAME data-volume convention media custody
-            # uses (`_build_media_custody` below: `store.data_dir / "media"`)
-            # — not a second, unmounted absolute path. Bind-mounted at
-            # `./data:/app/data` in docker-compose.yml, so a job's workspace
-            # survives a container restart exactly as media blobs do.
-            workspace_root=cfg.store.data_dir / COMPUTE_WORKSPACE_DIRNAME,
-            # The SAME directory, named as the HOST sees it — the only value
-            # `LocalDockerBackend` may hand the Docker daemon as a bind source
-            # (see its `__init__`'s two-roots comment, and
-            # `_compute_workspace_host_root`'s own for why this cannot be
-            # derived from `data_dir`). The identical `COMPUTE_WORKSPACE_DIRNAME`
-            # is appended to both, so the container-side path and the host-side
-            # path can only ever differ in the part the mount itself defines.
-            workspace_host_root=(
-                _compute_workspace_host_root(cfg) / COMPUTE_WORKSPACE_DIRNAME
-            ),
+    if cfg.compute.enabled and compute_backend is None:
+        log.warning(
+            "[compute] enabled = true but no ComputeBackend adapter ships (the "
+            "per-job container backend was retired, design/sandbox-runtime "
+            "decision 4); the compute-job poller stays idle. Set enabled = false."
         )
     # Nora's computer (design/sandbox-runtime, DEC-243): `ComputerdRuntime`,
     # built ONLY when `[computer] enabled`. Off leaves it `None` and every
@@ -2825,7 +2666,7 @@ async def build_dependencies(
     # computer, built unconditionally like the audit store, and its link
     # destination, `DropArtifactIngest`, ONLY when the computer is on. Drop's
     # internal listener and its token are `[shortener]`'s pair, the one
-    # `LocalDockerBackend` already reuses for the same listener. A missing
+    # `LinkShortener` already uses for the same listener. A missing
     # token leaves the link destination `unavailable`, never the boot: `chat`
     # and `keep` do not need Drop.
     computer_exports: ComputerExportStore = SqlComputerExportStore(engine)
@@ -3028,11 +2869,6 @@ async def build_dependencies(
         # (R-5) whenever a composition has not wired one; every deployment
         # here has, since it needs nothing this file does not already build.
         events=events,
-        # `make_artifact`'s own pair (Nora Compute spec §4): `compute_jobs` is
-        # ALWAYS the store built above, `compute_backend` is `None` whenever
-        # `[compute] enabled` is false — the tool answers `unavailable` in
-        # that case (R-5), never a silent no-op.
-        compute_backend=compute_backend, compute_jobs=compute_jobs,
         # The third consumer of `tool_call_log_store` (Task 6 Step 8 wired the
         # first two: EngagementPipeline/FirePath, via `deliver.build`) —
         # `recall_lookups`'s own collaborator, tool-recall-log spec §4.
@@ -3261,12 +3097,11 @@ async def build_dependencies(
     fire_path: FirePath | None = None
     # `or cfg.compute.enabled`: without this, a deployment that enables
     # `[compute]` alone (heartbeat off, no version announcement) would build
-    # `compute_backend` and accept `make_artifact` slow-path jobs, but the
-    # poller below — which needs `fire_path` to deliver a finished job —
-    # would never spawn, and every such job would sit `pending` forever with
-    # no path to ever reach the group it was asked into. Caught while wiring
-    # the poller itself: this gate pre-dates Nora Compute and had no reason
-    # to anticipate a third occasion needing it.
+    # `compute_backend` and accept deferred jobs, but the poller below —
+    # which needs `fire_path` to deliver a finished job — would never spawn,
+    # and every such job would sit `pending` forever with no path to ever
+    # reach the group it was asked into. This gate pre-dates Nora Compute and
+    # had no reason to anticipate a third occasion needing it.
     if cfg.heartbeat.enabled or announcing or cfg.compute.enabled or cfg.participation.enabled:
         # The real fire turn. It holds the SAME collaborators the tag path does
         # — one record store, one Honcho client, one runner, one tool registry —

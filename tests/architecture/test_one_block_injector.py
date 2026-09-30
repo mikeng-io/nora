@@ -79,19 +79,6 @@ _NOT_BUILT_HERE = {
         "strips the wrapper doctrine/loader.py builds",
 }
 
-#: Not a prompt. Smith renders an HTML PAGE for a person to open in a browser;
-#: `<div>` there is a division of a document, not a block handed to a model.
-_NOT_A_PROMPT = {
-    "nora/compute/smith/page_shell.py": "renders an HTML page, not a prompt",
-    "nora/compute/smith/skills/markdown/render.py": "renders HTML",
-    "nora/compute/smith/tests/test_page_shell.py": "a test of the HTML",
-    "nora/compute/smith/tests/test_render_html_report.py": "a test of the HTML",
-    "nora/compute/smith/tests/test_render_map.py": "a test of the HTML",
-    "nora/compute/smith/tests/test_render_markdown.py": "a test of the HTML",
-    "nora/compute/smith/tests/test_render_mermaid.py": "a test of the HTML",
-}
-
-
 def _docstring_nodes(tree: ast.AST) -> set[int]:
     """Every Constant that is a DOCSTRING — prose about a tag, not a tag.
 
@@ -152,7 +139,7 @@ def _discovered() -> dict[str, tuple[str, ...]]:
     return out
 
 
-_CLASSIFIED = set(HAND_WRITTEN) | set(_OWN_INJECTOR) | set(_NOT_A_PROMPT)
+_CLASSIFIED = set(HAND_WRITTEN) | set(_OWN_INJECTOR)
 
 
 def test_every_module_that_writes_a_tag_is_classified():
@@ -168,7 +155,7 @@ def test_every_module_that_writes_a_tag_is_classified():
     assert not unclassified, (
         f"{sorted(unclassified)} open and close an element by hand and are "
         "classified nowhere. Route it through ContextBlock (see #292), or "
-        "classify it in _OWN_INJECTOR / _NOT_A_PROMPT with a reason."
+        "classify it in _OWN_INJECTOR with a reason."
     )
     stale = _CLASSIFIED - set(discovered)
     assert not stale, (
@@ -257,7 +244,7 @@ def test_the_converted_list_is_not_quietly_shrinking():
     stale — so it is checked against the source rather than trusted. Every
     module that builds a prompt block through `ContextBlock` must be on it, or
     dropping a module's line here would silently stop guarding it."""
-    builds = set(CONVERTED) | set(_OWN_INJECTOR) | set(_NOT_A_PROMPT)
+    builds = set(CONVERTED) | set(_OWN_INJECTOR)
     uses_injector = set()
     for path in sorted((ROOT / "nora").rglob("*.py")):
         rel = path.relative_to(ROOT).as_posix()

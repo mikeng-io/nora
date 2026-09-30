@@ -139,20 +139,6 @@ def test_nora_skills_mixed_with_something_else_still_selects_all():
     assert select(["nora/skills/navigation/SKILL.md", "README.md"]) == ALL
 
 
-def test_compute_smith_markdown_selects_only_the_universal_doc_reader():
-    """nora/compute/smith/**/*.md (doctrine.md, the smith skills' own
-    SKILL.md files) has its own test suite under nora/compute/smith/tests/,
-    which is not on `testpaths` and is never collected here — no module under
-    tests/ was found (by grep) to read a nora/compute/smith path by name, so
-    only the universal .md reader applies."""
-    assert select(["nora/compute/smith/doctrine.md"]) == [
-        "tests/architecture/test_doc_references_resolve.py",
-    ]
-    assert select(["nora/compute/smith/skills/maps/SKILL.md"]) == [
-        "tests/architecture/test_doc_references_resolve.py",
-    ]
-
-
 def test_agents_md_selects_its_readers():
     """AGENTS_MD = ROOT / "AGENTS.md" in test_agent_skills.py (every skill +
     the operational constraints table); test_architecture_doc.py separately

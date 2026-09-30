@@ -1832,15 +1832,8 @@ class ArtifactIngest(Protocol):
     `update` (Nora Compute spec §9) overwrites an existing artifact at its
     existing `artifact_id`/URL rather than minting a new one — `drop`'s own
     `PATCH /api/artifacts/{artifact_id}` (`deploy/drop/server.py`) is its
-    concrete implementation. Note the caller asymmetry this port carries
-    deliberately: Nora Compute's actual production caller for BOTH `register`
-    and `update` is Smith's own HTTP client against `drop` directly (its own
-    per-job credential, its own container — see the Nora Compute spec §2/§3
-    on why it never imports this Python module), not `DropArtifactIngest`.
-    This Protocol and its two implementations exist so the port stays
-    conformant and testable on Nora's own side per this repo's own
-    discipline, the same reason `register` already had `DropArtifactIngest`
-    as a real second implementation before Compute had a caller for it.
+    concrete implementation. Its production caller is `computer_export`
+    (design/sandbox-runtime §6), through `DropArtifactIngest`.
     """
 
     async def register(
@@ -1893,7 +1886,7 @@ class JobResult:
 @runtime_checkable
 class ComputeBackend(Protocol):
     """A compute job's execution environment (Nora Compute spec §2) —
-    `LocalDockerBackend` is the only adapter this repo ships. `launch`
+    No adapter ships: the one that did (per-job Docker containers) was retired in S3b. `launch`
     returns immediately with a `job_id`; the job itself runs out-of-band.
     `task` is the caller's OWN distilled brief, never a raw conversation
     transcript (spec §4's "interpret once" boundary). `context` is Nora's
@@ -1904,14 +1897,13 @@ class ComputeBackend(Protocol):
     context-channel spec exists to remove.
 
     `artifact_id`, when set, means "this job revises an existing artifact"
-    (spec §9) rather than creating a new one — `LocalDockerBackend` uses it
-    to mint a narrower-scoped credential (Task 2) than a create job gets.
+    (spec §9) rather than creating a new one.
 
     NEVER raises. A backend that cannot even start a job (Docker unreachable,
     the image missing) reports that as a `poll` result with
     `status=JobStatus.FAILED`, not an exception out of `launch` — the same
     fail-closed-but-never-crash shape `RosterSource`/`MediaSource` already
-    hold elsewhere in this file, so a caller (`make_artifact`, Phase 4) never
+    hold elsewhere in this file, so a caller never
     needs a try/except around a call it expects to be load-bearing.
     """
 

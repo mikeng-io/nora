@@ -121,8 +121,6 @@ def _rendered_names() -> set[str]:
     """
     found: set[str] = set(_table_names()) | _wrapper_names()
     for path in sorted((ROOT / "nora").rglob("*.py")):
-        if "compute/smith" in path.as_posix():
-            continue
         try:
             tree = ast.parse(path.read_text(encoding="utf-8"))
         except SyntaxError:                                # pragma: no cover

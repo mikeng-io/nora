@@ -76,7 +76,7 @@ def test_build_tools_forwards_every_parameter_it_accepts() -> None:
 _SPECS_ONLY = frozenset({
     # `clock` left this set 2026-09-24: `room_list` reports how long ago a
     # room last spoke, and its tests freeze time through `build_tools`.
-    "compute_backend", "compute_jobs", "events", "fire_turn",
+    "events", "fire_turn",
     "music", "relay", "reminder_caps", "reminders", "tool_call_log_store",
     "versions",
     # Proactive destination map (design/dreamer-agent-loop/40, #248): the
@@ -92,7 +92,7 @@ _SPECS_ONLY = frozenset({
     "shelf",
     # Nora's computer (design/sandbox-runtime, DEC-243): the runtime, its
     # audit store and its bounds, threaded from the composition root through
-    # `ToolRegistry.build` like `compute_backend`. Its tests build the specs
+    # `ToolRegistry.build` like `reminders`. Its tests build the specs
     # directly (tests/unit/test_computer_tools.py).
     "computer", "computer_events", "computer_settings",
     # Its sessions and the process's one lease table (design/sandbox-runtime

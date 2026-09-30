@@ -35,7 +35,6 @@ from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
 from nora.agent.tools import OriginRoom
 from nora.domain.models import ConversationTarget, PersonRef
-from nora.domain.ports import JobResult, JobStatus
 from nora.domain.reminders import (
     Recurrence,
     Reminder,
@@ -46,8 +45,6 @@ from nora.domain.reminders import (
 from nora.domain.tool_call_log import ToolCallLogEntry
 from nora.obs.metrics import Metrics
 from nora.testing import (
-    FakeComputeBackend,
-    FakeComputeJobStore,
     FakeMemoryStore,
     FakeToolCallLogStore,
 )
@@ -107,8 +104,6 @@ def _tools(
     metrics: Metrics | None = None,
     conversation_id: str = CONVERSATION,
     persons: _FakePersons | None = None,
-    compute_backend=None,
-    compute_jobs=None,
     tool_call_log_store=None,
     presence_source=None,
     presence_circles=(),
@@ -122,15 +117,13 @@ def _tools(
     """Every native tool, closed over one turn — keyed by name.
 
     `reminders=None` is a real production state (no store wired), not a test
-    shortcut: it is what `remind` must answer `unavailable` for. `compute_backend`/
-    `compute_jobs` default the same honest way, for `make_artifact`.
+    shortcut: it is what `remind` must answer `unavailable` for.
     `tool_call_log_store` defaults the same honest way, for `recall_lookups`.
     `presence_source`/`presence_circles`/`location_trusted` default the same
     honest way, unwired, unless a test passes them explicitly.
     """
     registry = ToolRegistry(
         reminders=reminders, reminder_caps=caps, clock=clock,
-        compute_backend=compute_backend, compute_jobs=compute_jobs,
         tool_call_log_store=tool_call_log_store,
         presence=presence_source, circles=presence_circles,
         notes=notes,
@@ -1090,188 +1083,6 @@ async def test_cancelling_a_repeating_reminder_ends_the_whole_series():
     assert await store.pending_for(CONVERSATION) == []
 
 
-# ---- make_artifact (Nora Compute spec §4, Task 5) --------------------------
-#
-# Built through the same `_tools()` helper as everything above it — the
-# wiring (registry -> build_tool_specs -> a real closure) IS what is under
-# test, the same argument this file's own module docstring makes for
-# `remind`. `compute_backend=None` (the `_tools()` default) is the honest
-# "not configured" state, exercised explicitly below.
-
-# ---- make_artifact's context channel (context-channel spec §3.2) -----------
-#
-# R-44 (the identifier/coordinate/person-name screen this section used to
-# enforce) was removed 2026-08-14: it substring-matched every string leaf of
-# `context` against the address book, and a common-word collision ("beer
-# pong" containing the 2-char surname key "novak") refused two legitimate
-# requests in production before any real leak was ever caught. `context` now
-# reaches `compute_backend.launch` exactly as given — unscreened, same as
-# `task` always was.
-
-async def test_clean_context_reaches_the_backend_unblocked():
-    backend = FakeComputeBackend()
-    jobs = FakeComputeJobStore()
-    tools = _tools(compute_backend=backend, compute_jobs=jobs)
-
-    result = await tools["make_artifact"](
-        task="chart it",
-        context=[{"kind": "place", "name": "Yoho Mall", "rating": 4.2}],
-    )
-
-    assert result["status"] == "ok"
-    assert backend.launched[-1]["context"] == [
-        {"kind": "place", "name": "Yoho Mall", "rating": 4.2}
-    ]
-
-
-async def test_no_context_is_the_default_and_is_never_screened():
-    backend = FakeComputeBackend()
-    jobs = FakeComputeJobStore()
-    tools = _tools(compute_backend=backend, compute_jobs=jobs)
-
-    result = await tools["make_artifact"](task="write a haiku")
-
-    assert result["status"] == "ok"
-    assert backend.launched[-1]["context"] is None
-
-
-async def test_make_artifact_unavailable_when_compute_backend_not_configured():
-    """R-5: no backend wired is an honest wiring gap, not a crash and not a
-    guess."""
-    tools = _tools()
-
-    result = await tools["make_artifact"](task="write a haiku")
-
-    assert result == {"status": "unavailable", "note": tools_module._ARTIFACT_OFF["note"]}
-
-
-async def test_make_artifacts_unavailable_note_is_a_plain_instruction():
-    """ADR 0015 §3: both `unavailable` paths (no backend, nobody to deliver to)
-    carry the same non-empty, dash-free `note`; the exact-dict tests around
-    this one pin that it is present."""
-    note = tools_module._ARTIFACT_OFF["note"]
-    assert isinstance(note, str) and note.strip()
-    assert "—" not in note and "–" not in note
-
-
-async def test_make_artifact_returns_the_result_inline_when_fast():
-    """`FakeComputeBackend.launch` defaults to immediate SUCCEEDED (its own
-    docstring), so the very first poll inside the sync window already sees a
-    non-RUNNING result and the slow path never engages."""
-    backend = FakeComputeBackend()
-    jobs = FakeComputeJobStore()
-    tools = _tools(compute_backend=backend, compute_jobs=jobs)
-
-    result = await tools["make_artifact"](task="write a haiku")
-
-    assert result["status"] == "ok"
-    assert "url" in result
-    assert "summary" in result
-    assert jobs._jobs == {}  # the fast path never writes a row
-
-
-async def test_make_artifact_falls_back_to_still_working_when_slow(monkeypatch):
-    """Arrange a job that stays RUNNING past the sync poll window --
-    `FakeComputeBackend.set_result`'s `polls_before_done` (Phase 2 Task 1) --
-    and shrink the window itself so the test does not spend real wall-clock
-    seconds sleeping through it. `_SYNC_POLL_SECONDS`/`_SYNC_POLL_INTERVAL`
-    are module constants precisely so a test can monkeypatch them directly
-    rather than needing a new hook threaded through production code."""
-    monkeypatch.setattr(tools_module, "_SYNC_POLL_SECONDS", 0.03)
-    monkeypatch.setattr(tools_module, "_SYNC_POLL_INTERVAL", 0.01)
-    backend = FakeComputeBackend()
-    jobs = FakeComputeJobStore()
-    # `FakeComputeBackend`'s ids are assigned in order starting at "job_000001"
-    # -- this is the FIRST (and only) job this backend instance ever launches,
-    # so it is deterministic to arrange before `make_artifact` calls `launch`.
-    backend.set_result(
-        job_id="job_000001",
-        result=JobResult(status=JobStatus.SUCCEEDED, url="https://x/drop/1", summary="ok"),
-        polls_before_done=999,
-    )
-    tools = _tools(compute_backend=backend, compute_jobs=jobs)
-
-    result = await tools["make_artifact"](task="a long research task")
-
-    assert result == {
-        "status": "ok", "still_working": True,
-        "note": "It is still being built. Tell them you are working on it "
-                "and that it will follow as a separate message once ready.",
-    }
-    assert len(jobs._jobs) == 1  # a durable row was written
-    [job] = jobs._jobs.values()
-    assert job.task == "a long research task"
-    assert job.backend_job_id == "job_000001"
-    assert job.requester_person_id == MILES.person_id
-    assert job.conversation_id == CONVERSATION
-    assert job.state.value == "pending"
-
-
-async def test_make_artifact_unavailable_when_slow_and_no_tagger(monkeypatch):
-    """Mirrors `remind`'s own unmapped-sender refusal: with nobody to deliver
-    the eventual result TO, writing a durable row would be a job with nowhere
-    to land, so this degrades to `unavailable` instead.
-
-    `launched == []` is the load-bearing assertion, and it is about ORDER: the
-    binding check runs BEFORE `compute_backend.launch`, so this case never
-    starts a container at all. Checked after launching (the original shape), a
-    real sandbox would be running — holding a concurrency slot and a minted
-    Drop token — for a result the code has already decided nobody can be
-    told about.
-    """
-    monkeypatch.setattr(tools_module, "_SYNC_POLL_SECONDS", 0.03)
-    monkeypatch.setattr(tools_module, "_SYNC_POLL_INTERVAL", 0.01)
-    backend = FakeComputeBackend()
-    jobs = FakeComputeJobStore()
-    backend.set_result(
-        job_id="job_000001",
-        result=JobResult(status=JobStatus.SUCCEEDED, url="https://x/drop/1", summary="ok"),
-        polls_before_done=999,
-    )
-    tools = _tools(compute_backend=backend, compute_jobs=jobs, tagger=None)
-
-    result = await tools["make_artifact"](task="a long research task")
-
-    assert result == {"status": "unavailable", "note": tools_module._ARTIFACT_OFF["note"]}
-    assert jobs._jobs == {}
-    assert backend.launched == []
-
-
-async def test_make_artifact_reports_a_failed_job_without_calling_it_ok():
-    """The fast-path FAILURE branch: the backend answers FAILED inside the
-    sync window, so no durable row is ever written and the model is told
-    inline.
-
-    TWO things are asserted, because the payload and the counter answer
-    different questions. The PAYLOAD keeps `status: ok` — R-27 is about
-    whether the TOOL could answer, and it could; `failed: True` plus the
-    backend's own `error` is the answer. The COUNTER must not say `ok`: a
-    failed job that increments `nora_tool_calls_total{status="ok"}` is
-    invisible to anyone watching the series, which is exactly the state this
-    tool shipped in (the distinction lived only in a log-line keyword).
-    """
-    backend = FakeComputeBackend()
-    jobs = FakeComputeJobStore()
-    metrics = Metrics()
-    tools = _tools(compute_backend=backend, compute_jobs=jobs, metrics=metrics)
-    # `FakeComputeBackend` assigns ids in order from "job_000001"; this is the
-    # only job it ever launches here, so arranging it up front is deterministic
-    # (the same argument the still-working test above makes).
-    backend.set_result(
-        job_id="job_000001",
-        result=JobResult(status=JobStatus.FAILED, error="the sandbox ran out of memory"),
-    )
-
-    result = await tools["make_artifact"](task="render an enormous chart")
-
-    assert result == {
-        "status": "ok", "failed": True, "error": "the sandbox ran out of memory",
-    }
-    assert jobs._jobs == {}  # a failure inside the window writes no durable row
-    assert metrics.get("nora_tool_calls_total", tool="make_artifact", status="failed") == 1
-    assert metrics.get("nora_tool_calls_total", tool="make_artifact", status="ok") == 0
-
-
 # ---- `recall_lookups` (tool-recall-log spec §4) ------------------------------
 
 def _log_entry(**kw) -> ToolCallLogEntry:
@@ -1306,8 +1117,7 @@ async def test_recall_lookups_is_nothing_found_when_empty():
 
 async def test_recall_lookups_unavailable_when_not_configured():
     """R-5: no store wired is an honest wiring gap, not a crash and not a
-    guess — the same shape `make_artifact` answers `unavailable` for when
-    `compute_backend` is unwired."""
+    guess."""
     tools = _tools()  # no tool_call_log_store
     result = await tools["recall_lookups"]()
     assert result["status"] == "unavailable"

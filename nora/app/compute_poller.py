@@ -118,7 +118,8 @@ async def recover(
     `PENDING` has no heartbeat counterpart, and leaving it un-swept was a real
     defect rather than a theoretical one. A pending compute job is a HANDLE
     (`backend_job_id`) into `ComputeBackend`'s registry, and
-    `LocalDockerBackend` keeps that registry in memory — so ANY restart, not
+    an in-process backend keeps that registry in memory (the one that
+    shipped did) — so ANY restart, not
     just a crash, orphans every surviving `PENDING` row. The next tick polls a
     handle nothing recognises, gets `FAILED("unknown job_id")` back, claims the
     row and delivers it: Nora tells the group, in her own voice, that their job

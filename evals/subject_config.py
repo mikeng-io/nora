@@ -89,11 +89,9 @@ FORCE_OFF: tuple[str, ...] = (
     "obs.tracing.enabled", "obs.errors.enabled",
     "analytics.enabled", "heartbeat.enabled", "presence.enabled",
     "media.rustfs.enabled", "evals.langfuse.enabled",
-    # make_artifact's Smith jobs are containers on the deploy host's
-    # `nora-compute` network, which a host-run subject cannot reach, and since
-    # #631 composition refuses to start when the model URL it would hand a job
-    # (here the host's 127.0.0.1) is off the compute-egress allowlist. Off, the
-    # tool answers `unavailable`, which is what a sandbox can honestly offer.
+    # The deferred-delivery poller is a background loop with no adapter behind
+    # it (S3b retired the only one); an eval has nothing to deliver, and off
+    # spares it the "enabled but no backend" boot warning.
     "compute.enabled",
 )
 
@@ -221,8 +219,8 @@ ALLOWED_TO_DIFFER: dict[str, str] = {
     "media.rustfs.enabled": "its endpoint resolves only inside the deploy network",
     "evals.langfuse.enabled": "as above, and a run would write its own traces back",
     "compute.enabled":
-        "Smith jobs need the deploy host's nora-compute network, and composition "
-        "refuses a host-side model URL for them (#631)",
+        "no compute backend adapter ships (S3b), so the poller has nothing to "
+        "poll; an eval has nothing to deliver",
 }
 
 

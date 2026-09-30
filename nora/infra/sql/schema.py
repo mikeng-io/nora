@@ -1204,9 +1204,9 @@ ARTIFACTS = sa.Table(
 
 
 # `compute_jobs` — the Nora Compute outbox (Nora Compute spec §4, §12). One
-# row per `make_artifact` call that fell to the slow path; the fast path
-# never writes one. No recurrence columns — unlike `REMINDERS`, a compute
-# job never repeats.
+# row per deferred job; nothing writes one today (S3b retired its only
+# producer; the table is kept for a future `delegate_task`). No recurrence
+# columns — unlike `REMINDERS`, a compute job never repeats.
 COMPUTE_JOBS = sa.Table(
     "compute_jobs",
     METADATA,

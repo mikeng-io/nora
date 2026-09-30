@@ -209,8 +209,6 @@ def test_the_registry_exposes_every_declared_tool():
         # The Event module (gatherings/RSVP/venue suggestions).
         "event_propose", "event_revise", "event_rsvp", "event_set_status",
         "event_search", "suggest_venue",
-        # Nora Compute spec §4 (Task 5).
-        "make_artifact",
         # Nora's computer (design/sandbox-runtime §4, DEC-243).
         "computer_run", "computer_read", "computer_write", "computer_edit",
         "computer_export", "computer_import", "computer_session_list",
@@ -444,11 +442,6 @@ def test_budgets_match_todays_table():
         # second call in the same turn is a model looping on its own write.
         "event_search": 1, "event_propose": 3, "event_revise": 2,
         "event_rsvp": 1, "event_set_status": 2, "suggest_venue": 4,
-        # 1 — like `group_members`/`saved_places`: a slow, external call
-        # (Nora Compute spec §4), sized by model round trips rather than by
-        # cost. A second `make_artifact` in one turn is a model looping on a
-        # job it already launched.
-        "make_artifact": 1,
         # 2 — one call answers "what version are you", a second covers the
         # follow-up about an earlier one (DEC-79).
         "version": 2,
@@ -799,7 +792,6 @@ def test_cacheable_tools_is_a_frozenset_not_a_list():
 ACT_VERBS = frozenset({
     "remind", "cancel_reminder",
     "event_propose", "event_revise", "event_rsvp", "event_set_status",
-    "make_artifact",
     # design/sandbox-runtime §4: a command, a file write and a file edit all
     # change the room's workspace.
     "computer_run", "computer_write", "computer_edit",

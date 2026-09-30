@@ -826,43 +826,19 @@ base_url = "https://orion.tail0a1b2c3d.ts.net/pulse/mcp"
 token_env = "PULSE_MCP_TOKEN"
 budget = 5
 
-# `make_artifact` — she builds a FILE (a report, a chart, a map) in a sandboxed
-# container and hands back a link, instead of typing the answer into chat.
-#
-# Ships INERT, like [presence] and [search] before it, and this one has more
-# reason than either: turning it on gives her process the host Docker socket
-# (docker-compose.yml mounts it, with the argument for that beside the mount)
-# and lets an LLM-authored program run on this box. That is an operator
-# decision every time, never something a missing section decides.
-#
-# Turning `enabled` on ALSO requires four host-injected values, and Nora
-# REFUSES TO START without any of them rather than accepting every job and
-# failing it minutes later in front of the group:
-#   NORA_DATA_HOST_ROOT   the host-side path of the /app/data mount. It exists
-#                         because a sandbox's workspace is bind-mounted by the
-#                         HOST Docker daemon, which resolves the source on the
-#                         host filesystem — an in-container path silently
-#                         resolves to an empty directory and the job produces
-#                         nothing. docker-compose.yml sets it from the same
-#                         expression as the mount itself, so the two agree.
-#   NORA_DROP_TOKEN       [shortener].token_env — the credential each job's own
-#                         scoped, short-lived Drop token is minted against.
-#   GOOGLE_MAPS_API_KEY   [route].api_key_env — the SAME key the `route` tool
-#                         uses, shared with the map-rendering skill.
-#   OMNIROUTE_API_KEY     [llm].api_key_env — the model the sandbox itself runs
-#                         on (the same OmniRoute triple Nora uses).
+# Deferred delivery: a background poller that tells a room when a job it was
+# promised has finished. NO backend adapter ships today: the per-job
+# container backend and the artifact tool were retired in S3b
+# (design/sandbox-runtime decision 4). The poller, the `compute_jobs` outbox
+# and the `ComputeBackend` port are kept as the delivery path a future
+# `delegate_task` plugs into, so `enabled = true` builds nothing and logs a
+# warning at boot. Leave it false.
 [compute]
 enabled = false
-# sandbox_image = "smith:latest"
-# job_timeout_seconds = 300   # wall-clock guardrail; the container is killed
-# max_concurrent_jobs = 2     # containers in flight at once
 # poll_tick_seconds = 10      # how often the poller WAKES to check for a
 #                             # finished job — the same "best case for
 #                             # lateness, not an upper bound" shape that the
 #                             # heartbeat section's own tick_seconds has.
-# mem_limit = "8g"            # docker-py's own containers.run mem_limit shape
-# nano_cpus = 2000000000      # billionths of a CPU core (2 vCPUs)
-# data_host_root_env = "NORA_DATA_HOST_ROOT"
 
 # Nora's computer (design/sandbox-runtime, DEC-243, ADR 0019): `computer_run`,
 # `computer_read`, `computer_write` and `computer_edit` against computerd in an
@@ -892,7 +868,7 @@ enabled = false
 # export_max_bytes = 26214400    # the largest file computer_export sends out (25 MiB; at most 50 MiB)
 # import_max_bytes = 26214400    # the largest attachment computer_import copies in (25 MiB; at most 50 MiB)
 # computer_export's link destination is Drop's internal listener, reached with
-# [shortener]'s base_url and token_env (the same pair make_artifact uses):
+# [shortener]'s base_url and token_env:
 # without that token a link export answers unavailable.
 #
 # Reserved: per-command resource limits. None is applied today (operator,
