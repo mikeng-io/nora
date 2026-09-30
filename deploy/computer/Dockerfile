@@ -26,16 +26,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=ghcr.io/astral-sh/uv@sha256:a7aed3216253ee804de3e2d8afa5073baa1a177335345d43845cd4165e43b711 /uv /uvx /usr/local/bin/
 
 # computerd in its own venv, so a project's `pip install` can never break the
-# thing that answers Nora. Root-owned: commands run as `computer` and cannot
-# replace it.
+# thing that answers Nora. Root-owned: commands run as their room's own
+# user and cannot replace it.
 COPY requirements.txt computerd.py /opt/computerd/
 RUN python3 -m venv /opt/computerd/venv \
     && /opt/computerd/venv/bin/pip install --no-cache-dir --require-hashes \
         -r /opt/computerd/requirements.txt
 
-# The working user. /workspace is root-owned so a command cannot swap a room's
-# directory for a link; computerd creates each room's directory owned by
-# `computer`.
+# The operator's user, for an interactive `sbx exec`. /workspace is root-owned
+# so a command cannot swap a room's directory for a link; computerd creates
+# each room's directory 0700, owned by that room's own system user
+# (`c-<12 hex>`, made on first use), and runs the room's commands as it.
 RUN useradd --create-home --uid 1500 --shell /bin/bash computer \
     && mkdir -p /workspace && chmod 755 /workspace
 USER computer

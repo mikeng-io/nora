@@ -8,11 +8,17 @@ has no client credentials to misuse.
 
 Who runs as whom (ADR 0019):
 
-- **computerd runs as root, and every command runs as `computer`.** A command
-  therefore cannot read computerd's token (`/proc/<pid>/environ` is
-  owner-only), kill it, or bind its port. The image listens on port 80, which
-  only root may bind, so a command cannot put an impostor in its place either.
-  Run as a normal user (the tests do), computerd runs commands as itself.
+- **computerd runs as root, and every command runs as its scope's own user.**
+  Each scope gets a system user `c-<first 12 hex of the scope>`, created on
+  first use (`useradd --system --no-create-home`); its directory is `0o700`
+  and owned by that user, and its commands run as it, with `HOME` the scope
+  directory and `TMPDIR` its `.tmp`. So one room's command cannot read
+  another room's files, and no command can read computerd's token
+  (`/proc/<pid>/environ` is owner-only), kill it, or bind its port. The image
+  listens on port 80, which only root may bind, so a command cannot put an
+  impostor in its place either. The image's `computer` user is for an
+  operator's interactive `sbx exec`, not for commands. Run as a normal user
+  (the tests do), computerd runs commands as itself.
 
 What it guarantees, whatever the caller sends:
 
@@ -24,8 +30,8 @@ What it guarantees, whatever the caller sends:
   link nor a directory swapped mid-call can redirect a read or a root-owned
   write. A command can still create links; the file operations refuse to
   cross them, and `computer_run` is the tool that can.
-  Scopes are disclosure hygiene between rooms, not a security boundary:
-  every command runs as the same user in one VM.
+  Between rooms the boundary is the per-scope user and the `0o700`
+  directory: one kernel, so a kernel or root escalation crosses it.
 - **Bounded answers.** Command output goes to temp files, not pipes, so
   computerd waits on the process alone. A backgrounded or escaped child can
   neither hang a call nor grow this process. Reads, listings and transfers
@@ -53,8 +59,10 @@ import pwd
 import re
 import secrets
 import signal
+import subprocess
 import stat
 import tempfile
+import threading
 import time
 from collections.abc import Callable, Iterator
 from pathlib import Path
@@ -99,29 +107,58 @@ def _components(raw: Any) -> list[str]:
     return parts
 
 
+def scope_user(scope: str) -> str:
+    """The system user a scope's commands run as: `c-` and the scope's first
+    12 hex characters (48 bits, and a Linux user name stays under 32)."""
+    return f"c-{scope[:12]}"
+
+
 class Owner:
-    """Who owns what computerd creates, and who commands run as."""
+    """Who owns a scope's files and runs its commands.
 
-    def __init__(self, run_as: str | None) -> None:
-        self.uid: int | None = None
-        self.gid: int | None = None
-        self.home: str | None = None
-        if run_as and os.geteuid() == 0:
-            entry = pwd.getpwnam(run_as)
-            self.uid, self.gid, self.home = entry.pw_uid, entry.pw_gid, entry.pw_dir
+    As root with `isolate` set (the image), each scope resolves to its own
+    system user, created on first use; otherwise (the tests, computerd run
+    as a normal user) nothing is changed hands and commands run as
+    computerd's own user."""
 
-    def chown_fd(self, fd: int) -> None:
-        if self.uid is not None and self.gid is not None:
-            os.fchown(fd, self.uid, self.gid)
+    def __init__(self, *, isolate: bool) -> None:
+        self.isolate = isolate and os.geteuid() == 0
+        self._ids: dict[str, tuple[int, int]] = {}
+        self._lock = threading.Lock()
+
+    def ids(self, scope: str) -> tuple[int, int] | None:
+        if not self.isolate:
+            return None
+        with self._lock:
+            cached = self._ids.get(scope)
+            if cached is not None:
+                return cached
+            name = scope_user(scope)
+            try:
+                entry = pwd.getpwnam(name)
+            except KeyError:
+                subprocess.run(  # noqa: S603 - fixed argv, the name is hex
+                    ["useradd", "--system", "--no-create-home", "--user-group",  # noqa: S607
+                     "--shell", "/usr/sbin/nologin", "--home-dir", "/nonexistent", name],
+                    check=True, capture_output=True,
+                )
+                entry = pwd.getpwnam(name)
+            self._ids[scope] = (entry.pw_uid, entry.pw_gid)
+            return self._ids[scope]
+
+    def chown_fd(self, fd: int, scope: str) -> None:
+        ids = self.ids(scope)
+        if ids is not None:
+            os.fchown(fd, *ids)
 
 
 class Computer:
-    def __init__(self, *, root: Path, token: str, run_as: str | None = "computer") -> None:
+    def __init__(self, *, root: Path, token: str, isolate_scopes: bool = True) -> None:
         if not token:
             raise ValueError("computerd needs a non-empty token")
         self.root = root
         self._token = token
-        self.owner = Owner(run_as)
+        self.owner = Owner(isolate=isolate_scopes)
 
     # -- request plumbing -------------------------------------------------
 
@@ -137,7 +174,8 @@ class Computer:
     def _dir(self, scope: str, parts: list[str], *, create: bool) -> Iterator[int]:
         """A directory fd for `parts` under the scope, walked without
         following any link. `create` makes missing directories, owned by the
-        command user. Yields the fd; closes everything it opened."""
+        scope's user; the scope directory itself is `0o700`. Yields the fd;
+        closes everything it opened."""
         opened: list[int] = []
         try:
             fd = os.open(self.root, _DIR_FLAGS)
@@ -148,9 +186,9 @@ class Computer:
                 except FileNotFoundError:
                     if not create:
                         raise MissingError("no such file or directory") from None
-                    os.mkdir(name, 0o755, dir_fd=fd)
+                    os.mkdir(name, 0o700 if len(opened) == 1 else 0o755, dir_fd=fd)
                     fd = os.open(name, _DIR_FLAGS, dir_fd=fd)
-                    self.owner.chown_fd(fd)
+                    self.owner.chown_fd(fd, scope)
                 except OSError as exc:
                     if exc.errno in (errno.ELOOP, errno.ENOTDIR):
                         msg = "a path component is a link or not a directory"
@@ -204,7 +242,7 @@ class Computer:
             try:
                 with os.fdopen(fd, "wb", closefd=False) as f:
                     f.write(data)
-                self.owner.chown_fd(fd)
+                self.owner.chown_fd(fd, scope)
             finally:
                 os.close(fd)
             # The audit's "before": what the target held just before it is
@@ -316,10 +354,11 @@ class Computer:
         env = {k: v for k, v in os.environ.items() if k != TOKEN_ENV}
         # HOME is the room's own directory, so a profile or cache one room's
         # command writes is not read by every other room's.
-        env.update(HOME=str(workdir), PWD=str(workdir))
+        env.update(HOME=str(workdir), PWD=str(workdir), TMPDIR=str(workdir / ".tmp"))
         user: dict[str, Any] = {}
-        if self.owner.uid is not None:
-            user = {"user": self.owner.uid, "group": self.owner.gid, "extra_groups": []}
+        ids = self.owner.ids(scope)
+        if ids is not None:
+            user = {"user": ids[0], "group": ids[1], "extra_groups": []}
         started = time.monotonic()
         with tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err:
             try:
@@ -352,8 +391,14 @@ class Computer:
         return {"status": "ok", **fields}
 
     def _ensure_scope(self, scope: str) -> None:
-        with self._dir(scope, [], create=True):
-            pass
+        """The scope directory and its `.tmp`, both `0o700` and the scope
+        user's. Re-asserted on every run, so a directory made before per-scope
+        users existed is closed and handed over too."""
+        with self._dir(scope, [".tmp"], create=True) as tmp_fd:
+            os.fchmod(tmp_fd, 0o700)
+        with self._dir(scope, [], create=True) as fd:
+            os.fchmod(fd, 0o700)
+            self.owner.chown_fd(fd, scope)
 
 
 def _previous_sha256(dfd: int, name: str) -> str | None:
@@ -420,8 +465,8 @@ def _limit(raw: Any, ceiling: int, *, default: int | None = None) -> int:
     return min(value, ceiling)
 
 
-def create_app(*, root: Path, token: str, run_as: str | None = "computer") -> web.Application:
-    computer = Computer(root=root, token=token, run_as=run_as)
+def create_app(*, root: Path, token: str, isolate_scopes: bool = True) -> web.Application:
+    computer = Computer(root=root, token=token, isolate_scopes=isolate_scopes)
     file_ops: dict[str, Callable[[str, dict[str, Any]], Any]] = {
         "read": computer.read, "write": computer.write, "edit": computer.edit,
         "files": computer.files, "fetch": computer.fetch,
@@ -489,10 +534,9 @@ def main() -> None:
     parser.add_argument("--root", default="/workspace")
     parser.add_argument("--host", default="0.0.0.0")  # noqa: S104 - inside the VM; sbx publishes it
     parser.add_argument("--port", type=int, default=80)
-    parser.add_argument("--run-as", default="computer")
     args = parser.parse_args()
     token = os.environ.get(TOKEN_ENV, "")
-    app = create_app(root=Path(args.root), token=token, run_as=args.run_as)
+    app = create_app(root=Path(args.root), token=token)
     web.run_app(app, host=args.host, port=args.port)
 
 

@@ -184,19 +184,53 @@ async def test_home_is_the_rooms_own_directory(served):
     assert _same_dir(result.stdout.strip(), root / SCOPE)
 
 
-async def test_commands_run_as_the_computer_user_when_computerd_is_root(tmp_path, monkeypatch):
-    """Root computerd drops every command to `computer`, so a command cannot
-    read its token, kill it or bind its port. Proven on the wiring: the uid is
-    handed to the subprocess."""
+def test_each_scope_runs_as_its_own_user_when_computerd_is_root(monkeypatch):
+    """Root computerd maps every scope to its own system user, `c-<12 hex>`,
+    created once with `useradd --system --no-create-home`, so one room's
+    command cannot read another room's 0700 directory. Proven on the mapping
+    with root and the user database faked; the end-to-end check (two rooms,
+    one reading the other's file) runs on norty."""
     computerd = load_computerd()
     monkeypatch.setattr(computerd.os, "geteuid", lambda: 0)
-    monkeypatch.setattr(
-        computerd.pwd, "getpwnam",
-        lambda name: type("P", (), {"pw_uid": 1500, "pw_gid": 1500, "pw_dir": "/home/c"})(),
-    )
-    owner = computerd.Owner("computer")
-    assert (owner.uid, owner.gid) == (1500, 1500)
-    assert computerd.Owner(None).uid is None
+    users: dict[str, int] = {}
+    created: list[list[str]] = []
+
+    def getpwnam(name):
+        if name not in users:
+            raise KeyError(name)
+        uid = users[name]
+        return type("P", (), {"pw_uid": uid, "pw_gid": uid, "pw_dir": "/nonexistent"})()
+
+    def run(argv, **_kwargs):
+        created.append(argv)
+        users[argv[-1]] = 2000 + len(users)
+
+    monkeypatch.setattr(computerd.pwd, "getpwnam", getpwnam)
+    monkeypatch.setattr(computerd.subprocess, "run", run)
+    owner = computerd.Owner(isolate=True)
+    other = computer_scope("signal", "room-b")
+
+    first, again, second = owner.ids(SCOPE), owner.ids(SCOPE), owner.ids(other)
+    assert first == again
+    assert first != second
+    assert [argv[-1] for argv in created] == [f"c-{SCOPE[:12]}", f"c-{other[:12]}"]
+    assert all({"--system", "--no-create-home"} <= set(argv) for argv in created)
+
+
+def test_not_root_or_not_isolating_changes_no_owner(monkeypatch):
+    computerd = load_computerd()
+    monkeypatch.setattr(computerd.os, "geteuid", lambda: 1000)
+    assert computerd.Owner(isolate=True).ids(SCOPE) is None
+    monkeypatch.setattr(computerd.os, "geteuid", lambda: 0)
+    assert computerd.Owner(isolate=False).ids(SCOPE) is None
+
+
+async def test_a_scope_directory_is_private_and_has_its_own_tmp(served):
+    runtime, _server, root = served
+    got = await runtime.run(scope=SCOPE, command='echo "$TMPDIR"', timeout_s=5)
+    assert got.stdout.strip() == str(root / SCOPE / ".tmp")
+    assert (root / SCOPE).stat().st_mode & 0o777 == 0o700
+    assert (root / SCOPE / ".tmp").stat().st_mode & 0o777 == 0o700
 
 
 async def test_a_hostile_reply_never_raises_out_of_the_client():
