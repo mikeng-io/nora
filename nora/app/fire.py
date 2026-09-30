@@ -96,6 +96,7 @@ from nora.domain.decision_log import (
     DecisionRow,
     DecisionWriter,
 )
+from nora.domain.documents_context import DocumentsView
 from nora.domain.events import Event, EventFactory
 from nora.domain.media_join import MediaJoin
 from nora.domain.models import (
@@ -131,6 +132,7 @@ from nora.domain.turn_deadline import turn_deadline
 from nora.domain.withdrawal import render_supported
 from nora.engagement.computer_context import ComputerContextReader
 from nora.engagement.context import StandingNotesReader
+from nora.engagement.documents_context import DocumentsContextReader
 from nora.engagement.mentions import MentionRenderer
 from nora.engagement.self_presence import PresenceReader
 from nora.engagement.stages import deliver, feedback
@@ -789,6 +791,9 @@ class FirePath:
         # `<computer>` (design/sandbox-runtime §15.3): the SAME reader the tag
         # path's assembler holds. `None` while `[computer]` is off.
         computer: ComputerContextReader | None = None,
+        # `<documents>` (design/artifact §29): the SAME reader the tag path's assembler
+        # holds. `None` while `[documents]` is off.
+        documents: DocumentsContextReader | None = None,
     ) -> None:
         # S5 (15-roadmap §6.3): `<standing>` renders on the fire path too.
         #
@@ -831,6 +836,7 @@ class FirePath:
         #
         # `None` while `[culture] enabled = false`, the shipped default.
         self._computer = computer
+        self._documents = documents
         self._culture = culture
         # BOUNDED, for the reason the debrief stage's own store calls are:
         # the heartbeat holds this conversation's slot around the whole fire
@@ -1127,13 +1133,21 @@ class FirePath:
         # Each helper keeps its own fail-soft handling and none raises, which
         # is what makes one `gather` safe: an exception would otherwise cancel
         # its siblings and take the turn down with it.
-        standing, culture, notes, decisions, presence, computer = await asyncio.gather(
-            self._read_standing(occasion),
-            self._read_culture(occasion),
-            self._read_notes(occasion, unit),
-            self._read_decisions(occasion, unit),
-            self._read_presence(occasion),
-            self._read_computer(occasion),
+        # Nested: `asyncio.gather` types at most six awaitables, and a seventh makes every
+        # result a union (the tag path's assembler nests its reads for the same reason).
+        (
+            (standing, culture, notes, decisions, presence, computer),
+            documents,
+        ) = await asyncio.gather(
+            asyncio.gather(
+                self._read_standing(occasion),
+                self._read_culture(occasion),
+                self._read_notes(occasion, unit),
+                self._read_decisions(occasion, unit),
+                self._read_presence(occasion),
+                self._read_computer(occasion),
+            ),
+            self._read_documents(occasion),
         )
         return TagContext(
             tag_id=uuid.uuid4().hex,
@@ -1150,6 +1164,7 @@ class FirePath:
             decisions=decisions,
             presence=presence,
             computer=computer,
+            documents=documents,
             room_members=self._room_members(occasion),
             lineage_room=(
                 self._lineage.render_room(
@@ -1174,6 +1189,15 @@ class FirePath:
         if self._computer is None:
             return None
         return await self._computer.read(
+            platform=occasion.platform, conversation_id=occasion.conversation_id,
+        )
+
+    async def _read_documents(self, occasion: Event) -> DocumentsView | None:
+        """`<documents>` for this occasion's room, or `None` (no reader, none yet,
+        or the read failed). The reader never raises."""
+        if self._documents is None:
+            return None
+        return await self._documents.read(
             platform=occasion.platform, conversation_id=occasion.conversation_id,
         )
 

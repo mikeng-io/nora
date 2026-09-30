@@ -1004,3 +1004,39 @@ before any `document_publish` when changing a document (an ORDER criterion, on a
 so it measures reading first, not finding the id). The subject for the documents-on arm is the
 deployment's config with `[documents] enabled = true`, passed as `--deployment-config`: nothing in the
 live config changes and `materialise()` still compares the generated config with the file it was given.
+
+## 29. The `<documents>` block: how she learns a document's id in a later turn (2026-10-01)
+
+**The gap.** `document_read` and `document_publish` take a document's id, and a revision asked for
+later ("make it 8pm") arrives in a turn where the id is nowhere in view. The coordinator's
+recommendation, adopted: not a list tool, because a lookup she must remember to call is skipped (an
+optional act was chosen 3 times in about 720 replayed turns), while a line already in view is not. It
+is what `<computer>` does for its export links.
+
+**The block.** `<documents>` is rendered by code (`render_documents`), never by a model, from
+`DocumentsContextReader.read`, which calls the room-scoped `DocumentStore.list_room`: this ROOM's
+documents (every conversation id the room answers to, on its platform), most recently revised first,
+at most five, each as title, id, revision and age. It is the room's own list and not a person's, because
+everyone the room names already reads these; a document made in another room never appears, whoever made
+it. No spec or text is loaded (a turn reads this), and the top-revision subquery is restricted to the
+room's documents first. Order 58, `turn`-keyed, directly after `<computer>`: its ages move every turn.
+It renders only under `[documents] enabled` (the reader is built under the same flag that withholds the
+tools) and only when the room has a document; otherwise it costs nothing.
+
+**Fail quiet, never wrong.** A store that is down, or slower than one second, is logged, counted
+(`nora_errors_total{stage="documents_context"}`) and read as no block: the turn is never held or failed,
+and the block never shows an id it did not read. The block's own description says no block does not mean
+no document exists.
+
+**What it says.** A title is data a model wrote: collapsed to one line, cut to 50 characters, escaped.
+The description tells her to `document_read` then `document_publish` with `base_revision`, and to use an
+id only in those calls (a UUID in a reply is blocked at egress; people read titles), matching the skill.
+
+**Cost, measured** (cl100k, 2026-10-01): 150 tokens with one document, 316 with five. The coordinator's
+estimate was about 100; the ids are about 27 tokens each and are what the tool takes, so five documents
+cannot be smaller than roughly 135 tokens before any title. The description is about 100.
+
+**Eval.** `route_document_revise_id_only_in_the_block`: the document is seeded into the room
+(`metadata.documents`, refused on a subject with `[documents]` off) and named nowhere in the message or the
+transcript; the case asks for `document_read` on its id. The before arm is the commit that adds the case
+and the seeding without the block; the after arm adds the block.

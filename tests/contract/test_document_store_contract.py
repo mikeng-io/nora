@@ -318,3 +318,52 @@ async def test_the_table_refuses_a_bad_media_element_and_an_oversized_spec(reque
                     )
     finally:
         await engine.dispose()
+
+
+# -- the room's own list (the `<documents>` block's read) ---------------------------------
+
+
+async def _revise(store, doc_id, *, base, title):
+    return await store.add_revision(
+        document_id=doc_id, base_revision=base, revision=_rev(title, SHA_B)
+    )
+
+
+async def test_list_room_is_this_rooms_documents_newest_revision_first(store):
+    first = await _make(store, title="First")
+    await asyncio.sleep(0.02)
+    second = await _make(store, title="Second")
+    await asyncio.sleep(0.02)
+    await _revise(store, first, base=1, title="First, revised")  # now the newest touch
+    got = await store.list_room(platform="signal", conversation_ids=frozenset({"room-1"}), limit=5)
+    assert [d.id for d in got] == [first, second]
+    assert got[0].title == "First, revised" and got[0].revision == 2
+    assert got[1].title == "Second" and got[1].revision == 1
+
+
+async def test_list_room_never_returns_another_rooms_document_whoever_made_it(store):
+    mine = await _make(store, created_by="ken", room=ROOM, title="Here")
+    await _make(store, created_by="ken", room=OTHER_ROOM, title="Elsewhere")
+    await _make(store, created_by="ken", room=("discord", "room-1"), title="Other platform")
+    got = await store.list_room(platform="signal", conversation_ids=frozenset({"room-1"}), limit=5)
+    assert [d.id for d in got] == [mine]
+
+
+async def test_list_room_reads_every_id_a_room_answers_to(store):
+    a = await _make(store, room=("signal", "room-1"), title="A")
+    await asyncio.sleep(0.02)
+    b = await _make(store, room=("signal", "room-1-alias"), title="B")
+    got = await store.list_room(
+        platform="signal", conversation_ids=frozenset({"room-1", "room-1-alias"}), limit=5
+    )
+    assert {d.id for d in got} == {a, b}
+
+
+async def test_list_room_is_bounded_by_its_limit_and_empty_for_nothing(store):
+    for n in range(4):
+        await _make(store, title=f"doc {n}")
+        await asyncio.sleep(0.01)
+    ids = frozenset({"room-1"})
+    assert len(await store.list_room(platform="signal", conversation_ids=ids, limit=3)) == 3
+    assert await store.list_room(platform="signal", conversation_ids=ids, limit=0) == ()
+    assert await store.list_room(platform="signal", conversation_ids=frozenset(), limit=5) == ()

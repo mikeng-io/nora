@@ -1025,7 +1025,7 @@ async def sandbox_from_snapshot(
 
 
 async def seed_documents(subject: Subject, case_name: str, specs: Sequence[dict[str, Any]]) -> None:
-    """Put the documents a case names into the subject's own room (design/artifact §27).
+    """Put the documents a case names into the subject's own room (design/artifact §29).
 
     The production source holds none, so a case about revising a document has to make
     the document it revises. Each spec is `{id, title, body}`: a one-paragraph Page,

@@ -1556,7 +1556,7 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
                 before_ms=before_ms,
                 leave_room_for_arrival=port.delivers_input,
             )
-            # design/artifact §27: a case about a document she already made
+            # design/artifact §29: a case about a document she already made
             # has to make it, the production source holding none. Refused on a
             # subject with `[documents]` off, never read as a model failure.
             await seed_documents(subject, case.name, md.get("documents") or ())

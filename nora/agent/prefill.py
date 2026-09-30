@@ -28,6 +28,7 @@ from ..domain.prompt import escape
 from ..domain.self_presence import Presence
 from ..language.computer_render import render_computer
 from ..language.culture_render import render_culture
+from ..language.documents_render import render_documents
 from ..language.note_render import render_notes
 from ..language.presence_render import render_presence
 from ..language.self_card_render import render_self_card
@@ -171,6 +172,11 @@ _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     # the transcript are read as the pair «where I was, what was said since».
     # Renders only in a room using the computer (`ComputerContextReader`).
     ("computer", 57, "turn"),
+    # design/artifact §29: this room's documents with their ids, so a revision asked
+    # for in a later turn can name the document it means. `turn`: its ages move every
+    # turn. Directly after `computer` (both are «what I have made in this room») and
+    # before `standing`. Renders only where `[documents]` is on and the room has one.
+    ("documents", 58, "turn"),
     ("standing", 60, "room"),
     # design/standing-compact/30-working-set.md, issue #445. Immediately
     # after `standing` and before the transcript, on purpose — the read
@@ -1068,6 +1074,7 @@ def build_prefill(
             _restamp(_decisions_block(ctx, now=clock)),
             _restamp(_culture_block(ctx, now=clock, view=view)),
             _restamp(render_computer(ctx.computer)),
+            _restamp(render_documents(ctx.documents)),
             _restamp(_standing_block(ctx, view)),
             _restamp(_standing_working_set_block(ctx, view)),
             _transcript_block(ctx, display_name, clock, context_window),

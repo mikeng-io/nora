@@ -176,6 +176,9 @@ def build_offline_pipeline(
         # `<computer>` (design/sandbox-runtime §15.3) — `None`: this harness
         # has no computer, and an eval's VM workspace would be empty anyway.
         computer=None,
+        # `<documents>` (design/artifact §29) — `None`: this harness has no document
+        # store; the live eval subject builds the real reader through composition.
+        documents=None,
     )
 
     def _spawn(coro: Coroutine[Any, Any, None]) -> None:
@@ -269,6 +272,8 @@ def build_offline_pipeline(
             # Same reason, same instance, for DEC-195's resolver.
             # `<computer>`: `None`, the assembler's reason above.
             computer=None,
+            # `<documents>`: `None`, the assembler's reason above.
+            documents=None,
             quote_window=quote_window,
             doctrine_store=doctrine_store, metrics=metrics,
             runner=runner, adapters={adapter.platform: adapter},

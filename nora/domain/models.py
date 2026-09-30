@@ -10,6 +10,7 @@ from typing import Any, Literal
 from .computer_context import ComputerView
 from .culture import CultureRevision
 from .decision_log import DecisionRow
+from .documents_context import DocumentsView
 from .lineage import RenderRoom
 from .media import MediaBlob, MediaRef
 from .notes import Note
@@ -637,6 +638,11 @@ class TagContext:
     # `active_days` and has no open or lapsed task, and in every harness
     # that wires no reader: the block then renders nothing.
     computer: ComputerView | None = None
+    # `<documents>` (design/artifact §29): this room's newest documents with
+    # their ids, read at turn start by `DocumentsContextReader`. `None` while
+    # `[documents]` is off, in a room with no document, and in every harness
+    # that wires no reader: the block then renders nothing.
+    documents: DocumentsView | None = None
 
 
 @dataclass(frozen=True)

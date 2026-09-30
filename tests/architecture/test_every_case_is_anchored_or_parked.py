@@ -269,7 +269,7 @@ def test_the_whole_corpus_is_accounted_for() -> None:
     `tool_selection` cases for `media_search`'s room scope (DEC-138 amended
     2026-10-01: the photos from last week's dinner in English and Cantonese, and
     a photo in view that stays on `media_fetch`), plus 1 `tool_selection` case
-    for `<documents>` (2026-10-01, design/artifact §27: changing a document whose id
+    for `<documents>` (2026-10-01, design/artifact §29: changing a document whose id
     is in the block and nowhere else, seeded into the room with `metadata.documents`;
     documents-on arm only); a change to it
     is a change to what the suite claims to measure and belongs in a commit that

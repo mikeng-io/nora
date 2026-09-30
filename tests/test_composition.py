@@ -2278,6 +2278,28 @@ async def test_the_document_tools_reach_the_registry_only_while_documents_are_on
     assert on.engagement._tool_registry._documents is on.document_service
 
 
+async def test_the_documents_block_reaches_both_turn_paths_only_while_documents_are_on(cfg):
+    """design/artifact §29: one `DocumentsContextReader`, built only under `[documents]
+    enabled` (the flag that withholds the two tools), handed to the tag path's assembler
+    and to the fire path. Off, no room renders `<documents>`."""
+    off = await build_dependencies(cfg)
+    assert off.assembler._documents_reader is None
+    on = await build_dependencies(override_config(cfg, {"documents.enabled": True}))
+    assert on.assembler._documents_reader is not None
+    fire = override_config(cfg, {"documents.enabled": True, "heartbeat.enabled": True})
+    deps = await build_dependencies(fire)
+    try:
+        loops = [
+            task.get_coro().cr_frame.f_locals["self"]
+            for task in deps.background._tasks
+            if task.get_coro().__qualname__ == "HeartbeatLoop.run"
+        ]
+        assert loops, "the heartbeat loop was not spawned"
+        assert loops[0]._fire.__self__._documents is deps.assembler._documents_reader
+    finally:
+        await deps.background.cancel_all()
+
+
 async def test_computer_sweeper_and_block_exist_only_while_on(cfg, monkeypatch):
     """Design/sandbox-runtime §15.2: composition builds the session sweeper
     (and `__main__` spawns its loop) only under `[computer] enabled`."""
