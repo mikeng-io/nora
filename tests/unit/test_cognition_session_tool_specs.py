@@ -127,8 +127,10 @@ def _const(value: Any) -> Any:
 async def specs() -> dict[str, dict[str, Any]]:
     spy = _Spy()
     ledger = InMemoryCognitionDryRunStore()
+    stimuli = InMemoryStimulusStore(ledger=ledger)
+    stimuli.seed_wake("u", 1)
     runner = CognitionSessionRunner(
-        dry_run_store=ledger, stimulus_store=InMemoryStimulusStore(ledger=ledger),
+        dry_run_store=ledger, stimulus_store=stimuli,
         agent_runner=spy, home_rooms={"u": Room("signal", "home")},
         read_tools_for=lambda unit, room: [], skill_text_for=lambda kinds: "",
         doctrine_text="D", doctrine_sha256=None, open_note_titles=_const(()),

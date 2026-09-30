@@ -4226,6 +4226,21 @@ class Config(BaseModel):
         return self
 
     @model_validator(mode="after")
+    def _cognition_sessions_need_the_dreamer(self) -> Config:
+        """A Cognition session borrows the Dreamer's model source, tool source
+        and objective corpus (migration step 3a-iii), so `[cognition]
+        session_mode = "shadow"` with `[dreamer] enabled = false` would build
+        an evaluator whose hook has nothing to run on. Refused at load, where
+        the operator is looking, not discovered as a session that never
+        starts."""
+        if self.cognition.session_mode == "shadow" and not self.dreamer.enabled:
+            raise ValueError(
+                "[cognition] session_mode = \"shadow\" needs [dreamer] enabled = true: "
+                "a session runs on the Dreamer's model, tools and objectives"
+            )
+        return self
+
+    @model_validator(mode="after")
     def _the_dream_unit_hold_exceeds_its_components(self) -> Config:
         """`[dreamer] max_unit_hold_seconds`, EXPLICITLY SET, must PROVABLY
         exceed the known-bounded pieces the wall clock in `_run_adaptor`

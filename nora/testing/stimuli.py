@@ -166,6 +166,14 @@ class InMemoryStimulusStore:
         for carry in carries:
             if carry.unit != outcome.unit:
                 raise ValueError(f"carry for unit {carry.unit!r} on a wake of {outcome.unit!r}")
+        # The same wake checks the SQL store makes under its lock.
+        owner = next((w.unit for w in self.wakes if w.id == outcome.wake_id), None)
+        if owner is None:
+            raise ValueError(f"no cognition wake {outcome.wake_id} to record an outcome for")
+        if owner != outcome.unit:
+            raise ValueError(
+                f"wake {outcome.wake_id} belongs to unit {owner!r}, not {outcome.unit!r}",
+            )
         # Everything below runs with no await: one transaction, as the SQL
         # store's is under its lock. A carry the table's CHECK would refuse
         # refuses the WHOLE write, before any of it lands.
@@ -223,6 +231,8 @@ class InMemoryStimulusStore:
         self, *, wake: NewWake, recorded_at_ms: int, guard: WakeGuard | None = None,
     ) -> int | None:
         self._check("record_wake")
+        if wake.tracked and guard is None:
+            raise ValueError("a tracked wake must be recorded under a WakeGuard")
         if guard is not None:
             mine = [w.id for w in self.wakes if w.unit == wake.unit and w.mode == wake.mode]
             if (max(mine) if mine else None) != guard.last_wake_id:
@@ -242,6 +252,17 @@ class InMemoryStimulusStore:
         )
         self.wakes.append(row_)
         return row_.id
+
+    def seed_wake(self, unit: str, wake_id: int, *, tracked: bool = True) -> None:
+        """A wake row with this id, as the evaluator would have written it, for
+        a test that drives a session hook directly: an outcome names a wake
+        that exists (`record_outcome` refuses one that does not)."""
+        self.wakes.append(WakeRow(
+            id=wake_id, unit=unit, mode="shadow", reason="settled", from_stimulus_id=0,
+            through_stimulus_id=0, stimulus_count=0, eligible_count=0,
+            oldest_pending_ms=None, cut_cooldown=False, at_ms=0, recorded_at_ms=0,
+            tracked=tracked,
+        ))
 
     async def aclose(self) -> None:
         return None

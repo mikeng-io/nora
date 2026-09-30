@@ -434,7 +434,7 @@ async def test_a_wake_with_no_outcome_blocks_its_unit_and_no_later_wake_swallows
         through_stimulus_id=w2_sid, stimulus_count=1, eligible_count=1,
         oldest_pending_ms=rig.clock.ms, cut_cooldown=False, at_ms=rig.clock.ms,
         tracked=True,
-    ), recorded_at_ms=rig.clock.ms)
+    ), recorded_at_ms=rig.clock.ms, guard=_guard_of(rig.stimuli))
     assert w2 is not None
 
     # Inside the timeout: more speech arrives, a strong cue, the cooldown long
@@ -1175,6 +1175,19 @@ def test_a_session_budget_that_can_outlive_its_wake_is_refused():
             CognitionSessionRunner(**_runner_kwargs(budget_timeout=too_long, session_timeout=900))
 
 
+def _guard_of(stimuli: Any) -> Any:
+    """The guard a writer that just read the unit would hold: its newest wake
+    and that wake's outcome (a tracked wake is refused without one)."""
+    from nora.domain.stimuli import WakeGuard
+
+    last = stimuli.wakes[-1] if stimuli.wakes else None
+    row = None if last is None else stimuli.outcomes.get(last.id)
+    return WakeGuard(
+        last_wake_id=None if last is None else last.id,
+        last_outcome=None if row is None else row.outcome,
+    )
+
+
 def _runner_kwargs(
     *, units: tuple[str, ...] = ("u1",), home_rooms: dict[str, Room] | None = None,
     budget_timeout: float = 30.0, session_timeout: float = 900.0,
@@ -1261,7 +1274,7 @@ async def test_a_late_close_between_the_read_and_the_write_refuses_the_new_wake(
         unit="u1", mode="shadow", reason="settled", from_stimulus_id=0,
         through_stimulus_id=sid, stimulus_count=1, eligible_count=1,
         oldest_pending_ms=T, cut_cooldown=False, at_ms=rig.clock.ms, tracked=True,
-    ), recorded_at_ms=rig.clock.ms)
+    ), recorded_at_ms=rig.clock.ms, guard=_guard_of(rig.stimuli))
     assert w1 is not None
     rig.clock.advance(900 + 300 + 1)
 

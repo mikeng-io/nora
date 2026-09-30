@@ -35,6 +35,8 @@ from opentelemetry.util.types import AttributeValue
 
 from nora.agent import factory, tool_choice
 from nora.agent.dreamer import (
+    MEMORY_TOOLS,
+    TOOL_RESULT_CAPS,
     AdaptorBudget,
     AdaptorGrant,
     AdaptorSchedule,
@@ -57,8 +59,19 @@ from nora.agent.telemetry import (
     start_raw_model_span,
 )
 from nora.agent.telemetry import timed as telemetry_timed
-from nora.agent.tools import OriginRoom
+from nora.agent.tools import NATIVE_TOOLS, OriginRoom
 from nora.agent.whereis import Circle, check_disclosure_invariant, circles_from_persons
+from nora.app.cognition_session import CognitionSessionRunner
+from nora.app.cognition_wiring import (
+    COGNITION_ADAPTOR_NAME,
+    AgendaSkills,
+    CognitionShutdown,
+    build_cognition_runner,
+    cognition_budget,
+    read_surface,
+    require_session_hook,
+    units_with_home_rooms,
+)
 from nora.app.memory_routing import (
     MemoryRoutingError,
     build_workspace_router,
@@ -72,6 +85,7 @@ from nora.config import Config, DreamBudgetConfig
 from nora.doctrine.loader import Doctrine, DoctrineError, DoctrineStore
 from nora.domain.compute import ComputeJobStore
 from nora.domain.decision_log import DecisionLogRecorder
+from nora.domain.gatherings import GatheringStatus
 from nora.domain.media_join import MediaJoin
 from nora.domain.models import PersonRef
 from nora.domain.ports import (
@@ -95,7 +109,7 @@ from nora.domain.ports import (
 )
 from nora.domain.quote_window import QuoteWindow
 from nora.domain.reminders import ReminderCaps, ReminderStore
-from nora.domain.stimuli import WakePolicy
+from nora.domain.stimuli import WakeHook, WakePolicy
 from nora.domain.tool_call_log import ToolCallLogStore
 from nora.engagement.pipeline import EngagementPipeline
 from nora.engagement.self_presence import PresenceReader
@@ -109,6 +123,7 @@ from nora.infra.honcho import HonchoClient
 from nora.infra.music import YtDlpSource
 from nora.infra.sql import SqlRecordStore, create_sql_engine, run_migrations
 from nora.infra.sql.announcements import SqlAnnouncementLog
+from nora.infra.sql.cognition_dry_run import SqlCognitionDryRunStore
 from nora.infra.sql.compute_jobs import SqlComputeJobStore
 from nora.infra.sql.culture import SqlCultureStore
 from nora.infra.sql.decision_log import SqlDecisionLogStore
@@ -392,6 +407,37 @@ def _reasoning_effort(value: str, *, source: str) -> ReasoningEffort:
             f"start rather than failing on the first call that uses it"
         )
     return cast(ReasoningEffort, value)
+
+
+def _build_wake_evaluator(
+    cfg: Config, *, store: SqlStimulusStore, units: Callable[[], Sequence[str]],
+    metrics: Metrics, on_wake: WakeHook | None,
+) -> WakeEvaluator:
+    """The cognition loop's wake evaluator (design/cognition-loop/20 §3). With
+    `on_wake` (`session_mode = "shadow"`) every would-wake starts a shadow
+    session and the brakes count real sessions; without it, exactly step 1."""
+    return WakeEvaluator(
+        store=store,
+        units=units,
+        policy=WakePolicy(
+            quiet_seconds=cfg.cognition.quiet_seconds,
+            cue_quiet_seconds=cfg.cognition.cue_quiet_seconds,
+            rollup_delay_seconds=cfg.cognition.rollup_delay_seconds,
+            batch_max=cfg.cognition.batch_max,
+            max_age_seconds=cfg.cognition.max_age_seconds,
+            cooldown_seconds=cfg.cognition.cooldown_seconds,
+            max_concurrent_sessions=cfg.cognition.max_concurrent_sessions,
+            session_seconds=cfg.cognition.shadow_session_seconds,
+            session_timeout_seconds=cfg.cognition.session_timeout_seconds,
+        ),
+        metrics=metrics,
+        floors=tuple(Floor.parse(f) for f in cfg.cognition.time_floors),
+        tz=ZoneInfo(cfg.cognition.timezone),
+        floor_grace_seconds=cfg.cognition.floor_grace_seconds,
+        mode="shadow",
+        store_timeout_seconds=cfg.cognition.store_timeout_seconds,
+        on_wake=on_wake,
+    )
 
 
 def _adaptor_budget(b: DreamBudgetConfig) -> AdaptorBudget:
@@ -1136,6 +1182,11 @@ class Dependencies:
     # §3, migration step 1) — `None` under `[cognition] mode = "off"`, the
     # shipped default. It fires nothing: `nora.app.wake`.
     wake_evaluator: WakeEvaluator | None = None
+    # The shadow Cognition session (step 3a-iii): `None` under `[cognition]
+    # session_mode = "off"`, the shipped default. Its shutdown cancels the
+    # sessions in flight, once (`nora.app.cognition_wiring`).
+    cognition_runner: CognitionSessionRunner | None = None
+    cognition_shutdown: CognitionShutdown | None = None
     wake_tick_seconds: float = 30.0
     # Platform adapter health transitions as Record (20 §1). ALWAYS built:
     # it is Record, not a subsystem that acts, and «was the source healthy
@@ -2240,7 +2291,11 @@ async def build_dependencies(
     # recorded person-authored item, and the evaluator below reads them and
     # records would-wakes, firing nothing.
     stimulus_wiring: stimulus_stage.Wiring | None = None
-    wake_evaluator: WakeEvaluator | None = None
+    # The evaluator itself is built after the Dreamer block below
+    # (`_build_wake_evaluator`): under `session_mode = "shadow"` it is handed
+    # the session runner's hook, and the runner needs the Dreamer's model and
+    # tool sources.
+    stimulus_store: SqlStimulusStore | None = None
     if cfg.cognition.mode != "off":
         stimulus_store = SqlStimulusStore(engine)
         stimulus_wiring = stimulus_stage.Wiring(
@@ -2249,27 +2304,6 @@ async def build_dependencies(
             self_ids=registry.self_aliases(),
             reply_quiet_seconds=cfg.cognition.reply_quiet_seconds,
             timeout_seconds=cfg.cognition.store_timeout_seconds,
-        )
-        wake_evaluator = WakeEvaluator(
-            store=stimulus_store,
-            units=unit_scopes,
-            policy=WakePolicy(
-                quiet_seconds=cfg.cognition.quiet_seconds,
-                cue_quiet_seconds=cfg.cognition.cue_quiet_seconds,
-                rollup_delay_seconds=cfg.cognition.rollup_delay_seconds,
-                batch_max=cfg.cognition.batch_max,
-                max_age_seconds=cfg.cognition.max_age_seconds,
-                cooldown_seconds=cfg.cognition.cooldown_seconds,
-                max_concurrent_sessions=cfg.cognition.max_concurrent_sessions,
-                session_seconds=cfg.cognition.shadow_session_seconds,
-                session_timeout_seconds=cfg.cognition.session_timeout_seconds,
-            ),
-            metrics=metrics,
-            floors=tuple(Floor.parse(f) for f in cfg.cognition.time_floors),
-            tz=ZoneInfo(cfg.cognition.timezone),
-            floor_grace_seconds=cfg.cognition.floor_grace_seconds,
-            mode="shadow",
-            store_timeout_seconds=cfg.cognition.store_timeout_seconds,
         )
     ingest = IngestPipeline(
         audit=audit, memory=memory, persons=persons,
@@ -3514,6 +3548,11 @@ async def build_dependencies(
     # adaptor's pass/wake clocks (issue #136): two instances would be two
     # engines over one table for no reason.
     dream_schedule_clock = SqlDreamScheduleClock(engine)
+    # The shadow Cognition session (step 3a-iii): built inside the Dreamer
+    # block below ONLY under `[cognition] session_mode = "shadow"`; `off`
+    # builds nothing here, no model client and no agent-runner import.
+    cognition_runner: CognitionSessionRunner | None = None
+    cognition_units: Callable[[], Sequence[str]] = unit_scopes
     if cfg.dreamer.enabled:
         # The note tier's curator, on its OWN gate and behind the tier's.
         # `[notes] enabled` decides whether the index is injected and the four
@@ -4269,6 +4308,89 @@ async def build_dependencies(
             },
         )
 
+        if cfg.cognition.session_mode == "shadow" and stimulus_store is not None:
+            # Sessions ride the Dreamer's model, tool source and objective
+            # corpus (the config validator refuses shadow sessions without
+            # `[dreamer] enabled`), and touch NO live tier store: the runner
+            # is handed the dry-run ledger, the stimulus store and three read
+            # callables (`nora.app.cognition_wiring`).
+            surface = read_surface(
+                read_only=dream_tools.read_only(),
+                enabled_flags={"record_query.enabled"} if cfg.record_query.enabled else (),
+            )
+            log.info(
+                "cognition sessions (shadow): read tools wired=%s missing=%s withheld=%s",
+                sorted(surface.wired), sorted(surface.missing), sorted(surface.withheld),
+            )
+            homes = allowlist.home_rooms()
+            cognition_wakeable, cognition_skipped = units_with_home_rooms(
+                list(unit_scopes()), homes,
+            )
+            if cognition_skipped:
+                log.error(
+                    "cognition sessions: unit(s) %s name no home room in policy.toml, "
+                    "so no session will run for them (their wakes are not recorded "
+                    "while sessions run); set `home_room = true` on one of their rooms",
+                    cognition_skipped,
+                )
+            cognition_units = lambda: tuple(cognition_wakeable)  # noqa: E731
+            dry_run_store = SqlCognitionDryRunStore(engine)
+
+            async def _note_titles(unit: str) -> Sequence[str]:
+                if note_store is None:
+                    return ()
+                return [n.title for n in await note_store.standing(unit=unit)]
+
+            async def _proposed_events(conversation_id: str) -> Sequence[Any]:
+                return await event_store.list_for_conversation(
+                    conversation_id=conversation_id, status=GatheringStatus.PROPOSED,
+                )
+
+            cognition_runner = build_cognition_runner(
+                cfg=cfg, models=dream_models,
+                retry=factory.build_retry_policy(timeout_seconds=tier.timeout_seconds),
+                metrics=metrics, tools=dream_tools, instructions=dreamer_instructions,
+                registry_table={n: t.budget for n, t in NATIVE_TOOLS.items()},
+                dry_run_store=dry_run_store, stimulus_store=stimulus_store,
+                note_titles=_note_titles, proposed_events_in=_proposed_events,
+                standing_of=lambda platform, conversation_id: standing_store.read(
+                    platform=platform, conversation_id=conversation_id,
+                ),
+                homes=homes, units=cognition_wakeable,
+                # No skill ships for any agenda kind in this step: the table is
+                # where each lands (`AgendaSkills`).
+                skills=AgendaSkills(by_kind={}, resolve=lambda name: None),
+                surface=surface, clock=lambda: clock().timestamp(),
+                model_id=dream_model, model_route=cfg.llm.base_url,
+                budget=cognition_budget(cfg.dreamer.budget_for(COGNITION_ADAPTOR_NAME)),
+                tool_calls=cfg.dreamer.budget_for(COGNITION_ADAPTOR_NAME).tool_calls,
+                llm_budgets=cfg.llm.budgets, result_caps=TOOL_RESULT_CAPS,
+                memory_tools=MEMORY_TOOLS,
+            )
+
+    # The wake evaluator, after the Dreamer block so `session_mode = "shadow"`
+    # can hand it the runner's hook. The boot check below refuses a shadow
+    # session mode that ended with no runner or no hook (#627 review, minor
+    # 4): a week of would-wakes and no session must not look healthy.
+    wake_evaluator: WakeEvaluator | None = None
+    cognition_shutdown: CognitionShutdown | None = None
+    if stimulus_store is not None:
+        wake_evaluator = _build_wake_evaluator(
+            cfg, store=stimulus_store, units=cognition_units, metrics=metrics,
+            on_wake=cognition_runner.wake_hook if cognition_runner is not None else None,
+        )
+        if cognition_runner is not None:
+            cognition_shutdown = CognitionShutdown(
+                evaluator=wake_evaluator, runner=cognition_runner,
+            )
+    try:
+        require_session_hook(
+            session_mode=cfg.cognition.session_mode, runner=cognition_runner,
+            evaluator=wake_evaluator,
+        )
+    except RuntimeError as exc:
+        raise StartupError(str(exc)) from exc
+
     return Dependencies(
         audit=audit, memory=memory, persons=persons, metrics=metrics,
         media_join=media_join,
@@ -4303,6 +4425,8 @@ async def build_dependencies(
         voice_hub=voice_hub,
         voice_event_consumer=voice_event_consumer,
         wake_evaluator=wake_evaluator,
+        cognition_runner=cognition_runner,
+        cognition_shutdown=cognition_shutdown,
         wake_tick_seconds=cfg.cognition.tick_seconds,
         health_recorder=AdapterHealthRecorder(
             log=SqlSourceHealthLog(engine), metrics=metrics,

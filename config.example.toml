@@ -2197,6 +2197,27 @@ max_memory_calls = 12
 [dreamer.budgets.culture.tool_calls]
 lookup_person = 12
 
+# The Cognition session (design/cognition-loop/30-cognition.md §5, migration
+# step 3a-iii; read only when the cognition section's `session_mode` is
+# "shadow"). One wall clock over the whole session, and it must end at least
+# 60 s before that section's `session_timeout_seconds` (900) or the runner
+# refuses to start.
+# It rides `[dreamer] model`: no key of its own, and none added.
+#
+# UNMEASURED starting points, sized from the proactive pass's shape (24 turns,
+# 1M total, a reading and writing loop) and raised where a session does more:
+# up to the cognition section's `max_items` (12) agenda items, each read and then written
+# or closed. The shadow week's `nora_dream_guard_vetoes_total{adaptor=
+# "cognition"}` and the sessions' Langfuse traces size them for real; never
+# stated in the prompt (a model told of a cap declines the work).
+[dreamer.budgets.cognition]
+turns = 24
+total_tokens = 1000000
+output_tokens = 12000
+timeout_seconds = 600.0
+max_memory_calls = 6
+max_tool_calls = 60
+
 
 # Lineage at assembly (design/cognition-loop/10-tiers.md §3; migration step
 # 2). Every derived row carries the set of (kind, subject, origin room) its
@@ -2274,7 +2295,11 @@ store_timeout_seconds = 5
 # runs on each would-wake the evaluator records — a real model call, its
 # note/event/Standing verbs in dry run, its `remind` mirrored and held.
 # Ships OFF, same as `mode`; `session_mode = "shadow"` requires
-# `mode = "shadow"` (refused to start otherwise).
+# `mode = "shadow"` and `[dreamer] enabled = true` (refused to start otherwise:
+# a session runs on the Dreamer's model, tools and objectives), and every unit
+# it may wake needs a `home_room = true` room in policy.toml (a unit with none
+# is named at boot and not woken while sessions run). Off builds nothing: no
+# model client, no runner, no session.
 session_mode = "off"
 # 30-cognition.md §1/§2 starting values.
 max_items = 12

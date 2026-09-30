@@ -204,6 +204,7 @@ from enum import StrEnum
 from typing import Any, Literal, Protocol, runtime_checkable
 
 from nora.domain.cognition_pace import PendingSelfWake
+from nora.domain.cognition_remind import PendingMirroredRemind
 from nora.domain.culture import CultureRevision as CultureRevision
 from nora.domain.decision_log import DecisionRow as DecisionRow
 from nora.domain.identity import PlatformIdentity as PlatformIdentity
@@ -1157,6 +1158,17 @@ class CognitionDryRunStore(Protocol):
     async def count_self_wakes_created(self, *, unit: str, since_ms: int) -> int:
         """`created` (recorded, not refused) `wake_at` rows for the unit at or
         after `since_ms` (the per-day cap's count; moves do not count)."""
+        ...
+
+    async def pending_mirrored_reminds(
+        self, *, unit: str, now_ms: int,
+    ) -> Sequence[PendingMirroredRemind]:
+        """The unit's mirrored reminds still PENDING at `now_ms`: per
+        `reminder_ref`, the latest recorded link decides; cancelled and due
+        (its time is at or before `now_ms`; nothing fires in shadow) are not
+        pending (`nora.domain.cognition_remind.fold_pending_reminds`). BOUNDED:
+        only refs with a recorded `remind` or `remind_move` due at or after
+        `now_ms` are read."""
         ...
 
 

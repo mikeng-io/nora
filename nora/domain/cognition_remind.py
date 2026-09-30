@@ -34,6 +34,54 @@ class PendingMirroredRemind:
 
 
 @dataclass(frozen=True, slots=True)
+class MirrorRow:
+    """One recorded `cognition_remind_mirror` row, as `fold_pending_reminds`
+    reads it (a refused row is passed too and ignored by the fold)."""
+
+    reminder_ref: str | None
+    verb: str
+    outcome: str
+    platform: str
+    conversation_id: str
+    subject_rows: tuple[str, ...]
+    at_ms: int | None
+    session_id: int | None
+
+
+def fold_pending_reminds(
+    rows: Sequence[MirrorRow], *, now_ms: int,
+) -> tuple[PendingMirroredRemind, ...]:
+    """The mirrored reminds still PENDING, from a unit's rows in recorded
+    order. A mirrored remind is a chain (`remind`, then `remind_move` and
+    `remind_cancel` on its ref); the latest recorded link decides. Cancelled
+    is not pending. **Due is not pending either**: nothing fires in shadow, so
+    a remind whose time has come is what would have been sent and is no
+    longer a pending act; without this the dedupe rule (one pending act per
+    subject rows and room) would refuse a second reminder on the same rows
+    forever. A refused row changes nothing; a move or cancel whose `remind` is
+    not among `rows` is ignored."""
+    live: dict[str, tuple[PendingMirroredRemind, int]] = {}
+    for row in rows:
+        if row.outcome != "recorded" or row.reminder_ref is None:
+            continue
+        ref = row.reminder_ref
+        if row.verb == "remind" and row.at_ms is not None:
+            live[ref] = (
+                PendingMirroredRemind(
+                    reminder_ref=ref, platform=row.platform,
+                    conversation_id=row.conversation_id, subject_rows=row.subject_rows,
+                    created_by_session_id=row.session_id,
+                ),
+                row.at_ms,
+            )
+        elif row.verb == "remind_move" and ref in live and row.at_ms is not None:
+            live[ref] = (live[ref][0], row.at_ms)
+        elif row.verb == "remind_cancel":
+            live.pop(ref, None)
+    return tuple(p for p, at in live.values() if at >= now_ms)
+
+
+@dataclass(frozen=True, slots=True)
 class RemindRefusal:
     reason: str
     detail: str = ""

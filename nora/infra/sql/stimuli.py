@@ -345,6 +345,10 @@ class SqlStimulusStore:
         o = COGNITION_WAKE_OUTCOME
         async with self._engine.begin() as conn:
             await _lock_unit(conn, outcome.unit)
+            wake_unit = (await conn.execute(
+                sa.select(COGNITION_WAKE.c.unit).where(COGNITION_WAKE.c.id == outcome.wake_id),
+            )).scalar_one_or_none()
+            _check_outcome_wake(outcome, wake_unit)
             existing = (await conn.execute(
                 sa.select(o.c.outcome).where(o.c.wake_id == outcome.wake_id),
             )).first()
@@ -420,6 +424,7 @@ class SqlStimulusStore:
     async def record_wake(
         self, *, wake: NewWake, recorded_at_ms: int, guard: WakeGuard | None = None,
     ) -> int | None:
+        check_wake_guard(wake, guard)
         stmt = sa.insert(COGNITION_WAKE).values(
             unit=wake.unit, mode=wake.mode, reason=wake.reason,
             from_stimulus_id=wake.from_stimulus_id,
@@ -467,6 +472,27 @@ def _check_outcome(outcome: NewWakeOutcome, carries: Sequence[NewCarry]) -> None
     for carry in carries:
         if carry.unit != outcome.unit:
             raise ValueError(f"carry for unit {carry.unit!r} on a wake of {outcome.unit!r}")
+
+
+def _check_outcome_wake(outcome: NewWakeOutcome, wake_unit: str | None) -> None:
+    """An outcome names a wake that exists and is THIS unit's, in both
+    implementations (`nora.testing.stimuli` calls this too): an outcome keyed
+    by a wake nobody wrote, or by another unit's, would be a row no reader
+    ever finds and a `closed` that advances nothing (#627 review, minor 2)."""
+    if wake_unit is None:
+        raise ValueError(f"no cognition wake {outcome.wake_id} to record an outcome for")
+    if wake_unit != outcome.unit:
+        raise ValueError(
+            f"wake {outcome.wake_id} belongs to unit {wake_unit!r}, not {outcome.unit!r}",
+        )
+
+
+def check_wake_guard(wake: NewWake, guard: WakeGuard | None) -> None:
+    """A TRACKED wake is written under a guard, in both implementations
+    (`nora.testing.stimuli` calls this too): an unguarded tracked write is the
+    write-skew the per-unit lock exists to prevent (#627 review, minor 3)."""
+    if wake.tracked and guard is None:
+        raise ValueError("a tracked wake must be recorded under a WakeGuard")
 
 
 def _superseded(later_wake_id: int, detail: str) -> str:

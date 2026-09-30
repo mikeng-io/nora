@@ -170,6 +170,14 @@ class WakeEvaluator:
         #: past what the rows can say) still holds its unit.
         self._live: dict[str, asyncio.Task[None]] = {}
 
+    @property
+    def has_wake_hook(self) -> bool:
+        """True when a session hook is wired (`session_mode = "shadow"`). The
+        composition root's boot check reads it: a session mode that asked for
+        sessions and built an evaluator with no hook would record would-wakes
+        forever and run nothing."""
+        return self._on_wake is not None
+
     async def tick(self) -> list[int]:
         """Evaluate every unit; return the ids of the wake rows written."""
         now_ms = int(self._clock() * 1000)

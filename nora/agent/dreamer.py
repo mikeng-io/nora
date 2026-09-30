@@ -145,6 +145,10 @@ _TOOL_RESULT_CAPS: Mapping[str, int] = {
     "ask_memory": MAX_MEMORY_RESULT_CHARS,
 }
 
+#: The same table under a public name, for the Cognition session's guard
+#: (`nora.app.cognition_wiring`): one table, two readers, never a second copy.
+TOOL_RESULT_CAPS: Mapping[str, int] = _TOOL_RESULT_CAPS
+
 #: THE VERBS THE PER-PASS MEMORY CEILING COUNTS (issue #160) — every read that
 #: answers «what is already known about this person», whichever store it goes
 #: to. The four are the memory cluster of `nora.language.proactive.
@@ -499,6 +503,18 @@ def culture_grant() -> AdaptorGrant:
     A function rather than a module-level constant, for `proactive_grant`'s
     reason (DEC-13).
     """
+    return AdaptorGrant(home_room=True)
+
+
+def cognition_grant() -> AdaptorGrant:
+    """The Cognition adaptor's grant (design/cognition-loop/30 §2): a real
+    room, and NO act verb. Its write, pace and act verbs are not registry
+    tools at all: the session holds them as its own closures, dry-run in
+    shadow (`nora.app.cognition_session`), so nothing here widens the
+    read-only ceiling and `acts` stays empty, said twice rather than relied on
+    once. It is SCOPE-resolved (`RegistryToolSource.build` with the agenda
+    item's room as the key), so lineage and the roster's disclosure guard are
+    the room's own. A function, for `proactive_grant`'s reason (DEC-13)."""
     return AdaptorGrant(home_room=True)
 
 

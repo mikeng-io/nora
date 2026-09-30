@@ -18,21 +18,19 @@
 # transcript line.
 #
 # `entry: dreamer` with `category: cognition` is this corpus's declared
-# entry point (`evals/scenarios.py`'s `CORPUS_ENTRY`), the SAME shape
-# `note_candidates.yaml`/`proactive_decide.yaml` already use for a
-# Dreamer-adaptor pass. There is no registered `cognition` adaptor in
-# `nora.agent.dreamer`'s registry yet — the session runner this migration
-# step ships (`nora.app.cognition_session.CognitionSessionRunner`) is a
-# standalone runner, not a `DreamAdaptor` plugged into that registry — so
-# driving these cases live raises `LookupError` today. That is out of
-# scope here: this corpus is loaded and CENSUSED (`evals/scenarios.py::
-# census`), never run, per this task's own instruction not to run a live
-# eval in this session. Every case is anchored (no `parked:`) because the
-# anchor itself is real and reused (`tool_selection.yaml`'s own ROOM A) —
-# what is synthetic is the AGENDA TEXT, not the room.
+# entry point (`evals/scenarios.py`'s `CORPUS_ENTRY`). It is driven by
+# `evals.rebuilt.entry._cognition_probe`, which hands each case's `input` to
+# `CognitionSessionRunner.probe` as ONE agenda item: the same tools, the same
+# instruction (`nora/dreamer/objectives/cognition.md`) and the same agent
+# runner as a wake's session, on the model `[dreamer] model` names. It needs
+# the eval subject to build that runner, so the deployment's config must hold
+# `[cognition] mode = "shadow"` and `session_mode = "shadow"`; with sessions
+# off the case is an ERROR, never a pass (migration step 3a-iii). Every case
+# is anchored (no `parked:`) because the anchor itself is real and reused
+# (`tool_selection.yaml`'s own ROOM A) — what is synthetic is the AGENDA
+# TEXT, not the room.
 #
-# Run (once the adaptor is wired) with `--sample 3` at least
-# (eval-numbers-are-not-rates).
+# Run with `--sample 3` at least (eval-numbers-are-not-rates).
 
 cases:
   - name: cognition_note_create_vs_update_new_topic

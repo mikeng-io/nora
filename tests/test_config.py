@@ -1074,7 +1074,7 @@ def test_every_budget_block_the_template_declares_is_pinned_with_its_reasoning(
 
     `note-curation` still has no block and still runs on the defaults."""
     budgets = load(toml_path).dreamer.budgets
-    assert set(budgets) == {"proactive", "culture", "note-candidates"}, (
+    assert set(budgets) == {"proactive", "culture", "note-candidates", "cognition"}, (
         "a [dreamer.budgets.*] block arrived — pin it here with the reasoning "
         "for its numbers, so the section cannot fill up unmeasured"
     )
@@ -1165,6 +1165,23 @@ def test_every_budget_block_the_template_declares_is_pinned_with_its_reasoning(
         "note_read": 16, "lookup_person": 12, "ask_memory": 8,
         "search_memory_workspace": 8, "about": 8, "note_search": 4, "remind": 6,
     }
+    # COGNITION, pinned 2026-09-30 (migration step 3a-iii). NOT measurements:
+    # room to take one. The proactive block's shape (a loop that reads and then
+    # writes, 24 turns, 1M total tokens as the safety net and `turns` the real
+    # bound) with a longer clock, because a session reads and writes across up
+    # to 12 agenda items. 600 s stays under the wake's own 900 s by more than
+    # `SESSION_TIMEOUT_MARGIN_SECONDS` (the runner refuses to start otherwise)
+    # and under the 720 s the deployment's proactive block already holds, so
+    # the derived unit hold (`dreamer_max_unit_hold_seconds`) does not rise.
+    # `output_tokens` 12,000 is above proactive's 10,000 for the writes it
+    # carries (notes, events, a Standing body). The two per-pass read ceilings
+    # are starting guesses that `nora_dream_guard_vetoes_total{adaptor=
+    # "cognition"}` sizes after the shadow week. It rides `[dreamer] model`.
+    cognition = budgets["cognition"]
+    assert (cognition.turns, cognition.total_tokens) == (24, 1_000_000)
+    assert (cognition.output_tokens, cognition.timeout_seconds) == (12_000, 600.0)
+    assert (cognition.max_memory_calls, cognition.max_tool_calls) == (6, 60)
+    assert cognition.tool_calls == {}
     # NOTE-CANDIDATES, pinned 2026-09-17 — declared in the template only
     # because the DEPLOYMENT sets it (it was set live while chasing #291 and
     # the template did not follow, which is the drift
@@ -1953,9 +1970,33 @@ def test_session_mode_shadow_is_accepted_once_the_evaluator_is_also_shadow(toml_
         '[cognition]\nmode = "off"', '[cognition]\nmode = "shadow"',
     )
     text = _set_key(text, "session_mode", '"shadow"')
-    toml_path.write_text(text)
+    # A session rides the Dreamer's model, tools and objectives (step 3a-iii).
+    toml_path.write_text(_set_dreamer_enabled(text))
     c = load(toml_path).cognition
     assert (c.mode, c.session_mode) == ("shadow", "shadow")
+
+
+def _set_dreamer_enabled(text: str) -> str:
+    """`[dreamer] enabled = true`, whichever way the template spells it."""
+    head, sep, tail = text.partition("\n[dreamer]\n")
+    assert sep, "the template has no [dreamer] section"
+    import re as _re
+
+    tail, n = _re.subn(r"(?m)^enabled = .*$", "enabled = true", tail, count=1)
+    assert n == 1, "the [dreamer] section states no `enabled` key"
+    return head + sep + tail
+
+
+def test_session_mode_shadow_without_the_dreamer_is_refused_at_load(toml_path):
+    """A session borrows the Dreamer's model, tools and objectives: shadow
+    sessions with the Dreamer off would build a hook with nothing to run on,
+    so the config refuses to load rather than the runner failing at boot."""
+    text = toml_path.read_text().replace(
+        '[cognition]\nmode = "off"', '[cognition]\nmode = "shadow"',
+    )
+    toml_path.write_text(_set_key(text, "session_mode", '"shadow"'))
+    with pytest.raises(ConfigError, match="needs \\[dreamer\\] enabled"):
+        load(toml_path)
 
 
 def test_session_mode_refuses_a_value_outside_off_and_shadow(toml_path):

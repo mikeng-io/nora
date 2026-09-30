@@ -1,12 +1,10 @@
 """`evals/corpora/tool_selection_cognition.yaml` — the Cognition catalogue's
-S2 corpus, migration step 3a-ii. COLLECTION only: this test loads and
-censuses the corpus (`evals.scenarios.load_corpus`/`census`) the way
-`python -m evals` does before any run — it makes no model call and drives
-no case, which is deliberate (this task's own instruction: build the
-corpus and confirm the runner collects it, never run it live). Running it
-for real needs a `cognition` Dreamer adaptor registered
-(`evals.rebuilt.entry.dreamer`'s own `LookupError` path), which migration
-step 3a-ii does not add.
+S2 corpus (migration steps 3a-ii and 3a-iii). COLLECTION only: this test loads
+and censuses the corpus (`evals.scenarios.load_corpus`/`census`) the way
+`python -m evals` does before any run — it makes no model call and drives no
+case. Running it for real goes through `evals.rebuilt.entry._cognition_probe`
+on the session runner the subject builds under `[cognition] session_mode =
+"shadow"` (`tests/unit/test_cognition_wiring.py` pins that seam).
 """
 
 from __future__ import annotations

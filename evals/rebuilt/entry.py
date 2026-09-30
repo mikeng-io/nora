@@ -238,6 +238,30 @@ async def tag(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
     )
 
 
+async def _cognition_probe(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
+    """One Cognition session over the case's agenda-item sentence, graded on
+    the tools it CALLED (`ToolRouteGrader`, from the tool spans).
+
+    ERROR, never a pass, when the subject built no session runner: a
+    deployment whose `[cognition] session_mode` is off has no session to
+    measure, and a case that reached no model has measured nothing whatever it
+    prints (`nora.app.cognition_wiring`: off builds nothing)."""
+    runner = getattr(subject.deps, "cognition_runner", None)
+    if runner is None:
+        return Outcome(
+            admitted=None, source="fail_closed",
+            error="the subject built no Cognition session runner "
+                  "([cognition] session_mode is off in the eval config)",
+        )
+    try:
+        await runner.probe(unit=subject.unit, summary=case.input, now_ms=now_ms)
+    except Exception as exc:  # noqa: BLE001 -- a session that raised measured nothing
+        return Outcome(
+            admitted=None, source="fail_closed", error=f"{type(exc).__name__}: {exc}",
+        )
+    return Outcome(admitted=None)
+
+
 async def dreamer(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
     """One dream pass, graded on the NOTEBOOK.
 
@@ -284,6 +308,8 @@ async def dreamer(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
             ),
         )
     adaptor = case.category or "note-candidates"
+    if adaptor == "cognition":
+        return await _cognition_probe(subject, case, now_ms=now_ms)
     try:
         after = case.metadata.get("batch_after_ms")
         result = await dream(

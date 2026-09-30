@@ -137,8 +137,10 @@ async def test_a_scripted_session_writes_nothing_to_a_live_store_and_sends_nothi
     live = ExplodingLiveStore()
     dry_run_store = InMemoryCognitionDryRunStore()
     agent = ScriptedAgentRunner()
+    stimuli = InMemoryStimulusStore()
+    stimuli.seed_wake("unit-1", 1)
     runner = CognitionSessionRunner(
-        dry_run_store=dry_run_store, stimulus_store=InMemoryStimulusStore(),
+        dry_run_store=dry_run_store, stimulus_store=stimuli,
         agent_runner=agent, home_rooms={"unit-1": HOME}, read_tools_for=lambda u, r: [],
         skill_text_for=lambda kinds: "", doctrine_text="DOCTRINE", doctrine_sha256="sha",
         open_note_titles=live.open_note_titles, open_proposed_events=live.open_proposed_events,
@@ -175,8 +177,10 @@ async def test_session_mode_off_never_constructs_a_live_read_either():
     live = ExplodingLiveStore()
     dry_run_store = InMemoryCognitionDryRunStore()
     agent = ScriptedAgentRunner()
+    stimuli = InMemoryStimulusStore()
+    stimuli.seed_wake("unit-1", 1)
     runner = CognitionSessionRunner(
-        dry_run_store=dry_run_store, stimulus_store=InMemoryStimulusStore(),
+        dry_run_store=dry_run_store, stimulus_store=stimuli,
         agent_runner=agent, home_rooms={"unit-1": HOME}, read_tools_for=lambda u, r: [],
         skill_text_for=lambda kinds: "", doctrine_text="DOCTRINE", doctrine_sha256="sha",
         open_note_titles=live.open_note_titles, open_proposed_events=live.open_proposed_events,
