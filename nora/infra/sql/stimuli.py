@@ -25,7 +25,8 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.domain.ports import NewCarry, NewWakeOutcome, RecordedOutcome
 from nora.domain.stimuli import (
-    FAILURE_CAUSES,
+    NO_CAUSE,
+    OUTCOME_CAUSES,
     WAKE_OUTCOMES,
     NewStimulus,
     NewWake,
@@ -35,6 +36,7 @@ from nora.domain.stimuli import (
     WakeRow,
     Watermark,
     failure_run,
+    stored_cause,
     wake_state,
 )
 from nora.infra.sql.schema import (
@@ -81,17 +83,32 @@ def _wake(r: Any) -> WakeRow:
         stimulus_count=int(r.stimulus_count), eligible_count=int(r.eligible_count),
         oldest_pending_ms=None if r.oldest_pending_ms is None else int(r.oldest_pending_ms),
         cut_cooldown=bool(r.cut_cooldown), at_ms=int(r.at_ms),
-        recorded_at_ms=_ms(r.recorded_at), detail=_detail(r.detail),
-        tracked=bool(r.tracked),
+        recorded_at_ms=_ms(r.recorded_at), detail=_wake_detail(r.detail),
+        tracked=bool(r.tracked), unclaimed_ids=_unclaimed(r.detail),
     )
 
 
+#: The `cognition_wake.detail` key that holds `NewWake.unclaimed_ids`: the
+#: stimuli inside the wake's range it did not claim (D2, DEC-245). In the
+#: existing jsonb, so no migration; `WakeRow.detail` never carries it.
+_UNCLAIMED_KEY = "unclaimed"
+
+
+def _unclaimed(raw: Any) -> tuple[int, ...]:
+    return tuple(int(i) for i in _detail(raw).get(_UNCLAIMED_KEY, ()))  # type: ignore[attr-defined]
+
+
+def _wake_detail(raw: Any) -> dict[str, object]:
+    return {k: v for k, v in _detail(raw).items() if k != _UNCLAIMED_KEY}
+
+
 def _detail(raw: Any) -> dict[str, object]:
-    """asyncpg hands `jsonb` back as text unless a codec is registered, and
-    this engine registers none."""
+    """The jsonb object, from either form a row was written in: an object (now)
+    or a jsonb STRING holding the JSON (every row written before the double
+    encoding was fixed; also, on some drivers, the text of the column)."""
     if raw is None:
         return {}
-    if isinstance(raw, str):
+    while isinstance(raw, str):
         raw = json.loads(raw)
     return dict(raw)
 
@@ -310,14 +327,17 @@ class SqlStimulusStore:
             mark_wake = None
             if last is not None:
                 outcome_row = (await conn.execute(
-                    sa.select(COGNITION_WAKE_OUTCOME.c.outcome, COGNITION_WAKE_OUTCOME.c.at_ms)
-                    .where(COGNITION_WAKE_OUTCOME.c.wake_id == last.id),
+                    sa.select(
+                        COGNITION_WAKE_OUTCOME.c.outcome, COGNITION_WAKE_OUTCOME.c.at_ms,
+                        COGNITION_WAKE_OUTCOME.c.cause,
+                    ).where(COGNITION_WAKE_OUTCOME.c.wake_id == last.id),
                 )).first()
                 last_session = wake_state(
                     tracked=last.tracked, recorded_at_ms=last.recorded_at_ms,
                     outcome=None if outcome_row is None else str(outcome_row.outcome),
                     outcome_at_ms=None if outcome_row is None else int(outcome_row.at_ms),
                     stale_before_ms=stale_before_ms,
+                    cause=None if outcome_row is None else str(outcome_row.cause),
                 )
                 if last_session is None or last_session.state != "failed":
                     mark_wake = last
@@ -336,13 +356,15 @@ class SqlStimulusStore:
             carry = {int(r.stimulus_id): int(r.strike) for r in carry_rows}
             waiting = {int(r.stimulus_id) for r in carry_rows if r.waits}
             have = {s.id for s in pending}
-            missing = [i for i in carry if i not in have]
+            # Two side doors past the range read: what a closed session carried,
+            # and what the watermark's wake left UNCLAIMED (D2), which the range
+            # would call consumed. Both name stimuli that were pending.
+            missing = sorted(({*carry, *mark.unclaimed}) - have)
             if missing:
                 extra = (await conn.execute(
-                    # `missing` came from `_carry_query`, which already
-                    # applied the retraction predicate.
                     sa.select(STIMULUS).where(
                         STIMULUS.c.id.in_(missing), STIMULUS.c.unit == unit,
+                        live_stimulus(STIMULUS.c.id),
                     ),
                 )).all()
                 for r in extra:
@@ -352,7 +374,14 @@ class SqlStimulusStore:
                     pending.append(
                         replace(row, waits=True) if row.id in waiting else row,
                     )
+            # ONE bound for the whole read, oldest first, the same in both stores
+            # (`InMemoryStimulusStore.view`, bound by the contract suite): the
+            # side doors are not exempt from `limit`. Oldest-first is what keeps
+            # a truncated read safe: whatever is cut has a higher id than
+            # everything shown, and a wake's `through_stimulus_id` is the
+            # highest id it claimed, so the cut stimuli stay pending.
             pending.sort(key=lambda x: x.id)
+            del pending[limit:]
             activity_q = activity_query(unit=unit)
             activity = (await conn.execute(activity_q)).scalar_one_or_none()
             recent = (await conn.execute(_recent_wakes_query(unit, mode))).all()
@@ -414,7 +443,7 @@ class SqlStimulusStore:
                     detail = _superseded(later, detail)
             await conn.execute(sa.insert(o).values(
                 wake_id=outcome.wake_id, unit=outcome.unit, session_id=outcome.session_id,
-                outcome=value, detail=detail, at_ms=outcome.at_ms, cause=cause,
+                outcome=value, detail=detail, at_ms=outcome.at_ms, cause=stored_cause(value, cause),
                 recorded_at=_at(recorded_at_ms),
             ))
             if rows:
@@ -449,6 +478,18 @@ class SqlStimulusStore:
             rows = (await conn.execute(stmt)).all()
         return len(rows)
 
+    async def count_rollup(
+        self, *, unit: str, person_id: str, item_prefix: str, from_ms: int, to_ms: int,
+    ) -> int:
+        stmt = sa.select(sa.func.count()).select_from(STIMULUS).where(
+            STIMULUS.c.unit == unit, STIMULUS.c.kind == "rollup",
+            STIMULUS.c.person_id == person_id,
+            STIMULUS.c.item.startswith(item_prefix, autoescape=True),
+            STIMULUS.c.at_ms >= from_ms, STIMULUS.c.at_ms < to_ms,
+        )
+        async with self._engine.connect() as conn:
+            return int((await conn.execute(stmt)).scalar_one())
+
     async def retract(
         self, *, unit: str, stimulus_id: int, reason: str, recorded_at_ms: int,
     ) -> bool:
@@ -472,9 +513,12 @@ class SqlStimulusStore:
             stimulus_count=wake.stimulus_count, eligible_count=wake.eligible_count,
             oldest_pending_ms=wake.oldest_pending_ms,
             cut_cooldown=int(wake.cut_cooldown),
-            # JSON text cast to jsonb: the detail is a small flat mapping and
-            # this keeps the dialect's JSON serializer out of the question.
-            detail=sa.cast(json.dumps(wake.detail, sort_keys=True), COGNITION_WAKE.c.detail.type),
+            # The mapping AS ITSELF: the JSONB type serializes what it is
+            # handed. `sa.cast(json.dumps(...), JSONB)` stored a jsonb STRING
+            # holding the JSON (`jsonb_typeof = 'string'`, so `detail->'unclaimed'`
+            # read NULL). Rows written that way stay strings; `_detail` reads
+            # either.
+            detail=_with_unclaimed(wake),
             at_ms=wake.at_ms, recorded_at=_at(recorded_at_ms), tracked=int(wake.tracked),
         ).returning(COGNITION_WAKE.c.id)
         async with self._engine.begin() as conn:
@@ -502,13 +546,21 @@ class SqlStimulusStore:
         await self._engine.dispose()
 
 
+def _with_unclaimed(wake: NewWake) -> dict[str, object]:
+    if not wake.unclaimed_ids:
+        return dict(wake.detail)
+    return {**wake.detail, _UNCLAIMED_KEY: sorted(wake.unclaimed_ids)}
+
+
 def _check_outcome(outcome: NewWakeOutcome, carries: Sequence[NewCarry]) -> None:
     """The arguments `record_outcome` refuses before any write, in both
     implementations (`nora.testing.stimuli` calls this too)."""
     if outcome.outcome not in WAKE_OUTCOMES:
         raise ValueError(f"unknown wake outcome {outcome.outcome!r}")
-    if outcome.cause not in FAILURE_CAUSES:
+    if outcome.cause not in OUTCOME_CAUSES:
         raise ValueError(f"unknown failure cause {outcome.cause!r}")
+    if outcome.cause == NO_CAUSE and outcome.outcome in ("failed", "timeout"):
+        raise ValueError(f"a {outcome.outcome} outcome names its cause, not {NO_CAUSE!r}")
     if carries and outcome.outcome != "closed":
         raise ValueError("carry rows are written only with a `closed` outcome")
     for carry in carries:

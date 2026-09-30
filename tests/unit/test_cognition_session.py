@@ -45,7 +45,9 @@ def test_message_stimuli_in_one_room_become_one_item_bound_to_that_room():
     assert item.room == Room("signal", "room-a")
     assert item.stimulus_ids == (1, 2, 3)
     assert "3" in item.summary
-    assert "room-a" in item.summary
+    # A summary is prompt text: the room is named by the item's label, never
+    # its conversation id (R-18, m5).
+    assert "room-a" not in item.summary
 
 
 def test_message_stimuli_in_different_rooms_become_separate_items():

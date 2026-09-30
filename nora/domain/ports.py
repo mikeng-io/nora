@@ -961,7 +961,9 @@ class StimulusStore(Protocol):
         strike (`UnitView.carry`, delivered `waits` when a person's wait
         closed them), and the `recorded_at` of its newest person-authored item
         (a `message` stimulus, `waits` included). A `self` stimulus that was
-        retracted (`retract`) is never pending.
+        retracted (`retract`) is never pending. A wake that claimed only the
+        stimuli of its own kind (D2) names the rest it left inside its range
+        (`WakeRow.unclaimed_ids`): those are pending too.
 
         `stale_before_ms` (a REAL clock, unlike `now_ms`, which is the settle
         cutoff): a TRACKED wake recorded before it with no outcome row is
@@ -991,6 +993,15 @@ class StimulusStore(Protocol):
         already superseded (it expired and its stimuli were taken) is written
         `timeout` with no carry, so they are never processed twice. Carries
         with any outcome but `closed` are refused (ValueError)."""
+        ...
+
+    async def count_rollup(
+        self, *, unit: str, person_id: str, item_prefix: str, from_ms: int, to_ms: int,
+    ) -> int:
+        """How many `rollup` stimuli of `unit` name `person_id`, have an `item`
+        starting with `item_prefix` and an `at_ms` in `[from_ms, to_ms)`, retracted
+        ones INCLUDED (a struck stimulus was still raised). What the Rollup reads
+        before raising a deviation, to hold «one per person per day» (D3, DEC-245)."""
         ...
 
     async def retract(

@@ -51,23 +51,27 @@ records the wake `failed` and its stimuli stay pending.
 from __future__ import annotations
 
 import logging
+import time
 from collections.abc import Awaitable, Callable, Collection, Sequence
 from typing import Any, Protocol
 
 from nora.agent.lineage import LineagePolicy, derived_view, visible_sections
 from nora.domain.blocks import speaker_name
 from nora.domain.cognition_ground import (
+    UNNAMED_ROOM,
     EventLine,
     Grounding,
     NoteLine,
     RecordItem,
     RecordKind,
+    RollupLine,
+    parse_rollup_ref,
     record_ref,
 )
 from nora.domain.cognition_session import AgendaItem, Room
 from nora.domain.gatherings import Gathering
 from nora.domain.notes import Note
-from nora.domain.record_query import RecordRefHit
+from nora.domain.record_query import RecordHit, RecordRefHit
 from nora.domain.rollup import room_key
 from nora.domain.stimuli import Stimulus
 
@@ -84,6 +88,10 @@ class RecordRefSource(Protocol):
     async def by_refs(
         self, refs: Sequence[tuple[str, int]], rooms: Sequence[tuple[str, str]],
     ) -> Sequence[RecordRefHit]: ...
+
+    async def own_sends(
+        self, rooms: Sequence[tuple[str, str]], *, start_ms: int, end_ms: int, limit: int,
+    ) -> Sequence[RecordHit]: ...
 
 
 def _record_item(
@@ -110,6 +118,73 @@ def _record_item(
     )
 
 
+def _rollup_lines(
+    pending: Sequence[Stimulus], claimed: set[int], persons: Any,
+) -> dict[str, RollupLine]:
+    """The readable Rollup stimuli of the agenda, by `ref`: the ref's fields with
+    each person's roster NAME. A ref that does not parse, or names a person the
+    roster does not know, has no entry: the session is not handed a row it
+    cannot read (DEC-245). Names are resolved here, at read time, and never
+    serialized (`Grounding.as_dict`)."""
+    out: dict[str, RollupLine] = {}
+    for s in pending:
+        if s.id not in claimed or s.kind != "rollup":
+            continue
+        parsed = parse_rollup_ref(s)
+        if parsed is None:
+            continue
+        refs = [persons.by_person.get(persons.subject_id_for(p)) for p in parsed.person_ids]
+        if any(r is None for r in refs):
+            continue
+        out[s.ref] = RollupLine(
+            ref=s.ref, kind=parsed.kind, names=tuple(r.name for r in refs if r is not None),
+            person_ids=parsed.person_ids, start_ms=parsed.start_ms, end_ms=parsed.end_ms,
+            place=parsed.place,
+        )
+    return out
+
+
+async def _own_sends(
+    records: RecordRefSource, items: Sequence[AgendaItem], pending: Sequence[Stimulus],
+    allowed: set[tuple[str, str]], ai_name: str, *, now_ms: int, lookback_ms: int, limit: int,
+) -> dict[int, tuple[RecordItem, ...]]:
+    """Nora's own sends in each message item's window, by item index (D1): from
+    `lookback_ms` before the item's oldest stimulus until now, at most `limit`
+    newest, in a room of the unit only. One read per room, over the widest window
+    any of its items has."""
+    by_id = {s.id: s for s in pending}
+    windows: dict[int, tuple[Room, int]] = {}
+    for index, item in enumerate(items):
+        if item.kind != "message" or (item.room.platform, item.room.conversation_id) not in allowed:
+            continue
+        times = [by_id[sid].at_ms for sid in item.stimulus_ids if sid in by_id]
+        if times:
+            windows[index] = (item.room, min(times) - lookback_ms)
+    widest: dict[Room, int] = {}
+    counts: dict[Room, int] = {}
+    for room, start in windows.values():
+        widest[room] = min(start, widest.get(room, start))
+        counts[room] = counts.get(room, 0) + 1
+    read: dict[Room, list[RecordHit]] = {}
+    for room, start in widest.items():
+        read[room] = list(await records.own_sends(
+            [(room.platform, room.conversation_id)], start_ms=start, end_ms=now_ms + 1,
+            limit=limit * counts[room],
+        ))
+    out: dict[int, tuple[RecordItem, ...]] = {}
+    for index, (room, start) in windows.items():
+        mine = [h for h in read[room] if h.row.ts >= start][-limit:]
+        out[index] = tuple(
+            RecordItem(
+                ref=f"messages:{h.row.id}", kind="message", message_id=h.row.id,
+                room=Room(h.platform, h.conversation_id), author=ai_name, at_ms=h.row.ts,
+                text=None if h.deleted else (h.row.body or ""), own=True,
+            )
+            for h in mine
+        )
+    return out
+
+
 def build_grounder(
     *,
     records: RecordRefSource,
@@ -120,12 +195,26 @@ def build_grounder(
     lineage: LineagePolicy,
     unit_rooms: Callable[[str], Collection[tuple[str, str]]],
     ai_display_name: str = "Nora",
+    room_label: Callable[[str, str], str] | None = None,
+    clock: Callable[[], float] = time.time,
+    own_send_lookback_seconds: float = 1800.0,
+    own_sends_max: int = 6,
 ) -> Callable[[str, Sequence[AgendaItem], Sequence[Stimulus]], Awaitable[Grounding]]:
     """The session's `Grounder` (`nora.app.cognition_session.Grounder`).
 
     `persons` is `nora.persons.Persons` (`name_transcript`), `media_join` the
     process's one `MediaJoin` or None (photos then stay as their bare handles,
-    which is what the row says). Everything else is one read seam each."""
+    which is what the row says). `room_label(platform, conversation_id)` is the
+    policy's label for a room ('' or None-built: the prompt says `UNNAMED_ROOM`,
+    never the id). Everything else is one read seam each.
+
+    **Nora's own sends (D1, DEC-245).** Inside each message item's window (from
+    `own_send_lookback_seconds` before its oldest stimulus until now) her own
+    delivered sends in that room are read, at most `own_sends_max` newest, and
+    handed to the render marked as hers. They are read through the same select
+    as every Record row (hidden rows absent, an unsent one's words withheld), in
+    a room of the unit only, and they are never a stimulus and never in
+    `records`."""
 
     async def ground(
         unit: str, items: Sequence[AgendaItem], pending: Sequence[Stimulus],
@@ -231,12 +320,26 @@ def build_grounder(
                     venue=e.venue_name or e.venue_text or "", status=e.status.value,
                     revision=None if e.head_revision_id is None else str(e.head_revision_id),
                 ))
+        rollups = _rollup_lines(pending, claimed, persons)
+        own_sends = await _own_sends(
+            records, items, pending, allowed, ai_display_name,
+            now_ms=int(clock() * 1000), lookback_ms=int(own_send_lookback_seconds * 1000),
+            limit=own_sends_max,
+        )
+        labels = {
+            f"{r.platform}:{r.conversation_id}":
+                (room_label(r.platform, r.conversation_id) if room_label else "") or UNNAMED_ROOM
+            for r in agenda_rooms
+        }
         if lineage.mode == "shadow" and any(withheld.values()):
             log.info(
                 "cognition grounding lineage shadow (unit=%s): would withhold %d note(s) "
                 "and %d event(s); shown", unit, withheld["notes"], withheld["events"],
             )
-        return Grounding(records=records_out, notes=notes, events=tuple(events))
+        return Grounding(
+            records=records_out, notes=notes, events=tuple(events), rollups=rollups,
+            own_sends=own_sends, room_labels=labels,
+        )
 
     return ground
 
