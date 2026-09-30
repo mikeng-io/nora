@@ -94,7 +94,9 @@ _REMIND_AGENT_ALLOWED: frozenset[str] = frozenset({
 
 #: Watches the session's read tools' results and keeps what they handed out; it
 #: reads a tool's answer and writes nothing anywhere.
-_FETCHED_ALLOWED: frozenset[str] = frozenset({"nora.domain.note_body"})
+_FETCHED_ALLOWED: frozenset[str] = frozenset({
+    "nora.agent.room_routing", "nora.domain.note_body",
+})
 
 _SESSION_RUNNER_ALLOWED: frozenset[str] = frozenset({
     "nora.agent.cognition_dry_run", "nora.agent.cognition_pace", "nora.agent.fetch_watch",
