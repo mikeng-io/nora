@@ -51,7 +51,7 @@ empty `question`), so the caption and `alt` describe the picture that is there. 
 `Image`. The picture has to come from this room; once it is in the document, everyone who can open
 the document sees it.
 
-Say in your reply which pictures went in, by what they show. A picture from before the recent window
+Say in your reply which pictures went in, by what they show. A picture from more than 90 days back
 is out of reach: say so and leave it out, and never guess a code.
 
 ## Change a document by reading it first

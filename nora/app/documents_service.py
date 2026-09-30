@@ -32,18 +32,18 @@ what was made there.
 from __future__ import annotations
 
 import copy
-import json
 import re
-from collections.abc import Callable, Sequence
+import time
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Literal, Protocol
+from typing import Any, Literal
 from uuid import UUID, uuid4
 
 from nora.documents import catalog_prompt
 from nora.documents.check import Checked, Finding, check_document
 from nora.domain.documents import DocumentStore, RevisionIn, RoomKey
-from nora.domain.media import resolve_room_media
-from nora.domain.ports import MediaObjectStore
+from nora.domain.media import code_matches, parse_media_type, resolve_room_media, room_sightings
+from nora.domain.ports import MediaObjectStore, RecordStore
 from nora.policy import Policy
 
 _HEX = re.compile(r"^[0-9a-f]{6,64}$")
@@ -51,11 +51,8 @@ _SHA = re.compile(r"^[0-9a-f]{64}$")
 _HANDLES_SHOWN = 5
 
 
-class _Transcript(Protocol):
-    """The one read of the record store this service makes: the room's recent rows,
-    each carrying `media_json`."""
-
-    async def recent(self, *, conversation_id: str, limit: int) -> Sequence[Any]: ...
+def _wall_ms() -> int:
+    return int(time.time() * 1000)
 
 
 @dataclass(frozen=True, slots=True)
@@ -118,12 +115,13 @@ class DocumentService:
         self,
         *,
         store: DocumentStore,
-        records: _Transcript,
+        records: RecordStore,
         media: MediaObjectStore,
         media_window: int,
         room_ids: Callable[[str, str], frozenset[str]],
         is_person: Callable[[str], bool],
         new_id: Callable[[], UUID] = uuid4,
+        now_ms: Callable[[], int] = _wall_ms,
     ) -> None:
         self._store = store
         self._records = records
@@ -137,32 +135,36 @@ class DocumentService:
         # happens to equal a real person id must never reach it (review of PR 654).
         self._is_person = is_person
         self._new_id = new_id
+        self._now_ms = now_ms
 
     # ------------------------------------------------------------------ media
     async def _sightings(self, platform: str, conversation_id: str, code: str) -> set[str] | None:
         """The distinct full sha256 of every picture in this room whose sha256
-        starts with `code`, or `None` when the room could not be read."""
+        starts with `code`, or `None` when the room could not be read, or when the
+        scan was cut short and found nothing (`could not check that far` is never
+        `no such picture`)."""
         found: set[str] = set()
+        truncated = False
         try:
             ids = self._room_ids(platform, conversation_id) | {conversation_id}
+            now = self._now_ms()
             for cid in sorted(ids):
-                rows = await self._records.recent(conversation_id=cid, limit=self._window)
-                for row in rows:
-                    if not getattr(row, "media_json", None):
-                        continue
-                    try:
-                        blobs = json.loads(row.media_json)
-                    except (ValueError, TypeError):
-                        continue
-                    for blob in blobs if isinstance(blobs, list) else ():
-                        sha = str(blob.get("sha256", "")) if isinstance(blob, dict) else ""
-                        # Only a real content address: a malformed entry is not a picture.
-                        if _SHA.match(sha) and sha.startswith(code):
-                            found.add(sha)
-            for cid in sorted(ids):
-                # The one resolver the sandbox session shares: a code resolves only in the
-                # room it was born in, and an index that cannot be read is `unavailable`,
-                # never "no such picture".
+                # The one resolver the sandbox session shares (DEC-251): the recent window
+                # plus the room's last 90 days of message rows, keyed by the message row.
+                seen = await room_sightings(
+                    self._records, conversation_id=cid, now_ms=now, window=self._window
+                )
+                truncated = truncated or seen.truncated
+                for sha, sighting in code_matches(seen.sightings, code).items():
+                    # Images only (this block's own rule): a clip or a voice note is not a
+                    # picture, and a shared item's cover is a preview of someone else's post.
+                    if (
+                        _SHA.match(sha)
+                        and not sighting.cover
+                        and parse_media_type(sighting.media_type)[0] == "image"
+                    ):
+                        found.add(sha)
+                # What Nora made or kept in this room is in the index, not in a message row.
                 look = await resolve_room_media(
                     self._media, code=code, platform=platform, conversation_id=cid
                 )
@@ -170,6 +172,8 @@ class DocumentService:
                     return None
                 found.update(sha for sha in look.objects if _SHA.match(sha))
         except Exception:  # noqa: BLE001 - a store that is down is `unavailable`, not a guess
+            return None
+        if truncated and not found:
             return None
         return found
 
