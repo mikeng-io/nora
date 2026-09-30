@@ -154,3 +154,8 @@ class ComputerToolSettings:
     max_output_chars: int = 8000
     max_read_chars: int = 20000
     limits: tuple[tuple[str, int], ...] = ()
+    # Sessions (`[computer.sessions]`): an open session with no computer call
+    # for `idle_after_minutes` and no tmux job running is shown `idle`; an
+    # expired one is shown `lapsed` for `lapsed_visible_hours`.
+    idle_after_minutes: int = 30
+    lapsed_visible_hours: int = 24

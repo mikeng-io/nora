@@ -88,6 +88,8 @@ from nora.domain.cognition_render import RenderBudget
 from nora.domain.compute import ComputeJobStore
 from nora.domain.computer import ComputerToolSettings
 from nora.domain.computer_events import ComputerEventStore
+from nora.domain.computer_leases import ComputerLeases
+from nora.domain.computer_sessions import ComputerSessionStore
 from nora.domain.decision_log import DecisionLogRecorder
 from nora.domain.gatherings import GatheringStatus
 from nora.domain.media_join import MediaJoin
@@ -131,6 +133,7 @@ from nora.infra.sql.announcements import SqlAnnouncementLog
 from nora.infra.sql.cognition_dry_run import SqlCognitionDryRunStore
 from nora.infra.sql.compute_jobs import SqlComputeJobStore
 from nora.infra.sql.computer_events import SqlComputerEventStore
+from nora.infra.sql.computer_sessions import SqlComputerSessionStore
 from nora.infra.sql.culture import SqlCultureStore
 from nora.infra.sql.decision_log import SqlDecisionLogStore
 from nora.infra.sql.dream_schedule import SqlDreamScheduleClock
@@ -1343,6 +1346,12 @@ async def build_dependencies(
     # row on every call, `unavailable` included, so a call made while
     # `[computer]` is off is audited too. Only the runtime is behind the flag.
     computer_events: ComputerEventStore = SqlComputerEventStore(engine)
+    # Computer sessions (design/sandbox-runtime §15.2), derived by code on
+    # every computer call, and the process's ONE lease table (§15.4): one
+    # instance shared by every turn and the sweeper, which is what makes an
+    # in-process lock a lock (one Nora process; `ComputerLeases` says so).
+    computer_sessions: ComputerSessionStore = SqlComputerSessionStore(engine)
+    computer_leases = ComputerLeases()
     # Issue #325's durable half (`reasoning_strip_log`, migration 0057, ADR
     # 0013), REUSING `engine` for the same reason the three stores above do.
     # UNCONDITIONAL and behind no flag: an instrument that is off by default
@@ -2737,6 +2746,8 @@ async def build_dependencies(
         max_output_chars=cfg.computer.max_output_chars,
         max_read_chars=cfg.computer.max_read_chars,
         limits=cfg.computer.limits.as_pairs(),
+        idle_after_minutes=cfg.computer.sessions.idle_after_minutes,
+        lapsed_visible_hours=cfg.computer.sessions.lapsed_visible_hours,
     )
     # `nora.agent` may not import `nora.config` (import-linter's "only app and
     # __main__ read config") — this is the conversion point, the same shape
@@ -2929,6 +2940,7 @@ async def build_dependencies(
         # is false; the audit store is always wired (see where it is built).
         computer=computer, computer_events=computer_events,
         computer_settings=computer_settings,
+        computer_sessions=computer_sessions, computer_leases=computer_leases,
         # §9's caps as the DOMAIN value, the SAME `reminder_caps` instance
         # `GatheringService` was built with above — see that variable's own
         # comment for why they must not be two separately constructed copies.

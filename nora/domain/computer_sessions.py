@@ -43,12 +43,25 @@ from datetime import datetime, timedelta
 from typing import Any, Literal, Protocol, runtime_checkable
 from uuid import UUID
 
+from nora.domain.cognition_render import ago
 from nora.domain.computer_events import ComputerEvent, ensure_utc_event
 
 __all__ = [
-    "EXPIRED", "EXPIRY_REASONS", "OPEN", "STORED_STATUSES", "ComputerSession",
-    "ComputerSessionStore", "SessionProgress", "ShownStatus", "cut", "derive_progress",
-    "ensure_utc_event", "normalise_session", "shown_status",
+    "EXPIRED",
+    "EXPIRY_REASONS",
+    "OPEN",
+    "STORED_STATUSES",
+    "ComputerSession",
+    "ComputerSessionStore",
+    "SessionProgress",
+    "ShownStatus",
+    "age",
+    "cut",
+    "derive_progress",
+    "ensure_utc_event",
+    "normalise_session",
+    "progress_text",
+    "shown_status",
 ]
 
 #: The stored states. `open` is live; `expired` is the sweeper's, final.
@@ -204,6 +217,36 @@ def derive_progress(events: Sequence[ComputerEvent], *, capped: bool = False) ->
         runs=len(runs), runs_capped=capped, last_command=last_command,
         last_exit_code=last_exit, files=tuple(files), last_activity_at=last,
     )
+
+
+def age(then: datetime, now: datetime) -> str:
+    """How long before `now` `then` was, as a person says it («12 min ago»)."""
+    return ago(int((now - then).total_seconds() * 1000))
+
+
+def progress_text(progress: SessionProgress, *, now: datetime) -> str:
+    """A session's progress on one line: runs and the last one's exit, the
+    last command, the files changed, and the last activity's age. A non-zero
+    exit is said as a failed run; it is never a status."""
+    parts: list[str] = []
+    if progress.runs:
+        count = f"{progress.runs}{'+' if progress.runs_capped else ''} run"
+        count += "" if progress.runs == 1 else "s"
+        if progress.last_exit_code is None:
+            parts.append(f"{count}, the last did not finish")
+        elif progress.last_exit_code != 0:
+            parts.append(f"{count}, last run failed, exit {progress.last_exit_code}")
+        else:
+            parts.append(f"{count}, last exit 0")
+        if progress.last_command:
+            parts.append(f"last command `{progress.last_command}`")
+    else:
+        parts.append("no commands run")
+    if progress.files:
+        parts.append("changed " + ", ".join(progress.files))
+    if progress.last_activity_at is not None:
+        parts.append(f"last active {age(progress.last_activity_at, now)}")
+    return "; ".join(parts)
 
 
 @runtime_checkable

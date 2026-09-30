@@ -168,4 +168,4 @@ async def test_resources_are_noted_without_moving_activity(store):
 
 async def test_a_naive_datetime_is_refused(store):
     with pytest.raises(ValueError):
-        await _open(store, now=datetime(2026, 9, 30, 12, 0))  # noqa: DTZ001
+        await _open(store, now=datetime(2026, 9, 30, 12, 0))
