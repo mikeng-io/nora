@@ -39,9 +39,19 @@ from uuid import UUID
 
 #: Who made a call (`ComputerEvent.actor`). `tag` is a turn somebody tagged
 #: her into, `fire` a fire turn (a reminder, participation, a proactive act),
-#: `dreamer:<adaptor>` a Dreamer pass. `cognition` and `operator` are reserved:
+#: `dreamer:<adaptor>` a Dreamer pass. `sweeper` is the session sweeper
+#: (design/sandbox-runtime §15.2, migration `0082`), which writes only the
+#: rows of the sessions it expires. `cognition` and `operator` are reserved:
 #: no path reaches the computer tools as either today.
-ACTORS: frozenset[str] = frozenset({"tag", "fire", "cognition", "operator"})
+ACTORS: frozenset[str] = frozenset({"tag", "fire", "cognition", "operator", "sweeper"})
+
+#: The actors who wait for a turn's answer: a live turn (design §15.4). Every
+#: other actor is background and never queues behind one.
+LIVE_ACTORS: frozenset[str] = frozenset({"tag", "fire"})
+
+
+def is_live_actor(actor: str) -> bool:
+    return actor in LIVE_ACTORS
 DREAMER_ACTOR_PREFIX = "dreamer:"
 
 #: How the call reached the computer (`ComputerEvent.path`). `direct` is a
@@ -125,6 +135,11 @@ class ComputerEvent:
     request: Mapping[str, Any] = field(default_factory=dict)
     result: Mapping[str, Any] = field(default_factory=dict)
     output_ref: Mapping[str, Any] = field(default_factory=dict)
+    #: The computer session the call belongs to (`nora.domain.computer_sessions`,
+    #: migration `0082`); None on rows written before sessions existed, on a
+    #: call whose session could not be opened, and on a call the computer
+    #: was off for.
+    session_id: UUID | None = None
 
     def __post_init__(self) -> None:
         if not valid_actor(self.actor):
@@ -166,6 +181,11 @@ class ComputerEventStore(Protocol):
         """The last `limit` events for `conversation_id` with `created_at >=
         since`, newest first. Absolute `since`, the `ToolCallLogStore`
         shape, so a fake clock needs no special-casing."""
+        ...
+
+    async def for_session(self, *, session_id: UUID, limit: int) -> list[ComputerEvent]:
+        """The newest `limit` rows of one computer session, newest first:
+        what a session's progress is derived from (`derive_progress`)."""
         ...
 
     async def orphaned_starts(self, *, older_than: datetime, limit: int) -> list[ComputerEvent]:

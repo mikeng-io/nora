@@ -65,6 +65,8 @@ from nora.domain.computer_events import ACTORS as COMPUTER_ACTORS
 from nora.domain.computer_events import CALL_PATHS as COMPUTER_CALL_PATHS
 from nora.domain.computer_events import DREAMER_ACTOR_PREFIX
 from nora.domain.computer_events import PHASES as COMPUTER_PHASES
+from nora.domain.computer_sessions import EXPIRY_REASONS as COMPUTER_EXPIRY_REASONS
+from nora.domain.computer_sessions import STORED_STATUSES as COMPUTER_SESSION_STATUSES
 from nora.domain.decision_log import REASON_MAX_CHARS, VERDICTS, WRITERS
 from nora.domain.facts import (
     FACT_PREDICATE_CEILING_CHARS,
@@ -4333,8 +4335,14 @@ COMPUTER_EVENTS = sa.Table(
     sa.Column(
         "output_ref", pg.JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"),
     ),
+    # `0082_computer_sessions`: the session a call belongs to. Nullable:
+    # rows written before sessions existed carry none. No foreign key, for
+    # the reason `computer_sessions` gives (a table-reset fixture truncates
+    # the two independently).
+    sa.Column("session_id", pg.UUID(as_uuid=True), nullable=True),
     # Both vocabularies read from `nora.domain.computer_events`, never
-    # restated: the migration froze the same sets on 2026-09-30.
+    # restated: the migration froze the same sets on 2026-09-30, and
+    # `0082_computer_sessions` added `sweeper`.
     sa.CheckConstraint(
         f"actor IN ({', '.join(repr(a) for a in sorted(COMPUTER_ACTORS))}) "
         f"OR (starts_with(actor, '{DREAMER_ACTOR_PREFIX}') "
@@ -4367,4 +4375,74 @@ COMPUTER_EVENTS = sa.Table(
 IDX_COMPUTER_EVENTS_CONV_TS = sa.Index(
     "idx_computer_events_conv_ts",
     COMPUTER_EVENTS.c.conversation_id, COMPUTER_EVENTS.c.created_at,
+)
+
+# A session's rows, for its derived progress (`for_session`).
+IDX_COMPUTER_EVENTS_SESSION_TS = sa.Index(
+    "idx_computer_events_session_ts",
+    COMPUTER_EVENTS.c.session_id, COMPUTER_EVENTS.c.created_at,
+)
+
+
+# `computer_sessions` — one task in progress on the computer, per room,
+# DERIVED BY CODE (design/sandbox-runtime §15.2, decision 5;
+# `nora.domain.computer_sessions`). A computer call opens one where the room
+# has none open and continues it otherwise; the sweeper expires it by a
+# compare-and-set on `last_activity_at`. Progress is never stored: it is
+# derived from the session's own `computer_events` rows. Changes in place,
+# so `0082` gives it the `nora_row_history` trigger; nothing deletes a row.
+# No foreign key from `computer_events.session_id`: a fixture that resets
+# every table truncates the two independently.
+COMPUTER_SESSIONS = sa.Table(
+    "computer_sessions",
+    METADATA,
+    sa.Column("id", pg.UUID(as_uuid=True), primary_key=True),
+    sa.Column("platform", sa.Text, nullable=False),
+    sa.Column("conversation_id", sa.Text, nullable=False),
+    sa.Column("scope", sa.Text, nullable=False),
+    sa.Column("objective", sa.Text, nullable=False),
+    sa.Column("status", sa.Text, nullable=False),
+    sa.Column(
+        "stopped_at_detail", pg.JSONB, nullable=False,
+        server_default=sa.text("'{}'::jsonb"),
+    ),
+    sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+    sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+    sa.Column("last_activity_at", sa.DateTime(timezone=True), nullable=False),
+    sa.Column("expired_at", sa.DateTime(timezone=True), nullable=True),
+    sa.Column("expired_reason", sa.Text, nullable=True),
+    sa.Column("actor", sa.Text, nullable=False),
+    sa.Column("created_by_tag", sa.Text, nullable=False),
+    sa.CheckConstraint(
+        f"status IN ({', '.join(repr(x) for x in sorted(COMPUTER_SESSION_STATUSES))})",
+        name="ck_computer_sessions_status",
+    ),
+    sa.CheckConstraint(
+        "(status = 'open' AND expired_at IS NULL AND expired_reason IS NULL) OR "
+        "(status = 'expired' AND expired_at IS NOT NULL AND expired_reason IS NOT NULL)",
+        name="ck_computer_sessions_expiry",
+    ),
+    sa.CheckConstraint(
+        "expired_reason IS NULL OR expired_reason IN "
+        f"({', '.join(repr(x) for x in sorted(COMPUTER_EXPIRY_REASONS))})",
+        name="ck_computer_sessions_expired_reason",
+    ),
+    sa.CheckConstraint(
+        f"actor IN ({', '.join(repr(a) for a in sorted(COMPUTER_ACTORS))}) "
+        f"OR (starts_with(actor, '{DREAMER_ACTOR_PREFIX}') "
+        f"AND length(actor) > {len(DREAMER_ACTOR_PREFIX)})",
+        name="ck_computer_sessions_actor",
+    ),
+)
+
+# ONE open session per room: what makes «a call in a room with no open
+# session opens exactly one» hold under two concurrent calls.
+UQ_COMPUTER_SESSIONS_OPEN_SCOPE = sa.Index(
+    "uq_computer_sessions_open_scope", COMPUTER_SESSIONS.c.scope,
+    unique=True, postgresql_where=sa.text("status = 'open'"),
+)
+
+IDX_COMPUTER_SESSIONS_ROOM = sa.Index(
+    "idx_computer_sessions_room",
+    COMPUTER_SESSIONS.c.conversation_id, COMPUTER_SESSIONS.c.last_activity_at,
 )

@@ -126,6 +126,7 @@ $$;
 );
 );
 );
+);
 ADD CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num);
 ADD CONSTRAINT analytics_watermark_pkey PRIMARY KEY (deriver_name, subject_id);
 ADD CONSTRAINT artifacts_pkey PRIMARY KEY (id);
@@ -145,6 +146,7 @@ ADD CONSTRAINT cognition_wake_pkey PRIMARY KEY (id);
 ADD CONSTRAINT cognition_would_write_pkey PRIMARY KEY (id);
 ADD CONSTRAINT compute_jobs_pkey PRIMARY KEY (id);
 ADD CONSTRAINT computer_events_pkey PRIMARY KEY (id);
+ADD CONSTRAINT computer_sessions_pkey PRIMARY KEY (id);
 ADD CONSTRAINT config_revision_pkey PRIMARY KEY (id);
 ADD CONSTRAINT consolidation_watermark_pkey PRIMARY KEY (consolidator_name, scope_id);
 ADD CONSTRAINT culture_head_revision_id_fkey FOREIGN KEY (head_revision_id) REFERENCES public.culture_revision(id);
@@ -267,6 +269,7 @@ ALTER TABLE ONLY public.cognition_would_write
 ALTER TABLE ONLY public.compute_jobs
 ALTER TABLE ONLY public.computer_events
 ALTER TABLE ONLY public.computer_events
+ALTER TABLE ONLY public.computer_sessions
 ALTER TABLE ONLY public.config_revision
 ALTER TABLE ONLY public.consolidation_watermark
 ALTER TABLE ONLY public.culture
@@ -468,10 +471,14 @@ CONSTRAINT ck_cognition_would_write_outcome CHECK ((outcome = ANY (ARRAY['would_
 CONSTRAINT ck_cognition_would_write_outcome_shape CHECK ((((outcome = 'would_commit'::text) AND (candidate IS NOT NULL)) OR ((outcome = 'refused'::text) AND (refusal_reason IS NOT NULL)))),
 CONSTRAINT ck_cognition_would_write_tier CHECK ((tier = ANY (ARRAY['note'::text, 'event'::text, 'standing'::text])))
 CONSTRAINT ck_compute_jobs_state CHECK ((state = ANY (ARRAY['pending'::text, 'firing'::text, 'done'::text, 'failed'::text])))
-CONSTRAINT ck_computer_events_actor CHECK (((actor = ANY (ARRAY['cognition'::text, 'fire'::text, 'operator'::text, 'tag'::text])) OR (starts_with(actor, 'dreamer:'::text) AND (length(actor) > 8)))),
+CONSTRAINT ck_computer_events_actor CHECK (((actor = ANY (ARRAY['cognition'::text, 'fire'::text, 'operator'::text, 'sweeper'::text, 'tag'::text])) OR (starts_with(actor, 'dreamer:'::text) AND (length(actor) > 8)))),
 CONSTRAINT ck_computer_events_path CHECK ((path = ANY (ARRAY['direct'::text, 'subagent'::text]))),
 CONSTRAINT ck_computer_events_phase CHECK ((phase = ANY (ARRAY['finished'::text, 'started'::text]))),
 CONSTRAINT ck_computer_events_phase_times CHECK ((((phase = 'started'::text) AND (finished_at IS NULL)) OR ((phase = 'finished'::text) AND (finished_at IS NOT NULL) AND (finished_at >= started_at))))
+CONSTRAINT ck_computer_sessions_actor CHECK (((actor = ANY (ARRAY['cognition'::text, 'fire'::text, 'operator'::text, 'sweeper'::text, 'tag'::text])) OR (starts_with(actor, 'dreamer:'::text) AND (length(actor) > 8)))),
+CONSTRAINT ck_computer_sessions_expired_reason CHECK (((expired_reason IS NULL) OR (expired_reason = ANY (ARRAY['idle'::text, 'resources_gone'::text, 'running_past_limit'::text])))),
+CONSTRAINT ck_computer_sessions_expiry CHECK ((((status = 'open'::text) AND (expired_at IS NULL) AND (expired_reason IS NULL)) OR ((status = 'expired'::text) AND (expired_at IS NOT NULL) AND (expired_reason IS NOT NULL)))),
+CONSTRAINT ck_computer_sessions_status CHECK ((status = ANY (ARRAY['expired'::text, 'open'::text])))
 CONSTRAINT ck_corridor_speed_how CHECK (((hour_of_week >= 0) AND (hour_of_week < 168)))
 CONSTRAINT ck_derived_places_kind CHECK ((kind = ANY (ARRAY['home'::text, 'work'::text, 'unlabeled'::text])))
 CONSTRAINT ck_event_revision_confidence_is_a_level CHECK (((confidence IS NULL) OR (confidence = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])))),
@@ -623,6 +630,8 @@ CREATE INDEX idx_cognition_would_write_session ON public.cognition_would_write U
 CREATE INDEX idx_cognition_would_write_unit_recorded ON public.cognition_would_write USING btree (unit, recorded_at);
 CREATE INDEX idx_compute_jobs_state ON public.compute_jobs USING btree (state);
 CREATE INDEX idx_computer_events_conv_ts ON public.computer_events USING btree (conversation_id, created_at);
+CREATE INDEX idx_computer_events_session_ts ON public.computer_events USING btree (session_id, created_at);
+CREATE INDEX idx_computer_sessions_room ON public.computer_sessions USING btree (conversation_id, last_activity_at);
 CREATE INDEX idx_config_revision_file_loaded ON public.config_revision USING btree (file, loaded_at);
 CREATE INDEX idx_culture_revision_key_written ON public.culture_revision USING btree (culture_key, written_at DESC, id DESC);
 CREATE INDEX idx_decision_log_conv_ts ON public.decision_log USING btree (conversation_id, ts DESC, id DESC);
@@ -697,6 +706,7 @@ CREATE TABLE public.cognition_wake_outcome (
 CREATE TABLE public.cognition_would_write (
 CREATE TABLE public.compute_jobs (
 CREATE TABLE public.computer_events (
+CREATE TABLE public.computer_sessions (
 CREATE TABLE public.config_revision (
 CREATE TABLE public.consolidation_watermark (
 CREATE TABLE public.culture (
@@ -771,6 +781,7 @@ CREATE TRIGGER computer_events_append_only BEFORE DELETE OR UPDATE ON public.com
 CREATE TRIGGER computer_events_no_truncate BEFORE TRUNCATE ON public.computer_events FOR EACH STATEMENT EXECUTE FUNCTION public.computer_events_refuse_change();
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.analytics_watermark FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('deriver_name', 'subject_id');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.compute_jobs FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
+CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.computer_sessions FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.consolidation_watermark FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('consolidator_name', 'scope_id');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.culture FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('key');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.dream_schedule_state FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('adaptor_name', 'scope_id');
@@ -810,6 +821,7 @@ CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.versi
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.video_readings FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('sha256', 'provider', 'model', 'chunk_seconds', 'chunk_max', 'reading_digest');
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.analytics_watermark FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.compute_jobs FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
+CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.computer_sessions FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.consolidation_watermark FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.culture FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.dream_schedule_state FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
@@ -849,6 +861,7 @@ CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.version_annou
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.video_readings FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
 CREATE UNIQUE INDEX note_candidate_create_anchor_key ON public.note_candidate USING btree (unit, anchor_date, anchor_entity_ids, lower(btrim(title))) WHERE (kind = 'create'::text);
 CREATE UNIQUE INDEX uq_cognition_wake_outcome_wake ON public.cognition_wake_outcome USING btree (wake_id);
+CREATE UNIQUE INDEX uq_computer_sessions_open_scope ON public.computer_sessions USING btree (scope) WHERE (status = 'open'::text);
 CREATE UNIQUE INDEX uq_reminders_proactive_open_note ON public.reminders USING btree (((payload ->> 'note_id'::text))) WHERE ((kind = 'proactive'::text) AND (state = ANY (ARRAY['pending'::text, 'firing'::text])));
 CREATE UNIQUE INDEX uq_rollup_build_current ON public.rollup_build USING btree (status) WHERE (status = 'current'::text);
 CREATE UNIQUE INDEX uq_row_history_open ON public.row_history USING btree (table_name, row_key) WHERE (superseded_at IS NULL);
@@ -1081,6 +1094,7 @@ accuracy_m double precision,
 act text NOT NULL,
 act text NOT NULL,
 actor text NOT NULL,
+actor text NOT NULL,
 adaptor_name text NOT NULL,
 added_at timestamp with time zone NOT NULL,
 added_by_person_id text NOT NULL,
@@ -1215,6 +1229,7 @@ conversation_id text NOT NULL,
 conversation_id text NOT NULL,
 conversation_id text NOT NULL,
 conversation_id text NOT NULL,
+conversation_id text NOT NULL,
 conversation_id text,
 conversation_type text NOT NULL,
 conversation_type text NOT NULL,
@@ -1242,8 +1257,10 @@ created_at timestamp with time zone DEFAULT now() NOT NULL,
 created_at timestamp with time zone DEFAULT now() NOT NULL,
 created_at timestamp with time zone NOT NULL,
 created_at timestamp with time zone NOT NULL,
+created_at timestamp with time zone NOT NULL,
 created_at_ms bigint NOT NULL,
 created_by text NOT NULL,
+created_by_tag text NOT NULL,
 cues text[] DEFAULT '{}'::text[] CONSTRAINT signal_cues_not_null NOT NULL,
 culture_key text NOT NULL,
 cut_cooldown integer DEFAULT 0 NOT NULL,
@@ -1302,6 +1319,8 @@ exclude_persons text[] DEFAULT '{}'::text[] NOT NULL,
 exclude_persons text[] DEFAULT '{}'::text[] NOT NULL,
 exclude_persons text[] DEFAULT '{}'::text[] NOT NULL,
 exclude_persons text[] DEFAULT '{}'::text[] NOT NULL,
+expired_at timestamp with time zone,
+expired_reason text,
 expires_at bigint
 extractor_confidence double precision NOT NULL,
 extractor_confidence double precision NOT NULL,
@@ -1405,6 +1424,7 @@ id uuid NOT NULL,
 id uuid NOT NULL,
 id uuid NOT NULL,
 id uuid NOT NULL,
+id uuid NOT NULL,
 image jsonb NOT NULL,
 image_id text,
 instruction_sha256 text NOT NULL,
@@ -1433,6 +1453,7 @@ kind text NOT NULL,
 kind text NOT NULL,
 kind text NOT NULL,
 label text,
+last_activity_at timestamp with time zone NOT NULL,
 last_adjudicated_at bigint,
 last_allowed_at bigint NOT NULL,
 last_cluster_id integer DEFAULT 0 NOT NULL,
@@ -1553,6 +1574,7 @@ now_playing_title text,
 object text NOT NULL,
 object_entity_id uuid,
 object_literal text NOT NULL,
+objective text NOT NULL,
 observed_at bigint NOT NULL,
 observed_at bigint NOT NULL,
 observed_in text[] DEFAULT '{}'::text[] NOT NULL,
@@ -1623,6 +1645,7 @@ place_id integer,
 place_id text NOT NULL,
 place_label text,
 place_label text,
+platform text NOT NULL,
 platform text NOT NULL,
 platform text NOT NULL,
 platform text NOT NULL,
@@ -1768,6 +1791,7 @@ saved_place_id text,
 scope text DEFAULT ''::text NOT NULL,
 scope text NOT NULL,
 scope text NOT NULL,
+scope text NOT NULL,
 scope_id text NOT NULL,
 scope_id text NOT NULL,
 scope_id text NOT NULL,
@@ -1793,6 +1817,7 @@ session_id bigint,
 session_id bigint,
 session_id bigint,
 session_id bigint,
+session_id uuid,
 sha256 text NOT NULL,
 sha256 text NOT NULL,
 sha256 text NOT NULL,
@@ -1829,6 +1854,7 @@ status text NOT NULL,
 status text NOT NULL,
 status text NOT NULL,
 status text NOT NULL,
+status text NOT NULL,
 status text,
 stay_count integer NOT NULL,
 stay_ms bigint NOT NULL,
@@ -1837,6 +1863,7 @@ stimulus_count integer CONSTRAINT cognition_wake_signal_count_not_null NOT NULL,
 stimulus_id bigint NOT NULL,
 stimulus_id bigint NOT NULL,
 stimulus_id bigint,
+stopped_at_detail jsonb DEFAULT '{}'::jsonb NOT NULL,
 strike integer DEFAULT 0 NOT NULL,
 strike integer NOT NULL,
 strikes integer DEFAULT 0 NOT NULL,
@@ -1945,6 +1972,7 @@ updated_at timestamp with time zone DEFAULT now() NOT NULL
 updated_at timestamp with time zone DEFAULT now() NOT NULL
 updated_at timestamp with time zone DEFAULT now() NOT NULL
 updated_at timestamp with time zone DEFAULT now() NOT NULL,
+updated_at timestamp with time zone NOT NULL,
 updated_at timestamp with time zone NOT NULL,
 updated_ms bigint NOT NULL,
 updated_ts bigint NOT NULL,

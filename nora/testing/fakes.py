@@ -11,7 +11,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from nora.domain.compute import (
     ComputeJob,
@@ -32,6 +32,13 @@ from nora.domain.computer import (
     TmuxSession,
 )
 from nora.domain.computer_events import ComputerEvent, normalise_computer_event
+from nora.domain.computer_sessions import (
+    EXPIRED,
+    OPEN,
+    ComputerSession,
+    ensure_utc_event,
+    normalise_session,
+)
 from nora.domain.media import (
     MediaBlob,
     MediaBytes,
@@ -1704,6 +1711,11 @@ class FakeComputerEventStore:
         """The `finished` rows, in order: what a test asserts outcomes on."""
         return [e for e in self.events if e.phase == "finished"]
 
+    async def for_session(self, *, session_id: UUID, limit: int) -> list[ComputerEvent]:
+        rows = [e for e in self.events if e.session_id == session_id]
+        rows.sort(key=lambda e: e.created_at, reverse=True)
+        return rows[:limit]
+
     async def recent(
         self, *, conversation_id: str, since: datetime, limit: int,
     ) -> list[ComputerEvent]:
@@ -1713,6 +1725,91 @@ class FakeComputerEventStore:
         ]
         rows.sort(key=lambda e: e.created_at, reverse=True)
         return rows[:limit]
+
+
+class FakeComputerSessionStore:
+    """In-memory `ComputerSessionStore`, bound to
+    `nora.infra.sql.computer_sessions.SqlComputerSessionStore` by
+    `tests/contract/test_computer_session_store_contract.py`: one open
+    session per scope, `expire` a compare-and-set on `last_activity_at`,
+    nothing ever deleted. `fail = True` makes every call raise (a database
+    that is down)."""
+
+    def __init__(self) -> None:
+        self.sessions: dict[UUID, ComputerSession] = {}
+        self.fail = False
+
+    def _check(self) -> None:
+        if self.fail:
+            raise RuntimeError("fake computer_sessions failure")
+
+    async def continue_or_open(
+        self, *, platform: str, conversation_id: str, scope: str, objective: str,
+        actor: str, tag_id: str, now: datetime,
+    ) -> tuple[ComputerSession, bool]:
+        self._check()
+        now = ensure_utc_event(now, field="now")
+        for sid, s in self.sessions.items():
+            if s.scope == scope and s.status == OPEN:
+                touched = replace(s, updated_at=max(s.updated_at, now),
+                                  last_activity_at=max(s.last_activity_at, now))
+                self.sessions[sid] = touched
+                return touched, False
+        opened = normalise_session(ComputerSession(
+            id=uuid4(), platform=platform, conversation_id=conversation_id, scope=scope,
+            objective=objective, status=OPEN, created_at=now, updated_at=now,
+            last_activity_at=now, actor=actor, created_by_tag=tag_id,
+        ))
+        self.sessions[opened.id] = opened
+        return opened, True
+
+    async def open_sessions(self, *, limit: int) -> list[ComputerSession]:
+        self._check()
+        rows = sorted((s for s in self.sessions.values() if s.status == OPEN),
+                      key=lambda s: s.last_activity_at)
+        return rows[:limit]
+
+    async def for_room(
+        self, *, platform: str, conversation_id: str, limit: int,
+    ) -> list[ComputerSession]:
+        self._check()
+        rows = sorted(
+            (s for s in self.sessions.values()
+             if s.platform == platform and s.conversation_id == conversation_id),
+            key=lambda s: s.last_activity_at, reverse=True,
+        )
+        return rows[:limit]
+
+    async def note_resources(
+        self, session_id: UUID, *, tmux: Sequence[str], now: datetime,
+    ) -> None:
+        self._check()
+        s = self.sessions.get(session_id)
+        if s is None or s.status != OPEN:
+            return
+        held = list(s.held_tmux)
+        merged = held + [n for n in dict.fromkeys(tmux) if n not in held]
+        if merged == held:
+            return
+        self.sessions[session_id] = replace(
+            s, stopped_at_detail={**s.stopped_at_detail, "tmux": merged[:20]},
+            updated_at=max(s.updated_at, ensure_utc_event(now, field="now")),
+        )
+
+    async def expire(
+        self, session_id: UUID, *, seen_last_activity_at: datetime, reason: str,
+        now: datetime,
+    ) -> ComputerSession | None:
+        self._check()
+        s = self.sessions.get(session_id)
+        seen = ensure_utc_event(seen_last_activity_at, field="seen_last_activity_at")
+        if s is None or s.status != OPEN or s.last_activity_at != seen:
+            return None
+        now = ensure_utc_event(now, field="now")
+        expired = replace(s, status=EXPIRED, expired_at=now, expired_reason=reason,
+                          updated_at=max(s.updated_at, now))
+        self.sessions[session_id] = expired
+        return expired
 
 
 class FakeSocialProvider:
