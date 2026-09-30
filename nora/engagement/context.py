@@ -44,6 +44,7 @@ from nora.domain.ports import (
 from nora.domain.quote_window import QuoteWindow
 from nora.domain.self_presence import Presence
 from nora.domain.standing import Standing
+from nora.domain.withdrawal import render_supported
 from nora.engagement.computer_context import ComputerContextReader
 from nora.engagement.self_presence import PresenceReader
 from nora.language.culture_render import read_culture
@@ -323,9 +324,7 @@ class TranscriptInjection:
         # never a partial or stale one. `head()` still returns it (other
         # callers, e.g. the fold's own "previous account" read, need the
         # real row to re-derive from); only the render path filters here.
-        if found is not None and found.unsupported_at is not None:
-            return None
-        return found
+        return render_supported(found)
 
     async def _computer(self, msg: NormalizedMessage) -> ComputerView | None:
         """What is on her computer for this room, or `None` (no reader, or a
@@ -578,9 +577,7 @@ class TranscriptInjection:
         # already used for a conversation with no fold yet. `read()` itself
         # still returns it (the fold's own read needs the real row); only
         # the render path filters here.
-        if found is not None and found.unsupported_at is not None:
-            return None
-        return found
+        return render_supported(found)
 
     async def _notes(self, msg: NormalizedMessage) -> tuple[Note, ...]:
         """The standing note index (2026-08-21 note-tier design §5.1).

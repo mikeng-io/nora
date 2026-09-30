@@ -128,6 +128,7 @@ from nora.domain.standing import (
 )
 from nora.domain.tool_call_log import ToolCallLogStore
 from nora.domain.turn_deadline import turn_deadline
+from nora.domain.withdrawal import render_supported
 from nora.engagement.computer_context import ComputerContextReader
 from nora.engagement.context import StandingNotesReader
 from nora.engagement.mentions import MentionRenderer
@@ -1576,11 +1577,13 @@ class FirePath:
             occasion.platform, occasion.conversation_id)
         if convo is None or not convo.primary_id:
             return None
-        return await read_culture(
+        found = await read_culture(
             self._culture.head(key=convo.primary_id), stage="fire_culture",
             platform=occasion.platform, metrics=self._metrics,
             timeout_seconds=self._standing_store_timeout_seconds,
         )
+        # WITHDRAWAL, the tag path's rule (`nora.domain.withdrawal`).
+        return render_supported(found)
 
     async def _read_standing(self, occasion: Event) -> Standing | None:
         """This conversation's position, or `None` (S5).
@@ -1597,7 +1600,7 @@ class FirePath:
         if self._standing is None:
             return None
         try:
-            return await asyncio.wait_for(
+            found = await asyncio.wait_for(
                 self._standing.read(
                     platform=occasion.platform,
                     conversation_id=occasion.conversation_id,
@@ -1611,6 +1614,8 @@ class FirePath:
                 platform=occasion.platform,
             )
             return None
+        # WITHDRAWAL, the tag path's rule (`nora.domain.withdrawal`).
+        return render_supported(found)
 
     async def run(self, rows: Sequence[Reminder]) -> str:
         """The heartbeat's `fire` collaborator: due rows in, §8.1 outcome out.
