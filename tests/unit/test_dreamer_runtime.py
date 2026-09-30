@@ -306,6 +306,24 @@ def test_an_adaptor_reaching_past_the_ceiling_refuses_to_start():
     assert "send_reply" in str(exc.value)
 
 
+def test_no_adaptor_may_hold_the_cognition_sessions_two_reads_however_it_derived_them():
+    """The class behind #647 M1: a grant DERIVED from the read-only ceiling
+    (`granted_tools`) swallowed `rollup_read` and `standing_read` silently. Both
+    are inside the ceiling, so only a check on the tools themselves refuses them,
+    at startup and at every run, granted a home room or not."""
+    ceiling = frozenset({"now", "rollup_read", "standing_read"})
+    adaptor = _Adaptor(sink=_Sink(), tools=frozenset({"now", "rollup_read", "standing_read"}))
+
+    for grant in (AdaptorGrant(), AdaptorGrant(home_room=True)):
+        (fault,) = tool_subset_faults(adaptor, ceiling=ceiling, grant=grant)
+        assert "rollup_read, standing_read" in fault and "Cognition" in fault
+    with pytest.raises(AdaptorToolError):
+        verify_tool_subsets([adaptor], tools=_ToolSource(ceiling=ceiling))
+    assert tool_subset_faults(
+        _Adaptor(sink=_Sink(), tools=frozenset({"now"})), ceiling=ceiling,
+    ) == ()
+
+
 def test_an_adaptor_inside_the_ceiling_starts():
     verify_tool_subsets([_Adaptor(sink=_Sink())], tools=_ToolSource())
 
@@ -751,6 +769,13 @@ def test_every_read_only_tool_is_classified_unit_safe_or_room_scoped():
         # with its per-build input-domain override, never through
         # `UNIT_SAFE_TOOLS` — the same fail-closed side as `where_been`.
         "online_now",
+        # `rollup_read` and `standing_read` (DEC-246): lineage runs for the
+        # ROOM the tool is bound to (its live roster, its `location` flag), and
+        # a person resolves among that room's people (R-21), so a unit-keyed
+        # tick with no room could answer neither. They are granted through the
+        # Cognition adaptor's home-room grant only, and are Dreamer-only tools
+        # (`nora.agent.surface.DREAMER_LOOP_TOOLS`).
+        "rollup_read", "standing_read",
         # `reverse_geocode` (DEC-156) is a pure coordinate -> address lookup
         # with no room state in its ARGUMENTS, which is exactly why it must be
         # here rather than beside `weather`. Since 13c530aa it is the ONLY tool
@@ -820,6 +845,9 @@ def test_every_read_only_tool_is_classified_unit_safe_or_room_scoped():
         # unit-keyed tick's synthetic room has no workspace of its own, and
         # nobody has decided a background loop may read one. Fail-closed.
         "computer_read",
+        # `computer_session_list` (design/sandbox-runtime §15.2) reads the
+        # ROOM's own sessions and workspace state; same reason, fail-closed.
+        "computer_session_list",
     }
     # The unit-safe half is `UNIT_SAFE_TOOLS` itself, read from the
     # module. Since design/dreamer-agent-loop/32 §3.4 that set includes the

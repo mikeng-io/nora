@@ -24,6 +24,7 @@ import time
 from typing import Any, Protocol
 
 from nora.agent.lineage import LineagePolicy
+from nora.domain.computer_context import ComputerView
 from nora.domain.culture import CultureRevision
 from nora.domain.media_join import MediaJoin
 from nora.domain.models import (
@@ -43,6 +44,7 @@ from nora.domain.ports import (
 from nora.domain.quote_window import QuoteWindow
 from nora.domain.self_presence import Presence
 from nora.domain.standing import Standing
+from nora.engagement.computer_context import ComputerContextReader
 from nora.engagement.self_presence import PresenceReader
 from nora.language.culture_render import read_culture
 from nora.obs.tracing import traced_read
@@ -101,6 +103,7 @@ class TranscriptInjection:
         presence: PresenceReader | None = None,
         culture: CultureReader | None = None,
         lineage: LineagePolicy | None = None,
+        computer: ComputerContextReader | None = None,
     ) -> None:
         self._audit = audit
         self._memory = memory
@@ -166,6 +169,10 @@ class TranscriptInjection:
         # is not read here (every row a block renders today carries no
         # presence entry; a predicate that needs the roster denies without it).
         self._lineage = lineage
+        # `<computer>` (design/sandbox-runtime §15.3). `None` while
+        # `[computer]` is off; the reader itself gates each room and never
+        # raises, so it is safe inside the gather.
+        self._computer_reader = computer
 
     async def assemble(self, *, request: EngagementRequest) -> TagContext:
         msg = request.message
@@ -212,6 +219,7 @@ class TranscriptInjection:
             (transcript, card, self_card, tagger_card, standing, notes),
             presence,
             culture,
+            computer,
         ) = await asyncio.gather(
             asyncio.gather(
                 self._recent(msg),
@@ -223,6 +231,7 @@ class TranscriptInjection:
             ),
             self._presence(msg),
             self._culture(msg),
+            self._computer(msg),
         )
 
         # One name space for the whole prompt (DEC-80) — see `Persons.name_transcript`.
@@ -258,6 +267,7 @@ class TranscriptInjection:
             standing=standing,
             presence=presence,
             culture=culture,
+            computer=computer,
             # A pure lookup (policy.toml, identity.toml), no read: the room's
             # listed persons and their aliases for `<room_members>`.
             room_members=self._room_members(msg),
@@ -316,6 +326,16 @@ class TranscriptInjection:
         if found is not None and found.unsupported_at is not None:
             return None
         return found
+
+    async def _computer(self, msg: NormalizedMessage) -> ComputerView | None:
+        """What is on her computer for this room, or `None` (no reader, or a
+        room not using the computer). `ComputerContextReader.read` never
+        raises."""
+        if self._computer_reader is None:
+            return None
+        return await traced_read("computer", "read", self._computer_reader.read(
+            platform=msg.platform, conversation_id=msg.conversation_id,
+        ))
 
     async def _presence(self, msg: NormalizedMessage) -> Presence | None:
         """Where she is, read at turn start, or `None` with no reader wired.

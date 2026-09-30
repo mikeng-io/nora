@@ -37,6 +37,8 @@ from strands.tools.decorator import FunctionToolMetadata
 from ..domain.compute import ComputeJobStore
 from ..domain.computer import ComputerToolSettings
 from ..domain.computer_events import ComputerEventStore
+from ..domain.computer_leases import ComputerLeases
+from ..domain.computer_sessions import ComputerSessionStore
 from ..domain.media_join import MediaJoin
 from ..domain.models import PersonRef, TranscriptRow
 from ..domain.ports import (
@@ -74,7 +76,7 @@ from .reaction import ReactionPicker
 from .relay import Relay
 from .room import Room
 from .shelf_hook import ShelfLoader
-from .surface import ToolScope, ToolShelf, ToolSurface
+from .surface import DREAMER_LOOP_TOOLS, ToolScope, ToolShelf, ToolSurface
 from .tools import (
     COMPUTER_TOOLS,
     HOT_TOOLS,
@@ -86,7 +88,9 @@ from .tools import (
     NoteCollaborator,
     OriginRoom,
     RecordQuerySource,
+    RollupReadSource,
     RoomDirectory,
+    StandingHeadSource,
     build_tool_specs,
     utc_now,
 )
@@ -210,6 +214,12 @@ class ToolRegistry:
         computer: SandboxRuntime | None = None,
         computer_events: ComputerEventStore | None = None,
         computer_settings: ComputerToolSettings | None = None,
+        # Sessions and leases (design/sandbox-runtime §15.2, §15.4): the
+        # session store and the process's ONE `ComputerLeases`, shared by
+        # every turn this registry builds tools for, which is what makes an
+        # in-process lock a lock.
+        computer_sessions: ComputerSessionStore | None = None,
+        computer_leases: ComputerLeases | None = None,
         clock: Callable[[], datetime] = utc_now,
         mcp_tools: Mapping[str, McpToolGroup] | None = None,
         versions: VersionManifest | None = None,
@@ -229,20 +239,30 @@ class ToolRegistry:
         # `conversation_id`. `None` answers `unavailable`.
         record: RecordQuerySource | None = None,
         lineage: LineagePolicy | None = None,
+        # `rollup_read`'s Rollup read and `standing_read`'s Standing head
+        # (design/cognition-loop/25 §5, 50 §2): both Dreamer-only tools
+        # (`nora.agent.surface.DREAMER_ONLY_TOOLS`), and each withheld from
+        # every surface while its read is not wired.
+        rollup: RollupReadSource | None = None,
+        standing_head: StandingHeadSource | None = None,
     ) -> None:
         self._budget_overrides = dict(budget_overrides or {})
         self._record = record
         self._lineage = lineage
+        self._rollup = rollup
+        self._standing_head = standing_head
         # Tools no turn is offered in this process: `record_query` without its
         # Record read (`[record_query] enabled = false`, the shipped default).
         # Withheld from every surface and from the gate's digest, so an
         # unconfigured tool costs no prompt and cannot be routed to.
-        # The four computer tools likewise without a runtime (`[computer]
+        # The computer tools likewise without a runtime (`[computer]
         # enabled = false`, the shipped default): they could only answer
         # `unavailable`, so offering them would spend prompt on a tool the
         # model can route to and never use.
         self._withheld: frozenset[str] = (
             (frozenset() if record is not None else frozenset({"record_query"}))
+            | (frozenset() if rollup is not None else frozenset({"rollup_read"}))
+            | (frozenset() if standing_head is not None else frozenset({"standing_read"}))
             | (frozenset() if computer is not None else COMPUTER_TOOLS)
         )
         self._transit = transit if transit is not None else TransitClient()
@@ -427,6 +447,8 @@ class ToolRegistry:
         self._computer = computer
         self._computer_events = computer_events
         self._computer_settings = computer_settings
+        self._computer_sessions = computer_sessions
+        self._computer_leases = computer_leases
         # §9's three anti-runaway caps, as the DOMAIN value — never
         # `nora.config.RemindersConfig`. Import-linter's "only app and __main__
         # read config" contract names `nora.agent` as a source module and
@@ -683,7 +705,7 @@ class ToolRegistry:
         verb and its subject, not its usage rules.
         """
         return "\n".join(self._digest_lines(
-            self.read_only_tools() - {LOADER_TOOL} - self._withheld,
+            self.read_only_tools() - {LOADER_TOOL} - self._withheld - DREAMER_LOOP_TOOLS,
         ))
 
     def _digest_lines(
@@ -1034,6 +1056,8 @@ class ToolRegistry:
             rooms=self._rooms,
             record=self._record,
             lineage=self._lineage,
+            rollup=self._rollup,
+            standing_head=self._standing_head,
             versions=self._versions,
             giphy_source=self._giphy,
             reaction_picker=self._reaction,
@@ -1041,6 +1065,8 @@ class ToolRegistry:
             tool_call_log_store=self._tool_call_log_store,
             computer=self._computer, computer_events=self._computer_events,
             computer_settings=self._computer_settings,
+            computer_sessions=self._computer_sessions,
+            computer_leases=self._computer_leases,
             music=self._music,
             online_source=self._online, voice_source=self._voice,
             presence=self._discord_presence,

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Any
+from uuid import UUID
 
 import sqlalchemy as sa
 from sqlalchemy.engine import Row
@@ -20,6 +21,7 @@ _FIELDS = (
     "requester_person_id",
     "platform", "conversation_id", "conversation_type", "tag_id", "scope", "tool",
     "path", "trace_id", "span_id", "status", "request", "result", "output_ref",
+    "session_id",
 )
 
 
@@ -43,13 +45,28 @@ class SqlComputerEventStore:
 
     async def recent(
         self, *, conversation_id: str, since: datetime, limit: int,
+        platform: str | None = None,
     ) -> list[ComputerEvent]:
+        where = [
+            COMPUTER_EVENTS.c.conversation_id == conversation_id,
+            COMPUTER_EVENTS.c.created_at >= since,
+        ]
+        if platform is not None:
+            where.append(COMPUTER_EVENTS.c.platform == platform)
         stmt = (
             sa.select(COMPUTER_EVENTS)
-            .where(
-                COMPUTER_EVENTS.c.conversation_id == conversation_id,
-                COMPUTER_EVENTS.c.created_at >= since,
-            )
+            .where(*where)
+            .order_by(COMPUTER_EVENTS.c.created_at.desc())
+            .limit(limit)
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+        return [_row_to_event(r) for r in rows]
+
+    async def for_session(self, *, session_id: UUID, limit: int) -> list[ComputerEvent]:
+        stmt = (
+            sa.select(COMPUTER_EVENTS)
+            .where(COMPUTER_EVENTS.c.session_id == session_id)
             .order_by(COMPUTER_EVENTS.c.created_at.desc())
             .limit(limit)
         )

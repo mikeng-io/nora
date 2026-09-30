@@ -33,7 +33,7 @@ async def test_obtain_returns_the_production_graph(spec) -> None:
     """Same type, same builder, same field count as `nora/__main__.py` gets."""
     subject = await obtain(spec)
     assert isinstance(subject.deps, Dependencies)
-    assert len(dataclasses.fields(Dependencies)) == 51, (
+    assert len(dataclasses.fields(Dependencies)) == 53, (
         "Dependencies changed shape; the subject follows it automatically, but "
         "this number is here so a change is noticed rather than absorbed. "
         "38 -> 40 on 2026-09-17: `relevance_gate` and `fire_path`, the two "
@@ -69,7 +69,10 @@ async def test_obtain_returns_the_production_graph(spec) -> None:
         "49 -> 51 on 2026-09-30: `cognition_runner` and `cognition_shutdown`, "
         "the shadow Cognition session and its idempotent stop (None under "
         "`[cognition] session_mode = off`; step 3a-iii), which the eval "
-        "subject reads to drive `tool_selection_cognition`."
+        "subject reads to drive `tool_selection_cognition`. "
+        "51 -> 53 on 2026-09-30: `computer_sweeper` and `computer_sweep_seconds`, "
+        "the computer session sweeper and its interval (None unless `[computer] "
+        "enabled`; design/sandbox-runtime §15.2)."
     )
 
 

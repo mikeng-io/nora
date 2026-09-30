@@ -95,6 +95,9 @@ _SPECS_ONLY = frozenset({
     # `ToolRegistry.build` like `compute_backend`. Its tests build the specs
     # directly (tests/unit/test_computer_tools.py).
     "computer", "computer_events", "computer_settings",
+    # Its sessions and the process's one lease table (design/sandbox-runtime
+    # §15.2, §15.4), threaded the same way.
+    "computer_sessions", "computer_leases",
 })
 
 

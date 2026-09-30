@@ -562,6 +562,20 @@ from what is *intended*, and neither is rewritten by a model.
    It is read fresh each turn, so it cannot go stale.
 2. **Intended state: `computer_sessions`, rows written by code from a typed
    result.**
+   - **Revised 2026-09-30 (operator), as built in S2b-2: sessions are
+     DERIVED BY CODE, and no model writes one.** An optional update tool
+     would be skipped (a must-have skill was skipped in 3 of 6 live turns).
+     A computer call in a room with no open session opens one before its
+     `started` audit row; any later call there continues it; after expiry
+     the next call opens a new one (no resume verb). The objective is the
+     triggering message, cut to 80 characters, plus its tag id. Progress is
+     derived when read from the session's own `computer_events` rows, never
+     stored. Stored status is `open` or `expired`; shown status is
+     `active`, `idle`, `lapsed` or `expired`; `paused`, `blocked`, `done`
+     and `failed` are dropped, as is `next_step`. `computer_session_list`
+     is the only session tool. Where the bullets below say the model or a
+     sub-agent returns a status, that is superseded; the browser
+     sub-agent's typed result (S4) is still to be designed against this.
    - When a `computer_browse` task (or a long run) ends, the sub-agent returns
      `status` (done / paused / blocked / failed), `objective`, `progress`,
      `next_step`, evidence (screenshot keys, file sha256s) and where it

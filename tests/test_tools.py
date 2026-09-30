@@ -141,6 +141,9 @@ def test_every_declared_tool_is_built(wiring):
         "room_list", "room_read",
         # design/cognition-loop/15-map.md §4: the Record under lineage.
         "record_query",
+        # design/cognition-loop/25 §5, 50 §2: built here like every closure; only a
+        # Dreamer loop is OFFERED them (`nora.agent.surface.DREAMER_LOOP_TOOLS`).
+        "rollup_read", "standing_read",
         "group_members", "lookup_person", "about", "ask_memory", "search_memory",
         "recall_lookups",
         # `search_memory_workspace` IS built here — `build_tools` builds every
@@ -198,6 +201,7 @@ def test_every_declared_tool_is_built(wiring):
         "make_artifact",
         # Nora's computer (design/sandbox-runtime §4, DEC-243).
         "computer_run", "computer_read", "computer_write", "computer_edit",
+        "computer_session_list",
         # DEC-97: what she is running, and what was in an earlier version.
         "version",
         # The note tier's four verbs (note-tier spec §5.2/§6).

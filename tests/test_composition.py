@@ -1121,6 +1121,38 @@ async def test_every_wired_adaptor_stays_inside_the_read_only_ceiling(cfg, tmp_p
         ), adaptor.name
 
 
+async def test_only_the_cognition_session_holds_rollup_read_and_standing_read(cfg, tmp_path):
+    """Enumerates EVERY live adaptor's final tool list with every tier switched on
+    and asserts the two Cognition reads appear for the Cognition session alone
+    (review of #647, M1: the note-candidates grant is derived from the read-only
+    ceiling and had silently gained both)."""
+    from nora.agent.surface import DREAMER_LOOP_TOOLS
+
+    (tmp_path / "policy.toml").write_text(_HOME_POLICY)
+    deps = await build_dependencies(override_config(cfg, {
+        "dreamer.enabled": True, "notes.enabled": True,
+        "notes.curator_enabled": True, "notes.candidates_enabled": True,
+        "notes.merge_mode": "shadow", "culture.enabled": True,
+        "cognition.mode": "shadow", "cognition.session_mode": "shadow",
+    }))
+
+    by_name = {a.name: a for a in deps.dream_adaptors}
+    assert set(by_name) == {
+        "note-curation", "note-candidates", "note-merge", "culture", "proactive",
+    }, "an adaptor added or gated off changes what this test enumerates"
+    holders = {name for name, a in by_name.items() if a.tools & DREAMER_LOOP_TOOLS}
+    assert holders == set(), f"adaptors holding a Cognition-only read: {holders}"
+    assert deps.cognition_runner is not None
+    assert deps.cognition_runner._read_only_tools >= DREAMER_LOOP_TOOLS, (
+        "the enumeration must find the tools where they belong, or it proves nothing"
+    )
+    # and the derivation that caught it: the candidates grant names both as withheld
+    from nora.language.note_candidates import WITHHELD_TOOLS, granted_tools
+
+    assert set(WITHHELD_TOOLS) >= DREAMER_LOOP_TOOLS
+    assert not granted_tools(frozenset(DREAMER_LOOP_TOOLS | {"now"})) & DREAMER_LOOP_TOOLS
+
+
 async def test_unit_scopes_are_the_allowlists_units_deduplicated(cfg):
     """Two rooms of one unit are ONE unit of work, not two — which is the
     whole reason a unit-keyed adaptor could not ride the per-scope
@@ -2085,6 +2117,17 @@ async def test_session_mode_shadow_builds_one_runner_and_hands_its_hook_to_the_e
     assert agent._memory_tools == MEMORY_TOOLS
     assert agent._read_tool_budgets["note_read"] > 0
     assert set(agent._read_tool_budgets) <= runner._read_only_tools
+    # PR B (DEC-246): the two new reads are wired and BUILT through the real
+    # registry (a tool whose read the composition root did not hand the registry
+    # is withheld from every surface and would be «wired» in name only), and the
+    # ceilings are the per-ITEM allowances a session scales by its agenda.
+    from nora.app.cognition_wiring import COGNITION_TOOL_CALLS_PER_ITEM
+
+    unit, home = next(iter(runner._home_rooms.items()))
+    built = {t.tool_name for t in runner._read_tools_for(unit, [home])}
+    assert {"rollup_read", "standing_read"} <= built
+    for name in ("rollup_read", "standing_read", "event_search"):
+        assert agent._read_tool_budgets[name] == COGNITION_TOOL_CALLS_PER_ITEM[name], name
     # Read tools only: the registry's table also names the tag path's
     # `remind`/`note_create`, whose arguments differ from the session's own
     # verbs of those names, and R-99 would veto every call to them.
@@ -2120,12 +2163,34 @@ async def test_the_sessions_read_tools_are_the_catalogue_less_what_a_flag_withho
     assert "record_query" in on.cognition_runner._read_only_tools
     wired = off.cognition_runner._read_only_tools
     assert {"note_read", "about", "where_been", "event_search"} <= wired
-    assert not {"rollup_read", "memo_read", "character_read"} & wired    # not built yet
+    assert {"rollup_read", "standing_read"} <= wired                    # PR B, DEC-246
+    assert not {"memo_read", "character_read", "social_items"} & wired  # not built yet
     # Built for a real room they are real, read-only tools, and only wired ones.
     built = on.cognition_runner._read_tools_for("friends", [Room("signal", "g1")])
     names = {t.tool_name for t in built}
     assert names and names <= on.cognition_runner._read_only_tools
     assert {"note_read", "record_query"} <= names
+
+
+async def test_a_cognition_budget_with_no_tool_calls_runs_on_the_per_item_defaults(
+    cfg, tmp_path,
+):
+    """M12 (DEC-246): the template states the per-item table, but a deployment
+    that carries a bare `[dreamer.budgets.cognition]` block must not fall back to
+    a tag turn's numbers (`event_search` 1). The code's own defaults are the
+    layer under the operator's word."""
+    from nora.agent.tools import NATIVE_TOOLS
+    from nora.app.cognition_wiring import COGNITION_TOOL_CALLS_PER_ITEM
+
+    (tmp_path / "policy.toml").write_text(_HOME_POLICY)
+    bare = cfg.dreamer.budgets["cognition"].model_copy(update={"tool_calls": {}})
+    deps = await build_dependencies(override_config(cfg, {
+        **_SESSION_ON, "dreamer.budgets": {**cfg.dreamer.budgets, "cognition": bare},
+    }))
+    got = deps.cognition_runner._agent_runner._read_tool_budgets
+    assert NATIVE_TOOLS["event_search"].budget == 1, "positive control: the tag turn's number"
+    assert got["event_search"] == COGNITION_TOOL_CALLS_PER_ITEM["event_search"] == 3
+    assert got["note_search"] == COGNITION_TOOL_CALLS_PER_ITEM["note_search"]
 
 
 async def test_the_configured_model_window_reaches_the_runner_the_overflow_proof_reads(
@@ -2228,3 +2293,21 @@ async def test_units_without_a_home_room_stay_in_the_evaluator_and_are_gauged(cf
     assert deps.metrics.get("nora_cognition_session_units", state="runnable") == 1
     assert deps.metrics.get("nora_cognition_session_units", state="no_home_room") == 1
     assert "wedding" in list(deps.wake_evaluator._units())
+
+
+async def test_computer_sweeper_and_block_exist_only_while_on(cfg, monkeypatch):
+    """Design/sandbox-runtime §15.2: composition builds the session sweeper
+    (and `__main__` spawns its loop) only under `[computer] enabled`."""
+    off = await build_dependencies(cfg)
+    assert off.computer_sweeper is None
+    # `<computer>` likewise: no reader, so no room renders the block.
+    assert off.assembler._computer_reader is None
+    monkeypatch.setenv(cfg.computer.token_env, "t")
+    on = override_config(cfg, {
+        "computer.enabled": True, "heartbeat.enabled": False,
+        "computer.sessions.sweep_interval_seconds": 42.0,
+    })
+    deps = await build_dependencies(on)
+    assert deps.computer_sweeper is not None
+    assert deps.computer_sweep_seconds == 42.0
+    assert deps.assembler._computer_reader is not None

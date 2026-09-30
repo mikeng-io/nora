@@ -102,3 +102,17 @@ cases:
     input: Miles星期三晚會喺邊？
     metadata: {criteria: [tool_status_reported]}
     snapshot: *room_a
+
+  # design/sandbox-runtime S2b-2: after `computer_run` she answers in her own
+  # words, never with the bare stdout (a live turn replied only "338350").
+  # Measures the `[computer] enabled` arm ONLY: with the computer off the
+  # tools are withheld and this is a plain arithmetic question. Judged on the
+  # FULL tag rubric, not `tool_status_reported` alone, which ignores tone:
+  # the failure was voice and language (a number, no Cantonese sentence).
+  - name: report_computer_run_in_own_words
+    entry: tag
+    expect: reply
+    mention: true
+    input: 用你部電腦跑段python：計1到100嘅平方和
+    metadata: {criteria: [tool_status_reported]}
+    snapshot: *room_a

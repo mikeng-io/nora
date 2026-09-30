@@ -31,6 +31,7 @@ from nora.app.cognition_session import (
 )
 from nora.app.cognition_wiring import (
     COGNITION_READ_CATALOGUE,
+    COGNITION_TOOL_CALLS_PER_ITEM,
     AgendaSkills,
     CognitionShutdown,
     cognition_budget,
@@ -75,9 +76,7 @@ def test_every_tool_the_session_would_wire_exists_and_is_read_only():
 
 def test_the_designs_tools_the_tree_does_not_have_are_named_missing_not_dropped():
     surface = read_surface(read_only=READ_ONLY, enabled_flags={"record_query.enabled"})
-    assert surface.missing == {
-        "rollup_read", "memo_read", "character_read", "standing_read", "social_items",
-    }
+    assert surface.missing == {"memo_read", "character_read", "social_items"}
     assert surface.wired | surface.missing == COGNITION_READ_CATALOGUE
 
 
@@ -656,3 +655,93 @@ def test_the_objective_frames_what_she_reads_and_does_not_list_write_kinds():
     # no enumeration of the write verbs (they carry their own descriptions)
     assert "Each note, event, Standing revision" not in text
     assert "note_create" not in text and "event_propose" not in text
+
+
+# ---- per-item call ceilings, sized for an agenda (M12) -------------------------
+#
+# `NativeTool.budget` is a tag turn's number (event_search 1, note_search 2). A
+# session reads an agenda, item by item, so its ceiling for a tool is the
+# per-item allowance times the item count. What each test would catch if the
+# fix were reverted is named in `scripts/mutations/cognition-reads.json`.
+
+def test_the_per_item_defaults_are_never_below_the_tag_turns_number_and_name_wired_tools():
+    table = {n: t.budget for n, t in NATIVE_TOOLS.items()}
+    surface = read_surface(read_only=READ_ONLY, enabled_flags={"record_query.enabled"})
+    assert set(COGNITION_TOOL_CALLS_PER_ITEM) <= surface.wired | {"record_query"}
+    for name, per_item in COGNITION_TOOL_CALLS_PER_ITEM.items():
+        assert per_item >= table[name], (name, per_item, table[name])
+    # and the one the review named is raised: a place, a date, a person
+    assert COGNITION_TOOL_CALLS_PER_ITEM["event_search"] > table["event_search"]
+
+
+def test_read_tool_budgets_layer_the_adaptor_default_between_the_deployment_and_the_operator():
+    table = {"event_search": 1, "about": 4, "note_read": 3}
+    got = read_tool_budgets(
+        {"event_search", "about", "note_read"}, table=table,
+        overrides={"event_search": 9, "about": 9, "note_read": 9},
+        adaptor_defaults={"event_search": 3, "about": 5},
+        adaptor_overrides={"about": 7},
+    )
+    # operator > adaptor default > deployment > table
+    assert got == {"event_search": 3, "about": 7, "note_read": 9}
+
+
+@pytest.mark.parametrize("items", [1, 3, 12])
+async def test_an_agenda_of_n_items_gets_n_times_the_per_item_ceilings(monkeypatch, items):
+    """The whole path: a real session runner, a real `LiveCognitionAgentRunner`,
+    N stimuli in N rooms (N agenda items), and the guard it builds. Ceilings
+    are read off the guard the model loop would run under."""
+    async def invoke(*a: Any, **k: Any) -> Any:
+        return SimpleNamespace(stop_reason="end_turn")
+
+    _patch_agent(monkeypatch, invoke)
+    live = _live(read_tool_budgets={"note_read": 4, "about": 3}, tool_budget=2)
+    runner, _s, _l = _runner(
+        agent=live,
+        read_tools_for=lambda unit, rooms: [_tool("note_read"), _tool("about")],
+        wake_ids=(1,),
+    )
+    pending = tuple(_stim(i + 1, Room("signal", f"room-{i}")) for i in range(items))
+    await _wake(runner, pending)
+    (guard,) = _Guard.seen
+    assert guard["budgets"]["note_read"] == 4 * items
+    assert guard["budgets"]["about"] == 3 * items
+    assert guard["budgets"]["close"] == max(2, items)           # never under one close per item
+    # the pass-wide ceilings are per item too: a per-tool number under a pass
+    # ceiling that did not grow would be decoration
+    assert guard["memory_budget"] is None and guard["pass_budget"] is None
+
+
+async def test_the_pass_wide_ceilings_scale_with_the_agenda_too(monkeypatch):
+    async def invoke(*a: Any, **k: Any) -> Any:
+        return SimpleNamespace(stop_reason="end_turn")
+
+    _patch_agent(monkeypatch, invoke)
+    live = _live(read_tool_budgets={"note_read": 4})
+    await live.run(
+        system_prompt="s", prompt="p", tools=[_tool("note_read")],
+        budget=AdaptorBudget(
+            turns=1, total_tokens=1, output_tokens=1, timeout_seconds=5,
+            max_memory_calls=6, max_tool_calls=60,
+        ),
+        trace_attributes={"cognition.items": "5"},
+    )
+    (guard,) = _Guard.seen
+    assert (guard["memory_budget"], guard["pass_budget"]) == (30, 300)
+    assert guard["budgets"] == {"note_read": 20}
+
+
+@pytest.mark.parametrize("attributes", [{}, {"cognition.items": "x"}, {"cognition.items": "0"}])
+async def test_an_agenda_size_that_is_absent_or_unreadable_is_one_item_never_more(
+    monkeypatch, attributes,
+):
+    async def invoke(*a: Any, **k: Any) -> Any:
+        return SimpleNamespace(stop_reason="end_turn")
+
+    _patch_agent(monkeypatch, invoke)
+    await _live(read_tool_budgets={"note_read": 4}).run(
+        system_prompt="s", prompt="p", tools=[_tool("note_read")],
+        budget=AdaptorBudget(turns=1, total_tokens=1, output_tokens=1, timeout_seconds=5),
+        trace_attributes=attributes,
+    )
+    assert _Guard.seen[0]["budgets"] == {"note_read": 4}

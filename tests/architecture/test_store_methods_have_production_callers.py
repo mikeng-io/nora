@@ -296,14 +296,15 @@ _AMBIGUOUS: frozenset[str] = frozenset(
 _STORE_MODULES: frozenset[str] = frozenset(
     {
         "announcements.py", "assess.py", "audit.py", "cognition_dry_run.py",
-        "compute_jobs.py", "computer_events.py",
+        "compute_jobs.py", "computer_events.py", "computer_sessions.py",
         "culture.py", "decision_log.py", "dream_schedule.py",
         "gatherings.py", "geocode_cache.py", "language.py",
         "media_descriptions.py", "media_objects.py", "mobility.py",
         "music_queue.py", "music_session.py", "notes.py",
         "participation_state.py", "presence.py",
         "reasoning_strip.py", "record_query.py",
-        "reminders.py", "revisions.py", "rollups.py", "snapshot_at.py",
+        "reminders.py", "revisions.py", "rollup_read.py", "rollups.py",
+        "snapshot_at.py",
         "stimuli.py",
         "source_health.py", "tag_debounce.py",
         "standing.py", "summons.py", "tag_traces.py", "tool_call_log.py",

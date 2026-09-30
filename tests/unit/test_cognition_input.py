@@ -267,8 +267,8 @@ async def test_striking_a_failing_rollup_wake_never_strikes_the_messages_it_left
     assert [s.id for s in view.pending] == [message]
 
 
-def test_an_outcome_row_written_before_0082_reads_no_cause_and_a_failure_keeps_its_own():
-    """M2 (strongest-tier review of #646): 0082 rewrites no row (the table is
+def test_an_outcome_row_written_before_0083_reads_no_cause_and_a_failure_keeps_its_own():
+    """M2 (strongest-tier review of #646): 0083 rewrites no row (the table is
     append-only), so a closed or cancelled outcome written with `infra` is
     normalised when it is READ."""
     from nora.domain.stimuli import wake_state

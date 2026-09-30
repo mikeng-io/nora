@@ -203,18 +203,18 @@
     "target": "tests/unit/test_cognition_grounding.py -k sorting_first"
   },
   {
-    "name": "migration 0082: no UPDATE of the append-only outcome table",
-    "file": "nora/infra/sql/migrations/versions/0082_cognition_cause_none.py",
+    "name": "migration 0083: no UPDATE of the append-only outcome table",
+    "file": "nora/infra/sql/migrations/versions/0083_cognition_cause_none.py",
     "old": "        \"cause IN ('infra', 'agenda', 'none')\",\n    )\n",
     "new": "        \"cause IN ('infra', 'agenda', 'none')\",\n    )\n    op.execute(\"UPDATE cognition_wake_outcome SET cause = 'none' WHERE outcome IN ('closed', 'cancelled') AND cause = 'infra'\")\n",
-    "target": "tests/infra/test_alembic.py -k 0082"
+    "target": "tests/infra/test_alembic.py -k 0083"
   },
   {
     "name": "wake_state: an old closed outcome row is normalised to no cause on read",
     "file": "nora/domain/stimuli.py",
     "old": "            cause=stored_cause(outcome, cause or DEFAULT_FAILURE_CAUSE),",
     "new": "            cause=cause or DEFAULT_FAILURE_CAUSE,",
-    "target": "tests/unit/test_cognition_input.py -k before_0082"
+    "target": "tests/unit/test_cognition_input.py -k before_0083"
   },
   {
     "name": "SQL view: the whole pending read is bounded by limit, oldest first",

@@ -48,7 +48,15 @@ DISCORD_ONLY_TOOLS: frozenset[str] = frozenset({
 #: `search_memory_workspace` returns verbatim lines from Honcho's WHOLE
 #: workspace, every unit, and a room could otherwise surface words said by
 #: people in none of its units — the crossing `send_to` refuses (R-49).
-DREAMER_ONLY_TOOLS: frozenset[str] = frozenset({"search_memory_workspace"})
+#:
+#: `rollup_read` supersedes `where_been`'s 90-day cap for the Dreamer's
+#: adaptors only (25 §5), and `standing_read` shows her own held position to
+#: the session that revises it (30 §2): neither is a tag-path tool, so a reply
+#: neither pays their prompt nor can route to them, and the Relevance Gate's
+#: capability digest does not offer them as something she can serve
+#: (`ToolRegistry.capability_digest`).
+DREAMER_LOOP_TOOLS: frozenset[str] = frozenset({"rollup_read", "standing_read"})
+DREAMER_ONLY_TOOLS: frozenset[str] = frozenset({"search_memory_workspace"}) | DREAMER_LOOP_TOOLS
 
 
 @dataclass(frozen=True)

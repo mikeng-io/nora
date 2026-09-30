@@ -897,6 +897,49 @@ enabled = false
 # cpu_seconds = 60
 # max_processes = 256
 # max_file_bytes = 1073741824
+#
+# Sessions (design/sandbox-runtime §15.2): one task in progress on the
+# computer in a room, opened and continued BY CODE on every computer call
+# (never written by the model), and expired by a sweeper. A session expires
+# when no computer call has happened for idle_expiry_hours AND no tmux job in
+# the room is running; a running job keeps it open up to max_running_days of
+# no calls, after which it expires with the job flagged in the audit and left
+# running. It also expires when every tmux session it was seen holding is
+# gone and the room has been idle for idle_after_minutes. Expiry is a database
+# state change and an audit row: it NEVER ends a tmux job and NEVER deletes a
+# file, a profile or an audit row. An expired session is shown as lapsed
+# for lapsed_visible_hours; it is not resumed, the next call opens a new one.
+# idle_after_minutes is also when an open session with no call and no running
+# job is shown idle rather than active.
+# [computer.sessions]
+# idle_expiry_hours = 24
+# max_running_days = 7
+# lapsed_visible_hours = 24
+# sweep_interval_seconds = 300
+# idle_after_minutes = 30
+#
+# The <computer> block (design/sandbox-runtime §15.3): what is on the computer
+# for this room, rebuilt each tag and fire turn from the live machine and the
+# audit, never a model's fold. It renders only in a room that used the
+# computer within active_days or has an open or lapsed session; every other
+# room's prompt is unchanged, and costs no read of the VM. Each section is
+# capped, with a "+N more" line; files count only when changed within
+# recent_file_days. max_tokens is the block body's ceiling (estimated high):
+# past it the oldest lines are dropped first, with a line saying how many.
+# The machine read never holds a reply: past read_timeout_seconds the block
+# renders from the database alone and says the machine could not be read. A
+# good read is kept per room for state_cache_seconds.
+# [computer.context]
+# active_days = 7
+# recent_file_days = 7
+# max_open_sessions = 5
+# max_lapsed_sessions = 3
+# max_tmux = 5
+# max_files = 8
+# max_runs = 5
+# max_tokens = 400
+# read_timeout_seconds = 1.5
+# state_cache_seconds = 30
 
 # The presence collector (design/19, DEC-54/55) — a SEPARATE process,
 # `python -m nora.presence`, that records circle members' distinct location
@@ -2250,6 +2293,13 @@ lookup_person = 12
 # or closed. The shadow week's `nora_dream_guard_vetoes_total{adaptor=
 # "cognition"}` and the sessions' Langfuse traces size them for real; never
 # stated in the prompt (a model told of a cap declines the work).
+#
+# **The three call ceilings of this block are PER AGENDA ITEM** (M12): a session
+# spends `max_memory_calls`, `max_tool_calls` and each `tool_calls` entry below
+# once per item on its agenda (a session for 3 items may make 3 x 60 calls),
+# because a tag turn's numbers (event_search 1, note_search 2) are sized for a
+# reply that reads one thing, and an agenda is read item by item. `turns`,
+# `total_tokens`, `output_tokens` and `timeout_seconds` stay whole-session.
 [dreamer.budgets.cognition]
 turns = 24
 total_tokens = 1000000
@@ -2257,6 +2307,25 @@ output_tokens = 12000
 timeout_seconds = 600.0
 max_memory_calls = 6
 max_tool_calls = 60
+# The per-tool call allowance of ONE agenda item (`nora.app.cognition_wiring.
+# COGNITION_TOOL_CALLS_PER_ITEM` states the same table; a test holds them
+# equal). Each is at least the tag turn's number (`NativeTool.budget`) and is
+# raised where reading one item needs more (event_search: a place, a date, a
+# person). A name the session does not hold refuses to start, so `record_query`
+# (held only with `[record_query] enabled`, allowance 4 in code) is not listed:
+# add it here when that flag is on and it needs another number.
+[dreamer.budgets.cognition.tool_calls]
+rollup_read = 4
+standing_read = 1
+event_search = 3
+where_been = 8
+routine_read = 8
+note_read = 4
+note_search = 3
+about = 4
+ask_memory = 4
+search_memory = 4
+search_memory_workspace = 4
 
 
 # Lineage at assembly (design/cognition-loop/10-tiers.md §3; migration step

@@ -1,0 +1,1 @@
+{"type": "none", "reason": "The document catalog, its renderer and its demos are not reachable by anyone yet: no tool writes a document and the only route is a fixture page that returns 404 in a production build.", "details": [], "limitations": []}
