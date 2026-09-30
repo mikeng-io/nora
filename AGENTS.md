@@ -114,6 +114,28 @@ rules were written down and not read at the moment they applied.
 holds the skills of the agents that build her. `tests/architecture/test_agent_skills.py`
 keeps this table and that directory in step.
 
+## Delegating to a sub-agent: which model
+
+Say the model in every launch; never let it default. Two tiers: the
+**default** tier (Claude: Sonnet) and the **strongest** tier (Claude: Opus).
+They are close in capability, so the strongest tier is spent only where a row
+below names it (operator ruling, 2026-09-30).
+
+| the sub-agent's task | tier |
+|---|---|
+| mechanical: renumber, rename, merge conflicts, config edit, read-back, doc sync | default |
+| build to a finished spec, off by default or additive | default |
+| fix review findings that name a file and line | default |
+| review of an off-by-default or additive change | default |
+| review of a change live on merge that touches disclosure, a lock or concurrency path, a migration on a hot table, or starts spending model calls | strongest |
+| build with no spec (design judgement), a design bundle, or its audit | strongest |
+| a default-tier build or fix drew a BLOCKER twice in the same area | next round strongest |
+| one tier's quota is exhausted | the other, and say so in the report |
+
+Every change still gets an independent review by a fresh agent, never the one
+that built it: resuming an agent keeps its model, so a follow-up that the table
+puts on another tier is a new launch with the old report pasted in.
+
 ## Reporting to the operator
 
 **Two registers, and using the wrong one is the common failure.**
