@@ -214,7 +214,7 @@
     "file": "nora/domain/stimuli.py",
     "old": "            cause=stored_cause(outcome, cause or DEFAULT_FAILURE_CAUSE),",
     "new": "            cause=cause or DEFAULT_FAILURE_CAUSE,",
-    "target": "tests/unit/test_cognition_input.py -k before_0083"
+    "target": "tests/unit/test_cognition_input.py -k before_0085"
   },
   {
     "name": "SQL view: the whole pending read is bounded by limit, oldest first",
