@@ -45,7 +45,13 @@ ENC = tiktoken.get_encoding("cl100k_base")
 # `computer_edit` (29), 132 tokens on a block measured at 2,045 over 64
 # lines, total 2,177 over 68 at a mean of 31.1, under `MEAN_CEILING`. No
 # existing line changed. 2,250 holds these and roughly two more lines.
-BLOCK_CEILING = 2_250
+#
+# RE-SET 2026-10-01, 2,250 -> 2,350, for TWO NEW TOOLS, not for drift:
+# S3a (design/sandbox-runtime §6, §7) adds `computer_export` (32 tokens) and
+# `computer_import` (28), on a block measured at 2,216 over 69 lines, total
+# 2,276 over 71 at a mean of 31.1, under `MEAN_CEILING`. No existing line changed. `make_artifact`'s line (38) leaves
+# in S3b, which gives most of this back.
+BLOCK_CEILING = 2_350
 
 # The per-line ceiling, and it was REVISED after measurement. The bundle
 # asserted 20 from an estimate; rendering the real thing put eleven lines

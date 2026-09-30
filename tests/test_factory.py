@@ -521,13 +521,13 @@ def test_r29_survives_activation_only_the_operator_dir_loads(tmp_path):
     ctx = SimpleNamespace(agent=agent, tool_use={}, invocation_state={})
 
     # Only the operator's skills loaded; naming one is the intended activation.
-    # (image-generation and navigation are the operator directory's two
-    # skills, sorted alphabetically by the loader; image-generation joined
-    # 2026-09-23, DEC-193. `self-description` moved into
+    # (the operator directory's four skills, sorted alphabetically by the
+    # loader; image-generation joined 2026-09-23, DEC-193, and computer-use
+    # and document-creation 2026-10-01, design/sandbox-runtime S3a. `self-description` moved into
     # `nora/doctrine/core/identity.md` on 2026-09-17 and `personalization` into
     # `nora/doctrine/rooms/conduct.md` on 2026-09-24, ADR 0016.)
     assert [s.name for s in plugin.get_available_skills(agent)] == [
-        "image-generation", "navigation"]
+        "computer-use", "document-creation", "image-generation", "navigation"]
     ok = asyncio.run(plugin.skills(skill_name="navigation", tool_context=ctx))
     assert "Wayfinding" in ok
 
@@ -551,7 +551,7 @@ def test_r29_survives_activation_only_the_operator_dir_loads(tmp_path):
 
     # Nothing a message named changed the loaded set; only navigation activated.
     assert [s.name for s in plugin.get_available_skills(agent)] == [
-        "image-generation", "navigation"]
+        "computer-use", "document-creation", "image-generation", "navigation"]
     assert plugin.get_activated_skills(agent) == ["navigation"]
 
 

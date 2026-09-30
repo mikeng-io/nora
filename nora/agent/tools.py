@@ -13482,9 +13482,8 @@ Args:
         title: str | None = None,
         artifact_id: str | None = None,
     ) -> dict:
-        """Send a file from your computer out: a link people open, an
-        attachment in this chat, or kept privately. Call this when a file you
-        made is ready for somebody.
+        """Send a file from your computer out as a link, a chat attachment or
+        a kept copy. Call this when a file you made is ready.
 
         MUST: for a page, report, chart, map or table people open as a file or
         link, follow the document-creation skill.
@@ -13555,9 +13554,8 @@ Args:
             if artifact_id:
                 try:
                     # Checked wired above for a link, the only `to` with an id.
-                    owner = await cast(ComputerExportStore, computer_exports).for_artifact(
-                        artifact_id=artifact_id,
-                    )
+                    exports = cast(ComputerExportStore, computer_exports)
+                    owner = await exports.for_artifact(artifact_id=artifact_id)
                 except Exception:
                     log.exception("computer_export: owner read failed")
                     outcome, row = "unavailable", {"to": to, "reason": "owner unreadable"}
@@ -13725,9 +13723,8 @@ Args:
         return True
 
     async def computer_import(code: str) -> dict:
-        """Copy a file somebody sent in this chat onto your computer, under
-        inbox/. Call this when you need to work on it with code or tools on
-        your computer.
+        """Copy a file sent in this chat onto your computer, into inbox/.
+        Call this when you need to work on it there.
 
         Returns `status`: ok, nothing_found, ambiguous, refused or
         unavailable, with a `note` on how to read it.
