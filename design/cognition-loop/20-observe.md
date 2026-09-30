@@ -99,8 +99,12 @@ and every `time` trigger raises a **stimulus**: `(unit, kind, ref, cues, at)`.
   `play`, `rollup` ([25](25-rollup.md) §4), `time` (an anchor passed, a
   revisit due, an event's date reached, the daily floors: proactive's 07:00 HK
   and the curator's 00:00 HK), and `self` (a wake Cognition requested for
-  itself with `wake_at`, below). Presence raises its stimuli through the
-  Rollup: a raw fix is too fine-grained to wake anything.
+  itself with `wake_at`, below), and, from E2 ([05](05-data-model.md) §7,
+  DEC-249), `handoff` (raised by code when a tag turn ends, carrying the tag
+  message id, her send ids and the turn's tool-call ids; a strong cue,
+  claimed like `message`; none for a turn that sent nothing and called no
+  tool). Presence raises its stimuli through the Rollup: a raw fix is too
+  fine-grained to wake anything.
 - **cues** (deterministic, never a model): a date or time expression; an
   amount or a split; a keep instruction («記低», "keep that", "write that
   down"); an RSVP word; a reply to, edit of, reaction to or delete of a
@@ -108,7 +112,9 @@ and every `time` trigger raises a **stimulus**: `(unit, kind, ref, cues, at)`.
   which makes `exclude_persons` mandatory on the write that cites it
   ([10](10-tiers.md) §3). An arrival at a place an open event names is not a
   cue on a message: the Rollup raises it as a stimulus ([25](25-rollup.md) §4).
-- An item whose author is Nora raises no stimulus. A person's reply to her
+- An item whose author is Nora raises no stimulus, with one exception by
+  name: the `handoff` a tag turn's end raises (above), which code raises for
+  the turn, not for her send. A person's reply to her
   message within `reply_quiet_seconds` (starting at 600 s) does not by
   itself wake Cognition: it waits for the next wake.
 
@@ -141,7 +147,7 @@ Cognition session on the **first** trigger that holds:
 | trigger | fires when | starting value |
 |---|---|---|
 | **settled** | at least one stimulus pending, and the unit's rooms quiet for `quiet_seconds` | 1800 s (operator 2026-09-29, was 600 s; matches `[dreamer] quiet_seconds`) |
-| **strong cue** | a pending stimulus carries a strong cue (a date or time, a place change, a keep instruction, an RSVP, an edit of a cited message), then `cue_quiet_seconds` of quiet | 120 s |
+| **strong cue** | a pending stimulus carries a strong cue (a date or time, a place change, a keep instruction, an RSVP, an edit of a cited message, a `handoff` from E2), then `cue_quiet_seconds` of quiet | 120 s |
 | **rollup** | a Rollup stimulus (co-location start, a stay starting at a place an open event names, play-together start, deviation) has waited `rollup_delay_seconds` | 60 s |
 | **batch** | pending stimuli ≥ `batch_max` | 80 |
 | **max age** | the oldest pending stimulus ≥ `max_age_seconds` old | 3600 s |

@@ -33,6 +33,28 @@ alone → `remember` (memory); settled and about the unit, someone else or
 the world → memo; not settled and must not be dropped → note; dated and
 attended → event; should happen at a time → a reminder.
 
+**The same rule over the Notebook's tiers** ([05](05-data-model.md) §2).
+Raw statements stay in the Record and per-person facts in Memory; the
+Notebook holds what the unit's affairs, its people and Nora add up to:
+
+| the thing | where it goes |
+|---|---|
+| the unit's affairs, still open | Register · note |
+| the unit's affairs, settled, to keep | Register · memo |
+| the unit's affairs, dated, people attend | Register · event |
+| what a person, a room, the unit or Nora is like, from many instances | Character (the Character adaptor only) |
+| where Nora stands toward a room, the unit or a person | Standing |
+| how Nora should act here, learned from outcomes | Lessons (the Lessons adaptor only) |
+| a settled fact about the speaker alone | Memory, through `remember`: not the Notebook |
+| something to do at a time | a reminder: machinery, not the Notebook |
+
+**Amended by DEC-249**: every Notebook entry is written by the subconscious, one writer per tier; the Register's is Cognition.
+From the cut-over the tag path writes none of the three kinds above; a
+«記低» about the unit and a date, time or RSVP are strong cues that wake
+Cognition, which writes the note, memo or event ([05](05-data-model.md) §7).
+The mentions below of a tag-path `memo_write` and tag-path event writes
+describe the design before that ruling.
+
 ## 2. Memo
 
 Title, body (the [12](12-schemas.md) §3 memo schema, restated whole on
@@ -80,7 +102,8 @@ previous revision. Two guards hold ([30](30-cognition.md) §3): a revision that
 moves a `told` event to `cancelled`, `evicted` or `lapsed` without `told`
 evidence keeps it rendering, flagged "cancelled?", for 48 hours; and
 cognition never cancels a reminder a person set, which fires with the
-event's current revision.
+event's current revision, except (after E2, DEC-249) with the event it
+cancels on `told` evidence.
 
 **The newest evidence outranks the event's older revision.** A message after
 the event was set, a co-location episode at another place at the event's time
