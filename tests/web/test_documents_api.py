@@ -19,6 +19,7 @@ from nora.domain.models import PersonRef
 from nora.persons import Persons
 from nora.policy import Conversation, Policy
 from nora.testing import FakeDocumentStore, FakeMemoryStore, FakeRecordStore
+from nora.testing.fakes import FakeBlobStore
 from nora.testing.reminders import FakeReminderStore
 from nora.web.api import register_web_routes
 from tests.conftest import build_test_doctrine_store
@@ -240,3 +241,177 @@ async def test_a_deployment_without_documents_answers_503_not_an_empty_list(aioh
         resp = await client.get(path)
         assert resp.status == 503
         assert (await resp.json())["status"] == "unavailable"
+
+
+# ---------------------------------------------------------------------- picture bytes
+# A real 1x1 PNG, GIF, JPEG header and WebP header: the route reads the type off the bytes.
+PNG = (
+    b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00"
+    b"\x1f\x15\xc4\x89\x00\x00\x00\rIDATx\x9cc\xf8\xff\xff?\x00\x05\xfe\x02\xfe\xa7\x9a\xa0"
+    b"\xa0\x00\x00\x00\x00IEND\xaeB`\x82"
+)
+GIF = b"GIF89a\x01\x00\x01\x00\x00\x00\x00;"
+JPEG = b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00\xff\xd9"
+WEBP = b"RIFF\x1a\x00\x00\x00WEBPVP8 \x0e\x00\x00\x000\x01\x00\x9d\x01*\x01\x00\x01\x00"
+SVG = b'<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>'
+HTML = b"<!doctype html><script>alert(1)</script>"
+
+
+class _BrokenBlobs:
+    """A `BlobStore` whose disk is unreachable: `get` raises, like the real one would."""
+
+    async def put(self, *, data: bytes) -> str:
+        raise RuntimeError("disk")
+
+    async def get(self, *, key: str) -> bytes | None:
+        raise RuntimeError("disk")
+
+
+class _MediaWorld(_World):
+    def __init__(self) -> None:
+        super().__init__()
+        self.blobs = FakeBlobStore()
+        self.shas: dict[str, str] = {}
+
+
+async def _media_app(aiohttp_client, world: _MediaWorld, *, blobs: Any = "world"):
+    for name, data in (
+        ("png", PNG), ("gif", GIF), ("jpeg", JPEG), ("webp", WEBP), ("svg", SVG),
+        ("html", HTML), ("unnamed", PNG + b"\x00"),
+    ):
+        world.shas[name] = await world.blobs.put(data=data)
+    named = tuple(world.shas[n] for n in ("png", "gif", "jpeg", "webp", "svg", "html"))
+    world.ids["m"] = uuid4()
+    await world.store.create(
+        document_id=world.ids["m"], platform="signal", conversation_id="r1", created_by="ken",
+        revision=_rev("Pictures", media=named),
+    )
+    app = web.Application()
+    register_web_routes(
+        app,
+        store=FakeRecordStore(),
+        honcho=FakeMemoryStore(),
+        reminders=FakeReminderStore(),
+        persons=Persons(by_person={"ken": KEN, "mei": MEI, "jo": JO, "sam": SAM}, index={}),
+        ai_peer="nora",
+        started_at=0.0,
+        games_client=None,
+        presence=None,
+        presence_circles=(),
+        skills_dir=NO_SKILLS_DIR,
+        events=_fake_events(),
+        doctrine_store=build_test_doctrine_store(),
+        documents=world.store,
+        rooms_of=world.rooms_of,
+        blobs=world.blobs if blobs == "world" else blobs,
+    )
+    return await aiohttp_client(app)
+
+
+@pytest.fixture
+async def media_client(aiohttp_client):
+    world = _MediaWorld()
+    return await _media_app(aiohttp_client, world), world
+
+
+def _url(world: _MediaWorld, sha: str, person: str = "mei", doc: str = "m") -> str:
+    return f"/app/v1/documents/{world.ids[doc]}/media/{sha}?personId={person}"
+
+
+@pytest.mark.parametrize(
+    ("name", "data", "media_type"),
+    [
+        ("png", PNG, "image/png"),
+        ("gif", GIF, "image/gif"),
+        ("jpeg", JPEG, "image/jpeg"),
+        ("webp", WEBP, "image/webp"),
+    ],
+)
+async def test_a_member_reads_each_raster_picture_the_document_names(
+    media_client, name, data, media_type
+):
+    client, world = media_client
+    resp = await client.get(_url(world, world.shas[name]))
+    assert resp.status == 200
+    assert resp.content_type == media_type
+    assert await resp.read() == data
+
+
+async def test_a_picture_is_served_so_that_it_can_never_run(media_client):
+    client, world = media_client
+    resp = await client.get(_url(world, world.shas["png"]))
+    assert resp.headers["X-Content-Type-Options"] == "nosniff"
+    assert "sandbox" in resp.headers["Content-Security-Policy"]
+    assert resp.headers["Cache-Control"] == "private, no-store"
+
+
+async def test_a_person_the_room_does_not_name_cannot_read_its_pictures(media_client):
+    client, world = media_client
+    for person in ("sam", "jo"):
+        resp = await client.get(_url(world, world.shas["png"], person=person))
+        assert resp.status == 404, person
+    # Not by id alone: the creator still can.
+    assert (await client.get(_url(world, world.shas["png"], person="ken"))).status == 200
+
+
+async def test_a_picture_the_document_does_not_name_is_not_served(media_client):
+    client, world = media_client
+    # The bytes exist in the store, and the person may read this document: still no.
+    resp = await client.get(_url(world, world.shas["unnamed"]))
+    assert resp.status == 404
+
+
+@pytest.mark.parametrize("name", ["svg", "html"])
+async def test_bytes_that_are_not_a_raster_picture_are_never_served(media_client, name):
+    client, world = media_client
+    # Named by the document and readable by the viewer; the bytes themselves refuse.
+    resp = await client.get(_url(world, world.shas[name]))
+    assert resp.status == 404
+    assert b"alert" not in await resp.read()
+
+
+async def test_the_address_must_be_the_whole_sha_in_lower_case(media_client):
+    client, world = media_client
+    sha = world.shas["png"]
+    for bad in (sha[:12], sha.upper(), sha + "0", "../" + sha, ""):
+        resp = await client.get(f"/app/v1/documents/{world.ids['m']}/media/{bad}?personId=mei")
+        assert resp.status in (404, 400), bad
+        assert resp.content_type != "image/png"
+
+
+async def test_an_unreadable_document_and_an_unknown_one_answer_alike(media_client):
+    client, world = media_client
+    hidden = await client.get(_url(world, world.shas["png"], person="sam"))
+    unknown = await client.get(
+        f"/app/v1/documents/{uuid4()}/media/{world.shas['png']}?personId=mei"
+    )
+    assert hidden.status == unknown.status == 404
+    assert await hidden.json() == await unknown.json()
+
+
+async def test_a_blob_store_that_cannot_be_read_is_unavailable_never_not_found(aiohttp_client):
+    world = _MediaWorld()
+    client = await _media_app(aiohttp_client, world, blobs=_BrokenBlobs())
+    resp = await client.get(_url(world, world.shas["png"]))
+    assert resp.status == 503
+
+
+async def test_with_no_blob_store_a_picture_is_unavailable(aiohttp_client):
+    world = _MediaWorld()
+    client = await _media_app(aiohttp_client, world, blobs=None)
+    assert (await client.get(_url(world, world.shas["png"]))).status == 503
+
+
+async def test_the_picture_route_needs_a_known_person_and_a_uuid(media_client):
+    client, world = media_client
+    sha = world.shas["png"]
+    assert (await client.get(f"/app/v1/documents/{world.ids['m']}/media/{sha}")).status == 400
+    assert (await client.get(_url(world, sha, person="nobody"))).status == 400
+    bad_id = await client.get(f"/app/v1/documents/not-a-uuid/media/{sha}?personId=mei")
+    assert bad_id.status == 400
+
+
+async def test_a_removed_picture_is_not_found_not_an_error(media_client):
+    client, world = media_client
+    del world.blobs.blobs[world.shas["png"]]
+    assert (await client.get(_url(world, world.shas["png"]))).status == 404

@@ -1,6 +1,7 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import * as documents from "./api/documents";
 import * as games from "./api/games";
 import * as nora from "./api/nora";
 import * as people from "./api/people";
@@ -33,6 +34,8 @@ export const qk = {
   roster: ["roster"] as const,
   person: (id: string) => ["person", id] as const,
   plans: ["plans"] as const,
+  documents: (page: number) => ["documents", page] as const,
+  document: (id: string) => ["document", id] as const,
   plan: (id: string) => ["plan", id] as const,
   presence: ["presence"] as const,
   savedPlaces: ["saved-places"] as const,
@@ -120,6 +123,26 @@ export const usePlan = (id: string) =>
   useQuery({
     queryKey: qk.plan(id),
     queryFn: ({ signal }) => people.fetchPlan(id, signal),
+    staleTime: 1 * M,
+  });
+
+// ------------------------------------------------------------- documents
+
+export const useDocuments = (page: number) =>
+  useQuery({
+    queryKey: qk.documents(page),
+    queryFn: ({ signal }) => documents.fetchDocuments(page, signal),
+    staleTime: 1 * M,
+    // Turning a page keeps the last one on screen until the next arrives.
+    placeholderData: keepPreviousData,
+  });
+
+export const useDocument = (id: string) =>
+  useQuery({
+    queryKey: qk.document(id),
+    queryFn: ({ signal }) => documents.fetchDocument(id, signal),
+    // A document is revised by Nora between visits; a minute is fresh enough to read
+    // and short enough that a revision she just made is the one you open.
     staleTime: 1 * M,
   });
 

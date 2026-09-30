@@ -35,7 +35,7 @@
 //                     ±40% jitter so loading states are visible and vary.
 //   MOCK_FAIL      — comma list of route families to answer 503 on:
 //                     status, memory, doctrine, skills, tools, persons,
-//                     games, presence, events.
+//                     games, presence, events, documents.
 //   MOCK_EMPTY     — comma list of the same families to answer with
 //                     genuinely empty data (empty arrays, zero counts)
 //                     instead of their normal generated content.
@@ -1679,6 +1679,140 @@ get("/app/v1/events/:id", (params, sp, now) => {
   return { status: 200, body };
 });
 
+// ------------------------------------------------------------ documents
+//
+// nora/web/documents.py: what the viewer created plus what a room that names them
+// made. Three fixtures for Miles (one revised, one whose stored spec this build refuses)
+// and one only Mei can read, so a hidden document answers exactly like an unknown id.
+// The picture is one real 1x1 PNG served under a fixed sha256.
+
+const DOC_PICTURE_SHA = "b".repeat(64);
+const DOC_PNG = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==",
+  "base64",
+);
+const DOC_SPEC = (title, extra = []) => ({
+  version: 1,
+  root: {
+    type: "Page",
+    props: { title, subtitle: "Made for the group chat" },
+    children: [
+      {
+        type: "Section",
+        props: { title: "Notes" },
+        children: [{ type: "Markdown", props: { text: "Three nights, one train, no rush." } }],
+      },
+      ...extra,
+    ],
+  },
+});
+const DOCUMENTS = [
+  {
+    id: "5b6f0c3a-2d41-4e8b-9c77-1a2b3c4d5e01",
+    title: "Lisbon in December",
+    revision: 3,
+    platform: "signal",
+    createdAt: "2026-09-28T09:00:00Z",
+    updatedAt: "2026-09-30T18:30:00Z",
+    createdBy: { personId: "ken", name: "Ken" },
+    readers: ["miles", "ken", "mei"],
+    media: [DOC_PICTURE_SHA],
+    document: DOC_SPEC("Lisbon in December", [
+      { type: "Image", props: { media: DOC_PICTURE_SHA, alt: "The hotel door", caption: "Where we are staying" } },
+    ]),
+  },
+  {
+    id: "5b6f0c3a-2d41-4e8b-9c77-1a2b3c4d5e02",
+    title: "Kitchen rota",
+    revision: 1,
+    platform: "discord",
+    createdAt: "2026-09-25T10:00:00Z",
+    updatedAt: "2026-09-25T10:00:00Z",
+    createdBy: { personId: "miles", name: "Miles" },
+    readers: ["miles"],
+    media: [],
+    document: DOC_SPEC("Kitchen rota"),
+  },
+  {
+    id: "5b6f0c3a-2d41-4e8b-9c77-1a2b3c4d5e03",
+    title: "From a newer catalog",
+    revision: 1,
+    platform: "signal",
+    createdAt: "2026-09-20T10:00:00Z",
+    updatedAt: "2026-09-20T10:00:00Z",
+    createdBy: { personId: "miles", name: "Miles" },
+    readers: ["miles"],
+    media: [],
+    document: { version: 9, root: { type: "Page", props: { title: "From a newer catalog" } } },
+  },
+  {
+    id: "5b6f0c3a-2d41-4e8b-9c77-1a2b3c4d5e04",
+    title: "Mei's surprise",
+    revision: 1,
+    platform: "signal",
+    createdAt: "2026-09-19T10:00:00Z",
+    updatedAt: "2026-09-19T10:00:00Z",
+    createdBy: { personId: "mei", name: "Mei" },
+    readers: ["mei"],
+    media: [],
+    document: DOC_SPEC("Mei's surprise"),
+  },
+];
+const docSummary = ({ readers: _r, media: _m, document: _d, ...rest }) => rest;
+const DOC_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function documentViewer(sp) {
+  const personId = sp.get("personId");
+  return personId && ROSTER_BY_ID.has(personId) ? personId : null;
+}
+
+get("/app/v1/documents", (params, sp) => {
+  if (isFailing("documents")) return { status: 503, body: ERR_UNAVAILABLE };
+  const personId = documentViewer(sp);
+  if (!personId) return { status: 400, body: { error: "personId required" } };
+  const { value: page, error: pageErr } = intParam(sp, "page", 1);
+  const { value: pageSize, error: sizeErr } = intParam(sp, "pageSize", 20);
+  if (pageErr) return { status: 400, body: { error: "invalid page" } };
+  if (sizeErr) return { status: 400, body: { error: "invalid pageSize" } };
+  const mine = isEmptied("documents")
+    ? []
+    : DOCUMENTS.filter((d) => d.readers.includes(personId)).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  const size = Math.min(Math.max(1, pageSize), 50);
+  const at = Math.max(1, page);
+  return {
+    status: 200,
+    body: {
+      documents: mine.slice((at - 1) * size, at * size).map(docSummary),
+      page: at,
+      pageSize: size,
+      total: mine.length,
+    },
+  };
+});
+
+get("/app/v1/documents/:id", (params, sp) => {
+  if (isFailing("documents")) return { status: 503, body: ERR_UNAVAILABLE };
+  const personId = documentViewer(sp);
+  if (!personId) return { status: 400, body: { error: "personId required" } };
+  if (!DOC_UUID.test(params.id)) return { status: 400, body: { status: "refused", note: "bad id" } };
+  const doc = DOCUMENTS.find((d) => d.id === params.id);
+  // Unreadable is unknown: never a distinct "forbidden".
+  if (!doc || !doc.readers.includes(personId)) return { status: 404, body: { status: "not_found" } };
+  return { status: 200, body: { ...docSummary(doc), document: doc.document, media: doc.media } };
+});
+
+get("/app/v1/documents/:id/media/:sha", (params, sp) => {
+  if (isFailing("documents")) return { status: 503, body: ERR_UNAVAILABLE };
+  const personId = documentViewer(sp);
+  if (!personId) return { status: 400, body: { error: "personId required" } };
+  if (!DOC_UUID.test(params.id)) return { status: 400, body: { status: "refused", note: "bad id" } };
+  const doc = DOCUMENTS.find((d) => d.id === params.id);
+  if (!doc || !doc.readers.includes(personId) || !doc.media.includes(params.sha)) {
+    return { status: 404, body: { status: "not_found" } };
+  }
+  return { status: 200, bytes: DOC_PNG, contentType: "image/png" };
+});
+
 // -------------------------------------------------------------- presence
 
 get("/app/v1/presence", (params, sp, now) => {
@@ -1881,12 +2015,17 @@ function sleep(ms) {
 function startServer() {
   const server = createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://127.0.0.1");
-    const { status, body } =
+    const { status, body, bytes, contentType } =
       req.method === "GET" ? handle(url.pathname, url.searchParams, Date.now()) : { status: 404, body: ERR_NOT_FOUND };
     await sleep(jitteredLatencyMs());
-    const json = JSON.stringify(body);
-    res.writeHead(status, { "content-type": "application/json; charset=utf-8" });
-    res.end(json);
+    if (bytes) {
+      // A picture: the only non-JSON answer this mock gives.
+      res.writeHead(status, { "content-type": contentType });
+      res.end(bytes);
+    } else {
+      res.writeHead(status, { "content-type": "application/json; charset=utf-8" });
+      res.end(JSON.stringify(body));
+    }
     console.log(`[mock-nora] ${req.method} ${url.pathname}${url.search} -> ${status}`);
   });
   server.listen(PORT, "127.0.0.1", () => {

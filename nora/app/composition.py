@@ -1068,6 +1068,10 @@ class Dependencies:
     documents: DocumentStore
     document_service: DocumentService
     rooms_of: Callable[[str], frozenset[RoomKey]]
+    # The content-addressed byte store, for the portal's picture route (a document names
+    # its pictures by sha256). `None` when media custody is off: the route then answers
+    # `unavailable`, never a picture.
+    blobs: BlobStore | None
     assembler: ContextAssembler
     ingest: IngestPipeline
     engagement: EngagementPipeline
@@ -4618,6 +4622,7 @@ async def build_dependencies(
         workspaces_of=functools.partial(workspaces_of_person, allowlist),
         documents=documents_store, document_service=document_service,
         rooms_of=functools.partial(rooms_named, allowlist),
+        blobs=blobs,
         dispatcher=dispatcher, adapter=adapter, registry=registry,
         participation_trigger=participation_trigger,
         relevance_gate=gate,
