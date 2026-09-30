@@ -153,6 +153,9 @@ class ComputerToolSettings:
     max_run_timeout_seconds: int = 900
     max_output_chars: int = 8000
     max_read_chars: int = 20000
+    # `computer_export` / `computer_import`: the largest file either moves.
+    export_max_bytes: int = 25 * 1024 * 1024
+    import_max_bytes: int = 25 * 1024 * 1024
     limits: tuple[tuple[str, int], ...] = ()
     # Sessions (`[computer.sessions]`): an open session with no computer call
     # for `idle_after_minutes` and no tmux job running is shown `idle`; an

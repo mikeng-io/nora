@@ -889,6 +889,11 @@ enabled = false
 # max_run_timeout_seconds = 900  # the most a model may ask a command to run
 # max_output_chars = 8000        # a run's stdout, cut beyond this
 # max_read_chars = 20000         # one computer_read, cut beyond this
+# export_max_bytes = 26214400    # the largest file computer_export sends out (25 MiB; at most 50 MiB)
+# import_max_bytes = 26214400    # the largest attachment computer_import copies in (25 MiB; at most 50 MiB)
+# computer_export's link destination is Drop's internal listener, reached with
+# [shortener]'s base_url and token_env (the same pair make_artifact uses):
+# without that token a link export answers unavailable.
 #
 # Reserved: per-command resource limits. None is applied today (operator,
 # 2026-09-30: the computer is semi-trusted) and computerd ignores the field;

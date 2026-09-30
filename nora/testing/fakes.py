@@ -32,6 +32,7 @@ from nora.domain.computer import (
     TmuxSession,
 )
 from nora.domain.computer_events import ComputerEvent, normalise_computer_event
+from nora.domain.computer_exports import ComputerExport, normalise_export
 from nora.domain.computer_sessions import (
     EXPIRED,
     OPEN,
@@ -1671,6 +1672,36 @@ class FakeToolCallLogStore:
         ]
         rows.sort(key=lambda e: e.created_at, reverse=True)
         return rows[:limit]
+
+
+class FakeComputerExportStore:
+    """In-memory `ComputerExportStore`. Bound to
+    `nora.infra.sql.computer_exports.SqlComputerExportStore` by
+    `tests/contract/test_computer_export_store_contract.py`.
+
+    `fail_record` makes `record` raise (the export already happened: the
+    tool must still answer); `fail_read` makes `for_artifact` raise (a
+    revision whose owner cannot be read must not go ahead).
+    """
+
+    def __init__(self) -> None:
+        self.exports: list[ComputerExport] = []
+        self.fail_record = False
+        self.fail_read = False
+
+    async def record(self, export: ComputerExport) -> None:
+        if self.fail_record:
+            raise RuntimeError("fake computer_exports record failure")
+        if any(e.id == export.id for e in self.exports):
+            raise RuntimeError("duplicate id")
+        self.exports.append(normalise_export(export))
+
+    async def for_artifact(self, *, artifact_id: str) -> ComputerExport | None:
+        if self.fail_read:
+            raise RuntimeError("fake computer_exports read failure")
+        rows = [e for e in self.exports if e.artifact_id == artifact_id]
+        rows.sort(key=lambda e: (e.created_at, str(e.id)))
+        return rows[0] if rows else None
 
 
 class FakeComputerEventStore:

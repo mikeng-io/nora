@@ -140,6 +140,9 @@ APPEND_ONLY: dict[str, str] = {
     # design/sandbox-runtime §12 (0081_computer_events): the computer audit,
     # two rows (started, finished) per computer tool call, never changed.
     "computer_events": "created_at",
+    # design/sandbox-runtime §6 (0083_computer_exports): every file that left
+    # the computer, one row per export, never changed; a revision is a row.
+    "computer_exports": "created_at",
     "revision_blob": "recorded_at",
     "doctrine_revision": "recorded_at",
     "config_revision": "recorded_at",

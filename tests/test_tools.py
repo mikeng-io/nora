@@ -198,7 +198,7 @@ def test_every_declared_tool_is_built(wiring):
         "make_artifact",
         # Nora's computer (design/sandbox-runtime §4, DEC-243).
         "computer_run", "computer_read", "computer_write", "computer_edit",
-        "computer_session_list",
+        "computer_export", "computer_import", "computer_session_list",
         # DEC-97: what she is running, and what was in an earlier version.
         "version",
         # The note tier's four verbs (note-tier spec §5.2/§6).

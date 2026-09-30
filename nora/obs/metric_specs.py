@@ -205,8 +205,9 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "(blob: a full input or output could not be put in the blob store, the "
         "row says so; row: the audit row itself was not appended; session: the "
         "call's computer session could not be continued or opened; lease: a "
-        "lease's started row was not appended). The tool call itself still "
-        "answered.",
+        "lease's started row was not appended; export: a computer_export that "
+        "reached its destination could not be recorded in computer_exports, so "
+        "that link cannot be revised). The tool call itself still answered.",
         ("tool", "stage"),
     ),
     # design/sandbox-runtime §15.2: the session sweeper's expiries, by reason
