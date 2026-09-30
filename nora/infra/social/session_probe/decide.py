@@ -28,7 +28,13 @@ from typing import Literal
 Network = Literal["instagram", "x", "linkedin"]
 NETWORKS: tuple[Network, ...] = ("instagram", "x", "linkedin")
 
-BridgeSession = Literal["authenticated", "checkpointed", "logged_out", "unreachable"]
+#: `disconnected` = /health says `authenticated` but the realtime socket is not
+#: connected, seen on two consecutive runs (the probe debounces; a bridge that
+#: just restarted is briefly disconnected). It is a session Instagram refuses
+#: (4003 Unauthorized) that the bridge's own state still calls authenticated.
+BridgeSession = Literal[
+    "authenticated", "disconnected", "checkpointed", "logged_out", "unreachable"
+]
 
 #: A Chrome session expiring inside this window is alerted while a human can
 #: still renew it on their own schedule rather than after reads start failing.
@@ -153,16 +159,18 @@ def _bridge_findings(snap: Snapshot, chrome_ig_usable: bool) -> list[Action]:
         return [ErrorAction("bridge_unreachable")]
     if session == "authenticated":
         return []
-    # checkpointed or logged_out: the follower is down.
+    # checkpointed, logged_out or disconnected: the follower is down.
     if not chrome_ig_usable:
         # Nothing good to copy; the Chrome-side alert already says why.
         return []
     if not snap.instagram_differs:
         # The bridge already holds Chrome's exact cookie and is still refused:
         # a sync would rewrite the same bytes. Only a human login helps.
-        reason = "bridge_logged_out_same_cookie" if session == "logged_out" else (
-            "bridge_checkpointed_same_cookie"
-        )
+        reason = {
+            "logged_out": "bridge_logged_out_same_cookie",
+            "checkpointed": "bridge_checkpointed_same_cookie",
+            "disconnected": "bridge_disconnected_same_cookie",
+        }[session]
         return [Alert("instagram", reason)]
     attempts = snap.history.consecutive_sync_attempts
     if attempts >= MAX_SYNC_ATTEMPTS:
@@ -202,10 +210,13 @@ def next_attempts(
     chrome_hash: str | None,
     bridge_session: BridgeSession,
     synced_now: bool,
+    bridge_connected: bool | None = True,
 ) -> int:
     """Consecutive-sync counter carried to the next run.
 
-    Reset when the bridge is authenticated, or when Chrome's cookie changed
+    Reset when the bridge is authenticated AND connected (`bridge_connected`
+    is not False; `disconnected` and an authenticated-but-not-yet-debounced
+    disconnected bridge both count as not recovered), or when Chrome's cookie changed
     (a human re-logged in: the earlier failures were about a different
     cookie). Otherwise it counts syncs that did not yield `authenticated`.
     An unreachable bridge tells us nothing, so the counter holds.
@@ -215,7 +226,7 @@ def next_attempts(
     cookie changed, so it never resets the counter (else a single unreadable
     run between syncs would defeat the cap).
     """
-    if bridge_session == "authenticated":
+    if bridge_session == "authenticated" and bridge_connected is not False:
         return 0
     if (
         chrome_hash is not None

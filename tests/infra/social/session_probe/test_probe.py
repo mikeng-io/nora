@@ -479,14 +479,14 @@ def test_the_marker_is_not_written_when_no_sync_happens(world, bridge_dir, tmp_p
 def test_live_check_runs_once_per_hour_across_runs_with_jitter(world, bridge_dir, tmp_path):
     p, _ = make(world, bridge_dir, tmp_path)
     p.run_once()
-    assert sorted(world.whoami_sites()) == ["instagram", "linkedin", "twitter"]
-    assert world.sleeps == [1.5, 1.5, 1.5]
+    assert sorted(world.whoami_sites()) == ["linkedin", "twitter"]
+    assert world.sleeps == [1.5, 1.5]
     world.now = NOW + timedelta(minutes=10)
     p.run_once()
-    assert len(world.whoami_sites()) == 3                  # not repeated
+    assert len(world.whoami_sites()) == 2                  # not repeated
     world.now = NOW + timedelta(minutes=61)
     p.run_once()
-    assert len(world.whoami_sites()) == 6                  # due again
+    assert len(world.whoami_sites()) == 4                  # due again
 
 
 def test_live_check_429_is_error_not_logged_out(world, bridge_dir, tmp_path):
@@ -515,7 +515,7 @@ def test_live_check_exit_77_is_logged_out_alert(world, bridge_dir, tmp_path):
 
 
 def test_unknown_opencli_failure_is_error(world, bridge_dir, tmp_path):
-    world.whoami["instagram"] = RunResult(1, "", "boom")
+    world.whoami["twitter"] = RunResult(1, "", "boom")
     p, _ = make(world, bridge_dir, tmp_path)
     assert p.run_once()[0] == "ERROR"
 
@@ -524,6 +524,103 @@ def test_missing_cookie_skips_that_networks_live_check(world, bridge_dir, tmp_pa
     p, _ = make(world, bridge_dir, tmp_path, chrome=jar(li=False))
     p.run_once()
     assert "linkedin" not in world.whoami_sites()
+
+
+def test_no_instagram_whoami_is_ever_made(world, bridge_dir, tmp_path):
+    world.whoami["instagram"] = RunResult(1, "", "HTTP 429 Too Many Requests")
+    p, _ = make(world, bridge_dir, tmp_path)
+    for i in range(3):
+        world.now = NOW + timedelta(hours=2 * i)
+        verdict, rec = p.run_once()
+        assert verdict == "PASS"
+        assert "instagram" not in rec["live"]
+    assert "instagram" not in world.whoami_sites()
+
+
+# ---- authenticated but disconnected (the 2026-09-29 failure) ----------------
+
+DISCONNECTED = '{"session":"authenticated","connected":false,"seq":0}'
+CONNECTED = '{"session":"authenticated","connected":true,"seq":7}'
+
+
+def test_one_disconnected_run_is_recorded_but_does_not_sync(world, bridge_dir, tmp_path):
+    world.health = DISCONNECTED
+    p, _ = make(world, bridge_dir, tmp_path)
+    verdict, rec = p.run_once()
+    assert verdict == "PASS"
+    assert world.restarts() == 0 and world.sent == []
+    assert rec["bridge_connected"] is False
+    assert rec["carry"]["bridge_disconnected_runs"] == 1
+
+
+def test_two_consecutive_disconnected_runs_with_a_differing_cookie_sync(
+    world, bridge_dir, tmp_path
+):
+    world.health = DISCONNECTED
+    p, _ = make(world, bridge_dir, tmp_path)
+    p.run_once()
+    world.now = NOW + timedelta(minutes=10)
+    verdict, rec = p.run_once()
+    assert verdict == "FAIL"
+    assert rec["bridge_session"] == "disconnected"
+    assert rec["sync"] == "ok" and world.restarts() == 1
+    assert [c[:2] for c in world.calls if c[:2] in (["docker", "stop"], ["docker", "start"])] == [
+        ["docker", "stop"], ["docker", "start"]]
+    assert json.loads((bridge_dir / "cookies.json").read_text())["sessionid"] == CHROME_SID
+
+
+def test_two_disconnected_runs_with_the_same_cookie_alert_and_do_not_sync(
+    world, bridge_dir, tmp_path
+):
+    (bridge_dir / "cookies.json").write_text(json.dumps({"sessionid": CHROME_SID}))
+    world.health = DISCONNECTED
+    p, _ = make(world, bridge_dir, tmp_path)
+    p.run_once()
+    world.now = NOW + timedelta(minutes=10)
+    p.run_once()
+    assert world.restarts() == 0
+    assert [m.reason for m in world.sent] == ["bridge_disconnected_same_cookie"]
+
+
+def test_a_connected_run_between_disconnected_runs_resets_the_debounce(
+    world, bridge_dir, tmp_path
+):
+    p, _ = make(world, bridge_dir, tmp_path)
+    for i, health in enumerate([DISCONNECTED, CONNECTED, DISCONNECTED]):
+        world.health = health
+        world.now = NOW + timedelta(minutes=10 * i)
+        _, rec = p.run_once()
+    assert world.restarts() == 0
+    assert rec["carry"]["bridge_disconnected_runs"] == 1
+
+
+def test_authenticated_and_connected_with_a_differing_cookie_is_left_alone(
+    world, bridge_dir, tmp_path
+):
+    world.health = CONNECTED
+    p, _ = make(world, bridge_dir, tmp_path)
+    for i in range(3):
+        world.now = NOW + timedelta(minutes=10 * i)
+        verdict, _ = p.run_once()
+        assert verdict == "PASS"
+    assert world.restarts() == 0 and world.sent == []
+
+
+def test_disconnected_syncs_are_capped_and_the_first_run_does_not_reset_the_counter(
+    world, bridge_dir, tmp_path
+):
+    world.health = DISCONNECTED
+    p, _ = make(world, bridge_dir, tmp_path)
+    recs = []
+    for i in range(6):
+        world.now = NOW + timedelta(minutes=10 * i)
+        # the sync leaves the (fake) bridge holding Chrome's cookie: keep the
+        # cookies different so only the cap can stop it
+        (bridge_dir / "cookies.json").write_text(json.dumps({"sessionid": BRIDGE_SID}))
+        recs.append(p.run_once()[1])
+    assert world.restarts() == 3
+    assert [r["carry"]["attempts"] for r in recs] == [0, 1, 2, 3, 3, 3]
+    assert any(m.reason == "sync_capped" for m in world.sent)
 
 
 # ---- alert dedup -----------------------------------------------------------
@@ -548,7 +645,7 @@ def test_a_corrupt_last_state_line_is_skipped_not_fatal(world, bridge_dir, tmp_p
         fh.write("{torn line")
     world.now = NOW + timedelta(minutes=10)
     p.run_once()
-    assert len(world.whoami_sites()) == 3  # carry still recovered from the good line
+    assert len(world.whoami_sites()) == 2  # carry still recovered from the good line
 
 
 # ---- alert-bridge sink -----------------------------------------------------
