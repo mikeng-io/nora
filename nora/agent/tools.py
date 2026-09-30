@@ -13554,7 +13554,10 @@ Args:
             owner: ComputerExport | None = None
             if artifact_id:
                 try:
-                    owner = await computer_exports.for_artifact(artifact_id=artifact_id)
+                    # Checked wired above for a link, the only `to` with an id.
+                    owner = await cast(ComputerExportStore, computer_exports).for_artifact(
+                        artifact_id=artifact_id,
+                    )
                 except Exception:
                     log.exception("computer_export: owner read failed")
                     outcome, row = "unavailable", {"to": to, "reason": "owner unreadable"}
@@ -13624,14 +13627,15 @@ Args:
                 )
 
             if to == "link":
+                ingest = cast(ArtifactIngest, artifact_ingest)  # checked wired above
                 try:
                     if artifact_id:
-                        made = await artifact_ingest.update(
+                        made = await ingest.update(
                             artifact_id=artifact_id, data=data, title=shown_title,
                             media_type=media_type,
                         )
                     else:
-                        made = await artifact_ingest.register(
+                        made = await ingest.register(
                             data=data, title=shown_title, media_type=media_type,
                         )
                 except Exception as exc:
