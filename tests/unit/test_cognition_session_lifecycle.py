@@ -176,8 +176,9 @@ def _rig(
     agent = agent or ScriptedAgent()
 
     async def _pending(unit: str) -> Any:
+        rows = await ledger.pending_self_wakes(unit=unit)
         await asyncio.sleep(0)  # a real store yields here; so must the double
-        return await ledger.pending_self_wakes(unit=unit)
+        return rows
 
     runner = CognitionSessionRunner(
         dry_run_store=ledger, stimulus_store=stimuli, agent_runner=agent,
