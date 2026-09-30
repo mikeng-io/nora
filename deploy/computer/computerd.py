@@ -98,6 +98,8 @@ MATCH_ALL = frozenset({"", "*", "**", "**/*"})
 MAX_STATE_FILES = 50
 MAX_STATE_WALK = 20_000
 # `/v1/state` processes: at most this many, newest first; each command cut.
+# The tmux server's process name (`/proc/<pid>/stat`), exactly: tmux sets it.
+TMUX_SERVER_COMM = "tmux: server"
 MAX_STATE_PROCESSES = 20
 PROCESS_COMMAND_CHARS = 80
 # Directories the state read never walks into: tool caches and environments,
@@ -604,18 +606,24 @@ class Computer:
 
     def processes(self, scope: str, *, panes: frozenset[int] = frozenset()) -> dict[str, Any]:
         """Every process the scope's user owns, from `/proc`: a job started
-        any way (`nohup … &` has no tmux session). Isolated, that user is the
-        scope's own; not isolated (tests, a non-root computerd), commands run
-        as computerd's own user, so that is whose processes are listed.
-        `processes` is None (with `processes_reason`) when `/proc` cannot be
-        read: unknown, never none.
+        any way (`nohup … &` has no tmux session). Only when scopes are
+        isolated: then that user is the scope's own. Not isolated (tests, a
+        non-root computerd), every room's commands run as computerd's own
+        user, so its processes are every room's, and computerd itself: they
+        are not this room's to see, and `processes` is None. It is None too
+        (with `processes_reason`) when `/proc` cannot be read: unknown,
+        never none.
 
         tmux is judged by its own rule, never here (operator, 2026-10-01): a
         tmux server and a pane's own process (`panes`, from `list-panes`) are
         left out, so an idle session is not running; a pane's CHILD is an
         ordinary process and counts, which is the pane-with-a-child rule."""
         ids = self.owner.ids(scope)
-        uid = ids[0] if ids is not None else os.getuid()
+        if ids is None:
+            return {"processes": None,
+                    "processes_reason": "scopes are not isolated, so no process is one "
+                                        "room's own"}
+        uid = ids[0]
         try:
             found = scope_processes(self.proc_root, uid, time.time(), exclude=panes)
         except OSError as exc:
@@ -648,10 +656,11 @@ def scope_processes(
     """Every process whose real uid is `uid`: pid, command (its argv, cut to
     `PROCESS_COMMAND_CHARS`), start (epoch seconds) and elapsed seconds.
     Left out: kernel threads (no argv; pid 2 and its children), and tmux's
-    own processes, a server (`tmux…` in its name) and each pid in `exclude`
-    (the panes), which tmux's pane rule judges instead. Nothing is followed through a link: each `/proc/<pid>` is
-    opened as a directory with `O_NOFOLLOW` and its files read relative to
-    it. A process that exits mid-read is skipped. Raises `OSError` when
+    own processes, the server (named exactly `TMUX_SERVER_COMM`) and each pid
+    in `exclude` (the panes), which tmux's pane rule judges instead. A user
+    job whose name merely starts with `tmux` counts like any other. Nothing
+    is followed through a link: each `/proc/<pid>` is opened as a directory
+    with `O_NOFOLLOW` and its files read relative to it. A process that exits mid-read is skipped. Raises `OSError` when
     `proc_root` itself cannot be listed."""
     boot = _boot_time(proc_root)
     ticks = os.sysconf("SC_CLK_TCK") if hasattr(os, "sysconf") else 100
@@ -683,7 +692,7 @@ def scope_processes(
         if not argv or pid == 2 or ppid == 2:
             continue  # a kernel thread
         comm = raw[raw.find("(") + 1:raw.rfind(")")]
-        if pid in exclude or comm.startswith("tmux"):
+        if pid in exclude or comm == TMUX_SERVER_COMM:
             continue  # tmux's own: judged by the pane-with-a-child rule
         command = " ".join(a.decode("utf-8", "replace") for a in argv.split(b"\0") if a)
         start_ticks = _int(fields[19], 0) if len(fields) > 19 else 0

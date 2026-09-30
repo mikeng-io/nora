@@ -84,40 +84,48 @@ def test_a_pid_directory_that_is_a_link_is_not_followed(computerd, proc, tmp_pat
     assert computerd.scope_processes(proc, UID, NOW) == []
 
 
+def _isolated(computerd, tmp_path, proc, monkeypatch):
+    """A computerd whose scopes resolve to their own user (as root in the
+    image), without being root: the scope's user is `UID`."""
+    comp = computerd.Computer(root=tmp_path / "ws", token="t", isolate_scopes=False,  # noqa: S106
+                              tmux_root=tmp_path / "tm", proc_root=proc)
+    monkeypatch.setattr(comp.owner, "ids", lambda scope: (UID, UID))
+    return comp
+
+
 def test_state_caps_processes_at_twenty_newest_first(computerd, proc, tmp_path, monkeypatch):
     monkeypatch.setattr(computerd.os, "sysconf", lambda name: 100)
     for pid in range(100, 125):
         _proc(proc, pid, argv=["sleep", str(pid)], start_s=pid)
-    comp = computerd.Computer(root=tmp_path / "ws", token="t", isolate_scopes=False,  # noqa: S106
-                              tmux_root=tmp_path / "tm", proc_root=proc)
-    monkeypatch.setattr(computerd.os, "getuid", lambda: UID)
-    got = comp.processes("ab" * 16)
+    got = _isolated(computerd, tmp_path, proc, monkeypatch).processes("ab" * 16)
     assert got["processes_truncated"] is True
     assert [p["pid"] for p in got["processes"]] == list(range(124, 104, -1))
 
 
-def test_an_unreadable_proc_is_unknown_not_none_running(computerd, tmp_path):
+def test_without_isolation_no_process_is_listed(computerd, proc, tmp_path, monkeypatch):
+    """FALSIFIER (review S3): not isolated, every room runs as computerd's
+    own user, so its process list is every room's command lines and
+    computerd itself. None of that is one room's to see."""
+    monkeypatch.setattr(computerd.os, "sysconf", lambda name: 100)
+    monkeypatch.setattr(computerd.os, "getuid", lambda: UID)
+    _proc(proc, 50, argv=["python3", "/opt/computerd/computerd.py"])
+    _proc(proc, 51, argv=["python3", "other_rooms_job.py", "--token", "abc"])
     comp = computerd.Computer(root=tmp_path / "ws", token="t", isolate_scopes=False,  # noqa: S106
-                              tmux_root=tmp_path / "tm", proc_root=tmp_path / "no-proc")
+                              tmux_root=tmp_path / "tm", proc_root=proc)
     got = comp.processes("ab" * 16)
+    assert got["processes"] is None
+    assert "not isolated" in got["processes_reason"]
+
+
+def test_a_job_named_like_tmux_still_counts(computerd, proc, monkeypatch):
+    """Only the tmux server is tmux's own; `tmuxinator` is a user's job."""
+    monkeypatch.setattr(computerd.os, "sysconf", lambda name: 100)
+    _proc(proc, 50, argv=["tmux", "new-session", "-d"], comm="tmux: server")
+    _proc(proc, 60, argv=["tmuxinator", "start", "dev"], comm="tmuxinator")
+    got = computerd.scope_processes(proc, UID, NOW)
+    assert [p["pid"] for p in got] == [60]
+
+
+def test_an_unreadable_proc_is_unknown_not_none_running(computerd, tmp_path, monkeypatch):
+    got = _isolated(computerd, tmp_path, tmp_path / "no-proc", monkeypatch).processes("ab" * 16)
     assert got["processes"] is None and got["processes_reason"]
-
-
-def test_an_idle_tmux_session_is_not_a_running_process(computerd, proc, monkeypatch):
-    """FALSIFIER (operator, 2026-10-01): a tmux server and a bare shell in a
-    pane are tmux's to judge, by the pane-with-a-child rule, never counted
-    as a running process. Counted, a room with a session left open would
-    stay active for days."""
-    monkeypatch.setattr(computerd.os, "sysconf", lambda name: 100)
-    _proc(proc, 50, argv=["tmux", "new-session", "-d", "-s", "job"], comm="tmux: server")
-    _proc(proc, 51, argv=["-bash"], ppid=50, comm="bash")
-    assert computerd.scope_processes(proc, UID, NOW, exclude=frozenset({51})) == []
-
-
-def test_a_panes_child_is_a_running_process(computerd, proc, monkeypatch):
-    monkeypatch.setattr(computerd.os, "sysconf", lambda name: 100)
-    _proc(proc, 50, argv=["tmux", "new-session", "-d", "-s", "job"], comm="tmux: server")
-    _proc(proc, 51, argv=["-bash"], ppid=50, comm="bash")
-    _proc(proc, 52, argv=["python3", "train.py"], ppid=51, comm="python3")
-    got = computerd.scope_processes(proc, UID, NOW, exclude=frozenset({51}))
-    assert [p["pid"] for p in got] == [52]
