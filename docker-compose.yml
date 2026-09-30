@@ -786,6 +786,22 @@ services:
       start_period: 20s
       retries: 3
 
+  # compute-egress — the only way out of `nora-compute` (deploy/compute-egress/
+  # squid.conf holds the allowlist and why). `nora-compute` is internal, so
+  # Smith's per-job containers reach `drop` directly and OmniRoute, the OTLP
+  # collector and Google Maps through this proxy; LocalDockerBackend sets
+  # HTTP(S)_PROXY on each job to `http://compute-egress:3128`, a literal it
+  # pins the same way it pins the network name.
+  compute-egress:
+    image: ubuntu/squid@sha256:6a097f68bae708cedbabd6188d68c7e2e7a38cedd05a176e1cc0ba29e3bbe029
+    container_name: compute-egress
+    restart: unless-stopped
+    networks: [nora-compute, compute-egress]
+    # Squid resolves `host.docker.internal` for the two allowed host ports.
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    volumes:
+      - ./deploy/compute-egress/squid.conf:/etc/squid/squid.conf:ro
+
   # db — Nora's own PostgreSQL record store (design/20 §3). Reached as `db:5432`
   # on the private network; loopback publish (127.0.0.1:5435) lets host-side ops
   # (migrations, the one-time load, backups, the `nora groups` CLI) in without
@@ -1101,6 +1117,18 @@ networks:
     # prefix, and it is the half of this pair that is allowed to move: the
     # backend's string is the fixed point.
     name: nora-compute
+    # INTERNAL, with the bridge's IPv4 inhibited (S0, design/sandbox-runtime
+    # §0). Internal alone still left the gateway address on the bridge, and a
+    # probe from inside reached the host's sshd on it; inhibiting IPv4 removes
+    # that address, so a job reaches only `drop` and `compute-egress`.
+    # Measured 2026-09-30 before this change: a job read Honcho unauthenticated
+    # and reached the host, the LAN and Tailscale.
+    internal: true
+    driver_opts:
+      com.docker.network.bridge.inhibit_ipv4: "true"
+  # compute-egress's outward leg: an ordinary bridge, joined only by the proxy.
+  compute-egress:
+    name: compute-egress
   # Nora Compute spec §5a: only `drop` and Smith's per-job sandbox containers
   # (Phase 2, LocalDockerBackend) ever join this network. Smith needs to reach
   # `drop:8081` directly (its own per-job credential, Nora Compute spec §2/§3)

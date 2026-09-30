@@ -51,13 +51,18 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 from unittest.mock import MagicMock
+from urllib.parse import urlsplit
 
 import pytest
 import requests.exceptions
 from aioresponses import aioresponses
 
 from nora.domain.ports import JobResult, JobStatus
-from nora.infra.compute.docker_backend import MAX_ERROR_LOG_CHARS, LocalDockerBackend
+from nora.infra.compute.docker_backend import (
+    EGRESS_PROXY_URL,
+    MAX_ERROR_LOG_CHARS,
+    LocalDockerBackend,
+)
 
 DROP_URL = "http://drop:8081"
 MASTER_TOKEN = "master-token"  # noqa: S105
@@ -589,3 +594,29 @@ async def test_unreadable_container_logs_do_not_break_the_result(
     assert result.error is not None
     assert "without producing a result" in result.error
     container.remove.assert_called_once_with(force=True)
+
+
+async def test_a_job_leaves_only_through_compute_egress(backend, docker_client):
+    """`nora-compute` is internal (docker-compose.yml), so the proxy is a job's
+    one way out and nothing may hand it a direct route to the host. Before S0 a
+    job carried `host.docker.internal:host-gateway` and read Honcho
+    unauthenticated; `extra_hosts` coming back is that exposure coming back."""
+    with aioresponses() as mocked:
+        mocked.post(f"{DROP_URL}/api/tokens", payload={"token": "scoped-token"})
+        job_id = await backend.launch(task="write a haiku")
+        await _poll_until_done(backend, job_id=job_id)
+    _, kwargs = docker_client.containers.run.call_args
+    env = kwargs["environment"]
+    assert "extra_hosts" not in kwargs
+    for key in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"):
+        assert env[key] == "http://compute-egress:3128"
+    drop_host = urlsplit(DROP_URL).hostname
+    assert env["NO_PROXY"] == env["no_proxy"] == drop_host
+
+
+def test_the_egress_proxy_literal_matches_compose():
+    """The backend names the proxy by a literal, like the network: the compose
+    service's `container_name` is the side that adapts, and this pins the pair."""
+    compose = (Path(__file__).parents[3] / "docker-compose.yml").read_text()
+    assert "container_name: compute-egress" in compose
+    assert EGRESS_PROXY_URL == "http://compute-egress:3128"
