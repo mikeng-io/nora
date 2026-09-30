@@ -1,0 +1,253 @@
+"""`ComputerdRuntime`: Nora's side of the computerd protocol
+(`deploy/computer/computerd.py`, design/sandbox-runtime §2, §3).
+
+It is a plain HTTP client with a bearer token. It knows nothing about sbx: the
+same client works against computerd in any VM or container, which is what
+keeps the runtime replaceable (the lifecycle unit changes, this does not).
+
+**Never raises.** Every public method is a thin guard around its body: a
+refused connection, a timeout, a malformed body or any unexpected exception
+becomes `SandboxStatus.UNAVAILABLE` with a reason. So a tool maps the result to
+R-27 without a try/except, and the computer being down is an ordinary answer
+("I couldn't reach my computer"), never a crash in a turn. **Any non-200 reply
+is `unavailable`**: a bad token (401) is a configuration fault, not a refusal
+the model should read as "refused as asked".
+
+Transfers are checked end to end. `fetch` reads until EOF under a byte cap and
+hashes what it RECEIVED, which must equal the digest computerd sent. `put`
+and `write_text` compare the digest computerd reports against the bytes they
+sent. A mismatch is `unavailable`, never a success.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import logging
+from collections.abc import Awaitable, Callable
+from typing import Any, TypeVar
+
+import aiohttp
+
+from nora.domain.computer import (
+    BytesResult,
+    FileEntry,
+    FileResult,
+    ListResult,
+    OpResult,
+    RunResult,
+    SandboxStatus,
+)
+
+log = logging.getLogger("nora.computer")
+
+__all__ = ["ComputerdRuntime"]
+
+# Slack on top of a command's own timeout, so the HTTP call outlives the
+# command it waits for and computerd, not this client, reports the timeout.
+_RUN_SLACK_SECONDS = 15.0
+
+R = TypeVar("R")
+
+
+class _UnavailableError(Exception):
+    """Internal: a reply that cannot be trusted as an answer."""
+
+
+def _status(raw: Any) -> SandboxStatus:
+    try:
+        return SandboxStatus(raw)
+    except ValueError:
+        return SandboxStatus.UNAVAILABLE
+
+
+def _text(raw: Any) -> str:
+    return raw if isinstance(raw, str) else ""
+
+
+def _opt_int(raw: Any) -> int | None:
+    return raw if isinstance(raw, int) and not isinstance(raw, bool) else None
+
+
+def _opt_str(raw: Any) -> str | None:
+    return raw if isinstance(raw, str) else None
+
+
+class ComputerdRuntime:
+    """Satisfies `nora.domain.ports.SandboxRuntime`."""
+
+    def __init__(
+        self, *, base_url: str, token: str, timeout_seconds: float = 30.0,
+        max_output_chars: int = 8000,
+    ) -> None:
+        self._base = base_url.rstrip("/") + "/v1"
+        self._headers = {"Authorization": f"Bearer {token}"}
+        self._timeout = timeout_seconds
+        self._max_output_chars = max_output_chars
+
+    # -- the port ---------------------------------------------------------
+
+    async def run(self, *, scope: str, command: str, timeout_s: float) -> RunResult:
+        async def body() -> RunResult:
+            reply = await self._post_json(
+                "run", {"scope": scope, "command": command, "timeout_s": timeout_s,
+                        "max_output_chars": self._max_output_chars},
+                deadline_s=timeout_s + _RUN_SLACK_SECONDS,
+            )
+            return RunResult(
+                status=_status(reply.get("status")),
+                exit_code=_opt_int(reply.get("exit_code")),
+                stdout=_text(reply.get("stdout")), stderr=_text(reply.get("stderr")),
+                truncated=reply.get("truncated") is True,
+                duration_ms=_opt_int(reply.get("duration_ms")),
+                reason=_opt_str(reply.get("reason")),
+            )
+        return await _guard(body, lambda why: RunResult(SandboxStatus.UNAVAILABLE, reason=why))
+
+    async def read(
+        self, *, scope: str, path: str, offset: int = 0, limit: int | None = None,
+    ) -> FileResult:
+        async def body() -> FileResult:
+            payload: dict[str, Any] = {"scope": scope, "path": path, "offset": offset}
+            if limit is not None:
+                payload["limit"] = limit
+            reply = await self._post_json("read", payload)
+            return FileResult(
+                status=_status(reply.get("status")), content=_text(reply.get("content")),
+                binary=reply.get("binary") is True, size=_opt_int(reply.get("size")),
+                sha256=_opt_str(reply.get("sha256")),
+                truncated=reply.get("truncated") is True,
+                lines_total=_opt_int(reply.get("lines_total")),
+                reason=_opt_str(reply.get("reason")),
+            )
+        return await _guard(body, lambda why: FileResult(SandboxStatus.UNAVAILABLE, reason=why))
+
+    async def write_text(self, *, scope: str, path: str, content: str) -> OpResult:
+        sent = hashlib.sha256(content.encode("utf-8")).hexdigest()
+        return await self._op("write", {"scope": scope, "path": path, "content": content}, sent)
+
+    async def edit(self, *, scope: str, path: str, old: str, new: str) -> OpResult:
+        return await self._op(
+            "edit", {"scope": scope, "path": path, "old": old, "new": new}, None,
+        )
+
+    async def files(self, *, scope: str, pattern: str = "**/*") -> ListResult:
+        async def body() -> ListResult:
+            reply = await self._post_json("files", {"scope": scope, "pattern": pattern})
+            raw = reply.get("entries")
+            entries = tuple(
+                FileEntry(path=e["path"], size=e["size"])
+                for e in (raw if isinstance(raw, list) else [])
+                if isinstance(e, dict) and isinstance(e.get("path"), str)
+                and _opt_int(e.get("size")) is not None
+            )
+            return ListResult(
+                status=_status(reply.get("status")), entries=entries,
+                truncated=reply.get("truncated") is True,
+                reason=_opt_str(reply.get("reason")),
+            )
+        return await _guard(body, lambda why: ListResult(SandboxStatus.UNAVAILABLE, reason=why))
+
+    async def fetch(self, *, scope: str, path: str, max_bytes: int) -> BytesResult:
+        async def body() -> BytesResult:
+            async with (
+                aiohttp.ClientSession(
+                    timeout=aiohttp.ClientTimeout(total=self._timeout),
+                ) as session,
+                session.post(
+                    f"{self._base}/fetch", headers=self._headers,
+                    json={"scope": scope, "path": path, "max_bytes": max_bytes},
+                ) as response,
+            ):
+                if response.status != 200:
+                    raise _UnavailableError(f"computerd answered HTTP {response.status}")
+                if response.content_type == "application/json":
+                    reply = await response.json()
+                    if not isinstance(reply, dict):
+                        raise _UnavailableError("computerd returned a non-object JSON body")
+                    return BytesResult(
+                        status=_status(reply.get("status")),
+                        reason=_opt_str(reply.get("reason")),
+                    )
+                claimed = response.headers.get("X-Computerd-Sha256")
+                chunks: list[bytes] = []
+                received = 0
+                async for chunk in response.content.iter_chunked(65536):
+                    received += len(chunk)
+                    if received > max_bytes:
+                        return BytesResult(SandboxStatus.DENIED, reason="file is over the cap")
+                    chunks.append(chunk)
+            data = b"".join(chunks)
+            digest = hashlib.sha256(data).hexdigest()
+            if claimed != digest:
+                raise _UnavailableError("the bytes received do not match the digest computerd sent")
+            return BytesResult(status=SandboxStatus.OK, data=data, sha256=digest)
+        return await _guard(body, lambda why: BytesResult(SandboxStatus.UNAVAILABLE, reason=why))
+
+    async def put(self, *, scope: str, path: str, data: bytes) -> OpResult:
+        sent = hashlib.sha256(data).hexdigest()
+
+        async def body() -> OpResult:
+            async with (
+                aiohttp.ClientSession(
+                    timeout=aiohttp.ClientTimeout(total=self._timeout),
+                ) as session,
+                session.post(
+                    f"{self._base}/put", headers=self._headers,
+                    params={"scope": scope, "path": path}, data=data,
+                ) as response,
+            ):
+                if response.status != 200:
+                    raise _UnavailableError(f"computerd answered HTTP {response.status}")
+                reply = await response.json(content_type=None)
+            return _op_result(reply, sent)
+        return await _guard(body, lambda why: OpResult(SandboxStatus.UNAVAILABLE, reason=why))
+
+    # -- plumbing ---------------------------------------------------------
+
+    async def _op(self, op: str, payload: dict[str, Any], sent: str | None) -> OpResult:
+        async def body() -> OpResult:
+            return _op_result(await self._post_json(op, payload), sent)
+        return await _guard(body, lambda why: OpResult(SandboxStatus.UNAVAILABLE, reason=why))
+
+    async def _post_json(
+        self, op: str, payload: dict[str, Any], *, deadline_s: float | None = None,
+    ) -> dict[str, Any]:
+        async with (
+            aiohttp.ClientSession(
+                timeout=aiohttp.ClientTimeout(total=deadline_s or self._timeout),
+            ) as session,
+            session.post(f"{self._base}/{op}", headers=self._headers, json=payload) as response,
+        ):
+            if response.status != 200:
+                raise _UnavailableError(f"computerd answered HTTP {response.status}")
+            reply = await response.json(content_type=None)
+        if not isinstance(reply, dict):
+            raise _UnavailableError("computerd returned a non-object JSON body")
+        return reply
+
+
+def _op_result(reply: Any, sent: str | None) -> OpResult:
+    if not isinstance(reply, dict):
+        raise _UnavailableError("computerd returned a non-object JSON body")
+    status = _status(reply.get("status"))
+    stored = _opt_str(reply.get("sha256"))
+    if status is SandboxStatus.OK and sent is not None and stored != sent:
+        raise _UnavailableError("computerd stored different bytes from the ones sent")
+    return OpResult(
+        status=status, size=_opt_int(reply.get("size")), sha256=stored,
+        reason=_opt_str(reply.get("reason")),
+    )
+
+
+async def _guard(body: Callable[[], Awaitable[R]], unavailable: Callable[[str], R]) -> R:
+    """The never-raise barrier every public method goes through."""
+    try:
+        return await body()
+    except _UnavailableError as exc:
+        return unavailable(str(exc))
+    except (aiohttp.ClientError, TimeoutError) as exc:
+        log.info("computerd unreachable: %s: %s", type(exc).__name__, exc)
+        return unavailable(f"the computer is unreachable ({type(exc).__name__})")
+    except Exception as exc:  # a raise out of the port breaks every tool on it
+        log.exception("computerd call failed unexpectedly")
+        return unavailable(f"the computer call failed ({type(exc).__name__})")

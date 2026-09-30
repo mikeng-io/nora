@@ -1,0 +1,10 @@
+[Unit]
+Description=Run nora-computer ensure every minute
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=1min
+Unit=nora-computer.service
+
+[Install]
+WantedBy=timers.target
