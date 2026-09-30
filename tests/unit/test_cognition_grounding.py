@@ -208,7 +208,7 @@ def test_a_single_message_longer_than_its_share_is_still_shown_clipped():
     prompt = _prompt([s], g, budget=RenderBudget(record_chars=100, min_item_chars=50,
                                                  message_chars=120))
     line = next(x for x in prompt.splitlines() if "#12" in x)
-    assert line.endswith("…") and len(line) < 220
+    assert line.endswith("…") and len(line) < 100        # clipped to its share of 100
 
 
 # ---- what is already recorded ---------------------------------------------------------------
@@ -602,7 +602,7 @@ def test_twelve_items_cannot_exceed_the_record_budget_however_high_the_floor():
     of `record_chars = 8000`. The floor shrinks when items x floor > budget."""
     rooms = [Room("signal", f"room-{i}") for i in range(12)]
     stims = [
-        _stim(100 * r + m + 1, room, ago=50 - r + m / 10, mid=1000 * r + m + 1)
+        _stim(100 * r + m + 1, room, ago=50 - r - m / 10, mid=1000 * r + m + 1)
         for r, room in enumerate(rooms) for m in range(4)
     ]
     by_room = {s.ref: room for s in stims for room in rooms
@@ -613,7 +613,10 @@ def test_twelve_items_cannot_exceed_the_record_budget_however_high_the_floor():
     budget = RenderBudget()                                   # 8000 and a 900 floor
     prompt = _prompt(stims, g, budget=budget)
     record_lines = [ln for ln in prompt.splitlines() if ln.startswith("  [#")]
-    assert len(record_lines) >= 12                            # every item still shows some
+    # every item still shows its newest message: the floor shrank to 666 rather
+    # than the last items being starved to nothing
+    for r in range(12):
+        assert f"[#{1000 * r + 4}]" in prompt, r
     assert sum(len(ln) + 1 for ln in record_lines) <= budget.record_chars
 
 

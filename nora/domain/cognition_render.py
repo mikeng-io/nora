@@ -179,11 +179,14 @@ def _shares(needs: Sequence[int], total: int, floor: int) -> list[int]:
     out = [0] * len(needs)
     left = total
     # The floor SHRINKS when items x floor would exceed the budget: the total
-    # is a hard cap, never a suggestion the floor may overrun.
+    # is a hard cap, never a suggestion the floor may overrun. With
+    # `floor <= total // n`, `left >= remaining * floor` holds at every step
+    # (a share never exceeds `left // remaining`, or the floor, which that
+    # bound covers), so the shares sum to at most `total`.
     floor = min(floor, total // len(needs)) if needs else floor
     for pos, i in enumerate(order):
         fair = max(floor, left // (len(order) - pos))
-        out[i] = min(needs[i], fair, left)
+        out[i] = min(needs[i], fair)
         left -= out[i]
     return out
 

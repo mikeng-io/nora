@@ -126,13 +126,6 @@
     "target": "tests/unit/test_cognition_grounding.py::test_twelve_items_cannot_exceed_the_record_budget_however_high_the_floor tests/unit/test_cognition_grounding.py::test_a_single_message_longer_than_its_share_is_still_shown_clipped"
   },
   {
-    "name": "minor 3: a share may exceed what is left",
-    "file": "nora/domain/cognition_render.py",
-    "old": "        out[i] = min(needs[i], fair, left)\n",
-    "new": "        out[i] = min(needs[i], fair)\n",
-    "target": "tests/unit/test_cognition_grounding.py::test_twelve_items_cannot_exceed_the_record_budget_however_high_the_floor"
-  },
-  {
     "name": "minor 5: the session row keeps the canonical name",
     "file": "nora/domain/cognition_ground.py",
     "old": "\"person_id\": r.person_id, \"at_ms\"",
