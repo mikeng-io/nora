@@ -289,6 +289,45 @@ async def test_a_room_cannot_revise_another_rooms_document() -> None:
     assert (await store.get(document_id=first.document_id)).summary.title == "mine"
 
 
+async def test_a_room_reads_its_own_document_at_the_current_revision() -> None:
+    svc, _ = _service()
+    first = await _publish(svc, _doc(title="v1"))
+    await _publish(svc, _doc(title="v2"), document_id=first.document_id, base_revision=1)
+    read = await svc.read(
+        platform=ROOM[0], conversation_id="room-1-alias", document_id=first.document_id
+    )
+    assert read.status == "ok" and read.revision == 2 and read.title == "v2"
+    assert read.spec is not None and read.spec["root"]["props"]["title"] == "v2"
+    assert read.url == f"/documents/{first.document_id}"
+
+
+async def test_another_rooms_document_reads_exactly_like_an_unknown_one() -> None:
+    svc, _ = _service()
+    first = await _publish(svc, _doc(title="mine"), room=ROOM)
+    other = await svc.read(
+        platform=OTHER[0], conversation_id=OTHER[1], document_id=first.document_id
+    )
+    unknown = await svc.read(platform=OTHER[0], conversation_id=OTHER[1], document_id=uuid4())
+    assert other.status == "refused" and other.spec is None
+    assert other == unknown
+
+
+async def test_a_store_that_is_down_reads_unavailable_not_missing() -> None:
+    class _Down(FakeDocumentStore):
+        async def get(self, **kw: Any):
+            raise RuntimeError("db down")
+
+    svc, _ = _service(store=_Down())
+    read = await svc.read(platform=ROOM[0], conversation_id=ROOM[1], document_id=uuid4())
+    assert read.status == "unavailable" and read.spec is None
+
+
+def test_the_catalog_is_the_generated_prompt_the_schema_came_with() -> None:
+    svc, _ = _service()
+    text = svc.catalog()
+    assert "Page" in text and "Mermaid" in text and len(text) > 1000
+
+
 async def test_revising_an_unknown_document_is_refused() -> None:
     svc, _ = _service()
     result = await _publish(svc, _doc(), document_id=uuid4(), base_revision=1)

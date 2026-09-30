@@ -53,7 +53,13 @@ ENC = tiktoken.get_encoding("cl100k_base")
 # Dreamer-only (`DREAMER_LOOP_TOOLS`) yet the catalogue lists every registered
 # tool (`test_every_registered_tool_has_a_catalogue_line`), so a tag turn pays
 # their lines; whether the catalogue should be scoped is a separate question.
-BLOCK_CEILING = 2_300
+#
+# RE-SET 2026-10-01, 2,300 -> 2,400, for TWO NEW TOOLS, not for drift:
+# `document_publish` (45 tokens) and `document_read` (31), design/artifact §26,
+# on a block measured at 2,275 over 71 lines: total 2,351 over 73 at a mean of
+# 32.2, under `MEAN_CEILING`. No existing line changed. Both ship withheld
+# (`[documents] enabled = false`), so a live turn pays nothing for them yet.
+BLOCK_CEILING = 2_400
 
 # The per-line ceiling, and it was REVISED after measurement. The bundle
 # asserted 20 from an estimate; rendering the real thing put eleven lines

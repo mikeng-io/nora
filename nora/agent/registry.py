@@ -79,10 +79,12 @@ from .shelf_hook import ShelfLoader
 from .surface import DREAMER_LOOP_TOOLS, ToolScope, ToolShelf, ToolSurface
 from .tools import (
     COMPUTER_TOOLS,
+    DOCUMENT_TOOLS,
     HOT_TOOLS,
     LOADER_TOOL,
     NATIVE_TOOL_BUDGETS,
     NATIVE_TOOLS,
+    DocumentPublisher,
     EventsCollaborator,
     ImageGenerator,
     NoteCollaborator,
@@ -232,6 +234,9 @@ class ToolRegistry:
         image_generator: ImageGenerator | None = None,
         image_refs_allowed: bool = False,
         media_store: MediaObjectStore | None = None,
+        # `document_publish`/`document_read` (design/artifact §26): the document
+        # service seen through `DocumentPublisher`. `None` withholds both tools.
+        documents: DocumentPublisher | None = None,
         budget_overrides: Mapping[str, int] | None = None,
         # `record_query`'s Record read and the process's one `LineagePolicy`
         # (design/cognition-loop/15-map.md §4). Process-lifetime, like
@@ -248,6 +253,7 @@ class ToolRegistry:
     ) -> None:
         self._budget_overrides = dict(budget_overrides or {})
         self._record = record
+        self._documents = documents
         self._lineage = lineage
         self._rollup = rollup
         self._standing_head = standing_head
@@ -264,6 +270,7 @@ class ToolRegistry:
             | (frozenset() if rollup is not None else frozenset({"rollup_read"}))
             | (frozenset() if standing_head is not None else frozenset({"standing_read"}))
             | (frozenset() if computer is not None else COMPUTER_TOOLS)
+            | (frozenset() if documents is not None else DOCUMENT_TOOLS)
         )
         self._transit = transit if transit is not None else TransitClient()
         # `parking` is keyless like `transit` — the TD open-data feed needs no
@@ -1074,6 +1081,7 @@ class ToolRegistry:
             image_generator=self._image_generator,
             image_refs_allowed=self._image_refs_allowed,
             media_store=self._media_store,
+            documents=self._documents,
             origin_rooms=origin_rooms,
             shelf=shelf,
             on_rows=on_rows,

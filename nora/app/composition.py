@@ -2977,6 +2977,9 @@ async def build_dependencies(
         reminders=reminders,
         # The unified media index store — same engine, same lifecycle.
         media_store=media_objects,
+        # `document_publish`/`document_read` (design/artifact §26): ships OFF, and
+        # off the registry withholds both tools from every turn.
+        documents=document_service if cfg.documents.enabled else None,
         # the six event tools (`create_event`/`update_event`/`rsvp_event`/
         # `cancel_event`/`list_events`/`suggest_venue`) answer `unavailable`
         # (R-5) whenever a composition has not wired one; every deployment

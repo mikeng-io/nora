@@ -39,6 +39,7 @@ from dataclasses import dataclass
 from typing import Any, Literal, Protocol
 from uuid import UUID, uuid4
 
+from nora.documents import catalog_prompt
 from nora.documents.check import Checked, Finding, check_document
 from nora.domain.documents import DocumentStore, RevisionIn, RoomKey
 from nora.domain.ports import MediaObjectStore
@@ -65,6 +66,22 @@ class PublishResult:
     status: Literal["ok", "refused", "conflict", "unavailable"]
     document_id: UUID | None = None
     revision: int = 0
+    url: str = ""
+    findings: tuple[Finding, ...] = ()
+    note: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class ReadResult:
+    """A document as its room sees it: the current revision and its spec, so a model
+    can apply a change to what is stored. `refused` with `no_such_document` is the one
+    answer for an unknown id and for a document made in another room."""
+
+    status: Literal["ok", "refused", "unavailable"]
+    document_id: UUID | None = None
+    revision: int = 0
+    title: str = ""
+    spec: dict[str, Any] | None = None
     url: str = ""
     findings: tuple[Finding, ...] = ()
     note: str = ""
@@ -201,6 +218,35 @@ class DocumentService:
                 named.append(sha)
         return rewritten, tuple(sorted(set(named))), findings, False
 
+    # ------------------------------------------------------------ catalog, read
+    def catalog(self) -> str:
+        """The catalog prompt the checker's schema was generated with, so a model
+        that has not seen the catalog can learn it from the tool, not from memory."""
+        return catalog_prompt()
+
+    async def read(self, *, platform: str, conversation_id: str, document_id: UUID) -> ReadResult:
+        """The current revision of a document made in THIS room. Another room's
+        document answers exactly like an unknown id (`no_such_document`)."""
+        try:
+            current = await self._store.get(document_id=document_id)
+        except Exception:  # noqa: BLE001 - a store that is down is `unavailable`
+            return ReadResult("unavailable", note="The document could not be read right now.")
+        here = self._room_ids(platform, conversation_id) | {conversation_id}
+        if (
+            current is None
+            or current.summary.platform != platform
+            or current.summary.conversation_id not in here
+        ):
+            return ReadResult("refused", findings=_no_such_document().findings)
+        return ReadResult(
+            "ok",
+            document_id=document_id,
+            revision=current.summary.revision,
+            title=current.summary.title,
+            spec=current.spec,
+            url=f"/documents/{document_id}",
+        )
+
     # ---------------------------------------------------------------- publish
     async def publish(
         self,
@@ -330,4 +376,4 @@ def _ok(document_id: UUID, revision: int) -> PublishResult:
     )
 
 
-__all__ = ["DocumentService", "PublishResult", "rooms_named"]
+__all__ = ["DocumentService", "PublishResult", "ReadResult", "rooms_named"]

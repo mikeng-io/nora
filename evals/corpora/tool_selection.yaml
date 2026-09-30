@@ -303,6 +303,69 @@ cases:
     metadata: {tools: [generate_image], not_tools: [computer_run]}
     snapshot: *room_a
 
+  # --- documents (design/artifact/00-design.md §26, ADR 0020) ----------------------
+  # `document_publish` against the tools a written piece could be mistaken for:
+  # `make_artifact` (the HTML path it replaces, still registered while S3b has
+  # not retired it), `note_create` (a private memory, not a page), `generate_image`
+  # and the computer (a FILE: CSV, PDF, a script's output).
+  #
+  # ON ARM ONLY for the positives (`route_document_publish_*`), exactly as the
+  # computer's: both document tools are withheld from every surface unless
+  # `[documents] enabled` (`ToolRegistry._withheld`), so with it off these cases
+  # FAIL by construction and measure nothing about routing. Run them with `--case`
+  # on a subject whose config has `[documents] enabled = true`. The three
+  # negatives (`route_*_not_a_document`) are valid on BOTH arms: off, nothing can
+  # be published, so they pass trivially; on, they are the measurement that a
+  # quick answer, a picture or a data file does not become a document.
+  #
+  # The file negative names `computer_run`, the tool that makes a CSV in this
+  # tree; the export verb (`computer_export`, sandbox #649) is not on master yet.
+  # When it lands, the case should expect it beside `computer_run`.
+  - name: route_document_publish_trip_plan
+    entry: tag
+    expect: reply
+    mention: true
+    input: >-
+      幫我整份12月東京旅行計劃，每日行程同預算都要有，整好之後我想喺網頁開返嚟睇
+    metadata: {tools: [document_publish], not_tools: [make_artifact, note_create]}
+    snapshot: *room_a
+
+  - name: route_document_publish_room_summary
+    entry: tag
+    expect: reply
+    mention: true
+    input: >-
+      write up what we decided about the December trip as a proper document
+      I can open later, with a section per day
+    metadata: {tools: [document_publish], not_tools: [make_artifact, note_create]}
+    snapshot: *room_a
+
+  - name: route_calculate_not_a_document
+    entry: tag
+    expect: reply
+    mention: true
+    input: 12月12號去到19號，一共幾晚？
+    metadata: {tools: [calculate], not_tools: [document_publish]}
+    snapshot: *room_a
+
+  - name: route_generate_image_not_a_document
+    entry: tag
+    expect: reply
+    mention: true
+    input: 畫張東京鐵塔日落俾我
+    metadata: {tools: [generate_image], not_tools: [document_publish]}
+    snapshot: *room_a
+
+  - name: route_csv_file_not_a_document
+    entry: tag
+    expect: reply
+    mention: true
+    input: >-
+      make me a CSV of these: Tokyo 5 nights 4200, Osaka 3 nights 2100,
+      Kyoto 2 nights 1800 (city, nights, budget)
+    metadata: {tools: [computer_run], not_tools: [document_publish]}
+    snapshot: *room_a
+
   # --- the room tools (design/self-awareness/07) ----------------------------------
   # A same-domain pair (ADR 0015 §1), and each has a neighbour it could steal
   # from: `room_list` from `group_members` (who is HERE vs which rooms exist),

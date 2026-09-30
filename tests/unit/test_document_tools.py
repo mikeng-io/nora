@@ -1,0 +1,224 @@
+"""`document_publish` and `document_read`: what a model is told, per outcome.
+
+The tools are thin over `DocumentService` (its own tests cover the store, the
+same-room rule and the checker). What is tested here is the translation: each
+service outcome becomes one status the model can act on, a refusal carries the
+checker's findings as plain sentences, and a turn nobody asked for publishes
+nothing.
+"""
+
+from __future__ import annotations
+
+import json
+from typing import Any, ClassVar
+from uuid import UUID, uuid4
+
+from nora.agent.registry import ToolRegistry
+from nora.agent.room import Room
+from nora.app.documents_service import DocumentService
+from nora.domain.models import PersonRef
+from nora.obs.metrics import Metrics
+from nora.testing import FakeDocumentStore, FakeMediaObjectStore, FakeMemoryStore, FakeRosterSource
+from tests.fakes import SinkSender
+
+MILES = PersonRef(person_id="miles", name="Miles Novak", honcho_peer_id="miles")
+ROOM = "signal-room-1"
+OTHER = "signal-room-2"
+
+
+class _Rows:
+    async def recent(self, *, conversation_id: str, limit: int) -> list[Any]:
+        return []
+
+
+class _Persons:
+    by_person: ClassVar[dict[str, PersonRef]] = {"miles": MILES}
+
+    def resolve(self, platform: str, sender_id: str):
+        return None
+
+
+def _service(store: FakeDocumentStore | None = None) -> DocumentService:
+    return DocumentService(
+        store=store or FakeDocumentStore(),
+        records=_Rows(),
+        media=FakeMediaObjectStore((), fail=False),
+        media_window=50,
+        room_ids=lambda platform, cid: frozenset({cid}),
+        is_person=lambda person_id: person_id == "miles",
+    )
+
+
+def _tools(
+    service: DocumentService | None,
+    *,
+    conversation_id: str = ROOM,
+    tagger: PersonRef | None = MILES,
+    fire_turn: bool = False,
+    dream_adaptor: str = "",
+    metrics: Metrics | None = None,
+) -> dict:
+    room = Room(
+        platform="signal",
+        conversation_id=conversation_id,
+        roster_source=FakeRosterSource(groups={conversation_id: (frozenset({"miles"}),)}),
+        persons=_Persons(),
+        tagger=tagger,
+    )
+    specs = ToolRegistry(documents=service).specs(
+        store=_Rows(),
+        conversation_id=conversation_id,
+        conversation_type="group",
+        persons=_Persons(),
+        honcho=FakeMemoryStore(),
+        deliverer=SinkSender(),
+        metrics=metrics or Metrics(),
+        room=room,
+        fire_turn=fire_turn,
+        dream_adaptor=dream_adaptor,
+    )
+    return {spec.name: spec.call for spec in specs}
+
+
+def _doc(title: str = "December in Tokyo") -> dict[str, Any]:
+    page = {
+        "type": "Page",
+        "props": {"title": title},
+        "children": [
+            {
+                "type": "Section",
+                "props": {"title": "Day 1"},
+                "children": [{"type": "Markdown", "props": {"text": "Land, eat ramen."}}],
+            }
+        ],
+    }
+    return {"version": 1, "root": page}
+
+
+async def test_a_good_spec_is_stored_and_answered_with_its_id_revision_and_path() -> None:
+    store = FakeDocumentStore()
+    out = await _tools(_service(store))["document_publish"](spec=_doc())
+    assert out["status"] == "ok" and out["revision"] == 1
+    assert out["url"] == f"/documents/{out['document_id']}"
+    assert "anyone can open" in out["note"]
+    stored = (
+        await store.list_visible(person_id="miles", rooms=frozenset(), limit=10, offset=0)
+    ).items
+    assert [d.created_by for d in stored] == ["miles"]
+    doc = await store.get(document_id=UUID(out["document_id"]))
+    assert doc is not None and doc.written_by.startswith("tag:")
+
+
+async def test_a_spec_sent_as_json_text_is_accepted_too() -> None:
+    out = await _tools(_service())["document_publish"](spec=json.dumps(_doc()))
+    assert out["status"] == "ok"
+
+
+async def test_no_spec_answers_with_the_catalog_and_stores_nothing() -> None:
+    store = FakeDocumentStore()
+    tools = _tools(_service(store))
+    for empty in (None, "", "   "):
+        out = await tools["document_publish"](spec=empty)
+        assert out["status"] == "bad_arguments"
+        assert "Page" in out["catalog"] and "Mermaid" in out["catalog"]
+    page = await store.list_visible(person_id="miles", rooms=frozenset(), limit=10, offset=0)
+    assert page.items == ()
+
+
+async def test_a_refused_spec_carries_its_findings_as_sentences_and_stores_nothing() -> None:
+    store = FakeDocumentStore()
+    html = "<html><body><h1>Tokyo</h1></body></html>"
+    out = await _tools(_service(store))["document_publish"](spec=html)
+    assert out["status"] == "bad_arguments"
+    assert out["findings"] and all(isinstance(f, str) and f for f in out["findings"])
+    assert "not tell anybody" in out["note"]
+    page = await store.list_visible(person_id="miles", rooms=frozenset(), limit=10, offset=0)
+    assert page.items == ()
+
+
+async def test_an_edit_needs_the_revision_read_and_a_stale_one_is_not_stored() -> None:
+    tools = _tools(_service())
+    first = await tools["document_publish"](spec=_doc("v1"))
+    needs_base = await tools["document_publish"](spec=_doc("v2"), document_id=first["document_id"])
+    assert needs_base["status"] == "bad_arguments"
+    assert any("revision" in f for f in needs_base["findings"])
+    edited = await tools["document_publish"](
+        spec=_doc("v2"), document_id=first["document_id"], base_revision=1
+    )
+    assert edited["status"] == "ok" and edited["revision"] == 2
+    stale = await tools["document_publish"](
+        spec=_doc("v3"), document_id=first["document_id"], base_revision=1
+    )
+    assert stale["status"] == "bad_arguments" and stale["current_revision"] == 2
+    assert (await tools["document_read"](document_id=first["document_id"]))["title"] == "v2"
+
+
+async def test_another_rooms_document_is_not_found_for_a_revision_and_for_a_read() -> None:
+    store = FakeDocumentStore()
+    made = await _tools(_service(store), conversation_id=ROOM)["document_publish"](spec=_doc())
+    there = _tools(_service(store), conversation_id=OTHER)
+    revise = await there["document_publish"](
+        spec=_doc("taken"), document_id=made["document_id"], base_revision=1
+    )
+    read = await there["document_read"](document_id=made["document_id"])
+    unknown = await there["document_read"](document_id=str(uuid4()))
+    assert revise["status"] == "not_found" and read["status"] == "not_found"
+    assert read == unknown
+
+
+async def test_a_turn_nobody_asked_for_publishes_nothing() -> None:
+    for kwargs in ({"tagger": None}, {"fire_turn": True}, {"dream_adaptor": "proactive"}):
+        store = FakeDocumentStore()
+        out = await _tools(_service(store), **kwargs)["document_publish"](spec=_doc())
+        assert out["status"] == "unavailable", kwargs
+        page = await store.list_visible(person_id="miles", rooms=frozenset(), limit=10, offset=0)
+        assert page.items == (), kwargs
+
+
+async def test_a_value_that_is_not_an_id_is_named_not_guessed() -> None:
+    tools = _tools(_service())
+    bad = await tools["document_publish"](spec=_doc(), document_id="not-an-id", base_revision=1)
+    read = await tools["document_read"](document_id="not-an-id")
+    assert bad["status"] == "bad_arguments" and read["status"] == "not_found"
+
+
+async def test_a_store_that_is_down_is_unavailable_never_ok_or_missing() -> None:
+    class _Down(FakeDocumentStore):
+        async def create(self, **kw: Any):
+            raise RuntimeError("db down")
+
+        async def get(self, **kw: Any):
+            raise RuntimeError("db down")
+
+    tools = _tools(_service(_Down()))
+    assert (await tools["document_publish"](spec=_doc()))["status"] == "unavailable"
+    assert (await tools["document_read"](document_id=str(uuid4())))["status"] == "unavailable"
+
+
+async def test_a_read_returns_the_spec_and_a_very_large_one_is_named_not_cut() -> None:
+    tools = _tools(_service())
+    made = await tools["document_publish"](spec=_doc())
+    read = await tools["document_read"](document_id=made["document_id"])
+    assert read["status"] == "ok" and read["revision"] == 1
+    assert read["spec"]["root"]["props"]["title"] == "December in Tokyo"
+
+    big = _doc()
+    big["root"]["children"][0]["children"] = [
+        {"type": "Markdown", "props": {"text": "x" * 15_000}} for _ in range(4)
+    ]
+    made_big = await tools["document_publish"](spec=big)
+    assert made_big["status"] == "ok"
+    read_big = await tools["document_read"](document_id=made_big["document_id"])
+    assert read_big["status"] == "ok" and "spec" not in read_big
+    assert read_big["revision"] == 1 and "too large" in read_big["note"]
+
+
+async def test_every_outcome_is_counted_on_the_tool_metric() -> None:
+    metrics = Metrics()
+    tools = _tools(_service(), metrics=metrics)
+    await tools["document_publish"](spec=_doc())
+    await tools["document_publish"](spec=None)
+    await tools["document_read"](document_id="nope")
+    text = metrics.render() if hasattr(metrics, "render") else ""
+    assert 'tool="document_publish"' in text and 'status="ok"' in text
+    assert 'status="bad_arguments"' in text and 'tool="document_read"' in text

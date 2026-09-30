@@ -1477,6 +1477,30 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
                                         side_effect_state="none", idempotency="idempotent",
                                         retry="safe",
                                         output_contract="three_state", level=2),
+    # document_publish / document_read (design/artifact/00-design.md §26, ADR
+    # 0020): a document is a JSON spec over a closed catalog that the signed-in
+    # web app renders. Withheld from every surface unless `[documents] enabled`
+    # (`ToolRegistry._withheld`).
+    #
+    # `document_publish` 4: one call with no spec to read the catalog, the
+    # publish, a fix after a refusal with findings, and one edit. Not
+    # `read_only`: it commits a document. `confirmed`: the answer is the
+    # store's own, a document id and revision, not a claim about a request.
+    # `non_idempotent`: the same spec with no `document_id` is a second
+    # document, and a revision advances the document's number. Never retried
+    # by the harness: a retry after a timeout would file a duplicate.
+    # Level 3: a status contract (what each answer means) and two MUSTs.
+    "document_publish": NativeTool(4, read_only=False,
+                                   side_effect_state="confirmed",
+                                   idempotency="non_idempotent", retry="never",
+                                   output_contract="three_state", level=3),
+    # `document_read` 2: what a model must see before changing a document is
+    # its current revision and spec; a second call is a different document.
+    # Level 1: what, when and what comes back.
+    "document_read": NativeTool(2, read_only=True,
+                                side_effect_state="none", idempotency="idempotent",
+                                retry="safe",
+                                output_contract="three_state", level=1),
     # WHAT SHE IS RUNNING, and what was in each version (DEC-97). ONE verb with
     # two shapes rather than two tools (`weather`'s DEC-72 argument): "咩version"
     # and "V2 有咩" are one capability asked from two angles, and two tools would
@@ -2568,6 +2592,27 @@ class RecordQuerySource(Protocol):
     async def query(
         self, q: RecordQuery,
     ) -> tuple[tuple[RecordHit, ...], bool, frozenset[int]]: ...
+
+
+class DocumentPublisher(Protocol):
+    """What `document_publish` and `document_read` run against
+    (`nora.app.documents_service.DocumentService`, the one implementation).
+    `nora.agent` may not import `nora.app`, so the tools see it through this.
+    Results are read by attribute: `status`, `document_id`, `revision`, `url`,
+    `findings` (each `path`, `rule`, `message`), `note`, and on a read `title`
+    and `spec`."""
+
+    def catalog(self) -> str: ...
+
+    async def publish(
+        self, *, platform: str, conversation_id: str, person_id: str,
+        raw: Any, written_by: str, document_id: UUID | None = None,
+        base_revision: int | None = None,
+    ) -> Any: ...
+
+    async def read(
+        self, *, platform: str, conversation_id: str, document_id: UUID,
+    ) -> Any: ...
 
 
 class RollupReadSource(Protocol):
@@ -4059,6 +4104,13 @@ COMPUTER_TOOLS: frozenset[str] = frozenset({
     "computer_session_list",
 })
 
+#: `document_read` returns the spec inline up to this many characters of JSON
+#: (about 10k tokens); a larger one is named and left out, never cut in half.
+_DOCUMENT_READ_CHARS = 40_000
+#: The document tools (design/artifact §26). `ToolRegistry` withholds both from
+#: every surface unless `[documents] enabled`.
+DOCUMENT_TOOLS: frozenset[str] = frozenset({"document_publish", "document_read"})
+
 #: `computer_session_list`'s reads: a room's sessions, and one session's
 #: audit rows (its progress is derived from them; more than this reads as
 #: "N+ runs").
@@ -4212,6 +4264,9 @@ def build_tool_specs(
     image_generator: ImageGenerator | None = None,
     image_refs_allowed: bool = False,
     media_store: MediaObjectStore | None = None,
+    # `document_publish`/`document_read` (design/artifact §26). `None` answers
+    # `unavailable`; the registry withholds both tools before that matters.
+    documents: DocumentPublisher | None = None,
     # Proactive destination map (design/dreamer-agent-loop/40, #248): policy
     # conversation ids -> OriginRoom, built by the composition root exactly
     # like `home_rooms` and handed through the same seam
@@ -13684,6 +13739,187 @@ Args:
     # the one builder every loop uses, `ToolRegistry.surface()`. This function
     # builds every closure; the scope admits.
 
+    # ---- document_publish / document_read (design/artifact §26) ----------------
+    document_actor = (
+        f"{DREAMER_ACTOR_PREFIX}{dream_adaptor}" if dream_adaptor
+        else "fire" if fire_turn else "tag"
+    )
+
+    def _document_findings(findings: Sequence[Any]) -> list[str]:
+        """The checker's findings as plain sentences, each led by where it is."""
+        return [
+            f"{f.path}: {f.message}" if f.path else str(f.message) for f in findings
+        ]
+
+    def _document_id(raw: str | None) -> UUID | None:
+        try:
+            return UUID(str(raw).strip())
+        except (ValueError, TypeError, AttributeError):
+            return None
+
+    async def document_publish(
+        spec: dict[str, Any] | str | None = None,
+        document_id: str | None = None,
+        base_revision: int | None = None,
+    ) -> dict:
+        """Publish a document to the web app, a plan, report or itinerary people
+        open later. Call this when somebody asks for one. Returns where to open it.
+
+        MUST: a document is a JSON spec, never HTML, markup or a file. Call with
+        no `spec` first to read the component catalog, then send the spec.
+
+        MUST: to change a document, pass its `document_id` and the `revision`
+        `document_read` gave you as `base_revision`.
+
+        It is not a public link: people open it in the web app, signed in.
+
+        `status` is one of:
+        - `ok`: stored; it carries `url` and `revision`.
+        - `bad_arguments`: nothing stored; the findings say what to fix, or the
+          revision is stale.
+        - `not_found`: no such document in this room.
+        - `unavailable`: not stored.
+        Every result carries a `note` saying how to report it.
+
+        Args:
+            spec: The document, one JSON object. Leave out to read the catalog.
+            document_id: The document to change. Leave out for a new one.
+            base_revision: The revision you read, required with `document_id`.
+        """
+        tool = "document_publish"
+        if documents is None:
+            _record(metrics, tool, "unavailable", reason="not_wired")
+            return {
+                "status": "unavailable",
+                "note": "I can't publish documents right now. Say so; do not invent "
+                        "a link and do not say one was made.",
+            }
+        if spec is None or (isinstance(spec, str) and not spec.strip()):
+            _record(metrics, tool, "bad_arguments", reason="no_spec")
+            return {
+                "status": "bad_arguments",
+                "note": "No spec was sent, so nothing was stored. The catalog is "
+                        "here: write the document against it and call again.",
+                "catalog": documents.catalog(),
+            }
+        tagger = getattr(room, "tagger", None) if room is not None else None
+        if document_actor != "tag" or tagger is None:
+            _record(metrics, tool, "unavailable", reason="no_requester")
+            return {
+                "status": "unavailable",
+                "note": "A document is published for the person who asked, and nobody "
+                        "asked here, so nothing was stored.",
+            }
+        target: UUID | None = None
+        if document_id is not None:
+            target = _document_id(document_id)
+            if target is None:
+                _record(metrics, tool, "bad_arguments", reason="bad_id")
+                return {"status": "bad_arguments",
+                        "note": "That is not a document id. Use the `document_id` "
+                                "a publish or a read gave you."}
+        try:
+            out = await documents.publish(
+                platform=room.platform, conversation_id=bound_conversation_id,
+                person_id=tagger.person_id, raw=spec,
+                written_by=f"{document_actor}:{current_tag_id() or ''}",
+                document_id=target, base_revision=base_revision,
+            )
+        except Exception:
+            log.exception("document_publish failed")
+            _record(metrics, tool, "unavailable", reason="raised")
+            return {
+                "status": "unavailable",
+                "note": "The document could not be saved, so nothing was stored. "
+                        "Say you could not.",
+            }
+        rules = [f.rule for f in out.findings]
+        if out.status == "ok":
+            _record(metrics, tool, "ok", revision=out.revision)
+            return {
+                "status": "ok", "document_id": str(out.document_id),
+                "revision": out.revision, "url": out.url,
+                "note": "Stored. Say you made it and that it is under Documents in "
+                        "the web app, for people signed in. Do not say it is a link "
+                        "anyone can open, and do not paste the path as a link.",
+            }
+        if out.status == "conflict":
+            _record(metrics, tool, "bad_arguments", reason="conflict")
+            return {"status": "bad_arguments", "document_id": str(out.document_id),
+                    "current_revision": out.revision,
+                    "note": "The document changed since you read it, so nothing was "
+                            "stored. Read it again, apply your change to that, and "
+                            "publish again with its revision."}
+        if out.status == "refused" and "no_such_document" in rules:
+            _record(metrics, tool, "not_found")
+            return {"status": "not_found",
+                    "note": "There is no document with that id in this room. Nothing "
+                            "was stored. Publish without a `document_id` for a new one."}
+        if out.status == "refused":
+            _record(metrics, tool, "bad_arguments", reason="findings")
+            return {
+                "status": "bad_arguments",
+                "note": "Nothing was stored. Fix each finding in the spec and call "
+                        "again; do not tell anybody it was published.",
+                "findings": _document_findings(out.findings),
+            }
+        _record(metrics, tool, "unavailable", reason=out.status)
+        return {"status": "unavailable",
+                "note": "The document could not be checked or saved, so nothing was "
+                        "stored. Say you could not."}
+
+    async def document_read(document_id: str) -> dict:
+        """Read a document made in this room: its current `revision` and `spec`.
+        Call this before changing a document, or to see what you published.
+
+        Args:
+            document_id: The `document_id` a publish gave you.
+        """
+        tool = "document_read"
+        if documents is None:
+            _record(metrics, tool, "unavailable", reason="not_wired")
+            return {
+                "status": "unavailable",
+                "note": "I can't read documents right now. Say you could not check.",
+            }
+        target = _document_id(document_id)
+        if target is None:
+            _record(metrics, tool, "not_found", reason="bad_id")
+            return {"status": "not_found",
+                    "note": "That is not a document id, so nothing was read."}
+        try:
+            out = await documents.read(
+                platform=room.platform if room is not None else "",
+                conversation_id=bound_conversation_id, document_id=target,
+            )
+        except Exception:
+            log.exception("document_read failed")
+            _record(metrics, tool, "unavailable", reason="raised")
+            return {"status": "unavailable",
+                    "note": "I could not read it. Say you could not check."}
+        if out.status == "refused":
+            _record(metrics, tool, "not_found")
+            return {"status": "not_found",
+                    "note": "There is no document with that id in this room."}
+        if out.status != "ok" or out.spec is None:
+            _record(metrics, tool, "unavailable", reason=out.status)
+            return {"status": "unavailable",
+                    "note": "I could not read it. Say you could not check."}
+        _record(metrics, tool, "ok", revision=out.revision)
+        body = json.dumps(out.spec, ensure_ascii=False, separators=(",", ":"))
+        result: dict[str, Any] = {
+            "status": "ok", "document_id": str(out.document_id),
+            "revision": out.revision, "title": out.title, "url": out.url,
+        }
+        if len(body) > _DOCUMENT_READ_CHARS:
+            return {**result,
+                    "note": "It is too large to show here, so `spec` is left out. "
+                            "To change it, send the whole document again with "
+                            "`base_revision` set to this `revision`."}
+        return {**result, "spec": out.spec,
+                "note": "This is the current revision. Apply the change to this spec "
+                        "and publish it with `base_revision` set to `revision`."}
+
     async def load_tools(names: list[str], tool_context: Any) -> dict:
         """Load catalogue tools by name so you can call them. Call this before
         using any tool your catalogue lists without a *.
@@ -13732,6 +13968,8 @@ Args:
         _spec("generate_image", generate_image),
         _spec("media_search", media_search),
         _spec("media_send", media_send),
+        _spec("document_publish", document_publish),
+        _spec("document_read", document_read),
         _spec("web_search", web_search),
         _spec("web_fetch", web_fetch),
         _spec("x_read", x_read),
@@ -13952,6 +14190,7 @@ def build_tools(
     image_generator: ImageGenerator | None = None,
     image_refs_allowed: bool = False,
     media_store: MediaObjectStore | None = None,
+    documents: DocumentPublisher | None = None,
     online_source: SteamPresenceProvider | None = None,
     voice_source: VoicePresenceSource | None = None,
     presence: DiscordPresenceSource | None = None,
@@ -13994,7 +14233,7 @@ def build_tools(
         supplied_unit=supplied_unit,
         dream_adaptor=dream_adaptor,
         image_generator=image_generator, image_refs_allowed=image_refs_allowed,
-        media_store=media_store,
+        media_store=media_store, documents=documents,
         online_source=online_source, voice_source=voice_source,
         presence=presence,
         online_scope=online_scope,
