@@ -315,9 +315,10 @@ class SqlStimulusStore:
             missing = [i for i in carry if i not in have]
             if missing:
                 extra = (await conn.execute(
+                    # `missing` came from `_carry_query`, which already
+                    # applied the retraction predicate.
                     sa.select(STIMULUS).where(
                         STIMULUS.c.id.in_(missing), STIMULUS.c.unit == unit,
-                        live_stimulus(STIMULUS.c.id),
                     ),
                 )).all()
                 for r in extra:

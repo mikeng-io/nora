@@ -177,6 +177,14 @@ async def test_an_untracked_wake_is_a_watermark_with_or_without_a_clock(stores):
         view = await _view(stimuli, **kw)
         assert view.pending == () and view.last_session is None
         assert view.last_wake.tracked is False
+    # Under a newer tracked wake that failed, the mark falls back to the
+    # untracked one, which a stale clock does not expire either.
+    await _msgs(stimuli, 1)
+    bad = await _wake(stimuli, through=3, at=NOW + 100)
+    await _close(stimuli, bad, "failed")
+    view = await _view(stimuli, stale_before_ms=NOW + 10**9)
+    assert view.mark.through_stimulus_id == 2
+    assert [s.id for s in view.pending] == [3]
 
 
 async def test_a_tracked_wake_with_no_outcome_is_open_then_expired_past_the_timeout(stores):

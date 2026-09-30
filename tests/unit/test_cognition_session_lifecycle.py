@@ -1240,3 +1240,73 @@ async def test_a_second_cancel_cannot_interrupt_the_cancelled_outcome_write():
     await rig.runner.shutdown()
     await rig.settle()
     assert rig.ends() == ["cancelled"]
+
+
+# ---------------------------------------------------------------------------
+# The guarded wake write and a close that fails on its own
+# ---------------------------------------------------------------------------
+
+async def test_a_late_close_between_the_read_and_the_write_refuses_the_new_wake():
+    """The evaluator reads W1 as EXPIRED (no outcome, past the timeout) and
+    decides a new wake over W1's stimuli. If W1's session closes before the
+    write, the decision is stale: the guarded write refuses it, so W1's
+    stimuli are not handed to a second session."""
+    from nora.domain.ports import NewWakeOutcome
+    from nora.domain.stimuli import NewWake
+
+    rig = _rig()
+    sid = await rig.say()
+    rig.clock.advance(1)
+    w1 = await rig.stimuli.record_wake(wake=NewWake(
+        unit="u1", mode="shadow", reason="settled", from_stimulus_id=0,
+        through_stimulus_id=sid, stimulus_count=1, eligible_count=1,
+        oldest_pending_ms=T, cut_cooldown=False, at_ms=rig.clock.ms, tracked=True,
+    ), recorded_at_ms=rig.clock.ms)
+    assert w1 is not None
+    rig.clock.advance(900 + 300 + 1)
+
+    real_view = rig.stimuli.view
+
+    async def view_then_close(**kw: Any) -> Any:
+        view = await real_view(**kw)
+        if w1 not in rig.stimuli.outcomes:          # W1's session lands, late
+            await rig.stimuli.record_outcome(outcome=NewWakeOutcome(
+                wake_id=w1, unit="u1", outcome="closed", at_ms=rig.clock.ms,
+            ), recorded_at_ms=rig.clock.ms)
+        return view
+
+    rig.stimuli.view = view_then_close  # type: ignore[method-assign]
+    assert await rig.tick() == []
+    assert [w.id for w in rig.stimuli.wakes] == [w1]
+    assert rig.agent.calls == 0
+    assert rig.metrics.get("nora_cognition_wake_deferred_total", brake="single_flight") == 1
+
+
+async def test_a_failed_close_is_recorded_failed_and_its_stimuli_return_with_no_strike():
+    """The `closed` write fails (and only it): the session records `failed`
+    at once — not left OPEN for the timeout — and none of its carries land,
+    so the next session after the cooldown sees the item at strike 0."""
+    rig = _rig(agent=ScriptedAgent(script=[ok, ok]))
+    real = rig.stimuli.record_outcome
+
+    async def closed_fails(**kw: Any) -> Any:
+        if kw["outcome"].outcome == "closed" and rig.agent.calls == 1:
+            raise RuntimeError("the close transaction failed")
+        return await real(**kw)
+
+    rig.stimuli.record_outcome = closed_fails  # type: ignore[method-assign]
+    await rig.say()
+    rig.clock.advance(1)
+    await rig.tick()
+    await rig.settle()
+    assert rig.ends() == ["failed"] and "close transaction" in rig.detail()
+    assert rig.stimuli.carries == []
+
+    rig.clock.advance(400)                       # the cooldown, not the timeout
+    await rig.tick()
+    await rig.settle()
+    assert rig.agent.calls == 2
+    _, second, _ = rig.ledger.sessions[1]
+    (item,) = second.agenda["items"]  # type: ignore[misc]
+    assert item["strike"] == 0  # type: ignore[index]
+    assert rig.ends() == ["failed", "closed"]
