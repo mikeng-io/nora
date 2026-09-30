@@ -1,0 +1,333 @@
+"""probe.py end to end with fakes: no Chrome DB, docker, opencli, network or sleep."""
+
+from __future__ import annotations
+
+import json
+import stat
+from collections.abc import Sequence
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+
+import pytest
+
+from nora.infra.social.session_probe.alerts import AlertBridgeSink, AlertMessage
+from nora.infra.social.session_probe.cookies import ChromeCookie, CookieError, fingerprint
+from nora.infra.social.session_probe.probe import Probe, ProbeConfig
+from nora.infra.social.session_probe.runner import RunResult
+
+NOW = datetime(2026, 9, 30, 12, 0, tzinfo=UTC)
+FAR = NOW + timedelta(days=300)
+CHROME_SID = "CHROME-SID-VALUE"
+BRIDGE_SID = "OLD-BRIDGE-SID"
+
+
+class FakeWorld:
+    def __init__(self) -> None:
+        self.health = '{"session":"authenticated"}'
+        self.health_rc = 0
+        self.restart_rc = 0
+        self.whoami: dict[str, RunResult] = {}
+        self.calls: list[list[str]] = []
+        self.sleeps: list[float] = []
+        self.sent: list[AlertMessage] = []
+        self.now = NOW
+        self.deliver = True
+
+    def run(self, argv: Sequence[str], timeout: float, stdin: str | None) -> RunResult:
+        self.calls.append(list(argv))
+        if argv[:2] == ["docker", "exec"] and "curl" in argv:
+            return RunResult(self.health_rc, self.health)
+        if argv[:2] == ["docker", "restart"]:
+            return RunResult(self.restart_rc)
+        if len(argv) >= 3 and argv[2] == "whoami":
+            return self.whoami.get(argv[1], RunResult(0, "{}"))
+        raise AssertionError(f"unexpected process: {argv}")
+
+    def send(self, message: AlertMessage) -> bool:
+        if not self.deliver:
+            return False
+        self.sent.append(message)
+        return True
+
+    def restarts(self) -> int:
+        return sum(1 for c in self.calls if c[:2] == ["docker", "restart"])
+
+    def whoami_sites(self) -> list[str]:
+        return [c[1] for c in self.calls if len(c) > 2 and c[2] == "whoami"]
+
+
+def jar(*, ig: str | None = CHROME_SID, x: bool = True, li: bool = True) -> list[ChromeCookie]:
+    created = NOW - timedelta(days=5)
+    out: list[ChromeCookie] = []
+    if ig:
+        out += [ChromeCookie(".instagram.com", "sessionid", ig, created, FAR),
+                ChromeCookie(".instagram.com", "csrftoken", "csrf-new", created, FAR)]
+    if x:
+        out.append(ChromeCookie(".x.com", "auth_token", "xt", created, FAR))
+    if li:
+        out.append(ChromeCookie(".linkedin.com", "li_at", "lt", created, FAR))
+    return out
+
+
+@pytest.fixture
+def world() -> FakeWorld:
+    return FakeWorld()
+
+
+@pytest.fixture
+def bridge_dir(tmp_path: Path) -> Path:
+    d = tmp_path / "instagram"
+    d.mkdir()
+    (d / "cookies.json").write_text(json.dumps({"sessionid": BRIDGE_SID, "mid": "keep-me"}))
+    return d
+
+
+def make(world: FakeWorld, bridge_dir: Path, tmp_path: Path, chrome=None, **cfg):  # type: ignore[no-untyped-def]
+    config = ProbeConfig(
+        chrome_db=tmp_path / "unused", bridge_dir=bridge_dir,
+        state_file=tmp_path / "state" / "probe.jsonl", opencli_bin="opencli", **cfg,
+    )
+
+    def read() -> list[ChromeCookie]:
+        if isinstance(chrome, Exception):
+            raise chrome
+        return chrome if chrome is not None else jar()
+
+    return Probe(config, read_chrome=read, run=world.run, sink=world, now=lambda: world.now,
+                 sleep=world.sleeps.append, jitter=lambda hi: 1.5), config
+
+
+def lines(config: ProbeConfig) -> list[dict]:
+    return [json.loads(x) for x in config.state_file.read_text().splitlines()]
+
+
+def test_healthy_run_is_pass_and_appends_one_line_without_secrets(world, bridge_dir, tmp_path):
+    world.health = '{"session":"authenticated"}'
+    p, cfg = make(world, bridge_dir, tmp_path)
+    verdict, _ = p.run_once()
+    assert verdict == "PASS"
+    assert world.restarts() == 0 and world.sent == []
+    recs = lines(cfg)
+    assert len(recs) == 1
+    raw = cfg.state_file.read_text()
+    for secret in (CHROME_SID, BRIDGE_SID, "csrf-new"):
+        assert secret not in raw  # values never recorded
+    assert recs[0]["instagram_sessionid"] == {
+        "chrome": fingerprint(CHROME_SID), "bridge": fingerprint(BRIDGE_SID)}
+    assert stat.S_IMODE(cfg.state_file.stat().st_mode) == 0o600
+
+
+def test_logged_out_bridge_with_newer_chrome_cookie_is_synced(world, bridge_dir, tmp_path):
+    world.health = '{"session":"logged_out"}'
+    p, _ = make(world, bridge_dir, tmp_path)
+    verdict, rec = p.run_once()
+    assert verdict == "FAIL"
+    assert world.restarts() == 1
+    merged = json.loads((bridge_dir / "cookies.json").read_text())
+    assert merged["sessionid"] == CHROME_SID          # Chrome wins
+    assert merged["csrftoken"] == "csrf-new"          # Chrome's extra cookies arrive
+    assert merged["mid"] == "keep-me"                 # bridge-only cookies survive
+    assert stat.S_IMODE((bridge_dir / "cookies.json").stat().st_mode) == 0o600
+    backups = list(bridge_dir.glob("cookies.json.bak-*"))
+    assert len(backups) == 1
+    assert json.loads(backups[0].read_text())["sessionid"] == BRIDGE_SID
+    assert not (bridge_dir / "cookies.json.tmp").exists()
+    assert rec["sync"] == "ok" and rec["carry"]["attempts"] == 1
+    assert rec["newer_sessionid"] in {"chrome", "bridge"}
+
+
+def test_sync_is_capped_after_three_failed_attempts_and_alerts(world, bridge_dir, tmp_path):
+    world.health = '{"session":"logged_out"}'
+    p, _ = make(world, bridge_dir, tmp_path)
+    # Chrome keeps a different cookie than the bridge: emulate the bridge
+    # rejecting the synced cookie by restoring its old jar between runs.
+    for i in range(3):
+        (bridge_dir / "cookies.json").write_text(json.dumps({"sessionid": BRIDGE_SID}))
+        world.now = NOW + timedelta(minutes=10 * (i + 1))
+        p.run_once()
+    assert world.restarts() == 3
+    (bridge_dir / "cookies.json").write_text(json.dumps({"sessionid": BRIDGE_SID}))
+    world.now = NOW + timedelta(minutes=50)
+    verdict, rec = p.run_once()
+    assert world.restarts() == 3                       # no fourth restart
+    assert verdict == "FAIL"
+    assert {"action": "capped", "attempts": 3} in rec["decisions"]
+    assert any(m.reason == "sync_capped" for m in world.sent)
+
+
+def test_bridge_recovery_resets_the_attempt_counter(world, bridge_dir, tmp_path):
+    world.health = '{"session":"logged_out"}'
+    p, cfg = make(world, bridge_dir, tmp_path)
+    p.run_once()
+    assert lines(cfg)[-1]["carry"]["attempts"] == 1
+    world.health = '{"session":"authenticated"}'
+    world.now = NOW + timedelta(minutes=10)
+    p.run_once()
+    assert lines(cfg)[-1]["carry"]["attempts"] == 0
+
+
+def test_same_cookie_logged_out_alerts_and_does_not_restart(world, bridge_dir, tmp_path):
+    (bridge_dir / "cookies.json").write_text(json.dumps({"sessionid": CHROME_SID}))
+    world.health = '{"session":"logged_out"}'
+    p, _ = make(world, bridge_dir, tmp_path)
+    verdict, _ = p.run_once()
+    assert verdict == "FAIL"
+    assert world.restarts() == 0
+    assert [m.reason for m in world.sent] == ["bridge_logged_out_same_cookie"]
+
+
+def test_unreadable_chrome_db_is_error_never_pass_and_touches_nothing(world, bridge_dir, tmp_path):
+    world.health = '{"session":"logged_out"}'
+    p, _ = make(world, bridge_dir, tmp_path, chrome=CookieError("cookie db not found"))
+    verdict, rec = p.run_once()
+    assert verdict == "ERROR"
+    assert world.restarts() == 0
+    assert json.loads((bridge_dir / "cookies.json").read_text())["sessionid"] == BRIDGE_SID
+    assert rec["chrome_error"] == "cookie db not found"
+    assert world.whoami_sites() == []
+
+
+@pytest.mark.parametrize("stdout,rc", [("", 1), ("not json", 0), ('{"session":"weird"}', 0),
+                                       ('{"nosession":1}', 0)])
+def test_unreachable_or_garbled_bridge_health_is_error(world, bridge_dir, tmp_path, stdout, rc):
+    world.health, world.health_rc = stdout, rc
+    p, _ = make(world, bridge_dir, tmp_path)
+    verdict, rec = p.run_once()
+    assert verdict == "ERROR" and rec["bridge_session"] == "unreachable"
+    assert world.restarts() == 0
+
+
+def test_failed_restart_is_recorded_as_error(world, bridge_dir, tmp_path):
+    world.health = '{"session":"logged_out"}'
+    world.restart_rc = 1
+    p, _ = make(world, bridge_dir, tmp_path)
+    verdict, rec = p.run_once()
+    assert verdict == "ERROR"
+    assert rec["sync"] == "restart_failed:rc=1"
+
+
+def test_missing_bridge_jar_counts_as_different_and_is_recreated(world, bridge_dir, tmp_path):
+    (bridge_dir / "cookies.json").unlink()
+    world.health = '{"session":"logged_out"}'
+    p, _ = make(world, bridge_dir, tmp_path)
+    p.run_once()
+    assert json.loads((bridge_dir / "cookies.json").read_text())["sessionid"] == CHROME_SID
+    assert world.restarts() == 1
+
+
+def test_backups_are_pruned_to_five(world, bridge_dir, tmp_path):
+    world.health = '{"session":"logged_out"}'
+    p, _ = make(world, bridge_dir, tmp_path)
+    for i in range(7):
+        (bridge_dir / "cookies.json").write_text(json.dumps({"sessionid": BRIDGE_SID}))
+        world.now = NOW + timedelta(seconds=i + 1)
+        p.run_once()
+        # reset the counter's cap by pretending the cookie changed each time
+        world.health = '{"session":"authenticated"}'
+        p.run_once()
+        world.health = '{"session":"logged_out"}'
+    assert len(list(bridge_dir.glob("cookies.json.bak-*"))) == 5
+
+
+# ---- live checks -----------------------------------------------------------
+
+def test_live_check_runs_once_per_hour_across_runs_with_jitter(world, bridge_dir, tmp_path):
+    p, _ = make(world, bridge_dir, tmp_path)
+    p.run_once()
+    assert sorted(world.whoami_sites()) == ["instagram", "linkedin", "twitter"]
+    assert world.sleeps == [1.5, 1.5, 1.5]
+    world.now = NOW + timedelta(minutes=10)
+    p.run_once()
+    assert len(world.whoami_sites()) == 3                  # not repeated
+    world.now = NOW + timedelta(minutes=61)
+    p.run_once()
+    assert len(world.whoami_sites()) == 6                  # due again
+
+
+def test_live_check_429_is_error_not_logged_out(world, bridge_dir, tmp_path):
+    world.whoami["twitter"] = RunResult(77, "", "HTTP 429 Too Many Requests: not logged in")
+    p, _ = make(world, bridge_dir, tmp_path)
+    verdict, rec = p.run_once()
+    assert verdict == "ERROR"
+    assert rec["live"]["x"] == "error"
+    assert not any(m.reason == "live_check_logged_out" for m in world.sent)
+
+
+def test_live_check_exit_77_is_logged_out_alert(world, bridge_dir, tmp_path):
+    world.whoami["linkedin"] = RunResult(77, "", "not logged in")
+    p, _ = make(world, bridge_dir, tmp_path)
+    verdict, _ = p.run_once()
+    assert verdict == "FAIL"
+    assert [(m.network, m.reason) for m in world.sent] == [("linkedin", "live_check_logged_out")]
+
+
+def test_unknown_opencli_failure_is_error(world, bridge_dir, tmp_path):
+    world.whoami["instagram"] = RunResult(1, "", "boom")
+    p, _ = make(world, bridge_dir, tmp_path)
+    assert p.run_once()[0] == "ERROR"
+
+
+def test_missing_cookie_skips_that_networks_live_check(world, bridge_dir, tmp_path):
+    p, _ = make(world, bridge_dir, tmp_path, chrome=jar(li=False))
+    p.run_once()
+    assert "linkedin" not in world.whoami_sites()
+
+
+# ---- alert dedup -----------------------------------------------------------
+
+def test_an_alert_is_not_repeated_within_the_window_but_is_after_it(world, bridge_dir, tmp_path):
+    (bridge_dir / "cookies.json").write_text(json.dumps({"sessionid": CHROME_SID}))
+    world.health = '{"session":"logged_out"}'
+    p, _ = make(world, bridge_dir, tmp_path)
+    p.run_once()
+    world.now = NOW + timedelta(hours=1)
+    p.run_once()
+    assert len(world.sent) == 1
+    world.now = NOW + timedelta(hours=13)
+    p.run_once()
+    assert len(world.sent) == 2
+
+
+def test_a_corrupt_last_state_line_is_skipped_not_fatal(world, bridge_dir, tmp_path):
+    p, cfg = make(world, bridge_dir, tmp_path)
+    p.run_once()
+    with cfg.state_file.open("a") as fh:
+        fh.write("{torn line")
+    world.now = NOW + timedelta(minutes=10)
+    p.run_once()
+    assert len(world.whoami_sites()) == 3  # carry still recovered from the good line
+
+
+# ---- alert-bridge sink -----------------------------------------------------
+
+def test_alert_bridge_sink_posts_an_alertmanager_shaped_payload_via_docker_exec():
+    seen: dict = {}
+
+    def run(argv, timeout, stdin):  # type: ignore[no-untyped-def]
+        seen.update(argv=list(argv), stdin=stdin)
+        return RunResult(0)
+
+    assert AlertBridgeSink(run).send(AlertMessage("x", "chrome_session_missing", "log in"))
+    assert seen["argv"][:4] == ["docker", "exec", "-i", "nora-alert-bridge"]
+    body = json.loads(seen["stdin"])
+    assert body["status"] == "firing"
+    assert body["alerts"][0]["labels"]["job"] == "x"
+    assert "chrome_session_missing" in body["alerts"][0]["annotations"]["summary"]
+
+
+def test_alert_bridge_sink_reports_failure_without_raising():
+    sink = AlertBridgeSink(lambda a, t, s: RunResult(1, "", "no such container"))
+    assert sink.send(AlertMessage("probe", "bridge_unreachable", "x")) is False
+
+
+def test_failed_delivery_is_not_marked_sent_so_it_retries(world, bridge_dir, tmp_path):
+    (bridge_dir / "cookies.json").write_text(json.dumps({"sessionid": CHROME_SID}))
+    world.health = '{"session":"logged_out"}'
+    p, _ = make(world, bridge_dir, tmp_path)
+    world.deliver = False
+    p.run_once()
+    assert world.sent == []
+    world.deliver = True
+    world.now = NOW + timedelta(minutes=10)
+    p.run_once()
+    assert len(world.sent) == 1
