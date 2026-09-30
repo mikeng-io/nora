@@ -585,7 +585,7 @@ enabled = true
 # var, never inline the secret). Host-injected, like OMNIROUTE_API_KEY. Generate:
 #   python -c "import os,base64;print(base64.b64encode(os.urandom(32)).decode())"
 # Empty (or the var unset) = custody OFF.
-encryption_key_env = "NORA_MEDIA_KEY"
+encryption_key_env = "MEDIA_ENCRYPTION_KEY"
 max_bytes = 104857600     # 100 MiB — Signal's own attachment ceiling
 timeout_seconds = 8.0     # ingest path: a wedged daemon costs seconds, never the message
 # Reading a stored image back through MiMo-V2.5 (the `media_fetch` tool, DEC-56).

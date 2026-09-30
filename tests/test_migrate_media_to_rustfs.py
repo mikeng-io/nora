@@ -71,7 +71,7 @@ def rustfs_bucket_env(monkeypatch, rustfs_container):
     monkeypatch.setenv("RUSTFS_BUCKET", "migration-test")
     monkeypatch.setenv("RUSTFS_ROOT_USER", RUSTFS_TEST_USER)
     monkeypatch.setenv("RUSTFS_ROOT_PASSWORD", RUSTFS_TEST_PASSWORD)
-    monkeypatch.setenv("NORA_MEDIA_KEY", KEY)
+    monkeypatch.setenv("MEDIA_ENCRYPTION_KEY", KEY)
 
 
 def test_iter_keys_reads_back_exactly_what_put_wrote(media_root, seeded_source):
@@ -123,7 +123,7 @@ async def test_migration_is_idempotent(
 async def test_a_missing_encryption_key_refuses_rather_than_guesses(
     config_toml, media_root, rustfs_bucket_env, monkeypatch,
 ):
-    monkeypatch.delenv("NORA_MEDIA_KEY", raising=False)
+    monkeypatch.delenv("MEDIA_ENCRYPTION_KEY", raising=False)
     import scripts.migrate_media_to_rustfs as migrate
 
     monkeypatch.setattr(migrate, "CONFIG_PATH", config_toml)
@@ -135,7 +135,7 @@ async def test_missing_rustfs_credentials_refuse_rather_than_guess(
 ):
     for var in ("RUSTFS_ENDPOINT", "RUSTFS_ROOT_USER", "RUSTFS_ROOT_PASSWORD"):
         monkeypatch.delenv(var, raising=False)
-    monkeypatch.setenv("NORA_MEDIA_KEY", KEY)
+    monkeypatch.setenv("MEDIA_ENCRYPTION_KEY", KEY)
     import scripts.migrate_media_to_rustfs as migrate
 
     monkeypatch.setattr(migrate, "CONFIG_PATH", config_toml)
