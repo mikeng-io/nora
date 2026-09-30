@@ -41,6 +41,7 @@ dependencies = [
     # and formatting; tomli_w would strip every rationale comment in a
     # 75KB config. Runtime dependency: the CLI ships in the image.
     "tomlkit>=0.13",
+    "jsonschema>=4.26.0",
 ]
 
 [project.optional-dependencies]
@@ -76,6 +77,11 @@ nora = [
     # without the Dreamer's instructions and every adaptor fails at startup.
     "dreamer/doctrine/*.md",
     "dreamer/objectives/*.md",
+    # The generated schema, prompt fragment and corpus beside `nora/documents/check.py`.
+    # Without them a WHEEL would import the checker and answer `error` to every
+    # document, because `document.schema.json` is read from beside the module.
+    "documents/*.json",
+    "documents/*.md",
     "py.typed",
     # The build-time version stamp (DEC-79). Generated, gitignored, and absent
     # from a source checkout — declared here so a WHEEL built from a stamped
@@ -258,8 +264,28 @@ layers = [
     "nora.skills | nora.instructions",
     "nora.obs",
     "nora.infra | nora.testing",
-    "nora.domain",
+    # Pure: see the "document checker imports nothing of ours" contract below.
+    "nora.domain | nora.documents",
 ]
+
+[[tool.importlinter.contracts]]
+name = "the document checker imports nothing of ours"
+type = "forbidden"
+# `nora.documents` is pure: the standard library and `jsonschema`, and the generated
+# schema beside it. The layers contract lists it next to `nora.domain` but only stops it
+# importing a LISTED layer; `nora.persons`, `nora.tag` and `nora.web` sit outside that
+# list, so a comment saying "nothing of ours" was a claim nothing checked (review of
+# PR 648, 2026-10-01). Every other top-level name is forbidden here instead.
+source_modules = ["nora.documents"]
+forbidden_modules = [
+    "nora.agent", "nora.analytics", "nora.app", "nora.compute", "nora.config",
+    "nora.doctrine", "nora.domain", "nora.dreamer", "nora.engagement", "nora.infra",
+    "nora.ingest", "nora.instructions", "nora.language", "nora.obs", "nora.persons",
+    "nora.persons_file", "nora.platform",
+    "nora.policy", "nora.presence", "nora.skills", "nora.subject", "nora.tag",
+    "nora.testing", "nora.web",
+]
+allow_indirect_imports = "True"
 
 [[tool.importlinter.contracts]]
 name = "only app and __main__ read config"
@@ -274,7 +300,7 @@ source_modules = [
     "nora.agent", "nora.obs", "nora.doctrine", "nora.language", "nora.platform",
     "nora.domain", "nora.persons", "nora.tag",
     "nora.infra", "nora.testing", "nora.ingest", "nora.engagement",
-    "nora.skills", "nora.instructions",
+    "nora.skills", "nora.instructions", "nora.documents",
 ]
 forbidden_modules = ["nora.config"]
 
@@ -329,7 +355,6 @@ dev = [
     "aioresponses>=0.7.9",
     "boto3-stubs[s3]>=1.43.78",
     "import-linter>=2.0",
-    "jsonschema>=4.26.0",
     "mcp>=1.29.0",
     "mypy>=1.11",
     "pytest>=8.0",

@@ -1,0 +1,1 @@
+{"type": "none", "reason": "The document checker is not called by any tool yet: computer_export(to=\"document\") and the documents table that would use it are not built, so no one can reach it.", "details": [], "limitations": []}
