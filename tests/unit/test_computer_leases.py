@@ -8,11 +8,17 @@ import asyncio
 from nora.domain.computer_leases import ComputerLeases
 
 
+async def _try(leases: ComputerLeases, key: str):
+    """`try_acquire` under a bound, so a broken «never waits» fails the test
+    instead of hanging it."""
+    return await asyncio.wait_for(leases.try_acquire(key), 1)
+
+
 async def test_a_background_caller_defers_while_the_key_is_held():
     leases = ComputerLeases(live_wait_seconds=5)
     held = await leases.acquire("session:a", live=True)
     assert held is not None
-    assert await leases.try_acquire("session:a") is None
+    assert await _try(leases, "session:a") is None
     assert await leases.try_acquire("session:b") is not None
     leases.release(held)
     assert await leases.try_acquire("session:a") is not None
@@ -25,7 +31,7 @@ async def test_a_background_caller_defers_while_a_live_one_waits():
     await asyncio.sleep(0)
     leases.release(held)
     # The key is free for an instant, but a live caller is queued for it.
-    assert await leases.try_acquire("k") is None
+    assert await _try(leases, "k") is None
     got = await waiter
     assert got is not None
     leases.release(got)
