@@ -21,24 +21,45 @@ import { z } from "zod";
 const text = (max: number) => z.string().min(1).max(max);
 const tone = z.enum(["neutral", "info", "success", "warning", "danger"]);
 // A link is http(s) only: no `javascript:`, no `data:`, no relative path.
-const link = z.string().max(2048).regex(/^https?:\/\/[^\s]+(?![\s\S])/, "an http(s) URL");
+const link = z.string().max(2048).regex(/^https?:\/\/[!-~]+(?![\s\S])/, "an http(s) URL");
 
 // A Mermaid source is plain drawing instructions or it is refused. Mermaid 12
-// takes configuration from frontmatter, `%%{init}%%`, `click`/`link`/`callback`
-// statements and CSS (`style`, `classDef`, `linkStyle`), and it inserts the SVG
-// into the live page to measure it, so a `url(https://…)` or an <a href> there
-// is a request or a link before any check of the output can run (found by
-// review and reproduced in e2e on 2026-09-30). The renderer applies this same
-// pattern before it calls mermaid. Case-folded by hand, not with an `i` flag,
-// because a JSON Schema `pattern` cannot carry flags and the Python checker
-// reads that schema alone.
+// takes configuration from frontmatter and `%%{init}%%`, node metadata
+// (`A@{ img: "https://…" }`), `click`/`link` statements and CSS, and it inserts
+// the SVG into the live page to measure it, so a `url(https://…)` or an image
+// there is a REQUEST before any check of the output can run (found by review,
+// reproduced in e2e, 2026-09-30). The first version was a blocklist and a
+// second review walked round it with a non-breaking space before `---`, a CSS
+// escape (`u\72 l(`), a `;` before `click` and sequence `links`. Mermaid's own
+// parser accepts more whitespace and more separators than a list can name, so
+// this is an ALLOWLIST at the start and in the character set, with a blocklist
+// only for statements that are still legal inside it:
+//   - the source begins, at index 0, with a known diagram keyword, so there is
+//     no room for frontmatter (which must come first);
+//   - no control, format, line-separator or non-ASCII space character, no lone
+//     CR, and no backslash (a CSS escape), because those are how the parser's
+//     idea of whitespace and of `url(` diverge from a regex's;
+//   - no `%%{`, no `@{`, and no `click`, `link`, `links`, `callback`, `call`,
+//     `href`, `properties` or `details` statement at a line start or after `;`;
+//   - a `style`, `classDef` or `linkStyle` line may use only letters, digits and
+//     `# : ; , . % _ -`, so a colour or a size is fine and a function is not;
+//   - no `url(`, `image-set(`, `@import`, `expression(` or `javascript:`.
+// Written with explicit classes, never `\s`, `\b` or a flag: the Python checker
+// reads the JSON Schema `pattern` alone, and its `\s`, `\b` and `$` mean other
+// things (measured: a U+FEFF and a U+001C each passed on one side only).
 const ci = (word: string) => [...word].map((c) => `[${c.toLowerCase()}${c.toUpperCase()}]`).join("");
-const LINE = "(?:^|\\n)[ \\t\\uFEFF]*";
+const STATEMENT = "(?:^|[\\n;])[ \\t]*";
+const DIAGRAMS = ["flowchart", "graph", "sequenceDiagram", "stateDiagram-v2", "stateDiagram", "classDiagram", "erDiagram", "gantt", "timeline", "mindmap"];
+const EXOTIC = "\\u0000-\\u0008\\u000B-\\u001F\\u007F-\\u009F\\u00A0\\u1680\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u3000\\uFEFF";
 export const MERMAID_PLAIN = new RegExp(
   "^" +
-    `(?![\\s\\S]*${LINE}---)` +
-    "(?![\\s\\S]*%%\\{)" +
-    `(?![\\s\\S]*${LINE}(?:${["click", "link", "callback", "call", "style", "classDef", "linkStyle"].map(ci).join("|")})\\b)` +
+    `(?=(?:${DIAGRAMS.join("|")})(?:[ \\t\\n]|(?![\\s\\S])))` +
+    `(?![\\s\\S]*[${EXOTIC}])` +
+    "(?![\\s\\S]*\\\\)" +
+    "(?![\\s\\S]*%%[ \\t\\n]*\\{)" +
+    "(?![\\s\\S]*@[ \\t\\n]*\\{)" +
+    `(?![\\s\\S]*${STATEMENT}(?:${["click", "callback", "call", "links", "link", "href", "properties", "details"].map(ci).join("|")})[ \\t]+)` +
+    `(?![\\s\\S]*${STATEMENT}(?:${["style", "classDef", "linkStyle"].map(ci).join("|")})[ \\t][^\\n;]*[^A-Za-z0-9#:;,._% \\t\\n-])` +
     `(?![\\s\\S]*(?:${ci("url")}\\(|${ci("image-set")}\\(|@${ci("import")}|${ci("expression")}\\(|${ci("javascript")}:))` +
     "[\\s\\S]*(?![\\s\\S])",
 );
@@ -120,18 +141,18 @@ export const components = {
       title: text(120).optional(),
       unit: text(20).optional(),
       caption: text(200),
-      data: z.array(z.strictObject({ label: text(40), value: z.number() })).min(2).max(60),
+      data: z.array(z.strictObject({ label: text(40), value: z.number().min(-1e15).max(1e15) })).min(2).max(60),
     }),
     description:
       "One measure, one axis: `bar` ranks or compares categories, `line` shows a change over an ordered `label` axis (days, months). `caption` states what the chart shows. Two measures of different scale are two charts, never one; a single number is a Stat, not a chart.",
   },
   Mermaid: {
     props: z.strictObject({
-      source: z.string().min(1).max(4000).regex(MERMAID_PLAIN, "plain diagram source: no frontmatter, directive, click, style or url"),
+      source: z.string().min(1).max(4000).regex(MERMAID_PLAIN, "plain diagram source that starts with a diagram keyword"),
       caption: text(200),
     }),
     description:
-      "A diagram written as plain Mermaid source (flowchart, sequence, state). No frontmatter, `%%{` directive, `click`, `link`, `style`, `classDef` or `url(`: the page styles it. Show a mechanism or a route, label every arrow, and let `caption` say what the picture shows.",
+      "A diagram as plain Mermaid source. Start the source with the diagram type (flowchart, graph, sequenceDiagram, stateDiagram-v2, classDiagram, erDiagram, gantt, timeline or mindmap; not journey). No frontmatter, no `%%{` directive, no `click`/`link` statements, no backslash, no function in a style line: the page themes it. Show a mechanism or a route, label every arrow, and let `caption` say what the picture shows.",
   },
   Map: {
     props: z.strictObject({

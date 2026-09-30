@@ -1112,6 +1112,160 @@
      }
     ]
    }
+  },
+  "a Mermaid flowchart with Cantonese labels": {
+   "version": 1,
+   "root": {
+    "type": "Page",
+    "props": {
+     "title": "T"
+    },
+    "children": [
+     {
+      "type": "Mermaid",
+      "props": {
+       "source": "flowchart LR\n  A[開始] -->|去機場| B[完成]",
+       "caption": "c"
+      }
+     }
+    ]
+   }
+  },
+  "a Mermaid style line with hex colours": {
+   "version": 1,
+   "root": {
+    "type": "Page",
+    "props": {
+     "title": "T"
+    },
+    "children": [
+     {
+      "type": "Mermaid",
+      "props": {
+       "source": "flowchart TD\n  Start --> Stop\n  style Start fill:#f9f,stroke:#333,stroke-width:2px",
+       "caption": "c"
+      }
+     }
+    ]
+   }
+  },
+  "a Mermaid classDef and :::": {
+   "version": 1,
+   "root": {
+    "type": "Page",
+    "props": {
+     "title": "T"
+    },
+    "children": [
+     {
+      "type": "Mermaid",
+      "props": {
+       "source": "flowchart LR\n  A:::hot-->B\n  classDef hot fill:#f96",
+       "caption": "c"
+      }
+     }
+    ]
+   }
+  },
+  "a Mermaid linkStyle": {
+   "version": 1,
+   "root": {
+    "type": "Page",
+    "props": {
+     "title": "T"
+    },
+    "children": [
+     {
+      "type": "Mermaid",
+      "props": {
+       "source": "flowchart LR\n  A-->B\n  linkStyle 0 stroke:#ff3",
+       "caption": "c"
+      }
+     }
+    ]
+   }
+  },
+  "a Mermaid node that is named like a statement": {
+   "version": 1,
+   "root": {
+    "type": "Page",
+    "props": {
+     "title": "T"
+    },
+    "children": [
+     {
+      "type": "Mermaid",
+      "props": {
+       "source": "flowchart LR\n  call[Call the hotel] --> book[Book]",
+       "caption": "c"
+      }
+     }
+    ]
+   }
+  },
+  "a Mermaid sequence diagram": {
+   "version": 1,
+   "root": {
+    "type": "Page",
+    "props": {
+     "title": "T"
+    },
+    "children": [
+     {
+      "type": "Mermaid",
+      "props": {
+       "source": "sequenceDiagram\n  Alice->>Bob: Hello\n  Bob-->>Alice: Hi",
+       "caption": "c"
+      }
+     }
+    ]
+   }
+  },
+  "a Mermaid gantt": {
+   "version": 1,
+   "root": {
+    "type": "Page",
+    "props": {
+     "title": "T"
+    },
+    "children": [
+     {
+      "type": "Mermaid",
+      "props": {
+       "source": "gantt\n  title Plan\n  section Trip\n  Flights :a1, 2026-12-01, 3d",
+       "caption": "c"
+      }
+     }
+    ]
+   }
+  },
+  "a Chart value at the bound": {
+   "version": 1,
+   "root": {
+    "type": "Page",
+    "props": {
+     "title": "T"
+    },
+    "children": [
+     {
+      "type": "Chart",
+      "props": {
+       "kind": "bar",
+       "caption": "c",
+       "data": [
+        {
+         "label": "a",
+         "value": 1000000000000000
+        },
+        {
+         "label": "b",
+         "value": -1000000000000000
+        }
+       ]
+      }
+     }
+    ]
+   }
   }
  },
  "invalid": [
@@ -1898,48 +2052,6 @@
    }
   },
   {
-   "label": "a Mermaid style statement",
-   "doc": {
-    "version": 1,
-    "root": {
-     "type": "Page",
-     "props": {
-      "title": "T"
-     },
-     "children": [
-      {
-       "type": "Mermaid",
-       "props": {
-        "source": "flowchart LR\n  A-->B\n  style A fill:#f00",
-        "caption": "c"
-       }
-      }
-     ]
-    }
-   }
-  },
-  {
-   "label": "a Mermaid classDef",
-   "doc": {
-    "version": 1,
-    "root": {
-     "type": "Page",
-     "props": {
-      "title": "T"
-     },
-     "children": [
-      {
-       "type": "Mermaid",
-       "props": {
-        "source": "flowchart LR\n  A-->B\n  classDef x fill:#f00\n  class A x",
-        "caption": "c"
-       }
-      }
-     ]
-    }
-   }
-  },
-  {
    "label": "a Mermaid url()",
    "doc": {
     "version": 1,
@@ -1954,6 +2066,469 @@
        "props": {
         "source": "flowchart LR\n  A-->B\n  linkStyle 0 stroke:url(https://evil.example/s)",
         "caption": "c"
+       }
+      }
+     ]
+    }
+   }
+  },
+  {
+   "label": "Mermaid frontmatter behind a non-breaking space",
+   "doc": {
+    "version": 1,
+    "root": {
+     "type": "Page",
+     "props": {
+      "title": "T"
+     },
+     "children": [
+      {
+       "type": "Mermaid",
+       "props": {
+        "source": " ---\nconfig:\n  htmlLabels: true\n ---\nflowchart LR\n  A-->B",
+        "caption": "c"
+       }
+      }
+     ]
+    }
+   }
+  },
+  {
+   "label": "Mermaid frontmatter behind a vertical tab",
+   "doc": {
+    "version": 1,
+    "root": {
+     "type": "Page",
+     "props": {
+      "title": "T"
+     },
+     "children": [
+      {
+       "type": "Mermaid",
+       "props": {
+        "source": "\u000b---\nconfig:\n  htmlLabels: true\n\u000b---\nflowchart LR\n  A-->B",
+        "caption": "c"
+       }
+      }
+     ]
+    }
+   }
+  },
+  {
+   "label": "Mermaid frontmatter behind an ideographic space",
+   "doc": {
+    "version": 1,
+    "root": {
+     "type": "Page",
+     "props": {
+      "title": "T"
+     },
+     "children": [
+      {
+       "type": "Mermaid",
+       "props": {
+        "source": "　---\nconfig:\n  htmlLabels: true\n　---\nflowchart LR\n  A-->B",
+        "caption": "c"
+       }
+      }
+     ]
+    }
+   }
+  },
+  {
+   "label": "Mermaid frontmatter behind a line separator",
+   "doc": {
+    "version": 1,
+    "root": {
+     "type": "Page",
+     "props": {
+      "title": "T"
+     },
+     "children": [
+      {
+       "type": "Mermaid",
+       "props": {
+        "source": " ---\nconfig:\n  htmlLabels: true\n ---\nflowchart LR\n  A-->B",
+        "caption": "c"
+       }
+      }
+     ]
+    }
+   }
+  },
+  {
+   "label": "a Mermaid source that starts with a space",
+   "doc": {
+    "version": 1,
+    "root": {
+     "type": "Page",
+     "props": {
+      "title": "T"
+     },
+     "children": [
+      {
+       "type": "Mermaid",
+       "props": {
+        "source": " flowchart LR\n  A-->B",
+        "caption": "c"
+       }
+      }
+     ]
+    }
+   }
+  },
+  {
+   "label": "a Mermaid source that starts with a newline",
+   "doc": {
+    "version": 1,
+    "root": {
+     "type": "Page",
+     "props": {
+      "title": "T"
+     },
+     "children": [
+      {
+       "type": "Mermaid",
+       "props": {
+        "source": "\nflowchart LR\n  A-->B",
+        "caption": "c"
+       }
+      }
+     ]
+    }
+   }
+  },
+  {
+   "label": "a Mermaid source with no diagram keyword",
+   "doc": {
+    "version": 1,
+    "root": {
+     "type": "Page",
+     "props": {
+      "title": "T"
+     },
+     "children": [
+      {
+       "type": "Mermaid",
+       "props": {
+        "source": "A-->B",
+        "caption": "c"
+       }
+      }
+     ]
+    }
+   }
+  },
+  {
+   "label": "a Mermaid journey (mermaid draws it with HTML)",
+   "doc": {
+    "version": 1,
+    "root": {
+     "type": "Page",
+     "props": {
+      "title": "T"
+     },
+     "children": [
+      {
+       "type": "Mermaid",
+       "props": {
+        "source": "journey\n  title x\n  section a\n    t: 5: me",
+        "caption": "c"
+       }
+      }
+     ]
+    }
+   }
+  },
+  {
+   "label": "a Mermaid CSS escape hiding url(",
+   "doc": {
+    "version": 1,
+    "root": {
+     "type": "Page",
+     "props": {
+      "title": "T"
+     },
+     "children": [
+      {
+       "type": "Mermaid",
+       "props": {
+        "source": "flowchart LR\n  A-->B\n  style A fill:u\\72 l(https://evil.example/esc)",
+        "caption": "c"
+       }
+      }
+     ]
+    }
+   }
+  },
+  {
+   "label": "a Mermaid click after a semicolon",
+   "doc": {
+    "version": 1,
+    "root": {
+     "type": "Page",
+     "props": {
+      "title": "T"
+     },
+     "children": [
+      {
+       "type": "Mermaid",
+       "props": {
+        "source": "flowchart LR; A-->B; click B \"https://evil.example/semi\"",
+        "caption": "c"
+       }
+      }
+     ]
+    }
+   }
+  },
+  {
+   "label": "a Mermaid click after a lone CR",
+   "doc": {
+    "version": 1,
+    "root": {
+     "type": "Page",
+     "props": {
+      "title": "T"
+     },
+     "children": [
+      {
+       "type": "Mermaid",
+       "props": {
+        "source": "flowchart LR\r  A-->B\r  click B \"https://evil.example/cr\"",
+        "caption": "c"
+       }
+      }
+     ]
+    }
+   }
+  },
+  {
+   "label": "a Mermaid click indented with a non-breaking space",
+   "doc": {
+    "version": 1,
+    "root": {
+     "type": "Page",
+     "props": {
+      "title": "T"
+     },
+     "children": [
+      {
+       "type": "Mermaid",
+       "props": {
+        "source": "flowchart LR\n  A-->B\n  click B \"https://evil.example/n\"",
+        "caption": "c"
+       }
+      }
+     ]
+    }
+   }
+  },
+  {
+   "label": "a Mermaid sequence links statement",
+   "doc": {
+    "version": 1,
+    "root": {
+     "type": "Page",
+     "props": {
+      "title": "T"
+     },
+     "children": [
+      {
+       "type": "Mermaid",
+       "props": {
+        "source": "sequenceDiagram\n  participant A\n  links A: {\"x\": \"https://evil.example/sq\"}\n  A->>A: hi",
+        "caption": "c"
+       }
+      }
+     ]
+    }
+   }
+  },
+  {
+   "label": "a Mermaid node image",
+   "doc": {
+    "version": 1,
+    "root": {
+     "type": "Page",
+     "props": {
+      "title": "T"
+     },
+     "children": [
+      {
+       "type": "Mermaid",
+       "props": {
+        "source": "flowchart LR\n  A@{ img: \"https://evil.example/x.png\", shape: imageSquare }-->B",
+        "caption": "c"
+       }
+      }
+     ]
+    }
+   }
+  },
+  {
+   "label": "a Mermaid style line with a function",
+   "doc": {
+    "version": 1,
+    "root": {
+     "type": "Page",
+     "props": {
+      "title": "T"
+     },
+     "children": [
+      {
+       "type": "Mermaid",
+       "props": {
+        "source": "flowchart LR\n  A-->B\n  style A fill:rgb(1,2,3)",
+        "caption": "c"
+       }
+      }
+     ]
+    }
+   }
+  },
+  {
+   "label": "a Mermaid style line with an entity",
+   "doc": {
+    "version": 1,
+    "root": {
+     "type": "Page",
+     "props": {
+      "title": "T"
+     },
+     "children": [
+      {
+       "type": "Mermaid",
+       "props": {
+        "source": "flowchart LR\n  A-->B\n  style A fill:u&#114;l(x)",
+        "caption": "c"
+       }
+      }
+     ]
+    }
+   }
+  },
+  {
+   "label": "a Mermaid next-line character hiding a click",
+   "doc": {
+    "version": 1,
+    "root": {
+     "type": "Page",
+     "props": {
+      "title": "T"
+     },
+     "children": [
+      {
+       "type": "Mermaid",
+       "props": {
+        "source": "flowchart LR click B x",
+        "caption": "c"
+       }
+      }
+     ]
+    }
+   }
+  },
+  {
+   "label": "a Chart value past the bound",
+   "doc": {
+    "version": 1,
+    "root": {
+     "type": "Page",
+     "props": {
+      "title": "T"
+     },
+     "children": [
+      {
+       "type": "Chart",
+       "props": {
+        "kind": "bar",
+        "caption": "c",
+        "data": [
+         {
+          "label": "a",
+          "value": 10000000000000000
+         },
+         {
+          "label": "b",
+          "value": 2
+         }
+        ]
+       }
+      }
+     ]
+    }
+   }
+  },
+  {
+   "label": "a link with a non-breaking character",
+   "doc": {
+    "version": 1,
+    "root": {
+     "type": "Page",
+     "props": {
+      "title": "T"
+     },
+     "children": [
+      {
+       "type": "Sources",
+       "props": {
+        "items": [
+         {
+          "title": "x",
+          "url": "https://a.example/ b"
+         }
+        ]
+       }
+      }
+     ]
+    }
+   }
+  },
+  {
+   "label": "a link with a byte-order mark",
+   "doc": {
+    "version": 1,
+    "root": {
+     "type": "Page",
+     "props": {
+      "title": "T"
+     },
+     "children": [
+      {
+       "type": "Sources",
+       "props": {
+        "items": [
+         {
+          "title": "x",
+          "url": "https://a.example/﻿b"
+         }
+        ]
+       }
+      }
+     ]
+    }
+   }
+  },
+  {
+   "label": "a link with a control character",
+   "doc": {
+    "version": 1,
+    "root": {
+     "type": "Page",
+     "props": {
+      "title": "T"
+     },
+     "children": [
+      {
+       "type": "Sources",
+       "props": {
+        "items": [
+         {
+          "title": "x",
+          "url": "https://a.example/\u001cb"
+         }
+        ]
        }
       }
      ]

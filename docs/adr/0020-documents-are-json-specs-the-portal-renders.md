@@ -43,9 +43,12 @@ which serves it on a public URL. Read from the tree and from norty on 2026-09-30
 3. **Every prop list is strict.** No component takes `className`, a style or raw HTML. A link is an
    http(s) address in `Sources`, or in Markdown text where it costs a click and nothing more. A picture
    is named by a media code and resolved to a sha256 by Nora, never a URL. A chart has one axis. A
-   diagram's source is plain drawing instructions: no frontmatter, `%%{` directive, `click`/`link`,
-   `style`/`classDef`/`linkStyle` or `url(`, because Mermaid 12 reads configuration and CSS from those and
-   draws into the live page, so a request happens before any output check can run.
+   diagram's source is plain drawing instructions, accepted by an allowlist (it starts with a known
+   diagram keyword, has no control or non-ASCII space character, no backslash, no `%%{` or `@{`, no
+   `click`/`link`/`callback`/`call`/`href` statement, only plain values on `style` lines, no `url(`)
+   because Mermaid 12 reads configuration, node images and CSS from those and draws into the live page,
+   so a request happens before any output check can run. A blocklist was tried first and a second
+   review walked round it.
    Nesting is capped at 8 levels and a document at 500 nodes.
 4. **Documents render inside the portal**, behind sign-in, on the portal's theme, through
    `@json-render/core` and `/react` with components written on the portal's own primitives.

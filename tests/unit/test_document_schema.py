@@ -102,3 +102,26 @@ def test_a_wide_document_at_the_depth_cap_validates_in_linear_time() -> None:
     started = time.monotonic()
     assert VALIDATOR.is_valid(_page(node))
     assert time.monotonic() - started < 2.0
+
+
+def test_a_non_finite_number_is_refused() -> None:
+    # Python's json.loads reads 1e400 as inf, which has no place in a Chart, and a
+    # bare `type: number` accepts it. The schema bounds the value instead.
+    text = (
+        '{"version":1,"root":{"type":"Page","props":{"title":"T"},"children":['
+        '{"type":"Chart","props":{"kind":"bar","caption":"c","data":'
+        '[{"label":"a","value":1e400},{"label":"b","value":2}]}}]}}'
+    )
+    assert not VALIDATOR.is_valid(json.loads(text))
+
+
+def test_the_node_cap_is_a_rule_the_schema_cannot_state() -> None:
+    # JSON Schema cannot count nodes. The app refuses more than 500 (parseDocument),
+    # so a 502-node document is refused there and accepted here. This pins the gap
+    # so nobody assumes the schema alone bounds size: the checker must count.
+    leaf = {"type": "Badge", "props": {"text": "x"}}
+    grids = [{"type": "Grid", "props": {}, "children": [leaf] * 100} for _ in range(5)]
+    doc = _page(*grids)
+    nodes = 1 + sum(1 + len(g["children"]) for g in grids)
+    assert nodes > 500
+    assert VALIDATOR.is_valid(doc)

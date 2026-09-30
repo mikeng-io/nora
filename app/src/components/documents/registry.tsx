@@ -229,7 +229,7 @@ const { registry } = defineRegistry(catalog, {
             ))}
           </div>
           {panels.map((panel, i) => (
-            <div key={i} id={`${uid}-panel-${i}`} role="tabpanel" aria-labelledby={`${uid}-tab-${i}`} hidden={i !== active}>
+            <div key={i} id={`${uid}-panel-${i}`} role="tabpanel" aria-labelledby={`${uid}-tab-${i}`} tabIndex={0} hidden={i !== active}>
               {panel}
             </div>
           ))}

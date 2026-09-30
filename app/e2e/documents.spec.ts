@@ -85,7 +85,7 @@ test("hostile mermaid source makes no outside request and runs nothing", async (
   await signIn(page);
   await page.goto("/en/documents/spike?demo=mermaid-sink");
   const figs = page.locator("[data-case]");
-  await expect(figs).toHaveCount(6);
+  await expect(figs).toHaveCount(12);
   // Each case either draws something clean or says it could not; never a blank figure.
   for (const fig of await figs.all()) {
     await expect(fig.locator("svg, [role=note]").first()).toBeVisible({ timeout: 15_000 });

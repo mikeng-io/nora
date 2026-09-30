@@ -43,6 +43,13 @@ export const HOSTILE_MERMAID: Record<string, string> = {
   "style url": 'flowchart LR\n  A-->B\n  style A fill:url(https://evil.example/s)',
   "classdef url": 'flowchart LR\n  A-->B\n  classDef x background:url(https://evil.example/c)\n  class A x',
   "label html": 'flowchart LR\n  A["<img src=x onerror=alert(1)>"]-->B',
+  "nbsp frontmatter":
+    '\u00A0---\nconfig:\n  htmlLabels: true\n\u00A0---\nflowchart LR\n  A["<img src=https://evil.example/n.png>"]-->B',
+  "css escape": "flowchart LR\n  A-->B\n  style A fill:u\\72 l(https://evil.example/esc)",
+  "semicolon click": 'flowchart LR; A-->B; click B "https://evil.example/semi"',
+  "node image": 'flowchart LR\n  A@{ img: "https://evil.example/node.png", shape: imageSquare }-->B',
+  "sequence links": 'sequenceDiagram\n  participant A\n  links A: {"x": "https://evil.example/sq"}\n  A->>A: hi',
+  "leading space": " flowchart LR\n  A-->B",
 };
 
 const IMAGE_DOC: DocumentSpec = {

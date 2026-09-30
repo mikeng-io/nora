@@ -354,7 +354,9 @@
                 "maxLength": 40
               },
               "value": {
-                "type": "number"
+                "type": "number",
+                "minimum": -1000000000000000,
+                "maximum": 1000000000000000
               }
             },
             "required": [
@@ -379,7 +381,7 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 4000,
-          "pattern": "^(?![\\s\\S]*(?:^|\\n)[ \\t\\uFEFF]*---)(?![\\s\\S]*%%\\{)(?![\\s\\S]*(?:^|\\n)[ \\t\\uFEFF]*(?:[cC][lL][iI][cC][kK]|[lL][iI][nN][kK]|[cC][aA][lL][lL][bB][aA][cC][kK]|[cC][aA][lL][lL]|[sS][tT][yY][lL][eE]|[cC][lL][aA][sS][sS][dD][eE][fF]|[lL][iI][nN][kK][sS][tT][yY][lL][eE])\\b)(?![\\s\\S]*(?:[uU][rR][lL]\\(|[iI][mM][aA][gG][eE][--][sS][eE][tT]\\(|@[iI][mM][pP][oO][rR][tT]|[eE][xX][pP][rR][eE][sS][sS][iI][oO][nN]\\(|[jJ][aA][vV][aA][sS][cC][rR][iI][pP][tT]:))[\\s\\S]*(?![\\s\\S])"
+          "pattern": "^(?=(?:flowchart|graph|sequenceDiagram|stateDiagram-v2|stateDiagram|classDiagram|erDiagram|gantt|timeline|mindmap)(?:[ \\t\\n]|(?![\\s\\S])))(?![\\s\\S]*[\\u0000-\\u0008\\u000B-\\u001F\\u007F-\\u009F\\u00A0\\u1680\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u3000\\uFEFF])(?![\\s\\S]*\\\\)(?![\\s\\S]*%%[ \\t\\n]*\\{)(?![\\s\\S]*@[ \\t\\n]*\\{)(?![\\s\\S]*(?:^|[\\n;])[ \\t]*(?:[cC][lL][iI][cC][kK]|[cC][aA][lL][lL][bB][aA][cC][kK]|[cC][aA][lL][lL]|[lL][iI][nN][kK][sS]|[lL][iI][nN][kK]|[hH][rR][eE][fF]|[pP][rR][oO][pP][eE][rR][tT][iI][eE][sS]|[dD][eE][tT][aA][iI][lL][sS])[ \\t]+)(?![\\s\\S]*(?:^|[\\n;])[ \\t]*(?:[sS][tT][yY][lL][eE]|[cC][lL][aA][sS][sS][dD][eE][fF]|[lL][iI][nN][kK][sS][tT][yY][lL][eE])[ \\t][^\\n;]*[^A-Za-z0-9#:;,._% \\t\\n-])(?![\\s\\S]*(?:[uU][rR][lL]\\(|[iI][mM][aA][gG][eE][--][sS][eE][tT]\\(|@[iI][mM][pP][oO][rR][tT]|[eE][xX][pP][rR][eE][sS][sS][iI][oO][nN]\\(|[jJ][aA][vV][aA][sS][cC][rR][iI][pP][tT]:))[\\s\\S]*(?![\\s\\S])"
         },
         "caption": {
           "type": "string",
@@ -575,7 +577,7 @@
               "url": {
                 "type": "string",
                 "maxLength": 2048,
-                "pattern": "^https?:\\/\\/[^\\s]+(?![\\s\\S])"
+                "pattern": "^https?:\\/\\/[!-~]+(?![\\s\\S])"
               },
               "asOf": {
                 "type": "string",

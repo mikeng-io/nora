@@ -678,3 +678,31 @@ unrolled) and the prompt fragment (about 1,750 tokens) are restated in the PR.
 **Still not covered.** No Content-Security-Policy on the portal, so the renderer and schema are
 the only walls; a CSP for the document route belongs with the W5 routes. The Python checker does not
 yet exist; this schema and corpus are what it will be built against.
+
+### Second pass (same day): the first fix was incomplete
+
+The reviewer was resumed and told to attack the fixes, not the original code. It ran its payloads
+through `MermaidBlock`'s exact initialisation with `evil.example` routed and found the Mermaid channel
+**still open**, plus a disagreement I had not seen and an over-rejection.
+
+| # | Finding | Fix | Proven by |
+|---|---|---|---|
+| 7 | **A blocklist cannot name every whitespace Mermaid accepts.** Its frontmatter rule is `^([^\S\n\r]*)-{3}`, any leading space except a newline; mine allowed only space, tab and BOM, so ` ---` (also `\u000B`, `\u000C`, ` `, `　`) still changed the config and fired a request. | **An allowlist**: the source starts at index 0 with a known diagram keyword (no room for frontmatter), contains no control, format or non-ASCII space character, no lone CR and no backslash. | 12 hostile sources through `MermaidBlock` with the route on; removing the renderer's pre-check makes the e2e see `i.png`, `ff` and `n.png` (red), restored (green). |
+| 8 | **A CSS escape hides `url(`:** `u\72 l(https://…)` passed both the source rule and `passiveSvg`. | No backslash at all; `style`, `classDef` and `linkStyle` lines may use only letters, digits and `# : ; , . % _ -`. | corpus cases in Zod, ajv and Python. |
+| 9 | **`;` separates Mermaid statements and `links` is a sequence statement**, so `click` after a `;`, after a lone CR or after an NBSP indent, and `links A: {…}`, all drew an `<a href>`. Node metadata `A@{ img: "https://…" }` was an unlisted image channel. | Statement blocklist matches at a line start **or after `;`** and adds `links`, `href`, `properties`, `details`; `@{` is refused. | corpus; `passiveSvg` still caught the links as a second wall. |
+| 10 | **Zod and Python still disagreed** on `\s` (U+FEFF passed in Python, U+001C in Zod), on `\b` (ASCII-only in JS, Unicode in Python) and on `1e400` (`inf` in Python). | No `\s` or `\b` anywhere; a link is printable ASCII (`[!-~]`); Chart values are bounded to ±1e15. | corpus; `test_a_non_finite_number_is_refused`. |
+| 11 | **The 500-node cap cannot be stated in JSON Schema**; a 502-node document is refused by `parseDocument` and accepted by Python. | Not fixable in the schema. Pinned by `test_the_node_cap_is_a_rule_the_schema_cannot_state`: the W3 checker must count nodes. | Python test. |
+| 12 | **The first fix over-rejected plausible documents**: `style Start fill:#f9f`, `classDef`, `linkStyle 0 stroke:#ff3`, a node named `call[...]`. | Those are accepted now (plain values only); a participant named `Call center` in a sequence diagram is still refused, by design. | 8 new valid corpus cases, including Cantonese labels. |
+| 13 | `journey` diagrams always fail `passiveSvg` (Mermaid draws them with HTML) and showed the fallback. | `journey` is not an allowed diagram; the prompt says so. | corpus. |
+| 14 | A tab panel had no `tabIndex`. | `tabIndex=0`. | e2e. |
+
+Result: 22 accepted and 73 refused documents in the corpus, run through Zod, ajv and Python's
+`jsonschema` with the same verdicts; 105 Python schema tests, 208 app unit tests, 44 e2e.
+
+**What this says about the approach.** Two review passes found five channels that a model-written
+Mermaid source could use, four of them after the first fix. The parser's grammar is larger than any
+rule written against it, so the allowlist is a bound on what reaches Mermaid, not a proof. The second
+wall (`passiveSvg`) and a Content-Security-Policy for the document route are the defence for what the
+allowlist misses, and only the first exists today. If a third pass still finds a channel, the next
+step is to stop drawing model-written Mermaid in the page (render it to an image in the sandbox)
+rather than lengthen the list.
