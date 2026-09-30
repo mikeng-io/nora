@@ -136,6 +136,14 @@ class ShownMessage:
     is_nora: bool = False
 
 
+#: The names Nora goes by in a note body, ONE value for the tag path and the
+#: Cognition session (#663 review). It is the literal `_speaker` prints for her
+#: own rows (`nora.agent.tools`: `"Nora"`, not `[doctrine].display_name`), so it
+#: is the name a row's sender carries on both paths; a deployment that renames
+#: her changes that one literal, in one place.
+NORA_NAMES: frozenset[str] = frozenset({"Nora"})
+
+
 @dataclass(frozen=True, slots=True)
 class Shown:
     """What a write may cite and name (§4.5).

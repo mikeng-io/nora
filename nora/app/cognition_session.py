@@ -108,7 +108,7 @@ from nora.domain.cognition_session import (
     close_or_strike,
 )
 from nora.domain.gatherings import Gathering, GatheringStatus
-from nora.domain.note_body import Shown, ShownMessage
+from nora.domain.note_body import NORA_NAMES, Shown, ShownMessage
 from nora.domain.ports import (
     CognitionDryRunStore,
     NewCarry,
@@ -329,9 +329,10 @@ class _RunState:
     records: tuple[RecordItem, ...] = ()
     #: What the session's read tools returned that a note may cite (m4).
     fetched: Fetched = field(default_factory=Fetched)
-    #: The rooms (`platform:conversation_id`) this session made a `would_commit`
-    #: write in: what `close(reason="written")` is backed by (B3).
-    written_rooms: set[str] = field(default_factory=set)
+    #: `(room key, agenda item or None)` of every write this session made that
+    #: would commit: what `close(reason="written")` is backed by, per item (B3).
+    #: A write that named no item is `(room, None)`.
+    written: set[tuple[str, int | None]] = field(default_factory=set)
     closed_indices: set[int] = field(default_factory=set)
     closes: list[CloseOutcome] = field(default_factory=list)
     #: The line of the prompt that says which room(s) the read tools resolve
@@ -363,6 +364,48 @@ def _room_of(room: str, state: _RunState) -> tuple[str, str] | dict[str, object]
         "detail": f"this agenda spans {len(state.rooms)} rooms; name the one this "
                   f"write is about as `room`, one of {sorted(state.rooms)}",
     }
+
+
+def _write_target(
+    room: str, item: int | None, state: _RunState,
+) -> tuple[tuple[str, str], int | None] | dict[str, object]:
+    """The room a write is about and the agenda item it is for (B3). `item`
+    is optional: given, it must be an item on the agenda, and it fixes the room
+    (a `room` that names another is refused, never guessed between). Left out,
+    the room is `_room_of`'s."""
+    if item is None:
+        resolved = _room_of(room, state)
+        return resolved if isinstance(resolved, dict) else (resolved, None)
+    found = state.items_by_index.get(item)
+    if found is None:
+        return {"status": "refused", "reason": "no_such_item",
+                "detail": f"{item} is not an item of this agenda"}
+    key = _room_key(found.room)
+    if room and room != key:
+        return {"status": "refused", "reason": "item_room_mismatch",
+                "detail": f"item {item} is in {key}, not {room}"}
+    return (found.room.platform, found.room.conversation_id), item
+
+
+def _off_agenda(state: _RunState) -> dict[str, object]:
+    """A reminder whose room is not on today's agenda is not this session's to
+    move or cancel: the same refusal a write to such a room gets (R-21)."""
+    return {
+        "status": "refused", "reason": "unknown_room",
+        "detail": f"that reminder's room is not a room on this agenda: {sorted(state.rooms)}",
+    }
+
+
+def _written_for(index: int, item: AgendaItem, state: _RunState) -> bool:
+    """Whether a write that would commit backs `index`'s `written` close: one
+    tagged with this item, or an untagged write in its room when it holds the
+    only item there (B3)."""
+    key = _room_key(item.room)
+    if (key, index) in state.written:
+        return True
+    alone = sum(1 for other in state.items_by_index.values()
+                if _room_key(other.room) == key) == 1
+    return alone and (key, None) in state.written
 
 
 def _parse_when(text: str) -> datetime | None:
@@ -451,7 +494,7 @@ class CognitionSessionRunner:
         model_window_tokens: int | None = None, overflow_window_fraction: float = 0.8,
         person_known: Callable[[str], bool] | None = None,
         roster_of: RosterOf | None = None,
-        nora_names: frozenset[str] = frozenset({"Nora"}),
+        nora_names: frozenset[str] = NORA_NAMES,
     ) -> None:
         """`doctrine_source`, when given, is read at the start of EVERY session
         and replaces `doctrine_text`/`doctrine_sha256` (which then serve only
@@ -1080,7 +1123,7 @@ class CognitionSessionRunner:
         )
         # The reads that hand out citable rows are watched: what they return is
         # what a note may cite besides the agenda's own rows (m4).
-        read_tools = watch_reads(self._guarded_read_tools(unit, rooms), state.fetched)
+        read_tools = watch_reads(self._guarded_read_tools(unit, rooms), state.fetched, keys)
 
         async def shown_for(
             platform: str, conversation_id: str, body: str,
@@ -1094,6 +1137,7 @@ class CognitionSessionRunner:
             roster is `unavailable`, never an empty room that refuses every
             owner."""
             here = Room(platform, conversation_id)
+            fetched = state.fetched.of(_room_key(here))
             rendered: dict[int, ShownMessage] = {
                 r.message_id: ShownMessage(
                     id=r.message_id, sender=r.author, person_id=r.person_id,
@@ -1102,7 +1146,7 @@ class CognitionSessionRunner:
                 for r in state.records
                 if r.room == here and r.kind in ("message", "edit") and r.text is not None
             }
-            for n, sender in state.fetched.messages.items():
+            for n, sender in fetched.messages.items():
                 rendered.setdefault(n, ShownMessage(
                     id=n, sender=sender, person_id=None, is_nora=sender in self._nora_names,
                 ))
@@ -1118,16 +1162,19 @@ class CognitionSessionRunner:
                 roster = got
             return Shown(
                 rendered=tuple(rendered.values()),
-                carried=frozenset(state.fetched.carried_ids),
+                carried=frozenset(fetched.carried_ids),
                 roster=roster, nora_names=self._nora_names,
-                rollup_keys=frozenset(state.fetched.rollup_keys),
+                rollup_keys=frozenset(fetched.rollup_keys),
             )
 
-        def wrote(platform: str, conversation_id: str, write: Any) -> dict[str, object]:
+        def wrote(
+            platform: str, conversation_id: str, write: Any, item: int | None,
+        ) -> dict[str, object]:
             """The verb's answer, and what backs a `written` close: only a
-            write that would commit counts (B3)."""
+            write that would commit counts, and it backs the item it names
+            (B3)."""
             if write.outcome == "would_commit":
-                state.written_rooms.add(_room_key(Room(platform, conversation_id)))
+                state.written.add((_room_key(Room(platform, conversation_id)), item))
             return _verb_result(write)
 
         established_by = f"{COGNITION_PATH_PREFIX}{unit}"
@@ -1141,12 +1188,13 @@ class CognitionSessionRunner:
             closes it for good after a few.
 
             Returns `status`: ok or refused, with a `reason` when refused
-            (`written` with no write of yours in that room is refused).
+            (`written` with no write of yours for that item is refused).
 
             Args:
                 item_index: The item's number in the agenda.
-                reason: `written` when a write you made in its room covers it (one
-                    that was not refused), `no_change` when nothing about it
+                reason: `written` when a write you made for it covers it (one
+                    that was not refused, and named this item when its room
+                    holds several), `no_change` when nothing about it
                     needs to change, `waiting` when it cannot be settled yet,
                     `covered` when another item already handles it.
             """
@@ -1155,15 +1203,16 @@ class CognitionSessionRunner:
             item = state.items_by_index.get(item_index)
             if item is None:
                 return {"status": "refused", "reason": "no_such_item"}
-            if reason == "written" and _room_key(item.room) not in state.written_rooms:
+            if reason == "written" and not _written_for(item_index, item, state):
                 # A close is measured against what was written, never against the
                 # model's say-so (B3): `written` needs a write this session made
-                # in the item's room that code did not refuse.
+                # FOR this item that code did not refuse: one that names it, or,
+                # when it is the only item in its room, the room's write.
                 return {
                     "status": "refused", "reason": "no_write_for_item",
-                    "detail": "no write of yours in this item's room was accepted in this "
-                              "session; write it first, or close it `no_change`, `waiting` "
-                              "or `covered`",
+                    "detail": "no write of yours for this item was accepted in this "
+                              "session (name it as the write's `item`); write it first, or "
+                              "close it `no_change`, `waiting` or `covered`",
                 }
             try:
                 outcome = close_or_strike(
@@ -1178,7 +1227,7 @@ class CognitionSessionRunner:
         async def note_create(
             title: str, description: str, uncertainty: str, closing_condition: str,
             body: str, anchor_date: str | None = None,
-            anchor_entities: list[str] | None = None, room: str = "",
+            anchor_entities: list[str] | None = None, room: str = "", item: int | None = None,
         ) -> dict[str, object]:
             """Start carrying an open question that nothing here settles yet.
             Call this when a room is chewing on something that outlives this
@@ -1215,11 +1264,14 @@ class CognitionSessionRunner:
                 room: Optional when the agenda is one room, required when it
                     spans several. The room this note is about, as
                     `platform:conversation_id` from the agenda.
+                item: Optional. The agenda item this write is for, by its
+                    number. A `written` close of that item is backed by a write
+                    that names it.
             """
-            resolved = _room_of(room, state)
+            resolved = _write_target(room, item, state)
             if isinstance(resolved, dict):
                 return resolved
-            platform, conversation_id = resolved
+            (platform, conversation_id), item = resolved
             anchor_day: int | None = None
             if anchor_date:
                 anchor_day = _day_number(anchor_date)
@@ -1238,11 +1290,11 @@ class CognitionSessionRunner:
                 uncertainty=uncertainty, closing_condition=closing_condition, body=body,
                 anchor_date=anchor_day, anchor_entity_ids=tuple(anchor_entities or ()),
             )
-            return wrote(platform, conversation_id, write)
+            return wrote(platform, conversation_id, write, item)
 
         async def note_update(
             note_id: str, body: str, parent_revision_id: str,
-            entity_ids: list[str] | None = None, room: str = "",
+            entity_ids: list[str] | None = None, room: str = "", item: int | None = None,
         ) -> dict[str, object]:
             """Revise a note. Call this when a note's content changes: a detail
             settles, a plan moves. Give back the WHOLE note with your change
@@ -1264,11 +1316,14 @@ class CognitionSessionRunner:
                 room: Optional when the agenda is one room, required when it
                     spans several. The room this note is about, as
                     `platform:conversation_id` from the agenda.
+                item: Optional. The agenda item this write is for, by its
+                    number. A `written` close of that item is backed by a write
+                    that names it.
             """
-            resolved = _room_of(room, state)
+            resolved = _write_target(room, item, state)
             if isinstance(resolved, dict):
                 return resolved
-            platform, conversation_id = resolved
+            (platform, conversation_id), item = resolved
             shown = await shown_for(platform, conversation_id, body)
             if isinstance(shown, dict):
                 return shown
@@ -1279,10 +1334,10 @@ class CognitionSessionRunner:
                 parent_revision_id=parent_revision_id,
                 entity_ids=tuple(entity_ids or ()),
             )
-            return wrote(platform, conversation_id, write)
+            return wrote(platform, conversation_id, write, item)
 
         async def event_propose(
-            title: str, when: str = "", venue_text: str = "", room: str = "",
+            title: str, when: str = "", venue_text: str = "", room: str = "", item: int | None = None,
         ) -> dict[str, object]:
             """Propose a NEW gathering in a room, returning its id. Call this
             when a room wants to arrange something that is not open yet. If an
@@ -1301,11 +1356,14 @@ class CognitionSessionRunner:
                 room: Optional when the agenda is one room, required when it
                     spans several. The room the gathering is in, as
                     `platform:conversation_id` from the agenda.
+                item: Optional. The agenda item this write is for, by its
+                    number. A `written` close of that item is backed by a write
+                    that names it.
             """
-            resolved = _room_of(room, state)
+            resolved = _write_target(room, item, state)
             if isinstance(resolved, dict):
                 return resolved
-            platform, conversation_id = resolved
+            (platform, conversation_id), item = resolved
             due = _parse_when(when) if when else None
             if when and due is None:
                 return {"status": "refused", "reason": "bad_when",
@@ -1322,7 +1380,7 @@ class CognitionSessionRunner:
                 venue_maps_url=None, venue_resolved_at=None,
                 status=GatheringStatus.PROPOSED, reminder_id=None, created_at=created,
             )
-            return wrote(platform, conversation_id, write)
+            return wrote(platform, conversation_id, write, item)
 
         async def _current_event(
             conversation_id: str, event_id: str,
@@ -1332,7 +1390,7 @@ class CognitionSessionRunner:
 
         async def event_revise(
             event_id: str, when: str = "", venue_text: str = "",
-            base_revision_id: str = "", room: str = "",
+            base_revision_id: str = "", room: str = "", item: int | None = None,
         ) -> dict[str, object]:
             """Change the time or venue of an event ALREADY proposed in a room.
             Call this when an open event's details are settled or change. In
@@ -1351,11 +1409,14 @@ class CognitionSessionRunner:
                 room: Optional when the agenda is one room, required when it
                     spans several. The event's room, as
                     `platform:conversation_id` from the agenda.
+                item: Optional. The agenda item this write is for, by its
+                    number. A `written` close of that item is backed by a write
+                    that names it.
             """
-            resolved = _room_of(room, state)
+            resolved = _write_target(room, item, state)
             if isinstance(resolved, dict):
                 return resolved
-            platform, conversation_id = resolved
+            (platform, conversation_id), item = resolved
             changes: dict[str, object] = {}
             if when:
                 due = _parse_when(when)
@@ -1374,11 +1435,11 @@ class CognitionSessionRunner:
                 platform=platform, conversation_id=conversation_id, current=current,
                 base_revision_id=base_revision_id or None, now_ms=now_ms, **changes,
             )
-            return wrote(platform, conversation_id, write)
+            return wrote(platform, conversation_id, write, item)
 
         async def event_set_status(
             event_id: str, status: Literal["confirmed", "cancelled", "happened", "lapsed"],
-            base_revision_id: str = "", room: str = "",
+            base_revision_id: str = "", room: str = "", item: int | None = None,
         ) -> dict[str, object]:
             """Move an event already proposed in a room to a new state. Call
             this when the room confirms it, says it happened, or says it is
@@ -1396,11 +1457,14 @@ class CognitionSessionRunner:
                 room: Optional when the agenda is one room, required when it
                     spans several. The event's room, as
                     `platform:conversation_id` from the agenda.
+                item: Optional. The agenda item this write is for, by its
+                    number. A `written` close of that item is backed by a write
+                    that names it.
             """
-            resolved = _room_of(room, state)
+            resolved = _write_target(room, item, state)
             if isinstance(resolved, dict):
                 return resolved
-            platform, conversation_id = resolved
+            (platform, conversation_id), item = resolved
             try:
                 parsed = GatheringStatus(status)
             except ValueError:
@@ -1412,12 +1476,12 @@ class CognitionSessionRunner:
                 platform=platform, conversation_id=conversation_id, current=current,
                 status=parsed, base_revision_id=base_revision_id or None, now_ms=now_ms,
             )
-            return wrote(platform, conversation_id, write)
+            return wrote(platform, conversation_id, write, item)
 
         async def standing_revise(
             where_it_stands: str, hold_open: str | None = None, i_owe: str | None = None,
             mode: Literal["deduced", "abduced", "said"] = "deduced",
-            base_revision_id: str | None = None, room: str = "",
+            base_revision_id: str | None = None, room: str = "", item: int | None = None,
         ) -> dict[str, object]:
             """Revise a room's Standing: where it stands right now. Call this
             when what a room has settled, or is holding open, has changed. Give
@@ -1439,11 +1503,14 @@ class CognitionSessionRunner:
                 room: Optional when the agenda is one room, required when it
                     spans several. The room, as `platform:conversation_id`
                     from the agenda.
+                item: Optional. The agenda item this write is for, by its
+                    number. A `written` close of that item is backed by a write
+                    that names it.
             """
-            resolved = _room_of(room, state)
+            resolved = _write_target(room, item, state)
             if isinstance(resolved, dict):
                 return resolved
-            platform, conversation_id = resolved
+            (platform, conversation_id), item = resolved
             head = await self._prior_standing(platform, conversation_id)
             write = await dry_run_standing_revise(
                 ledger=self._store, session_id=state.session_id, unit=unit,
@@ -1453,7 +1520,7 @@ class CognitionSessionRunner:
                 where_it_stands=where_it_stands, hold_open=hold_open, i_owe=i_owe,
                 mode=mode, base_revision_id=base_revision_id, now_ms=now_ms,
             )
-            return wrote(platform, conversation_id, write)
+            return wrote(platform, conversation_id, write, item)
 
         async def wake_at(
             subject_rows: list[str], at: str, why: str,
@@ -1585,7 +1652,8 @@ class CognitionSessionRunner:
             """Move a reminder you set to a new time. Call this when the time
             you chose no longer fits. Only your own.
 
-            Returns `status`: ok or refused (not found or not yours).
+            Returns `status`: ok or refused (not found, not yours, or its room is
+            not on this agenda).
 
             Args:
                 reminder_id: The id `remind` returned.
@@ -1601,6 +1669,8 @@ class CognitionSessionRunner:
                     ((p.platform, p.conversation_id) for p in pending
                      if p.reminder_ref == reminder_id), ("", ""),
                 )
+                if platform and f"{platform}:{conversation_id}" not in state.rooms:
+                    return _off_agenda(state)
                 answer = await dry_run_remind_move(
                     ledger=self._store, session_id=state.session_id, unit=unit,
                     reminder_ref=reminder_id, at_ms=at_ms, why=why, platform=platform,
@@ -1613,7 +1683,8 @@ class CognitionSessionRunner:
             """Cancel a reminder you set. Call this when the room no longer
             needs to hear it. Only your own.
 
-            Returns `status`: ok or refused (not found or not yours).
+            Returns `status`: ok or refused (not found, not yours, or its room is
+            not on this agenda).
 
             Args:
                 reminder_id: The id `remind` returned.
@@ -1625,6 +1696,8 @@ class CognitionSessionRunner:
                     ((p.platform, p.conversation_id) for p in pending
                      if p.reminder_ref == reminder_id), ("", ""),
                 )
+                if platform and f"{platform}:{conversation_id}" not in state.rooms:
+                    return _off_agenda(state)
                 answer = await dry_run_remind_cancel(
                     ledger=self._store, session_id=state.session_id, unit=unit,
                     reminder_ref=reminder_id, why=why, platform=platform,

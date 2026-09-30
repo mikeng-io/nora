@@ -2,21 +2,21 @@
  {
   "name": "B3: a written close needs no write",
   "file": "nora/app/cognition_session.py",
-  "old": "if reason == \"written\" and _room_key(item.room) not in state.written_rooms:",
+  "old": "if reason == \"written\" and not _written_for(item_index, item, state):",
   "new": "if False:",
   "target": "tests/unit/test_cognition_session_verbs_c.py::test_written_with_no_write_in_the_session_is_refused_and_the_item_stays_open tests/unit/test_cognition_session_verbs_c.py::test_a_reminder_or_a_self_wake_is_not_a_write_that_backs_a_close"
  },
  {
   "name": "B3: any write backs every room",
   "file": "nora/app/cognition_session.py",
-  "old": "state.written_rooms.add(_room_key(Room(platform, conversation_id)))",
-  "new": "state.written_rooms.update(state.rooms)",
+  "old": "state.written.add((_room_key(Room(platform, conversation_id)), item))",
+  "new": "state.written.update((k, None) for k in state.rooms)",
   "target": "tests/unit/test_cognition_session_verbs_c.py::test_a_write_in_one_room_does_not_back_a_written_close_of_another_rooms_item"
  },
  {
   "name": "B3: a refused write backs a close",
   "file": "nora/app/cognition_session.py",
-  "old": "if write.outcome == \"would_commit\":\n                state.written_rooms",
+  "old": "if write.outcome == \"would_commit\":\n                state.written",
   "new": "if True:\n                state.written_rooms",
   "target": "tests/unit/test_cognition_session_verbs_c.py::test_a_refused_write_does_not_back_a_written_close"
  },
@@ -100,16 +100,16 @@
  {
   "name": "m4: the read tools are not watched",
   "file": "nora/app/cognition_session.py",
-  "old": "read_tools = watch_reads(self._guarded_read_tools(unit, rooms), state.fetched)",
+  "old": "read_tools = watch_reads(self._guarded_read_tools(unit, rooms), state.fetched, keys)",
   "new": "read_tools = self._guarded_read_tools(unit, rooms)",
-  "target": "tests/unit/test_cognition_session_verbs_c.py::test_a_note_may_cite_an_id_an_existing_note_read_this_session_carries tests/unit/test_cognition_session_verbs_c.py::test_a_note_may_cite_a_rollup_row_it_read_and_no_other tests/unit/test_cognition_session_verbs_c.py::test_a_message_record_query_returned_is_checked_against_its_sender"
+  "target": "tests/unit/test_cognition_session_verbs_c.py::test_a_note_may_cite_an_id_an_existing_note_read_this_session_carries tests/unit/test_cognition_session_verbs_c.py::test_a_note_may_cite_a_rollup_row_it_read_and_no_other tests/unit/test_cognition_record_query_ids.py::test_a_note_citing_a_message_the_real_record_query_returned_is_checked_against_its_sender"
  },
  {
   "name": "m4: a fetched message is shown with no sender",
   "file": "nora/app/cognition_session.py",
   "old": "id=n, sender=sender, person_id=None,",
   "new": "id=n, sender=\"\", person_id=None,",
-  "target": "tests/unit/test_cognition_session_verbs_c.py::test_a_message_record_query_returned_is_checked_against_its_sender"
+  "target": "tests/unit/test_cognition_record_query_ids.py::test_a_note_citing_a_message_the_real_record_query_returned_is_checked_against_its_sender"
  },
  {
   "name": "M5: a naive time is taken as UTC",
@@ -229,5 +229,89 @@
   "old": "is_nora=r.own or r.author in self._nora_names,",
   "new": "is_nora=r.own,",
   "target": "tests/unit/test_cognition_session_verbs_c.py::test_a_line_citing_one_of_noras_own_messages_is_refused"
+ },
+ {
+  "name": "major 1: fetched rows are session-wide, not per room",
+  "file": "nora/agent/fetch_watch.py",
+  "old": "        return self.by_room.get(room) or RoomFetched()",
+  "new": "        merged = RoomFetched()\n        for each in self.by_room.values():\n            merged.carried_ids |= each.carried_ids\n            merged.messages.update(each.messages)\n            merged.rollup_keys |= each.rollup_keys\n        return merged",
+  "target": "tests/unit/test_cognition_session_verbs_c.py::test_a_row_read_through_one_room_is_not_citable_in_a_note_filed_to_another tests/unit/test_cognition_session_verbs_c.py::test_a_carried_id_and_a_fetched_message_are_per_room_too"
+ },
+ {
+  "name": "major 1: a read is filed under the first room whatever it named",
+  "file": "nora/agent/fetch_watch.py",
+  "old": "return named if isinstance(named, str) and named in self._rooms else None",
+  "new": "return self._rooms[0]",
+  "target": "tests/unit/test_cognition_session_verbs_c.py::test_a_row_read_through_one_room_is_not_citable_in_a_note_filed_to_another tests/unit/test_cognition_session_verbs_c.py::test_a_carried_id_and_a_fetched_message_are_per_room_too"
+ },
+ {
+  "name": "major 1: a read naming no room on the agenda is kept anyway",
+  "file": "nora/agent/fetch_watch.py",
+  "old": "return named if isinstance(named, str) and named in self._rooms else None",
+  "new": "return named if isinstance(named, str) else \"signal:room-a\"",
+  "target": "tests/unit/test_cognition_session_verbs_c.py::test_a_read_that_names_no_room_on_the_agenda_keeps_nothing"
+ },
+ {
+  "name": "major 2: record_query prints no number for the Cognition session",
+  "file": "nora/agent/tools.py",
+  "old": "with_ids=dream_adaptor == COGNITION_ADAPTOR,",
+  "new": "with_ids=False,",
+  "target": "tests/unit/test_cognition_record_query_ids.py::test_the_cognition_sessions_record_query_rows_carry_their_number tests/unit/test_cognition_record_query_ids.py::test_what_the_real_record_query_returns_is_what_the_watcher_keeps tests/unit/test_cognition_record_query_ids.py::test_a_note_citing_a_message_the_real_record_query_returned_is_checked_against_its_sender"
+ },
+ {
+  "name": "major 2: record_query prints a number on every turn",
+  "file": "nora/agent/tools.py",
+  "old": "with_ids=dream_adaptor == COGNITION_ADAPTOR,",
+  "new": "with_ids=True,",
+  "target": "tests/unit/test_cognition_record_query_ids.py::test_a_tag_turns_record_query_prints_no_ids"
+ },
+ {
+  "name": "B3 per item: a write for one item backs every item in its room",
+  "file": "nora/app/cognition_session.py",
+  "old": "    if (key, index) in state.written:\n        return True",
+  "new": "    if any(k == key for k, _ in state.written):\n        return True",
+  "target": "tests/unit/test_cognition_session_verbs_c.py::test_a_write_for_one_item_does_not_back_the_written_close_of_another_in_its_room"
+ },
+ {
+  "name": "B3 per item: an untagged write backs a room that holds several items",
+  "file": "nora/app/cognition_session.py",
+  "old": "    return alone and (key, None) in state.written",
+  "new": "    return (key, None) in state.written",
+  "target": "tests/unit/test_cognition_session_verbs_c.py::test_an_untagged_write_backs_a_close_only_when_its_room_holds_one_item"
+ },
+ {
+  "name": "B3 per item: a write naming an item of another room is accepted",
+  "file": "nora/app/cognition_session.py",
+  "old": "    if room and room != key:",
+  "new": "    if False:",
+  "target": "tests/unit/test_cognition_session_verbs_c.py::test_a_write_naming_an_item_of_another_room_or_none_is_refused"
+ },
+ {
+  "name": "B3 per item: a write naming no item on the agenda is accepted",
+  "file": "nora/app/cognition_session.py",
+  "old": "    found = state.items_by_index.get(item)\n    if found is None:\n        return {\"status\": \"refused\", \"reason\": \"no_such_item\",",
+  "new": "    found = state.items_by_index.get(item) or state.items_by_index[0]\n    if found is None:\n        return {\"status\": \"refused\", \"reason\": \"no_such_item\",",
+  "target": "tests/unit/test_cognition_session_verbs_c.py::test_a_write_naming_an_item_of_another_room_or_none_is_refused"
+ },
+ {
+  "name": "minor: remind_move acts on a reminder whose room is off the agenda",
+  "file": "nora/app/cognition_session.py",
+  "old": "if platform and f\"{platform}:{conversation_id}\" not in state.rooms:\n                    return _off_agenda(state)\n                answer = await dry_run_remind_move(",
+  "new": "if False:\n                    return _off_agenda(state)\n                answer = await dry_run_remind_move(",
+  "target": "tests/unit/test_cognition_session_verbs_c.py::test_remind_move_and_cancel_refuse_a_reminder_whose_room_is_off_the_agenda"
+ },
+ {
+  "name": "minor: remind_cancel acts on a reminder whose room is off the agenda",
+  "file": "nora/app/cognition_session.py",
+  "old": "if platform and f\"{platform}:{conversation_id}\" not in state.rooms:\n                    return _off_agenda(state)\n                answer = await dry_run_remind_cancel(",
+  "new": "if False:\n                    return _off_agenda(state)\n                answer = await dry_run_remind_cancel(",
+  "target": "tests/unit/test_cognition_session_verbs_c.py::test_remind_move_and_cancel_refuse_a_reminder_whose_room_is_off_the_agenda"
+ },
+ {
+  "name": "minor: the wiring's names for Nora differ from the tag path's",
+  "file": "nora/app/cognition_wiring.py",
+  "old": "nora_names: frozenset[str] = NORA_NAMES,",
+  "new": "nora_names: frozenset[str] = frozenset({\"Nora2\"}),",
+  "target": "tests/unit/test_cognition_session_verbs_c.py::test_the_session_and_the_tag_path_go_by_one_set_of_names_for_nora"
  }
 ]

@@ -23,23 +23,27 @@ result, after the registry's lineage and the room's disclosure have shaped it,
 so a row that was withheld was never fetched and cannot be cited. A refused,
 unavailable or unparseable result keeps nothing.
 
-**`record_query` does not yet print `n`.** Its rows carry `room`, `sender`,
-`body` and `when` only (`nora.agent.tools._record_messages` does not ask
-`_transcript_messages` for `with_ids`), so on today's tool this records nothing
-for it; the reader is written to the shape `load_transcript` and `room_read`
-already print on a Dreamer pass (`n`), and starts to count the day the row
-carries it. `note_read` and `rollup_read` feed it now.
+**Per room.** What a read returned is kept under the room it was routed through
+(the tool call's `room` argument, or the one room of a one-room agenda), and a
+write in a room is shown only that room's fetched rows. A Rollup row read
+through room A is not citable in a note filed to room B (#663 review, major 1):
+the read's room is the binding its roster and lineage resolved through.
+
+**`record_query` prints `n` for the Cognition session only** (DEC-250): its rows
+carry the message number a note cites, WITH the sender, and never on a tag turn
+(R-18).
 """
 
 from __future__ import annotations
 
 import json
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
 from strands.types.tools import AgentTool, ToolSpec, ToolUse
 
+from nora.agent.room_routing import ROOM_ARG
 from nora.domain.note_body import cited_ids_in, rollup_key
 
 #: The read tools whose results hand out citable rows.
@@ -47,8 +51,8 @@ WATCHED_TOOLS: frozenset[str] = frozenset({"note_read", "record_query", "rollup_
 
 
 @dataclass
-class Fetched:
-    """One session's fetched rows, filled as its read tools answer."""
+class RoomFetched:
+    """What one room's reads handed out."""
 
     #: Ids a note head already cites (`note_read`): carried, not re-checked.
     carried_ids: set[int] = field(default_factory=set)
@@ -81,6 +85,21 @@ class Fetched:
                     self.rollup_keys.add(rollup_key(parts[0], parts[1], parts[2], parts[3]))
 
 
+@dataclass
+class Fetched:
+    """One session's fetched rows, per room (`platform:conversation_id`), filled
+    as its read tools answer."""
+
+    by_room: dict[str, RoomFetched] = field(default_factory=dict)
+
+    def of(self, room: str) -> RoomFetched:
+        """`room`'s fetched rows; an empty set for a room nothing was read through."""
+        return self.by_room.get(room) or RoomFetched()
+
+    def take(self, tool: str, result: Any, room: str) -> None:
+        self.by_room.setdefault(room, RoomFetched()).take(tool, result)
+
+
 def _name_of(tool: Any) -> str | None:
     name = getattr(tool, "tool_name", None) or getattr(tool, "__name__", None)
     return name if isinstance(name, str) else None
@@ -109,11 +128,14 @@ class WatchedTool(AgentTool):
     """`inner`, unchanged for the model (same name, schema and answers), with
     what it answers kept in `fetched`."""
 
-    def __init__(self, inner: Any, fetched: Fetched, name: str) -> None:
+    def __init__(
+        self, inner: Any, fetched: Fetched, name: str, rooms: Sequence[str] = (),
+    ) -> None:
         super().__init__()
         self._inner = inner
         self._fetched = fetched
         self._name = name
+        self._rooms = tuple(rooms)
 
     @property
     def tool_name(self) -> str:
@@ -130,24 +152,36 @@ class WatchedTool(AgentTool):
     async def stream(
         self, tool_use: ToolUse, invocation_state: dict[str, Any], **kwargs: Any,
     ) -> AsyncGenerator[Any, None]:
+        room = self._room_of(tool_use)
         async for event in self._inner.stream(tool_use, invocation_state, **kwargs):
             answer = _result_of(event)
-            if answer is not None:
-                self._fetched.take(self._name, answer)
+            if answer is not None and room is not None:
+                self._fetched.take(self._name, answer, room)
             yield event
 
+    def _room_of(self, tool_use: ToolUse) -> str | None:
+        """The room this call is routed through: its `room` argument on a
+        several-room agenda, the one room on a one-room agenda. A room that is
+        not on the agenda (the tool refuses it) or none: None, keeping nothing."""
+        if len(self._rooms) == 1:
+            return self._rooms[0]
+        named = (tool_use.get("input") or {}).get(ROOM_ARG)
+        return named if isinstance(named, str) and named in self._rooms else None
 
-def watch_reads(tools: list[Any], fetched: Fetched) -> list[Any]:
-    """`tools` with each watched read wrapped; every other tool, and any tool
-    that is not a Strands tool object, passes through as it is."""
+
+def watch_reads(tools: list[Any], fetched: Fetched, rooms: Sequence[str]) -> list[Any]:
+    """`tools` with each watched read wrapped, keeping what it answers under the
+    room it was routed through (`rooms` are the agenda's room keys); every other
+    tool, and any tool that is not a Strands tool object, passes through as it
+    is."""
     out: list[Any] = []
     for tool in tools:
         name = _name_of(tool)
         if name in WATCHED_TOOLS and hasattr(tool, "stream") and hasattr(tool, "tool_spec"):
-            out.append(WatchedTool(tool, fetched, name))
+            out.append(WatchedTool(tool, fetched, name, rooms))
         else:
             out.append(tool)
     return out
 
 
-__all__ = ["WATCHED_TOOLS", "Fetched", "WatchedTool", "watch_reads"]
+__all__ = ["WATCHED_TOOLS", "Fetched", "RoomFetched", "WatchedTool", "watch_reads"]

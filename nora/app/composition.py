@@ -4573,7 +4573,6 @@ async def build_dependencies(
                     platform=platform, conversation_id=conversation_id,
                 ),
                 roster_of=_roster_names_of(rosters, persons, registry.self_aliases()),
-                nora_names=frozenset({cfg.doctrine.display_name}),
                 homes=homes, units=cognition_wakeable,
                 skills=agenda_skills,
                 grounder=grounder,

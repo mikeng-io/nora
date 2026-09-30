@@ -44,6 +44,7 @@ from nora.agent.dreamer import (
 )
 from nora.domain.cognition_session import COGNITION_ADAPTOR, Room
 from nora.domain.gatherings import Gathering
+from nora.domain.note_body import NORA_NAMES
 from nora.domain.ports import CognitionDryRunStore, StimulusStore
 from nora.domain.standing import StandingHead
 
@@ -333,7 +334,7 @@ def build_cognition_runner(
     proposed_events_in: Callable[[str], Awaitable[Sequence[Gathering]]],
     standing_of: Callable[[str, str], Awaitable[StandingHead | None]],
     roster_of: Callable[[str, str], Awaitable[Mapping[str, str] | None]] | None = None,
-    nora_names: frozenset[str] = frozenset({"Nora"}),
+    nora_names: frozenset[str] = NORA_NAMES,
     homes: Mapping[str, Any],
     units: Sequence[str],
     skills: AgendaSkills,

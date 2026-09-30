@@ -21,14 +21,16 @@ import pytest
 
 from nora.agent.fetch_watch import Fetched, watch_reads
 from nora.agent.ports import ToolSpec, adapt
+from nora.agent.room_routing import route_reads
 from nora.app.cognition_session import (
     AdaptorBudget,
     CognitionRunResult,
     CognitionSessionRunner,
 )
 from nora.domain.cognition_ground import Grounding, RecordItem
+from nora.domain.cognition_remind import PendingMirroredRemind
 from nora.domain.cognition_session import Room
-from nora.domain.note_body import rollup_key
+from nora.domain.note_body import NORA_NAMES, rollup_key
 from nora.domain.standing import Standing, StandingHead
 from nora.domain.stimuli import Stimulus, UnitView
 from nora.testing.cognition_dry_run_store import InMemoryCognitionDryRunStore
@@ -123,13 +125,15 @@ async def _session(
     roster: Mapping[str, str] | str | None = "default",
     head: StandingHead | None = None, reads: list[Any] | None = None,
     cooldown: float = 300.0, own_sends: Mapping[int, tuple[RecordItem, ...]] | None = None,
+    extra: tuple[Stimulus, ...] = (),
+    pending_reminds: tuple[PendingMirroredRemind, ...] = (),
 ) -> tuple[InMemoryCognitionDryRunStore, Any]:
     store = InMemoryCognitionDryRunStore()
     stimuli = InMemoryStimulusStore(ledger=store)
     stimuli.seed_wake("u", 1)
     # One stimulus per room, the ids the RECORDS table keys the rows by.
     ids = {A: 1, B: 3}
-    pending = tuple(_stimulus(ids[r], r) for r in rooms)
+    pending = (*(_stimulus(ids[r], r) for r in rooms), *extra)
 
     async def roster_of(platform: str, conversation_id: str) -> Mapping[str, str] | None:
         if roster == "default":
@@ -139,7 +143,10 @@ async def _session(
     runner = CognitionSessionRunner(
         dry_run_store=store, stimulus_store=stimuli, agent_runner=Script(behave),
         units=("u",), session_timeout_seconds=900.0, home_rooms={"u": A},
-        read_tools_for=lambda unit, rs: list(reads or []),
+        read_tools_for=lambda unit, rs: (
+            route_reads({f"{r.platform}:{r.conversation_id}": list(reads or []) for r in rs})
+            if len(rs) > 1 else list(reads or [])
+        ),
         read_only_tools=frozenset(t.tool_name for t in (reads or [])),
         skill_text_for=lambda kinds: "",
         grounder=StaticGrounder(Grounding(
@@ -148,7 +155,7 @@ async def _session(
         else EmptyGrounder(),
         doctrine_text="D", doctrine_sha256=None, open_note_titles=_const(()),
         open_proposed_events=_const(()), prior_standing=_const(head),
-        pending_self_wakes=_const(()), pending_mirrored_reminds=_const(()),
+        pending_self_wakes=_const(()), pending_mirrored_reminds=_const(pending_reminds),
         session_mode="shadow", budget=BUDGET, cooldown_seconds=cooldown, max_items=12,
         max_strikes=3, clock=lambda: NOW / 1000, roster_of=roster_of,
         nora_names=frozenset({"Nora"}),
@@ -247,6 +254,57 @@ async def test_a_reminder_or_a_self_wake_is_not_a_write_that_backs_a_close():
     assert answers[2]["reason"] == "no_write_for_item"
 
 
+def _time_item(i: int = 9) -> Stimulus:
+    """A second agenda item in the home room (A): only `message` stimuli are
+    room-bound, so a `time` stimulus lands in the unit's home room."""
+    return Stimulus(
+        id=i, unit="u", kind="time", item="dinner", ref=f"time:{i}", at_ms=NOW,
+        recorded_at_ms=NOW, platform=None, conversation_id=None,
+    )
+
+
+async def test_a_write_for_one_item_does_not_back_the_written_close_of_another_in_its_room():
+    """B3 per item (#663 review, minor): two items share room A. A write that
+    names item 1 backs item 1 and not item 0."""
+    answers: dict[str, Any] = {}
+
+    async def behave(by: dict[str, Any], tools: list[Any]) -> None:
+        answers["write"] = await by["standing_revise"](where_it_stands="settled", item=1)
+        answers["other"] = await by["close"](item_index=0, reason="written")
+        answers["named"] = await by["close"](item_index=1, reason="written")
+
+    _, outcome = await _session(behave, extra=(_time_item(),))
+    assert answers["write"]["status"] == "ok", answers["write"]
+    assert answers["other"]["reason"] == "no_write_for_item"
+    assert answers["named"]["status"] == "ok"
+    assert {c.item_index: c.reason for c in outcome.closed} == {0: "waiting", 1: "written"}
+
+
+async def test_an_untagged_write_backs_a_close_only_when_its_room_holds_one_item():
+    answers: dict[str, Any] = {}
+
+    async def behave(by: dict[str, Any], tools: list[Any]) -> None:
+        await by["standing_revise"](where_it_stands="settled")          # no `item`
+        answers["two"] = await by["close"](item_index=0, reason="written")
+
+    await _session(behave, extra=(_time_item(),))
+    assert answers["two"]["reason"] == "no_write_for_item"
+
+
+async def test_a_write_naming_an_item_of_another_room_or_none_is_refused():
+    answers: dict[str, Any] = {}
+
+    async def behave(by: dict[str, Any], tools: list[Any]) -> None:
+        answers["none"] = await by["standing_revise"](where_it_stands="x", item=7)
+        answers["mismatch"] = await by["standing_revise"](
+            where_it_stands="x", item=0, room="signal:room-b")
+
+    store, _ = await _session(behave, rooms=(A, B))
+    assert answers["none"]["reason"] == "no_such_item"
+    assert answers["mismatch"]["reason"] == "item_room_mismatch"
+    assert store.would_writes == []
+
+
 async def test_the_other_close_reasons_need_no_write():
     answers: list[Any] = []
 
@@ -288,6 +346,32 @@ async def test_remind_refuses_a_room_that_is_not_on_the_agenda_and_records_nothi
     store, _ = await _session(behave, rooms=(A, B))
     assert answers[0]["status"] == "refused" and answers[0]["reason"] == "unknown_room"
     assert store.remind_mirrors == []
+
+
+async def test_remind_move_and_cancel_refuse_a_reminder_whose_room_is_off_the_agenda():
+    off = PendingMirroredRemind(
+        reminder_ref="r-off", platform="signal", conversation_id="room-b",
+        subject_rows=("note:1",), created_by_session_id=None,
+    )
+    on = PendingMirroredRemind(
+        reminder_ref="r-on", platform="signal", conversation_id="room-a",
+        subject_rows=("note:2",), created_by_session_id=None,
+    )
+    answers: dict[str, Any] = {}
+
+    async def behave(by: dict[str, Any], tools: list[Any]) -> None:
+        later = iso(NOW + 3_600_000)
+        answers["move_off"] = await by["remind_move"](reminder_id="r-off", at=later, why="w")
+        answers["cancel_off"] = await by["remind_cancel"](reminder_id="r-off", why="w")
+        answers["move_on"] = await by["remind_move"](reminder_id="r-on", at=later, why="w")
+        answers["cancel_on"] = await by["remind_cancel"](reminder_id="r-on", why="w")
+
+    store, _ = await _session(behave, pending_reminds=(off, on))        # agenda: room A only
+    for key in ("move_off", "cancel_off"):
+        assert answers[key]["status"] == "refused" and answers[key]["reason"] == "unknown_room"
+    assert answers["move_on"]["status"] == "ok", answers["move_on"]
+    assert answers["cancel_on"]["status"] == "ok", answers["cancel_on"]
+    assert {m.reminder_ref for _, m, _ in store.remind_mirrors} == {"r-on"}
 
 
 async def test_remind_on_a_several_room_agenda_must_name_its_room():
@@ -476,42 +560,73 @@ async def test_a_line_resting_on_a_carried_id_may_not_be_attributed_to_nora():
     assert answers[0]["status"] == "refused" and answers[0]["reason"] == "misattributed"
 
 
-async def test_a_message_record_query_returned_is_checked_against_its_sender():
-    read = _read_tool("record_query", {"status": "ok", "messages": [
-        {"n": 777, "sender": "Ben", "body": "later", "when": "yesterday"},
-    ]})
-    by_ben = "## Decided\n- on (Ben) [777]\n## Open\n- q [777]\n"
-    by_ada = "## Decided\n- on (Ada) [777]\n## Open\n- q [777]\n"
+async def test_a_row_read_through_one_room_is_not_citable_in_a_note_filed_to_another():
+    """The reviewer's probe P2 (#663 review, major 1): a `rollup_read` routed
+    through room A made its row citable in a note written to room B."""
+    rows = {"status": "ok", "rows": [{
+        "kind": "stay", "subject": "p_ada", "from": "2026-10-01T09:00:00+08:00",
+        "to": "2026-10-01T11:00:00+08:00", "place": "home",
+    }]}
+    note = f"## Decided\n## Open\n- is Ada home [rollup({KEY})]\n"
+    answers: dict[str, Any] = {}
+
+    async def behave(by: dict[str, Any], tools: list[Any]) -> None:
+        await _stream(by["rollup_read"], query="", room="signal:room-a")
+        answers["b"] = await by["note_create"](**NOTE, body=note, room="signal:room-b")
+        answers["a"] = await by["note_create"](**NOTE, body=note, room="signal:room-a")
+
+    await _session(behave, rooms=(A, B), reads=[_read_tool("rollup_read", rows)])
+    assert answers["b"]["status"] == "refused" and answers["b"]["reason"] == "unknown_rollup_key"
+    assert answers["a"]["status"] == "ok", answers["a"]
+
+
+async def test_a_carried_id_and_a_fetched_message_are_per_room_too():
+    carried = _read_tool("note_read", {"status": "ok", "body": "## Decided\n## Open\n- q [555]\n"})
+    body = "## Decided\n## Open\n- q [555]\n"
+    answers: dict[str, Any] = {}
+
+    async def behave(by: dict[str, Any], tools: list[Any]) -> None:
+        await _stream(by["note_read"], query="x", room="signal:room-a")
+        answers["b"] = await by["note_create"](**NOTE, body=body, room="signal:room-b")
+        answers["a"] = await by["note_create"](**NOTE, body=body, room="signal:room-a")
+
+    await _session(behave, rooms=(A, B), reads=[carried])
+    assert answers["b"]["reason"] == "unknown_id"
+    assert answers["a"]["status"] == "ok", answers["a"]
+
+
+async def test_a_read_that_names_no_room_on_the_agenda_keeps_nothing():
+    rows = {"status": "ok", "body": "## Decided\n## Open\n- q [555]\n"}
+    body = "## Decided\n## Open\n- q [555]\n"
     answers: list[Any] = []
 
     async def behave(by: dict[str, Any], tools: list[Any]) -> None:
-        await _stream(by["record_query"], query="x")
-        answers.append(await by["note_create"](**NOTE, body=by_ben))
-        answers.append(await by["note_create"](**NOTE, body=by_ada))
+        refused = await _stream(by["note_read"], query="x", room="signal:elsewhere")
+        assert refused["status"] == "refused"
+        answers.append(await by["note_create"](**NOTE, body=body, room="signal:room-a"))
 
-    await _session(behave, reads=[read])
-    assert answers[0]["status"] == "ok", answers[0]
-    assert answers[1]["reason"] == "misattributed"
+    await _session(behave, rooms=(A, B), reads=[_read_tool("note_read", rows)])
+    assert answers[0]["reason"] == "unknown_id"
 
 
 async def test_watching_a_read_changes_nothing_the_model_reads_and_keeps_only_ok_results():
     answer = {"status": "ok", "body": "## Decided\n## Open\n- q [555]\n"}
     fetched = Fetched()
-    [watched] = watch_reads([_read_tool("note_read", answer)], fetched)
+    [watched] = watch_reads([_read_tool("note_read", answer)], fetched, ["signal:room-a"])
     assert await _stream(watched, query="x") == answer
-    assert fetched.carried_ids == {555}
+    assert fetched.of("signal:room-a").carried_ids == {555}
 
     # A refused or unavailable answer keeps nothing, even one that carries rows.
     empty = Fetched()
     stray = {"status": "refused", "body": "## Decided\n## Open\n- q [555]\n"}
-    [refused] = watch_reads([_read_tool("note_read", stray)], empty)
+    [refused] = watch_reads([_read_tool("note_read", stray)], empty, ["signal:room-a"])
     await _stream(refused, query="x")
-    assert empty.carried_ids == set()
+    assert empty.of("signal:room-a").carried_ids == set()
 
 
 def test_a_tool_that_hands_out_nothing_citable_is_not_wrapped():
     plain = _read_tool("about", {"status": "ok"})
-    assert watch_reads([plain], Fetched()) == [plain]
+    assert watch_reads([plain], Fetched(), ()) == [plain]
 
 
 # ---------------------------------------------------------------------------
@@ -628,3 +743,22 @@ async def test_a_base_against_a_head_with_no_revision_id_is_stale():
 
     await _session(behave, head=_head(None))
     assert answers[0]["reason"] == "stale_base"
+
+
+def test_the_session_and_the_tag_path_go_by_one_set_of_names_for_nora():
+    """One source (#663 review, minor): `NORA_NAMES` is what `_speaker` prints for
+    her rows, the tag path's validator and this session's validator both take it,
+    and the composition passes no second name that could make them differ."""
+    import inspect
+
+    from nora.app.cognition_wiring import build_cognition_runner
+
+    assert NORA_NAMES == frozenset({"Nora"})
+    for fn in (CognitionSessionRunner.__init__, build_cognition_runner):
+        assert inspect.signature(fn).parameters["nora_names"].default is NORA_NAMES
+    assert "nora_names=NORA_NAMES" in inspect.getsource(
+        __import__("nora.agent.tools", fromlist=["x"]),
+    )
+    assert "nora_names=" not in inspect.getsource(
+        __import__("nora.app.composition", fromlist=["x"]),
+    ).split("cognition_runner = build_cognition_runner(")[1].split("homes=homes")[0]
