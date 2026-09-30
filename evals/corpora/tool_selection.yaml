@@ -917,7 +917,14 @@ cases:
     expect: reply
     mention: true
     input: find the photos from the dinner last week
-    metadata: {tools: [media_search], not_tools: [media_fetch, web_search]}
+    metadata:
+      tools: [media_search]
+      not_tools: [media_fetch, web_search]
+      # `scope` and `room` must both be in some call's input: the default
+      # `library` scope finds nothing of what people sent, so a call that
+      # routes right and omits `scope` leaves the feature dead.
+      args_include:
+        media_search: [scope, room]
     snapshot: *room_a
 
   - name: route_media_search_room_photos_yue
@@ -925,7 +932,14 @@ cases:
     expect: reply
     mention: true
     input: 搵返上個星期食飯嗰幾張相
-    metadata: {tools: [media_search], not_tools: [media_fetch, web_search]}
+    metadata:
+      tools: [media_search]
+      not_tools: [media_fetch, web_search]
+      # `scope` and `room` must both be in some call's input: the default
+      # `library` scope finds nothing of what people sent, so a call that
+      # routes right and omits `scope` leaves the feature dead.
+      args_include:
+        media_search: [scope, room]
     snapshot: *room_a
 
   - name: route_media_fetch_photo_in_view_not_search
