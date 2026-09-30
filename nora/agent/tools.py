@@ -122,17 +122,23 @@ from ..domain.linkedin_links import is_handle as _is_linkedin_handle
 from ..domain.linkedin_links import parse_link as _parse_linkedin_link
 from ..domain.media import (
     COMPUTER_MEDIA_SOURCE,
-    COVER_ROLE,
     HANDLE_CHARS,
     MEDIA_FETCH_CALLERS,
+    ROOM_MEDIA_DAYS,
     GifCandidate,
     MediaBlob,
     MediaObject,
+    RoomSightings,
+    Sighting,
     VideoReadingKey,
     born_in_room,
+    code_matches,
     handle_hex,
     label_from_media_type,
+    reading_matches,
     resolve_media_type,
+    room_photos,
+    room_sightings,
     sniff_media_type,
 )
 from ..domain.media import LABELS as MEDIA_LABELS
@@ -151,6 +157,7 @@ from ..domain.models import (
     strip_mention_placeholders,
 )
 from ..domain.note_body import (
+    NORA_NAMES,
     NoteBodyError,
     Shown,
     ShownMessage,
@@ -1052,7 +1059,10 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
                                  output_contract="three_state", level=3),
     # media_search / media_send (DEC-138 — unified media index): READ side
     # of Nora's OWN stored media (source ∈ generated/fetched) — no provider
-    # call, no quota. search is read-only; send delivers a stored attachment
+    # call, no quota. `media_search(scope="room")` also finds photos PEOPLE
+    # SENT in the calling room (DEC-138 amended 2026-10-01), through that
+    # room's own message rows; `media_send` still delivers only her own.
+    # search is read-only; send delivers a stored attachment
     # (an act verb, like send_gif). Budget 2 each: one search + one send per
     # turn. `images_lookup`/`images_resend` were renamed here (DEC-138) so
     # the media surface stays ONE family: media_fetch (this conversation's
@@ -3772,6 +3782,20 @@ _COVER_NOTE = (
 # with nothing saying the sender is already looking at the thing
 # (design/proposed/32-shared-media-register.md). The hedge stays: a vision
 # model wrote this about somebody else's bytes.
+#: `media_search`'s longest look-back a model may ask for: the room media
+#: reach every resolver shares (`nora.domain.media.ROOM_MEDIA_DAYS`).
+_MEDIA_SEARCH_MAX_DAYS = ROOM_MEDIA_DAYS
+#: How much of a stored reading a room-search result carries when the object
+#: has no description (a video's reading is all `content`).
+_ROOM_EXCERPT_CHARS = 240
+_MS_PER_DAY = 86_400_000
+
+_TRUNCATED_CODE_NOTE = (
+    "This chat has more sent media than one lookup reads, so that code may be "
+    "older than what was searched. Say you could not check that far back, and "
+    "do not say it does not exist. Ask for a more recent photo."
+)
+
 _MEDIA_READING_NOTE = (
     "A vision model's notes on media somebody sent or linked, so you can see "
     "it too; whoever sent it has usually seen the thing itself. Take them as "
@@ -4153,32 +4177,6 @@ _EXPORT_TITLE_CHARS = 200
 
 #: The characters a kept file-name suffix may carry into `inbox/`.
 _INBOX_SUFFIX = re.compile(r"\.[A-Za-z0-9]{1,8}")
-
-
-def _media_in_view(rows: Sequence[Any], hex_handle: str) -> dict[str, tuple[str, str]]:
-    """Every distinct blob in `rows`' `media_json` whose sha256 starts with
-    `hex_handle`: sha256 -> (media type, filename). The resolution
-    `media_fetch` does WITHIN this conversation (R-21, DEC-24), so a code
-    from another room does not resolve here. Keyed by the full sha256, so
-    one blob seen in several rows is one match and two blobs sharing the
-    prefix are two."""
-    found: dict[str, tuple[str, str]] = {}
-    for row in rows:
-        raw = getattr(row, "media_json", None)
-        if not raw:
-            continue
-        try:
-            blobs = json.loads(raw)
-        except (ValueError, TypeError):
-            continue
-        for blob in blobs if isinstance(blobs, list) else ():
-            if not isinstance(blob, dict):
-                continue
-            sha = str(blob.get("sha256", ""))
-            if sha.startswith(hex_handle):
-                found.setdefault(sha, (str(blob.get("media_type", "")),
-                                       str(blob.get("filename") or "")))
-    return found
 
 
 def _inbox_path(sha256: str, media_type: str, filename: str) -> str:
@@ -5137,14 +5135,20 @@ def build_tool_specs(
         """The hits in `load_transcript`'s one shape (`_transcript_messages`),
         each named with its room, its reactions and whether it was deleted.
         A deleted message keeps its place and loses its words: its author
-        took them back (the withdrawal cascade that hides it is step 2c)."""
+        took them back (the withdrawal cascade that hides it is step 2c).
+
+        Each row carries its number `n` ONLY for the Cognition session, the
+        citation handle a note's line rests on (DEC-250, #663 review major 2);
+        never on a tag turn or any other pass (R-18)."""
         names = {
             (r.platform, cid): (r.label or platform_name(r.platform))
             for r in rooms for cid in r.ids
         }
         out: list[dict] = []
         for hit, row in zip(hits, rows, strict=True):
-            item = _transcript_messages([row], now=now)[0][0]
+            item = _transcript_messages(
+                [row], now=now, with_ids=dream_adaptor == COGNITION_ADAPTOR,
+            )[0][0]
             item = {"room": names.get((hit.platform, hit.conversation_id), ""), **item}
             if hit.reactions:
                 item["reactions"] = dict(hit.reactions)
@@ -8183,7 +8187,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         answering means knowing what is IN a picture or a video.
 
         Pass exactly one: `code`, from an `[image ...]` or `[video ...]` marker
-        in view here, or `url`, an http(s) link to a picture or video found
+        in this chat, or `url`, an http(s) link to a picture or video found
         elsewhere. It cannot open a file; a voice note gives back what was said.
 
         Leave `question` empty for the stored reading (what it shows, all its
@@ -8338,9 +8342,11 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             # resolved-then-refused. Wrapped, because a tool never raises
             # into the loop (`test_a_tool_never_raises_...`).
             try:
-                rows = await store.recent(
-                    conversation_id=bound_conversation_id, limit=_media_window,
+                reach = await room_sightings(
+                    store, conversation_id=bound_conversation_id,
+                    now_ms=_now_ms(), window=_media_window,
                 )
+                seen = reach.sightings
             except Exception:
                 log.exception("media_fetch failed to read the transcript")
                 _record_media(metrics, "unavailable", reason="store")
@@ -8351,50 +8357,37 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                             "it showed.",
                 }
 
-            # Every distinct blob in view whose sha256 starts with the handle.
-            # A dict keyed by full sha256 dedups the same blob appearing in
-            # several rows (a forwarded meme) while KEEPING two different
-            # blobs that share the 6-hex prefix apart — 24 bits collide, and
-            # `media.py` says so.
-            matches: dict[str, str] = {}
-            # Whether EVERY sighting of that blob in view was a shared item's
-            # cover (`MediaBlob.role`). Every, not any: the same bytes sent
-            # as a photo too make the handle somebody's picture as well, and
-            # the note below would then be a claim about the wrong one. An
-            # absent role (every row written before it existed) is an
-            # ordinary attachment.
-            covers: dict[str, bool] = {}
-            # The post or reel link on a row that holds that blob AS A
-            # COVER, when the row's line carries one: the legacy shape, a
-            # link and its cover side by side (see `_shared_page_link`).
-            cover_links: dict[str, str] = {}
-            for row in rows:
-                if not row.media_json:
-                    continue
-                try:
-                    blobs = json.loads(row.media_json)
-                except (ValueError, TypeError):
-                    continue
-                for blob in blobs if isinstance(blobs, list) else ():
-                    if not isinstance(blob, dict):
-                        continue
-                    sha = str(blob.get("sha256", ""))
-                    if sha.startswith(hex_handle):
-                        matches.setdefault(sha, str(blob.get("media_type", "")))
-                        covers[sha] = covers.get(sha, True) and (
-                            blob.get("role") == COVER_ROLE
-                        )
-                        if blob.get("role") == COVER_ROLE and sha not in cover_links:
-                            page_link = _shared_page_link(row.body)
-                            if page_link:
-                                cover_links[sha] = page_link
+            # Every distinct blob in this room whose sha256 starts with the
+            # handle: the window in view PLUS the room's last 90 days of sent
+            # media, through the one resolver `computer_import`, room search
+            # and the documents share. Keyed by full sha256, so a forwarded
+            # meme is one match while two blobs sharing the 6-hex prefix stay
+            # two: 24 bits collide, and `media.py` says so. Whether every
+            # sighting was a shared item's cover, and the link a cover's row
+            # carried, ride on the sighting.
+            matches = code_matches(seen, hex_handle)
+            covers = {sha: sg.cover for sha, sg in matches.items()}
+            cover_links = {
+                sha: link for sha, sg in matches.items()
+                if sg.cover and sg.cover_body
+                and (link := _shared_page_link(sg.cover_body))
+            }
 
+            if not matches and reach.truncated:
+                # The scan stopped at its row cap: an older photo may exist
+                # that it never read, so this is «could not check», not «none».
+                _record_media(metrics, "unavailable", reason="truncated")
+                return {
+                    "status": "unavailable", "code": hex_handle,
+                    "note": _TRUNCATED_CODE_NOTE,
+                }
             if not matches:
                 _record_media(metrics, "nothing_found", candidates=0)
                 return {
                     "status": "nothing_found", "code": hex_handle,
-                    "note": "I don't see media with that code here. Say you "
-                            "can't find it rather than guessing what it was.",
+                    "note": "I don't see media sent in this chat in the last 90 "
+                            "days with that code. Say you can't find it rather "
+                            "than guessing what it was.",
                 }
             if len(matches) > 1:
                 # NEVER pick the first — two in-scope blobs sharing the
@@ -8408,7 +8401,8 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                             "one they mean.",
                 }
 
-            sha256, media_type = next(iter(matches.items()))
+            sha256 = next(iter(matches))
+            media_type = matches[sha256].media_type
             serve_code = sha256[:HANDLE_CHARS]
             is_cover = covers.get(sha256, False)
 
@@ -9229,21 +9223,29 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
     # search by what the media WAS ("the birthday card for Miles"), then send
     # the stored bytes — no regeneration, no quota burn. The rename from
     # images_lookup/images_resend (DEC-138) keeps the media surface ONE
-    # family; the scope is custody (source ∈ generated/fetched), never
-    # inbound (other people's photos are not Nora's library).
+    # family; the default scope is custody (source ∈ generated/fetched).
+    # Other people's photos are not Nora's library, so they are a SEPARATE
+    # scope (`room`), limited to the calling room and never a model argument.
 
-    async def media_search(query: str = "") -> dict:
-        """Find previously stored media in Nora's own library. Use this when
-        somebody asks you to resend, reuse, or point at an image you made or
-        fetched earlier.
+    async def media_search(
+        query: str = "", scope: Literal["library", "room"] = "library",
+        days: int = 0,
+    ) -> dict:
+        """Find stored media. Use this when somebody asks you to resend an
+        image you made or fetched, or to find photos sent in this chat that
+        are out of view.
 
         It reaches back days, and nothing is regenerated.
 
         Returns `status`: ok or unavailable, with a `note` on how to report it.
 
         Args:
-            query: Words from the original prompt, title or description. Empty
-                returns the most recent media.
+            query: Words from the prompt, title or description. Empty returns
+                the most recent media.
+            scope: `library` is media you made or fetched. `room` is photos and
+                clips people sent in this chat, never another chat's.
+            days: How far back to look, 1 to 90. Empty is no limit for `library`
+                and 90 for `room`.
         """
         if media_store is None:
             return {
@@ -9251,12 +9253,18 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 "note": "I can't look up my stored media right now. Say "
                         "so plainly, and do not invent an image.",
             }
+        span = min(days, _MEDIA_SEARCH_MAX_DAYS) if days > 0 else 0
+        if scope == "room":
+            return await _media_search_room(
+                media_store, query, span or _MEDIA_SEARCH_MAX_DAYS,
+            )
         try:
             # Custody-scoped (DEC-138): Nora's OWN media only — generated or
-            # fetched; never inbound (other people's photos are not her
-            # library).
-            found = await media_store.search(
+            # fetched. Photos people sent are the other scope, and only ever
+            # this room's (DEC-138, amended 2026-10-01).
+            found = await media_store.lookup_search(
                 query=query, limit=10, sources=("generated", "fetched"),
+                since_ms=_now_ms() - span * _MS_PER_DAY if span else 0,
             )
         except Exception:
             log.exception("media_search: store search failed")
@@ -9265,6 +9273,13 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 "note": "I can't look up my media right now. Say "
                         "so plainly.",
             }
+        if not found.available:
+            # An index that could not be read is not an empty library.
+            return {
+                "status": "unavailable",
+                "note": "I can't look up my media right now. Say so plainly, "
+                        "and do not say there is nothing.",
+            }
         results = [
             {
                 "handle": obj.handle,
@@ -9272,7 +9287,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 "prompt": obj.prompt,
                 "created_at_ms": obj.created_at_ms,
             }
-            for obj in found
+            for obj in found.objects.values()
         ]
         # ADR 0015 §3: the reporting rule rides with the answer, split on
         # whether anything matched.
@@ -9287,6 +9302,120 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             ),
         }
 
+    async def _media_search_room(
+        index: MediaObjectStore, query: str, span: int,
+    ) -> dict:
+        """`media_search`'s `room` scope: pictures and clips PEOPLE SENT in
+        THIS conversation, found through this conversation's own message rows
+        (`media_rows`), never through the media index's provenance, which
+        names only the first room a byte string was seen in. The room is
+        `bound_conversation_id`, never an argument. Text comes from the media
+        index by content address, when a row exists. No sender is returned."""
+        unreadable = {
+            "status": "unavailable",
+            "note": "I can't look through the photos sent here right now. Say "
+                    "so plainly, and do not say there are none.",
+        }
+        if not room.platform:
+            # A background run with no room (a Dreamer unit keyed by name): its
+            # conversation slot is a key, not a chat, so there is nothing to
+            # look through and an empty answer would be a false «none».
+            return {
+                "status": "unavailable",
+                "note": "There is no chat in this run to look through. Say so "
+                        "plainly, and do not say there are no photos.",
+            }
+        try:
+            reach = await room_sightings(
+                store, conversation_id=bound_conversation_id,
+                now_ms=_now_ms(), days=span,
+            )
+            photos = room_photos(reach.sightings)
+            look = await index.lookup(
+                sha256s=tuple(p.sha256 for p in photos),
+            )
+        except Exception:
+            log.exception("media_search: room media read failed")
+            return unreadable
+        if not look.available:
+            return unreadable
+        results: list[dict[str, object]] = []
+        unread = 0
+        asked = bool(query.strip())
+        for photo in photos:
+            obj = look.objects.get(photo.sha256)
+            read = obj is not None and obj.comprehended
+            # The SAME screen `media_fetch` serves through, over the whole
+            # reading (title, description, content, caveat) at once. A screened
+            # reading is never matched on either: matching it would let a model
+            # confirm hidden digits one query at a time.
+            hidden = obj is not None and read and (
+                scan_identifiers(_stored_reading(obj)) is not None
+            )
+            if not asked:
+                results.append(_room_result(photo, obj, hidden=hidden))
+            elif read and not hidden and obj is not None and reading_matches(obj, query):
+                results.append(_room_result(photo, obj, hidden=False))
+            elif not read:
+                # A photo nothing has read cannot match words; count it so
+                # «no match» is not heard as «no such photo».
+                unread += 1
+        shown = results[:10]
+        note = (
+            "Photos people sent in this chat, newest first. Each description is "
+            "a vision model's notes, how it looks and not a fact. Say what you "
+            "found and never claim a photo this list does not hold. Do not name "
+            "who sent one."
+            if shown else
+            "No photo sent in this chat matched. Say so, and do not say a photo "
+            "exists that the search did not return."
+        )
+        if unread:
+            note += (
+                f" {unread} photo(s) in this period have not been read yet, so "
+                "a word search could not match them. Say so if it matters."
+            )
+        out: dict[str, object] = {
+            "status": "ok", "scope": "room", "days": span,
+            "results": shown, "note": note,
+        }
+        if reach.truncated:
+            # The row cap cut the read short: the newest items were searched
+            # and older ones were not, so an empty or short list is not «none».
+            out["truncated"] = True
+            out["note"] = (
+                f"{note} This chat has more sent media than one search reads, so "
+                "only the newest was searched and older media was NOT. Do not "
+                "say a photo does not exist; say the search did not reach that "
+                "far back."
+            )
+        return out
+
+    def _room_result(
+        photo: Sighting, obj: MediaObject | None, *, hidden: bool,
+    ) -> dict[str, object]:
+        """One room photo for the model: its marker code, kind, when it was
+        sent and its stored reading, unless the reading failed the identifier
+        screen, in which case none of it (title included) is returned."""
+        entry: dict[str, object] = {
+            "handle": photo.handle,
+            "kind": label_from_media_type(photo.media_type),
+            "sent": _been_iso(photo.sent_ms),
+        }
+        if obj is None or not obj.comprehended:
+            entry["read"] = False
+        elif hidden:
+            entry["withheld"] = True
+        else:
+            entry["title"] = obj.title
+            # A video's reading lives in `content` (timecoded) with an empty
+            # `description`, so the excerpt falls back to it: without it the
+            # model would see a clip that matched a word and nothing saying why.
+            text = obj.description or obj.content[:_ROOM_EXCERPT_CHARS]
+            if text:
+                entry["description"] = text
+        return entry
+
     async def media_send(handle: str) -> dict:
         """Send a previously stored media object (from `media_search`) to this
         chat. Call this when the room wants the media itself, not just its
@@ -9296,7 +9425,8 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         unavailable, with a `note` on how to report it.
 
         Args:
-            handle: the media object's handle from `media_search`.
+            handle: the handle of your own stored media from `media_search`
+                (library scope). A photo somebody sent cannot be sent.
         """
         if media_store is None or blob_store is None:
             return {
@@ -12459,7 +12589,7 @@ Args:
                     ref.name: pid
                     for pid, ref in getattr(persons, "by_person", {}).items()
                 },
-                nora_names=frozenset({"Nora"}),
+                nora_names=NORA_NAMES,
             ))
         except NoteBodyError as refused:
             _record(metrics, tool, "refused", reason="schema", rule=refused.rule)
@@ -14141,7 +14271,7 @@ Args:
         Returns `status`: ok, nothing_found, ambiguous, refused or
         unavailable, with a `note` on how to read it.
         - ok: copied; `path` is where it is in your workspace.
-        - nothing_found: nothing in view here has that code.
+        - nothing_found: nothing sent here in the last 90 days has that code.
         - ambiguous: more than one thing has it; ask which.
         - refused: it is too large.
         - unavailable: the file or the computer could not be reached.
@@ -14174,11 +14304,14 @@ Args:
             try:
                 hex_handle = _handle_hex(code)
                 matches: dict[str, tuple[str, str]] = {}
+                reach: RoomSightings | None = None
                 if len(hex_handle) >= HANDLE_CHARS and store is not None:
                     try:
-                        rows = await store.recent(
-                            conversation_id=bound_conversation_id, limit=_media_window,
+                        reach = await room_sightings(
+                            store, conversation_id=bound_conversation_id,
+                            now_ms=_now_ms(), window=_media_window,
                         )
+                        seen = reach.sightings
                     except Exception:
                         log.exception("computer_import failed to read the transcript")
                         outcome, row = "unavailable", {"code": hex_handle,
@@ -14186,12 +14319,23 @@ Args:
                         return {"status": "unavailable", "reason": "the chat could not be read",
                                 "note": "I couldn't look up that file just now. Say so; "
                                         "don't guess what it holds."}
-                    matches = _media_in_view(rows, hex_handle)
+                    matches = {
+                        sha: (sg.media_type, sg.filename)
+                        for sha, sg in code_matches(seen, hex_handle).items()
+                    }
+                if not matches and reach is not None and reach.truncated:
+                    outcome, row = "unavailable", {"code": hex_handle,
+                                                   "reason": "search reach truncated"}
+                    return {"status": "unavailable", "reason": "the search was cut short",
+                            "note": "This chat has more sent media than one lookup reads, "
+                                    "so that code may be older than what was searched. Say "
+                                    "you could not check that far back; do not say it does "
+                                    "not exist."}
                 if not matches:
                     outcome, row = "nothing_found", {"code": hex_handle}
                     return {"status": "nothing_found", "code": hex_handle,
-                            "note": "Nothing in view here has that code. Say you can't find "
-                                    "it rather than guessing."}
+                            "note": "Nothing sent in this chat in the last 90 days has that "
+                                    "code. Say you can't find it rather than guessing."}
                 if len(matches) > 1:
                     outcome, row = "ambiguous", {"code": hex_handle,
                                                  "candidates": len(matches)}

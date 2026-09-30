@@ -431,6 +431,7 @@ def _build_wake_evaluator(
     cfg: Config, *, store: SqlStimulusStore, units: Callable[[], Sequence[str]],
     metrics: Metrics, on_wake: WakeHook | None,
     session_units: Callable[[], Collection[str]] | None = None,
+    floors_ready: bool = True,
 ) -> WakeEvaluator:
     """The cognition loop's wake evaluator (design/cognition-loop/20 §3). With
     `on_wake` (`session_mode = "shadow"`) every would-wake starts a shadow
@@ -459,6 +460,7 @@ def _build_wake_evaluator(
         store_timeout_seconds=cfg.cognition.store_timeout_seconds,
         on_wake=on_wake,
         session_units=session_units,
+        floors_ready=floors_ready,
     )
 
 
@@ -3710,6 +3712,10 @@ async def build_dependencies(
     # The shadow Cognition session (step 3a-iii): built inside the Dreamer
     # block below ONLY under `[cognition] session_mode = "shadow"`; `off`
     # builds nothing here, no model client and no agent-runner import.
+    #: Skills injected per agenda kind. No skill ships for any kind in this step: the
+    #: table is where each lands (`AgendaSkills`). A `time` floor wakes a session only
+    #: once the table has its kind (M8, DEC-245).
+    agenda_skills = AgendaSkills(by_kind={}, resolve=lambda name: None)
     cognition_runner: CognitionSessionRunner | None = None
     # EVERY unit stays in the wake evaluator (#637 review, minor 1): a unit with
     # no home room keeps recording its would-wakes, it only cannot start a
@@ -4530,6 +4536,12 @@ async def build_dependencies(
                 cognition_unit_rooms.setdefault(conv.unit, set()).update(
                     (conv.platform, cid) for cid in conv.ids
                 )
+            # The policy's label for each of those ids (m5): the prompt calls a
+            # room by it and never by the conversation id.
+            cognition_room_labels: dict[tuple[str, str], str] = {
+                (conv.platform, cid): conv.label
+                for conv in allowlist.conversations for cid in conv.ids
+            }
 
             async def _room_events(unit: str, conversation_id: str) -> Sequence[Any]:
                 return await _proposed_events(conversation_id)
@@ -4543,6 +4555,10 @@ async def build_dependencies(
                 lineage=lineage,
                 unit_rooms=lambda unit: cognition_unit_rooms.get(unit, set()),
                 ai_display_name=cfg.doctrine.display_name,
+                room_label=lambda platform, cid: cognition_room_labels.get((platform, cid), ""),
+                clock=lambda: clock().timestamp(),
+                own_send_lookback_seconds=cfg.cognition.own_send_lookback_seconds,
+                own_sends_max=cfg.cognition.own_sends_max,
             )
 
             cognition_runner = build_cognition_runner(
@@ -4551,14 +4567,18 @@ async def build_dependencies(
                 metrics=metrics, tools=dream_tools, instructions=dreamer_instructions,
                 dry_run_store=dry_run_store, stimulus_store=stimulus_store,
                 note_titles=_note_titles, proposed_events_in=_proposed_events,
-                standing_of=lambda platform, conversation_id: standing_store.read(
+                # The HEAD with its `standing_revision` id: the token a
+                # `standing_revise` base is checked against (M6, DEC-250).
+                standing_of=lambda platform, conversation_id: standing_store.read_head(
                     platform=platform, conversation_id=conversation_id,
                 ),
+                roster_of=_roster_names_of(rosters, persons, registry.self_aliases()),
                 homes=homes, units=cognition_wakeable,
-                # No skill ships for any agenda kind in this step: the table is
-                # where each lands (`AgendaSkills`).
-                skills=AgendaSkills(by_kind={}, resolve=lambda name: None),
+                skills=agenda_skills,
                 grounder=grounder,
+                person_known=lambda person_id: persons.by_person.get(
+                    persons.subject_id_for(person_id),
+                ) is not None,
                 render_budget=RenderBudget(
                     record_chars=cfg.cognition.record_chars,
                     message_chars=cfg.cognition.message_chars,
@@ -4583,6 +4603,7 @@ async def build_dependencies(
             session_units=(
                 None if cognition_session_units is None else (lambda: cognition_session_units)
             ),
+            floors_ready="time" in agenda_skills.by_kind,
         )
         if cognition_runner is not None:
             cognition_shutdown = CognitionShutdown(
@@ -4686,6 +4707,27 @@ async def _tell_about_lost_jobs(
             metrics.inc("nora_compute_lost_told_total", outcome="failed_error")
         finally:
             slots.release_and_dispatch(key)
+
+
+def _roster_names_of(
+    rosters: Mapping[str, RosterSource], persons: Persons, self_ids: frozenset[str],
+) -> Callable[[str, str], Awaitable[Mapping[str, str] | None]]:
+    """A cognition session's roster seam: the room's roster NAMES with their
+    person ids, read through the same `Room` the tag path resolves a room with
+    (Nora's own accounts are not members: `self_ids`). `None` when the roster
+    cannot be read, so a note write can say `unavailable` instead of refusing
+    every owner against an empty room (M3)."""
+
+    async def roster_of(platform: str, conversation_id: str) -> Mapping[str, str] | None:
+        view = await Room(
+            platform=platform, conversation_id=conversation_id,
+            roster_source=rosters.get(platform), persons=persons, self_ids=self_ids,
+        ).members()
+        if not view.available:
+            return None
+        return {p.name: p.person_id for p in view.people}
+
+    return roster_of
 
 
 async def _presence_preflight(

@@ -612,3 +612,50 @@ def test_0067_keys_a_pre_existing_summons_row_on_a_legacy_message_id(pg_url):
     assert left == ["17900000000000001"]
     run_migrations(pg_url)
     assert current_revision(pg_url) == head_revision()
+
+
+def test_0085_rewrites_no_outcome_row_and_a_downgrade_survives_a_none_row(pg_url):
+    """`cognition_wake_outcome` is APPEND_ONLY (10 §8): 0085 only widens the check.
+    A closed outcome written before it keeps `infra` (readers normalise, see
+    `wake_state`), and going back down does not UPDATE the `none` rows a newer
+    deploy wrote (the restored check is NOT VALID: it still refuses a new one)."""
+    from alembic import command as alembic_command
+
+    run_migrations(pg_url)
+    alembic_command.downgrade(alembic_config(pg_url), "0084_documents")
+    engine = sa.create_engine(sync_url_for(pg_url))
+    try:
+        with engine.begin() as conn:
+            wake = conn.execute(sa.text(
+                "INSERT INTO cognition_wake (unit, mode, reason, from_stimulus_id, "
+                "through_stimulus_id, stimulus_count, eligible_count, cut_cooldown, at_ms, "
+                "tracked) VALUES ('u', 'shadow', 'settled', 0, 1, 1, 1, 0, 1000, 1) "
+                "RETURNING id"
+            )).scalar_one()
+            conn.execute(sa.text(
+                "INSERT INTO cognition_wake_outcome (wake_id, unit, outcome, at_ms, cause) "
+                "VALUES (:w, 'u', 'closed', 2000, 'infra')"
+            ), {"w": wake})
+    finally:
+        engine.dispose()
+
+    run_migrations(pg_url)
+    engine = sa.create_engine(sync_url_for(pg_url))
+    try:
+        with engine.begin() as conn:
+            assert conn.execute(sa.text(
+                "SELECT cause FROM cognition_wake_outcome WHERE wake_id = :w"
+            ), {"w": wake}).scalar_one() == "infra"          # no UPDATE ran
+            conn.execute(sa.text("UPDATE cognition_wake_outcome SET cause = 'none'"))
+    finally:
+        engine.dispose()
+
+    alembic_command.downgrade(alembic_config(pg_url), "0084_documents")
+    engine = sa.create_engine(sync_url_for(pg_url))
+    try:
+        with engine.begin() as conn:
+            assert conn.execute(sa.text(
+                "SELECT cause FROM cognition_wake_outcome WHERE wake_id = :w"
+            ), {"w": wake}).scalar_one() == "none"           # not rewritten on the way down
+    finally:
+        engine.dispose()

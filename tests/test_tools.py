@@ -1447,6 +1447,12 @@ class _BrokenMediaStore(FakeMediaObjectStore):
     async def search(self, **kwargs):
         raise RuntimeError("index down")
 
+    async def lookup_search(self, **kwargs):
+        raise RuntimeError("index down")
+
+    async def lookup(self, **kwargs):
+        raise RuntimeError("index down")
+
     async def by_prefix(self, **kwargs):
         raise RuntimeError("index down")
 

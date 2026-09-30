@@ -214,6 +214,31 @@ class SqlRecordStore:
         """
         return await self._newest(conversation_id=conversation_id, limit=limit)
 
+    async def media_rows(
+        self, *, conversation_id: str, since_ts: int, limit: int,
+    ) -> list[TranscriptRow]:
+        """See `nora.domain.ports.RecordStore.media_rows`. One indexed seek on
+        `idx_messages_conv_ts` bounded by `since_ts`; `media_json IS NOT NULL`
+        is the column's own «Nora holds something for this row» (NULL, never
+        `[]`). Raises on a database error, unlike the swallowing reads: the
+        caller is a tool that must say `unavailable`, not «no photos»."""
+        if limit <= 0:
+            return []
+        stmt = (
+            transcript_select()
+            .where(
+                MESSAGES.c.conversation_id == conversation_id,
+                MESSAGES.c.ts >= since_ts,
+                MESSAGES.c.is_nora == 0,
+                MESSAGES.c.media_json.is_not(None),
+            )
+            .order_by(MESSAGES.c.ts.desc(), MESSAGES.c.id.desc())
+            .limit(limit)
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+        return [self._row(r) for r in rows]
+
     async def recent_before(
         self, *, conversation_id: str, before_ts: int, limit: int,
     ) -> list[TranscriptRow]:

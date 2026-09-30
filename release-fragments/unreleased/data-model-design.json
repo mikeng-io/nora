@@ -1,0 +1,6 @@
+{
+  "type": "none",
+  "reason": "Design only: the data-model node and its decision row describe how stored data is organised; nothing a user sees changes and no code ships.",
+  "details": [],
+  "limitations": []
+}

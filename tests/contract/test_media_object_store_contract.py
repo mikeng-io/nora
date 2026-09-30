@@ -183,6 +183,22 @@ async def test_search_can_be_scoped_to_sources(store):
     assert {h.sha256 for h in everything} == {CAT, DOG}
 
 
+async def test_lookup_search_is_search_with_the_availability_axis(store):
+    """Same matches, same newest-first order, same scope; the mapping is the
+    result, and `since_ms` keeps only objects created at or after it."""
+    await store.save(obj=_obj(CAT, prompt="a cat", created_at_ms=1_000))
+    await store.save(obj=_obj(DOG, prompt="a cat", created_at_ms=3_000))
+    await store.save(obj=_obj(PHOTO, prompt="a cat", source="inbound", created_at_ms=2_000))
+    found = await store.lookup_search(query="cat", sources=("generated", "fetched"))
+    assert found.available and list(found.objects) == [DOG, CAT]
+    recent = await store.lookup_search(query="cat", since_ms=2_000)
+    assert list(recent.objects) == [DOG, PHOTO]
+    nothing = await store.lookup_search(query="sofa")
+    assert (nothing.available, dict(nothing.objects)) == (True, {})
+    assert tuple(found.objects.values()) == await store.search(
+        query="cat", sources=("generated", "fetched"))
+
+
 async def test_by_prefix_surfaces_every_collision_newest_first(store):
     """A 6-hex handle shared by two objects is a QUESTION for the caller
     (`media_send` answers `ambiguous`), never a silent first pick — so the
@@ -208,6 +224,9 @@ async def test_an_unreachable_database_answers_false_and_empty_and_never_raises(
     assert await broken.get(sha256=CAT) is None
     assert await broken.search(query="cat") == ()
     assert await broken.by_prefix(handle="aabbcc") == ()
+    # `lookup_search` carries the axis `search` collapses, for the same reason.
+    searched = await broken.lookup_search(query="cat")
+    assert (searched.available, dict(searched.objects)) == (False, {})
     # `lookup_prefix` carries the axis `by_prefix` collapses: unreachable is
     # `available=False`, never an empty success.
     unread = await broken.lookup_prefix(handle="aabbcc")

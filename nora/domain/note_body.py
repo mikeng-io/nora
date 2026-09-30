@@ -72,7 +72,7 @@ ATTRIBUTED: frozenset[str] = frozenset({"Decided", "Proposed", "Ruled out"})
 RULES: frozenset[str] = frozenset({
     "unknown_section", "section_order", "missing_section", "not_a_line",
     "uncited", "unknown_id", "cites_nora", "misattributed", "unknown_owner",
-    "bad_date",
+    "bad_date", "unknown_rollup_key",
 })
 
 _WEEKDAYS: tuple[str, ...] = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
@@ -87,6 +87,11 @@ _HEADING = re.compile(r"^(#+)\s*(.*?)\s*$")
 _BULLET = re.compile(r"^[-*+] (.*)$")
 _CITED = re.compile(r"^(?P<rest>.*?)\s*\[(?P<ids>[^\[\]]*)\]$")
 _IDS = re.compile(r"^\s*[0-9]+(\s*,\s*[0-9]+)*\s*$")
+#: A Rollup key cited inside a line's trailing brackets: `rollup(<kind>|<subject>|
+#: <from>/<to>)`, the `(kind, subject, interval)` `rollup_read` shows a row by
+#: (10 §2 rule 2, 30 §3 check 1). A group holds message ids, keys, or both.
+_ROLLUP_KEY = re.compile(r"rollup\(([^()\[\]]*)\)")
+_IDS_OR_KEYS = re.compile(r"^\s*(?:[0-9]+|K)(?:\s*,\s*(?:[0-9]+|K))*\s*$")
 _NAMED = re.compile(r"^(?P<content>.+) \((?P<names>[^()]*)\)$")
 _FROM_MEMORY = re.compile(r"^(?P<what>.+) \(as of (?P<date>[^()]+)\)$")
 _FOLDED = re.compile(r"^(?P<title>.+?): (?P<closing>.+) \(folded (?P<date>[^()]+)\)$")
@@ -131,6 +136,14 @@ class ShownMessage:
     is_nora: bool = False
 
 
+#: The names Nora goes by in a note body, ONE value for the tag path and the
+#: Cognition session (#663 review). It is the literal `_speaker` prints for her
+#: own rows (`nora.agent.tools`: `"Nora"`, not `[doctrine].display_name`), so it
+#: is the name a row's sender carries on both paths; a deployment that renames
+#: her changes that one literal, in one place.
+NORA_NAMES: frozenset[str] = frozenset({"Nora"})
+
+
 @dataclass(frozen=True, slots=True)
 class Shown:
     """What a write may cite and name (§4.5).
@@ -143,12 +156,16 @@ class Shown:
     - `roster`: the room's roster, roster name -> person_id. An `## Owed`
       owner must be one of its names.
     - `nora_names`: the names Nora goes by, never an `## Owed` owner (§4.3).
+    - `rollup_keys`: the Rollup rows this write read, each as `rollup_key(...)`;
+      a line may cite only these inside `rollup(...)` (30 §3 check 1, «shown
+      or fetched»).
     """
 
     rendered: tuple[ShownMessage, ...] = ()
     carried: frozenset[int] = frozenset()
     roster: Mapping[str, str] = field(default_factory=dict)
     nora_names: frozenset[str] = frozenset()
+    rollup_keys: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True, slots=True)
@@ -162,6 +179,7 @@ class NoteLine:
     names: tuple[str, ...] = ()
     owner: str | None = None
     person_ids: tuple[str, ...] = ()
+    rollup_keys: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -353,9 +371,20 @@ def _split(text: str) -> list[tuple[str, list[str]]]:
     return sections
 
 
-def _ids(item: str, heading: str) -> tuple[str, tuple[int, ...]]:
+def rollup_key(kind: str, subject: str, start: str, end: str) -> str:
+    """The text a note cites a Rollup row by, inside `rollup(...)`: the same
+    `(kind, subject, interval)` `rollup_read` prints for the row (`kind`,
+    `subject`, `from`, `to`)."""
+    return f"{kind}|{subject}|{start}/{end}"
+
+
+def _ids(item: str, heading: str) -> tuple[str, tuple[int, ...], tuple[str, ...]]:
     m = _CITED.match(item)
-    if m is None or not _IDS.match(m.group("ids")):
+    group = "" if m is None else m.group("ids")
+    keys = tuple(k.strip() for k in _ROLLUP_KEY.findall(group))
+    shape = _ROLLUP_KEY.sub("K", group)
+    ok = _IDS.match(group) if not keys else _IDS_OR_KEYS.match(shape)
+    if m is None or not ok:
         raise NoteBodyError(
             "uncited",
             f"under ## {heading}, {item!r} does not end in the ids of the "
@@ -366,12 +395,21 @@ def _ids(item: str, heading: str) -> tuple[str, tuple[int, ...]]:
         raise NoteBodyError(
             "not_a_line", f"under ## {heading}, {item!r} says nothing before its ids",
         )
-    return rest, tuple(int(i) for i in m.group("ids").split(","))
+    ids = tuple(int(t) for t in shape.split(",") if t.strip().isdigit())
+    return rest, ids, keys
 
 
 def _check_ids(
     ids: tuple[int, ...], item: str, rendered: Mapping[int, ShownMessage], carried: frozenset[int],
+    keys: tuple[str, ...] = (), known_keys: frozenset[str] = frozenset(),
 ) -> None:
+    for key in keys:
+        if key not in known_keys:
+            raise NoteBodyError(
+                "unknown_rollup_key",
+                f"{item!r} cites rollup({key}), a Rollup row this write did not read; "
+                f"cite the `kind`, `subject`, `from` and `to` of a row rollup_read returned",
+            )
     for i in ids:
         row = rendered.get(i)
         if row is None:
@@ -463,8 +501,8 @@ def _line(
         _check_stamp(m.group("date").strip(), item)
         return NoteLine(text=item)
 
-    rest, ids = _ids(item, heading)
-    _check_ids(ids, item, rendered, shown.carried)
+    rest, ids, keys = _ids(item, heading)
+    _check_ids(ids, item, rendered, shown.carried, keys, shown.rollup_keys)
 
     if heading == "Owed":
         parts = [p.strip() for p in rest.split(_OWED_SPLIT)]
@@ -485,10 +523,12 @@ def _line(
                 f"the owner of {item!r}, {owner!r}, is not a roster name of this room",
             )
         _check_due(due, item)
-        return NoteLine(text=item, ids=ids, owner=owner, person_ids=(person_id,))
+        return NoteLine(
+            text=item, ids=ids, owner=owner, person_ids=(person_id,), rollup_keys=keys,
+        )
 
     if heading not in ATTRIBUTED:  # ## Open: `<question> [<ids>]`
-        return NoteLine(text=item, ids=ids)
+        return NoteLine(text=item, ids=ids, rollup_keys=keys)
 
     m = _NAMED.match(rest)
     names = tuple(n.strip() for n in m.group("names").split(",")) if m else ()
@@ -502,6 +542,12 @@ def _line(
         raise NoteBodyError(
             "not_a_line",
             f"under ## Ruled out, {item!r} is not `<option>: <reason> (<names>) [<ids>]`",
+        )
+    if keys and not ids:
+        raise NoteBodyError(
+            "misattributed",
+            f"under ## {heading}, {item!r} names who said it but cites only a Rollup row; "
+            f"a Rollup row says who was where, never who said what: cite the message",
         )
     authors = {rendered[i].sender: rendered[i].person_id for i in ids if i in rendered}
     # A name is checked against the evidence this write rendered. Only a line
@@ -520,7 +566,7 @@ def _line(
                 f"{item!r} names {name!r}, who wrote none of the messages it cites",
             )
     person_ids = tuple(p for n in names if (p := authors.get(n)) is not None)
-    return NoteLine(text=item, ids=ids, names=names, person_ids=person_ids)
+    return NoteLine(text=item, ids=ids, names=names, person_ids=person_ids, rollup_keys=keys)
 
 
 def parse_note_body(text: str, *, shown: Shown, require_open: bool = False) -> NoteBody:

@@ -86,29 +86,28 @@ def test_an_oversized_where_it_stands_is_refused_by_check_schema():
 
 
 def test_no_base_asserted_never_refuses():
-    assert check_stale_base(base_revision_id=None, current_fold_count=None) is None
-    assert check_stale_base(base_revision_id=None, current_fold_count=7) is None
+    assert check_stale_base(base_revision_id=None, current_revision_id=None) is None
+    assert check_stale_base(base_revision_id=None, current_revision_id="7") is None
 
 
 def test_a_base_against_a_room_with_no_revision_yet_is_stale():
-    """`current_fold_count is None` is its own branch, ahead of the generic
-    `base_revision_id != current_fold_count` comparison that would also
-    catch it (any int is `!= None`) — kept for the friendlier `detail`
-    ("no revision exists yet") rather than a bare mismatch message, so the
+    """`current_revision_id is None` is its own branch, ahead of the generic
+    mismatch comparison that would also catch it (any id is `!= None`) — kept
+    for the friendlier `detail` rather than a bare mismatch message, so the
     assertion pins that detail specifically: removing the branch would not
     change `reason`, only the message a caller logs."""
-    refusal = check_stale_base(base_revision_id=0, current_fold_count=None)
+    refusal = check_stale_base(base_revision_id="0", current_revision_id=None)
     assert refusal is not None
     assert refusal.reason == "stale_base"
-    assert "no revision exists yet" in refusal.detail
+    assert "no revision to write against" in refusal.detail
 
 
 def test_a_base_matching_the_current_revision_passes():
-    assert check_stale_base(base_revision_id=3, current_fold_count=3) is None
+    assert check_stale_base(base_revision_id="3", current_revision_id="3") is None
 
 
 def test_a_base_behind_the_current_revision_is_stale():
-    refusal = check_stale_base(base_revision_id=2, current_fold_count=3)
+    refusal = check_stale_base(base_revision_id="2", current_revision_id="3")
     assert refusal is not None
     assert refusal.reason == "stale_base"
 
@@ -201,7 +200,7 @@ async def test_a_stale_base_is_refused_with_the_current_row():
     revision = await standing_revise(
         store=store, prior=prior, platform="signal", conversation_id="g1",
         where_it_stands="second", last_folded_row_id=2, now_ms=2_000,
-        base_revision_id=prior.fold_count + 5,
+        base_revision_id="rev-old", prior_revision_id="rev-now",
     )
     assert not revision.committed
     assert revision.refusal is not None and revision.refusal.reason == "stale_base"
@@ -222,7 +221,7 @@ async def test_a_matching_base_revision_id_is_accepted():
     revision = await standing_revise(
         store=store, prior=prior, platform="signal", conversation_id="g1",
         where_it_stands="second", last_folded_row_id=2, now_ms=2_000,
-        base_revision_id=prior.fold_count,
+        base_revision_id="rev-now", prior_revision_id="rev-now",
     )
     assert revision.committed
 

@@ -789,12 +789,13 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     # co-location still starting on the next run (the stimulus table keeps
     # one per row); `unhealthy` is a deviation withheld because a source it
     # rests on was not proved healthy for its span (D3) — a rise there is an
-    # outage, not a quiet week.
+    # outage, not a quiet week; `capped` is a deviation past the per-person
+    # per-day cap (D3, DEC-245).
     _CounterSpec(
         "nora_rollup_stimuli_total",
         "Rollup stimuli the unit rollups tried to raise, by kind "
         "(colocation_start, arrival, deviation) and outcome (raised, "
-        "duplicate, unhealthy).",
+        "duplicate, unhealthy, capped).",
         ("kind", "outcome"),
     ),
     # The READ half's counter (DEC-56). `cached` is the axis that makes "MiMo is
@@ -1711,7 +1712,9 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "cites_nora (an id of one of Nora's own messages), misattributed (a "
         "name that wrote none of the ids its line cites), unknown_owner (an "
         "## Owed owner the pass did not show as a sender, or Nora), bad_date "
-        "(a malformed or impossible date, or the wrong weekday). One sample "
+        "(a malformed or impossible date, or the wrong weekday), "
+        "unknown_rollup_key (a Rollup row the pass did not read; no "
+        "note-candidates pass reads one). One sample "
         "per refused candidate; the candidate is not written. An update's body "
         "is checked here too since design 42 S4a, as a restatement.",
         ("rule",),
@@ -2395,6 +2398,15 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "or deferred item's stimulus with a strike; struck is code closing it "
         "at max_strikes (30 §2).",
         ("state",),
+    ),
+    _CounterSpec(
+        "nora_cognition_stimuli_skipped_total",
+        "Wakes that skipped stimuli a session could not read, by reason: "
+        "unreadable_rollup is a Rollup stimulus whose ref did not parse (consumed); "
+        "roster_miss_rollup names a person the roster does not know yet (retained "
+        "as a waiting carry, DEC-245). It counts the wakes, and the skipped ids "
+        "are on the session row (agenda.skipped_stimulus_ids, retained_stimulus_ids).",
+        ("reason",),
     ),
     _CounterSpec(
         "nora_cognition_stimuli_struck_total",

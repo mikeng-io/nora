@@ -784,6 +784,20 @@ class RecordStore(Protocol):
 
     async def recent(self, *, conversation_id: str, limit: int) -> list[TranscriptRow]: ...
 
+    async def media_rows(
+        self, *, conversation_id: str, since_ts: int, limit: int,
+    ) -> list[TranscriptRow]:
+        """The rows of ONE conversation that carry media Nora holds, sent by
+        somebody other than her, with `ts >= since_ts`, NEWEST first, at most
+        `limit`. Not a window read: a photo that has scrolled out of `recent`
+        is still a row here, which is the reason it exists (`media_search`'s
+        room scope). The conversation is the caller's own, never a model
+        argument. Raises when the database cannot be read (a caller maps that
+        to `unavailable`); a non-positive `limit` answers `[]` without a
+        query. Hidden (withdrawn) rows are excluded, as in every transcript
+        read."""
+        ...
+
     async def recent_before(
         self, *, conversation_id: str, before_ts: int, limit: int,
     ) -> list[TranscriptRow]:
@@ -947,7 +961,9 @@ class StimulusStore(Protocol):
         strike (`UnitView.carry`, delivered `waits` when a person's wait
         closed them), and the `recorded_at` of its newest person-authored item
         (a `message` stimulus, `waits` included). A `self` stimulus that was
-        retracted (`retract`) is never pending.
+        retracted (`retract`) is never pending. A wake that claimed only the
+        stimuli of its own kind (D2) names the rest it left inside its range
+        (`WakeRow.unclaimed_ids`): those are pending too.
 
         `stale_before_ms` (a REAL clock, unlike `now_ms`, which is the settle
         cutoff): a TRACKED wake recorded before it with no outcome row is
@@ -977,6 +993,15 @@ class StimulusStore(Protocol):
         already superseded (it expired and its stimuli were taken) is written
         `timeout` with no carry, so they are never processed twice. Carries
         with any outcome but `closed` are refused (ValueError)."""
+        ...
+
+    async def count_rollup(
+        self, *, unit: str, person_id: str, item_prefix: str, from_ms: int, to_ms: int,
+    ) -> int:
+        """How many `rollup` stimuli of `unit` name `person_id`, have an `item`
+        starting with `item_prefix` and an `at_ms` in `[from_ms, to_ms)`, retracted
+        ones INCLUDED (a struck stimulus was still raised). What the Rollup reads
+        before raising a deviation, to hold «one per person per day» (D3, DEC-245)."""
         ...
 
     async def retract(
@@ -1442,8 +1467,20 @@ class MediaObjectStore(Protocol):
 
     async def search(
         self, *, query: str, limit: int = 20,
-        sources: tuple[str, ...] = (),
+        sources: tuple[str, ...] = (), since_ms: int = 0,
     ) -> tuple[MediaObject, ...]: ...
+
+    async def lookup_search(
+        self, *, query: str, limit: int = 20,
+        sources: tuple[str, ...] = (), since_ms: int = 0,
+    ) -> MediaLookup:
+        """`search` with the availability axis `lookup` and `lookup_prefix`
+        have: the matches newest first (the mapping keeps that order), or
+        `available=False` and no objects when the index could not be read.
+        `search` collapses the two into `()`, so a tool built on it would say
+        «nothing matched» for a database that was down. `since_ms` keeps only
+        objects created at or after it (0 is no bound). Never raises."""
+        ...
 
     async def get(self, *, sha256: str) -> MediaObject | None: ...
 
