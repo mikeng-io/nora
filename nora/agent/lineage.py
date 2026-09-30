@@ -112,7 +112,7 @@ def _message(entry: LineageEntry, target: RenderRoom) -> bool:
     live = target.live
     if live is None or not live.available or live.degraded or live.unnamed > 0:
         return False
-    return live.person_ids <= a.persons
+    return bool(live.person_ids) and live.person_ids <= a.persons
 
 
 def _presence(entry: LineageEntry, target: RenderRoom) -> bool:

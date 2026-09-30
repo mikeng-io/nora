@@ -56,6 +56,8 @@ from nora.infra.sql.mobility import SqlMobilityStore
 from nora.infra.sql.notes import SqlNoteStore
 from nora.infra.sql.record_query import SqlRecordQuery
 from nora.infra.sql.reminders import SqlReminderStore
+from nora.infra.sql.rollup_read import SqlRollupRead
+from nora.infra.sql.standing import SqlStandingStore
 from nora.infra.sql.tool_call_log import SqlToolCallLogStore
 from nora.obs.metrics import Metrics
 from nora.persons import load_persons
@@ -197,6 +199,9 @@ class World:
         )
         registry = ToolRegistry(
             record=SqlRecordQuery(engine),
+            # The two Dreamer-only reads: a `rollup_read` that started a build or a
+            # `standing_read` that folded would be a write this test must see.
+            rollup=SqlRollupRead(engine), standing_head=SqlStandingStore(engine),
             lineage=LineagePolicy.from_policy(self.policy, circles=(circle,), mode="on"),
             notes=self.notes,
             note_unit=lambda platform, cid: "u1", unit_for=lambda platform, cid: "u1",
@@ -250,6 +255,12 @@ CALLS: dict[str, list[dict[str, Any]]] = {
                      {"start": "2026-09-01", "end": "2026-10-30", "text": "dinner",
                       "scope": "all_rooms"}],
     "event_search": [{}, {"place": "ramen"}],
+    "rollup_read": [
+        {"kind": "daybook", "subject": "Ada", "interval": "2026-09-01/2026-10-30"},
+        {"kind": "tie", "subject": "Ada, Ben", "interval": "2026-09-01"},
+        {"kind": "stay", "subject": "everyone", "interval": "2026-09-01/2026-10-30"},
+    ],
+    "standing_read": [{}],
     "where_been": [{"what": "places"}, {"what": "day", "date": "2026-09-30"}],
     "routine_read": [{"date": "2026-10-01", "from_hour": 18, "to_hour": 21}],
     "about": [{"person": "Ada"}],
@@ -307,7 +318,8 @@ async def test_every_read_tool_the_session_holds_writes_nothing_live(engine, wor
         t: (before.get(t), n) for t, n in _live(after).items() if before.get(t) != n
     }
     # A tool that answered `unavailable` for a wiring gap was never really run.
-    reached = {"note_search", "note_read", "record_query", "event_search"}
+    reached = {"note_search", "note_read", "record_query", "event_search",
+               "rollup_read", "standing_read"}
     for name in reached:
         assert set(results[name]) <= {"ok", "nothing_found"}, (name, results[name])
     assert "nothing_found" in results["note_search"] and "ok" in results["note_search"]

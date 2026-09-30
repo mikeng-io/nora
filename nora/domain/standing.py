@@ -353,3 +353,17 @@ class Standing:
                     f"Standing.{name} is {len(value)} characters, over the "
                     f"{STANDING_BODY_CEILING_CHARS}-character ceiling"
                 )
+
+
+@dataclass(frozen=True, slots=True)
+class StandingHead:
+    """A room's Standing head with the id of the `standing_revision` row that
+    IS that head (`standing_read`, design/cognition-loop/50 §2; step 3, M6's
+    preparation). `revision_id` is `None` when the chain holds no revision
+    that matches the head: the chain predates migration 0059 for that room, or
+    it was written outside `SqlStandingStore.write`. `None` is «no token», never
+    a guess at the newest row: an id that named another position would let a
+    stale `standing_revise` pass."""
+
+    standing: Standing
+    revision_id: str | None
