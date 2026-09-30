@@ -225,8 +225,13 @@ a name this table leaves open:
   ~90-minute outage would have retracted real human messages). Each failed
   outcome records its `cause`, `infra` or `agenda` (migration 0080,
   `nora.domain.stimuli.classify_failure`, the table in DEC-244); unknown is
-  `infra`. Always failing because of its agenda: 5 sessions and then none for a
-  static agenda; 10 on the first day and 4 a day after, with something new always
+  `infra`. `agenda` is reached only by PROOF (third review): a context overflow
+  with no sign of a provider or transport fault, whose prompt is at least
+  `overflow_window_fraction` of a configured `model_window_tokens`, repeated on
+  the same agenda; a reply cut at max_tokens and any SDK class by name are
+  `infra`. With no window configured nothing ever strikes. Always failing
+  because of its agenda, once proven: 5 sessions and then none for a static
+  agenda; 10 on the first day and 4 a day after, with something new always
   pending.
 
 ### Self-wakes: Cognition paces itself

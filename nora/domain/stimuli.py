@@ -62,6 +62,7 @@ stimuli a CLOSED wake returned to the next agenda with a strike (30 §2).
 
 from __future__ import annotations
 
+import re
 from collections.abc import Awaitable, Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Literal, Protocol, get_args
@@ -197,41 +198,145 @@ class WakeGuard:
 
 
 #: Why a wake FAILED (`cognition_wake_outcome.cause`, DEC-244's classification,
-#: #637 second review). `infra`: the world failed (provider, network, database,
-#: a kill, a timeout, a shutdown, or anything unclassified): the unit BACKS OFF
-#: and its stimuli are NEVER struck, because a real human message must not be
-#: dropped for an outage. `agenda`: this agenda itself cannot be processed
-#: (context overflow, a reply cut at max_tokens, a deterministic grounding
-#: fault): only these count toward a strike. Unknown is `infra`: fail-closed
-#: on the side that keeps the message.
+#: #637 second review, re-cut by the third). `infra`: the world failed
+#: (provider, network, database, a kill, a timeout, a shutdown, a reply cut at
+#: max_tokens, an overflow message nobody proved the agenda caused, or anything
+#: unclassified): the unit BACKS OFF and its stimuli are NEVER struck, because a
+#: real human message must not be dropped for an outage. `agenda`: PROVEN to be
+#: this agenda's own doing, deterministically (an `AgendaError`: a grounding
+#: fault for that input, or a context overflow the size and the repetition
+#: below both prove): only these count toward a strike. Unknown is `infra`:
+#: fail-closed on the side that keeps the message.
 FAILURE_CAUSES: tuple[str, ...] = ("infra", "agenda")
 DEFAULT_FAILURE_CAUSE = "infra"
 
-#: Exception classes (by NAME, because `nora.app` may not import the SDKs) whose
-#: cause is the agenda's own size or shape rather than the world.
-_AGENDA_FAILURE_NAMES = frozenset({
-    "ContextWindowOverflowException", "MaxTokensReachedException", "PartialReplyError",
-})
-
 
 class AgendaError(Exception):
-    """A failure caused by the agenda itself, raised by code that has proved
-    it deterministic for the input (a base class: `classify_failure`)."""
+    """A failure caused by the agenda itself, raised by code that has PROVED it
+    deterministic for the input (`classify_failure` reads only this). Today
+    that is one thing: a context overflow `prove_overflow_is_the_agenda`
+    accepted. A grounder read that fails is a store failure, so `infra`."""
 
 
 def classify_failure(exc: BaseException) -> str:
     """`infra` or `agenda` for the exception that ended a session (DEC-244).
 
-    NARROW by construction: `agenda` only for an `AgendaError` and the three
-    SDK/loop classes in `_AGENDA_FAILURE_NAMES`, matched on the exception's own
-    class or a base (so a subclass counts). Everything else (provider and HTTP
-    errors, rate limits, timeouts, cancellation, database errors, a store
-    outage, an unknown exception) is `infra`."""
+    `agenda` ONLY for an `AgendaError`: the exception's own class or a base, so
+    a subclass counts. Every SDK class is `infra`, however alarming its name:
+    Strands raises `ContextWindowOverflowException` for ANY provider error whose
+    message contains «context length» or «too many tokens» (a 503, a 413 tokens
+    per minute, a fallback model with a smaller window), and a reply cut at
+    max_tokens (`MaxTokensReachedException`, `PartialReplyError`) is a provider
+    capping output or a model looping, the world failing and not the agenda.
+    The one SDK failure that can be the agenda's is an overflow, and only
+    `prove_overflow_is_the_agenda` may turn it into an `AgendaError`."""
     if isinstance(exc, AgendaError):
         return "agenda"
-    if any(c.__name__ in _AGENDA_FAILURE_NAMES for c in type(exc).__mro__):
-        return "agenda"
     return "infra"
+
+
+_OVERFLOW_NAME = "ContextWindowOverflowException"
+
+#: Words in an error chain that say the provider or the transport failed, not
+#: the size of the request: a per-minute token budget, a throttle, an outage, a
+#: gateway, a timeout. Any one of them keeps an overflow `infra`.
+_TRANSPORT_MARKERS = (
+    "per minute", "tokens per min", "tpm", "rate limit", "rate_limit", "too many requests",
+    "throttl", "overloaded", "unavailable", "bad gateway", "gateway", "timed out",
+    "timeout", "internal server error", "connection", "service", "quota", "capacity",
+    "try again",
+)
+
+#: The only HTTP status a size fault comes back with. Anything else on the
+#: chain (413 «too many tokens per minute», 429, 5xx) is transport.
+_SIZE_FAULT_STATUS = 400
+
+#: An HTTP status quoted in a message: only right after «error code», «status»
+#: or «http» (so «8192 tokens» or «500 tokens» never matches).
+_TEXT_STATUS = re.compile(r"(?:error code|status(?: code)?|http(?: status)?)\W{0,3}([1-5]\d\d)\b")
+
+
+def is_context_overflow(exc: BaseException) -> bool:
+    """The exception is (a subclass of) Strands' `ContextWindowOverflowException`,
+    matched by name because `nora.domain` may not import the SDK."""
+    return any(c.__name__ == _OVERFLOW_NAME for c in type(exc).__mro__)
+
+
+def _chain(exc: BaseException) -> list[BaseException]:
+    seen: list[BaseException] = []
+    todo: list[BaseException | None] = [exc]
+    while todo and len(seen) < 12:
+        e = todo.pop()
+        if e is None or any(e is x for x in seen):
+            continue
+        seen.append(e)
+        todo.extend((e.__cause__, e.__context__))
+    return seen
+
+
+def transport_evidence(exc: BaseException) -> bool:
+    """Something on the exception chain says the provider or the network failed:
+    a status other than 400, or a message naming a rate, a quota, an outage or a
+    timeout. Deterministic, and biased to `True`: a false positive keeps a
+    message, a false negative retracts one."""
+    for e in _chain(exc):
+        for attr in ("status_code", "status", "http_status"):
+            code = getattr(e, attr, None)
+            if isinstance(code, int) and not isinstance(code, bool) and code != _SIZE_FAULT_STATUS:
+                return True
+        response = getattr(e, "response", None)
+        response_code = getattr(response, "status_code", None)
+        if response_code is None and isinstance(response, dict):
+            # botocore's ClientError: the status is in the response metadata.
+            meta = response.get("ResponseMetadata")
+            response_code = meta.get("HTTPStatusCode") if isinstance(meta, dict) else None
+        if (
+            isinstance(response_code, int)
+            and not isinstance(response_code, bool)
+            and response_code != _SIZE_FAULT_STATUS
+        ):
+            return True
+        if isinstance(e, TimeoutError | ConnectionError | OSError):
+            return True
+        text = str(e).lower()
+        if any(m in text for m in _TRANSPORT_MARKERS):
+            return True
+        # A status a wrapper flattened into the message ("Error code: 500 - ...").
+        # Only after a status-style prefix, so a token count never matches.
+        if any(int(m) != _SIZE_FAULT_STATUS for m in _TEXT_STATUS.findall(text)):
+            return True
+    return False
+
+
+#: A lower bound on tokens: characters over this. English runs about 4 chars a
+#: token and CJK about 1, so the estimate never overstates the prompt, and a
+#: prompt it calls large IS large.
+CHARS_PER_TOKEN_LOWER_BOUND = 4
+
+
+def estimate_tokens_lower_bound(*texts: str) -> int:
+    return sum(len(t) for t in texts) // CHARS_PER_TOKEN_LOWER_BOUND
+
+
+def prove_overflow_is_the_agenda(
+    exc: BaseException, *, estimated_tokens: int, window_tokens: int | None,
+    window_fraction: float, previously_overflowed: bool,
+) -> bool:
+    """True only when a context overflow is PROVEN to come from the agenda's size:
+    (1) it IS an overflow; (2) nothing on its chain says the provider or the
+    transport failed; (3) the prompt's token estimate (a lower bound) is at
+    least `window_fraction` of the configured model's window, which must be
+    KNOWN (`window_tokens` None proves nothing); and (4) the same agenda, or a
+    smaller one it contains, overflowed on an earlier attempt
+    (`previously_overflowed`). A single overflow, however loud, is `infra`."""
+    return (
+        is_context_overflow(exc)
+        and not transport_evidence(exc)
+        and window_tokens is not None
+        and window_tokens > 0
+        and estimated_tokens >= window_fraction * window_tokens
+        and previously_overflowed
+    )
 
 
 #: How a tracked wake ended (`cognition_wake_outcome`). Only `closed` advances

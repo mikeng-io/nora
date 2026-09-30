@@ -565,6 +565,27 @@ async def test_a_note_is_pushed_only_where_lineage_permits_it_for_every_room_rea
     assert [x.id for x in off.notes] == ["from-a"]
 
 
+async def test_lineage_shadow_reports_and_removes_nothing_only_on_removes(caplog):
+    """The tag path's reading: `shadow` computes the same answer and only
+    reports it; `on` removes; `off` applies nothing."""
+    n = _note("from-a", lineage=_OWN)
+    foreign = _event("foreign", origin="room-b")
+    with caplog.at_level("INFO", logger="nora.app.cognition_grounding"):
+        shadow = await _pushed([n], [foreign], mode="shadow", rooms=_TWO_ROOMS)
+    assert [x.id for x in shadow.notes] == ["from-a"]
+    assert [e.title for e in shadow.events] == ["event foreign"]
+    assert any("would withhold 1 note(s) and 1 event(s)" in r.getMessage()
+               for r in caplog.records)
+    on = await _pushed([n], [foreign], mode="on", rooms=_TWO_ROOMS)
+    assert on.notes == () and on.events == ()
+    off = await _pushed([n], [foreign], mode="off", rooms=_TWO_ROOMS)
+    assert [x.id for x in off.notes] == ["from-a"]
+    # withdrawal is not a lineage question: removed in shadow too
+    gone = await _pushed([_note("w", lineage=_OWN, unsupported_at=5)], [], mode="shadow",
+                         rooms=_ONE_ROOM)
+    assert gone.notes == ()
+
+
 async def test_a_note_naming_an_excluded_person_is_withheld_because_no_roster_can_clear_it():
     g = await _pushed([_note("surprise", lineage=_OWN, exclude=("bo",))], [], mode="on",
                       rooms=_ONE_ROOM)

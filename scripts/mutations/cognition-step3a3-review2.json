@@ -2,15 +2,15 @@
   {
     "name": "blocker: a withdrawn note is pushed",
     "file": "nora/app/cognition_grounding.py",
-    "old": "            if n.unsupported_at is None and (\n",
-    "new": "            if (\n",
+    "old": "            if n.unsupported_at is not None:\n                continue\n",
+    "new": "",
     "target": "tests/unit/test_cognition_grounding.py::test_a_note_the_withdrawal_cascade_marked_unsupported_is_not_pushed"
   },
   {
     "name": "blocker: a note is pushed whatever its lineage",
     "file": "nora/app/cognition_grounding.py",
-    "old": "                not applies or all(derived_view(",
-    "new": "                True or all(derived_view(",
+    "old": "            if applies and not all(derived_view(",
+    "new": "            if False and not all(derived_view(",
     "target": "tests/unit/test_cognition_grounding.py::test_a_note_is_pushed_only_where_lineage_permits_it_for_every_room_read tests/unit/test_cognition_grounding.py::test_a_note_naming_an_excluded_person_is_withheld_because_no_roster_can_clear_it"
   },
   {
@@ -54,13 +54,6 @@
     "old": "                cause=classify_failure(exc),\n",
     "new": "                cause=\"agenda\",\n",
     "target": "tests/unit/test_cognition_failure_backoff.py::test_twenty_infrastructure_failures_back_off_to_the_cap_and_strike_nothing"
-  },
-  {
-    "name": "major: the classifier calls the loop's own overflow infra",
-    "file": "nora/domain/stimuli.py",
-    "old": "    \"ContextWindowOverflowException\", \"MaxTokensReachedException\", \"PartialReplyError\",\n",
-    "new": "",
-    "target": "tests/unit/test_cognition_failure_backoff.py::test_the_classification_is_narrow_and_unknown_is_infrastructure"
   },
   {
     "name": "major: the classifier calls an unknown exception agenda",

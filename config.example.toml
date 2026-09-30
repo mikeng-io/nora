@@ -2354,6 +2354,18 @@ max_strikes = 3
 # 4 a day after (the 6 h cap); a static agenda: 5, then none.
 backoff_max_seconds = 21600
 max_consecutive_failures = 5
+# What counts as the AGENDA failing (DEC-244, third review). A failed session is
+# `infra` (backs off, never strikes) unless it is proven to be the agenda's own
+# doing. A context overflow is proven only when the prompt's token estimate (a
+# lower bound: characters / 4) is at least `overflow_window_fraction` of THIS
+# window AND the same agenda overflowed on the attempt before; a reply cut at
+# max_tokens is never the agenda's. Strands raises the overflow class for any
+# provider message with «context length» or «too many tokens» (a 503, a
+# per-minute token limit), so the class alone proves nothing. Unset = window
+# unknown: every overflow is infra and nothing is struck for one. Set it to the
+# `[dreamer] model`'s real window once measured.
+# model_window_tokens = 200000
+overflow_window_fraction = 0.8
 # What a session is shown beside its agenda (#637 review, major 2; 30-cognition
 # §1): each item's Record rows (author, message id, time, room, and what a
 # photo shows) and the Register index lines. `record_chars` is shared across the

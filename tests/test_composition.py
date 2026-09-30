@@ -2128,6 +2128,23 @@ async def test_the_sessions_read_tools_are_the_catalogue_less_what_a_flag_withho
     assert {"note_read", "record_query"} <= names
 
 
+async def test_the_configured_model_window_reaches_the_runner_the_overflow_proof_reads(
+    cfg, tmp_path,
+):
+    """Unset (the default) is «window unknown», so no overflow is the agenda's;
+    a configured window and fraction are what the runner proves one against."""
+    (tmp_path / "policy.toml").write_text(_HOME_POLICY)
+    default = (await build_dependencies(override_config(cfg, _SESSION_ON))).cognition_runner
+    assert default is not None and default._window_tokens is None
+    deps = await build_dependencies(override_config(cfg, {
+        **_SESSION_ON, "cognition.model_window_tokens": 123_456,
+        "cognition.overflow_window_fraction": 0.5,
+    }))
+    assert deps.cognition_runner is not None
+    assert (deps.cognition_runner._window_tokens, deps.cognition_runner._window_fraction) == (
+        123_456, 0.5)
+
+
 async def test_a_shadow_session_mode_that_built_no_runner_refuses_to_boot(
     cfg, tmp_path, monkeypatch,
 ):

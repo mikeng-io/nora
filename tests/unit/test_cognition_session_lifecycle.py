@@ -77,12 +77,22 @@ async def boom(agent: ScriptedAgent, tools: list[Any]) -> CognitionRunResult:
     raise RuntimeError("the model loop blew up")
 
 
+async def agenda_fault(agent: ScriptedAgent, tools: list[Any]) -> CognitionRunResult:
+    """A failure the AGENDA causes, already PROVEN (`classify_failure`: cause
+    `agenda`, the only cause that strikes)."""
+    from nora.domain.stimuli import AgendaError
+
+    raise AgendaError("the agenda cannot be processed")
+
+
 async def overflow(agent: ScriptedAgent, tools: list[Any]) -> CognitionRunResult:
-    """A failure the AGENDA causes: its prompt does not fit the model's window
-    (`classify_failure`: cause `agenda`, the only cause that strikes)."""
+    """What Strands raises for a context-length error, with NO proof it was the
+    agenda's size (a 400 «maximum context length»)."""
     from strands.types.exceptions import ContextWindowOverflowException
 
-    raise ContextWindowOverflowException("the agenda does not fit the window")
+    raise ContextWindowOverflowException(
+        "This model's maximum context length is 8192 tokens; too many tokens",
+    )
 
 
 @dataclass
@@ -185,6 +195,7 @@ def _rig(
     read_tools_for: Callable[[str, Sequence[Room]], list[Any]] | None = None,
     read_only_tools: frozenset[str] = frozenset(), max_self_wakes: int = 5,
     max_self_wakes_per_day: int = 12,
+    model_window_tokens: int | None = None, overflow_window_fraction: float = 0.8,
 ) -> Rig:
     ledger = InMemoryCognitionDryRunStore()
     stimuli = InMemoryStimulusStore(ledger=ledger)
@@ -214,6 +225,8 @@ def _rig(
         max_items=max_items, max_strikes=max_strikes,
         max_self_wakes=max_self_wakes, max_self_wakes_per_day=max_self_wakes_per_day,
         metrics=metrics, mint_ref=_counter(), clock=clock,
+        model_window_tokens=model_window_tokens,
+        overflow_window_fraction=overflow_window_fraction,
     )
     ev = WakeEvaluator(
         store=stimuli, units=lambda: units, policy=policy, metrics=metrics, tz=HK,

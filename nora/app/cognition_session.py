@@ -117,7 +117,16 @@ from nora.domain.ports import (
     StimulusStore,
 )
 from nora.domain.standing import Standing
-from nora.domain.stimuli import Stimulus, UnitView, WakeHook, classify_failure
+from nora.domain.stimuli import (
+    AgendaError,
+    Stimulus,
+    UnitView,
+    WakeHook,
+    classify_failure,
+    estimate_tokens_lower_bound,
+    is_context_overflow,
+    prove_overflow_is_the_agenda,
+)
 
 log = logging.getLogger("nora.app.cognition_session")
 
@@ -397,6 +406,7 @@ class CognitionSessionRunner:
         doctrine_source: DoctrineSource | None = None,
         skill_versions_for: SkillVersionsFor | None = None,
         tz: tzinfo = UTC, render_budget: RenderBudget | None = None,
+        model_window_tokens: int | None = None, overflow_window_fraction: float = 0.8,
     ) -> None:
         """`doctrine_source`, when given, is read at the start of EVERY session
         and replaces `doctrine_text`/`doctrine_sha256` (which then serve only
@@ -416,7 +426,12 @@ class CognitionSessionRunner:
         and `budget.timeout_seconds` must end `SESSION_TIMEOUT_MARGIN_SECONDS`
         before `session_timeout_seconds` (the evaluator's
         `WakePolicy.session_timeout_seconds`, the wake's own clock): both are
-        refused HERE, at startup, not discovered per wake."""
+        refused HERE, at startup, not discovered per wake.
+
+        `model_window_tokens` (None: unknown) and `overflow_window_fraction`
+        are what a context overflow is PROVEN against (DEC-244): without a
+        known window no overflow is ever the agenda's, and every one is
+        `infra`."""
         check_home_rooms(units, home_rooms)
         check_session_timeouts(budget.timeout_seconds, session_timeout_seconds)
         self._store = dry_run_store
@@ -453,6 +468,12 @@ class CognitionSessionRunner:
         self._metrics = metrics
         self._mint_ref = mint_ref
         self._clock = clock
+        self._window_tokens = model_window_tokens
+        self._window_fraction = overflow_window_fraction
+        #: Unit -> the stimulus ids of the agenda that last overflowed the
+        #: model's window WITH the size evidence (in memory: a restart forgets
+        #: it, which fails toward `infra`). A `closed` session clears it.
+        self._overflowed: dict[str, frozenset[int]] = {}
         #: Wake id -> the task running its session, for `shutdown`.
         self._tasks: dict[int, asyncio.Task[Any]] = {}
         #: Outcome writes shielded from a second cancel (a `shutdown` and the
@@ -698,9 +719,9 @@ class CognitionSessionRunner:
         )
         try:
             result = await asyncio.wait_for(
-                self._agent_runner.run(
+                self._run_agent(
+                    unit=unit, pending_ids=frozenset(s.id for s in view.pending),
                     system_prompt=system_prompt, prompt=prompt, tools=tools,
-                    budget=self._budget,
                     trace_attributes={
                         "cognition.unit": unit, "cognition.session_id": str(session_id),
                     },
@@ -722,6 +743,7 @@ class CognitionSessionRunner:
                 f"{'nothing' if recorded is None else recorded.outcome!r}, not closed: "
                 "it expired and a later wake took its stimuli",
             )
+        self._overflowed.pop(unit, None)
         for carry in carries:
             self._inc("nora_cognition_carry_total", state=carry.state)
         await self._record_fired(state=state, situation=situation, view=view)
@@ -729,6 +751,49 @@ class CognitionSessionRunner:
             session_id=session_id, items=len(items), closed=tuple(state.closes),
             stop_reason=result.stop_reason,
         )
+
+    async def _run_agent(
+        self, *, unit: str, pending_ids: frozenset[int], system_prompt: str, prompt: str,
+        tools: list[Any], trace_attributes: dict[str, str],
+    ) -> CognitionRunResult:
+        """The model loop, with ONE translation: a context overflow PROVEN to be
+        the agenda's (`prove_overflow_is_the_agenda`: no transport evidence, the
+        prompt at least `overflow_window_fraction` of a KNOWN window, and the
+        same agenda, or one it contains, overflowed on an earlier attempt)
+        becomes an `AgendaError`, the only thing `classify_failure` calls
+        `agenda`. Anything else propagates as raised and is `infra`."""
+        try:
+            return await self._agent_runner.run(
+                system_prompt=system_prompt, prompt=prompt, tools=tools,
+                budget=self._budget, trace_attributes=trace_attributes,
+            )
+        except Exception as exc:
+            if not is_context_overflow(exc):
+                # Any other failure (an outage, a cut reply) breaks the run:
+                # "twice in a row" means consecutive overflows.
+                self._overflowed.pop(unit, None)
+                raise
+            previous = self._overflowed.get(unit)
+            estimate = estimate_tokens_lower_bound(system_prompt, prompt)
+
+            def proves(*, repeated: bool, error: Exception = exc) -> bool:
+                return prove_overflow_is_the_agenda(
+                    error, estimated_tokens=estimate, window_tokens=self._window_tokens,
+                    window_fraction=self._window_fraction, previously_overflowed=repeated,
+                )
+
+            # THIS overflow is evidence (a size fault on a big prompt, no
+            # transport sign) whether or not it is the second one.
+            if proves(repeated=True):
+                self._overflowed[unit] = pending_ids
+            else:
+                self._overflowed.pop(unit, None)
+            if proves(repeated=previous is not None and previous <= pending_ids):
+                raise AgendaError(
+                    f"the agenda overflowed the model window twice (about {estimate} "
+                    f"tokens against {self._window_tokens}): {exc}",
+                ) from exc
+            raise
 
     async def _settle(
         self, *, state: _RunState, situation: Situation, view: UnitView,
