@@ -1,0 +1,1 @@
+{"type": "none", "reason": "Nothing publishes a document while `[documents] enabled` is off, which is the shipped default, so the new Documents pages and picture route have nothing to show anyone.", "details": [], "limitations": []}

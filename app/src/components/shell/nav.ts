@@ -1,6 +1,7 @@
 import {
   BookOpenText,
   CalendarDays,
+  FileText,
   Gamepad2,
   Map as MapIcon,
   NotebookPen,
@@ -10,12 +11,12 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-// The portal's map of itself. Five places for the circle, four for Nora.
+// The portal's map of itself. Six places for the circle, four for Nora.
 // On a phone the bottom bar holds four (DESIGN.md §7: four destinations, no
 // raised centre button); People is one tap from Today and the map, and
 // Nora is her own mark in the top bar.
 export interface NavItem {
-  key: "today" | "map" | "people" | "plans" | "games" | "nora" | "memory" | "doctrine" | "abilities";
+  key: "today" | "map" | "people" | "plans" | "documents" | "games" | "nora" | "memory" | "doctrine" | "abilities";
   href: string;
   icon: LucideIcon | "nora";
   /** Exact match only (a parent of other items). */
@@ -28,6 +29,7 @@ export const MAIN_NAV: NavItem[] = [
   { key: "map", href: "/map", icon: MapIcon, mobile: true },
   { key: "people", href: "/people", icon: UsersRound },
   { key: "plans", href: "/plans", icon: CalendarDays, mobile: true },
+  { key: "documents", href: "/documents", icon: FileText },
   { key: "games", href: "/games", icon: Gamepad2, mobile: true },
 ];
 

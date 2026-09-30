@@ -935,3 +935,37 @@ cases are in `tool_selection`, the two positives need a subject with `[documents
 subject is the deployment's config, which has it off), so they are NOT RUN; the three negatives (a count, a
 picture, a CSV file) pass trivially while it is off. The skill that teaches composing a good document, the
 portal routes and the media byte route are W5 and after.
+
+## 27. W5: the portal pages and the picture route (2026-10-01)
+
+**Pages.** `/documents` lists what the viewer may read, newest revision first (title, who asked, the
+room's platform, how long ago, a revision badge when it is past the first), with previous/next paging.
+`/documents/<id>` draws the stored spec through the same registry the fixtures use, in the portal theme;
+the spec's own Page draws the one `<h1>`, and a line above it says who made it, where, and (when revised)
+the revision and when. A document the viewer may not read, an unknown id and a string that is not an id all
+show one «Not one of your documents» page, because Nora answers the first two alike and the portal's proxy
+refuses the third before asking. A stored spec this build's catalog refuses is said so, never half drawn.
+The revision history is not shown: the read API returns the current revision only, and a history view
+would need its own route (`DocumentStore.history` exists); not built.
+
+**Nav.** One link, «Documents», in the rail's main group (`MAIN_NAV`, no `mobile` flag): the phone's bottom
+bar stays four destinations (DESIGN.md §7), and the command palette lists it with the others. No DESIGN.md
+change. (Decision for the operator: whether documents deserve a bottom-bar slot on a phone, which would
+displace one of Today, Map, Plans or Games.)
+
+**The picture route.** Nora: `GET /app/v1/documents/{id}/media/{sha}?personId=` (`build_document_media`).
+It answers a picture only when ALL of these hold, and every other case is one `404`: the document is
+readable by that person (the same query as the detail route), the sha is named by the revision being read,
+the bytes are in the blob store, and the bytes THEMSELVES are a PNG, JPEG, GIF or WebP (read off the first
+bytes, never the media index's label or the sender's, so an SVG, which can carry script, is refused however
+it was labelled). A blob store that cannot be read, or none configured, is `503` «could not check», never a
+`404`. It is sent with `X-Content-Type-Options: nosniff`, `Content-Security-Policy: sandbox; default-src
+'none'`, `Cache-Control: private, no-store` (a picture kept for minutes would outlive a sign-out on a shared
+browser profile and a room removal; found by the review) and `Content-Disposition: inline`. The portal:
+`/api/v1/documents/<id>/media/<sha>` (more specific than the JSON catch-all, which never carries bytes)
+checks the session, refuses any id that is not a UUID or sha that is not 64 lower-case hex before making a
+request, sends the SESSION's person id (never the browser's), passes on only a raster content type, repeats the headers, and reads a `400` from Nora (the two sides
+disagreeing about who the viewer is) as `503`, never «not found». `Dependencies` gains `blobs` for this (57 fields).
+
+**Not built here.** Search (⌘K, trigram), the skill, revision history. `[documents] enabled` stays off:
+until it is on, nothing publishes, so the pages are empty for everyone.

@@ -36,6 +36,7 @@
     "map": "Map",
     "people": "People",
     "plans": "Plans",
+    "documents": "Documents",
     "games": "Games",
     "nora": "About her",
     "memory": "Her memory of you",
@@ -229,6 +230,24 @@
     "answerInChat": "Answering happens in the group chat. Tell Nora there.",
     "plannedBy": "Planned by {name} on {date}.",
     "you": "you"
+  },
+  "documents": {
+    "title": "Documents",
+    "lede": "Write-ups Nora has made for a room you're in: a trip, a comparison, a summary. Ask her in the chat; this is where you read them.",
+    "emptyTitle": "No documents yet",
+    "empty": "When Nora writes one up for a room you're in, it shows here.",
+    "byIn": "{name} · {platform}",
+    "revisionN": "Revision {n}",
+    "updated": "Updated {ago}",
+    "page": "Page {page} of {pages}",
+    "previous": "Previous page",
+    "next": "Next page",
+    "pages": "Pages",
+    "back": "Documents",
+    "notFoundTitle": "Not one of your documents",
+    "notFound": "You can open documents you asked for, or that were made in a room you're in. This one isn't among them, or it no longer exists.",
+    "made": "Made by {name} in {platform}",
+    "madeRevised": "Made by {name} in {platform} · revision {n}, updated {ago}"
   },
   "map": {
     "title": "Where everyone is",
