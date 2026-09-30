@@ -310,6 +310,13 @@ async def dry_run_event_revise(
     current_head = None if current is None else (
         None if current.head_revision_id is None else str(current.head_revision_id)
     )
+    if current is None:
+        write = WouldWrite(
+            tier="event", verb="event_revise", platform=platform,
+            conversation_id=conversation_id, args=args, outcome="refused",
+            refusal_reason="not_found", base_revision_id=base_revision_id,
+        )
+        return await _record(ledger, session_id=session_id, unit=unit, write=write, now_ms=now_ms)
     if stale_event_base(base_revision_id=base_revision_id, current_head_revision_id=current_head):
         write = WouldWrite(
             tier="event", verb="event_revise", platform=platform,
@@ -317,13 +324,6 @@ async def dry_run_event_revise(
             refusal_reason="stale_base",
             refusal_detail=f"current head is {current_head!r}",
             base_revision_id=base_revision_id,
-        )
-        return await _record(ledger, session_id=session_id, unit=unit, write=write, now_ms=now_ms)
-    if current is None:
-        write = WouldWrite(
-            tier="event", verb="event_revise", platform=platform,
-            conversation_id=conversation_id, args=args, outcome="refused",
-            refusal_reason="not_found", base_revision_id=base_revision_id,
         )
         return await _record(ledger, session_id=session_id, unit=unit, write=write, now_ms=now_ms)
     try:

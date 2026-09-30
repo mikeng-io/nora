@@ -2326,6 +2326,21 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         ("reason",),
     ),
     _CounterSpec(
+        "nora_cognition_session_ended_total",
+        "Cognition sessions that ended, by outcome (closed / failed / timeout "
+        "/ cancelled). Only closed advances the unit's watermark; the other "
+        "three return the session's stimuli to pending (20 §3).",
+        ("outcome",),
+    ),
+    _CounterSpec(
+        "nora_cognition_carry_total",
+        "Stimuli a closed Cognition session returned to the next agenda, by "
+        "state (carried / released / struck): carried is an unclosed, waiting "
+        "or deferred item's stimulus with a strike; struck is code closing it "
+        "at max_strikes (30 §2).",
+        ("state",),
+    ),
+    _CounterSpec(
         "nora_cognition_wake_deferred_total",
         "Unit-ticks where a wake trigger held and a brake stopped it, by "
         "brake ("

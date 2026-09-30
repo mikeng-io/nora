@@ -8,7 +8,12 @@ they write a signal, not a tier").
 
 **Guards, in code** (20 §3):
 
-- at most `max_self_wakes` pending per unit (starting at 5);
+- at most `max_self_wakes` LIVE pending per unit (starting at 5): live means
+  not fired, not cancelled and not superseded (`fold_self_wakes`);
+- at most `max_self_wakes_per_day` `wake_at` calls per unit in a rolling 24 h
+  (starting at 12, DEC-242: a session that re-arms itself every pass is a
+  wedge the pending cap alone does not bound, because a fired wake frees its
+  slot);
 - one per subject: a new self-wake sharing any subject row with a pending
   one SUPERSEDES it (never refused — this is a normal `created` transition
   that carries `supersedes`);
@@ -35,8 +40,14 @@ DEFAULT_MAX_SELF_WAKES = 5
 #: 20 §3: "no longer than 7 days".
 DEFAULT_MAX_HORIZON_SECONDS = 7 * 24 * 3600.0
 
-PACE_VERBS: tuple[str, ...] = ("wake_at", "wake_move", "wake_cancel")
-PACE_TRANSITIONS: tuple[str, ...] = ("created", "moved", "cancelled")
+#: DEC-242: starting value, recorded in `[cognition] max_self_wakes_per_day`.
+DEFAULT_MAX_SELF_WAKES_PER_DAY = 12
+
+#: `wake_fire` is CODE's verb, never a model's: the session that picked a due
+#: self-wake up onto its agenda records that the wake fired (20 §3's
+#: `nora_self_wake_total{transition="fired"}`), which frees its pending slot.
+PACE_VERBS: tuple[str, ...] = ("wake_at", "wake_move", "wake_cancel", "wake_fire")
+PACE_TRANSITIONS: tuple[str, ...] = ("created", "moved", "cancelled", "fired")
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,12 +59,76 @@ class PendingSelfWake:
     wake_ref: str
     subject_rows: tuple[str, ...]
     created_by_session_id: int | None
+    #: The `self` stimulus currently standing for it (retracted when the wake
+    #: is cancelled, moved or superseded), and when it is due.
+    stimulus_id: int | None = None
+    at_ms: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class PaceRow:
+    """One recorded pace transition, as `fold_self_wakes` reads it. The
+    ledger's own row shape, restated here so this module imports nothing."""
+
+    wake_ref: str | None
+    transition: str
+    outcome: str
+    subject_rows: tuple[str, ...] = ()
+    session_id: int | None = None
+    stimulus_id: int | None = None
+    at_ms: int | None = None
+    supersedes: str | None = None
+
+
+def fold_self_wakes(rows: Sequence[PaceRow]) -> tuple[PendingSelfWake, ...]:
+    """The LIVE pending self-wakes from a unit's transition rows, oldest
+    first. Per `wake_ref` the newest transition decides: `created` and `moved`
+    are pending; `cancelled` and `fired` are not; a `created` row that names a
+    `supersedes` ends the ref it displaces. A refused row changes nothing."""
+    live: dict[str, PendingSelfWake] = {}
+    for row in rows:
+        if row.outcome != "recorded" or row.wake_ref is None:
+            continue
+        if row.transition == "created":
+            live[row.wake_ref] = PendingSelfWake(
+                wake_ref=row.wake_ref, subject_rows=row.subject_rows,
+                created_by_session_id=row.session_id, stimulus_id=row.stimulus_id,
+                at_ms=row.at_ms,
+            )
+            if row.supersedes is not None:
+                live.pop(row.supersedes, None)
+        elif row.transition == "moved":
+            was = live.get(row.wake_ref)
+            if was is not None:
+                live[row.wake_ref] = PendingSelfWake(
+                    wake_ref=was.wake_ref, subject_rows=was.subject_rows,
+                    created_by_session_id=was.created_by_session_id,
+                    stimulus_id=row.stimulus_id, at_ms=row.at_ms,
+                )
+        elif row.transition in ("cancelled", "fired"):
+            live.pop(row.wake_ref, None)
+    return tuple(live.values())
 
 
 @dataclass(frozen=True, slots=True)
 class PaceRefusal:
     reason: str
     detail: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class PaceAnswer:
+    """What a recorded pace call answers: the ledger row, and the refusal when
+    the call was refused (so the tool can tell the model WHY, not just record
+    it)."""
+
+    row_id: int
+    refusal_reason: str | None = None
+    refusal_detail: str | None = None
+
+    @property
+    def refused(self) -> bool:
+        return self.refusal_reason is not None
 
 
 def _overlap(a: Sequence[str], b: Sequence[str]) -> bool:
@@ -65,6 +140,8 @@ def check_wake_at(
     cooldown_seconds: float, pending: Sequence[PendingSelfWake],
     max_self_wakes: int = DEFAULT_MAX_SELF_WAKES,
     max_horizon_seconds: float = DEFAULT_MAX_HORIZON_SECONDS,
+    created_today: int = 0,
+    max_self_wakes_per_day: int = DEFAULT_MAX_SELF_WAKES_PER_DAY,
 ) -> tuple[PaceRefusal | None, str | None]:
     """Validate a `wake_at(at, subject_rows, why)` call.
 
@@ -74,6 +151,15 @@ def check_wake_at(
     self-wake with nothing to look at again is not what 20 §3 describes."""
     if not subject_rows:
         return PaceRefusal("no_subject", "wake_at needs at least one subject row"), None
+    if created_today >= max_self_wakes_per_day:
+        return (
+            PaceRefusal(
+                "daily_cap",
+                f"{max_self_wakes_per_day} self-wakes were already set for this unit "
+                "in the last 24 hours",
+            ),
+            None,
+        )
     horizon_seconds = (at_ms - now_ms) / 1000.0
     if horizon_seconds < cooldown_seconds:
         return (

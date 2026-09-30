@@ -112,7 +112,7 @@ class ScriptedAgentRunner:
             title="dinner", description="d", uncertainty="u", closing_condition="c",
             body="## Decided\n- x (Ada) [1]\n## Open\n- y [1]\n",
         )
-        await by_name["standing_revise"](where_it_stands="dinner is on", working_set=[])
+        await by_name["standing_revise"](where_it_stands="dinner is on")
         await by_name["wake_at"](
             subject_rows=["event:1"], at_ms=NOW + 3_600_000, why="check the venue",
         )

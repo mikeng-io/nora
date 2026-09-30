@@ -203,6 +203,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, Literal, Protocol, runtime_checkable
 
+from nora.domain.cognition_pace import PendingSelfWake
 from nora.domain.culture import CultureRevision as CultureRevision
 from nora.domain.decision_log import DecisionRow as DecisionRow
 from nora.domain.identity import PlatformIdentity as PlatformIdentity
@@ -930,18 +931,73 @@ class StimulusStore(Protocol):
 
     async def view(
         self, *, unit: str, mode: str, now_ms: int, limit: int,
+        stale_before_ms: int | None = None,
     ) -> UnitView:
         """One tick's read for one unit: its newest wake in `mode`, the
-        stimuli pending against that wake's watermark and due by `now_ms`
-        (ascending id, at most `limit`), and the `recorded_at` of its newest
-        person-authored item (a `message` stimulus, `waits` included)."""
+        stimuli pending against the WATERMARK (the newest wake whose session
+        did not fail; `UnitView.mark`) and due by `now_ms` (ascending id, at
+        most `limit`), plus the stimuli a closed session returned with a
+        strike (`UnitView.carry`, delivered `waits` when a person's wait
+        closed them), and the `recorded_at` of its newest person-authored item
+        (a `message` stimulus, `waits` included). A `self` stimulus that was
+        retracted (`retract`) is never pending.
+
+        `stale_before_ms` (a REAL clock, unlike `now_ms`, which is the settle
+        cutoff): a session that started before it and has no end row is
+        treated as failed. None: an unended session is running."""
         ...
 
     async def record_wake(self, *, wake: NewWake, recorded_at_ms: int) -> int:
-        """Append one wake row; it is the unit's new watermark in its mode."""
+        """Append one wake row; it is the unit's new watermark in its mode
+        unless its session fails (see `view`)."""
+        ...
+
+    async def record_carry(self, *, carry: NewCarry, recorded_at_ms: int) -> int:
+        """Append one carry row: a stimulus a closed session returned to the
+        next agenda (`carried`, with its strike), or released or struck. The
+        newest row per `(unit, stimulus_id)` is the current one."""
+        ...
+
+    async def retract(
+        self, *, unit: str, stimulus_id: int, reason: str, recorded_at_ms: int,
+    ) -> bool:
+        """Mark one stimulus retracted so no wake ever counts it (a cancelled,
+        moved or superseded self-wake). Append-only: the stimulus row stays.
+        False when it was already retracted."""
         ...
 
     async def aclose(self) -> None: ...
+
+
+@dataclass(frozen=True)
+class NewCarry:
+    """A stimulus's standing after a CLOSED session (30-cognition.md §2:
+    «returns to the next agenda with a strike; at `max_strikes` code closes
+    it `struck`»). `waits`: it rides the next wake and never starts one."""
+
+    unit: str
+    stimulus_id: int
+    strike: int
+    state: str
+    session_id: int | None = None
+    waits: bool = False
+
+
+CARRY_STATES: tuple[str, ...] = ("carried", "released", "struck")
+
+#: How a session ended (`cognition_session_end`). Only `closed` advances the
+#: unit's watermark; the other three return the session's stimuli to pending.
+SESSION_END_OUTCOMES: tuple[str, ...] = ("closed", "failed", "timeout", "cancelled")
+
+
+@dataclass(frozen=True)
+class NewCognitionSessionEnd:
+    """One row when a session ends; a session row with none is in flight."""
+
+    session_id: int
+    outcome: str
+    at_ms: int
+    detail: str = ""
 
 
 @dataclass(frozen=True)
@@ -1051,6 +1107,25 @@ class CognitionDryRunStore(Protocol):
         """Append one mirrored `remind`/`remind_move`/`remind_cancel` call
         (step 3a-ii, 30-cognition.md §2: "every reminder cognition writes is
         mirrored to a review channel and held") and return its id."""
+        ...
+
+    async def record_session_end(
+        self, *, end: NewCognitionSessionEnd, recorded_at_ms: int,
+    ) -> int:
+        """Append the session's end row (`closed`, `failed`, `timeout`,
+        `cancelled`). One per session: a second returns the first's id and
+        writes nothing, so a cancel racing a failure records one outcome."""
+        ...
+
+    async def pending_self_wakes(self, *, unit: str) -> Sequence[PendingSelfWake]:
+        """The unit's LIVE pending self-wakes: per `wake_ref`, the newest
+        transition decides. `created`/`moved` is pending; `cancelled`,
+        `fired` and a ref another `created` row superseded are not."""
+        ...
+
+    async def count_self_wakes_created(self, *, unit: str, since_ms: int) -> int:
+        """`created` (recorded, not refused) `wake_at` rows for the unit at or
+        after `since_ms` (the per-day cap's count; moves do not count)."""
         ...
 
 

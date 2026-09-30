@@ -1,0 +1,179 @@
+"""The session's own verbs, as the SPECS Strands would hand the model (ADR
+0015; review of #627).
+
+A closure declared `**kwargs` reaches Strands as one untyped `kwargs`
+parameter, and a `Sequence[str]` without an item type as an array of nothing:
+the model is told nothing about what to pass. This builds the tool list a
+session really hands its agent (`CognitionSessionRunner._build_tools`), turns
+it into Strands tools the way the live runner does (`as_strands_tools`), and
+holds every one to its named, typed parameters and a docstring.
+"""
+
+from __future__ import annotations
+
+import asyncio
+from typing import Any
+
+import pytest
+
+from nora.app.cognition_agent_runner import as_strands_tools
+from nora.app.cognition_session import (
+    AdaptorBudget,
+    CognitionRunResult,
+    CognitionSessionRunner,
+)
+from nora.domain.cognition_session import Room
+from nora.domain.stimuli import Stimulus, UnitView
+from nora.testing.cognition_dry_run_store import InMemoryCognitionDryRunStore
+from nora.testing.stimuli import InMemoryStimulusStore
+
+NOW = 1_800_000_000_000
+
+#: verb -> ({param: (json type, item type or enum or None)}, required)
+EXPECTED: dict[str, tuple[dict[str, tuple[str, Any]], set[str]]] = {
+    "close": (
+        {"item_index": ("integer", None),
+         "reason": ("string", ["written", "no_change", "waiting", "covered"])},
+        {"item_index", "reason"},
+    ),
+    "note_create": (
+        {"title": ("string", None), "description": ("string", None),
+         "uncertainty": ("string", None), "closing_condition": ("string", None),
+         "body": ("string", None), "anchor_date": ("integer", None),
+         "anchor_entities": ("array", {"type": "string"}), "room": ("string", None)},
+        {"title", "description", "uncertainty", "closing_condition", "body"},
+    ),
+    "note_update": (
+        {"note_id": ("string", None), "body": ("string", None),
+         "parent_revision_id": ("string", None),
+         "entity_ids": ("array", {"type": "string"}), "room": ("string", None)},
+        {"note_id", "body", "parent_revision_id"},
+    ),
+    "event_propose": (
+        {"title": ("string", None), "when": ("string", None),
+         "venue_text": ("string", None), "room": ("string", None)},
+        {"title"},
+    ),
+    "event_revise": (
+        {"event_id": ("string", None), "when": ("string", None),
+         "venue_text": ("string", None), "base_revision_id": ("string", None),
+         "room": ("string", None)},
+        {"event_id"},
+    ),
+    "event_set_status": (
+        {"event_id": ("string", None),
+         "status": ("string", ["confirmed", "cancelled", "happened", "lapsed"]),
+         "base_revision_id": ("string", None), "room": ("string", None)},
+        {"event_id", "status"},
+    ),
+    "standing_revise": (
+        {"where_it_stands": ("string", None), "hold_open": ("string", None),
+         "i_owe": ("string", None),
+         "mode": ("string", ["deduced", "abduced", "said"]),
+         "base_revision_id": ("integer", None), "room": ("string", None)},
+        {"where_it_stands"},
+    ),
+    "wake_at": (
+        {"subject_rows": ("array", {"type": "string"}), "at_ms": ("integer", None),
+         "why": ("string", None)},
+        {"subject_rows", "at_ms", "why"},
+    ),
+    "wake_move": (
+        {"wake_id": ("string", None), "at_ms": ("integer", None), "why": ("string", None)},
+        {"wake_id", "at_ms", "why"},
+    ),
+    "wake_cancel": (
+        {"wake_id": ("string", None), "why": ("string", None)}, {"wake_id", "why"},
+    ),
+    "remind": (
+        {"room_platform": ("string", None), "room_conversation_id": ("string", None),
+         "intent": ("string", ["tell", "ask"]),
+         "subject_rows": ("array", {"type": "string"}), "at_ms": ("integer", None)},
+        {"room_platform", "room_conversation_id", "intent", "subject_rows", "at_ms"},
+    ),
+    "remind_move": (
+        {"reminder_id": ("string", None), "at_ms": ("integer", None),
+         "why": ("string", None)},
+        {"reminder_id", "at_ms", "why"},
+    ),
+    "remind_cancel": (
+        {"reminder_id": ("string", None), "why": ("string", None)},
+        {"reminder_id", "why"},
+    ),
+}
+
+
+class _Spy:
+    """Captures the tool list a session hands its agent."""
+
+    def __init__(self) -> None:
+        self.tools: list[Any] = []
+
+    async def run(
+        self, *, system_prompt: str, prompt: str, tools: list[Any],
+        budget: AdaptorBudget, trace_attributes: dict[str, str],
+    ) -> CognitionRunResult:
+        self.tools = list(tools)
+        return CognitionRunResult(stop_reason="end_turn")
+
+
+def _const(value: Any) -> Any:
+    async def f(*args: Any, **kwargs: Any) -> Any:
+        return value
+    return f
+
+
+@pytest.fixture
+async def specs() -> dict[str, dict[str, Any]]:
+    spy = _Spy()
+    ledger = InMemoryCognitionDryRunStore()
+    runner = CognitionSessionRunner(
+        dry_run_store=ledger, stimulus_store=InMemoryStimulusStore(ledger=ledger),
+        agent_runner=spy, home_rooms={"u": Room("signal", "home")},
+        read_tools_for=lambda unit, room: [], skill_text_for=lambda kinds: "",
+        doctrine_text="D", doctrine_sha256=None, open_note_titles=_const(()),
+        open_proposed_events=_const(()), prior_standing=_const(None),
+        pending_self_wakes=_const(()), pending_mirrored_reminds=_const(()),
+        session_mode="shadow",
+        budget=AdaptorBudget(turns=1, total_tokens=1, output_tokens=1, timeout_seconds=5),
+        cooldown_seconds=300, max_items=12, max_strikes=3,
+    )
+    pending = (Stimulus(
+        id=1, unit="u", kind="message", item="message", ref="messages:1", at_ms=NOW,
+        recorded_at_ms=NOW, platform="signal", conversation_id="home",
+    ),)
+    view = UnitView(unit="u", pending=pending, last_activity_ms=None, last_wake=None)
+    await asyncio.wait_for(runner.on_wake(unit="u", view=view, now_ms=NOW), 5)
+    return {t.tool_name: t.tool_spec for t in as_strands_tools(spy.tools)}
+
+
+def test_the_session_offers_exactly_the_verbs_this_table_names(specs):
+    assert set(specs) == set(EXPECTED)
+
+
+@pytest.mark.parametrize("verb", sorted(EXPECTED))
+def test_every_verb_has_named_typed_parameters_and_no_kwargs(specs, verb):
+    spec = specs[verb]
+    schema = spec["inputSchema"]["json"]
+    props = schema["properties"]
+    want, required = EXPECTED[verb]
+
+    assert "kwargs" not in props, "a **kwargs closure reaches the model as one untyped param"
+    assert set(props) == set(want)
+    assert set(schema.get("required", ())) == required
+    for name, (json_type, extra) in want.items():
+        got = props[name]
+        assert got["type"] == json_type, (verb, name)
+        assert got.get("description"), f"{verb}.{name} has no description"
+        if json_type == "array":
+            assert got["items"] == extra, f"{verb}.{name} is an array of nothing"
+        elif extra is not None:
+            assert got["enum"] == extra
+
+
+@pytest.mark.parametrize("verb", sorted(EXPECTED))
+def test_every_verb_carries_a_docstring_that_says_what_it_returns(specs, verb):
+    description = specs[verb]["description"]
+    assert len(description) > 40
+    assert "status" in description
+    assert not any(ch in description for ch in "—–"), "no dash (ADR 0015)"

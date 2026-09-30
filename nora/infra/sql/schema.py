@@ -3902,11 +3902,11 @@ COGNITION_SELF_WAKE = sa.Table(
     sa.Column("supersedes", sa.Text),
     _recorded_at(),
     sa.CheckConstraint(
-        "verb IN ('wake_at', 'wake_move', 'wake_cancel')",
+        "verb IN ('wake_at', 'wake_move', 'wake_cancel', 'wake_fire')",
         name="ck_cognition_self_wake_verb",
     ),
     sa.CheckConstraint(
-        "transition IN ('created', 'moved', 'cancelled')",
+        "transition IN ('created', 'moved', 'cancelled', 'fired')",
         name="ck_cognition_self_wake_transition",
     ),
     sa.CheckConstraint(
@@ -3964,6 +3964,76 @@ COGNITION_REMIND_MIRROR = sa.Table(
 IDX_COGNITION_REMIND_MIRROR_UNIT_REF = sa.Index(
     "idx_cognition_remind_mirror_unit_ref",
     COGNITION_REMIND_MIRROR.c.unit, COGNITION_REMIND_MIRROR.c.reminder_ref,
+)
+
+# Migration step 3a-ii (0079), the session LIFECYCLE and what a session hands
+# the next one. All append-only; none carries a foreign key, for `wake_id`'s
+# reason on `cognition_session` (the contract suites TRUNCATE the parents
+# alone, and the restore fixture appends each table independently).
+#
+# `cognition_session_end`: one row when a session ends. A session with none is
+# IN FLIGHT (bounded by `[cognition] session_timeout_seconds`, after which it
+# is dead). `outcome` is `closed` (the only one that advances the unit's
+# watermark), `failed`, `timeout` or `cancelled` (their stimuli return to
+# pending). Unique on `session_id`: a cancel racing a failure records one.
+COGNITION_SESSION_END = sa.Table(
+    "cognition_session_end",
+    METADATA,
+    sa.Column("id", sa.BigInteger, sa.Identity(always=False), primary_key=True),
+    sa.Column("session_id", sa.BigInteger, nullable=False),
+    sa.Column("outcome", sa.Text, nullable=False),
+    sa.Column("detail", sa.Text, nullable=False, server_default=sa.text("''")),
+    sa.Column("at_ms", sa.BigInteger, nullable=False),
+    _recorded_at(),
+    sa.CheckConstraint(
+        "outcome IN ('closed', 'failed', 'timeout', 'cancelled')",
+        name="ck_cognition_session_end_outcome",
+    ),
+)
+
+UQ_COGNITION_SESSION_END_SESSION = sa.Index(
+    "uq_cognition_session_end_session", COGNITION_SESSION_END.c.session_id, unique=True,
+)
+
+# `cognition_carry`: a stimulus a CLOSED session returned to the next agenda
+# with a strike (30 §2), or released/struck. Newest row per (unit,
+# stimulus_id) is current. `waits` = it rides the next wake, never starts one.
+COGNITION_CARRY = sa.Table(
+    "cognition_carry",
+    METADATA,
+    sa.Column("id", sa.BigInteger, sa.Identity(always=False), primary_key=True),
+    sa.Column("unit", sa.Text, nullable=False),
+    sa.Column("stimulus_id", sa.BigInteger, nullable=False),
+    sa.Column("strike", sa.Integer, nullable=False),
+    sa.Column("state", sa.Text, nullable=False),
+    sa.Column("waits", sa.Integer, nullable=False, server_default=sa.text("0")),
+    sa.Column("session_id", sa.BigInteger),
+    _recorded_at(),
+    sa.CheckConstraint(
+        "state IN ('carried', 'released', 'struck')", name="ck_cognition_carry_state",
+    ),
+)
+
+IDX_COGNITION_CARRY_UNIT_STIMULUS = sa.Index(
+    "idx_cognition_carry_unit_stimulus",
+    COGNITION_CARRY.c.unit, COGNITION_CARRY.c.stimulus_id, COGNITION_CARRY.c.id,
+)
+
+# `stimulus_retraction`: a `self` stimulus taken back (its self-wake was
+# cancelled, moved or superseded), so no wake counts it. The stimulus row is
+# never touched (append-only); unique on `stimulus_id`.
+STIMULUS_RETRACTION = sa.Table(
+    "stimulus_retraction",
+    METADATA,
+    sa.Column("id", sa.BigInteger, sa.Identity(always=False), primary_key=True),
+    sa.Column("unit", sa.Text, nullable=False),
+    sa.Column("stimulus_id", sa.BigInteger, nullable=False),
+    sa.Column("reason", sa.Text, nullable=False),
+    _recorded_at(),
+)
+
+UQ_STIMULUS_RETRACTION_STIMULUS = sa.Index(
+    "uq_stimulus_retraction_stimulus", STIMULUS_RETRACTION.c.stimulus_id, unique=True,
 )
 
 SOURCE_HEALTH = sa.Table(

@@ -10,6 +10,7 @@ scalar subquery, and nothing is ever updated.
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from datetime import UTC, datetime
 from typing import Any
 
@@ -17,8 +18,25 @@ import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from nora.domain.stimuli import NewStimulus, NewWake, Stimulus, UnitView, WakeRow
-from nora.infra.sql.schema import COGNITION_WAKE, STIMULUS
+from nora.domain.ports import NewCarry
+from nora.domain.stimuli import (
+    LastSession,
+    NewStimulus,
+    NewWake,
+    SessionState,
+    Stimulus,
+    UnitView,
+    WakeRow,
+    Watermark,
+)
+from nora.infra.sql.schema import (
+    COGNITION_CARRY,
+    COGNITION_SESSION,
+    COGNITION_SESSION_END,
+    COGNITION_WAKE,
+    STIMULUS,
+    STIMULUS_RETRACTION,
+)
 
 
 def _at(ms: int) -> datetime:
@@ -86,7 +104,10 @@ def pending_query(
     settle margin exists for). `tests/infra/test_stimulus_store_plan.py` holds
     the plan to those indexes."""
     since = sa.func.coalesce(STIMULUS.c.due_ms, _RECORDED_MS)
-    base = (STIMULUS.c.unit == unit, since <= now_ms)
+    # A retracted `self` stimulus (its self-wake was cancelled, moved or
+    # superseded) is never pending: one probe of `uq_stimulus_retraction_stimulus`.
+    retracted = sa.exists().where(STIMULUS_RETRACTION.c.stimulus_id == STIMULUS.c.id)
+    base = (STIMULUS.c.unit == unit, since <= now_ms, ~retracted)
     under = STIMULUS.c.id <= through_id
     branches = sa.union_all(
         sa.select(STIMULUS).where(*base, STIMULUS.c.id > through_id),
@@ -104,6 +125,90 @@ def activity_query(*, unit: str) -> sa.Select[Any]:
     of `idx_stimulus_unit_message_recorded`."""
     return sa.select(sa.func.max(STIMULUS.c.recorded_at)).where(
         STIMULUS.c.unit == unit, STIMULUS.c.kind == "message",
+    )
+
+
+def _failed_session(stale_before_ms: int | None) -> Any:
+    """SQL for «a session of wake `w` that did not finish well»: an end row that
+    is not `closed`, or no end row and started before `stale_before_ms`."""
+    ended_badly = sa.and_(
+        COGNITION_SESSION_END.c.id.isnot(None),
+        COGNITION_SESSION_END.c.outcome != "closed",
+    )
+    if stale_before_ms is None:
+        return ended_badly
+    return sa.or_(
+        ended_badly,
+        sa.and_(
+            COGNITION_SESSION_END.c.id.is_(None),
+            COGNITION_SESSION.c.started_at_ms < stale_before_ms,
+        ),
+    )
+
+
+def _mark_query(*, unit: str, mode: str, stale_before_ms: int | None) -> sa.Select[Any]:
+    """The unit's newest wake whose session, if it has one, did not fail: the
+    watermark row."""
+    failed = (
+        sa.select(sa.literal(1))
+        .select_from(
+            COGNITION_SESSION.outerjoin(
+                COGNITION_SESSION_END,
+                COGNITION_SESSION_END.c.session_id == COGNITION_SESSION.c.id,
+            ),
+        )
+        .where(COGNITION_SESSION.c.wake_id == COGNITION_WAKE.c.id, _failed_session(stale_before_ms))
+        .exists()
+    )
+    return (
+        sa.select(COGNITION_WAKE)
+        .where(COGNITION_WAKE.c.unit == unit, COGNITION_WAKE.c.mode == mode, ~failed)
+        .order_by(COGNITION_WAKE.c.id.desc())
+        .limit(1)
+    )
+
+
+async def _session_of(
+    conn: Any, wake_id: int, stale_before_ms: int | None,
+) -> LastSession | None:
+    q = (
+        sa.select(
+            COGNITION_SESSION.c.started_at_ms,
+            COGNITION_SESSION_END.c.outcome, COGNITION_SESSION_END.c.at_ms,
+        )
+        .select_from(
+            COGNITION_SESSION.outerjoin(
+                COGNITION_SESSION_END,
+                COGNITION_SESSION_END.c.session_id == COGNITION_SESSION.c.id,
+            ),
+        )
+        .where(COGNITION_SESSION.c.wake_id == wake_id)
+        .order_by(COGNITION_SESSION.c.id.desc())
+        .limit(1)
+    )
+    row = (await conn.execute(q)).first()
+    if row is None:
+        return None
+    started = int(row.started_at_ms)
+    if row.outcome is not None:
+        state: SessionState = "closed" if row.outcome == "closed" else "failed"
+        return LastSession(state=state, started_at_ms=started, ended_at_ms=int(row.at_ms))
+    if stale_before_ms is not None and started < stale_before_ms:
+        return LastSession(state="failed", started_at_ms=started)
+    return LastSession(state="running", started_at_ms=started)
+
+
+def _carry_query(unit: str) -> sa.Select[Any]:
+    """The CURRENT carry rows for a unit that are still `carried`: the newest
+    row per stimulus, when its state is `carried`."""
+    newer = COGNITION_CARRY.alias("newer")
+    superseded = sa.exists().where(
+        newer.c.unit == COGNITION_CARRY.c.unit,
+        newer.c.stimulus_id == COGNITION_CARRY.c.stimulus_id,
+        newer.c.id > COGNITION_CARRY.c.id,
+    )
+    return sa.select(COGNITION_CARRY).where(
+        COGNITION_CARRY.c.unit == unit, COGNITION_CARRY.c.state == "carried", ~superseded,
     )
 
 
@@ -151,9 +256,14 @@ class SqlStimulusStore:
             row = (await conn.execute(stmt)).first()
         return None if row is None else int(row.id)
 
-    async def view(self, *, unit: str, mode: str, now_ms: int, limit: int) -> UnitView:
-        """Three reads on one connection: the newest wake (the watermark), the
-        pending stimuli against it, and the newest person-authored item."""
+    async def view(
+        self, *, unit: str, mode: str, now_ms: int, limit: int,
+        stale_before_ms: int | None = None,
+    ) -> UnitView:
+        """One connection: the newest wake (for the brakes), the newest wake
+        whose session did not fail (the WATERMARK), the pending stimuli
+        against it, the stimuli a closed session carried forward, and the
+        newest person-authored item."""
         last_q = (
             sa.select(COGNITION_WAKE)
             .where(COGNITION_WAKE.c.unit == unit, COGNITION_WAKE.c.mode == mode)
@@ -163,20 +273,71 @@ class SqlStimulusStore:
         async with self._engine.connect() as conn:
             last_row = (await conn.execute(last_q)).first()
             last = None if last_row is None else _wake(last_row)
-            through_id = 0 if last is None else last.through_stimulus_id
-            through_ms = 0 if last is None else last.at_ms
+            last_session = None
+            mark_wake = None
+            if last is not None:
+                last_session = await _session_of(conn, last.id, stale_before_ms)
+                if last_session is None or last_session.state != "failed":
+                    mark_wake = last
+                else:
+                    mark_row = (await conn.execute(
+                        _mark_query(unit=unit, mode=mode, stale_before_ms=stale_before_ms),
+                    )).first()
+                    mark_wake = None if mark_row is None else _wake(mark_row)
+            mark = Watermark.of(mark_wake)
             pending_q = pending_query(
-                unit=unit, through_id=through_id, through_ms=through_ms,
-                now_ms=now_ms, limit=limit,
+                unit=unit, through_id=mark.through_stimulus_id,
+                through_ms=mark.through_ms, now_ms=now_ms, limit=limit,
             )
-            pending = tuple(_stimulus(r) for r in (await conn.execute(pending_q)).all())
+            pending = [_stimulus(r) for r in (await conn.execute(pending_q)).all()]
+            carry_rows = (await conn.execute(_carry_query(unit))).all()
+            carry = {int(r.stimulus_id): int(r.strike) for r in carry_rows}
+            waiting = {int(r.stimulus_id) for r in carry_rows if r.waits}
+            have = {s.id for s in pending}
+            missing = [i for i in carry if i not in have]
+            if missing:
+                extra = (await conn.execute(
+                    sa.select(STIMULUS).where(
+                        STIMULUS.c.id.in_(missing), STIMULUS.c.unit == unit,
+                    ),
+                )).all()
+                for r in extra:
+                    row = _stimulus(r)
+                    # A stimulus a person's wait closed rides the next wake and
+                    # never starts one.
+                    pending.append(
+                        replace(row, waits=True) if row.id in waiting else row,
+                    )
+            pending.sort(key=lambda x: x.id)
             activity_q = activity_query(unit=unit)
             activity = (await conn.execute(activity_q)).scalar_one_or_none()
         return UnitView(
-            unit=unit, pending=pending,
+            unit=unit, pending=tuple(pending),
             last_activity_ms=None if activity is None else _ms(activity),
-            last_wake=last,
+            last_wake=last, mark=mark, last_session=last_session, carry=carry,
         )
+
+    async def record_carry(self, *, carry: NewCarry, recorded_at_ms: int) -> int:
+        stmt = sa.insert(COGNITION_CARRY).values(
+            unit=carry.unit, stimulus_id=carry.stimulus_id, strike=carry.strike,
+            state=carry.state, waits=int(carry.waits), session_id=carry.session_id,
+            recorded_at=_at(recorded_at_ms),
+        ).returning(COGNITION_CARRY.c.id)
+        async with self._engine.begin() as conn:
+            result = await conn.execute(stmt)
+        return int(result.scalar_one())
+
+    async def retract(
+        self, *, unit: str, stimulus_id: int, reason: str, recorded_at_ms: int,
+    ) -> bool:
+        stmt: Any = pg_insert(STIMULUS_RETRACTION).values(
+            unit=unit, stimulus_id=stimulus_id, reason=reason,
+            recorded_at=_at(recorded_at_ms),
+        ).on_conflict_do_nothing(index_elements=[STIMULUS_RETRACTION.c.stimulus_id])
+        stmt = stmt.returning(STIMULUS_RETRACTION.c.id)
+        async with self._engine.begin() as conn:
+            row = (await conn.execute(stmt)).first()
+        return row is not None
 
     async def record_wake(self, *, wake: NewWake, recorded_at_ms: int) -> int:
         stmt = sa.insert(COGNITION_WAKE).values(

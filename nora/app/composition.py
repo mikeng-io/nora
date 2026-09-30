@@ -2244,6 +2244,7 @@ async def build_dependencies(
                 cooldown_seconds=cfg.cognition.cooldown_seconds,
                 max_concurrent_sessions=cfg.cognition.max_concurrent_sessions,
                 session_seconds=cfg.cognition.shadow_session_seconds,
+                session_timeout_seconds=cfg.cognition.session_timeout_seconds,
             ),
             metrics=metrics,
             floors=tuple(Floor.parse(f) for f in cfg.cognition.time_floors),

@@ -379,6 +379,16 @@ APPEND: dict[str, Callable[[int], dict[str, Any]]] = {
         "platform": "signal", "conversation_id": "g0", "intent": "tell",
         "subject_rows": [f"note:{n}"], "at_ms": MS0 + n, "outcome": "recorded",
     },
+    # Step 3a-ii, the session lifecycle (no foreign keys, see schema.py).
+    "cognition_session_end": lambda n: {
+        "session_id": n, "outcome": "closed", "at_ms": MS0 + n,
+    },
+    "cognition_carry": lambda n: {
+        "unit": "u", "stimulus_id": n, "strike": 1, "state": "carried",
+    },
+    "stimulus_retraction": lambda n: {
+        "unit": "u", "stimulus_id": n, "reason": "cancelled",
+    },
 }
 
 

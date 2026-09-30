@@ -193,7 +193,7 @@ async def test_the_tool_list_offers_every_write_pace_and_remind_verb():
 
 async def test_a_would_write_call_is_recorded_against_this_sessions_id():
     fake = FakeCognitionAgentRunner(script=[(
-        "standing_revise", {"where_it_stands": "dinner is on", "working_set": []},
+        "standing_revise", {"where_it_stands": "dinner is on"},
     )])
     runner, store, fake = _runner(agent_runner=fake)
     view = UnitView(

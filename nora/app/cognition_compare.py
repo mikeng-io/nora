@@ -1,6 +1,7 @@
 """`nora cognition compare --since <ISO>` — reads both sides of
 `nora.domain.cognition_compare.compare` over a window and prints matched /
-cognition-only / proactive-only (migration step 3a-ii).
+cognition-only / proactive-only, then the notes that say what those three
+counts leave out (cancelled, moved, unkeyed, unkeyable) (migration step 3a-ii).
 
 **Read-only, and off the live path.** This module runs a plain SQL SELECT
 against `cognition_remind_mirror` (cognition's held mirror) and `reminders`
@@ -17,7 +18,14 @@ from datetime import UTC, datetime
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from nora.domain.cognition_compare import CompareResult, MirroredAct, ProactiveAct, compare
+from nora.domain.cognition_compare import (
+    CompareResult,
+    MirroredAct,
+    MirrorRow,
+    ProactiveAct,
+    compare,
+    resolve_chains,
+)
 from nora.infra.sql.schema import COGNITION_REMIND_MIRROR, REMINDERS
 
 
@@ -28,26 +36,39 @@ class CompareWindow:
 
 
 async def read_mirrored(engine: AsyncEngine, window: CompareWindow) -> tuple[MirroredAct, ...]:
+    """The mirrored `remind` chains that BEGAN in the window, each at its
+    latest state: the moves and cancels that followed (up to the window's end)
+    are read too, so a cancelled remind is not counted as an act and a moved
+    one is read at its latest time."""
     t = COGNITION_REMIND_MIRROR
-    stmt = sa.select(
-        t.c.reminder_ref, t.c.platform, t.c.conversation_id, t.c.subject_rows, t.c.recorded_at,
-    ).where(
+    began = sa.select(t.c.reminder_ref).where(
         t.c.verb == "remind", t.c.outcome == "recorded",
         t.c.recorded_at >= _at(window.since_ms), t.c.recorded_at < _at(window.until_ms),
-    ).order_by(t.c.recorded_at)
+    )
+    stmt = sa.select(
+        t.c.verb, t.c.reminder_ref, t.c.platform, t.c.conversation_id, t.c.subject_rows,
+        t.c.at_ms, t.c.recorded_at, t.c.outcome,
+    ).where(
+        t.c.reminder_ref.in_(began), t.c.recorded_at < _at(window.until_ms),
+        t.c.verb.in_(("remind", "remind_move", "remind_cancel")),
+    ).order_by(t.c.id)
     async with engine.connect() as conn:
         rows = (await conn.execute(stmt)).all()
-    return tuple(
-        MirroredAct(
-            reminder_ref=r.reminder_ref or "", platform=r.platform,
+    return resolve_chains([
+        MirrorRow(
+            verb=r.verb, reminder_ref=r.reminder_ref or "", platform=r.platform,
             conversation_id=r.conversation_id, subject_rows=tuple(r.subject_rows or ()),
-            at_ms=int(r.recorded_at.timestamp() * 1000),
+            at_ms=int(r.at_ms) if r.at_ms is not None else int(r.recorded_at.timestamp() * 1000),
+            outcome=r.outcome,
         )
         for r in rows
-    )
+    ])
 
 
 async def read_proactive(engine: AsyncEngine, window: CompareWindow) -> tuple[ProactiveAct, ...]:
+    """Every proactive reminder in the window, keyed by the note id and the
+    event id its payload names. One naming neither is KEPT (`unkeyed`), never
+    dropped."""
     t = REMINDERS
     stmt = sa.select(t.c.id, t.c.platform, t.c.conversation_id, t.c.payload, t.c.created_at).where(
         t.c.kind == "proactive", t.c.created_at >= _at(window.since_ms),
@@ -57,12 +78,13 @@ async def read_proactive(engine: AsyncEngine, window: CompareWindow) -> tuple[Pr
         rows = (await conn.execute(stmt)).all()
     out = []
     for r in rows:
-        note_id = (r.payload or {}).get("note_id")
-        if not isinstance(note_id, str) or not note_id:
-            continue  # a proactive row this comparison cannot key on
+        payload = r.payload or {}
+        note_id, event_id = payload.get("note_id"), payload.get("event_id")
         out.append(ProactiveAct(
             reminder_id=str(r.id), platform=r.platform, conversation_id=r.conversation_id,
-            note_id=note_id, at_ms=int(r.created_at.timestamp() * 1000),
+            note_id=note_id if isinstance(note_id, str) else "",
+            event_id=event_id if isinstance(event_id, str) else "",
+            at_ms=int(r.created_at.timestamp() * 1000),
         ))
     return tuple(out)
 
@@ -88,8 +110,27 @@ def render(result: CompareResult, window: CompareWindow) -> list[str]:
     for p in result.proactive_only[:10]:
         lines.append(
             f"    proactive_only  {p.platform}:{p.conversation_id}  "
-            f"note={p.note_id}  id={p.reminder_id}"
+            f"note={p.note_id or '-'} event={p.event_id or '-'}  id={p.reminder_id}"
         )
+    lines.append("  notes (counted apart, or unmatched by construction):")
+    lines.append(
+        f"    cancelled:  {len(result.cancelled)} mirrored remind(s) cognition cancelled "
+        "before the window closed; in neither matched nor cognition_only"
+    )
+    lines.append(
+        f"    moved:      {len(result.moved)} counted mirrored remind(s) were moved; "
+        "each is read at its latest time"
+    )
+    lines.append(
+        f"    unkeyed:    {len(result.unkeyed)} proactive reminder(s) name neither a note "
+        "nor an event; they cannot be matched and are not in proactive_only"
+    )
+    lines.append(
+        f"    unkeyable:  {len(result.unkeyable)} of cognition_only cite no note or event "
+        "row, so they cannot match a proactive reminder by construction"
+    )
+    for p in result.unkeyed[:10]:
+        lines.append(f"      unkeyed  {p.platform}:{p.conversation_id}  id={p.reminder_id}")
     return lines
 
 

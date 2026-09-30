@@ -11,6 +11,7 @@ from collections.abc import Sequence
 
 from nora.domain.cognition_remind import (
     PendingMirroredRemind,
+    RemindAnswer,
     check_remind,
     check_remind_cancel,
     check_remind_move,
@@ -25,8 +26,8 @@ async def _record(
     reminder_ref: str | None, platform: str, conversation_id: str, intent: str | None,
     subject_rows: Sequence[str], at_ms: int | None, why: str | None, now_ms: int,
     outcome: str, refusal_reason: str | None = None, refusal_detail: str | None = None,
-) -> int:
-    return await ledger.record_remind_mirror(
+) -> RemindAnswer:
+    row_id = await ledger.record_remind_mirror(
         mirror=NewCognitionRemindMirror(
             session_id=session_id, unit=unit, verb=verb, reminder_ref=reminder_ref,
             platform=platform, conversation_id=conversation_id, intent=intent,
@@ -35,6 +36,7 @@ async def _record(
         ),
         recorded_at_ms=now_ms,
     )
+    return RemindAnswer(row_id, refusal_reason, refusal_detail)
 
 
 async def dry_run_remind(
@@ -42,7 +44,7 @@ async def dry_run_remind(
     reminder_ref: str, platform: str, conversation_id: str, intent: str,
     subject_rows: Sequence[str], at_ms: int, now_ms: int,
     pending: Sequence[PendingMirroredRemind],
-) -> int:
+) -> RemindAnswer:
     """`remind(at, room, brief)`. `reminder_ref` is minted by the caller
     before this call, the same "prior is a parameter" shape `wake_at`'s
     wrapper uses."""
@@ -71,7 +73,7 @@ async def dry_run_remind_move(
     reminder_ref: str, at_ms: int, why: str, platform: str, conversation_id: str,
     now_ms: int, pending: Sequence[PendingMirroredRemind],
     created_by_session_id: int | None,
-) -> int:
+) -> RemindAnswer:
     refusal = check_remind_move(
         reminder_ref=reminder_ref, pending=pending,
         created_by_session_id=created_by_session_id,
@@ -91,7 +93,7 @@ async def dry_run_remind_cancel(
     *, ledger: CognitionDryRunStore, session_id: int | None, unit: str,
     reminder_ref: str, why: str, platform: str, conversation_id: str, now_ms: int,
     pending: Sequence[PendingMirroredRemind], created_by_session_id: int | None,
-) -> int:
+) -> RemindAnswer:
     refusal = check_remind_cancel(
         reminder_ref=reminder_ref, pending=pending,
         created_by_session_id=created_by_session_id,

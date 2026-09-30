@@ -36,6 +36,7 @@ from typing import Any
 
 from nora.agent import factory
 from nora.agent.dream_guard import DreamGuard
+from nora.agent.ports import ToolSpec, adapt
 from nora.app.cognition_session import AdaptorBudget, CognitionRunResult
 from nora.obs.metrics import Metrics
 
@@ -48,6 +49,29 @@ log = logging.getLogger("nora.app.cognition_agent_runner")
 #: week's `nora_dream_guard_vetoes_total{adaptor="cognition"}` is what would
 #: size it for real.
 DEFAULT_TOOL_BUDGET = 20
+
+
+def as_strands_tools(tools: list[Any]) -> list[Any]:
+    """The session's tool list as Strands tool objects.
+
+    The session's own verbs are plain typed closures (`nora.app.
+    cognition_session`); `Agent(tools=...)` accepts only `AgentTool` objects,
+    so each closure goes through `nora.agent.ports.adapt`, the one place a
+    `ToolSpec` becomes a Strands tool, exactly as every registry tool does.
+    `adapt` derives the model-facing schema from the closure's own signature,
+    annotations and docstring (ADR 0015), which is why those must be real.
+    A tool that is already a Strands tool object (a read tool from the
+    registry) passes through untouched."""
+    out: list[Any] = []
+    for tool in tools:
+        if hasattr(tool, "tool_spec") and hasattr(tool, "tool_name"):
+            out.append(tool)
+            continue
+        out.append(adapt(ToolSpec(
+            name=tool.__name__, description="", schema={}, call=tool,
+            budget=DEFAULT_TOOL_BUDGET,
+        )))
+    return out
 
 
 class LiveCognitionAgentRunner:
@@ -67,7 +91,8 @@ class LiveCognitionAgentRunner:
         self, *, system_prompt: str, prompt: str, tools: list[Any],
         budget: AdaptorBudget, trace_attributes: Mapping[str, str],
     ) -> CognitionRunResult:
-        tool_names = [getattr(t, "__name__", str(t)) for t in tools]
+        tool_names = [getattr(t, "tool_name", None) or t.__name__ for t in tools]
+        tools = as_strands_tools(tools)
         guard = DreamGuard(
             adaptor="cognition",
             budgets=dict.fromkeys(tool_names, self._tool_budget),
@@ -78,6 +103,12 @@ class LiveCognitionAgentRunner:
             guard=guard, trace_attributes=dict(trace_attributes), retry=self._retry,
             agent_name=self._agent_name,
         )
+        # A failure or a timeout is RAISED, never returned as a normal result:
+        # `CognitionSessionRunner` records the session `failed`/`timeout`
+        # (which leaves its stimuli pending), and only a loop that RETURNED
+        # closes its items. Swallowing either here made a dead session read as
+        # one that ran: items closed `waiting` with a strike, the watermark
+        # moved past stimuli nobody looked at.
         try:
             result = await asyncio.wait_for(
                 factory.invoke(
@@ -92,10 +123,9 @@ class LiveCognitionAgentRunner:
         except TimeoutError:
             log.error("cognition session timed out after %.0fs", budget.timeout_seconds)
             self._metrics.inc("nora_errors_total", stage="cognition_session")
-            return CognitionRunResult(stop_reason="timeout")
+            raise
         except Exception:
             log.exception("cognition session failed")
             self._metrics.inc("nora_errors_total", stage="cognition_session")
-            return CognitionRunResult(stop_reason=None)
-        stop_reason = getattr(result, "stop_reason", None)
-        return CognitionRunResult(stop_reason=stop_reason)
+            raise
+        return CognitionRunResult(stop_reason=getattr(result, "stop_reason", None))

@@ -172,6 +172,12 @@ APPEND_ONLY: dict[str, str] = {
     # family. Each transition is its own row, never revised.
     "cognition_self_wake": "recorded_at",
     "cognition_remind_mirror": "recorded_at",
+    # Step 3a-ii, the session lifecycle: how a session ended (only `closed`
+    # advances the watermark), what it returned to the next agenda, and the
+    # `self` stimuli taken back.
+    "cognition_session_end": "recorded_at",
+    "cognition_carry": "recorded_at",
+    "stimulus_retraction": "recorded_at",
 }
 
 #: Changes in place today and migrates at a later step (70 §5). Not

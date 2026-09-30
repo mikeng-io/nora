@@ -39,6 +39,20 @@ class RemindRefusal:
     detail: str = ""
 
 
+@dataclass(frozen=True, slots=True)
+class RemindAnswer:
+    """What a mirrored remind call answers: the ledger row, and the refusal
+    when it was refused."""
+
+    row_id: int
+    refusal_reason: str | None = None
+    refusal_detail: str | None = None
+
+    @property
+    def refused(self) -> bool:
+        return self.refusal_reason is not None
+
+
 def check_remind(
     *, subject_rows: Sequence[str], intent: str, platform: str, conversation_id: str,
     pending: Sequence[PendingMirroredRemind],

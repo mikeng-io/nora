@@ -1,0 +1,878 @@
+"""The REAL evaluator composed with the REAL session runner (migration step
+3a-ii, review of #627): a would-wake produces a session row through the one
+typed hook, the brakes count sessions that are really in flight, and a session
+that fails does not move the watermark.
+
+Only the model is scripted (`ScriptedAgent`): every store is an in-memory
+double bound to its SQL twin by a contract suite, and both objects share one
+fake clock, so «how long a session ran» is a fact the test sets.
+
+What each test would catch if the fix were reverted is named in
+`scripts/mutations/cognition-step3a2-session.json`.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import datetime as dt
+import inspect
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass, field
+from typing import Any
+from zoneinfo import ZoneInfo
+
+import pytest
+
+from nora.app.cognition_session import (
+    AdaptorBudget,
+    CognitionRunResult,
+    CognitionSessionRunner,
+    NotReadOnlyToolError,
+)
+from nora.app.wake import WakeEvaluator
+from nora.domain.cognition_session import Room
+from nora.domain.stimuli import NewStimulus, UnitView, WakeHook, WakePolicy
+from nora.obs.metrics import Metrics
+from nora.testing.cognition_dry_run_store import InMemoryCognitionDryRunStore
+from nora.testing.stimuli import InMemoryStimulusStore
+
+HK = ZoneInfo("Asia/Hong_Kong")
+T = int(dt.datetime(2026, 9, 28, 15, 0, tzinfo=HK).timestamp() * 1000)
+S = 1000
+HOME = Room("signal", "home")
+POLICY = WakePolicy(
+    quiet_seconds=0, cue_quiet_seconds=0, rollup_delay_seconds=60, batch_max=1000,
+    max_age_seconds=3600, cooldown_seconds=300, max_concurrent_sessions=2,
+    session_seconds=60, session_timeout_seconds=900,
+)
+
+Behaviour = Callable[["ScriptedAgent", list[Any]], Awaitable[CognitionRunResult]]
+
+
+class Clock:
+    def __init__(self, ms: int) -> None:
+        self.ms = ms
+
+    def __call__(self) -> float:
+        return self.ms / 1000
+
+    def advance(self, seconds: float) -> None:
+        self.ms += int(seconds * 1000)
+
+
+async def ok(agent: ScriptedAgent, tools: list[Any]) -> CognitionRunResult:
+    return CognitionRunResult(stop_reason="end_turn")
+
+
+async def close_written(agent: ScriptedAgent, tools: list[Any]) -> CognitionRunResult:
+    """Closes every agenda item `written`, so nothing returns to the next one."""
+    by = {t.__name__: t for t in tools if hasattr(t, "__name__")}
+    for i in range(len(agent.prompts[-1].splitlines())):
+        await by["close"](item_index=i, reason="written")
+    return CognitionRunResult(stop_reason="end_turn")
+
+
+async def boom(agent: ScriptedAgent, tools: list[Any]) -> CognitionRunResult:
+    raise RuntimeError("the model loop blew up")
+
+
+@dataclass
+class ScriptedAgent:
+    """The fake model. Each `run` takes the next behaviour off `script` (the
+    last one repeats), so a test can make the first session fail and the second
+    succeed. `release` blocks a behaviour until the test lets it go."""
+
+    script: list[Behaviour] = field(default_factory=lambda: [ok])
+    calls: int = 0
+    prompts: list[str] = field(default_factory=list)
+    started: asyncio.Event = field(default_factory=asyncio.Event)
+    release: asyncio.Event = field(default_factory=asyncio.Event)
+    cancelled: bool = False
+    tools_seen: list[list[Any]] = field(default_factory=list)
+
+    async def run(
+        self, *, system_prompt: str, prompt: str, tools: list[Any],
+        budget: AdaptorBudget, trace_attributes: dict[str, str],
+    ) -> CognitionRunResult:
+        self.calls += 1
+        self.prompts.append(prompt)
+        self.tools_seen.append(tools)
+        behaviour = self.script[min(self.calls - 1, len(self.script) - 1)]
+        return await behaviour(self, tools)
+
+    async def block(self, tools: list[Any]) -> CognitionRunResult:
+        self.started.set()
+        try:
+            await self.release.wait()
+        except asyncio.CancelledError:
+            self.cancelled = True
+            raise
+        return CognitionRunResult(stop_reason="end_turn")
+
+
+async def blocked(agent: ScriptedAgent, tools: list[Any]) -> CognitionRunResult:
+    return await agent.block(tools)
+
+
+def _const(value: Any) -> Callable[..., Awaitable[Any]]:
+    async def f(*args: Any, **kwargs: Any) -> Any:
+        return value
+    return f
+
+
+def _counter() -> Callable[[], str]:
+    n = 0
+
+    def mint() -> str:
+        nonlocal n
+        n += 1
+        return f"ref{n}"
+    return mint
+
+
+@dataclass
+class Rig:
+    ledger: InMemoryCognitionDryRunStore
+    stimuli: InMemoryStimulusStore
+    clock: Clock
+    metrics: Metrics
+    agent: ScriptedAgent
+    runner: CognitionSessionRunner
+    ev: WakeEvaluator
+
+    async def say(
+        self, *, unit: str = "u1", room: str = "room-a", cues: tuple[str, ...] = (),
+    ) -> int:
+        sid = await self.stimuli.append(stimulus=NewStimulus(
+            unit=unit, kind="message", item="message",
+            ref=f"messages:{len(self.stimuli.stimuli) + 1}", at_ms=self.clock.ms,
+            platform="signal", conversation_id=room, cues=cues,
+        ), recorded_at_ms=self.clock.ms)
+        assert sid is not None
+        return sid
+
+    async def tick(self) -> list[int]:
+        return await self.ev.tick()
+
+    async def settle(self) -> None:
+        """Let every started session finish (or fail) and be recorded."""
+        await self.ev.drain()
+
+    def ends(self) -> list[str]:
+        return [e.outcome for _, e, _ in self.ledger.ends]
+
+
+def _rig(
+    *, agent: ScriptedAgent | None = None, units: tuple[str, ...] = ("u1",),
+    timeout: float = 30.0, max_items: int = 12, max_strikes: int = 3,
+    policy: WakePolicy = POLICY, read_tools_for: Callable[[str, Room], list[Any]] | None = None,
+    read_only_tools: frozenset[str] = frozenset(), max_self_wakes: int = 5,
+    max_self_wakes_per_day: int = 12,
+) -> Rig:
+    ledger = InMemoryCognitionDryRunStore()
+    stimuli = InMemoryStimulusStore(ledger=ledger)
+    clock = Clock(T)
+    metrics = Metrics()
+    agent = agent or ScriptedAgent()
+
+    async def _pending(unit: str) -> Any:
+        await asyncio.sleep(0)  # a real store yields here; so must the double
+        return await ledger.pending_self_wakes(unit=unit)
+
+    runner = CognitionSessionRunner(
+        dry_run_store=ledger, stimulus_store=stimuli, agent_runner=agent,
+        home_rooms=dict.fromkeys(units, HOME),
+        read_tools_for=read_tools_for or (lambda unit, room: []),
+        read_only_tools=read_only_tools,
+        skill_text_for=lambda kinds: "", doctrine_text="DOCTRINE", doctrine_sha256="sha",
+        open_note_titles=_const(()), open_proposed_events=_const(()),
+        prior_standing=_const(None), pending_self_wakes=_pending,
+        pending_mirrored_reminds=_const(()), session_mode="shadow",
+        budget=AdaptorBudget(turns=4, total_tokens=1000, output_tokens=100,
+                             timeout_seconds=timeout),
+        cooldown_seconds=300.0, max_items=max_items, max_strikes=max_strikes,
+        max_self_wakes=max_self_wakes, max_self_wakes_per_day=max_self_wakes_per_day,
+        metrics=metrics, mint_ref=_counter(), clock=clock,
+    )
+    ev = WakeEvaluator(
+        store=stimuli, units=lambda: units, policy=policy, metrics=metrics, tz=HK,
+        clock=clock, settle_seconds=0, on_wake=runner.wake_hook,
+    )
+    return Rig(ledger, stimuli, clock, metrics, agent, runner, ev)
+
+
+# ---------------------------------------------------------------------------
+# MAJOR 1: the evaluator and the runner share ONE typed hook
+# ---------------------------------------------------------------------------
+
+async def test_a_would_wake_through_the_real_evaluator_produces_a_session_row():
+    rig = _rig()
+    await rig.say()
+    rig.clock.advance(1)
+    wake_ids = await rig.tick()
+    await rig.settle()
+
+    assert len(wake_ids) == 1
+    assert len(rig.ledger.sessions) == 1
+    session_id, session, _ = rig.ledger.sessions[0]
+    assert session.wake_id == wake_ids[0]
+    assert session.unit == "u1"
+    assert rig.agent.calls == 1
+    assert rig.ends() == ["closed"]
+    assert rig.metrics.get("nora_errors_total", stage="cognition_session") == 0
+    assert session_id == 1
+
+
+def test_the_runner_hook_and_the_evaluators_call_share_one_signature():
+    """The evaluator calls `WakeHook` by keyword; the runner's `on_wake` must
+    take exactly those keywords (it once took `now_ms` the evaluator never
+    sent, and the evaluator sent positionally what the runner took by keyword)."""
+    proto = inspect.signature(WakeHook.__call__)
+    wanted = {n for n, p in proto.parameters.items() if n != "self"}
+    assert wanted == {"unit", "view", "wake_id", "now_ms"}
+    have = inspect.signature(CognitionSessionRunner.on_wake).parameters
+    for name in wanted:
+        assert have[name].kind is inspect.Parameter.KEYWORD_ONLY, name
+    required = {n for n, p in have.items() if n != "self" and p.default is inspect.Parameter.empty}
+    assert required <= wanted
+
+
+async def test_a_hook_failure_is_recorded_on_the_session_and_counted_not_only_logged():
+    rig = _rig(agent=ScriptedAgent(script=[boom]))
+    await rig.say()
+    rig.clock.advance(1)
+    await rig.tick()
+    await rig.settle()
+
+    assert len(rig.ledger.sessions) == 1
+    assert rig.ends() == ["failed"]
+    _, end, _ = rig.ledger.ends[0]
+    assert "the model loop blew up" in end.detail
+    assert rig.metrics.get("nora_cognition_session_ended_total", outcome="failed") == 1
+    assert rig.metrics.get("nora_errors_total", stage="cognition_session") == 1
+
+
+async def test_a_failure_before_the_model_is_recorded_failed_and_the_model_never_runs():
+    def explode(unit: str, room: Room) -> list[Any]:
+        raise RuntimeError("the tool source is down")
+
+    rig = _rig(read_tools_for=explode)
+    await rig.say()
+    rig.clock.advance(1)
+    await rig.tick()
+    await rig.settle()
+
+    assert rig.agent.calls == 0
+    assert rig.ends() == ["failed"]
+
+
+# ---------------------------------------------------------------------------
+# MAJOR 3: the watermark does not advance on a session that did not close
+# ---------------------------------------------------------------------------
+
+async def test_a_failed_sessions_stimuli_are_not_lost():
+    rig = _rig(agent=ScriptedAgent(script=[boom, ok]))
+    for _ in range(3):
+        await rig.say()
+    rig.clock.advance(1)
+    await rig.tick()
+    await rig.settle()
+    assert rig.ends() == ["failed"]
+
+    # The watermark did NOT move: the wake row exists, but every stimulus is
+    # still pending, and the unit's mark is back at zero.
+    view = await rig.stimuli.view(unit="u1", mode="shadow", now_ms=rig.clock.ms, limit=100)
+    assert [s.id for s in view.pending] == [1, 2, 3]
+    assert view.mark is not None and view.mark.through_stimulus_id == 0
+    assert view.last_wake is not None  # the brakes still see the wake
+
+    # Inside the cooldown nothing wakes (a failed session backs the unit off) …
+    rig.clock.advance(60)
+    assert await rig.tick() == []
+    # … and after it the SAME three stimuli are the next session's agenda.
+    rig.clock.advance(300)
+    await rig.tick()
+    await rig.settle()
+    assert rig.ends() == ["failed", "closed"]
+    _, second, _ = rig.ledger.sessions[1]
+    assert second.from_stimulus_id == 1 and second.through_stimulus_id == 3
+    assert rig.stimuli.wakes[1].from_stimulus_id == 0
+    assert "3 new messages" in rig.agent.prompts[1]
+
+
+async def test_a_closed_session_does_advance_the_watermark():
+    """The control for the test above: the same flow with a session that
+    closes its items leaves nothing pending."""
+    rig = _rig(agent=ScriptedAgent(script=[close_written]))
+    await rig.say()
+    rig.clock.advance(1)
+    await rig.tick()
+    await rig.settle()
+    assert rig.ends() == ["closed"]
+    view = await rig.stimuli.view(unit="u1", mode="shadow", now_ms=rig.clock.ms, limit=100)
+    assert view.pending == ()
+    assert view.mark is not None and view.mark.through_stimulus_id == 1
+
+
+async def test_a_timed_out_session_is_cancelled_recorded_timeout_and_strands_nothing():
+    async def hang(agent: ScriptedAgent, tools: list[Any]) -> CognitionRunResult:
+        return await agent.block(tools)
+
+    agent = ScriptedAgent(script=[hang])
+    rig = _rig(agent=agent, timeout=0.05)
+    await rig.say()
+    rig.clock.advance(1)
+    await rig.tick()
+    await rig.settle()
+
+    assert agent.cancelled, "the model loop must be cancelled at the wall clock"
+    assert rig.ends() == ["timeout"]
+    assert rig.metrics.get("nora_cognition_session_ended_total", outcome="timeout") == 1
+    view = await rig.stimuli.view(unit="u1", mode="shadow", now_ms=rig.clock.ms, limit=100)
+    assert [s.id for s in view.pending] == [1]
+
+
+async def test_a_long_session_blocks_a_second_on_the_same_unit_through_a_strong_cue_cut():
+    agent = ScriptedAgent(script=[blocked, ok])
+    rig = _rig(agent=agent)
+    await rig.say()
+    rig.clock.advance(1)
+    first = await rig.tick()
+    await agent.started.wait()
+    assert len(first) == 1
+
+    # 200 s in: past the 60 s a would-wake is ASSUMED to run, inside the
+    # cooldown, with a strong cue that could cut it. The session is still
+    # running, so nothing may start.
+    rig.clock.advance(200)
+    await rig.say(cues=("datetime",))
+    assert await rig.tick() == []
+    assert len(rig.stimuli.wakes) == 1
+    assert agent.calls == 1
+    assert rig.metrics.get("nora_cognition_wake_deferred_total", brake="single_flight") >= 1
+
+    agent.release.set()
+    await rig.settle()
+    assert rig.ends() == ["closed"]
+
+
+async def test_the_cooldown_runs_from_the_sessions_end_not_from_the_wake():
+    agent = ScriptedAgent(script=[blocked, ok])
+    rig = _rig(agent=agent)
+    await rig.say()
+    rig.clock.advance(1)
+    await rig.tick()
+    await agent.started.wait()
+    rig.clock.advance(1000)              # the session ran 1000 s
+    agent.release.set()
+    await rig.settle()
+    await rig.say()
+    rig.clock.advance(100)               # 100 s after it ended: inside the cooldown
+    assert await rig.tick() == []
+    assert rig.metrics.get("nora_cognition_wake_deferred_total", brake="cooldown") >= 1
+    rig.clock.advance(250)
+    assert len(await rig.tick()) == 1
+
+
+async def test_a_session_still_running_after_a_restart_still_holds_its_unit():
+    """Single-flight is derived from ROWS, so an evaluator with no memory of
+    the task (a restart) still sees the unit in flight."""
+    agent = ScriptedAgent(script=[blocked])
+    rig = _rig(agent=agent)
+    await rig.say()
+    rig.clock.advance(1)
+    await rig.tick()
+    await agent.started.wait()
+    rig.clock.advance(400)
+    await rig.say()
+
+    calls: list[int] = []
+
+    async def noop(*, unit: str, view: UnitView, wake_id: int, now_ms: int) -> None:
+        calls.append(wake_id)
+
+    reborn = WakeEvaluator(
+        store=rig.stimuli, units=lambda: ("u1",), policy=POLICY, metrics=Metrics(),
+        tz=HK, clock=rig.clock, settle_seconds=0, on_wake=noop,
+    )
+    assert await reborn.tick() == []
+    assert calls == []
+    agent.release.set()
+    await rig.settle()
+
+
+async def test_a_session_with_no_end_row_past_the_timeout_is_dead_and_its_stimuli_return():
+    rig = _rig()
+    sid = await rig.say()
+    rig.clock.advance(1)
+    # A session that started and never wrote an end row (a crash), directly:
+    from nora.domain.ports import NewCognitionSession
+    from nora.domain.stimuli import NewWake
+    wake_id = await rig.stimuli.record_wake(wake=NewWake(
+        unit="u1", mode="shadow", reason="settled", from_stimulus_id=0,
+        through_stimulus_id=sid, stimulus_count=1, eligible_count=1,
+        oldest_pending_ms=T, cut_cooldown=False, at_ms=rig.clock.ms,
+    ), recorded_at_ms=rig.clock.ms)
+    await rig.ledger.record_session(session=NewCognitionSession(
+        unit="u1", mode="shadow", started_at_ms=rig.clock.ms, from_stimulus_id=0,
+        through_stimulus_id=sid, situation={}, agenda={"items": []}, wake_id=wake_id,
+    ), recorded_at_ms=rig.clock.ms)
+
+    # Inside the timeout it is running: the unit is held, its stimulus consumed.
+    rig.clock.advance(600)
+    assert await rig.tick() == []
+    # Past it the session is dead: it holds nothing, and its stimulus is pending.
+    rig.clock.advance(400 + 300)
+    written = await rig.tick()
+    await rig.settle()
+    assert len(written) == 1
+    assert rig.agent.calls == 1
+
+
+async def test_more_than_two_units_in_flight_is_refused_on_real_sessions():
+    agent = ScriptedAgent(script=[blocked])
+    rig = _rig(agent=agent, units=("u1", "u2", "u3"))
+    for unit in ("u1", "u2", "u3"):
+        await rig.say(unit=unit)
+    rig.clock.advance(1)
+    written = await rig.tick()
+    await asyncio.sleep(0)
+    assert len(written) == 2
+    assert rig.metrics.get("nora_cognition_wake_deferred_total", brake="concurrency") == 1
+
+    # 120 s later the old shadow arithmetic (60 s per would-wake) would call
+    # both sessions over and admit the third. They are still running.
+    rig.clock.advance(120)
+    assert await rig.tick() == []
+    assert len(rig.stimuli.wakes) == 2
+    assert rig.metrics.get("nora_cognition_wake_deferred_total", brake="concurrency") == 2
+
+    agent.release.set()
+    await rig.settle()
+    rig.clock.advance(400)
+    third = await rig.tick()
+    await rig.settle()
+    assert [rig.stimuli.wakes[-1].unit] == ["u3"] and len(third) == 1
+
+
+# ---------------------------------------------------------------------------
+# 30-cognition §2: strikes and deferred items
+# ---------------------------------------------------------------------------
+
+async def test_items_past_max_items_come_back_on_the_next_agenda_with_a_strike():
+    async def close_all(agent: ScriptedAgent, tools: list[Any]) -> CognitionRunResult:
+        by = {t.__name__: t for t in tools if hasattr(t, "__name__")}
+        for i in (0, 1):
+            await by["close"](item_index=i, reason="written")
+        return CognitionRunResult(stop_reason="end_turn")
+
+    agent = ScriptedAgent(script=[close_all, ok])
+    rig = _rig(agent=agent, max_items=2)
+    for room in ("room-a", "room-b", "room-c"):
+        await rig.say(room=room)
+    rig.clock.advance(1)
+    await rig.tick()
+    await rig.settle()
+
+    _, first, _ = rig.ledger.sessions[0]
+    assert first.agenda["deferred_stimulus_ids"] == [3]
+    assert len(first.agenda["items"]) == 2  # type: ignore[arg-type]
+    carried = [(c.stimulus_id, c.strike, c.state, c.waits) for _, c in rig.stimuli.carries]
+    assert carried == [(3, 1, "carried", False)]
+
+    # The deferred one is pending again, and wakes on its own (it was never seen).
+    rig.clock.advance(400)
+    await rig.tick()
+    await rig.settle()
+    _, second, _ = rig.ledger.sessions[1]
+    (item,) = second.agenda["items"]  # type: ignore[misc]
+    assert item["stimulus_ids"] == [3] and item["strike"] == 1  # type: ignore[index]
+    assert "room-c" in rig.agent.prompts[1]
+
+
+async def test_an_unclosed_item_returns_with_a_strike_and_is_struck_at_max_strikes():
+    rig = _rig(max_strikes=2)
+    await rig.say()
+    rig.clock.advance(1)
+    await rig.tick()
+    await rig.settle()
+    assert [(c.reason, c.strike) for _, c, _ in rig.ledger.closes] == [("waiting", 1)]
+
+    # Waiting stimuli ride the next wake and never start one.
+    rig.clock.advance(7200)
+    assert await rig.tick() == []
+
+    # A new message wakes the unit; the returning item is on the agenda WITH its
+    # strike, is left open again, and code closes it `struck`.
+    await rig.say()
+    rig.clock.advance(1)
+    await rig.tick()
+    await rig.settle()
+    _, second, _ = rig.ledger.sessions[1]
+    (item,) = second.agenda["items"]  # type: ignore[misc]
+    assert item["stimulus_ids"] == [1, 2] and item["strike"] == 1  # type: ignore[index]
+    assert [(c.reason, c.strike) for _, c, _ in rig.ledger.closes] == [
+        ("waiting", 1), ("struck", 2),
+    ]
+    states = {c.stimulus_id: c.state for _, c in rig.stimuli.carries}
+    assert states == {1: "struck", 2: "struck"}
+    # Struck is closed for good: nothing is carried, nothing is pending.
+    view = await rig.stimuli.view(unit="u1", mode="shadow", now_ms=rig.clock.ms, limit=100)
+    assert view.pending == () and dict(view.carry) == {}
+    assert rig.metrics.get("nora_cognition_carry_total", state="struck") == 2
+
+
+async def test_a_model_close_waiting_takes_a_strike_like_an_unclosed_item():
+    async def wait_it_out(agent: ScriptedAgent, tools: list[Any]) -> CognitionRunResult:
+        by = {t.__name__: t for t in tools if hasattr(t, "__name__")}
+        assert (await by["close"](item_index=0, reason="waiting"))["status"] == "ok"
+        assert (await by["close"](item_index=0, reason="written"))["reason"] == "already_closed"
+        return CognitionRunResult(stop_reason="end_turn")
+
+    rig = _rig(agent=ScriptedAgent(script=[wait_it_out]))
+    await rig.say()
+    rig.clock.advance(1)
+    await rig.tick()
+    await rig.settle()
+    assert [(c.reason, c.strike) for _, c, _ in rig.ledger.closes] == [("waiting", 1)]
+
+
+# ---------------------------------------------------------------------------
+# MINOR 6: a room is named, never guessed; a read tool is on the allowlist
+# ---------------------------------------------------------------------------
+
+async def test_a_write_on_a_multi_room_agenda_without_a_room_is_refused_not_guessed():
+    answers: list[dict[str, object]] = []
+
+    async def write(agent: ScriptedAgent, tools: list[Any]) -> CognitionRunResult:
+        by = {t.__name__: t for t in tools if hasattr(t, "__name__")}
+        answers.append(await by["standing_revise"](where_it_stands="dinner is on"))
+        answers.append(await by["standing_revise"](
+            where_it_stands="dinner is on", room="signal:elsewhere",
+        ))
+        answers.append(await by["standing_revise"](
+            where_it_stands="dinner is on", room="signal:room-b",
+        ))
+        return CognitionRunResult(stop_reason="end_turn")
+
+    rig = _rig(agent=ScriptedAgent(script=[write]))
+    await rig.say(room="room-a")
+    await rig.say(room="room-b")
+    rig.clock.advance(1)
+    await rig.tick()
+    await rig.settle()
+
+    assert answers[0]["reason"] == "room_required"
+    assert answers[1]["reason"] == "unknown_room"
+    assert answers[2] == {"status": "ok"}
+    assert len(rig.ledger.would_writes) == 1     # the two refusals wrote nothing
+    _, write_row, _ = rig.ledger.would_writes[0]
+    assert (write_row.platform, write_row.conversation_id) == ("signal", "room-b")
+
+
+async def test_a_read_tool_off_the_allowlist_is_refused_and_the_session_fails_closed():
+    async def send_reply(text: str) -> dict[str, object]:
+        return {"status": "ok"}
+
+    rig = _rig(read_tools_for=lambda unit, room: [send_reply],
+               read_only_tools=frozenset({"now"}))
+    await rig.say()
+    rig.clock.advance(1)
+    await rig.tick()
+    await rig.settle()
+    assert rig.agent.calls == 0
+    assert rig.ends() == ["failed"]
+    _, end, _ = rig.ledger.ends[0]
+    assert "send_reply" in end.detail and "read-only allowlist" in end.detail
+
+
+async def test_no_allowlist_means_no_read_tool_and_an_allowlisted_name_may_not_shadow_a_verb():
+    async def now() -> str:
+        return "t"
+
+    async def note_create(title: str) -> dict[str, object]:
+        return {}
+
+    rig = _rig(read_tools_for=lambda unit, room: [now], read_only_tools=frozenset())
+    await rig.say()
+    rig.clock.advance(1)
+    await rig.tick()
+    await rig.settle()
+    assert rig.ends() == ["failed"]
+
+    shadow = _rig(
+        read_tools_for=lambda unit, room: [note_create],
+        read_only_tools=frozenset({"note_create"}),
+    )
+    await shadow.say()
+    shadow.clock.advance(1)
+    await shadow.tick()
+    await shadow.settle()
+    assert shadow.ends() == ["failed"]
+    assert "shadows a session verb" in shadow.ledger.ends[0][1].detail
+
+    good = _rig(read_tools_for=lambda unit, room: [now], read_only_tools=frozenset({"now"}))
+    await good.say()
+    good.clock.advance(1)
+    await good.tick()
+    await good.settle()
+    assert good.ends() == ["closed"]
+    assert "now" in [getattr(t, "__name__", None) for t in good.agent.tools_seen[0]]
+
+
+def test_the_guard_error_is_a_value_error():
+    assert issubclass(NotReadOnlyToolError, ValueError)
+
+
+# ---------------------------------------------------------------------------
+# MINOR 7: shutdown cancels what is in flight and records it
+# ---------------------------------------------------------------------------
+
+async def test_shutdown_cancels_an_in_flight_session_and_records_it_cancelled():
+    agent = ScriptedAgent(script=[blocked])
+    rig = _rig(agent=agent)
+    await rig.say()
+    rig.clock.advance(1)
+    await rig.tick()
+    await agent.started.wait()
+
+    await rig.runner.shutdown()
+    await rig.settle()
+
+    assert agent.cancelled
+    assert rig.ends() == ["cancelled"]
+    assert rig.metrics.get("nora_cognition_session_ended_total", outcome="cancelled") == 1
+    view = await rig.stimuli.view(unit="u1", mode="shadow", now_ms=rig.clock.ms, limit=100)
+    assert [s.id for s in view.pending] == [1]
+
+
+async def test_the_evaluator_can_cancel_its_in_flight_sessions_too():
+    agent = ScriptedAgent(script=[blocked])
+    rig = _rig(agent=agent)
+    await rig.say()
+    rig.clock.advance(1)
+    await rig.tick()
+    await agent.started.wait()
+    await rig.ev.cancel_in_flight()
+    assert rig.ends() == ["cancelled"]
+
+
+async def test_a_hook_that_raises_synchronously_does_not_abort_the_tick_for_other_units():
+    seen: list[str] = []
+
+    def hook(*, unit: str, view: UnitView, wake_id: int, now_ms: int) -> Awaitable[None]:
+        seen.append(unit)
+        if unit == "u1":
+            raise TypeError("a hook that cannot be called")
+
+        async def run() -> None:
+            return None
+        return run()
+
+    ledger = InMemoryCognitionDryRunStore()
+    stimuli = InMemoryStimulusStore(ledger=ledger)
+    clock = Clock(T)
+    metrics = Metrics()
+    ev = WakeEvaluator(
+        store=stimuli, units=lambda: ("u1", "u2"), policy=POLICY, metrics=metrics, tz=HK,
+        clock=clock, settle_seconds=0, on_wake=hook,
+    )
+    for unit in ("u1", "u2"):
+        await stimuli.append(stimulus=NewStimulus(
+            unit=unit, kind="message", item="message", ref=f"messages:{unit}", at_ms=T,
+            platform="signal", conversation_id="r",
+        ), recorded_at_ms=T)
+    clock.advance(1)
+    written = await ev.tick()
+    await ev.drain()
+    assert len(written) == 2
+    assert seen == ["u1", "u2"]
+    assert metrics.get("nora_errors_total", stage="cognition_session") == 1
+
+
+# ---------------------------------------------------------------------------
+# MINOR 7: the pace verbs' read-check-write is one critical section
+# ---------------------------------------------------------------------------
+
+async def test_two_concurrent_wake_at_calls_cannot_both_pass_the_pending_cap():
+    answers: list[dict[str, object]] = []
+
+    async def two_at_once(agent: ScriptedAgent, tools: list[Any]) -> CognitionRunResult:
+        by = {t.__name__: t for t in tools if hasattr(t, "__name__")}
+        answers.extend(await asyncio.gather(
+            by["wake_at"](subject_rows=["event:1"], at_ms=T + 3_600_000, why="a"),
+            by["wake_at"](subject_rows=["event:2"], at_ms=T + 3_600_000, why="b"),
+        ))
+        return CognitionRunResult(stop_reason="end_turn")
+
+    rig = _rig(agent=ScriptedAgent(script=[two_at_once]), max_self_wakes=1)
+    await rig.say()
+    rig.clock.advance(1)
+    await rig.tick()
+    await rig.settle()
+
+    statuses = sorted(str(a["status"]) for a in answers)
+    assert statuses == ["ok", "refused"]
+    assert next(a for a in answers if a["status"] == "refused")["reason"] == "too_many_pending"
+    assert len(await rig.ledger.pending_self_wakes(unit="u1")) == 1
+    assert len([p for _, p, _ in rig.ledger.paces if p.outcome == "recorded"]) == 1
+
+
+async def test_wake_at_is_capped_per_unit_per_day_and_yesterdays_do_not_count():
+    answers: list[dict[str, object]] = []
+    holder: list[Rig] = []
+
+    async def three(agent: ScriptedAgent, tools: list[Any]) -> CognitionRunResult:
+        by = {t.__name__: t for t in tools if hasattr(t, "__name__")}
+        for n in range(3):
+            answers.append(await by["wake_at"](
+                subject_rows=[f"event:{n}"], at_ms=holder[0].clock.ms + 3_600_000, why="w",
+            ))
+        return CognitionRunResult(stop_reason="end_turn")
+
+    rig = _rig(agent=ScriptedAgent(script=[three, three]), max_self_wakes=10,
+               max_self_wakes_per_day=2)
+    holder.append(rig)
+    await rig.say()
+    rig.clock.advance(1)
+    await rig.tick()
+    await rig.settle()
+    assert [a["status"] for a in answers] == ["ok", "ok", "refused"]
+    assert answers[2]["reason"] == "daily_cap"
+
+    # A day later the rolling window has emptied.
+    answers.clear()
+    await rig.say()
+    rig.clock.advance(25 * 3600)
+    await rig.tick()
+    await rig.settle()
+    assert [a["status"] for a in answers][:2] == ["ok", "ok"]
+
+
+# ---------------------------------------------------------------------------
+# MINOR 5: a cancelled self-wake never wakes; a moved one wakes once
+# ---------------------------------------------------------------------------
+
+def _wake_script(rig_holder: list[Rig]) -> tuple[list[dict[str, object]], Behaviour, Behaviour]:
+    """Session 1 sets a self-wake an hour out; session 2 (built by the caller)
+    cancels or moves it."""
+    answers: list[dict[str, object]] = []
+
+    async def set_it(agent: ScriptedAgent, tools: list[Any]) -> CognitionRunResult:
+        by = {t.__name__: t for t in tools if hasattr(t, "__name__")}
+        answers.append(await by["wake_at"](
+            subject_rows=["event:1"], at_ms=rig_holder[0].clock.ms + 3_600_000, why="venue",
+        ))
+        return CognitionRunResult(stop_reason="end_turn")
+
+    async def cancel_it(agent: ScriptedAgent, tools: list[Any]) -> CognitionRunResult:
+        by = {t.__name__: t for t in tools if hasattr(t, "__name__")}
+        answers.append(await by["wake_cancel"](wake_id="ref1", why="settled"))
+        return CognitionRunResult(stop_reason="end_turn")
+
+    return answers, set_it, cancel_it
+
+
+async def test_a_cancelled_self_wake_never_fires_and_an_uncancelled_one_does():
+    holder: list[Rig] = []
+    answers, set_it, cancel_it = _wake_script(holder)
+    rig = _rig(agent=ScriptedAgent(script=[set_it, cancel_it, ok]))
+    holder.append(rig)
+    await rig.say()
+    rig.clock.advance(1)
+    await rig.tick()
+    await rig.settle()
+    assert answers[0]["status"] == "ok"
+
+    rig.clock.advance(400)
+    await rig.say()
+    await rig.tick()
+    await rig.settle()
+    assert answers[1] == {"status": "ok"}
+    wakes_before = len(rig.stimuli.wakes)
+
+    rig.clock.advance(4 * 3600)               # well past the hour it was set for
+    assert await rig.tick() == []
+    assert len(rig.stimuli.wakes) == wakes_before
+    assert await rig.ledger.pending_self_wakes(unit="u1") == ()
+
+    # CONTROL: the same flow with no cancel wakes on `self`.
+    holder2: list[Rig] = []
+    _, set2, _ = _wake_script(holder2)
+    rig2 = _rig(agent=ScriptedAgent(script=[set2, ok]))
+    holder2.append(rig2)
+    await rig2.say()
+    rig2.clock.advance(1)
+    await rig2.tick()
+    await rig2.settle()
+    rig2.clock.advance(3600)                  # just past the hour it was set for
+    assert len(await rig2.tick()) == 1
+    assert rig2.stimuli.wakes[-1].reason == "self"
+
+
+async def test_a_moved_self_wake_fires_once_at_the_new_time_and_never_at_the_old():
+    holder: list[Rig] = []
+    _answers, set_it, _cancel = _wake_script(holder)
+
+    async def move_it(agent: ScriptedAgent, tools: list[Any]) -> CognitionRunResult:
+        by = {t.__name__: t for t in tools if hasattr(t, "__name__")}
+        moved = await by["wake_move"](
+            wake_id="ref1", at_ms=holder[0].clock.ms + 3 * 3600_000, why="pushed back",
+        )
+        assert moved == {"status": "ok"}, moved
+        return CognitionRunResult(stop_reason="end_turn")
+
+    rig = _rig(agent=ScriptedAgent(script=[set_it, move_it, ok]))
+    holder.append(rig)
+    await rig.say()
+    rig.clock.advance(1)
+    await rig.tick()
+    await rig.settle()
+    rig.clock.advance(400)
+    await rig.say()
+    await rig.tick()
+    await rig.settle()
+    wakes_before = len(rig.stimuli.wakes)
+
+    rig.clock.ms = T + 1 + 3600 + 1_000       # just past the ORIGINAL time
+    assert await rig.tick() == []
+    assert len(rig.stimuli.wakes) == wakes_before
+
+    rig.clock.ms = T + 1 + 400 * 1000 + 3 * 3600_000 + 1_000   # just past the NEW time
+    assert len(await rig.tick()) == 1
+    await rig.settle()
+    assert rig.stimuli.wakes[-1].reason == "self"
+    fired = [p for _, p, _ in rig.ledger.paces if p.transition == "fired"]
+    assert [p.wake_ref for p in fired] == ["ref1"]
+
+    rig.clock.advance(3600)
+    assert await rig.tick() == []             # exactly once
+    assert await rig.ledger.pending_self_wakes(unit="u1") == ()
+
+
+@pytest.mark.parametrize("unit", ["u1"])
+async def test_a_superseded_self_wake_is_retracted_so_only_the_replacement_fires(unit):
+    holder: list[Rig] = []
+
+    async def replace_it(agent: ScriptedAgent, tools: list[Any]) -> CognitionRunResult:
+        by = {t.__name__: t for t in tools if hasattr(t, "__name__")}
+        await by["wake_at"](subject_rows=["event:1"], at_ms=holder[0].clock.ms + 3_600_000,
+                            why="first")
+        await by["wake_at"](subject_rows=["event:1"], at_ms=holder[0].clock.ms + 7_200_000,
+                            why="second")
+        return CognitionRunResult(stop_reason="end_turn")
+
+    rig = _rig(agent=ScriptedAgent(script=[replace_it, ok]))
+    holder.append(rig)
+    await rig.say(unit=unit)
+    rig.clock.advance(1)
+    await rig.tick()
+    await rig.settle()
+
+    rig.clock.advance(3600 + 60)              # the FIRST one's time
+    assert await rig.tick() == []
+    rig.clock.advance(3600)                   # the replacement's
+    assert len(await rig.tick()) == 1
+    await rig.settle()
+    live = await rig.ledger.pending_self_wakes(unit=unit)
+    assert live == ()                          # fired, and the superseded one is gone

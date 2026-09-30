@@ -49,6 +49,24 @@ avoid). Every place in this tree that TRUNCATEs `cognition_session` now
 also names these two tables in the same statement, or the truncate is
 refused outright (see the contract test's own comment).
 
+THE SESSION LIFECYCLE (review of #627). Three more append-only tables, none
+with a foreign key (a session id may be appended by a restore fixture before
+its session, and `wake_id` already set the precedent):
+
+`cognition_session_end`: one row when a session ends (`closed`, `failed`,
+`timeout`, `cancelled`); a session row with none is in flight. Only `closed`
+advances the unit's watermark (20 §3: «a failed session does not advance
+it»), which the stimulus store's `view` reads.
+
+`cognition_carry`: a stimulus a closed session returned to the next agenda
+with a strike (30 §2), or released or struck; the newest row per
+`(unit, stimulus_id)` is current.
+
+`stimulus_retraction`: a `self` stimulus taken back when its self-wake is
+cancelled, moved or superseded, so the evaluator never wakes on it.
+`cognition_self_wake` also admits the `fired` transition and the code-only
+`wake_fire` verb (a session picking a due self-wake up frees its slot).
+
 Revision ID: 0079_cognition_pace_remind
 Revises: 0078_cognition_session
 Create Date: 2026-09-29
@@ -102,11 +120,11 @@ def upgrade() -> None:
             server_default=sa.func.clock_timestamp(),
         ),
         sa.CheckConstraint(
-            "verb IN ('wake_at', 'wake_move', 'wake_cancel')",
+            "verb IN ('wake_at', 'wake_move', 'wake_cancel', 'wake_fire')",
             name="ck_cognition_self_wake_verb",
         ),
         sa.CheckConstraint(
-            "transition IN ('created', 'moved', 'cancelled')",
+            "transition IN ('created', 'moved', 'cancelled', 'fired')",
             name="ck_cognition_self_wake_transition",
         ),
         sa.CheckConstraint(
@@ -162,8 +180,76 @@ def upgrade() -> None:
         "cognition_remind_mirror", ["unit", "reminder_ref"],
     )
 
+    op.create_table(
+        "cognition_session_end",
+        sa.Column("id", sa.BigInteger, sa.Identity(always=False), primary_key=True),
+        sa.Column("session_id", sa.BigInteger, nullable=False),
+        sa.Column("outcome", sa.Text, nullable=False),
+        sa.Column("detail", sa.Text, nullable=False, server_default=sa.text("''")),
+        sa.Column("at_ms", sa.BigInteger, nullable=False),
+        sa.Column(
+            "recorded_at", sa.DateTime(timezone=True), nullable=False,
+            server_default=sa.func.clock_timestamp(),
+        ),
+        sa.CheckConstraint(
+            "outcome IN ('closed', 'failed', 'timeout', 'cancelled')",
+            name="ck_cognition_session_end_outcome",
+        ),
+    )
+    op.create_index(
+        "uq_cognition_session_end_session", "cognition_session_end", ["session_id"],
+        unique=True,
+    )
+
+    op.create_table(
+        "cognition_carry",
+        sa.Column("id", sa.BigInteger, sa.Identity(always=False), primary_key=True),
+        sa.Column("unit", sa.Text, nullable=False),
+        sa.Column("stimulus_id", sa.BigInteger, nullable=False),
+        sa.Column("strike", sa.Integer, nullable=False),
+        sa.Column("state", sa.Text, nullable=False),
+        sa.Column("waits", sa.Integer, nullable=False, server_default=sa.text("0")),
+        sa.Column("session_id", sa.BigInteger),
+        sa.Column(
+            "recorded_at", sa.DateTime(timezone=True), nullable=False,
+            server_default=sa.func.clock_timestamp(),
+        ),
+        sa.CheckConstraint(
+            "state IN ('carried', 'released', 'struck')", name="ck_cognition_carry_state",
+        ),
+    )
+    op.create_index(
+        "idx_cognition_carry_unit_stimulus", "cognition_carry",
+        ["unit", "stimulus_id", "id"],
+    )
+
+    op.create_table(
+        "stimulus_retraction",
+        sa.Column("id", sa.BigInteger, sa.Identity(always=False), primary_key=True),
+        sa.Column("unit", sa.Text, nullable=False),
+        sa.Column("stimulus_id", sa.BigInteger, nullable=False),
+        sa.Column("reason", sa.Text, nullable=False),
+        sa.Column(
+            "recorded_at", sa.DateTime(timezone=True), nullable=False,
+            server_default=sa.func.clock_timestamp(),
+        ),
+    )
+    op.create_index(
+        "uq_stimulus_retraction_stimulus", "stimulus_retraction", ["stimulus_id"],
+        unique=True,
+    )
+
 
 def downgrade() -> None:
+    op.drop_index("uq_stimulus_retraction_stimulus", table_name="stimulus_retraction")
+    op.drop_table("stimulus_retraction")
+    op.drop_index("idx_cognition_carry_unit_stimulus", table_name="cognition_carry")
+    op.drop_table("cognition_carry")
+    op.drop_index(
+        "uq_cognition_session_end_session", table_name="cognition_session_end",
+    )
+    op.drop_table("cognition_session_end")
+
     op.drop_index(
         "idx_cognition_remind_mirror_unit_ref", table_name="cognition_remind_mirror",
     )

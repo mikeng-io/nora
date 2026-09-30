@@ -3380,6 +3380,19 @@ class CognitionConfig(BaseModel):
     max_items: int = Field(default=12, ge=1)
     #: 30-cognition.md §2: "starting at 3".
     max_strikes: int = Field(default=3, ge=1)
+    # DEC-242 (review of #627). The hard wall clock of ONE real session (30 §5:
+    # `AdaptorBudget`'s single timeout): the session runner cancels the model
+    # loop at it and records the session `timeout`; the wake evaluator treats a
+    # session row with no end row older than this as dead. Replaces the
+    # assumption `shadow_session_seconds` makes for a session hook that is
+    # wired; `shadow_session_seconds` stays for `session_mode = "off"`.
+    session_timeout_seconds: float = Field(default=900.0, gt=0)
+    #: 20 §3: "at most `max_self_wakes` pending per unit (starting at 5)".
+    max_self_wakes: int = Field(default=5, ge=1)
+    #: DEC-242: a rolling-24 h cap on `wake_at` calls per unit, starting at 12.
+    #: The pending cap alone does not bound a session that re-arms itself on
+    #: every pass, because a fired wake frees its slot.
+    max_self_wakes_per_day: int = Field(default=12, ge=1)
 
     @field_validator("time_floors")
     @classmethod

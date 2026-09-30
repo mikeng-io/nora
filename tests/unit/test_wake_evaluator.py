@@ -374,7 +374,7 @@ async def test_on_wake_is_never_called_when_none_the_off_wiring():
 async def test_on_wake_is_called_once_per_would_wake_with_the_wake_id():
     calls = []
 
-    async def hook(unit, view, wake_id):
+    async def hook(*, unit, view, wake_id, now_ms):
         calls.append((unit, wake_id))
 
     ev, store, clock, _ = _setup(policy=WakePolicy(quiet_seconds=0), on_wake=hook)
@@ -387,7 +387,7 @@ async def test_on_wake_is_called_once_per_would_wake_with_the_wake_id():
 
 
 async def test_on_wake_a_failing_hook_is_caught_and_counted_never_taking_the_tick_down():
-    async def hook(unit, view, wake_id):
+    async def hook(*, unit, view, wake_id, now_ms):
         raise RuntimeError("a session blew up")
 
     ev, store, clock, metrics = _setup(policy=WakePolicy(quiet_seconds=0), on_wake=hook)
@@ -402,7 +402,7 @@ async def test_on_wake_a_failing_hook_is_caught_and_counted_never_taking_the_tic
 async def test_on_wake_a_sync_hook_with_no_awaitable_return_is_a_no_op():
     calls = []
 
-    def hook(unit, view, wake_id):
+    def hook(*, unit, view, wake_id, now_ms):
         calls.append(wake_id)
         # returns None, not a coroutine — must not be scheduled or awaited
 
