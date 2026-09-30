@@ -2852,6 +2852,17 @@ class NotesConfig(BaseModel):
     #: the create gate; the run is unavailable only when every sample was.
     candidate_samples: int = Field(default=1, ge=1, le=10)
 
+    #: Minimum seconds between two `note-candidates` fires for one room (the
+    #: adaptor's `AdaptorSchedule.min_interval_seconds`). A fire needs unread
+    #: backlog AND the watermark row at least this old. Default 3600, the
+    #: cadence before the key existed, so a config without it behaves exactly
+    #: as before. The floor is 300, the dreamer tick: a smaller number cannot
+    #: fire any faster and would only read as a promise the loop cannot keep.
+    #: A longer interval defers messages, never drops them: a fire reads at
+    #: most `batch_limit` (80) rows past the watermark and advances it by what
+    #: was read, so a room speaking faster than 80 per interval builds lag.
+    candidates_interval_seconds: int = Field(default=3600, ge=300)
+
     #: The `note-merge` pass (design/dreamer-agent-loop/41 §7, DEC-202) — the
     #: back-stop for two open notes asking the same question, and a FIFTH
     #: switch on the two-risks argument above: this is the one pass that

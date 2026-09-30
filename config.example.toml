@@ -1553,6 +1553,16 @@ candidates_enabled = false
 # per room and only when the room spoke.
 # candidate_samples = 1
 
+# Minimum seconds between two note-candidates fires for one room; a fire needs
+# unread messages AND this long since the last one. Default 3600 (hourly),
+# minimum 300. The live operator runs 10800 (3 hours, operator ruling
+# 2026-10-01: "slower the note-candidate to every 3 hours"). A longer interval
+# DEFERS messages, it does not drop them: a fire reads at most 80 messages past
+# the watermark and advances it by what it read, so a room that says more than
+# 80 things per interval leaves a backlog that drains on later fires (80 per
+# interval per room), oldest first.
+# candidates_interval_seconds = 3600
+
 # The DISCHARGE PIPELINE (design/dreamer-agent-loop/33-note-dreamer-
 # schedule.md §7, 19-between-tiers.md §1, issue #101) — a FOURTH gate, on its
 # own rather than riding curator_enabled: that pass retires NOTES, this one

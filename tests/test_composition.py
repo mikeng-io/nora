@@ -1733,6 +1733,35 @@ async def test_candidate_samples_reaches_the_note_candidates_schedule(cfg):
     assert await _samples(4) == 4
 
 
+async def test_candidates_interval_reaches_the_note_candidates_schedule(cfg):
+    """`[notes] candidates_interval_seconds` is the adaptor's
+    `min_interval_seconds` (operator 2026-10-01: every 3 hours). Unset keeps
+    the hourly cadence it had before the key existed."""
+    async def _interval(over: dict) -> int:
+        deps = await build_dependencies(override_config(cfg, {
+            "dreamer.enabled": True, "notes.enabled": True,
+            "notes.candidates_enabled": True, **over,
+        }))
+        return deps.dream_schedules["note-candidates"].min_interval_seconds
+
+    assert await _interval({}) == 3600
+    assert await _interval({"notes.candidates_interval_seconds": 10800}) == 10800
+
+
+def test_candidates_interval_refuses_below_the_dreamer_tick():
+    """Floor 300: a shorter interval cannot fire faster than the tick."""
+    import pytest
+    from pydantic import ValidationError
+
+    from nora.config import NotesConfig
+
+    assert NotesConfig().candidates_interval_seconds == 3600
+    assert NotesConfig(candidates_interval_seconds=300).candidates_interval_seconds == 300
+    for bad in (299, 0, -1):
+        with pytest.raises(ValidationError):
+            NotesConfig(candidates_interval_seconds=bad)
+
+
 async def test_note_candidates_renders_moments_in_the_operators_timezone(cfg):
     """The sibling of `test_the_curator_reads_the_day_from_the_operators_
     timezone`, for the create path: «this Saturday» in a message is resolved
