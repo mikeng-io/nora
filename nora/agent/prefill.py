@@ -26,6 +26,7 @@ from ..domain.decision_log import (
 from ..domain.models import TagContext, TranscriptRow
 from ..domain.prompt import escape
 from ..domain.self_presence import Presence
+from ..language.computer_render import render_computer
 from ..language.culture_render import render_culture
 from ..language.note_render import render_notes
 from ..language.presence_render import render_presence
@@ -164,6 +165,12 @@ _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     # that varied per turn would end the cached prefix's hit rate for
     # everything after it.
     ("culture", 55, "room"),
+    # design/sandbox-runtime §15.3: what is on her computer for this room,
+    # read fresh at turn start. `turn`: its ages move every turn. Before
+    # `standing` because it is the state of the machine, and `standing` +
+    # the transcript are read as the pair «where I was, what was said since».
+    # Renders only in a room using the computer (`ComputerContextReader`).
+    ("computer", 57, "turn"),
     ("standing", 60, "room"),
     # design/standing-compact/30-working-set.md, issue #445. Immediately
     # after `standing` and before the transcript, on purpose — the read
@@ -1060,6 +1067,7 @@ def build_prefill(
             _restamp(_notes_block(ctx, now=clock, view=view)),
             _restamp(_decisions_block(ctx, now=clock)),
             _restamp(_culture_block(ctx, now=clock, view=view)),
+            _restamp(render_computer(ctx.computer)),
             _restamp(_standing_block(ctx, view)),
             _restamp(_standing_working_set_block(ctx, view)),
             _transcript_block(ctx, display_name, clock, context_window),

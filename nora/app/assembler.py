@@ -28,6 +28,7 @@ from nora.domain.ports import (
     StandingStore,
 )
 from nora.domain.quote_window import QuoteWindow
+from nora.engagement.computer_context import ComputerContextReader
 from nora.engagement.context import (
     StandingNotesReader,
     TranscriptInjection,
@@ -64,6 +65,7 @@ def build_assembler(
     quote_window: QuoteWindow | None = None,
     presence: PresenceReader | None = None,
     culture: CultureReader | None = None,
+    computer: ComputerContextReader | None = None,
 ) -> TranscriptInjection:
     return TranscriptInjection(
         audit=audit, memory=memory, persons=persons,
@@ -101,4 +103,8 @@ def build_assembler(
         # same policy and identity every harness already passes, so an eval
         # turn is filtered exactly as a live one in every `[lineage] mode`.
         lineage=lineage_policy(cfg, policy=policy, persons=persons),
+        # `<computer>` (design/sandbox-runtime §15.3). The SAME reader the
+        # fire path holds; `None` while `[computer]` is off, and in every
+        # harness, which renders no block.
+        computer=computer,
     )

@@ -304,6 +304,13 @@ class App:
             ))
         else:
             log.info("cognition wake evaluator disabled (cognition.mode = off)")
+        # The computer session sweeper (design/sandbox-runtime §15.2):
+        # composition builds it only while `[computer] enabled`.
+        if deps.computer_sweeper is not None:
+            deps.background.spawn(runtime.computer_sweep_loop(
+                deps.computer_sweeper, deps.metrics,
+                interval_seconds=deps.computer_sweep_seconds,
+            ))
         deps.background.spawn(runtime.debounce_sweep_loop(
             deps.debounce, deps.metrics,
             interval_seconds=DEBOUNCE_SWEEP_INTERVAL_SECONDS,

@@ -37,6 +37,8 @@ from strands.tools.decorator import FunctionToolMetadata
 from ..domain.compute import ComputeJobStore
 from ..domain.computer import ComputerToolSettings
 from ..domain.computer_events import ComputerEventStore
+from ..domain.computer_leases import ComputerLeases
+from ..domain.computer_sessions import ComputerSessionStore
 from ..domain.media_join import MediaJoin
 from ..domain.models import PersonRef, TranscriptRow
 from ..domain.ports import (
@@ -210,6 +212,12 @@ class ToolRegistry:
         computer: SandboxRuntime | None = None,
         computer_events: ComputerEventStore | None = None,
         computer_settings: ComputerToolSettings | None = None,
+        # Sessions and leases (design/sandbox-runtime §15.2, §15.4): the
+        # session store and the process's ONE `ComputerLeases`, shared by
+        # every turn this registry builds tools for, which is what makes an
+        # in-process lock a lock.
+        computer_sessions: ComputerSessionStore | None = None,
+        computer_leases: ComputerLeases | None = None,
         clock: Callable[[], datetime] = utc_now,
         mcp_tools: Mapping[str, McpToolGroup] | None = None,
         versions: VersionManifest | None = None,
@@ -237,7 +245,7 @@ class ToolRegistry:
         # Record read (`[record_query] enabled = false`, the shipped default).
         # Withheld from every surface and from the gate's digest, so an
         # unconfigured tool costs no prompt and cannot be routed to.
-        # The four computer tools likewise without a runtime (`[computer]
+        # The computer tools likewise without a runtime (`[computer]
         # enabled = false`, the shipped default): they could only answer
         # `unavailable`, so offering them would spend prompt on a tool the
         # model can route to and never use.
@@ -427,6 +435,8 @@ class ToolRegistry:
         self._computer = computer
         self._computer_events = computer_events
         self._computer_settings = computer_settings
+        self._computer_sessions = computer_sessions
+        self._computer_leases = computer_leases
         # §9's three anti-runaway caps, as the DOMAIN value — never
         # `nora.config.RemindersConfig`. Import-linter's "only app and __main__
         # read config" contract names `nora.agent` as a source module and
@@ -1041,6 +1051,8 @@ class ToolRegistry:
             tool_call_log_store=self._tool_call_log_store,
             computer=self._computer, computer_events=self._computer_events,
             computer_settings=self._computer_settings,
+            computer_sessions=self._computer_sessions,
+            computer_leases=self._computer_leases,
             music=self._music,
             online_source=self._online, voice_source=self._voice,
             presence=self._discord_presence,

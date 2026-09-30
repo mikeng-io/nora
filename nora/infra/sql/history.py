@@ -122,6 +122,9 @@ HISTORY_TABLES: dict[str, tuple[str, ...]] = {
     # Step 2b (0074_event_revision): the head is still the compare-and-swap
     # cache 10-tiers.md §8 allows over `event_revision` (APPEND_ONLY, below).
     "events": ("id",),
+    # design/sandbox-runtime §15.2 (0082_computer_sessions): a session is
+    # continued and expired in place; its versions are what it was at T.
+    "computer_sessions": ("id",),
 }
 
 #: Append-only tables a restore copies, and each one's system-time column.
