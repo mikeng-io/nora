@@ -176,21 +176,21 @@
  },
  {
   "name": "major 3: a routed read goes to the first room, whatever it names",
-  "file": "nora/app/cognition_room_reads.py",
+  "file": "nora/agent/room_routing.py",
   "old": "        target = self._per_room.get(room)",
   "new": "        target = next(iter(self._per_room.values()))",
   "target": "tests/unit/test_cognition_room_reads.py::test_a_two_room_agenda_reads_each_room_through_itself tests/infra/test_a_cognition_sessions_read_tools_write_nothing.py::test_a_two_room_agenda_reads_each_room_through_itself_and_cannot_read_another"
  },
  {
   "name": "major 3: a room not on the agenda is read",
-  "file": "nora/app/cognition_room_reads.py",
+  "file": "nora/agent/room_routing.py",
   "old": "        if not isinstance(room, str) or room not in self._rooms:",
   "new": "        if not isinstance(room, str):",
   "target": "tests/unit/test_cognition_room_reads.py::test_a_room_not_on_the_agenda_is_refused_and_reads_nothing tests/infra/test_a_cognition_sessions_read_tools_write_nothing.py::test_a_two_room_agenda_reads_each_room_through_itself_and_cannot_read_another"
  },
  {
   "name": "major 3: a read with no room is guessed from the first",
-  "file": "nora/app/cognition_room_reads.py",
+  "file": "nora/agent/room_routing.py",
   "old": "        room = tool_input.pop(ROOM_ARG, None)",
   "new": "        room = tool_input.pop(ROOM_ARG, None) or self._rooms[0]",
   "target": "tests/unit/test_cognition_room_reads.py::test_a_call_that_names_no_room_is_refused_never_guessed_from_the_first"

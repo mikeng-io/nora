@@ -213,7 +213,7 @@ def read_tools_for(
 
     ONE room: that room's tools, untouched. SEVERAL: each room's tools are
     built by the same source and laid under one tool per name that takes a
-    `room` argument (`nora.app.cognition_room_reads`), so each read resolves
+    `room` argument (`nora.agent.room_routing`), so each read resolves
     through the room it names and a room not on the agenda is refused. The
     unit's home room is never substituted for an item's room (DEC-231)."""
     allowance = grant if grant is not None else cognition_grant()
@@ -227,7 +227,7 @@ def read_tools_for(
     def build(unit: str, rooms: Sequence[Room]) -> list[Any]:
         if len(rooms) == 1:
             return build_for(rooms[0])
-        from nora.app.cognition_room_reads import route_reads
+        from nora.agent.room_routing import route_reads
 
         return route_reads({
             f"{room.platform}:{room.conversation_id}": build_for(room) for room in rooms
@@ -391,7 +391,7 @@ def build_cognition_runner(
         # arguments differ from the session's own verbs of the same names
         # (`room`, `at_ms`, ...), and R-99 would veto every call to them.
         # Plus `room`: the routed tools of an agenda spanning several rooms
-        # take it (`nora.app.cognition_room_reads`), and R-99 would veto an
+        # take it (`nora.agent.room_routing`), and R-99 would veto an
         # argument the table does not list.
         param_names={
             n: frozenset(names) | {"room"}

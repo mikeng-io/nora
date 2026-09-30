@@ -19,7 +19,7 @@ import json
 from typing import Any
 
 from nora.agent.ports import ToolSpec, adapt
-from nora.app.cognition_room_reads import route_reads
+from nora.agent.room_routing import route_reads
 from nora.app.cognition_wiring import read_tools_for
 from nora.domain.cognition_session import Room
 
