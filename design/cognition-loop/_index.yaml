@@ -24,8 +24,9 @@ description: >
   whose items each bind a room, the read tools that room permits, typed write
   verbs whose every call code validates, and one act verb, remind, whose rows
   the fire path composes inside the target room under its guards. It fixes
-  the tiers and their words so nothing overlaps: RECORD (what was observed),
-  ROLLUP (what it adds up to, computed), REGISTER (the unit's affairs: note,
+  the layers, the tiers and their words so nothing overlaps: the RECORD
+  layer (what was observed), the ROLLUP layer (what it adds up to,
+  computed), and the Notebook's tiers REGISTER (the unit's affairs: note,
   memo, event), CHARACTER (what an entity is like), LESSONS (what she has
   learned about how to act here), STANDING (where Nora stands). Every derived row carries its reasoning mode (computed, told,
   deduced, induced, abduced, said), its confidence, its lineage (a set of
@@ -40,12 +41,13 @@ description: >
   into an eval sandbox; memory (Honcho) is the exception. Every Register, Character, Lessons and Standing row is structured
   Markdown with a fixed schema in a revision chain; the Rollup is typed and
   rebuilt into versioned builds. Under all of it is one data model
-  (05, operator 2026-10-01): the LAKE (Record and Rollup) is what happened
-  and the only evidence; MEMORY (Honcho) holds per-person facts; the
-  WAREHOUSE is the entries (Register, Character, Standing, Lessons), each
-  referencing the lake for audit, written only by the subconscious, read by
-  every consumer through a mart assembled at read time by one path; no
-  knowledge graph is built. The Dreamer runtime is kept and its scheduling half replaced; the
+  (05, operator 2026-10-01): five layers in one flow, each defined by who
+  writes it, AUTHORED (humans) → RECORD (ingestion) → ROLLUP (code) →
+  NOTEBOOK (the Cognition loop only; entries citing the Record and Rollup,
+  never evidence) → VIEWS (per-reader slices assembled at read time through
+  one path, never stored), with MEMORY (Honcho) beside the flow; the
+  hierarchy Layer › Tier › Kind › Entry, a tier existing only inside the
+  Notebook; no knowledge graph is built. The Dreamer runtime is kept and its scheduling half replaced; the
   proactive adaptor becomes the loop's act step.
 status: proposed
 governance: operator-directed

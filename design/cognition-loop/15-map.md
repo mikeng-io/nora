@@ -1,7 +1,7 @@
 ---
 type: design
 title: "Map — every store, every block, every read tool, and how they relate"
-description: "The kinds of state (authored, live, observed, computed, derived by Nora, derived by memory, operator-only), each store in each; which context is pushed into every prompt as a small index and which is pulled by a read tool; who writes what; and the graph, laid out as the operator's lake, transform, warehouse, dashboard, action."
+description: "Every store by layer (Authored, Record, Rollup, Notebook and the Live part of Views; Memory and operator-only rows beside them); which context is pushed into every prompt as a small index and which is pulled by a read tool; who writes what; and the graph, with the operator's first analogy (lake, warehouse, mart) mapped onto the layer names that replace it."
 tags: [nora, tiers, map, context, prompt-blocks, read-tools, graph, rollup]
 timestamp: '2026-09-28'
 edges:
@@ -12,23 +12,28 @@ edges:
 
 # 15 · Map
 
-## 1. Every store
+## 1. Every store, by layer
 
-| kind | what makes it this kind | stores | written by |
+The layers are [05](05-data-model.md) §1's (DEC-249); "Live" is part of what a View assembles per turn, and Memory and the operator-only rows sit outside the flow.
+
+| layer | what makes it this layer | stores | written by |
 |---|---|---|---|
 | **Authored** | a person decided it | doctrine (`nora/doctrine/`); the Dreamer doctrine and skills; `<room>` and `policy.toml`; `identity.toml`; reference photos for faces ([60](60-faces.md) §2) | the operator |
-| **Live** | computed for this turn, never stored | the clock; her platform status (which platforms are up); the tool catalogue | code, per turn |
+| **Live** (assembled into Views) | computed for this turn, never stored | the clock; her platform status (which platforms are up); the tool catalogue | code, per turn |
 | **Record** | it happened and was seen | messages with edits, deletes and reactions; her own sends and decisions; presence fixes and collector polls; social items; play samples; perceptions (what media shows, whose face); face labels and templates; `character_dispute` items | code (ingestion; the decision log and the fire path for her own acts; the tag path's `face_label` and `character_dispute`, authored by the person) |
 | **Rollup** | code computed it from the Record | episodes: stay, trip, co-location, face co-appearance, outing, play session, daybook, response · aggregates: place, occupancy, rhythm, corridor and trip speeds, tie, play profile ([25](25-rollup.md)); anomalies are computed on read, not stored | code only |
-| **Register**, **Character**, **Lessons**, **Standing** | an adaptor concluded it: the warehouse, entries that are never evidence ([05](05-data-model.md) §3) | Register: note, memo, event · Character: person, room (culture), unit (culture), Nora · Lessons: the unit's lessons · Standing: room, unit, person | Register: the Cognition adaptor and the tag path · Character: the Character adaptor only · Lessons: the Lessons adaptor only · Standing: the Cognition adaptor and the debrief |
-| **memory** | Honcho concluded it | representation (Nora → person), self card (Nora → Nora), peer card, `remember` conclusions | Honcho; `remember` |
-| **Operator-only** | for the operator, never for her | tension rows ([55](55-self.md) §4); assess reports | the Character and Lessons adaptors; the Assess adaptor |
+| **Notebook**: its tiers **Register**, **Character**, **Lessons**, **Standing** | an adaptor concluded it: entries that cite the Record and Rollup and are never evidence ([05](05-data-model.md) §3) | Register: note, memo, event · Character: person, room (culture), unit (culture), Nora · Lessons: the unit's lessons · Standing: room, unit, person | Register: the Cognition adaptor and the tag path · Character: the Character adaptor only · Lessons: the Lessons adaptor only · Standing: the Cognition adaptor and the debrief |
+| **Memory** (beside the flow) | Honcho concluded it | representation (Nora → person), self card (Nora → Nora), peer card, `remember` conclusions | Honcho; `remember` |
+| **Operator-only** (outside the flow) | for the operator, never for her | tension rows ([55](55-self.md) §4); assess reports | the Character and Lessons adaptors; the Assess adaptor |
 
-In the data model ([05](05-data-model.md) §2) the Record and the Rollup are
-the **lake**, memory (Honcho) holds per-person facts, and the four derived
-tiers are the **warehouse**, written only by the subconscious (DEC-249).
+The Notebook is written only by the Cognition loop from the cut-over
+(DEC-249); until then the tag path and the debrief also write it, as the row
+says.
 
-## 2. The operator's analogy, laid out
+## 2. The operator's first analogy, and the layer names that replace it
+
+The analogy's words are not names ([05](05-data-model.md) §1); this table only
+shows what each was pointing at.
 
 | data stack | Nora |
 |---|---|
@@ -36,11 +41,11 @@ tiers are the **warehouse**, written only by the subconscious (DEC-249).
 | extract / enrich | ingestion and perception ([20](20-observe.md), [60](60-faces.md)) |
 | transform, deterministic | **Rollup** ([25](25-rollup.md)) |
 | transform, judged | the Dreamer's adaptors ([00](00-intent.md) §3) writing Register, Character, Lessons, Standing |
-| warehouse | the entries: Register, Character, Lessons, Standing ([05](05-data-model.md)); the Rollup stays lake-side, rebuildable from the Record |
+| warehouse | the **Notebook**: Register, Character, Lessons, Standing ([05](05-data-model.md)) |
 | row-level security | **lineage** and `exclude_persons`, applied at assembly ([10](10-tiers.md) §3) |
-| **mart** | a per-consumer read view, assembled at read time, never stored, under lineage for the consumer's room and with withdrawal applied, through one builder: the tag and fire turns' pushed blocks (§3), the Cognition session's grounded agenda, portal pages, later recommendations ([05](05-data-model.md) §6, which lists today's assemblers and where they depart from one path) |
-| dashboard, analyst | the conscious turn, which speaks from its mart, and the Cognition session, which thinks with its own |
-| queries | read tools (§4), each a mart cut on demand |
+| mart | **Views**: per-reader slices assembled at read time, never stored, under lineage for the reader's room and with withdrawal applied, through one assembly path: the tag and fire turns' pushed blocks (§3), the Cognition session's grounded agenda, portal pages, later recommendations ([05](05-data-model.md) §6 lists today's assemblers and where they depart from one path) |
+| dashboard, analyst | the speaking turns, which speak from their View, and the Cognition session, which thinks with its own |
+| queries | read tools (§4), each a View cut on demand |
 | action | the act verb and the fire path |
 
 ## 3. Context pushed into the prompt: small indices only
@@ -51,7 +56,7 @@ on `culture` in `_BLOCKS`, `nora/agent/prefill.py`). Everything else is pulled
 (§4). Every pushed block carries its age, and renders each row, field or
 section only where its lineage passes for the room ([10](10-tiers.md) §3).
 
-| block | tier | subject | pushed into | size |
+| block | layer · tier | subject | pushed into | size |
 |---|---|---|---|---|
 | doctrine (system prompt) | Authored | Nora | every turn | — |
 | `<room>` | Authored | a room | proactive only today (`this_room_is` on `<presence>`, `nora/language/proactive.py`); tag and fire turns do not get it (`prefill.py` calls `render_presence` without `room_is`); note-candidates and culture get `description_for`. Cognition gets it for every bound room | one line |
@@ -118,14 +123,14 @@ item's room-scoped reads resolve through it ([30](30-cognition.md) §1).
 A graph here is a way of reading the typed references between rows (cites,
 about, links), not a store: nothing is a knowledge graph, and the storage is
 relational ([05](05-data-model.md) §5, [80](80-prior-art.md) §5). The data
-model's own flow, with the marts, is [05](05-data-model.md) §8.
+model's own flow, with the Views, is [05](05-data-model.md) §8.
 
 ```mermaid
 flowchart BT
   subgraph SRC[sources]
     MSG[messages] --- PRES[presence] --- SOC[social] --- PLAY[play] --- MED[media]
   end
-  REC[(RECORD · lake)]
+  REC[(RECORD)]
   ROL[(ROLLUP · computed<br/>episodes · aggregates)]
   SIG[(stimuli · per unit)]
   REG[(REGISTER<br/>note · memo · event)]

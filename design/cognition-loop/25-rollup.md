@@ -1,7 +1,7 @@
 ---
 type: design
 title: "Rollup — what the Record adds up to, computed by code"
-description: "The tier between the Record and everything a model writes: episodes and aggregates as a pure, replayable projection of the Record up to a logical watermark, generalising the presence analytics substrate (design 27) from presence to every stream. The rollups, their keys and inputs, versioned builds, citation by overlap, the deviation stimulus, and why no model writes here."
+description: "The layer between the Record and everything a model writes (a layer, not a tier: 05-data-model.md, DEC-249): episodes and aggregates as a pure, replayable projection of the Record up to a logical watermark, generalising the presence analytics substrate (design 27) from presence to every stream. The rollups, their keys and inputs, versioned builds, citation by overlap, the deviation stimulus, and why no model writes here."
 tags: [nora, rollup, episode, aggregate, presence-analytics, co-location, outing, daybook, tie, play]
 timestamp: '2026-09-28'
 edges:
@@ -15,7 +15,9 @@ edges:
 
 The operator's analogy (2026-09-28): nobody runs analytics live on the
 dashboard; data lands in a lake, is transformed and loaded into a warehouse,
-and the dashboard queries that. Nora's Record is the lake. Without this tier,
+and the dashboard queries that. Nora's Record is the lake. (Those are the
+analogy's words; the layer names are Record, Rollup, Notebook and Views,
+[05](05-data-model.md) §1.) Without this layer,
 every question about a routine or a relationship would make a model read raw
 messages and location fixes at answer time: expensive, unrepeatable, and the
 thing that fills prompts.
@@ -23,7 +25,7 @@ thing that fills prompts.
 The Rollup already exists for one stream. The presence analytics substrate
 (design/proposed/27-presence-analytics.md, `nora/analytics/rollup.py`) turns
 fixes into typed episodes (stays, trips) and aggregates (places, occupancy,
-rhythm, corridors), and its §3.5 rule is this tier's rule: typed rows, never
+rhythm, corridors), and its §3.5 rule is this layer's rule: typed rows, never
 prose, fully deterministic. This node generalises it to every stream.
 
 ## 2. The rule: a pure projection
@@ -56,7 +58,7 @@ prose, fully deterministic. This node generalises it to every stream.
   ([10](10-tiers.md) §2 rule 7). A face co-appearance has no interval of its
   own and is cited by its media item.
 - **No upward inputs.** A Rollup is a function of the Record: some rollups
-  read other rollups (an outing reads co-locations), never an upper tier (a
+  read other rollups (an outing reads co-locations), never the Notebook (a
   daybook counts outings, not events attended).
 - **Fail-closed labelling** (design 27 §3.4): `unlabeled` is an answer, never
   smoothed into a guess.
@@ -208,7 +210,7 @@ unit's rooms was `up` throughout. Withheld deviations are counted
   `nora/infra/sql/mobility.py`) and DEC-155's rule that the Dreamer is not granted
   `where_been` ("spec §7.4" in `nora/agent/tools.py`).
 - `route` refuses coordinates taken from a presence rollup (R-28).
-- Cited by the tiers above: an event's `Happened` section cites the outing; a
+- Cited by the Notebook's tiers: an event's `Happened` section cites the outing; a
   Character line about routine or closeness cites the rhythm or the tie
   ([10](10-tiers.md) §2 rule 5).
 

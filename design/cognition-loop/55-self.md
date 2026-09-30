@@ -130,16 +130,18 @@ conscious barely drives the subconscious.**
   cannot start or steer a session. That her own messages raise no stimulus
   ([20](20-observe.md) §3) is a consequence of this rule.
 
-**The layers over the data model** ([05](05-data-model.md) §7, DEC-249).
-The subconscious is the only writer of the warehouse: Cognition writes the
-Register and Standing, the Character adaptor Character, the Lessons adaptor
-Lessons. The conscious speaks from it, reading a mart cut for its room at
-read time ([05](05-data-model.md) §6): pushed indices (`<notes>`, `<memos>`,
-`<events>`, `culture`, `standing`, `self`, `lessons`) and pulled reads
-(`note_read`, `memo_read`, `event_search`, `character_read`, `standing_read`).
-It writes nothing there: it hands off. A «記低» about the unit is a strong
-cue, and the end of a tag turn raises a hand-off stimulus in place of the
-debrief, each waking Cognition in about two minutes; a «記低» about the
-speaker stays `remember`, into memory. So the conscious reaches the
+**The two layers of mind over the data model** ([05](05-data-model.md) §7,
+DEC-249). "Layer" in [05](05-data-model.md) names the five data layers; the
+subconscious and the conscious are this section's two layers of mind, and the
+two words do not mix. The Cognition loop, the subconscious, is the only writer
+of the Notebook: Cognition writes the Register and Standing, the Character
+adaptor Character, the Lessons adaptor Lessons. The conscious reads Views cut
+for its room at read time ([05](05-data-model.md) §6): pushed indices
+(`<notes>`, `<memos>`, `<events>`, `culture`, `standing`, `self`, `lessons`)
+and pulled reads (`note_read`, `memo_read`, `event_search`, `character_read`,
+`standing_read`). It writes nothing there: it hands off. A «記低» about the
+unit is a strong cue, and the end of a tag turn raises a hand-off stimulus in
+place of the debrief, each waking Cognition in about two minutes; a «記低»
+about the speaker stays `remember`, into Memory. So the conscious reaches the
 subconscious only as Record and stimuli, which is the direction rule above,
 now without the shared writes it allowed.

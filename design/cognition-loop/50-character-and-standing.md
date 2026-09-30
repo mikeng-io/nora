@@ -31,14 +31,14 @@ revision chain the culture store already has, design/culture-tier/).
 `character_revise` for a person refuses anyone who is not a listed person of
 the unit's rooms.
 
-**In the data model** ([05](05-data-model.md) §4) every account is a
-Character entry in the warehouse: culture is the Character of a room or the
+**In the data model** ([05](05-data-model.md) §2) every account is an entry
+of the Notebook's Character tier: culture is the Character of a room or the
 unit, on the same machinery as a person's or Nora's. **Amended by DEC-249**
-([05](05-data-model.md) §5): evidence is only the lake. The Register rows and
-members' Characters named in "evidence it reads" above are read as context
-and linked, never cited; an account cites Record ids and Rollup keys. The
-same holds for Standing below, which links to Character and Lessons and cites
-the lake.
+([05](05-data-model.md) §5): evidence is only the Record and the Rollup. The
+Register rows and members' Characters named in "evidence it reads" above are
+read as context and linked, never cited; an account cites Record ids and
+Rollup keys. The same holds for Standing below, which links to Character and
+Lessons and cites the Record and Rollup.
 
 Character is descriptive. What Nora has learned to *do* in a unit ("two
 options, not five") is a lesson, in the Lessons tier ([10](10-tiers.md) §1,

@@ -54,9 +54,9 @@ is doctrine, never that tier.)
 
 **Memory is Honcho, and only Honcho** (`design/cognition-loop/10-tiers.md`
 §6's words table: memory means Honcho, never "any store of ours"). Postgres
-holds two windows onto the same tier, **Record**, not memory:
+holds two windows onto the same layer, the **Record**, not memory:
 
-| layer | tier | store | holds | tool |
+| window | layer | store | holds | tool |
 |---|---|---|---|---|
 | **hot** | Record | PostgreSQL | last 40 messages, verbatim | *(injected, no tool)* |
 | **deeper** | Record | **same PostgreSQL** | everything older, verbatim | `load_transcript`, `who_said` |
@@ -72,7 +72,7 @@ have their own sections below: **notes** (the unit's open questions) and
 **Standing** (her own position, per subject).
 
 **The record store is the RECORD** — the same word `10-tiers.md` uses for the
-tier. **Honcho is memory**, its only store. The record store is authoritative
+layer. **Honcho is memory**, its only store. The record store is authoritative
 and is what R-2/A9 guarantee; Honcho is best-effort and may be absent — which
 is why `nora/infra`'s two clients have opposite error contracts.
 
@@ -308,27 +308,36 @@ The most-used words in this repo, and none of them was here until 2026-09-08.
   the last days, with outcomes: `sent`, `silent`, `cancelled_note_moved`,
   `pending`. Injected into every pass so she does not repeat herself.
 
-## The tiers — Record, Rollup, Register, Character, Lessons, Standing
+## The layers and the Notebook's tiers
 
-**`design/cognition-loop/10-tiers.md` is canonical for all six and every
-word below**; this section only resolves what collides with words already in
-use elsewhere in this file, and adds what had no entry.
+**`design/cognition-loop/05-data-model.md` is canonical for the topology and
+the vocabulary** (DEC-249): five **layers** in one flow, each defined by who
+writes it, **Authored** (humans) → **Record** (ingestion) → **Rollup**
+(code) → **Notebook** (the Cognition loop only) → **Views** (assembled at read
+time through one path, never stored), with **Memory** (Honcho) beside the
+flow; and the hierarchy **Layer › Tier › Kind › Entry**. A **tier** is a
+subdivision inside the Notebook only (Register, Character, Standing,
+Lessons); the Record and the Rollup are layers, not tiers.
+**`design/cognition-loop/10-tiers.md` is canonical for the two layers and four
+tiers below and every word they use**; this section only resolves what
+collides with words already in use elsewhere in this file, and adds what had
+no entry.
 
-- **Record** — the observed tier: messages (hers included) with their edits,
+- **Record** — the observed layer: messages (hers included) with their edits,
   deletes and reactions; her loop decisions and reminder results; presence
   fixes and the collector's polls; social items; play samples; perceptions
   of media (what it shows, whose face); face labels and `character_dispute`
   items (`10-tiers.md` §1's words). Written by code. This is what "the
   record store" / "the RECORD" above already names — never "a database row"
   in general.
-- **Rollup** — the computed tier: **episodes** (a Rollup row for one bounded
+- **Rollup** — the computed layer: **episodes** (a Rollup row for one bounded
   happening, with a start, an end and participants — a stay, a co-location,
   an outing, a person's day) and **aggregates** (a Rollup row of counts,
   patterns or clusters over a window — place, rhythm, tie). Code only, a
   pure function of the Record. Never a model's summary, and never Standing's
   fold of folds: `nora/analytics/rollup.py` keeps its own name for the
-  presence part of this tier, and `[standing] rollup_max_folds` /
-  `nora_standing_rollup_folds_total` name a Standing fold, not this tier,
+  presence part of this layer, and `[standing] rollup_max_folds` /
+  `nora_standing_rollup_folds_total` name a Standing fold, not this layer,
   until the ingest Standing fold retires (`10-tiers.md` §6).
 - **Register** — the unit's affairs: **note** (unchanged, DEC-213), **memo**
   (a settled thing the unit wants kept, that does not close — distinct from
@@ -346,8 +355,8 @@ use elsewhere in this file, and adds what had no entry.
   prescriptive lines, each with the outcomes that taught it. Written only by
   the Lessons adaptor, through `lesson_write`/`lesson_retire`. Not doctrine
   (a rule she may not break) and not a runtime skill.
-- **Standing** — see above; now one of six named tiers rather than a lone
-  concept.
+- **Standing** — see above; now one of the Notebook's four tiers rather
+  than a lone concept.
 
 Other words this bundle introduces:
 
@@ -368,7 +377,7 @@ Other words this bundle introduces:
   `Gathering` (above). Never the fire-turn occasion (code `Event`, DEC-139,
   see *occasion*, below).
 - **subconscious / conscious** — the operator's own words (潛意識 / 明意識,
-  `design/cognition-loop/55-self.md` §6) for the two layers: the Dreamer's
+  `design/cognition-loop/55-self.md` §6) for the two layers of mind (not the data layers of `05-data-model.md`): the Dreamer's
   four adaptors run underneath, always; the tag turn and the fire turn
   speak. Not code names, and never "tier".
 
@@ -511,7 +520,7 @@ kind. The files sit in four scope folders — `core/` (wherever she is),
   point of having one renderer.
 - **placement** — where a block goes: `header` (the static, cache-hit prefix)
   or `turn` (rebuilt every turn). Deliberately not called a *tier* — a tier in
-  this file is one of Record, Rollup, Register, Character, Lessons or
+  this file is one of the Notebook's Register, Character, Lessons or
   Standing (`design/cognition-loop/10-tiers.md`), each with its own store,
   and this is a position in one prompt. One volatile byte placed in `header`
   ends the 95-99% prefix-cache hit for everything after it.

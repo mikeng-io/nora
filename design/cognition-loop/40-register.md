@@ -33,9 +33,9 @@ alone → `remember` (memory); settled and about the unit, someone else or
 the world → memo; not settled and must not be dropped → note; dated and
 attended → event; should happen at a time → a reminder.
 
-**The same rule over the tiers** ([05](05-data-model.md) §4). Raw statements
-stay in the lake and per-person facts in memory; the warehouse holds what the
-unit's affairs, its people and Nora add up to:
+**The same rule over the Notebook's tiers** ([05](05-data-model.md) §2).
+Raw statements stay in the Record and per-person facts in Memory; the
+Notebook holds what the unit's affairs, its people and Nora add up to:
 
 | the thing | where it goes |
 |---|---|
@@ -45,10 +45,10 @@ unit's affairs, its people and Nora add up to:
 | what a person, a room, the unit or Nora is like, from many instances | Character (the Character adaptor only) |
 | where Nora stands toward a room, the unit or a person | Standing |
 | how Nora should act here, learned from outcomes | Lessons (the Lessons adaptor only) |
-| a settled fact about the speaker alone | memory, through `remember`: not the warehouse |
-| something to do at a time | a reminder: machinery, not the warehouse |
+| a settled fact about the speaker alone | Memory, through `remember`: not the Notebook |
+| something to do at a time | a reminder: machinery, not the Notebook |
 
-**Amended by DEC-249**: every warehouse row is written by the subconscious.
+**Amended by DEC-249**: every Notebook entry is written by the Cognition loop.
 From the cut-over the tag path writes none of the three kinds above; a
 «記低» about the unit and a date, time or RSVP are strong cues that wake
 Cognition, which writes the note, memo or event ([05](05-data-model.md) §7).

@@ -66,9 +66,9 @@ bypass is the session setting the snapshot's seeding and test resets use.
 2026-10-01, DEC-249). **Memo is the first kind built on the entry, right
 after step 3's shadow week** (it moves up from step 7, row 7 below): the entry
 store and chain, the reference table widened to every kind and to Rollup
-keys, `about` and `links`, the generic verbs, the one mart builder serving
-`<memos>` and `memo_read`, written only by Cognition. **The subconscious is the
-only writer of the warehouse**: at or right after the cut-over the tag path's
+keys, `about` and `links`, the generic verbs, the one View builder serving
+`<memos>` and `memo_read`, written only by Cognition. **The Cognition loop is the
+only writer of the Notebook**: at or right after the cut-over the tag path's
 `note_create`, `note_update` and event verbs and the debrief's Standing write
 move behind Cognition, replaced by a hand-off stimulus with a strong cue
 (about two minutes), with the tag tools' text and the «記低» doctrine changed

@@ -1,7 +1,7 @@
 ---
 type: design
 title: "Prior art — Honcho, Graphiti/Zep, Letta, Generative Agents, Mem0; what Nora adopts, what it refuses, and the boundary with Honcho"
-description: "What each memory system does from raw input to derived memory, read from source on 2026-09-28; the mapping to Nora's tiers; the word collisions and how this bundle avoids them; the adopted mechanisms (retraction cascade, decay and reinforcement, transaction time everywhere and valid time only where intrinsic, hybrid search, contradiction as a row, a learning loop below fixed law); the refused ones (model-extracted triples, rewriting old rows, agent-written doctrine or skills); and where Honcho stops and Nora's tiers start."
+description: "What each memory system does from raw input to derived memory, read from source on 2026-09-28; the mapping to Nora's layers and tiers; the word collisions and how this bundle avoids them; the adopted mechanisms (retraction cascade, decay and reinforcement, transaction time everywhere and valid time only where intrinsic, hybrid search, contradiction as a row, a learning loop below fixed law); the refused ones (model-extracted triples, rewriting old rows, agent-written doctrine or skills); and where Honcho stops and Nora's tiers start."
 tags: [nora, prior-art, honcho, graphiti, zep, letta, generative-agents, mem0, memory, terminology]
 timestamp: '2026-09-28'
 edges:

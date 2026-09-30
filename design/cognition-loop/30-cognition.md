@@ -104,7 +104,7 @@ versions injected, the config revision in force, and the model id and route
 
 | class | verbs | leaves the session how |
 |---|---|---|
-| **read** | every read tool the registry admits (`read_only_tools()`) except the live social reads ([20](20-observe.md) §2), plus the warehouse queries of [15](15-map.md) §4: `record_query`, `rollup_read`, `event_search`, `memo_read`, `character_read`, `standing_read`, `social_items` | returns into context, filtered by the item's room |
+| **read** | every read tool the registry admits (`read_only_tools()`) except the live social reads ([20](20-observe.md) §2), plus the Notebook and Rollup reads of [15](15-map.md) §4: `record_query`, `rollup_read`, `event_search`, `memo_read`, `character_read`, `standing_read`, `social_items` | returns into context, filtered by the item's room |
 | **write** | one family per tier: Register (`note_create`, `note_update`, `memo_write`, `memo_withdraw`, `event_propose` (status `staged` or `proposed`), `event_revise`, `event_set_status`), Standing (`standing_revise`); each takes `base_revision_id`. Character's and Lessons' verbs belong to their own adaptors ([50](50-character-and-standing.md) §6) | code validates, then commits (§3) |
 | **act** | `remind(at, room, brief)`, the one act verb; `room` is the agenda item's bound room. `remind_move(reminder_id, at, why)` and `remind_cancel(reminder_id, why)` for reminders Cognition itself wrote, never a person's | a reminder row; the fire path composes it when due |
 | **pace** | `wake_at(at, subject_rows, why)`, `wake_move(wake_id, at, why)`, `wake_cancel(wake_id, why)` | write verbs on the unit's stimulus table, not a tier: a `self` stimulus due at `at` ([20](20-observe.md) §3); nothing leaves for a room |
@@ -138,8 +138,8 @@ an agenda or a pending self-wake. `remind` is the bridge: Cognition holds it
 to reach the conscious layer, and the tag turn holds it for a reminder a
 person asks for. The write verbs on the Register and room Standing are held
 by both layers; that is shared state, not a command. **Amended by DEC-249**
-([05](05-data-model.md) §7): from the cut-over only the subconscious writes
-the warehouse, and the tag turn hands off through a strong-cue stimulus
+([05](05-data-model.md) §7): from the cut-over only the Cognition loop writes
+the Notebook, and the tag turn hands off through a strong-cue stimulus
 instead of holding these write verbs.
 
 **The grant.** The runtime's ceiling today is "may look, may not act": every
@@ -309,7 +309,7 @@ cut-over ([70](70-migration.md)).
   gates step 7).
 - **A cheap reader** samples finished sessions for writes whose citations do
   not say what the write claims. It reports; it never edits.
-- **Data-quality checks, nightly, in code** (the analogue of warehouse tests):
+- **Data-quality checks, nightly, in code** (the analogue of a data team's quality tests):
   citations that no longer resolve; one happening written as two events
   across rooms; a Rollup row a rebuild computes differently; a happened event
   whose place differs from its outing's; sections past their age horizon; an

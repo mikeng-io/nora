@@ -1,7 +1,7 @@
 ---
 type: design
-title: "Tiers — Record, Rollup, Register, Character, Lessons, Standing; and the words that are not tiers"
-description: "Six stores, each answering exactly one question, each with one write path, one key and one citation direction; every derived row carries its reasoning mode, its confidence, its lineage and its age. Lineage is a set of (kind, subject, origin room) per field, checked per room at assembly. Every store is append-only in system time, so Nora as of any past moment can be restored, memory excepted. Cognition is the loop, memory is Honcho, doctrine is authored, tension is the operator's. The terminology table and the words retired."
+title: "Tiers — the Notebook's four tiers (Register, Character, Lessons, Standing), the Record and Rollup layers beneath them, and the words"
+description: "The Record and Rollup layers and the Notebook's four tiers (05-data-model.md fixes the layers; a tier is a subdivision of the Notebook only), each answering exactly one question, each with one write path, one key and one citation direction; every derived row carries its reasoning mode, its confidence, its lineage and its age. Lineage is a set of (kind, subject, origin room) per field, checked per room at assembly. Every store is append-only in system time, so Nora as of any past moment can be restored, memory excepted. Cognition is the loop, memory is Honcho, doctrine is authored, tension is the operator's. The terminology table and the words retired."
 tags: [nora, tiers, terminology, record, rollup, register, character, lessons, standing, culture, lineage, reasoning-mode, versioning, as-of]
 timestamp: '2026-09-28'
 edges:
@@ -13,30 +13,35 @@ edges:
 
 # 10 · Tiers
 
-**This node is the canonical definition** of the tiers, their columns, modes,
-keys and words. Every other node, the GLOSSARY and every objective or skill
-uses these words with exactly these meanings; a new word for any of these
-things is a defect. **The data model is [05](05-data-model.md)** (operator 2026-10-01,
-DEC-249): the Record and the Rollup are the **lake**, what happened; Honcho is
-**memory**, per-person facts; the Register, Character, Standing and Lessons
-are the **warehouse**, each row an **entry** that references the lake for
-audit and is never evidence. The rules below that the operator changed that
-day are marked «Amended by DEC-249».
+**The topology and the vocabulary are [05](05-data-model.md)** (operator
+2026-10-01, DEC-249): five layers in flow order, Authored → Record → Rollup →
+Notebook → Views, with Memory (Honcho) beside them, and the hierarchy
+Layer › Tier › Kind › Entry. **A tier is a subdivision inside the Notebook
+only**: Register, Character, Standing, Lessons. The Record and the Rollup are
+layers, not tiers; this node keeps its filename and describes them because
+the Notebook's rules are cut against them.
 
-## 1. The rule the tiers are cut by
+**This node is canonical for** the Notebook's tiers and the two layers they
+cite: their questions, columns, modes, keys and words. Every other node, the
+GLOSSARY and every objective or skill uses these words with exactly these
+meanings; a new word for any of these things is a defect. The rules below
+that the operator changed on 2026-10-01 are marked «Amended by DEC-249».
 
-**Each tier answers one question, and no question is answered by two tiers.**
+## 1. The rule the layers and tiers are cut by
 
-| tier | the one question | holds | written by | reasoning |
+**Each of these answers one question, and no question is answered by two.**
+The first two rows are layers; the other four are the Notebook's tiers.
+
+| layer or tier | the one question | holds | written by | reasoning |
 |---|---|---|---|---|
-| **Record** | *what was observed?* | messages (hers included) with their edits, deletes and reactions; her loop decisions and reminder results; presence fixes and the collector's polls; social items; play samples; perceptions of media (what it shows, whose face); face labels and `character_dispute` items | **code**: ingestion ([20](20-observe.md)); the decision log and the fire path for her own acts; two tag-path recording verbs, `face_label` and `character_dispute`, each recording what one person said as an item authored by that person and citing their message | none: observed (a perception carries its model's confidence) |
-| **Rollup** | *what does the Record add up to over an interval?* | **episodes** (bounded happenings: a stay, a trip, a co-location, a face co-appearance, an outing, a play session, a person's day, a `response` to her send) and **aggregates** (counts, patterns and clusters over a window: place, rhythm, tie, play profile) | **code only**: a pure function of the Record up to a logical watermark ([25](25-rollup.md)) | **computed** |
-| **Register** | *what is the state of the unit's affairs?* | **note** (open, closes), **memo** (settled, kept), **event** (dated, attended) | the Cognition adaptor and the tag path, through write verbs; the Cognition adaptor alone after the cut-over (DEC-249) | **told**, **deduced**, **abduced** |
+| **Record** (layer) | *what was observed?* | messages (hers included) with their edits, deletes and reactions; her loop decisions and reminder results; presence fixes and the collector's polls; social items; play samples; perceptions of media (what it shows, whose face); face labels and `character_dispute` items | **code**: ingestion ([20](20-observe.md)); the decision log and the fire path for her own acts; two tag-path recording verbs, `face_label` and `character_dispute`, each recording what one person said as an item authored by that person and citing their message | none: observed (a perception carries its model's confidence) |
+| **Rollup** (layer) | *what does the Record add up to over an interval?* | **episodes** (bounded happenings: a stay, a trip, a co-location, a face co-appearance, an outing, a play session, a person's day, a `response` to her send) and **aggregates** (counts, patterns and clusters over a window: place, rhythm, tie, play profile) | **code only**: a pure function of the Record up to a logical watermark ([25](25-rollup.md)) | **computed** |
+| **Register** | *what is the state of the unit's affairs?* | **note** (open, closes), **memo** (settled, kept), **event** (dated, attended) | the Cognition adaptor and the tag path, through write verbs; the Cognition loop alone after the cut-over (DEC-249) | **told**, **deduced**, **abduced** |
 | **Character** | *what is this entity like, and how does it behave?* | one account per entity: a **person**, a **room**, the **unit**, **Nora** | the Character adaptor only, through `character_revise` | **induced** |
 | **Lessons** | *what has Nora learned about how to act here?* | per unit, **lessons**: short prescriptive lines of learned practice, each with the outcomes that taught it ([12](12-schemas.md) §4a) | the Lessons adaptor only, through `lesson_write` and `lesson_retire`; the operator's rollback on the portal goes through `lesson_retire` | **induced**, from outcomes |
-| **Standing** | *where does Nora stand?* | her held position toward a **room**, the **unit**, a **person** | the Cognition adaptor and the tag-path debrief, through `standing_revise`; the Cognition adaptor alone after the cut-over (DEC-249) | **deduced**, **abduced**, **said** |
+| **Standing** | *where does Nora stand?* | her held position toward a **room**, the **unit**, a **person** | the Cognition adaptor and the tag-path debrief, through `standing_revise`; the Cognition loop alone after the cut-over (DEC-249) | **deduced**, **abduced**, **said** |
 
-Outside the six, and not tiers:
+Outside these, and neither these two layers nor a tier:
 
 - **Doctrine** — authored by the operator (`nora/doctrine/`). Never derived,
   never changed by Nora in whole or in part, changed only when the humans
@@ -80,7 +85,7 @@ And the words that name processes, never stores:
    a note may not rest on "that person tends to cancel", which is a Character
    line, not a claim about the plan.
    **Amended by DEC-249** ([05](05-data-model.md) §5): evidence is only
-   the lake. An entry cites Record ids and Rollup keys; a reference to
+   the Record and the Rollup. An entry cites Record ids and Rollup keys; a reference to
    another entry (a Character line, a note, a lesson) is a **link**, never
    evidence, and the cascade does not walk it. The order above now says only
    which entries may link to which.
@@ -88,13 +93,13 @@ And the words that name processes, never stores:
    Record ids; a Rollup key qualifies, because every Rollup row is computed
    from Record ids. A derived row with a chain that does not end there is
    refused.
-3. **One write path per tier.** Code writes the Record and the Rollup; the
+3. **One writer per layer, one write path per tier.** Code writes the Record and the Rollup; the
    two recording verbs of §1 write Record items authored by a person. Only
    write verbs write Register, Character, Lessons and Standing, and each verb
    belongs to exactly one tier (the pace verbs write the stimulus table, no
    tier). The exceptions are `character_revise` and `lesson_write`, which
    may also write a tension row. **Amended by DEC-249** ([05](05-data-model.md)
-   §7): the subconscious is the only writer of these four tiers. The tag
+   §7): the Cognition loop is the only writer of the Notebook's four tiers. The tag
    path's Register writes and the debrief's Standing write, named in §1,
    move behind Cognition at or after the cut-over; the tag turn hands off
    through a strong-cue stimulus instead ([05](05-data-model.md) §9, E2).
@@ -234,10 +239,10 @@ Nora's own (Honcho's code has no abductive level, [80](80-prior-art.md) §1):
 | **abduced** | the best explanation of evidence nobody stated | Register, Standing | a value resting only on abduction goes out as a question ("you ended up at C, right?"); never upgraded by assent (§2 rule 4) |
 | **said** | Nora herself said it; the row asserts only that she said it | Standing | cites her own Record row; grounds nothing but itself |
 
-**At the warehouse level** ([05](05-data-model.md) §3) an entry states only
-`observed` or `inferred`, with its confidence; whether these six modes are
-mapped onto the two and dropped at convergence, or kept as the detail behind
-them, is [05](05-data-model.md) §10 Q2. Until then this table holds.
+**On a Notebook entry** ([05](05-data-model.md) §3) the stated basis is
+`observed` or `inferred`, with its confidence; whether these six modes stay as
+the detail under the two (the recommendation) or are dropped at convergence
+is [05](05-data-model.md) §10 Q2. Until then this table holds.
 
 **Code caps the mode.** A value resting on presence fixes, or on a face in
 media ([60](60-faces.md)), older than the freshness threshold (starting at
@@ -259,14 +264,19 @@ machinery ([05](05-data-model.md) §4).
 
 | word | means exactly | never means |
 |---|---|---|
-| **lake** | the Record and the Rollup: what happened, raw, and what code computes from it; the only evidence ([05](05-data-model.md) §2) | a model's summary; memory |
-| **warehouse** | the Register, Character, Standing and Lessons: what Nora makes of the lake, written only by the subconscious ([05](05-data-model.md)) | the Rollup |
-| **entry** | one warehouse row: subject, kind, body, lake references, basis, confidence, visibility, lifecycle, revisions ([05](05-data-model.md) §3) | a Record item; a log line |
+| **layer** | one of the five of [05](05-data-model.md) §1, defined by who writes it and how it is derived: Authored, Record, Rollup, Notebook, Views; Memory sits beside them | a tier; a prompt block |
+| **Authored** | the layer humans write: doctrine, the Dreamer's objectives and skills, the config files | anything a model writes |
+| **Notebook** | the layer of Nora's judgement: entries in four tiers, written only by the Cognition loop, citing the Record and Rollup, never evidence ([05](05-data-model.md)) | the Record; Memory |
+| **Views** | the layer of per-reader slices, assembled at read time under lineage and withdrawal through one assembly path, never stored ([05](05-data-model.md) §6) | a store; a cache; a SQL view |
+| **Memory** | Honcho, beside the layers: per-person understanding and what people say about themselves; read into Views, never copied into the Notebook | any store of ours |
+| **tier** | a subdivision inside the Notebook only, by what it is about: Register, Character, Standing, Lessons | the Record or the Rollup (layers) |
+| **kind** | a row type within a tier: note, memo, event; person, room, unit, Nora; room, unit, person; lesson | a platform; a stimulus kind |
+| **entry** | one Notebook row: scope, subject, kind, body, citations, basis, confidence, visibility, lifecycle, revisions ([05](05-data-model.md) §3) | a Record item; a log line |
 | **basis** | an entry's `observed` or `inferred`, beside its confidence ([05](05-data-model.md) §3) | a reasoning mode (§4), its finer grain |
 | **link** | a typed reference from one entry to another; never evidence ([05](05-data-model.md) §5) | a citation |
-| **mart** | a per-consumer read view, assembled at read time under lineage and withdrawal through one builder, never stored ([05](05-data-model.md) §6) | a store; a cache |
-| **Record** | the observed tier | a database row in general |
-| **Rollup** | the computed tier | a model's summary; Standing's fold of folds (below) |
+| **Cognition loop** | the Notebook's one writer: the Dreamer's adaptors (Cognition, and the Character and Lessons adaptors beside it) | the Cognition adaptor alone; a tier |
+| **Record** | the observed layer | a database row in general |
+| **Rollup** | the computed layer | a model's summary; Standing's fold of folds (below) |
 | **episode** | a Rollup row for one bounded happening, with a start, an end and participants | a raw ingested item (Graphiti's episode); an interaction exemplar (LangMem's) |
 | **aggregate** | a Rollup row of counts, patterns or clusters over a window (a place cluster is one) | a Character line |
 | **daybook** | the Rollup episode of one person's day | a diary Nora writes |
@@ -285,7 +295,7 @@ machinery ([05](05-data-model.md) §4).
 | **reasoning** | the mode a derived row was reached by (§4) | the model's chain of thought |
 | **confidence** | the writer's stated certainty (§3); on a perception, its model's score | a probability; the reasoning mode |
 | **lineage** | the `(kind, subject, origin room)` set a row's citations reach down to (§3) | the citations themselves |
-| **citation** | a Record id or a lower-tier key a line rests on | a hint read from memory |
+| **citation** | a Record id or a Rollup key a line rests on | a hint read from memory |
 | **fold** | a model call that rewrites a row from its last version plus new evidence (the Standing fold; a note's `Folded`) | a Rollup; a revision chain |
 | **memory** | Honcho | any store of ours |
 | **conclusion** | a derived row in Honcho | a Record item (Honcho calls its conclusions "observations"; Nora never does) |
@@ -331,20 +341,22 @@ machinery ([05](05-data-model.md) §4).
 | **play** | the stream of who is in which game or voice channel, with whom | a game's own match data (that is a source feeding it) |
 
 **"Rollup" collides twice.** `nora/analytics/rollup.py` is the presence part
-of this tier and keeps its name. Standing's `[standing] rollup_max_folds` and
-`nora_standing_rollup_folds_total` name a fold of Standing folds, not this
-tier: both go when the ingest Standing fold is retired ([70](70-migration.md)
-step 4), and until then their help text says "Standing fold, not the Rollup
-tier".
+of this layer and keeps its name. Standing's `[standing] rollup_max_folds`
+and `nora_standing_rollup_folds_total` name a fold of Standing folds, not
+this layer: both go when the ingest Standing fold is retired
+([70](70-migration.md) step 4).
 
 Retired: **idea** (a proposal is a `## Proposed` line of a note, DEC-213);
 **stance** (it is Standing); **knowledge** and **fact** (the deleted tier,
 #115; say "claim" or "typed row"); **gathering** in prose (the code name
 `Gathering` stays); **circle** for the people of a unit (say unit; R-47's
 "circle", the presence roster, keeps its meaning); **observation** (Honcho's
-word for a conclusion; say "Record item" or "report"); **storage tier**;
-**trace** (the operator's metaphor; it is Langfuse's in this repo; **mart**,
-retired with it, is restored by DEC-249 for a per-consumer read view); **inferred** (replaced by the three inference modes); **community**
+word for a conclusion; say "Record item" or "report"); **storage tier**; **tier** for the Record or the Rollup (they are layers, DEC-249);
+**mart** and **trace** (the operator's metaphors; "trace" is Langfuse's in
+this repo), and with them **lake** and **warehouse** (say Record, Notebook,
+Views; DEC-249); **bronze**, **silver**, **gold** (never used);
+**inferred** as a reasoning mode (replaced by the three inference modes; it
+survives only as an entry's basis, [05](05-data-model.md) §3, DEC-249); **community**
 (Graphiti's clustered group; rooms and units are configured).
 
 ## 7. Where today's stores land

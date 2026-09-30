@@ -108,18 +108,18 @@ state, never as a command ([55](55-self.md) §6).
   adaptors wrote, and writes the Register and room Standing through the same
   verbs.
 
-**The data model** ([05](05-data-model.md), operator 2026-10-01). The
-**lake** is what happened, raw: the Record (transcripts, audio, photos,
-reactions, presence) and the Rollup code computes from it. **Memory** (Honcho)
-holds per-person facts, including what people say about themselves. The
-**warehouse** is what Nora makes of it: the Register (note, memo, event),
-Character (culture included), Standing and Lessons, each row one **entry**
-that references the lake for audit, says whether it was observed or inferred
-and how sure, links to other entries, and is never evidence itself. Nothing is
-a knowledge graph. **Only the subconscious writes the warehouse**; the
-conscious turns speak from it and hand off (a «記低» or the end of a tag turn
-is a strong-cue stimulus that wakes Cognition), and each consumer reads a
-**mart**, a slice assembled at read time through one path.
+**The data model** ([05](05-data-model.md), operator 2026-10-01). Five
+layers in one flow, each defined by who writes it: **Authored** (doctrine and
+config, humans only) → **Record** (raw observations, ingestion only) →
+**Rollup** (computed from the Record by code) → **Notebook** (Nora's
+judgement, written only by the Cognition loop, citing the Record and Rollup
+and never evidence itself) → **Views** (per-reader slices assembled at read
+time through one path, never stored), with **Memory** (Honcho) beside the
+flow. Nothing writes backwards: what she says is observed into the Record. The
+Notebook's tiers are the Register (note, memo, event), Character (culture
+included), Standing and Lessons; a tier exists only inside the Notebook.
+Speaking turns read Views and speak; to change the Notebook they raise a
+stimulus. Nothing is a knowledge graph.
 
 **Amended 2026-10-01 (DEC-249):** the tag path's Register writes and the
 debrief's Standing write, described in this section and in D9 and D12, move
@@ -226,7 +226,9 @@ decisions of 2026-09-28, binding:
   her conscious; the subconscious drives the conscious, and the conscious
   reaches the subconscious only as Record and shared state.
 
-**2026-10-01 — the data model agreed and corrected the same day** (DEC-249,
-[05](05-data-model.md)): the warehouse only, beside the lake and memory; one
-entry; evidence only the lake; the subconscious the only writer; memo first on
-the entry, right after the shadow week; the tier names kept.
+**2026-10-01 — the data model agreed and corrected twice the same day**
+(DEC-249, [05](05-data-model.md)): five layers (Authored, Record, Rollup,
+Notebook, Views) with Memory beside them; Layer › Tier › Kind › Entry, a tier
+inside the Notebook only; one entry; evidence only the Record and Rollup; the
+Cognition loop the Notebook's only writer; memo first on the entry, right
+after the shadow week.
