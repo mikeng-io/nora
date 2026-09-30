@@ -761,3 +761,33 @@ behaviour instead of the `tabindex` attributes the hand-written version happened
 table, visibility by room, the read API) are next and are this session's. `computer_export` and the
 `to="document"` change are the sandbox session's; the findings shape is the contract between them
 and is specified in the W3 PR, not in their file.
+
+## 24. The checker (W3) and its review (2026-10-01)
+
+`nora/documents/check.py` judges every document in Nora's container: shape (size, UTF-8, JSON without
+NaN, Infinity or a duplicate key, node, depth and width counts with an explicit stack, no control
+character), the generated schema, then the rules the schema cannot state. It returns `ok`, `refused`
+with structured findings, or `error`, never collapsed. On success it returns the title, the plain
+search text, the canonical form and its sha256. The reviewer from PR #644 attacked it (PR #648); the
+bytes path never said `ok` wrongly, but it found one CPU bug and several gaps, all reproduced first.
+
+| # | Finding | Fix | Proven by |
+|---|---|---|---|
+| 1 | **Quadratic `_LINK` regex**: twelve Markdown nodes of 20,000 `[` (240 KB, under the cap) cost 9.5 s of CPU before being refused, because extraction ran before the text cap. | Linear patterns (a class that excludes its own delimiter); the text cap is checked as the text grows. | test under 2 s; 9 of the 10 new tests fail on the first version. |
+| 2 | **A dict skipped every guard the bytes path has**: NaN passed (then a canonical form that is not JSON), a dict subclass lying to `.get` hid 1,000 nodes (`nodes=1`), a 100,000-deep list in props was `error`, no size cap. | Every input is written to JSON first and judged as bytes: one path. | tests for NaN, the lying subclass, deep props, size and a set. |
+| 3 | **A lone surrogate was `error`**, so the model could not fix its file. | Refused with `unpaired_surrogate` and the path (or `encoding` for a Python string). | test. |
+| 4 | **NUL and control characters reached `ok`** and would be refused by Postgres `text` and `jsonb` later. | Refused (`control_character`, with the path) in every string and key; tab, newline and CRLF stay legal. | test. |
+| 5 | **One document had several hashes**: `2` and `2.0`, `-0.0` and `0`, an NFD and an NFC title. | Normalise before hashing: NFC on every string and key, integral floats as ints, `-0.0` as `0`; the title is returned NFC. | test. |
+| 6 | **Findings read as schema-speak or echoed input**: a regex dump for an Image URL, the Mermaid source then a cut-off pattern, a Tabs mistake with the useful line last, an enum list cut mid-word, and up to 200 characters of a hostile key echoed back. | A sentence per rule in document terms, a plain reason for each pattern, a wrong `type` first, and content echoed back capped at 40 characters. | 10 realistic mistakes asserted, plus a prompt-injection-shaped key. |
+| 7 | **A wheel would ship without the schema**, so every check would answer `error`. | `documents/*.json` and `documents/*.md` in the package data. | test against `pyproject.toml`. |
+| 8 | **"Imports nothing of ours" was only a comment**: the layers contract stops a listed layer, and `nora.persons`, `nora.tag` and `nora.web` are outside the list. | A forbidden contract naming every other top-level package. | `lint-imports` reports the break when `check.py` imports `nora.persons`, and is clean after. |
+| 9 | **Search text gaps**: Chart `unit` missing; bare URLs, autolinks and reference targets leaked in; Mermaid keywords and `classDef` colours leaked in. | Extraction updated for each. | tests. |
+
+**Left as found, deliberately.** Python is stricter than the TypeScript `parseDocument` (a Card in a
+Card, a short table row and a 2026-02-30 `asOf` are refused here and accepted there). That is safe only
+while every stored document has passed this checker, which is the W4 requirement: nothing is stored
+except through `check_document`. The node cap cannot be stated in JSON Schema and stays a rule here.
+
+**One test attempt that proved nothing, recorded.** A mutation of the "error is never `ok`" rule did
+not apply (`ruff format` had rewrapped the line), so its green run was not evidence; it was redone
+against the real source and then turned a named test red.

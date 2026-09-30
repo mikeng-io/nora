@@ -12,18 +12,23 @@ failed; nothing is known about the document, and it is never treated as `ok`).
 
 What it checks, in order, stopping at the first group that fails:
 
-1. **Shape.** Size, UTF-8, JSON (no NaN or Infinity, no duplicate key), then node
-   count, depth and width measured with an explicit stack before anything
-   recursive touches the tree.
-2. **Schema.** `document.schema.json`, generated from the catalog: closed
-   vocabulary, strict props, allowlisted Mermaid source, depth capped at 8. JSON
-   Schema cannot count nodes, which is why step 1 does.
+1. **Shape.** Whatever arrives, dict included, is written to JSON first, so one path
+   applies to all input: size, UTF-8, JSON (no NaN or Infinity, no duplicate key, no
+   unpaired surrogate), then node count, depth and width measured with an explicit
+   stack before anything recursive touches the tree, then no control character in
+   any string (Postgres refuses NUL).
+2. **Schema.** `document.schema.json`, generated from the catalog: closed vocabulary,
+   strict props, allowlisted Mermaid source, depth capped at 8. JSON Schema cannot
+   count nodes, which is why step 1 does. Its messages are rewritten for a model: a
+   plain sentence per rule, in document terms, never the offending content at length.
 3. **Rules the schema cannot state:** a Card inside a Card, a Stat inside a Card,
    a table row of the wrong width, an `asOf` that is not a real date.
 
 On success it also returns what the rest of the system needs, computed ONCE here
 and never re-derived by a reader: the title, the plain text the search indexes,
-the canonical serialisation and its sha256.
+the canonical serialisation and its sha256. The canonical form is normalised first
+(NFC on every string and key, `2.0` written `2`, `-0.0` written `0`) so one document
+has one hash.
 """
 
 from __future__ import annotations
@@ -40,6 +45,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from jsonschema import Draft202012Validator
+from jsonschema.exceptions import ValidationError
 
 MAX_BYTES = 256 * 1024
 MAX_NODES = 500
@@ -47,7 +53,8 @@ MAX_DEPTH = 8
 MAX_CHILDREN = 200
 MAX_TEXT_CHARS = 100_000
 MAX_FINDINGS = 10
-_MESSAGE_CHARS = 200
+_MESSAGE_CHARS = 320  # our own sentences; content echoed from a document is capped at _ECHO_CHARS
+_ECHO_CHARS = 40  # how much of the document a finding may repeat back to the model
 
 _SCHEMA_PATH = Path(__file__).with_name("document.schema.json")
 
@@ -87,6 +94,11 @@ def _refused(*findings: Finding) -> Checked:
     return Checked(status="refused", findings=findings)
 
 
+def _clip(value: object, limit: int = _ECHO_CHARS) -> str:
+    text = str(value)
+    return text if len(text) <= limit else text[:limit] + "..."
+
+
 @functools.cache
 def _validator() -> Draft202012Validator:
     schema = json.loads(_SCHEMA_PATH.read_text(encoding="utf-8"))
@@ -103,13 +115,28 @@ def _no_duplicates(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     seen: dict[str, Any] = {}
     for key, value in pairs:
         if key in seen:
-            raise ValueError(f"the key {key!r} appears twice in one object")
+            raise ValueError(f"the key {_clip(key)!r} appears twice in one object")
         seen[key] = value
     return seen
 
 
-def _parse(raw: bytes | str) -> tuple[Any, Finding | None]:
-    data = raw.encode("utf-8") if isinstance(raw, str) else raw
+def _to_bytes(raw: bytes | str | dict[str, Any]) -> tuple[bytes | None, Finding | None]:
+    """Everything is written to JSON bytes first, a dict included, so one path
+    judges all input. A dict skipped the size cap, NaN, duplicate and recursion
+    guards of the bytes path, and a dict subclass could lie to `.get` (review,
+    2026-10-01); written out and read back, it is plain JSON."""
+    if isinstance(raw, bytes):
+        return raw, None
+    try:
+        text = raw if isinstance(raw, str) else json.dumps(raw, allow_nan=False, ensure_ascii=False)
+        return text.encode("utf-8"), None
+    except UnicodeEncodeError:
+        return None, Finding("", "encoding", "a string holds an unpaired surrogate")
+    except (TypeError, ValueError, RecursionError) as exc:
+        return None, Finding("", "json", f"cannot be written as JSON ({type(exc).__name__})")
+
+
+def _parse(data: bytes) -> tuple[Any, Finding | None]:
     if len(data) > MAX_BYTES:
         return None, Finding("", "size", f"{len(data)} bytes; the limit is {MAX_BYTES}")
     try:
@@ -119,7 +146,7 @@ def _parse(raw: bytes | str) -> tuple[Any, Finding | None]:
     try:
         return json.loads(text, parse_constant=_no_constant, object_pairs_hook=_no_duplicates), None
     except (ValueError, RecursionError) as exc:
-        return None, Finding("", "json", str(exc)[:_MESSAGE_CHARS] or "not valid JSON")
+        return None, Finding("", "json", _clip(str(exc), _MESSAGE_CHARS) or "not valid JSON")
 
 
 def _walk(node: Any, path: str = "") -> Iterator[tuple[dict[str, Any], str, int]]:
@@ -150,20 +177,112 @@ def _shape(document: Any) -> Finding | None:
     return None
 
 
+# C0 controls except tab, newline and carriage return; DEL; lone surrogates (a JSON
+# `\ud800` escape decodes to one, and cannot be written as UTF-8 or stored).
+_BAD_CHAR = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f\x7f\ud800-\udfff]")
+
+
+def _pointer(path: str, key: object) -> str:
+    return f"{path}/{str(key).replace('~', '~0').replace('/', '~1')}"
+
+
+def _characters(document: Any) -> Finding | None:
+    """No NUL or other control character, and no unpaired surrogate, in any string
+    or key. Postgres `text` refuses NUL and `jsonb` refuses \\u0000, and a control
+    character in a document is never something a person meant. Iterative."""
+    stack: list[tuple[Any, str]] = [(document, "")]
+    while stack:
+        value, path = stack.pop()
+        if isinstance(value, str):
+            match = _BAD_CHAR.search(value)
+            if match:
+                bad = match.group()
+                rule = "unpaired_surrogate" if "\ud800" <= bad <= "\udfff" else "control_character"
+                return Finding(path, rule, f"contains U+{ord(bad):04X}, which is not allowed")
+        elif isinstance(value, dict):
+            for key, item in value.items():
+                if _BAD_CHAR.search(key):
+                    return Finding(path, "control_character", "a key contains a control character")
+                stack.append((item, _pointer(path, key)))
+        elif isinstance(value, list):
+            stack.extend((item, _pointer(path, index)) for index, item in enumerate(value))
+    return None
+
+
 # ----------------------------------------------------------------- 2. schema
+_PATTERNS = {
+    "url": "must be an http(s) address of printable ASCII, with no spaces",
+    "asOf": "must be a date written YYYY-MM-DD",
+    "media": "must be a media code (6 to 64 lowercase hex characters), never a web address",
+    "source": (
+        "must start with a diagram keyword (flowchart, graph, sequenceDiagram, stateDiagram-v2, "
+        "stateDiagram, classDiagram, erDiagram, gantt, timeline, mindmap) and hold plain drawing "
+        "instructions: no frontmatter, %%{, @{, click/link/callback statement, backslash, url() "
+        "or unusual whitespace"
+    ),
+}
+
+
+def _describe(error: ValidationError) -> str:
+    """A rule in document terms. The offending content is named, never repeated at
+    length: a finding goes back to a model, and a long echo of a hostile value is a
+    way to hand it instructions (review, 2026-10-01)."""
+    rule, want, got = str(error.validator), error.validator_value, error.instance
+    last = str(error.absolute_path[-1]) if error.absolute_path else ""
+    if rule == "required":
+        return "missing " + ", ".join(sorted(set(want) - set(got)))
+    if rule == "additionalProperties":
+        known = set((error.schema or {}).get("properties", {}))
+        extra = sorted(_clip(k) for k in got if k not in known)[:5]
+        return f"unknown {'key' if len(extra) == 1 else 'keys'}: {', '.join(extra)}; remove"
+    if rule == "enum":
+        allowed = ", ".join(str(v) for v in want[:25])
+        return f"{_clip(repr(got))} is not allowed; use one of: {allowed}"
+    if rule == "const":
+        return f"must be {want!r}"
+    if rule == "type":
+        return f"must be {want}"
+    if rule == "not":
+        kind = got.get("type", "this component") if isinstance(got, dict) else "this component"
+        return f"a {_clip(kind)} cannot have children"
+    if rule in ("minItems", "maxItems"):
+        size = len(got) if hasattr(got, "__len__") else "?"
+        return f"needs {'at least' if rule == 'minItems' else 'at most'} {want} items (has {size})"
+    if rule in ("minLength", "maxLength"):
+        size = len(got) if hasattr(got, "__len__") else "?"
+        bound = "at least" if rule == "minLength" else "at most"
+        return f"must be {bound} {want} characters (is {size})"
+    if rule in ("minimum", "maximum"):
+        return f"must be {'at least' if rule == 'minimum' else 'at most'} {want}"
+    if rule == "pattern":
+        return _PATTERNS.get(last, "does not have the required form")
+    return _clip(f"breaks the schema rule {rule}", _MESSAGE_CHARS)
+
+
 def _schema_findings(document: Any) -> list[Finding]:
-    errors = sorted(
-        _validator().iter_errors(document), key=lambda e: [str(p) for p in e.absolute_path]
-    )
+    # Most useful first. A wrong `type` (a Markdown where a Tab belongs) is the
+    # finding that explains several below it, so it leads; then a missing or an
+    # unknown key; then the detail. Within a rank, document order.
+    def order(error: ValidationError) -> tuple[int, list[str]]:
+        rule = str(error.validator)
+        last = str(error.absolute_path[-1]) if error.absolute_path else ""
+        if rule in {"const", "enum"} and last == "type":
+            rank = 0
+        elif rule in {"required", "additionalProperties", "not", "const", "enum"}:
+            rank = 1
+        else:
+            rank = 2
+        return rank, [str(p) for p in error.absolute_path]
+
     out: list[Finding] = []
     seen: set[tuple[str, str]] = set()
-    for error in errors:
-        path = "".join(f"/{part}" for part in error.absolute_path)
+    for error in sorted(_validator().iter_errors(document), key=order):
+        path = "".join(_pointer("", part) for part in error.absolute_path)
         key = (path, str(error.validator))
         if key in seen:
             continue
         seen.add(key)
-        out.append(Finding(path, str(error.validator), error.message[:_MESSAGE_CHARS]))
+        out.append(Finding(path, str(error.validator), _clip(_describe(error), _MESSAGE_CHARS)))
         if len(out) == MAX_FINDINGS:
             break
     return out
@@ -212,7 +331,7 @@ def _rule_findings(document: dict[str, Any]) -> list[Finding]:
                             Finding(
                                 f"{where}/props/items/{index}/asOf",
                                 "bad_date",
-                                f"{as_of} is not a date",
+                                "is not a real date",
                             )
                         )
         for index, child in enumerate(node.get("children") or []):
@@ -223,17 +342,54 @@ def _rule_findings(document: dict[str, Any]) -> list[Finding]:
     return out
 
 
+# ------------------------------------------------------------- normalisation
+def _normalise(value: Any) -> Any:
+    """The form that is hashed and stored: NFC on every string and key, an integral
+    float written as an int, `-0.0` as `0`. Without it the same document had several
+    hashes (`2` and `2.0`, an NFD and an NFC title). Bounded recursion: the schema
+    has already fixed the structure's depth."""
+    if isinstance(value, str):
+        return unicodedata.normalize("NFC", value)
+    if isinstance(value, float) and value == int(value) and abs(value) < 2**53:
+        return int(value)
+    if isinstance(value, dict):
+        return {unicodedata.normalize("NFC", k): _normalise(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_normalise(v) for v in value]
+    return value
+
+
 # ---------------------------------------------------------------- extraction
-_LINK = re.compile(r"\[([^\]]*)\]\([^)]*\)")
+# Each pattern is linear: a class that excludes the delimiter it is scanning for, so
+# no start rescans to the end (the first `_LINK` took 9.5 s on twelve nodes of `[`).
+_LINK = re.compile(r"\[([^\[\]]*)\]\([^()]*\)")
+_REFERENCE = re.compile(r"(?m)^[ \t]*\[[^\[\]]*\]:[ \t]*\S+.*$")
+_AUTOLINK = re.compile(r"<[a-zA-Z][a-zA-Z0-9+.-]*:[^>\s]*>|\b(?:https?|ftp)://\S+")
 _MARKDOWN_NOISE = re.compile(r"(?m)^[ \t]*(?:[#>]+|[-*+]|\d+\.)[ \t]+|[*_`~|]+")
+_DIAGRAM_STYLE = re.compile(r"(?m)^[ \t]*(?:style|classDef|linkStyle|class)\b.*$")
+_DIAGRAM_HEAD = re.compile(
+    r"^(?:flowchart|graph|sequenceDiagram|stateDiagram-v2|stateDiagram|classDiagram|erDiagram|gantt"
+    r"|timeline|mindmap)(?:[ \t]+(?:TB|TD|BT|RL|LR)\b)?"
+)
 _DIAGRAM_NOISE = re.compile(r"[-=.<>|\[\](){}:;\"'#]+")
 _SPACE = re.compile(r"\s+")
 
 
-def _plain(text: str, pattern: re.Pattern[str] | None = None) -> str:
-    text = _LINK.sub(r"\1", text)
-    text = (pattern or _MARKDOWN_NOISE).sub(" ", text)
+def _squash(text: str) -> str:
     return _SPACE.sub(" ", unicodedata.normalize("NFC", text)).strip()
+
+
+def _markdown(text: str) -> str:
+    text = _REFERENCE.sub(" ", text)
+    text = _LINK.sub(r"\1", text)
+    text = _AUTOLINK.sub(" ", text)
+    return _squash(_MARKDOWN_NOISE.sub(" ", text))
+
+
+def _diagram(text: str) -> str:
+    text = _DIAGRAM_STYLE.sub(" ", text)
+    text = _DIAGRAM_HEAD.sub(" ", text, count=1)
+    return _squash(_DIAGRAM_NOISE.sub(" ", text))
 
 
 def _strings(kind: str, p: dict[str, Any]) -> list[str]:
@@ -246,7 +402,7 @@ def _strings(kind: str, p: dict[str, Any]) -> list[str]:
         case "Section" | "Card":
             return [p.get("title", ""), p.get("description", "")]
         case "Markdown":
-            return [_plain(p["text"])]
+            return [_markdown(p["text"])]
         case "Table":
             return [
                 p.get("caption", ""),
@@ -268,15 +424,16 @@ def _strings(kind: str, p: dict[str, Any]) -> list[str]:
         case "Stat":
             return [p["label"], p["value"], p.get("detail", "")]
         case "Accordion":
-            return [s for i in items for s in (i["title"], _plain(i["text"]))]
+            return [s for i in items for s in (i["title"], _markdown(i["text"]))]
         case "Code":
             return [p.get("language", ""), p["text"]]
         case "Tab":
             return [p["label"]]
         case "Chart":
-            return [p.get("title", ""), p["caption"], *(d["label"] for d in p["data"])]
+            unit = p.get("unit", "")
+            return [p.get("title", ""), unit, p["caption"], *(d["label"] for d in p["data"])]
         case "Mermaid":
-            return [p["caption"], _plain(p["source"], _DIAGRAM_NOISE)]
+            return [p["caption"], _diagram(p["source"])]
         case "Map":
             return [p["caption"], *(pl["name"] for pl in p["places"])]
         case "Image":
@@ -285,13 +442,19 @@ def _strings(kind: str, p: dict[str, Any]) -> list[str]:
             return []
 
 
-def _text(document: dict[str, Any]) -> str:
+def _text(document: dict[str, Any]) -> str | None:
+    """The plain text, or None once it passes the cap (checked as it grows, so a
+    hostile document is refused early instead of being extracted in full)."""
     parts: list[str] = []
+    total = 0
     for node, _, _ in _walk(document["root"]):
-        for s in _strings(str(node.get("type")), node.get("props") or {}):
-            s = _SPACE.sub(" ", unicodedata.normalize("NFC", s)).strip()
-            if s:
-                parts.append(s)
+        for raw in _strings(str(node.get("type")), node.get("props") or {}):
+            part = _squash(raw)
+            if part:
+                total += len(part) + 1
+                if total > MAX_TEXT_CHARS:
+                    return None
+                parts.append(part)
     return "\n".join(parts)
 
 
@@ -300,29 +463,29 @@ def check_document(raw: bytes | str | dict[str, Any]) -> Checked:
     """Judge one document. Never raises: a failure of the checker itself is
     `status="error"`, which no caller may read as `ok`."""
     try:
-        if isinstance(raw, (bytes, str)):
-            document, problem = _parse(raw)
-            if problem:
-                return _refused(problem)
-        else:
-            document = raw
-        problem = _shape(document)
+        data, problem = _to_bytes(raw)
+        if data is None or problem:
+            return _refused(problem or Finding("", "json", "unreadable"))
+        document, problem = _parse(data)
+        if problem:
+            return _refused(problem)
+        problem = _shape(document) or _characters(document)
         if problem:
             return _refused(problem)
         findings = _schema_findings(document)
         if findings:
             return Checked(status="refused", findings=tuple(findings))
         findings = _rule_findings(document)
-        text = _text(document)
-        if len(text) > MAX_TEXT_CHARS:
-            findings.append(
-                Finding(
-                    "", "text", f"{len(text)} characters of text; the limit is {MAX_TEXT_CHARS}"
-                )
-            )
         if findings:
             return Checked(status="refused", findings=tuple(findings[:MAX_FINDINGS]))
-        canonical = json.dumps(document, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        document = _normalise(document)
+        text = _text(document)
+        if text is None:
+            limit = f"more than {MAX_TEXT_CHARS} characters of text"
+            return _refused(Finding("", "text", limit))
+        canonical = json.dumps(
+            document, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False
+        )
         return Checked(
             status="ok",
             document=document,
