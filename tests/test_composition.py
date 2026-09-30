@@ -1143,13 +1143,13 @@ async def test_only_the_cognition_session_holds_rollup_read_and_standing_read(cf
     holders = {name for name, a in by_name.items() if a.tools & DREAMER_LOOP_TOOLS}
     assert holders == set(), f"adaptors holding a Cognition-only read: {holders}"
     assert deps.cognition_runner is not None
-    assert DREAMER_LOOP_TOOLS <= deps.cognition_runner._read_only_tools, (
+    assert deps.cognition_runner._read_only_tools >= DREAMER_LOOP_TOOLS, (
         "the enumeration must find the tools where they belong, or it proves nothing"
     )
     # and the derivation that caught it: the candidates grant names both as withheld
     from nora.language.note_candidates import WITHHELD_TOOLS, granted_tools
 
-    assert DREAMER_LOOP_TOOLS <= set(WITHHELD_TOOLS)
+    assert set(WITHHELD_TOOLS) >= DREAMER_LOOP_TOOLS
     assert not granted_tools(frozenset(DREAMER_LOOP_TOOLS | {"now"})) & DREAMER_LOOP_TOOLS
 
 
