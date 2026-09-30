@@ -209,7 +209,7 @@ diagram's `TAG → REG` and debrief arrows describe the tree until then.
 
 Every store above except memory is append-only in system time
 ([10](10-tiers.md) §8), so each has a second axis: *as of T*. The blocks and
-read tools read the current view (as of now); `nora snapshot --at T`
+read tools read the current state (as of now); `nora snapshot --at T`
 ([70](70-migration.md) §2) reads every store as of T, with the doctrine,
 skills, config and model route in force at T, and the Rollup rebuilt to the
 watermark T. Memory has no such axis.

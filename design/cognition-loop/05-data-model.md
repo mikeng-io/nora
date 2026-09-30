@@ -29,38 +29,58 @@ and how it is derived.
 | layer | holds | written by | derived how | lifecycle | evidence? |
 |---|---|---|---|---|---|
 | **Authored** | doctrine, the Dreamer's objectives and skills, `config.toml`, `policy.toml`, `identity.toml`, reference photos for faces | humans only | written by hand | versioned files, each load recorded ([70](70-migration.md) §5) | no: it is the law, not a claim about the world |
-| **Record** | raw observations: transcripts, audio, photos and what they show, reactions, edits, deletes, presence, social items, play, Nora's own sends and decisions | ingestion code only | observed | append-only; hidden on forget, never deleted ([10](10-tiers.md) §8) | **yes** |
-| **Rollup** | episodes and aggregates: stays, trips, co-locations, outings, a person's day, places, rhythm, ties, responses to her ([25](25-rollup.md)) | the Rollup builder, code only | computed from the Record, deterministic | rebuildable and disposable; versioned builds | **yes**, as computed from the Record |
-| **Notebook** | Nora's judgement: entries that aggregate what the Record and Rollup show, in four tiers (§2) | the subconscious, one writer per tier: Cognition (Register, Standing), the Character adaptor (Character), the Lessons adaptor (Lessons) (§7) | judged by a model, citing the Record and Rollup | revised, withdrawn, versioned; hidden on forget | no |
-| **Views** | per-reader slices: a turn's blocks, a session's agenda, a portal page | one assembly path, code (§6) | assembled at read time under lineage and withdrawal | **never stored** | no |
+| **Record** | raw observations: transcripts, audio, photos and every perception of them, reactions, edits, deletes, presence, social items, play, face labels; Nora's own sends, acts, decisions, **tool calls and their results**, and artifacts (§1a) | code, at the moment it happens: ingestion for what others do; the turn and fire paths for her own sends, acts, tool calls and artifacts; the recording verbs (`face_label`, `character_dispute`) for a person's statement, authored by that person | observed | append-only; hidden on forget, never deleted ([10](10-tiers.md) §8) | **yes** |
+| **Rollup** | episodes and aggregates: stays, trips, co-locations, outings, a person's day, places, rhythm, ties, responses to her, face templates ([25](25-rollup.md)) | the Rollup builder, code only | computed from the Record, deterministic | rebuildable and disposable; versioned builds | **yes**, as computed from the Record |
+| **Notebook** | Nora's judgement: entries that aggregate what the Record and Rollup show, in four tiers (§2) | the subconscious, one writer per tier: Cognition (Register, Standing), the Character adaptor (Character), the Lessons adaptor (Lessons) (§7); the operator may retire or correct, never author (rule 6) | judged by a model, citing the Record and Rollup | revised, withdrawn, versioned; hidden on forget | no |
+| **Views** | per-reader slices: a turn's blocks, a session's agenda, a portal page, an operator page | one assembly path, code (§6) | assembled at read time under lineage and withdrawal | **never stored as data**; a View may be recorded as provenance (a session's situation, a trace), never read back as input | no |
 
 **Beside the flow: Memory.** Honcho: per-person understanding, and what people
-say about themselves (`remember`). Outside our system; fed from the Record; may
-be read into Views, never copied into the Notebook and never cited.
+say about themselves (`remember`). Outside our system; fed from the Record
+(messages and the perceptions of media, which are Record items); may be read
+into Views, never copied into the Notebook and never cited.
 
 **Boundary rules:**
 
 1. **One-way flow**: Record → Rollup → Notebook → Views. Nothing writes
-   backwards. What Nora says enters the Record as an observation, like anyone
-   else's words. Authored configures every layer and is written by none.
+   backwards. What Nora says and does enters the Record as an observation,
+   like anyone else's words. Authored configures every layer and is written
+   by none.
 2. **Only the Record, and the Rollup computed from it, is evidence.** A
    Notebook entry cites them; it is never evidence itself, and a reference
    from one entry to another is a link, not a citation (§5).
 3. **One writer per layer, and inside the Notebook one writer per tier**:
-   humans for Authored, ingestion for the Record, the Rollup builder for the
-   Rollup, the subconscious for the Notebook (Cognition for the Register and
-   Standing, the Character adaptor for Character, the Lessons adaptor for
-   Lessons), the one assembly path for Views. Assess writes nothing there: it
+   the table's third column. Assess writes nothing in the Notebook: it
    reports.
 4. **Speaking turns only read Views and speak.** To change the Notebook they
    raise a stimulus, which wakes the subconscious (§7).
-5. **Scope is explicit on every row**: a person, a room, the unit or the
-   workspace (DEC-214's hierarchy). The unit is the read boundary (DEC-231);
+5. **Every row states its home**: the person, room, unit or workspace it
+   belongs to (DEC-214's hierarchy). The unit is the read boundary (DEC-231);
    lineage decides per room what a View may show ([10](10-tiers.md) §3).
+6. **The operator may retire or correct a Notebook entry, never author one**:
+   the revision carries `source='operator'` (as `scripts/standing_edit.py`
+   already writes it, and the operator's rollback through `lesson_retire`).
+7. **Machinery is not a layer.** Stimuli, wakes, sessions, self-wakes and
+   reminders are the loop's append-only state, each with named writers:
+   stimuli by ingestion, the Rollup builder, the wake evaluator's clock
+   (`time`) and Cognition's pace verbs (`self`); wakes and sessions by the
+   wake evaluator and the session runner; reminders by `remind` (tag turn,
+   Cognition) and their transitions by the fire path. A reminder's outcome
+   (sent, silent, answered) is Record. A reminder's brief may **link** to
+   entries, never cite them.
 
-Not layers, and outside the flow: operator-only rows (tension, assess
-reports), which no View shows her; and the loop's machinery (stimuli, wakes,
-sessions, reminders), which is state, not data about the world.
+### 1a. Everything else, placed
+
+| what | layer | note |
+|---|---|---|
+| her tool calls and results (every call, every status, keyed to the turn) | Record | today only cacheable tools that returned `ok` are logged (`tool_call_log`, `nora/agent/guards.py`); a precondition of E2 (§9) |
+| her artifacts: documents, generated images, computer sessions and exports | Record (her acts) | the portal page that shows one is a View |
+| her Instagram comment replies | Record | today held only in `instagram_summons.reply_text`: a gap (§9) |
+| perceptions (what a photo shows, whose face) | Record | stored on the item they read; fed to Memory as Record |
+| social items, play samples | Record | step 5 |
+| face labels · face templates (embeddings) | Record · Rollup | templates are computed from labelled crops ([60](60-faces.md)) |
+| tension rows, assess reports | outside the flow, operator-only | read through an operator View (§6); tension has no table yet, `assess_report` exists |
+| caches: `geocode_cache`, `sticker_index`, `video_readings`, the vision cache | outside the layers | rebuildable conveniences, never evidence and never cited |
+| a table holding two layers | split when touched | `presence_places` holds Life360's saved places (Record, written through `nora/infra/sql/presence.py`) and, per the review of this node, fields the analytics process derives (Rollup); `messages` carries machinery columns (delivery status) beside the Record row ([10](10-tiers.md) §7) |
 
 The operator's first analogy was a data lake, a warehouse and data marts: the
 Record is the lake, the Notebook the warehouse, Views the marts. The layer
@@ -72,11 +92,16 @@ names above replace those words; they are not used as names.
 |---|---|---|
 | **layer** | one of the five above, by who writes it and how it is derived | Authored, Record, Rollup, Notebook, Views (Memory beside) |
 | **tier** | a subdivision **inside the Notebook only**, by what it is about | Register, Character, Standing, Lessons |
-| **kind** | a row type within a tier | Register: note, memo, event · Character: person, room, unit, Nora · Standing: room, unit, person · Lessons: lesson |
-| **entry** | one row of a kind | — |
+| **kind** | the row type, at every layer: a Record kind (message, reaction, fix), a Rollup kind (stay, outing, tie), a stimulus kind, and in the Notebook a kind within a tier | Notebook: Register: note, memo, event · Character: person, room, unit, Nora · Standing: room, unit, person · Lessons: lesson |
+| **entry** | one Notebook row | — |
 
 The Record and the Rollup are layers, not tiers. "Tier" names nothing outside
-the Notebook.
+the Notebook. A lineage `(kind, subject, origin room)` item is a **triple**,
+never an entry ([10](10-tiers.md) §3).
+
+**Words avoided because they collide:** "subject" is the eval subject
+(`nora/subject/`), and "scope" is `record_query`'s argument; the entry's
+fields are therefore **entity** and **home**.
 
 | tier | about | kind of statement | the question |
 |---|---|---|---|
@@ -91,11 +116,13 @@ note, "Cy usually pays late" is a Character line (it rests on an aggregate),
 per-head amount first" is a lesson.
 
 **Raw statements live in the Record; per-person facts live in Memory; the
-Notebook aggregates.** The Notebook models no statement-level provenance (who
-said what, to whom): that is the Record's and Memory's job. Nothing here is a
-knowledge graph: no bare fact is stored as truth, and no store of extracted
-facts or entity clusters is built ([80](80-prior-art.md) §5; the deprecated
-fact tier, #115, was one).
+Notebook aggregates.** The Notebook stores no statement-level provenance (who
+said what, to whom): that is the Record's and Memory's job. Where a body says
+who settled something (a memo's `Kept` line, [12](12-schemas.md) §3), the name
+is read from the cited message when the View renders it, never stored.
+Nothing here is a knowledge graph: no bare fact is stored as truth, and no
+store of extracted facts or entity clusters is built ([80](80-prior-art.md)
+§5; the deprecated fact tier, #115, was one).
 
 ## 3. The entry
 
@@ -103,27 +130,27 @@ Every Notebook row is an **entry**: one shape, one machinery.
 
 | part | what it holds | set by |
 |---|---|---|
-| **scope** | the unit it belongs to, and its origin room | code |
-| **subject** | what it is about: a person, a room or the unit, Nora, or the affair itself (a note, a memo, an event) | the write verb |
+| **home** | the unit it belongs to, and its origin room | code |
+| **entity** | what it is about: a person, a room or the unit, Nora, or the affair itself (a note, a memo, an event) | the write verb |
 | **tier, kind** | §2 | the verb |
 | **body** | Markdown under the kind's fixed schema ([12](12-schemas.md)); an event also has typed columns | the model; parsed by code, refused not repaired |
-| **citations** | the Record ids and Rollup keys it was built from, for audit | the model names them; code resolves them and writes the edges |
-| **basis** | `observed` (the Record or Rollup shows it: people settled it, or code computed it) or `inferred` (Nora concluded it) | the verb, checked by code: presence fixes or a face older than the freshness threshold cap it at `inferred` ([10](10-tiers.md) §4) |
+| **citations** | the Record ids and Rollup keys it was built from, each with the `part` (field or section) it supports | the model names them; code resolves them and writes the edges |
+| **reasoning, basis** | the stored mode is one of [10](10-tiers.md) §4's six; a View shows it as `observed` or `inferred` (how the two relate is Q2, and both recommendations keep the six stored) | the verb, checked and capped by code |
 | **confidence** | `low`, `medium`, `high` | the verb |
-| **visibility** | lineage (the rooms its citations may be shown in) and `exclude_persons` ([10](10-tiers.md) §3) | code, from the citations; never the model |
+| **visibility** | lineage (the rooms it may be shown in) and `exclude_persons` ([10](10-tiers.md) §3), by the kind's lineage rule (below) | code; never the model |
 | **time** | `as_of`, valid time on the Register, support and age on Character, Standing and lessons, system time | code |
 | **lifecycle** | the kind's states (below) | the verb, under the kind's rules |
-| **revisions** | an append-only chain; a write names `base_revision_id`, and a stale one is refused `stale_base` | code |
+| **revisions** | an append-only chain; a write names `base_revision_id`, and a stale one is refused `stale_base`; each revision records its `source` (the adaptor, or `operator`) | code |
 | **withdrawal** | `unsupported` when a cited item is withdrawn, `hidden` when forgotten or retained out; neither deletes | code |
 | **about** | persons, places, rooms it names: an index for finding it | the verb, resolved by code |
 | **links** | typed references to other entries (§5) | the verb |
 | **provenance** | the adaptor and session that wrote it, the model, the instruction hash | code |
 
-`basis` and `confidence` sit on the row, an event's field, or a section of a
-Character or Standing entry, as [10](10-tiers.md) §3 sets the grain. **An
-inferred value goes out as a question, never as a stated fact**, unless its
-confidence is `high` ([40](40-register.md) §4's rule over the basis); a "yeah"
-to her own guess changes nothing ([10](10-tiers.md) §2 rule 4).
+`reasoning` and `confidence` sit on the row, an event's field, or a section of
+a Character or Standing entry, as [10](10-tiers.md) §3 sets the grain. **An
+abduced value goes out as a question, never as a stated fact, whatever its
+confidence, and a "yeah" to her own guess never upgrades it**
+([40](40-register.md) §4, [10](10-tiers.md) §2 rule 4).
 
 **One machinery for every kind**: storage, the revision chain and
 compare-and-swap, the citation edges, the withdrawal cascade and hiding,
@@ -135,14 +162,24 @@ Each cell is one rule, and each gets its own named test when its kind is
 built on the entry, never one test run over a table that passes whatever the
 table says.
 
-| tier · kind | writer | body schema | lifecycle | basis | revisited when |
+| tier · kind | writer | body schema | lifecycle | lineage from | revisited when |
 |---|---|---|---|---|---|
-| Register · note | Cognition | [12](12-schemas.md) §3 (DEC-213) | open → retired or replaced | observed, inferred | its anchor, `revisit_at`, strikes |
-| Register · memo | Cognition | [12](12-schemas.md) §3 | kept → withdrawn; never closes | observed | when a cited message is edited or deleted |
-| Register · event | Cognition | columns + [12](12-schemas.md) §3 | staged → proposed → confirmed → happened; cancelled, lapsed, evicted ([40](40-register.md) §3) | per field | its date; self-wakes |
-| Character · person, room, unit, Nora | the Character adaptor | [12](12-schemas.md) §4 | one current account; a section past 60 days moves to `Unsure` | inferred, from many instances | enough new evidence, or 7 days stale; a dispute at once |
-| Standing · room, unit, person | Cognition | [12](12-schemas.md) §5 | one current position; a section past 14 days is dropped | observed, inferred | each session that touches its subject |
-| Lessons · lesson | the Lessons adaptor; the operator retires | [12](12-schemas.md) §4a | active → retired, under a size cap per unit | inferred, from outcomes | 30 new outcomes, 7 days stale, a 60-day horizon |
+| Register · note | Cognition | [12](12-schemas.md) §3 (DEC-213) | open → retired or replaced | the union of its citations | its anchor, `revisit_at`, strikes |
+| Register · memo | Cognition | [12](12-schemas.md) §3 | kept → withdrawn; never closes | the union of its citations | when a cited message is edited or deleted |
+| Register · event | Cognition | columns + [12](12-schemas.md) §3 | staged → proposed → confirmed → happened; cancelled, lapsed, evicted ([40](40-register.md) §3) | per field, from the citations of that field (`part`) | its date; self-wakes |
+| Character · person, room | the Character adaptor | [12](12-schemas.md) §4 | one current account; a section past 60 days moves to `Unsure` | per section, from its citations | enough new evidence, or 7 days stale; a dispute at once |
+| Character · unit, Nora | the Character adaptor | [12](12-schemas.md) §4 | as above | per section: **from `about`** (the persons it names) when the section places nobody; else its citations | as above |
+| Standing · room, person | Cognition | [12](12-schemas.md) §5 | one current position; a section past 14 days is dropped | per section, from its citations | each session that touches its entity |
+| Standing · unit | Cognition | [12](12-schemas.md) §5 | as above | per section: **from `about`** when the section places nobody; else its citations | as above |
+| Lessons · lesson | the Lessons adaptor; the operator retires | [12](12-schemas.md) §4a | active → retired, under a size cap per unit | **from `about`** when it places nobody; else its citations | 30 new outcomes, 7 days stale, a 60-day horizon |
+
+**Why lineage from `about` for unit-wide kinds.** A lesson, the unit's
+Character or the unit's Standing is induced from many rooms. Taking its
+lineage as the union of every cited message makes it renderable only where
+every source room's roster passes, which for a unit with rooms of different
+rosters is nowhere. When the text places nobody and quotes nobody, what it
+discloses is the persons it names: its `about`. A section that places a
+person (presence, a face) keeps the citation rule.
 
 ## 4. Where each layer is specified
 
@@ -162,14 +199,15 @@ or a column, never parsed out of a body:
 
 | reference | from → to | what code does with it |
 |---|---|---|
-| **citation** | entry → Record id or Rollup key | lineage is computed from it; the withdrawal cascade walks it (`nora/app/withdrawal.py` over the `citation` table) |
-| **about** | entry → person, place, room, unit | finds entries by subject; forget hides the entries about a person ([70](70-migration.md) §9) |
-| **link** | entry → entry, typed: a note *tracks* an event, a note *closes into* a memo, an event *leaves behind* a memo, a Standing line *is informed by* a Character line | `exclude_persons` is unioned across it ([10](10-tiers.md) §3); a link to a hidden or unsupported entry is not followed when a View is assembled |
+| **citation** | entry (and the `part` it supports) → Record id or Rollup key | lineage is computed from it; the withdrawal cascade walks it (`nora/app/withdrawal.py` over the `citation` table) |
+| **about** | entry → person, place, room, unit | finds entries by entity; forget hides the entries about a person ([70](70-migration.md) §9); the lineage source for unit-wide kinds (§3) |
+| **link** | entry → entry, typed; **links point down the order Register → Character → Lessons → Standing** and never up: a note *tracks* an event, a note *closes into* a memo, an event *leaves behind* a memo, a room's or the unit's Character *draws on* its members' Characters, a lesson *draws on* a Character line, a Standing line *is informed by* a Character line or a lesson | `exclude_persons` is unioned across it ([10](10-tiers.md) §3); a link to a hidden or unsupported entry is not followed when a View is assembled |
 
 A link is never evidence: the cascade does not walk it, and an entry rests on
-its own citations. This amends [10](10-tiers.md) §2 rule 1. A graph is a way
-of reading these references ("everything about Bo", "what this note
-became"): walks in SQL over typed rows. There is no graph store.
+its own citations. This amends [10](10-tiers.md) §2 rule 1, which now orders
+links, not citations. A graph is a way of reading these references
+("everything about Bo", "what this note became"): walks in SQL over typed
+rows. There is no graph store.
 
 **Recommendation needs no new store** (the operator's future use case),
 worked through with synthetic people. Bo asks the room where to eat on Friday.
@@ -188,14 +226,15 @@ A read across the Notebook, the Rollup and Memory, then a decision.
 
 ## 6. Views: every reader gets one slice, cut at read time, by one path
 
-A View selects what its reader declares (tiers, kinds, subjects, window, size
-cap), as of now or as of T; applies **lineage for the reader's room** (the
-turn's room, each agenda item's bound room, the viewer's rooms on the portal);
+A View selects what its reader declares (tiers, kinds, entities, window, size
+cap), as of now or as of T; applies **lineage for the reader's rooms** (the
+turn's room, each agenda item's bound room, a portal viewer's listed rooms);
 applies **withdrawal** (an unsupported or hidden entry is absent, in every
 lineage mode); and renders each row with its age, basis and confidence,
 through `ContextBlock` for a prompt. Readers: the tag and fire turns (they
-speak), the Cognition session (it thinks), the portal (a person reads), later
-recommendations.
+speak), the Cognition session (it thinks), the portal (a person reads; the
+operator reads the operator-only pages, tension and assess reports, through
+an operator View that no turn or session can declare), later recommendations.
 
 **One assembly path.** Every reader gets its View from one builder. A reader
 declares its slice and never writes its own selection, lineage or withdrawal
@@ -212,9 +251,11 @@ from the tree on 2026-10-01; each departure is a migration item, §9):
 | View | reader | assembled by | lineage | withdrawal | departure |
 |---|---|---|---|---|---|
 | the tag turn's blocks | tag turn | `nora/engagement/context.py` with `build_prefill` (`nora/agent/prefill.py`) | per room, behind `[lineage] mode` (shipped `off`) | notes in the note store's reads; culture and Standing in `nora/engagement/context.py` | the reference path; no `<events>`, `<memos>`, `self` or `lessons` block yet |
-| the fire turn's blocks | fire turn | its own `build_context` in `nora/app/fire.py`, sharing `build_prefill` | the same `LineagePolicy` | as the tag turn's | a second assembler |
+| the fire turn's blocks | fire turn | its own `build_context` in `nora/app/fire.py`, sharing `build_prefill` | the same `LineagePolicy` | **none for culture and Standing**: `nora/app/fire.py` never checks `unsupported_at`, so a withdrawn head renders in every fire turn | a second assembler; the withdrawal gap is a code bug, fixed separately, before any parity baseline |
+| `<loop_decisions>` | fire turn | `nora/app/fire.py` | none | — | skips lineage |
 | the agenda's grounding | Cognition session | `nora/app/cognition_grounding.py`, with its own renderer | its own call into `nora/agent/lineage.py`; a row must pass for every room on the agenda | in every mode | a third assembler and renderer |
 | read tools | both | each tool: `note_read`/`note_search` (`nora/agent/tools.py`), `nora/agent/standing_read.py`, `nora/infra/sql/record_query.py`, `rollup_read` | each applies it itself | each applies it itself | one call site per tool |
+| `media_search`, `media_send` | tag turn | `nora/agent/tools.py` | none: not scoped to the room | — | a read of the Record that no room bounds |
 | the clocked adaptors' prompts | note-candidates, the curator, note-merge, proactive, culture, the ingest Standing fold, the debrief | each module's own builder (`nora/language/note_candidates.py`, `nora/language/proactive.py`, `nora/language/culture.py`, `nora/ingest/stages/standing_event.py`, `nora/engagement/debrief_render.py`) | none: they read unit-wide and never speak | notes through the store's reads | retired with the adaptors at step 4 |
 | portal pages | a person | `nora/web/gatherings.py` (events they created or answered), `nora/web/documents.py` | none: participation-scoped | none: events are outside the cascade | no page for notes, memos, Character, Standing or lessons yet |
 
@@ -233,27 +274,52 @@ Notebook it raises a stimulus.
 
 | tier · kind | written by | how a speaking turn hands off | the turn reads it (pushed · pulled) | timescale |
 |---|---|---|---|---|
-| Register · note, event | Cognition | the messages are already Record and raise stimuli; a date, time or RSVP is a strong cue | `<notes>`, `<events>` · `note_read`, `note_search`, `event_search` | minutes |
+| Register · note, event | Cognition | the messages are already Record and raise stimuli; a date, time or RSVP is a strong cue; the turn's `handoff` carries what it looked up | `<notes>`, `<events>` · `note_read`, `note_search`, `event_search` | minutes |
 | Register · memo | Cognition | «記低» about the unit is a keep instruction, a strong cue; «記低» about the speaker stays `remember`, into Memory | `<memos>` · `memo_read` | minutes |
-| Standing | Cognition | the tag turn raises a hand-off stimulus with a strong cue when it ends, in place of the debrief | `standing` (room) · `standing_read` | minutes |
+| Standing | Cognition | the turn's `handoff` stimulus, in place of the debrief | `standing` (room) · `standing_read` | minutes |
 | Character | the Character adaptor | none; a person's `character_dispute` is a Record item that wakes it | `culture`, `self` · `character_read` | days |
 | Lessons | the Lessons adaptor | none; the operator retires on the portal | `lessons` | days |
 
-**The hand-off.** A strong cue wakes Cognition after `cue_quiet_seconds` of
-quiet, 120 s today ([20](20-observe.md) §3), so a «記低» about the unit lands
-in about two minutes; the unit's cooldown (300 s) can delay it, and a strong
-cue may cut the cooldown once. The turn never says a thing is already
-written; it may say it will be. Reminders stay the tag turn's: they are
-machinery, not the Notebook.
+**The `handoff` stimulus** (a new stimulus kind beside `message`, `social`,
+`play`, `rollup`, `time` and `self`). Raised by code when a tag turn ends,
+after delivery or a silent end, bound to the turn's room. It carries the tag
+message's id, the id of each send she delivered in the turn, and the ids of
+the turn's tool calls (Record, §1a). It is a strong cue, so it wakes
+Cognition after `cue_quiet_seconds` (120 s today, [20](20-observe.md) §3); the
+unit's cooldown (300 s) can delay it, and a strong cue may cut the cooldown
+once. A wake claims it like a `message` stimulus, and the agenda item it
+becomes shows the tag message, her reply and what her tool calls returned. **A
+turn that sent nothing and called no tool raises none**: the tag message's own
+`message` stimulus already carries everything that turn produced. It is the
+one exception to "an item whose author is Nora raises no stimulus"
+([20](20-observe.md) §3): her send still raises none; the hand-off is raised
+by code, by name.
+
+**What is lost without her tool calls in the Record.** The hand-off gives
+Cognition the tag message and her reply. What she looked up to answer (a
+place's details, a fetched page, a search result) exists today only for
+cacheable tools that returned `ok`. The debrief builds Standing's working set
+(`Found, not yet given`) from exactly those results, and a «記低» can rest on
+one. Without every call and result in the Record, Cognition would re-fetch
+them, get a different answer, or lose them. So recording them is a
+precondition of E2 (§9).
+
+The turn never says a thing is already written; it may say it will be.
+
+**Reminders are machinery, and stay on the tag turn.** `remind` and
+`cancel_reminder` change a reminder row, not the Notebook, so the tag turn
+keeps both after E2 (rule 7). A person's cancellation in words is also Record
+evidence Cognition reads: Cognition may cancel a reminder a person set when it
+cancels that reminder's event on `told` evidence ([30](30-cognition.md) §2).
 
 ## 8. The flow
 
 ```
 AUTHORED (humans): doctrine, config, policy, identity ──configures──▶ every layer below
 
-RECORD (ingestion code) ──▶ ROLLUP (Rollup builder, code)
-  ▲   │                        │
-  │   └──── stimuli ◀──────────┘ ◀── hand-off from a speaking turn: «記低», the end of a tag turn
+RECORD (code, as it happens) ──▶ ROLLUP (Rollup builder, code)
+  ▲   │                             │
+  │   └──── stimuli ◀───────────────┘ ◀── `handoff` at the end of a tag turn; «記低» is a strong cue
   │            │
   │            ▼  wake evaluator (code): about two minutes on a strong cue
   │      THE SUBCONSCIOUS (the Dreamer's adaptors; one writer per tier)
@@ -264,10 +330,11 @@ RECORD (ingestion code) ──▶ ROLLUP (Rollup builder, code)
   │                                │        VIEWS (read time, one assembly path:
   │                                │         slice + lineage + withdrawal + age)
   │                                │          ├─▶ agenda grounding ─▶ Cognition session (thinks)
-  │                                ▼          ├─▶ tag-turn blocks ──▶ tag turn  ─┐ SPEAKING TURNS
-  │                         due reminder ────▶├─▶ fire-turn blocks ─▶ fire turn ─┤ (read Views,
-  │                                           └─▶ portal pages ────▶ a person    │  speak, hand off)
-  └──────────────── what she says is observed into the Record ◀──────────────────┘
+  │                                ▼          ├─▶ tag-turn blocks ──▶ tag turn  ─┐ THE CONSCIOUS
+  │                         due reminder ────▶├─▶ fire-turn blocks ─▶ fire turn ─┤ (reads Views,
+  │                                           ├─▶ portal pages ────▶ a person    │  speaks, hands off)
+  │                                           └─▶ operator pages ──▶ the operator│
+  └──── what she says and does (sends, tool calls, artifacts) is observed ◀───────┘
 
 MEMORY (Honcho, beside the flow): fed from the Record; `remember`; read into Views, never into the Notebook
 ```
@@ -276,42 +343,52 @@ MEMORY (Honcho, beside the flow): fed from the Record; `remember`; read into Vie
 
 **Built today** (read from `nora/infra/sql/schema.py` on 2026-10-01):
 
-| tier · kind | tables | scope | chain | lineage columns | citation edges | in the cascade |
+| tier · kind | tables | keyed by | chain | lineage columns | citation edges | in the cascade |
 |---|---|---|---|---|---|---|
 | Register · note | `note`, `note_revision` | unit | `note_revision` | yes | message ids parsed from the body | yes |
-| Register · event | `events`, `event_revision`, `event_rsvps` | origin room, plus `unit_id` | `event_revision` (DEC-237) | per field | **none** | **no** |
+| Register · event | `events`, `event_revision`, `event_rsvps` | origin room, plus `unit_id` | `event_revision` (DEC-237) | per field, but **no writer sets them** (`nora/infra/sql/gatherings.py`) | **none** | **no** |
 | Standing · room | `standing`, `standing_revision` | room | `standing_revision` | yes | one message id, a stand-in | yes |
-| Character · room (culture) | `culture`, `culture_revision` | room | `culture_revision` | yes | one message id, a stand-in | yes |
+| Character · room (culture) | `culture`, `culture_revision` | `culture.key`, the room's `primary_id` from `policy.toml` | `culture_revision` | yes | one message id, a stand-in | yes |
 | Register · memo; Character · person, unit, Nora; Standing · unit, person; Lessons · lesson | not built | | | | | |
 
 Every table above keeps `row_history` (DEC-232). Built writers other than the
 subconscious: the tag turn's `note_create`, `note_update` and event verbs,
-and the debrief through `standing_revise` (DEC-239). The `reasoning` column
-holds [10](10-tiers.md) §4's six modes (a database CHECK; `standing_revise`
-takes `deduced`, `abduced` or `said`), finer than the entry's two-value basis
-(Q2).
+the debrief through `standing_revise` (DEC-239), and the operator through
+`scripts/standing_edit.py`. The `reasoning` column holds [10](10-tiers.md)
+§4's six modes (a database CHECK; `standing_revise` takes `deduced`,
+`abduced` or `said`); the entry's basis is computed from it (Q2).
 
 **Gaps in the built code, each a migration item:**
 
 - events are outside the `citation` table and the cascade: a withdrawn
   message keeps supporting an event;
-- the `citation` table cites messages only (`nora/infra/sql/citation.py`):
-  Rollup keys are not edges;
+- event lineage has no writer: with `[lineage] mode = "on"` every event would
+  render only in its origin room;
+- the `citation` table cites messages only, from notes, Standing and culture
+  (its CHECKs, `nora/infra/sql/schema.py`): Rollup keys and events are not
+  edges, and an edge has no `part` for per-field lineage;
 - Standing and culture each cite one stand-in message id, not what their
   bodies rest on;
-- Views depart from one path in the ways §6 lists.
+- her tool calls are logged only when cacheable and `ok`; her Instagram
+  comment replies are not Record (§1a);
+- the fire turn does not apply withdrawal to culture and Standing (a code
+  fix, separate, before any parity baseline);
+- `<loop_decisions>` and `media_search`/`media_send` skip lineage (§6);
+- Views depart from one path in the other ways §6 lists.
 
 **The order.** Additive: no table is dropped ([70](70-migration.md) §5), and a
 kind moves onto the entry only under render parity (its blocks and tool
-results unchanged byte for byte).
+results unchanged byte for byte), measured after the fire-turn fix.
 
 | order | what | when |
 |---|---|---|
-| E1 | **Register · memo, the first kind on the entry**, written only by Cognition: the entry store and chain, the `citation` table widened to every kind and to Rollup keys, `about` and `links`, the generic verbs, and the one View builder serving `<memos>` and `memo_read` | right after step 3's shadow week, before the cut-over (was step 7) |
-| E2 | **one writer**: the tag turn's `note_create`, `note_update` and event verbs and the debrief's Standing write move behind Cognition, replaced by the hand-off stimulus (§7) | at the cut-over, step 4, or right after it |
+| E1a | **the citation table widened**: events and every Notebook kind as citing stores, Rollup keys as cited, a `part` column (field or section) for per-field lineage; events brought into the cascade; event lineage written from its field citations | **gates step 4** |
+| E1b | **Register · memo, the first kind on the entry**, written only by Cognition: the entry store and chain, `about` and `links`, the generic verbs, the one View builder serving `<memos>` and `memo_read` | right after step 3's shadow week; gated on the memo corpus; may land after step 4 |
+| E1c | **her tool calls and results in the Record**: every call, every status, keyed to the turn; her Instagram comment replies too | **precondition of E2** |
+| E2 | **one writer per tier**: the tag turn's `note_create`, `note_update` and event verbs and the debrief's Standing write move behind Cognition, replaced by the `handoff` stimulus (§7); `remind` and `cancel_reminder` stay on the tag turn | at the cut-over, step 4, or right after it |
 | E3 | Character · person, unit, Nora, Lessons, and Standing · unit, person are born on the entry | step 8 |
-| E4 | Character · room (culture), Standing · room, events and notes converge onto the entry as each is next touched | per kind (culture: Q1) |
-| E5 | Views converge on one builder, reader by reader, each with a parity test | alongside E1 to E4 |
+| E4 | Character · room (culture, re-keyed from `primary_id` to its unit and room), Standing · room, events and notes converge onto the entry as each is next touched; the note body's `## From memory` section retires then, rendered by the View from Memory instead | per kind (culture: Q1) |
+| E5 | Views converge on one builder, reader by reader, each with a parity test | alongside E1a to E4 |
 
 **What one writer costs** (E2). A note, event or memo a person asks for
 appears a couple of minutes later instead of in the turn. The tag tools' text
@@ -319,13 +396,12 @@ and the doctrine that tells her to write (`nora/doctrine/rooms/conduct.md`,
 the «記低» paragraph) change, each measured with `tool_selection` and the
 eval before and after (ADR 0015); the speaker's own «記低» through `remember`
 does not change. The debrief's reply-slot fold is retired with the ingest
-Standing fold. The strong-cue list ([20](20-observe.md) §3) gains the tag
-turn's hand-off.
+Standing fold. The curator's discharge into Memory (off by default) dies with
+the curator at step 4: the Notebook never writes Memory.
 
-**What step 4 needs.** Events inside the cascade before Cognition revises them
-live; the grounding and the tag turn's blocks agreeing on withdrawal and
-lineage for the same rows; the hand-off stimulus built before the tag-path
-writes are withdrawn.
+**What step 4 needs.** E1a; the `handoff` stimulus and E1c before the tag-path
+writes are withdrawn; the grounding and the tag turn's blocks agreeing on
+withdrawal and lineage for the same rows.
 
 **What must not be disrupted until its kind converges.** The live Standing
 path (the debrief and the ingest fold through `standing_revise` into
@@ -336,19 +412,22 @@ verbs (DEC-237); history capture (DEC-232); the cascade (DEC-238);
 
 ## 10. Questions for the operator
 
-Open: the operator has not ruled. Each has a recommendation:
+Open: the operator has not ruled. Each has two recommendations, from this
+node's author and from the independent review (Fable, 2026-10-01):
 
-| # | question | recommendation |
-|---|---|---|
-| Q1 | When does Character · room (culture) move onto the entry? Step 4 already rewrites culture into sections and hands it to the Character adaptor. | **At step 4**, in the same change that rewrites it, so culture is migrated once. |
-| Q2 | The entry states only `observed` or `inferred`; the built column and `standing_revise` hold six finer modes (told, computed, deduced, induced, abduced, said). | **Keep the six as the detail under the two**: told and computed are observed; deduced, induced, abduced are inferred; said stays Standing's mode for her own words. |
-| Q3 | The portal's events page shows every event a person created or answered, across all their groups, with no per-room visibility and no withdrawal. | **Serve it through the one Views path**, showing only what the viewer's rooms may see. |
+| # | question | author's recommendation | review's recommendation |
+|---|---|---|---|
+| Q1 | When does Character · room (culture) move onto the entry? Step 4 already rewrites culture into sections and hands it to the Character adaptor. | At step 4, in the same change, so culture is migrated once. | At step 4 only if E1a and E1b have landed and memo has held a shadow week on the entry; otherwise at step 8. |
+| Q2 | The entry shows `observed` or `inferred`; the built column and `standing_revise` hold six finer modes (told, computed, deduced, induced, abduced, said). | Keep the six as the detail under the two. | Keep the six as the stored `reasoning`; the basis is a render-time function of it (this node's §3 already writes it so). |
+| Q3 | The portal's events page shows every event a person created or answered, across all their groups, with no per-room visibility and no withdrawal. | Serve it through the one Views path, showing only what the viewer's rooms may see. | Through Views, the reader's room set being the viewer's listed rooms, a field shown if its lineage passes in any of them, withdrawal always applied, and "created or answered" as a filter on top; after E1a and the event-lineage writer. |
 
 ## Status / Checkpoint
 
 **2026-10-01 — proposed, design only.** The concept was agreed with the
-operator and corrected twice the same day (DEC-249): first to scope it to
-what Nora writes, beside the Record and Memory; then to fix the topology (five
-layers, Memory beside them, the boundary rules) and the vocabulary (Layer ›
-Tier › Kind › Entry, tier inside the Notebook only; Notebook and Views
-replacing "warehouse" and "mart"). Nothing is built by this node.
+operator and corrected three times the same day (DEC-249): to scope it to
+what Nora writes; to fix the topology and the vocabulary; to name the
+Notebook's writers one per tier and keep "layer" for the data layers. It was
+then revised on an independent review (Fable, 2026-10-01): her tool calls and
+artifacts in the Record, the `handoff` stimulus, reminders as machinery,
+lineage from `about` for unit-wide kinds, and E1 split into E1a, E1b and
+E1c. Nothing is built by this node.

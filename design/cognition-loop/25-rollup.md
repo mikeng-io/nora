@@ -122,7 +122,7 @@ open, as the build fixed them:
 |---|---|---|---|---|
 | **stay**, **trip** | where was X, from when to when? | (person, interval) | presence fixes and polls | yes (design 27's Tier 1) |
 | **co-location** | who was with whom, where, when? | (unit, person set, place, interval) | overlapping stays within a radius | design 27's Tier 6, speculative → built here |
-| **face co-appearance** | who appeared together in one media item? | (unit, person set, item); cited by item | face matches in one item ([60](60-faces.md)); no place of its own. Every face places a person, so its lineage is `presence` for each person in it, and every entry must pass ([10](10-tiers.md) §3) | new |
+| **face co-appearance** | who appeared together in one media item? | (unit, person set, item); cited by item | face matches in one item ([60](60-faces.md)); no place of its own. Every face places a person, so its lineage is `presence` for each person in it, and every triple must pass ([10](10-tiers.md) §3) | new |
 | **outing** | where have we been together, how often? | (unit, place, interval) | co-locations of ≥ 2 members away from any member's home | new |
 | **play session** | who played what, with whom, when? | (unit, game, interval) | play samples (§6) | new |
 | **daybook** | what did X do on day D? | (unit, person, local date) | that day's stays, co-locations, outings, play sessions, rooms active in, social items posted | new |

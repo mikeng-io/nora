@@ -66,9 +66,10 @@ the tag path's debrief, both through `standing_revise`:
 | **unit** | new | what she is following, what she is watching for, what she owes |
 | **person** | new | her position toward one person: what is between them, what she owes them, how they receive her |
 
-Its modes are `deduced`, `abduced` and `said` ([10](10-tiers.md) §4). It may
-cite every tier below it, including Character and Lessons ("they tend to change plans
-late, so I hold this one loosely").
+Its modes are `deduced`, `abduced` and `said` ([10](10-tiers.md) §4). It
+cites the Record and the Rollup, and may **link** to a Character line or a
+lesson ("they tend to change plans late, so I hold this one loosely"), never
+cite one (DEC-249, [10](10-tiers.md) §2 rule 1).
 
 **The head stops being a lossy fold, which reverses standing-compact.**
 Standing already keeps its history: `standing_revision` (migration 0059,

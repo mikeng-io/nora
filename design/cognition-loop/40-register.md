@@ -102,7 +102,8 @@ previous revision. Two guards hold ([30](30-cognition.md) §3): a revision that
 moves a `told` event to `cancelled`, `evicted` or `lapsed` without `told`
 evidence keeps it rendering, flagged "cancelled?", for 48 hours; and
 cognition never cancels a reminder a person set, which fires with the
-event's current revision.
+event's current revision, except (after E2, DEC-249) with the event it
+cancels on `told` evidence.
 
 **The newest evidence outranks the event's older revision.** A message after
 the event was set, a co-location episode at another place at the event's time

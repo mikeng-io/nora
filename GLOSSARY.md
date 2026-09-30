@@ -345,7 +345,7 @@ no entry.
   people attend; the code name stays `Gathering`). "Event" here never means
   the fire-turn *occasion* — that is code `Event` (`nora.domain.events.Event`,
   DEC-139, see *occasion* below), a different thing with the same English
-  word. Written by the Cognition adaptor and the tag path.
+  word. Written by the Cognition adaptor and the tag path until the cut-over, then by the Cognition adaptor alone (DEC-249).
 - **Character** — what a **person**, a **room** (culture's new home, above),
   the **unit** or **Nora** is like and how it behaves. **account** is the
   body of one Character row — always "platform account" for a login (the

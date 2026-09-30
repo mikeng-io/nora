@@ -75,20 +75,16 @@ And the words that name processes, never stores:
 
 ## 2. The boundaries, as rules code enforces
 
-1. **Citations point down.** Order: Record < Rollup < Register < Character <
-   Lessons < Standing. A row cites only rows below it: Rollup cites the
-   Record; Register cites the Record and the Rollup; Character cites those and
-   the Register, and a room's or the unit's Character may also cite the
-   Characters of its members or rooms; Lessons cite any of those four (both
-   Character and Lessons are induced from outcomes, and a lesson may rest on
-   what a person is like, never the reverse); Standing cites any of the five. **Nothing cites upward**:
-   a note may not rest on "that person tends to cancel", which is a Character
-   line, not a claim about the plan.
-   **Amended by DEC-249** ([05](05-data-model.md) §5): evidence is only
-   the Record and the Rollup. An entry cites Record ids and Rollup keys; a reference to
-   another entry (a Character line, a note, a lesson) is a **link**, never
-   evidence, and the cascade does not walk it. The order above now says only
-   which entries may link to which.
+1. **Links point down; citations reach only the Record and the Rollup**
+   (amended by DEC-249, [05](05-data-model.md) §5; this rule said
+   "Citations point down" until then). An entry cites Record ids and Rollup
+   keys, and nothing else is evidence. A reference to another entry is a
+   **link**, never evidence, and the cascade does not walk it. Links follow
+   the order Register → Character → Lessons → Standing, and **nothing links
+   upward**: a room's or the unit's Character may link to its members'
+   Characters; a lesson to a Character line; a Standing line to a Character
+   line or a lesson; a note may not rest on "that person tends to cancel",
+   which is a Character line, not a claim about the plan.
 2. **Everything derived rests on the Record.** Every citation chain ends in
    Record ids; a Rollup key qualifies, because every Rollup row is computed
    from Record ids. A derived row with a chain that does not end there is
@@ -178,15 +174,15 @@ Each lineage kind has one written per-room predicate, in code:
 
 Memory has no lineage kind: it is never cited, so nothing derived rests on it.
 
-- **Per field, every entry.** A field (on an event) or section (on a
-  Character or Standing row) renders in a room only if every entry of its
+- **Per field, every triple.** A field (on an event) or section (on a
+  Character or Standing row) renders in a room only if every triple of its
   lineage passes there; one that fails is not shown, and the rest of the row
   is. A status or people field that places people is `presence`-lineaged.
 - **Placing a person is presence.** Any row that places a person somewhere at
   a time carries `presence` for that person, whatever its source: a
   co-location, a face in a media item, a story's location tag.
 - **The guard runs live.** Rendering re-runs DisclosureGuard; R-31's subset
-  check is a rule about a *person*, which is why every lineage entry names
+  check is a rule about a *person*, which is why every lineage triple names
   its subject.
 - **Unknown is deny.** An empty or unknown lineage renders only in its origin
   room, and nowhere if it has none. Existing rows get their lineage by a
@@ -205,7 +201,7 @@ Memory has no lineage kind: it is never cited, so nothing derived rests on it.
   stores the array; a row with lineage per section stores an object of
   arrays: a Standing row `body` and `working_set`, the two sections today's
   schema has, a culture row `body` (prose until the sectioned account, step
-  4). `message` entries carry the room as origin and no subject;
+  4). `message` triples carry the room as origin and no subject;
   `unresolved` carries the row's own room. The predicates are `nora/agent/lineage.py`
   and fix the details the table leaves open: `message:<A>` passes only
   between rooms of one unit and never out of a `*` room (R-49's boundary),
@@ -223,8 +219,14 @@ Memory has no lineage kind: it is never cited, so nothing derived rests on it.
   live roster. The four pushed blocks filter behind `[lineage] mode`
   (`off`, `shadow`, `on`; shipped `off`); `record_query` applies lineage in
   every mode. Block assembly reads no live roster yet, so until it does a
-  presence entry or a surprise withholds its section in every room, and a
-  `message:<A>` entry in every room but A.
+  presence triple or a surprise withholds its section in every room, and a
+  `message:<A>` triple in every room but A.
+- **Per kind: lineage from `about` for unit-wide kinds** (DEC-249,
+  [05](05-data-model.md) §3). A lesson, a unit's or Nora's Character section
+  and a unit Standing section whose text places nobody take their lineage
+  from the persons they are about, not from the union of their citations,
+  which would make them unrenderable across rooms with different rosters. A
+  section that places a person keeps the citation rule.
 
 ## 4. Reasoning modes
 
@@ -272,9 +274,11 @@ machinery ([05](05-data-model.md) §4).
 | **Views** | the layer of per-reader slices, assembled at read time under lineage and withdrawal through one assembly path, never stored ([05](05-data-model.md) §6) | a store; a cache; a SQL view |
 | **Memory** | Honcho, beside the layers: per-person understanding and what people say about themselves; read into Views, never copied into the Notebook | any store of ours |
 | **tier** | a subdivision inside the Notebook only, by what it is about: Register, Character, Standing, Lessons | the Record or the Rollup (layers) |
-| **kind** | a row type within a tier: note, memo, event; person, room, unit, Nora; room, unit, person; lesson | a platform; a stimulus kind |
-| **entry** | one Notebook row: scope, subject, kind, body, citations, basis, confidence, visibility, lifecycle, revisions ([05](05-data-model.md) §3) | a Record item; a log line |
-| **basis** | an entry's `observed` or `inferred`, beside its confidence ([05](05-data-model.md) §3) | a reasoning mode (§4), its finer grain |
+| **kind** | the row type at every layer: a Record kind (message, reaction, fix), a Rollup kind (stay, outing, tie), a stimulus kind, and in the Notebook a row type within a tier (note, memo, event; person, room, unit, Nora; room, unit, person; lesson) | a platform |
+| **entry** | one Notebook row: home, entity, kind, body, citations, reasoning, confidence, visibility, lifecycle, revisions ([05](05-data-model.md) §3); a lineage item is a **triple**, a `policy.toml` block a table, never an entry | a Record item; a log line |
+| **basis** | how a View shows an entry's reasoning: `observed` or `inferred` ([05](05-data-model.md) §3, Q2) | a stored column |
+| **triple** | one `(kind, subject, origin room)` item of a lineage (§3) | an entry |
+| **home** | the person, room, unit or workspace a row belongs to ([05](05-data-model.md) §1 rule 5) | `record_query`'s `scope` argument |
 | **link** | a typed reference from one entry to another; never evidence ([05](05-data-model.md) §5) | a citation |
 | **Record** | the observed layer | a database row in general |
 | **Rollup** | the computed layer | a model's summary; Standing's fold of folds (below) |
@@ -317,7 +321,7 @@ machinery ([05](05-data-model.md) §4).
 | **system time** | when a row entered and left the store (`recorded_at`, `superseded_at`) | valid time |
 | **valid time** | when what a row says held in the world (`valid_from`, `valid_to`) | system time |
 | **as of T** | every row with `recorded_at` ≤ T and not superseded at T (§8) | "valid at T" |
-| **head** | the current revision of a chain: a view over it, never a row updated in place | the chain |
+| **head** | the current revision of a chain, derivable from it, never a row updated in place (as built, a live row kept by the trigger, below) | the chain; a View |
 | **snapshot** | an eval sandbox holding Nora as of T ([70](70-migration.md) §2) | a Honcho export |
 | **assess pass** | the measurement of finished sessions, off any live path ([30](30-cognition.md) §6) | a gate on a write |
 | **session** | one run of a Dreamer adaptor for one key (a unit, or a unit and an entity); bare "session" is a Cognition session | a Honcho session (a conversation thread; always written "Honcho session") |
@@ -379,6 +383,13 @@ survives only as an entry's basis, [05](05-data-model.md) §3, DEC-249); **commu
 | Honcho representation, self card, peer card | memory (a hint, never a citation, never Character evidence) |
 | — | tension (new, operator-only) |
 | reminders | the machinery of act, not a tier |
+| her tool calls and their results, her artifacts (documents, generated images, computer sessions and exports), her Instagram comment replies | Record, her acts (DEC-249; today tool calls are logged only when cacheable and `ok`, and comment replies live only in `instagram_summons`) |
+| face labels · face templates | Record · Rollup |
+| `presence_places` | two layers in one table: Life360's saved places are Record, the fields the analytics process derives are Rollup; split when touched |
+| `messages`' delivery-status and adoption columns | machinery beside the Record row |
+| `geocode_cache`, `sticker_index`, `video_readings`, the vision cache | caches, outside the layers: rebuildable, never cited |
+| a note body's `## From memory` section | Memory crossing into the Notebook: retires when notes converge onto the entry ([05](05-data-model.md) §9, E4), rendered by the View from Memory instead |
+| the curator's discharge into Honcho (`[notes] discharge_enabled`, off) | the Notebook writing Memory: dies with the curator at step 4 |
 
 ## 8. Time: every store is append-only, so Nora can be restored as of T
 
@@ -399,7 +410,7 @@ versioned with them.
   thing was true in the world; `recorded_at`/`superseded_at` say when Nora
   held a row. A dinner at 20:00 recorded at 18:40 has valid time 20:00 and
   system time 18:40.
-- **No UPDATE in place on anything derived.** A head is a view over its chain
+- **No UPDATE in place on anything derived.** A head is derived from its chain
   (the revision not superseded). A head pointer kept for compare-and-swap is
   a cache derivable from the chain, and no as-of read uses it. Mutable loop
   state (a note's strikes and revisit time, a reminder's status, an event's
@@ -408,7 +419,7 @@ versioned with them.
   that changed in place STAY the live heads, updated in place as before;
   the chain is `row_history`, written by a trigger in the same transaction
   as each write, and no as-of read uses the head. No head was rebuilt as a
-  view: rewriting ~60 write statements and every reader to get one was the
+  SQL view: rewriting ~60 write statements and every reader to get one was the
   cost, and the trigger gives the same as-of answer with no reader
   changed. Versions are dated when the write ran, not when its
   transaction committed. History capture has no flag, deliberately: a

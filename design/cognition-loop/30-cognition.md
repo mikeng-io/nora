@@ -126,7 +126,12 @@ already holds, so adding `brief` changes a shared tool and is measured with
 **A person's reminder after cognition revises its event** fires with the
 event's current revision. If cognition cancelled the event, the reminder is
 kept and fires flagged as being about a cancelled event: only the tag path
-cancels a reminder a person set. The senders stay those of R-1b: the tag
+cancels a reminder a person set. **Amended by DEC-249 for after E2**
+([05](05-data-model.md) §7): `remind` and `cancel_reminder` stay on the tag
+turn as machinery (they change a reminder row, not the Notebook), and
+Cognition may also cancel a reminder a person set when it cancels that
+reminder's event on `told` evidence (a person's cancellation in words is
+Record it reads). The senders stay those of R-1b: the tag
 path, the fire path and, since DEC-212, the public summons.
 
 **Self-wakes are not acts** ([20](20-observe.md) §3 defines the pace verbs,
@@ -178,7 +183,7 @@ it can rewrite, and counted by rule; never silently dropped.
 1. **Citations resolve** to ids this session was shown or fetched, and every
    citation chain ends in Record ids; a Rollup key qualifies
    ([10](10-tiers.md) §2 rule 2).
-2. **Citations point down** ([10](10-tiers.md) §2 rule 1).
+2. **Citations reach only the Record and the Rollup; links point down** ([10](10-tiers.md) §2 rule 1, amended by DEC-249).
 3. **Authorship** per the echo rule ([10](10-tiers.md) §2 rule 4);
    non-member social text alone is refused ([20](20-observe.md) §2).
 4. **Schema** ([12](12-schemas.md)): headings, cited lines, absolute dates (a
@@ -208,7 +213,9 @@ it can rewrite, and counted by rule; never silently dropped.
     "cancelled?".
 12. **Own misreads only.** `event_set_status(evicted)` is refused on an event
     whose first revision Cognition did not write; `remind_move` and
-    `remind_cancel` are refused on a reminder Cognition did not write.
+    `remind_cancel` are refused on a reminder Cognition did not write, except
+    (after E2, DEC-249) `remind_cancel` on a person's reminder whose event
+    Cognition cancels in the same session on `told` evidence.
 
 **The pace verbs** (`wake_at`, `wake_move`, `wake_cancel`) pass checks 1
 (their subject rows resolve to ids shown or fetched) and 10 (provenance and
@@ -224,8 +231,9 @@ schema, mode or lineage: they write a stimulus, not a tier.
 - a value that is only abduced goes out as a question: code sets the brief's
   intent to `ask`;
 - an act whose only citations are non-member social text is refused;
-- cognition never cancels a reminder a person set; only a tag-path revision
-  does, and a reminder about a row is cancelled before it fires when that
+- cognition never cancels a reminder a person set, except with the event it
+  cancels on `told` evidence (after E2, DEC-249); a tag-path revision or
+  `cancel_reminder` does, and a reminder about a row is cancelled before it fires when that
   row is retired or revised on the tag path (DEC-162 D11).
 
 **Deviation is a stimulus, not a rule.** No gate is specific to it. It enters
