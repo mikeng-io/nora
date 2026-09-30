@@ -516,3 +516,41 @@ def test_config_example_has_no_secret_values():
 
 def test_env_example_names_the_secret():
     assert "OMNIROUTE_API_KEY" in (ROOT / ".env.example").read_text()
+
+
+def test_every_secret_name_the_config_defaults_reaches_the_container_that_reads_it():
+    """A `*_env` field names the variable a secret arrives in, and compose
+    passes an explicit list, not the whole `.env`. `NORA_COMPUTER_TOKEN` was in
+    `.env` but not in `nora`'s list, so the first `[computer] enabled` deploy
+    crash-looped nora (2026-09-30); `HKGOV_MAPS_TOKEN` was missing from
+    `presence` the same way. Every default name must reach its reader."""
+    import yaml
+    from pydantic import BaseModel
+
+    from nora.config import Config
+
+    def names(model_cls, prefix=""):
+        for field, info in model_cls.model_fields.items():
+            if isinstance(info.default, BaseModel):
+                yield from names(type(info.default), f"{prefix}{field}.")
+            elif field.endswith("_env") and isinstance(info.default, str) and info.default:
+                yield f"{prefix}{field}", info.default
+
+    compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text())
+
+    def passed(service):
+        return {e.split("=", 1)[0] for e in compose["services"][service]["environment"]}
+
+    # Who reads each secret. Default: nora. The presence collector talks to
+    # Life360 only; geocoding (Google or HK-gov) runs in nora (`where_is`), so
+    # the collector deliberately has no Maps key (docker-compose.yml says so).
+    readers = {"presence.client_credential_env": ("presence",)}
+    missing = [
+        f"{key} -> {name} (service {service})"
+        for key, name in names(Config)
+        for service in readers.get(key, ("nora",))
+        if name not in passed(service)
+    ]
+    assert not missing, (
+        "secret names not passed to the container that reads them: " + "; ".join(missing)
+    )
