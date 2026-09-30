@@ -1,0 +1,101 @@
+#!/usr/bin/env bash
+# nora-computer: the lifecycle unit of Nora's computer (design/sandbox-runtime §2).
+# The ONLY thing that runs `sbx`; Nora never holds the sbx or Docker socket.
+# Runs on the deploy host as the user that ran `sbx login`.
+#
+#   nora-computer build    build the image and load it into sbx as a template
+#   nora-computer ensure   VM exists, runs, publishes its port, computerd answers
+#   nora-computer status   one line: sandbox state and computerd health
+#   nora-computer stop     stop the VM (files persist)
+#   nora-computer destroy  remove the VM and its disk
+#
+# `ensure` is idempotent and is what the timer runs every minute. Health is an
+# HTTP BODY from computerd: under sbx a TCP connect succeeds to any address,
+# so a connect check proves nothing (spike round 2).
+set -uo pipefail
+
+NAME=${NORA_COMPUTER_NAME:-nora-computer}
+IMAGE=${NORA_COMPUTER_IMAGE:-nora-computer:latest}
+HOST_IP=${NORA_COMPUTER_HOST_IP:-172.17.0.1}   # docker0: the nora container reaches it, the LAN does not
+HOST_PORT=${NORA_COMPUTER_PORT:-18765}
+MEMORY=${NORA_COMPUTER_MEMORY:-3g}
+CPUS=${NORA_COMPUTER_CPUS:-2}
+ENV_FILE=${NORA_ENV_FILE:-$HOME/workspace/nora/.env}
+HERE=$(cd "$(dirname "$0")" && pwd)
+
+# The desktop keyring is locked on a headless host; point sbx at nothing and
+# it falls back to its file store (spike round 1).
+export DBUS_SESSION_BUS_ADDRESS=unix:path=/nonexistent
+
+log() { echo "$(date -Is) nora-computer: $*"; }
+
+healthy() {
+    curl -fsS -m 3 "http://$HOST_IP:$HOST_PORT/v1/health" 2>/dev/null | grep -q '"service": "computerd"'
+}
+
+sandbox_state() {
+    sbx ls --json </dev/null | python3 -c '
+import json, sys
+name = sys.argv[1]
+for s in json.load(sys.stdin)["sandboxes"]:
+    if s["name"] == name:
+        print(s["status"]); break
+else:
+    print("absent")' "$NAME"
+}
+
+load_token() {
+    COMPUTERD_TOKEN=$(grep -E '^NORA_COMPUTER_TOKEN=' "$ENV_FILE" 2>/dev/null | tail -n 1 | cut -d= -f2-)
+    [ -n "$COMPUTERD_TOKEN" ] || { log "NORA_COMPUTER_TOKEN is not set in $ENV_FILE"; exit 3; }
+    export COMPUTERD_TOKEN
+}
+
+cmd_build() {
+    local tar
+    tar=$(mktemp --suffix=.tar) || exit 1
+    # --network=host: BuildKit's default bridge cannot resolve package mirrors on
+    # the deploy host (operational constraint 1, the same reason every compose
+    # `build:` sets it).
+    docker build --network=host -t "$IMAGE" "$HERE" || { rm -f "$tar"; exit 4; }
+    docker save "$IMAGE" -o "$tar" && sbx template load "$tar" </dev/null; local rc=$?
+    rm -f "$tar"
+    [ "$rc" = 0 ] || exit 5
+    log "built and loaded $IMAGE"
+}
+
+cmd_ensure() {
+    load_token
+    if [ "$(sandbox_state)" = absent ]; then
+        log "creating $NAME from $IMAGE"
+        sbx create --name "$NAME" -m "$MEMORY" --cpus "$CPUS" -q --pull never -t "$IMAGE" shell \
+            </dev/null || { log "create failed"; exit 6; }
+    fi
+    if ! sbx ports "$NAME" --json </dev/null 2>/dev/null | grep -q "\"host_port\": $HOST_PORT"; then
+        sbx ports "$NAME" --publish "$HOST_IP:$HOST_PORT:8080" </dev/null >/dev/null \
+            || { log "publish failed"; exit 7; }
+    fi
+    healthy && exit 0
+    # `sbx exec` also starts a stopped sandbox. `-e COMPUTERD_TOKEN` passes the
+    # value from this environment, so it never appears on a command line.
+    log "starting computerd"
+    sbx exec -e COMPUTERD_TOKEN "$NAME" bash -c \
+        'nohup /opt/computerd/venv/bin/python /opt/computerd/computerd.py --root /workspace \
+            >/tmp/computerd.log 2>&1 &' </dev/null || { log "exec failed"; exit 8; }
+    for _ in 1 2 3 4 5 6 7 8 9 10; do healthy && { log "computerd healthy"; exit 0; }; sleep 1; done
+    log "computerd did not answer /v1/health"; exit 9
+}
+
+cmd_status() {
+    local health=down
+    healthy && health=healthy
+    echo "sandbox=$(sandbox_state) computerd=$health endpoint=http://$HOST_IP:$HOST_PORT"
+}
+
+case "${1:-}" in
+    build) cmd_build ;;
+    ensure) cmd_ensure ;;
+    status) cmd_status ;;
+    stop) sbx stop "$NAME" </dev/null ;;
+    destroy) sbx rm --force "$NAME" </dev/null ;;
+    *) echo "usage: nora-computer build|ensure|status|stop|destroy" >&2; exit 2 ;;
+esac

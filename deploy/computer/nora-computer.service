@@ -1,0 +1,10 @@
+# Keeps Nora's computer up (design/sandbox-runtime §2). A USER unit for the
+# account that ran `sbx login`; run by nora-computer.timer every minute.
+# Install: deploy/computer/README.md.
+[Unit]
+Description=Nora's computer: ensure the sbx microVM and computerd are up
+
+[Service]
+Type=oneshot
+ExecStart=%h/workspace/nora/deploy/computer/nora-computer ensure
+TimeoutStartSec=300

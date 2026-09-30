@@ -203,6 +203,11 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, Literal, Protocol, runtime_checkable
 
+from nora.domain.computer import BytesResult as BytesResult
+from nora.domain.computer import FileResult as FileResult
+from nora.domain.computer import ListResult as ListResult
+from nora.domain.computer import OpResult as OpResult
+from nora.domain.computer import RunResult as RunResult
 from nora.domain.culture import CultureRevision as CultureRevision
 from nora.domain.decision_log import DecisionRow as DecisionRow
 from nora.domain.identity import PlatformIdentity as PlatformIdentity
@@ -1681,6 +1686,40 @@ class ComputeBackend(Protocol):
     ) -> str: ...
 
     async def poll(self, *, job_id: str) -> JobResult: ...
+
+
+@runtime_checkable
+class SandboxRuntime(Protocol):
+    """Nora's computer (design/sandbox-runtime §3): a persistent, less-trusted
+    machine the computer-use tools execute on. `ComputerdRuntime`
+    (`nora.infra.computer.client`) talks to `computerd` in an sbx microVM;
+    `FakeSandboxRuntime` is its in-memory twin, and both pass
+    `tests/contract/test_sandbox_runtime_contract.py`.
+
+    `scope` is `nora.domain.computer.computer_scope(platform, conversation_id)`,
+    derived by Nora's code from the turn, never chosen by the model. Paths are
+    relative to that scope's directory.
+
+    NEVER raises. The computer being down, a timeout or a refused path is a
+    typed result (`nora.domain.computer.SandboxStatus`), so a tool maps it to
+    R-27 without a try/except.
+    """
+
+    async def run(self, *, scope: str, command: str, timeout_s: float) -> RunResult: ...
+
+    async def read(
+        self, *, scope: str, path: str, offset: int = 0, limit: int | None = None,
+    ) -> FileResult: ...
+
+    async def write_text(self, *, scope: str, path: str, content: str) -> OpResult: ...
+
+    async def edit(self, *, scope: str, path: str, old: str, new: str) -> OpResult: ...
+
+    async def files(self, *, scope: str, pattern: str = "**/*") -> ListResult: ...
+
+    async def fetch(self, *, scope: str, path: str, max_bytes: int) -> BytesResult: ...
+
+    async def put(self, *, scope: str, path: str, data: bytes) -> OpResult: ...
 
 
 @runtime_checkable

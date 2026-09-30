@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import fnmatch
 import hashlib
 import json
+import posixpath
+import re
 from collections.abc import Sequence
 from dataclasses import replace
 from datetime import datetime
@@ -15,6 +18,15 @@ from nora.domain.compute import (
     ComputeJobState,
     ensure_utc_job,
     normalise_compute_job,
+)
+from nora.domain.computer import (
+    BytesResult,
+    FileEntry,
+    FileResult,
+    ListResult,
+    OpResult,
+    RunResult,
+    SandboxStatus,
 )
 from nora.domain.media import (
     MediaBlob,
@@ -1809,3 +1821,127 @@ class FakeInstagramAccountLookup:
             return UsernameLookup("unavailable")
         igid = self.accounts.get(username.strip().removeprefix("@").lower())
         return UsernameLookup("found", igid) if igid else UsernameLookup("none")
+
+
+class FakeSandboxRuntime:
+    """In-memory `SandboxRuntime` (`nora.domain.ports.SandboxRuntime`).
+
+    **Bound by `tests/contract/test_sandbox_runtime_contract.py`** alongside
+    `nora.infra.computer.client.ComputerdRuntime` talking to a real computerd
+    (`deploy/computer/computerd.py`) started in-process. The suite holds both
+    to the same file semantics: scope keys, escaping paths, missing files,
+    ambiguous edits, caps.
+
+    It cannot execute anything, so `run` answers what a test scripted with
+    `script(command, result)`, and `ok` with exit 0 and no output otherwise.
+    Set `down = True` for the computer-unreachable case.
+    """
+
+    def __init__(self) -> None:
+        self.files_by_scope: dict[str, dict[str, bytes]] = {}
+        self.runs: list[tuple[str, str]] = []
+        self.down = False
+        self._scripted: dict[str, RunResult] = {}
+
+    def script(self, command: str, result: RunResult) -> None:
+        self._scripted[command] = result
+
+    def _refusal(self, scope: str, path: str | None = None) -> SandboxStatus | None:
+        if self.down:
+            return SandboxStatus.UNAVAILABLE
+        if not re.fullmatch(r"[0-9a-f]{16,64}", scope):
+            return SandboxStatus.DENIED
+        if path is not None and _fake_path(path) is None:
+            return SandboxStatus.DENIED
+        return None
+
+    async def run(self, *, scope: str, command: str, timeout_s: float) -> RunResult:
+        if (refusal := self._refusal(scope)) is not None:
+            return RunResult(status=refusal, reason="fake refusal")
+        self.runs.append((scope, command))
+        return self._scripted.get(command, RunResult(status=SandboxStatus.OK, exit_code=0))
+
+    async def read(
+        self, *, scope: str, path: str, offset: int = 0, limit: int | None = None,
+    ) -> FileResult:
+        if (refusal := self._refusal(scope, path)) is not None:
+            return FileResult(status=refusal, reason="fake refusal")
+        data = self.files_by_scope.get(scope, {}).get(_fake_path(path) or "")
+        if data is None:
+            return FileResult(status=SandboxStatus.NOTHING_FOUND, reason="no such file")
+        digest = hashlib.sha256(data).hexdigest()
+        try:
+            text = data.decode("utf-8")
+        except UnicodeDecodeError:
+            return FileResult(
+                status=SandboxStatus.OK, binary=True, size=len(data), sha256=digest,
+            )
+        lines = text.splitlines(keepends=True)
+        chosen = "".join(lines[max(offset, 0):])
+        cap = limit if limit is not None else len(chosen)
+        return FileResult(
+            status=SandboxStatus.OK, content=chosen[:cap], size=len(data), sha256=digest,
+            truncated=len(chosen) > cap, lines_total=len(lines),
+        )
+
+    async def write_text(self, *, scope: str, path: str, content: str) -> OpResult:
+        return await self.put(scope=scope, path=path, data=content.encode("utf-8"))
+
+    async def edit(self, *, scope: str, path: str, old: str, new: str) -> OpResult:
+        if (refusal := self._refusal(scope, path)) is not None:
+            return OpResult(status=refusal, reason="fake refusal")
+        if not old:
+            return OpResult(status=SandboxStatus.DENIED, reason="old must be non-empty")
+        key = _fake_path(path) or ""
+        data = self.files_by_scope.get(scope, {}).get(key)
+        if data is None:
+            return OpResult(status=SandboxStatus.NOTHING_FOUND, reason="no such file")
+        text = data.decode("utf-8")
+        count = text.count(old)
+        if count == 0:
+            return OpResult(status=SandboxStatus.NOTHING_FOUND, reason="old text not found")
+        if count > 1:
+            return OpResult(
+                status=SandboxStatus.DENIED, reason=f"old text matches {count} places",
+            )
+        return await self.put(scope=scope, path=path, data=text.replace(old, new, 1).encode())
+
+    async def files(self, *, scope: str, pattern: str = "**/*") -> ListResult:
+        if (refusal := self._refusal(scope)) is not None:
+            return ListResult(status=refusal, reason="fake refusal")
+        entries = tuple(
+            FileEntry(path=p, size=len(d))
+            for p, d in sorted(self.files_by_scope.get(scope, {}).items())
+            if fnmatch.fnmatch(p, pattern) or fnmatch.fnmatch(p.rsplit("/", 1)[-1], pattern)
+        )
+        status = SandboxStatus.OK if entries else SandboxStatus.NOTHING_FOUND
+        return ListResult(status=status, entries=entries)
+
+    async def fetch(self, *, scope: str, path: str, max_bytes: int) -> BytesResult:
+        if (refusal := self._refusal(scope, path)) is not None:
+            return BytesResult(status=refusal, reason="fake refusal")
+        data = self.files_by_scope.get(scope, {}).get(_fake_path(path) or "")
+        if data is None:
+            return BytesResult(status=SandboxStatus.NOTHING_FOUND, reason="no such file")
+        if len(data) > max_bytes:
+            return BytesResult(status=SandboxStatus.DENIED, reason="file is over the cap")
+        digest = hashlib.sha256(data).hexdigest()
+        return BytesResult(status=SandboxStatus.OK, data=data, sha256=digest)
+
+    async def put(self, *, scope: str, path: str, data: bytes) -> OpResult:
+        if (refusal := self._refusal(scope, path)) is not None:
+            return OpResult(status=refusal, reason="fake refusal")
+        self.files_by_scope.setdefault(scope, {})[_fake_path(path) or ""] = data
+        digest = hashlib.sha256(data).hexdigest()
+        return OpResult(status=SandboxStatus.OK, size=len(data), sha256=digest)
+
+
+def _fake_path(path: str) -> str | None:
+    """computerd's confinement rule without a filesystem: relative only, and
+    no `..` that climbs out after normalisation."""
+    if not path or path.startswith("/") or "\x00" in path:
+        return None
+    normal = posixpath.normpath(path)
+    if normal == ".." or normal.startswith("../") or normal == ".":
+        return None
+    return normal
