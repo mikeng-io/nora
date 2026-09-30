@@ -78,7 +78,7 @@ def fold_pending_reminds(
             live[ref] = (live[ref][0], row.at_ms)
         elif row.verb == "remind_cancel":
             live.pop(ref, None)
-    return tuple(p for p, at in live.values() if at >= now_ms)
+    return tuple(p for p, at in live.values() if at > now_ms)
 
 
 @dataclass(frozen=True, slots=True)

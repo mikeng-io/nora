@@ -33,6 +33,7 @@ from nora.domain.stimuli import (
     WakeGuard,
     WakeRow,
     Watermark,
+    failure_run,
     wake_state,
 )
 from nora.infra.sql.schema import (
@@ -172,6 +173,28 @@ def _mark_query(*, unit: str, mode: str, stale_before_ms: int | None) -> sa.Sele
         )
         .order_by(COGNITION_WAKE.c.id.desc())
         .limit(1)
+    )
+
+
+#: How many of a unit's newest wakes the failure streak looks back over. The
+#: streak is capped by it, and every consumer of the streak acts long before
+#: (`WakePolicy.max_consecutive_failures`), so it only has to exceed that.
+FAILURE_LOOKBACK = 64
+
+
+def _recent_wakes_query(unit: str, mode: str) -> sa.Select[Any]:
+    """The unit's newest wakes in the mode WITH their outcome (or NULL), newest
+    first: what `nora.domain.stimuli.failure_run` reads."""
+    outcome = COGNITION_WAKE_OUTCOME
+    return (
+        sa.select(
+            COGNITION_WAKE, outcome.c.outcome.label("outcome"),
+            outcome.c.at_ms.label("outcome_at_ms"),
+        )
+        .select_from(COGNITION_WAKE.outerjoin(outcome, outcome.c.wake_id == COGNITION_WAKE.c.id))
+        .where(COGNITION_WAKE.c.unit == unit, COGNITION_WAKE.c.mode == mode)
+        .order_by(COGNITION_WAKE.c.id.desc())
+        .limit(FAILURE_LOOKBACK)
     )
 
 
@@ -331,10 +354,24 @@ class SqlStimulusStore:
             pending.sort(key=lambda x: x.id)
             activity_q = activity_query(unit=unit)
             activity = (await conn.execute(activity_q)).scalar_one_or_none()
+            recent = (await conn.execute(_recent_wakes_query(unit, mode))).all()
+        failures, failed_mark = failure_run(
+            (
+                _wake(r),
+                wake_state(
+                    tracked=bool(r.tracked), recorded_at_ms=_ms(r.recorded_at),
+                    outcome=None if r.outcome is None else str(r.outcome),
+                    outcome_at_ms=None if r.outcome_at_ms is None else int(r.outcome_at_ms),
+                    stale_before_ms=stale_before_ms,
+                ),
+            )
+            for r in recent
+        )
         return UnitView(
             unit=unit, pending=tuple(pending),
             last_activity_ms=None if activity is None else _ms(activity),
             last_wake=last, mark=mark, last_session=last_session, carry=carry,
+            failures=failures, failed_mark=failed_mark,
         )
 
     async def record_outcome(

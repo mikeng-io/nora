@@ -39,6 +39,7 @@ from nora.app.cognition_session import (
 from nora.domain.cognition_session import Room
 from nora.domain.stimuli import Stimulus, UnitView
 from nora.testing.cognition_dry_run_store import InMemoryCognitionDryRunStore
+from nora.testing.cognition_grounding import EmptyGrounder
 from nora.testing.stimuli import InMemoryStimulusStore
 
 NOW = 1_800_000_000_000
@@ -141,8 +142,9 @@ async def test_a_scripted_session_writes_nothing_to_a_live_store_and_sends_nothi
     stimuli.seed_wake("unit-1", 1)
     runner = CognitionSessionRunner(
         dry_run_store=dry_run_store, stimulus_store=stimuli,
-        agent_runner=agent, home_rooms={"unit-1": HOME}, read_tools_for=lambda u, r: [],
-        skill_text_for=lambda kinds: "", doctrine_text="DOCTRINE", doctrine_sha256="sha",
+        agent_runner=agent, home_rooms={"unit-1": HOME}, read_tools_for=lambda u, rs: [],
+        skill_text_for=lambda kinds: "", grounder=EmptyGrounder(),
+        doctrine_text="DOCTRINE", doctrine_sha256="sha",
         open_note_titles=live.open_note_titles, open_proposed_events=live.open_proposed_events,
         prior_standing=live.prior_standing, pending_self_wakes=live.pending_self_wakes,
         pending_mirrored_reminds=live.pending_mirrored_reminds, session_mode="shadow",
@@ -181,8 +183,9 @@ async def test_session_mode_off_never_constructs_a_live_read_either():
     stimuli.seed_wake("unit-1", 1)
     runner = CognitionSessionRunner(
         dry_run_store=dry_run_store, stimulus_store=stimuli,
-        agent_runner=agent, home_rooms={"unit-1": HOME}, read_tools_for=lambda u, r: [],
-        skill_text_for=lambda kinds: "", doctrine_text="DOCTRINE", doctrine_sha256="sha",
+        agent_runner=agent, home_rooms={"unit-1": HOME}, read_tools_for=lambda u, rs: [],
+        skill_text_for=lambda kinds: "", grounder=EmptyGrounder(),
+        doctrine_text="DOCTRINE", doctrine_sha256="sha",
         open_note_titles=live.open_note_titles, open_proposed_events=live.open_proposed_events,
         prior_standing=live.prior_standing, pending_self_wakes=live.pending_self_wakes,
         pending_mirrored_reminds=live.pending_mirrored_reminds, session_mode="off",

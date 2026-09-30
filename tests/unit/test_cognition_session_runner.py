@@ -25,6 +25,7 @@ from nora.app.cognition_session import (
 from nora.domain.cognition_session import Room
 from nora.domain.stimuli import Stimulus, UnitView
 from nora.testing.cognition_dry_run_store import InMemoryCognitionDryRunStore
+from nora.testing.cognition_grounding import EmptyGrounder
 from nora.testing.stimuli import InMemoryStimulusStore
 
 NOW = 1_800_000_000_000
@@ -83,8 +84,8 @@ def _runner(
     runner = CognitionSessionRunner(
         dry_run_store=store, stimulus_store=stimuli or _seeded(),
         agent_runner=fake, units=("unit-1",), session_timeout_seconds=900.0,
-        home_rooms={"unit-1": HOME}, read_tools_for=lambda unit, room: [],
-        skill_text_for=lambda kinds: "", doctrine_text="DOCTRINE",
+        home_rooms={"unit-1": HOME}, read_tools_for=lambda unit, rooms: [],
+        skill_text_for=lambda kinds: "", grounder=EmptyGrounder(), doctrine_text="DOCTRINE",
         doctrine_sha256="sha", open_note_titles=_async_const(()),
         open_proposed_events=_async_const2(()), prior_standing=_async_const2(None),
         pending_self_wakes=_async_const(()), pending_mirrored_reminds=_async_const(()),

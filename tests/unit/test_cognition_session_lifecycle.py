@@ -16,7 +16,7 @@ from __future__ import annotations
 import asyncio
 import datetime as dt
 import inspect
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -34,6 +34,7 @@ from nora.domain.cognition_session import Room
 from nora.domain.stimuli import NewStimulus, UnitView, WakeHook, WakePolicy
 from nora.obs.metrics import Metrics
 from nora.testing.cognition_dry_run_store import InMemoryCognitionDryRunStore
+from nora.testing.cognition_grounding import EmptyGrounder
 from nora.testing.stimuli import InMemoryStimulusStore
 
 HK = ZoneInfo("Asia/Hong_Kong")
@@ -172,7 +173,8 @@ class Rig:
 def _rig(
     *, agent: ScriptedAgent | None = None, units: tuple[str, ...] = ("u1",),
     timeout: float = 30.0, max_items: int = 12, max_strikes: int = 3,
-    policy: WakePolicy = POLICY, read_tools_for: Callable[[str, Room], list[Any]] | None = None,
+    policy: WakePolicy = POLICY,
+    read_tools_for: Callable[[str, Sequence[Room]], list[Any]] | None = None,
     read_only_tools: frozenset[str] = frozenset(), max_self_wakes: int = 5,
     max_self_wakes_per_day: int = 12,
 ) -> Rig:
@@ -190,9 +192,10 @@ def _rig(
     runner = CognitionSessionRunner(
         dry_run_store=ledger, stimulus_store=stimuli, agent_runner=agent,
         home_rooms=dict.fromkeys(units, HOME),
-        read_tools_for=read_tools_for or (lambda unit, room: []),
+        read_tools_for=read_tools_for or (lambda unit, rooms: []),
         read_only_tools=read_only_tools,
-        skill_text_for=lambda kinds: "", doctrine_text="DOCTRINE", doctrine_sha256="sha",
+        skill_text_for=lambda kinds: "", grounder=EmptyGrounder(),
+        doctrine_text="DOCTRINE", doctrine_sha256="sha",
         open_note_titles=_const(()), open_proposed_events=_const(()),
         prior_standing=_const(None), pending_self_wakes=_pending,
         pending_mirrored_reminds=_const(()), session_mode="shadow",
@@ -1196,7 +1199,8 @@ def _runner_kwargs(
     return {
         "dry_run_store": ledger, "stimulus_store": InMemoryStimulusStore(ledger=ledger),
         "agent_runner": ScriptedAgent(), "home_rooms": home_rooms or {"u1": HOME},
-        "read_tools_for": lambda unit, room: [], "skill_text_for": lambda kinds: "",
+        "read_tools_for": lambda unit, rooms: [], "skill_text_for": lambda kinds: "",
+        "grounder": EmptyGrounder(),
         "doctrine_text": "D", "doctrine_sha256": None, "open_note_titles": _const(()),
         "open_proposed_events": _const(()), "prior_standing": _const(None),
         "pending_self_wakes": _const(()), "pending_mirrored_reminds": _const(()),

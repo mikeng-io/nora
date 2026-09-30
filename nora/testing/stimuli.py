@@ -26,6 +26,7 @@ from nora.domain.stimuli import (
     WakeGuard,
     WakeRow,
     Watermark,
+    failure_run,
     wake_state,
 )
 
@@ -146,11 +147,15 @@ class InMemoryStimulusStore:
             s.recorded_at_ms for s in self.stimuli
             if s.unit == unit and s.kind == "message" and s.id not in self.uncommitted
         ]
+        failures, failed_mark = failure_run(
+            (w, self._state(w, stale_before_ms)) for w in reversed(mine)
+        )
         return UnitView(
             unit=unit, pending=tuple(pending),
             last_activity_ms=max(activity) if activity else None, last_wake=last,
             mark=mark, last_session=last_session,
             carry={i: c.strike for i, c in carried.items()},
+            failures=failures, failed_mark=failed_mark,
         )
 
     async def record_outcome(

@@ -2072,14 +2072,21 @@ async def test_session_mode_shadow_builds_one_runner_and_hands_its_hook_to_the_e
     # `remind`/`note_create`, whose arguments differ from the session's own
     # verbs of those names, and R-99 would veto every call to them.
     assert agent._param_names is not None and "note_read" in agent._param_names
+    # R-99 must accept the `room` argument the routed tools of a multi-room
+    # agenda take (#637 review, major 3), for every read tool held.
+    assert all("room" in names for names in agent._param_names.values())
     assert set(agent._param_names) <= runner._read_only_tools
     # The session's instruction is the Dreamer's objective for it, read from
     # the bind-mounted corpus, doctrine first.
     text, sha = runner._doctrine()
     assert text.startswith('<dreamer_doctrine name="dreamer">')
     assert '<dreamer_objective name="cognition">' in text and sha
-    # Only units with a home room are woken: `wedding` names none.
-    assert list(evaluator._units()) == ["friends"]
+    # EVERY unit stays in the evaluator (its would-wakes are still recorded);
+    # only units with a home room can start a session: `wedding` names none
+    # (#637 review, minor 1).
+    assert sorted(evaluator._units()) == ["friends", "wedding"]
+    assert set(evaluator._session_units()) == {"friends"}
+    assert set(runner._home_rooms) == {"friends"}
 
 
 async def test_the_sessions_read_tools_are_the_catalogue_less_what_a_flag_withholds(
@@ -2098,7 +2105,7 @@ async def test_the_sessions_read_tools_are_the_catalogue_less_what_a_flag_withho
     assert {"note_read", "about", "where_been", "event_search"} <= wired
     assert not {"rollup_read", "memo_read", "character_read"} & wired    # not built yet
     # Built for a real room they are real, read-only tools, and only wired ones.
-    built = on.cognition_runner._read_tools_for("friends", Room("signal", "g1"))
+    built = on.cognition_runner._read_tools_for("friends", [Room("signal", "g1")])
     names = {t.tool_name for t in built}
     assert names and names <= on.cognition_runner._read_only_tools
     assert {"note_read", "record_query"} <= names
@@ -2115,3 +2122,75 @@ async def test_a_shadow_session_mode_that_built_no_runner_refuses_to_boot(
     monkeypatch.setattr(composition, "build_cognition_runner", lambda **kw: None)
     with pytest.raises(composition.StartupError, match="no session runner"):
         await build_dependencies(override_config(cfg, _SESSION_ON))
+
+
+async def test_the_shadow_session_is_grounded_from_the_record_with_record_query_off(
+    cfg, tmp_path, pg_url,
+):
+    """#637 review, major 2: the rows that raised a stimulus are read by code for
+    the agenda whether or not `[record_query] enabled` offers a MODEL the tool.
+    Real Postgres, the composition's own grounder: who said what, with the id."""
+    import sqlalchemy as sa
+
+    from nora.domain.cognition_session import Room, build_situation
+    from nora.domain.stimuli import Stimulus
+    from nora.infra.sql.engine import create_sql_engine
+
+    (tmp_path / "policy.toml").write_text(_HOME_POLICY)
+    deps = await build_dependencies(override_config(cfg, _SESSION_ON))
+    assert "record_query" not in deps.cognition_runner._read_only_tools   # the tool is OFF
+    engine = create_sql_engine(pg_url)
+    now = 1_790_000_000_000
+    try:
+        async with engine.begin() as conn:
+            ids = []
+            for room, sender, name, body, hidden in (
+                ("g1", "+85211110001", "Ada Self-Set", "dinner friday?", None),
+                ("g1", "+85211110002", "Ben Self-Set", "a hidden one", now),
+                ("g2", "+85211110003", "Cy Self-Set", "other unit words", None),
+            ):
+                ids.append((await conn.execute(sa.text(
+                    "INSERT INTO messages (platform, conversation_id, conversation_type, "
+                    "sender_id, sender_name, ts, body, is_nora, hidden_at) VALUES "
+                    "('signal', :room, 'group', :s, :n, :ts, :b, 0, :h) RETURNING id"
+                ), {"room": room, "s": sender, "n": name, "ts": now - 600_000, "b": body,
+                    "h": hidden})).scalar_one())
+    finally:
+        await engine.dispose()
+    pending = tuple(
+        Stimulus(id=i + 1, unit="friends", kind="message", item="message", ref=f"messages:{mid}",
+                 at_ms=now - 600_000, recorded_at_ms=now - 600_000, platform="signal",
+                 conversation_id=room)
+        for i, (mid, room) in enumerate(zip(ids, ("g1", "g1", "g2"), strict=True))
+    )
+    situation = build_situation(
+        unit="friends", pending=pending, home_room=Room("signal", "g1"), now_ms=now,
+        last_session_ms=None,
+    )
+    grounding = await deps.cognition_runner._grounder("friends", situation.agenda.items, pending)
+    said = {r.message_id: r for r in grounding.records.values()}
+    assert set(said) == {ids[0]}                    # the hidden one and the OTHER UNIT's are absent
+    assert said[ids[0]].text == "dinner friday?" and said[ids[0]].room == Room("signal", "g1")
+    assert "+852" not in repr(grounding)            # R-18: no platform id reaches the prompt
+
+
+async def test_shadow_sessions_with_no_unit_that_can_run_them_refuse_to_boot(cfg, tmp_path):
+    """#637 review, minor 1: units without a home room stay in the evaluator,
+    but a shadow week in which NO unit can start a session would record
+    would-wakes and look healthy."""
+    from nora.app import composition
+
+    (tmp_path / "policy.toml").write_text(
+        'default = "deny"\n[[conversations]]\nplatform = "signal"\nid = "g1"\npersons = "*"\n'
+        'unit = "friends"\nlabel = "Friends"\n',
+    )
+    with pytest.raises(composition.StartupError, match="no unit can run a session"):
+        await build_dependencies(override_config(cfg, _SESSION_ON))
+
+
+async def test_units_without_a_home_room_stay_in_the_evaluator_and_are_gauged(cfg, tmp_path):
+    (tmp_path / "policy.toml").write_text(_HOME_POLICY)
+    deps = await build_dependencies(override_config(cfg, _SESSION_ON))
+    assert deps.metrics.get("nora_cognition_session_units", state="runnable") == 1
+    assert deps.metrics.get("nora_cognition_session_units", state="no_home_room") == 1
+    assert "wedding" in list(deps.wake_evaluator._units())

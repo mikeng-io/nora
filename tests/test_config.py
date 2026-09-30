@@ -1999,6 +1999,52 @@ def test_session_mode_shadow_without_the_dreamer_is_refused_at_load(toml_path):
         load(toml_path)
 
 
+def _shadow_sessions(text: str) -> str:
+    text = text.replace('[cognition]\nmode = "off"', '[cognition]\nmode = "shadow"')
+    return _set_dreamer_enabled(_set_key(text, "session_mode", '"shadow"'))
+
+
+def test_session_mode_shadow_refuses_to_load_without_an_explicit_cognition_budget(toml_path):
+    """#637 review, minor 4: `budget_for` answers an adaptor with no block from
+    the class defaults (6 turns, 40k tokens, 120 s), a budget nobody chose for a
+    session that reads and writes across up to `max_items` items. The review
+    found a live config with no block, silently running on it."""
+    import re as _re
+
+    text = _shadow_sessions(toml_path.read_text())
+    assert "[dreamer.budgets.cognition]" in text, "positive control: the template carries it"
+    load(_write(toml_path, text))                              # with the block: loads
+    stripped, n = _re.subn(
+        r"(?ms)^\[dreamer\.budgets\.cognition\]\n.*?(?:\n\n|\Z)", "", text, count=1,
+    )
+    assert n == 1
+    toml_path.write_text(stripped)
+    with pytest.raises(ConfigError, match=r"needs an explicit \[dreamer\.budgets\.cognition\]"):
+        load(toml_path)
+
+
+def test_a_config_without_shadow_sessions_needs_no_cognition_budget(toml_path):
+    import re as _re
+
+    text = _re.sub(
+        r"(?ms)^\[dreamer\.budgets\.cognition\]\n.*?(?:\n\n|\Z)", "", toml_path.read_text(),
+        count=1,
+    )
+    toml_path.write_text(text)
+    assert load(toml_path).cognition.session_mode == "off"
+
+
+def _write(path, text):
+    path.write_text(text)
+    return path
+
+
+def test_the_failure_backoff_and_grounding_keys_load_with_their_documented_defaults(toml_path):
+    c = load(toml_path).cognition
+    assert (c.backoff_max_seconds, c.max_consecutive_failures) == (21600.0, 5)
+    assert (c.record_chars, c.message_chars, c.register_lines) == (8000, 400, 40)
+
+
 def test_session_mode_refuses_a_value_outside_off_and_shadow(toml_path):
     text = toml_path.read_text()
     toml_path.write_text(_set_key(text, "session_mode", '"live"'))

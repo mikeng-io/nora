@@ -42,7 +42,7 @@ from nora.agent.dreamer import (
     DreamToolSource,
     cognition_grant,
 )
-from nora.domain.cognition_session import Room
+from nora.domain.cognition_session import COGNITION_ADAPTOR, Room
 from nora.domain.gatherings import Gathering
 from nora.domain.ports import CognitionDryRunStore, StimulusStore
 from nora.domain.standing import Standing
@@ -52,7 +52,7 @@ log = logging.getLogger("nora.app.cognition_wiring")
 #: The Dreamer adaptor name (its budget key, its guard label, its trace name)
 #: and the objective file the session's instruction is read from
 #: (`nora/dreamer/objectives/cognition.md`).
-COGNITION_ADAPTOR_NAME = "cognition"
+COGNITION_ADAPTOR_NAME = COGNITION_ADAPTOR
 COGNITION_OBJECTIVE = "cognition"
 
 #: The read tools 30 §2 and 15 §4 name for a session. Some do not exist in the
@@ -67,6 +67,54 @@ COGNITION_READ_CATALOGUE: frozenset[str] = frozenset({
     # memory
     "about", "ask_memory", "search_memory", "search_memory_workspace",
 })
+
+#: The side-effect audit of every tool in the catalogue (#637 review, blocker;
+#: `tests/unit/test_cognition_wiring.py` holds its keys equal to
+#: `COGNITION_READ_CATALOGUE`, so a tool added to the catalogue without an
+#: audited line fails the gate). «Shadow writes nothing live» is a claim about
+#: EVERY tool the session holds, not about the write verbs it was built with:
+#: the blocker was a READ tool (`note_search`) that upserted `note_candidate`
+#: and bumped `nora_note_candidates_total{trigger="miss"}` on a miss, the
+#: table the live note curator reads. `tests/infra/test_a_cognition_sessions_
+#: read_tools_write_nothing.py` runs every wired tool through the real registry
+#: against real Postgres and asserts no non-cognition table gained a row.
+#:
+#: Counters (`nora_tool_calls_total`, `nora_recall_total`, `nora_room_lookups_
+#: total`) are observability, read by a person and never by a decision, and are
+#: kept. A Honcho read verb only ever ROUTES (`HonchoClient._route` ensures the
+#: unit's workspace marker and scope once per process, the identical idempotent
+#: get-or-create the tag path performs) and answers; no message and no
+#: conclusion is written.
+READ_TOOL_AUDIT: Mapping[str, str] = {
+    "record_query": "SQL read of messages, edits, reactions, deletes and the media "
+                    "index (`MediaJoin.enrich`); counters only. No write.",
+    "rollup_read": "not built yet; audit it when it lands (a Rollup read must not "
+                   "trigger a rebuild).",
+    "event_search": "SQL read of the unit's gatherings; counters only. No write.",
+    "memo_read": "not built yet; audit it when it lands.",
+    "character_read": "not built yet; audit it when it lands.",
+    "standing_read": "not built yet; audit it when it lands (a Standing read must "
+                     "not fold).",
+    "social_items": "not built yet; audit it when it lands (an ingested-items read "
+                    "must not fetch from the network).",
+    "where_been": "SQL read of derived presence (stays, trips, places) and the "
+                  "newest raw fix; counters only. No write, and no refresh of the "
+                  "live fix (that is `where_is`, not held).",
+    "routine_read": "SQL read of derived presence; counters only. No write.",
+    "note_read": "SQL read of a note and its head; its CAS anchor is a closure "
+                 "local to the build. No write.",
+    "note_search": "SQL read of note bodies. ON A MISS it upserted `note_candidate` "
+                   "and counted `nora_note_candidates_total{trigger=miss}`: "
+                   "NEUTRALISED under `dream_adaptor == cognition` (no write, no "
+                   "count).",
+    "about": "Honcho `peer_card` + `representation` reads; counters only.",
+    "ask_memory": "Honcho `chat` (dialectic reasoning, server side): a read verb; "
+                  "what Honcho does inside it is not observable from this repo. "
+                  "KEPT, flagged; counters only.",
+    "search_memory": "Honcho session `search` read; counters only.",
+    "search_memory_workspace": "Honcho workspace `search` read, narrowed to the "
+                               "unit's scope; counters only.",
+}
 
 #: Tools withheld while their flag is off. `record_query` is offered only with
 #: `[record_query] enabled` (the registry withholds it itself when it has no
@@ -149,7 +197,7 @@ def cognition_budget(b: Any) -> Any:
     )
 
 
-ReadTools = Callable[[str, Room], list[Any]]
+ReadTools = Callable[[str, Sequence[Room]], list[Any]]
 
 
 def read_tools_for(
@@ -157,18 +205,33 @@ def read_tools_for(
     grant: AdaptorGrant | None = None,
 ) -> ReadTools:
     """`CognitionSessionRunner`'s `read_tools_for`: the catalogue's tools built
-    for a room, through the registry's own tool source. The room is a scope
-    key (the conversation id), so the source resolves the real room, its
-    roster and its lineage exactly as it does for a scope-keyed adaptor; a
+    for the agenda's rooms, through the registry's own tool source. A room is
+    a scope key (the conversation id), so the source resolves the real room,
+    its roster and its lineage exactly as it does for a scope-keyed adaptor; a
     room the policy does not name gets the closed shape, whose every answer is
-    `unavailable`, never an empty answer read as «nothing there»."""
+    `unavailable`, never an empty answer read as «nothing there».
+
+    ONE room: that room's tools, untouched. SEVERAL: each room's tools are
+    built by the same source and laid under one tool per name that takes a
+    `room` argument (`nora.app.cognition_room_reads`), so each read resolves
+    through the room it names and a room not on the agenda is refused. The
+    unit's home room is never substituted for an item's room (DEC-231)."""
     allowance = grant if grant is not None else cognition_grant()
 
-    def build(unit: str, room: Room) -> list[Any]:
+    def build_for(room: Room) -> list[Any]:
         return source.build(
             key=room.conversation_id, names=names, unit=None,
             adaptor=COGNITION_ADAPTOR_NAME, grant=allowance,
         )
+
+    def build(unit: str, rooms: Sequence[Room]) -> list[Any]:
+        if len(rooms) == 1:
+            return build_for(rooms[0])
+        from nora.app.cognition_room_reads import route_reads
+
+        return route_reads({
+            f"{room.platform}:{room.conversation_id}": build_for(room) for room in rooms
+        })
 
     return build
 
@@ -234,13 +297,22 @@ class CognitionShutdown:
 
 def require_session_hook(
     *, session_mode: str, runner: object | None, evaluator: object | None,
+    session_units: Collection[str] | None = None,
 ) -> None:
-    """The boot check (#627 review, minor 4): `session_mode = "shadow"` built
-    a runner AND an evaluator that holds its hook. Raises `RuntimeError` (the
+    """The boot check (#627 review, minor 4; #637 review, minor 1):
+    `session_mode = "shadow"` built a runner AND an evaluator that holds its
+    hook AND at least one unit a session can run for (`session_units`, the
+    units with a home room; `None` skips that half). Raises `RuntimeError` (the
     composition root turns it into its `StartupError`) rather than run a
     shadow week that records would-wakes and starts no session."""
     if session_mode != "shadow":
         return
+    if session_units is not None and not session_units:
+        raise RuntimeError(
+            "[cognition] session_mode = \"shadow\" but no unit can run a session: "
+            "none names a `home_room = true` room in policy.toml, so every wake "
+            "would be recorded and no session run",
+        )
     if runner is None:
         raise RuntimeError(
             "[cognition] session_mode = \"shadow\" but no session runner was built",
@@ -262,10 +334,12 @@ def _by_home_room(
 def units_with_home_rooms(
     units: Sequence[str], homes: Mapping[str, Any],
 ) -> tuple[list[str], list[str]]:
-    """`(wakeable, skipped)`: the units a session can run for. A unit with no
-    home room is not one the evaluator may wake while sessions run (the runner
-    refuses it at startup, `check_home_rooms`); it is named, loudly, at boot
-    rather than failing every wake."""
+    """`(can_run_sessions, cannot)`: a unit with no home room cannot start a
+    session (the runner refuses it at startup, `check_home_rooms`). It stays in
+    the wake evaluator, which keeps recording its would-wakes as it does with
+    sessions off (they are the shadow week's evidence for the unit), and is
+    named, loudly, at boot and on a gauge rather than failing every wake or
+    vanishing from the record."""
     wakeable = [u for u in units if u in homes]
     return wakeable, [u for u in units if u not in homes]
 
@@ -287,6 +361,8 @@ def build_cognition_runner(
     homes: Mapping[str, Any],
     units: Sequence[str],
     skills: AgendaSkills,
+    grounder: Any,
+    render_budget: Any,
     surface: ReadSurface,
     clock: Callable[[], float],
     model_id: str,
@@ -314,8 +390,12 @@ def build_cognition_runner(
         # the tag path's `note_create`, `note_update` and `remind`, whose
         # arguments differ from the session's own verbs of the same names
         # (`room`, `at_ms`, ...), and R-99 would veto every call to them.
+        # Plus `room`: the routed tools of an agenda spanning several rooms
+        # take it (`nora.app.cognition_room_reads`), and R-99 would veto an
+        # argument the table does not list.
         param_names={
-            n: names for n, names in tools.tool_param_names().items() if n in surface.wired
+            n: frozenset(names) | {"room"}
+            for n, names in tools.tool_param_names().items() if n in surface.wired
         },
         result_caps=result_caps, memory_tools=memory_tools,
     )
@@ -349,6 +429,7 @@ def build_cognition_runner(
         read_tools_for=read_tools_for(tools, names=surface.wired),
         read_only_tools=surface.wired,
         skill_text_for=skills.text_for, skill_versions_for=skills.versions_for,
+        grounder=grounder, render_budget=render_budget,
         doctrine_text=text, doctrine_sha256=sha, doctrine_source=doctrine,
         open_note_titles=note_titles, open_proposed_events=open_events,
         prior_standing=prior, pending_self_wakes=self_wakes,

@@ -87,6 +87,7 @@ from nora.agent.cognition_remind_mirror import (
     dry_run_remind_cancel,
     dry_run_remind_move,
 )
+from nora.domain.cognition_ground import Grounding
 from nora.domain.cognition_pace import (
     DEFAULT_MAX_SELF_WAKES_PER_DAY,
     PENDING_WINDOW_SECONDS,
@@ -94,6 +95,7 @@ from nora.domain.cognition_pace import (
     PendingSelfWake,
 )
 from nora.domain.cognition_remind import PendingMirroredRemind, RemindAnswer
+from nora.domain.cognition_render import RenderBudget, render_agenda, room_key
 from nora.domain.cognition_session import (
     Agenda,
     AgendaItem,
@@ -263,7 +265,16 @@ PriorStanding = Callable[[str, str], Awaitable[Standing | None]]
 PendingSelfWakes = Callable[[str, int], Awaitable[Sequence[PendingSelfWake]]]
 PendingMirroredReminds = Callable[[str], Awaitable[Sequence[PendingMirroredRemind]]]
 SelfWakesCreatedSince = Callable[[str, int], Awaitable[int]]
-ReadToolsFor = Callable[[str, Room], list[Any]]
+#: `(unit, the agenda's rooms)`: the read tools for those rooms. One room: that
+#: room's tools. Several: ONE tool per name, each taking a `room` argument that
+#: routes the read through the item's own room and refuses one not on the agenda
+#: (DEC-231: each item's reads resolve through its room), built by the caller.
+ReadToolsFor = Callable[[str, Sequence[Room]], list[Any]]
+#: `(unit, agenda items, the claimed stimuli)` -> what she is shown beside the
+#: agenda (`nora.domain.cognition_ground`): the Record rows that raised each
+#: stimulus and the Register index lines. RAISES when it cannot read: a session
+#: that could not be grounded must not run on the bare counts.
+Grounder = Callable[[str, Sequence[AgendaItem], Sequence[Stimulus]], Awaitable[Grounding]]
 SkillsFor = Callable[[Sequence[str]], str]
 #: The versions (content digests) of the skills `SkillsFor` would inject for
 #: these agenda kinds, recorded on the session row (30 §1: "the skill versions
@@ -293,13 +304,12 @@ class _RunState:
     cited_ids: frozenset[int] = frozenset()
     closed_indices: set[int] = field(default_factory=set)
     closes: list[CloseOutcome] = field(default_factory=list)
-    #: `"platform:conversation_id"` of the room the session's read tools
-    #: resolve through (`_build_tools`).
-    reads_room: str = ""
+    #: The line of the prompt that says which room(s) the read tools resolve
+    #: through (`_build_tools`).
+    reads_note: str = ""
 
 
-def _room_key(room: Room) -> str:
-    return f"{room.platform}:{room.conversation_id}"
+_room_key = room_key
 
 
 def _room_of(room: str, state: _RunState) -> tuple[str, str] | dict[str, object]:
@@ -367,7 +377,7 @@ class CognitionSessionRunner:
     def __init__(
         self, *, dry_run_store: CognitionDryRunStore, stimulus_store: StimulusStore,
         agent_runner: CognitionAgentRunner, home_rooms: Mapping[str, Room],
-        read_tools_for: ReadToolsFor, skill_text_for: SkillsFor,
+        read_tools_for: ReadToolsFor, skill_text_for: SkillsFor, grounder: Grounder,
         doctrine_text: str, doctrine_sha256: str | None,
         open_note_titles: OpenNoteTitles, open_proposed_events: OpenProposedEvents,
         prior_standing: PriorStanding, pending_self_wakes: PendingSelfWakes,
@@ -383,7 +393,7 @@ class CognitionSessionRunner:
         clock: Callable[[], float] = time.time,
         doctrine_source: DoctrineSource | None = None,
         skill_versions_for: SkillVersionsFor | None = None,
-        tz: tzinfo = UTC,
+        tz: tzinfo = UTC, render_budget: RenderBudget | None = None,
     ) -> None:
         """`doctrine_source`, when given, is read at the start of EVERY session
         and replaces `doctrine_text`/`doctrine_sha256` (which then serve only
@@ -411,6 +421,8 @@ class CognitionSessionRunner:
         self._agent_runner = agent_runner
         self._home_rooms = home_rooms
         self._read_tools_for = read_tools_for
+        self._grounder = grounder
+        self._render_budget = render_budget or RenderBudget()
         self._read_only_tools = read_only_tools
         self._skill_text_for = skill_text_for
         self._doctrine_text = doctrine_text
@@ -504,11 +516,17 @@ class CognitionSessionRunner:
                 {} if self._skill_versions_for is None
                 else dict(self._skill_versions_for(kinds))
             )
+            # GROUNDED BEFORE ANYTHING IS RECORDED (30 §1, #637 review major 2):
+            # the Record rows that raised each item and the Register index
+            # lines. A read that fails raises here, so the wake is recorded
+            # `failed` and its stimuli stay pending: a session never runs on
+            # bare counts it cannot judge from.
+            grounding = await self._grounder(unit, situation.agenda.items, view.pending)
             session = NewCognitionSession(
                 unit=unit, mode="shadow", started_at_ms=now_ms,
                 from_stimulus_id=min(s.id for s in view.pending),
                 through_stimulus_id=max(s.id for s in view.pending),
-                situation=situation.as_dict(),
+                situation={**situation.as_dict(), "grounding": grounding.as_dict()},
                 agenda={
                     "items": [i.as_dict() for i in situation.agenda.items],
                     "deferred_stimulus_ids": list(situation.agenda.deferred_stimulus_ids),
@@ -524,6 +542,7 @@ class CognitionSessionRunner:
             return await self._run_session(
                 unit=unit, view=view, situation=situation, session_id=session_id,
                 wake_id=wake_id, now_ms=now_ms, doctrine_text=doctrine_text,
+                grounding=grounding,
             )
         except asyncio.CancelledError:
             await self._shielded_finish(
@@ -587,9 +606,9 @@ class CognitionSessionRunner:
         tools = await self._build_tools(unit=unit, state=state, now_ms=now_ms)
         return await self._agent_runner.run(
             system_prompt=doctrine_text + self._skill_text_for([item.kind]),
-            prompt=_render_agenda(
-                [item], reads_through=state.reads_room, now_ms=now_ms,
-                last_session_ms=None, tz=self._tz,
+            prompt=render_agenda(
+                [item], reads_note=state.reads_note, now_ms=now_ms,
+                last_session_ms=None, tz=self._tz, budget=self._render_budget,
             ),
             tools=tools, budget=self._budget,
             trace_attributes={"cognition.unit": unit, "cognition.session_id": str(session_id)},
@@ -654,22 +673,24 @@ class CognitionSessionRunner:
 
     async def _run_session(
         self, *, unit: str, view: UnitView, situation: Situation, session_id: int,
-        wake_id: int, now_ms: int, doctrine_text: str,
+        wake_id: int, now_ms: int, doctrine_text: str, grounding: Grounding,
     ) -> CognitionSessionOutcome:
         items = situation.agenda.items
         state = _RunState(
             session_id=session_id, wake_id=wake_id, unit=unit, now_ms=now_ms,
             items_by_index=dict(enumerate(items)),
             rooms={_room_key(i.room): (i.room.platform, i.room.conversation_id) for i in items},
-            cited_ids=_message_ids(view.pending),
+            cited_ids=_message_ids(view.pending)
+            | frozenset(r.message_id for r in grounding.records.values()),
         )
         tools = await self._build_tools(unit=unit, state=state, now_ms=now_ms)
         kinds = sorted({item.kind for item in items})
         system_prompt = doctrine_text + self._skill_text_for(kinds)
-        prompt = _render_agenda(
-            items, reads_through=state.reads_room, now_ms=now_ms,
+        prompt = render_agenda(
+            items, stimuli={s.id: s for s in view.pending}, grounding=grounding,
+            reads_note=state.reads_note, now_ms=now_ms,
             last_session_ms=situation.last_session_ms, tz=self._tz,
-            stimulus_times={s.id: s.at_ms for s in view.pending},
+            budget=self._render_budget,
         )
         try:
             result = await asyncio.wait_for(
@@ -789,12 +810,12 @@ class CognitionSessionRunner:
 
     # -- tools --------------------------------------------------------------
 
-    def _guarded_read_tools(self, unit: str, room: Room) -> list[Any]:
+    def _guarded_read_tools(self, unit: str, rooms: Sequence[Room]) -> list[Any]:
         """`read_tools_for`'s result, refused unless every tool is on the
         read-only allowlist and none shadows a session verb. The session's
         ceiling is «may look, may not write»; a read-tool source that ever
         returned a write is stopped here, not trusted."""
-        tools = self._read_tools_for(unit, room)
+        tools = self._read_tools_for(unit, rooms)
         seen: set[str] = set()
         for tool in tools:
             name = getattr(tool, "tool_name", None) or getattr(tool, "__name__", None)
@@ -814,21 +835,25 @@ class CognitionSessionRunner:
     async def _build_tools(
         self, *, unit: str, state: _RunState, now_ms: int,
     ) -> list[Any]:
-        rooms = {item.room for item in state.items_by_index.values()}
-        # ONE read binding per session, because a tool name is one tool: two
-        # rooms' `record_query` cannot both be «record_query» (Strands keeps
-        # the LAST silently, which read one room's Record through another
-        # room's binding without a word). An agenda in one room binds that
-        # room (R-21, 30 §1). An agenda spanning several binds the unit's HOME
-        # room, the one the operator chose for the unit (39 D2) and the one
-        # every other unit-keyed adaptor already reads through: reads about a
-        # person or a room outside it fail closed on its roster (R-31) rather
-        # than answering from a room nobody chose. The prompt says which room
-        # (`_render_agenda`), so the model reads what it is looking at. Reads
-        # that take a room, one tool per name, are the follow-up (DEC-244).
-        bound = next(iter(rooms)) if len(rooms) == 1 else self._home_rooms[unit]
-        state.reads_room = _room_key(bound)
-        read_tools = self._guarded_read_tools(unit, bound)
+        # EACH ITEM'S READS RESOLVE THROUGH ITS OWN ROOM (30 §1, DEC-231, R-21;
+        # #637 review, major 3). One room on the agenda: that room's tools, as
+        # ever. Several: `read_tools_for` returns ONE tool per name (a tool name
+        # is one tool: Strands keeps the LAST of two silently, which read one
+        # room's Record through another room's binding without a word), and
+        # each takes a `room` argument routing the read through that room's
+        # own build; a room not on the agenda is refused, so the unit is the
+        # boundary the session may read across and the room the boundary of each
+        # read. The agenda's rooms are never replaced by the unit's home room.
+        rooms = list(dict.fromkeys(item.room for item in state.items_by_index.values()))
+        keys = [_room_key(r) for r in rooms]
+        state.reads_note = (
+            f"Your read tools look through room {keys[0]}."
+            if len(keys) == 1
+            else "Your read tools take a `room`, one of: " + ", ".join(keys)
+            + ". Each read resolves through the room you name and shows only what that "
+            "room may be shown; a room that is not listed is refused."
+        )
+        read_tools = self._guarded_read_tools(unit, rooms)
 
         shown = Shown(carried=state.cited_ids)
         established_by = f"{COGNITION_PATH_PREFIX}{unit}"
@@ -1312,83 +1337,6 @@ class CognitionSessionRunner:
         if self._self_wakes_created_since is not None:
             return await self._self_wakes_created_since(unit, since_ms)
         return await self._store.count_self_wakes_created(unit=unit, since_ms=since_ms)
-
-
-def _ago(delta_ms: int) -> str:
-    """A span as a person says it: «just now», «42 min», «3 h 5 min», «2 d»."""
-    minutes = max(delta_ms, 0) // 60_000
-    if minutes < 1:
-        return "just now"
-    if minutes < 60:
-        return f"{minutes} min ago"
-    if minutes < 24 * 60:
-        hours, rest = divmod(minutes, 60)
-        return f"{hours} h {rest} min ago" if rest else f"{hours} h ago"
-    return f"{minutes // (24 * 60)} d ago"
-
-
-def _clock_line(now_ms: int, last_session_ms: int | None, tz: tzinfo) -> str:
-    """The time now in the group's own day, and how long since the last look.
-    An agenda whose input cannot say WHEN reads every item as «just now»
-    (AGENTS.md: a judgement that turns on time needs the time in its input)."""
-    now = datetime.fromtimestamp(now_ms / 1000, tz=tz)
-    stamp = f"{now:%A %-d %B %Y, %H:%M} ({getattr(tz, 'key', None) or now.tzname()})"
-    since = (
-        "This is your first look at this group."
-        if last_session_ms is None
-        else f"You last looked at this group {_ago(now_ms - last_session_ms)}."
-    )
-    return f"It is {stamp}. {since}"
-
-
-def _item_age(
-    item: AgendaItem, stimulus_times: Mapping[int, int], now_ms: int, tz: tzinfo,
-) -> str:
-    times = [stimulus_times[i] for i in item.stimulus_ids if i in stimulus_times]
-    if not times:
-        return ""
-    newest, oldest = max(times), min(times)
-    at = f"{datetime.fromtimestamp(oldest / 1000, tz=tz):%H:%M}"
-    if newest - oldest < 60_000:
-        return f" (at {at}, {_ago(now_ms - newest)})"
-    to = f"{datetime.fromtimestamp(newest / 1000, tz=tz):%H:%M}"
-    return f" (from {at} to {to}, the newest {_ago(now_ms - newest)})"
-
-
-def _render_agenda(
-    items: Sequence[AgendaItem], *, reads_through: str = "", now_ms: int | None = None,
-    last_session_ms: int | None = None, tz: tzinfo = UTC,
-    stimulus_times: Mapping[int, int] | None = None,
-) -> str:
-    """The agenda as the model's own prompt — one line per item, a fact
-    never a conclusion (30-cognition.md §1), matching `AgendaItem.summary`'s
-    own construction. Each line names its room, so a write that takes a
-    `room` can name the one it means, and says how long ago its stimuli were
-    (30 §1: «each with its age»). A first line gives the clock, and one says
-    which room the read tools look through: with several rooms on the agenda
-    that is one room, and a model that is not told reads every answer as the
-    room it asked about."""
-    times = stimulus_times or {}
-    lines = [
-        f"{i}. {item.summary}{_returning(item.strike)} [room {_room_key(item.room)}]"
-        f"{'' if now_ms is None else _item_age(item, times, now_ms, tz)}"
-        for i, item in enumerate(items)
-    ]
-    header = []
-    if now_ms is not None:
-        header.append(_clock_line(now_ms, last_session_ms, tz))
-    if reads_through:
-        header.append(f"Your read tools look through room {reads_through}.")
-    return "\n".join([*header, *lines])
-
-
-def _returning(strike: int) -> str:
-    """A returning item says so: without it two items of one room (the fresh
-    messages and the ones an earlier session left open) read the same."""
-    if strike <= 0:
-        return ""
-    noun = "session" if strike == 1 else "sessions"
-    return f" (returning: left open by {strike} earlier {noun})"
 
 
 def now_utc(ms: int) -> datetime:

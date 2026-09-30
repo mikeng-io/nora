@@ -62,7 +62,7 @@ stimuli a CLOSED wake returned to the next agenda with a strike (30 §2).
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Mapping
+from collections.abc import Awaitable, Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Literal, Protocol, get_args
 
@@ -87,7 +87,7 @@ WakeReason = Literal[
 WAKE_REASONS: tuple[str, ...] = get_args(WakeReason)
 
 #: Why a unit with pending stimuli did NOT wake this tick.
-WakeBrake = Literal["single_flight", "cooldown", "concurrency"]
+WakeBrake = Literal["single_flight", "cooldown", "backoff", "concurrency"]
 WAKE_BRAKES: tuple[str, ...] = get_args(WakeBrake)
 
 #: How a wake row was produced. `live` arrives with the Cognition adaptor.
@@ -241,6 +241,18 @@ class WakePolicy:
     #: EXPIRED, read as failed: it stops holding its unit and its stimuli
     #: return. A session's own wall clock ends a margin before it.
     session_timeout_seconds: float = 900.0
+    #: A unit whose sessions FAIL is not woken again at the cooldown, forever
+    #: (#637 review, major 1: 283 failed sessions a day measured, one every
+    #: `cooldown_seconds`). After `n` consecutive failed or timed-out wakes the
+    #: next one waits `cooldown_seconds * 2 ** (n - 1)`, capped at this; a
+    #: `closed` wake resets it (`failure_streak`). 20 §3: «per-unit backoff
+    #: after a failed session».
+    backoff_max_seconds: float = 21600.0
+    #: After this many consecutive failures the stimuli the failing wakes
+    #: claimed are struck (retracted, reason `failed`): an always-failing agenda
+    #: stops instead of retrying the same input for ever (30 §2's `max_strikes`
+    #: is the item-level twin for a session that ran).
+    max_consecutive_failures: int = 5
 
 
 SessionState = Literal["running", "closed", "failed"]
@@ -303,6 +315,14 @@ class UnitView:
     tracked: bool = False
     live: bool = False
     carry: Mapping[int, int] = field(default_factory=dict)
+    #: The unit's consecutive failed or timed-out wakes, newest first, ended by
+    #: a `closed` one (`failure_streak`); a `cancelled` or still-open wake
+    #: neither counts nor ends it. 0 for an untracked reader.
+    failures: int = 0
+    #: The watermark the newest FAILED wake of that streak would have set: what
+    #: the failing wakes claimed, so what is struck at `max_consecutive_failures`
+    #: is exactly what they read and never a stimulus that arrived since.
+    failed_mark: Watermark | None = None
 
     @property
     def watermark(self) -> Watermark:
@@ -337,6 +357,50 @@ class Verdict:
     oldest_pending_ms: int | None = None
 
 
+def failure_streak(newest_first: Iterable[LastSession | None]) -> int:
+    """Consecutive FAILED wakes, from the newest back: the ONE rule both
+    `StimulusStore` implementations apply to their wake states (the contract
+    suite holds them together). A `failed` state (outcome `failed`/`timeout`,
+    or expired with none) counts; a `cancelled` outcome is a shutdown, not a
+    session that went wrong, and a `running` wake has not ended: neither counts
+    and neither ends the run. A `closed` wake, or a wake with no state (an
+    untracked one), ends it."""
+    n = 0
+    for state in newest_first:
+        if state is None or state.state == "closed":
+            break
+        if state.state == "running" or state.outcome == "cancelled":
+            continue
+        n += 1
+    return n
+
+
+def failure_run(
+    newest_first: Iterable[tuple[WakeRow, LastSession | None]],
+) -> tuple[int, Watermark | None]:
+    """`(failure_streak, the watermark of the newest failed wake in it)` from
+    a unit's wakes with their states, newest first: what both stores put on
+    `UnitView.failures` and `.failed_mark`."""
+    pairs = list(newest_first)
+    n = failure_streak(state for _, state in pairs)
+    if n == 0:
+        return 0, None
+    for wake, state in pairs:
+        if state is not None and state.state == "failed":
+            return n, Watermark.of(wake)
+    return n, None
+
+
+def backoff_ms(failures: int, policy: WakePolicy) -> int:
+    """How long after a wake ended the unit's next wake waits: the cooldown,
+    doubled for each failure past the first, capped."""
+    cooldown = int(policy.cooldown_seconds * 1000)
+    if failures <= 1:
+        return cooldown
+    cap = int(policy.backoff_max_seconds * 1000)
+    return int(max(cooldown, min(cap, cooldown * 2 ** min(failures - 1, 40))))
+
+
 def in_flight(last_wake: WakeRow | None, policy: WakePolicy, now_ms: int) -> bool:
     """Whether the unit's last (would-)session is still running at `now_ms`,
     by the SHADOW assumption (`session_seconds`). Only meaningful with no
@@ -365,21 +429,33 @@ def unit_in_flight(view: UnitView, policy: WakePolicy, now_ms: int) -> bool:
     return session is not None and session.state == "running"
 
 
-def _cooling(view: UnitView, policy: WakePolicy, now_ms: int) -> bool:
+def _cool_base(view: UnitView, policy: WakePolicy) -> int | None:
+    """When the unit's last (would-)session ended, or is presumed to have."""
     wake = view.last_wake
     if wake is None:
-        return False
-    cooldown_ms = int(policy.cooldown_seconds * 1000)
+        return None
     if not view.tracked:
-        return now_ms < wake.at_ms + int(policy.session_seconds * 1000) + cooldown_ms
+        return wake.at_ms + int(policy.session_seconds * 1000)
     session = view.last_session
     if session is None:
-        base = wake.at_ms
-    elif session.ended_at_ms is not None:
-        base = session.ended_at_ms
-    else:
-        base = session.started_at_ms + int(policy.session_timeout_seconds * 1000)
-    return now_ms < base + cooldown_ms
+        return wake.at_ms
+    if session.ended_at_ms is not None:
+        return session.ended_at_ms
+    return session.started_at_ms + int(policy.session_timeout_seconds * 1000)
+
+
+def _cooling(view: UnitView, policy: WakePolicy, now_ms: int) -> bool:
+    """The plain cooldown after the last session."""
+    base = _cool_base(view, policy)
+    return base is not None and now_ms < base + int(policy.cooldown_seconds * 1000)
+
+
+def _backing_off(view: UnitView, policy: WakePolicy, now_ms: int) -> bool:
+    """The extra wait a failing unit owes past the cooldown (`backoff_ms`)."""
+    if view.failures <= 1:
+        return False
+    base = _cool_base(view, policy)
+    return base is not None and now_ms < base + backoff_ms(view.failures, policy)
 
 
 def _trigger(view: UnitView, policy: WakePolicy, now_ms: int) -> WakeReason | None:
@@ -441,15 +517,19 @@ def decide(view: UnitView, policy: WakePolicy, now_ms: int) -> Verdict:
     if unit_in_flight(view, policy, now_ms):
         return Verdict(brake="single_flight")
     cut = False
-    if _cooling(view, policy, now_ms):
+    cooling = _cooling(view, policy, now_ms)
+    if cooling or _backing_off(view, policy, now_ms):
         strong = any(is_strong(s.cues) for s in view.pending if not s.waits)
         last_cut = view.last_wake is not None and view.last_wake.cut_cooldown
         quiet_ms = (
             None if view.last_activity_ms is None else now_ms - view.last_activity_ms
         )
         cue_quiet = quiet_ms is None or quiet_ms >= policy.cue_quiet_seconds * 1000
-        if not (strong and cue_quiet and not last_cut):
-            return Verdict(brake="cooldown")
+        # A strong cue cuts a cooldown ONCE, and never a backoff: a unit whose
+        # sessions keep failing must not be woken every `cue_quiet_seconds` by
+        # a room that keeps saying a time.
+        if not (cooling and view.failures == 0 and strong and cue_quiet and not last_cut):
+            return Verdict(brake="cooldown" if cooling else "backoff")
         reason, cut = "strong_cue", True
     eligible = [s for s in view.pending if not s.waits]
     return Verdict(

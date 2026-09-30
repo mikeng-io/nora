@@ -212,6 +212,16 @@ a name this table leaves open:
   `stale`, not `up`.
 - `nora_cognition_wake_total` carries `mode` beside `reason`, and
   `nora_cognition_wake_deferred_total{brake}` counts unit-ticks a brake held.
+- **As built (step 3a-iii review, DEC-244): failures back off, then strike.** A
+  session that failed or timed out is not retried at the cooldown for ever (283 a
+  day were measured). After `n` consecutive failed or timed-out wakes the unit's
+  next wake waits `cooldown_seconds * 2 ** (n - 1)`, capped at
+  `backoff_max_seconds` (6 h); a `closed` wake resets it, a shutdown's `cancelled`
+  wake neither counts nor resets, and a strong cue never cuts a backoff (brake
+  `backoff`). After `max_consecutive_failures` (5) the stimuli the failing wakes
+  claimed are struck (retracted, reason `failed`). Always failing: 5 sessions and
+  then none for a static agenda; 10 on the first day and 4 a day after, with
+  something new always pending.
 
 ### Self-wakes: Cognition paces itself
 

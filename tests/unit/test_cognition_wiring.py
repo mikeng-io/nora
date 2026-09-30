@@ -10,6 +10,7 @@ objects for the names it was asked for).
 from __future__ import annotations
 
 import dataclasses
+from collections.abc import Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from types import SimpleNamespace
@@ -44,6 +45,7 @@ from nora.domain.cognition_session import Room
 from nora.domain.stimuli import Stimulus, UnitView
 from nora.obs.metrics import Metrics
 from nora.testing.cognition_dry_run_store import InMemoryCognitionDryRunStore
+from nora.testing.cognition_grounding import EmptyGrounder
 from nora.testing.stimuli import InMemoryStimulusStore
 
 NOW = 1_790_000_000_000
@@ -126,6 +128,19 @@ def test_the_session_budget_carries_every_field_the_dreamer_budget_gives_it():
         assert getattr(got, f.name) == getattr(configured, f.name), f.name
 
 
+def test_every_tool_in_the_catalogue_has_an_audited_side_effect_line():
+    """#637 review, blocker: «shadow writes nothing live» is a claim about EVERY
+    tool the session holds, so a tool added to the design's catalogue without an
+    audit of what it writes fails here, not in a shadow week. The audit itself
+    is run, against real Postgres, by `tests/infra/test_a_cognition_sessions_
+    read_tools_write_nothing.py`."""
+    from nora.app.cognition_wiring import READ_TOOL_AUDIT
+
+    assert set(READ_TOOL_AUDIT) == set(COGNITION_READ_CATALOGUE)
+    assert all(text.strip() for text in READ_TOOL_AUDIT.values())
+    assert "NEUTRALISED" in READ_TOOL_AUDIT["note_search"]
+
+
 # ---- read tools for a room ---------------------------------------------------
 
 class _Source:
@@ -157,7 +172,7 @@ def _tool(name: str) -> Any:
 def test_read_tools_are_built_for_the_agenda_room_under_the_cognition_grant():
     source = _Source()
     build = read_tools_for(source, names=frozenset({"note_read", "about"}))
-    tools = build("friends", Room("signal", "g1"))
+    tools = build("friends", [Room("signal", "g1")])
     assert sorted(t.__name__ for t in tools) == ["about", "note_read"]
     (call,) = source.calls
     assert call["key"] == "g1" and call["unit"] is None       # scope-resolved: the room's own
@@ -207,9 +222,10 @@ def _runner(
 
     runner = CognitionSessionRunner(
         dry_run_store=ledger, stimulus_store=stimuli, agent_runner=agent,
-        home_rooms={"u": HOME}, read_tools_for=read_tools_for or (lambda unit, room: []),
+        home_rooms={"u": HOME}, read_tools_for=read_tools_for or (lambda unit, rooms: []),
         read_only_tools=frozenset({"note_read", "about"}),
         skill_text_for=kw.pop("skill_text_for", lambda kinds: ""),
+        grounder=EmptyGrounder(),
         doctrine_text="FIXED", doctrine_sha256="fixed-sha",
         open_note_titles=const, open_proposed_events=const, prior_standing=const,
         pending_self_wakes=const, pending_mirrored_reminds=const,
@@ -258,40 +274,43 @@ async def test_the_skills_injected_for_the_agenda_kinds_are_recorded_on_the_sess
 
 
 async def test_an_agenda_in_one_room_binds_the_reads_to_that_room():
-    asked: list[Room] = []
+    asked: list[list[Room]] = []
 
-    def reads(unit: str, room: Room) -> list[Any]:
-        asked.append(room)
+    def reads(unit: str, rooms: Sequence[Room]) -> list[Any]:
+        asked.append(list(rooms))
         return [_tool("note_read")]
 
     agent = _Agent()
     runner, _s, _l = _runner(agent=agent, read_tools_for=reads)
     await _wake(runner, (_stim(1, OTHER),))
-    assert asked == [OTHER]
+    assert asked == [[OTHER]]
     assert "Your read tools look through room discord:other." in agent.prompts[0]
 
 
-async def test_an_agenda_spanning_rooms_binds_the_reads_once_to_the_home_room():
-    """A tool name is one tool: two rooms' `note_read` cannot both be
-    `note_read` (Strands keeps the last silently). One binding, the unit's
-    home room, and the prompt says which."""
-    asked: list[Room] = []
+async def test_an_agenda_spanning_rooms_asks_for_each_rooms_reads_and_never_the_home_room_instead():
+    """DEC-231, 30 §1 (#637 review, major 3): each item's reads resolve through
+    that item's room. The session hands the source EVERY agenda room, in agenda
+    order, and never substitutes the unit's home room for an item's; the prompt
+    says the reads take a `room` and lists them."""
+    asked: list[list[Room]] = []
 
-    def reads(unit: str, room: Room) -> list[Any]:
-        asked.append(room)
+    def reads(unit: str, rooms: Sequence[Room]) -> list[Any]:
+        asked.append(list(rooms))
         return [_tool("note_read"), _tool("about")]
 
     agent = _Agent()
     runner, _s, _l = _runner(agent=agent, read_tools_for=reads)
-    await _wake(runner, (_stim(1, HOME), _stim(2, OTHER)))
-    assert asked == [HOME]                       # once, never per room
-    assert agent.tool_names[0].count("note_read") == 1
-    assert "Your read tools look through room signal:home." in agent.prompts[0]
+    third = Room("whatsapp", "third")
+    await _wake(runner, (_stim(1, OTHER), _stim(2, third), _stim(3, OTHER)))
+    assert asked == [[OTHER, third]]              # once, both rooms, agenda order
+    assert HOME not in asked[0]
+    assert "take a `room`, one of: discord:other, whatsapp:third" in agent.prompts[0]
+    assert "look through room" not in agent.prompts[0]
 
 
 async def test_a_read_tool_handed_twice_is_refused_not_kept_last():
     runner, _s, _l = _runner(
-        agent=_Agent(), read_tools_for=lambda u, r: [_tool("note_read"), _tool("note_read")],
+        agent=_Agent(), read_tools_for=lambda u, rs: [_tool("note_read"), _tool("note_read")],
     )
     with pytest.raises(NotReadOnlyToolError, match="handed twice"):
         await _wake(runner, (_stim(1, HOME),))
@@ -313,7 +332,9 @@ async def test_probe_runs_one_hand_written_item_and_writes_no_outcome():
     """The seam `tool_selection_cognition` drives: same tools, same doctrine,
     same agent runner; no wake, so no outcome and no carry."""
     agent = _Agent()
-    runner, stimuli, ledger = _runner(agent=agent, read_tools_for=lambda u, r: [_tool("note_read")])
+    runner, stimuli, ledger = _runner(
+        agent=agent, read_tools_for=lambda u, rs: [_tool("note_read")],
+    )
     result = await runner.probe(unit="u", summary="room A has 2 new messages", now_ms=NOW)
     assert result.stop_reason == "end_turn"
     assert "room A has 2 new messages" in agent.prompts[0]
@@ -497,6 +518,23 @@ def test_the_boot_check_refuses_a_session_mode_that_built_no_session():
         require_session_hook(session_mode="shadow", runner=object(), evaluator=None)
 
 
+def test_the_boot_check_refuses_shadow_when_no_unit_can_run_a_session():
+    """#637 review, minor 1: units without a home room stay in the evaluator
+    (their would-wakes are still recorded), but if NONE can start a session a
+    shadow week would record would-wakes and run nothing, and look healthy."""
+    hooked = SimpleNamespace(has_wake_hook=True)
+    require_session_hook(
+        session_mode="shadow", runner=object(), evaluator=hooked, session_units={"friends"},
+    )
+    with pytest.raises(RuntimeError, match="no unit can run a session"):
+        require_session_hook(
+            session_mode="shadow", runner=object(), evaluator=hooked, session_units=frozenset(),
+        )
+    require_session_hook(                            # off asks for none
+        session_mode="off", runner=None, evaluator=None, session_units=frozenset(),
+    )
+
+
 async def test_the_app_stops_the_cognition_sessions_before_it_closes_the_client_and_the_audit():
     """`App.shutdown` (the `finally` of `main`) is where the design's open
     choice (a) lands: the sessions are cancelled BEFORE the model client and
@@ -574,3 +612,39 @@ async def test_a_probe_that_raised_is_an_error_never_a_pass():
     subject = SimpleNamespace(deps=SimpleNamespace(cognition_runner=_Runner()), unit="friends")
     outcome = await _cognition_probe(subject, _case(), now_ms=NOW)
     assert outcome.source == "fail_closed" and "fell over" in (outcome.error or "")
+
+
+# ---- the objective: what she is told she is reading (#637 review, minors) ---------------
+
+def _objective() -> str:
+    from pathlib import Path
+
+    return (Path(__file__).resolve().parents[2] / "nora" / "dreamer" / "objectives"
+            / "cognition.md").read_text()
+
+
+def test_the_objective_names_every_close_reason_the_session_closes_with():
+    """`close`'s tool schema offers `written`; an instruction that listed three
+    of the four told her a reason the tool accepts was not hers to use."""
+    from nora.domain.cognition_session import CLOSE_REASONS
+
+    text = _objective()
+    for reason in CLOSE_REASONS:
+        if reason == "struck":                      # code's own close, never her argument
+            continue
+        assert f"- **{reason}**" in text, reason
+
+
+def test_the_objective_frames_what_she_reads_and_does_not_list_write_kinds():
+    """Context framing, not a capability list (AGENTS.md; measured on the gate):
+    it says what the agenda block is, how old, which room, and what the
+    numbers are, and it does not enumerate the kinds of write she can make."""
+    text = _objective()
+    # the agenda it describes is the one the renderer produces
+    assert "[#101] Ada, 14:05 (1 h 12 min ago): dinner friday?" in text
+    for phrase in ("the message's id", "(edited)", "[cues: ...]", "could not be\nshown",
+                   "the group's open notes", "which room your read tools"):
+        assert phrase in text or phrase.replace("\n", " ") in text, phrase
+    # no enumeration of the write verbs (they carry their own descriptions)
+    assert "Each note, event, Standing revision" not in text
+    assert "note_create" not in text and "event_propose" not in text

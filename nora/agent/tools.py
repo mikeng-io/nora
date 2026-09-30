@@ -68,6 +68,7 @@ from nora.agent.security import _names_a_person, scan_identifiers
 from nora.agent.security import looks_like_coordinate as _looks_like_coordinate
 from nora.agent.security import screen_and_resolve_place as _screen_and_resolve_place
 
+from ..domain.cognition_session import COGNITION_ADAPTOR
 from ..domain.compute import ComputeJob, ComputeJobState, ComputeJobStore
 from ..domain.gatherings import (
     RSVP,
@@ -11627,21 +11628,30 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             # noise; the third time is the signal the curator reads to decide
             # a note should exist. Best-effort — a miss cache that cannot be
             # written must not turn a real `nothing_found` into a failure.
-            try:
-                await book.record_miss(
-                    unit=_unit() or "", probe=probe,
-                    conversation_id=bound_conversation_id, now_ms=_now_ms(),
-                )
-            except Exception:
-                log.exception("note_search could not record the miss")
-            else:
-                # INSIDE the `else`, so this counts a miss that was actually
-                # WRITTEN. Counting before the call would make the metric agree
-                # with itself while the cache stayed empty — and a candidate
-                # series that cannot be reconciled against `note_candidate`'s
-                # row count is the same self-attesting instrument this whole
-                # block exists to stop shipping.
-                metrics.inc("nora_note_candidates_total", trigger="miss")
+            #
+            # NOT UNDER A SHADOW COGNITION SESSION (#637 review, blocker): the
+            # session's ceiling is «may look, may not write», and this upsert
+            # is a write to `note_candidate`, the live table the note curator
+            # reads to decide a note should exist, plus the counter that
+            # counts it. A session whose every probe fed the live curator
+            # would make «shadow» a claim about the session's VERBS and not
+            # about its reads. It reads the answer and records nothing.
+            if dream_adaptor != COGNITION_ADAPTOR:
+                try:
+                    await book.record_miss(
+                        unit=_unit() or "", probe=probe,
+                        conversation_id=bound_conversation_id, now_ms=_now_ms(),
+                    )
+                except Exception:
+                    log.exception("note_search could not record the miss")
+                else:
+                    # INSIDE the `else`, so this counts a miss that was actually
+                    # WRITTEN. Counting before the call would make the metric agree
+                    # with itself while the cache stayed empty — and a candidate
+                    # series that cannot be reconciled against `note_candidate`'s
+                    # row count is the same self-attesting instrument this whole
+                    # block exists to stop shipping.
+                    metrics.inc("nora_note_candidates_total", trigger="miss")
             _record(metrics, "note_search", "nothing_found")
             return {
                 "status": "nothing_found",

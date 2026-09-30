@@ -51,7 +51,7 @@
  {
   "name": "cognition_remind: a due mirrored remind is no longer pending",
   "file": "nora/domain/cognition_remind.py",
-  "old": "    return tuple(p for p, at in live.values() if at >= now_ms)",
+  "old": "    return tuple(p for p, at in live.values() if at > now_ms)",
   "new": "    return tuple(p for p, at in live.values())",
   "target": "tests/contract/test_stimulus_session_lifecycle_contract.py -k cancelled_moved_due_or_refused"
  },
@@ -70,11 +70,11 @@
   "target": "tests/unit/test_cognition_wiring.py -k read_at_every_session"
  },
  {
-  "name": "session runner: a spanning agenda binds the reads to the home room",
+  "name": "session runner: a spanning agenda binds the reads to the home room, not each item's room",
   "file": "nora/app/cognition_session.py",
-  "old": "        bound = next(iter(rooms)) if len(rooms) == 1 else self._home_rooms[unit]",
-  "new": "        bound = sorted(rooms, key=_room_key)[0]",
-  "target": "tests/unit/test_cognition_wiring.py -k spanning_rooms_binds"
+  "old": "        read_tools = self._guarded_read_tools(unit, rooms)",
+  "new": "        read_tools = self._guarded_read_tools(unit, [self._home_rooms[unit]])",
+  "target": "tests/unit/test_cognition_wiring.py -k spanning_rooms_asks"
  },
  {
   "name": "session runner: a read tool handed twice is refused",
@@ -85,9 +85,9 @@
  },
  {
   "name": "session runner: the prompt carries the clock",
-  "file": "nora/app/cognition_session.py",
-  "old": "    if now_ms is not None:\n        header.append(_clock_line(now_ms, last_session_ms, tz))",
-  "new": "    if False:\n        header.append(_clock_line(now_ms, last_session_ms, tz))",
+  "file": "nora/domain/cognition_render.py",
+  "old": "    if now_ms is not None:\n        header.append(clock_line(now_ms, last_session_ms, tz))",
+  "new": "    if False:\n        header.append(clock_line(now_ms, last_session_ms, tz))",
   "target": "tests/unit/test_cognition_wiring.py -k says_what_time_it_is"
  },
  {
@@ -212,8 +212,8 @@
  {
   "name": "wiring: the argument table handed to the guard holds read tools only",
   "file": "nora/app/cognition_wiring.py",
-  "old": "            n: names for n, names in tools.tool_param_names().items() if n in surface.wired",
-  "new": "            n: names for n, names in tools.tool_param_names().items()",
+  "old": "            for n, names in tools.tool_param_names().items() if n in surface.wired",
+  "new": "            for n, names in tools.tool_param_names().items()",
   "target": "tests/test_composition.py::test_session_mode_shadow_builds_one_runner_and_hands_its_hook_to_the_evaluator"
  }
 ]

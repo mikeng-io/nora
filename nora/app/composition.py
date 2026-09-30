@@ -21,7 +21,7 @@ import asyncio
 import functools
 import logging
 import os
-from collections.abc import Awaitable, Callable, Coroutine, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Collection, Coroutine, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -61,6 +61,7 @@ from nora.agent.telemetry import (
 from nora.agent.telemetry import timed as telemetry_timed
 from nora.agent.tools import NATIVE_TOOLS, OriginRoom
 from nora.agent.whereis import Circle, check_disclosure_invariant, circles_from_persons
+from nora.app.cognition_grounding import build_grounder
 from nora.app.cognition_session import CognitionSessionRunner
 from nora.app.cognition_wiring import (
     COGNITION_ADAPTOR_NAME,
@@ -83,6 +84,7 @@ from nora.app.voice_events import VoiceEventConsumer
 from nora.app.wake import Floor, WakeEvaluator
 from nora.config import Config, DreamBudgetConfig
 from nora.doctrine.loader import Doctrine, DoctrineError, DoctrineStore
+from nora.domain.cognition_render import RenderBudget
 from nora.domain.compute import ComputeJobStore
 from nora.domain.decision_log import DecisionLogRecorder
 from nora.domain.gatherings import GatheringStatus
@@ -412,6 +414,7 @@ def _reasoning_effort(value: str, *, source: str) -> ReasoningEffort:
 def _build_wake_evaluator(
     cfg: Config, *, store: SqlStimulusStore, units: Callable[[], Sequence[str]],
     metrics: Metrics, on_wake: WakeHook | None,
+    session_units: Callable[[], Collection[str]] | None = None,
 ) -> WakeEvaluator:
     """The cognition loop's wake evaluator (design/cognition-loop/20 §3). With
     `on_wake` (`session_mode = "shadow"`) every would-wake starts a shadow
@@ -429,6 +432,8 @@ def _build_wake_evaluator(
             max_concurrent_sessions=cfg.cognition.max_concurrent_sessions,
             session_seconds=cfg.cognition.shadow_session_seconds,
             session_timeout_seconds=cfg.cognition.session_timeout_seconds,
+            backoff_max_seconds=cfg.cognition.backoff_max_seconds,
+            max_consecutive_failures=cfg.cognition.max_consecutive_failures,
         ),
         metrics=metrics,
         floors=tuple(Floor.parse(f) for f in cfg.cognition.time_floors),
@@ -437,6 +442,7 @@ def _build_wake_evaluator(
         mode="shadow",
         store_timeout_seconds=cfg.cognition.store_timeout_seconds,
         on_wake=on_wake,
+        session_units=session_units,
     )
 
 
@@ -3552,7 +3558,11 @@ async def build_dependencies(
     # block below ONLY under `[cognition] session_mode = "shadow"`; `off`
     # builds nothing here, no model client and no agent-runner import.
     cognition_runner: CognitionSessionRunner | None = None
+    # EVERY unit stays in the wake evaluator (#637 review, minor 1): a unit with
+    # no home room keeps recording its would-wakes, it only cannot start a
+    # session. `cognition_session_units` is the ones that can.
     cognition_units: Callable[[], Sequence[str]] = unit_scopes
+    cognition_session_units: Collection[str] | None = None
     if cfg.dreamer.enabled:
         # The note tier's curator, on its OWN gate and behind the tier's.
         # `[notes] enabled` decides whether the index is injected and the four
@@ -4326,14 +4336,23 @@ async def build_dependencies(
             cognition_wakeable, cognition_skipped = units_with_home_rooms(
                 list(unit_scopes()), homes,
             )
+            cognition_session_units = frozenset(cognition_wakeable)
+            metrics.gauge(
+                "nora_cognition_session_units", float(len(cognition_wakeable)),
+                state="runnable",
+            )
+            metrics.gauge(
+                "nora_cognition_session_units", float(len(cognition_skipped)),
+                state="no_home_room",
+            )
             if cognition_skipped:
                 log.error(
-                    "cognition sessions: unit(s) %s name no home room in policy.toml, "
-                    "so no session will run for them (their wakes are not recorded "
-                    "while sessions run); set `home_room = true` on one of their rooms",
+                    "cognition sessions: unit(s) %s name no home room in policy.toml, so no "
+                    "session can start for them; their would-wakes are still recorded "
+                    "(nora_cognition_session_units{state=no_home_room}). Set `home_room = "
+                    "true` on one of their rooms to cover them",
                     cognition_skipped,
                 )
-            cognition_units = lambda: tuple(cognition_wakeable)  # noqa: E731
             dry_run_store = SqlCognitionDryRunStore(engine)
 
             async def _note_titles(unit: str) -> Sequence[str]:
@@ -4341,10 +4360,39 @@ async def build_dependencies(
                     return ()
                 return [n.title for n in await note_store.standing(unit=unit)]
 
+            async def _note_index(unit: str) -> Sequence[Any]:
+                if note_store is None:
+                    return ()
+                return await note_store.standing(unit=unit)
+
             async def _proposed_events(conversation_id: str) -> Sequence[Any]:
                 return await event_store.list_for_conversation(
                     conversation_id=conversation_id, status=GatheringStatus.PROPOSED,
                 )
+
+            # The unit -> its rooms' every id form, for the grounding read: a
+            # stimulus naming a room outside its unit is never read (DEC-231).
+            cognition_unit_rooms: dict[str, set[tuple[str, str]]] = {}
+            for conv in allowlist.conversations:
+                cognition_unit_rooms.setdefault(conv.unit, set()).update(
+                    (conv.platform, cid) for cid in conv.ids
+                )
+
+            async def _room_events(unit: str, conversation_id: str) -> Sequence[Any]:
+                return await _proposed_events(conversation_id)
+
+            grounder = build_grounder(
+                # NOT `tool_registry`'s `record`, which is None unless `[record_query]
+                # enabled`: the rows that raised a stimulus are code's own input, and a
+                # session must be grounded with the tool off.
+                records=SqlRecordQuery(engine), persons=persons, media_join=media_join,
+                note_index=_note_index, events_in=_room_events,
+                standing_of=lambda platform, conversation_id: standing_store.read(
+                    platform=platform, conversation_id=conversation_id,
+                ),
+                unit_rooms=lambda unit: cognition_unit_rooms.get(unit, set()),
+                ai_display_name=cfg.doctrine.display_name,
+            )
 
             cognition_runner = build_cognition_runner(
                 cfg=cfg, models=dream_models,
@@ -4360,6 +4408,12 @@ async def build_dependencies(
                 # No skill ships for any agenda kind in this step: the table is
                 # where each lands (`AgendaSkills`).
                 skills=AgendaSkills(by_kind={}, resolve=lambda name: None),
+                grounder=grounder,
+                render_budget=RenderBudget(
+                    record_chars=cfg.cognition.record_chars,
+                    message_chars=cfg.cognition.message_chars,
+                    register_lines=cfg.cognition.register_lines,
+                ),
                 surface=surface, clock=lambda: clock().timestamp(),
                 model_id=dream_model, model_route=cfg.llm.base_url,
                 budget=cognition_budget(cfg.dreamer.budget_for(COGNITION_ADAPTOR_NAME)),
@@ -4378,6 +4432,9 @@ async def build_dependencies(
         wake_evaluator = _build_wake_evaluator(
             cfg, store=stimulus_store, units=cognition_units, metrics=metrics,
             on_wake=cognition_runner.wake_hook if cognition_runner is not None else None,
+            session_units=(
+                None if cognition_session_units is None else (lambda: cognition_session_units)
+            ),
         )
         if cognition_runner is not None:
             cognition_shutdown = CognitionShutdown(
@@ -4386,7 +4443,7 @@ async def build_dependencies(
     try:
         require_session_hook(
             session_mode=cfg.cognition.session_mode, runner=cognition_runner,
-            evaluator=wake_evaluator,
+            evaluator=wake_evaluator, session_units=cognition_session_units,
         )
     except RuntimeError as exc:
         raise StartupError(str(exc)) from exc

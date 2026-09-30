@@ -185,6 +185,48 @@ async def test_a_failed_wake_falls_back_to_the_newest_wake_that_did_not_fail(sto
     assert view.last_wake.id == bad
 
 
+async def test_consecutive_failures_and_the_mark_of_the_newest_failed_wake(stores):
+    """#637 review, major 1: what the backoff and the strike read. Failed and
+    timed-out wakes count, a shutdown (`cancelled`) neither counts nor ends the
+    run, an EXPIRED wake counts, and one `closed` wake resets it: the same rule
+    in both stores, `nora.domain.stimuli.failure_run`."""
+    stimuli, _ledger = stores
+    await _msgs(stimuli, 6)
+    assert (await _view(stimuli, stale_before_ms=NOW)).failures == 0
+    good = await _wake(stimuli, through=1, at=NOW)
+    await _close(stimuli, good)
+    view = await _view(stimuli, stale_before_ms=NOW)
+    assert (view.failures, view.failed_mark) == (0, None)
+    a = await _wake(stimuli, through=2, at=NOW + 100)
+    await _close(stimuli, a, "failed")
+    b = await _wake(stimuli, through=3, at=NOW + 200)
+    await _close(stimuli, b, "cancelled")
+    c = await _wake(stimuli, through=4, at=NOW + 300)
+    await _close(stimuli, c, "timeout")
+    view = await _view(stimuli, stale_before_ms=NOW)
+    assert view.failures == 2                                  # a and c, b is transparent
+    assert (view.failed_mark.through_stimulus_id, view.failed_mark.through_ms) == (4, NOW + 300)
+    # a wake that never resolved and is past the timeout is a failure too
+    await _wake(stimuli, through=5, at=NOW + 400)
+    stale = await _view(stimuli, stale_before_ms=NOW + 5000)
+    assert stale.failures == 3
+    assert stale.failed_mark.through_stimulus_id == 5
+    # ... and while it is still OPEN it neither counts nor ends the run
+    running = await _view(stimuli, stale_before_ms=NOW)
+    assert running.failures == 2
+    # one closed wake resets the run
+    await _close(stimuli, await _open_wake_id(stimuli), "closed")
+    view = await _view(stimuli, stale_before_ms=NOW)
+    assert (view.failures, view.failed_mark) == (0, None)
+    # a reader that tracks no sessions sees none
+    assert (await _view(stimuli)).failures == 0
+
+
+async def _open_wake_id(stimuli: Any) -> int:
+    view = await _view(stimuli, stale_before_ms=NOW)
+    return int(view.last_wake.id)
+
+
 async def test_an_untracked_wake_is_a_watermark_with_or_without_a_clock(stores):
     """No hook (`session_mode = "off"`): the step-1 behaviour, unchanged, and
     an untracked wake never expires even when the reader tracks sessions."""
@@ -655,3 +697,19 @@ async def test_a_cancelled_moved_due_or_refused_remind_is_read_at_its_latest_sta
         await ledger.record_remind_mirror(mirror=m, recorded_at_ms=NOW)
     pending = await ledger.pending_mirrored_reminds(unit=UNIT, now_ms=NOW + 100)
     assert [p.reminder_ref for p in pending] == ["moved"]
+
+
+async def test_a_remind_due_exactly_now_is_due_not_pending(stores):
+    """`fold_pending_reminds`' docstring says a due remind is no longer pending
+    (nothing fires in shadow, so its time having come is what would have been
+    sent) and the fire path treats `at <= now` as due: at the boundary instant
+    it is due. It read `at >= now`, one millisecond of a dedupe rule refusing a
+    second reminder on the same rows (#637 review, minor)."""
+    _stimuli, ledger = stores
+    for ref, at in (("edge", NOW + 100), ("after", NOW + 101), ("before", NOW + 99)):
+        await ledger.record_remind_mirror(
+            mirror=_mirror(reminder_ref=ref, subject_rows=(f"note:{ref}",), at_ms=at),
+            recorded_at_ms=NOW,
+        )
+    pending = await ledger.pending_mirrored_reminds(unit=UNIT, now_ms=NOW + 100)
+    assert [p.reminder_ref for p in pending] == ["after"]

@@ -25,6 +25,7 @@ from nora.app.cognition_session import (
 from nora.domain.cognition_session import Room
 from nora.domain.stimuli import Stimulus, UnitView
 from nora.testing.cognition_dry_run_store import InMemoryCognitionDryRunStore
+from nora.testing.cognition_grounding import EmptyGrounder
 from nora.testing.stimuli import InMemoryStimulusStore
 
 NOW = 1_800_000_000_000
@@ -132,7 +133,8 @@ async def specs() -> dict[str, dict[str, Any]]:
     runner = CognitionSessionRunner(
         dry_run_store=ledger, stimulus_store=stimuli,
         agent_runner=spy, home_rooms={"u": Room("signal", "home")},
-        read_tools_for=lambda unit, room: [], skill_text_for=lambda kinds: "",
+        read_tools_for=lambda unit, rooms: [], skill_text_for=lambda kinds: "",
+        grounder=EmptyGrounder(),
         doctrine_text="D", doctrine_sha256=None, open_note_titles=_const(()),
         open_proposed_events=_const(()), prior_standing=_const(None),
         pending_self_wakes=_const(()), pending_mirrored_reminds=_const(()),

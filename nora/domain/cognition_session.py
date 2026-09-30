@@ -46,6 +46,13 @@ from dataclasses import dataclass
 
 from nora.domain.stimuli import Stimulus
 
+#: The Dreamer adaptor name a Cognition session's tools are built under
+#: (`RegistryToolSource.build(adaptor=...)` stamps it as `dream_adaptor`). A
+#: read tool that would WRITE something a live reader consumes checks it and
+#: does not (`nora.agent.tools.note_search`): the session's ceiling is «may
+#: look, may not write».
+COGNITION_ADAPTOR = "cognition"
+
 #: The kinds bound to the room they came from; every other kind binds the
 #: unit's home room (30-cognition.md §1).
 _ROOM_BOUND_KINDS: frozenset[str] = frozenset({"message"})
