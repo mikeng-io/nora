@@ -29,26 +29,68 @@ PHOTO_TWIN = "a3f2c1" + "f" * 58  # shares the 6-hex handle with PHOTO
 DRAWING = "9b8c7d" + "1" * 58  # an image Nora generated in room-1
 
 
+NOW = 1_800_000_000_000
+DAY = 86_400_000
+
+
 @dataclass
 class _Row:
+    id: int
+    ts: int
+    body: str
     media_json: str | None
 
 
-class _Transcript:
-    """Only `recent`, the one read the service makes. Rows by room."""
+def _blob(sha: str, media_type: str = "image/jpeg", role: str = "") -> dict[str, Any]:
+    blob: dict[str, Any] = {"sha256": sha, "media_type": media_type}
+    if role:
+        blob["role"] = role
+    return blob
 
-    def __init__(self, rooms: dict[str, list[list[str]]], *, fail: bool = False) -> None:
+
+class _Transcript:
+    """`recent` and `media_rows`, the two reads `room_sightings` makes. `rooms` are the
+    newest rows of a room (what `recent` returns); `history` are older media rows that only
+    `media_rows` reaches, as (days_ago, blob); `filler` pads `media_rows` with that many
+    rows that match nothing, to hit the row cap."""
+
+    def __init__(
+        self,
+        rooms: dict[str, list[list[str]]],
+        *,
+        fail: bool = False,
+        history: dict[str, list[tuple[int, dict[str, Any]]]] | None = None,
+        filler: int = 0,
+    ) -> None:
         self.rooms = rooms
         self.fail = fail
+        self.history = history or {}
+        self.filler = filler
 
     async def recent(self, *, conversation_id: str, limit: int) -> list[_Row]:
         if self.fail:
             raise RuntimeError("db down")
         rows = [
-            _Row(json.dumps([{"sha256": sha, "media_type": "image/jpeg"} for sha in shas]))
-            for shas in self.rooms.get(conversation_id, [])
+            _Row(n, NOW - n, "", json.dumps([_blob(sha) for sha in shas]))
+            for n, shas in enumerate(self.rooms.get(conversation_id, []), start=1)
         ]
         return rows[-limit:]
+
+    async def media_rows(self, *, conversation_id: str, since_ts: int, limit: int) -> list[_Row]:
+        if self.fail:
+            raise RuntimeError("db down")
+        rows = [
+            _Row(10_000 + n, NOW - days * DAY, "", json.dumps([blob]))
+            for n, (days, blob) in enumerate(self.history.get(conversation_id, []))
+            if NOW - days * DAY >= since_ts
+        ]
+        if self.filler:
+            rows += [
+                _Row(50_000 + n, NOW - 1000 - n, "", json.dumps([_blob(f"{n:064x}")]))
+                for n in range(self.filler)
+            ]
+        rows.sort(key=lambda r: (r.ts, r.id), reverse=True)
+        return rows[:limit]
 
 
 def _doc(*children: Any, title: str = "Saturday") -> dict[str, Any]:
@@ -67,11 +109,13 @@ def _service(
     store: FakeDocumentStore | None = None,
     fail_media: bool = False,
     fail_rows: bool = False,
+    history: dict[str, list[tuple[int, dict[str, Any]]]] | None = None,
+    filler: int = 0,
 ) -> tuple[DocumentService, FakeDocumentStore]:
     store = store or FakeDocumentStore()
     svc = DocumentService(
         store=store,
-        records=_Transcript(rooms or {}, fail=fail_rows),
+        records=_Transcript(rooms or {}, fail=fail_rows, history=history, filler=filler),  # type: ignore[arg-type]
         media=FakeMediaObjectStore(objs, fail=fail_media),
         media_window=50,
         room_ids=lambda platform, cid: (
@@ -80,6 +124,7 @@ def _service(
             else frozenset({cid})
         ),
         is_person=lambda person_id: person_id in {"ken", "mei"},
+        now_ms=lambda: NOW,
     )
     return svc, store
 
@@ -252,6 +297,39 @@ async def test_a_room_that_cannot_be_read_is_unavailable_never_a_guess() -> None
     assert (
         await dstore.list_visible(person_id="ken", rooms=frozenset(), limit=10, offset=0)
     ).total == 0
+
+
+async def test_a_photo_older_than_the_window_but_inside_90_days_resolves() -> None:
+    svc, store = _service(history={"room-1": [(40, _blob(PHOTO))]})
+    result = await _publish(svc, _doc(_image("a3f2c1")))
+    assert result.status == "ok"
+    stored = await store.get(document_id=result.document_id)
+    assert stored.spec["root"]["children"][0]["props"]["media"] == PHOTO
+
+
+async def test_a_photo_older_than_90_days_is_not_found() -> None:
+    svc, _ = _service(history={"room-1": [(91, _blob(PHOTO))]})
+    result = await _publish(svc, _doc(_image("a3f2c1")))
+    assert result.status == "refused"
+    assert result.findings[0].rule == "media_unknown"
+
+
+async def test_a_truncated_scan_that_finds_nothing_is_unavailable_not_unknown() -> None:
+    svc, _ = _service(filler=1001)
+    result = await _publish(svc, _doc(_image("a3f2c1")))
+    assert result.status == "unavailable"
+
+
+async def test_a_truncated_scan_that_found_the_code_still_resolves() -> None:
+    svc, _ = _service(filler=1001, history={"room-1": [(0, _blob(PHOTO))]})
+    assert (await _publish(svc, _doc(_image("a3f2c1")))).status == "ok"
+
+
+async def test_only_pictures_are_documents_material() -> None:
+    clip = _blob(PHOTO, "video/mp4")
+    cover = _blob(PHOTO_TWIN, "image/jpeg", role="cover")
+    svc, _ = _service(history={"room-1": [(3, clip), (4, cover)]})
+    assert (await _publish(svc, _doc(_image("a3f2c1")))).findings[0].rule == "media_unknown"
 
 
 async def test_what_is_stored_was_judged_and_its_hash_is_of_the_rewritten_form() -> None:

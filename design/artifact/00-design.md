@@ -868,14 +868,17 @@ never in the payload, only its platform.
 **Media, settling §16's two open questions for inbound photos.** An inbound photo is recorded as a
 sha256 in `messages.media_json`, which is what `[image a3f2c1: …]` renders from; it is resolvable, and it
 carries its room because the message row does. So a code resolves against the document's own room's
-message rows (`recent`, over the same window `media_fetch` scans), plus media-index rows born in the
-room (`provenance.platform` and `provenance.conversation_id`; any source).
+message rows through the shared resolver `room_sightings` (DEC-251, operator 2026-10-01, amending DEC-138:
+the `recent` window plus the room's last 90 days of message media rows, keyed by the message row), plus
+media-index rows born in the room (`provenance.platform` and `provenance.conversation_id`; any source).
+Images only is this block's own rule: a clip, a voice note and a shared item's cover are never a picture.
 The message row is the authority for a photo people sent, not the index row: an index row keeps only the
 FIRST room a byte string was seen in (first source wins), so a photo re-sent to room B would be wrongly
 refused by provenance. A row with no room (a sticker, a comprehension-born row) never resolves: fail
 closed. A code that matches no picture is `media_unknown`; one that matches more than one is
 `media_ambiguous` and names the candidates' 8-character handles; nothing is ever picked. A photo older
-than the window is not found (the operator's decision is pending on that; not built).
+than 90 days is not found, and a scan cut short by the row cap that finds nothing answers `unavailable`
+(could not check that far), never `media_unknown`.
 Each Image's code is then **rewritten to the full sha256** and the document is checked again, so what is
 stored is what was judged. The index half is the sandbox session's `resolve_room_media` (its #649), used as
 is for each of the room's ids: a code resolves only in the room it was born in whatever its source, and an
