@@ -35,7 +35,6 @@ from opentelemetry.util.types import AttributeValue
 
 from nora.agent import factory, tool_choice
 from nora.agent.dreamer import (
-    MEMORY_TOOLS,
     TOOL_RESULT_CAPS,
     AdaptorBudget,
     AdaptorGrant,
@@ -59,7 +58,7 @@ from nora.agent.telemetry import (
     start_raw_model_span,
 )
 from nora.agent.telemetry import timed as telemetry_timed
-from nora.agent.tools import NATIVE_TOOLS, OriginRoom
+from nora.agent.tools import OriginRoom
 from nora.agent.whereis import Circle, check_disclosure_invariant, circles_from_persons
 from nora.app.cognition_grounding import build_grounder
 from nora.app.cognition_session import CognitionSessionRunner
@@ -4523,7 +4522,6 @@ async def build_dependencies(
                 cfg=cfg, models=dream_models,
                 retry=factory.build_retry_policy(timeout_seconds=tier.timeout_seconds),
                 metrics=metrics, tools=dream_tools, instructions=dreamer_instructions,
-                registry_table={n: t.budget for n, t in NATIVE_TOOLS.items()},
                 dry_run_store=dry_run_store, stimulus_store=stimulus_store,
                 note_titles=_note_titles, proposed_events_in=_proposed_events,
                 standing_of=lambda platform, conversation_id: standing_store.read(
@@ -4542,9 +4540,7 @@ async def build_dependencies(
                 surface=surface, clock=lambda: clock().timestamp(),
                 model_id=dream_model, model_route=cfg.llm.base_url,
                 budget=cognition_budget(cfg.dreamer.budget_for(COGNITION_ADAPTOR_NAME)),
-                tool_calls=cfg.dreamer.budget_for(COGNITION_ADAPTOR_NAME).tool_calls,
-                llm_budgets=cfg.llm.budgets, result_caps=TOOL_RESULT_CAPS,
-                memory_tools=MEMORY_TOOLS,
+                result_caps=TOOL_RESULT_CAPS,
             )
 
     # The wake evaluator, after the Dreamer block so `session_mode = "shadow"`
