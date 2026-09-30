@@ -217,6 +217,7 @@ def build_rollup(cfg: Config) -> AnalyticsDependencies:
         response_window_seconds=analytics.response_window_seconds,
         stimulus_horizon_seconds=analytics.stimulus_horizon_seconds,
         deviation_silence_days=analytics.deviation_silence_days,
+        deviation_stimuli_per_person_per_day=analytics.deviation_stimuli_per_person_per_day,
         health_max_poll_gap_seconds=analytics.health_max_poll_gap_seconds,
         tz_name=analytics.tz_name,
     )

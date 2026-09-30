@@ -420,3 +420,125 @@ async def test_on_wake_a_sync_hook_with_no_awaitable_return_is_a_no_op():
     # tell "never scheduled" apart from "scheduled and its error was caught"
     # is that NEITHER a background task NOR an error is left behind.
     assert metrics.get("nora_errors_total", stage="cognition_session") == 0
+
+
+# ── D2: a rollup, time or self wake claims only its own kind (DEC-245) ────────
+
+
+async def _pending(store, unit="nora", *, now_ms=None, clock=None):
+    view = await store.view(unit=unit, mode="shadow", now_ms=now_ms or clock.ms, limit=1000)
+    return [(s.id, s.kind) for s in view.pending]
+
+
+async def test_a_rollup_wake_takes_the_rollup_and_leaves_an_unsettled_room_pending():
+    """Before: the rollup wake consumed the room's conversation too, unseen by
+    anything that judges a room. Now the messages wait for their own settling."""
+    ev, store, clock, _ = _setup()
+    m = await _say(store, clock)                                   # the room is live
+    r = await _say(store, clock, kind="rollup", ref="rollup:colocation:1")
+    clock.advance(60)
+    await ev.tick()
+    (wake,) = store.wakes
+    assert wake.reason == "rollup"
+    assert (wake.stimulus_count, wake.eligible_count) == (1, 1)
+    assert wake.through_stimulus_id == r and wake.unclaimed_ids == (m,)
+    assert await _pending(store, clock=clock) == [(m, "message")]
+
+
+async def test_the_messages_a_rollup_wake_left_are_taken_once_by_their_own_settled_wake():
+    ev, store, clock, _ = _setup()
+    m = await _say(store, clock)
+    await _say(store, clock, kind="rollup", ref="rollup:colocation:1")
+    clock.advance(60)
+    await ev.tick()
+    clock.advance(1800)                       # the room settles, past the cooldown
+    await ev.tick()
+    assert [w.reason for w in store.wakes] == ["rollup", "settled"]
+    assert store.wakes[1].stimulus_count == 1
+    assert store.wakes[1].through_stimulus_id == max(m, 2)
+    assert store.wakes[1].unclaimed_ids == ()
+    clock.advance(4000)
+    assert await ev.tick() == []                              # and never again
+    assert await _pending(store, clock=clock) == []
+
+
+async def test_a_settled_wake_still_claims_everything_pending():
+    """The narrowing is for rollup, time and self only: a settled room's wake
+    takes the rollup row that arrived beside its messages (one agenda)."""
+    ev, store, clock, _ = _setup(policy=WakePolicy(
+        quiet_seconds=1800, cue_quiet_seconds=120, rollup_delay_seconds=10**6, batch_max=50,
+        max_age_seconds=10**6, cooldown_seconds=300, session_seconds=60,
+    ))
+    await _say(store, clock)
+    await _say(store, clock, kind="rollup", ref="rollup:colocation:1")
+    clock.advance(1800)
+    await ev.tick()
+    (wake,) = store.wakes
+    assert wake.reason == "settled" and wake.stimulus_count == 2 and wake.unclaimed_ids == ()
+    assert await _pending(store, clock=clock) == []
+
+
+async def test_a_self_wake_leaves_a_message_pending_and_a_time_wake_leaves_a_self_wake():
+    ev, store, clock, _ = _setup()
+    await _say(store, clock, kind="self", ref="wake:1", due_ms=clock.ms + 100 * S)
+    m = await _say(store, clock)
+    clock.advance(100)
+    await ev.tick()
+    assert [w.reason for w in store.wakes] == ["self"]
+    assert await _pending(store, clock=clock) == [(m, "message")]
+
+
+async def test_the_hook_is_handed_only_what_the_wake_claimed():
+    seen = []
+
+    async def hook(*, unit, view, wake_id, now_ms):
+        seen.append([(s.id, s.kind) for s in view.pending])
+
+    ev, store, clock, _ = _setup(on_wake=hook)
+    await _say(store, clock)
+    await _say(store, clock, kind="rollup", ref="rollup:colocation:1")
+    clock.advance(60)
+    await ev.tick()
+    await ev.drain()
+    assert seen == [[(2, "rollup")]]
+
+
+# ── M8: no wake on a time floor until its skill exists (DEC-245) ──────────────
+
+
+async def _noop_hook(*, unit, view, wake_id, now_ms):
+    return None
+
+
+def _floor_setup(*, floors_ready, units=("nora",), session_units=None):
+    store = InMemoryStimulusStore()
+    clock = Clock(int(dt.datetime(2026, 9, 28, 7, 5, tzinfo=HK).timestamp() * 1000))
+    ev = WakeEvaluator(
+        store=store, units=lambda: units, policy=POLICY, metrics=Metrics(),
+        floors=(Floor(7, 0),), tz=HK, clock=clock, settle_seconds=0,
+        on_wake=_noop_hook, session_units=session_units, floors_ready=floors_ready,
+    )
+    return ev, store, clock
+
+
+async def test_a_unit_whose_wakes_start_sessions_raises_no_floor_while_no_skill_ships():
+    ev, store, _clock = _floor_setup(floors_ready=False)
+    assert await ev.tick() == []
+    assert store.stimuli == [] and store.wakes == []
+
+
+async def test_a_ready_floor_is_raised_and_wakes_as_time_for_a_session_unit():
+    ev, store, _clock = _floor_setup(floors_ready=True)
+    await ev.tick()
+    assert [s.kind for s in store.stimuli] == ["time"]
+    assert [w.reason for w in store.wakes] == ["time"]
+
+
+async def test_a_unit_that_only_records_would_wakes_still_raises_its_floor():
+    """Sizing the floors from a shadow week is what they are for: only a unit
+    that would START a session is held back."""
+    ev, store, _clock = _floor_setup(
+        floors_ready=False, units=("a", "b"), session_units=lambda: {"a"},
+    )
+    await ev.tick()
+    assert {s.unit for s in store.stimuli} == {"b"}

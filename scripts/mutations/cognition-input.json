@@ -1,0 +1,177 @@
+[
+  {
+    "name": "decide: a rollup, time or self wake claims only its own kind",
+    "file": "nora/domain/stimuli.py",
+    "old": "    if reason in _OWN_KIND_REASONS:",
+    "new": "    if False:",
+    "target": "tests/unit/test_wake_evaluator.py -k test_a_rollup_wake_takes_the_rollup"
+  },
+  {
+    "name": "decide: the messages a narrow wake leaves are listed as unclaimed, so the watermark never passes them",
+    "file": "nora/domain/stimuli.py",
+    "old": "        unclaimed_ids=tuple(\n            s.id for s in view.pending if s.id not in taken and s.id <= through\n        ),",
+    "new": "        unclaimed_ids=(),",
+    "target": "tests/contract/test_stimulus_store_contract.py -k random_run"
+  },
+  {
+    "name": "Watermark.consumed: an unclaimed id is not consumed by the range",
+    "file": "nora/domain/stimuli.py",
+    "old": "            and stimulus.id not in self.unclaimed\n        )",
+    "new": "        )",
+    "target": "tests/contract/test_stimulus_store_contract.py -k unclaimed"
+  },
+  {
+    "name": "SQL view: what the watermark's wake left unclaimed is read back as pending",
+    "file": "nora/infra/sql/stimuli.py",
+    "old": "            missing = sorted(({*carry, *mark.unclaimed}) - have)",
+    "new": "            missing = sorted(set(carry) - have)",
+    "target": "tests/contract/test_stimulus_store_contract.py -k unclaimed"
+  },
+  {
+    "name": "SQL record_wake: the unclaimed list is stored on the wake row",
+    "file": "nora/infra/sql/stimuli.py",
+    "old": "    return {**wake.detail, _UNCLAIMED_KEY: sorted(wake.unclaimed_ids)}",
+    "new": "    return dict(wake.detail)",
+    "target": "tests/contract/test_stimulus_store_contract.py -k unclaimed"
+  },
+  {
+    "name": "in-memory view: the unclaimed stimuli are pending, as in SQL",
+    "file": "nora/testing/stimuli.py",
+    "old": "            elif s.id in mark.unclaimed:",
+    "new": "            elif False:",
+    "target": "tests/contract/test_stimulus_store_contract.py -k unclaimed"
+  },
+  {
+    "name": "evaluator: the session hook is handed only the stimuli the wake claimed",
+    "file": "nora/app/wake.py",
+    "old": "                            x for x in view.pending if x.id in verdict.claimed_ids",
+    "new": "                            x for x in view.pending",
+    "target": "tests/unit/test_wake_evaluator.py -k test_the_hook_is_handed_only_what_the_wake_claimed"
+  },
+  {
+    "name": "evaluator: a session unit raises no time floor while no skill ships",
+    "file": "nora/app/wake.py",
+    "old": "                self._floor_stimuli(unit, now_ms) if self._floors_ready or not tracked else ()",
+    "new": "                self._floor_stimuli(unit, now_ms)",
+    "target": "tests/unit/test_wake_evaluator.py -k a_unit_whose_wakes_start_sessions_raises_no_floor"
+  },
+  {
+    "name": "runner: the clock line counts from the end of the last session",
+    "file": "nora/app/cognition_session.py",
+    "old": "                None if view.last_session is None else view.last_session.ended_at_ms",
+    "new": "                view.last_activity_ms",
+    "target": "tests/unit/test_cognition_input.py -k the_clock_line_counts_from"
+  },
+  {
+    "name": "runner: an unreadable rollup stimulus is not an agenda item",
+    "file": "nora/app/cognition_session.py",
+    "old": "                if s.kind == \"rollup\" and s.ref not in grounding.rollups",
+    "new": "                if False",
+    "target": "tests/unit/test_cognition_input.py -k unreadable_rollup"
+  },
+  {
+    "name": "runner: the skip is recorded on the session row",
+    "file": "nora/app/cognition_session.py",
+    "old": "                    \"skipped_stimulus_ids\": sorted(skipped),",
+    "new": "                    \"skipped_stimulus_ids\": [],",
+    "target": "tests/unit/test_cognition_input.py -k unreadable_rollup"
+  },
+  {
+    "name": "runner: the reads line pairs a room's id with its label",
+    "file": "nora/app/cognition_session.py",
+    "old": "        named = [room_label(r, labels or {}) for r in rooms]",
+    "new": "        named = keys",
+    "target": "tests/unit/test_cognition_input.py -k names_a_room_by_its_label"
+  },
+  {
+    "name": "grounder: a rollup naming someone off the roster has no line",
+    "file": "nora/app/cognition_grounding.py",
+    "old": "        if any(r is None for r in refs):\n            continue",
+    "new": "        if False:\n            continue",
+    "target": "tests/unit/test_cognition_grounding.py -k cannot_be_read_has_no_line"
+  },
+  {
+    "name": "grounder: her own sends are read in the item's window",
+    "file": "nora/app/cognition_grounding.py",
+    "old": "        mine = [h for h in read[room] if h.row.ts >= start][-limit:]",
+    "new": "        mine = []",
+    "target": "tests/unit/test_cognition_grounding.py -k her_own_send_is_shown_in_the_items_window"
+  },
+  {
+    "name": "grounder: the window opens a lookback before the oldest message and no earlier",
+    "file": "nora/app/cognition_grounding.py",
+    "old": "        mine = [h for h in read[room] if h.row.ts >= start][-limit:]",
+    "new": "        mine = list(read[room])[-limit:]",
+    "target": "tests/unit/test_cognition_grounding.py -k the_window_opens_a_lookback"
+  },
+  {
+    "name": "render: her own send is marked as hers",
+    "file": "nora/domain/cognition_render.py",
+    "old": "{rec.author} (you), {when}",
+    "new": "{rec.author}, {when}",
+    "target": "tests/unit/test_cognition_grounding.py -k her_own_send_is_shown_in_the_items_window"
+  },
+  {
+    "name": "render: only her sends in the item's own room appear under it",
+    "file": "nora/domain/cognition_render.py",
+    "old": "        if rec.room == item.room:\n            lines.append((rec.at_ms, rec.message_id, _own_line(",
+    "new": "        if True:\n            lines.append((rec.at_ms, rec.message_id, _own_line(",
+    "target": "tests/unit/test_cognition_grounding.py -k only_her_sends_in_the_items_own_room"
+  },
+  {
+    "name": "render: a rollup line names the person from its ref",
+    "file": "nora/domain/cognition_render.py",
+    "old": "    who = _join_names(line.names)",
+    "new": "    who = \"someone\"",
+    "target": "tests/unit/test_cognition_grounding.py -k a_deviation_names_the_person"
+  },
+  {
+    "name": "render: an item is headed by its room's label, never its id",
+    "file": "nora/domain/cognition_render.py",
+    "old": "        f\"[room {room_label(item.room, grounding.room_labels)}]\"\n        f\"{_item_age(",
+    "new": "        f\"[room {room_key(item.room)}]\"\n        f\"{_item_age(",
+    "target": "tests/unit/test_cognition_grounding.py -k each_message_carries_its_id"
+  },
+  {
+    "name": "agenda: a message item's summary does not carry the conversation id",
+    "file": "nora/domain/cognition_session.py",
+    "old": "        return f\"{count} new {noun} in this room\"",
+    "new": "        return f\"room {room.platform}:{room.conversation_id} has {count} new {noun}\"",
+    "target": "tests/unit/test_cognition_session.py -k message_stimuli_in_one_room_become_one_item"
+  },
+  {
+    "name": "units: the deviation cap is enforced",
+    "file": "nora/analytics/units.py",
+    "old": "        return raised >= self._cfg.deviation_stimuli_per_person_per_day",
+    "new": "        return False",
+    "target": "tests/unit/test_unit_rollup_deviation_cap.py"
+  },
+  {
+    "name": "store: count_rollup reads the person's deviations (SQL)",
+    "file": "nora/infra/sql/stimuli.py",
+    "old": "            STIMULUS.c.item.startswith(item_prefix, autoescape=True),",
+    "new": "            STIMULUS.c.item.startswith(\"nothing_\", autoescape=True),",
+    "target": "tests/contract/test_stimulus_store_contract.py -k count_rollup"
+  },
+  {
+    "name": "dry-run store: jsonb columns hold the object, not a string of it",
+    "file": "nora/infra/sql/cognition_dry_run.py",
+    "old": "    reads either.\"\"\"\n    return value",
+    "new": "    reads either.\"\"\"\n    return json.dumps(value)  # type: ignore[return-value]",
+    "target": "tests/contract/test_cognition_dry_run_store_contract.py -k jsonb_objects"
+  },
+  {
+    "name": "stores: a closed or cancelled outcome records no cause",
+    "file": "nora/domain/stimuli.py",
+    "old": "    return NO_CAUSE if outcome in (\"closed\", \"cancelled\") else cause",
+    "new": "    return cause",
+    "target": "tests/contract/test_stimulus_session_lifecycle_contract.py -k records_no_cause"
+  },
+  {
+    "name": "SQL view: the newest wake's cause is read from its outcome row",
+    "file": "nora/infra/sql/stimuli.py",
+    "old": "                    cause=None if outcome_row is None else str(outcome_row.cause),\n                )\n                if last_session",
+    "new": "                )\n                if last_session",
+    "target": "tests/contract/test_stimulus_session_lifecycle_contract.py -k keeps_the_cause_it_was_written_with"
+  }
+]

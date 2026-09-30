@@ -117,7 +117,11 @@ and every `time` trigger raises a **stimulus**: `(unit, kind, ref, cues, at)`.
 proven healthy for the interval: the collector's recorded polls succeeded,
 and the adapters' recorded health shows the platforms up. Missing data from an outage is not absence of
 activity (R-27). A deviation is then a stimulus like any other; no gate is
-specific to it ([30](30-cognition.md) §3).
+specific to it ([30](30-cognition.md) §3), **except one cap: at most one
+deviation stimulus per person per local day** (D3, operator 2026-09-30;
+`[analytics] deviation_stimuli_per_person_per_day`, DEC-245), until
+`rollup_read` lets a session read the rows behind them. A deviation past it is
+counted (`nora_rollup_stimuli_total{outcome="capped"}`), not raised.
 
 **Stimuli are durable.** They are rows in a per-unit `stimulus` table, not
 memory: the Rollup raises them from the analytics process into nora, and
@@ -148,6 +152,22 @@ Cognition session on the **first** trigger that holds:
 the stimuli up to the watermark it reads at its start; stimuli that arrive
 during it stay pending for the next session. The watermark survives a
 restart, and a failed session does not advance it.
+
+**A wake claims a set, not a range (D2, operator 2026-09-30; DEC-245).** The
+first four triggers are about the room or the pile, and their wake takes every
+pending stimulus. **rollup, time and self are about one kind of stimulus, and
+their wake claims only stimuli of that kind:** a room's messages stay pending
+until they themselves satisfy `settled` or `strong cue`. Before this, a rollup
+wake consumed the conversation of a room that had not yet settled, unseen by
+anything that judges a room. Because a range cannot say «through 40 except 33
+and 35», a wake records the stimuli inside its range it left
+(`cognition_wake.detail.unclaimed`), and the watermark reads them as pending
+(`Watermark.unclaimed`). The invariant is that every stimulus is claimed by
+exactly one wake that closes: a wake never advances the watermark past a
+stimulus it did not claim, a later wake re-lists what is still unclaimed, and a
+failed wake falls back to the previous watermark with ITS unclaimed list (the
+store contract runs a seeded random stream of stimuli and wakes and reads the
+claimed sets back).
 
 **Brakes, all in code:**
 
@@ -208,6 +228,13 @@ a name this table leaves open:
   time bound: ids commit out of order under concurrent ingest, and an id
   committed after a higher one was read is then still pending, not consumed
   unseen.
+- **As built (the cognition-input PR, DEC-245): the input, and the claim.** A
+  `rollup`, `time` or `self` wake claims only its own kind (above). A `time` floor
+  raises NO stimulus for a unit whose wakes start sessions until the `time` agenda
+  kind has a skill (`AgendaSkills.by_kind`): the item was «a time stimulus is due:
+  floor» with nothing to act on (M8). A unit that only records would-wakes still
+  raises its floors, because sizing them is what shadow is for. A closed or
+  cancelled outcome records `cause = none` (migration 0082), never `infra`.
 - An adapter connected but silent for `PlatformSilent`'s 900 s is recorded
   `stale`, not `up`.
 - `nora_cognition_wake_total` carries `mode` beside `reason`, and

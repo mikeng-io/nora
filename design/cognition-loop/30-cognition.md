@@ -42,6 +42,34 @@ Built once per session, in code, before any model call:
   by computed surprise ([80](80-prior-art.md) §4) and hands at most
   `max_items` (starting at 12); the rest wait for the next session.
 
+**As built (the cognition-input PR, DEC-245): what the session is actually
+handed.** Each of these was found by reading the input before the instruction
+(AGENTS.md, «the spine»):
+
+- **The clock line counts from when she last LOOKED**: the end of the unit's last
+  session (`UnitView.last_session.ended_at_ms`), not the newest person message,
+  which had made «you last looked» read «just now» about a room last looked at
+  two hours before. No earlier session: «This is your first look at this group.»
+- **A Rollup item is spelled out from its ref**: who (the roster name, resolved
+  at read time and never serialized), what kind (co-location, arrival, silence,
+  anomaly), the interval, and the place when the ref names one. **A Rollup
+  stimulus whose ref cannot be read (unparseable, or a person the roster does not
+  know) is not an agenda item** until `rollup_read` exists: it is skipped, counted
+  (`nora_cognition_stimuli_skipped_total`) and recorded on the session row
+  (`agenda.skipped_stimulus_ids`), and consumed, so it wedges nothing.
+- **Her own sends are part of the situation (D1, operator 2026-09-30).** Inside
+  each message item's window (from `own_send_lookback_seconds`, 1800 s, before its
+  oldest message until now, at most `own_sends_max`, 6) her own delivered sends in
+  that room are shown in order with the room's messages, marked as hers («Nora
+  (you), 18:40, ...»), so a reply reads as an answer to what she asked. They are
+  read through the same select as every Record row (a hidden row is absent, an
+  unsent one's words are withheld), only in a room of the unit, and they are
+  never a stimulus and never an id a note may cite.
+- **A room is called by its label** (`policy.toml`), never its conversation id
+  (R-18): in the item line, the summary and the Register index lines. The id
+  appears once, beside its label, in the line that tells her what a read tool's
+  `room` argument takes.
+
 **Every item binds one room**: the room its stimulus came from, or, for an item
 with none (a Rollup, `time`, `self`, social or play stimulus), the unit's home
 room (39 D2). That

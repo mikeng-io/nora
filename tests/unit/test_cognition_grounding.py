@@ -16,6 +16,7 @@ What each test would catch if the fix were reverted is named in
 
 from __future__ import annotations
 
+import dataclasses
 import datetime as dt
 from collections.abc import Sequence
 from typing import Any
@@ -76,10 +77,15 @@ def _rec(stim: Stimulus, *, author: str, text: str | None, room: Room | None = N
     )
 
 
+LABELS = {"signal:room-a": "Room A", "discord:room-b": "Room B"}
+
+
 def _prompt(stimuli: Sequence[Stimulus], grounding: Grounding, **kw: Any) -> str:
     sit = build_situation(
         unit="u", pending=stimuli, home_room=HOME, now_ms=NOW, last_session_ms=None,
     )
+    if not grounding.room_labels:
+        grounding = dataclasses.replace(grounding, room_labels=LABELS)
     return render_agenda(
         sit.agenda.items, stimuli={s.id: s for s in stimuli}, grounding=grounding,
         now_ms=NOW, last_session_ms=None, tz=HK, **kw,
@@ -95,7 +101,8 @@ def test_each_message_carries_its_id_its_author_its_time_and_its_room():
         s2.ref: _rec(s2, author="Ben", text="yes, the ramen place"),
     })
     prompt = _prompt([s1, s2], g)
-    assert "room signal:room-a has 2 new messages [room signal:room-a]" in prompt
+    assert "2 new messages in this room [room «Room A»]" in prompt
+    assert "room-a" not in prompt          # the id is never on the wire (R-18)
     assert "[#101] Ada, 14:50 (40 min ago): dinner friday at 8?" in prompt
     assert "[#102] Ben, 15:13 (17 min ago): yes, the ramen place" in prompt
     # oldest first, so «who answered whom» reads in order
@@ -155,7 +162,7 @@ def test_every_agenda_item_gets_its_own_rooms_messages_and_no_other():
         a.ref: _rec(a, author="Ada", text="in a"), b.ref: _rec(b, author="Bo", text="in b"),
     })
     prompt = _prompt([a, b], g)
-    block_a = prompt.split("[room discord:room-b]")[0]
+    block_a = prompt.split("[room «Room B»]")[0]
     assert "in a" in block_a and "in b" not in block_a
     # a record that names a different room than its item is not rendered under it
     wrong = Grounding(records={a.ref: _rec(a, author="Ada", text="LEAK", room=B)})
@@ -324,9 +331,17 @@ async def test_the_empty_grounder_is_the_probes_input_and_nothing_else_reads_tha
 class _Records:
     """`RecordRefSource`: answers what it is told and records what it was asked."""
 
-    def __init__(self, hits: Sequence[RecordRefHit]) -> None:
+    def __init__(self, hits: Sequence[RecordRefHit], own: Sequence[RecordHit] = ()) -> None:
         self.hits = list(hits)
+        self.own = list(own)
         self.asked: list[tuple[list[tuple[str, int]], list[tuple[str, str]]]] = []
+        self.own_asked: list[tuple[list[tuple[str, str]], int, int, int]] = []
+
+    async def own_sends(self, rooms: Sequence[tuple[str, str]], *, start_ms: int, end_ms: int,
+                        limit: int) -> Sequence[RecordHit]:
+        self.own_asked.append((list(rooms), start_ms, end_ms, limit))
+        return [h for h in self.own if (h.platform, h.conversation_id) in set(rooms)
+                and start_ms <= h.row.ts < end_ms]
 
     async def by_refs(self, refs: Sequence[tuple[str, int]],
                       rooms: Sequence[tuple[str, str]]) -> Sequence[RecordRefHit]:
@@ -347,7 +362,10 @@ def _hit(mid: int, room: Room, *, name: str = "Self Set", sender: str = "+852000
 
 
 _PERSONS = Persons(
-    by_person={"ada": PersonRef(person_id="ada", name="Ada", honcho_peer_id="ada")},
+    by_person={
+        "ada": PersonRef(person_id="ada", name="Ada", honcho_peer_id="ada"),
+        "ben": PersonRef(person_id="ben", name="Ben", honcho_peer_id="ben"),
+    },
     index={("signal", "+852111"): "ada"},
 )
 
@@ -669,3 +687,185 @@ def test_the_instruction_does_not_promise_a_standing_index_line():
     text = (pathlib.Path(__file__).parents[2] / "nora/dreamer/objectives/cognition.md").read_text()
     below = text.split("Below the list is what is already written down")[1].split("\n\n")[0]
     assert "Standing" not in below and "open events" in below
+
+
+# ---- D1 (DEC-245): her own sends in each item's window, marked as hers ---------------------------
+
+def _own(mid: int, room: Room, *, ago: float, body: str = "what time works?",
+         deleted: bool = False) -> RecordHit:
+    row = TranscriptRow(
+        id=mid, sender_id="nora", sender_name="Nora", ts=_at(ago), body=body, is_nora=True,
+        delivery_status=DeliveryStatus.SENT, raw_json=None,
+    )
+    return RecordHit(platform=room.platform, conversation_id=room.conversation_id, row=row,
+                     deleted=deleted)
+
+
+def _own_grounder(records: _Records, **kw: Any) -> Any:
+    async def notes(unit: str) -> Sequence[Note]:
+        return ()
+
+    async def events(unit: str, cid: str) -> Sequence[Gathering]:
+        return ()
+
+    return build_grounder(
+        records=records, persons=_PERSONS, media_join=None, note_index=notes, events_in=events,
+        lineage=_lineage(), clock=lambda: NOW / 1000,
+        unit_rooms=lambda unit: {(A.platform, A.conversation_id), (B.platform, B.conversation_id)},
+        **kw,
+    )
+
+
+async def _ground_own(records: _Records, stimuli: Sequence[Stimulus], **kw: Any) -> Grounding:
+    sit = build_situation(unit="u", pending=stimuli, home_room=HOME, now_ms=NOW,
+                          last_session_ms=None)
+    return await _own_grounder(records, **kw)("u", sit.agenda.items, stimuli)
+
+
+async def test_her_own_send_is_shown_in_the_items_window_marked_as_hers_and_is_no_stimulus():
+    """The reply the room is answering: without it «yes, the ramen place» reads as
+    a statement out of nowhere, and she cannot tell she asked the question."""
+    s = _stim(1, A, ago=20, mid=101)
+    records = _Records([_hit(101, A, name="Ada", body="yes, the ramen place")],
+                       own=[_own(900, A, ago=25, body="dinner friday at 8?")])
+    g = await _ground_own(records, [s])
+    prompt = _prompt([s], g)
+    assert "[#900] Nora (you), 15:05 (25 min ago): dinner friday at 8?" in prompt
+    assert prompt.index("#900") < prompt.index("#101")          # in order with the room's words
+    # never a stimulus: it is not in `records` (keyed by stimulus ref) and no item names it
+    assert "messages:900" not in g.records
+    sit = build_situation(unit="u", pending=[s], home_room=HOME, now_ms=NOW, last_session_ms=None)
+    assert all(900 not in item.stimulus_ids for item in sit.agenda.items)
+
+
+async def test_the_window_opens_a_lookback_before_the_oldest_message_and_no_earlier():
+    s = _stim(1, A, ago=20, mid=101)
+    records = _Records([_hit(101, A)], own=[
+        _own(900, A, ago=25), _own(901, A, ago=200, body="from long before"),
+    ])
+    g = await _ground_own(records, [s], own_send_lookback_seconds=120)
+    (rooms, start, end, _limit), = records.own_asked
+    assert rooms == [("signal", "room-a")]
+    assert start == _at(20) - 120 * 1000 and end == NOW + 1
+    prompt = _prompt([s], g)
+    assert "#900" not in prompt          # 25 min ago is before a 2-minute lookback
+    assert "from long before" not in prompt
+
+
+async def test_only_her_sends_in_the_items_own_room_are_shown_and_at_most_the_newest_few():
+    a, b = _stim(1, A, ago=20, mid=101), _stim(2, B, ago=15, mid=102)
+    records = _Records(
+        [_hit(101, A), _hit(102, B)],
+        own=[_own(900 + i, A, ago=29 - i, body=f"a line {i}") for i in range(5)]
+        + [_own(950, B, ago=16, body="the other room's")],
+    )
+    g = await _ground_own(records, [a, b], own_sends_max=2,
+                          room_label=lambda platform, cid: {"room-a": "Room A",
+                                                            "room-b": "Room B"}[cid])
+    prompt = _prompt([a, b], g)
+    block_a, block_b = prompt.split("[room «Room B»]")
+    assert "a line 4" in block_a and "a line 3" in block_a and "a line 2" not in block_a
+    assert "the other room's" not in block_a and "the other room's" in block_b
+    assert "a line" not in block_b
+
+
+async def test_her_unsent_message_has_its_words_withheld_like_any_deleted_row():
+    s = _stim(1, A, ago=20, mid=101)
+    g = await _ground_own(_Records([_hit(101, A)], own=[_own(900, A, ago=25, deleted=True)]), [s])
+    prompt = _prompt([s], g)
+    assert "Nora (you)" in prompt and "what time works?" not in prompt
+    assert "(the words are withdrawn)" in prompt
+
+
+async def test_a_room_outside_the_unit_reads_none_of_her_sends():
+    s = _stim(1, A, ago=20, mid=101)
+    records = _Records([_hit(101, A)], own=[_own(900, A, ago=25)])
+    grounder = build_grounder(
+        records=records, persons=_PERSONS, media_join=None, lineage=_lineage(),
+        note_index=lambda u: _none(), events_in=lambda u, c: _none(), clock=lambda: NOW / 1000,
+        unit_rooms=lambda unit: {(B.platform, B.conversation_id)},   # room A is not the unit's
+    )
+    sit = build_situation(unit="u", pending=[s], home_room=HOME, now_ms=NOW, last_session_ms=None)
+    g = await grounder("u", sit.agenda.items, [s])
+    assert records.own_asked == [] and g.own_sends == {}
+
+
+async def _none() -> Sequence[Any]:
+    return ()
+
+
+async def test_what_the_session_row_keeps_of_her_sends_is_ids_and_times_never_words():
+    s = _stim(1, A, ago=20, mid=101)
+    g = await _ground_own(_Records([_hit(101, A)], own=[_own(900, A, ago=25, body="SECRET")]), [s])
+    kept = g.as_dict()["own_sends"]
+    assert kept == {"0": [{"message_id": 900, "at_ms": _at(25), "words_shown": True}]}
+    assert "SECRET" not in repr(g.as_dict())
+
+
+# ---- B2 (DEC-245): a rollup item is spelled out from its ref -------------------------------------
+
+def _roll(sid: int, ref: str, item: str, *, ago: float = 30) -> Stimulus:
+    return Stimulus(id=sid, unit="u", kind="rollup", item=item, ref=ref, at_ms=_at(ago),
+                    recorded_at_ms=_at(ago), person_id=None)
+
+
+async def test_a_deviation_names_the_person_the_kind_and_the_interval():
+    r = _roll(1, f"deviation|silence|ada|{_at(60 * 30)}", "deviation_silence", ago=30)
+    g = await _ground_own(_Records([]), [r])
+    prompt = _prompt([r], g)
+    line = next(ln for ln in prompt.splitlines() if "Ada" in ln)
+    assert "Ada: no message in any of the group's rooms and never at home, from " in line
+    assert " to 15:00 (30 min ago)" in line
+    assert "a rollup row changed: deviation_silence" in prompt     # the item still says what
+
+
+async def test_a_colocation_names_everyone_and_an_anomaly_says_only_what_the_rhythm_scored():
+    c = _roll(1, f"colocation|ada,ben|{_at(45)}", "colocation_start", ago=45)
+    a = _roll(2, f"deviation|anomaly|ben|{_at(120)}", "deviation_anomaly", ago=60)
+    g = await _ground_own(_Records([]), [c, a])
+    prompt = _prompt([c, a], g)
+    assert "Ada and Ben were in the same place since 14:45 (45 min ago)" in prompt
+    assert ("Ben: a stay the rhythm scored anomalous, from 13:30 (2 h ago) "
+            "to 14:30 (1 h ago)") in prompt
+
+
+async def test_an_arrival_names_its_place():
+    r = _roll(1, f"arrival|event:7|ada|{_at(10)}", "arrival", ago=10)
+    g = await _ground_own(_Records([]), [r])
+    assert "Ada arrived at event:7 since 15:20 (10 min ago)" in _prompt([r], g)
+
+
+@pytest.mark.parametrize("ref", [
+    "deviation|silence|nobody|1",          # a person the roster does not know
+    "deviation|weird|ada|1",               # a kind the producer never writes
+    "colocation|ada|notanumber",           # not a timestamp
+    "something|else",                      # not a rollup ref at all
+    "deviation|silence||1",                # no person
+])
+async def test_a_rollup_stimulus_that_cannot_be_read_has_no_line_for_the_session_to_be_handed(ref):
+    r = _roll(1, ref, "deviation_silence")
+    g = await _ground_own(_Records([]), [r])
+    assert r.ref not in g.rollups
+
+
+async def test_the_session_row_keeps_a_rollups_person_id_and_never_the_name():
+    r = _roll(1, f"deviation|silence|ada|{_at(60)}", "deviation_silence")
+    g = await _ground_own(_Records([]), [r])
+    kept = g.as_dict()["rollups"]
+    assert kept[0]["person_ids"] == ["ada"] and kept[0]["kind"] == "deviation_silence"
+    assert "Ada" not in repr(g.as_dict())     # a name outlives a withdrawal in an append-only row
+
+
+# ---- m5 (DEC-245): a room is called by its label, never its conversation id ----------------------
+
+async def test_the_grounder_labels_rooms_from_the_policy_and_floors_an_unlabelled_one():
+    a, b = _stim(1, A, ago=20, mid=101), _stim(2, B, ago=15, mid=102)
+    g = await _ground_own(
+        _Records([_hit(101, A), _hit(102, B)]), [a, b],
+        room_label=lambda platform, cid: {"room-a": "Weekend Plans"}.get(cid, ""),
+    )
+    assert g.room_labels == {"signal:room-a": "Weekend Plans",
+                             "discord:room-b": "a room with no name"}
+    prompt = _prompt([a, b], g)
+    assert "[room «Weekend Plans»]" in prompt and "[room «a room with no name»]" in prompt
+    assert "room-a" not in prompt and "room-b" not in prompt

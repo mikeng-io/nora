@@ -41,11 +41,12 @@ from nora.app.cognition_wiring import (
     units_with_home_rooms,
 )
 from nora.config import DreamBudgetConfig
+from nora.domain.cognition_ground import Grounding
 from nora.domain.cognition_session import Room
 from nora.domain.stimuli import Stimulus, UnitView
 from nora.obs.metrics import Metrics
 from nora.testing.cognition_dry_run_store import InMemoryCognitionDryRunStore
-from nora.testing.cognition_grounding import EmptyGrounder
+from nora.testing.cognition_grounding import EmptyGrounder, StaticGrounder
 from nora.testing.stimuli import InMemoryStimulusStore
 
 NOW = 1_790_000_000_000
@@ -210,7 +211,7 @@ def _stim(sid: int, room: Room, at: int = NOW - 90 * 60_000) -> Stimulus:
 
 def _runner(
     *, agent: _Agent, read_tools_for: Any = None, wake_ids: tuple[int, ...] = (1,),
-    metrics: Any = None, **kw: Any,
+    metrics: Any = None, grounder: Any = None, **kw: Any,
 ) -> tuple[CognitionSessionRunner, InMemoryStimulusStore, InMemoryCognitionDryRunStore]:
     ledger = InMemoryCognitionDryRunStore()
     stimuli = InMemoryStimulusStore(ledger=ledger)
@@ -225,7 +226,7 @@ def _runner(
         home_rooms={"u": HOME}, read_tools_for=read_tools_for or (lambda unit, rooms: []),
         read_only_tools=frozenset({"note_read", "about"}),
         skill_text_for=kw.pop("skill_text_for", lambda kinds: ""),
-        grounder=EmptyGrounder(),
+        grounder=grounder or EmptyGrounder(),
         doctrine_text="FIXED", doctrine_sha256="fixed-sha",
         open_note_titles=const, open_proposed_events=const, prior_standing=const,
         pending_self_wakes=const, pending_mirrored_reminds=const,
@@ -281,10 +282,13 @@ async def test_an_agenda_in_one_room_binds_the_reads_to_that_room():
         return [_tool("note_read")]
 
     agent = _Agent()
-    runner, _s, _l = _runner(agent=agent, read_tools_for=reads)
+    labels = Grounding(room_labels={"discord:other": "The Other Room"})
+    runner, _s, _l = _runner(agent=agent, read_tools_for=reads, grounder=StaticGrounder(labels))
     await _wake(runner, (_stim(1, OTHER),))
     assert asked == [[OTHER]]
-    assert "Your read tools look through room discord:other." in agent.prompts[0]
+    # the prompt says the room's label; its id is for a tool's argument only (m5)
+    assert "Your read tools look through room «The Other Room»." in agent.prompts[0]
+    assert "discord:other" not in agent.prompts[0]
 
 
 async def test_an_agenda_spanning_rooms_asks_for_each_rooms_reads_and_never_the_home_room_instead():
@@ -299,12 +303,16 @@ async def test_an_agenda_spanning_rooms_asks_for_each_rooms_reads_and_never_the_
         return [_tool("note_read"), _tool("about")]
 
     agent = _Agent()
-    runner, _s, _l = _runner(agent=agent, read_tools_for=reads)
+    labels = Grounding(room_labels={"discord:other": "The Other Room", "whatsapp:third": "Third"})
+    runner, _s, _l = _runner(agent=agent, read_tools_for=reads, grounder=StaticGrounder(labels))
     third = Room("whatsapp", "third")
     await _wake(runner, (_stim(1, OTHER), _stim(2, third), _stim(3, OTHER)))
     assert asked == [[OTHER, third]]              # once, both rooms, agenda order
     assert HOME not in asked[0]
-    assert "take a `room`, one of: discord:other, whatsapp:third" in agent.prompts[0]
+    assert (
+        "take a `room`, one of: `discord:other` («The Other Room»), `whatsapp:third` («Third»)"
+        in agent.prompts[0]
+    )
     assert "look through room" not in agent.prompts[0]
 
 

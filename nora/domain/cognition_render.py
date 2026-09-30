@@ -33,10 +33,12 @@ from datetime import UTC, datetime, tzinfo
 
 from nora.domain.blocks import speaker_name
 from nora.domain.cognition_ground import (
+    UNNAMED_ROOM,
     EventLine,
     Grounding,
     NoteLine,
     RecordItem,
+    RollupLine,
     record_ref,
 )
 from nora.domain.cognition_session import AgendaItem, Room
@@ -65,6 +67,13 @@ def room_key(room: Room) -> str:
     return f"{room.platform}:{room.conversation_id}"
 
 
+def room_label(room: Room, labels: Mapping[str, str]) -> str:
+    """What the prompt calls a room: its label, and never its conversation id
+    (R-18; `UNNAMED_ROOM` for a room with none). The id is what a tool's `room`
+    argument takes, so it stays THERE, in the tool's own schema."""
+    return f"«{labels.get(room_key(room)) or UNNAMED_ROOM}»"
+
+
 def ago(delta_ms: int) -> str:
     """A span as a person says it: «just now», «42 min», «3 h 5 min», «2 d»."""
     minutes = max(delta_ms, 0) // 60_000
@@ -84,6 +93,9 @@ def clock_line(now_ms: int, last_session_ms: int | None, tz: tzinfo) -> str:
     (AGENTS.md: a judgement that turns on time needs the time in its input)."""
     now = datetime.fromtimestamp(now_ms / 1000, tz=tz)
     stamp = f"{now:%A %-d %B %Y, %H:%M} ({getattr(tz, 'key', None) or now.tzname()})"
+    # `last_session_ms` is when the unit's last session ENDED (`LastSession.
+    # ended_at_ms`), not when someone last spoke: the newest message says how
+    # active the room is, and the clock line says how long since SHE looked.
     since = (
         "This is your first look at this group."
         if last_session_ms is None
@@ -191,18 +203,70 @@ def _shares(needs: Sequence[int], total: int, floor: int) -> list[int]:
     return out
 
 
-def _item_block(
-    index: int, item: AgendaItem, stimuli: Mapping[int, Stimulus], grounding: Grounding,
-    *, now_ms: int, tz: tzinfo, allowance_of: Mapping[int, int], message_chars: int,
-) -> list[str]:
-    rows = [stimuli[sid] for sid in item.stimulus_ids if sid in stimuli]
-    head = (
-        f"{index}. {item.summary}{returning(item.strike)} [room {room_key(item.room)}]"
-        f"{_item_age(item, [s.at_ms for s in rows], now_ms, tz)}"
+def _own_line(rec: RecordItem, *, now_ms: int, tz: tzinfo, message_chars: int) -> str:
+    """Nora's own send, marked as hers: «Nora (you), 18:40 (…): words». It is
+    context the room's messages may be answering, never a stimulus."""
+    when = _when(rec.at_ms, now_ms, tz)
+    body = (
+        "(the words are withdrawn)" if rec.text is None
+        else _clip(rec.text, message_chars) or "(no words)"
     )
+    return f"  [#{rec.message_id}] {rec.author} (you), {when}: {body}"
+
+
+def _span(start_ms: int | None, end_ms: int | None, now_ms: int, tz: tzinfo) -> str:
+    if start_ms is None:
+        return ""
+    if end_ms is None:
+        return f"since {_when(start_ms, now_ms, tz)}"
+    return f"from {_when(start_ms, now_ms, tz)} to {_when(end_ms, now_ms, tz)}"
+
+
+def _join_names(names: Sequence[str]) -> str:
+    if len(names) <= 2:
+        return " and ".join(names)
+    return ", ".join(names[:-1]) + " and " + names[-1]
+
+
+def _rollup_line(line: RollupLine, *, now_ms: int, tz: tzinfo) -> str:
+    """A Rollup row as a fact, its ref's fields spelled out: WHO (roster name),
+    WHAT kind, WHEN (the interval) and WHERE (a place, when the row names one).
+    No conclusion: a row the rhythm scored anomalous is said to be that, not to
+    mean something."""
+    who = _join_names(line.names)
+    span = _span(line.start_ms, line.end_ms, now_ms, tz)
+    if line.kind == "colocation":
+        return f"  {who} were in the same place {span}"
+    if line.kind == "arrival":
+        at = f" at {line.place}" if line.place else ""
+        return f"  {who} arrived{at} {span}"
+    if line.kind == "deviation_silence":
+        return (
+            f"  {who}: no message in any of the group's rooms and never at home, {span} "
+            "(presence and the platforms were healthy throughout)"
+        )
+    if line.kind == "deviation_anomaly":
+        return f"  {who}: a stay the rhythm scored anomalous, {span}"
+    return f"  {who}: {line.kind} {span}"
+
+
+def _item_lines(
+    item: AgendaItem, rows: Sequence[Stimulus], grounding: Grounding, own: Sequence[RecordItem],
+    *, now_ms: int, tz: tzinfo, message_chars: int,
+) -> tuple[list[tuple[int, int, str]], int]:
+    """The item's readable lines `(at_ms, id, text)` and how many stimuli of it
+    could not be read: its messages (Record rows), Nora's own sends in its
+    window, and its Rollup rows."""
     lines: list[tuple[int, int, str]] = []
     unreadable = 0
     for s in rows:
+        if s.kind == "rollup":
+            roll = grounding.rollups.get(s.ref)
+            if roll is None:
+                unreadable += 1
+                continue
+            lines.append((s.at_ms, s.id, _rollup_line(roll, now_ms=now_ms, tz=tz)))
+            continue
         ref = record_ref(s)
         if ref is None:
             continue
@@ -213,6 +277,28 @@ def _item_block(
         lines.append((rec.at_ms, rec.message_id, _record_line(
             rec, s.cues, now_ms=now_ms, tz=tz, message_chars=message_chars,
         )))
+    for rec in own:
+        if rec.room == item.room:
+            lines.append((rec.at_ms, rec.message_id, _own_line(
+                rec, now_ms=now_ms, tz=tz, message_chars=message_chars,
+            )))
+    return lines, unreadable
+
+
+def _item_block(
+    index: int, item: AgendaItem, stimuli: Mapping[int, Stimulus], grounding: Grounding,
+    *, now_ms: int, tz: tzinfo, allowance_of: Mapping[int, int], message_chars: int,
+) -> list[str]:
+    rows = [stimuli[sid] for sid in item.stimulus_ids if sid in stimuli]
+    head = (
+        f"{index}. {item.summary}{returning(item.strike)} "
+        f"[room {room_label(item.room, grounding.room_labels)}]"
+        f"{_item_age(item, [s.at_ms for s in rows], now_ms, tz)}"
+    )
+    lines, unreadable = _item_lines(
+        item, rows, grounding, grounding.own_sends.get(index, ()),
+        now_ms=now_ms, tz=tz, message_chars=message_chars,
+    )
     lines.sort(key=lambda t: (t[0], t[1]))
     body = [t[2] for t in lines]
     kept, cut = _fit(body, allowance_of.get(index, 0))
@@ -235,16 +321,13 @@ def _needs(
     *, now_ms: int, tz: tzinfo, message_chars: int,
 ) -> list[int]:
     needs = []
-    for item in items:
-        total = 0
-        for sid in item.stimulus_ids:
-            s = stimuli.get(sid)
-            rec = None if s is None else grounding.records.get(s.ref)
-            if s is not None and rec is not None and rec.room == item.room:
-                total += len(_record_line(
-                    rec, s.cues, now_ms=now_ms, tz=tz, message_chars=message_chars,
-                )) + 1
-        needs.append(total)
+    for index, item in enumerate(items):
+        rows = [stimuli[sid] for sid in item.stimulus_ids if sid in stimuli]
+        lines, _ = _item_lines(
+            item, rows, grounding, grounding.own_sends.get(index, ()),
+            now_ms=now_ms, tz=tz, message_chars=message_chars,
+        )
+        needs.append(sum(len(t[2]) + 1 for t in lines))
     return needs
 
 
@@ -275,7 +358,7 @@ def _register(
         events = [e for e in grounding.events if e.room == room]
         if not events:
             continue
-        out.append(f"Already recorded for room {room_key(room)}:")
+        out.append(f"Already recorded for room {room_label(room, grounding.room_labels)}:")
         out.extend(_event_line(e, now_ms, tz) for e in events[: budget.register_lines])
     if not out:
         return []
@@ -314,7 +397,8 @@ def render_agenda(
     for i, item in enumerate(items):
         if now_ms is None:
             blocks.append(
-                f"{i}. {item.summary}{returning(item.strike)} [room {room_key(item.room)}]"
+                f"{i}. {item.summary}{returning(item.strike)} "
+                f"[room {room_label(item.room, ground.room_labels)}]"
             )
             continue
         blocks.extend(_item_block(
@@ -334,5 +418,5 @@ def render_agenda(
 
 
 __all__ = [
-    "RenderBudget", "ago", "clock_line", "render_agenda", "returning", "room_key",
+    "RenderBudget", "ago", "clock_line", "render_agenda", "returning", "room_key", "room_label",
 ]

@@ -166,6 +166,10 @@ class WakeRow:
     #: Written with a session hook wired: the wake awaits an outcome row and
     #: is EXPIRED (read as failed) when it has none past the session timeout.
     tracked: bool = False
+    #: Stimuli inside `[.., through_stimulus_id]` this wake did NOT claim, so
+    #: they stay pending (`Watermark.unclaimed`). Empty for a wake that claims
+    #: everything pending, which is every wake before D2.
+    unclaimed_ids: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -182,6 +186,7 @@ class NewWake:
     at_ms: int
     detail: dict[str, object] = field(default_factory=dict)
     tracked: bool = False
+    unclaimed_ids: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -209,6 +214,17 @@ class WakeGuard:
 #: fail-closed on the side that keeps the message.
 FAILURE_CAUSES: tuple[str, ...] = ("infra", "agenda")
 DEFAULT_FAILURE_CAUSE = "infra"
+#: The cause a wake that did NOT fail records: a `closed` session, or one a
+#: shutdown `cancelled` (m2, DEC-245). Recording `infra` there read «the world
+#: failed» on a session that succeeded.
+NO_CAUSE = "none"
+OUTCOME_CAUSES: tuple[str, ...] = (*FAILURE_CAUSES, NO_CAUSE)
+
+
+def stored_cause(outcome: str, cause: str) -> str:
+    """The cause an outcome row is written with: `none` for `closed` and
+    `cancelled`, the classified one otherwise. The ONE rule both stores apply."""
+    return NO_CAUSE if outcome in ("closed", "cancelled") else cause
 
 
 class AgendaError(Exception):
@@ -348,19 +364,26 @@ WAKE_OUTCOMES: tuple[str, ...] = ("closed", "failed", "timeout", "cancelled")
 class Watermark:
     """`(through_stimulus_id, through_ms)`: every stimulus with `id <=
     through_stimulus_id` and pending since no later than `through_ms` is
-    consumed. `ZERO` is a unit that has never woken."""
+    consumed, EXCEPT the ids in `unclaimed`: a wake that claims only the
+    stimuli of its own kind (D2, DEC-245) leaves the rest pending, and a
+    range cannot say that, so the wake lists them. `ZERO` is a unit that has
+    never woken."""
 
     through_stimulus_id: int = 0
     through_ms: int = 0
+    unclaimed: frozenset[int] = frozenset()
 
     @classmethod
     def of(cls, wake: WakeRow | None) -> Watermark:
-        return cls() if wake is None else cls(wake.through_stimulus_id, wake.at_ms)
+        if wake is None:
+            return cls()
+        return cls(wake.through_stimulus_id, wake.at_ms, frozenset(wake.unclaimed_ids))
 
     def consumed(self, stimulus: Stimulus) -> bool:
         return (
             stimulus.id <= self.through_stimulus_id
             and stimulus.pending_since_ms <= self.through_ms
+            and stimulus.id not in self.unclaimed
         )
 
 
@@ -507,6 +530,10 @@ class Verdict:
     stimulus_count: int = 0
     eligible_count: int = 0
     oldest_pending_ms: int | None = None
+    #: The stimuli the wake takes (`claim`), and the ones inside its range it
+    #: leaves pending.
+    claimed_ids: frozenset[int] = frozenset()
+    unclaimed_ids: tuple[int, ...] = ()
 
 
 def failure_streak(newest_first: Iterable[LastSession | None]) -> int:
@@ -701,7 +728,10 @@ def decide(view: UnitView, policy: WakePolicy, now_ms: int) -> Verdict:
         if not (cooling and view.failures == 0 and strong and cue_quiet and not last_cut):
             return Verdict(brake="cooldown" if cooling else "backoff")
         reason, cut = "strong_cue", True
-    eligible = [s for s in view.pending if not s.waits]
+    claimed = claim(view, reason)
+    eligible = [s for s in claimed if not s.waits]
+    through = max(view.watermark.through_stimulus_id, max(s.id for s in claimed))
+    taken = {s.id for s in claimed}
     return Verdict(
         reason=reason,
         cut_cooldown=cut,
@@ -710,11 +740,36 @@ def decide(view: UnitView, policy: WakePolicy, now_ms: int) -> Verdict:
         # (appended at 15:00, due at 19:40); a wake that consumed only it and
         # set the watermark to its id would re-open every stimulus between,
         # resurrecting them as pending.
-        through_stimulus_id=max(
-            view.watermark.through_stimulus_id,
-            max(s.id for s in view.pending),
-        ),
-        stimulus_count=len(view.pending),
+        through_stimulus_id=through,
+        stimulus_count=len(claimed),
         eligible_count=len(eligible),
         oldest_pending_ms=min(s.pending_since_ms for s in eligible),
+        claimed_ids=frozenset(taken),
+        # What the range covers and the wake did NOT take (D2): listed, so the
+        # watermark leaves them pending. Above `through` they are pending
+        # anyway.
+        unclaimed_ids=tuple(
+            s.id for s in view.pending if s.id not in taken and s.id <= through
+        ),
     )
+
+
+#: The wake reasons that are about ONE kind of stimulus (20 §3, D2/DEC-245):
+#: a `rollup`, `time` or `self` wake claims only stimuli of that kind.
+_OWN_KIND_REASONS: frozenset[str] = frozenset({"rollup", "time", "self"})
+
+
+def claim(view: UnitView, reason: WakeReason) -> list[Stimulus]:
+    """The pending stimuli a wake for `reason` takes (D2, DEC-245).
+
+    `settled`, `strong_cue`, `batch` and `max_age` are about the pile or the
+    room, so they take every pending stimulus. `rollup`, `time` and `self` are
+    about one kind of stimulus: they take THAT kind only, and a room's messages
+    stay pending until they satisfy `settled` or `strong_cue` themselves, where
+    before a rollup wake consumed a room's unsettled conversation unseen. The
+    stimuli left over are recorded on the wake (`NewWake.unclaimed_ids`) so the
+    watermark never passes them: the claim is a SET, and no stimulus is lost or
+    processed twice."""
+    if reason in _OWN_KIND_REASONS:
+        return [s for s in view.pending if s.kind == reason and not s.waits]
+    return list(view.pending)

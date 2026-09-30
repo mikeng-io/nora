@@ -758,12 +758,13 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     # co-location still starting on the next run (the stimulus table keeps
     # one per row); `unhealthy` is a deviation withheld because a source it
     # rests on was not proved healthy for its span (D3) — a rise there is an
-    # outage, not a quiet week.
+    # outage, not a quiet week; `capped` is a deviation past the per-person
+    # per-day cap (D3, DEC-245).
     _CounterSpec(
         "nora_rollup_stimuli_total",
         "Rollup stimuli the unit rollups tried to raise, by kind "
         "(colocation_start, arrival, deviation) and outcome (raised, "
-        "duplicate, unhealthy).",
+        "duplicate, unhealthy, capped).",
         ("kind", "outcome"),
     ),
     # The READ half's counter (DEC-56). `cached` is the axis that makes "MiMo is
@@ -2353,6 +2354,14 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "or deferred item's stimulus with a strike; struck is code closing it "
         "at max_strikes (30 §2).",
         ("state",),
+    ),
+    _CounterSpec(
+        "nora_cognition_stimuli_skipped_total",
+        "Wakes that skipped stimuli a session could not read, by reason: "
+        "unreadable_rollup is a Rollup stimulus whose ref did not parse or named "
+        "a person the roster does not know (DEC-245). It counts the wakes, and the "
+        "skipped ids are on the session row (agenda.skipped_stimulus_ids).",
+        ("reason",),
     ),
     _CounterSpec(
         "nora_cognition_stimuli_struck_total",

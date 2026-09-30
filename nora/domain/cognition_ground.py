@@ -43,6 +43,11 @@ RECORD_REF_TABLES: tuple[str, ...] = ("messages", "message_reaction", "message_d
 
 RecordKind = Literal["message", "edit", "reaction", "delete"]
 
+#: What a room with no label is called in a prompt. Never its conversation id
+#: (R-18, and `nora.language.proactive.UNNAMED_ROOM`'s own rule): a raw id on a
+#: model's wire is an identifier egress and reads as noise.
+UNNAMED_ROOM = "a room with no name"
+
 
 def record_ref(stimulus: Stimulus) -> tuple[str, int] | None:
     """`(table, row id)` of the Record row a `message` stimulus names, or None
@@ -81,6 +86,68 @@ class RecordItem:
     #: there would outlive the person's withdrawal. A name is rendered to the
     #: model at read time and never serialized (#637 second review, minor 5).
     person_id: str | None = None
+    #: Nora's OWN send in the item's window (D1, DEC-245): context the room is
+    #: answering, marked as hers, never a stimulus and never something to cite.
+    own: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class RollupRef:
+    """What a Rollup stimulus's `ref` and `item` say, parsed (the producers are
+    `nora.analytics.units.UnitRollups._raise`): the row's kind, the person ids
+    it names, its interval and its place. `end_ms` is None for a co-location
+    still open. Person ids are the roster's, never a platform id."""
+
+    kind: str
+    person_ids: tuple[str, ...]
+    start_ms: int | None
+    end_ms: int | None
+    place: str | None = None
+
+
+def parse_rollup_ref(stimulus: Stimulus) -> RollupRef | None:
+    """The ref's fields, or None for a stimulus that is not a Rollup one or
+    whose `ref` is not one of the three shapes its producer writes:
+
+    - `colocation|<person>,<person>|<since ms>`
+    - `arrival|<place ref>|<person>|<since ms>`
+    - `deviation|<anomaly or silence>|<person>|<from ms>` (it ends at the
+      stimulus's own `at_ms`)
+
+    Unreadable is None, never a guess: a session is not handed a rollup row it
+    cannot read (D-decision 2026-09-30, DEC-245)."""
+    if stimulus.kind != "rollup":
+        return None
+    parts = stimulus.ref.split("|")
+    try:
+        if parts[0] == "colocation" and len(parts) == 3:
+            people = tuple(p for p in parts[1].split(",") if p)
+            return RollupRef("colocation", people, int(parts[2]), None) if people else None
+        if parts[0] == "arrival" and len(parts) == 4 and parts[2]:
+            return RollupRef("arrival", (parts[2],), int(parts[3]), None, place=parts[1] or None)
+        if parts[0] == "deviation" and len(parts) == 4 and parts[1] in ("anomaly", "silence") \
+                and parts[2]:
+            return RollupRef(
+                f"deviation_{parts[1]}", (parts[2],), int(parts[3]), stimulus.at_ms,
+            )
+    except ValueError:
+        return None
+    return None
+
+
+@dataclass(frozen=True, slots=True)
+class RollupLine:
+    """A Rollup stimulus as the session reads it: the `ref`'s fields with the
+    people's roster NAMES. Built at read time and never serialized (a name in
+    an append-only row outlives a person's withdrawal)."""
+
+    ref: str
+    kind: str
+    names: tuple[str, ...]
+    person_ids: tuple[str, ...]
+    start_ms: int | None
+    end_ms: int | None
+    place: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -119,6 +186,15 @@ class Grounding:
     records: Mapping[str, RecordItem] = field(default_factory=dict)
     notes: tuple[NoteLine, ...] = ()
     events: tuple[EventLine, ...] = ()
+    #: A Rollup stimulus's readable fields, by the stimulus `ref`. A rollup
+    #: stimulus with no entry here cannot be shown, and is not an agenda item.
+    rollups: Mapping[str, RollupLine] = field(default_factory=dict)
+    #: Nora's own sends inside each item's window, by the item's index in the
+    #: agenda that was grounded (D1): what the room's messages may be answering.
+    own_sends: Mapping[int, tuple[RecordItem, ...]] = field(default_factory=dict)
+    #: `platform:conversation_id` -> the room's label. The prompt says the
+    #: label; the id stays where a tool's argument needs it.
+    room_labels: Mapping[str, str] = field(default_factory=dict)
 
     def as_dict(self) -> dict[str, object]:
         """The JSON the session row keeps: what she was shown, by reference
@@ -134,10 +210,22 @@ class Grounding:
             ],
             "notes": [n.id for n in self.notes],
             "events": [e.id for e in self.events],
+            # By reference, and no name: a person id, the kind, the interval.
+            "rollups": [
+                {"ref": r.ref, "kind": r.kind, "person_ids": list(r.person_ids),
+                 "start_ms": r.start_ms, "end_ms": r.end_ms, "place": r.place}
+                for r in self.rollups.values()
+            ],
+            # Her own sends by message id and time; never the words.
+            "own_sends": {
+                str(i): [{"message_id": m.message_id, "at_ms": m.at_ms,
+                          "words_shown": m.text is not None} for m in sends]
+                for i, sends in self.own_sends.items()
+            },
         }
 
 
 __all__ = [
-    "RECORD_REF_TABLES", "EventLine", "Grounding", "NoteLine", "RecordItem", "RecordKind",
-    "record_ref",
+    "RECORD_REF_TABLES", "UNNAMED_ROOM", "EventLine", "Grounding", "NoteLine", "RecordItem",
+    "RecordKind", "RollupLine", "RollupRef", "parse_rollup_ref", "record_ref",
 ]

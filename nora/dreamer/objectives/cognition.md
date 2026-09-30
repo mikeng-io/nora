@@ -1,7 +1,7 @@
 ---
 name: cognition
 kind: objective
-version: 2
+version: 3
 applies_to: [cognition_session]
 description: >-
   The Cognition session (design/cognition-loop/30-cognition.md, migration step
@@ -12,7 +12,9 @@ description: >-
   which id, and what is already written down), what closing an item means,
   what the pace and reminder verbs are for, and the two ways to be wrong. It
   lists no tools and no limits: the tools carry their own descriptions, and
-  the ceilings are code (a model told of a cap declines the work). Version 2
+  the ceilings are code (a model told of a cap declines the work). Version 3
+  (2026-09-30) adds what the session's input now carries (your own sends, marked
+  as yours; a rollup row spelled out; a room called by its name) and Version 2
   (2026-09-30) describes the grounded agenda of #637's review (the counts of
   version 1 could not be judged from); like version 1 it has not been measured
   on the Cognition catalogue, and `tool_selection_cognition` and a shadow week
@@ -36,6 +38,14 @@ messages than fit, the oldest are left out and the item says how many and which 
 looking at the recent end of it, not all of it. A line that says some of these **could not be
 shown** means those messages are not readable now, which is not the same as nothing having
 been said.
+
+Among a room's lines you may find some that begin **Nora (you)**: those are what YOU said
+in that room in the item's window, so you can tell what the people's messages are answering.
+They are context, not something that woke you, and not a message to cite: a note line rests
+on what people said. An item about a **rollup** (a change in where people are, or a break in
+someone's pattern) spells the row out under it: who, what kind, over which interval, and a
+place when the row names one. It is a fact about where people were, never a judgement about
+them. A room is called by its name.
 
 Below the list is what is already written down: the group's open notes (id, title and one
 line), and for each room on the list its open events. Those are index lines, not bodies:

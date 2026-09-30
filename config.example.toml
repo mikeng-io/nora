@@ -1023,6 +1023,7 @@ enabled = false
 # response_window_seconds = 3600       #   how long after her send an answer still counts
 # stimulus_horizon_seconds = 3600      #   a Rollup stimulus only for a row this recent
 # deviation_silence_days = 2           #   silent in every room and never home, N days
+# deviation_stimuli_per_person_per_day = 1  #   D3: a cap until `rollup_read` exists
 # health_max_poll_gap_seconds = 900    #   the longest poll gap a healthy collector leaves
 # tz_name = "Asia/Hong_Kong"
 # metrics_port = 9103
@@ -2376,6 +2377,11 @@ overflow_window_fraction = 0.8
 record_chars = 8000
 message_chars = 400
 register_lines = 40
+# D1 (DEC-245): Nora's own sends inside each item's window are shown, marked as
+# hers, so the room's messages can be read as what they answer. The window opens
+# this long before the item's oldest message; at most `own_sends_max` newest.
+own_send_lookback_seconds = 1800.0
+own_sends_max = 6
 
 # The Assess adaptor (design/cognition-loop/30-cognition.md §6,
 # 70-migration.md §2 row 3): reports and metrics only, never a tier write.
