@@ -189,27 +189,6 @@ class _Pin(NamedTuple):
 # the artifact that gets re-derived from scratch by the next session that
 # notices one of them.
 _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
-    ("cognition_dry_run.py", "record_session"): _Pin(
-        "deferred_consumer",
-        "The Cognition adaptor's session row — migration step 3a builds the "
-        "session/agenda and the note/event/Standing dry-run verbs "
-        "(design/cognition-loop/70-migration.md §2 row 3a), but wiring an "
-        "actual loop that starts a session on the wake evaluator's "
-        "would-wakes and calls this method is step 3a-ii's job, deliberately "
-        "not this row's: `record_would_write` (the dry-run verbs' own call) "
-        "IS exercised, by every dry-run wrapper in "
-        "`nora.agent.cognition_dry_run`. `tests/contract/"
-        "test_cognition_dry_run_store_contract.py` proves this method works "
-        "against both implementations; 3a-ii is the consumer.",
-    ),
-    ("cognition_dry_run.py", "record_close"): _Pin(
-        "deferred_consumer",
-        "Same reason as `record_session` right above: an agenda item's close "
-        "is written by the session LOOP deciding to close it, which does not "
-        "exist yet at this step (`nora.domain.cognition_session.close_or_strike` "
-        "computes the outcome, pure; nothing calls this store method with it "
-        "yet). Step 3a-ii's session loop is the consumer.",
-    ),
     ("culture.py", "chain"): _Pin(
         "deferred_consumer",
         "The revision chain, newest first, walked through parent links. The "

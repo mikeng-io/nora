@@ -2313,6 +2313,19 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         ("reason", "mode"),
     ),
     _CounterSpec(
+        "nora_cognition_session_total",
+        "Cognition sessions started in shadow (migration step 3a-ii): one "
+        "per would-wake whose agenda was non-empty, session row recorded "
+        "before the model call.",
+        ("mode",),
+    ),
+    _CounterSpec(
+        "nora_cognition_session_skipped_total",
+        "Would-wakes on which no Cognition session ran, by reason "
+        "(no_home_room / empty_agenda). No model call is made on either.",
+        ("reason",),
+    ),
+    _CounterSpec(
         "nora_cognition_wake_deferred_total",
         "Unit-ticks where a wake trigger held and a brake stopped it, by "
         "brake ("

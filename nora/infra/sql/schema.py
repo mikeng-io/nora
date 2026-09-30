@@ -3812,7 +3812,9 @@ COGNITION_SESSION_CLOSE = sa.Table(
     # (tests/integration/test_snapshot_holds_what_was_held.py) appends each
     # APPEND-ONLY table's row independently, with no ordering guarantee
     # that a session row for a given id already exists.
-    sa.Column("session_id", sa.BigInteger, nullable=True),
+    sa.Column(
+        "session_id", sa.BigInteger, sa.ForeignKey("cognition_session.id"), nullable=True,
+    ),
     sa.Column("item_index", sa.Integer, nullable=False),
     sa.Column("kind", sa.Text, nullable=False),
     sa.Column("reason", sa.Text, nullable=False),
@@ -3834,7 +3836,9 @@ COGNITION_WOULD_WRITE = sa.Table(
     "cognition_would_write",
     METADATA,
     sa.Column("id", sa.BigInteger, sa.Identity(always=False), primary_key=True),
-    sa.Column("session_id", sa.BigInteger, nullable=True),
+    sa.Column(
+        "session_id", sa.BigInteger, sa.ForeignKey("cognition_session.id"), nullable=True,
+    ),
     sa.Column("unit", sa.Text, nullable=False),
     sa.Column("tier", sa.Text, nullable=False),
     sa.Column("verb", sa.Text, nullable=False),
