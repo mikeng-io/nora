@@ -62,6 +62,12 @@ async def _run(engine: Any, *, tolerance_min: int = 60, unit: str | None = None)
     )
 
 
+async def _run_with(engine: Any, directory: RoomDirectory):
+    return await run_shadow_compare(
+        engine, WINDOW, tolerance_ms=60 * 60_000, unit=None, directory=directory,
+    )
+
+
 def _writer(report: Any, tier: str, writer: str) -> Any:
     tr = next(t for t in report.tiers if t.tier == tier)
     return tr, next(w for w in tr.writers if w.writer == writer)
@@ -82,7 +88,7 @@ async def _would(engine: Any, at: datetime, tier: str, verb: str, *, room: str =
 
 async def _note(engine: Any, *, by: str, at: datetime, room: str = "room-a", unit: str = "u",
                 anchor_date: int | None = 20260930, parent: bool = False,
-                note_id: str | None = None) -> tuple[str, str]:
+                note_id: str | None = None, title: str = "t") -> tuple[str, str]:
     """A note and one revision of it by `by`. `parent=True` writes a LATER
     revision on an existing note (`note_id`)."""
     async with engine.begin() as conn:
@@ -90,7 +96,7 @@ async def _note(engine: Any, *, by: str, at: datetime, room: str = "room-a", uni
             note_id = str(uuid4())
             head = str(uuid4())
             await conn.execute(sa.insert(NOTE).values(
-                id=note_id, unit=unit, title="t", description="d", uncertainty="u",
+                id=note_id, unit=unit, title=title, description="d", uncertainty="u",
                 closing_condition="c", anchor_date=anchor_date, established_in=room,
                 created_at=_ms(at), head_revision_id=head,
             ))
@@ -144,18 +150,27 @@ async def _event(engine: Any, at: datetime, *, title: str = "Dinner", room: str 
 
 
 async def _session_close(engine: Any, at: datetime, reason: str, *, room: str = "room-a",
-                         unit: str = "u", agenda: Any = None) -> None:
+                         unit: str = "u", agenda: Any = None, kind: str = "message",
+                         cites: str = "") -> None:
+    """A session with one agenda item and its close. `cites` is text the item's
+    summary carries (a note or event id)."""
     async with engine.begin() as conn:
         sid = (await conn.execute(sa.insert(COGNITION_SESSION).values(
             unit=unit, mode="shadow", started_at_ms=_ms(at), from_stimulus_id=1,
             through_stimulus_id=1, situation={},
             agenda=agenda if agenda is not None else {"items": [
-                {"kind": "message", "platform": "signal", "conversation_id": room}]},
+                {"kind": kind, "platform": "signal", "conversation_id": room,
+                 "summary": f"3 new messages {cites}".strip(), "cues": []}]},
             recorded_at=at,
         ).returning(COGNITION_SESSION.c.id))).scalar_one()
         await conn.execute(sa.insert(COGNITION_SESSION_CLOSE).values(
-            session_id=sid, item_index=0, kind="message", reason=reason, recorded_at=at,
+            session_id=sid, item_index=0, kind=kind, reason=reason, recorded_at=at,
         ))
+
+
+def _tag(report: Any) -> Any:
+    tr = next(t for t in report.tiers if t.tier == "event")
+    return tr, next((w for w in tr.tag_path if w.writer == "event:tag"), None)
 
 
 # ---- note tier ------------------------------------------------------------
@@ -172,7 +187,26 @@ async def test_a_note_update_matches_the_revision_of_the_same_note_by_its_writer
 async def test_a_note_create_matches_a_first_revision_in_the_same_room_with_the_same_anchor(engine):
     await _note(engine, by="dream:note-candidates:k:1", at=T0, anchor_date=20260930)
     await _would(engine, T0, "note", "note_create", candidate={
-        "anchor_date": 20260930, "anchor_entity_ids": []})
+        "anchor_date": 20260930, "anchor_entity_ids": [], "title": "T"})
+    tier, w = _writer(await _run(engine), "note", "note-candidates")
+    assert w.matched == 1 and not w.clocked_only and not tier.cognition_only
+
+
+async def test_a_create_on_the_same_day_with_another_title_is_another_note(engine):
+    await _note(engine, by="dream:note-candidates:k:1", at=T0, title="Dentist")
+    await _would(engine, T0, "note", "note_create", candidate={
+        "anchor_date": 20260930, "anchor_entity_ids": [], "title": "Passport renewal"})
+    tier, w = _writer(await _run(engine), "note", "note-candidates")
+    assert w.matched == 0 and len(w.clocked_only) == 1 and len(tier.cognition_only) == 1
+
+
+async def test_a_create_is_read_at_the_anchor_the_revision_wrote_not_the_notes_current_one(engine):
+    note_id, _ = await _note(engine, by="dream:note-candidates:k:1", at=T0, title="Dentist")
+    async with engine.begin() as conn:   # a later curation moves the anchor and retitles it
+        await conn.execute(sa.update(NOTE).where(NOTE.c.id == note_id).values(
+            anchor_date=20261015, title="Dentist (moved)"))
+    await _would(engine, T0, "note", "note_create", candidate={
+        "anchor_date": 20260930, "anchor_entity_ids": [], "title": "dentist"})
     tier, w = _writer(await _run(engine), "note", "note-candidates")
     assert w.matched == 1 and not w.clocked_only and not tier.cognition_only
 
@@ -234,32 +268,82 @@ async def test_a_note_update_does_not_match_a_first_revision_of_the_same_note(en
 # ---- deliberately closed ---------------------------------------------------
 
 @pytest.mark.parametrize("reason", ["no_change", "waiting", "covered"])
-async def test_a_close_in_the_same_room_explains_a_clocked_only_row(engine, reason):
-    await _note(engine, by="dream:note-curation:k:1", at=T0, parent=True)
-    await _session_close(engine, T0 + timedelta(minutes=10), reason)
+async def test_a_close_in_the_same_room_naming_the_note_explains_a_clocked_only_row(engine, reason):
+    note_id, _ = await _note(engine, by="dream:note-curation:k:1", at=T0, parent=True)
+    await _session_close(engine, T0 + timedelta(minutes=10), reason, cites=f"note {note_id}")
     _, w = _writer(await _run(engine), "note", "note-curation")
     assert [g.closed_by for g in w.clocked_only] == [reason] and w.closed == 1 and w.open == 0
 
 
 @pytest.mark.parametrize("reason", ["written", "struck"])
 async def test_written_and_struck_do_not_explain_anything(engine, reason):
-    await _note(engine, by="dream:note-curation:k:1", at=T0, parent=True)
-    await _session_close(engine, T0, reason)
+    note_id, _ = await _note(engine, by="dream:note-curation:k:1", at=T0, parent=True)
+    await _session_close(engine, T0, reason, cites=note_id)
     _, w = _writer(await _run(engine), "note", "note-curation")
     assert w.closed == 0 and w.open == 1
 
 
 async def test_a_close_in_another_room_or_outside_the_tolerance_does_not_close_it(engine):
-    await _note(engine, by="dream:note-curation:k:1", at=T0, parent=True)
-    await _session_close(engine, T0, "no_change", room="room-b")
-    await _session_close(engine, T0 + timedelta(hours=5), "no_change")
+    note_id, _ = await _note(engine, by="dream:note-curation:k:1", at=T0, parent=True)
+    await _session_close(engine, T0, "no_change", room="room-b", cites=note_id)
+    await _session_close(engine, T0 + timedelta(hours=5), "no_change", cites=note_id)
     _, w = _writer(await _run(engine, tolerance_min=60), "note", "note-curation")
     assert w.open == 1
 
 
+async def test_a_close_before_the_clocked_write_does_not_explain_it(engine):
+    note_id, _ = await _note(engine, by="dream:note-curation:k:1", at=T0, parent=True)
+    await _session_close(engine, T0 - timedelta(minutes=5), "no_change", cites=note_id)
+    _, w = _writer(await _run(engine), "note", "note-curation")
+    assert w.open == 1
+
+
+async def test_a_close_that_names_another_note_or_none_does_not_close_a_note_row(engine):
+    note_id, _ = await _note(engine, by="dream:note-curation:k:1", at=T0, parent=True)
+    await _session_close(engine, T0 + timedelta(minutes=5), "no_change", cites=str(uuid4()))
+    await _session_close(engine, T0 + timedelta(minutes=6), "no_change")
+    _, w = _writer(await _run(engine), "note", "note-curation")
+    assert w.open == 1 and note_id
+
+
+async def test_a_rollup_close_does_not_close_a_note_row(engine):
+    note_id, _ = await _note(engine, by="dream:note-curation:k:1", at=T0, parent=True)
+    await _session_close(engine, T0 + timedelta(minutes=1), "no_change", kind="rollup",
+                         cites=note_id)
+    assert _writer(await _run(engine), "note", "note-curation")[1].open == 1
+
+
+async def test_a_time_close_does_not_close_a_standing_row_but_a_rollup_close_does(engine):
+    await _standing(engine, T0, 2)
+    await _session_close(engine, T0 + timedelta(minutes=2), "no_change", kind="time")
+    assert _writer(await _run(engine), "standing", "standing-debrief")[1].open == 1
+    await _session_close(engine, T0 + timedelta(minutes=3), "no_change", kind="rollup")
+    assert _writer(await _run(engine), "standing", "standing-debrief")[1].closed == 1
+
+
+async def test_one_waiting_close_does_not_close_three_writers_rows(engine):
+    await _standing(engine, T0 - timedelta(days=3), 1)
+    await _standing(engine, T0, 2)                                        # debrief
+    await _standing(engine, T0 + timedelta(minutes=1), 2)                 # ingest fold
+    await _standing(engine, T0 + timedelta(minutes=2), 3)                 # debrief
+    await _session_close(engine, T0 + timedelta(minutes=10), "waiting")
+    report = await _run(engine)
+    tier = next(t for t in report.tiers if t.tier == "standing")
+    assert sum(w.closed for w in tier.writers) == 1
+    assert sum(w.open for w in tier.writers) == 2      # 3 rows in the window, one explained
+
+
+async def test_a_refused_would_write_nearby_does_not_close_a_row(engine):
+    await _standing(engine, T0, 2)
+    await _would(engine, T0 + timedelta(minutes=1), "standing", "standing_revise",
+                 outcome="refused")
+    _, w = _writer(await _run(engine), "standing", "standing-debrief")
+    assert w.open == 1 and w.clocked_only[0].refused_nearby == 1
+
+
 async def test_a_close_with_an_unreadable_agenda_explains_nothing_and_says_so(engine):
     await _note(engine, by="dream:note-curation:k:1", at=T0, parent=True)
-    await _session_close(engine, T0, "no_change", agenda={"items": []})
+    await _session_close(engine, T0 + timedelta(minutes=1), "no_change", agenda={"items": []})
     tier, w = _writer(await _run(engine), "note", "note-curation")
     assert w.open == 1 and any("unreadable agenda" in n for n in tier.notes)
 
@@ -275,8 +359,8 @@ async def test_standing_writers_are_told_apart_by_fold_count_and_match_by_room(e
     report = await _run(engine)
     tier, debrief = _writer(report, "standing", "standing-debrief")
     _, ingest = _writer(report, "standing", "standing-ingest-fold")
-    assert debrief.matched == 1 and not debrief.clocked_only
-    assert ingest.matched == 0 and len(ingest.clocked_only) == 1 and not tier.cognition_only
+    assert debrief.coincident == 1 and debrief.matched == 0 and not debrief.clocked_only
+    assert ingest.coincident == 0 and len(ingest.clocked_only) == 1 and not tier.cognition_only
 
 
 async def test_a_would_write_with_no_live_write_is_cognition_only(engine):
@@ -292,15 +376,15 @@ async def test_event_propose_matches_by_room_and_title_and_revise_by_event_id(en
     eid = await _event(engine, T0, title="Lunch", parent=True)
     await _would(engine, T0, "event", "event_propose", candidate={"title": "dinner"})
     await _would(engine, T0, "event", "event_revise", candidate={"id": str(eid)})
-    tier, w = _writer(await _run(engine), "event", "event:tag")
+    tier, w = _tag(await _run(engine))
     assert w.matched == 2 and not w.clocked_only and not tier.cognition_only
+    assert tier.writers == ()
 
 
 async def test_a_backfill_revision_is_not_a_live_write(engine):
     await _event(engine, T0, written_by="backfill")
-    tier, w = _writer(await _run(engine), "event", "event:tag")
-    assert w.matched == 0 and not w.clocked_only
-    assert [x.writer for x in tier.writers] == ["event:tag"]
+    tier, w = _tag(await _run(engine))
+    assert w is None and tier.writers == ()
 
 
 # ---- culture ----------------------------------------------------------------
@@ -310,7 +394,7 @@ async def test_culture_writes_are_clocked_only_by_construction_and_never_closed(
         await conn.execute(sa.insert(CULTURE_REVISION).values(
             culture_key="room-a", body="b", written_at=_ms(T0),
             established_by="dream:culture:k:1", recorded_at=T0))
-    await _session_close(engine, T0, "no_change")
+    await _session_close(engine, T0 + timedelta(minutes=1), "no_change")
     tier, w = _writer(await _run(engine), "culture", "culture")
     assert len(w.clocked_only) == 1 and w.closed == 0
     assert any("no culture verb" in n for n in tier.notes)
@@ -424,3 +508,56 @@ async def test_the_output_names_ids_labels_and_times_and_no_room_id(engine):
     text = "\n".join(render_text(report, DIRECTORY)) + json.dumps(report_json(report, DIRECTORY))
     assert "Dinner" in text and "room-a" not in text
     assert "note-curation: 0 matched" in "\n".join(verdict_lines(report))
+
+
+async def test_the_live_tag_path_is_reported_apart_and_in_no_gate_verdict(engine):
+    await _event(engine, T0, title="Dinner")                 # written_by = 'tag'
+    report = await _run(engine)
+    _, tag = _tag(report)
+    assert tag is not None and len(tag.clocked_only) == 1 and tag.clocked_only[0].closed_by is None
+    assert not any("event:tag" in line for line in verdict_lines(report))
+    assert any("event:tag" in line for line in report_json(report, DIRECTORY)["tag_path"])
+
+
+# ---- privacy: no conversation id, phone number or member name, in any tier -------
+
+PHONE, OTHER_PHONE, MEMBER = "+85291234567", "+85299998888", "Alice Walsh"
+
+
+async def test_no_tier_prints_a_room_id_a_phone_number_or_a_member_name(engine):
+    import json
+
+    from nora.domain.cognition_shadow_compare import render_text
+    directory = RoomDirectory(labels={PHONE: "Dinner"}, unit_rooms={})
+    rooms = (PHONE, f"signal:{OTHER_PHONE}")             # one labelled, one not
+    for n, room in enumerate(rooms):
+        at = T0 + timedelta(minutes=n)
+        await _note(engine, by="dream:note-curation:k:1", at=at, parent=True, room=room,
+                    title=MEMBER)
+        await _note(engine, by="dream:note-candidates:k:1", at=at, room=room, title=MEMBER)
+        await _event(engine, at, room=room, title=MEMBER, written_by="tag")
+        await _event(engine, at, room=room, title=MEMBER, written_by="someone")
+        await _standing(engine, at, 1, room=room)
+        await _standing(engine, at + timedelta(seconds=1), 2, room=room)
+        async with engine.begin() as conn:
+            await conn.execute(sa.insert(CULTURE_REVISION).values(
+                culture_key=room, body=MEMBER, written_at=_ms(at),
+                established_by="dream:culture:k:1", recorded_at=at))
+            await conn.execute(sa.insert(DECISION_LOG).values(
+                id=f"d{n}", writer="proactive_decide", platform="signal", conversation_id=room,
+                unit="u", note_id=f"n{n}", verdict="remind", reason=MEMBER, ts=_ms(at),
+                recorded_at=at))
+        await _reminder(engine, {"note_id": f"p{n}"}, at, room=room)
+        await _reminder(engine, {}, at, room=room)
+        await _would(engine, at, "standing", "standing_revise", room=room)
+        await _would(engine, at, "note", "note_create", room=room, candidate={
+            "anchor_date": 1, "anchor_entity_ids": [], "title": MEMBER})
+        await _session_close(engine, at + timedelta(minutes=5), "waiting", room=room)
+    report = await _run_with(engine, directory)
+    # every tier really reported a clocked-only row, so the absence below is not vacuous
+    for tier in report.tiers:
+        assert any(w.clocked_only for w in (*tier.writers, *tier.tag_path)), tier.tier
+    text = "\n".join(render_text(report, directory)) + json.dumps(report_json(report, directory))
+    for secret in (PHONE, OTHER_PHONE, "85291234567", "85299998888", "Alice", "Walsh"):
+        assert secret not in text, secret
+    assert "Dinner" in text and "room#" in text

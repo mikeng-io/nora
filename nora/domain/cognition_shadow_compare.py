@@ -19,21 +19,34 @@ THE MATCHING RULES (one per tier; a pair is one-to-one, a row is in at most one)
   revision's `established_by = dream:<writer>:...`). A would-write
   `note_update` matches a clocked REVISION (parent not null) of the same note
   id. A would-write `note_create` matches a clocked FIRST revision in the same
-  room whose note carries the same anchor (`anchor_date` and the sorted
-  `anchor_entity_ids`). Room is required for a create and NOT for an update: a
-  note belongs to the unit, `established_in` is a routing key, and the same
-  note is revised from any room.
-- `event` (writer `event:<written_by>`, today always `event:tag`: no clocked
-  writer sets `written_by`, so the tag path's own writes land here until one
-  does). `event_propose` matches a clocked first revision in the same room with
-  the same title; `event_revise` matches a clocked later revision of the same
-  event id.
+  room whose note carried, AS OF THAT REVISION, the same anchor (`anchor_date`
+  and the sorted `anchor_entity_ids`) AND either the same title (casefolded,
+  whitespace collapsed) or a non-empty, equal entity set: a date alone is not an
+  identity (two notes for the same day are two notes), and the note row a later
+  curation has since moved is not the note the writer created, so the caller
+  reads the anchor and title from `row_history` at the revision's own time.
+  Room is required for a create and NOT for an update: a note belongs to the
+  unit, `established_in` is a routing key, and the same note is revised from any
+  room.
+- `event`. No clocked writer writes events: `written_by = 'tag'` is the LIVE tag
+  path, which step 4 does not retire, so it is reported in its own section
+  ("tag path (not retired)") and is in no per-writer gate verdict. A
+  `written_by` other than `tag` and `backfill` would be a clocked writer and is
+  reported as `event:<written_by>`. `event_propose` matches a clocked first
+  revision in the same room with the same title; `event_revise` matches a
+  clocked later revision of the same event id.
 - `standing` (writers `standing-debrief`, `standing-ingest-fold`). Keyed by
   room. `standing_revision` does not name its writer, so the writer is DERIVED
   from `fold_count`: the debrief fold increments it, the rollup (ingest) fold
   carries it (`increments_fold_count=False`, DEC-239); a room's first revision
   counts as a debrief when `fold_count >= 1`. `source = 'operator'` edits are
-  not a clocked writer and are not read.
+  not a clocked writer and are not read. A Standing pair is room plus time
+  ONLY: the recorded write does not say which messages the fold read, so "the
+  cognition would-write came after the clocked write's input window" cannot be
+  checked, and a pair is therefore reported as COINCIDENT, never as matched: both
+  arms revised that room's Standing at about the same time, which is not the
+  same as agreeing on what it should say. `matched` is 0 for a Standing writer
+  by construction.
 - `culture` (writer `culture`). Cognition has no culture verb (its tiers are
   note, event and Standing; step 4 moves culture to `character_revise`), so
   every clocked write is clocked-only by construction and is reported as such,
@@ -47,7 +60,7 @@ THE MATCHING RULES (one per tier; a pair is one-to-one, a row is in at most one)
   nor an event cannot be keyed: it is clocked-only with `keyless`, never
   dropped.
 
-The three keyed tiers match inside a TIME TOLERANCE: a clocked write and a
+The keyed tiers match inside a TIME TOLERANCE: a clocked write and a
 would-write pair only when their recorded times are within `tolerance_ms`.
 Matching is greedy and deterministic: clocked rows in time order, each taking
 the nearest unused compatible would-write (ties by id), so the same input is
@@ -56,21 +69,51 @@ window; an unmatched row counts only when it is itself in the window.
 
 DELIBERATELY CLOSED
 
-A clocked-only row is `closed` when cognition looked at that room at about that
-time and decided nothing needed writing: a `cognition_session_close` row with
-reason `no_change`, `waiting` or `covered` whose agenda item is in the same
-room, closed within the tolerance of the clocked row. `written` does not close
-a row (it claims a write happened, and B3 means nothing proves it did) and
-`struck` does not (code's own strike at `max_strikes`, not a decision). One
-close can explain every clocked-only row in its room and window. A clocked-only
-row no close explains is `open`. A cognition-only row is never closed: it is
-the other arm's extra write, not an omission.
+A clocked-only row is `closed` when cognition looked at THAT thing and decided
+nothing needed writing. A `cognition_session_close` row with reason `no_change`,
+`waiting` or `covered` explains a clocked-only row only when ALL of these hold:
+
+1. the close's agenda item is in the row's room;
+2. the item's kind maps to the row's tier (`CLOSE_KIND_TIERS`: a `message` item
+   is about notes, events, Standing and the act tiers, a `time` item about notes,
+   events and the act tiers, a `rollup` item about Standing; `self`, `social` and
+   `play` are about none of them; culture is never explained);
+3. where the row carries a note or event id, the item names that id (an id in its
+   summary, cues, or `note_id` / `event_id` fields). A close that names no id
+   explains only rows that carry none (Standing, a keyless proactive row);
+4. the close was recorded AFTER the clocked write (the session looked at what was
+   there) and within the tolerance of it;
+5. it explains ONE row. Rows are taken in time order, each claims the nearest
+   unused eligible close, ties by reason then session. One `waiting` close is one
+   explained row, not every row in its room.
+
+`written` does not close a row (it claims a write happened, and B3 means nothing
+proves it did) and `struck` does not (code's own strike at `max_strikes`, not a
+decision). A refused would-write nearby does not close a row either: it is
+named beside it (`refused_nearby`) and the row stays open. A clocked-only row
+no close explains is `open`. A cognition-only row is never closed: it is the
+other arm's extra write, not an omission. The pool of closes is shared by every
+tier of one report (tiers in report order), so a close is spent once.
 
 Refused would-writes (`outcome = 'refused'`) are not writes cognition made.
 They are not matched and not cognition-only; each clocked-only row carries how
 many were refused in its room within the tolerance (`refused_nearby`), because
 "cognition tried and was refused" is a different finding from "cognition never
 looked".
+
+FAIL-CLOSED
+
+THE TOLERANCE. The default is `DEFAULT_TOLERANCE_MINUTES` (65): the cadence of
+the HOURLY clocked writers (`note-candidates`, and `note-merge` in shadow, both
+"hourly" in `config.example.toml`) plus one scheduler tick
+(`[dreamer.schedule] tick_seconds = 300`). A clocked write records when the
+hourly pass ran; the cognition session records when the wake fired (seconds to
+`quiet_seconds` after the stimulus); the two can differ by up to one cadence.
+The DAILY writers (`note-curation` at the 00:00 floor, the Standing folds at
+`fold_interval_seconds = 86400`) run once a day, so a 65-minute default will
+show their rows as clocked-only more often than a wider one; widen
+`--tolerance-minutes` (1445 covers a day plus a tick) to read them, and read the
+result as a widening, not a pass. A narrow tolerance errs toward OPEN.
 
 FAIL-CLOSED
 
@@ -93,11 +136,26 @@ from nora.domain.cognition_compare import CompareResult
 #: A `cognition_session_close` reason that explains a clocked-only row.
 CLOSING_REASONS: tuple[str, ...] = ("no_change", "waiting", "covered")
 
+#: The default tolerance, derived (see THE TOLERANCE): the hourly clocked
+#: writers' cadence plus one scheduler tick.
+DEFAULT_TOLERANCE_MINUTES = 65
+
+#: Which tiers an agenda item of a kind is about. A kind absent here explains
+#: nothing; culture is in no set (cognition has no culture verb).
+CLOSE_KIND_TIERS: Mapping[str, frozenset[str]] = {
+    "message": frozenset({"note", "event", "standing", "act", "act-decision"}),
+    "time": frozenset({"note", "event", "act", "act-decision"}),
+    "rollup": frozenset({"standing"}),
+}
+
+#: Writers that are LIVE paths, not clocked writers step 4 retires.
+TAG_PATH_WRITERS: frozenset[str] = frozenset({"event:tag"})
+
 #: The writers each tier is ALWAYS reported with, so a writer that wrote nothing
 #: reads `0 matched ... 0 clocked-only` and never as an absent line.
 EXPECTED_WRITERS: Mapping[str, tuple[str, ...]] = {
     "note": ("note-candidates", "note-curation", "note-merge"),
-    "event": ("event:tag",),
+    "event": (),
     "standing": ("standing-debrief", "standing-ingest-fold"),
     "culture": ("culture",),
     "act": ("proactive",),
@@ -190,6 +248,11 @@ class Close:
     room: str
     reason: str
     at_ms: int
+    #: The item's kind (`message`, `time`, `rollup`, ...): which tiers it is about.
+    kind: str = "message"
+    #: Ids the item names (tokens of its summary and cues, and any `note_id` /
+    #: `event_id` field). A close that names none explains only id-less rows.
+    cited: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True, slots=True)
@@ -216,6 +279,9 @@ class WriterVerdict:
     status: Status
     matched: int | None
     clocked_only: tuple[Gap, ...] = ()
+    #: Standing only: a pair by room and time, which does not show the two arms
+    #: agreed (see the module docstring). Never counted in `matched`.
+    coincident: int | None = 0
 
     @property
     def closed(self) -> int | None:
@@ -240,13 +306,16 @@ class TierResult:
     refused: int | None = 0
     error: str | None = None
     notes: tuple[str, ...] = ()
+    #: The live tag path's writes, reported apart: not a writer step 4 retires,
+    #: so in no per-writer gate verdict.
+    tag_path: tuple[WriterVerdict, ...] = ()
 
     @classmethod
     def errored(cls, tier: str, error: str) -> TierResult:
         return cls(
             tier=tier, status="error", error=error, refused=None,
             writers=tuple(
-                WriterVerdict(writer=w, status="error", matched=None)
+                WriterVerdict(writer=w, status="error", matched=None, coincident=None)
                 for w in EXPECTED_WRITERS[tier]
             ),
         )
@@ -265,19 +334,45 @@ class ShadowReport:
         return any(t.status == "error" for t in self.tiers)
 
 
-def _explain(room: str, at_ms: int, closes: Sequence[Close], tolerance_ms: int) -> str | None:
-    """The reason of the nearest close in `room` within the tolerance, or None."""
-    best: tuple[int, str, int] | None = None
-    for close in closes:
-        if close.reason not in CLOSING_REASONS or room_id(close.room) != room_id(room):
-            continue
-        gap = abs(close.at_ms - at_ms)
-        if gap > tolerance_ms:
-            continue
-        rank = (gap, close.reason, close.session_id if close.session_id is not None else 0)
-        if best is None or rank < best:
-            best = rank
-    return None if best is None else best[1]
+class CloseLedger:
+    """The closes of one report, each spendable ONCE. `claim` hands a clocked-only
+    row the nearest unused close that is eligible for it (module docstring,
+    DELIBERATELY CLOSED); the caller claims rows in time order, so the result is
+    a pure function of its input."""
+
+    def __init__(self, closes: Sequence[Close], tolerance_ms: int) -> None:
+        self._closes = sorted(
+            (c for c in closes if c.reason in CLOSING_REASONS),
+            key=lambda c: (c.at_ms, c.session_id if c.session_id is not None else 0, c.reason),
+        )
+        self._used: set[int] = set()
+        self._tolerance_ms = tolerance_ms
+
+    def claim(self, *, tier: str, room: str, at_ms: int, key: str) -> str | None:
+        best: tuple[int, str, int, int] | None = None
+        for index, close in enumerate(self._closes):
+            if index in self._used or room_id(close.room) != room_id(room):
+                continue
+            if tier not in CLOSE_KIND_TIERS.get(close.kind, frozenset()):
+                continue
+            if key and key not in close.cited:
+                continue
+            gap = close.at_ms - at_ms
+            if gap < 0 or gap > self._tolerance_ms:
+                continue
+            rank = (
+                gap, close.reason, close.session_id if close.session_id is not None else 0, index,
+            )
+            if best is None or rank < best:
+                best = rank
+        if best is None:
+            return None
+        self._used.add(best[3])
+        return best[1]
+
+
+def _norm_title(title: str) -> str:
+    return " ".join(title.casefold().split())
 
 
 def _compatible(c: CognitionWrite, w: ClockedWrite) -> bool:
@@ -287,8 +382,11 @@ def _compatible(c: CognitionWrite, w: ClockedWrite) -> bool:
         if not w.create or room_id(c.room) != room_id(w.room):
             return False
         if c.verb == "note_create":
-            return c.anchor is not None and c.anchor == w.anchor
-        return bool(c.title.strip()) and c.title.strip().casefold() == w.title.strip().casefold()
+            if c.anchor is None or c.anchor != w.anchor:
+                return False
+            same_title = bool(_norm_title(c.title)) and _norm_title(c.title) == _norm_title(w.title)
+            return same_title or bool(c.anchor[1])
+        return bool(_norm_title(c.title)) and _norm_title(c.title) == _norm_title(w.title)
     if c.verb in ("note_update", "event_revise", "event_set_status"):
         return not w.create and bool(c.key) and c.key == w.key
     if c.verb == "standing_revise":
@@ -319,21 +417,26 @@ def match_writes(
 
 def compare_tier(
     tier: str, *, cognition: Sequence[CognitionWrite], refusals: Sequence[Refusal],
-    clocked: Sequence[ClockedWrite], closes: Sequence[Close], tolerance_ms: int,
+    clocked: Sequence[ClockedWrite], closes: Sequence[Close] | CloseLedger, tolerance_ms: int,
     since_ms: int, until_ms: int, explainable: bool = True, notes: tuple[str, ...] = (),
 ) -> TierResult:
     """Match one tier and split the result per writer. `cognition` and `clocked`
     are read over the window widened by the tolerance on both sides; only rows in
-    `[since_ms, until_ms)` are counted (a pair counts when either side is)."""
+    `[since_ms, until_ms)` are counted (a pair counts when either side is).
+    `closes` is a `CloseLedger` shared across the tiers of one report, or a plain
+    sequence for this tier alone."""
+    ledger = closes if isinstance(closes, CloseLedger) else CloseLedger(closes, tolerance_ms)
 
     def inside(ms: int) -> bool:
         return since_ms <= ms < until_ms
 
     pairs, cog_left, clocked_left = match_writes(cognition, clocked, tolerance_ms=tolerance_ms)
     matched_by_writer: dict[str, int] = {}
+    coincident_by_writer: dict[str, int] = {}
     for c, w in pairs:
         if inside(c.at_ms) or inside(w.at_ms):
-            matched_by_writer[w.writer] = matched_by_writer.get(w.writer, 0) + 1
+            counts = coincident_by_writer if c.verb == "standing_revise" else matched_by_writer
+            counts[w.writer] = counts.get(w.writer, 0) + 1
 
     cognition_only = tuple(
         Gap(
@@ -355,40 +458,53 @@ def compare_tier(
         gaps_by_writer.setdefault(w.writer, []).append(Gap(
             side="clocked", tier=tier, writer=w.writer, id=w.id, room=w.room, at_ms=w.at_ms,
             key=w.key, keyless=w.keyless, refused_nearby=refused,
-            closed_by=_explain(w.room, w.at_ms, closes, tolerance_ms) if explainable else None,
+            closed_by=(
+                ledger.claim(tier=tier, room=w.room, at_ms=w.at_ms, key=w.key)
+                if explainable and w.writer not in TAG_PATH_WRITERS else None
+            ),
         ))
-    seen = {w.writer for w in clocked} | set(matched_by_writer)
-    names = list(EXPECTED_WRITERS[tier]) + sorted(seen - set(EXPECTED_WRITERS[tier]))
-    writers = tuple(
-        WriterVerdict(
+    seen = {w.writer for w in clocked} | set(matched_by_writer) | set(coincident_by_writer)
+
+    def verdict(name: str) -> WriterVerdict:
+        return WriterVerdict(
             writer=name, status="compared", matched=matched_by_writer.get(name, 0),
+            coincident=coincident_by_writer.get(name, 0),
             clocked_only=tuple(gaps_by_writer.get(name, ())),
         )
-        for name in names
+
+    names = list(EXPECTED_WRITERS[tier]) + sorted(
+        seen - set(EXPECTED_WRITERS[tier]) - TAG_PATH_WRITERS
     )
     return TierResult(
-        tier=tier, status="compared", writers=writers, cognition_only=cognition_only,
+        tier=tier, status="compared", writers=tuple(verdict(n) for n in names),
+        cognition_only=cognition_only,
         refused=sum(1 for r in refusals if r.tier == tier and inside(r.at_ms)), notes=notes,
+        tag_path=tuple(verdict(n) for n in sorted(seen & TAG_PATH_WRITERS)),
     )
 
 
 def act_tier(
-    tier: str, result: CompareResult, *, closes: Sequence[Close], tolerance_ms: int,
-    extra_notes: tuple[str, ...] = (),
+    tier: str, result: CompareResult, *, closes: Sequence[Close] | CloseLedger,
+    tolerance_ms: int, extra_notes: tuple[str, ...] = (),
 ) -> TierResult:
     """The act tiers, from `nora.domain.cognition_compare.compare`: matched by
     key inside the window, no time tolerance on the match (the tolerance only
     decides whether a close explains a clocked-only row). A live row naming no
     note and no event is clocked-only and `keyless`."""
     writer = EXPECTED_WRITERS[tier][0]
+    ledger = closes if isinstance(closes, CloseLedger) else CloseLedger(closes, tolerance_ms)
     gaps = tuple(
         Gap(
             side="clocked", tier=tier, writer=writer, id=p.reminder_id,
             room=f"{p.platform}:{p.conversation_id}", at_ms=p.at_ms,
             key=p.note_id or p.event_id, keyless=not p.keys,
-            closed_by=_explain(p.conversation_id, p.at_ms, closes, tolerance_ms),
+            closed_by=ledger.claim(
+                tier=tier, room=p.conversation_id, at_ms=p.at_ms, key=p.note_id or p.event_id,
+            ),
         )
-        for p in (*result.proactive_only, *result.unkeyed)
+        for p in sorted(
+            (*result.proactive_only, *result.unkeyed), key=lambda a: (a.at_ms, a.reminder_id),
+        )
     )
     cognition_only = tuple(
         Gap(
@@ -425,8 +541,25 @@ def verdict_lines(report: ShadowReport) -> list[str]:
                 continue
             cog = f"{len(tier.cognition_only)} cognition-only (tier {tier.tier}, shared)"
             lines.append(
-                f"{w.writer}: {w.matched} matched, {cog}, {len(w.clocked_only)} clocked-only "
-                f"({w.closed} closed, {w.open} open)"
+                f"{w.writer}: {w.matched} matched, {w.coincident} coincident, {cog}, "
+                f"{len(w.clocked_only)} clocked-only ({w.closed} closed, {w.open} open)"
+            )
+    return lines
+
+
+def tag_path_lines(report: ShadowReport) -> list[str]:
+    """The live tag path's lines. Counts, and not a gate: nothing retires it."""
+    lines: list[str] = []
+    for tier in report.tiers:
+        if tier.status == "error":
+            lines.append(
+                f"{tier.tier} tag path: ERROR ({tier.error or 'unreadable'}); not compared"
+            )
+            continue
+        for w in tier.tag_path:
+            lines.append(
+                f"{w.writer}: {w.matched} matched, {len(w.clocked_only)} with no cognition "
+                f"would-write nearby (the live tag path is not retired; no verdict)"
             )
     return lines
 
@@ -451,6 +584,7 @@ def report_json(report: ShadowReport, directory: RoomDirectory) -> dict[str, obj
         "tolerance_seconds": report.tolerance_ms // 1000, "unit": report.unit,
         "status": "error" if report.any_error else "compared",
         "verdicts": verdict_lines(report),
+        "tag_path": tag_path_lines(report),
         "tiers": [
             {
                 "tier": t.tier, "status": t.status, "error": t.error, "refused": t.refused,
@@ -459,11 +593,19 @@ def report_json(report: ShadowReport, directory: RoomDirectory) -> dict[str, obj
                 "writers": [
                     {
                         "writer": w.writer, "status": w.status, "matched": w.matched,
+                        "coincident": w.coincident,
                         "clocked_only": None if w.status == "error" else len(w.clocked_only),
                         "closed": w.closed, "open": w.open,
                         "unmatched": [_gap_json(g, directory) for g in w.clocked_only],
                     }
                     for w in t.writers
+                ],
+                "tag_path": [
+                    {
+                        "writer": w.writer, "matched": w.matched,
+                        "unmatched": [_gap_json(g, directory) for g in w.clocked_only],
+                    }
+                    for w in t.tag_path
                 ],
             }
             for t in report.tiers
@@ -480,6 +622,8 @@ def render_text(report: ShadowReport, directory: RoomDirectory) -> list[str]:
         "verdicts (counts only; the gate is yours):",
     ]
     lines += [f"  {line}" for line in verdict_lines(report)]
+    lines += ["", "tag path (not retired; excluded from the verdicts above):"]
+    lines += [f"  {line}" for line in tag_path_lines(report)] or ["  none"]
     for tier in report.tiers:
         lines.append("")
         suffix = f" ({tier.error})" if tier.error else ""
@@ -502,5 +646,11 @@ def render_text(report: ShadowReport, directory: RoomDirectory) -> list[str]:
                     + (f"  closed_by={g.closed_by}" if g.closed_by else "  OPEN")
                     + (f"  refused_nearby={g.refused_nearby}" if g.refused_nearby else "")
                     + ("  KEYLESS" if g.keyless else "")
+                )
+        for w in tier.tag_path:
+            for g in w.clocked_only:
+                lines.append(
+                    f"  tag-path        {w.writer}  id={g.id}  room={directory.label(g.room)}  "
+                    f"at={_iso(g.at_ms)}" + (f"  key={g.key}" if g.key else "")
                 )
     return lines

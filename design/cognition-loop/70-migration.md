@@ -543,8 +543,11 @@ first.
 --since ISO [--until ISO] [--unit U] [--tolerance-minutes N] [--json]` reports, per tier and per
 clocked writer (`note-candidates`, `note-curation`, `note-merge`, `event:tag`, `standing-debrief`,
 `standing-ingest-fold`, `culture`, `proactive`, `proactive-decide`), matched / cognition-only /
-clocked-only, with a clocked-only row `closed` when a `no_change`, `waiting` or `covered` close
-in its room explains it. An unreadable source is ERROR, never zero. It prints counts and does not
+clocked-only, with a clocked-only row `closed` only when a `no_change`, `waiting` or `covered` close
+explains it (same room, same tier, names the row's id, after the write, one close per row;
+DEC-252). The default tolerance is 65 minutes, derived from the hourly writers' cadence;
+`event:tag` is the live tag path and is reported apart, in no verdict; a Standing pair is
+`coincident`, not matched. An unreadable source is ERROR, never zero. It prints counts and does not
 decide the gate; step 4 retires a writer only on its own line. Matching rules: the module
 docstring of `nora.domain.cognition_shadow_compare`.
 

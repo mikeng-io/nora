@@ -13,6 +13,7 @@ own shape for "read what already happened and report it".
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -33,6 +34,7 @@ from nora.domain.cognition_shadow_compare import (
     CLOSING_REASONS,
     ClockedWrite,
     Close,
+    CloseLedger,
     CognitionWrite,
     Refusal,
     RoomDirectory,
@@ -55,6 +57,7 @@ from nora.infra.sql.schema import (
     NOTE,
     NOTE_REVISION,
     REMINDERS,
+    ROW_HISTORY,
     STANDING_REVISION,
 )
 
@@ -230,6 +233,7 @@ async def read_would_writes(
             key = str(cand.get("id") or "")
         elif r.verb == "note_create":
             anchor = _anchor(cand.get("anchor_date"), cand.get("anchor_entity_ids"))
+            title = str(cand.get("title") or "")
         elif r.verb == "event_propose":
             title = str(cand.get("title") or "")
         writes.append(CognitionWrite(
@@ -239,13 +243,28 @@ async def read_would_writes(
     return writes, refusals
 
 
+_TOKEN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]*")
+
+
+def _cited(item: dict[str, Any]) -> frozenset[str]:
+    """The ids an agenda item names: the tokens of its summary and cues, and any
+    `note_id` / `event_id` field. The agenda records no id field of its own today,
+    so this is what the text says; a close that names nothing explains only
+    rows that carry no id."""
+    texts = [str(item.get("summary") or ""), *(str(c) for c in item.get("cues") or ())]
+    texts += [str(item[k]) for k in ("note_id", "event_id") if item.get(k)]
+    return frozenset(tok for text in texts for tok in _TOKEN.findall(text))
+
+
 async def read_closes(
     engine: AsyncEngine, *, since_ms: int, until_ms: int, unit: str | None,
 ) -> tuple[list[Close], int]:
     """The explaining closes, and how many had an agenda this could not read
     (they explain nothing)."""
     c, s = COGNITION_SESSION_CLOSE, COGNITION_SESSION
-    stmt = sa.select(c.c.session_id, c.c.item_index, c.c.reason, c.c.recorded_at, s.c.agenda).join(
+    stmt = sa.select(
+        c.c.session_id, c.c.item_index, c.c.kind, c.c.reason, c.c.recorded_at, s.c.agenda,
+    ).join(
         s, s.c.id == c.c.session_id,
     ).where(
         c.c.reason.in_(CLOSING_REASONS),
@@ -269,6 +288,7 @@ async def read_closes(
             continue
         closes.append(Close(
             session_id=r.session_id, room=cid, reason=r.reason, at_ms=_ms(r.recorded_at),
+            kind=r.kind, cited=_cited(item),
         ))
     return closes, unreadable
 
@@ -282,7 +302,7 @@ async def read_clocked_notes(
     rev = NOTE_REVISION
     stmt = sa.select(
         rev.c.id, rev.c.note_id, rev.c.parent_revision_id, rev.c.recorded_at, rev.c.established_by,
-        NOTE.c.established_in, NOTE.c.anchor_date, NOTE.c.anchor_entity_ids,
+        NOTE.c.established_in, NOTE.c.anchor_date, NOTE.c.anchor_entity_ids, NOTE.c.title,
     ).join(NOTE, NOTE.c.id == rev.c.note_id).where(
         rev.c.recorded_at >= _at(since_ms), rev.c.recorded_at < _at(until_ms),
         rev.c.established_by.like("dream:%"),
@@ -291,15 +311,54 @@ async def read_clocked_notes(
         stmt = stmt.where(NOTE.c.unit == unit)
     async with engine.connect() as conn:
         rows = (await conn.execute(stmt.order_by(rev.c.recorded_at, rev.c.id))).all()
-    return [
-        ClockedWrite(
+    as_of = await _notes_as_of(engine, [(str(r.note_id), r.recorded_at) for r in rows
+                                        if r.parent_revision_id is None])
+    out: list[ClockedWrite] = []
+    for r in rows:
+        create = r.parent_revision_id is None
+        anchor, title = _anchor(r.anchor_date, r.anchor_entity_ids), r.title
+        if create:
+            # The note row is the note NOW; a curation since may have moved its
+            # anchor or retitled it. A create is matched on what it wrote.
+            image = as_of.get((str(r.note_id), r.recorded_at))
+            if image is not None:
+                anchor = _anchor(image.get("anchor_date"), image.get("anchor_entity_ids"))
+                title = str(image.get("title") or "")
+        out.append(ClockedWrite(
             writer=r.established_by.split(":")[1], tier="note", id=str(r.id),
             room=r.established_in, at_ms=_ms(r.recorded_at), key=str(r.note_id),
-            create=r.parent_revision_id is None,
-            anchor=_anchor(r.anchor_date, r.anchor_entity_ids),
-        )
-        for r in rows
-    ]
+            create=create, anchor=anchor, title=title,
+        ))
+    return out
+
+
+async def _notes_as_of(
+    engine: AsyncEngine, wanted: list[tuple[str, datetime]],
+) -> dict[tuple[str, datetime], dict[str, Any]]:
+    """Each wanted note's image in `row_history` AS OF the given time: the latest
+    version recorded at or before it, else the OLDEST version held (the closest
+    thing to the state it was created in), else absent (the caller then keeps the
+    current row)."""
+    if not wanted:
+        return {}
+    h = ROW_HISTORY
+    ids = sorted({n for n, _ in wanted})
+    stmt = sa.select(h.c.row_key, h.c.image, h.c.recorded_at).where(
+        h.c.table_name == "note", h.c.row_key["id"].astext.in_(ids),
+    ).order_by(h.c.recorded_at, h.c.id)
+    async with engine.connect() as conn:
+        versions = (await conn.execute(stmt)).all()
+    by_note: dict[str, list[Any]] = {}
+    for v in versions:
+        by_note.setdefault(str(_obj(v.row_key).get("id")), []).append(v)
+    out: dict[tuple[str, datetime], dict[str, Any]] = {}
+    for note_id, at in wanted:
+        chain = by_note.get(note_id)
+        if not chain:
+            continue
+        chosen = [v for v in chain if v.recorded_at <= at]
+        out[(note_id, at)] = _obj((chosen[-1] if chosen else chain[0]).image)
+    return out
 
 
 async def read_clocked_events(
@@ -350,7 +409,6 @@ async def read_clocked_standing(
                 fold_count=r.fold_count, previous_fold_count=r.previous_fold_count,
             ),
             tier="standing", id=str(r.id), room=r.conversation_id, at_ms=_ms(r.recorded_at),
-            key=room_id(r.conversation_id),
         )
         for r in rows if rooms is None or room_id(r.conversation_id) in rooms
     ]
@@ -429,6 +487,7 @@ async def run_shadow_compare(
         if unreadable else ()
     )
     tiers: list[TierResult] = []
+    ledger = CloseLedger(closes, tolerance_ms)
 
     readers: dict[str, Callable[[], Awaitable[list[ClockedWrite]]]] = {
         "note": lambda: read_clocked_notes(engine, since_ms=lo, until_ms=hi, unit=unit),
@@ -443,7 +502,7 @@ async def run_shadow_compare(
             continue
         tiers.append(compare_tier(
             tier, cognition=[c for c in written[0] if c.tier == tier], refusals=written[1],
-            clocked=clocked, closes=closes, notes=close_note, **common,
+            clocked=clocked, closes=ledger, notes=close_note, **common,
         ))
 
     culture, err_culture = await _try(
@@ -474,7 +533,7 @@ async def run_shadow_compare(
             continue
         tiers.append(act_tier(
             tier, compare(mirrored, tuple(a for a in live if _in_rooms(a, rooms))),
-            closes=closes, tolerance_ms=tolerance_ms, extra_notes=close_note,
+            closes=ledger, tolerance_ms=tolerance_ms, extra_notes=close_note,
         ))
     return ShadowReport(
         since_ms=window.since_ms, until_ms=window.until_ms, tolerance_ms=tolerance_ms,

@@ -89,3 +89,16 @@ async def test_the_tolerance_and_unit_reach_the_read(monkeypatch, capsys):
 async def test_a_bad_window_or_tolerance_is_refused(monkeypatch, capsys, since, until, tolerance):
     with pytest.raises(cli.CliError):
         await _run(monkeypatch, capsys, since=since, until=until, tolerance=tolerance)
+
+
+def test_the_default_tolerance_is_the_derived_one_not_a_guess():
+    import argparse
+
+    from nora.domain.cognition_shadow_compare import DEFAULT_TOLERANCE_MINUTES
+
+    parent = argparse.ArgumentParser(add_help=False)
+    parent.add_argument("--config", default="x")
+    top = argparse.ArgumentParser()
+    cli.add_subcommands(top.add_subparsers(dest="cmd"), parent)
+    args = top.parse_args(["cognition", "compare", "--since", "2026-09-29T00:00:00+08:00"])
+    assert args.tolerance_minutes == DEFAULT_TOLERANCE_MINUTES == 65

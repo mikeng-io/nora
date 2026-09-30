@@ -83,7 +83,11 @@ from nora.app.person_forget import (
     unforget_person,
 )
 from nora.config import Config, ConfigError, load
-from nora.domain.cognition_shadow_compare import RoomDirectory, room_id
+from nora.domain.cognition_shadow_compare import (
+    DEFAULT_TOLERANCE_MINUTES,
+    RoomDirectory,
+    room_id,
+)
 from nora.domain.cognition_shadow_compare import render_text as shadow_render_text
 from nora.domain.cognition_shadow_compare import report_json as shadow_report_json
 from nora.domain.media_join import MediaJoin
@@ -425,9 +429,11 @@ def add_subcommands(
         "--unit", default=None, help="only this unit's rooms and rows (a policy.toml unit)",
     )
     compare.add_argument(
-        "--tolerance-minutes", type=int, default=360,
+        "--tolerance-minutes", type=int, default=DEFAULT_TOLERANCE_MINUTES,
         help="a clocked write and a would-write match only within this many minutes "
-             "(default 360); also how near a close must be to explain a clocked-only row",
+             "(default 65: the hourly writers' cadence plus one scheduler tick; widen it "
+             "to 1445 to read the daily writers); also how long after a clocked-only row "
+             "a close may come and still explain it",
     )
     compare.add_argument(
         "--json", action="store_true", help="the machine-readable report, one JSON object",

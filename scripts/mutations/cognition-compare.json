@@ -2,22 +2,22 @@
  {
   "name": "a close explains a clocked-only row only for a closing reason",
   "file": "nora/domain/cognition_shadow_compare.py",
-  "old": "        if close.reason not in CLOSING_REASONS or room_id(close.room) != room_id(room):",
-  "new": "        if room_id(close.room) != room_id(room):",
+  "old": "            (c for c in closes if c.reason in CLOSING_REASONS),",
+  "new": "            (c for c in closes),",
   "target": "tests/unit/test_cognition_shadow_compare.py -k closing_reason"
  },
  {
   "name": "a close explains a clocked-only row only in its own room",
   "file": "nora/domain/cognition_shadow_compare.py",
-  "old": "or room_id(close.room) != room_id(room):",
-  "new": "or False:",
+  "old": "            if index in self._used or room_id(close.room) != room_id(room):",
+  "new": "            if index in self._used:",
   "target": "tests/infra/test_cognition_shadow_compare_read.py -k another_room_or_outside_the_tolerance"
  },
  {
   "name": "a close explains a row only within the tolerance",
   "file": "nora/domain/cognition_shadow_compare.py",
-  "old": "        if gap > tolerance_ms:\n            continue\n        rank",
-  "new": "        if False:\n            continue\n        rank",
+  "old": "            if gap < 0 or gap > self._tolerance_ms:",
+  "new": "            if gap < 0:",
   "target": "tests/infra/test_cognition_shadow_compare_read.py -k another_room_or_outside_the_tolerance"
  },
  {
@@ -180,5 +180,117 @@
   "old": "    if until <= since:\n        raise CliError(\"--until must be after --since\")\n",
   "new": "",
   "target": "tests/unit/test_cognition_compare_cli.py -k bad_window"
+ },
+ {
+  "name": "a close before the clocked write explains nothing",
+  "file": "nora/domain/cognition_shadow_compare.py",
+  "old": "            if gap < 0 or gap > self._tolerance_ms:",
+  "new": "            if abs(gap) > self._tolerance_ms:",
+  "target": "tests/infra/test_cognition_shadow_compare_read.py -k close_before_the_clocked_write"
+ },
+ {
+  "name": "one close explains at most one row",
+  "file": "nora/domain/cognition_shadow_compare.py",
+  "old": "        self._used.add(best[3])",
+  "new": "        pass",
+  "target": "tests/infra/test_cognition_shadow_compare_read.py -k one_waiting_close_does_not_close_three"
+ },
+ {
+  "name": "one close is spent once (unit)",
+  "file": "nora/domain/cognition_shadow_compare.py",
+  "old": "        self._used.add(best[3])",
+  "new": "        pass",
+  "target": "tests/unit/test_cognition_shadow_compare.py -k one_close_explains_at_most_one"
+ },
+ {
+  "name": "a close explains only the tiers its item kind is about",
+  "file": "nora/domain/cognition_shadow_compare.py",
+  "old": "            if tier not in CLOSE_KIND_TIERS.get(close.kind, frozenset()):",
+  "new": "            if False:",
+  "target": "tests/infra/test_cognition_shadow_compare_read.py -k rollup_close_does_not_close_a_note_row"
+ },
+ {
+  "name": "a close explains only the tiers its item kind is about (unit)",
+  "file": "nora/domain/cognition_shadow_compare.py",
+  "old": "            if tier not in CLOSE_KIND_TIERS.get(close.kind, frozenset()):",
+  "new": "            if False:",
+  "target": "tests/unit/test_cognition_shadow_compare.py -k its_item_kind_is_about"
+ },
+ {
+  "name": "a row with an id is explained only by a close that names it",
+  "file": "nora/domain/cognition_shadow_compare.py",
+  "old": "            if key and key not in close.cited:",
+  "new": "            if False:",
+  "target": "tests/infra/test_cognition_shadow_compare_read.py -k names_another_note_or_none"
+ },
+ {
+  "name": "a row with an id is explained only by a close that names it (unit)",
+  "file": "nora/domain/cognition_shadow_compare.py",
+  "old": "            if key and key not in close.cited:",
+  "new": "            if False:",
+  "target": "tests/unit/test_cognition_shadow_compare.py -k names_it"
+ },
+ {
+  "name": "each row takes the NEAREST unused close",
+  "file": "nora/domain/cognition_shadow_compare.py",
+  "old": "            if best is None or rank < best:",
+  "new": "            if best is None or rank > best:",
+  "target": "tests/unit/test_cognition_shadow_compare.py -k nearest_unused_close"
+ },
+ {
+  "name": "a note create needs the title or an entity on top of the anchor",
+  "file": "nora/domain/cognition_shadow_compare.py",
+  "old": "            return same_title or bool(c.anchor[1])",
+  "new": "            return True",
+  "target": "tests/infra/test_cognition_shadow_compare_read.py -k another_title_is_another_note"
+ },
+ {
+  "name": "a create is read at the anchor the revision wrote",
+  "file": "nora/app/cognition_compare.py",
+  "old": "            image = as_of.get((str(r.note_id), r.recorded_at))",
+  "new": "            image = None",
+  "target": "tests/infra/test_cognition_shadow_compare_read.py -k anchor_the_revision_wrote"
+ },
+ {
+  "name": "the would-write's note title is read",
+  "file": "nora/app/cognition_compare.py",
+  "old": "            title = str(cand.get(\"title\") or \"\")\n        elif r.verb == \"event_propose\":",
+  "new": "            pass\n        elif r.verb == \"event_propose\":",
+  "target": "tests/infra/test_cognition_shadow_compare_read.py -k with_the_same_anchor"
+ },
+ {
+  "name": "a Standing pair is coincident, never matched",
+  "file": "nora/domain/cognition_shadow_compare.py",
+  "old": "            counts = coincident_by_writer if c.verb == \"standing_revise\" else matched_by_writer",
+  "new": "            counts = matched_by_writer",
+  "target": "tests/unit/test_cognition_shadow_compare.py -k standing_pair_is_coincident"
+ },
+ {
+  "name": "the tag path is not a per-writer verdict",
+  "file": "nora/domain/cognition_shadow_compare.py",
+  "old": "        seen - set(EXPECTED_WRITERS[tier]) - TAG_PATH_WRITERS",
+  "new": "        seen - set(EXPECTED_WRITERS[tier])",
+  "target": "tests/unit/test_cognition_shadow_compare.py -k live_tag_path_is_its_own_section"
+ },
+ {
+  "name": "the tag path is not explained by a close",
+  "file": "nora/domain/cognition_shadow_compare.py",
+  "old": "                if explainable and w.writer not in TAG_PATH_WRITERS else None",
+  "new": "                if explainable else None",
+  "target": "tests/unit/test_cognition_shadow_compare.py -k live_tag_path_is_its_own_section"
+ },
+ {
+  "name": "a Standing row carries no room id as its key",
+  "file": "nora/app/cognition_compare.py",
+  "old": "            tier=\"standing\", id=str(r.id), room=r.conversation_id, at_ms=_ms(r.recorded_at),\n        )",
+  "new": "            tier=\"standing\", id=str(r.id), room=r.conversation_id, at_ms=_ms(r.recorded_at),\n            key=room_id(r.conversation_id),\n        )",
+  "target": "tests/infra/test_cognition_shadow_compare_read.py -k no_tier_prints_a_room_id"
+ },
+ {
+  "name": "the default tolerance is the derived 65 minutes",
+  "file": "nora/domain/cognition_shadow_compare.py",
+  "old": "DEFAULT_TOLERANCE_MINUTES = 65",
+  "new": "DEFAULT_TOLERANCE_MINUTES = 360",
+  "target": "tests/unit/test_cognition_compare_cli.py -k default_tolerance"
  }
 ]
