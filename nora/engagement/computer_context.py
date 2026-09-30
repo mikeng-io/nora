@@ -30,7 +30,7 @@ import time
 from collections.abc import Callable
 from datetime import datetime, timedelta
 
-from nora.domain.computer import SandboxStatus, StateResult, computer_scope
+from nora.domain.computer import SandboxStatus, StateResult, anything_running, computer_scope
 from nora.domain.computer_context import (
     ComputerContextCaps,
     ComputerView,
@@ -132,8 +132,10 @@ class ComputerContextReader:
         state = await self._state(computer_scope(platform, conversation_id))
         machine_read = state is not None
         tmux = state.tmux if state is not None else None
-        # None: unknown (unread, or tmux could not be listed), never «none running».
-        running: bool | None = None if tmux is None else any(t.running for t in tmux)
+        processes = state.processes if state is not None else None
+        # A tmux job or ANY process the room's user owns (a `nohup … &` job
+        # has no tmux session). None: unknown, never «none running».
+        running = anything_running(state) if state is not None else None
         cutoff = now - timedelta(days=caps.recent_file_days)
         files = tuple(f for f in state.files if f.mtime >= cutoff) if state is not None else ()
 
@@ -163,7 +165,9 @@ class ComputerContextReader:
         return ComputerView(
             now=now, caps=caps, open_sessions=tuple(open_lines),
             lapsed_sessions=tuple(lapsed_lines),
-            tmux=tmux, files=files, runs=_runs(rows), links=_links(rows),
+            tmux=tmux, processes=processes,
+            processes_truncated=state.processes_truncated if state is not None else False,
+            files=files, runs=_runs(rows), links=_links(rows),
             machine_read=machine_read,
         )
 

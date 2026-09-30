@@ -174,3 +174,43 @@ async def test_the_loop_survives_a_failing_sweep_and_counts_it():
     with pytest.raises(asyncio.CancelledError):
         await task
     assert metrics.get("nora_errors_total", stage="computer_sweep") >= 2
+
+
+# -- processes outside tmux (live read-back, 2026-10-01) ----------------------
+
+
+async def test_a_nohup_job_with_no_tmux_keeps_the_session_open(world):
+    """FALSIFIER: a `nohup python tick.py &` job has no tmux session, only a
+    process the room's user owns. Read as «nothing running», the session
+    expired while the job was still going."""
+    clock, runtime, sessions, _, _, _, sweeper = world
+    s = await _open(sessions)
+    runtime.start_process(SCOPE, "python tick.py", pid=159, started=T0)
+    clock.at = T0 + timedelta(days=2)
+    assert await sweeper.sweep_once() == 0
+    assert sessions.sessions[s.id].status == "open"
+    runtime.stop_process(SCOPE, 159)
+    assert await sweeper.sweep_once() == 1
+    assert sessions.sessions[s.id].expired_reason == "idle"
+
+
+async def test_a_process_past_the_limit_is_flagged_never_killed(world):
+    clock, runtime, sessions, events, _, _, sweeper = world
+    await _open(sessions)
+    runtime.start_process(SCOPE, "python tick.py", pid=159, started=T0)
+    clock.at = T0 + timedelta(days=8)
+    assert await sweeper.sweep_once() == 1
+    [row] = events.events
+    assert row.result["reason"] == "running_past_limit"
+    assert row.result["flagged_running_processes"] == [
+        {"pid": 159, "command": "python tick.py"}]
+    assert [p.pid for p in runtime.processes_by_scope[SCOPE]] == [159]
+
+
+async def test_unreadable_processes_are_never_read_as_nothing_running(world):
+    clock, runtime, sessions, _, _, _, sweeper = world
+    s = await _open(sessions)
+    runtime.processes_unknown = True
+    clock.at = T0 + timedelta(days=2)
+    assert await sweeper.sweep_once() == 0
+    assert sessions.sessions[s.id].status == "open"

@@ -119,6 +119,19 @@ class TmuxSession:
 
 
 @dataclass(frozen=True)
+class ScopeProcess:
+    """One process owned by a scope's user, read from `/proc` by computerd:
+    a job started any way at all (`nohup … &`, a server, a tmux pane's
+    child). `command` is cut to 80 characters; `started` is UTC-aware and
+    `elapsed_seconds` is how long it had run when read."""
+
+    pid: int
+    command: str
+    started: datetime
+    elapsed_seconds: int
+
+
+@dataclass(frozen=True)
 class StateResult:
     """What the computer holds for one scope, read fresh (design/sandbox-runtime
     §15.1): the newest files, newest first, and the tmux sessions.
@@ -127,7 +140,8 @@ class StateResult:
     why). A reader must take None as UNKNOWN, never as «nothing is running»:
     the sweeper skips a scope it cannot see rather than expire a session a
     live job still holds. `files_truncated` says the walk stopped at its cap,
-    so a newer file may be missing."""
+    so a newer file may be missing. `processes` is the same reading for
+    processes (see `anything_running`)."""
 
     status: SandboxStatus
     files: tuple[StateFile, ...] = ()
@@ -135,6 +149,25 @@ class StateResult:
     tmux: tuple[TmuxSession, ...] | None = None
     tmux_reason: str | None = None
     reason: str | None = None
+    #: Every process the scope's user owns, newest first, at most 20
+    #: (`processes_truncated` when there were more). None when they could not
+    #: be read (`processes_reason`): unknown, never «none running».
+    processes: tuple[ScopeProcess, ...] | None = None
+    processes_truncated: bool = False
+    processes_reason: str | None = None
+
+
+def anything_running(state: StateResult) -> bool | None:
+    """Whether the scope is running a job: a tmux pane with one, or ANY
+    process its user owns (a `nohup … &` job has no tmux session at all).
+    True as soon as either source shows one; None when neither shows one and
+    either could not be read (unknown is never «nothing running»)."""
+    tmux_running = state.tmux is not None and any(t.running for t in state.tmux)
+    if tmux_running or state.processes:
+        return True
+    if state.tmux is None or state.processes is None:
+        return None
+    return False
 
 
 @dataclass(frozen=True)

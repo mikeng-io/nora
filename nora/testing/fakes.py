@@ -27,6 +27,7 @@ from nora.domain.computer import (
     OpResult,
     RunResult,
     SandboxStatus,
+    ScopeProcess,
     StateFile,
     StateResult,
     TmuxSession,
@@ -2036,6 +2037,11 @@ class FakeSandboxRuntime:
         self.mtimes: dict[str, dict[str, datetime]] = {}
         self.tmux_by_scope: dict[str, dict[str, TmuxSession]] = {}
         self.tmux_unknown = False
+        # Processes a scope's user owns, as computerd reads them from /proc:
+        # only what a test starts with `start_process` (the fake runs
+        # nothing). `processes_unknown = True` is a /proc it cannot read.
+        self.processes_by_scope: dict[str, list[ScopeProcess]] = {}
+        self.processes_unknown = False
         self._clock = clock or (lambda: datetime.now(UTC))
         self._last_mtime: datetime | None = None
         self.runs: list[tuple[str, str]] = []
@@ -2168,6 +2174,24 @@ class FakeSandboxRuntime:
             name=name, created=created or self._clock(), attached=False, running=running,
         )
 
+    def start_process(
+        self, scope: str, command: str, *, pid: int | None = None,
+        started: datetime | None = None,
+    ) -> None:
+        """A process owned by `scope`'s user, running until `stop_process`
+        (a `nohup … &` job: no tmux session)."""
+        procs = self.processes_by_scope.setdefault(scope, [])
+        at = started or self._clock()
+        procs.append(ScopeProcess(
+            pid=pid if pid is not None else 1000 + len(procs), command=command[:80],
+            started=at, elapsed_seconds=max(0, int((self._clock() - at).total_seconds())),
+        ))
+
+    def stop_process(self, scope: str, pid: int) -> None:
+        self.processes_by_scope[scope] = [
+            p for p in self.processes_by_scope.get(scope, []) if p.pid != pid
+        ]
+
     async def state(self, *, scope: str) -> StateResult:
         if (refusal := self._refusal(scope)) is not None:
             return StateResult(status=refusal, reason="fake refusal")
@@ -2182,9 +2206,16 @@ class FakeSandboxRuntime:
         tmux = None if self.tmux_unknown else tuple(
             sorted(self.tmux_by_scope.get(scope, {}).values(), key=lambda t: t.created)
         )
+        procs = sorted(self.processes_by_scope.get(scope, []), key=lambda p: p.started,
+                       reverse=True)
         return StateResult(
             status=SandboxStatus.OK, files=tuple(visible[:FAKE_MAX_STATE_FILES]),
             tmux=tmux, tmux_reason="tmux is not installed" if tmux is None else None,
+            processes=None if self.processes_unknown else tuple(
+                procs[:FAKE_MAX_STATE_PROCESSES]),
+            processes_truncated=(not self.processes_unknown
+                                 and len(procs) > FAKE_MAX_STATE_PROCESSES),
+            processes_reason="/proc could not be read" if self.processes_unknown else None,
         )
 
     def _stamp(self) -> datetime:
@@ -2218,6 +2249,7 @@ def _fake_matches(rel: str, pattern: str) -> bool:
 
 FAKE_MAX_READ_CHARS = 200_000  # computerd's MAX_READ_CHARS
 FAKE_MAX_STATE_FILES = 50  # computerd's MAX_STATE_FILES
+FAKE_MAX_STATE_PROCESSES = 20  # computerd's MAX_STATE_PROCESSES
 FAKE_STATE_SKIP_DIRS = frozenset({"node_modules", "__pycache__"})  # STATE_SKIP_DIRS
 
 

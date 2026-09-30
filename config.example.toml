@@ -940,6 +940,7 @@ enabled = false
 # max_open_sessions = 5
 # max_lapsed_sessions = 3
 # max_tmux = 5
+# max_processes = 5
 # max_files = 8
 # max_runs = 5
 # max_links = 3

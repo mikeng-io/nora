@@ -48,7 +48,11 @@ What it guarantees, whatever the caller sends:
   which is where every `run` puts a `tmux new`. A session is `running` when
   a pane runs a non-shell command OR its process has any child: a `bash
   train.sh`, a `bash -c` chain or a backgrounded server all show `bash` as
-  the foreground command. Nothing here kills a session or deletes a file.
+  the foreground command. And every process the scope's user owns, read
+  from `/proc` without following a link (pid, command cut to 80 characters,
+  start and elapsed seconds, the newest 20): a `nohup … &` job has no tmux
+  session and is still running. Nothing here kills a session or a process,
+  or deletes a file.
 
 Dependencies: the standard library and aiohttp, nothing from `nora`.
 """
@@ -93,6 +97,9 @@ MATCH_ALL = frozenset({"", "*", "**", "**/*"})
 # newest files it returns, and how many entries it will walk to find them.
 MAX_STATE_FILES = 50
 MAX_STATE_WALK = 20_000
+# `/v1/state` processes: at most this many, newest first; each command cut.
+MAX_STATE_PROCESSES = 20
+PROCESS_COMMAND_CHARS = 80
 # Directories the state read never walks into: tool caches and environments,
 # not work anyone would name. Dot-directories (`.venv`, `.git`, `.cache`,
 # `.tmp`) are skipped by their leading dot.
@@ -592,9 +599,94 @@ class Computer:
                              "attached": _int(attached, 0) > 0, "running": name in running})
         return {"tmux": sessions}
 
+    def processes(self, scope: str) -> dict[str, Any]:
+        """Every process the scope's user owns, from `/proc`: a job started
+        any way (`nohup … &` has no tmux session). Isolated, that user is the
+        scope's own; not isolated (tests, a non-root computerd), commands run
+        as computerd's own user, so that is whose processes are listed.
+        `processes` is None (with `processes_reason`) when `/proc` cannot be
+        read: unknown, never none."""
+        ids = self.owner.ids(scope)
+        uid = ids[0] if ids is not None else os.getuid()
+        try:
+            found = scope_processes(self.proc_root, uid, time.time())
+        except OSError as exc:
+            return {"processes": None,
+                    "processes_reason": f"{type(exc).__name__}: {exc}"[:200]}
+        found.sort(key=lambda p: p["started"], reverse=True)
+        return {"processes": found[:MAX_STATE_PROCESSES],
+                "processes_truncated": len(found) > MAX_STATE_PROCESSES}
+
     async def state(self, scope: str, body: dict[str, Any]) -> dict[str, Any]:
         files = await asyncio.to_thread(self.recent_files, scope)
-        return {"status": "ok", **files, **await self.tmux_sessions(scope)}
+        procs = await asyncio.to_thread(self.processes, scope)
+        return {"status": "ok", **files, **await self.tmux_sessions(scope), **procs}
+
+
+def _read_proc_file(pid_fd: int, name: str, limit: int = 65536) -> bytes:
+    """One file under an opened `/proc/<pid>`, never through a link."""
+    fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=pid_fd)
+    try:
+        return os.read(fd, limit)
+    finally:
+        os.close(fd)
+
+
+def scope_processes(proc_root: Path, uid: int, now: float) -> list[dict[str, Any]]:
+    """Every process whose real uid is `uid`: pid, command (its argv, cut to
+    `PROCESS_COMMAND_CHARS`), start (epoch seconds) and elapsed seconds.
+    Kernel threads (no argv; pid 2 and its children) are the only ones
+    left out. Nothing is followed through a link: each `/proc/<pid>` is
+    opened as a directory with `O_NOFOLLOW` and its files read relative to
+    it. A process that exits mid-read is skipped. Raises `OSError` when
+    `proc_root` itself cannot be listed."""
+    boot = _boot_time(proc_root)
+    ticks = os.sysconf("SC_CLK_TCK") if hasattr(os, "sysconf") else 100
+    out: list[dict[str, Any]] = []
+    for entry in os.scandir(proc_root):
+        if not entry.name.isdigit():
+            continue
+        try:
+            pid_fd = os.open(entry.path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        except OSError:
+            continue
+        try:
+            status = _read_proc_file(pid_fd, "status").decode("utf-8", "replace")
+            real_uid = next((line.split()[1] for line in status.splitlines()
+                             if line.startswith("Uid:") and len(line.split()) > 1), None)
+            if real_uid is None or _int(real_uid, -1) != uid:
+                continue
+            raw = _read_proc_file(pid_fd, "stat").decode("utf-8", "replace")
+            argv = _read_proc_file(pid_fd, "cmdline")
+        except OSError:
+            continue
+        finally:
+            os.close(pid_fd)
+        pid = int(entry.name)
+        # `pid (comm) state ppid ... starttime(22nd field)`, split after the
+        # LAST `)`: fields[0] is state, [1] ppid, [19] starttime.
+        fields = raw[raw.rfind(")") + 1:].split()
+        ppid = _int(fields[1], -1) if len(fields) > 1 else -1
+        if not argv or pid == 2 or ppid == 2:
+            continue  # a kernel thread
+        command = " ".join(a.decode("utf-8", "replace") for a in argv.split(b"\0") if a)
+        start_ticks = _int(fields[19], 0) if len(fields) > 19 else 0
+        started = boot + start_ticks / ticks if boot is not None else now
+        out.append({"pid": pid, "command": command[:PROCESS_COMMAND_CHARS],
+                    "started": int(started), "elapsed": max(0, int(now - started))})
+    return out
+
+
+def _boot_time(proc_root: Path) -> float | None:
+    """`btime` from `/proc/stat`, the epoch second the machine booted."""
+    try:
+        with open(proc_root / "stat", encoding="utf-8", errors="replace") as f:
+            for line in f:
+                if line.startswith("btime "):
+                    return float(line.split()[1])
+    except OSError:
+        return None
+    return None
 
 
 def child_parents(proc_root: Path) -> frozenset[int]:

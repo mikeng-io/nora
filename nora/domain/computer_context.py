@@ -14,7 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
-from nora.domain.computer import StateFile, TmuxSession
+from nora.domain.computer import ScopeProcess, StateFile, TmuxSession
 from nora.domain.computer_sessions import ComputerSession, SessionProgress, ShownStatus
 
 
@@ -28,6 +28,7 @@ class ComputerContextCaps:
     max_open_sessions: int = 5
     max_lapsed_sessions: int = 3
     max_tmux: int = 5
+    max_processes: int = 5
     max_files: int = 8
     max_runs: int = 5
     max_links: int = 3
@@ -86,6 +87,9 @@ class ComputerView:
     open_sessions: tuple[SessionLine, ...] = ()
     lapsed_sessions: tuple[SessionLine, ...] = ()
     tmux: tuple[TmuxSession, ...] | None = None
+    #: Every process the room's user owns, newest first; None: not read.
+    processes: tuple[ScopeProcess, ...] | None = None
+    processes_truncated: bool = False
     files: tuple[StateFile, ...] = ()
     runs: tuple[RunLine, ...] = ()
     links: tuple[LinkLine, ...] = ()

@@ -438,3 +438,31 @@ def test_links_are_capped_with_a_line_saying_how_many_more():
     )
     body = render_computer(view).body
     assert body.count("link \"page") == 3 and "+2 more links" in body
+
+
+# -- processes outside tmux (live read-back, 2026-10-01) ----------------------
+
+
+async def test_a_nohup_job_shows_as_running_and_keeps_its_task_active():
+    """FALSIFIER: the block's running section and the session status read
+    processes as well as tmux. A `nohup … &` job has no tmux session."""
+    runtime = FakeSandboxRuntime(clock=lambda: NOW)
+    runtime.start_process(SCOPE, "python tick.py --every 60", pid=159,
+                          started=NOW - timedelta(minutes=17))
+    sessions = FakeComputerSessionStore()
+    await _open_session(sessions)  # last active 3 h ago: idle without a job
+    view = await _reader(runtime, sessions, FakeComputerEventStore()).read(
+        platform="signal", conversation_id=ROOM)
+    body = render_computer(view).body
+    assert "process 159 `python tick.py --every 60` · running · started 17 min ago" in body
+    assert "open task, active," in body
+
+
+def test_a_command_is_escaped_exactly_once():
+    """`&` and `>` reach the prompt as `&amp;` and `&gt;` once: the renderer
+    escapes each line (`render_bullets`), nothing escapes it before."""
+    view = _view(runs=(RunLine("python a.py > out.txt && echo ok", 0, True, NOW),),
+                 caps=ComputerContextCaps(max_tokens=100_000))
+    body = render_computer(view).body
+    assert "python a.py &gt; out.txt &amp;&amp; echo ok" in body
+    assert "&amp;gt;" not in body and "&amp;amp;" not in body

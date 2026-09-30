@@ -2265,6 +2265,8 @@ class ComputerContextConfig(BaseModel):
     max_open_sessions: int = Field(default=5, gt=0)
     max_lapsed_sessions: int = Field(default=3, ge=0)
     max_tmux: int = Field(default=5, ge=0)
+    # Processes the room's user owns (a `nohup … &` job has no tmux session).
+    max_processes: int = Field(default=5, ge=0)
     max_files: int = Field(default=8, ge=0)
     max_runs: int = Field(default=5, ge=0)
     # The newest Drop links the room made (`computer_export`, S3a), each with

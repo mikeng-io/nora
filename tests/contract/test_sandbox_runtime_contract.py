@@ -39,6 +39,8 @@ from nora.domain.ports import SandboxRuntime
 from nora.infra.computer.client import ComputerdRuntime
 from nora.testing import FakeSandboxRuntime
 
+#: Whether this machine has a /proc for computerd to read processes from.
+HAS_PROC = Path("/proc/self/stat").exists()
 TOKEN = "contract-computerd-token"  # noqa: S105
 SCOPE = computer_scope("signal", "room-a")
 OTHER = computer_scope("signal", "room-b")
@@ -293,3 +295,26 @@ async def test_tmux_sessions_are_per_room(runtime):
     await start_job(runtime, SCOPE, "mine", running=True)
     other = await runtime.state(scope=OTHER)
     assert other.tmux == ()
+
+
+async def test_state_lists_a_process_the_room_owns_outside_tmux(runtime, tmp_path):
+    """A `nohup … &` job: no tmux session, still a process of the room's
+    user. computerd reads /proc, which only Linux has; elsewhere it answers
+    None (unknown), never an empty list."""
+    scope = "cd" * 16
+    if isinstance(runtime, FakeSandboxRuntime):
+        runtime.start_process(scope, "python tick.py", pid=159)
+    else:
+        if not HAS_PROC:
+            got = await runtime.state(scope=scope)
+            assert got.status is SandboxStatus.OK and got.processes is None
+            assert got.processes_reason
+            return
+        ran = await runtime.run(scope=scope, command="nohup sleep 30 >/dev/null 2>&1 &",
+                                timeout_s=10)
+        assert ran.status is SandboxStatus.OK
+    got = await runtime.state(scope=scope)
+    assert got.status is SandboxStatus.OK
+    assert got.processes is not None
+    assert any("sleep 30" in p.command or p.command == "python tick.py"
+               for p in got.processes)
