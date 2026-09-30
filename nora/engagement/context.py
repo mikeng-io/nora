@@ -26,6 +26,7 @@ from typing import Any, Protocol
 from nora.agent.lineage import LineagePolicy
 from nora.domain.computer_context import ComputerView
 from nora.domain.culture import CultureRevision
+from nora.domain.documents_context import DocumentsView
 from nora.domain.media_join import MediaJoin
 from nora.domain.models import (
     NormalizedMessage,
@@ -46,6 +47,7 @@ from nora.domain.self_presence import Presence
 from nora.domain.standing import Standing
 from nora.domain.withdrawal import render_supported
 from nora.engagement.computer_context import ComputerContextReader
+from nora.engagement.documents_context import DocumentsContextReader
 from nora.engagement.self_presence import PresenceReader
 from nora.language.culture_render import read_culture
 from nora.obs.tracing import traced_read
@@ -105,6 +107,7 @@ class TranscriptInjection:
         culture: CultureReader | None = None,
         lineage: LineagePolicy | None = None,
         computer: ComputerContextReader | None = None,
+        documents: DocumentsContextReader | None = None,
     ) -> None:
         self._audit = audit
         self._memory = memory
@@ -174,6 +177,9 @@ class TranscriptInjection:
         # `[computer]` is off; the reader itself gates each room and never
         # raises, so it is safe inside the gather.
         self._computer_reader = computer
+        # `<documents>` (design/artifact §29). `None` while `[documents]` is off; the
+        # reader never raises, so it is safe inside the gather.
+        self._documents_reader = documents
 
     async def assemble(self, *, request: EngagementRequest) -> TagContext:
         msg = request.message
@@ -221,6 +227,7 @@ class TranscriptInjection:
             presence,
             culture,
             computer,
+            documents,
         ) = await asyncio.gather(
             asyncio.gather(
                 self._recent(msg),
@@ -233,6 +240,7 @@ class TranscriptInjection:
             self._presence(msg),
             self._culture(msg),
             self._computer(msg),
+            self._documents(msg),
         )
 
         # One name space for the whole prompt (DEC-80) — see `Persons.name_transcript`.
@@ -269,6 +277,7 @@ class TranscriptInjection:
             presence=presence,
             culture=culture,
             computer=computer,
+            documents=documents,
             # A pure lookup (policy.toml, identity.toml), no read: the room's
             # listed persons and their aliases for `<room_members>`.
             room_members=self._room_members(msg),
@@ -333,6 +342,15 @@ class TranscriptInjection:
         if self._computer_reader is None:
             return None
         return await traced_read("computer", "read", self._computer_reader.read(
+            platform=msg.platform, conversation_id=msg.conversation_id,
+        ))
+
+    async def _documents(self, msg: NormalizedMessage) -> DocumentsView | None:
+        """This room's newest documents, or `None` (no reader, none yet, or the read
+        failed). `DocumentsContextReader.read` never raises."""
+        if self._documents_reader is None:
+            return None
+        return await traced_read("documents", "read", self._documents_reader.read(
             platform=msg.platform, conversation_id=msg.conversation_id,
         ))
 

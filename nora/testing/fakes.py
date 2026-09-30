@@ -2407,6 +2407,19 @@ class FakeDocumentStore:
         return VisiblePage(items=tuple(seen[offset : offset + limit] if limit > 0 else ()),
                            total=len(seen))
 
+    async def list_room(
+        self, *, platform: str, conversation_ids: frozenset[str], limit: int
+    ) -> tuple[DocumentSummary, ...]:
+        seen = [
+            d.summary for doc_id in self._rooms
+            if (d := self._stored(doc_id)) is not None
+            and d.summary.platform == platform
+            and d.summary.conversation_id in conversation_ids
+        ]
+        seen.sort(key=lambda s: (-s.updated_at.timestamp(), str(s.id)))
+        limit = min(max(limit, 0), 1_000)
+        return tuple(seen[:limit])
+
     async def get_visible(
         self, *, document_id: UUID, person_id: str, rooms: frozenset[RoomKey]
     ) -> StoredDocument | None:

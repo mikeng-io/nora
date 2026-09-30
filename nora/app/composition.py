@@ -124,6 +124,7 @@ from nora.domain.reminders import ReminderCaps, ReminderStore
 from nora.domain.stimuli import WakeHook, WakePolicy
 from nora.domain.tool_call_log import ToolCallLogStore
 from nora.engagement.computer_context import ComputerContextReader
+from nora.engagement.documents_context import DocumentsContextReader
 from nora.engagement.pipeline import EngagementPipeline
 from nora.engagement.self_presence import PresenceReader
 from nora.engagement.slots import ConversationSlots
@@ -1448,6 +1449,15 @@ async def build_dependencies(
         room_ids=_room_ids_of(allowlist),
         is_person=persons.by_person.__contains__,
     )
+    # `<documents>` (design/artifact §29): the one reader the tag path and the fire path
+    # share. `None` while `[documents]` is off, so no room renders the block (the same
+    # flag that withholds `document_publish` and `document_read`).
+    documents_context: DocumentsContextReader | None = None
+    if cfg.documents.enabled:
+        documents_context = DocumentsContextReader(
+            store=documents_store, room_ids=_room_ids_of(allowlist),
+            clock=lambda: datetime.now(UTC), metrics=metrics,
+        )
     # ONE media join for the whole process (issue #116, operator 2026-09-08),
     # handed to every transcript builder there is: the tag assembler, the fire
     # path, the tag-path debrief, the standing event fold, the note tier's two
@@ -2011,6 +2021,7 @@ async def build_dependencies(
         # `<computer>` (design/sandbox-runtime §15.3): `None` while
         # `[computer]` is off; the same reader the fire path gets.
         computer=computer_context,
+        documents=documents_context,
     )
 
     def _spawn(coro: Coroutine[Any, Any, None]) -> None:
@@ -3348,6 +3359,7 @@ async def build_dependencies(
             # `<computer>` (design/sandbox-runtime §15.3), the reader the tag
             # path's assembler holds; `None` while `[computer]` is off.
             computer=computer_context,
+            documents=documents_context,
             presence=presence_reader,
             # The note tier (design/dreamer-agent-loop/35 Phase 2) — S5's
             # precedent one tier later: the participation determination grounds

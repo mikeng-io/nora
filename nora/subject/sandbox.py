@@ -119,12 +119,15 @@ import uuid
 from collections.abc import AsyncGenerator, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import sqlalchemy as sa
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from nora.agent.prefill import render_transcript
+from nora.documents.check import check_document
+from nora.domain.documents import RevisionIn
 from nora.domain.media_join import MediaJoin
 from nora.domain.models import TranscriptRow
 from nora.domain.notes import Note, NoteRevision
@@ -1019,3 +1022,46 @@ async def sandbox_from_snapshot(
         pending_reminder_note_ids=_pending_reminder_note_ids(shot.reminders),
         note_ids_by_title=_note_ids_by_title(shot.notes),
     )
+
+
+async def seed_documents(subject: Subject, case_name: str, specs: Sequence[dict[str, Any]]) -> None:
+    """Put the documents a case names into the subject's own room (design/artifact §29).
+
+    The production source holds none, so a case about revising a document has to make
+    the document it revises. Each spec is `{id, title, body}`: a one-paragraph Page,
+    checked by the same `check_document` a publish goes through and stored as revision 1
+    in the subject's room, where `<documents>` (and `document_read`) find it. It REFUSES
+    a subject whose config has `[documents]` off: the block and both tools would be
+    absent, and the case would read as a model failure.
+    """
+    if not specs:
+        return
+    if not subject.cfg.documents.enabled:
+        raise ValueError(
+            f"case {case_name!r} seeds documents, but the subject's config has "
+            "[documents] off, so neither the block nor the tools exist; run it on a "
+            "subject whose config has them on (`--deployment-config`)"
+        )
+    platform, conversation_id = subject.room
+    for spec in specs:
+        page = {
+            "version": 1,
+            "root": {
+                "type": "Page",
+                "props": {"title": spec["title"]},
+                "children": [{"type": "Markdown", "props": {"text": spec["body"]}}],
+            },
+        }
+        checked = check_document(page)
+        if not checked.ok or checked.document is None:
+            raise ValueError(f"case {case_name!r}: document {spec['title']!r} does not check")
+        await subject.deps.documents.create(
+            document_id=uuid.UUID(spec["id"]),
+            platform=platform,
+            conversation_id=conversation_id,
+            created_by="eval",
+            revision=RevisionIn(
+                title=checked.title, spec=checked.document, text=checked.text,
+                sha256=checked.sha256, media=(), written_by="eval",
+            ),
+        )

@@ -14,6 +14,7 @@ from nora.domain.computer import StateFile
 from nora.domain.computer_context import ComputerContextCaps, ComputerView
 from nora.domain.culture import CultureRevision
 from nora.domain.decision_log import DecisionRow
+from nora.domain.documents_context import DocumentLine, DocumentsView
 from nora.domain.models import (
     DeliveryStatus,
     NormalizedMessage,
@@ -30,16 +31,26 @@ from nora.domain.standing import Standing, WorkingSetItem
 def _ctx(transcript=(), peer_card=(), body="nora.000 what time", tagger=None, self_card=(),
          quote=None, platform="signal", tagger_card=(), notes=(),
          standing=None, decisions=(), people_in_window=(), culture=None,
-         room_members=(), computer=None) -> TagContext:
+         room_members=(), computer=None, documents=None) -> TagContext:
     msg = NormalizedMessage(platform, "g1", "group", "+852111", "Miles", 1, body, {},
                             quote=quote)
     kwargs = {"tagger_card": tuple(tagger_card),
               "notes": tuple(notes), "standing": standing, "culture": culture,
               "decisions": tuple(decisions),
               "people_in_window": tuple(people_in_window),
-              "room_members": tuple(room_members), "computer": computer}
+              "room_members": tuple(room_members), "computer": computer,
+              "documents": documents}
     return TagContext("tag-1", msg, tagger, tuple(transcript), tuple(peer_card), 0.0,
                       tuple(self_card), **kwargs)
+
+
+def _documents() -> DocumentsView:
+    """One document in this room, so `_full_prefill_body` renders `<documents>`."""
+    now = datetime.now(UTC)
+    return DocumentsView(
+        lines=(DocumentLine("Trip to Tokyo", "00000000-0000-0000-0000-000000000001", 2, now),),
+        now=now,
+    )
 
 
 def _computer() -> ComputerView:
@@ -260,7 +271,7 @@ def _full_prefill_body() -> str:
         culture=_culture(), decisions=_decisions(),
         people_in_window=(("Grant", ("asked about dinner",)),),
         room_members=(PersonRef("p_ann", "Ann Lee", "p_ann", aliases=("Annie", "阿Ann")),),
-        computer=_computer(),
+        computer=_computer(), documents=_documents(),
     )
     return build_prefill(
         ctx, display_name="Nora", context_window=40,

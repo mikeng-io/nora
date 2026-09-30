@@ -81,6 +81,7 @@ from nora.subject import (
     obtain,
     sandbox_database,
     sandbox_from_snapshot,
+    seed_documents,
 )
 from nora.subject.transport import held_states, hold_transports
 
@@ -1555,6 +1556,10 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
                 before_ms=before_ms,
                 leave_room_for_arrival=port.delivers_input,
             )
+            # design/artifact §29: a case about a document she already made
+            # has to make it, the production source holding none. Refused on a
+            # subject with `[documents]` off, never read as a model failure.
+            await seed_documents(subject, case.name, md.get("documents") or ())
             # Issue #158: a `remind` case must have no reminder already
             # pending on its own expected note at this instant, compared BY
             # NOTE ID. `seeded.pending_reminder_note_ids`/`.note_ids_by_title`

@@ -217,6 +217,47 @@ class SqlDocumentStore:
             total=int(total),
         )
 
+    async def list_room(
+        self, *, platform: str, conversation_ids: frozenset[str], limit: int
+    ) -> tuple[DocumentSummary, ...]:
+        limit = min(max(limit, 0), _MAX_LIMIT)
+        if limit == 0 or not conversation_ids:
+            return ()
+        ids = sorted(conversation_ids)
+        in_room = sa.and_(_D.platform == platform, _D.conversation_id.in_(ids))
+        # The top-revision subquery is restricted to THIS room's documents first, so a turn's
+        # read does not aggregate every revision of every document.
+        top = (
+            sa.select(_R.document_id, sa.func.max(_R.revision).label("top"))
+            .where(_R.document_id.in_(sa.select(_D.id).where(in_room)))
+            .group_by(_R.document_id)
+            .subquery()
+        )
+        stmt = (
+            sa.select(
+                _D.id,
+                _D.platform,
+                _D.conversation_id,
+                _D.created_by,
+                _D.recorded_at.label("created_at"),
+                _R.revision,
+                _R.title,
+                _R.recorded_at,
+            )
+            .select_from(
+                DOCUMENTS.join(top, top.c.document_id == _D.id).join(
+                    DOCUMENT_REVISION,
+                    sa.and_(_R.document_id == top.c.document_id, _R.revision == top.c.top),
+                )
+            )
+            .where(in_room)
+            .order_by(_R.recorded_at.desc(), _D.id)
+            .limit(limit)
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+        return tuple(_summary(r, r.created_at) for r in rows)
+
     async def get_visible(
         self, *, document_id: UUID, person_id: str, rooms: frozenset[RoomKey]
     ) -> StoredDocument | None:

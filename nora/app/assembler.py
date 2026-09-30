@@ -33,6 +33,7 @@ from nora.engagement.context import (
     StandingNotesReader,
     TranscriptInjection,
 )
+from nora.engagement.documents_context import DocumentsContextReader
 from nora.engagement.self_presence import PresenceReader
 from nora.obs.metrics import Metrics
 from nora.persons import Persons
@@ -66,6 +67,7 @@ def build_assembler(
     presence: PresenceReader | None = None,
     culture: CultureReader | None = None,
     computer: ComputerContextReader | None = None,
+    documents: DocumentsContextReader | None = None,
 ) -> TranscriptInjection:
     return TranscriptInjection(
         audit=audit, memory=memory, persons=persons,
@@ -107,4 +109,7 @@ def build_assembler(
         # fire path holds; `None` while `[computer]` is off, and in every
         # harness, which renders no block.
         computer=computer,
+        # `<documents>` (design/artifact §29). The SAME reader the fire path holds;
+        # `None` while `[documents]` is off, which renders no block.
+        documents=documents,
     )

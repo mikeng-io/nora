@@ -149,6 +149,15 @@ class DocumentStore(Protocol):
         """The documents `person_id` may read, most recently updated first."""
         ...
 
+    async def list_room(
+        self, *, platform: str, conversation_ids: frozenset[str], limit: int
+    ) -> tuple[DocumentSummary, ...]:
+        """The documents made in ONE room (`platform` and any of the room's conversation ids),
+        most recently revised first, at most `limit`. It is the room's own list, not a person's:
+        no visibility check, because everyone the room names already reads these. It loads no
+        spec and no text: the prompt block reads this on every turn."""
+        ...
+
     async def get_visible(
         self, *, document_id: UUID, person_id: str, rooms: frozenset[RoomKey]
     ) -> StoredDocument | None:
