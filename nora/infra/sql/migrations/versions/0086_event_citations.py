@@ -32,6 +32,15 @@ WHAT THIS ADDS, all additive:
    row-level until a writer stated one. The row-level `reasoning` and
    `confidence` columns stay.
 
+5. `citation` moves from append-only to a HISTORY table (the trigger
+   `nora_row_history`, `0068`'s function). An event's edges for a field are
+   REPLACED when a revision restates the field, so the cascade follows what the
+   event now rests on (10 §2 rule 7: the row's CURRENT citation chain), and
+   that is a DELETE: the trigger keeps each removed edge as a `delete` version,
+   so what an earlier revision rested on is still re-derivable. The table's own
+   history starts here, at what its columns prove now (`0074`'s pattern: one
+   `backfill` version per row, dated at `recorded_at`).
+
 Revision ID: 0086_event_citations
 Revises: 0085_cognition_cause_none
 Create Date: 2026-10-01
@@ -81,8 +90,27 @@ def upgrade() -> None:
             f"ck_{table}_field_meta_shape", table, "jsonb_typeof(field_meta) = 'object'",
         )
 
+    op.execute(
+        "CREATE TRIGGER nora_row_history AFTER INSERT OR UPDATE OR DELETE "
+        "ON \"citation\" FOR EACH ROW EXECUTE FUNCTION nora_row_history('id')"
+    )
+    op.execute(
+        "CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON \"citation\" "
+        "FOR EACH STATEMENT EXECUTE FUNCTION nora_row_history_refuse_truncate()"
+    )
+    op.execute("""
+        INSERT INTO row_history (table_name, row_key, op, image, recorded_at)
+        SELECT 'citation', jsonb_build_object('id', to_jsonb(x.id)),
+               'backfill', to_jsonb(x), x.recorded_at
+        FROM "citation" x
+    """)
+
 
 def downgrade() -> None:
+    op.execute("DROP TRIGGER IF EXISTS nora_row_history ON \"citation\"")
+    op.execute("DROP TRIGGER IF EXISTS nora_row_history_truncate ON \"citation\"")
+    op.execute("DELETE FROM row_history WHERE table_name = 'citation'")
+
     for table in ("event_revision", "events"):
         op.drop_constraint(f"ck_{table}_field_meta_shape", table, type_="check")
         op.drop_column(table, "field_meta")

@@ -306,9 +306,19 @@ class HeartbeatLoop:
                 await self._resolve_all([row], state, outcome=outcome, now=now)
                 continue
             if row.kind == GATHERING_KIND and self._gatherings is not None:
-                gathering_refusal = await self._gatherings.refusal(row)
+                gathering_refusal = await self._gatherings.refusal(row, now=now)
                 if gathering_refusal is not None:
                     state, outcome = gathering_refusal
+                    if state is None:
+                        # A HOLD (`nora.app.gathering_screen`): the row stays
+                        # PENDING and the next tick asks again, so a cleared
+                        # mark or a recovered read releases it. Counted, like a
+                        # deferral: nothing fired and nothing resolved, so
+                        # `nora_reminders_fired_total` does not move.
+                        self._metrics.inc(
+                            "nora_gathering_reminders_held_total", reason=outcome,
+                        )
+                        continue
                     await self._resolve_all([row], state, outcome=outcome, now=now)
                     continue
             if self._policy.is_allowed(

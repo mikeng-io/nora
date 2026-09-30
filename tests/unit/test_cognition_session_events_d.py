@@ -1,7 +1,7 @@
 """The Cognition session's event verbs carry evidence (fix PR D, review of
 2026-09-30 M2 and M4, and of #662 M8/E1a): `cited_ids`, a `reasoning` and a
 `confidence`, held to what the session was shown or fetched exactly as a note's
-citations are, an abduced value kept as a question and never as a stated field,
+citations are, an abduced value stored with its mode (voiced as a question, never upgraded),
 and every status before `happened` reachable.
 
 Drives the REAL runner through its REAL tool closures with a scripted agent, the
@@ -163,10 +163,10 @@ async def test_a_mode_the_event_tier_does_not_allow_is_refused():
 
 
 # ---------------------------------------------------------------------------
-# 40 §4: an abduced value is a question to ask, never a stated field
+# 40 §4: an abduced value is STORED with its mode and voiced as a question
 # ---------------------------------------------------------------------------
 
-async def test_an_abduced_proposal_creates_no_event_and_records_the_question():
+async def test_an_abduced_proposal_is_stored_with_its_mode_and_voiced_as_a_question():
     answers: list[Any] = []
 
     async def behave(by: dict[str, Any], tools: list[Any]) -> None:
@@ -178,14 +178,19 @@ async def test_an_abduced_proposal_creates_no_event_and_records_the_question():
     store, _ = await _session(behave)
     assert answers[0]["status"] == "ok"
     [candidate] = _candidates(store)
-    assert candidate["kind"] == "question_to_ask" and candidate["reasoning"] == "abduced"
-    assert {"field": "place", "value": "place two"} in candidate["questions_to_ask"]
-    # No stated event: no id, no title, no field_meta a renderer could read as told.
-    assert "title" not in candidate and "field_meta" not in candidate
+    # A stated event, not a side record: it has a title and a place ...
+    assert candidate["title"] == "dinner at place two"
+    assert candidate["venue_text"] == "place two"
+    # ... whose every stated field says how it was reached.
+    modes = {m["field"]: m["reasoning"] for m in candidate["field_meta"]}
+    assert modes["place"] == "abduced" and modes["what"] == "abduced"
+    assert candidate["cited_ids"] == ["101"]
 
 
-async def test_an_abduced_revision_leaves_the_event_as_it_was_and_asks():
-    current = _event()
+async def test_an_abduced_revision_changes_the_field_and_keeps_the_others_modes():
+    current = _event(field_meta=(
+        FieldMeta(field="what", reasoning="told", confidence="high"),
+    ))
     answers: list[Any] = []
 
     async def behave(by: dict[str, Any], tools: list[Any]) -> None:
@@ -196,10 +201,9 @@ async def test_an_abduced_revision_leaves_the_event_as_it_was_and_asks():
 
     store, _ = await _session(behave, events=(current,))
     [candidate] = _candidates(store)
-    assert candidate["kind"] == "question_to_ask"
-    assert candidate["event_id"] == str(current.id)
-    assert candidate["questions_to_ask"] == [{"field": "place", "value": "place two"}]
-    assert "venue_text" not in candidate
+    assert candidate["venue_text"] == "place two"
+    modes = {m["field"]: m["reasoning"] for m in candidate["field_meta"]}
+    assert modes == {"what": "told", "place": "abduced"}
 
 
 # ---------------------------------------------------------------------------

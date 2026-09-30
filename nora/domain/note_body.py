@@ -208,8 +208,9 @@ class NoteBody:
         return frozenset(p for s in self.sections for ln in s.lines for p in ln.person_ids)
 
 
-#: `[<ids>]` anywhere in a text, read without the parser (§7).
-_CITATION = re.compile(r"\[\s*([0-9]+(?:\s*,\s*[0-9]+)*)\s*\]")
+#: `[<ids>]` anywhere in a text, read without the parser (§7): every bracket
+#: group, which `cited_ids_in` then holds to ids-or-Rollup-keys.
+_BRACKET_GROUP = re.compile(r"\[([^\[\]]*)\]")
 
 
 def cited_ids_in(text: str) -> frozenset[int]:
@@ -221,8 +222,25 @@ def cited_ids_in(text: str) -> frozenset[int]:
     carry-forward check will compare. A body with no citations answers the
     empty set, never an error.
     """
+    ids: set[int] = set()
+    for group in _BRACKET_GROUP.findall(text):
+        # A group may hold ids, Rollup keys or both (`[4812, rollup(...)]`): a key
+        # carries commas of its own, so it is blanked before the ids are split.
+        shape = _ROLLUP_KEY.sub("K", group)
+        if _IDS_OR_KEYS.match(shape):
+            ids.update(int(t) for t in shape.split(",") if t.strip().isdigit())
+    return frozenset(ids)
+
+
+def rollup_keys_in(text: str) -> frozenset[str]:
+    """Every Rollup key a text cites as `rollup(<kind>|<subject>|<from>/<to>)`
+    inside a bracket group (`[12, rollup(...)]`), read with a pattern and NOT
+    with `parse_note_body`, for `cited_ids_in`'s reason: it works on a head that
+    does not parse. What the `citation` edge and the lineage of a note that rests
+    on a Rollup row are computed from (the review of PR #669, #663)."""
     return frozenset(
-        int(i) for m in _CITATION.finditer(text) for i in m.group(1).split(",")
+        key.strip() for group in _BRACKET_GROUP.findall(text)
+        for key in _ROLLUP_KEY.findall(group) if key.strip()
     )
 
 

@@ -25,7 +25,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import StrEnum
 from typing import Protocol, runtime_checkable
 from uuid import UUID
@@ -87,6 +87,18 @@ class RSVPResponse(StrEnum):
 _PRE_HAPPENED_STATUSES: frozenset[GatheringStatus] = frozenset({
     GatheringStatus.STAGED, GatheringStatus.PROPOSED, GatheringStatus.CONFIRMED,
 })
+#: How long a reminder whose event is marked unsupported waits past its
+#: `due_at` for the mark to be cleared before it expires
+#: (`nora.app.gathering_screen`): a gathering's reminder said late is still
+#: useful for a little while and misleading after it.
+HOLD_GRACE = timedelta(hours=2)
+
+#: Why the fire-time screen held a gathering's reminder
+#: (`nora_gathering_reminders_held_total{reason}`).
+HELD_UNSUPPORTED = "unsupported"
+HELD_READ_ERROR = "read_error"
+HELD_REASONS: tuple[str, ...] = (HELD_UNSUPPORTED, HELD_READ_ERROR)
+
 #: The statuses an event may still be revised out of (every one before
 #: `happened`): what a Cognition session may move, and what it is shown.
 OPEN_STATUSES: frozenset[GatheringStatus] = _PRE_HAPPENED_STATUSES
@@ -158,6 +170,31 @@ class FieldMeta:
             raise InvalidEventFieldModeError("field", self.field)
         validate_event_field_mode(self.reasoning)
         validate_event_field_confidence(self.confidence)
+
+
+def field_mode(event: Gathering, part: str) -> str | None:
+    """How `part` of `event` was reached (`told`, `deduced`, `abduced`), or
+    `None` when the field states none (a row from before `0086`, or a part no
+    write stated). The field's own mode wins; the row-level `reasoning` is only
+    what a write that states one for the whole row carried, so it is the
+    fallback and never overrides a field that says otherwise."""
+    for m in event.field_meta:
+        if m.field == part:
+            return m.reasoning
+    return event.reasoning
+
+
+def render_field(event: Gathering, part: str, value: str) -> str:
+    """One field of an event as it may be said (40 §4, 10 §2 rule 4): a value
+    that rests only on abduction goes out as a QUESTION, never as a stated fact,
+    whatever its confidence, and a person's «yeah» to her own guess never
+    upgrades it (the stored mode stays `abduced` until a write restates the
+    field on evidence of its own). Every other mode is stated. The one place a
+    reader asks how to voice an event's field, so the `<events>` block and any
+    tool that names one cannot disagree about it."""
+    if field_mode(event, part) == "abduced":
+        return f"{part}: {value}? (a guess to check, not a fact)"
+    return f"{part}: {value}"
 
 
 def merge_field_meta(
@@ -513,6 +550,13 @@ class GatheringStore(Protocol):
         """The event whose `reminder_id` is this reminder, as stored (withdrawn
         or not): what the fire-time screen reads
         (`nora.app.gathering_screen`)."""
+
+    async def unsupported_reminder_ids(
+        self, reminder_ids: Sequence[UUID],
+    ) -> frozenset[UUID]:
+        """Of `reminder_ids`, the ones a withdrawn event owns (`unsupported_at`
+        set): reminders that are HELD and so not to be listed or announced
+        (`nora.app.gathering_screen`). A reminder no event owns is not in it."""
 
     async def list_for_conversation(
         self, *, conversation_id: str, status: GatheringStatus | None = None,

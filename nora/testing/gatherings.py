@@ -68,6 +68,12 @@ class FakeGatheringStore:
             rollup_lineages=self._rollup_lineages,
             origin=evidence.room or row.conversation_id,
         )
+        # The real store's rule (`record_event_citations`): a part the write
+        # restates has its edges REPLACED, the rest are kept.
+        restated = set(evidence.parts) | {c.part for c in evidence.citations}
+        self.citations = [
+            (k, c) for k, c in self.citations if k != str(row.id) or c.part not in restated
+        ]
         for c in evidence.citations:
             if (str(row.id), c) not in self.citations:
                 self.citations.append((str(row.id), c))
@@ -77,6 +83,10 @@ class FakeGatheringStore:
         """What the withdrawal cascade does to the head (the real store's is
         `nora.app.withdrawal`'s UPDATE)."""
         self._events[event_id] = replace(self._events[event_id], unsupported_at=at_ms)
+
+    def clear_unsupported(self, event_id: UUID) -> None:
+        """What `nora person unforget --clear-unsupported` does to the head."""
+        self._events[event_id] = replace(self._events[event_id], unsupported_at=None)
 
     async def create(
         self, event: Gathering, *, evidence: EventEvidence | None = None,
@@ -97,6 +107,15 @@ class FakeGatheringStore:
     async def get_by_reminder(self, reminder_id: UUID) -> Gathering | None:
         return next(
             (e for e in self._events.values() if e.reminder_id == reminder_id), None,
+        )
+
+    async def unsupported_reminder_ids(
+        self, reminder_ids: Sequence[UUID],
+    ) -> frozenset[UUID]:
+        wanted = set(reminder_ids)
+        return frozenset(
+            e.reminder_id for e in self._events.values()
+            if e.reminder_id in wanted and e.unsupported_at is not None
         )
 
     async def list_for_conversation(

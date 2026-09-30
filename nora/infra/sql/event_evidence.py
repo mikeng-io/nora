@@ -54,11 +54,34 @@ _MESSAGE_ID_MAX = 2**31 - 1
 
 
 async def record_event_citations(
-    conn: AsyncConnection, *, event_id: str, citations: Sequence[EventCitation],
+    conn: AsyncConnection, *, event_id: str, parts: Iterable[str],
+    citations: Sequence[EventCitation],
 ) -> None:
-    """One edge per `(part, cited)`, in `conn`'s transaction. `ON CONFLICT DO
-    NOTHING`: an event re-citing the same row for the same part on its next
-    revision is not a new edge (`nora.infra.sql.citation`'s own rule)."""
+    """The edges of `event_id` after a write that states `parts`, in `conn`'s
+    transaction: every edge the event holds for a part this write restates is
+    REPLACED by the write's own, and the edges of every part it leaves alone are
+    kept.
+
+    Per field lineage is replaced the same way (`event_lineage`), and the two
+    must agree: the value a revision states rests on the evidence THAT revision
+    cites, not on what the value it replaced rested on. Left to accumulate
+    (`ON CONFLICT DO NOTHING` alone), a place moved from a message A to a message
+    B would still hang on A, and withdrawing A would mark an event that no longer
+    states anything A supports (10 §2 rule 7: the cascade follows a row's
+    CURRENT citation chain). A part restated with no citation (a lapse, whose
+    evidence is the clock) leaves the part with no edge.
+
+    `ON CONFLICT DO NOTHING` stays for what is left: one write citing the same
+    row twice for a part is one edge (`nora.infra.sql.citation`'s own rule)."""
+    restated = set(parts) | {c.part for c in citations}
+    if restated:
+        await conn.execute(
+            sa.delete(CITATION).where(
+                CITATION.c.citing_store == "event",
+                CITATION.c.citing_key == event_id,
+                CITATION.c.part.in_(restated),
+            )
+        )
     if not citations:
         return
     await conn.execute(
@@ -173,9 +196,10 @@ async def apply_evidence(
     evidence: EventEvidence,
 ) -> tuple[Lineage, int | None]:
     """The lineage and `as_of` of `event` after a write that rests on
-    `evidence`, and its edges written. `held` is the lineage the row carries now
-    (read under the row lock by `update`; the row's own on `create`). `as_of`
-    is the newest cited message's time when that is newer than the row's."""
+    `evidence`, and its edges replaced for the parts it restates. `held` is the
+    lineage the row carries now (read under the row lock by `update`; the row's
+    own on `create`). `as_of` is the newest cited message's time when that is
+    newer than the row's."""
     ids = {int(c.ref) for c in evidence.citations if c.store == CITED_MESSAGE and c.ref.isdigit()}
     rooms, newest = await _message_rooms(conn, ids)
     rollups: dict[str, Lineage | None] = {}
@@ -187,6 +211,8 @@ async def apply_evidence(
     lineage = event_lineage(
         held, evidence, message_rooms=rooms, rollup_lineages=rollups, origin=origin,
     )
-    await record_event_citations(conn, event_id=str(event.id), citations=evidence.citations)
+    await record_event_citations(
+        conn, event_id=str(event.id), parts=evidence.parts, citations=evidence.citations,
+    )
     known = [t for t in (event.as_of, newest) if t is not None]
     return lineage, (max(known) if known else None)

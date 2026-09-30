@@ -50,7 +50,7 @@ remap.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from dataclasses import asdict, replace
 from datetime import UTC, datetime
 
@@ -256,12 +256,6 @@ def _event_candidate(event: Gathering) -> dict[str, object]:
     return row
 
 
-def _stated(value: object) -> object:
-    return value.isoformat() if isinstance(value, datetime) else str(value) if isinstance(
-        value, GatheringStatus,
-    ) else value
-
-
 def _checked_evidence(
     *, verb: str, reasoning: str, confidence: str, cited_ids: Sequence[str], shown: Shown,
     parts: Sequence[str], may_be_uncited: bool,
@@ -277,19 +271,6 @@ def _checked_evidence(
         return meta, (), ()
     ids, keys = check_citations(cited_ids, shown, what=verb)
     return meta, ids, keys
-
-
-def _questions(changes: Mapping[str, object], cited: Sequence[str]) -> dict[str, object]:
-    """An abduced write's whole result (40 §4): not a stated field but a
-    question to ask, the value as the guess and the rows it came from. Nothing
-    of the event changes, and a "yeah" to the question later does not make it
-    anything but abduced."""
-    return {
-        "kind": "question_to_ask", "reasoning": "abduced", "cited_ids": list(cited),
-        "questions_to_ask": [
-            {"field": _PART_OF[name], "value": _stated(v)} for name, v in changes.items()
-        ],
-    }
 
 
 async def dry_run_event_propose(
@@ -313,9 +294,12 @@ async def dry_run_event_propose(
 
     `reasoning` (`told`, `deduced` or `abduced`), `confidence` and `cited_ids`
     (message ids and `rollup(...)` keys) are what 40 §4 says every field
-    carries; `cited_ids` are held to `shown` as a note's are. **An abduced write
-    creates nothing**: it records the question to ask (`_questions`), never a
-    stated event.
+    carries; `cited_ids` are held to `shown` as a note's are. **An abduced value
+    is STORED, with its mode** (40 §4, 10 §2 rule 4): the field is written like
+    any other and its `FieldMeta.reasoning` says `abduced`, which is what makes
+    every reader render it as a question (`nora.domain.gatherings.render_field`)
+    and what no later assent changes: only a write that restates the field, on
+    its own citations, can.
 
     `open_proposed_events` (review follow-up on #625's step 3a-i): the
     conversation's already-`PROPOSED` events, READ-ONLY input the caller
@@ -363,13 +347,6 @@ async def dry_run_event_propose(
         return await refuse(f"bad_{exc.field}", str(exc))
     except NoteBodyError as exc:
         return await refuse(exc.rule, str(exc))
-    if reasoning == "abduced":
-        write = WouldWrite(
-            tier="event", verb="event_propose", platform=platform,
-            conversation_id=conversation_id, args=args, outcome="would_commit",
-            candidate=_questions(stated, cited_ids),
-        )
-        return await _record(ledger, session_id=session_id, unit=unit, write=write, now_ms=now_ms)
     try:
         event = build(
             conversation_id=conversation_id, unit_id=unit, reasoning=reasoning,
@@ -404,7 +381,7 @@ async def dry_run_event_revise(
     with `reasoning` and `confidence`, resting on `cited_ids` (held to `shown`
     as a note's are; a move to `lapsed` alone may cite nothing, the date
     passing is no row). Fields it leaves alone keep what they carried. **An
-    abduced write changes nothing**: it records the question to ask."""
+    abduced value is stored with its mode**, as `event_propose` says."""
     args = {
         "base_revision_id": base_revision_id, **field_changes, "reasoning": reasoning,
         "confidence": confidence, "cited_ids": list(cited_ids),
@@ -441,14 +418,6 @@ async def dry_run_event_revise(
         return await refuse(f"bad_{exc.field}", str(exc))
     except NoteBodyError as exc:
         return await refuse(exc.rule, str(exc))
-    if reasoning == "abduced":
-        write = WouldWrite(
-            tier="event", verb=verb, platform=platform,
-            conversation_id=conversation_id, args=args, outcome="would_commit",
-            candidate=_questions(field_changes, cited_ids) | {"event_id": str(current.id)},
-            base_revision_id=base_revision_id,
-        )
-        return await _record(ledger, session_id=session_id, unit=unit, write=write, now_ms=now_ms)
     try:
         updated = replace(
             current, **field_changes,  # type: ignore[arg-type]

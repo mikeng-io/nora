@@ -343,6 +343,7 @@ class RenderRoom:
 def note_revision_lineage(
     *, cited: Iterable[int], rooms: Mapping[int, str], origin: str,
     origin_key: str | None, first: bool, evidence_room: str | None = None,
+    rollup_lineages: Mapping[str, Lineage | None] | None = None,
 ) -> Lineage:
     """A note revision's lineage from its body's citations (migration
     `0073_lineage`'s backfill rule, applied to every new revision by
@@ -357,10 +358,20 @@ def note_revision_lineage(
     no longer on record, a first revision whose room has no platform on
     record, or a later revision citing nothing from no known room, is
     `unresolved` at the origin: shown only there (70 §5).
+
+    `rollup_lineages` maps each Rollup key the body cites to the lineage of the
+    current row it names (`None` for a key that names no current row): a cited
+    row brings the entries its own lineage holds, so a note resting on a
+    presence row is shown only where that row may be; a key that resolves to
+    nothing is `unresolved` at the origin, never widened (#663).
     """
     ids = frozenset(cited)
     here = origin_key or origin
     entries = [message(rooms[i]) for i in ids if i in rooms]
+    for key in sorted(rollup_lineages or ()):
+        row = (rollup_lineages or {}).get(key)
+        reached = [] if row is None else [e for _, es in row.sections for e in es]
+        entries.extend(reached or [unresolved(here)])
     if first:
         entries.append(message(origin_key) if origin_key else unresolved(here))
     if evidence_room:

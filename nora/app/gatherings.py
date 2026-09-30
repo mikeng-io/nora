@@ -24,8 +24,10 @@ from uuid import UUID
 
 from nora.agent.security import screen_and_resolve_place
 from nora.domain.gatherings import (
+    CITED_MESSAGE,
     RSVP,
     TERMINAL_STATUSES,
+    EventCitation,
     EventEvidence,
     Gathering,
     GatheringStatus,
@@ -94,18 +96,29 @@ class _Honcho(Protocol):
 
 def _tag_evidence(
     parts: set[str], platform: str, conversation_id: str,
+    message_ids: Sequence[int] = (),
 ) -> EventEvidence | None:
     """What a tag-path write rests on: the turn itself, said in this room, and
-    no row it could cite (the tag path's event verbs take no `cited_ids`, so it
-    records NO `citation` edge; 12 §3's `Plan` and the edges arrive with the
-    Cognition adaptor's live verbs). Its lineage is `message:<this room>` for
-    the fields it states, `note_revision_lineage`'s `evidence_room` rule, so an
-    event a tag turn wrote is not unknown-and-hidden under `[lineage] mode =
-    on`. No fields, no evidence."""
+    the message(s) that raised it (`Room.trigger_message_ids`, code's own
+    knowledge, not something the model names: the tag path's event verbs take no
+    `cited_ids`). Each field the write states gets one `citation` edge per
+    message, so the withdrawal cascade reaches the event when that message is
+    withdrawn (10 §2 rule 7; the review of PR #669). Its lineage is
+    `message:<the room the message was said in>` per field, plus
+    `message:<this room>` for the turn itself (`note_revision_lineage`'s
+    `evidence_room` rule), so an event a tag turn wrote is not
+    unknown-and-hidden under `[lineage] mode = on`. No ids (the fire path, a row
+    outside the window) records no edge: the room-only lineage it always had.
+    No fields, no evidence."""
     if not parts:
         return None
     return EventEvidence(
-        parts=frozenset(parts), citations=(), room=room_key(platform, conversation_id),
+        parts=frozenset(parts),
+        citations=tuple(
+            EventCitation(part=part, store=CITED_MESSAGE, ref=str(mid))
+            for part in sorted(parts) for mid in dict.fromkeys(message_ids)
+        ),
+        room=room_key(platform, conversation_id),
     )
 
 
@@ -141,7 +154,7 @@ class GatheringService:
         self, *, conversation_id: str, requester_person_id: str, title: str,
         when: datetime | None = None, venue_text: str | None = None,
         person_names: frozenset[str] | None = None, platform: str,
-        unit_id: str = "",
+        unit_id: str = "", message_ids: Sequence[int] = (),
     ) -> Gathering:
         """Spec §3.1: the CALLER (the `create_event` tool) is expected to
         have already checked `list_events(status=PROPOSED)` and decided a
@@ -202,14 +215,14 @@ class GatheringService:
             {"what", "status"}
             | ({"start"} if when is not None else set())
             | ({"place"} if venue_text is not None else set()),
-            platform, conversation_id,
+            platform, conversation_id, message_ids,
         ))
 
     async def update_event(
         self, *, event_id: UUID, conversation_id: str,
         when: datetime | None = None, venue_text: str | None = None,
         person_names: frozenset[str] | None = None, platform: str,
-        base_revision_id: UUID | None = None,
+        base_revision_id: UUID | None = None, message_ids: Sequence[int] = (),
     ) -> Gathering:
         current = await self._require_in_conversation(event_id, conversation_id)
         if current.status in TERMINAL_STATUSES:
@@ -242,13 +255,14 @@ class GatheringService:
             evidence=_tag_evidence(
                 ({"start"} if when is not None else set())
                 | ({"place"} if venue_text is not None else set()),
-                platform, conversation_id,
+                platform, conversation_id, message_ids,
             ),
         )
 
     async def set_event_status(
         self, *, event_id: UUID, conversation_id: str, status: GatheringStatus,
         base_revision_id: UUID | None = None, platform: str | None = None,
+        message_ids: Sequence[int] = (),
     ) -> Gathering:
         """The general lifecycle move `event_set_status` backs (40-register.md
         §3): `cancel_event` is `set_event_status(status=CANCELLED)` restated,
@@ -267,7 +281,7 @@ class GatheringService:
         return await self._store.update(
             updated, base_revision_id=base_revision_id,
             evidence=None if platform is None else _tag_evidence(
-                {"status"}, platform, conversation_id,
+                {"status"}, platform, conversation_id, message_ids,
             ),
         )
 
@@ -339,6 +353,14 @@ class GatheringService:
         exist."""
         event = await self._store.get(event_id)
         return None if event is None or event.unsupported_at is not None else event
+
+    async def held_reminder_ids(
+        self, reminder_ids: Sequence[UUID],
+    ) -> frozenset[UUID]:
+        """Of `reminder_ids`, those a withdrawn event owns: a reminder held
+        until its event's mark is cleared (`nora.app.gathering_screen`), which
+        no listing shows, since its text carries the event's title."""
+        return await self._store.unsupported_reminder_ids(reminder_ids)
 
     async def list_events_for_person(self, *, person_id: str) -> Sequence[Gathering]:
         """The web app's ONLY read path (not conversation-scoped, unlike

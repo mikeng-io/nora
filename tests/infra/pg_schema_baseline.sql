@@ -811,6 +811,7 @@ CREATE TRIGGER computer_events_no_truncate BEFORE TRUNCATE ON public.computer_ev
 CREATE TRIGGER computer_exports_append_only BEFORE DELETE OR UPDATE ON public.computer_exports FOR EACH ROW EXECUTE FUNCTION public.computer_exports_refuse_change();
 CREATE TRIGGER computer_exports_no_truncate BEFORE TRUNCATE ON public.computer_exports FOR EACH STATEMENT EXECUTE FUNCTION public.computer_exports_refuse_change();
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.analytics_watermark FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('deriver_name', 'subject_id');
+CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.citation FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.compute_jobs FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.computer_sessions FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.consolidation_watermark FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('consolidator_name', 'scope_id');
@@ -851,6 +852,7 @@ CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.tag_d
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.version_announcements FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('version', 'platform', 'conversation_id');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.video_readings FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('sha256', 'provider', 'model', 'chunk_seconds', 'chunk_max', 'reading_digest');
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.analytics_watermark FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
+CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.citation FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.compute_jobs FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.computer_sessions FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.consolidation_watermark FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();

@@ -57,6 +57,7 @@ class BackfillStore(Protocol):
 
     async def list_for_conversation(
         self, *, conversation_id: str, status: GatheringStatus | None = None,
+        include_unsupported: bool = False,
     ) -> Sequence[Gathering]: ...
 
     async def update(
@@ -103,7 +104,14 @@ async def backfill_unit_ids(
     for convo in policy.conversations:
         if not convo.unit or not convo.primary_id:
             continue
-        events = await store.list_for_conversation(conversation_id=convo.primary_id)
+        # `include_unsupported`: a writer that re-homes every row needs the
+        # ones the withdrawal cascade marked too. Left out, a marked legacy
+        # event would keep no unit for good, and clearing its mark later would
+        # return it unreachable by the unit-scoped search. The update does not
+        # touch the mark (`_event_values` never writes it).
+        events = await store.list_for_conversation(
+            conversation_id=convo.primary_id, include_unsupported=True,
+        )
         counts = RoomCounts(
             conversation_id=convo.primary_id, label=convo.label or convo.primary_id,
             unit=convo.unit, total=len(events),

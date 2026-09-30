@@ -4032,14 +4032,14 @@ class EventsCollaborator(Protocol):
         self, *, conversation_id: str, requester_person_id: str, title: str,
         when: datetime | None = None, venue_text: str | None = None,
         person_names: frozenset[str] | None = None, platform: str,
-        unit_id: str = "",
+        unit_id: str = "", message_ids: Sequence[int] = (),
     ) -> Gathering: ...
 
     async def update_event(
         self, *, event_id: UUID, conversation_id: str,
         when: datetime | None = None, venue_text: str | None = None,
         person_names: frozenset[str] | None = None, platform: str,
-        base_revision_id: UUID | None = None,
+        base_revision_id: UUID | None = None, message_ids: Sequence[int] = (),
     ) -> Gathering: ...
 
     async def rsvp(
@@ -4054,11 +4054,16 @@ class EventsCollaborator(Protocol):
     async def set_event_status(
         self, *, event_id: UUID, conversation_id: str, status: GatheringStatus,
         base_revision_id: UUID | None = None, platform: str | None = None,
+        message_ids: Sequence[int] = (),
     ) -> Gathering: ...
 
     async def list_events(
         self, *, conversation_id: str, status: GatheringStatus | None = None,
     ) -> Sequence[Gathering]: ...
+
+    async def held_reminder_ids(
+        self, reminder_ids: Sequence[UUID],
+    ) -> frozenset[UUID]: ...
 
     async def search_events(
         self, *, unit_id: str, conversation_id: str, place: str | None = None,
@@ -11482,6 +11487,26 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 "note": "I couldn't check what's waiting. Say so: an empty list and "
                         "a failed look are different answers.",
             }
+        # A reminder HELD by the withdrawal cascade (its event's evidence is
+        # gone, `nora.app.gathering_screen`) is not listed: its text carries
+        # the event's title, and the listing is a read path like any other
+        # that must not show what the cascade took out. FAIL-CLOSED: if the
+        # event side cannot be read the listing is unavailable, never the full
+        # list that might show a withdrawn title.
+        if events is not None and any(r.kind == "gathering" for r in rows):
+            try:
+                held = await events.held_reminder_ids(
+                    [r.id for r in rows if r.kind == "gathering"],
+                )
+            except Exception:
+                log.exception("list_reminders could not check held gatherings")
+                _record(metrics, "list_reminders", "unavailable")
+                return {
+                    "status": "unavailable",
+                    "note": "I couldn't check what's waiting. Say so: an empty list and "
+                            "a failed look are different answers.",
+                }
+            rows = [r for r in rows if r.id not in held]
         _record(metrics, "list_reminders", "ok", count=len(rows))
         listed = [
             {
@@ -11709,6 +11734,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 person_names=_route_person_names,
                 platform=room.platform,
                 unit_id=_unit() or "",
+                message_ids=room.trigger_message_ids,
             )
         except AmbiguousOpenGatheringsError:
             _record(metrics, "event_propose", "refused", reason="ambiguous")
@@ -11762,6 +11788,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 when=due_at, venue_text=venue_text or None,
                 person_names=_route_person_names, platform=room.platform,
                 base_revision_id=UUID(base_revision_id) if base_revision_id else None,
+                message_ids=room.trigger_message_ids,
             )
         except GatheringNotFoundError:
             _record(metrics, "event_revise", "refused", reason="not_found")
@@ -11891,7 +11918,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 event_id=UUID(event_id), conversation_id=bound_conversation_id,
                 status=parsed_status,
                 base_revision_id=UUID(base_revision_id) if base_revision_id else None,
-                platform=room.platform,
+                platform=room.platform, message_ids=room.trigger_message_ids,
             )
         except GatheringNotFoundError:
             _record(metrics, "event_set_status", "refused", reason="not_found")

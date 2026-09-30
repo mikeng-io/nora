@@ -94,7 +94,10 @@ class _FakePersons:
         return None
 
 
-def _room(*, tagger: PersonRef | None = MILES, conversation_id: str = GROUP) -> Room:
+def _room(
+    *, tagger: PersonRef | None = MILES, conversation_id: str = GROUP,
+    trigger_message_ids: tuple[int, ...] = (),
+) -> Room:
     source = FakeRosterSource(groups={conversation_id: (frozenset({"miles"}),)})
     return Room(
         platform="signal",
@@ -102,6 +105,7 @@ def _room(*, tagger: PersonRef | None = MILES, conversation_id: str = GROUP) -> 
         roster_source=source,
         persons=_FakePersons(MILES),
         tagger=tagger,
+        trigger_message_ids=trigger_message_ids,
     )
 
 
@@ -111,6 +115,7 @@ def _tools(
     metrics: Metrics | None = None,
     tagger: PersonRef | None = MILES,
     conversation_id: str = GROUP,
+    trigger_message_ids: tuple[int, ...] = (),
 ) -> dict:
     registry = ToolRegistry(events=events)
     specs = registry.specs(
@@ -121,7 +126,10 @@ def _tools(
         honcho=FakeMemoryStore(),
         deliverer=SinkSender(),
         metrics=metrics or Metrics(),
-        room=_room(tagger=tagger, conversation_id=conversation_id),
+        room=_room(
+            tagger=tagger, conversation_id=conversation_id,
+            trigger_message_ids=trigger_message_ids,
+        ),
     )
     return {spec.name: spec.call for spec in specs}
 
@@ -419,3 +427,46 @@ async def test_event_set_status_moves_through_the_lifecycle_and_bumps_the_revisi
 
     ev = await events.get_event(event_id=UUID(created["id"]))
     assert ev.status.value == "happened"
+
+
+# ── The tag path's event writes cite the message that raised the turn (the
+# review of PR #669: an event with no edge is out of the withdrawal cascade's
+# reach). The ids are the Room's (code's own knowledge), never a tool argument.
+
+
+async def test_a_tag_turn_s_event_writes_cite_the_message_that_raised_the_turn():
+    store = FakeGatheringStore()
+    tools = _tools(events=_events_service(store=store), trigger_message_ids=(77,))
+    made = await tools["event_propose"](
+        title="Dinner", when="2026-09-01T19:00:00+08:00", venue_text="place one",
+    )
+    assert made["status"] == "ok"
+    cited = {(c.part, c.ref) for _, c in store.citations}
+    assert cited == {(part, "77") for part in ("what", "status", "start", "place")}
+    # A revision restates its own parts on the same message; a status move its own.
+    await tools["event_revise"](event_id=made["id"], venue_text="place two")
+    await tools["event_set_status"](event_id=made["id"], status="confirmed")
+    assert {(c.part, c.ref) for _, c in store.citations} == cited
+    # No id in the turn (a fire turn, a row outside the window): nothing to cite.
+    bare = FakeGatheringStore()
+    await _tools(events=_events_service(store=bare))["event_propose"](title="Dinner")
+    assert bare.citations == []
+
+
+def test_the_triggering_row_is_the_taggers_row_at_the_messages_own_time():
+    from nora.agent.room import trigger_message_ids
+    from nora.domain.models import TranscriptRow
+
+    def row(id_: int, sender: str, ts: int, *, nora: bool = False) -> TranscriptRow:
+        return TranscriptRow(
+            id=id_, sender_id=sender, sender_name=None, ts=ts, body="x", is_nora=nora,
+            delivery_status="sent", raw_json=None,  # type: ignore[arg-type]
+        )
+
+    window = (
+        row(1, "+1", 1000), row(2, "+2", 2000), row(3, "+1", 2000, nora=True),
+        row(4, "+1", 2000), row(5, "+1", 3000),
+    )
+    assert trigger_message_ids(window, sender_id="+1", timestamp=2000) == (4,)
+    # Not in the window: no id, and never a nearby row.
+    assert trigger_message_ids(window, sender_id="+1", timestamp=2500) == ()

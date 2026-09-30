@@ -247,6 +247,19 @@ class SqlGatheringStore:
             row = (await conn.execute(stmt)).first()
         return None if row is None else _row_to_event(row)
 
+    async def unsupported_reminder_ids(
+        self, reminder_ids: Sequence[UUID],
+    ) -> frozenset[UUID]:
+        if not reminder_ids:
+            return frozenset()
+        stmt = sa.select(EVENTS.c.reminder_id).where(
+            EVENTS.c.reminder_id.in_(list(reminder_ids)),
+            EVENTS.c.unsupported_at.is_not(None),
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+        return frozenset(r.reminder_id for r in rows)
+
     async def list_for_conversation(
         self, *, conversation_id: str, status: GatheringStatus | None = None,
         include_unsupported: bool = False,

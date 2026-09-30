@@ -17,7 +17,7 @@ from __future__ import annotations
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from nora.domain.note_body import cited_ids_in
+from nora.domain.note_body import cited_ids_in, rollup_keys_in
 from nora.infra.sql.schema import CITATION
 
 __all__ = ["record_citations", "record_message_citation"]
@@ -27,21 +27,33 @@ async def record_citations(
     conn: AsyncConnection, *, citing_store: str, citing_key: str, body: str,
 ) -> None:
     """Every `[id, id]` group `cited_ids_in(body)` finds (design 42 §4's
-    citation grammar, `nora.domain.note_body`) becomes one edge. Used by
+    citation grammar, `nora.domain.note_body`) becomes one edge, and every
+    `rollup(...)` key `rollup_keys_in(body)` finds becomes one edge to the
+    `rollup` store. Used by
     `nora.infra.sql.notes`, whose bodies are already written in this format
     (the only store today whose schema requires it, `12-schemas.md` §1)."""
     ids = cited_ids_in(body)
-    if not ids:
+    keys = rollup_keys_in(body)
+    edges = [
+        {
+            "citing_store": citing_store, "citing_key": citing_key,
+            "cited_store": "message", "cited_id": str(i),
+        }
+        for i in sorted(ids)
+    ] + [
+        # A Rollup row the body rests on (`rollup(kind|subject|from/to)`, #663):
+        # its edge is the row's key text, `cited_store = 'rollup'`, the same
+        # vocabulary an event's edge uses (migration `0086_event_citations`).
+        {
+            "citing_store": citing_store, "citing_key": citing_key,
+            "cited_store": "rollup", "cited_id": key,
+        }
+        for key in sorted(keys)
+    ]
+    if not edges:
         return
     await conn.execute(
-        pg_insert(CITATION)
-        .values([
-            {
-                "citing_store": citing_store, "citing_key": citing_key,
-                "cited_store": "message", "cited_id": str(i),
-            }
-            for i in sorted(ids)
-        ])
+        pg_insert(CITATION).values(edges)
         .on_conflict_do_nothing(constraint="citation_edge_unique")
     )
 

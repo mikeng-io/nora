@@ -1350,9 +1350,9 @@ class CognitionSessionRunner:
             recorded, not committed.
 
             Every field you give rests on the rows you cite. An `abduced` value
-            (your best explanation of something nobody said) is not written: it
-            is kept as a question to ask, and a yes to it later does not make it
-            told.
+            (your best explanation of something nobody said) is written as
+            abduced and is put to the room as a question, and a yes to it later
+            does not make it told.
 
             Returns `status`: ok or refused, with a `reason` and `detail` when
             refused.
@@ -1429,7 +1429,7 @@ class CognitionSessionRunner:
             recorded, not committed.
 
             What you change rests on the rows you cite, and an `abduced` value
-            is kept as a question to ask, not written. One write has one
+            is written as abduced and put as a question. One write has one
             reasoning: if the time and the place rest on different evidence,
             make two writes.
 
@@ -1496,8 +1496,8 @@ class CognitionSessionRunner:
             says it happened, or says it is off. In this run the write is
             recorded, not committed.
 
-            The move rests on the rows you cite; an `abduced` one is kept as a
-            question to ask ("did it happen?"), not written. A move to `lapsed`
+            The move rests on the rows you cite; an `abduced` one is written as
+            abduced and put as a question ("did it happen?"). A move to `lapsed`
             (the date passed with nothing agreed) may cite nothing, since the
             evidence is the clock. Only a status before `happened` moves: an
             event that happened, was cancelled or lapsed stays as it is.
