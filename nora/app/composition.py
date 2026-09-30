@@ -4387,9 +4387,7 @@ async def build_dependencies(
                 # session must be grounded with the tool off.
                 records=SqlRecordQuery(engine), persons=persons, media_join=media_join,
                 note_index=_note_index, events_in=_room_events,
-                standing_of=lambda platform, conversation_id: standing_store.read(
-                    platform=platform, conversation_id=conversation_id,
-                ),
+                lineage=lineage,
                 unit_rooms=lambda unit: cognition_unit_rooms.get(unit, set()),
                 ai_display_name=cfg.doctrine.display_name,
             )

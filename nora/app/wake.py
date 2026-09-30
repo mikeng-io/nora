@@ -320,14 +320,18 @@ class WakeEvaluator:
             return None
 
     async def _strike_failed(self, view: UnitView, now_ms: int) -> UnitView:
-        """At `max_consecutive_failures` strike what the failing wakes claimed:
-        every pending stimulus their newest watermark consumes is retracted with
-        reason `failed`, so an agenda that always fails stops, and a stimulus
-        that arrived after the last failed wake is never struck unseen."""
+        """At `max_consecutive_failures` AGENDA failures strike what those wakes
+        claimed: every pending stimulus their newest watermark consumes is
+        retracted with reason `failed`, so an agenda that always fails stops, and
+        a stimulus that arrived after the last agenda-failed wake is never struck
+        unseen. INFRASTRUCTURE failures (provider outage, kill, database) back
+        the unit off (`view.failures`) and never strike, however many in a row
+        (DEC-244, #637 second review): a human message is not dropped for an
+        outage."""
         mark = view.failed_mark
         if (
             not view.tracked or mark is None
-            or view.failures < self._policy.max_consecutive_failures
+            or view.agenda_failures < self._policy.max_consecutive_failures
         ):
             return view
         struck = [s for s in view.pending if mark.consumed(s)]
@@ -345,8 +349,9 @@ class WakeEvaluator:
                 wrote += 1
         self._metrics.inc("nora_cognition_stimuli_struck_total", float(wrote), reason="failed")
         log.error(
-            "cognition: unit %s failed %d sessions in a row; struck %d stimulus(es) it "
-            "could not process (reason=failed)", view.unit, view.failures, wrote,
+            "cognition: unit %s failed %d sessions in a row because of its agenda; struck "
+            "%d stimulus(es) it could not process (reason=failed)",
+            view.unit, view.agenda_failures, wrote,
         )
         gone = {s.id for s in struck}
         return replace(view, pending=tuple(s for s in view.pending if s.id not in gone))

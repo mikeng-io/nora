@@ -122,10 +122,12 @@ async def _wake(
 
 async def _close(
     stimuli: Any, wake_id: int, outcome: str = "closed", *, carries: Any = (),
-    at: int = NOW + 500,
+    at: int = NOW + 500, cause: str = "infra",
 ) -> Any:
     return await stimuli.record_outcome(
-        outcome=NewWakeOutcome(wake_id=wake_id, unit=UNIT, outcome=outcome, at_ms=at),
+        outcome=NewWakeOutcome(
+            wake_id=wake_id, unit=UNIT, outcome=outcome, at_ms=at, cause=cause,
+        ),
         carries=tuple(carries), recorded_at_ms=at,
     )
 
@@ -196,30 +198,58 @@ async def test_consecutive_failures_and_the_mark_of_the_newest_failed_wake(store
     good = await _wake(stimuli, through=1, at=NOW)
     await _close(stimuli, good)
     view = await _view(stimuli, stale_before_ms=NOW)
-    assert (view.failures, view.failed_mark) == (0, None)
+    assert (view.failures, view.agenda_failures, view.failed_mark) == (0, 0, None)
     a = await _wake(stimuli, through=2, at=NOW + 100)
-    await _close(stimuli, a, "failed")
+    await _close(stimuli, a, "failed", cause="agenda")
     b = await _wake(stimuli, through=3, at=NOW + 200)
     await _close(stimuli, b, "cancelled")
     c = await _wake(stimuli, through=4, at=NOW + 300)
-    await _close(stimuli, c, "timeout")
+    await _close(stimuli, c, "timeout", cause="agenda")
     view = await _view(stimuli, stale_before_ms=NOW)
     assert view.failures == 2                                  # a and c, b is transparent
+    assert view.agenda_failures == 2
     assert (view.failed_mark.through_stimulus_id, view.failed_mark.through_ms) == (4, NOW + 300)
-    # a wake that never resolved and is past the timeout is a failure too
+    # a wake that never resolved and is past the timeout is a failure too, and
+    # an INFRASTRUCTURE one (a kill, a crash): it backs off, it is never struck
     await _wake(stimuli, through=5, at=NOW + 400)
     stale = await _view(stimuli, stale_before_ms=NOW + 5000)
     assert stale.failures == 3
-    assert stale.failed_mark.through_stimulus_id == 5
+    assert stale.agenda_failures == 2
+    assert stale.failed_mark.through_stimulus_id == 4
     # ... and while it is still OPEN it neither counts nor ends the run
     running = await _view(stimuli, stale_before_ms=NOW)
     assert running.failures == 2
     # one closed wake resets the run
     await _close(stimuli, await _open_wake_id(stimuli), "closed")
     view = await _view(stimuli, stale_before_ms=NOW)
-    assert (view.failures, view.failed_mark) == (0, None)
+    assert (view.failures, view.agenda_failures, view.failed_mark) == (0, 0, None)
     # a reader that tracks no sessions sees none
     assert (await _view(stimuli)).failures == 0
+
+
+async def test_a_failed_outcome_stores_its_cause_and_only_agenda_counts_toward_a_strike(stores):
+    """DEC-244 (#637 second review): the cause is written with the outcome and
+    read back by the same rule in both stores. `infra` is the default and the
+    reading of anything unrecorded; an unknown cause is refused."""
+    stimuli, _ledger = stores
+    await _msgs(stimuli, 4)
+    infra = await _wake(stimuli, through=2, at=NOW)
+    await _close(stimuli, infra, "failed")                       # cause defaults to infra
+    view = await _view(stimuli, stale_before_ms=NOW)
+    assert (view.failures, view.agenda_failures, view.failed_mark) == (1, 0, None)
+    agenda = await _wake(stimuli, through=3, at=NOW + 100)
+    await _close(stimuli, agenda, "failed", cause="agenda")
+    view = await _view(stimuli, stale_before_ms=NOW)
+    assert (view.failures, view.agenda_failures) == (2, 1)
+    assert view.failed_mark.through_stimulus_id == 3
+    later_infra = await _wake(stimuli, through=4, at=NOW + 200)
+    await _close(stimuli, later_infra, "timeout", cause="infra")
+    view = await _view(stimuli, stale_before_ms=NOW)
+    assert (view.failures, view.agenda_failures) == (3, 1)       # infra is transparent
+    assert view.failed_mark.through_stimulus_id == 3             # ... and never the mark
+    with pytest.raises(ValueError, match="failure cause"):
+        await _close(stimuli, await _wake(stimuli, through=4, at=NOW + 300), "failed",
+                     cause="weather")
 
 
 async def _open_wake_id(stimuli: Any) -> int:

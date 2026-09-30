@@ -77,6 +77,14 @@ async def boom(agent: ScriptedAgent, tools: list[Any]) -> CognitionRunResult:
     raise RuntimeError("the model loop blew up")
 
 
+async def overflow(agent: ScriptedAgent, tools: list[Any]) -> CognitionRunResult:
+    """A failure the AGENDA causes: its prompt does not fit the model's window
+    (`classify_failure`: cause `agenda`, the only cause that strikes)."""
+    from strands.types.exceptions import ContextWindowOverflowException
+
+    raise ContextWindowOverflowException("the agenda does not fit the window")
+
+
 @dataclass
 class ScriptedAgent:
     """The fake model. Each `run` takes the next behaviour off `script` (the

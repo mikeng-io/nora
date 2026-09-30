@@ -500,7 +500,7 @@ cognition catalogue — the rest of this table's own 3a row.
 **Step 3a-ii built 2026-09-29** (DEC-242, #627): the session loop, the pace
 verbs, the mirrored and held `remind`, `nora cognition compare`; unwired.
 
-**Step 3a-iii built 2026-09-30** (DEC-244, no migration): the composition root
+**Step 3a-iii built 2026-09-30** (DEC-244; migration `0080_cognition_outcome_cause`): the composition root
 builds the shadow session under `[cognition] session_mode = "shadow"`
 (off builds nothing), hands its hook to the wake evaluator and stops it at
 shutdown; the session rides the Dreamer's model and takes its budget from

@@ -37,7 +37,6 @@ from nora.domain.cognition_ground import (
     Grounding,
     NoteLine,
     RecordItem,
-    StandingLine,
     record_ref,
 )
 from nora.domain.cognition_session import AgendaItem, Room
@@ -152,12 +151,16 @@ def _record_line(
 
 def _fit(lines: list[str], allowance: int) -> tuple[list[str], int]:
     """The NEWEST lines that fit `allowance`, in order, and how many older ones
-    were left out. At least one line is always kept: an item whose newest
-    message is longer than its share still shows it (clipped)."""
+    were left out. At least one line is always kept, CLIPPED to `allowance` when
+    the newest message is longer than its share: `record_chars` is a hard cap
+    (#637 second review: a per-item floor let 12 items spend 10,418 of 8,000)."""
     kept: list[str] = []
     spent = 0
     for line in reversed(lines):
         cost = len(line) + 1
+        if not kept and cost > allowance:
+            line = _clip(line, max(allowance - 1, 2))
+            cost = len(line) + 1
         if kept and spent + cost > allowance:
             break
         kept.append(line)
@@ -168,16 +171,20 @@ def _fit(lines: list[str], allowance: int) -> tuple[list[str], int]:
 
 def _shares(needs: Sequence[int], total: int, floor: int) -> list[int]:
     """Each item's allowance: the smallest need first, each given what it
-    needs or an even share of what is left (never under `floor`), so a chatty
+    needs or an even share of what is left (never under `floor`, which itself
+    shrinks to `total // items` so the shares sum to at most `total`), so a chatty
     room does not starve a quiet one and unused budget flows to the room that
     needs it."""
     order = sorted(range(len(needs)), key=lambda i: needs[i])
     out = [0] * len(needs)
     left = total
+    # The floor SHRINKS when items x floor would exceed the budget: the total
+    # is a hard cap, never a suggestion the floor may overrun.
+    floor = min(floor, total // len(needs)) if needs else floor
     for pos, i in enumerate(order):
         fair = max(floor, left // (len(order) - pos))
-        out[i] = min(needs[i], fair)
-        left = max(left - out[i], 0)
+        out[i] = min(needs[i], fair, left)
+        left -= out[i]
     return out
 
 
@@ -251,13 +258,6 @@ def _event_line(e: EventLine, now_ms: int, tz: tzinfo) -> str:
     return f"- event {e.id} \"{one_line(e.title)}\", {e.status}, {when}{venue}{rev}"
 
 
-def _standing_line(s: StandingLine, now_ms: int) -> str:
-    return (
-        f"- Standing (revision {s.revision}, folded {ago(now_ms - s.updated_at_ms)}): "
-        f"{_clip(s.text, 300)}"
-    )
-
-
 def _register(
     rooms: Sequence[Room], grounding: Grounding, *, now_ms: int, tz: tzinfo, budget: RenderBudget,
 ) -> list[str]:
@@ -270,12 +270,10 @@ def _register(
             out.append(f"- ({len(grounding.notes) - len(shown)} more open notes not listed)")
     for room in rooms:
         events = [e for e in grounding.events if e.room == room]
-        standing = [s for s in grounding.standing if s.room == room]
-        if not events and not standing:
+        if not events:
             continue
         out.append(f"Already recorded for room {room_key(room)}:")
         out.extend(_event_line(e, now_ms, tz) for e in events[: budget.register_lines])
-        out.extend(_standing_line(s, now_ms) for s in standing)
     if not out:
         return []
     text = "\n".join(out)

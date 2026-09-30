@@ -18,6 +18,7 @@ from typing import Any
 
 from nora.domain.ports import CARRY_STATES, NewCarry, NewWakeOutcome, RecordedOutcome
 from nora.domain.stimuli import (
+    FAILURE_CAUSES,
     WAKE_OUTCOMES,
     NewStimulus,
     NewWake,
@@ -47,6 +48,7 @@ class OutcomeRow:
     at_ms: int
     detail: str
     session_id: int | None
+    cause: str = "infra"
 
 
 class InMemoryStimulusStore:
@@ -103,6 +105,7 @@ class InMemoryStimulusStore:
             outcome=None if row is None else row.outcome,
             outcome_at_ms=None if row is None else row.at_ms,
             stale_before_ms=stale_before_ms,
+            cause=None if row is None else row.cause,
         )
 
     def _counted(self, wake_id: int) -> bool:
@@ -147,7 +150,7 @@ class InMemoryStimulusStore:
             s.recorded_at_ms for s in self.stimuli
             if s.unit == unit and s.kind == "message" and s.id not in self.uncommitted
         ]
-        failures, failed_mark = failure_run(
+        failures, agenda_failures, failed_mark = failure_run(
             (w, self._state(w, stale_before_ms)) for w in reversed(mine)
         )
         return UnitView(
@@ -155,7 +158,7 @@ class InMemoryStimulusStore:
             last_activity_ms=max(activity) if activity else None, last_wake=last,
             mark=mark, last_session=last_session,
             carry={i: c.strike for i, c in carried.items()},
-            failures=failures, failed_mark=failed_mark,
+            failures=failures, agenda_failures=agenda_failures, failed_mark=failed_mark,
         )
 
     async def record_outcome(
@@ -166,6 +169,8 @@ class InMemoryStimulusStore:
         # The same argument checks the SQL store makes before its transaction.
         if outcome.outcome not in WAKE_OUTCOMES:
             raise ValueError(f"unknown wake outcome {outcome.outcome!r}")
+        if outcome.cause not in FAILURE_CAUSES:
+            raise ValueError(f"unknown failure cause {outcome.cause!r}")
         if carries and outcome.outcome != "closed":
             raise ValueError("carry rows are written only with a `closed` outcome")
         for carry in carries:
@@ -188,6 +193,7 @@ class InMemoryStimulusStore:
         if any(c.state not in CARRY_STATES for c in carries):
             raise ValueError("carry state outside ck_cognition_carry_state")
         value, detail, rows = outcome.outcome, outcome.detail, list(carries)
+        cause = outcome.cause
         if value == "closed":
             this = next((w for w in self.wakes if w.id == outcome.wake_id), None)
             later = None if this is None else min(
@@ -196,7 +202,7 @@ class InMemoryStimulusStore:
                 default=None,
             )
             if later is not None:
-                value, rows = "timeout", []
+                value, rows, cause = "timeout", [], "infra"
                 note = (
                     f"expired: wake {later} superseded this one and took its stimuli; "
                     "its carries were not written"
@@ -205,6 +211,7 @@ class InMemoryStimulusStore:
         self.outcomes[outcome.wake_id] = OutcomeRow(
             wake_id=outcome.wake_id, unit=outcome.unit, outcome=value,
             at_ms=outcome.at_ms, detail=detail, session_id=outcome.session_id,
+            cause=cause,
         )
         for carry in rows:
             self.carries.append((len(self.carries) + 1, outcome.wake_id, carry))

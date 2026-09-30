@@ -23,6 +23,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
+from nora.agent.lineage import LineagePolicy
 from nora.app.cognition_grounding import build_grounder
 from nora.app.cognition_session import AdaptorBudget, CognitionRunResult, CognitionSessionRunner
 from nora.domain.cognition_ground import (
@@ -30,15 +31,14 @@ from nora.domain.cognition_ground import (
     Grounding,
     NoteLine,
     RecordItem,
-    StandingLine,
 )
 from nora.domain.cognition_render import RenderBudget, render_agenda
 from nora.domain.cognition_session import Room, build_situation
 from nora.domain.gatherings import Gathering
+from nora.domain.lineage import ROW, Lineage, LineageEntry, RoomFacts
 from nora.domain.models import DeliveryStatus, PersonRef, TranscriptRow
 from nora.domain.notes import Note
 from nora.domain.record_query import RecordHit, RecordRefHit
-from nora.domain.standing import Standing
 from nora.domain.stimuli import Stimulus, UnitView
 from nora.persons import Persons
 from nora.testing.cognition_dry_run_store import InMemoryCognitionDryRunStore
@@ -224,8 +224,6 @@ def test_the_register_index_lines_follow_the_agenda_and_carry_ids():
             EventLine(id="e-x", room=B, title="Other room's event", when_ms=None, venue="",
                       status="proposed"),
         ),
-        standing=(StandingLine(room=A, revision=4, updated_at_ms=_at(2 * 24 * 60),
-                               text="planning the autumn trip"),),
     )
     prompt = _prompt([s], g)
     tail = prompt.split("\n\n")[-1]
@@ -233,7 +231,7 @@ def test_the_register_index_lines_follow_the_agenda_and_carry_ids():
     assert (
         'event e-9 "Dinner", proposed, Wed 30 Sep 2026 16:30, at Ramen Ya, revision rev-3' in tail
     )
-    assert "Standing (revision 4, folded 2 d ago): planning the autumn trip" in tail
+    assert "Standing" not in prompt                 # pulled, never pushed (30 §1)
     assert "Other room's event" not in prompt                 # only the agenda's rooms
 
 
@@ -354,6 +352,19 @@ _PERSONS = Persons(
 )
 
 
+def _lineage(mode: str = "off") -> LineagePolicy:
+    rooms = (
+        RoomFacts(platform=A.platform, ids=frozenset({A.conversation_id}), unit="u",
+                  persons=frozenset({"ada"})),
+        RoomFacts(platform=B.platform, ids=frozenset({B.conversation_id}), unit="u",
+                  persons=frozenset({"ada"})),
+    )
+    return LineagePolicy(
+        rooms=rooms, mode=mode,  # type: ignore[arg-type]
+        _by_id={(r.platform, cid): r for r in rooms for cid in r.ids},
+    )
+
+
 def _grounder(records: _Records, *, unit_rooms: set[tuple[str, str]] | None = None,
               media_join: Any = None) -> Any:
     async def notes(unit: str) -> Sequence[Note]:
@@ -362,12 +373,9 @@ def _grounder(records: _Records, *, unit_rooms: set[tuple[str, str]] | None = No
     async def events(unit: str, cid: str) -> Sequence[Gathering]:
         return ()
 
-    async def standing(platform: str, cid: str) -> Standing | None:
-        return None
-
     return build_grounder(
         records=records, persons=_PERSONS, media_join=media_join, note_index=notes,
-        events_in=events, standing_of=standing,
+        events_in=events, lineage=_lineage(),
         unit_rooms=lambda unit: unit_rooms if unit_rooms is not None else {
             (A.platform, A.conversation_id), (B.platform, B.conversation_id)},
     )
@@ -470,16 +478,166 @@ async def test_the_register_lines_are_built_from_the_units_rows():
     async def events(unit: str, cid: str) -> Sequence[Gathering]:
         return ()
 
-    async def standing(platform: str, cid: str) -> Standing | None:
-        return Standing(platform=platform, conversation_id=cid, body="B" * 500, fold_count=3,
-                        updated_at=NOW - MIN)
-
     ground = build_grounder(
         records=_Records([]), persons=_PERSONS, media_join=None, note_index=notes,
-        events_in=events, standing_of=standing, unit_rooms=lambda u: {("signal", "room-a")},
+        events_in=events, lineage=_lineage(), unit_rooms=lambda u: {("signal", "room-a")},
     )
-    s = _stim(1, A, ago=3, mid=1)
+    s = _stim(1, A, ago=3, mid=12)
     sit = build_situation(unit="u", pending=[s], home_room=HOME, now_ms=NOW, last_session_ms=None)
     g = await ground("u", sit.agenda.items, [s])
     assert [n.id for n in g.notes] == ["n1"]
-    assert g.standing[0].revision == 3 and len(g.standing[0].text) == 300
+
+
+# ---- every pushed index line honours withdrawal and lineage (#637 second review) -----------------
+
+def _note(nid: str, *, established_in: str = "room-a", unsupported_at: int | None = None,
+          lineage: Lineage | None = None, exclude: tuple[str, ...] = ()) -> Note:
+    return Note(id=nid, unit="u", title=f"title {nid}", description="d", uncertainty="u",
+                closing_condition="c", established_in=established_in, created_at=1,
+                head_revision_id="r1", anchor_date=20260930, unsupported_at=unsupported_at,
+                lineage=lineage if lineage is not None else Lineage(),
+                exclude_persons=exclude)
+
+
+def _event(eid: str, *, origin: str, exclude: tuple[str, ...] = ()) -> Gathering:
+    import uuid
+
+    from nora.domain.gatherings import GatheringStatus
+
+    entries = [LineageEntry("message", None, origin)]
+    return Gathering(
+        id=uuid.uuid5(uuid.NAMESPACE_DNS, eid), conversation_id="room-a", title=f"event {eid}",
+        created_by="p_ada", when=None, venue_text=None, venue_place_id=None, venue_name=None,
+        venue_address=None, venue_rating=None, venue_price_level="", venue_maps_url=None,
+        venue_resolved_at=None, status=GatheringStatus.PROPOSED, reminder_id=None,
+        created_at=dt.datetime(2026, 9, 29, tzinfo=dt.UTC), unit_id="u",
+        lineage=Lineage.of(dict.fromkeys(("what", "start", "place", "status"), entries)),
+        exclude_persons=exclude,
+    )
+
+
+async def _pushed(notes: Sequence[Note], events: Sequence[Gathering], *, mode: str,
+                  rooms: Sequence[Stimulus]) -> Grounding:
+    async def note_index(unit: str) -> Sequence[Note]:
+        return notes
+
+    async def events_in(unit: str, cid: str) -> Sequence[Gathering]:
+        return events if cid == "room-a" else ()
+
+    ground = build_grounder(
+        records=_Records([]), persons=_PERSONS, media_join=None, note_index=note_index,
+        events_in=events_in, lineage=_lineage(mode),
+        unit_rooms=lambda u: {(A.platform, A.conversation_id), (B.platform, B.conversation_id)},
+    )
+    sit = build_situation(unit="u", pending=rooms, home_room=HOME, now_ms=NOW,
+                          last_session_ms=None)
+    return await ground("u", sit.agenda.items, rooms)
+
+
+_ONE_ROOM = [_stim(1, A, ago=3, mid=1)]
+_TWO_ROOMS = [_stim(1, A, ago=3, mid=1), _stim(2, B, ago=2, mid=2)]
+_OWN = Lineage.of({ROW: [LineageEntry("message", None, "room-a")]})
+
+
+async def test_a_note_the_withdrawal_cascade_marked_unsupported_is_not_pushed():
+    g = await _pushed(
+        [_note("live", lineage=_OWN), _note("withdrawn", lineage=_OWN, unsupported_at=5)],
+        [], mode="off", rooms=_ONE_ROOM,
+    )
+    assert [n.id for n in g.notes] == ["live"]
+    # ... in every lineage mode: withdrawal is not a lineage question
+    on = await _pushed([_note("withdrawn", lineage=_OWN, unsupported_at=5)], [], mode="on",
+                       rooms=_ONE_ROOM)
+    assert on.notes == ()
+
+
+async def test_a_note_is_pushed_only_where_lineage_permits_it_for_every_room_read():
+    """A note resting on room A's words is shown in a session over room A, and
+    is NOT shown when the same session also reads room B (no live roster to
+    prove B may see it: unknown denies)."""
+    n = _note("from-a", lineage=_OWN)
+    alone = await _pushed([n], [], mode="on", rooms=_ONE_ROOM)
+    both = await _pushed([n], [], mode="on", rooms=_TWO_ROOMS)
+    assert [x.id for x in alone.notes] == ["from-a"]
+    assert both.notes == ()
+    # lineage off is the tag path's own reading: no lineage predicate applied
+    off = await _pushed([n], [], mode="off", rooms=_TWO_ROOMS)
+    assert [x.id for x in off.notes] == ["from-a"]
+
+
+async def test_a_note_naming_an_excluded_person_is_withheld_because_no_roster_can_clear_it():
+    g = await _pushed([_note("surprise", lineage=_OWN, exclude=("bo",))], [], mode="on",
+                      rooms=_ONE_ROOM)
+    assert g.notes == ()
+
+
+async def test_an_event_is_pushed_only_where_lineage_permits_it():
+    own = _event("own", origin="room-a")
+    foreign = _event("foreign", origin="room-b")     # rests on room B's words
+    g = await _pushed([], [own, foreign], mode="on", rooms=_ONE_ROOM)
+    assert [e.title for e in g.events] == ["event own"]
+    excluded = await _pushed([], [_event("x", origin="room-a", exclude=("bo",))], mode="on",
+                             rooms=_ONE_ROOM)
+    assert excluded.events == ()
+
+
+def test_no_standing_is_ever_pushed_it_is_pulled():
+    """30 §1: «Standing bodies are pulled ... never pushed». The grounder has no
+    Standing seam, the Grounding has no Standing field, and a rendered prompt
+    carries none (`standing_read` does not exist yet)."""
+    import inspect
+
+    assert "standing_of" not in inspect.signature(build_grounder).parameters
+    assert not hasattr(Grounding(), "standing")
+    s = _stim(1, A, ago=3, mid=12)
+    g = Grounding(records={s.ref: _rec(s, author="Ada", text="hi")},
+                  notes=(NoteLine(id="n", title="T", description="d"),))
+    assert "Standing" not in _prompt([s], g)
+
+
+# ---- the record budget is a hard cap ------------------------------------------------------------
+
+def test_twelve_items_cannot_exceed_the_record_budget_however_high_the_floor():
+    """#637 second review: with a 900-char floor per item, 12 items spent 10,418
+    of `record_chars = 8000`. The floor shrinks when items x floor > budget."""
+    rooms = [Room("signal", f"room-{i}") for i in range(12)]
+    stims = [_stim(i + 1, r, ago=50 - i, mid=100 + i) for i, r in enumerate(rooms)]
+    g = Grounding(records={
+        s.ref: _rec(s, author="Ada", text="w" * 380, room=r)
+        for s, r in zip(stims, rooms, strict=True)
+    })
+    budget = RenderBudget()                                   # 8000 and a 900 floor
+    prompt = _prompt(stims, g, budget=budget)
+    record_lines = [ln for ln in prompt.splitlines() if ln.startswith("  [#")]
+    assert len(record_lines) == 12                            # every item still shows one
+    assert sum(len(ln) + 1 for ln in record_lines) <= budget.record_chars
+
+
+# ---- what the session row keeps of a person ---------------------------------------------------
+
+def test_the_session_row_keeps_a_person_id_never_a_canonical_name():
+    """`nora person forget` cannot rewrite an append-only row, so the name must
+    never be written to it (#637 second review, minor 5)."""
+    s = dataclasses_replace_person(_stim(1, A, ago=3, mid=12), "ada")
+    rec = RecordItem(ref=s.ref, kind="message", message_id=12, room=A, author="Ada Lovelace",
+                     at_ms=s.at_ms, text="hi", person_id=s.person_id)
+    dumped = Grounding(records={s.ref: rec}).as_dict()
+    assert dumped["records"][0]["person_id"] == "ada"        # type: ignore[index]
+    assert "Ada Lovelace" not in repr(dumped) and "author" not in repr(dumped)
+
+
+def dataclasses_replace_person(s: Stimulus, person_id: str) -> Stimulus:
+    import dataclasses
+
+    return dataclasses.replace(s, person_id=person_id)
+
+
+def test_the_instruction_does_not_promise_a_standing_index_line():
+    """The objective says what she is shown; it must not name a block the
+    grounder no longer builds (a promised block that is absent reads as «nothing
+    recorded»)."""
+    import pathlib
+
+    text = (pathlib.Path(__file__).parents[2] / "nora/dreamer/objectives/cognition.md").read_text()
+    below = text.split("Below the list is what is already written down")[1].split("\n\n")[0]
+    assert "Standing" not in below and "open events" in below

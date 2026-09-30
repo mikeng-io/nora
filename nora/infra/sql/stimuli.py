@@ -25,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.domain.ports import NewCarry, NewWakeOutcome, RecordedOutcome
 from nora.domain.stimuli import (
+    FAILURE_CAUSES,
     WAKE_OUTCOMES,
     NewStimulus,
     NewWake,
@@ -189,7 +190,7 @@ def _recent_wakes_query(unit: str, mode: str) -> sa.Select[Any]:
     return (
         sa.select(
             COGNITION_WAKE, outcome.c.outcome.label("outcome"),
-            outcome.c.at_ms.label("outcome_at_ms"),
+            outcome.c.at_ms.label("outcome_at_ms"), outcome.c.cause.label("cause"),
         )
         .select_from(COGNITION_WAKE.outerjoin(outcome, outcome.c.wake_id == COGNITION_WAKE.c.id))
         .where(COGNITION_WAKE.c.unit == unit, COGNITION_WAKE.c.mode == mode)
@@ -355,7 +356,7 @@ class SqlStimulusStore:
             activity_q = activity_query(unit=unit)
             activity = (await conn.execute(activity_q)).scalar_one_or_none()
             recent = (await conn.execute(_recent_wakes_query(unit, mode))).all()
-        failures, failed_mark = failure_run(
+        failures, agenda_failures, failed_mark = failure_run(
             (
                 _wake(r),
                 wake_state(
@@ -363,6 +364,7 @@ class SqlStimulusStore:
                     outcome=None if r.outcome is None else str(r.outcome),
                     outcome_at_ms=None if r.outcome_at_ms is None else int(r.outcome_at_ms),
                     stale_before_ms=stale_before_ms,
+                    cause=None if r.cause is None else str(r.cause),
                 ),
             )
             for r in recent
@@ -371,7 +373,7 @@ class SqlStimulusStore:
             unit=unit, pending=tuple(pending),
             last_activity_ms=None if activity is None else _ms(activity),
             last_wake=last, mark=mark, last_session=last_session, carry=carry,
-            failures=failures, failed_mark=failed_mark,
+            failures=failures, agenda_failures=agenda_failures, failed_mark=failed_mark,
         )
 
     async def record_outcome(
@@ -392,6 +394,7 @@ class SqlStimulusStore:
             if existing is not None:
                 return RecordedOutcome(outcome=str(existing.outcome), written=False)
             value, detail, rows = outcome.outcome, outcome.detail, list(carries)
+            cause = outcome.cause
             if value == "closed":
                 this = COGNITION_WAKE.alias("this")
                 later = (await conn.execute(
@@ -407,11 +410,11 @@ class SqlStimulusStore:
                     ).where(COGNITION_WAKE.c.id > outcome.wake_id),
                 )).scalar_one_or_none()
                 if later is not None:
-                    value, rows = "timeout", []
+                    value, rows, cause = "timeout", [], "infra"
                     detail = _superseded(later, detail)
             await conn.execute(sa.insert(o).values(
                 wake_id=outcome.wake_id, unit=outcome.unit, session_id=outcome.session_id,
-                outcome=value, detail=detail, at_ms=outcome.at_ms,
+                outcome=value, detail=detail, at_ms=outcome.at_ms, cause=cause,
                 recorded_at=_at(recorded_at_ms),
             ))
             if rows:
@@ -504,6 +507,8 @@ def _check_outcome(outcome: NewWakeOutcome, carries: Sequence[NewCarry]) -> None
     implementations (`nora.testing.stimuli` calls this too)."""
     if outcome.outcome not in WAKE_OUTCOMES:
         raise ValueError(f"unknown wake outcome {outcome.outcome!r}")
+    if outcome.cause not in FAILURE_CAUSES:
+        raise ValueError(f"unknown failure cause {outcome.cause!r}")
     if carries and outcome.outcome != "closed":
         raise ValueError("carry rows are written only with a `closed` outcome")
     for carry in carries:

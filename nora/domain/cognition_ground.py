@@ -75,6 +75,12 @@ class RecordItem:
     text: str | None
     emoji: str = ""
     edited: bool = False
+    #: The stimulus's person id (or None), what the session row keeps in the
+    #: NAME's place: `cognition_session.situation` is append-only and
+    #: `nora person forget` cannot rewrite it, so a canonical name written
+    #: there would outlive the person's withdrawal. A name is rendered to the
+    #: model at read time and never serialized (#637 second review, minor 5).
+    person_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -101,51 +107,37 @@ class EventLine:
 
 
 @dataclass(frozen=True, slots=True)
-class StandingLine:
-    """A room's Standing head: its revision (`base_revision_id`), when it was
-    last folded, and the position, clipped."""
-
-    room: Room
-    revision: int
-    updated_at_ms: int
-    text: str
-
-
-@dataclass(frozen=True, slots=True)
 class Grounding:
     """Everything one session is shown beside its agenda, built once.
 
     `records` is keyed by the stimulus `ref` (`messages:12`), so the renderer
     joins a stimulus to its row without re-parsing anything. `notes` is the
-    unit's (the unit is the read boundary, DEC-231); `events` and `standing`
-    are the rooms on the agenda's."""
+    unit's (the unit is the read boundary, DEC-231); `events` are the rooms on
+    the agenda's. There is no Standing here: Standing is pulled, never pushed
+    (30 §1), and `standing_read` does not exist yet."""
 
     records: Mapping[str, RecordItem] = field(default_factory=dict)
     notes: tuple[NoteLine, ...] = ()
     events: tuple[EventLine, ...] = ()
-    standing: tuple[StandingLine, ...] = ()
 
     def as_dict(self) -> dict[str, object]:
         """The JSON the session row keeps: what she was shown, by reference
-        (a message id, a note id), not the bodies."""
+        (a message id, a note id), not the bodies and NEVER a name: the row is
+        append-only, and a person's forget must not leave their canonical name
+        in it."""
         return {
             "records": [
                 {"ref": r.ref, "kind": r.kind, "message_id": r.message_id,
                  "platform": r.room.platform, "conversation_id": r.room.conversation_id,
-                 "author": r.author, "at_ms": r.at_ms, "words_shown": r.text is not None}
+                 "person_id": r.person_id, "at_ms": r.at_ms, "words_shown": r.text is not None}
                 for r in self.records.values()
             ],
             "notes": [n.id for n in self.notes],
             "events": [e.id for e in self.events],
-            "standing": [
-                {"platform": s.room.platform, "conversation_id": s.room.conversation_id,
-                 "revision": s.revision}
-                for s in self.standing
-            ],
         }
 
 
 __all__ = [
     "RECORD_REF_TABLES", "EventLine", "Grounding", "NoteLine", "RecordItem", "RecordKind",
-    "StandingLine", "record_ref",
+    "record_ref",
 ]

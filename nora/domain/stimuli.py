@@ -196,6 +196,44 @@ class WakeGuard:
     last_outcome: str | None
 
 
+#: Why a wake FAILED (`cognition_wake_outcome.cause`, DEC-244's classification,
+#: #637 second review). `infra`: the world failed (provider, network, database,
+#: a kill, a timeout, a shutdown, or anything unclassified): the unit BACKS OFF
+#: and its stimuli are NEVER struck, because a real human message must not be
+#: dropped for an outage. `agenda`: this agenda itself cannot be processed
+#: (context overflow, a reply cut at max_tokens, a deterministic grounding
+#: fault): only these count toward a strike. Unknown is `infra`: fail-closed
+#: on the side that keeps the message.
+FAILURE_CAUSES: tuple[str, ...] = ("infra", "agenda")
+DEFAULT_FAILURE_CAUSE = "infra"
+
+#: Exception classes (by NAME, because `nora.app` may not import the SDKs) whose
+#: cause is the agenda's own size or shape rather than the world.
+_AGENDA_FAILURE_NAMES = frozenset({
+    "ContextWindowOverflowException", "MaxTokensReachedException", "PartialReplyError",
+})
+
+
+class AgendaError(Exception):
+    """A failure caused by the agenda itself, raised by code that has proved
+    it deterministic for the input (a base class: `classify_failure`)."""
+
+
+def classify_failure(exc: BaseException) -> str:
+    """`infra` or `agenda` for the exception that ended a session (DEC-244).
+
+    NARROW by construction: `agenda` only for an `AgendaError` and the three
+    SDK/loop classes in `_AGENDA_FAILURE_NAMES`, matched on the exception's own
+    class or a base (so a subclass counts). Everything else (provider and HTTP
+    errors, rate limits, timeouts, cancellation, database errors, a store
+    outage, an unknown exception) is `infra`."""
+    if isinstance(exc, AgendaError):
+        return "agenda"
+    if any(c.__name__ in _AGENDA_FAILURE_NAMES for c in type(exc).__mro__):
+        return "agenda"
+    return "infra"
+
+
 #: How a tracked wake ended (`cognition_wake_outcome`). Only `closed` advances
 #: the watermark; the other three return the wake's stimuli to pending.
 WAKE_OUTCOMES: tuple[str, ...] = ("closed", "failed", "timeout", "cancelled")
@@ -271,11 +309,14 @@ class LastSession:
     started_at_ms: int
     ended_at_ms: int | None = None
     outcome: str | None = None
+    #: Why a `failed` state failed (`FAILURE_CAUSES`). An EXPIRED wake (no
+    #: outcome row: a kill, a crash) is `infra`.
+    cause: str = DEFAULT_FAILURE_CAUSE
 
 
 def wake_state(
     *, tracked: bool, recorded_at_ms: int, outcome: str | None,
-    outcome_at_ms: int | None, stale_before_ms: int | None,
+    outcome_at_ms: int | None, stale_before_ms: int | None, cause: str | None = None,
 ) -> LastSession | None:
     """ONE wake's state from its rows: the rule both `StimulusStore`
     implementations apply (the SQL store spells it as a predicate in
@@ -286,6 +327,7 @@ def wake_state(
         return LastSession(
             state="closed" if outcome == "closed" else "failed",
             started_at_ms=recorded_at_ms, ended_at_ms=outcome_at_ms, outcome=outcome,
+            cause=cause or DEFAULT_FAILURE_CAUSE,
         )
     if not tracked or stale_before_ms is None:
         return None
@@ -319,9 +361,14 @@ class UnitView:
     #: a `closed` one (`failure_streak`); a `cancelled` or still-open wake
     #: neither counts nor ends it. 0 for an untracked reader.
     failures: int = 0
-    #: The watermark the newest FAILED wake of that streak would have set: what
-    #: the failing wakes claimed, so what is struck at `max_consecutive_failures`
-    #: is exactly what they read and never a stimulus that arrived since.
+    #: How many of that streak's failures were `agenda` failures (an `infra`
+    #: one, a `cancelled` or an open wake neither counts nor ends this run; a
+    #: `closed` wake ends it). ONLY this feeds the strike (DEC-244).
+    agenda_failures: int = 0
+    #: The watermark the newest AGENDA-failed wake of the run would have set:
+    #: what those wakes claimed, so what is struck at `max_consecutive_failures`
+    #: is exactly what they read and never a stimulus that arrived since, nor
+    #: one only an infrastructure-failed wake claimed.
     failed_mark: Watermark | None = None
 
     @property
@@ -375,20 +422,38 @@ def failure_streak(newest_first: Iterable[LastSession | None]) -> int:
     return n
 
 
+def agenda_failure_streak(newest_first: Iterable[LastSession | None]) -> int:
+    """Consecutive `agenda`-caused failures, from the newest back: `failure_streak`
+    with one more transparency, an `infra` failure (an outage says nothing about
+    the agenda). Only this run strikes (DEC-244)."""
+    n = 0
+    for state in newest_first:
+        if state is None or state.state == "closed":
+            break
+        if state.state == "running" or state.outcome == "cancelled" or state.cause != "agenda":
+            continue
+        n += 1
+    return n
+
+
 def failure_run(
     newest_first: Iterable[tuple[WakeRow, LastSession | None]],
-) -> tuple[int, Watermark | None]:
-    """`(failure_streak, the watermark of the newest failed wake in it)` from
-    a unit's wakes with their states, newest first: what both stores put on
-    `UnitView.failures` and `.failed_mark`."""
+) -> tuple[int, int, Watermark | None]:
+    """`(failure_streak, agenda_failure_streak, the watermark of the newest
+    AGENDA-failed wake in that run)` from a unit's wakes with their states,
+    newest first: what both stores put on `UnitView.failures`,
+    `.agenda_failures` and `.failed_mark`."""
     pairs = list(newest_first)
     n = failure_streak(state for _, state in pairs)
-    if n == 0:
-        return 0, None
+    agenda = agenda_failure_streak(state for _, state in pairs)
+    if agenda == 0:
+        return n, 0, None
     for wake, state in pairs:
-        if state is not None and state.state == "failed":
-            return n, Watermark.of(wake)
-    return n, None
+        if state is None or state.state == "closed":
+            break
+        if state.state == "failed" and state.cause == "agenda" and state.outcome != "cancelled":
+            return n, agenda, Watermark.of(wake)
+    return n, agenda, None
 
 
 def backoff_ms(failures: int, policy: WakePolicy) -> int:

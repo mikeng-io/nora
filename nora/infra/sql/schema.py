@@ -4009,10 +4009,16 @@ COGNITION_WAKE_OUTCOME = sa.Table(
     sa.Column("outcome", sa.Text, nullable=False),
     sa.Column("detail", sa.Text, nullable=False, server_default=sa.text("''")),
     sa.Column("at_ms", sa.BigInteger, nullable=False),
+    # WHY a `failed`/`timeout` wake failed (migration 0080, DEC-244): `infra`
+    # backs the unit off and never strikes a stimulus; only `agenda` strikes.
+    sa.Column("cause", sa.Text, nullable=False, server_default=sa.text("'infra'")),
     _recorded_at(),
     sa.CheckConstraint(
         "outcome IN ('closed', 'failed', 'timeout', 'cancelled')",
         name="ck_cognition_wake_outcome_outcome",
+    ),
+    sa.CheckConstraint(
+        "cause IN ('infra', 'agenda')", name="ck_cognition_wake_outcome_cause",
     ),
 )
 

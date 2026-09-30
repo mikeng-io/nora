@@ -21,6 +21,20 @@ not the tool is on, and a session with the tool off still sees who said what.
   hidden rows (`transcript_select`), so a hidden message is not «shown as
   withheld», it is absent. A deleted message's words are withheld (the row is
   shown as deleted), the rule `record_query` keeps.
+- *Standing is pulled, never pushed* (30 §1: "Standing bodies are pulled ...
+  never pushed"). No Standing text, head or revision is rendered here:
+  `standing_store.read()` returns rows the withdrawal cascade marked
+  unsupported, so a pushed head could carry a withdrawn person's words to the
+  model. The session sees no Standing until `standing_read` lands and applies
+  the withdrawal and lineage predicates itself (#637 second review, blocker).
+- *Every pushed index line honours withdrawal and lineage.* A note marked
+  `unsupported_at` is dropped here as well as in the store's read (the seam is
+  injected, so the rule is held where the line is built), and a note or an
+  event is shown only when lineage permits it for EVERY room on the agenda
+  (`nora.agent.lineage`, the tag path's own predicates; `[lineage] mode = "off"`
+  applies none, exactly as the tag path). A row naming `exclude_persons` is
+  withheld: the session has no live roster to check it against, and unknown
+  denies.
 - *Names.* An author is the identity-canonical name (`Persons.name_transcript`)
   else the self-set profile name, never a platform id (R-18), and what a photo
   shows arrives through the ONE media join every transcript builder shares.
@@ -36,6 +50,7 @@ import logging
 from collections.abc import Awaitable, Callable, Collection, Sequence
 from typing import Any, Protocol
 
+from nora.agent.lineage import LineagePolicy, derived_view, visible_sections
 from nora.domain.blocks import speaker_name
 from nora.domain.cognition_ground import (
     EventLine,
@@ -43,20 +58,20 @@ from nora.domain.cognition_ground import (
     NoteLine,
     RecordItem,
     RecordKind,
-    StandingLine,
     record_ref,
 )
 from nora.domain.cognition_session import AgendaItem, Room
 from nora.domain.gatherings import Gathering
 from nora.domain.notes import Note
 from nora.domain.record_query import RecordRefHit
-from nora.domain.standing import Standing
+from nora.domain.rollup import room_key
 from nora.domain.stimuli import Stimulus
 
 log = logging.getLogger("nora.app.cognition_grounding")
 
-#: A Standing head is an index line (30 §1: index lines, not bodies).
-STANDING_HEAD_CHARS = 300
+#: An event's lineage sections (`nora.domain.gatherings.Gathering.lineage` is
+#: keyed by FIELD name); every one a rendered line shows must pass.
+_EVENT_SHOWN_FIELDS = ("what", "start", "place", "status")
 
 
 class RecordRefSource(Protocol):
@@ -84,6 +99,7 @@ def _record_item(
     return RecordItem(
         ref=stimulus.ref, kind=kind, message_id=hit.row.id,
         room=Room(hit.platform, hit.conversation_id), author=author,
+        person_id=stimulus.person_id,
         at_ms=stimulus.at_ms if kind != "message" else hit.row.ts,
         text=None if withheld else body, emoji=found.emoji,
         edited=hit.row.edit is not None,
@@ -97,7 +113,7 @@ def build_grounder(
     media_join: Any | None,
     note_index: Callable[[str], Awaitable[Sequence[Note]]],
     events_in: Callable[[str, str], Awaitable[Sequence[Gathering]]],
-    standing_of: Callable[[str, str], Awaitable[Standing | None]],
+    lineage: LineagePolicy,
     unit_rooms: Callable[[str], Collection[tuple[str, str]]],
     ai_display_name: str = "Nora",
 ) -> Callable[[str, Sequence[AgendaItem], Sequence[Stimulus]], Awaitable[Grounding]]:
@@ -162,34 +178,46 @@ def build_grounder(
                 s, ref, hit, body=row.body, author=author,
             )
 
+        agenda_rooms = list(dict.fromkeys(i.room for i in items))
+        targets = [
+            lineage.render_room(platform=r.platform, conversation_id=r.conversation_id)
+            for r in agenda_rooms
+        ]
+        applies = lineage.mode != "off"
         notes = tuple(
             NoteLine(id=n.id, title=n.title, description=n.description)
             for n in await note_index(unit)
+            # WITHDRAWN: dropped here too. LINEAGE: shown only where it passes
+            # for every room the session reads.
+            if n.unsupported_at is None and (
+                not applies or all(derived_view(
+                    notes=(n,), standing=None, culture=None, target=t,
+                ).notes for t in targets)
+            )
         )
-        agenda_rooms = list(dict.fromkeys(i.room for i in items))
         events: list[EventLine] = []
-        standing: list[StandingLine] = []
         for room in agenda_rooms:
             if (room.platform, room.conversation_id) not in allowed:
                 continue
+            target = lineage.render_room(
+                platform=room.platform, conversation_id=room.conversation_id,
+            )
             for e in await events_in(unit, room.conversation_id):
+                if applies and not all(visible_sections(
+                    e.lineage, _EVENT_SHOWN_FIELDS, target,
+                    origin=room_key(room.platform, room.conversation_id),
+                    exclude_persons=e.exclude_persons,
+                ).values()):
+                    continue
                 events.append(EventLine(
                     id=str(e.id), room=room, title=e.title,
                     when_ms=None if e.when is None else int(e.when.timestamp() * 1000),
                     venue=e.venue_name or e.venue_text or "", status=e.status.value,
                     revision=None if e.head_revision_id is None else str(e.head_revision_id),
                 ))
-            head = await standing_of(room.platform, room.conversation_id)
-            if head is not None:
-                standing.append(StandingLine(
-                    room=room, revision=head.fold_count, updated_at_ms=head.updated_at,
-                    text=head.body[:STANDING_HEAD_CHARS],
-                ))
-        return Grounding(
-            records=records_out, notes=notes, events=tuple(events), standing=tuple(standing),
-        )
+        return Grounding(records=records_out, notes=notes, events=tuple(events))
 
     return ground
 
 
-__all__ = ["STANDING_HEAD_CHARS", "RecordRefSource", "build_grounder"]
+__all__ = ["RecordRefSource", "build_grounder"]

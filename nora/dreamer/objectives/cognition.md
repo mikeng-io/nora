@@ -38,10 +38,9 @@ shown** means those messages are not readable now, which is not the same as noth
 been said.
 
 Below the list is what is already written down: the group's open notes (id, title and one
-line), and for each room on the list its open events and its Standing (where it stands, and
-how long ago that was last folded). Those are index lines, not bodies: they tell you what
-exists so you neither write it twice nor contradict it unread, and a note's body is a read
-away.
+line), and for each room on the list its open events. Those are index lines, not bodies:
+they tell you what exists so you neither write it twice nor contradict it unread, and a
+note's body is a read away.
 
 The line above the list gives the time now, in the group's own day, and how long it has been
 since you last looked. An item that says it is **returning** was left open by earlier looks;

@@ -117,7 +117,7 @@ from nora.domain.ports import (
     StimulusStore,
 )
 from nora.domain.standing import Standing
-from nora.domain.stimuli import Stimulus, UnitView, WakeHook
+from nora.domain.stimuli import Stimulus, UnitView, WakeHook, classify_failure
 
 log = logging.getLogger("nora.app.cognition_session")
 
@@ -267,8 +267,11 @@ PendingMirroredReminds = Callable[[str], Awaitable[Sequence[PendingMirroredRemin
 SelfWakesCreatedSince = Callable[[str, int], Awaitable[int]]
 #: `(unit, the agenda's rooms)`: the read tools for those rooms. One room: that
 #: room's tools. Several: ONE tool per name, each taking a `room` argument that
-#: routes the read through the item's own room and refuses one not on the agenda
-#: (DEC-231: each item's reads resolve through its room), built by the caller.
+#: routes the read through the item's own room and refuses a `room` value not
+#: on the agenda (DEC-231: each item's reads resolve through its room), built
+#: by the caller. That names the room a read is BOUND to, not the only room it
+#: reads: `record_query scope="all_rooms"` and `search_memory_workspace` reach
+#: the unit's other rooms, which the unit-wide read boundary allows.
 ReadToolsFor = Callable[[str, Sequence[Room]], list[Any]]
 #: `(unit, agenda items, the claimed stimuli)` -> what she is shown beside the
 #: agenda (`nora.domain.cognition_ground`): the Record rows that raised each
@@ -558,6 +561,7 @@ class CognitionSessionRunner:
             log.exception("cognition session failed (unit=%s wake=%s)", unit, wake_id)
             await self._finish(
                 wake_id, unit, session_id, "failed", f"{type(exc).__name__}: {exc}"[:500],
+                cause=classify_failure(exc),
             )
             raise
         finally:
@@ -644,7 +648,7 @@ class CognitionSessionRunner:
 
     async def _finish(
         self, wake_id: int, unit: str, session_id: int | None, outcome: str, detail: str,
-        carries: Sequence[NewCarry] = (),
+        carries: Sequence[NewCarry] = (), cause: str = "infra",
     ) -> RecordedOutcome | None:
         """Record the wake's outcome, at the REAL clock: the cooldown runs
         from here, not from the wake, so a long session is not already
@@ -657,7 +661,7 @@ class CognitionSessionRunner:
             recorded = await self._stimuli.record_outcome(
                 outcome=NewWakeOutcome(
                     wake_id=wake_id, unit=unit, outcome=outcome, at_ms=ended_ms,
-                    detail=detail, session_id=session_id,
+                    detail=detail, session_id=session_id, cause=cause,
                 ),
                 carries=carries, recorded_at_ms=ended_ms,
             )
@@ -841,9 +845,12 @@ class CognitionSessionRunner:
         # is one tool: Strands keeps the LAST of two silently, which read one
         # room's Record through another room's binding without a word), and
         # each takes a `room` argument routing the read through that room's
-        # own build; a room not on the agenda is refused, so the unit is the
-        # boundary the session may read across and the room the boundary of each
-        # read. The agenda's rooms are never replaced by the unit's home room.
+        # own build; a `room` value not on the agenda is refused. The unit is the
+        # boundary the session may read across (DEC-231: `record_query
+        # scope="all_rooms"` and `search_memory_workspace` read the unit's other
+        # rooms), the `room` argument picks the binding (roster, lineage) a read
+        # resolves through. The agenda's rooms are never replaced by the unit's
+        # home room.
         rooms = list(dict.fromkeys(item.room for item in state.items_by_index.values()))
         keys = [_room_key(r) for r in rooms]
         state.reads_note = (

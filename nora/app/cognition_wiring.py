@@ -214,8 +214,12 @@ def read_tools_for(
     ONE room: that room's tools, untouched. SEVERAL: each room's tools are
     built by the same source and laid under one tool per name that takes a
     `room` argument (`nora.agent.room_routing`), so each read resolves
-    through the room it names and a room not on the agenda is refused. The
-    unit's home room is never substituted for an item's room (DEC-231)."""
+    through the room it names; a `room` argument that is not on the agenda is
+    refused. That binds WHICH room a read is resolved through (its roster and
+    lineage), not which rooms' data a tool may reach: `record_query
+    scope="all_rooms"` and `search_memory_workspace` read the unit's OTHER
+    rooms too, because the unit is the read boundary (DEC-231). The unit's home
+    room is never substituted for an item's room."""
     allowance = grant if grant is not None else cognition_grant()
 
     def build_for(room: Room) -> list[Any]:

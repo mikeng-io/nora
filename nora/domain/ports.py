@@ -1029,6 +1029,10 @@ class NewWakeOutcome:
     at_ms: int
     detail: str = ""
     session_id: int | None = None
+    #: Why a `failed`/`timeout` outcome happened (`nora.domain.stimuli.
+    #: FAILURE_CAUSES`, `classify_failure`); ignored for `closed`/`cancelled`.
+    #: Defaults to `infra`, the side that never strikes a stimulus.
+    cause: str = "infra"
 
 
 @dataclass(frozen=True)

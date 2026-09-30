@@ -14,14 +14,19 @@ What each test would catch if the fix were reverted is named in
 
 from __future__ import annotations
 
+import asyncio
 import dataclasses
 import itertools
 
+import pytest
+
 from nora.domain.stimuli import (
+    AgendaError,
     LastSession,
     WakePolicy,
     Watermark,
     backoff_ms,
+    classify_failure,
     failure_run,
     failure_streak,
 )
@@ -32,7 +37,9 @@ from tests.unit.test_cognition_session_lifecycle import (
     ScriptedAgent,
     _rig,
     boom,
+    close_written,
     ok,
+    overflow,
 )
 
 TICK = 30
@@ -67,8 +74,10 @@ def test_the_backoff_starts_at_the_cooldown_doubles_and_is_capped():
     assert backoff_ms(10**6, p) // S == 21600      # no overflow at absurd counts
 
 
-def _st(state: str, outcome: str | None = None) -> LastSession:
-    return LastSession(state=state, started_at_ms=0, ended_at_ms=1, outcome=outcome)  # type: ignore[arg-type]
+def _st(state: str, outcome: str | None = None, cause: str = "infra") -> LastSession:
+    return LastSession(
+        state=state, started_at_ms=0, ended_at_ms=1, outcome=outcome, cause=cause,  # type: ignore[arg-type]
+    )
 
 
 def test_the_streak_counts_failed_and_timed_out_and_only_a_closed_wake_resets_it():
@@ -96,13 +105,24 @@ def test_the_failed_mark_is_the_newest_failed_wakes_watermark():
             oldest_pending_ms=None, cut_cooldown=False, at_ms=at, recorded_at_ms=at,
         )
 
-    streak, mark = failure_run([
-        (wake(3, 30, 3000), _st("failed", "failed")),
-        (wake(2, 20, 2000), _st("failed", "timeout")),
+    streak, agenda, mark = failure_run([
+        (wake(3, 30, 3000), _st("failed", "failed", "agenda")),
+        (wake(2, 20, 2000), _st("failed", "timeout", "agenda")),
         (wake(1, 10, 1000), _st("closed", "closed")),
     ])
-    assert streak == 2 and mark == Watermark(30, 3000)
-    assert failure_run([(wake(1, 10, 1000), _st("closed", "closed"))]) == (0, None)
+    assert (streak, agenda) == (2, 2) and mark == Watermark(30, 3000)
+    assert failure_run([(wake(1, 10, 1000), _st("closed", "closed"))]) == (0, 0, None)
+    # an INFRASTRUCTURE failure backs the unit off but is never the strike's
+    # mark: what only it claimed is not struck
+    streak, agenda, mark = failure_run([
+        (wake(4, 40, 4000), _st("failed", "failed", "infra")),
+        (wake(3, 30, 3000), _st("failed", "failed", "agenda")),
+        (wake(2, 20, 2000), _st("failed", "failed", "infra")),
+        (wake(1, 10, 1000), _st("closed", "closed")),
+    ])
+    assert (streak, agenda) == (3, 1) and mark == Watermark(30, 3000)
+    only_infra = failure_run([(wake(2, 20, 2000), _st("failed", "failed", "infra"))])
+    assert only_infra == (1, 0, None)
 
 
 # ---- the measured day ------------------------------------------------------------
@@ -121,7 +141,7 @@ async def test_an_always_failing_static_agenda_stops_after_five_sessions():
     """Three messages that always fail: 5 sessions (300 + 600 + 1200 + 2400 s
     apart), then the three stimuli are struck with reason `failed` and nothing
     more wakes for them, that day or after."""
-    rig = _rig(agent=ScriptedAgent(script=[boom]))
+    rig = _rig(agent=ScriptedAgent(script=[overflow]))
     for _ in range(3):
         await rig.say()
     await _run(rig, ticks=DAY_TICKS, chatty=False)
@@ -137,7 +157,7 @@ async def test_an_always_failing_chatty_room_is_10_sessions_on_day_one_and_4_a_d
     """The worst case: something new is always pending. The first day is the
     backoff climbing (300, 600, 1200, 2400, 4800, 9600 s, then 6 h), and every
     later day is the 6 h cap: 4 sessions."""
-    rig = _rig(agent=ScriptedAgent(script=[boom]))
+    rig = _rig(agent=ScriptedAgent(script=[overflow]))
     await _run(rig, ticks=DAY_TICKS, chatty=True)
     day_one = rig.agent.calls
     assert day_one == 10
@@ -149,7 +169,7 @@ async def test_an_always_failing_chatty_room_is_10_sessions_on_day_one_and_4_a_d
 
 
 async def test_a_stimulus_that_arrived_after_the_failed_wakes_is_not_struck_unseen():
-    rig = _rig(agent=ScriptedAgent(script=[boom]))
+    rig = _rig(agent=ScriptedAgent(script=[overflow]))
     await rig.say()
     await _run(rig, ticks=int(4500 / TICK) + 2, chatty=False)    # five failures in
     assert rig.agent.calls == 5
@@ -203,3 +223,68 @@ async def test_a_strong_cue_does_not_cut_a_backoff():
     await rig.say(cues=("datetime",))
     assert await rig.tick() == []
     assert rig.agent.calls == calls
+
+
+# ---- infrastructure failures back off and never strike (DEC-244, #637 second review) ----
+
+@pytest.mark.parametrize(("exc", "cause"), [
+    (RuntimeError("the model loop blew up"), "infra"),
+    (TimeoutError(), "infra"),
+    (ConnectionError("provider unreachable"), "infra"),
+    (asyncio.CancelledError(), "infra"),
+    (KeyError("unclassified"), "infra"),
+    (AgendaError("a grounding read that fails for this agenda, deterministically"), "agenda"),
+    (type("ContextWindowOverflowException", (Exception,), {})("window"), "agenda"),
+    (type("MaxTokensReachedException", (Exception,), {})("cut"), "agenda"),
+    (type("PartialReplyError", (Exception,), {})("cut"), "agenda"),
+    # a SUBCLASS of an agenda class is the agenda's too
+    (type("Mine", (type("ContextWindowOverflowException", (Exception,), {}),), {})("w"), "agenda"),
+])
+def test_the_classification_is_narrow_and_unknown_is_infrastructure(exc, cause):
+    assert classify_failure(exc) == cause
+
+
+async def test_twenty_infrastructure_failures_back_off_to_the_cap_and_strike_nothing():
+    """A provider outage of days: 20 failed sessions in a row, every stimulus
+    the failing wakes claimed still pending, the wait between sessions climbing
+    to and held at the 6 h cap, and the first session after recovery processes
+    the whole backlog. Nothing is retracted, ever."""
+    rig = _rig(agent=ScriptedAgent(script=[boom] * 20 + [close_written]))
+    for _ in range(3):
+        await rig.say()
+    began = rig.clock.ms
+    while rig.agent.calls < 21:
+        await _run(rig, ticks=1, chatty=False)
+        assert rig.clock.ms - began < 10 * 86_400_000, "the loop is not converging"
+    await rig.settle()
+    assert rig.ends() == ["failed"] * 20 + ["closed"]
+    assert rig.stimuli.retracted == set()
+    assert rig.metrics.get("nora_cognition_stimuli_struck_total", reason="failed") == 0
+    starts = [w.at_ms for w in rig.stimuli.wakes]
+    gaps = [(b - a) // S for a, b in itertools.pairwise(starts)]
+    cap = int(POLICY.backoff_max_seconds)
+    assert max(gaps) < cap + 2 * TICK + int(POLICY.cooldown_seconds), gaps    # never past the cap
+    assert gaps[-6:] and all(cap <= g < cap + 2 * TICK + 60 for g in gaps[-6:]), gaps[-6:]
+    assert {o.cause for o in rig.stimuli.outcomes.values() if o.outcome == "failed"} == {"infra"}
+    view = await rig.stimuli.view(unit="u1", mode="shadow", now_ms=rig.clock.ms, limit=100)
+    assert view.pending == () and view.failures == 0     # the backlog was processed
+
+
+async def test_five_agenda_failures_strike_and_an_infrastructure_one_between_does_not_reset():
+    rig = _rig(agent=ScriptedAgent(script=[overflow, overflow, boom, overflow, overflow, overflow]))
+    for _ in range(3):
+        await rig.say()
+    await _run(rig, ticks=DAY_TICKS * 2, chatty=False)
+    assert rig.agent.calls == 6                          # 5 agenda + 1 infra, then none
+    assert rig.stimuli.retracted == {1, 2, 3}
+    assert [o.cause for _, o in sorted(rig.stimuli.outcomes.items())] == [
+        "agenda", "agenda", "infra", "agenda", "agenda", "agenda",
+    ]
+
+
+async def test_the_session_runner_records_why_it_failed():
+    rig = _rig(agent=ScriptedAgent(script=[boom, overflow]))
+    await rig.say()
+    while rig.agent.calls < 2:
+        await _run(rig, ticks=1, chatty=False)
+    assert [o.cause for _, o in sorted(rig.stimuli.outcomes.items())] == ["infra", "agenda"]
