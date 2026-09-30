@@ -5312,9 +5312,10 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
 
         Never state a computed number that did not come from a tool: this one,
         or computer_run for data work (many values, statistics, fitting, a
-        file). This one checks the
-        arithmetic, not the question: divide by 5 when six people ate and you get
-        an exact answer to the wrong sum, so count first.
+        file). A number computer_run printed is already computed: report it,
+        do not recompute it here. This one checks the arithmetic, not the
+        question: divide by 5 when six people ate and you get an exact answer
+        to the wrong sum, so count first.
 
         Returns `status`: ok or refused, with a `note` on how to report it.
 
