@@ -4,7 +4,7 @@
   "file": "nora/domain/cognition_shadow_compare.py",
   "old": "        if close.reason not in CLOSING_REASONS or room_id(close.room) != room_id(room):",
   "new": "        if room_id(close.room) != room_id(room):",
-  "target": "tests/infra/test_cognition_shadow_compare_read.py -k written_and_struck"
+  "target": "tests/unit/test_cognition_shadow_compare.py -k closing_reason"
  },
  {
   "name": "a close explains a clocked-only row only in its own room",
@@ -53,7 +53,7 @@
   "file": "nora/domain/cognition_shadow_compare.py",
   "old": "        return not w.create and bool(c.key) and c.key == w.key",
   "new": "        return bool(c.key) and c.key == w.key",
-  "target": "tests/infra/test_cognition_shadow_compare_read.py -k event_propose_matches"
+  "target": "tests/infra/test_cognition_shadow_compare_read.py -k first_revision_of_the_same_note"
  },
  {
   "name": "the Standing writer is the one that moved fold_count",

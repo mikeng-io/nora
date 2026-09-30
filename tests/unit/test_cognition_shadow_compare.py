@@ -7,6 +7,7 @@ from __future__ import annotations
 from nora.domain.cognition_compare import CompareResult, ProactiveAct
 from nora.domain.cognition_shadow_compare import (
     ClockedWrite,
+    Close,
     CognitionWrite,
     RoomDirectory,
     act_tier,
@@ -72,3 +73,16 @@ def test_a_room_without_a_label_is_a_stable_hash_never_the_id():
     d = RoomDirectory(labels={}, unit_rooms={})
     assert d.label("signal:secret-id") == d.label("secret-id")
     assert "secret" not in d.label("secret-id")
+
+
+def test_only_a_closing_reason_explains_a_clocked_only_row():
+    for reason, closed_by in (
+        ("no_change", "no_change"), ("waiting", "waiting"), ("covered", "covered"),
+        ("written", None), ("struck", None),
+    ):
+        result = compare_tier(
+            "standing", cognition=[], refusals=[], clocked=[_w("a", 100)],
+            closes=[Close(session_id=1, room="r", reason=reason, at_ms=100)],
+            tolerance_ms=50, since_ms=0, until_ms=1000,
+        )
+        assert result.writers[0].clocked_only[0].closed_by == closed_by, reason

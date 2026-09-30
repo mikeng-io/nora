@@ -224,6 +224,13 @@ async def test_a_refused_would_write_is_not_a_write_and_is_named_beside_the_cloc
     assert w.clocked_only[0].refused_nearby == 1 and note_id
 
 
+async def test_a_note_update_does_not_match_a_first_revision_of_the_same_note(engine):
+    note_id, _ = await _note(engine, by="dream:note-candidates:k:1", at=T0)
+    await _would(engine, T0, "note", "note_update", candidate={"note_id": note_id})
+    tier, w = _writer(await _run(engine), "note", "note-candidates")
+    assert w.matched == 0 and len(w.clocked_only) == 1 and len(tier.cognition_only) == 1
+
+
 # ---- deliberately closed ---------------------------------------------------
 
 @pytest.mark.parametrize("reason", ["no_change", "waiting", "covered"])
@@ -291,8 +298,9 @@ async def test_event_propose_matches_by_room_and_title_and_revise_by_event_id(en
 
 async def test_a_backfill_revision_is_not_a_live_write(engine):
     await _event(engine, T0, written_by="backfill")
-    _, w = _writer(await _run(engine), "event", "event:tag")
+    tier, w = _writer(await _run(engine), "event", "event:tag")
     assert w.matched == 0 and not w.clocked_only
+    assert [x.writer for x in tier.writers] == ["event:tag"]
 
 
 # ---- culture ----------------------------------------------------------------
@@ -377,6 +385,8 @@ async def test_an_unreadable_source_is_ERROR_and_never_zero(engine):
     assert any(line.startswith("standing-debrief: ERROR") for line in verdict_lines(report))
     note = next(t for t in report.tiers if t.tier == "note")
     assert note.status == "compared"
+    # the ERROR names the exception CLASS only: a message can quote a row
+    assert tier.error and tier.error.isidentifier() and "standing_revision" not in tier.error
     data = report_json(report, DIRECTORY)
     standing = next(t for t in data["tiers"] if t["tier"] == "standing")
     first = standing["writers"][0]
