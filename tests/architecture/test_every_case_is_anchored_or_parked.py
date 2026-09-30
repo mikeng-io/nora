@@ -256,9 +256,10 @@ def test_the_whole_corpus_is_accounted_for() -> None:
     twice and against `where_been` past its 90 days, and `standing_read` read
     before `standing_revise` and against `note_read`/`note_search`), plus
     `tool_selection`'s 2 S3a cases (2026-10-01, design/sandbox-runtime §7: a
-    `computer_run` task that should load computer-use first, and a
-    `computer_import` of a sent file against `media_fetch`; computer-on arm
-    only); a change to it
+    simulation that is `computer_run`'s, never `calculate`'s (it first also
+    required a computer-use skill load; measured 1/5 and dropped as a wrong
+    expectation, operator 2026-10-01), and a `computer_import` of a sent file
+    against `media_fetch`; computer-on arm only); a change to it
     is a change to what the suite claims to measure and belongs in a commit that
     says so. Recomputed with `census()` at each merge, never summed."""
     totals = [census(n) for n in CORPORA]

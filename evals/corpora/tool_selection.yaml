@@ -309,22 +309,23 @@ cases:
   # case: a document is the document path's (ADR 0020, operator 2026-10-01),
   # not `computer_export`'s.
   #
-  # computer-use's reach row. `computer_run`'s description says SHOULD, not
-  # MUST, so this can fail while the route is right: that is the number it
-  # exists to show.
-  - name: route_computer_run_loads_computer_use
+  # A simulation is code, never a sum: computer_run chosen for it over
+  # calculate. This was `route_computer_run_loads_computer_use`, which also
+  # required a `computer-use` skill load before the run. Measured 2026-10-01
+  # on the eval VM at b2492770, n=5: the route right in every draw, the skill
+  # loaded in 1 of 5. Operator decision the same day: the expectation was
+  # wrong, not the model. What she must know (files only, no web pages, no
+  # internet, import and export) is in the tools' descriptions and results;
+  # the skill is guidance for multi-step project work, and a one-shot job
+  # does not need it. So the case measures the route only, not a skill load.
+  - name: route_computer_run_simulation
     entry: tag
     expect: reply
     mention: true
     input: >-
       write a python script on your computer that simulates rolling two dice
       100000 times and tells me how often the total is 7, then run it
-    metadata:
-      tools: [computer_run]
-      not_tools: [calculate]
-      before: {skills: [computer_run]}
-      args_include:
-        skills: ["computer-use"]
+    metadata: {tools: [computer_run], not_tools: [calculate]}
     snapshot: *room_a
 
   # Import of a sent file. The anchor carries no attachment of this code, so
