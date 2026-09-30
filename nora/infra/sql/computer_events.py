@@ -45,13 +45,17 @@ class SqlComputerEventStore:
 
     async def recent(
         self, *, conversation_id: str, since: datetime, limit: int,
+        platform: str | None = None,
     ) -> list[ComputerEvent]:
+        where = [
+            COMPUTER_EVENTS.c.conversation_id == conversation_id,
+            COMPUTER_EVENTS.c.created_at >= since,
+        ]
+        if platform is not None:
+            where.append(COMPUTER_EVENTS.c.platform == platform)
         stmt = (
             sa.select(COMPUTER_EVENTS)
-            .where(
-                COMPUTER_EVENTS.c.conversation_id == conversation_id,
-                COMPUTER_EVENTS.c.created_at >= since,
-            )
+            .where(*where)
             .order_by(COMPUTER_EVENTS.c.created_at.desc())
             .limit(limit)
         )

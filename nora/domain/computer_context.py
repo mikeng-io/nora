@@ -31,6 +31,8 @@ class ComputerContextCaps:
     max_files: int = 8
     max_runs: int = 5
     max_tokens: int = 400
+    read_timeout_seconds: float = 1.5
+    state_cache_seconds: float = 30.0
     idle_after: timedelta = timedelta(minutes=30)
     lapsed_visible: timedelta = timedelta(hours=24)
 

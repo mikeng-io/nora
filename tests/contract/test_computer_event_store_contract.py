@@ -213,3 +213,13 @@ async def test_the_sweeper_is_an_actor(store):
                               requester_person_id=None))
     [got] = await store.recent(conversation_id="conv-1", since=EPOCH, limit=10)
     assert got.actor == "sweeper"
+
+
+async def test_recent_can_be_narrowed_to_one_platform(store):
+    """Two networks can carry the same conversation id."""
+    await store.append(_event(platform="signal"))
+    await store.append(_event(platform="discord"))
+    rows = await store.recent(conversation_id="conv-1", since=EPOCH, limit=10,
+                              platform="discord")
+    assert [r.platform for r in rows] == ["discord"]
+    assert len(await store.recent(conversation_id="conv-1", since=EPOCH, limit=10)) == 2

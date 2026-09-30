@@ -10,7 +10,9 @@ the block says what it is and that the computer is its source (ADR 0013).
 
 from __future__ import annotations
 
+import asyncio
 import re
+import time
 import uuid
 from datetime import UTC, datetime, timedelta
 
@@ -175,7 +177,8 @@ async def test_a_lapsed_task_shows_within_its_window_and_is_gone_after():
     view = await _reader(runtime, sessions, events).read(platform="signal", conversation_id=ROOM)
     block = render_computer(view)
     assert block is not None
-    assert 'lapsed task, stopped 23 h ago (idle)' in block.body and "book a table" in block.body
+    assert "lapsed task, stopped 23 h ago (no activity; files kept)" in block.body
+    assert "book a table" in block.body
     later = ComputerContextReader(sessions=sessions, events=events, runtime=runtime,
                                   caps=ComputerContextCaps(), metrics=Metrics(),
                                   clock=lambda: NOW + timedelta(hours=2))
@@ -286,3 +289,99 @@ def test_a_full_block_is_about_four_hundred_tokens_or_fewer(n, capsys):
     body_tokens, whole_tokens = len(enc.encode(block.body)), len(enc.encode(block.render()))
     print(f"computer block: body {body_tokens} tokens, whole {whole_tokens} (cl100k)")
     assert body_tokens <= 400
+
+
+
+# -- the machine read never holds a reply ----------------------------------
+
+
+class SlowRuntime(FakeSandboxRuntime):
+    """A computer that answers the state read after `delay` seconds."""
+
+    def __init__(self, delay: float, **kw) -> None:
+        super().__init__(**kw)
+        self.delay = delay
+        self.state_reads = 0
+
+    async def state(self, *, scope):
+        self.state_reads += 1
+        await asyncio.sleep(self.delay)
+        return await super().state(scope=scope)
+
+
+async def _open_session(sessions, objective="scrape prices"):
+    await sessions.continue_or_open(platform="signal", conversation_id=ROOM, scope=SCOPE,
+                                    objective=objective, actor="tag", tag_id="t",
+                                    now=NOW - timedelta(hours=3))
+
+
+async def test_a_slow_machine_does_not_delay_the_block_past_its_budget():
+    sessions, metrics = FakeComputerSessionStore(), Metrics()
+    await _open_session(sessions)
+    reader = ComputerContextReader(
+        sessions=sessions, events=FakeComputerEventStore(), runtime=SlowRuntime(5.0),
+        caps=ComputerContextCaps(read_timeout_seconds=0.2), clock=lambda: NOW,
+        metrics=metrics,
+    )
+    started = time.monotonic()
+    view = await reader.read(platform="signal", conversation_id=ROOM)
+    assert time.monotonic() - started < 1.0
+    block = render_computer(view)
+    assert block is not None
+    assert "scrape prices" in block.body  # the database half still renders
+    assert "the computer itself could not be read" in block.body
+    assert metrics.get("nora_computer_context_machine_unread_total", reason="timeout") == 1
+
+
+async def test_an_unreadable_machine_shows_an_open_task_as_running_unknown_never_idle():
+    sessions = FakeComputerSessionStore()
+    await _open_session(sessions)
+    runtime = FakeSandboxRuntime()
+    runtime.down = True
+    view = await _reader(runtime, sessions, FakeComputerEventStore()).read(
+        platform="signal", conversation_id=ROOM)
+    body = render_computer(view).body
+    assert "open task, running unknown" in body and "idle" not in body
+
+
+async def test_a_good_machine_read_is_kept_for_the_cache_window():
+    sessions = FakeComputerSessionStore()
+    await _open_session(sessions)
+    runtime, tick = SlowRuntime(0.0), [0.0]
+    reader = ComputerContextReader(
+        sessions=sessions, events=FakeComputerEventStore(), runtime=runtime,
+        caps=ComputerContextCaps(state_cache_seconds=30), clock=lambda: NOW,
+        metrics=Metrics(), monotonic=lambda: tick[0],
+    )
+    await reader.read(platform="signal", conversation_id=ROOM)
+    tick[0] = 29.0
+    await reader.read(platform="signal", conversation_id=ROOM)
+    assert runtime.state_reads == 1
+    tick[0] = 31.0
+    await reader.read(platform="signal", conversation_id=ROOM)
+    assert runtime.state_reads == 2
+
+
+def test_a_task_whose_jobs_ended_says_its_files_were_kept():
+    view = _view(lapsed_sessions=(SessionLine(_lapsed_jobs_ended(), "lapsed", None),))
+    assert "its tmux jobs ended; files kept" in render_computer(view).body
+
+
+def _lapsed_jobs_ended() -> ComputerSession:
+    s = _session(1, status="expired", minutes_ago=10)
+    return ComputerSession(
+        id=s.id, platform=s.platform, conversation_id=s.conversation_id, scope=s.scope,
+        objective=s.objective, status="expired", created_at=s.created_at,
+        updated_at=s.updated_at, last_activity_at=s.last_activity_at, actor="tag",
+        created_by_tag="t", expired_at=s.expired_at, expired_reason="jobs_ended",
+    )
+
+
+def test_the_ceiling_counts_the_escaped_text():
+    """`&` goes out as `&amp;`: five characters, not one."""
+    amp = "&" * 200
+    view = _view(runs=(RunLine(amp, 0, True, NOW),),
+                 files=(StateFile("f.txt", 1, NOW - timedelta(minutes=1)),),
+                 caps=ComputerContextCaps(max_tokens=150))
+    body = render_computer(view).body
+    assert estimate_tokens(body) <= 150

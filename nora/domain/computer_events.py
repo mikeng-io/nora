@@ -177,8 +177,10 @@ class ComputerEventStore(Protocol):
 
     async def recent(
         self, *, conversation_id: str, since: datetime, limit: int,
+        platform: str | None = None,
     ) -> list[ComputerEvent]:
-        """The last `limit` events for `conversation_id` with `created_at >=
+        """The last `limit` events for `conversation_id` (and `platform`, when
+        given: two networks can share a conversation id) with `created_at >=
         since`, newest first. Absolute `since`, the `ToolCallLogStore`
         shape, so a fake clock needs no special-casing."""
         ...

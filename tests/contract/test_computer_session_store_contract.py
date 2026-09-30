@@ -159,7 +159,7 @@ async def test_resources_are_noted_without_moving_activity(store):
     [got] = await store.open_sessions(limit=10)
     assert got.held_tmux == ("scrape", "fit", "plot")
     assert got.last_activity_at == T0
-    await store.expire(session.id, seen_last_activity_at=T0, reason="resources_gone",
+    await store.expire(session.id, seen_last_activity_at=T0, reason="jobs_ended",
                        now=later)
     await store.note_resources(session.id, tmux=["late"], now=later)
     [expired] = await store.for_room(platform="signal", conversation_id="conv-1", limit=10)
@@ -169,3 +169,17 @@ async def test_resources_are_noted_without_moving_activity(store):
 async def test_a_naive_datetime_is_refused(store):
     with pytest.raises(ValueError):
         await _open(store, now=datetime(2026, 9, 30, 12, 0))
+
+
+async def test_a_background_caller_only_continues_never_opens(store):
+    none = await store.continue_or_open(
+        platform="signal", conversation_id="conv-1", scope=SCOPE, objective="",
+        actor="dreamer:proactive", tag_id="", now=T0, open_new=False)
+    assert none is None and await store.open_sessions(limit=10) == []
+    opened, _ = await _open(store)
+    later = T0 + timedelta(minutes=1)
+    got = await store.continue_or_open(
+        platform="signal", conversation_id="conv-1", scope=SCOPE, objective="",
+        actor="dreamer:proactive", tag_id="", now=later, open_new=False)
+    assert got is not None and got[0].id == opened.id and got[1] is False
+    assert got[0].last_activity_at == later

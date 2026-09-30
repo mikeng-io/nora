@@ -53,13 +53,15 @@ class SqlComputerSessionStore:
 
     async def continue_or_open(
         self, *, platform: str, conversation_id: str, scope: str, objective: str,
-        actor: str, tag_id: str, now: datetime,
-    ) -> tuple[ComputerSession, bool]:
+        actor: str, tag_id: str, now: datetime, open_new: bool = True,
+    ) -> tuple[ComputerSession, bool] | None:
         now = ensure_utc_event(now, field="now")
         async with self._engine.begin() as conn:
             found = await self._touch(conn, scope, now)
             if found is not None:
                 return found, False
+            if not open_new:
+                return None
             inserted = (await conn.execute(
                 pg.insert(T).values(
                     id=uuid.uuid4(), platform=platform, conversation_id=conversation_id,

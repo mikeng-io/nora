@@ -9,19 +9,28 @@ room gets `None` and nothing is asked of the VM: the block's cost lands only
 on rooms that use the computer. The reader exists only while `[computer]
 enabled`, so an off deployment renders nothing anywhere.
 
+**The machine read never holds a reply.** It has its own budget
+(`read_timeout_seconds`, 1.5 s by default); past it, or when the computer
+answers `unavailable`, the block renders from the database alone with a line
+saying the machine could not be read, and the miss is counted
+(`nora_computer_context_machine_unread_total{reason}`). A good read is kept
+per room for `state_cache_seconds`, so consecutive turns in a busy room do
+not each ask the VM. The per-session progress reads run concurrently.
+
 **Never raises.** A failure is logged, counted (`nora_errors_total{stage=
 "computer_context"}`) and read as no block: a turn never fails because the
-computer's summary could not be built. A machine that cannot be read still
-renders the database half, with a line saying the live state is missing.
+computer's summary could not be built.
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import time
 from collections.abc import Callable
 from datetime import datetime, timedelta
 
-from nora.domain.computer import SandboxStatus, computer_scope
+from nora.domain.computer import SandboxStatus, StateResult, computer_scope
 from nora.domain.computer_context import (
     ComputerContextCaps,
     ComputerView,
@@ -55,6 +64,7 @@ class ComputerContextReader:
         self, *, sessions: ComputerSessionStore, events: ComputerEventStore,
         runtime: SandboxRuntime, caps: ComputerContextCaps,
         clock: Callable[[], datetime], metrics: object,
+        monotonic: Callable[[], float] = time.monotonic,
     ) -> None:
         self._sessions = sessions
         self._events = events
@@ -62,15 +72,41 @@ class ComputerContextReader:
         self._caps = caps
         self._clock = clock
         self._metrics = metrics
+        self._monotonic = monotonic
+        # scope -> (read at, a good read). One process, rooms in the tens,
+        # entries overwritten per room: bounded by the rooms that use it.
+        self._cache: dict[str, tuple[float, StateResult]] = {}
+
+    def _inc(self, name: str, **labels: object) -> None:
+        inc = getattr(self._metrics, "inc", None)
+        if inc is not None:
+            inc(name, **labels)
+
+    async def _state(self, scope: str) -> StateResult | None:
+        """The room's machine state within the read budget, from the cache
+        when fresh; None when it could not be read in time or at all."""
+        hit = self._cache.get(scope)
+        if hit is not None and self._monotonic() - hit[0] < self._caps.state_cache_seconds:
+            return hit[1]
+        try:
+            state = await asyncio.wait_for(
+                self._runtime.state(scope=scope), self._caps.read_timeout_seconds,
+            )
+        except TimeoutError:
+            self._inc("nora_computer_context_machine_unread_total", reason="timeout")
+            return None
+        if state.status is not SandboxStatus.OK:
+            self._inc("nora_computer_context_machine_unread_total", reason="unavailable")
+            return None
+        self._cache[scope] = (self._monotonic(), state)
+        return state
 
     async def read(self, *, platform: str, conversation_id: str) -> ComputerView | None:
         try:
             return await self._read(platform, conversation_id)
         except Exception:
             log.exception("computer context read failed; rendering no block")
-            inc = getattr(self._metrics, "inc", None)
-            if inc is not None:
-                inc("nora_errors_total", stage="computer_context", platform=platform)
+            self._inc("nora_errors_total", stage="computer_context", platform=platform)
             return None
 
     async def _read(self, platform: str, conversation_id: str) -> ComputerView | None:
@@ -78,7 +114,7 @@ class ComputerContextReader:
         caps = self._caps
         rows = await self._events.recent(
             conversation_id=conversation_id, since=now - timedelta(days=caps.active_days),
-            limit=EVENTS_READ,
+            limit=EVENTS_READ, platform=platform,
         )
         used = any(r.actor != "sweeper" for r in rows)
         sessions = await self._sessions.for_room(
@@ -92,17 +128,18 @@ class ComputerContextReader:
         ]
         if not used and not open_rows and not lapsed_rows:
             return None
-        state = await self._runtime.state(scope=computer_scope(platform, conversation_id))
-        machine_read = state.status is SandboxStatus.OK
-        tmux = state.tmux if machine_read else None
-        running = bool(tmux) and any(t.running for t in tmux or ())
+        state = await self._state(computer_scope(platform, conversation_id))
+        machine_read = state is not None
+        tmux = state.tmux if state is not None else None
+        # None: unknown (unread, or tmux could not be listed), never «none running».
+        running: bool | None = None if tmux is None else any(t.running for t in tmux)
         cutoff = now - timedelta(days=caps.recent_file_days)
-        files = tuple(f for f in state.files if f.mtime >= cutoff) if machine_read else ()
+        files = tuple(f for f in state.files if f.mtime >= cutoff) if state is not None else ()
 
         async def line(s: ComputerSession) -> SessionLine:
             shown = shown_status(s, now=now, idle_after=caps.idle_after,
                                  lapsed_visible=caps.lapsed_visible,
-                                 tmux_running=running and s.status != EXPIRED)
+                                 tmux_running=running if s.status != EXPIRED else False)
             try:
                 mine = await self._events.for_session(session_id=s.id,
                                                       limit=SESSION_EVENTS_READ)
@@ -112,16 +149,19 @@ class ComputerContextReader:
                 progress = None
             return SessionLine(session=s, shown=shown, progress=progress)
 
-        # Progress is read only for the sessions the caps will show.
-        open_lines = tuple([await line(s) for s in open_rows[: caps.max_open_sessions]]
-                           + [SessionLine(s, "active", None)
-                              for s in open_rows[caps.max_open_sessions:]])
-        lapsed_lines = tuple(
-            [await line(s) for s in lapsed_rows[: caps.max_lapsed_sessions]]
-            + [SessionLine(s, "lapsed", None) for s in lapsed_rows[caps.max_lapsed_sessions:]]
-        )
+        # Progress is read only for the sessions the caps will show, all at once.
+        shown_open = open_rows[: caps.max_open_sessions]
+        shown_lapsed = lapsed_rows[: caps.max_lapsed_sessions]
+        lines = await asyncio.gather(*(line(s) for s in (*shown_open, *shown_lapsed)))
+        open_lines = (*lines[: len(shown_open)],
+                      *(SessionLine(s, "active", None)
+                        for s in open_rows[caps.max_open_sessions:]))
+        lapsed_lines = (*lines[len(shown_open):],
+                        *(SessionLine(s, "lapsed", None)
+                          for s in lapsed_rows[caps.max_lapsed_sessions:]))
         return ComputerView(
-            now=now, caps=caps, open_sessions=open_lines, lapsed_sessions=lapsed_lines,
+            now=now, caps=caps, open_sessions=tuple(open_lines),
+            lapsed_sessions=tuple(lapsed_lines),
             tmux=tmux, files=files, runs=_runs(rows), machine_read=machine_read,
         )
 
