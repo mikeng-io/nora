@@ -77,6 +77,8 @@ async def test_the_sweeper_never_deletes_anything(world):
     assert len(events.events) == 1  # appended, nothing removed
     # The one destructive act: a tmux shell with nothing running in it.
     assert runtime.killed == [(SCOPE, "shell")]
+    # No command at all: `run` is the only way the port could remove a file.
+    assert runtime.run_calls == []
 
 
 async def test_a_running_tmux_job_keeps_it_open_then_is_flagged_never_killed(world):
