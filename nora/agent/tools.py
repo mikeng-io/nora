@@ -13787,7 +13787,7 @@ Args:
         a kept copy. Call this when a file you made is ready.
 
         MUST: it sends files (images, charts, CSV, PDF, data), never a web
-        page. For a document people open, follow the document skill.
+        page.
 
         Returns `status`: ok, nothing_found, refused, held_for_review or
         unavailable, with a `note` on how to read it.
@@ -13911,9 +13911,8 @@ Args:
             if media_type is None:
                 outcome, row = "refused", {**received, "reason": "type not allowed"}
                 return {"status": "refused", "reason": "not a kind of file that may leave",
-                        "note": "Nothing was sent: only a picture, a PDF, or a text, CSV, "
-                                "markdown or JSON file may leave, never a web page. A "
-                                "document goes through the document skill."}
+                        "note": "Nothing was sent: a web page cannot leave your "
+                                "computer. Send the data, an image or a PDF instead."}
             if to == "link" and media_type in NOT_AS_LINK:
                 outcome, row = "refused", {**received, "media_type": media_type,
                                            "reason": "svg as a link"}
