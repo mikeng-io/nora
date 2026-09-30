@@ -100,6 +100,7 @@ from .dream_guard import DreamGuard
 from .dream_screen import screen
 from .reasoning_strip import ReasoningStripWatch
 from .registry import ToolRegistry
+from .surface import DREAMER_LOOP_TOOLS
 from .tools import OriginRoom
 
 log = logging.getLogger("nora.dreamer")
@@ -762,6 +763,17 @@ def tool_subset_faults(
             f"may look and may not act; a tool is grantable only if its "
             f"NativeTool row says read_only=True, or an AdaptorGrant names "
             f"it for this adaptor (39 D3)."
+        )
+    loop_only = declared & DREAMER_LOOP_TOOLS
+    if loop_only:
+        # The class behind #647 M1: a grant DERIVED from the read-only ceiling
+        # swallowed both tools silently. They are the Cognition session's
+        # (`cognition_wiring.read_surface`, which does not pass through this
+        # check); no DreamAdaptor holds them, however its tools were derived.
+        faults.append(
+            f"Dreamer adaptor {adaptor.name!r} declares Cognition-only tools: "
+            f"{', '.join(sorted(loop_only))}. `rollup_read` and `standing_read` "
+            f"belong to the Cognition session's own surface, not to an adaptor."
         )
     if adaptor.key_kind == "unit" and not allowance.home_room:
         room_scoped = declared - UNIT_SAFE_TOOLS

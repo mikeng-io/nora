@@ -201,7 +201,9 @@ from ..domain.reminders import (
     occurrence_at,
     remaining_occurrences,
 )
+from ..domain.rollup_read import ROLLUP_READ_KINDS, RollupRead, RollupReadQuery
 from ..domain.self_presence import KnownRoom, UnitRooms, platform_name
+from ..domain.standing import StandingHead
 from ..domain.tool_call_log import ToolCallLogStore
 from ..domain.x_links import is_handle as _is_x_handle
 from ..domain.x_links import parse_link as _parse_x_link
@@ -243,7 +245,10 @@ from .link_owners import redirect as _link_redirect
 from .links import LinkCarry
 from .ports import ToolSpec, adapt
 from .relay import Relay
+from .rollup_read import iso as rollup_iso
+from .rollup_read import parse_interval, render_row, visible_rows
 from .room import Room, RoomView, _key, _names_of, find_by_name
+from .standing_read import render_standing
 from .surface import LOAD_TOOLS_UNAVAILABLE_NOTE, ToolShelf, load_onto
 from .whereis import (
     STALE_AFTER_MS,
@@ -849,6 +854,31 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
                                source_tier="remembered", read_only=True,
                                side_effect_state="none", idempotency="idempotent",
                                retry="safe", output_contract="three_state", level=2),
+    # `rollup_read` (design/cognition-loop/25-rollup.md §5, migration step 3):
+    # the Rollup's typed rows over an interval, for a Dreamer adaptor ONLY
+    # (`nora.agent.surface.DREAMER_ONLY_TOOLS`): the tag path keeps
+    # `where_been` and `routine_read`. 4, the same currency as `where_been`:
+    # cheap local SELECTs, so the model round trip is the cost, and one
+    # question can walk a person's days, then the pair, then a week. A
+    # Cognition session raises it per agenda item (`nora.app.cognition_wiring`).
+    # `time_shiftable=True` and `cacheable=False` are `where_been`'s, for its
+    # reasons: every answer is a window answer, and lineage runs against the
+    # room's LIVE roster on every call, so a replayed `ok` could outlive it.
+    # `level=2`: L1 plus one SHOULD (how to name the subject).
+    "rollup_read": NativeTool(4,
+                              time_shiftable=True, source_tier="confirmed", cacheable=False,
+                              read_only=True,
+                              side_effect_state="none", idempotency="idempotent", retry="safe",
+                              output_contract="three_state", level=2),
+    # `standing_read` (design/cognition-loop/30 §2, 50 §2): this room's Standing
+    # head, for a Dreamer adaptor ONLY. 1: the head does not move inside one
+    # session's read of one room, so a second call returns what the first did.
+    # `remembered`: her own held position, like a note. `cacheable=False`:
+    # withdrawal and lineage run at every read. `level=1`: what, when, returns.
+    "standing_read": NativeTool(1,
+                                source_tier="remembered", cacheable=False, read_only=True,
+                                side_effect_state="none", idempotency="idempotent",
+                                retry="safe", output_contract="three_state", level=1),
     # The three room-scoped tools. Every budget here is chosen against ONE
     # currency: a tool call is a model round trip (~4 s on this gateway), and
     # `llm.limits.turns = 8` is the real global ceiling — these numbers only
@@ -2577,6 +2607,23 @@ class RecordQuerySource(Protocol):
     ) -> tuple[tuple[RecordHit, ...], bool, frozenset[int]]: ...
 
 
+class RollupReadSource(Protocol):
+    """The Rollup read `rollup_read` runs (`nora.infra.sql.rollup_read.
+    SqlRollupRead`, the one implementation): the CURRENT build's rows of one
+    kind over an interval, never a build."""
+
+    async def read(self, q: RollupReadQuery) -> RollupRead: ...
+
+
+class StandingHeadSource(Protocol):
+    """The Standing head `standing_read` shows, with its revision id
+    (`nora.infra.sql.standing.SqlStandingStore.read_head`)."""
+
+    async def read_head(
+        self, *, platform: str, conversation_id: str,
+    ) -> StandingHead | None: ...
+
+
 def _room_name(room: KnownRoom) -> str:
     """What a room is called to her: the operator's label, or its network when
     it has none. Never `conversation_id` (R-18), and the SAME string
@@ -2837,6 +2884,65 @@ _RECORD_QUERY_DELETED = (
 _RECORD_QUERY_NEAR = (
     "A message marked near has words close to these but not these words; do "
     "not quote it as saying them."
+)
+
+
+#: `rollup_read`'s and `standing_read`'s notes (ADR 0015 §3: interpretation
+#: lives in the result, paid only when the status fires).
+_ROLLUP_OFF = (
+    "I can't read the rollups right now. Say so; do not guess what anyone did."
+)
+_ROLLUP_TIME = (
+    "I could not read that interval. Give it as ISO 8601: a date such as "
+    "2026-09-01, or start/end such as 2026-09-01/2026-09-07 (an end date "
+    "includes that whole day)."
+)
+_ROLLUP_NO_BUILD = (
+    "No rollup build is current yet, so there are no rows to read. Say so; "
+    "do not read it as nothing having happened."
+)
+_ROLLUP_SUBJECT = (
+    "Name a person here. stay, trip and daybook take one name; colocation, "
+    "outing and tie take one or several, separated by commas."
+)
+_ROLLUP_KIND = (
+    "That is not a rollup kind. Use stay, trip, daybook, colocation, outing or "
+    "tie."
+)
+_ROLLUP_EVERYONE = (
+    "«everyone» stands for the whole room and takes no other name beside it. "
+    "Give either everyone or the names, not both."
+)
+_ROLLUP_NO_PERSON = (
+    "Nobody in this conversation goes by that. Check the name with "
+    "lookup_person; do not guess who was meant."
+)
+_ROLLUP_NONE = (
+    "No rollup row matches in that stretch. The build reads the Record only "
+    "up to `through`. Say you found none, not that nothing happened."
+)
+_ROLLUP_WITHHELD = (
+    "Some rows are not shown in this conversation. Do not read the rest as "
+    "complete, and do not hint at what the others hold."
+)
+_ROLLUP_MORE = (
+    "More rows matched than are shown. Narrow the interval or the subject. "
+    "A note cites a row by its kind, subject, from and to."
+)
+_ROLLUP_UNLABELLED = (
+    "An unlabelled place is not a guess about where: say it was somewhere "
+    "not yet named."
+)
+_STANDING_OFF = (
+    "I can't read this room's position right now. Say so; do not guess it."
+)
+_STANDING_NONE = (
+    "No supported position is held for this room. Say so, and do not "
+    "reconstruct one."
+)
+_STANDING_WITHHELD = (
+    "Some sections are not shown in this conversation. Do not read the rest "
+    "as complete."
 )
 
 
@@ -4225,6 +4331,11 @@ def build_tool_specs(
     # (offline, eval, every test that does not care) answers `unavailable`.
     record: RecordQuerySource | None = None,
     lineage: LineagePolicy | None = None,
+    # `rollup_read`'s Rollup read and `standing_read`'s Standing head
+    # (design/cognition-loop/25 §5, 50 §2). `None` (offline, eval, every tag
+    # path) answers `unavailable`; both tools are Dreamer-only besides.
+    rollup: RollupReadSource | None = None,
+    standing_head: StandingHeadSource | None = None,
 ) -> tuple[ToolSpec, ...]:
     """Every native tool, closed over one turn's collaborators.
 
@@ -4990,6 +5101,184 @@ def build_tool_specs(
                 item["near"] = True
             out.append(item)
         return out
+
+    # ---- rollup_read and standing_read (design/cognition-loop/25 §5, 50 §2) ----
+    #
+    # Dreamer-only reads of two derived tiers, each under LINEAGE for the room
+    # this tool is bound to. The unit is the read boundary (DEC-231): a unit
+    # rollup is read for the room's unit only, and a person resolves among
+    # THIS room's people (R-21), so «not here» and «nobody» are one answer.
+    # Neither tool writes, builds or folds: the read is a SELECT.
+
+    async def _lineage_target(tool: str) -> tuple[RenderRoom, RoomFacts, Any] | None:
+        """This room's `RenderRoom` with its live roster read, the room's own
+        facts and the roster view; `None` (counted) when the room is not in
+        the policy or lineage is not wired."""
+        if lineage is None:
+            _record(metrics, tool, "unavailable", reason="unwired")
+            return None
+        target = lineage.render_room(
+            platform=room.platform, conversation_id=bound_conversation_id,
+        )
+        if target.room is None:
+            _record(metrics, tool, "unavailable", reason="room")
+            return None
+        view = await room.scope()
+        return target.with_live(LiveRoom(
+            person_ids=frozenset(p.person_id for p in view.people),
+            unnamed=view.unnamed, available=view.available, degraded=view.degraded,
+        )), target.room, view
+
+    def _rollup_name(subject: str) -> str:
+        ref = persons.by_person.get(subject)
+        return ref.name if ref is not None else "someone"
+
+    async def rollup_read(
+        kind: Literal["stay", "trip", "colocation", "outing", "daybook", "tie"],
+        subject: str,
+        interval: str,
+    ) -> dict:
+        """Read what people here did, as computed rows: stays, trips, days, ties, who
+        was together. Call this when you need a pattern over days or weeks.
+
+        SHOULD: name people as they are named here. Rows come oldest first,
+        each with `kind`, `subject`, `from` and `to`, the key a note cites it
+        by. Statuses: ok, nothing_found, ambiguous, unavailable.
+
+        Args:
+            kind: stay, trip or daybook is one person; colocation and outing
+                are who was together; tie is two people's interaction in a week.
+            subject: A person's name used in this conversation, or several
+                separated by commas for colocation, outing and tie.
+            interval: ISO 8601, a date or start/end; an end date includes that
+                whole day.
+        """
+        if rollup is None:
+            _record(metrics, "rollup_read", "unavailable", reason="unwired")
+            return {"status": "unavailable", "note": _ROLLUP_OFF}
+        try:
+            start_ms, end_ms = parse_interval(interval)
+        except (ValueError, OverflowError):
+            _record(metrics, "rollup_read", "unavailable", reason="time")
+            return {"status": "unavailable", "note": _ROLLUP_TIME}
+        if kind not in ROLLUP_READ_KINDS:
+            _record(metrics, "rollup_read", "unavailable", reason="kind")
+            return {"status": "unavailable", "note": _ROLLUP_KIND}
+        bound = await _lineage_target("rollup_read")
+        if bound is None:
+            return {"status": "unavailable", "note": _ROLLUP_OFF}
+        target, here, view = bound
+        if not view.available:
+            _record(metrics, "rollup_read", "unavailable", reason="roster")
+            return {"status": "unavailable", "note": _ROLLUP_OFF}
+        names = [n.strip() for n in str(subject).split(",") if n.strip()]
+        everyone = any(n.casefold() in _been_everyone for n in names)
+        if not names or (kind in ("stay", "trip", "daybook") and len(names) > 1):
+            _record(metrics, "rollup_read", "unavailable", reason="subject")
+            return {"status": "unavailable", "note": _ROLLUP_SUBJECT}
+        if everyone and len(names) > 1:
+            _record(metrics, "rollup_read", "unavailable", reason="subject")
+            return {"status": "unavailable", "note": _ROLLUP_EVERYONE}
+        people: list[PersonRef] = []
+        if everyone:
+            people = list(view.people)
+            if not people:
+                # A room with nobody resolved is not «every person»: an empty
+                # subject set would reach the store as no filter at all. The
+                # store refuses it too (`SqlRollupRead.read`), so neither layer
+                # alone can turn «nobody» into «all».
+                _record(metrics, "rollup_read", "nothing_found", reason="subject")
+                return {"status": "nothing_found", "note": _ROLLUP_NO_PERSON}
+        for name in [] if everyone else names:
+            matches = view.find(name)
+            if not matches:
+                _record(metrics, "rollup_read", "nothing_found", reason="subject")
+                return {"status": "nothing_found", "note": _ROLLUP_NO_PERSON}
+            if len(matches) > 1:
+                _record(metrics, "rollup_read", "ambiguous")
+                return {
+                    "status": "ambiguous", "could_be": [p.name for p in matches],
+                    "note": "More than one person here goes by that. Ask which one.",
+                }
+            people.append(matches[0])
+        subjects = tuple(dict.fromkeys(persons.subject_id_for(p.person_id) for p in people))
+        try:
+            got: RollupRead = await rollup.read(RollupReadQuery(
+                kind=kind, unit=here.unit, subjects=subjects,
+                start_ms=start_ms, end_ms=end_ms,
+                match="all" if len(names) > 1 and not everyone else "any",
+            ))
+        except Exception:
+            log.exception("rollup_read failed")
+            _record(metrics, "rollup_read", "unavailable")
+            return {"status": "unavailable", "note": _ROLLUP_OFF}
+        if got.build_id is None or got.through_ms is None:
+            _record(metrics, "rollup_read", "unavailable", reason="build")
+            return {"status": "unavailable", "note": _ROLLUP_NO_BUILD}
+        shown, withheld = visible_rows(got.rows, target)
+        through = rollup_iso(got.through_ms)
+        notes: list[str] = []
+        if not shown:
+            _record(metrics, "rollup_read", "nothing_found",
+                    kind=kind, withheld=withheld, more=got.more)
+            return {
+                "status": "nothing_found", "through": through,
+                "note": _ROLLUP_WITHHELD if withheld else _ROLLUP_NONE,
+            }
+
+        def _room_label(key: str) -> str:
+            found = target.resolve(key)
+            return (found[0].label or platform_name(found[0].platform)) if found else "another room"
+
+        out = [render_row(r, name_of=_rollup_name, room_label=_room_label) for r in shown]
+        if got.more:
+            notes.append(_ROLLUP_MORE)
+        if withheld:
+            notes.append(_ROLLUP_WITHHELD)
+        if any("unlabelled" in str(r.get("place", "")) for r in out):
+            notes.append(_ROLLUP_UNLABELLED)
+        _record(metrics, "rollup_read", "ok", kind=kind, rows=len(out),
+                withheld=withheld, more=got.more)
+        result: dict = {"status": "ok", "through": through, "rows": out}
+        if notes:
+            result["note"] = " ".join(notes)
+        return result
+
+    async def standing_read() -> dict:
+        """Read this room's Standing: what she holds, holds open and owes. Call this
+        before you revise the position.
+
+        A revision replaces the whole of it. Returns its sections and the
+        `revision` it stands at. Statuses: ok, nothing_found, unavailable.
+        """
+        if standing_head is None:
+            _record(metrics, "standing_read", "unavailable", reason="unwired")
+            return {"status": "unavailable", "note": _STANDING_OFF}
+        bound = await _lineage_target("standing_read")
+        if bound is None:
+            return {"status": "unavailable", "note": _STANDING_OFF}
+        target = bound[0]
+        try:
+            head = await standing_head.read_head(
+                platform=room.platform, conversation_id=bound_conversation_id,
+            )
+        except Exception:
+            log.exception("standing_read failed")
+            _record(metrics, "standing_read", "unavailable")
+            return {"status": "unavailable", "note": _STANDING_OFF}
+        shown, withheld = (None, 0) if head is None else render_standing(head, target)
+        if not shown:
+            _record(metrics, "standing_read", "nothing_found", withheld=withheld)
+            return {
+                "status": "nothing_found",
+                "note": _STANDING_WITHHELD if withheld else _STANDING_NONE,
+            }
+        _record(metrics, "standing_read", "ok", withheld=withheld,
+                revision=head is not None and head.revision_id is not None)
+        result: dict = {"status": "ok", **shown}
+        if withheld:
+            result["note"] = _STANDING_WITHHELD
+        return result
 
     # ---- the three room-scoped tools -------------------------------------
     #
@@ -13889,6 +14178,8 @@ Args:
         _spec("room_list", room_list),
         _spec("room_read", room_read),
         _spec("record_query", record_query),
+        _spec("rollup_read", rollup_read),
+        _spec("standing_read", standing_read),
         _spec("group_members", group_members),
         _spec("lookup_person", lookup_person),
         _spec("about", about),
@@ -14130,6 +14421,8 @@ def build_tools(
     on_rows: Callable[[Sequence[TranscriptRow]], None] | None = None,
     record: RecordQuerySource | None = None,
     lineage: LineagePolicy | None = None,
+    rollup: RollupReadSource | None = None,
+    standing_head: StandingHeadSource | None = None,
 ) -> list:
     """The Strands-ready form of `build_tool_specs` — `adapt()` each spec so
     the docstrings above become the tool's model-facing description/schema
@@ -14189,5 +14482,7 @@ def build_tools(
         clock=clock,
         record=record,
         lineage=lineage,
+        rollup=rollup,
+        standing_head=standing_head,
     )
     return [adapt(spec) for spec in specs]
