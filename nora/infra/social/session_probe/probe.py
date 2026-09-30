@@ -159,10 +159,10 @@ class Probe:
         argv = [self._cfg.opencli_bin, OPENCLI_SITE[net], "whoami", "-f", "json"]
         res = self._run(argv, 60.0, None)
         text = f"{res.stdout}\n{res.stderr}"
+        if res.rc == 0:
+            return LiveCheck.LOGGED_IN  # a 429 inside a good JSON body is data
         if _RATE_LIMIT_TEXT.search(text):
             return LiveCheck.ERROR  # rate limited is not logged out
-        if res.rc == 0:
-            return LiveCheck.LOGGED_IN
         if res.rc == 77 or _LOGGED_OUT_TEXT.search(text):
             return LiveCheck.LOGGED_OUT
         return LiveCheck.ERROR
@@ -189,9 +189,17 @@ class Probe:
 
     # ---- actions ----------------------------------------------------------
     def _sync(self, jar: dict[str, str]) -> str:
-        """Backup, merge Chrome's Instagram cookies over the bridge's, write
-        atomically at 0600, restart the container. Returns «ok» or an error tag."""
+        """Stop the bridge, back up, merge Chrome's Instagram cookies over the
+        bridge's, write atomically at 0600, start the bridge. Returns «ok» or an
+        error tag.
+
+        The order is load-bearing: the bridge's SIGTERM handler flushes its
+        in-memory (old, rejected) jar back over cookies.json, so the write must
+        land AFTER the process is gone and BEFORE it starts again."""
         target = self._cfg.cookies_json
+        stopped = self._run(["docker", "stop", self._cfg.container], 60.0, None)
+        if stopped.rc != 0:
+            return f"stop_failed:rc={stopped.rc}"
         try:
             if target.exists():
                 stamp = self._now().strftime("%Y%m%dT%H%M%SZ")
@@ -210,9 +218,11 @@ class Probe:
                 os.fsync(fh.fileno())
             os.replace(tmp, target)
         except OSError as exc:
+            # The bridge is down: bring it back before reporting the failure.
+            self._run(["docker", "start", self._cfg.container], 60.0, None)
             return f"write_failed:{type(exc).__name__}"
-        res = self._run(["docker", "restart", self._cfg.container], 60.0, None)
-        return "ok" if res.rc == 0 else f"restart_failed:rc={res.rc}"
+        started = self._run(["docker", "start", self._cfg.container], 60.0, None)
+        return "ok" if started.rc == 0 else f"start_failed:rc={started.rc}"
 
     def _emit_alerts(
         self, actions: list[Action], carry: dict[str, Any], now: datetime
@@ -296,7 +306,8 @@ class Probe:
             history.consecutive_sync_attempts, carry.get("chrome_hash"), chrome_fp,
             bridge_session, synced,
         )
-        carry["chrome_hash"] = chrome_fp
+        if chrome_fp is not None:  # an unreadable run never erases the last known hash
+            carry["chrome_hash"] = chrome_fp
         record["carry"] = carry
         self._append(record)
         return v, record

@@ -127,6 +127,10 @@ def read_cookies(db_path: Path, networks: Sequence[Network]) -> list[ChromeCooki
         try:
             shutil.copy2(db_path, copy)
             copy.chmod(0o600)
+            journal = db_path.with_name(db_path.name + "-journal")
+            if journal.is_file():  # a hot-journal makes a mid-write copy consistent
+                shutil.copy2(journal, tmpdir / "Cookies-journal")
+                (tmpdir / "Cookies-journal").chmod(0o600)
             con = sqlite3.connect(f"file:{copy}?mode=ro", uri=True)
         except (OSError, sqlite3.Error) as exc:
             raise CookieError(f"cannot copy or open cookie db: {type(exc).__name__}") from exc

@@ -169,3 +169,17 @@ def test_counter_restarts_when_a_human_changed_chrome_cookie() -> None:
 
 def test_counter_holds_when_bridge_unreachable_and_no_sync() -> None:
     assert next_attempts(2, "aaaaaaaa", "aaaaaaaa", "unreachable", False) == 2
+
+
+def test_unreadable_chrome_never_resets_the_counter() -> None:
+    # chrome_hash None = Chrome could not be read: no evidence the cookie changed.
+    assert next_attempts(3, "aaaaaaaa", None, "logged_out", False) == 3
+
+
+def test_counter_sequence_across_an_unreadable_run_still_reaches_the_cap() -> None:
+    last, n, seen = None, 0, []
+    for chrome_hash, synced in [("a", True), ("a", True), ("a", True), (None, False), ("a", True)]:
+        n = next_attempts(n, last, chrome_hash, "logged_out", synced)
+        last = chrome_hash if chrome_hash is not None else last
+        seen.append(n)
+    assert seen == [1, 2, 3, 3, 4]

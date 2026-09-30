@@ -93,7 +93,7 @@ class Snapshot:
 @dataclass(frozen=True)
 class SyncBridge:
     """Backup cookies.json, merge Chrome's Instagram cookies over it, write
-    atomically at mode 0600, `docker restart instagram-bridge`."""
+    atomically at mode 0600 while the bridge is stopped, then start it."""
 
     attempt: int
 
@@ -198,7 +198,7 @@ def verdict(actions: list[Action]) -> Verdict:
 
 def next_attempts(
     prev_attempts: int,
-    prev_chrome_hash: str | None,
+    last_known_chrome_hash: str | None,
     chrome_hash: str | None,
     bridge_session: BridgeSession,
     synced_now: bool,
@@ -209,10 +209,19 @@ def next_attempts(
     (a human re-logged in: the earlier failures were about a different
     cookie). Otherwise it counts syncs that did not yield `authenticated`.
     An unreachable bridge tells us nothing, so the counter holds.
+
+    `last_known_chrome_hash` is the last NON-None hash the probe saw. A run
+    that could not read Chrome (`chrome_hash is None`) is no evidence that the
+    cookie changed, so it never resets the counter (else a single unreadable
+    run between syncs would defeat the cap).
     """
     if bridge_session == "authenticated":
         return 0
-    if chrome_hash != prev_chrome_hash:
+    if (
+        chrome_hash is not None
+        and last_known_chrome_hash is not None
+        and chrome_hash != last_known_chrome_hash
+    ):
         return 1 if synced_now else 0
     return prev_attempts + 1 if synced_now else prev_attempts
 

@@ -25,8 +25,10 @@ It never logs in to anything. A dead session in Chrome needs a human in VNC.
    file, so the 10-minute timer does not repeat it.
 4. Decides (`nora/infra/social/session_probe/decide.py`, pure) and acts:
    - bridge `logged_out`/`checkpointed` and Chrome's Instagram cookie differs:
-     **SYNC** — back up `cookies.json` (last 5 kept), merge Chrome's cookies
-     over it, atomic write at mode 0600, `docker restart instagram-bridge`.
+     **SYNC** — `docker stop instagram-bridge` (its shutdown flushes its old
+     jar over `cookies.json`, so the write must come after), back up
+     `cookies.json` (last 5 kept), merge Chrome's cookies over it, atomic
+     write at mode 0600, `docker start instagram-bridge`.
    - **CAPPED** after 3 consecutive syncs that did not reach `authenticated`:
      no more restarts, an alert instead. A changed Chrome cookie (a human
      logged in again) restarts the count.

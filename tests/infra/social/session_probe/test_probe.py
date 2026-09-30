@@ -25,7 +25,13 @@ class FakeWorld:
     def __init__(self) -> None:
         self.health = '{"session":"authenticated"}'
         self.health_rc = 0
-        self.restart_rc = 0
+        self.stop_rc = 0
+        self.start_rc = 0
+        self.bridge_dir: Path | None = None
+        #: the bridge's in-memory jar; `docker stop` flushes it over cookies.json
+        #: (the real SIGTERM handler: gw.Shutdown() -> flushCookies()).
+        self.bridge_memory: dict[str, str] = {"sessionid": BRIDGE_SID, "mid": "keep-me"}
+        self.running = True
         self.whoami: dict[str, RunResult] = {}
         self.calls: list[list[str]] = []
         self.sleeps: list[float] = []
@@ -37,8 +43,16 @@ class FakeWorld:
         self.calls.append(list(argv))
         if argv[:2] == ["docker", "exec"] and "curl" in argv:
             return RunResult(self.health_rc, self.health)
-        if argv[:2] == ["docker", "restart"]:
-            return RunResult(self.restart_rc)
+        if argv[:2] == ["docker", "stop"]:
+            if self.stop_rc == 0:
+                self.running = False
+                if self.bridge_dir is not None:
+                    (self.bridge_dir / "cookies.json").write_text(json.dumps(self.bridge_memory))
+            return RunResult(self.stop_rc)
+        if argv[:2] == ["docker", "start"]:
+            if self.start_rc == 0:
+                self.running = True
+            return RunResult(self.start_rc)
         if len(argv) >= 3 and argv[2] == "whoami":
             return self.whoami.get(argv[1], RunResult(0, "{}"))
         raise AssertionError(f"unexpected process: {argv}")
@@ -50,7 +64,8 @@ class FakeWorld:
         return True
 
     def restarts(self) -> int:
-        return sum(1 for c in self.calls if c[:2] == ["docker", "restart"])
+        """Completed stop/start cycles (each sync is one)."""
+        return sum(1 for c in self.calls if c[:2] == ["docker", "start"])
 
     def whoami_sites(self) -> list[str]:
         return [c[1] for c in self.calls if len(c) > 2 and c[2] == "whoami"]
@@ -93,6 +108,7 @@ def make(world: FakeWorld, bridge_dir: Path, tmp_path: Path, chrome=None, **cfg)
             raise chrome
         return chrome if chrome is not None else jar()
 
+    world.bridge_dir = bridge_dir
     return Probe(config, read_chrome=read, run=world.run, sink=world, now=lambda: world.now,
                  sleep=world.sleeps.append, jitter=lambda hi: 1.5), config
 
@@ -197,13 +213,76 @@ def test_unreachable_or_garbled_bridge_health_is_error(world, bridge_dir, tmp_pa
     assert world.restarts() == 0
 
 
-def test_failed_restart_is_recorded_as_error(world, bridge_dir, tmp_path):
+def test_failed_start_is_recorded_as_error(world, bridge_dir, tmp_path):
     world.health = '{"session":"logged_out"}'
-    world.restart_rc = 1
+    world.start_rc = 1
     p, _ = make(world, bridge_dir, tmp_path)
     verdict, rec = p.run_once()
     assert verdict == "ERROR"
-    assert rec["sync"] == "restart_failed:rc=1"
+    assert rec["sync"] == "start_failed:rc=1"
+
+
+def test_failed_stop_writes_nothing_and_is_error(world, bridge_dir, tmp_path):
+    world.health = '{"session":"logged_out"}'
+    world.stop_rc = 125
+    p, _ = make(world, bridge_dir, tmp_path)
+    verdict, rec = p.run_once()
+    assert verdict == "ERROR"
+    assert rec["sync"] == "stop_failed:rc=125"
+    assert json.loads((bridge_dir / "cookies.json").read_text())["sessionid"] == BRIDGE_SID
+    assert list(bridge_dir.glob("cookies.json.bak-*")) == []
+    assert not any(c[:2] == ["docker", "start"] for c in world.calls)
+
+
+def test_sync_writes_after_the_bridge_stops_so_its_flush_cannot_undo_it(
+    world, bridge_dir, tmp_path
+):
+    """The bridge flushes its old in-memory jar over cookies.json when it stops.
+    Only stop -> write -> start ends with Chrome's jar on disk."""
+    world.health = '{"session":"logged_out"}'
+    p, _ = make(world, bridge_dir, tmp_path)
+    p.run_once()
+    verbs = [c[1] for c in world.calls if c[0] == "docker" and c[1] in {"stop", "start", "restart"}]
+    assert verbs == ["stop", "start"]
+    assert json.loads((bridge_dir / "cookies.json").read_text())["sessionid"] == CHROME_SID
+
+
+def test_the_fake_bridge_flush_really_undoes_a_write_made_before_stop(world, bridge_dir):
+    """Guards the model itself: the OLD order (write, then stop) ends with the old jar."""
+    (bridge_dir / "cookies.json").write_text(json.dumps({"sessionid": CHROME_SID}))
+    world.bridge_dir = bridge_dir
+    world.run(["docker", "stop", "instagram-bridge"], 60.0, None)
+    assert json.loads((bridge_dir / "cookies.json").read_text())["sessionid"] == BRIDGE_SID
+
+
+def test_unreadable_run_between_syncs_does_not_reset_the_cap(world, bridge_dir, tmp_path):
+    """sync, sync, sync, unreadable, sync: the 5th run must be CAPPED, not attempt 1."""
+    world.health = '{"session":"logged_out"}'
+    chrome: list = [jar()]
+    cfg = ProbeConfig(chrome_db=tmp_path / "unused", bridge_dir=bridge_dir,
+                      state_file=tmp_path / "state" / "probe.jsonl", opencli_bin="opencli")
+
+    def read() -> list[ChromeCookie]:
+        got = chrome[0]
+        if isinstance(got, Exception):
+            raise got
+        return got
+
+    p = Probe(cfg, read_chrome=read, run=world.run, sink=world, now=lambda: world.now,
+              sleep=world.sleeps.append, jitter=lambda hi: 1.5)
+    world.bridge_dir = bridge_dir
+    for i in range(5):
+        chrome[0] = CookieError("db locked") if i == 3 else jar()
+        # the bridge keeps rejecting Chrome's cookie: restore its old jar each run
+        (bridge_dir / "cookies.json").write_text(json.dumps({"sessionid": BRIDGE_SID}))
+        world.now = NOW + timedelta(minutes=10 * (i + 1))
+        p.run_once()
+    recs = lines(cfg)
+    assert [r["verdict"] for r in recs][3] == "ERROR"
+    assert world.restarts() == 3                        # the 5th run did NOT sync
+    assert {"action": "capped", "attempts": 3} in recs[4]["decisions"]
+    assert recs[4]["carry"]["chrome_hash"] == fingerprint(CHROME_SID)
+    assert recs[3]["carry"]["chrome_hash"] == fingerprint(CHROME_SID)  # not erased
 
 
 def test_missing_bridge_jar_counts_as_different_and_is_recreated(world, bridge_dir, tmp_path):
@@ -251,6 +330,14 @@ def test_live_check_429_is_error_not_logged_out(world, bridge_dir, tmp_path):
     assert verdict == "ERROR"
     assert rec["live"]["x"] == "error"
     assert not any(m.reason == "live_check_logged_out" for m in world.sent)
+
+
+def test_successful_whoami_containing_429_is_logged_in(world, bridge_dir, tmp_path):
+    world.whoami["twitter"] = RunResult(0, '{"followers": 429}')
+    p, _ = make(world, bridge_dir, tmp_path)
+    verdict, rec = p.run_once()
+    assert rec["live"]["x"] == "logged_in"
+    assert verdict == "PASS"
 
 
 def test_live_check_exit_77_is_logged_out_alert(world, bridge_dir, tmp_path):
