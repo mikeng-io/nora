@@ -54,12 +54,20 @@ ENC = tiktoken.get_encoding("cl100k_base")
 # tool (`test_every_registered_tool_has_a_catalogue_line`), so a tag turn pays
 # their lines; whether the catalogue should be scoped is a separate question.
 #
-# RE-SET 2026-10-01, 2,300 -> 2,400, for TWO NEW TOOLS, not for drift:
-# `document_publish` (45 tokens) and `document_read` (31), design/artifact §26,
-# on a block measured at 2,275 over 71 lines: total 2,351 over 73 at a mean of
-# 32.2, under `MEAN_CEILING`. No existing line changed. Both ship withheld
-# (`[documents] enabled = false`), so a live turn pays nothing for them yet.
-BLOCK_CEILING = 2_400
+# RE-SET 2026-10-01 again, 2,300 -> 2,400, for TWO MORE NEW TOOLS, not for
+# drift: S3a (design/sandbox-runtime §6, §7) adds `computer_export` (32
+# tokens) and `computer_import` (28) on top of the two reads above: total
+# 2,342 over 73 lines at a mean of 31.1. No existing line changed. `make_artifact`'s
+# line (38) leaves in S3b, which gives some of this back.
+#
+# RE-SET 2026-10-01 a third time, 2,400 -> 2,500, for TWO NEW TOOLS, from the
+# MEASURED block, not raised blindly: `document_publish` (35 tokens) and
+# `document_read` (34), design/artifact §26, on master's 2,344 over 73 lines:
+# total 2,413 over 75 at a mean of 32.2, under `MEAN_CEILING`. No existing line
+# changed. Both ship withheld (`[documents] enabled = false`), so a live turn
+# pays nothing for them until the portal pages exist. 2,500 holds these and
+# roughly two more lines.
+BLOCK_CEILING = 2_500
 
 # The per-line ceiling, and it was REVISED after measurement. The bundle
 # asserted 20 from an estimate; rendering the real thing put eleven lines

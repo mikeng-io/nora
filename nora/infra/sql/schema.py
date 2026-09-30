@@ -65,6 +65,7 @@ from nora.domain.computer_events import ACTORS as COMPUTER_ACTORS
 from nora.domain.computer_events import CALL_PATHS as COMPUTER_CALL_PATHS
 from nora.domain.computer_events import DREAMER_ACTOR_PREFIX
 from nora.domain.computer_events import PHASES as COMPUTER_PHASES
+from nora.domain.computer_exports import DESTINATIONS as COMPUTER_EXPORT_DESTINATIONS
 from nora.domain.computer_sessions import EXPIRY_REASONS as COMPUTER_EXPIRY_REASONS
 from nora.domain.computer_sessions import STORED_STATUSES as COMPUTER_SESSION_STATUSES
 from nora.domain.decision_log import REASON_MAX_CHARS, VERDICTS, WRITERS
@@ -4448,8 +4449,64 @@ IDX_COMPUTER_SESSIONS_ROOM = sa.Index(
 )
 
 
+# `computer_exports` — every file that left Nora's computer through
+# `computer_export` (design/sandbox-runtime §6, §7; `nora.domain.
+# computer_exports`): the room and path it came from, the sha256 and size
+# Nora computed on the bytes she received, the media type read off those
+# bytes, and where it went (a Drop link, the room, or the blob store). The
+# FIRST row of an `artifact_id` names the only room that may revise it.
+# Insert-only; migration `0083_computer_exports` adds the trigger refusing
+# UPDATE, DELETE and TRUNCATE (unless deliberately switched off, the `0068`
+# guard's rule), which METADATA cannot express.
+COMPUTER_EXPORTS = sa.Table(
+    "computer_exports",
+    METADATA,
+    sa.Column("id", pg.UUID(as_uuid=True), primary_key=True),
+    sa.Column(
+        "created_at", sa.DateTime(timezone=True), nullable=False,
+        server_default=sa.text("now()"),
+    ),
+    sa.Column("platform", sa.Text, nullable=False),
+    sa.Column("conversation_id", sa.Text, nullable=False),
+    sa.Column("scope", sa.Text, nullable=False),
+    sa.Column("path", sa.Text, nullable=False),
+    sa.Column("destination", sa.Text, nullable=False),
+    sa.Column("sha256", sa.Text, nullable=False),
+    sa.Column("size_bytes", sa.BigInteger, nullable=False),
+    sa.Column("media_type", sa.Text, nullable=False),
+    sa.Column("title", sa.Text, nullable=False),
+    sa.Column("tag_id", sa.Text, nullable=False),
+    sa.Column("operation_id", pg.UUID(as_uuid=True), nullable=False),
+    sa.Column("artifact_id", sa.Text, nullable=True),
+    sa.Column("url", sa.Text, nullable=True),
+    sa.Column("revised", sa.Boolean, nullable=False, server_default=sa.false()),
+    sa.Column("blob_key", sa.Text, nullable=True),
+    sa.Column("session_id", pg.UUID(as_uuid=True), nullable=True),
+    sa.CheckConstraint(
+        f"destination IN ({', '.join(repr(d) for d in sorted(COMPUTER_EXPORT_DESTINATIONS))})",
+        name="ck_computer_exports_destination",
+    ),
+    sa.CheckConstraint(
+        "(destination = 'link' AND artifact_id IS NOT NULL AND url IS NOT NULL) OR "
+        "(destination <> 'link' AND artifact_id IS NULL AND NOT revised "
+        "AND blob_key IS NOT NULL)",
+        name="ck_computer_exports_target",
+    ),
+)
+
+# The ownership read (`for_artifact`: the first row of an artifact).
+IDX_COMPUTER_EXPORTS_ARTIFACT = sa.Index(
+    "idx_computer_exports_artifact",
+    COMPUTER_EXPORTS.c.artifact_id, COMPUTER_EXPORTS.c.created_at,
+)
+
+IDX_COMPUTER_EXPORTS_ROOM = sa.Index(
+    "idx_computer_exports_room",
+    COMPUTER_EXPORTS.c.conversation_id, COMPUTER_EXPORTS.c.created_at,
+)
+
 # `documents` and `document_revision` (ADR 0020, design/artifact/00-design.md §5,
-# migration `0083_documents`). Both are APPEND-ONLY: `documents` is the identity of a
+# migration `0084_documents`). Both are APPEND-ONLY: `documents` is the identity of a
 # document, written once (its `recorded_at` is when the document first existed), and
 # `document_revision` holds one full snapshot per revision. The current document is
 # the highest revision, so nothing is updated in place and nothing needs the row

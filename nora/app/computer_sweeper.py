@@ -43,7 +43,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
-from nora.domain.computer import SandboxStatus, StateResult
+from nora.domain.computer import SandboxStatus, StateResult, anything_running
 from nora.domain.computer_events import ComputerEvent, ComputerEventStore
 from nora.domain.computer_leases import ComputerLeases, session_key
 from nora.domain.computer_sessions import ComputerSession, ComputerSessionStore
@@ -88,9 +88,10 @@ class ComputerSessionSweeper:
             if session.scope not in states:
                 states[session.scope] = await self._runtime.state(scope=session.scope)
             state = states[session.scope]
-            if state.status is not SandboxStatus.OK or state.tmux is None:
+            if (state.status is not SandboxStatus.OK or state.tmux is None
+                    or state.processes is None):
                 log.info("computer sweep skipped a room it cannot see (%s)",
-                         state.reason or state.tmux_reason)
+                         state.reason or state.tmux_reason or state.processes_reason)
                 continue
             if await self._sweep(session, state, now):
                 expired += 1
@@ -99,14 +100,17 @@ class ComputerSessionSweeper:
     def _reason(self, session: ComputerSession, state: StateResult, now: datetime) -> str | None:
         idle = now - session.last_activity_at
         tmux = state.tmux or ()
-        running = any(t.running for t in tmux)
+        # «Nothing it owns is running»: no tmux job AND no process of the
+        # room's user (a `nohup … &` job has no tmux session).
+        running = anything_running(state) is True
         if idle >= self._rules.idle_expiry:
             if not running:
                 return "idle"
             if idle >= self._rules.max_running:
                 return "running_past_limit"
             return None
-        if session.held_tmux and not tmux and idle >= self._rules.idle_after:
+        if (session.held_tmux and not tmux and not state.processes
+                and idle >= self._rules.idle_after):
             return "jobs_ended"
         return None
 
@@ -143,6 +147,9 @@ class ComputerSessionSweeper:
                 "transition": "expired", "reason": reason,
                 "idle_seconds": int((now - session.last_activity_at).total_seconds()),
                 "flagged_running_tmux": flagged,
+                "flagged_running_processes": [
+                    {"pid": p.pid, "command": p.command} for p in state.processes or ()
+                ],
                 "tmux_left": [t.name for t in tmux],
             })
             return True

@@ -311,6 +311,23 @@ class SqlMediaObjectStore:
             return ()
         return tuple(_row_to_object(r) for r in rows)
 
+    async def lookup_prefix(self, *, handle: str, limit: int = 100) -> MediaLookup:
+        """`by_prefix`'s read with the axis it lacks: `available=False` when
+        the index could not be read, never an empty answer."""
+        stmt = (
+            sa.select(MEDIA_OBJECTS)
+            .where(MEDIA_OBJECTS.c.sha256.like(handle + "%"))
+            .order_by(MEDIA_OBJECTS.c.created_at_ms.desc())
+            .limit(limit)
+        )
+        try:
+            async with self._engine.connect() as conn:
+                rows = (await conn.execute(stmt)).all()
+        except Exception:
+            log.exception("media_object lookup_prefix failed; the index cannot read")
+            return MediaLookup(available=False, reason="store")
+        return MediaLookup(available=True, objects={r.sha256: _row_to_object(r) for r in rows})
+
 
 def _row_to_object(row: sa.Row[tuple[Any, ...]]) -> MediaObject:
     return MediaObject(

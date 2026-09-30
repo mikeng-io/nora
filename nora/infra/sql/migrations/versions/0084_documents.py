@@ -16,13 +16,10 @@ Both tables are append-only, so neither gets the `nora_row_history` trigger:
 `nora.infra.sql.history.APPEND_ONLY` names `recorded_at` as their system time, and
 `tests/infra/test_row_history.py` is the guard that every table is classified once.
 
->>> RE-POINT AT MERGE. <<< `down_revision` is `origin/master`'s head when this branch
-was cut (`0082_computer_sessions`). The sandbox session's `0083_computer_exports` (#649)
-may land first; then this becomes `0084_documents` with `down_revision =
-"0083_computer_exports"`. `uv run alembic heads` must print exactly ONE line.
+Follows `0083_computer_exports` (#649). `uv run alembic heads` must print exactly ONE line.
 
-Revision ID: 0083_documents
-Revises: 0082_computer_sessions
+Revision ID: 0084_documents
+Revises: 0083_computer_exports
 Create Date: 2026-10-01
 """
 
@@ -34,8 +31,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql as pg
 
-revision = "0083_documents"
-down_revision = "0082_computer_sessions"
+revision = "0084_documents"
+down_revision = "0083_computer_exports"
 branch_labels = None
 depends_on = None
 

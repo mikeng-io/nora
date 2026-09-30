@@ -2104,30 +2104,23 @@ async def test_session_mode_shadow_builds_one_runner_and_hands_its_hook_to_the_e
     assert evaluator.has_wake_hook
     assert evaluator._on_wake == runner.wake_hook          # the SAME hook, not a copy
     assert deps.cognition_shutdown is not None and not deps.cognition_shutdown.done
-    # The Dreamer's own budget entry, converted; 600 s ends before the wake's 900 s.
-    assert (runner._budget.turns, runner._budget.timeout_seconds) == (24, 600.0)
-    assert (runner._budget.max_memory_calls, runner._budget.max_tool_calls) == (6, 60)
-    # Its guard holds every ceiling a Dreamer sample's does, from the same
-    # tables: the registry's per-tool budget, the result caps, the memory
-    # cluster and the R-99 argument table.
-    from nora.agent.dreamer import MEMORY_TOOLS, TOOL_RESULT_CAPS
+    # The Dreamer's own budget entry, converted: rounds, tokens and the clock,
+    # and no call ceiling (DEC-247); the clock ends before the wake's.
+    assert (runner._budget.turns, runner._budget.timeout_seconds) == (200, 3600.0)
+    assert (runner._budget.max_memory_calls, runner._budget.max_tool_calls) == (None, None)
+    assert runner._budget.timeout_seconds <= cfg.cognition.session_timeout_seconds - 60.0
+    # Its guard holds the result caps and the R-99 argument table, and no call ceiling.
+    from nora.agent.dreamer import TOOL_RESULT_CAPS
 
     agent = runner._agent_runner
     assert agent._result_caps == dict(TOOL_RESULT_CAPS)
-    assert agent._memory_tools == MEMORY_TOOLS
-    assert agent._read_tool_budgets["note_read"] > 0
-    assert set(agent._read_tool_budgets) <= runner._read_only_tools
+    assert not hasattr(agent, "_read_tool_budgets")
     # PR B (DEC-246): the two new reads are wired and BUILT through the real
     # registry (a tool whose read the composition root did not hand the registry
-    # is withheld from every surface and would be «wired» in name only), and the
-    # ceilings are the per-ITEM allowances a session scales by its agenda.
-    from nora.app.cognition_wiring import COGNITION_TOOL_CALLS_PER_ITEM
-
+    # is withheld from every surface and would be «wired» in name only).
     unit, home = next(iter(runner._home_rooms.items()))
     built = {t.tool_name for t in runner._read_tools_for(unit, [home])}
     assert {"rollup_read", "standing_read"} <= built
-    for name in ("rollup_read", "standing_read", "event_search"):
-        assert agent._read_tool_budgets[name] == COGNITION_TOOL_CALLS_PER_ITEM[name], name
     # Read tools only: the registry's table also names the tag path's
     # `remind`/`note_create`, whose arguments differ from the session's own
     # verbs of those names, and R-99 would veto every call to them.
@@ -2170,27 +2163,6 @@ async def test_the_sessions_read_tools_are_the_catalogue_less_what_a_flag_withho
     names = {t.tool_name for t in built}
     assert names and names <= on.cognition_runner._read_only_tools
     assert {"note_read", "record_query"} <= names
-
-
-async def test_a_cognition_budget_with_no_tool_calls_runs_on_the_per_item_defaults(
-    cfg, tmp_path,
-):
-    """M12 (DEC-246): the template states the per-item table, but a deployment
-    that carries a bare `[dreamer.budgets.cognition]` block must not fall back to
-    a tag turn's numbers (`event_search` 1). The code's own defaults are the
-    layer under the operator's word."""
-    from nora.agent.tools import NATIVE_TOOLS
-    from nora.app.cognition_wiring import COGNITION_TOOL_CALLS_PER_ITEM
-
-    (tmp_path / "policy.toml").write_text(_HOME_POLICY)
-    bare = cfg.dreamer.budgets["cognition"].model_copy(update={"tool_calls": {}})
-    deps = await build_dependencies(override_config(cfg, {
-        **_SESSION_ON, "dreamer.budgets": {**cfg.dreamer.budgets, "cognition": bare},
-    }))
-    got = deps.cognition_runner._agent_runner._read_tool_budgets
-    assert NATIVE_TOOLS["event_search"].budget == 1, "positive control: the tag turn's number"
-    assert got["event_search"] == COGNITION_TOOL_CALLS_PER_ITEM["event_search"] == 3
-    assert got["note_search"] == COGNITION_TOOL_CALLS_PER_ITEM["note_search"]
 
 
 async def test_the_configured_model_window_reaches_the_runner_the_overflow_proof_reads(

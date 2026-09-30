@@ -303,6 +303,46 @@ cases:
     metadata: {tools: [generate_image], not_tools: [computer_run]}
     snapshot: *room_a
 
+  # --- S3a: files in and out of the computer, and the computer-use skill -----
+  # ON ARM ONLY, like the computer-positive cases above: with `[computer]` off
+  # the tools are withheld and these FAIL by construction. No export-to-link
+  # case: a document is the document path's (ADR 0020, operator 2026-10-01),
+  # not `computer_export`'s.
+  #
+  # A simulation is code, never a sum: computer_run chosen for it over
+  # calculate. This was `route_computer_run_loads_computer_use`, which also
+  # required a `computer-use` skill load before the run. Measured 2026-10-01
+  # on the eval VM at b2492770, n=5: the route right in every draw, the skill
+  # loaded in 1 of 5. Operator decision the same day: the expectation was
+  # wrong, not the model. What she must know (files only, no web pages, no
+  # internet, import and export) is in the tools' descriptions and results;
+  # the skill is guidance for multi-step project work, and a one-shot job
+  # does not need it. So the case measures the route only, not a skill load.
+  - name: route_computer_run_simulation
+    entry: tag
+    expect: reply
+    mention: true
+    input: >-
+      write a python script on your computer that simulates rolling two dice
+      100000 times and tells me how often the total is 7, then run it
+    metadata: {tools: [computer_run], not_tools: [calculate]}
+    snapshot: *room_a
+
+  # Import of a sent file. The anchor carries no attachment of this code, so
+  # a correct turn calls `computer_import` and gets an honest
+  # `nothing_found`: graded on the call, like the other tools here that
+  # answer `unavailable` in the sandbox. `media_fetch` is the sibling it
+  # could steal from (it reads a picture; it cannot put a file on the
+  # computer).
+  - name: route_computer_import_attachment
+    entry: tag
+    expect: reply
+    mention: true
+    input: >-
+      [file 3fa9c2] 呢個CSV放入你部電腦，用python計每個城市嘅平均溫度
+    metadata: {tools: [computer_import], not_tools: [media_fetch]}
+    snapshot: *room_a
+
   # --- documents (design/artifact/00-design.md §26, ADR 0020) ----------------------
   # `document_publish` against the tools a written piece could be mistaken for:
   # `make_artifact` (the HTML path it replaces, still registered while S3b has
@@ -318,9 +358,11 @@ cases:
   # be published, so they pass trivially; on, they are the measurement that a
   # quick answer, a picture or a data file does not become a document.
   #
-  # The file negative names `computer_run`, the tool that makes a CSV in this
-  # tree; the export verb (`computer_export`, sandbox #649) is not on master yet.
-  # When it lands, the case should expect it beside `computer_run`.
+  # The file negative is the computer's: a CSV the user asks to be handed is made
+  # with `computer_run` and sent with `computer_export`, never published as a
+  # document (operator 2026-10-01: a document is the document path's, a file the
+  # computer's). Like the computer positives it needs `[computer] enabled`; with
+  # it off the tool is withheld and the case fails by construction.
   - name: route_document_publish_trip_plan
     entry: tag
     expect: reply
@@ -361,9 +403,9 @@ cases:
     expect: reply
     mention: true
     input: >-
-      make me a CSV of these: Tokyo 5 nights 4200, Osaka 3 nights 2100,
-      Kyoto 2 nights 1800 (city, nights, budget)
-    metadata: {tools: [computer_run], not_tools: [document_publish]}
+      make me a CSV file of these and send it to me: Tokyo 5 nights 4200,
+      Osaka 3 nights 2100, Kyoto 2 nights 1800 (city, nights, budget)
+    metadata: {tools: [computer_export], not_tools: [document_publish]}
     snapshot: *room_a
 
   # --- the room tools (design/self-awareness/07) ----------------------------------

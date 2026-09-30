@@ -55,6 +55,16 @@ VERBS: tuple[str, ...] = (
     # operations none of `create`/`update` names: `create` implies the thing
     # is new, and `update` a record's fields.
     "run", "write", "edit",
+    # S3a (design/sandbox-runtime §4, §6, §7): files crossing the computer's
+    # edge. `export` moves a file OUT of the workspace to a destination (a
+    # link, the room, private custody) and `import` copies one IN. None of
+    # the existing verbs fits: `send` names one destination of three and
+    # implies a message; `fetch` is taken for reading a remote thing INTO
+    # the turn (`media_fetch`), the opposite direction of `export`, and
+    # `create`/`write` name the file, not its crossing of the VM boundary.
+    # The pair is Claude Code's and the design's own words for the two
+    # directions.
+    "export", "import",
     # Documents (design/artifact §26, ADR 0020): `publish` makes a written piece
     # readable in the web app AND is how it is revised, one act with two
     # outcomes (a new document, or the next revision of one). `create` would

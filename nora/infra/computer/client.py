@@ -37,6 +37,7 @@ from nora.domain.computer import (
     OpResult,
     RunResult,
     SandboxStatus,
+    ScopeProcess,
     StateFile,
     StateResult,
     TmuxSession,
@@ -238,11 +239,28 @@ class ComputerdRuntime:
                 for t in raw_tmux
                 if isinstance(t, dict) and isinstance(t.get("name"), str)
             )
+            raw_procs = reply.get("processes")
+            # None stays None here too: an old computerd that sends no
+            # `processes`, or one that could not read /proc, is UNKNOWN.
+            processes = None if not isinstance(raw_procs, list) else tuple(
+                ScopeProcess(
+                    pid=p["pid"], command=_text(p.get("command")),
+                    started=_epoch(p.get("started")),
+                    elapsed_seconds=_opt_int(p.get("elapsed")) or 0,
+                )
+                for p in raw_procs
+                if isinstance(p, dict) and _opt_int(p.get("pid")) is not None
+            )
             return StateResult(
                 status=_status(reply.get("status")), files=files,
                 files_truncated=reply.get("files_truncated") is True, tmux=tmux,
                 tmux_reason=_opt_str(reply.get("tmux_reason")),
                 reason=_opt_str(reply.get("reason")),
+                processes=processes,
+                processes_truncated=reply.get("processes_truncated") is True,
+                processes_reason=(_opt_str(reply.get("processes_reason"))
+                                  or (None if isinstance(raw_procs, list)
+                                      else "computerd did not report processes")),
             )
         return await _guard(body, lambda why: StateResult(SandboxStatus.UNAVAILABLE, reason=why))
 

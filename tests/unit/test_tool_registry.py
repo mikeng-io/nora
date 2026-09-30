@@ -213,7 +213,7 @@ def test_the_registry_exposes_every_declared_tool():
         "make_artifact",
         # Nora's computer (design/sandbox-runtime §4, DEC-243).
         "computer_run", "computer_read", "computer_write", "computer_edit",
-        "computer_session_list",
+        "computer_export", "computer_import", "computer_session_list",
         # design/artifact §26: a document is published to the web app, read back to edit.
         "document_publish", "document_read",
         # DEC-97: what she is running, and what was in an earlier version.
@@ -313,6 +313,9 @@ def test_budgets_match_todays_table():
         # files, or a fix after a run.
         "computer_run": 12, "computer_read": 8, "computer_write": 8,
         "computer_edit": 8,
+        # S3a: one file out, a revision after a look, one spare (a page and
+        # its data); two or three of somebody's files in.
+        "computer_export": 3, "computer_import": 3,
         # design/sandbox-runtime §15.2: sessions are derived by code, so the
         # one session tool reads. One call answers «what were you doing»; a
         # second is a different status filter.
@@ -800,6 +803,9 @@ ACT_VERBS = frozenset({
     # design/sandbox-runtime §4: a command, a file write and a file edit all
     # change the room's workspace.
     "computer_run", "computer_write", "computer_edit",
+    # S3a: an export publishes (a Drop link, an attachment) or stores, and an
+    # import writes into the workspace.
+    "computer_export", "computer_import",
     # design/artifact §26: commits a document other people can open.
     "document_publish",
     "send_reply", "send_to", "send_gif",

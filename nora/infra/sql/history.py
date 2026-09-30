@@ -132,7 +132,7 @@ HISTORY_TABLES: dict[str, tuple[str, ...]] = {
 #: time; the others gained `recorded_at` in `0068`.
 APPEND_ONLY: dict[str, str] = {
     "note_revision": "recorded_at",
-    # ADR 0020 (0083_documents): a document's identity and one snapshot per revision,
+    # ADR 0020 (0084_documents): a document's identity and one snapshot per revision,
     # neither ever updated; the current document is the highest revision.
     "documents": "recorded_at",
     "document_revision": "recorded_at",
@@ -144,6 +144,9 @@ APPEND_ONLY: dict[str, str] = {
     # design/sandbox-runtime §12 (0081_computer_events): the computer audit,
     # two rows (started, finished) per computer tool call, never changed.
     "computer_events": "created_at",
+    # design/sandbox-runtime §6 (0083_computer_exports): every file that left
+    # the computer, one row per export, never changed; a revision is a row.
+    "computer_exports": "created_at",
     "revision_blob": "recorded_at",
     "doctrine_revision": "recorded_at",
     "config_revision": "recorded_at",

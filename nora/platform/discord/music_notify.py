@@ -167,7 +167,10 @@ def make_notify(
                 guild_id, routed, fallback_channel_id, text,
             )
             return
-        if await _send(channel, text, guild_id):
+        if await _send(channel, text, guild_id) != _REFUSED:
+            # Sent, or UNKNOWN (a 5xx / dropped connection): the message may
+            # already be in the channel, and posting it to a second channel
+            # would duplicate it. Only a definite refusal falls back.
             return
         # The send itself failed — the routed channel resolves but refuses
         # writes, which is exactly the shape a DEDICATED announcements
@@ -185,23 +188,37 @@ def make_notify(
     return notify
 
 
-async def _send(channel: discord.abc.Messageable, text: str, guild_id: str) -> bool:
-    """`False` on any Discord-side refusal, never an exception. `silent` keeps
+_SENT = "sent"
+#: Discord definitely did not post it (403 missing permission, 404 channel gone).
+_REFUSED = "refused"
+#: The send raised but the message may have landed (5xx, dropped connection).
+_UNKNOWN = "unknown"
+
+
+async def _send(channel: discord.abc.Messageable, text: str, guild_id: str) -> str:
+    """`_SENT`, `_REFUSED` or `_UNKNOWN`, never an exception. `silent` keeps
     a "Now playing" line every few minutes out of everyone's push
-    notifications."""
+    notifications. Only `_REFUSED` is safe to retry elsewhere."""
     try:
         await channel.send(text, silent=True)
-    except discord.HTTPException as exc:
+    except (discord.Forbidden, discord.NotFound) as exc:
         log.warning(
-            "music notify: send to channel %s failed for guild %s: %s",
+            "music notify: send to channel %s refused for guild %s: %s",
             getattr(channel, "id", "?"), guild_id, exc,
         )
-        return False
+        return _REFUSED
+    except discord.HTTPException as exc:
+        log.warning(
+            "music notify: send to channel %s failed for guild %s (outcome unknown, "
+            "not retrying elsewhere): %s",
+            getattr(channel, "id", "?"), guild_id, exc,
+        )
+        return _UNKNOWN
     log.info(
         "music notify: sent %r to channel %s (guild %s)",
         text, getattr(channel, "id", "?"), guild_id,
     )
-    return True
+    return _SENT
 
 
 def _live_client(get: Callable[[], discord.Client | None]) -> discord.Client | None:

@@ -1,9 +1,8 @@
 {
   "type": "change",
-  "summary": "For the shadow Cognition session, `[dreamer.budgets.cognition] max_memory_calls` and `max_tool_calls` now mean calls per agenda item, not per session.",
+  "summary": "The shadow Cognition session gains two read tools, `rollup_read` and `standing_read`, held by no other pass.",
   "details": [
-    "A session's pass-wide memory and tool-call ceilings are those numbers times the agenda's item count, like each per-tool ceiling.",
-    "The session also gains two read tools, `rollup_read` and `standing_read`, held by no other pass."
+    "The session's call ceilings were first made per agenda item, then removed altogether in the same release: see the Cognition-session bounds fragment."
   ],
   "limitations": [
     "The session mode ships off, so nothing changes until an operator turns shadow sessions on."

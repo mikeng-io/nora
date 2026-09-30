@@ -176,8 +176,15 @@ class DreamGuard(HookProvider):
         memory_budget: int | None = None,
         param_names: Mapping[str, frozenset[str]] | None = None,
         pass_budget: int | None = None,
+        per_tool_ceilings: bool = True,
     ) -> None:
         self._adaptor = adaptor
+        # `False` is the Cognition session's shape (DEC-247): the tool names
+        # stay the membership set (R-7's unknown-tool veto and R-99 still
+        # run) but no count vetoes a call, so a session that needs fifty
+        # reads is not told «you already called X». Every other adaptor
+        # keeps the default; the session's bound is rounds, tokens and time.
+        self._per_tool_ceilings = per_tool_ceilings
         self._metrics = metrics
         self._ledger = CallLedger(budgets)
         # R-99 (design/social-per-network/30-link-owner-registry.md): each
@@ -273,7 +280,7 @@ class DreamGuard(HookProvider):
         # measured against itself. The number quoted is the same one, because
         # «you already called it 0 time(s)» while refusing the fifth call of a
         # batch reads to a model as a reason to retry.
-        if self._ledger.at_ceiling(tool_name):
+        if self._per_tool_ceilings and self._ledger.at_ceiling(tool_name):
             return self._veto(
                 _TOOL_BUDGET_RULE, f"You already called {tool_name} "
                        f"{self._ledger.spent(tool_name)} time(s) and have that context. "

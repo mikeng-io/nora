@@ -56,6 +56,10 @@ import mimetypes
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from nora.domain.ports import MediaLookup, MediaObjectStore
 
 # How much of the sha256 rides in the rendered placeholder. Six hex characters
 # is a handle, not an identity: it is what makes `[image a3f2c1]` legible in a
@@ -479,6 +483,56 @@ def ground_media_type(*, declared: str, data: bytes) -> str:
     if not sniffed_top or sniffed_top != top:
         return declared
     return f"{sniffed_top}/{sniffed_subtype}"
+
+
+#: `MediaObject.source` of a picture Nora kept from her computer
+#: (`computer_export(to="keep")`, S3a): made by her, like `generated`, and
+#: born in one room, which its provenance names.
+COMPUTER_MEDIA_SOURCE = "computer"
+
+
+def born_in_room(obj: MediaObject, *, platform: str, conversation_id: str) -> bool:
+    """Whether `obj` was born in this room, by its provenance's `platform` and
+    `conversation_id`. A row that names no room is born in none."""
+    prov = obj.provenance or {}
+    return (prov.get("platform"), prov.get("conversation_id")) == (platform, conversation_id)
+
+
+def handle_hex(raw: str) -> str:
+    """The hex handle inside whatever was passed: `a3f2c1`, `[image a3f2c1]`,
+    `image a3f2c1` or a full sha256 all reduce to the same lowercase hex run.
+
+    The model is shown `[image a3f2c1]` in the transcript (DEC-43) and may
+    quote any of those forms back. The LAST whitespace token, stripped of
+    brackets and reduced to its hex characters, is the handle: the label in
+    front of it («image») holds hex letters too and must not join it. Anything
+    shorter than the rendered handle width is not one."""
+    token = raw.strip().strip("[]").split()
+    tail = token[-1] if token else ""
+    return "".join(c for c in tail.lower() if c in "0123456789abcdef")
+
+
+async def resolve_room_media(
+    store: MediaObjectStore, *, code: str, platform: str, conversation_id: str,
+) -> MediaLookup:
+    """The media objects whose code is `code` and which were born in this
+    room. `available=False` when the index could not be read: «I couldn't
+    check», never «no such picture». Of what is available, one object is the
+    answer, none is «no such picture here», more than one is ambiguous
+    (never pick the first). A code from another room resolves to nothing
+    here. Never raises (the store's `lookup_prefix` contract)."""
+    from nora.domain.ports import MediaLookup
+
+    hex_code = handle_hex(code)
+    if len(hex_code) < HANDLE_CHARS:
+        return MediaLookup(available=True, objects={})
+    found = await store.lookup_prefix(handle=hex_code)
+    if not found.available:
+        return found
+    return MediaLookup(available=True, objects={
+        sha: o for sha, o in found.objects.items()
+        if born_in_room(o, platform=platform, conversation_id=conversation_id)
+    })
 
 
 def label_from_media_type(media_type: str) -> str:
