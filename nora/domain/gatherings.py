@@ -306,6 +306,24 @@ class AmbiguousOpenGatheringsError(Exception):
         self.open_events = tuple(open_events)
 
 
+def still_open_gatherings(
+    events: Sequence[Gathering], *, now: datetime,
+) -> list[Gathering]:
+    """`GatheringService.create_event`'s I1 filter, extracted (review
+    follow-up on #625's step 3a-i): a PROPOSED event still counts toward the
+    ambiguity backstop only while it is STILL OPEN — `when is None` (no time
+    settled yet) or `when >= now`. A dinner that already happened and was
+    never explicitly cancelled must not refuse every future `create_event`
+    call for this conversation forever.
+
+    `events` is expected already filtered to `status=PROPOSED` (the caller's
+    own read, `list_events(status=PROPOSED)` live or the equivalent shadow
+    read) — this function does not read a store and does not filter by
+    status itself, matching `has_duplicate_open_title`'s "prior is a
+    parameter" shape next door in `nora.domain.notes`."""
+    return [e for e in events if e.when is None or e.when >= now]
+
+
 @runtime_checkable
 class GatheringStore(Protocol):
     async def create(self, event: Gathering) -> Gathering: ...

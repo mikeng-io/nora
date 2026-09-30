@@ -121,6 +121,7 @@ from ..domain.notes import (
     NoteRevision,
     NoteSupersedeReason,
     StaleNoteHeadError,
+    has_duplicate_open_title,
     note_handle,
     proactive_row_forwarded_is_moved,
     tag_path_progressed_since_wake,
@@ -11918,11 +11919,8 @@ Args:
         # two notes, and note-candidates used to create a third. The room's
         # question already has a note; the model's job is to update it.
         try:
-            wanted = note_handle(title)
-            if any(
-                note_handle(n.title) == wanted
-                for n in await book.standing(unit=_unit() or "")
-            ):
+            open_titles = [n.title for n in await book.standing(unit=_unit() or "")]
+            if has_duplicate_open_title(title, open_titles):
                 _record(metrics, "note_create", "refused", reason="duplicate_title")
                 return {
                     "status": "refused",

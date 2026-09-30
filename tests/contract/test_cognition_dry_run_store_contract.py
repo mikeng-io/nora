@@ -22,6 +22,8 @@ import pytest
 import sqlalchemy as sa
 
 from nora.domain.ports import (
+    NewCognitionPace,
+    NewCognitionRemindMirror,
     NewCognitionSession,
     NewCognitionSessionClose,
     NewCognitionWouldWrite,
@@ -66,7 +68,13 @@ async def store(request: Any) -> AsyncIterator[Any]:
     finally:
         async with engine.begin() as conn:
             await conn.execute(sa.text(
+                # `cognition_self_wake`/`cognition_remind_mirror` FK
+                # `cognition_session.id` (step 3a-ii) — a table with a live FK
+                # to one being truncated must be in the SAME statement, or
+                # Postgres refuses the truncate outright, regardless of
+                # whether it holds any rows.
                 "truncate cognition_would_write, cognition_session_close, "
+                "cognition_self_wake, cognition_remind_mirror, "
                 "cognition_session restart identity"
             ))
         await engine.dispose()
@@ -139,3 +147,88 @@ async def test_a_would_write_with_no_session_is_allowed(store):
         recorded_at_ms=NOW,
     )
     assert write_id is not None
+
+
+# --------------------------------------------------------------------------
+# pace verbs and the mirrored `remind` family (step 3a-ii)
+# --------------------------------------------------------------------------
+
+async def test_record_pace_wake_at_returns_a_fresh_id(store):
+    session_id = await store.record_session(session=_session(), recorded_at_ms=NOW)
+    pace_id = await store.record_pace(
+        pace=NewCognitionPace(
+            session_id=session_id, unit="unit-1", verb="wake_at", wake_ref="w1",
+            transition="created", subject_rows=("event:1",), why="check the venue",
+            at_ms=NOW + 60_000, outcome="recorded", stimulus_id=42,
+        ),
+        recorded_at_ms=NOW,
+    )
+    assert pace_id is not None
+
+
+async def test_record_pace_refused_carries_no_wake_ref(store):
+    pace_id = await store.record_pace(
+        pace=NewCognitionPace(
+            session_id=None, unit="unit-1", verb="wake_at", wake_ref=None,
+            transition="created", subject_rows=("event:1",), why="too far out",
+            at_ms=None, outcome="refused", refusal_reason="horizon",
+        ),
+        recorded_at_ms=NOW,
+    )
+    assert pace_id is not None
+
+
+async def test_record_pace_move_and_cancel_name_an_existing_ref(store):
+    session_id = await store.record_session(session=_session(), recorded_at_ms=NOW)
+    await store.record_pace(
+        pace=NewCognitionPace(
+            session_id=session_id, unit="unit-1", verb="wake_at", wake_ref="w2",
+            transition="created", subject_rows=("event:2",), why="first look",
+            at_ms=NOW + 60_000, outcome="recorded", stimulus_id=7,
+        ),
+        recorded_at_ms=NOW,
+    )
+    moved = await store.record_pace(
+        pace=NewCognitionPace(
+            session_id=session_id, unit="unit-1", verb="wake_move", wake_ref="w2",
+            transition="moved", subject_rows=("event:2",), why="pushed back an hour",
+            at_ms=NOW + 3_600_000, outcome="recorded", stimulus_id=8,
+        ),
+        recorded_at_ms=NOW,
+    )
+    cancelled = await store.record_pace(
+        pace=NewCognitionPace(
+            session_id=session_id, unit="unit-1", verb="wake_cancel", wake_ref="w2",
+            transition="cancelled", subject_rows=("event:2",), why="no longer needed",
+            at_ms=None, outcome="recorded",
+        ),
+        recorded_at_ms=NOW,
+    )
+    assert moved is not None
+    assert cancelled is not None
+
+
+async def test_record_remind_mirror_returns_a_fresh_id(store):
+    session_id = await store.record_session(session=_session(), recorded_at_ms=NOW)
+    mirror_id = await store.record_remind_mirror(
+        mirror=NewCognitionRemindMirror(
+            session_id=session_id, unit="unit-1", verb="remind", reminder_ref="r1",
+            platform="signal", conversation_id="room-a", intent="tell",
+            subject_rows=("note:1",), at_ms=NOW + 60_000, why=None, outcome="recorded",
+        ),
+        recorded_at_ms=NOW,
+    )
+    assert mirror_id is not None
+
+
+async def test_record_remind_mirror_refused(store):
+    mirror_id = await store.record_remind_mirror(
+        mirror=NewCognitionRemindMirror(
+            session_id=None, unit="unit-1", verb="remind", reminder_ref=None,
+            platform="signal", conversation_id="room-a", intent="tell",
+            subject_rows=(), at_ms=None, why=None, outcome="refused",
+            refusal_reason="no_citations",
+        ),
+        recorded_at_ms=NOW,
+    )
+    assert mirror_id is not None

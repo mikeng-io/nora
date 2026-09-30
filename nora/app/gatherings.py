@@ -32,6 +32,7 @@ from nora.domain.gatherings import (
     RSVPResponse,
     VenueCandidate,
     VenueSuggestions,
+    still_open_gatherings,
 )
 from nora.domain.gatherings import (
     AmbiguousOpenGatheringsError as AmbiguousOpenGatheringsError,
@@ -143,7 +144,7 @@ class GatheringService:
             conversation_id=conversation_id, status=GatheringStatus.PROPOSED,
         )
         now = self._now()
-        still_open = [e for e in open_events if e.when is None or e.when >= now]
+        still_open = still_open_gatherings(open_events, now=now)
         if len(still_open) >= 2:
             raise AmbiguousOpenGatheringsError(conversation_id, still_open)
 
