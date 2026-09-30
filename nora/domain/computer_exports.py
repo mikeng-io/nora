@@ -28,10 +28,10 @@ extension. The binary formats come from their magic numbers
 a text file is HTML when it opens the way the WHATWG MIME sniffing standard
 says an HTML document opens (so a `.png` holding a page is refused as the
 page it is, never typed as an image), SVG when its root element is `<svg`,
-JSON when it parses as an object or an array. Only a text file that is none of those, plain UTF-8 with no
-markup the standard recognises, takes its subtype (`csv`, `md`, `txt`) from
-the file name, and every one of those three is inert text. Anything else is
-not exportable (`None`).
+JSON when it parses as an object or an array. Only a text file that is none
+of those, plain UTF-8 with no markup the standard recognises, takes its
+subtype (`csv`, `md`, `txt`) from the file name, and every one of those three
+is inert text. HTML, and anything else, is not exportable (`None`).
 
 Every datetime crossing this port is UTC-aware.
 """
