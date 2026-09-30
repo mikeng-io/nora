@@ -539,4 +539,16 @@ shutdown; the session rides the Dreamer's model and takes its budget from
 shadow week is the measurement, and the `tool_selection_cognition` eval runs
 first.
 
+**Step 3a gate instrument built 2026-10-01** (DEC-252; review B1, D5): `nora cognition compare
+--since ISO [--until ISO] [--unit U] [--tolerance-minutes N] [--json]` reports, per tier and per
+clocked writer (`note-candidates`, `note-curation`, `note-merge`, `event:tag`, `standing-debrief`,
+`standing-ingest-fold`, `culture`, `proactive`, `proactive-decide`), matched / cognition-only /
+clocked-only, with a clocked-only row `closed` only when a `no_change`, `waiting` or `covered` close
+explains it (same room, same tier, names the row's id, after the write, one close per row;
+DEC-252). The default tolerance is 65 minutes, derived from the hourly writers' cadence;
+`event:tag` is the live tag path and is reported apart, in no verdict; a Standing pair is
+`coincident`, not matched. An unreadable source is ERROR, never zero. It prints counts and does not
+decide the gate; step 4 retires a writer only on its own line. Matching rules: the module
+docstring of `nora.domain.cognition_shadow_compare`.
+
 Steps 4–8 remain design only.
