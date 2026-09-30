@@ -5,6 +5,8 @@
 "when" timestamp with time zone,
 $$;
 $$;
+$$;
+);
 );
 );
 );
@@ -142,6 +144,7 @@ ADD CONSTRAINT cognition_wake_outcome_pkey PRIMARY KEY (id);
 ADD CONSTRAINT cognition_wake_pkey PRIMARY KEY (id);
 ADD CONSTRAINT cognition_would_write_pkey PRIMARY KEY (id);
 ADD CONSTRAINT compute_jobs_pkey PRIMARY KEY (id);
+ADD CONSTRAINT computer_events_pkey PRIMARY KEY (id);
 ADD CONSTRAINT config_revision_pkey PRIMARY KEY (id);
 ADD CONSTRAINT consolidation_watermark_pkey PRIMARY KEY (consolidator_name, scope_id);
 ADD CONSTRAINT culture_head_revision_id_fkey FOREIGN KEY (head_revision_id) REFERENCES public.culture_revision(id);
@@ -237,6 +240,7 @@ ADD CONSTRAINT tag_debounce_state_pkey PRIMARY KEY (platform, conversation_id);
 ADD CONSTRAINT tag_trace_pkey PRIMARY KEY (id);
 ADD CONSTRAINT tool_call_log_pkey PRIMARY KEY (id);
 ADD CONSTRAINT turn_verdict_pkey PRIMARY KEY (tag_id);
+ADD CONSTRAINT uq_computer_events_operation_phase UNIQUE (operation_id, phase);
 ADD CONSTRAINT uq_music_queue_guild_position UNIQUE (guild_id, "position");
 ADD CONSTRAINT uq_occupancy_bin UNIQUE (subject_id, place_id, hour_of_week);
 ADD CONSTRAINT version_announcements_pkey PRIMARY KEY (version, platform, conversation_id);
@@ -261,6 +265,8 @@ ALTER TABLE ONLY public.cognition_wake_outcome
 ALTER TABLE ONLY public.cognition_would_write
 ALTER TABLE ONLY public.cognition_would_write
 ALTER TABLE ONLY public.compute_jobs
+ALTER TABLE ONLY public.computer_events
+ALTER TABLE ONLY public.computer_events
 ALTER TABLE ONLY public.config_revision
 ALTER TABLE ONLY public.consolidation_watermark
 ALTER TABLE ONLY public.culture
@@ -397,6 +403,8 @@ AND superseded_at IS NULL;
 AND superseded_at IS NULL;
 AS $$
 AS $$
+AS $$
+BEGIN
 BEGIN
 BEGIN
 CACHE 1
@@ -453,12 +461,17 @@ CONSTRAINT ck_cognition_self_wake_verb CHECK ((verb = ANY (ARRAY['wake_at'::text
 CONSTRAINT ck_cognition_session_close_reason CHECK ((reason = ANY (ARRAY['written'::text, 'no_change'::text, 'waiting'::text, 'covered'::text, 'struck'::text])))
 CONSTRAINT ck_cognition_session_mode CHECK ((mode = 'shadow'::text))
 CONSTRAINT ck_cognition_wake_mode CHECK ((mode = 'shadow'::text)),
+CONSTRAINT ck_cognition_wake_outcome_cause CHECK ((cause = ANY (ARRAY['infra'::text, 'agenda'::text]))),
 CONSTRAINT ck_cognition_wake_outcome_outcome CHECK ((outcome = ANY (ARRAY['closed'::text, 'failed'::text, 'timeout'::text, 'cancelled'::text])))
 CONSTRAINT ck_cognition_wake_reason CHECK ((reason = ANY (ARRAY['settled'::text, 'strong_cue'::text, 'rollup'::text, 'batch'::text, 'max_age'::text, 'time'::text, 'self'::text])))
 CONSTRAINT ck_cognition_would_write_outcome CHECK ((outcome = ANY (ARRAY['would_commit'::text, 'refused'::text]))),
 CONSTRAINT ck_cognition_would_write_outcome_shape CHECK ((((outcome = 'would_commit'::text) AND (candidate IS NOT NULL)) OR ((outcome = 'refused'::text) AND (refusal_reason IS NOT NULL)))),
 CONSTRAINT ck_cognition_would_write_tier CHECK ((tier = ANY (ARRAY['note'::text, 'event'::text, 'standing'::text])))
 CONSTRAINT ck_compute_jobs_state CHECK ((state = ANY (ARRAY['pending'::text, 'firing'::text, 'done'::text, 'failed'::text])))
+CONSTRAINT ck_computer_events_actor CHECK (((actor = ANY (ARRAY['cognition'::text, 'fire'::text, 'operator'::text, 'tag'::text])) OR (starts_with(actor, 'dreamer:'::text) AND (length(actor) > 8)))),
+CONSTRAINT ck_computer_events_path CHECK ((path = ANY (ARRAY['direct'::text, 'subagent'::text]))),
+CONSTRAINT ck_computer_events_phase CHECK ((phase = ANY (ARRAY['finished'::text, 'started'::text]))),
+CONSTRAINT ck_computer_events_phase_times CHECK ((((phase = 'started'::text) AND (finished_at IS NULL)) OR ((phase = 'finished'::text) AND (finished_at IS NOT NULL) AND (finished_at >= started_at))))
 CONSTRAINT ck_corridor_speed_how CHECK (((hour_of_week >= 0) AND (hour_of_week < 168)))
 CONSTRAINT ck_derived_places_kind CHECK ((kind = ANY (ARRAY['home'::text, 'work'::text, 'unlabeled'::text])))
 CONSTRAINT ck_event_revision_confidence_is_a_level CHECK (((confidence IS NULL) OR (confidence = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])))),
@@ -594,6 +607,7 @@ CONSTRAINT turn_verdict_grounded_has_no_unsupported_check CHECK ((NOT (grounded 
 CONSTRAINT turn_verdict_unsupported_fits_the_list_check CHECK ((cardinality(unsupported) <= 10))
 CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public;
 CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public;
+CREATE FUNCTION public.computer_events_refuse_change() RETURNS trigger
 CREATE FUNCTION public.nora_row_history() RETURNS trigger
 CREATE FUNCTION public.nora_row_history_refuse_truncate() RETURNS trigger
 CREATE INDEX idx_assess_report_kind_run ON public.assess_report USING btree (kind, run_at_ms);
@@ -608,6 +622,7 @@ CREATE INDEX idx_cognition_wake_unit_mode_id ON public.cognition_wake USING btre
 CREATE INDEX idx_cognition_would_write_session ON public.cognition_would_write USING btree (session_id);
 CREATE INDEX idx_cognition_would_write_unit_recorded ON public.cognition_would_write USING btree (unit, recorded_at);
 CREATE INDEX idx_compute_jobs_state ON public.compute_jobs USING btree (state);
+CREATE INDEX idx_computer_events_conv_ts ON public.computer_events USING btree (conversation_id, created_at);
 CREATE INDEX idx_config_revision_file_loaded ON public.config_revision USING btree (file, loaded_at);
 CREATE INDEX idx_culture_revision_key_written ON public.culture_revision USING btree (culture_key, written_at DESC, id DESC);
 CREATE INDEX idx_decision_log_conv_ts ON public.decision_log USING btree (conversation_id, ts DESC, id DESC);
@@ -681,6 +696,7 @@ CREATE TABLE public.cognition_wake (
 CREATE TABLE public.cognition_wake_outcome (
 CREATE TABLE public.cognition_would_write (
 CREATE TABLE public.compute_jobs (
+CREATE TABLE public.computer_events (
 CREATE TABLE public.config_revision (
 CREATE TABLE public.consolidation_watermark (
 CREATE TABLE public.culture (
@@ -751,6 +767,8 @@ CREATE TABLE public.tool_call_log (
 CREATE TABLE public.turn_verdict (
 CREATE TABLE public.version_announcements (
 CREATE TABLE public.video_readings (
+CREATE TRIGGER computer_events_append_only BEFORE DELETE OR UPDATE ON public.computer_events FOR EACH ROW EXECUTE FUNCTION public.computer_events_refuse_change();
+CREATE TRIGGER computer_events_no_truncate BEFORE TRUNCATE ON public.computer_events FOR EACH STATEMENT EXECUTE FUNCTION public.computer_events_refuse_change();
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.analytics_watermark FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('deriver_name', 'subject_id');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.compute_jobs FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.consolidation_watermark FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('consolidator_name', 'scope_id');
@@ -840,6 +858,8 @@ CREATE UNIQUE INDEX uq_stimulus_time_ref ON public.stimulus USING btree (unit, r
 DECLARE
 END
 END
+END
+END IF;
 END IF;
 END IF;
 END IF;
@@ -850,11 +870,13 @@ END IF;
 END IF;
 END IF;
 END LOOP;
+ERRCODE = 'insufficient_privilege';
 FOREACH col IN ARRAY TG_ARGV LOOP
 IF TG_OP <> 'DELETE' THEN
 IF TG_OP <> 'INSERT' THEN
 IF TG_OP = 'DELETE' OR (TG_OP = 'UPDATE' AND new_key <> old_key) THEN
 IF TG_OP = 'DELETE' THEN
+IF TG_OP = 'TRUNCATE' AND current_setting('nora.row_history', true) = 'off' THEN
 IF TG_OP = 'UPDATE' AND new_image = old_image THEN
 IF current_setting('nora.row_history', true) = 'off' THEN
 IF current_setting('nora.row_history', true) = 'off' THEN
@@ -899,6 +921,8 @@ INSERT INTO row_history (id, table_name, row_key, op, image, recorded_at)
 INSERT INTO row_history (id, table_name, row_key, op, image, recorded_at)
 LANGUAGE plpgsql
 LANGUAGE plpgsql
+LANGUAGE plpgsql
+MESSAGE = 'computer_events is append-only: ' || TG_OP || ' refused',
 NO MAXVALUE
 NO MAXVALUE
 NO MAXVALUE
@@ -969,7 +993,9 @@ NO MINVALUE
 NO MINVALUE
 NO MINVALUE
 NO MINVALUE
+RAISE EXCEPTION USING
 RAISE EXCEPTION USING MESSAGE = 'TRUNCATE ' || TG_TABLE_NAME
+RETURN NULL;
 RETURN NULL;
 RETURN NULL;
 RETURN NULL;
@@ -1054,6 +1080,7 @@ WHERE table_name = TG_TABLE_NAME AND row_key = old_key
 accuracy_m double precision,
 act text NOT NULL,
 act text NOT NULL,
+actor text NOT NULL,
 adaptor_name text NOT NULL,
 added_at timestamp with time zone NOT NULL,
 added_by_person_id text NOT NULL,
@@ -1129,6 +1156,7 @@ candidate jsonb,
 canonical_form text NOT NULL,
 canonical_form text NOT NULL,
 canonical_name text NOT NULL,
+cause text DEFAULT 'infra'::text NOT NULL,
 chunk_max integer NOT NULL,
 chunk_seconds integer NOT NULL,
 circle_id text NOT NULL,
@@ -1186,7 +1214,9 @@ conversation_id text NOT NULL,
 conversation_id text NOT NULL,
 conversation_id text NOT NULL,
 conversation_id text NOT NULL,
+conversation_id text NOT NULL,
 conversation_id text,
+conversation_type text NOT NULL,
 conversation_type text NOT NULL,
 conversation_type text NOT NULL,
 conversation_type text NOT NULL,
@@ -1206,6 +1236,7 @@ created_at text DEFAULT (now())::text NOT NULL,
 created_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
 created_at timestamp with time zone DEFAULT now() NOT NULL
 created_at timestamp with time zone DEFAULT now() NOT NULL
+created_at timestamp with time zone DEFAULT now() NOT NULL,
 created_at timestamp with time zone DEFAULT now() NOT NULL,
 created_at timestamp with time zone DEFAULT now() NOT NULL,
 created_at timestamp with time zone DEFAULT now() NOT NULL,
@@ -1281,6 +1312,7 @@ fidelity text DEFAULT 'tentative'::text NOT NULL,
 file text NOT NULL,
 files jsonb NOT NULL,
 fingerprint text NOT NULL,
+finished_at timestamp with time zone,
 fired_at timestamp with time zone,
 first_seen timestamp with time zone DEFAULT now() NOT NULL,
 first_seen_at bigint NOT NULL,
@@ -1364,6 +1396,7 @@ id uuid DEFAULT gen_random_uuid() NOT NULL,
 id uuid DEFAULT gen_random_uuid() NOT NULL,
 id uuid DEFAULT gen_random_uuid() NOT NULL,
 id uuid DEFAULT gen_random_uuid() NOT NULL,
+id uuid NOT NULL,
 id uuid NOT NULL,
 id uuid NOT NULL,
 id uuid NOT NULL,
@@ -1538,6 +1571,7 @@ op text NOT NULL,
 open integer DEFAULT 0 NOT NULL
 open integer DEFAULT 0 NOT NULL
 open_stay jsonb,
+operation_id uuid NOT NULL,
 outcome text NOT NULL,
 outcome text NOT NULL,
 outcome text NOT NULL,
@@ -1549,6 +1583,7 @@ outcome text NOT NULL,
 outcome text,
 outcome text,
 outings integer NOT NULL,
+output_ref jsonb DEFAULT '{}'::jsonb NOT NULL,
 p50_kmh double precision NOT NULL,
 p90_kmh double precision NOT NULL,
 params_sha256 text NOT NULL,
@@ -1558,6 +1593,7 @@ parent_revision_id uuid,
 part_of_speech text,
 participants text[] NOT NULL,
 participants text[] NOT NULL,
+path text NOT NULL,
 path text NOT NULL,
 path text NOT NULL,
 paused boolean NOT NULL,
@@ -1580,12 +1616,14 @@ person_id text,
 person_id text,
 persons text[] NOT NULL,
 persons text[] NOT NULL,
+phase text NOT NULL,
 place_id integer NOT NULL,
 place_id integer NOT NULL,
 place_id integer,
 place_id text NOT NULL,
 place_label text,
 place_label text,
+platform text NOT NULL,
 platform text NOT NULL,
 platform text NOT NULL,
 platform text NOT NULL,
@@ -1701,12 +1739,15 @@ replies_ab integer NOT NULL,
 replies_ba integer NOT NULL,
 reply_comment_id text,
 reply_text text,
+request jsonb DEFAULT '{}'::jsonb NOT NULL,
 requester_person_id text NOT NULL,
 requester_person_id text NOT NULL,
+requester_person_id text,
 resolved_at timestamp with time zone DEFAULT now() NOT NULL
 responded_at timestamp with time zone NOT NULL,
 responders text[] DEFAULT '{}'::text[] NOT NULL,
 response text NOT NULL,
+result jsonb DEFAULT '{}'::jsonb NOT NULL,
 result_summary text,
 result_url text,
 results jsonb DEFAULT '[]'::jsonb NOT NULL,
@@ -1725,6 +1766,7 @@ saved_place_id text,
 saved_place_id text,
 saved_place_id text,
 scope text DEFAULT ''::text NOT NULL,
+scope text NOT NULL,
 scope text NOT NULL,
 scope_id text NOT NULL,
 scope_id text NOT NULL,
@@ -1768,7 +1810,9 @@ source text NOT NULL,
 source text NOT NULL,
 source_excerpt text,
 source_url text,
+span_id text NOT NULL,
 speed_kmh double precision
+started_at timestamp with time zone NOT NULL,
 started_at timestamp with time zone NOT NULL,
 started_at_ms bigint NOT NULL,
 started_ts bigint NOT NULL,
@@ -1780,6 +1824,7 @@ state text NOT NULL,
 state text NOT NULL,
 state text NOT NULL,
 state text NOT NULL,
+status text NOT NULL,
 status text NOT NULL,
 status text NOT NULL,
 status text NOT NULL,
@@ -1829,6 +1874,7 @@ table_name text NOT NULL,
 tag_id text NOT NULL,
 tag_id text NOT NULL,
 tag_id text NOT NULL,
+tag_id text NOT NULL,
 tag_id text,
 tags_sha256 text,
 task text NOT NULL,
@@ -1846,9 +1892,11 @@ title text NOT NULL,
 title text NOT NULL,
 title text NOT NULL,
 title text,
+tool text NOT NULL,
 tool_input jsonb NOT NULL,
 tool_name text NOT NULL,
 tool_result jsonb NOT NULL,
+trace_id text NOT NULL,
 trace_id text,
 tracked integer DEFAULT 0 NOT NULL,
 transcript jsonb NOT NULL,

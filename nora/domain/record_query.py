@@ -15,7 +15,7 @@ from dataclasses import dataclass
 
 from nora.domain.models import TranscriptRow
 
-__all__ = ["RECORD_QUERY_MAX", "RecordHit", "RecordQuery"]
+__all__ = ["RECORD_QUERY_MAX", "RecordHit", "RecordQuery", "RecordRefHit"]
 
 #: The most hits one call returns. A read that answers "what was said over
 #: this stretch" hands back verbatim group text, so it is bounded the way
@@ -47,3 +47,16 @@ class RecordHit:
     row: TranscriptRow
     reactions: tuple[tuple[str, int], ...] = ()
     deleted: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class RecordRefHit:
+    """The message a stimulus's `ref` names, for the Cognition session's
+    grounding (`nora.domain.cognition_ground`): the hit, and for a reaction the
+    emoji it left. A reaction and a delete are rows of their own tables; the hit
+    is the MESSAGE they touch."""
+
+    table: str
+    row_id: int
+    hit: RecordHit
+    emoji: str = ""

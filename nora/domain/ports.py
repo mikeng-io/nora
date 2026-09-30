@@ -204,6 +204,7 @@ from enum import StrEnum
 from typing import Any, Literal, Protocol, runtime_checkable
 
 from nora.domain.cognition_pace import PendingSelfWake
+from nora.domain.cognition_remind import PendingMirroredRemind
 from nora.domain.computer import BytesResult as BytesResult
 from nora.domain.computer import FileResult as FileResult
 from nora.domain.computer import ListResult as ListResult
@@ -1028,6 +1029,10 @@ class NewWakeOutcome:
     at_ms: int
     detail: str = ""
     session_id: int | None = None
+    #: Why a `failed`/`timeout` outcome happened (`nora.domain.stimuli.
+    #: FAILURE_CAUSES`, `classify_failure`); ignored for `closed`/`cancelled`.
+    #: Defaults to `infra`, the side that never strikes a stimulus.
+    cause: str = "infra"
 
 
 @dataclass(frozen=True)
@@ -1162,6 +1167,17 @@ class CognitionDryRunStore(Protocol):
     async def count_self_wakes_created(self, *, unit: str, since_ms: int) -> int:
         """`created` (recorded, not refused) `wake_at` rows for the unit at or
         after `since_ms` (the per-day cap's count; moves do not count)."""
+        ...
+
+    async def pending_mirrored_reminds(
+        self, *, unit: str, now_ms: int,
+    ) -> Sequence[PendingMirroredRemind]:
+        """The unit's mirrored reminds still PENDING at `now_ms`: per
+        `reminder_ref`, the latest recorded link decides; cancelled and due
+        (its time is at or before `now_ms`; nothing fires in shadow) are not
+        pending (`nora.domain.cognition_remind.fold_pending_reminds`). BOUNDED:
+        only refs with a recorded `remind` or `remind_move` due at or after
+        `now_ms` are read."""
         ...
 
 
@@ -1355,7 +1371,10 @@ class MediaSource(Protocol):
 @runtime_checkable
 class BlobStore(Protocol):
     """Content-addressed byte custody. `put` returns the key it computed; there
-    is no `delete` on this port — see module docstring."""
+    is no `delete` on this port — see module docstring. Keys are referenced
+    from media rows AND from the computer audit (`computer_events.request`,
+    `.output_ref`); any future GC must keep every referenced key
+    (`nora/infra/blobs/__init__.py`)."""
 
     async def put(self, *, data: bytes) -> str: ...
 
@@ -1873,7 +1892,15 @@ class SandboxRuntime(Protocol):
     R-27 without a try/except.
     """
 
-    async def run(self, *, scope: str, command: str, timeout_s: float) -> RunResult: ...
+    async def run(
+        self, *, scope: str, command: str, timeout_s: float,
+        limits: Mapping[str, int] | None = None,
+    ) -> RunResult:
+        """`limits` is the RESERVED per-command resource slot (`[computer]
+        limits`): sent only when it names at least one limit, and ignored by
+        computerd today (operator 2026-09-30: the computer is semi-trusted,
+        so no limits are applied)."""
+        ...
 
     async def read(
         self, *, scope: str, path: str, offset: int = 0, limit: int | None = None,

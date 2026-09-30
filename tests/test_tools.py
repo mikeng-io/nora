@@ -196,6 +196,8 @@ def test_every_declared_tool_is_built(wiring):
         "event_search", "suggest_venue",
         # Nora Compute spec §4 (Task 5).
         "make_artifact",
+        # Nora's computer (design/sandbox-runtime §4, DEC-243).
+        "computer_run", "computer_read", "computer_write", "computer_edit",
         # DEC-97: what she is running, and what was in an earlier version.
         "version",
         # The note tier's four verbs (note-tier spec §5.2/§6).

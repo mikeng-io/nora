@@ -585,7 +585,7 @@ enabled = true
 # var, never inline the secret). Host-injected, like OMNIROUTE_API_KEY. Generate:
 #   python -c "import os,base64;print(base64.b64encode(os.urandom(32)).decode())"
 # Empty (or the var unset) = custody OFF.
-encryption_key_env = "NORA_MEDIA_KEY"
+encryption_key_env = "MEDIA_ENCRYPTION_KEY"
 max_bytes = 104857600     # 100 MiB — Signal's own attachment ceiling
 timeout_seconds = 8.0     # ingest path: a wedged daemon costs seconds, never the message
 # Reading a stored image back through MiMo-V2.5 (the `media_fetch` tool, DEC-56).
@@ -863,6 +863,40 @@ enabled = false
 # mem_limit = "8g"            # docker-py's own containers.run mem_limit shape
 # nano_cpus = 2000000000      # billionths of a CPU core (2 vCPUs)
 # data_host_root_env = "NORA_DATA_HOST_ROOT"
+
+# Nora's computer (design/sandbox-runtime, DEC-243, ADR 0019): `computer_run`,
+# `computer_read`, `computer_write` and `computer_edit` against computerd in an
+# sbx microVM, one workspace per room.
+#
+# Ships INERT: every computer tool answers `unavailable` until this is on.
+# Turning it on lets model-authored bash run on a VM on this host, so it is an
+# operator decision every time, never something a missing section decides.
+#
+# Enabling it requires the computer VM running with computerd listening at
+# `base_url`, and its bearer token in .env under the name `token_env` gives
+# (DEC-8: the value never goes in this file). Nora REFUSES TO START with
+# `enabled = true` and that variable unset or empty, rather than answering
+# every call `unavailable` in front of the group.
+#
+# Every call is written to the `computer_events` table (the audit), whatever
+# it answers.
+[computer]
+enabled = false
+# base_url = "http://172.17.0.1:18765"
+# token_env = "NORA_COMPUTER_TOKEN"
+# request_timeout_seconds = 30   # every call except a run
+# run_timeout_seconds = 120      # a command's default timeout
+# max_run_timeout_seconds = 900  # the most a model may ask a command to run
+# max_output_chars = 8000        # a run's stdout, cut beyond this
+# max_read_chars = 20000         # one computer_read, cut beyond this
+#
+# Reserved: per-command resource limits. None is applied today (operator,
+# 2026-09-30: the computer is semi-trusted) and computerd ignores the field;
+# only the keys set here are sent, and only when at least one is.
+# [computer.limits]
+# cpu_seconds = 60
+# max_processes = 256
+# max_file_bytes = 1073741824
 
 # The presence collector (design/19, DEC-54/55) — a SEPARATE process,
 # `python -m nora.presence`, that records circle members' distinct location
@@ -2197,6 +2231,32 @@ max_memory_calls = 12
 [dreamer.budgets.culture.tool_calls]
 lookup_person = 12
 
+# The Cognition session (design/cognition-loop/30-cognition.md §5, migration
+# step 3a-iii). REQUIRED when the cognition section's `session_mode = "shadow"`: the config
+# REFUSES TO LOAD without this block (#637 review), because an adaptor with no
+# block silently runs on the class defaults (6 turns, 40k tokens, 120 s), a
+# budget nobody chose for a session that reads and writes across up to
+# the cognition section's `max_items` (12) agenda items. A deployment that turns sessions
+# on carries this block in its own config.toml, exactly as written here, or
+# sizes its own. One wall clock over the whole session, and it must end at
+# least 60 s before that section's `session_timeout_seconds` (900) or the runner
+# refuses to start. It rides `[dreamer] model`: no key of its own, and none
+# added.
+#
+# UNMEASURED starting points, sized from the proactive pass's shape (24 turns,
+# 1M total, a reading and writing loop) and raised where a session does more:
+# up to the cognition section's `max_items` (12) agenda items, each read and then written
+# or closed. The shadow week's `nora_dream_guard_vetoes_total{adaptor=
+# "cognition"}` and the sessions' Langfuse traces size them for real; never
+# stated in the prompt (a model told of a cap declines the work).
+[dreamer.budgets.cognition]
+turns = 24
+total_tokens = 1000000
+output_tokens = 12000
+timeout_seconds = 600.0
+max_memory_calls = 6
+max_tool_calls = 60
+
 
 # Lineage at assembly (design/cognition-loop/10-tiers.md §3; migration step
 # 2). Every derived row carries the set of (kind, subject, origin room) its
@@ -2274,11 +2334,48 @@ store_timeout_seconds = 5
 # runs on each would-wake the evaluator records — a real model call, its
 # note/event/Standing verbs in dry run, its `remind` mirrored and held.
 # Ships OFF, same as `mode`; `session_mode = "shadow"` requires
-# `mode = "shadow"` (refused to start otherwise).
+# `mode = "shadow"` and `[dreamer] enabled = true` (refused to start otherwise:
+# a session runs on the Dreamer's model, tools and objectives), and every unit
+# it may wake needs a `home_room = true` room in policy.toml (a unit with none
+# is named at boot and not woken while sessions run). Off builds nothing: no
+# model client, no runner, no session.
 session_mode = "off"
 # 30-cognition.md §1/§2 starting values.
 max_items = 12
 max_strikes = 3
+# A failing session is not retried at the cooldown for ever (#637 review, major
+# 1: 283 failed sessions a day were measured, one per `cooldown_seconds`). After
+# `n` consecutive failed or timed-out sessions the unit's next wake waits
+# `cooldown_seconds * 2 ** (n - 1)` (300, 600, 1200, ... s), capped here; one
+# `closed` session resets it. After `max_consecutive_failures` the stimuli those
+# sessions claimed are STRUCK (retracted, reason `failed`,
+# nora_cognition_stimuli_struck_total), so an agenda that always fails stops.
+# Worst case with something new always pending: 10 sessions on the first day,
+# 4 a day after (the 6 h cap); a static agenda: 5, then none.
+backoff_max_seconds = 21600
+max_consecutive_failures = 5
+# What counts as the AGENDA failing (DEC-244, third review). A failed session is
+# `infra` (backs off, never strikes) unless it is proven to be the agenda's own
+# doing. A context overflow is proven only when the prompt's token estimate (a
+# lower bound: characters / 4) is at least `overflow_window_fraction` of THIS
+# window AND the same agenda overflowed on the attempt before; a reply cut at
+# max_tokens is never the agenda's. Strands raises the overflow class for any
+# provider message with «context length» or «too many tokens» (a 503, a
+# per-minute token limit), so the class alone proves nothing. Unset = window
+# unknown: every overflow is infra and nothing is struck for one. Set it to the
+# `[dreamer] model`'s real window once measured.
+# model_window_tokens = 200000
+overflow_window_fraction = 0.8
+# What a session is shown beside its agenda (#637 review, major 2; 30-cognition
+# §1): each item's Record rows (author, message id, time, room, and what a
+# photo shows) and the Register index lines. `record_chars` is shared across the
+# items by what each needs; `message_chars` clips one message; `register_lines`
+# caps the index lines listed per kind. When an item's messages do not fit the
+# OLDEST are dropped and the prompt says how many. Starting values a shadow
+# week sizes; independent of `[record_query] enabled`.
+record_chars = 8000
+message_chars = 400
+register_lines = 40
 
 # The Assess adaptor (design/cognition-loop/30-cognition.md §6,
 # 70-migration.md §2 row 3): reports and metrics only, never a tier write.

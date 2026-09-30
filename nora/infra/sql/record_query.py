@@ -32,12 +32,14 @@ are there, and it would make that claim about words their author took back.
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Sequence
 from typing import Any
 
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from nora.domain.record_query import RECORD_QUERY_MAX, RecordHit, RecordQuery
+from nora.domain.cognition_ground import RECORD_REF_TABLES
+from nora.domain.record_query import RECORD_QUERY_MAX, RecordHit, RecordQuery, RecordRefHit
 from nora.infra.sql.audit import transcript_row, transcript_select
 from nora.infra.sql.schema import MESSAGE_DELETE, MESSAGE_EDIT, MESSAGE_REACTION, MESSAGES
 
@@ -139,6 +141,82 @@ class SqlRecordQuery:
             key=lambda h: (h.row.ts, h.row.id),
         )
         return tuple(hits), more, near
+
+    async def by_refs(
+        self, refs: Sequence[tuple[str, int]], rooms: Sequence[tuple[str, str]],
+    ) -> tuple[RecordRefHit, ...]:
+        """The messages the `(table, row id)` refs of message stimuli name
+        (`messages`, `message_reaction`, `message_delete`), read for the
+        Cognition session's grounding (design/cognition-loop/30-cognition.md §1).
+
+        Not `record_query`: no interval, no search, and NOT behind
+        `[record_query] enabled`, which decides whether a MODEL is offered a
+        tool, not whether code may read the rows that raised its own stimuli.
+        The caller's rooms are the whole boundary, as for `query` (a row of a
+        room not listed is never selected), and the withdrawal cascade's hidden
+        rows are excluded by the same `transcript_select` every read shares. A
+        ref that names nothing readable (hidden, another room, gone) simply has
+        no hit; the caller counts it, it never guesses one."""
+        if not refs or not rooms:
+            return ()
+        in_rooms = sa.or_(*(
+            sa.and_(MESSAGES.c.platform == platform, MESSAGES.c.conversation_id == cid)
+            for platform, cid in rooms
+        ))
+        wanted: dict[str, set[int]] = {t: set() for t in RECORD_REF_TABLES}
+        for table, row_id in refs:
+            if table in wanted:
+                wanted[table].add(row_id)
+        async with self._engine.connect() as conn:
+            emoji: dict[int, tuple[int, str]] = {}
+            if wanted["message_reaction"]:
+                for r in (await conn.execute(
+                    sa.select(
+                        MESSAGE_REACTION.c.id, MESSAGE_REACTION.c.message_id,
+                        MESSAGE_REACTION.c.emoji,
+                    ).where(MESSAGE_REACTION.c.id.in_(wanted["message_reaction"]))
+                )).all():
+                    emoji[int(r.id)] = (int(r.message_id), str(r.emoji))
+            deleted_of: dict[int, int] = {}
+            if wanted["message_delete"]:
+                for r in (await conn.execute(
+                    sa.select(MESSAGE_DELETE.c.id, MESSAGE_DELETE.c.message_id)
+                    .where(MESSAGE_DELETE.c.id.in_(wanted["message_delete"]))
+                )).all():
+                    deleted_of[int(r.id)] = int(r.message_id)
+            message_ids = (
+                wanted["messages"]
+                | {m for m, _ in emoji.values()} | set(deleted_of.values())
+            )
+            if not message_ids:
+                return ()
+            rows = (await conn.execute(
+                transcript_select()
+                .add_columns(MESSAGES.c.platform, MESSAGES.c.conversation_id)
+                .where(in_rooms, MESSAGES.c.id.in_(message_ids))
+            )).all()
+            ids = [r.id for r in rows]
+            reactions = await self._reactions(conn, ids)
+            gone = await self._deleted(conn, ids)
+        hits = {
+            int(r.id): RecordHit(
+                platform=r.platform, conversation_id=r.conversation_id,
+                row=transcript_row(r), reactions=reactions.get(r.id, ()),
+                deleted=r.id in gone,
+            )
+            for r in rows
+        }
+        out: list[RecordRefHit] = []
+        for mid in sorted(wanted["messages"]):
+            if mid in hits:
+                out.append(RecordRefHit("messages", mid, hits[mid]))
+        for rid, (mid, mark) in sorted(emoji.items()):
+            if mid in hits:
+                out.append(RecordRefHit("message_reaction", rid, hits[mid], emoji=mark))
+        for rid, mid in sorted(deleted_of.items()):
+            if mid in hits:
+                out.append(RecordRefHit("message_delete", rid, hits[mid]))
+        return tuple(out)
 
     @staticmethod
     async def _reactions(

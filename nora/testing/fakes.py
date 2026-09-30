@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import fnmatch
 import hashlib
 import json
 import re
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from datetime import datetime
 from typing import Any
@@ -27,6 +28,7 @@ from nora.domain.computer import (
     RunResult,
     SandboxStatus,
 )
+from nora.domain.computer_events import ComputerEvent, normalise_computer_event
 from nora.domain.media import (
     MediaBlob,
     MediaBytes,
@@ -1661,6 +1663,55 @@ class FakeToolCallLogStore:
         return rows[:limit]
 
 
+class FakeComputerEventStore:
+    """In-memory `ComputerEventStore`. Bound to
+    `nora.infra.sql.computer_events.SqlComputerEventStore` by
+    `tests/contract/test_computer_event_store_contract.py`.
+
+    `fail` names the phases whose append raises: `{"started"}` is the case
+    where a tool must refuse to run, `{"finished"}` the one where it must
+    still answer. `(operation_id, phase)` is unique, as in the table.
+    """
+
+    def __init__(self) -> None:
+        self.events: list[ComputerEvent] = []
+        self.fail: set[str] = set()
+        # Set to an unset `asyncio.Event` to make a `finished` append wait on
+        # it: a slow write a second cancellation can land on.
+        self.hold_finished: asyncio.Event | None = None
+
+    async def append(self, event: ComputerEvent) -> None:
+        if event.phase == "finished" and self.hold_finished is not None:
+            await self.hold_finished.wait()
+        if event.phase in self.fail:
+            raise RuntimeError("fake computer_events append failure")
+        if any((e.operation_id, e.phase) == (event.operation_id, event.phase)
+               for e in self.events):
+            raise RuntimeError("duplicate (operation_id, phase)")
+        self.events.append(normalise_computer_event(event))
+
+    async def orphaned_starts(self, *, older_than: datetime, limit: int) -> list[ComputerEvent]:
+        done = {e.operation_id for e in self.events if e.phase == "finished"}
+        rows = [e for e in self.events if e.phase == "started"
+                and e.operation_id not in done and e.created_at < older_than]
+        rows.sort(key=lambda e: e.created_at)
+        return rows[:limit]
+
+    def finished(self) -> list[ComputerEvent]:
+        """The `finished` rows, in order: what a test asserts outcomes on."""
+        return [e for e in self.events if e.phase == "finished"]
+
+    async def recent(
+        self, *, conversation_id: str, since: datetime, limit: int,
+    ) -> list[ComputerEvent]:
+        rows = [
+            e for e in self.events
+            if e.conversation_id == conversation_id and e.created_at >= since
+        ]
+        rows.sort(key=lambda e: e.created_at, reverse=True)
+        return rows[:limit]
+
+
 class FakeSocialProvider:
     """In-memory `SocialProvider`, bound to `OpenCliBridgeClient`,
     `InstagramSocialClient` and `SocialRouter` by
@@ -1839,7 +1890,13 @@ class FakeSandboxRuntime:
     def __init__(self) -> None:
         self.files_by_scope: dict[str, dict[str, bytes]] = {}
         self.runs: list[tuple[str, str]] = []
+        # Every `run` call as it arrived, refused ones included: what a test
+        # reads to see the timeout and the reserved `limits` slot.
+        self.run_calls: list[dict[str, object]] = []
         self.down = False
+        # Set to an unset `asyncio.Event` to make `run` wait on it: a slow
+        # command a test can cancel mid-call.
+        self.hold: asyncio.Event | None = None
         self._scripted: dict[str, RunResult] = {}
 
     def script(self, command: str, result: RunResult) -> None:
@@ -1854,10 +1911,17 @@ class FakeSandboxRuntime:
             return SandboxStatus.DENIED
         return None
 
-    async def run(self, *, scope: str, command: str, timeout_s: float) -> RunResult:
+    async def run(
+        self, *, scope: str, command: str, timeout_s: float,
+        limits: Mapping[str, int] | None = None,
+    ) -> RunResult:
+        self.run_calls.append({"scope": scope, "command": command,
+                               "timeout_s": timeout_s, "limits": limits})
         if (refusal := self._refusal(scope)) is not None:
             return RunResult(status=refusal, reason="fake refusal")
         self.runs.append((scope, command))
+        if self.hold is not None:
+            await self.hold.wait()
         return self._scripted.get(command, RunResult(status=SandboxStatus.OK, exit_code=0))
 
     async def read(
@@ -1936,9 +2000,15 @@ class FakeSandboxRuntime:
             return OpResult(status=refusal, reason="fake refusal")
         if (conflict := self._conflict(scope, path, reading=False)) is not None:
             return OpResult(status=conflict, reason="fake conflict")
-        self.files_by_scope.setdefault(scope, {})[_fake_path(path) or ""] = data
+        stored = self.files_by_scope.setdefault(scope, {})
+        key = _fake_path(path) or ""
+        before = stored.get(key)
+        stored[key] = data
         digest = hashlib.sha256(data).hexdigest()
-        return OpResult(status=SandboxStatus.OK, size=len(data), sha256=digest)
+        return OpResult(
+            status=SandboxStatus.OK, size=len(data), sha256=digest,
+            previous_sha256=hashlib.sha256(before).hexdigest() if before is not None else None,
+        )
 
     def _conflict(self, scope: str, path: str, *, reading: bool) -> SandboxStatus | None:
         """A file and a directory cannot share a path, as on a filesystem:

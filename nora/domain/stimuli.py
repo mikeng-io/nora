@@ -62,7 +62,8 @@ stimuli a CLOSED wake returned to the next agenda with a strike (30 §2).
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Mapping
+import re
+from collections.abc import Awaitable, Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Literal, Protocol, get_args
 
@@ -87,7 +88,7 @@ WakeReason = Literal[
 WAKE_REASONS: tuple[str, ...] = get_args(WakeReason)
 
 #: Why a unit with pending stimuli did NOT wake this tick.
-WakeBrake = Literal["single_flight", "cooldown", "concurrency"]
+WakeBrake = Literal["single_flight", "cooldown", "backoff", "concurrency"]
 WAKE_BRAKES: tuple[str, ...] = get_args(WakeBrake)
 
 #: How a wake row was produced. `live` arrives with the Cognition adaptor.
@@ -196,6 +197,148 @@ class WakeGuard:
     last_outcome: str | None
 
 
+#: Why a wake FAILED (`cognition_wake_outcome.cause`, DEC-244's classification,
+#: #637 second review, re-cut by the third). `infra`: the world failed
+#: (provider, network, database, a kill, a timeout, a shutdown, a reply cut at
+#: max_tokens, an overflow message nobody proved the agenda caused, or anything
+#: unclassified): the unit BACKS OFF and its stimuli are NEVER struck, because a
+#: real human message must not be dropped for an outage. `agenda`: PROVEN to be
+#: this agenda's own doing, deterministically (an `AgendaError`: a grounding
+#: fault for that input, or a context overflow the size and the repetition
+#: below both prove): only these count toward a strike. Unknown is `infra`:
+#: fail-closed on the side that keeps the message.
+FAILURE_CAUSES: tuple[str, ...] = ("infra", "agenda")
+DEFAULT_FAILURE_CAUSE = "infra"
+
+
+class AgendaError(Exception):
+    """A failure caused by the agenda itself, raised by code that has PROVED it
+    deterministic for the input (`classify_failure` reads only this). Today
+    that is one thing: a context overflow `prove_overflow_is_the_agenda`
+    accepted. A grounder read that fails is a store failure, so `infra`."""
+
+
+def classify_failure(exc: BaseException) -> str:
+    """`infra` or `agenda` for the exception that ended a session (DEC-244).
+
+    `agenda` ONLY for an `AgendaError`: the exception's own class or a base, so
+    a subclass counts. Every SDK class is `infra`, however alarming its name:
+    Strands raises `ContextWindowOverflowException` for ANY provider error whose
+    message contains «context length» or «too many tokens» (a 503, a 413 tokens
+    per minute, a fallback model with a smaller window), and a reply cut at
+    max_tokens (`MaxTokensReachedException`, `PartialReplyError`) is a provider
+    capping output or a model looping, the world failing and not the agenda.
+    The one SDK failure that can be the agenda's is an overflow, and only
+    `prove_overflow_is_the_agenda` may turn it into an `AgendaError`."""
+    if isinstance(exc, AgendaError):
+        return "agenda"
+    return "infra"
+
+
+_OVERFLOW_NAME = "ContextWindowOverflowException"
+
+#: Words in an error chain that say the provider or the transport failed, not
+#: the size of the request: a per-minute token budget, a throttle, an outage, a
+#: gateway, a timeout. Any one of them keeps an overflow `infra`.
+_TRANSPORT_MARKERS = (
+    "per minute", "tokens per min", "tpm", "rate limit", "rate_limit", "too many requests",
+    "throttl", "overloaded", "unavailable", "bad gateway", "gateway", "timed out",
+    "timeout", "internal server error", "connection", "service", "quota", "capacity",
+    "try again",
+)
+
+#: The only HTTP status a size fault comes back with. Anything else on the
+#: chain (413 «too many tokens per minute», 429, 5xx) is transport.
+_SIZE_FAULT_STATUS = 400
+
+#: An HTTP status quoted in a message: only right after «error code», «status»
+#: or «http» (so «8192 tokens» or «500 tokens» never matches).
+_TEXT_STATUS = re.compile(r"(?:error code|status(?: code)?|http(?: status)?)\W{0,3}([1-5]\d\d)\b")
+
+
+def is_context_overflow(exc: BaseException) -> bool:
+    """The exception is (a subclass of) Strands' `ContextWindowOverflowException`,
+    matched by name because `nora.domain` may not import the SDK."""
+    return any(c.__name__ == _OVERFLOW_NAME for c in type(exc).__mro__)
+
+
+def _chain(exc: BaseException) -> list[BaseException]:
+    seen: list[BaseException] = []
+    todo: list[BaseException | None] = [exc]
+    while todo and len(seen) < 12:
+        e = todo.pop()
+        if e is None or any(e is x for x in seen):
+            continue
+        seen.append(e)
+        todo.extend((e.__cause__, e.__context__))
+    return seen
+
+
+def transport_evidence(exc: BaseException) -> bool:
+    """Something on the exception chain says the provider or the network failed:
+    a status other than 400, or a message naming a rate, a quota, an outage or a
+    timeout. Deterministic, and biased to `True`: a false positive keeps a
+    message, a false negative retracts one."""
+    for e in _chain(exc):
+        for attr in ("status_code", "status", "http_status"):
+            code = getattr(e, attr, None)
+            if isinstance(code, int) and not isinstance(code, bool) and code != _SIZE_FAULT_STATUS:
+                return True
+        response = getattr(e, "response", None)
+        response_code = getattr(response, "status_code", None)
+        if response_code is None and isinstance(response, dict):
+            # botocore's ClientError: the status is in the response metadata.
+            meta = response.get("ResponseMetadata")
+            response_code = meta.get("HTTPStatusCode") if isinstance(meta, dict) else None
+        if (
+            isinstance(response_code, int)
+            and not isinstance(response_code, bool)
+            and response_code != _SIZE_FAULT_STATUS
+        ):
+            return True
+        if isinstance(e, TimeoutError | ConnectionError | OSError):
+            return True
+        text = str(e).lower()
+        if any(m in text for m in _TRANSPORT_MARKERS):
+            return True
+        # A status a wrapper flattened into the message ("Error code: 500 - ...").
+        # Only after a status-style prefix, so a token count never matches.
+        if any(int(m) != _SIZE_FAULT_STATUS for m in _TEXT_STATUS.findall(text)):
+            return True
+    return False
+
+
+#: A lower bound on tokens: characters over this. English runs about 4 chars a
+#: token and CJK about 1, so the estimate never overstates the prompt, and a
+#: prompt it calls large IS large.
+CHARS_PER_TOKEN_LOWER_BOUND = 4
+
+
+def estimate_tokens_lower_bound(*texts: str) -> int:
+    return sum(len(t) for t in texts) // CHARS_PER_TOKEN_LOWER_BOUND
+
+
+def prove_overflow_is_the_agenda(
+    exc: BaseException, *, estimated_tokens: int, window_tokens: int | None,
+    window_fraction: float, previously_overflowed: bool,
+) -> bool:
+    """True only when a context overflow is PROVEN to come from the agenda's size:
+    (1) it IS an overflow; (2) nothing on its chain says the provider or the
+    transport failed; (3) the prompt's token estimate (a lower bound) is at
+    least `window_fraction` of the configured model's window, which must be
+    KNOWN (`window_tokens` None proves nothing); and (4) the same agenda, or a
+    smaller one it contains, overflowed on an earlier attempt
+    (`previously_overflowed`). A single overflow, however loud, is `infra`."""
+    return (
+        is_context_overflow(exc)
+        and not transport_evidence(exc)
+        and window_tokens is not None
+        and window_tokens > 0
+        and estimated_tokens >= window_fraction * window_tokens
+        and previously_overflowed
+    )
+
+
 #: How a tracked wake ended (`cognition_wake_outcome`). Only `closed` advances
 #: the watermark; the other three return the wake's stimuli to pending.
 WAKE_OUTCOMES: tuple[str, ...] = ("closed", "failed", "timeout", "cancelled")
@@ -241,6 +384,18 @@ class WakePolicy:
     #: EXPIRED, read as failed: it stops holding its unit and its stimuli
     #: return. A session's own wall clock ends a margin before it.
     session_timeout_seconds: float = 900.0
+    #: A unit whose sessions FAIL is not woken again at the cooldown, forever
+    #: (#637 review, major 1: 283 failed sessions a day measured, one every
+    #: `cooldown_seconds`). After `n` consecutive failed or timed-out wakes the
+    #: next one waits `cooldown_seconds * 2 ** (n - 1)`, capped at this; a
+    #: `closed` wake resets it (`failure_streak`). 20 §3: «per-unit backoff
+    #: after a failed session».
+    backoff_max_seconds: float = 21600.0
+    #: After this many consecutive failures the stimuli the failing wakes
+    #: claimed are struck (retracted, reason `failed`): an always-failing agenda
+    #: stops instead of retrying the same input for ever (30 §2's `max_strikes`
+    #: is the item-level twin for a session that ran).
+    max_consecutive_failures: int = 5
 
 
 SessionState = Literal["running", "closed", "failed"]
@@ -259,11 +414,14 @@ class LastSession:
     started_at_ms: int
     ended_at_ms: int | None = None
     outcome: str | None = None
+    #: Why a `failed` state failed (`FAILURE_CAUSES`). An EXPIRED wake (no
+    #: outcome row: a kill, a crash) is `infra`.
+    cause: str = DEFAULT_FAILURE_CAUSE
 
 
 def wake_state(
     *, tracked: bool, recorded_at_ms: int, outcome: str | None,
-    outcome_at_ms: int | None, stale_before_ms: int | None,
+    outcome_at_ms: int | None, stale_before_ms: int | None, cause: str | None = None,
 ) -> LastSession | None:
     """ONE wake's state from its rows: the rule both `StimulusStore`
     implementations apply (the SQL store spells it as a predicate in
@@ -274,6 +432,7 @@ def wake_state(
         return LastSession(
             state="closed" if outcome == "closed" else "failed",
             started_at_ms=recorded_at_ms, ended_at_ms=outcome_at_ms, outcome=outcome,
+            cause=cause or DEFAULT_FAILURE_CAUSE,
         )
     if not tracked or stale_before_ms is None:
         return None
@@ -303,6 +462,19 @@ class UnitView:
     tracked: bool = False
     live: bool = False
     carry: Mapping[int, int] = field(default_factory=dict)
+    #: The unit's consecutive failed or timed-out wakes, newest first, ended by
+    #: a `closed` one (`failure_streak`); a `cancelled` or still-open wake
+    #: neither counts nor ends it. 0 for an untracked reader.
+    failures: int = 0
+    #: How many of that streak's failures were `agenda` failures (an `infra`
+    #: one, a `cancelled` or an open wake neither counts nor ends this run; a
+    #: `closed` wake ends it). ONLY this feeds the strike (DEC-244).
+    agenda_failures: int = 0
+    #: The watermark the newest AGENDA-failed wake of the run would have set:
+    #: what those wakes claimed, so what is struck at `max_consecutive_failures`
+    #: is exactly what they read and never a stimulus that arrived since, nor
+    #: one only an infrastructure-failed wake claimed.
+    failed_mark: Watermark | None = None
 
     @property
     def watermark(self) -> Watermark:
@@ -337,6 +509,68 @@ class Verdict:
     oldest_pending_ms: int | None = None
 
 
+def failure_streak(newest_first: Iterable[LastSession | None]) -> int:
+    """Consecutive FAILED wakes, from the newest back: the ONE rule both
+    `StimulusStore` implementations apply to their wake states (the contract
+    suite holds them together). A `failed` state (outcome `failed`/`timeout`,
+    or expired with none) counts; a `cancelled` outcome is a shutdown, not a
+    session that went wrong, and a `running` wake has not ended: neither counts
+    and neither ends the run. A `closed` wake, or a wake with no state (an
+    untracked one), ends it."""
+    n = 0
+    for state in newest_first:
+        if state is None or state.state == "closed":
+            break
+        if state.state == "running" or state.outcome == "cancelled":
+            continue
+        n += 1
+    return n
+
+
+def agenda_failure_streak(newest_first: Iterable[LastSession | None]) -> int:
+    """Consecutive `agenda`-caused failures, from the newest back: `failure_streak`
+    with one more transparency, an `infra` failure (an outage says nothing about
+    the agenda). Only this run strikes (DEC-244)."""
+    n = 0
+    for state in newest_first:
+        if state is None or state.state == "closed":
+            break
+        if state.state == "running" or state.outcome == "cancelled" or state.cause != "agenda":
+            continue
+        n += 1
+    return n
+
+
+def failure_run(
+    newest_first: Iterable[tuple[WakeRow, LastSession | None]],
+) -> tuple[int, int, Watermark | None]:
+    """`(failure_streak, agenda_failure_streak, the watermark of the newest
+    AGENDA-failed wake in that run)` from a unit's wakes with their states,
+    newest first: what both stores put on `UnitView.failures`,
+    `.agenda_failures` and `.failed_mark`."""
+    pairs = list(newest_first)
+    n = failure_streak(state for _, state in pairs)
+    agenda = agenda_failure_streak(state for _, state in pairs)
+    if agenda == 0:
+        return n, 0, None
+    for wake, state in pairs:
+        if state is None or state.state == "closed":
+            break
+        if state.state == "failed" and state.cause == "agenda" and state.outcome != "cancelled":
+            return n, agenda, Watermark.of(wake)
+    return n, agenda, None
+
+
+def backoff_ms(failures: int, policy: WakePolicy) -> int:
+    """How long after a wake ended the unit's next wake waits: the cooldown,
+    doubled for each failure past the first, capped."""
+    cooldown = int(policy.cooldown_seconds * 1000)
+    if failures <= 1:
+        return cooldown
+    cap = int(policy.backoff_max_seconds * 1000)
+    return int(max(cooldown, min(cap, cooldown * 2 ** min(failures - 1, 40))))
+
+
 def in_flight(last_wake: WakeRow | None, policy: WakePolicy, now_ms: int) -> bool:
     """Whether the unit's last (would-)session is still running at `now_ms`,
     by the SHADOW assumption (`session_seconds`). Only meaningful with no
@@ -365,21 +599,33 @@ def unit_in_flight(view: UnitView, policy: WakePolicy, now_ms: int) -> bool:
     return session is not None and session.state == "running"
 
 
-def _cooling(view: UnitView, policy: WakePolicy, now_ms: int) -> bool:
+def _cool_base(view: UnitView, policy: WakePolicy) -> int | None:
+    """When the unit's last (would-)session ended, or is presumed to have."""
     wake = view.last_wake
     if wake is None:
-        return False
-    cooldown_ms = int(policy.cooldown_seconds * 1000)
+        return None
     if not view.tracked:
-        return now_ms < wake.at_ms + int(policy.session_seconds * 1000) + cooldown_ms
+        return wake.at_ms + int(policy.session_seconds * 1000)
     session = view.last_session
     if session is None:
-        base = wake.at_ms
-    elif session.ended_at_ms is not None:
-        base = session.ended_at_ms
-    else:
-        base = session.started_at_ms + int(policy.session_timeout_seconds * 1000)
-    return now_ms < base + cooldown_ms
+        return wake.at_ms
+    if session.ended_at_ms is not None:
+        return session.ended_at_ms
+    return session.started_at_ms + int(policy.session_timeout_seconds * 1000)
+
+
+def _cooling(view: UnitView, policy: WakePolicy, now_ms: int) -> bool:
+    """The plain cooldown after the last session."""
+    base = _cool_base(view, policy)
+    return base is not None and now_ms < base + int(policy.cooldown_seconds * 1000)
+
+
+def _backing_off(view: UnitView, policy: WakePolicy, now_ms: int) -> bool:
+    """The extra wait a failing unit owes past the cooldown (`backoff_ms`)."""
+    if view.failures <= 1:
+        return False
+    base = _cool_base(view, policy)
+    return base is not None and now_ms < base + backoff_ms(view.failures, policy)
 
 
 def _trigger(view: UnitView, policy: WakePolicy, now_ms: int) -> WakeReason | None:
@@ -441,15 +687,19 @@ def decide(view: UnitView, policy: WakePolicy, now_ms: int) -> Verdict:
     if unit_in_flight(view, policy, now_ms):
         return Verdict(brake="single_flight")
     cut = False
-    if _cooling(view, policy, now_ms):
+    cooling = _cooling(view, policy, now_ms)
+    if cooling or _backing_off(view, policy, now_ms):
         strong = any(is_strong(s.cues) for s in view.pending if not s.waits)
         last_cut = view.last_wake is not None and view.last_wake.cut_cooldown
         quiet_ms = (
             None if view.last_activity_ms is None else now_ms - view.last_activity_ms
         )
         cue_quiet = quiet_ms is None or quiet_ms >= policy.cue_quiet_seconds * 1000
-        if not (strong and cue_quiet and not last_cut):
-            return Verdict(brake="cooldown")
+        # A strong cue cuts a cooldown ONCE, and never a backoff: a unit whose
+        # sessions keep failing must not be woken every `cue_quiet_seconds` by
+        # a room that keeps saying a time.
+        if not (cooling and view.failures == 0 and strong and cue_quiet and not last_cut):
+            return Verdict(brake="cooldown" if cooling else "backoff")
         reason, cut = "strong_cue", True
     eligible = [s for s in view.pending if not s.waits]
     return Verdict(

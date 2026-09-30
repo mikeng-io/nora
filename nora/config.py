@@ -2191,6 +2191,71 @@ class ComputeConfig(BaseModel):
     data_host_root_env: str = "NORA_DATA_HOST_ROOT"
 
 
+class ComputerLimitsConfig(BaseModel):
+    """`[computer.limits]`: a RESERVED slot for per-command resource limits.
+
+    The operator ruled on 2026-09-30 that the computer is a semi-trusted
+    environment, so NO limit is applied today: every field defaults to `None`
+    and computerd ignores the field even when it is sent. The slot exists so
+    that enabling limits later is this config plus one computerd change
+    (`deploy/computer/computerd.py`'s `run`), not a new wire field. Only the
+    fields that are set are sent, and only when at least one is.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    cpu_seconds: int | None = Field(default=None, gt=0)
+    max_processes: int | None = Field(default=None, gt=0)
+    max_file_bytes: int | None = Field(default=None, gt=0)
+
+    def as_pairs(self) -> tuple[tuple[str, int], ...]:
+        return tuple(
+            (name, value) for name, value in self.model_dump().items() if value is not None
+        )
+
+
+class ComputerConfig(BaseModel):
+    """Nora's computer (design/sandbox-runtime, DEC-243, ADR 0019): the
+    `computer_run`/`computer_read`/`computer_write`/`computer_edit` tools
+    against computerd in an sbx microVM.
+
+    Optional, defaulted, and INERT by default, the `[compute]` shape: a
+    config.toml written before this section existed keeps loading, and every
+    computer tool answers `unavailable` until an operator turns it on.
+    Turning it on lets model-authored bash run on a VM on this host, which is
+    an operator decision every time.
+
+    `token_env` NAMES the env var holding computerd's bearer token (DEC-8);
+    the value lives in `.env`. `nora.app.composition` refuses to start when
+    `enabled` is true and that variable is unset or empty.
+
+    `request_timeout_seconds` bounds every non-run call; a run waits for its
+    own timeout (`run_timeout_seconds` by default, a model-supplied value
+    clamped to `max_run_timeout_seconds`). `max_output_chars` bounds a run's
+    stdout, `max_read_chars` one `computer_read`.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    enabled: bool = False
+    base_url: str = "http://172.17.0.1:18765"
+    token_env: str = "NORA_COMPUTER_TOKEN"  # noqa: S105 — names an env var, not a secret
+    request_timeout_seconds: float = Field(default=30.0, gt=0)
+    run_timeout_seconds: int = Field(default=120, gt=0)
+    max_run_timeout_seconds: int = Field(default=900, gt=0)
+    max_output_chars: int = Field(default=8000, gt=0)
+    max_read_chars: int = Field(default=20000, gt=0)
+    limits: ComputerLimitsConfig = ComputerLimitsConfig()
+
+    @model_validator(mode="after")
+    def _default_run_within_max(self) -> ComputerConfig:
+        if self.run_timeout_seconds > self.max_run_timeout_seconds:
+            raise ValueError(
+                "[computer] run_timeout_seconds must not exceed max_run_timeout_seconds"
+            )
+        return self
+
+
 class VersionConfig(BaseModel):
     """The startup upgrade note (DEC-97, `nora.app.announce`).
 
@@ -3395,6 +3460,35 @@ class CognitionConfig(BaseModel):
     #: The pending cap alone does not bound a session that re-arms itself on
     #: every pass, because a fired wake frees its slot.
     max_self_wakes_per_day: int = Field(default=12, ge=1)
+    #: #637 review, major 1 (DEC-244 (7)): a unit whose sessions fail is not
+    #: woken again every `cooldown_seconds`, for ever. The next wake after `n`
+    #: consecutive failed or timed-out sessions waits `cooldown_seconds *
+    #: 2 ** (n - 1)` (a `closed` session resets it), capped at
+    #: `backoff_max_seconds` (6 h); after `max_consecutive_failures` the stimuli
+    #: those sessions claimed are struck (reason `failed`) so an always-failing
+    #: agenda stops. Both are starting values a shadow week sizes.
+    backoff_max_seconds: float = Field(default=21600.0, gt=0)
+    max_consecutive_failures: int = Field(default=5, ge=1)
+    #: #637 review, major 2 (DEC-244 (8)): how much of a session's prompt the
+    #: Record rows and Register index lines may spend. `record_chars` is shared
+    #: across the agenda's items by what each needs; `message_chars` clips one
+    #: message; `register_lines` caps the index lines listed per kind. When an
+    #: item's messages do not fit, the OLDEST are dropped and the prompt says
+    #: how many. Starting values.
+    record_chars: int = Field(default=8000, ge=500)
+    message_chars: int = Field(default=400, ge=40)
+    register_lines: int = Field(default=40, ge=1)
+    #: DEC-244 (third review): a context overflow is the AGENDA's (and may strike
+    #: human stimuli) only when it is proven: the prompt's token estimate (a
+    #: lower bound) is at least `overflow_window_fraction` of THIS model's window
+    #: AND the same agenda overflowed on the attempt before. `None` (the
+    #: default) is «window unknown»: no overflow is ever the agenda's, every one
+    #: is `infra` (backs off, never strikes). Strands raises the overflow class
+    #: for any provider message containing «context length» or «too many
+    #: tokens», a 503 and a per-minute token limit included, so the class alone
+    #: proves nothing.
+    model_window_tokens: int | None = Field(default=None, ge=1000)
+    overflow_window_fraction: float = Field(default=0.8, gt=0, le=1)
 
     @field_validator("time_floors")
     @classmethod
@@ -3822,6 +3916,10 @@ class Config(BaseModel):
     # (`enabled = false`); the `ComputeJobStore` is built unconditionally
     # regardless (the `reminders` shape), only the poller's tick loop is gated.
     compute: ComputeConfig = ComputeConfig()
+    # Optional and defaulted, see `ComputerConfig`. Ships INERT
+    # (`enabled = false`): no runtime is built and every computer tool answers
+    # `unavailable`.
+    computer: ComputerConfig = ComputerConfig()
     # Optional and defaulted — see `ImageGenConfig`. Ships INERT
     # (`enabled = false`); a config.toml written before DEC-137 keeps loading
     # unchanged, and a misconfigured lane degrades the tool to `unavailable`
@@ -4222,6 +4320,40 @@ class Config(BaseModel):
                 f"[standing] max_slot_hold_seconds "
                 f"({self.standing.max_slot_hold_seconds:g}). Lower a timeout or "
                 f"raise the budget deliberately; do not leave them disagreeing."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _cognition_sessions_need_the_dreamer(self) -> Config:
+        """A Cognition session borrows the Dreamer's model source, tool source
+        and objective corpus (migration step 3a-iii), so `[cognition]
+        session_mode = "shadow"` with `[dreamer] enabled = false` would build
+        an evaluator whose hook has nothing to run on. Refused at load, where
+        the operator is looking, not discovered as a session that never
+        starts."""
+        if self.cognition.session_mode == "shadow" and not self.dreamer.enabled:
+            raise ValueError(
+                "[cognition] session_mode = \"shadow\" needs [dreamer] enabled = true: "
+                "a session runs on the Dreamer's model, tools and objectives"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _cognition_sessions_need_their_own_budget(self) -> Config:
+        """`[cognition] session_mode = "shadow"` REFUSES to load without an
+        explicit `[dreamer.budgets.cognition]` block (#637 review, minor 4).
+        `budget_for` answers an adaptor with no block from the class defaults
+        (6 turns, 40k tokens, 120 s), which is a budget nobody chose for a
+        session that reads and writes across up to `max_items` items: the
+        review found a live config with no block, silently running on it. The
+        block is in `config.example.toml`; a deployment that turns sessions on
+        copies it, or sizes its own."""
+        if self.cognition.session_mode == "shadow" and "cognition" not in self.dreamer.budgets:
+            raise ValueError(
+                "[cognition] session_mode = \"shadow\" needs an explicit "
+                "[dreamer.budgets.cognition] block: without one the session silently "
+                "runs on the class defaults (6 turns, 40k tokens, 120 s). Copy the block "
+                "from config.example.toml or size your own"
             )
         return self
 

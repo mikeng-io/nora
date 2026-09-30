@@ -25,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.domain.ports import NewCarry, NewWakeOutcome, RecordedOutcome
 from nora.domain.stimuli import (
+    FAILURE_CAUSES,
     WAKE_OUTCOMES,
     NewStimulus,
     NewWake,
@@ -33,6 +34,7 @@ from nora.domain.stimuli import (
     WakeGuard,
     WakeRow,
     Watermark,
+    failure_run,
     wake_state,
 )
 from nora.infra.sql.schema import (
@@ -172,6 +174,28 @@ def _mark_query(*, unit: str, mode: str, stale_before_ms: int | None) -> sa.Sele
         )
         .order_by(COGNITION_WAKE.c.id.desc())
         .limit(1)
+    )
+
+
+#: How many of a unit's newest wakes the failure streak looks back over. The
+#: streak is capped by it, and every consumer of the streak acts long before
+#: (`WakePolicy.max_consecutive_failures`), so it only has to exceed that.
+FAILURE_LOOKBACK = 64
+
+
+def _recent_wakes_query(unit: str, mode: str) -> sa.Select[Any]:
+    """The unit's newest wakes in the mode WITH their outcome (or NULL), newest
+    first: what `nora.domain.stimuli.failure_run` reads."""
+    outcome = COGNITION_WAKE_OUTCOME
+    return (
+        sa.select(
+            COGNITION_WAKE, outcome.c.outcome.label("outcome"),
+            outcome.c.at_ms.label("outcome_at_ms"), outcome.c.cause.label("cause"),
+        )
+        .select_from(COGNITION_WAKE.outerjoin(outcome, outcome.c.wake_id == COGNITION_WAKE.c.id))
+        .where(COGNITION_WAKE.c.unit == unit, COGNITION_WAKE.c.mode == mode)
+        .order_by(COGNITION_WAKE.c.id.desc())
+        .limit(FAILURE_LOOKBACK)
     )
 
 
@@ -331,10 +355,25 @@ class SqlStimulusStore:
             pending.sort(key=lambda x: x.id)
             activity_q = activity_query(unit=unit)
             activity = (await conn.execute(activity_q)).scalar_one_or_none()
+            recent = (await conn.execute(_recent_wakes_query(unit, mode))).all()
+        failures, agenda_failures, failed_mark = failure_run(
+            (
+                _wake(r),
+                wake_state(
+                    tracked=bool(r.tracked), recorded_at_ms=_ms(r.recorded_at),
+                    outcome=None if r.outcome is None else str(r.outcome),
+                    outcome_at_ms=None if r.outcome_at_ms is None else int(r.outcome_at_ms),
+                    stale_before_ms=stale_before_ms,
+                    cause=None if r.cause is None else str(r.cause),
+                ),
+            )
+            for r in recent
+        )
         return UnitView(
             unit=unit, pending=tuple(pending),
             last_activity_ms=None if activity is None else _ms(activity),
             last_wake=last, mark=mark, last_session=last_session, carry=carry,
+            failures=failures, agenda_failures=agenda_failures, failed_mark=failed_mark,
         )
 
     async def record_outcome(
@@ -345,12 +384,17 @@ class SqlStimulusStore:
         o = COGNITION_WAKE_OUTCOME
         async with self._engine.begin() as conn:
             await _lock_unit(conn, outcome.unit)
+            wake_unit = (await conn.execute(
+                sa.select(COGNITION_WAKE.c.unit).where(COGNITION_WAKE.c.id == outcome.wake_id),
+            )).scalar_one_or_none()
+            _check_outcome_wake(outcome, wake_unit)
             existing = (await conn.execute(
                 sa.select(o.c.outcome).where(o.c.wake_id == outcome.wake_id),
             )).first()
             if existing is not None:
                 return RecordedOutcome(outcome=str(existing.outcome), written=False)
             value, detail, rows = outcome.outcome, outcome.detail, list(carries)
+            cause = outcome.cause
             if value == "closed":
                 this = COGNITION_WAKE.alias("this")
                 later = (await conn.execute(
@@ -366,11 +410,11 @@ class SqlStimulusStore:
                     ).where(COGNITION_WAKE.c.id > outcome.wake_id),
                 )).scalar_one_or_none()
                 if later is not None:
-                    value, rows = "timeout", []
+                    value, rows, cause = "timeout", [], "infra"
                     detail = _superseded(later, detail)
             await conn.execute(sa.insert(o).values(
                 wake_id=outcome.wake_id, unit=outcome.unit, session_id=outcome.session_id,
-                outcome=value, detail=detail, at_ms=outcome.at_ms,
+                outcome=value, detail=detail, at_ms=outcome.at_ms, cause=cause,
                 recorded_at=_at(recorded_at_ms),
             ))
             if rows:
@@ -420,6 +464,7 @@ class SqlStimulusStore:
     async def record_wake(
         self, *, wake: NewWake, recorded_at_ms: int, guard: WakeGuard | None = None,
     ) -> int | None:
+        check_wake_guard(wake, guard)
         stmt = sa.insert(COGNITION_WAKE).values(
             unit=wake.unit, mode=wake.mode, reason=wake.reason,
             from_stimulus_id=wake.from_stimulus_id,
@@ -462,11 +507,34 @@ def _check_outcome(outcome: NewWakeOutcome, carries: Sequence[NewCarry]) -> None
     implementations (`nora.testing.stimuli` calls this too)."""
     if outcome.outcome not in WAKE_OUTCOMES:
         raise ValueError(f"unknown wake outcome {outcome.outcome!r}")
+    if outcome.cause not in FAILURE_CAUSES:
+        raise ValueError(f"unknown failure cause {outcome.cause!r}")
     if carries and outcome.outcome != "closed":
         raise ValueError("carry rows are written only with a `closed` outcome")
     for carry in carries:
         if carry.unit != outcome.unit:
             raise ValueError(f"carry for unit {carry.unit!r} on a wake of {outcome.unit!r}")
+
+
+def _check_outcome_wake(outcome: NewWakeOutcome, wake_unit: str | None) -> None:
+    """An outcome names a wake that exists and is THIS unit's, in both
+    implementations (`nora.testing.stimuli` calls this too): an outcome keyed
+    by a wake nobody wrote, or by another unit's, would be a row no reader
+    ever finds and a `closed` that advances nothing (#627 review, minor 2)."""
+    if wake_unit is None:
+        raise ValueError(f"no cognition wake {outcome.wake_id} to record an outcome for")
+    if wake_unit != outcome.unit:
+        raise ValueError(
+            f"wake {outcome.wake_id} belongs to unit {wake_unit!r}, not {outcome.unit!r}",
+        )
+
+
+def check_wake_guard(wake: NewWake, guard: WakeGuard | None) -> None:
+    """A TRACKED wake is written under a guard, in both implementations
+    (`nora.testing.stimuli` calls this too): an unguarded tracked write is the
+    write-skew the per-unit lock exists to prevent (#627 review, minor 3)."""
+    if wake.tracked and guard is None:
+        raise ValueError("a tracked wake must be recorded under a WakeGuard")
 
 
 def _superseded(later_wake_id: int, detail: str) -> str:

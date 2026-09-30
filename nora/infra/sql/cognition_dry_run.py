@@ -17,6 +17,7 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.domain.cognition_pace import PaceRow, PendingSelfWake, fold_self_wakes
+from nora.domain.cognition_remind import MirrorRow, PendingMirroredRemind, fold_pending_reminds
 from nora.domain.ports import (
     NewCognitionPace,
     NewCognitionRemindMirror,
@@ -221,6 +222,33 @@ class SqlCognitionDryRunStore:
         )
         async with self._engine.connect() as conn:
             return int((await conn.execute(stmt)).scalar_one())
+
+    async def pending_mirrored_reminds(
+        self, *, unit: str, now_ms: int,
+    ) -> Sequence[PendingMirroredRemind]:
+        t = COGNITION_REMIND_MIRROR
+        due = sa.select(t.c.reminder_ref).where(
+            t.c.unit == unit, t.c.outcome == "recorded",
+            t.c.verb.in_(("remind", "remind_move")), t.c.at_ms >= now_ms,
+            t.c.reminder_ref.isnot(None),
+        )
+        stmt = sa.select(
+            t.c.reminder_ref, t.c.verb, t.c.outcome, t.c.platform, t.c.conversation_id,
+            t.c.subject_rows, t.c.at_ms, t.c.session_id,
+        ).where(
+            t.c.unit == unit, t.c.outcome == "recorded", t.c.reminder_ref.in_(due),
+        ).order_by(t.c.id)
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+        return fold_pending_reminds([
+            MirrorRow(
+                reminder_ref=r.reminder_ref, verb=r.verb, outcome=r.outcome,
+                platform=r.platform, conversation_id=r.conversation_id,
+                subject_rows=tuple(_rows(r.subject_rows)), at_ms=r.at_ms,
+                session_id=r.session_id,
+            )
+            for r in rows
+        ], now_ms=now_ms)
 
     async def aclose(self) -> None:
         await self._engine.dispose()

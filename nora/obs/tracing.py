@@ -282,6 +282,23 @@ def annotate(**attributes: object) -> None:
         log.debug("span annotation not recorded", exc_info=True)
 
 
+def current_span_ids() -> tuple[str, str]:
+    """The CURRENT span's `(trace_id, span_id)` as 32 and 16 hex characters,
+    or `("", "")` when there is no recording span. Never raises.
+
+    For an audit row that links to its trace as a debug view (the
+    `computer_events` table, design/sandbox-runtime §12): the row is the
+    record, so an absent trace is an empty link, never a guessed one."""
+    try:
+        context = trace.get_current_span().get_span_context()
+        if not context.is_valid:
+            return "", ""
+        return format(context.trace_id, "032x"), format(context.span_id, "016x")
+    except Exception:  # a broken tracer must not break a turn
+        log.debug("span ids not read", exc_info=True)
+        return "", ""
+
+
 def current_trace_id() -> str | None:
     """The CURRENT span's trace id as 32 hex characters, or `None` when there
     is no recording span (tracing off, or called outside one). Never raises.

@@ -220,6 +220,89 @@ cases:
     metadata: {tools: [generate_image]}
     snapshot: *room_a
 
+  # --- Nora's computer (design/sandbox-runtime §4, DEC-243) -------------------------
+  # The four computer tools against their nearest siblings: `calculate` for
+  # maths, `web_fetch` for reading a page, `generate_image` for a picture.
+  #
+  # ON ARM ONLY for the computer-POSITIVE cases (`route_computer_*`). The
+  # tools are withheld from every surface unless `[computer] enabled`
+  # (`ToolRegistry._withheld`), and the subject is composed from the
+  # deployment's config, so with the computer off these cases FAIL by
+  # construction: they measure nothing about routing there. No case key
+  # marks an arm (CASE_KEYS has none, and `parked` means "never run"), so run
+  # them with `--case` on a subject whose config has the computer on. The
+  # three negatives (`route_*_not_the_computer`) are valid on BOTH arms:
+  # off, `computer_run` cannot execute, so they pass trivially; on, they are
+  # the measurement that a trivial job does not get a computer.
+  #
+  # No case for `computer_edit`: a correct turn on "fix the typo in the script
+  # you wrote" depends on a file existing in the room's workspace, and an
+  # anchor carries no workspace state (the VM is not part of the clone). A
+  # read of a missing file is still the right call (an honest nothing_found,
+  # like the other tools here), but an edit is usually preceded by that read
+  # and then stops, so an edit case would grade
+  # the missing state, not the routing.
+  #
+  # `route_computer_read_named_file` is UNANCHORED on purpose, so it ERRORs
+  # visibly rather than being deleted: nothing in a turn says the file exists
+  # until S2b-2's <computer> block renders the workspace, and an anchor cannot
+  # carry that state. It is owed work, not a parking reason (P-B was
+  # rejected, design/evaluation/11). It gains its anchor with S2b-2.
+  # A trend's slope on eight numbers is a few `calculate` expressions, a
+  # correct route; the first version of this case expected the computer for it
+  # and measured the expectation (0/5, every draw used calculate). A p-value
+  # is past what `calculate` can do, so this one needs code.
+  - name: route_computer_run_regression_stats
+    entry: tag
+    expect: reply
+    mention: true
+    input: >-
+      幫我做個linear regression，要R-squared同p-value：
+      月份1到8嘅用電量係 312, 298, 335, 351, 340, 372, 389, 401
+    metadata: {tools: [computer_run], not_tools: [calculate]}
+    snapshot: *room_a
+
+  - name: route_computer_run_parse_csv
+    entry: tag
+    expect: reply
+    mention: true
+    input: >-
+      write a small script that reads this CSV and tells me which city has the
+      highest average: city,temp\nHK,31\nTaipei,29\nHK,30\nTokyo,27\nTaipei,33
+    metadata: {tools: [computer_run], not_tools: [calculate]}
+    snapshot: *room_a
+
+  - name: route_computer_read_named_file
+    entry: tag
+    expect: reply
+    mention: true
+    input: 你部電腦入面個notes.md寫咗啲咩？讀俾我聽
+    metadata: {tools: [computer_read], not_tools: [note_read, web_fetch]}
+
+  - name: route_calculate_not_the_computer
+    entry: tag
+    expect: reply
+    mention: true
+    input: 1260蚊，三個人夾，再加一成服務費，每人幾多？
+    metadata: {tools: [calculate], not_tools: [computer_run]}
+    snapshot: *room_a
+
+  - name: route_web_fetch_not_the_computer
+    entry: tag
+    expect: reply
+    mention: true
+    input: 睇下呢頁講咩，簡單講俾我知 https://en.wikipedia.org/wiki/Victoria_Harbour
+    metadata: {tools: [web_fetch], not_tools: [computer_run]}
+    snapshot: *room_a
+
+  - name: route_generate_image_not_the_computer
+    entry: tag
+    expect: reply
+    mention: true
+    input: 畫張維港夜景俾我，要有煙花
+    metadata: {tools: [generate_image], not_tools: [computer_run]}
+    snapshot: *room_a
+
   # --- the room tools (design/self-awareness/07) ----------------------------------
   # A same-domain pair (ADR 0015 §1), and each has a neighbour it could steal
   # from: `room_list` from `group_members` (who is HERE vs which rooms exist),

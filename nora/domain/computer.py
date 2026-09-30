@@ -85,7 +85,31 @@ class BytesResult:
 
 @dataclass(frozen=True)
 class OpResult:
+    """`sha256` is what the file holds after the write; `previous_sha256`
+    what it held just before (None: there was no regular file there). The
+    pair is the audit's before and after (design/sandbox-runtime §12)."""
+
     status: SandboxStatus
     size: int | None = None
     sha256: str | None = None
     reason: str | None = None
+    previous_sha256: str | None = None
+
+
+@dataclass(frozen=True)
+class ComputerToolSettings:
+    """The computer tools' bounds, as a DOMAIN value: `nora.agent` may not
+    import `nora.config`, so the composition root converts `[computer]` into
+    this once (the `ReminderCaps` shape).
+
+    `limits` is the reserved per-command resource slot as `(name, value)`
+    pairs, only the ones the operator set; empty (the shipped default) means
+    nothing is sent. computerd ignores it today (operator 2026-09-30: the
+    computer is semi-trusted).
+    """
+
+    run_timeout_seconds: int = 120
+    max_run_timeout_seconds: int = 900
+    max_output_chars: int = 8000
+    max_read_chars: int = 20000
+    limits: tuple[tuple[str, int], ...] = ()

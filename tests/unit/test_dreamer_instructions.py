@@ -440,6 +440,10 @@ NATIVELY_AUTHORED = {
     # merge half (removed 2026-09-08) was keyed in code and never asked the
     # model this question.
     "note-merge",
+    # The Cognition session's instruction (design/cognition-loop/30-cognition.md,
+    # DEC-244). Written for it from 30 §1-§3; there was no prior prompt, and it
+    # lists no tool and no limit.
+    "cognition",
 }
 
 # `standing-debrief` is the odd one in that set and it is worth saying why

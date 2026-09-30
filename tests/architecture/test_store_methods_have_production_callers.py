@@ -189,17 +189,6 @@ class _Pin(NamedTuple):
 # the artifact that gets re-derived from scratch by the next session that
 # notices one of them.
 _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
-    ("cognition_dry_run.py", "pending_self_wakes"): _Pin(
-        "deferred_consumer",
-        "The unit's LIVE pending self-wakes (per wake_ref, the newest transition "
-        "decides: not fired, not cancelled, not superseded). The session runner "
-        "takes it as its `pending_self_wakes` seam (`nora.app.cognition_session."
-        "CognitionSessionRunner`), a constructor argument the composition root "
-        "fills with THIS method when it wires the session hook; wiring is a "
-        "separate PR from step 3a-ii (DEC-242, open choice a), so until then no "
-        "production module names it. The contract suite proves it against both "
-        "implementations.",
-    ),
     ("culture.py", "chain"): _Pin(
         "deferred_consumer",
         "The revision chain, newest first, walked through parent links. The "
@@ -229,6 +218,13 @@ _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
         "(tests/integration/test_rollup_builds.py). Its consumer at runtime is "
         "`rollup_read` (design/cognition-loop/30-cognition.md §2), not built "
         "in step 2a.",
+    ),
+    ("computer_events.py", "orphaned_starts"): _Pin(
+        "read_back_affordance",
+        "The computer audit's crash marker (design/sandbox-runtime §12): "
+        "`started` rows with no `finished` row, a call interrupted by a crash "
+        "or a restart. The operator's query, pinned by the contract suite; no "
+        "daemon consumer is designed (a reaper or an alert is S2b-2's).",
     ),
     ("notes.py", "note_by_id"): _Pin(
         "read_back_affordance",
@@ -300,7 +296,7 @@ _AMBIGUOUS: frozenset[str] = frozenset(
 _STORE_MODULES: frozenset[str] = frozenset(
     {
         "announcements.py", "assess.py", "audit.py", "cognition_dry_run.py",
-        "compute_jobs.py",
+        "compute_jobs.py", "computer_events.py",
         "culture.py", "decision_log.py", "dream_schedule.py",
         "gatherings.py", "geocode_cache.py", "language.py",
         "media_descriptions.py", "media_objects.py", "mobility.py",

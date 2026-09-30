@@ -19,6 +19,16 @@ cascade mark; `unforget` is not that.
 person-scoped Character and Standing — has no table until steps 5, 6 and 8).
 Only `messages` is hidden.
 
+**The cognition tables hold ids, never a canonical name** (#637 second review).
+`cognition_session.situation` is append-only (`APPEND_ONLY`), so `forget`
+cannot redact it after the fact; what it records of a Record row's author is
+the `person_id` (`nora.domain.cognition_ground.Grounding.as_dict`), and a name
+is rendered to the model at read time and never serialized. A cognition table
+therefore needs no cascade step: a forgotten person leaves an id there, which
+resolves to nothing a reader can show. (The model's own prose in a would-write
+or mirror row is derived text, cited by message id, and is a shadow-only
+record no reader renders.)
+
 **Dry run by default, like `nora.app.events_backfill`.** Without `--apply`
 this reads and reports what WOULD be hidden or restored; only `--apply`
 writes, and the hide-then-cascade is one transaction (the module docstring

@@ -39,7 +39,7 @@ import datetime as dt
 import inspect
 import logging
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Collection, Sequence
 from dataclasses import dataclass, replace
 from typing import Any
 
@@ -103,6 +103,7 @@ class WakeEvaluator:
         settle_seconds: float | None = None,
         clock: Callable[[], float] = time.time,
         on_wake: WakeHook | None = None,
+        session_units: Callable[[], Collection[str]] | None = None,
     ) -> None:
         """`settle_seconds` (default: twice `store_timeout_seconds`) is how
         far behind the clock the pending read looks. Ids are assigned at
@@ -161,6 +162,7 @@ class WakeEvaluator:
             (2 * store_timeout_seconds if settle_seconds is None else settle_seconds) * 1000
         )
         self._on_wake = on_wake
+        self._session_units = session_units
         #: Held so a background task is never garbage-collected mid-flight
         #: (the classic "Task was destroyed but it is pending" loss) and so
         #: tests can drain them deterministically instead of sleeping.
@@ -169,6 +171,14 @@ class WakeEvaluator:
         #: a session whose row is not yet written (or whose task is alive
         #: past what the rows can say) still holds its unit.
         self._live: dict[str, asyncio.Task[None]] = {}
+
+    @property
+    def has_wake_hook(self) -> bool:
+        """True when a session hook is wired (`session_mode = "shadow"`). The
+        composition root's boot check reads it: a session mode that asked for
+        sessions and built an evaluator with no hook would record would-wakes
+        forever and run nothing."""
+        return self._on_wake is not None
 
     async def tick(self) -> list[int]:
         """Evaluate every unit; return the ids of the wake rows written."""
@@ -200,7 +210,8 @@ class WakeEvaluator:
             if wake_id is not None:
                 written.append(wake_id)
                 flying.add(view.unit)
-                self._schedule_on_wake(view, wake_id, now_ms)
+                if view.tracked:
+                    self._schedule_on_wake(view, wake_id, now_ms)
         return written
 
     def _schedule_on_wake(self, view: UnitView, wake_id: int, now_ms: int) -> None:
@@ -288,7 +299,9 @@ class WakeEvaluator:
                 )
                 if sid is not None:
                     self._metrics.inc("nora_stimulus_total", kind="time", cue="none")
-            tracked = self._on_wake is not None
+            tracked = self._on_wake is not None and (
+                self._session_units is None or unit in set(self._session_units())
+            )
             view = await asyncio.wait_for(
                 self._store.view(
                     unit=unit, mode=self._mode, now_ms=cutoff_ms, limit=self._limit,
@@ -300,11 +313,48 @@ class WakeEvaluator:
                 timeout=self._timeout,
             )
             live = unit in self._live and not self._live[unit].done()
-            return replace(view, tracked=tracked, live=live)
+            return await self._strike_failed(replace(view, tracked=tracked, live=live), now_ms)
         except Exception:
             log.exception("wake evaluator: could not read unit %s; skipped this tick", unit)
             self._metrics.inc("nora_errors_total", stage="cognition_wake")
             return None
+
+    async def _strike_failed(self, view: UnitView, now_ms: int) -> UnitView:
+        """At `max_consecutive_failures` AGENDA failures strike what those wakes
+        claimed: every pending stimulus their newest watermark consumes is
+        retracted with reason `failed`, so an agenda that always fails stops, and
+        a stimulus that arrived after the last agenda-failed wake is never struck
+        unseen. INFRASTRUCTURE failures (provider outage, kill, database) back
+        the unit off (`view.failures`) and never strike, however many in a row
+        (DEC-244, #637 second review): a human message is not dropped for an
+        outage."""
+        mark = view.failed_mark
+        if (
+            not view.tracked or mark is None
+            or view.agenda_failures < self._policy.max_consecutive_failures
+        ):
+            return view
+        struck = [s for s in view.pending if mark.consumed(s)]
+        if not struck:
+            return view
+        wrote = 0
+        for stimulus in struck:
+            if await asyncio.wait_for(
+                self._store.retract(
+                    unit=view.unit, stimulus_id=stimulus.id, reason="failed",
+                    recorded_at_ms=now_ms,
+                ),
+                timeout=self._timeout,
+            ):
+                wrote += 1
+        self._metrics.inc("nora_cognition_stimuli_struck_total", float(wrote), reason="failed")
+        log.error(
+            "cognition: unit %s failed %d sessions in a row because of its agenda; struck "
+            "%d stimulus(es) it could not process (reason=failed)",
+            view.unit, view.agenda_failures, wrote,
+        )
+        gone = {s.id for s in struck}
+        return replace(view, pending=tuple(s for s in view.pending if s.id not in gone))
 
     def _publish_age(self, view: UnitView, now_ms: int) -> None:
         """`nora_stimulus_pending_age_seconds{unit}`: the oldest stimulus that
@@ -323,7 +373,7 @@ class WakeEvaluator:
         for s in view.pending:
             items[f"{s.kind}:{s.item}"] = items.get(f"{s.kind}:{s.item}", 0) + 1
             cues.update(s.cues)
-        tracked = self._on_wake is not None
+        tracked = view.tracked
         wake = NewWake(
             unit=view.unit, mode=self._mode, reason=reason,
             from_stimulus_id=mark.through_stimulus_id,
