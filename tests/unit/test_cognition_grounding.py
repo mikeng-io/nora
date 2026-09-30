@@ -869,3 +869,32 @@ async def test_the_grounder_labels_rooms_from_the_policy_and_floors_an_unlabelle
     prompt = _prompt([a, b], g)
     assert "[room «Weekend Plans»]" in prompt and "[room «a room with no name»]" in prompt
     assert "room-a" not in prompt and "room-b" not in prompt
+
+
+async def test_the_windows_are_per_item_so_a_returning_item_does_not_borrow_the_fresh_ones():
+    """Two items of one room (a returning one and a fresh one, each with its own
+    strike) each get their own window: a send of hers that is inside the older
+    item's window and outside the newer one's is shown under the older only."""
+    old, fresh = _stim(1, A, ago=100, mid=101), _stim(2, A, ago=20, mid=102)
+    records = _Records([_hit(101, A), _hit(102, A)], own=[
+        _own(900, A, ago=60, body="between them"), _own(901, A, ago=21, body="just before"),
+    ])
+    sit = build_situation(unit="u", pending=[old, fresh], home_room=HOME, now_ms=NOW,
+                          last_session_ms=None, strikes={1: 1})
+    grounder = _own_grounder(records, own_send_lookback_seconds=120)
+    g = await grounder("u", sit.agenda.items, [old, fresh])
+    assert [i.stimulus_ids for i in sit.agenda.items] == [(1,), (2,)]
+    assert [r.message_id for r in g.own_sends[0]] == [900, 901]      # the older window is wide
+    assert [r.message_id for r in g.own_sends[1]] == [901]           # the fresh one opens later
+
+
+def test_a_send_of_hers_from_another_room_is_never_rendered_under_an_item():
+    """The renderer's own guard, as for a Record row (`test_every_agenda_item_
+    gets_its_own_rooms_messages`): the grounder reads only the item's room, and a
+    Grounding that holds another room's line under an item is still not shown."""
+    s = _stim(1, A, ago=20, mid=101)
+    stray = RecordItem(ref="messages:950", kind="message", message_id=950, room=B,
+                       author="Nora", at_ms=_at(25), text="the other room's line", own=True)
+    g = Grounding(records={s.ref: _rec(s, author="Ada", text="hello")}, own_sends={0: (stray,)})
+    prompt = _prompt([s], g)
+    assert "the other room's line" not in prompt and "Nora (you)" not in prompt

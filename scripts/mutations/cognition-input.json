@@ -21,6 +21,13 @@
     "target": "tests/contract/test_stimulus_store_contract.py -k unclaimed"
   },
   {
+    "name": "Watermark.consumed: a failing wake's strike reaches only what it claimed",
+    "file": "nora/domain/stimuli.py",
+    "old": "            and stimulus.id not in self.unclaimed\n        )",
+    "new": "        )",
+    "target": "tests/unit/test_cognition_input.py -k striking_a_failing_rollup_wake"
+  },
+  {
     "name": "SQL view: what the watermark's wake left unclaimed is read back as pending",
     "file": "nora/infra/sql/stimuli.py",
     "old": "            missing = sorted(({*carry, *mark.unclaimed}) - have)",
@@ -32,13 +39,6 @@
     "file": "nora/infra/sql/stimuli.py",
     "old": "    return {**wake.detail, _UNCLAIMED_KEY: sorted(wake.unclaimed_ids)}",
     "new": "    return dict(wake.detail)",
-    "target": "tests/contract/test_stimulus_store_contract.py -k unclaimed"
-  },
-  {
-    "name": "in-memory view: the unclaimed stimuli are pending, as in SQL",
-    "file": "nora/testing/stimuli.py",
-    "old": "            elif s.id in mark.unclaimed:",
-    "new": "            elif False:",
     "target": "tests/contract/test_stimulus_store_contract.py -k unclaimed"
   },
   {
@@ -156,8 +156,8 @@
   {
     "name": "dry-run store: jsonb columns hold the object, not a string of it",
     "file": "nora/infra/sql/cognition_dry_run.py",
-    "old": "    reads either.\"\"\"\n    return value",
-    "new": "    reads either.\"\"\"\n    return json.dumps(value)  # type: ignore[return-value]",
+    "old": "reads either.\"\"\"\n    return value",
+    "new": "reads either.\"\"\"\n    return json.dumps(value)  # type: ignore[return-value]",
     "target": "tests/contract/test_cognition_dry_run_store_contract.py -k jsonb_objects"
   },
   {

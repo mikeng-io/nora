@@ -145,12 +145,8 @@ class InMemoryStimulusStore:
         }
         have = {s.id for s in pending}
         for s in self.stimuli:
-            if s.unit != unit or s.id in have or not self._live(s.id):
-                continue
-            if s.id in carried:
+            if s.unit == unit and s.id in carried and s.id not in have:
                 pending.append(replace(s, waits=True) if carried[s.id].waits else s)
-            elif s.id in mark.unclaimed:
-                pending.append(s)
         pending.sort(key=lambda x: x.id)
         activity = [
             s.recorded_at_ms for s in self.stimuli

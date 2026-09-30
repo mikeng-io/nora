@@ -12,10 +12,13 @@ What each test would catch if its fix were reverted is named in
 
 from __future__ import annotations
 
+import dataclasses
+
 from nora.domain.cognition_ground import Grounding, RollupLine
 from nora.domain.stimuli import NewStimulus
 from nora.testing.cognition_grounding import StaticGrounder
-from tests.unit.test_cognition_session_lifecycle import T, _rig, ok
+from tests.unit.test_cognition_failure_backoff import _run, _until_calls
+from tests.unit.test_cognition_session_lifecycle import POLICY, ScriptedAgent, T, _rig, ok
 
 HOUR = 3600
 
@@ -146,3 +149,31 @@ async def test_a_closed_wake_records_no_cause_and_a_failed_one_records_its_own()
     closed, failed = (o for _, o in sorted(rig.stimuli.outcomes.items()))
     assert (closed.outcome, closed.cause) == ("closed", "none")     # never `infra`
     assert (failed.outcome, failed.cause) == ("failed", "infra")
+
+
+# ---- D2: what a failing wake struck is what it CLAIMED -----------------------------------
+
+async def test_striking_a_failing_rollup_wake_never_strikes_the_messages_it_left_pending():
+    """A rollup wake that fails its agenda five times strikes the rollup. The
+    unsettled room's message sat INSIDE its id range but was never claimed, so it
+    must not be retracted unseen: the strike reads the failed wake's watermark,
+    unclaimed ids excluded."""
+    from tests.unit.test_cognition_session_lifecycle import agenda_fault
+
+    ref = "deviation|silence|ada|1"
+    quiet = dataclasses.replace(
+        POLICY, quiet_seconds=10**9, max_age_seconds=10**9, batch_max=10**6,
+    )
+    rig = _rig(
+        agent=ScriptedAgent(script=[agenda_fault]), policy=quiet,
+        grounder=StaticGrounder(Grounding(rollups={ref: _readable(ref)})),
+    )
+    message = await rig.say()                       # id 1: the room is live, never settles
+    rolled = await rig.stimuli.append(stimulus=_rollup("u1", ref, T), recorded_at_ms=T)
+    assert rolled is not None and rolled > message
+    await _until_calls(rig, 5)
+    await rig.settle()
+    await _run(rig, ticks=2, chatty=False)          # the tick that reads five agenda failures
+    assert rig.stimuli.retracted == {rolled}        # the rollup it claimed, and nothing else
+    view = await rig.stimuli.view(unit="u1", mode="shadow", now_ms=rig.clock.ms, limit=10)
+    assert [s.id for s in view.pending] == [message]
