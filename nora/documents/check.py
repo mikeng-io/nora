@@ -36,6 +36,7 @@ from __future__ import annotations
 import functools
 import hashlib
 import json
+import math
 import re
 import unicodedata
 from collections.abc import Iterator
@@ -124,7 +125,9 @@ def _to_bytes(raw: bytes | str | dict[str, Any]) -> tuple[bytes | None, Finding 
     """Everything is written to JSON bytes first, a dict included, so one path
     judges all input. A dict skipped the size cap, NaN, duplicate and recursion
     guards of the bytes path, and a dict subclass could lie to `.get` (review,
-    2026-10-01); written out and read back, it is plain JSON."""
+    2026-10-01); written out and read back, it is plain JSON. (An object that lies
+    while it is written is judged on what it wrote: callers store `Checked.canonical`,
+    never the object they passed in.)"""
     if isinstance(raw, bytes):
         return raw, None
     try:
@@ -132,7 +135,7 @@ def _to_bytes(raw: bytes | str | dict[str, Any]) -> tuple[bytes | None, Finding 
         return text.encode("utf-8"), None
     except UnicodeEncodeError:
         return None, Finding("", "encoding", "a string holds an unpaired surrogate")
-    except (TypeError, ValueError, RecursionError) as exc:
+    except Exception as exc:  # noqa: BLE001 - a hostile object can raise anything while being written
         return None, Finding("", "json", f"cannot be written as JSON ({type(exc).__name__})")
 
 
@@ -179,7 +182,11 @@ def _shape(document: Any) -> Finding | None:
 
 # C0 controls except tab, newline and carriage return; DEL; lone surrogates (a JSON
 # `\ud800` escape decodes to one, and cannot be written as UTF-8 or stored).
-_BAD_CHAR = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f\x7f\ud800-\udfff]")
+# Also the bidi overrides and isolates (U+202A-202E, U+2066-2069): a title or a code
+# line that displays reversed is a way to show a reader something the text does not say.
+_BAD_CHAR = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f\x7f\ud800-\udfff\u202a-\u202e\u2066-\u2069]")
+# A terminal colour or cursor sequence, which a runbook's pasted output carries.
+_ANSI = re.compile("\x1b\\[[0-9;?]*[ -/]*[@-~]")
 
 
 def _pointer(path: str, key: object) -> str:
@@ -189,23 +196,31 @@ def _pointer(path: str, key: object) -> str:
 def _characters(document: Any) -> Finding | None:
     """No NUL or other control character, and no unpaired surrogate, in any string
     or key. Postgres `text` refuses NUL and `jsonb` refuses \\u0000, and a control
-    character in a document is never something a person meant. Iterative."""
-    stack: list[tuple[Any, str]] = [(document, "")]
+    character in a document is never something a person meant. ESC alone is let
+    through in a Code block's `text` (pasted terminal output); `_strip_ansi` removes
+    the colour sequences and refuses what is left. Iterative."""
+    stack: list[tuple[Any, str, bool]] = [(document, "", False)]
     while stack:
-        value, path = stack.pop()
+        value, path, code_text = stack.pop()
         if isinstance(value, str):
-            match = _BAD_CHAR.search(value)
+            # Only the `text` string itself may carry ESC, never its siblings.
+            match = _BAD_CHAR.search(
+                value.replace("\x1b", "") if code_text and path.endswith("/text") else value
+            )
             if match:
                 bad = match.group()
                 rule = "unpaired_surrogate" if "\ud800" <= bad <= "\udfff" else "control_character"
                 return Finding(path, rule, f"contains U+{ord(bad):04X}, which is not allowed")
         elif isinstance(value, dict):
+            is_code = value.get("type") == "Code"
             for key, item in value.items():
                 if _BAD_CHAR.search(key):
                     return Finding(path, "control_character", "a key contains a control character")
-                stack.append((item, _pointer(path, key)))
+                # `code_text` marks a Code node's props dict, then its `text` inside it.
+                next_flag = (is_code and key == "props") or (code_text and key == "text")
+                stack.append((item, _pointer(path, key), next_flag))
         elif isinstance(value, list):
-            stack.extend((item, _pointer(path, index)) for index, item in enumerate(value))
+            stack.extend((item, _pointer(path, index), False) for index, item in enumerate(value))
     return None
 
 
@@ -233,8 +248,10 @@ def _describe(error: ValidationError) -> str:
         return "missing " + ", ".join(sorted(set(want) - set(got)))
     if rule == "additionalProperties":
         known = set((error.schema or {}).get("properties", {}))
-        extra = sorted(_clip(k) for k in got if k not in known)[:5]
-        return f"unknown {'key' if len(extra) == 1 else 'keys'}: {', '.join(extra)}; remove"
+        unknown = sorted(k for k in got if k not in known)
+        shown = ", ".join(_clip(k) for k in unknown[:5])
+        more = f" (and {len(unknown) - 5} more)" if len(unknown) > 5 else ""
+        return f"unknown {'key' if len(unknown) == 1 else 'keys'}: {shown}{more}; remove"
     if rule == "enum":
         allowed = ", ".join(str(v) for v in want[:25])
         return f"{_clip(repr(got))} is not allowed; use one of: {allowed}"
@@ -343,20 +360,64 @@ def _rule_findings(document: dict[str, Any]) -> list[Finding]:
 
 
 # ------------------------------------------------------------- normalisation
-def _normalise(value: Any) -> Any:
-    """The form that is hashed and stored: NFC on every string and key, an integral
-    float written as an int, `-0.0` as `0`. Without it the same document had several
-    hashes (`2` and `2.0`, an NFD and an NFC title). Bounded recursion: the schema
-    has already fixed the structure's depth."""
-    if isinstance(value, str):
-        return unicodedata.normalize("NFC", value)
-    if isinstance(value, float) and value == int(value) and abs(value) < 2**53:
-        return int(value)
-    if isinstance(value, dict):
-        return {unicodedata.normalize("NFC", k): _normalise(v) for k, v in value.items()}
-    if isinstance(value, list):
-        return [_normalise(v) for v in value]
-    return value
+def _normalise(document: Any) -> tuple[Any, Finding | None]:
+    """The form that is judged, hashed and stored: NFC on every string and key, an
+    integral float written as an int, `-0.0` as `0`. It runs BEFORE validation: run
+    after, a value that passed could grow past its limit or turn into a statement the
+    Mermaid allowlist refuses (U+0958 x 40 becomes 80 characters, U+212A becomes `K`;
+    review, 2026-10-01). Without it the same document had several hashes too.
+    Iterative, because it runs on structure the schema has not yet bounded."""
+    box: dict[str, Any] = {}
+    stack: list[tuple[Any, Any, Any, str]] = [(document, box, "root", "")]
+    while stack:
+        value, parent, key, path = stack.pop()
+        if isinstance(value, str):
+            parent[key] = unicodedata.normalize("NFC", value)
+        elif (
+            isinstance(value, float)
+            and math.isfinite(value)
+            and value == int(value)
+            and abs(value) < 2**53
+        ):
+            parent[key] = int(value)
+        elif isinstance(value, dict):
+            made: dict[str, Any] = {}
+            parent[key] = made
+            for k, v in value.items():
+                nk = unicodedata.normalize("NFC", k)
+                if nk in made:
+                    return None, Finding(
+                        path,
+                        "duplicate_key",
+                        f"two keys are the same once normalised: {_clip(nk)!r}",
+                    )
+                made[nk] = None
+                stack.append((v, made, nk, _pointer(path, nk)))
+        elif isinstance(value, list):
+            items: list[Any] = [None] * len(value)
+            parent[key] = items
+            stack.extend((v, items, i, _pointer(path, i)) for i, v in enumerate(value))
+        else:
+            parent[key] = value
+    return box["root"], None
+
+
+def _strip_ansi(document: dict[str, Any]) -> Finding | None:
+    """Terminal colour and cursor sequences are removed from a Code block's text;
+    an ESC that is not part of one is refused. Anywhere else ESC was refused already."""
+    for node, where, _ in _walk(document["root"], "/root"):
+        if node.get("type") != "Code":
+            continue
+        props = node.get("props") or {}
+        cleaned = _ANSI.sub("", props["text"])
+        if "\x1b" in cleaned:
+            return Finding(
+                f"{where}/props/text",
+                "control_character",
+                "contains U+001B outside a colour sequence",
+            )
+        props["text"] = cleaned
+    return None
 
 
 # ---------------------------------------------------------------- extraction
@@ -364,7 +425,7 @@ def _normalise(value: Any) -> Any:
 # no start rescans to the end (the first `_LINK` took 9.5 s on twelve nodes of `[`).
 _LINK = re.compile(r"\[([^\[\]]*)\]\([^()]*\)")
 _REFERENCE = re.compile(r"(?m)^[ \t]*\[[^\[\]]*\]:[ \t]*\S+.*$")
-_AUTOLINK = re.compile(r"<[a-zA-Z][a-zA-Z0-9+.-]*:[^>\s]*>|\b(?:https?|ftp)://\S+")
+_AUTOLINK = re.compile(r"<[a-zA-Z][a-zA-Z0-9+.-]*:[^<>\s]*>|\b(?:https?|ftp)://\S+")
 _MARKDOWN_NOISE = re.compile(r"(?m)^[ \t]*(?:[#>]+|[-*+]|\d+\.)[ \t]+|[*_`~|]+")
 _DIAGRAM_STYLE = re.compile(r"(?m)^[ \t]*(?:style|classDef|linkStyle|class)\b.*$")
 _DIAGRAM_HEAD = re.compile(
@@ -472,13 +533,18 @@ def check_document(raw: bytes | str | dict[str, Any]) -> Checked:
         problem = _shape(document) or _characters(document)
         if problem:
             return _refused(problem)
+        document, problem = _normalise(document)
+        if problem:
+            return _refused(problem)
         findings = _schema_findings(document)
         if findings:
             return Checked(status="refused", findings=tuple(findings))
         findings = _rule_findings(document)
         if findings:
             return Checked(status="refused", findings=tuple(findings[:MAX_FINDINGS]))
-        document = _normalise(document)
+        problem = _strip_ansi(document)
+        if problem:
+            return _refused(problem)
         text = _text(document)
         if text is None:
             limit = f"more than {MAX_TEXT_CHARS} characters of text"

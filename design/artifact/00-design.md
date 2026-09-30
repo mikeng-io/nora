@@ -791,3 +791,21 @@ except through `check_document`. The node cap cannot be stated in JSON Schema an
 **One test attempt that proved nothing, recorded.** A mutation of the "error is never `ok`" rule did
 not apply (`ruff format` had rewrapped the line), so its green run was not evidence; it was redone
 against the real source and then turned a named test red.
+
+### Second pass on the checker (same day): a regression the fix introduced
+
+Re-run against the fixes, every earlier finding held, and the reviewer found that **the fix itself
+had introduced a wrong `ok`** plus one pattern still slow.
+
+| # | Finding | Fix | Proven by |
+|---|---|---|---|
+| 10 | **Normalisation ran after validation.** A Badge of U+0958 x 40 passed, and its stored NFC form was 80 characters; a Mermaid source with U+212A and U+037E passed, and NFC made it `clicK B "…"` and `;`. The checker's own canonical output then failed its own schema and the portal's. | Normalise **first** (iteratively, because the structure is not yet bounded), then judge the normalised form. Two keys equal after NFC are refused instead of one silently replacing the other. | the stored form is re-checked and passes with the same hash; the two inputs are refused. |
+| 11 | **`_AUTOLINK` was still quadratic** (`<a:` repeated: 15.8x for a 4x input). | A class that excludes `<`. | a doubling test over 16 adversarial units and both extraction functions; it fails on the previous version at exactly `<a:`. |
+| 12 | A dict whose `items()` raises was `error`, not a refusal. | Any failure while writing the input as JSON is a `json` refusal. | test. |
+| 13 | **Bidi overrides (U+202A-202E, U+2066-2069)** passed: a title can display reversed. | Refused in every string and key. Zero-width characters, NEL, U+2028 and private-use stay legal (harmless here). | test. |
+| 14 | **ESC in a Code block was refused**, though a runbook pastes terminal output. | Colour and cursor sequences are stripped from a Code block's `text` only; any other ESC, and ESC anywhere else, is still refused. | test. |
+| 15 | The isolation contract named 20 of 22 packages (`nora.persons_file`, `nora.dreamer` missing). | Added, and a test builds the list from `ls nora` so a new package fails it. | the test failed first, naming both. |
+| 16 | The unknown-keys message did not say how many. | "(and 9995 more)". | test. |
+
+Not changed: a dict subclass that lies in `items()` is judged on what it wrote, so callers store
+`Checked.canonical`, never the object they passed in (documented on `_to_bytes`).

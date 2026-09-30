@@ -548,3 +548,141 @@ def test_a_wheel_ships_the_files_the_checker_reads() -> None:
     # Every data file beside check.py, relative to the nora package, is matched.
     for name in ("document.schema.json", "catalog-prompt.md", "corpus.json"):
         assert any(fnmatch.fnmatch(f"documents/{name}", g) for g in globs), name
+
+
+# ============================================ second review of PR 648 (2026-10-01)
+def test_what_is_stored_is_what_was_judged_so_normalising_cannot_break_a_limit() -> None:
+    # NFC ran AFTER validation, so a value that passed could grow past its limit
+    # (U+0958 is one character that NFC writes as two) or become a forbidden
+    # statement (U+212A is `K`, U+037E is `;`), and the checker's own canonical
+    # output then failed its own schema.
+    grows = check_document(_page({"type": "Badge", "props": {"text": "क़" * 40}}))
+    assert grows.status == "refused"
+    assert any(f.rule == "maxLength" for f in grows.findings)
+    source = 'flowchart LR\n  A-->B;clicK B "https://evil.example/x"'
+    assert check_document(
+        _page({"type": "Mermaid", "props": {"source": source, "caption": "c"}})
+    ).status == ("refused")
+    ok = check_document(_page({"type": "Badge", "props": {"text": "Café"}}))
+    assert ok.ok
+    again = check_document(ok.canonical)
+    assert again.ok and again.sha256 == ok.sha256  # the stored form passes its own check
+
+
+def test_two_keys_that_are_one_key_once_normalised_are_refused() -> None:
+    doc = '{"version":1,"root":{"type":"Page","props":{"title":"T","é":1,"é":2},"children":[]}}'
+    result = check_document(doc)
+    assert result.status == "refused"
+    assert "duplicate_key" in _rules(result)
+
+
+def test_a_number_python_reads_as_infinity_is_refused_by_the_schema() -> None:
+    text = (
+        '{"version":1,"root":{"type":"Page","props":{"title":"T"},"children":['
+        '{"type":"Chart","props":{"kind":"bar","caption":"c","data":'
+        '[{"label":"a","value":1e400},{"label":"b","value":2}]}}]}}'
+    )
+    result = check_document(text)
+    assert result.status == "refused"
+    assert "maximum" in _rules(result)
+
+
+def test_a_dict_that_raises_while_being_written_is_refused_not_an_error() -> None:
+    class Angry(dict[str, Any]):
+        def items(self) -> Any:
+            raise RuntimeError("no")
+
+    result = check_document({"version": 1, "root": Angry(type="Page", props={}, children=[])})
+    assert result.status == "refused"
+    assert _rules(result) == {"json"}
+
+
+def test_bidi_overrides_are_refused_and_zero_width_characters_are_not() -> None:
+    assert _rules(check_document(_page(title="invoice‮txt.exe"))) == {"control_character"}
+    assert _rules(check_document(_page({"type": "Code", "props": {"text": "a⁦b"}}))) == {
+        "control_character"
+    }
+    assert check_document(_page(title="zero​width")).ok
+
+
+def test_terminal_colour_codes_in_a_code_block_are_stripped_and_anywhere_else_refused() -> None:
+    pasted = "\x1b[32mOK\x1b[0m  2 passed\n\x1b[1;31mFAILED\x1b[0m"
+    result = check_document(_page({"type": "Code", "props": {"language": "text", "text": pasted}}))
+    assert result.ok, result.summary()
+    assert "\x1b" not in result.canonical
+    assert "OK 2 passed" in result.text
+    bare = check_document(_page({"type": "Code", "props": {"text": "a\x1bb"}}))
+    assert _rules(bare) == {"control_character"}
+    elsewhere = check_document(_page({"type": "Markdown", "props": {"text": "\x1b[31mred"}}))
+    assert _rules(elsewhere) == {"control_character"}
+    sibling = check_document(_page({"type": "Code", "props": {"language": "\x1b[0m", "text": "x"}}))
+    assert _rules(sibling) == {"control_character"}
+
+
+def test_the_number_of_unknown_keys_is_said() -> None:
+    doc = _page({"type": "Section", "props": {f"k{i}": 1 for i in range(10_000)}})
+    message = check_document(doc).findings[0].message
+    assert "and 9995 more" in message
+    assert len(message) < 200
+
+
+def _seconds(function: Any, text: str) -> float:
+    best = float("inf")
+    for _ in range(3):
+        started = time.perf_counter()
+        function(text)
+        best = min(best, time.perf_counter() - started)
+    return best
+
+
+@pytest.mark.parametrize(
+    "unit",
+    [
+        "<a:",
+        "[",
+        "](",
+        "<",
+        "http://",
+        "\n[",
+        "]:",
+        "- ",
+        "1. ",
+        "*",
+        "\n#",
+        "\nstyle x\n",
+        " ",
+        "(",
+        "[[](",
+        "\nclass ",
+    ],
+)
+def test_no_extraction_pattern_is_slower_than_linear(unit: str) -> None:
+    # A doubling test: a pattern that rescans from every start costs about 16x when
+    # the input grows 4x. The first `_LINK` and then `_AUTOLINK` both did.
+    from nora.documents.check import _diagram, _markdown
+
+    for function in (_markdown, _diagram):
+        small = _seconds(function, unit * (4000 // len(unit)))
+        large = _seconds(function, unit * (16000 // len(unit)))
+        assert large < max(small * 9, 0.05), (function.__name__, unit, small, large)
+
+
+def test_the_isolation_contract_names_every_package_beside_documents() -> None:
+    import tomllib
+
+    root = Path(checker.__file__).parents[2]
+    pyproject = tomllib.loads((root / "pyproject.toml").read_text())
+    contract = next(
+        c
+        for c in pyproject["tool"]["importlinter"]["contracts"]
+        if c["name"] == "the document checker imports nothing of ours"
+    )
+    forbidden = {m.removeprefix("nora.") for m in contract["forbidden_modules"]}
+    names = {
+        p.stem
+        for p in (root / "nora").iterdir()
+        if not p.name.startswith(("_", "."))
+        and (p.is_dir() or p.suffix == ".py")
+        and p.name not in {"documents", "py.typed", "version.json"}
+    }
+    assert names <= forbidden, sorted(names - forbidden)

@@ -279,8 +279,9 @@ type = "forbidden"
 source_modules = ["nora.documents"]
 forbidden_modules = [
     "nora.agent", "nora.analytics", "nora.app", "nora.compute", "nora.config",
-    "nora.doctrine", "nora.domain", "nora.engagement", "nora.infra", "nora.ingest",
-    "nora.instructions", "nora.language", "nora.obs", "nora.persons", "nora.platform",
+    "nora.doctrine", "nora.domain", "nora.dreamer", "nora.engagement", "nora.infra",
+    "nora.ingest", "nora.instructions", "nora.language", "nora.obs", "nora.persons",
+    "nora.persons_file", "nora.platform",
     "nora.policy", "nora.presence", "nora.skills", "nora.subject", "nora.tag",
     "nora.testing", "nora.web",
 ]
