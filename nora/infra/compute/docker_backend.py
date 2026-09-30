@@ -25,6 +25,7 @@ import logging
 import uuid
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 import aiohttp
 
@@ -45,6 +46,36 @@ log = logging.getLogger("nora.compute")
 # whoever is reading `nora.compute`'s logs.
 LOG_TAIL_LINES = 200
 MAX_ERROR_LOG_CHARS = 2000
+
+# A LITERAL for the same reason `network="nora-compute"` is one: the job
+# container is started by the Docker daemon directly, not through Compose, and
+# `docker-compose.yml`'s `container_name: compute-egress` is the side that
+# adapts. `tests/infra/compute/test_docker_backend.py` pins it.
+EGRESS_PROXY_URL = "http://compute-egress:3128"
+
+# What `compute-egress` lets a job reach: (scheme, host, port, path prefix).
+# `deploy/compute-egress/squid.conf` encodes exactly this set, and
+# `tests/infra/compute/test_compute_egress.py` parses that file and compares,
+# so the two cannot drift. `egress_refusal` is how composition checks, at
+# BOOT, that the model and tracing endpoints it hands a job are on this list:
+# otherwise pointing `[llm] base_url` somewhere new would fail every job with a
+# proxy 403 in front of the group instead of in the operator's terminal.
+EGRESS_ALLOWLIST: tuple[tuple[str, str, int, str], ...] = (
+    ("http", "host.docker.internal", 20128, "/v1/"),        # OmniRoute, Smith's model
+    ("http", "host.docker.internal", 4318, "/v1/traces"),   # OTLP collector
+    ("https", "maps.googleapis.com", 443, ""),              # render_map, geocode
+)
+
+
+def egress_refusal(url: str) -> str | None:
+    """None when a job may reach `url` through `compute-egress`, else why not."""
+    parts = urlsplit(url)
+    port = parts.port or {"http": 80, "https": 443}.get(parts.scheme, 0)
+    for scheme, host, allowed_port, prefix in EGRESS_ALLOWLIST:
+        if (parts.scheme, parts.hostname, port) == (scheme, host, allowed_port) \
+                and parts.path.startswith(prefix):
+            return None
+    return f"{url} is not on the compute-egress allowlist ({EGRESS_ALLOWLIST})"
 
 
 def _unexpected(exc: BaseException) -> str:
@@ -297,21 +328,17 @@ class LocalDockerBackend:
         own `name: nora-compute` on that network (Compose would otherwise
         prefix it with the project name and this call would raise `NotFound`).
         The compose file is the side that adapts; this string is the fixed
-        point, and `tests/infra/compute/test_docker_backend.py` pins it."""
+        point, and `tests/infra/compute/test_docker_backend.py` pins it. The
+        network is internal: `_egress_env` is the job's only way out."""
         return self._docker.containers.run(
             self._sandbox_image,
             detach=True,
             network="nora-compute",
-            # Launched ad-hoc via docker.from_env(), never through Compose --
-            # so it does NOT inherit the `extra_hosts: ["host.docker.internal:
-            # host-gateway"]` docker-compose.yml gives Nora's own container.
-            # Without this, `SMITH_MODEL_BASE_URL`/the OTLP endpoint (both
-            # `http://host.docker.internal:...`) fail to resolve at all --
-            # confirmed live: the first real job crashed with
-            # openai.APIConnectionError before producing any output. Same
-            # target Compose's own entry names, added explicitly here since
-            # this container was never subject to Compose's own config.
-            extra_hosts={"host.docker.internal": "host-gateway"},
+            # No `extra_hosts`: `nora-compute` is internal with the bridge's
+            # IPv4 inhibited (docker-compose.yml), so a job has no route to the
+            # host at all. `host.docker.internal` in `SMITH_MODEL_BASE_URL` and
+            # the OTLP endpoint is resolved by the PROXY, not here -- an
+            # HTTP proxy is handed the whole URL and does its own lookup.
             volumes={str(host_workspace): {"bind": "/workspace", "mode": "rw"}},
             environment={
                 "DROP_JOB_TOKEN": token,
@@ -323,6 +350,7 @@ class LocalDockerBackend:
                 "SMITH_MODEL_NAME": self._model_name,
                 "GOOGLE_MAPS_API_KEY": self._google_maps_api_key,
                 "SMITH_OTLP_ENABLED": "1" if self._tracing_enabled else "0",
+                **self._egress_env(),
                 "SMITH_OTLP_ENDPOINT": self._tracing_endpoint,
                 "SMITH_OTLP_HEADERS": self._tracing_headers,
             },
@@ -330,6 +358,18 @@ class LocalDockerBackend:
             nano_cpus=self._nano_cpus,
             name=job_id,
         )
+
+    def _egress_env(self) -> dict[str, str]:
+        """The job's one way out: every HTTP(S) client in Smith's image
+        (openai/httpx, requests, the OTLP exporter) honours these variables,
+        and `compute-egress` allows only OmniRoute, the OTLP collector and
+        Google Maps (deploy/compute-egress/squid.conf). `drop` is reached
+        directly on `nora-compute`, so its host is in `NO_PROXY`. Both
+        spellings, because clients disagree about which one they read."""
+        drop_host = urlsplit(self._drop_internal_url).hostname or "drop"
+        env = {"HTTP_PROXY": EGRESS_PROXY_URL, "HTTPS_PROXY": EGRESS_PROXY_URL,
+               "NO_PROXY": drop_host}
+        return {**env, **{key.lower(): value for key, value in env.items()}}
 
     def _kill_and_remove(self, job_id: str) -> str:
         """A killed-or-finished container is always removed -- a timed-out

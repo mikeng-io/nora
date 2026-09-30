@@ -1055,6 +1055,19 @@ startup message names exactly what is missing. They are checked there because
 each one, unset, would otherwise fail every job silently at run time, in front
 of the group.
 
+**A job fails reaching something new** (a pip install, a new API, a
+`ProxyError` / `403 Forbidden` in the job's log tail) is the egress allowlist
+working. `nora-compute` is internal and a job's only way out is
+`compute-egress`, which allows OmniRoute, the OTLP collector and
+`maps.googleapis.com` and nothing else (`deploy/compute-egress/squid.conf`
+says why). Read what it refused with:
+
+```bash
+docker exec compute-egress tail -20 /var/log/squid/access.log   # TCP_DENIED rows
+```
+
+Adding a destination is a decision: name the Smith skill that needs it.
+
 ## 9. "Where does everything live?" (read this first, months later)
 
 One tree. If it is not under `~/workspace/nora/`, Nora does not own it.
