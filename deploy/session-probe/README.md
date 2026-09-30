@@ -25,7 +25,14 @@ It never logs in to anything. A dead session in Chrome needs a human in VNC.
    `disconnected` (one run is only recorded: a bridge that just restarted is
    briefly disconnected); `bridge_disconnected_runs` in `carry` counts the
    streak and resets on any run that is connected, unreachable or not
-   authenticated.
+   authenticated, and after the probe's own restart (the fresh boot is
+   disconnected for a moment too). **Known trade-off:** the bridge stays
+   `authenticated` while it merely cannot reach Instagram, so a network outage
+   that spans two runs 10 minutes apart, with Chrome's cookie differing from
+   the bridge's (the normal state after any re-login in Chrome), makes the
+   probe replace the bridge's jar with Chrome's. Both are the same account and
+   the old jar is kept as `cookies.json.bak-*`; the worst case is Chrome's
+   cookie already being revoked, which ends as an alert.
 3. At most once an hour per network (with jitter), runs the read-only
    `opencli <twitter|linkedin> whoami`. HTTP 429 is recorded as ERROR, not
    «logged out». The time of the last check is carried in the state file, so

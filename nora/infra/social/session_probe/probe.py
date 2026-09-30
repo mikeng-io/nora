@@ -388,6 +388,10 @@ class Probe:
                 if sync_result != "ok":
                     actions.append(ErrorAction(f"sync_{sync_result}"))
         record["sync"] = sync_result
+        if sync_result == "ok":
+            # The probe just restarted the bridge: it is disconnected again for
+            # a moment, and that is the debounce's whole reason. Count afresh.
+            carry["bridge_disconnected_runs"] = 0
 
         v = verdict(actions)
         record["decisions"] = [_describe(a) for a in actions]

@@ -612,15 +612,42 @@ def test_disconnected_syncs_are_capped_and_the_first_run_does_not_reset_the_coun
     world.health = DISCONNECTED
     p, _ = make(world, bridge_dir, tmp_path)
     recs = []
-    for i in range(6):
+    for i in range(10):
         world.now = NOW + timedelta(minutes=10 * i)
         # the sync leaves the (fake) bridge holding Chrome's cookie: keep the
         # cookies different so only the cap can stop it
         (bridge_dir / "cookies.json").write_text(json.dumps({"sessionid": BRIDGE_SID}))
         recs.append(p.run_once()[1])
     assert world.restarts() == 3
-    assert [r["carry"]["attempts"] for r in recs] == [0, 1, 2, 3, 3, 3]
+    assert [r["carry"]["attempts"] for r in recs] == [0, 1, 1, 2, 2, 3, 3, 3, 3, 3]
     assert any(m.reason == "sync_capped" for m in world.sent)
+
+
+def test_the_cap_survives_an_unreachable_run_between_disconnected_runs(world, bridge_dir, tmp_path):
+    p, _ = make(world, bridge_dir, tmp_path)
+    for i in range(14):
+        world.now = NOW + timedelta(minutes=10 * i)
+        if i % 3 == 2:
+            world.health, world.health_rc = "", 1  # unreachable
+        else:
+            world.health, world.health_rc = DISCONNECTED, 0
+        (bridge_dir / "cookies.json").write_text(json.dumps({"sessionid": BRIDGE_SID}))
+        p.run_once()
+    assert world.restarts() == 3
+
+
+def test_the_debounce_restarts_after_the_probe_restarts_the_bridge(world, bridge_dir, tmp_path):
+    world.health = DISCONNECTED
+    p, _ = make(world, bridge_dir, tmp_path)
+    recs = []
+    for i in range(3):
+        world.now = NOW + timedelta(minutes=10 * i)
+        (bridge_dir / "cookies.json").write_text(json.dumps({"sessionid": BRIDGE_SID}))
+        recs.append(p.run_once()[1])
+    assert recs[1]["sync"] == "ok"
+    assert recs[2]["carry"]["bridge_disconnected_runs"] == 1  # not 3: no sync, no alert yet
+    assert recs[2]["sync"] is None
+    assert not any(m.reason == "bridge_disconnected_same_cookie" for m in world.sent)
 
 
 # ---- alert dedup -----------------------------------------------------------
