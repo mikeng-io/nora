@@ -121,6 +121,7 @@ from ..domain.lineage import message as message_lineage
 from ..domain.linkedin_links import is_handle as _is_linkedin_handle
 from ..domain.linkedin_links import parse_link as _parse_linkedin_link
 from ..domain.media import (
+    COMPUTER_MEDIA_SOURCE,
     COVER_ROLE,
     HANDLE_CHARS,
     MEDIA_FETCH_CALLERS,
@@ -128,6 +129,7 @@ from ..domain.media import (
     MediaBlob,
     MediaObject,
     VideoReadingKey,
+    born_in_room,
     label_from_media_type,
     resolve_media_type,
     sniff_media_type,
@@ -13796,7 +13798,8 @@ Args:
 
         Returns `status`: ok, nothing_found, refused, held_for_review or
         unavailable, with a `note` on how to read it.
-        - ok: sent. A link carries `url` and `artifact_id`.
+        - ok: sent. A link carries `url` and `artifact_id`; a kept picture
+          its media `code`.
         - nothing_found: there is no such file.
         - refused: too large, a kind of file that may not leave (a web page,
           an SVG as a link), an artifact_id this room did not make, or nobody
@@ -13977,7 +13980,21 @@ Args:
                         "note": "Nothing was sent: I couldn't store the file. Say so."}
             if to == "keep":
                 recorded = await _export_record(tool, _export_row(blob_key=key))
-                outcome, row = "ok", {**received, "blob_key": key, "recorded": recorded}
+                # A kept IMAGE joins the room's media index, the custody path
+                # `generate_image` uses, so a document in this room can show it
+                # by its code (the document path takes a media code from the
+                # same room, never a URL: ADR 0020). Born in this room: its
+                # provenance names the room, which is what scopes the code.
+                code = (await _kept_image_code(key, media_type, len(data), shown_title, path)
+                        if media_type.startswith("image/") else None)
+                outcome, row = "ok", {**received, "blob_key": key, "recorded": recorded,
+                                      "code": code}
+                if code:
+                    return {"status": "ok", "kept": True, "code": code, "sha256": digest,
+                            "media_type": media_type, "size": len(data),
+                            "note": "Kept privately; nobody was sent anything. Its code "
+                                    "puts this picture in a document in this room. Don't "
+                                    "tell them it was shared."}
                 return {"status": "ok", "kept": True, "sha256": digest,
                         "media_type": media_type, "size": len(data),
                         "note": "Kept privately; nobody was sent anything. Don't tell them "
@@ -14019,6 +14036,41 @@ Args:
         finally:
             await _computer_finish(tool, operation_id, outcome, started=started,
                                    finished=now_fn(), result=row, session_id=session_id)
+
+    async def _kept_image_code(
+        key: str, media_type: str, size: int, title: str, path: str,
+    ) -> str | None:
+        """Index a kept image in the media store, born in this room, and
+        return its media code (`MediaObject.handle`, the `[image a3f2c1]`
+        form); None when there is no store or the save failed (logged and
+        counted: the file is still kept, it just has no code)."""
+        if media_store is None:
+            return None
+        obj = MediaObject(
+            sha256=key, media_type=media_type, size=size, source=COMPUTER_MEDIA_SOURCE,
+            # Seeded like `generate_image`'s: Nora made it, so what it is needs
+            # no vision call. `describe_model` stays empty.
+            description=title, title=title,
+            provenance={"title": title, "path": path, "platform": computer_platform,
+                        "conversation_id": bound_conversation_id, "tag_id": current_tag_id()},
+            created_at_ms=int(now_fn().timestamp() * 1000),
+        )
+        try:
+            await media_store.save(obj=obj)
+            # First source wins: when these bytes were indexed before, the row
+            # is that first source's, and the code is this room's only if
+            # that row was born here. Read back rather than trusting `save`.
+            held = await media_store.get(sha256=key)
+            if held is None or not born_in_room(
+                held, platform=computer_platform, conversation_id=bound_conversation_id,
+            ):
+                return None
+        except Exception:
+            log.exception("computer_export: media_store save failed")
+            metrics.inc("nora_computer_audit_failures_total", tool="computer_export",
+                        stage="media")
+            return None
+        return obj.handle
 
     async def _export_record(tool: str, export: ComputerExport) -> bool:
         """Record one export that reached its destination. A failure is logged

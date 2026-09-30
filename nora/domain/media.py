@@ -56,6 +56,10 @@ import mimetypes
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from nora.domain.ports import MediaObjectStore
 
 # How much of the sha256 rides in the rendered placeholder. Six hex characters
 # is a handle, not an identity: it is what makes `[image a3f2c1]` legible in a
@@ -479,6 +483,34 @@ def ground_media_type(*, declared: str, data: bytes) -> str:
     if not sniffed_top or sniffed_top != top:
         return declared
     return f"{sniffed_top}/{sniffed_subtype}"
+
+
+#: `MediaObject.source` of a picture Nora kept from her computer
+#: (`computer_export(to="keep")`, S3a): made by her, like `generated`, and
+#: born in one room, which its provenance names.
+COMPUTER_MEDIA_SOURCE = "computer"
+
+
+def born_in_room(obj: MediaObject, *, platform: str, conversation_id: str) -> bool:
+    """Whether `obj` was born in this room, by its provenance's `platform` and
+    `conversation_id`. A row that names no room is born in none."""
+    prov = obj.provenance or {}
+    return (prov.get("platform"), prov.get("conversation_id")) == (platform, conversation_id)
+
+
+async def resolve_room_media(
+    store: MediaObjectStore, *, code: str, platform: str, conversation_id: str,
+) -> tuple[MediaObject, ...]:
+    """The media objects whose code is `code` and which were born in this
+    room: one is the answer, none is «no such picture here», more than one is
+    ambiguous (never pick the first). A code from another room resolves to
+    nothing here. MAY raise (the store's contract)."""
+    hex_code = "".join(c for c in code.lower() if c in "0123456789abcdef")
+    if len(hex_code) < HANDLE_CHARS:
+        return ()
+    rows = await store.by_prefix(handle=hex_code)
+    return tuple(o for o in rows
+                 if born_in_room(o, platform=platform, conversation_id=conversation_id))
 
 
 def label_from_media_type(media_type: str) -> str:

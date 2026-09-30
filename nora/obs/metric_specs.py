@@ -207,7 +207,8 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "call's computer session could not be continued or opened; lease: a "
         "lease's started row was not appended; export: a computer_export that "
         "reached its destination could not be recorded in computer_exports, so "
-        "that link cannot be revised). The tool call itself still answered.",
+        "that link cannot be revised; media: a kept image could not be indexed in the "
+        "media store, so it has no code). The tool call itself still answered.",
         ("tool", "stage"),
     ),
     # design/sandbox-runtime §15.2: the session sweeper's expiries, by reason

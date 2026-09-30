@@ -37,7 +37,7 @@ from nora.domain.computer import (
     computer_scope,
 )
 from nora.domain.computer_exports import sniff_export_type
-from nora.domain.media import MediaBlob
+from nora.domain.media import MediaBlob, resolve_room_media
 from nora.domain.models import ConversationTarget, NormalizedMessage
 from nora.obs.metrics import Metrics
 from nora.persons import load_persons
@@ -46,6 +46,7 @@ from nora.testing import (
     FakeBlobStore,
     FakeComputerEventStore,
     FakeComputerExportStore,
+    FakeMediaObjectStore,
     FakeRecordStore,
     FakeRosterSource,
     FakeSandboxRuntime,
@@ -79,6 +80,7 @@ class _World:
         self.ingest = ingest if ingest is not None else FakeArtifactIngest()
         self.blobs = FakeBlobStore()
         self.records = FakeRecordStore()
+        self.media = FakeMediaObjectStore()
         self.metrics = Metrics()
 
     def put(self, conversation_id: str, path: str, data: bytes) -> None:
@@ -102,7 +104,7 @@ def _tools(world: _World, persons, *, conversation_id: str = GROUP, fire_turn: b
         room=room, transit_source=None, blob_store=world.blobs, fire_turn=fire_turn,
         computer=world.runtime, computer_events=world.events, computer_settings=settings,
         computer_exports=world.exports,
-        artifact_ingest=world.ingest if ingest else None,
+        artifact_ingest=world.ingest if ingest else None, media_store=world.media,
     )
     return {s.name: s.call for s in specs
             if s.name in ("computer_export", "computer_import")}
@@ -566,3 +568,50 @@ async def test_import_with_bytes_missing_is_unavailable(persons):
     assert out["status"] == "unavailable"
     assert world.runtime.files_by_scope == {}
     _two_rows(world, "computer_import")
+
+
+# -- a kept image has a code in its room (the document path takes codes) ------
+
+
+async def test_a_kept_image_gets_a_code_that_resolves_only_in_its_room(persons):
+    """FALSIFIER: the code is scoped by the room the image was born in. A
+    document in another room cannot pull this picture by its code."""
+    world = _World()
+    world.put(GROUP, "out/chart.png", CHART)
+    out = await _tools(world, persons)["computer_export"](
+        path="out/chart.png", to="keep", title="Power use")
+    assert out["status"] == "ok" and out["kept"] is True
+    code = out["code"]
+    assert code == hashlib.sha256(CHART).hexdigest()[:6]
+    assert "document" in out["note"]
+    here = await resolve_room_media(world.media, code=code, platform="signal",
+                                    conversation_id=GROUP)
+    there = await resolve_room_media(world.media, code=code, platform="signal",
+                                     conversation_id=OTHER_GROUP)
+    assert [o.sha256 for o in here] == [hashlib.sha256(CHART).hexdigest()]
+    assert (here[0].source, here[0].title) == ("computer", "Power use")
+    assert there == ()
+    _, finished = _two_rows(world, "computer_export")
+    assert finished.result["code"] == code
+
+
+async def test_a_kept_non_image_gets_no_code(persons):
+    world = _World()
+    world.put(GROUP, "data/prices.csv", b"city,price\nHK,10\n")
+    out = await _tools(world, persons)["computer_export"](path="data/prices.csv", to="keep")
+    assert out["status"] == "ok" and "code" not in out
+    assert await world.media.by_prefix(
+        handle=hashlib.sha256(b"city,price\nHK,10\n").hexdigest()[:6]) == ()
+
+
+async def test_an_image_first_indexed_in_another_room_gets_no_code_here(persons):
+    """First source wins in the media index: the same bytes kept in a second
+    room are not that room's to cite, so no code is handed out there."""
+    world = _World()
+    world.put(OTHER_GROUP, "out/chart.png", CHART)
+    world.put(GROUP, "out/chart.png", CHART)
+    first = await _tools(world, persons, conversation_id=OTHER_GROUP)["computer_export"](
+        path="out/chart.png", to="keep")
+    second = await _tools(world, persons)["computer_export"](path="out/chart.png", to="keep")
+    assert "code" in first
+    assert second["status"] == "ok" and "code" not in second
