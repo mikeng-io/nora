@@ -5315,10 +5315,10 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         """Work out a number exactly. Use this for ALL arithmetic, however easy
         it looks: call it whenever a number needs computing.
 
-        Never state a computed number that did not come from a tool. A number
-        another tool already printed, such as a command on your computer, is
-        computed: report it, do not recompute it here. This one checks the
-        arithmetic, not the question: divide by 5 when six people ate and you get an exact answer
+        Never state a computed number that did not come from here, unless
+        another tool already printed it (a command on your computer): report
+        that one as it is, without recomputing it. It checks the arithmetic,
+        not the question: divide by 5 when six people ate and you get an exact answer
         to the wrong sum, so count first.
 
         Returns `status`: ok or refused, with a `note` on how to report it.
