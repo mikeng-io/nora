@@ -1,7 +1,7 @@
 ---
 type: design
 title: "Nora's computer — a coding agent's toolkit, executed in a microVM"
-description: "Early study. Nora stays a trusted container; the computer-use tools run in one persistent Docker Sandboxes (sbx) microVM that serves a small HTTP API (computerd) with Nora as its only client. A host unit owns lifecycle. Smith and the make_artifact tool are retired: artifacts become a runtime skill over the computer tools, published by computer_export(to=link) through the existing ArtifactIngest port to Drop, revised in place from a persistent workspace. Threat model follows content, not users. Includes the live exposure and two sbx spike rounds, all measured 2026-09-30."
+description: "Early study. Nora stays a trusted container; the computer-use tools run in one persistent Docker Sandboxes (sbx) microVM that serves a small HTTP API (computerd) with Nora as its only client. A host unit owns lifecycle. Smith and the make_artifact tool are to be retired (pending open decision 4 for the async path): artifacts become a runtime skill over the computer tools, published by computer_export(to=link) through the existing ArtifactIngest port to Drop, revised in place from a persistent workspace. Threat model follows content, not users. Includes the live exposure and two sbx spike rounds, all measured 2026-09-30."
 tags: [nora, compute, sandbox, sbx, computer-use, smith, drop, rustfs]
 timestamp: '2026-09-30'
 status: draft
@@ -9,7 +9,7 @@ status: draft
 
 # Nora's computer
 
-Status: **early study for computer use; nothing decided.** Operator direction
+Status: **early study for computer use; direction set, open decisions listed at the end.** Operator direction
 (2026-09-30):
 
 - **Nora remains a container** and stays the trusted control plane. She is
@@ -20,7 +20,8 @@ Status: **early study for computer use; nothing decided.** Operator direction
 - **Smith is deprecated, and `make_artifact` becomes a skill** (`document-creation`)
   over the computer tools, with Drop behind `computer_export` (§6).
 - **Target runtime: Docker Sandboxes (sbx)**, behind a `SandboxRuntime` port;
-  spike round 2 passed (§9), and the login is open decision 1.
+  spike round 2 passed every gate it tested, three untested (§9); the login
+  was accepted as a dependency (ADR 0019).
 - **Files: RustFS is reused** through Drop for published artifacts and
   through the `BlobStore` port for private exports. The VM's disk is the
   working disk.
@@ -56,7 +57,7 @@ It keeps these rules:
 It drops these, compared with the first draft: lease fencing, host btrfs
 snapshots, a mandatory worker between Nora and every command, and a home-made
 egress proxy. Tool output enters Nora's context as a tagged block that says
-what it is and where it came from (ADR 0012/0013), the same risk class
+what it is and where it came from (ADR 0012; ADR 0013 `a-block-says-what-it-is-and-its-type-says-it`), the same risk class
 `web_fetch` and `x_read` already carry.
 
 **Why not run Nora herself in the microVM?** A VM around Nora protects norty
@@ -122,10 +123,11 @@ class SandboxRuntime(Protocol):
     async def read(self, scope: Scope, path: str, *, offset: int = 0, limit: int = 2000) -> FileResult: ...
     async def write(self, scope: Scope, path: str, data: bytes) -> OpResult: ...
     async def edit(self, scope: Scope, path: str, old: str, new: str) -> OpResult: ...
-    async def files(self, scope: Scope, pattern: str = "**/*") -> ListResult: ...
+    async def files(self, scope: Scope, pattern: str = "**/*") -> ListResult: ...   # Nora's code only (state, export); no model tool
     async def fetch(self, scope: Scope, path: str, *, max_bytes: int) -> BytesResult: ...  # out of the VM
     async def put(self, scope: Scope, path: str, data: bytes) -> OpResult: ...            # into the VM
-    async def browse(self, scope: Scope, action: BrowserAction) -> BrowserResult: ...
+    # S4: the browser is reached over a CDP proxy through computerd; the
+    # sub-agent's steps travel there, not through a port method per action (§14).
     async def status(self) -> RuntimeStatus: ...
 ```
 
@@ -148,28 +150,48 @@ This is Claude Code's shape, as a **deferred group** loaded through
 `load_tools` when a task needs a computer, so her other ~80 tools do not pay
 the routing cost.
 
+**Decided 2026-09-30 (operator), after checking Pi, Hermes Agent and Prime
+Agent:** four shell and file tools, Pi's core set. All bash, no language
+restriction: a language restriction is not a capability restriction, and the
+VM is the boundary.
+
 | tool | does |
 |---|---|
-| `computer_run(command, timeout?)` | bash in the room's workspace: python/uv, node, git, ffmpeg, curl. One tool, not one per language |
-| `computer_read(path, offset?, limit?)` | text as a tagged, bounded block; images and PDFs go through her existing vision path |
-| `computer_write(path, content)` / `computer_edit(path, old, new)` | create or patch files; edit makes multi-step work cheap |
-| `computer_browse(action, …)` | `goto` / `snapshot` (accessibility tree) / `click` / `type` / `screenshot`, the Playwright-MCP shape, tree first |
-| `computer_import(ref)` | chat attachment, media ref or blob key → `inbox/` |
-| `computer_export(path, to, title?, artifact_id?)` | `to="link"` → Drop (new link, or the same link revised); `to="chat"` → sent as an attachment to the room; `to="keep"` → private blob + manifest (§6, §7) |
+| `computer_run(command, timeout?)` | bash in the room's workspace: python/uv, node, git, ffmpeg, curl. Listing and search (`ls`, `find`, `rg`) go here too |
+| `computer_read(path, offset?, limit?)` | text as a tagged, bounded block; instead of `cat` for a file you will act on. Later: images to her vision path |
+| `computer_write(path, content)` | a whole file, byte for byte, with no shell quoting; instead of a heredoc or `echo` |
+| `computer_edit(path, old, new)` | one exact replacement, refused when `old` is missing or ambiguous; instead of `sed` |
+| `computer_browse(objective, session?)` | S4: one call delegates a whole browser task to a sub-agent (§14) |
+| `computer_import(ref)` | S3: chat attachment, media ref or blob key → `inbox/` |
+| `computer_export(path, to, title?, artifact_id?)` | S3: `to="link"` → Drop (new link, or the same link revised); `to="chat"` → sent as an attachment to the room; `to="keep"` → private blob + manifest (§6, §7) |
 
-**No `computer_files`** (operator, 2026-09-30): listing and search go
-through `computer_run` (`ls`, `find`, `rg`), so S2b ships four file and shell
-tools, Pi's core set: run, read, write, edit.
+Why the file tools are separate from `computer_run` (bearing from the three
+agents, not copied): writing through bash means escaping (quotes, `$`,
+backticks, a stray `EOF`), and editing through bash means `sed`, which
+"succeeds" when it matches nothing. Pi's author gives the other reason:
+models are trained on read, write and edit tools with these schemas. Prime
+Agent's single persistent-kernel tool was rejected for Nora: a kernel that
+outlives turns is hidden state, which §15 exists to make visible.
 
-`make_artifact` is **no longer a tool**. It becomes the `document-creation` runtime
+The **`computer-use` runtime skill** carries the judgement across these
+tools (the write, run, read-the-error, edit loop; `projects/<slug>/` with a
+lockfile; tmux for long jobs; when not to use the computer at all). Its
+must-have rules also live in the tool descriptions and doctrine, because an
+optional skill gets skipped (image-generation: 3 of 6 live turns). It lands
+after the tools, written against the failures real tasks show (ADR 0016).
+**Per-command limits** are a reserved config slot, deliberately not applied:
+the operator judged the environment semi-trusted, and the audit log (§12) is
+the required control.
+
+`make_artifact` is **to stop being a tool** (S3; the async path pending open decision 4). It becomes the `document-creation` runtime
 skill (§6).
 
 - **Stay as they are:** `web_fetch`, `calculate`, `generate_image` and
   `media_*`. They are cheaper, and none of them needs a computer.
 - **`computer_browse`** is for pages that are JavaScript-heavy, interactive
   or behind a login.
-- **Measurement:** seven tools is a real routing cost (ADR 0015), so the
-  `tool_selection` measurement runs before and after they are added.
+- **Measurement:** every tool is a routing cost (ADR 0015), so the
+  `tool_selection` measurement runs before and after each group lands.
 
 ## 5. The VM image
 
@@ -213,7 +235,7 @@ over the computer tools, so it becomes the `document-creation` runtime skill (AD
 - write the source compactly (markdown, data, a small template), not
   hand-written HTML;
 - render with `nora-render`;
-- check the output (`computer_read` / a screenshot);
+- check the output (`computer_read`; a rendered screenshot once S4 lands);
 - `computer_export(path, to="link")`.
 
 Revising an artifact is the same skill with `artifact_id`.
@@ -270,7 +292,7 @@ computer_export(path, to="link", title, artifact_id?)
 - **Drop stays the single writer** of the artifacts bucket in RustFS and of
   the `artifacts` table, and the only public server (`/drop/{slug}` with its
   existing hardening). Nothing else writes RustFS for published artifacts.
-- **Retired:** `POST /api/tokens` (its only caller is
+- **To retire in S3:** `POST /api/tokens` (its only caller is
   `LocalDockerBackend._mint_token`), Drop's membership of `nora-compute`, and
   `url.txt`/`summary.txt`. The sha256 Nora computed is the provenance, so the
   VM's claim about what it built is never trusted.
@@ -389,14 +411,16 @@ week.
 | step | estimate |
 |---|---|
 | token-expiry test + Chromium RSS | 0.5 day |
-| image + `computerd` (run/read/write/edit/files/fetch/put/browse) | 2 days |
+| image + `computerd` (run/read/write/edit/files/fetch/put; browse is S4) | 2 days |
 | lifecycle unit (ensure, idle-stop, recreate, health) | 0.5 day |
 | `SandboxRuntime` port, `ComputerdRuntime`, fake + contract suite | 1 day |
 | tools + manifest table + `tool_selection` before/after | 2 days |
 | `computer_export` (link/chat/keep) on `ArtifactIngest`; `document-creation` skill + doctrine line | 1 day |
 | retire Smith, `make_artifact`, `LocalDockerBackend`, `/api/tokens`, `nora-compute`, `docker.sock`, and the ComputeJob path. The last one reaches further than the tool: `ComputeBackend`, `compute_poller.py`, `compute_jobs` + migrations, `fire.py`'s compute occasions, `agent/relay.py` and `registry.py`, `subject/knowledge.py`, the `nora_compute_jobs_delivered_total` metric, and their tests | 2 days |
 
-This totals about 9 days. The figures are estimates, not measured.
+This totals about 9 days for the core (S2a to S3). It excludes the audit
+trail (§12), sessions (§15) and the browser (S4), which are sized when they
+are built. The figures are estimates, not measured.
 
 ## 11. Inside vs outside
 
@@ -409,14 +433,35 @@ This totals about 9 days. The figures are estimates, not measured.
 | **nora-computer VM** | `computerd`, files under `/workspace/<room>`, processes, toolchains, Chromium + profiles |
 | **never in the VM** | Nora's model key, a Drop credential, any route to Honcho/Postgres/RustFS/Drop, the docker or sbx sockets |
 
-## 12. Audit
+## 12. Audit: a complete trail, Postgres as the record
 
-`computer_events` in Postgres: `ts, room, turn, tool, command or path, status,
-exit_code, duration, bytes, output_key, sha256`. It is written by Nora's
-port, not by `computerd`. sbx's `policy log --json` is pulled in for network
-events, and each Langfuse span carries the event id. Any claim about what ran
-or what was published re-derives from the table plus Drop's `artifacts` row,
-never from the model's account.
+**Operator requirement (2026-09-30): every operation is recorded in the DB,
+with who, when, how and what, as a full trail for auditing.**
+
+- **Audit is not tracing.** Traces (OTel into Langfuse, or Jaeger) can be
+  sampled, dropped by a failing exporter, and purged after days. Audit rows
+  are complete, append-only (a trigger refuses UPDATE and DELETE), kept, and
+  written in the same code path as the operation. Each row carries the OTel
+  `trace_id` and `span_id`, so a row opens its trace. Nothing extra is
+  deployed: tracing is what exists today, and the audit is one table.
+- **`computer_events`, one row per operation:**
+  - **who:** actor (`tag`, `fire`, `cognition`, `dreamer:<adaptor>`,
+    `operator`), requesting person, platform, room, turn;
+  - **when:** started and finished;
+  - **how:** tool, path (`direct`, or `subagent` from S4), trace and span ids;
+  - **what:** the full request (the whole command, the whole edit text); the
+    result (status, exit code, reason, sizes, sha256s); the full output and
+    read content in RustFS through `BlobStore`, referenced by key and sha256,
+    so the row stays small and nothing is dropped; and a write's or edit's
+    file sha256 before and after.
+- **Written by Nora's side,** never by computerd: the VM is the less-trusted
+  party, and its own logs are evidence, not the record.
+- **Coverage by stage.** S2b-1 covers the four tools. S2b-2 adds session
+  transitions, lease acquire, pre-emption and cancel, and lifecycle events
+  (create, recreate, computerd restart, token rotation), plus sbx's
+  `policy log --json` egress records. S3 adds import and export. S4 adds
+  every browser sub-agent step (action, element, URL, screenshot key). An
+  operation with no row is a gap in the trail, and is treated as a defect.
 
 ## 13. Sequence
 
@@ -426,13 +471,152 @@ never from the model's account.
   give Smith its own key. Falsifier: rerun the §0 probe, and every
   non-allowlisted row is refused.
 - **S1:** the token-expiry test and Chromium RSS (the spike's untested rows).
-- **S2:** image + `computerd` + lifecycle unit + port; `computer_run` and the
-  file tools behind `[computer] enabled`.
-- **S3:** `computer_export` on `ArtifactIngest` + the `document-creation` skill;
-  `make_artifact`, Smith, `LocalDockerBackend`, the ComputeJob machinery,
-  `/api/tokens` and `docker.sock` removed. Measure `output_tokens` on the
-  first real artifact turns.
-- **S4:** `computer_browse`, then persistent browser profiles per room.
+- **S2a:** image + `computerd` + lifecycle unit + port, inert (landed, #636).
+- **S2b-1:** the four tools, `[computer]` config, `computer_events` (the
+  audit), the per-command limits slot.
+- **S2b-2:** sessions (§15): the observed-state read, `computer_sessions`, the
+  `<computer>` block, leases, pre-emption and concurrency.
+- **S3:** `computer_export` on `ArtifactIngest` + the `document-creation` skill.
+  Then retire `make_artifact`, Smith, `LocalDockerBackend`, `/api/tokens` and
+  `docker.sock`, and the ComputeJob machinery if open decision 4 says so.
+  Measure `output_tokens` on the first real artifact turns.
+- **S4:** the browser spike (§14), then `computer_browse`, then persistent
+  browser profiles per room.
+
+## 14. Browser: agent-as-tool, not a tool per click
+
+A tool call per click would send Nora's whole prompt through a model round
+trip for every action. Her turn allows 20 model turns and 12,000 output
+tokens, so a 30-action checkout does not fit, and it would be slow and costly
+anyway. The unit is coarser, in two tiers:
+
+1. **A script.** For a flow she can describe, Nora writes a Playwright script
+   and runs it with one `computer_run`: dozens of actions, one call.
+2. **A delegated objective.** `computer_browse(objective, session?)` hands the
+   whole task to a **Strands sub-agent** with its own cheap model, step budget
+   and browser tools (snapshot, act, extract, screenshot). Nora sees one call
+   and gets one typed result back (§15). The sub-agent's loop runs in Nora's
+   process, outside the VM, and drives Chromium inside the VM over CDP
+   through computerd, so no model key enters the VM. It has no memory, no
+   `send_reply` and no Nora tools.
+
+**Decided 2026-09-30 (operator): the sub-agent drives the browser through
+Vercel agent-browser** (Apache-2.0; CDP attach; compact accessibility
+snapshots with `@eN` element refs, so several actions batch into one model
+turn; no model of its own and nothing sent out), with **browser-use** as the
+comparison arm in the spike.
+
+A survey of about 18 options (2026-09-30) excluded:
+
+- **Page content leaves norty:** Jev (TypeSafe's hosted action picker), Nova
+  Act, the OpenAI, Anthropic and Gemini computer-use APIs, Browserbase's
+  hosted MCP.
+- **Licence:** Skyvern (AGPL, and heavy), Notte (SSPL).
+- **Vision-only or TypeScript:** Magnitude.
+- **Maturity:** cua-s1 (research; the 4B needs about 16 GB free, norty has
+  about 10), UI-TARS, LaVague (dormant).
+
+Stagehand (DOM mode, action caching) is the third candidate; its standalone
+Python SDK repo was archived on 2026-09-01. The pattern Jev and cua-s1 share,
+a small specialist model picking each action, is worth keeping as a
+pluggable step-picker behind the sub-agent. It is not adopted now.
+
+**S4 spike.** Every arm uses the same DeepSeek Flash model and the same CDP
+proxy into the VM. Arms: agent-browser plus the Strands sub-agent;
+browser-use with vision off and on; Stagehand if it attaches cleanly. Six
+tasks, each with a deterministic checker, each run at least 5 times:
+
+1. availability on a booking page;
+2. a form with validation errors;
+3. a table behind a login, with the credentials never shown to the model;
+4. prices compared across two sites;
+5. a page carrying a prompt-injection trap;
+6. task 1 or 3 again after the page layout changes.
+
+Measured, fail-closed: success rate, model calls, tokens and cost per task,
+wall time, second-run cost, and zero unexpected egress.
+
+## 15. Sessions: a stateless Nora on a persistent computer
+
+The computer keeps files, running processes and browser tabs between turns.
+Nora's turns keep nothing. So each turn has to be *told* what the computer
+holds. Not remembering is the default, and a turn that is not told acts as if
+nothing is there.
+
+**Why not a Standing-style fold.** A model-written fold over the history is
+how earlier Standing folds dropped open plans (at least 10 of 206 folds,
+`design/standing-compact/40-open-plans.md`), and half-finished work is
+exactly what a session exists to keep. So what is *observed* is kept apart
+from what is *intended*, and neither is rewritten by a model.
+
+1. **Observed state: code, no model, always current.** At render time, read
+   the computer itself through computerd:
+   - files changed recently, with ages;
+   - tmux sessions still running (long jobs use tmux, Pi's pattern, not a
+     process registry of our own);
+   - open browser tabs, from CDP;
+   - the room's last few `computer_events`.
+
+   It is read fresh each turn, so it cannot go stale.
+2. **Intended state: `computer_sessions`, rows written by code from a typed
+   result.**
+   - When a `computer_browse` task (or a long run) ends, the sub-agent returns
+     `status` (done / paused / blocked / failed), `objective`, `progress`,
+     `next_step`, evidence (screenshot keys, file sha256s) and where it
+     stopped (tab URL, tmux name).
+   - Code writes that into a row keyed by room, with provenance (tag id,
+     time). The model fills in one task's result and never folds the history.
+   - The rows live in Nora's Postgres, not the VM, where a hostile page could
+     rewrite them.
+   - A session untouched past its expiry closes. One whose tab or tmux session
+     is gone is marked stale. An abandoned task stops appearing.
+3. **The `<computer>` block**, one renderer (ADR 0012; ADR 0013 `a-block-says-what-it-is…`), with an age on
+   every line:
+   ```text
+   <computer room-workspace>
+   open session  "table for 4 at X, Fri 7pm" · paused 2h ago at payment · next: needs card confirmation
+   running       tmux "scrape-prices" · started 40m ago
+   recent files  projects/trip/prices.csv (12m ago) · report.html (1h ago)
+   </computer>
+   ```
+   Nora resumes by passing the session id to `computer_browse`.
+4. **Concurrency: the live turn first, then the background loop.** Two
+   callers want the computer: the *conscious* path (a tag turn, someone waiting
+   on a reply) and the *subconscious* one (the Cognition and Dreamer passes,
+   which run with nobody waiting). The rules:
+   - **Every call carries its actor** (`tag`, `cognition`, `dreamer:<adaptor>`),
+     both in `computer_events` and on `computer_sessions`, so what ran on whose
+     behalf re-derives from the rows.
+   - **Lock the thing being changed, not the room.** Each session owns its
+     `projects/<slug>/`, its tmux name and its browser context. A lease is
+     per session (a lease id, a TTL and a heartbeat). Reads and observed-state
+     reads take no lock. A free-form `computer_run` with no session takes a
+     short room lease.
+   - **The live turn never queues behind the background.** The subconscious
+     side takes a lease with `try_acquire` and, when busy, defers to its next
+     pass. That is the same rule the heartbeat and compute poller already
+     follow for the conversation slot, so a reminder never waits behind a tag.
+     The conscious side waits briefly. If a background holder is in the way, it
+     signals a cancel: the browser sub-agent checks between steps, and a
+     background run is killed at its next step boundary. It then marks its
+     session `paused` with where it stopped, so the work resumes rather than
+     being lost.
+   - **Parallel where nothing is shared.** Different sessions run at once:
+     separate project directories, and separate CDP browser contexts (their
+     own cookies) in one Chromium. A logged-in browser profile is one shared
+     context, so work on it is serialised per profile. A cap of 2 concurrent
+     runs matches the VM's 2 vCPUs. Background runs are `nice`d below live
+     ones.
+   - **What the subconscious may do is a policy question, not a technical
+     one.** Proposed: the background side may observe, check a running job,
+     and resume a session a live turn started. It may not start new work with
+     side effects on its own initiative until that is measured and decided.
+     This follows DEC-201's refusal of LinkedIn reads in fire and Dreamer
+     turns: an action with an outside effect waits for a live request.
+
+The block renders only in rooms that have used the computer, so every other
+room's prompt is unchanged. How to measure it: a turn that follows an open
+session names it, and does not restart the task from scratch.
 
 ## Open decisions (operator)
 
@@ -441,3 +625,8 @@ never from the model's account.
 3. Which accounts, if any, may stay logged in inside the browser?
 4. Retire the ComputeJob async path with `make_artifact` (proposed, per the
    measured durations), or keep it for a future background task?
+5. Session expiry: how long an untouched `computer_sessions` row stays open
+   (proposed 24 h, and closed at once when its tab or tmux is gone).
+6. What the background loops (Cognition, Dreamer) may do on the computer:
+   proposed observe, check and resume only, with no new side-effecting work
+   of their own until measured (§15.4).
