@@ -224,9 +224,32 @@ model, at step 3 ([70](70-migration.md) §2).
 Per session, in code and never stated in the prompt (a model told of a cap
 declines work, measured on the proactive pass): `AdaptorBudget` holds turns,
 total and output tokens and the timeout, one wall clock over the whole
-session; `DreamGuard` holds the per-tool, memory and pass ledgers; `max_items`
-caps the agenda. A session that runs out closes nothing further; its open
-items return with a strike (§2).
+session. **Those four are the only bounds (DEC-247, operator 2026-10-01): a
+session is bounded by rounds, tokens and time, never per tool**, and each of
+the four is at least 10x the tag turn's (turns 200, total tokens 10,240,000,
+output tokens 120,000, 3600 s, against the tag turn's 20, 1,024,000, 12,000
+and 360 s). There is no per-tool, memory-cluster or pass-wide call ceiling and
+no repeat veto («you already called X»): the session's `DreamGuard` keeps only
+the safety checks (R-7, R-99, the result size cap). The wake's
+`session_timeout_seconds` (3900) stays above the session's clock by the 60 s
+margin the runner checks at start. `max_items` caps the agenda.
+
+**A session that stops at a bound has not finished (DEC-247).** Strands
+RETURNS normally on `limit_turns`, `limit_total_tokens` and
+`limit_output_tokens`, so the runner reads `stop_reason` and treats the three
+as a FAILED session with cause `infra` (DEC-244): outcome `failed`, no item
+closed, no strike, no carry row, its stimuli stay pending, and the failure
+backoff applies (so a runaway agenda is held to the backoff rate, about four
+sessions a day at the 6 h cap, and never drops a person's message).
+`nora_cognition_session_limit_total{limit}` counts them. **What the stopped
+session already wrote stays as recorded**: a dry-run would-write, a mirrored
+remind, a self-wake and its stimulus are rows, not part of the close. The next
+session reads them back as pending, so a re-run does not duplicate them: its
+`wake_at` on the same subject row supersedes the earlier self-wake (one live,
+the old stimulus retracted) and its identical `remind` is refused
+`duplicate_pending`. The per-day self-wake cap counts both creations. Only a
+session that ends on its own (`end_turn`) settles its open items with a strike
+(§2).
 
 ## 6. The Assess adaptor and data quality
 

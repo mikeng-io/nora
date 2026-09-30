@@ -846,7 +846,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # `where_been` and `routine_read`. 4, the same currency as `where_been`:
     # cheap local SELECTs, so the model round trip is the cost, and one
     # question can walk a person's days, then the pair, then a week. A
-    # Cognition session raises it per agenda item (`nora.app.cognition_wiring`).
+    # Cognition session holds no per-tool ceiling at all (DEC-247).
     # `time_shiftable=True` and `cacheable=False` are `where_been`'s, for its
     # reasons: every answer is a window answer, and lineage runs against the
     # room's LIVE roster on every call, so a replayed `ok` could outlive it.
