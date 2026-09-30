@@ -412,13 +412,15 @@ def test_a_key_whose_default_cannot_be_resolved_is_not_silently_passed():
     assert config_default("participation.reasoning_effort") == "none"
 
 
-def test_compute_is_forced_off_in_the_subject():
+
+def test_a_deployment_with_compute_on_yields_a_subject_with_it_off():
     """A host-run subject cannot run Smith's containers, and since #631 a
     deployment with `[compute] enabled` refused to compose at all (the model
     URL the subject hands a job is 127.0.0.1, off the compute-egress
-    allowlist): every corpus ERRORed. Forced off, the subject composes and
-    `make_artifact` answers `unavailable`."""
-    from evals.subject_config import ALLOWED_TO_DIFFER, FORCE_OFF
+    allowlist): every corpus ERRORed. The deployment's `true` must come out of
+    the rebuild as `false`, and the difference must be a declared one."""
+    from evals.subject_config import ALLOWED_TO_DIFFER, adopted
 
-    assert "compute.enabled" in FORCE_OFF
+    deployment = _DEPLOYMENT_FIXTURE + "\n[compute]\nenabled = true\n"
+    assert adopted(deployment)["compute.enabled"] is False
     assert "compute.enabled" in ALLOWED_TO_DIFFER
