@@ -21,6 +21,7 @@ own files sit under paths the site does not claim (`/sw.js`,
 | `/map` | everyone on a live map; a person's detail and route window; `?person=` and `?trail=` in the URL |
 | `/people`, `/people/<id>` | the roster; a person with their last day, plans you share, game profiles, and three pattern tabs: places, a usual week, routes. Your own page adds her memory of you |
 | `/plans`, `/plans/<id>` | plans by week and by month; a plan's venue, who is coming, add to calendar, open in maps, share |
+| `/documents`, `/documents/<id>` | what Nora has written up for the rooms you are in, newest first; one document drawn from its stored spec in the portal theme. Pictures come through `/api/v1/documents/<id>/media/<sha>` (raster only) |
 | `/games`, `/games/<id>`, `/games/<id>/players/<key>` | servers; a server's overview, players, activity, insights and world; a player's character, body, combat and playtime |
 | `/nora`, `/nora/memory`, `/nora/doctrine`, `/nora/abilities` | about her and her status; her memory of you; her doctrine as a reader; her tools and skills |
 | `/login` | Discord sign-in, and the refusal when an account is not on the list |
