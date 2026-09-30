@@ -1,7 +1,7 @@
 ---
 type: design
 title: "Nora's computer — a coding agent's toolkit, executed in a microVM"
-description: "Early study. Nora stays a trusted container; the computer-use tools run in one persistent Docker Sandboxes (sbx) microVM that serves a small HTTP API (computerd) with Nora as its only client. A host unit owns lifecycle. Smith and the make_artifact tool are retired: artifacts become a runtime skill over the computer tools, published by computer_export(to=link) through the existing ArtifactIngest port to Drop, revised in place from a persistent workspace. Threat model follows content, not users. Includes the live exposure and the first sbx spike, both measured 2026-09-30."
+description: "Early study. Nora stays a trusted container; the computer-use tools run in one persistent Docker Sandboxes (sbx) microVM that serves a small HTTP API (computerd) with Nora as its only client. A host unit owns lifecycle. Smith and the make_artifact tool are retired: artifacts become a runtime skill over the computer tools, published by computer_export(to=link) through the existing ArtifactIngest port to Drop, revised in place from a persistent workspace. Threat model follows content, not users. Includes the live exposure and two sbx spike rounds, all measured 2026-09-30."
 tags: [nora, compute, sandbox, sbx, computer-use, smith, drop, rustfs]
 timestamp: '2026-09-30'
 status: draft
@@ -19,8 +19,8 @@ Status: **early study for computer use; nothing decided.** Operator direction
   build and share an artifact), executed somewhere she can afford to lose.
 - **Smith is deprecated, and `make_artifact` becomes a skill** (`document-creation`)
   over the computer tools, with Drop behind `computer_export` (§6).
-- **Target runtime: Docker Sandboxes (sbx)**, behind a `SandboxRuntime` port,
-  pending the spike (§9).
+- **Target runtime: Docker Sandboxes (sbx)**, behind a `SandboxRuntime` port;
+  spike round 2 passed (§9), and the login is open decision 1.
 - **Files: RustFS is reused** through Drop for published artifacts and
   through the `BlobStore` port for private exports. The VM's disk is the
   working disk.
@@ -93,14 +93,22 @@ lifecycle (never on the data path)
   server beats one `sbx exec` per call. Its bearer token is set at `sbx
   create` and held by Nora. A token inside the VM is acceptable, because it
   only authorises calls *into* the VM.
-- **Published port:** `sbx ports --publish <docker-bridge-ip>:P:8080`, so it
-  is reachable from the nora container but not from the LAN or Tailscale. It
+- **Published port:** `sbx ports --publish 172.17.0.1:P:8080` (docker0, the
+  address measured in §9 round 2), so it is reachable from the nora container
+  but not from the LAN or Tailscale. It
   is not bound on `0.0.0.0` (§0 shows what that exposes).
 - **Lifecycle unit** (host systemd, the only thing that runs `sbx`):
   `ensure` (create from image if absent, start if stopped), stop after N idle
   minutes, and recreate on a failed health check or an image upgrade. Nora
   asks it to ensure over a unix socket and never holds the sbx or Docker
   socket.
+- **`computerd` is started by the unit, not the image.** sbx's `shell` agent
+  overrides the image `ENTRYPOINT`, and `sbx exec` **auto-starts** a stopped
+  sandbox. So a start the unit did not make still happens, and the unit
+  (re)starts `computerd` with `sbx exec` whenever it finds the VM running
+  without it.
+- **The health check reads an HTTP body** from `computerd`, never a TCP
+  connect, which succeeds to any address under sbx (§9 round 2).
 
 ## 3. `SandboxRuntime` port
 
@@ -162,8 +170,9 @@ skill (§6).
 
 ## 5. The VM image
 
-It is a Dockerfile, like Smith's today. Whether it must start `FROM
-docker/sandbox-templates:*` is untested (§9).
+It is a Dockerfile, like Smith's today. It does **not** need to start `FROM
+docker/sandbox-templates:*`: Smith's own image booted as a template (§9
+round 2).
 
 - Ubuntu base, Python 3.12 + uv, Node, bash/coreutils/git/curl/jq, sqlite.
 - ffmpeg, imagemagick, pandoc, poppler (PDF to text).
@@ -173,7 +182,8 @@ docker/sandbox-templates:*` is untested (§9).
   mermaid|markdown|map|report IN OUT`, so Nora or a plain script
   can all use them through `computer_run`. `render_map` needs the Google Maps
   key, which enters as an sbx placeholder (§8).
-- `computerd`, started by the image's entrypoint.
+- `computerd`, started by the lifecycle unit through `sbx exec` (§2), since
+  the entrypoint does not run.
 
 ## 6. `make_artifact` ↔ Drop
 
@@ -321,10 +331,10 @@ sudo from this session), running as user `norty`.
 | headless daemon | **works around**: fails on the locked gnome-keyring (`the OS keychain is locked`); starts with `DBUS_SESSION_BUS_ADDRESS` pointed at nothing (file-store fallback). A systemd unit needs that | `daemon-stderr.log` |
 | **Docker account required** | **yes, even locally**: `ls`, `policy ls` and `create` all return `401 … not authenticated to Docker … try: sbx login`; the policy governor fetches from Docker at start | CLI, `daemon.log` |
 | non-interactive control | on paper yes: `create --name`, `exec`, `cp`, `ports --publish`, `stop`, `rm -f`, `ls --json`, `policy log --json`, `secret set-custom`, `login --password-stdin` | `--help` |
-| custom image | yes: `create -t`, `template load`/`save`; built-in defaults are `docker/sandbox-templates:*`, and whether a non-derived image works is untested | `--help`, binary strings |
+| custom image | yes: `create -t`, `template load`/`save`; built-in defaults are `docker/sandbox-templates:*`, and whether a non-derived image works was untested (answered in round 2: it does) | `--help`, binary strings |
 | caps | CPU and memory yes; **no local disk cap found** | `create --help` |
 | persistent volumes | **cloud-only** | `--help` |
-| deny host/LAN, placeholder substitution, stop/start keeps disk, boot time, Chromium RSS, token revoked mid-run | untested (needs a VM) | — |
+| deny host/LAN, placeholder substitution, stop/start keeps disk, boot time, Chromium RSS, token revoked mid-run | untested in round 1 (needs a VM); round 2 measured all but Chromium RSS and the token | — |
 
 ### Round 2, after the operator's Docker login (same day)
 
@@ -338,10 +348,10 @@ leaves norty at `default-deny-all`.
 | create, non-interactive | `sbx create --name spike1 -m 2g --cpus 2 -q shell </dev/null` → rc 0, `running`; runs over plain `ssh` with no TTY | `ls --json` |
 | isolation | the guest runs its own kernel, `7.0.14` (the host runs `7.0.0-31`); Ubuntu 26.04 guest; 20 GB overlay root; 2 vCPU / 1,987 MiB as asked | `uname`, `df`, `free` |
 | exec latency | 0.67 s for a warm `sbx exec` | timed |
-| deny-all, data level | **holds.** Raw TCP `connect()` "succeeds" to every address (the host's LAN IP :22 and :8000, Tailscale :22/:443, the router, 1.1.1.1), but sbx's transparent stack closes it with no data: no SSH banner, and `curl --noproxy` gives `rc=52` (empty reply). Each attempt is logged as denied with `no applicable policies`. **A TCP-connect probe reads as OPEN here and is a false positive**; probe with a banner or an HTTP body | `sbx policy log` |
+| deny-all, data level | **held for every address probed.** Raw TCP `connect()` "succeeds" to every address (the host's LAN IP :22 and :8000, Tailscale :22/:443, the router, 1.1.1.1), but sbx's transparent stack closes it with no data: no SSH banner, and `curl --noproxy` gives `rc=52` (empty reply). Each attempt is logged as denied with `no applicable policies`. **A TCP-connect probe reads as OPEN here and is a false positive**; probe with a banner or an HTTP body | `sbx policy log` |
 | DNS | an outside name does not resolve in the VM; HTTP(S) goes through sbx's proxy (`gateway.docker.internal:3128`), and a non-allowed host gets 403 | `getent`, `curl` |
 | allow rule | `sbx policy allow network httpbin.org:443` → 200 for that host; `example.com` stays 403 | `curl` |
-| placeholder secret | `secret set-custom --sandbox spike1 --host httpbin.org`: a request that carried the placeholder arrived upstream with the **real value** in `Authorization`, and a grep for the real value across the VM's env, `/etc`, `/home`, `/run` and `/tmp` found **0** hits. The env var is set only in sandboxes created after the secret; an existing one needs the printed placeholder | httpbin `/headers` echo |
+| placeholder secret | `secret set-custom --sandbox spike1 --host httpbin.org`: a request that carried the placeholder arrived upstream with the **real value** in `Authorization`, and a grep for the real value across the VM's env, `/etc`, `/home`, `/run` and `/tmp` found **0** hits (process memory and `/proc` not searched). The env var is set only in sandboxes created after the secret; an existing one needs the printed placeholder | httpbin `/headers` echo |
 | file copy | `sbx cp` in and out, sha256 identical on both sides | `sha256sum` |
 | persistence | a file written, `sbx stop` (0.6 s), then `sbx exec` **auto-starts** the sandbox (2.0 s) and the file is intact | timed |
 | published port | `sbx ports --publish 172.17.0.1:18099:8080` → 200 from the host, from a container, and **from the `nora` container itself**; not reachable on the host's LAN IP | `curl`, urllib |
@@ -351,10 +361,11 @@ leaves norty at `default-deny-all`.
 
 **What round 2 changes in this study:**
 
-- §2's topology is confirmed end to end: Nora's container reaches `computerd`
-  on a port published to the Docker bridge IP.
-- §8 is real: deny-all, per-host allow, and host-side placeholder secrets all
-  work as described.
+- §2's path is confirmed for a published port: Nora's container reached a
+  stub HTTP server in the VM on the Docker bridge IP. A real `computerd` with
+  its bearer token is not yet built.
+- §8 behaved as described for what was probed: deny-all, per-host allow, and
+  host-side placeholder secrets.
 - §5 needs one change: the image's `ENTRYPOINT` does not run, so the
   lifecycle unit starts `computerd` with `sbx exec` after `create` and after
   every auto-start (or a kit is written).
@@ -370,7 +381,7 @@ egress proxy doing what §8 gets from sbx. The port (§3) and the tools (§4) do
 not change, and only the lifecycle unit does. That costs roughly one more
 week.
 
-## 10. Effort (sbx path; round 2 passed every gate it could test)
+## 10. Effort (sbx path; round 2 passed all gates tested, three untested)
 
 | step | estimate |
 |---|---|
@@ -411,7 +422,7 @@ never from the model's account.
   `maps.googleapis.com`), put auth on Honcho or bind it off `0.0.0.0`, and
   give Smith its own key. Falsifier: rerun the §0 probe, and every
   non-allowlisted row is refused.
-- **S1:** finish the spike.
+- **S1:** the token-expiry test and Chromium RSS (the spike's untested rows).
 - **S2:** image + `computerd` + lifecycle unit + port; `computer_run` and the
   file tools behind `[computer] enabled`.
 - **S3:** `computer_export` on `ArtifactIngest` + the `document-creation` skill;
