@@ -2297,6 +2297,9 @@ class FakeDocumentStore:
             and self._sees(d.summary, person_id, rooms)
         ]
         seen.sort(key=lambda s: (-s.updated_at.timestamp(), str(s.id)))
+        # The same bounds as `SqlDocumentStore.list_visible`.
+        limit = min(max(limit, 0), 1_000)
+        offset = min(max(offset, 0), 2**31 - 1)
         return VisiblePage(items=tuple(seen[offset : offset + limit] if limit > 0 else ()),
                            total=len(seen))
 

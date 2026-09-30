@@ -80,6 +80,13 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("document_id", "revision", name="pk_document_revision"),
         sa.CheckConstraint("revision >= 1", name="ck_document_revision_positive"),
         sa.CheckConstraint("sha256 ~ '^[0-9a-f]{64}$'", name="ck_document_revision_sha256"),
+        sa.CheckConstraint(
+            "array_to_string(media, ',') ~ '^([0-9a-f]{64}(,[0-9a-f]{64})*)?$'",
+            name="ck_document_revision_media",
+        ),
+        sa.CheckConstraint(
+            "octet_length(spec::text) <= 1048576", name="ck_document_revision_spec_size"
+        ),
     )
 
 

@@ -247,3 +247,74 @@ async def test_a_naive_clock_never_leaves_the_store(store):
     got = await store.get(document_id=doc_id)
     for stamp in (got.summary.created_at, got.summary.updated_at):
         assert stamp.tzinfo is not None
+
+
+async def test_a_page_past_the_end_or_out_of_bounds_is_an_empty_page_on_both_stores(store):
+    # A 30-digit `page` reached the SQL store as an OFFSET it could not take and was a
+    # 500, while the fake answered an empty page (review of PR 654). Both now clamp.
+    await _make(store)
+    rooms = frozenset({ROOM})
+    for limit, offset in ((10, 10**30), (10, 2**63), (10**9, 0), (-5, 0), (10, -7)):
+        page = await store.list_visible(person_id="mei", rooms=rooms, limit=limit, offset=offset)
+        assert page.total == 1
+    far = await store.list_visible(person_id="mei", rooms=rooms, limit=10, offset=10**30)
+    assert far.items == ()
+    assert (
+        len((await store.list_visible(person_id="mei", rooms=rooms, limit=10**9, offset=0)).items)
+        == 1
+    )
+    assert (
+        len((await store.list_visible(person_id="mei", rooms=rooms, limit=10, offset=-7)).items)
+        == 1
+    )
+
+
+async def test_the_table_refuses_a_bad_media_element_and_an_oversized_spec(request):
+    """SQL only: the CHECKs are the table's own bound, for a writer that is not the store."""
+    import sqlalchemy as sa
+    from sqlalchemy.exc import IntegrityError
+
+    from nora.infra.sql.schema import DOCUMENT_REVISION, DOCUMENTS
+
+    pg_url = request.getfixturevalue("pg_url")
+    run_migrations(pg_url)
+    engine = create_sql_engine(pg_url)
+    doc_id = uuid4()
+    base = {
+        "document_id": doc_id,
+        "revision": 1,
+        "title": "t",
+        "spec": {"a": 1},
+        "text": "t",
+        "sha256": SHA_A,
+        "media": [SHA_A],
+        "written_by": "tag",
+    }
+    try:
+        async with engine.begin() as conn:
+            await conn.execute(
+                sa.insert(DOCUMENTS).values(
+                    id=doc_id,
+                    platform="signal",
+                    conversation_id="r",
+                    created_by="ken",
+                )
+            )
+            await conn.execute(sa.insert(DOCUMENT_REVISION).values(base))  # the good row passes
+        for constraint, bad in (
+            ("ck_document_revision_media", {"media": ["../../etc"]}),
+            ("ck_document_revision_media", {"media": ["NOT A SHA"]}),
+            ("ck_document_revision_media", {"media": ["abc"]}),
+            ("ck_document_revision_media", {"media": [SHA_A, "x"]}),
+            ("ck_document_revision_spec_size", {"spec": {"blob": "x" * 1_100_000}}),
+            ("ck_document_revision_positive", {"revision": 0}),
+            ("ck_document_revision_sha256", {"sha256": "abc"}),
+        ):
+            # Each row must be refused by ITS OWN constraint, not by some other fault.
+            with pytest.raises(IntegrityError, match=constraint):
+                async with engine.begin() as conn:
+                    await conn.execute(
+                        sa.insert(DOCUMENT_REVISION).values({**base, "revision": 2, **bad})
+                    )
+    finally:
+        await engine.dispose()

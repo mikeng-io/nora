@@ -45,6 +45,7 @@ from nora.domain.ports import MediaObjectStore
 from nora.policy import Policy
 
 _HEX = re.compile(r"^[0-9a-f]{6,64}$")
+_SHA = re.compile(r"^[0-9a-f]{64}$")
 _HANDLES_SHOWN = 5
 
 
@@ -102,12 +103,21 @@ class DocumentService:
         records: _Transcript,
         media: MediaObjectStore,
         media_window: int,
+        room_ids: Callable[[str, str], frozenset[str]],
+        is_person: Callable[[str], bool],
         new_id: Callable[[], UUID] = uuid4,
     ) -> None:
         self._store = store
         self._records = records
         self._media = media
         self._window = media_window
+        # Every id a room answers to (`Conversation.ids`): a room that answers to two ids
+        # is one room, for reading its pictures and for revising its own document.
+        self._room_ids = room_ids
+        # Whether `person_id` is a resolved, known person. `created_by` decides who may
+        # read a document in a room that does not name them, so a raw platform id that
+        # happens to equal a real person id must never reach it (review of PR 654).
+        self._is_person = is_person
         self._new_id = new_id
 
     # ------------------------------------------------------------------ media
@@ -116,24 +126,28 @@ class DocumentService:
         starts with `code`, or `None` when the room could not be read."""
         found: set[str] = set()
         try:
-            rows = await self._records.recent(conversation_id=conversation_id, limit=self._window)
-            for row in rows:
-                if not getattr(row, "media_json", None):
-                    continue
-                try:
-                    blobs = json.loads(row.media_json)
-                except (ValueError, TypeError):
-                    continue
-                for blob in blobs if isinstance(blobs, list) else ():
-                    sha = str(blob.get("sha256", "")) if isinstance(blob, dict) else ""
-                    if sha.startswith(code):
-                        found.add(sha)
+            ids = self._room_ids(platform, conversation_id) | {conversation_id}
+            for cid in sorted(ids):
+                rows = await self._records.recent(conversation_id=cid, limit=self._window)
+                for row in rows:
+                    if not getattr(row, "media_json", None):
+                        continue
+                    try:
+                        blobs = json.loads(row.media_json)
+                    except (ValueError, TypeError):
+                        continue
+                    for blob in blobs if isinstance(blobs, list) else ():
+                        sha = str(blob.get("sha256", "")) if isinstance(blob, dict) else ""
+                        # Only a real content address: a malformed entry is not a picture.
+                        if _SHA.match(sha) and sha.startswith(code):
+                            found.add(sha)
             for obj in await self._media.by_prefix(handle=code, limit=20):
                 born = obj.provenance or {}
                 if (
                     obj.source in ("generated", "inbound", "computer")
                     and born.get("platform") == platform
-                    and born.get("conversation_id") == conversation_id
+                    and born.get("conversation_id") in ids
+                    and _SHA.match(obj.sha256)
                     and obj.sha256.startswith(code)
                 ):
                     found.add(obj.sha256)
@@ -197,7 +211,29 @@ class DocumentService:
         raw: bytes | str | dict[str, Any],
         written_by: str,
         document_id: UUID | None = None,
+        base_revision: int | None = None,
     ) -> PublishResult:
+        if not self._is_person(person_id):
+            return PublishResult(
+                "refused",
+                findings=(
+                    Finding("", "unknown_person", "only a known member can publish a document"),
+                ),
+            )
+        if document_id is not None and base_revision is None:
+            # A revision that does not say which revision it started from would silently
+            # replace newer work (review of PR 654: a stale edit won as revision 3).
+            return PublishResult(
+                "refused",
+                findings=(
+                    Finding(
+                        "",
+                        "base_revision_required",
+                        "say which revision you started from: the `revision` of the document "
+                        "you read",
+                    ),
+                ),
+            )
         checked = check_document(raw)
         if checked.status == "error":
             return PublishResult(
@@ -240,19 +276,25 @@ class DocumentService:
                 )
                 return _ok(made.summary.id, made.summary.revision)
             current = await self._store.get(document_id=document_id)
-            if current is None:
-                return PublishResult(
-                    "refused",
-                    findings=(Finding("", "no_such_document", "no document with that id"),),
-                )
-            if (current.summary.platform, current.summary.conversation_id) != (
-                platform,
-                conversation_id,
+            # A document in another room is answered exactly like one that does not exist:
+            # a model in room B must not learn that an id is a document in room A (the read
+            # API never distinguishes them either).
+            here = self._room_ids(platform, conversation_id) | {conversation_id}
+            if (
+                current is None
+                or current.summary.platform != platform
+                or current.summary.conversation_id not in here
             ):
+                return _no_such_document()
+            if current.summary.revision != base_revision:
                 return PublishResult(
-                    "refused",
-                    findings=(
-                        Finding("", "not_in_this_room", "that document was made in another room"),
+                    "conflict",
+                    document_id=document_id,
+                    revision=current.summary.revision,
+                    note=(
+                        f"This document is at revision {current.summary.revision}, not "
+                        f"{base_revision}. Read it again, apply your change to that, and "
+                        "publish again."
                     ),
                 )
             outcome = await self._store.add_revision(
@@ -271,10 +313,15 @@ class DocumentService:
                 note="Someone revised this document a moment ago. Read it again and publish again.",
             )
         if outcome.status == "not_found" or outcome.document is None:
-            return PublishResult(
-                "refused", findings=(Finding("", "no_such_document", "no document with that id"),)
-            )
+            return _no_such_document()
         return _ok(document_id, outcome.document.summary.revision)
+
+
+def _no_such_document() -> PublishResult:
+    return PublishResult(
+        "refused",
+        findings=(Finding("", "no_such_document", "no document with that id in this room"),),
+    )
 
 
 def _ok(document_id: UUID, revision: int) -> PublishResult:

@@ -23,6 +23,9 @@ from nora.domain.documents import DocumentStore, DocumentSummary, RoomKey
 from nora.persons import Persons
 
 MAX_PAGE_SIZE = 50
+# A page number past this is a mistake or an attack, never a place to be: the SQL store's
+# OFFSET is a 32-bit-safe integer (review of PR 654: a 30-digit `page` was a 500).
+MAX_PAGE = 100_000
 
 
 def _iso(value: datetime) -> str:
@@ -57,7 +60,7 @@ async def build_documents_payload(
     page: int,
     page_size: int,
 ) -> dict[str, object]:
-    page = max(1, page)
+    page = min(max(1, page), MAX_PAGE)
     page_size = min(max(1, page_size), MAX_PAGE_SIZE)
     result = await store.list_visible(
         person_id=person_id,

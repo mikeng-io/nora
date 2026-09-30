@@ -487,8 +487,10 @@ CONSTRAINT ck_computer_sessions_expiry CHECK ((((status = 'open'::text) AND (exp
 CONSTRAINT ck_computer_sessions_status CHECK ((status = ANY (ARRAY['expired'::text, 'open'::text])))
 CONSTRAINT ck_corridor_speed_how CHECK (((hour_of_week >= 0) AND (hour_of_week < 168)))
 CONSTRAINT ck_derived_places_kind CHECK ((kind = ANY (ARRAY['home'::text, 'work'::text, 'unlabeled'::text])))
+CONSTRAINT ck_document_revision_media CHECK ((array_to_string(media, ','::text) ~ '^([0-9a-f]{64}(,[0-9a-f]{64})*)?$'::text)),
 CONSTRAINT ck_document_revision_positive CHECK ((revision >= 1)),
-CONSTRAINT ck_document_revision_sha256 CHECK ((sha256 ~ '^[0-9a-f]{64}$'::text))
+CONSTRAINT ck_document_revision_sha256 CHECK ((sha256 ~ '^[0-9a-f]{64}$'::text)),
+CONSTRAINT ck_document_revision_spec_size CHECK ((octet_length((spec)::text) <= 1048576))
 CONSTRAINT ck_event_revision_confidence_is_a_level CHECK (((confidence IS NULL) OR (confidence = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])))),
 CONSTRAINT ck_event_revision_lineage_shape CHECK ((jsonb_typeof(lineage) = 'object'::text)),
 CONSTRAINT ck_event_revision_reasoning_is_a_mode CHECK (((reasoning IS NULL) OR (reasoning = ANY (ARRAY['told'::text, 'deduced'::text, 'abduced'::text])))),

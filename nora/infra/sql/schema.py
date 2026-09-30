@@ -4498,4 +4498,14 @@ DOCUMENT_REVISION = sa.Table(
     sa.PrimaryKeyConstraint("document_id", "revision", name="pk_document_revision"),
     sa.CheckConstraint("revision >= 1", name="ck_document_revision_positive"),
     sa.CheckConstraint("sha256 ~ '^[0-9a-f]{64}$'", name="ck_document_revision_sha256"),
+    # Every element of `media` is a content address, and a spec is bounded: the checker
+    # caps a document at 256 KiB and the table says so too (review of PR 654: a raw
+    # insert accepted `'../../etc'` and a 5 MB spec).
+    sa.CheckConstraint(
+        "array_to_string(media, ',') ~ '^([0-9a-f]{64}(,[0-9a-f]{64})*)?$'",
+        name="ck_document_revision_media",
+    ),
+    sa.CheckConstraint(
+        "octet_length(spec::text) <= 1048576", name="ck_document_revision_spec_size",
+    ),
 )

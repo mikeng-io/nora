@@ -33,6 +33,8 @@ from nora.domain.documents import (
 from nora.infra.sql.schema import DOCUMENT_REVISION, DOCUMENTS
 
 _D = DOCUMENTS.c
+_MAX_LIMIT = 1_000
+_MAX_OFFSET = 2**31 - 1
 _R = DOCUMENT_REVISION.c
 
 
@@ -195,6 +197,10 @@ class SqlDocumentStore:
         self, *, person_id: str, rooms: frozenset[RoomKey], limit: int, offset: int
     ) -> VisiblePage:
         where = _visible(person_id, rooms)
+        # Bounded here as well as by the caller: an unbounded OFFSET is a DataError, and
+        # the fake answers an empty page, so the two stores must agree at the extremes.
+        limit = min(max(limit, 0), _MAX_LIMIT)
+        offset = min(max(offset, 0), _MAX_OFFSET)
         count = sa.select(sa.func.count()).select_from(DOCUMENTS).where(where)
         page = (
             _current()

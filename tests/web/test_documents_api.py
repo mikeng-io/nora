@@ -148,6 +148,11 @@ async def test_a_listing_pages_and_caps_the_page_size(world_client):
     huge = await (await client.get("/app/v1/documents?personId=ken&pageSize=100000")).json()
     assert huge["pageSize"] == 50
     assert (await client.get("/app/v1/documents?personId=ken&pageSize=x")).status == 400
+    # A 30-digit page is capped, not a 500.
+    far = await client.get(f"/app/v1/documents?personId=ken&page={'9' * 30}")
+    assert far.status == 200
+    body = await far.json()
+    assert body["page"] == 100_000 and body["documents"] == [] and body["total"] == 2
 
 
 async def test_the_list_needs_a_person_this_deployment_knows(world_client):
@@ -188,7 +193,9 @@ async def test_the_detail_refuses_a_bad_id_and_an_unknown_person(world_client):
 
 
 async def test_removing_a_person_from_a_room_revokes_access_on_the_next_read(world_client):
-    # The rooms are read from the policy at the moment of each request, never cached.
+    # The rooms are read from the policy object at the moment of each request, never
+    # cached. The object itself is loaded at startup (policy.toml needs a restart), so in
+    # production a removal takes effect at the next restart: design/artifact §25.
     client, world = world_client
     url = f"/app/v1/documents/{world.ids['a']}?personId=mei"
     assert (await client.get(url)).status == 200

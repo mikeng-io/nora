@@ -262,7 +262,8 @@ S4 needs nothing from the sandbox session; the `path` form of `document_publish`
    `identity.toml`). `nora/web/memory.py` already scopes a read by viewer through
    `workspaces_of_person`; documents need the room-level analogue. Recommend:
    a document is visible to **its requester and to the persons its room names**, computed at
-   read time from current policy (so removing someone revokes access, not a stored snapshot);
+   read time from the loaded policy (so removing someone revokes access once the policy reloads, at the next
+   restart; not a stored snapshot);
    for a `"*"` room, **the requester only** (fail closed, because membership there cannot be
    enumerated). Everyone else gets 404, the same answer the proxy gives for a bad id.
 2. **Spec authority.** json-render's native spec, or a Nora envelope
@@ -859,7 +860,8 @@ six writers and expects exactly one).
 
 **Visibility is in the read.** A person reads what they created plus what was made in a room that names
 them; the rooms come from the current policy at the moment of each request (`rooms_named`), so removing a
-person from a room revokes access on the next read, and a `persons = "*"` room names nobody. A document
+person from a room revokes access when the policy is reloaded (`policy.toml` is read once at startup, so in
+practice at the next restart, not at the next request), and a `persons = "*"` room names nobody. A document
 you may not read is `404`, never `403`, and is indistinguishable from an unknown id. The room's chat id is
 never in the payload, only its platform.
 
@@ -878,10 +880,22 @@ Each Image's code is then **rewritten to the full sha256** and the document is c
 stored is what was judged. The sandbox session's `resolve_room_media` (its #649) covers the index half;
 once #649 lands the service uses it instead of its own loop, so there is one resolver.
 
-**Revisions.** A revision must be made in the room the document was made in (`not_in_this_room`
-otherwise), so a room cannot overwrite another room's document. Anyone in that room may revise; the
+**Revisions.** A revision must be made in the room the document was made in, so a room cannot overwrite
+another room's document; from any other room the answer is `no_such_document`, the same as for an
+id that is no document at all, so an id never confirms that a document exists elsewhere. Anyone in that room may revise; the
 creator stays the creator. The Page title is the document's title (no separate `title` argument, which
 serialises one fact once).
+
+**Review of PR 654 (2026-10-01), what it changed.** Publishing needs a known person (`unknown_person`);
+an edit must name the revision it read (`base_revision_required`) and a stale one is a `conflict` that says
+which revision is current, so an old edit can no longer win as the next revision; every stored media entry
+is a full 64-hex sha256 and a revision is at most 1 MiB of JSON, both enforced by a CHECK in the database as
+well as in the service; the list endpoint clamps `limit` and `offset` (and the page number is capped at
+100,000) so an absurd value answers a page, not a 500. A room is matched by its conversation id alone, not by
+platform, because conversation ids are unique across platforms by the same convention `media_fetch` relies
+on; if that ever stops being true, the room key here must gain the platform. Not covered: `nora person
+forget` does not reach documents, and a message the platform deleted may still be resolvable by `recent`;
+these are issues #655 and #656.
 
 **Not built, on purpose.** The media byte route (W5, with the portal), the tool and its routing eval
 (W4b), search, the `path` form of publishing (it waits on the sandbox session's audited reader). The

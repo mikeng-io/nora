@@ -74,6 +74,12 @@ def _service(
         records=_Transcript(rooms or {}, fail=fail_rows),
         media=FakeMediaObjectStore(objs, fail=fail_media),
         media_window=50,
+        room_ids=lambda platform, cid: (
+            frozenset({"room-1", "room-1-alias"})
+            if cid in {"room-1", "room-1-alias"}
+            else frozenset({cid})
+        ),
+        is_person=lambda person_id: person_id in {"ken", "mei"},
     )
     return svc, store
 
@@ -258,7 +264,7 @@ async def test_what_is_stored_was_judged_and_its_hash_is_of_the_rewritten_form()
 async def test_a_revision_made_in_the_same_room_becomes_the_current_document() -> None:
     svc, store = _service()
     first = await _publish(svc, _doc(title="v1"))
-    second = await _publish(svc, _doc(title="v2"), document_id=first.document_id)
+    second = await _publish(svc, _doc(title="v2"), document_id=first.document_id, base_revision=1)
     assert (
         second.status == "ok" and second.revision == 2 and second.document_id == first.document_id
     )
@@ -270,14 +276,22 @@ async def test_a_revision_made_in_the_same_room_becomes_the_current_document() -
 async def test_a_room_cannot_revise_another_rooms_document() -> None:
     svc, store = _service()
     first = await _publish(svc, _doc(title="mine"), room=ROOM)
-    result = await _publish(svc, _doc(title="taken"), room=OTHER, document_id=first.document_id)
-    assert result.status == "refused" and result.findings[0].rule == "not_in_this_room"
+    result = await _publish(
+        svc, _doc(title="taken"), room=OTHER, document_id=first.document_id, base_revision=1
+    )
+    assert result.status == "refused" and result.findings[0].rule == "no_such_document"
+    # Indistinguishable from an id that is no document at all, so an id never confirms
+    # that a document exists in another room.
+    unknown = await _publish(
+        svc, _doc(title="taken"), room=OTHER, document_id=uuid4(), base_revision=1
+    )
+    assert result.findings == unknown.findings and result.note == unknown.note
     assert (await store.get(document_id=first.document_id)).summary.title == "mine"
 
 
 async def test_revising_an_unknown_document_is_refused() -> None:
     svc, _ = _service()
-    result = await _publish(svc, _doc(), document_id=uuid4())
+    result = await _publish(svc, _doc(), document_id=uuid4(), base_revision=1)
     assert result.status == "refused" and result.findings[0].rule == "no_such_document"
 
 
@@ -294,7 +308,7 @@ async def test_a_revision_that_loses_a_race_is_a_conflict_not_an_overwrite() -> 
 
     svc, store = _service(store=Racing())
     first = await _publish(svc, _doc(title="v1"))
-    result = await _publish(svc, _doc(title="v2"), document_id=first.document_id)
+    result = await _publish(svc, _doc(title="v2"), document_id=first.document_id, base_revision=1)
     assert result.status == "conflict" and "again" in result.note
     assert (await store.get(document_id=first.document_id)).summary.revision == 2
 
@@ -306,7 +320,81 @@ async def test_an_outcome_the_store_reports_as_not_found_is_refused() -> None:
 
     svc, _ = _service(store=Vanishing())
     first = await _publish(svc, _doc())
-    assert (await _publish(svc, _doc(), document_id=first.document_id)).status == "refused"
+    assert (
+        await _publish(svc, _doc(), document_id=first.document_id, base_revision=1)
+    ).status == "refused"
+
+
+async def test_a_revision_must_say_which_revision_it_started_from() -> None:
+    # Without it a stale edit silently replaced newer work: a model's revision of v1
+    # was stored as revision 3 over someone else's revision 2 (review of PR 654).
+    svc, store = _service()
+    first = await _publish(svc, _doc(title="v1"))
+    result = await _publish(svc, _doc(title="v2"), document_id=first.document_id)
+    assert result.status == "refused"
+    assert result.findings[0].rule == "base_revision_required"
+    assert (await store.get(document_id=first.document_id)).summary.revision == 1
+
+
+async def test_an_edit_of_an_old_revision_is_a_conflict_not_an_overwrite() -> None:
+    svc, store = _service()
+    first = await _publish(svc, _doc(title="v1"))
+    await _publish(svc, _doc(title="A's v2"), document_id=first.document_id, base_revision=1)
+    stale = await _publish(
+        svc, _doc(title="B edit of v1"), document_id=first.document_id, base_revision=1
+    )
+    assert stale.status == "conflict"
+    assert "revision 2" in stale.note and stale.revision == 2
+    stored = await store.get(document_id=first.document_id)
+    assert stored.summary.title == "A's v2" and stored.summary.revision == 2
+    # Having read revision 2, the same edit goes through as revision 3.
+    again = await _publish(
+        svc, _doc(title="B edit of v2"), document_id=first.document_id, base_revision=2
+    )
+    assert again.status == "ok" and again.revision == 3
+
+
+async def test_a_room_that_answers_to_two_ids_is_one_room() -> None:
+    # `room-1` and `room-1-alias` are one room (Conversation.ids): a document made under
+    # one is revisable from the other, and a photo sent under the alias resolves.
+    svc, _ = _service(rooms={"room-1-alias": [[PHOTO]]})
+    first = await _publish(svc, _doc(title="v1"), room=ROOM)
+    there = await _publish(
+        svc,
+        _doc(title="v2"),
+        room=("signal", "room-1-alias"),
+        document_id=first.document_id,
+        base_revision=1,
+    )
+    assert there.status == "ok"
+    assert (await _publish(svc, _doc(_image("a3f2c1")), room=ROOM)).status == "ok"
+    # An unrelated room is still not it.
+    assert (
+        await _publish(svc, _doc(), room=OTHER, document_id=first.document_id, base_revision=2)
+    ).status == "refused"
+
+
+async def test_only_a_known_person_can_publish() -> None:
+    svc, store = _service()
+    result = await svc.publish(
+        platform="signal",
+        conversation_id="room-1",
+        person_id="100200300",
+        raw=_doc(),
+        written_by="tag:1",
+    )
+    assert result.status == "refused" and result.findings[0].rule == "unknown_person"
+    page = await store.list_visible(person_id="100200300", rooms=frozenset(), limit=10, offset=0)
+    assert page.total == 0
+
+
+async def test_a_malformed_picture_entry_is_not_a_picture() -> None:
+    # A media_json entry that is not a 64-hex content address never resolves: it used to
+    # be rewritten into the document and then fail the second check as `unavailable`.
+    svc, _ = _service(rooms={"room-1": [["abcdef/../../x"]]})
+    result = await _publish(svc, _doc(_image("abcdef")))
+    assert result.status == "refused"
+    assert [f.rule for f in result.findings] == ["media_unknown"]
 
 
 # ----------------------------------------------------------------- rooms_named

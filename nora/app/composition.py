@@ -1436,6 +1436,8 @@ async def build_dependencies(
     document_service = DocumentService(
         store=documents_store, records=audit, media=media_objects,
         media_window=cfg.store.context_window + LOAD_TRANSCRIPT_MAX,
+        room_ids=_room_ids_of(allowlist),
+        is_person=persons.by_person.__contains__,
     )
     # ONE media join for the whole process (issue #116, operator 2026-09-08),
     # handed to every transcript builder there is: the tag assembler, the fire
@@ -4909,6 +4911,19 @@ def _note_unit_of(policy: Policy) -> Callable[[str, str], str | None]:
         return convo.unit if convo is not None else None
 
     return _resolve
+
+
+def _room_ids_of(policy: Policy) -> Callable[[str, str], frozenset[str]]:
+    """Every id the room `(platform, conversation_id)` answers to (`Conversation.ids`),
+    or just the id itself for a room the policy does not list. A room with an alias is
+    one room to `DocumentService`: for reading its pictures and for revising its own
+    document."""
+
+    def room_ids(platform: str, conversation_id: str) -> frozenset[str]:
+        convo = policy.conversation(platform, conversation_id)
+        return convo.ids if convo is not None else frozenset({conversation_id})
+
+    return room_ids
 
 
 def _voice_room_of(policy: Policy) -> Callable[[str], str | None]:

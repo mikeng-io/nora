@@ -106,8 +106,7 @@ def _needs_a_build(
             return await handler(request)
         except NoRollupBuildError:
             return web.json_response(
-                {"error": "unavailable", "reason": "no Rollup build yet"},
-                status=503,
+                {"error": "unavailable", "reason": "no Rollup build yet"}, status=503,
             )
 
     return wrapped
@@ -205,20 +204,11 @@ def _corridor_payload(corridor: dict[str, Any]) -> dict[str, Any]:
 
 
 def register_web_routes(
-    app: web.Application,
-    *,
-    store: RecordStore,
-    honcho: MemoryStore,
-    reminders: ReminderStore,
-    persons: Persons,
-    ai_peer: str,
-    started_at: float,
+    app: web.Application, *, store: RecordStore, honcho: MemoryStore,
+    reminders: ReminderStore, persons: Persons, ai_peer: str, started_at: float,
     games_client: PulseGamesClient | None,
-    presence: PresenceReader | None,
-    presence_circles: tuple[Circle, ...],
-    skills_dir: Path,
-    events: GatheringService,
-    doctrine_store: DoctrineStore,
+    presence: PresenceReader | None, presence_circles: tuple[Circle, ...],
+    skills_dir: Path, events: GatheringService, doctrine_store: DoctrineStore,
     mobility: SqlMobilityStore | None = None,
     workspaces_of: Callable[[str], tuple[str, ...]] | None = None,
     documents: DocumentStore | None = None,
@@ -244,9 +234,7 @@ def register_web_routes(
     async def status(request: web.Request) -> web.Response:
         a = request.app
         body = await build_status_payload(
-            store=a["web_store"],
-            honcho=a["web_honcho"],
-            reminders=a["web_reminders"],
+            store=a["web_store"], honcho=a["web_honcho"], reminders=a["web_reminders"],
             started_at=a["web_started_at"],
         )
         return web.json_response(body)
@@ -254,9 +242,7 @@ def register_web_routes(
     async def memory(request: web.Request) -> web.Response:
         a = request.app
         body = await build_memory_payload(
-            honcho=a["web_honcho"],
-            persons=a["web_persons"],
-            ai_peer=a["web_ai_peer"],
+            honcho=a["web_honcho"], persons=a["web_persons"], ai_peer=a["web_ai_peer"],
             person_id=request.query.get("personId"),
             workspaces_of=a["web_workspaces_of"],
         )
@@ -277,8 +263,7 @@ def register_web_routes(
     async def person_profile(request: web.Request) -> web.Response:
         a = request.app
         body = await build_person_profile_payload(
-            persons=a["web_persons"],
-            games_client=a["web_games_client"],
+            persons=a["web_persons"], games_client=a["web_games_client"],
             person_id=request.match_info["personId"],
         )
         if body is None:
@@ -313,8 +298,7 @@ def register_web_routes(
         try:
             body = await build_game_server_graph_payload(
                 client=request.app["web_games_client"],
-                server_id=request.match_info["id"],
-                hours=hours,
+                server_id=request.match_info["id"], hours=hours,
             )
         except GamesUnavailableError as exc:
             log.warning("game server graph unavailable: %s", exc)
@@ -324,8 +308,7 @@ def register_web_routes(
     async def games_server_weekly(request: web.Request) -> web.Response:
         try:
             body = await build_game_server_weekly_payload(
-                client=request.app["web_games_client"],
-                server_id=request.match_info["id"],
+                client=request.app["web_games_client"], server_id=request.match_info["id"],
             )
         except GamesUnavailableError as exc:
             log.warning("game server weekly unavailable: %s", exc)
@@ -335,8 +318,7 @@ def register_web_routes(
     async def games_server_world(request: web.Request) -> web.Response:
         try:
             body = await build_game_server_world_payload(
-                client=request.app["web_games_client"],
-                server_id=request.match_info["id"],
+                client=request.app["web_games_client"], server_id=request.match_info["id"],
                 persons=request.app["web_persons"],
             )
         except GamesUnavailableError as exc:
@@ -347,8 +329,7 @@ def register_web_routes(
     async def games_server_progress(request: web.Request) -> web.Response:
         try:
             body = await build_game_server_progress_payload(
-                client=request.app["web_games_client"],
-                server_id=request.match_info["id"],
+                client=request.app["web_games_client"], server_id=request.match_info["id"],
             )
         except GamesUnavailableError as exc:
             log.warning("game server progress unavailable: %s", exc)
@@ -363,8 +344,7 @@ def register_web_routes(
         try:
             body = await build_game_server_save_history_payload(
                 client=request.app["web_games_client"],
-                server_id=request.match_info["id"],
-                hours=hours,
+                server_id=request.match_info["id"], hours=hours,
             )
         except GamesUnavailableError as exc:
             log.warning("game server save-history unavailable: %s", exc)
@@ -379,8 +359,7 @@ def register_web_routes(
         try:
             body = await build_game_server_insights_payload(
                 client=request.app["web_games_client"],
-                server_id=request.match_info["id"],
-                days=days,
+                server_id=request.match_info["id"], days=days,
             )
         except GamesUnavailableError as exc:
             log.warning("game server insights unavailable: %s", exc)
@@ -396,11 +375,8 @@ def register_web_routes(
             return web.json_response({"error": f"invalid {exc}"}, status=400)
         try:
             body = await build_game_server_players_payload(
-                client=request.app["web_games_client"],
-                server_id=request.match_info["id"],
-                page=page,
-                page_size=page_size,
-                online=online,
+                client=request.app["web_games_client"], server_id=request.match_info["id"],
+                page=page, page_size=page_size, online=online,
             )
         except GamesUnavailableError as exc:
             log.warning("game server players unavailable: %s", exc)
@@ -410,10 +386,8 @@ def register_web_routes(
     async def games_server_player(request: web.Request) -> web.Response:
         try:
             body = await build_game_server_player_payload(
-                client=request.app["web_games_client"],
-                server_id=request.match_info["id"],
-                player_key=request.match_info["playerKey"],
-                persons=request.app["web_persons"],
+                client=request.app["web_games_client"], server_id=request.match_info["id"],
+                player_key=request.match_info["playerKey"], persons=request.app["web_persons"],
             )
         except GamesUnavailableError as exc:
             log.warning("game server player unavailable: %s", exc)
@@ -430,12 +404,8 @@ def register_web_routes(
             return web.json_response({"error": f"invalid {exc}"}, status=400)
         try:
             body = await build_game_server_activity_payload(
-                client=request.app["web_games_client"],
-                server_id=request.match_info["id"],
-                page=page,
-                page_size=page_size,
-                since_ms=since_ms,
-                until_ms=until_ms,
+                client=request.app["web_games_client"], server_id=request.match_info["id"],
+                page=page, page_size=page_size, since_ms=since_ms, until_ms=until_ms,
             )
         except GamesUnavailableError as exc:
             log.warning("game server activity unavailable: %s", exc)
@@ -452,13 +422,10 @@ def register_web_routes(
             return web.json_response({"error": f"invalid {exc}"}, status=400)
         try:
             body = await build_game_server_sessions_payload(
-                client=request.app["web_games_client"],
-                server_id=request.match_info["id"],
-                page=page,
-                page_size=page_size,
+                client=request.app["web_games_client"], server_id=request.match_info["id"],
+                page=page, page_size=page_size,
                 player_key=request.query.get("playerKey"),
-                since_ms=since_ms,
-                until_ms=until_ms,
+                since_ms=since_ms, until_ms=until_ms,
             )
         except GamesUnavailableError as exc:
             log.warning("game server sessions unavailable: %s", exc)
@@ -468,16 +435,14 @@ def register_web_routes(
     async def presence_positions(request: web.Request) -> web.Response:
         a = request.app
         body = await build_presence_payload(
-            presence=a["web_presence"],
-            circles=a["web_presence_circles"],
+            presence=a["web_presence"], circles=a["web_presence_circles"],
         )
         return web.json_response(body)
 
     async def presence_places(request: web.Request) -> web.Response:
         a = request.app
         body = await build_presence_places_payload(
-            presence=a["web_presence"],
-            circles=a["web_presence_circles"],
+            presence=a["web_presence"], circles=a["web_presence_circles"],
         )
         return web.json_response(body)
 
@@ -513,9 +478,7 @@ def register_web_routes(
             return web.json_response({"error": "invalid days"}, status=400)
         days = min(days, _MAX_ANALYTICS_DAYS)
         empty: dict[str, object] = {
-            "subjectId": subject_id,
-            "bins": [],
-            "windowDays": days,
+            "subjectId": subject_id, "bins": [], "windowDays": days,
         }
         a = request.app
         mobility = a["web_mobility"]  # local NAME — see presence_analytics_places
@@ -527,8 +490,7 @@ def register_web_routes(
         ):
             return web.json_response(empty)
         bins = await mobility.rhythm_bins(
-            subject_id=subject_id,
-            window_ms=days * _DAY_MS,
+            subject_id=subject_id, window_ms=days * _DAY_MS,
         )
         return web.json_response(
             {
@@ -555,9 +517,7 @@ def register_web_routes(
             return web.json_response({"error": "invalid days"}, status=400)
         days = min(days, _MAX_ANALYTICS_DAYS)
         empty: dict[str, object] = {
-            "subjectId": subject_id,
-            "trips": [],
-            "corridors": [],
+            "subjectId": subject_id, "trips": [], "corridors": [],
         }
         a = request.app
         mobility = a["web_mobility"]  # local NAME — see presence_analytics_places
@@ -569,14 +529,15 @@ def register_web_routes(
         ):
             return web.json_response(empty)
         result = await mobility.trips_with_corridors(
-            subject_id=subject_id,
-            window_ms=days * _DAY_MS,
+            subject_id=subject_id, window_ms=days * _DAY_MS,
         )
         return web.json_response(
             {
                 "subjectId": subject_id,
                 "trips": [_trip_payload(trip) for trip in result["trips"]],
-                "corridors": [_corridor_payload(corridor) for corridor in result["corridors"]],
+                "corridors": [
+                    _corridor_payload(corridor) for corridor in result["corridors"]
+                ],
             }
         )
 
@@ -590,10 +551,8 @@ def register_web_routes(
             return web.json_response({"error": "invalid hours"}, status=400)
         a = request.app
         body = await build_presence_history_payload(
-            presence=a["web_presence"],
-            circles=a["web_presence_circles"],
-            person_id=request.match_info["person_id"],
-            hours=hours,
+            presence=a["web_presence"], circles=a["web_presence_circles"],
+            person_id=request.match_info["person_id"], hours=hours,
         )
         if body is None:
             return web.json_response({"error": "no such circle member"}, status=404)
@@ -624,8 +583,7 @@ def register_web_routes(
                 status=400,
             )
         body = await build_gatherings_payload(
-            events=request.app["web_events"],
-            person_id=person_id,
+            events=request.app["web_events"], person_id=person_id,
         )
         return web.json_response(body)
 
@@ -645,9 +603,7 @@ def register_web_routes(
         except ValueError:
             return web.json_response({"status": "refused", "note": "bad id"}, status=400)
         body = await build_gathering_payload(
-            events=request.app["web_events"],
-            event_id=event_id,
-            person_id=person_id,
+            events=request.app["web_events"], event_id=event_id, person_id=person_id,
         )
         if body is None:
             return web.json_response({"status": "not_found"}, status=404)
@@ -655,8 +611,7 @@ def register_web_routes(
 
     def _documents_unavailable() -> web.Response:
         return web.json_response(
-            {"status": "unavailable", "note": "documents are not available"},
-            status=503,
+            {"status": "unavailable", "note": "documents are not available"}, status=503,
         )
 
     async def documents_list(request: web.Request) -> web.Response:
@@ -669,8 +624,7 @@ def register_web_routes(
         person_id = request.query.get("personId")
         if not person_id or a["web_persons"].by_person.get(person_id) is None:
             return web.json_response(
-                {"status": "refused", "note": "a valid personId is required"},
-                status=400,
+                {"status": "refused", "note": "a valid personId is required"}, status=400,
             )
         try:
             page = _int_query(request, "page", _DEFAULT_PAGE)
@@ -678,12 +632,8 @@ def register_web_routes(
         except _BadQueryError as exc:
             return web.json_response({"error": f"invalid {exc}"}, status=400)
         body = await build_documents_payload(
-            store=a["web_documents"],
-            rooms_of=a["web_rooms_of"],
-            persons=a["web_persons"],
-            person_id=person_id,
-            page=page,
-            page_size=page_size,
+            store=a["web_documents"], rooms_of=a["web_rooms_of"], persons=a["web_persons"],
+            person_id=person_id, page=page, page_size=page_size,
         )
         return web.json_response(body)
 
@@ -694,19 +644,15 @@ def register_web_routes(
         person_id = request.query.get("personId")
         if not person_id or a["web_persons"].by_person.get(person_id) is None:
             return web.json_response(
-                {"status": "refused", "note": "a valid personId is required"},
-                status=400,
+                {"status": "refused", "note": "a valid personId is required"}, status=400,
             )
         try:
             document_id = UUID(request.match_info["id"])
         except ValueError:
             return web.json_response({"status": "refused", "note": "bad id"}, status=400)
         body = await build_document_payload(
-            store=a["web_documents"],
-            rooms_of=a["web_rooms_of"],
-            persons=a["web_persons"],
-            person_id=person_id,
-            document_id=document_id,
+            store=a["web_documents"], rooms_of=a["web_rooms_of"], persons=a["web_persons"],
+            person_id=person_id, document_id=document_id,
         )
         if body is None:
             # Never a distinct "forbidden": an id must not confirm a document exists.
@@ -730,24 +676,20 @@ def register_web_routes(
     app.router.add_get("/app/v1/games/servers/{id}/insights", games_server_insights)
     app.router.add_get("/app/v1/games/servers/{id}/players", games_server_players)
     app.router.add_get(
-        "/app/v1/games/servers/{id}/players/{playerKey}",
-        games_server_player,
+        "/app/v1/games/servers/{id}/players/{playerKey}", games_server_player,
     )
     app.router.add_get("/app/v1/games/servers/{id}/activity", games_server_activity)
     app.router.add_get("/app/v1/games/servers/{id}/sessions", games_server_sessions)
     app.router.add_get("/app/v1/presence", presence_positions)
     app.router.add_get("/app/v1/presence/places", presence_places)
     app.router.add_get(
-        "/app/v1/presence/analytics/places",
-        _needs_a_build(presence_analytics_places),
+        "/app/v1/presence/analytics/places", _needs_a_build(presence_analytics_places),
     )
     app.router.add_get(
-        "/app/v1/presence/analytics/rhythm",
-        _needs_a_build(presence_analytics_rhythm),
+        "/app/v1/presence/analytics/rhythm", _needs_a_build(presence_analytics_rhythm),
     )
     app.router.add_get(
-        "/app/v1/presence/analytics/routes",
-        _needs_a_build(presence_analytics_routes),
+        "/app/v1/presence/analytics/routes", _needs_a_build(presence_analytics_routes),
     )
     app.router.add_get("/app/v1/presence/{person_id}/history", presence_history)
     app.router.add_get("/app/v1/events", events_list)
