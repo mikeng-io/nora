@@ -326,13 +326,43 @@ sudo from this session), running as user `norty`.
 | persistent volumes | **cloud-only** | `--help` |
 | deny host/LAN, placeholder substitution, stop/start keeps disk, boot time, Chromium RSS, token revoked mid-run | untested (needs a VM) | — |
 
-To finish (operator, on norty):
+### Round 2, after the operator's Docker login (same day)
 
-```bash
-sudo apt install docker-sbx
-sudo usermod -aG kvm norty          # then a fresh login session
-echo "$DOCKER_PAT" | sbx login --username <docker-user> --password-stdin
-```
+Each result below was read from a command's output on norty. The spike's
+sandboxes, allow rule, secret and template were removed afterwards, which
+leaves norty at `default-deny-all`.
+
+| gate | result | reading |
+|---|---|---|
+| login | `sbx ls --json` → `{"sandboxes": []}` | CLI |
+| create, non-interactive | `sbx create --name spike1 -m 2g --cpus 2 -q shell </dev/null` → rc 0, `running`; runs over plain `ssh` with no TTY | `ls --json` |
+| isolation | the guest runs its own kernel, `7.0.14` (the host runs `7.0.0-31`); Ubuntu 26.04 guest; 20 GB overlay root; 2 vCPU / 1,987 MiB as asked | `uname`, `df`, `free` |
+| exec latency | 0.67 s for a warm `sbx exec` | timed |
+| deny-all, data level | **holds.** Raw TCP `connect()` "succeeds" to every address (the host's LAN IP :22 and :8000, Tailscale :22/:443, the router, 1.1.1.1), but sbx's transparent stack closes it with no data: no SSH banner, and `curl --noproxy` gives `rc=52` (empty reply). Each attempt is logged as denied with `no applicable policies`. **A TCP-connect probe reads as OPEN here and is a false positive**; probe with a banner or an HTTP body | `sbx policy log` |
+| DNS | an outside name does not resolve in the VM; HTTP(S) goes through sbx's proxy (`gateway.docker.internal:3128`), and a non-allowed host gets 403 | `getent`, `curl` |
+| allow rule | `sbx policy allow network httpbin.org:443` → 200 for that host; `example.com` stays 403 | `curl` |
+| placeholder secret | `secret set-custom --sandbox spike1 --host httpbin.org`: a request that carried the placeholder arrived upstream with the **real value** in `Authorization`, and a grep for the real value across the VM's env, `/etc`, `/home`, `/run` and `/tmp` found **0** hits. The env var is set only in sandboxes created after the secret; an existing one needs the printed placeholder | httpbin `/headers` echo |
+| file copy | `sbx cp` in and out, sha256 identical on both sides | `sha256sum` |
+| persistence | a file written, `sbx stop` (0.6 s), then `sbx exec` **auto-starts** the sandbox (2.0 s) and the file is intact | timed |
+| published port | `sbx ports --publish 172.17.0.1:18099:8080` → 200 from the host, from a container, and **from the `nora` container itself**; not reachable on the host's LAN IP | `curl`, urllib |
+| custom image | `docker save smith:latest` → `sbx template load` → `create -t smith:latest --pull never` → rc 0 in 14 s, Strands importable. **A non-Docker-derived image works.** It ran as root (the image's user), and sbx's `shell` agent **overrides the image's entrypoint**, so `computerd` must be started by an exec (a `nohup … &` via `sbx exec` stayed up and served) or by a kit | `exec` |
+| login lapse | **untested.** `sbx logout`'s help says it stops running local sandboxes; what an *expired* token or a Docker outage does to a running sandbox is unknown | `--help` |
+| Chromium RSS, a disk cap beyond the 20 GB root | untested | — |
+
+**What round 2 changes in this study:**
+
+- §2's topology is confirmed end to end: Nora's container reaches `computerd`
+  on a port published to the Docker bridge IP.
+- §8 is real: deny-all, per-host allow, and host-side placeholder secrets all
+  work as described.
+- §5 needs one change: the image's `ENTRYPOINT` does not run, so the
+  lifecycle unit starts `computerd` with `sbx exec` after `create` and after
+  every auto-start (or a kit is written).
+- **A health check must not treat a TCP connect as proof of anything**, in
+  either direction.
+
+The one open risk is the login: decision 1 below, plus a deliberate
+token-expiry test before anything depends on it.
 
 **Fallback** if the Docker-account dependency is unacceptable: the same
 `computerd` image under Kata, Firecracker, or Docker + gVisor, with a small
@@ -340,11 +370,11 @@ egress proxy doing what §8 gets from sbx. The port (§3) and the tools (§4) do
 not change, and only the lifecycle unit does. That costs roughly one more
 week.
 
-## 10. Effort (sbx path, if the remaining gates pass)
+## 10. Effort (sbx path; round 2 passed every gate it could test)
 
 | step | estimate |
 |---|---|
-| finish spike | 0.5 day |
+| token-expiry test + Chromium RSS | 0.5 day |
 | image + `computerd` (run/read/write/edit/files/fetch/put/browse) | 2 days |
 | lifecycle unit (ensure, idle-stop, recreate, health) | 0.5 day |
 | `SandboxRuntime` port, `ComputerdRuntime`, fake + contract suite | 1 day |
