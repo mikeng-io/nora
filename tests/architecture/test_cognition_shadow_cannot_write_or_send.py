@@ -61,7 +61,7 @@ REMIND_DOMAIN = ROOT / "nora" / "domain" / "cognition_remind.py"
 PACE_AGENT = ROOT / "nora" / "agent" / "cognition_pace.py"
 REMIND_AGENT = ROOT / "nora" / "agent" / "cognition_remind_mirror.py"
 SESSION_RUNNER = ROOT / "nora" / "app" / "cognition_session.py"
-FETCHED = ROOT / "nora" / "app" / "cognition_fetched.py"
+FETCHED = ROOT / "nora" / "agent" / "fetch_watch.py"
 
 #: Modules `nora.infra.sql.*` never appears here on purpose: a dry-run
 #: wrapper takes ALREADY-READ rows (`prior`, `current`, `shown`) as
@@ -97,7 +97,7 @@ _REMIND_AGENT_ALLOWED: frozenset[str] = frozenset({
 _FETCHED_ALLOWED: frozenset[str] = frozenset({"nora.domain.note_body"})
 
 _SESSION_RUNNER_ALLOWED: frozenset[str] = frozenset({
-    "nora.app.cognition_fetched", "nora.agent.cognition_dry_run", "nora.agent.cognition_pace",
+    "nora.agent.cognition_dry_run", "nora.agent.cognition_pace", "nora.agent.fetch_watch",
     "nora.agent.cognition_remind_mirror", "nora.domain.cognition_pace",
     "nora.domain.cognition_ground", "nora.domain.cognition_remind",
     "nora.domain.cognition_render", "nora.domain.cognition_session",

@@ -88,7 +88,7 @@ from nora.agent.cognition_remind_mirror import (
     dry_run_remind_cancel,
     dry_run_remind_move,
 )
-from nora.app.cognition_fetched import Fetched, watch_reads
+from nora.agent.fetch_watch import Fetched, watch_reads
 from nora.domain.cognition_ground import Grounding, RecordItem
 from nora.domain.cognition_pace import (
     DEFAULT_MAX_SELF_WAKES_PER_DAY,

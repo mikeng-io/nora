@@ -204,7 +204,7 @@
  },
  {
   "name": "m4: a fetched result of any status is kept",
-  "file": "nora/app/cognition_fetched.py",
+  "file": "nora/agent/fetch_watch.py",
   "old": "if not isinstance(result, dict) or result.get(\"status\") != \"ok\":",
   "new": "if not isinstance(result, dict):",
   "target": "tests/unit/test_cognition_session_verbs_c.py::test_watching_a_read_changes_nothing_the_model_reads_and_keeps_only_ok_results"

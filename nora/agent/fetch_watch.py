@@ -121,7 +121,7 @@ class WatchedTool(AgentTool):
 
     @property
     def tool_spec(self) -> ToolSpec:
-        return self._inner.tool_spec  # type: ignore[no-any-return]
+        return self._inner.tool_spec
 
     @property
     def tool_type(self) -> str:

@@ -19,8 +19,8 @@ from typing import Any
 
 import pytest
 
+from nora.agent.fetch_watch import Fetched, watch_reads
 from nora.agent.ports import ToolSpec, adapt
-from nora.app.cognition_fetched import Fetched, watch_reads
 from nora.app.cognition_session import (
     AdaptorBudget,
     CognitionRunResult,
