@@ -5307,8 +5307,8 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         return state_time(moment)
 
     async def calculate(expression: str) -> dict:
-        """Work out a number exactly from one expression. Call this for all
-        arithmetic on a few numbers, however easy it looks.
+        """Work out a number exactly. Use this for ALL arithmetic, however easy
+        it looks: call it whenever a number needs computing.
 
         Never state a computed number that did not come from a tool: this one,
         or computer_run for data work (many values, statistics, fitting, a
