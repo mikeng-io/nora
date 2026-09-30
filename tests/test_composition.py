@@ -793,6 +793,15 @@ async def test_compute_boot_recovery_sweeps_a_stranded_row_even_when_disabled(cf
     ) == 1
 
 
+# `[compute] enabled` plus a model URL a job can reach through compute-egress:
+# composition refuses to start when the endpoint it hands a job is off
+# EGRESS_ALLOWLIST (test_compute_refuses_a_model_url_its_jobs_cannot_reach).
+_COMPUTE_ON = {
+    "compute.enabled": True,
+    "llm.base_url": "http://host.docker.internal:20128/v1",
+}
+
+
 def _compute_environment(monkeypatch, cfg) -> Path:
     """Every host-injected value `[compute] enabled = true` refuses to start
     without, set to a plausible value. Returns the host data root, which is the
@@ -830,7 +839,7 @@ async def test_compute_refuses_to_start_without_its_host_injected_values(
     Parametrized over each one INDIVIDUALLY: a check that only fired when all
     three were missing would pass a single combined test.
     """
-    on = override_config(cfg, {"compute.enabled": True, "heartbeat.enabled": False})
+    on = override_config(cfg, {**_COMPUTE_ON, "heartbeat.enabled": False})
     _compute_environment(monkeypatch, cfg)
     monkeypatch.delenv({
         "data_host_root_env": cfg.compute.data_host_root_env,
@@ -842,13 +851,29 @@ async def test_compute_refuses_to_start_without_its_host_injected_values(
         await build_dependencies(on)
 
 
+@pytest.mark.parametrize("base_url", [
+    "http://localhost:20128/v1",               # right port, a host the proxy never allows
+    "http://host.docker.internal:8000/v1",     # Honcho's port
+])
+async def test_compute_refuses_a_model_url_its_jobs_cannot_reach(cfg, monkeypatch, base_url):
+    """A job is handed Nora's own `[llm] base_url`, and its only way out is
+    `compute-egress`. A URL off EGRESS_ALLOWLIST would fail every job with a
+    proxy 403 in front of the group, so it is refused here, at boot."""
+    on = override_config(cfg, {**_COMPUTE_ON, "llm.base_url": base_url,
+                                "heartbeat.enabled": False})
+    _compute_environment(monkeypatch, cfg)
+
+    with pytest.raises(StartupError, match="compute-egress allowlist"):
+        await build_dependencies(on)
+
+
 async def test_compute_refuses_a_relative_host_root(cfg, monkeypatch):
     """`./data` is what the compose mount falls back to when nobody sets the
     variable, and it is exactly the value that must NOT reach the backend: the
     host Docker daemon resolves a bind source against a working directory this
     process knows nothing about. Unset is caught above; a relative value is the
     same defect wearing a plausible-looking string."""
-    on = override_config(cfg, {"compute.enabled": True, "heartbeat.enabled": False})
+    on = override_config(cfg, {**_COMPUTE_ON, "heartbeat.enabled": False})
     _compute_environment(monkeypatch, cfg)
     monkeypatch.setenv(cfg.compute.data_host_root_env, "./data")
 
@@ -872,7 +897,7 @@ async def test_the_sandbox_bind_source_is_the_host_path_not_noras_own(
     assertion; wiring that appended a different subdirectory to each fails the
     first.
     """
-    on = override_config(cfg, {"compute.enabled": True, "heartbeat.enabled": False})
+    on = override_config(cfg, {**_COMPUTE_ON, "heartbeat.enabled": False})
     host_root = _compute_environment(monkeypatch, cfg)
     deps = await build_dependencies(on)
     try:
@@ -902,7 +927,7 @@ async def test_compute_only_deployment_still_gets_a_live_fire_path(
     `Dependencies` deliberately exposes neither loop.
     """
     on = override_config(cfg, {
-        "compute.enabled": True,
+        **_COMPUTE_ON,
         "heartbeat.enabled": False,
     })
     assert on.version.announce is True  # the shipped default; no_build_stamp is what mutes it
