@@ -58,9 +58,9 @@
  {
   "name": "M3: Nora's own rows are not marked hers",
   "file": "nora/app/cognition_session.py",
-  "old": "is_nora=r.author in self._nora_names,",
-  "new": "is_nora=False,",
-  "target": "tests/unit/test_cognition_session_verbs_c.py::test_a_line_citing_one_of_noras_own_messages_is_refused"
+  "old": "is_nora=r.own or r.author in self._nora_names,",
+  "new": "is_nora=r.author in self._nora_names and not r.own,",
+  "target": "tests/unit/test_cognition_session_verbs_c.py::test_a_line_citing_one_of_noras_own_messages_is_refused tests/unit/test_cognition_session_verbs_c.py::test_one_of_her_own_sends_shown_in_the_window_is_refused_as_hers_not_as_unknown"
  },
  {
   "name": "M3: another room's messages are shown to this room's write",
@@ -224,10 +224,10 @@
   "target": "tests/unit/test_cognition_session_verbs_c.py::test_one_of_her_own_sends_shown_in_the_window_is_refused_as_hers_not_as_unknown"
  },
  {
-  "name": "M3: her own sends are not marked hers",
+  "name": "M3: a row authored under her name is not marked hers",
   "file": "nora/app/cognition_session.py",
   "old": "is_nora=r.own or r.author in self._nora_names,",
-  "new": "is_nora=r.author in self._nora_names,",
-  "target": "tests/unit/test_cognition_session_verbs_c.py::test_one_of_her_own_sends_shown_in_the_window_is_refused_as_hers_not_as_unknown"
+  "new": "is_nora=r.own,",
+  "target": "tests/unit/test_cognition_session_verbs_c.py::test_a_line_citing_one_of_noras_own_messages_is_refused"
  }
 ]
