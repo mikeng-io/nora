@@ -33,10 +33,12 @@ not the tool is on, and a session with the tool off still sees who said what.
   event is shown only when lineage permits it for EVERY room on the agenda
   (`nora.agent.lineage`, the tag path's own predicates). `[lineage] mode` reads
   as it does on the tag path: `on` removes, `shadow` computes the same answer,
-  removes NOTHING and logs what it would have, `off` applies none. Under `on`,
-  a row naming `exclude_persons` is withheld: the session has no live roster
-  to check it against, and unknown denies (withdrawal is not a lineage
-  question and applies in every mode).
+  removes NOTHING and logs what it would have, `off` applies none. Withdrawal
+  (`unsupported_at`) is not a lineage question and applies in EVERY mode,
+  `off` and `shadow` included. `exclude_persons` follows the lineage mode: under
+  `on` a row naming one is withheld (the session has no live roster to check it
+  against, and unknown denies); under `shadow` it is logged, not removed; under
+  `off` it is ignored.
 - *Names.* An author is the identity-canonical name (`Persons.name_transcript`)
   else the self-set profile name, never a platform id (R-18), and what a photo
   shows arrives through the ONE media join every transcript builder shares.

@@ -122,6 +122,43 @@ def test_no_sdk_class_is_the_agenda_by_itself(exc):
     assert classify_failure(AgendaError("proven")) == "agenda"
 
 
+class _ClientError(Exception):
+    """botocore's ClientError shape: the status lives in a response dict."""
+
+    def __init__(self, status: int, message: str) -> None:
+        super().__init__(message)
+        self.response = {"ResponseMetadata": {"HTTPStatusCode": status}}
+
+
+def _bedrock(status: int, message: str) -> ContextWindowOverflowException:
+    exc = ContextWindowOverflowException(message)
+    exc.__cause__ = _ClientError(status, message)
+    return exc
+
+
+BEDROCK_SHAPES = [
+    ("bedrock 500 input context length exceeded",
+     _bedrock(500, "input context length exceeded"), False),
+    ("bedrock 413 input context length exceeded",
+     _bedrock(413, "input context length exceeded"), False),
+    ("bedrock 400 validation size fault",
+     _bedrock(400, "input context length exceeded"), True),
+    ("string-wrapped Error code 500", _overflow(
+        "Error code: 500 - {'message': 'the context length was exceeded'}"), False),
+    ("string-wrapped status 502", _overflow("status: 502 context length"), False),
+    ("string-wrapped 400 stays a size fault", _overflow(
+        "Error code: 400 - maximum context length is 8192 tokens"), True),
+    ("a token count is not a status", _overflow(
+        "maximum context length is 500 tokens, you sent 512 tokens"), True),
+]
+
+
+@pytest.mark.parametrize(
+    ("name", "exc", "size_fault"), BEDROCK_SHAPES, ids=[s[0] for s in BEDROCK_SHAPES])
+def test_transport_evidence_reads_a_botocore_dict_and_a_status_in_the_text(name, exc, size_fault):
+    assert transport_evidence(exc) is (not size_fault)
+
+
 # ---- through the real evaluator and runner --------------------------------------------------
 
 def _causes(rig: Any) -> list[str]:
@@ -187,13 +224,14 @@ async def test_a_reply_cut_at_max_tokens_is_infra_however_often():
     assert rig.stimuli.retracted == set()
 
 
-async def test_an_overflow_that_a_transport_failure_interrupts_still_needs_two_in_a_row():
-    """size, outage, size: the outage is not evidence either way, so the third
-    session (the second size fault) is the agenda's."""
-    rig = _rig(agent=ScriptedAgent(script=[_size_fault, boom, _size_fault]), **BIG)
+async def test_an_outage_between_two_size_faults_breaks_the_run():
+    """size, outage, size, size: the outage clears the tracker (the two size
+    faults are not consecutive), so the third session is a FIRST strike again
+    and only the fourth, the second in a row, is the agenda's."""
+    rig = _rig(agent=ScriptedAgent(script=[_size_fault, boom, _size_fault, _size_fault]), **BIG)
     await rig.say()
-    await _until_calls(rig, 3)
-    assert _causes(rig) == ["infra", "infra", "agenda"]
+    await _until_calls(rig, 4)
+    assert _causes(rig) == ["infra", "infra", "infra", "agenda"]
 
 
 async def test_a_session_that_closed_forgets_the_earlier_overflow():

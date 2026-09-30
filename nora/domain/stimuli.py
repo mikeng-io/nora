@@ -62,6 +62,7 @@ stimuli a CLOSED wake returned to the next agenda with a strike (30 §2).
 
 from __future__ import annotations
 
+import re
 from collections.abc import Awaitable, Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Literal, Protocol, get_args
@@ -250,6 +251,10 @@ _TRANSPORT_MARKERS = (
 #: chain (413 «too many tokens per minute», 429, 5xx) is transport.
 _SIZE_FAULT_STATUS = 400
 
+#: An HTTP status quoted in a message: only right after «error code», «status»
+#: or «http» (so «8192 tokens» or «500 tokens» never matches).
+_TEXT_STATUS = re.compile(r"(?:error code|status(?: code)?|http(?: status)?)\W{0,3}([1-5]\d\d)\b")
+
 
 def is_context_overflow(exc: BaseException) -> bool:
     """The exception is (a subclass of) Strands' `ContextWindowOverflowException`,
@@ -279,13 +284,26 @@ def transport_evidence(exc: BaseException) -> bool:
             code = getattr(e, attr, None)
             if isinstance(code, int) and not isinstance(code, bool) and code != _SIZE_FAULT_STATUS:
                 return True
-        response_code = getattr(getattr(e, "response", None), "status_code", None)
-        if isinstance(response_code, int) and response_code != _SIZE_FAULT_STATUS:
+        response = getattr(e, "response", None)
+        response_code = getattr(response, "status_code", None)
+        if response_code is None and isinstance(response, dict):
+            # botocore's ClientError: the status is in the response metadata.
+            meta = response.get("ResponseMetadata")
+            response_code = meta.get("HTTPStatusCode") if isinstance(meta, dict) else None
+        if (
+            isinstance(response_code, int)
+            and not isinstance(response_code, bool)
+            and response_code != _SIZE_FAULT_STATUS
+        ):
             return True
         if isinstance(e, TimeoutError | ConnectionError | OSError):
             return True
         text = str(e).lower()
         if any(m in text for m in _TRANSPORT_MARKERS):
+            return True
+        # A status a wrapper flattened into the message ("Error code: 500 - ...").
+        # Only after a status-style prefix, so a token count never matches.
+        if any(int(m) != _SIZE_FAULT_STATUS for m in _TEXT_STATUS.findall(text)):
             return True
     return False
 

@@ -769,6 +769,9 @@ class CognitionSessionRunner:
             )
         except Exception as exc:
             if not is_context_overflow(exc):
+                # Any other failure (an outage, a cut reply) breaks the run:
+                # "twice in a row" means consecutive overflows.
+                self._overflowed.pop(unit, None)
                 raise
             previous = self._overflowed.get(unit)
             estimate = estimate_tokens_lower_bound(system_prompt, prompt)

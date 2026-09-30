@@ -103,5 +103,33 @@
     "old": "                self._overflowed[unit] = pending_ids\n",
     "new": "                pass\n",
     "target": "tests/unit/test_cognition_failure_cause.py::test_the_first_overflow_is_infra_and_the_second_on_the_same_agenda_is_the_agendas"
+  },
+  {
+    "name": "the proof ignores botocore's response-dict status",
+    "file": "nora/domain/stimuli.py",
+    "old": "        if response_code is None and isinstance(response, dict):",
+    "new": "        if False:",
+    "target": "tests/unit/test_cognition_failure_cause.py::test_transport_evidence_reads_a_botocore_dict_and_a_status_in_the_text"
+  },
+  {
+    "name": "the proof ignores a status quoted in the message text",
+    "file": "nora/domain/stimuli.py",
+    "old": "        if any(int(m) != _SIZE_FAULT_STATUS for m in _TEXT_STATUS.findall(text)):",
+    "new": "        if False:",
+    "target": "tests/unit/test_cognition_failure_cause.py::test_transport_evidence_reads_a_botocore_dict_and_a_status_in_the_text"
+  },
+  {
+    "name": "the text status matches any three digits (a token count reads as transport)",
+    "file": "nora/domain/stimuli.py",
+    "old": "r\"(?:error code|status(?: code)?|http(?: status)?)\\W{0,3}([1-5]\\d\\d)\\b\"",
+    "new": "r\"()([1-5]\\d\\d)\\b\"",
+    "target": "tests/unit/test_cognition_failure_cause.py::test_transport_evidence_reads_a_botocore_dict_and_a_status_in_the_text"
+  },
+  {
+    "name": "an outage does not clear the unit's overflow tracker",
+    "file": "nora/app/cognition_session.py",
+    "old": "                self._overflowed.pop(unit, None)\n                raise\n            previous",
+    "new": "                raise\n            previous",
+    "target": "tests/unit/test_cognition_failure_cause.py::test_an_outage_between_two_size_faults_breaks_the_run"
   }
 ]
