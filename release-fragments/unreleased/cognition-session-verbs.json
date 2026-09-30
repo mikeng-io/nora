@@ -1,0 +1,6 @@
+{
+  "type": "none",
+  "reason": "The Cognition session's verbs (a written close needs a write, remind bound to a room, the note validator on what was shown, one time base, the Standing revision token) change only the shadow session, which runs with session_mode off in production; no user sees it.",
+  "details": [],
+  "limitations": []
+}

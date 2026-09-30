@@ -31,9 +31,15 @@ Details the build fixed, where the table left them open (annotated in 10 §3):
   `location = true` as trust that relaxes the subset check (DEC-79). Here the
   table asks for the flag AND the guard, so both must pass: B's live roster is
   read, a degraded or unreadable one denies (R-27), and B's people must be a
-  subset of a circle holding P. Unmapped accounts are waived exactly as DEC-79
-  waives them in a flagged room, since the flag is required. A presence entry
-  with no subject denies: the guard is a rule about a person.
+  subset of a circle holding P. An unmapped account in B is IGNORED, not
+  counted: `_presence` never reads `live.unnamed`, so the guard runs over the
+  named people alone (`live.person_ids`). That lets a flagged room pass past an
+  unmapped account as DEC-79 lets `where_is` disclose there, but it is not
+  DEC-79's waiver: nothing here counts it on
+  `nora_presence_disclosure_waived_total`, so a pass made over an unmapped
+  account leaves no trace. (The `message` kind and `exclude_persons` are
+  stricter and deny on `unnamed > 0`.) A presence entry with no subject denies:
+  the guard is a rule about a person.
 - **Unknown is deny.** An entry of a kind with no predicate, `UNRESOLVED`
   included, passes only in the row's origin room; so does a section with no
   entries. With no origin, nowhere.

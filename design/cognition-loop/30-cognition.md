@@ -110,6 +110,12 @@ versions injected, the config revision in force, and the model id and route
 | **pace** | `wake_at(at, subject_rows, why)`, `wake_move(wake_id, at, why)`, `wake_cancel(wake_id, why)` | write verbs on the unit's stimulus table, not a tier: a `self` stimulus due at `at` ([20](20-observe.md) §3); nothing leaves for a room |
 | **close** | `close(item, reason)` | ends one agenda item |
 
+**One time base, one room.** Every time a session verb takes (`at` on the
+pace verbs and on `remind`, `remind_move`; `when` on an event; a note's
+`anchor_date`) is ISO 8601 with an offset (a date, for the anchor), converted
+in code; a time with no offset or no meaning is refused `bad_time`. Every write
+and act verb resolves its `room` through the agenda (DEC-250).
+
 **Every act is a reminder** (DEC-162's decide/compose split, kept). Cognition
 decides and writes a reminder carrying a **brief**: an intent (`tell` or
 `ask`) and the subject rows (Register ids, Rollup keys, Record ids), never
@@ -145,7 +151,9 @@ granting named **write** verbs through `AdaptorGrant` (write verbs are not act
 verbs), and `remind_move`/`remind_cancel` by name for reminders Cognition
 wrote; `remind` stays the only verb that sends.
 
-**Closing.** An item closes only with a write that cites it, or with a reason
+**Closing.** An item closes only with a write that cites it (code checks that
+the session recorded a write that would commit in the item's room, refusing
+`written` with `no_write_for_item` otherwise, DEC-250), or with a reason
 from a closed list (`no_change`, `waiting`, `covered`), counted per reason. An
 item left open when the session ends, or closed `waiting`, returns to the next
 agenda with a strike; at `max_strikes` (starting at 3) code closes it
