@@ -74,7 +74,7 @@ from .reaction import ReactionPicker
 from .relay import Relay
 from .room import Room
 from .shelf_hook import ShelfLoader
-from .surface import ToolScope, ToolShelf, ToolSurface
+from .surface import DREAMER_LOOP_TOOLS, ToolScope, ToolShelf, ToolSurface
 from .tools import (
     COMPUTER_TOOLS,
     HOT_TOOLS,
@@ -86,7 +86,9 @@ from .tools import (
     NoteCollaborator,
     OriginRoom,
     RecordQuerySource,
+    RollupReadSource,
     RoomDirectory,
+    StandingHeadSource,
     build_tool_specs,
     utc_now,
 )
@@ -229,10 +231,18 @@ class ToolRegistry:
         # `conversation_id`. `None` answers `unavailable`.
         record: RecordQuerySource | None = None,
         lineage: LineagePolicy | None = None,
+        # `rollup_read`'s Rollup read and `standing_read`'s Standing head
+        # (design/cognition-loop/25 §5, 50 §2): both Dreamer-only tools
+        # (`nora.agent.surface.DREAMER_ONLY_TOOLS`), and each withheld from
+        # every surface while its read is not wired.
+        rollup: RollupReadSource | None = None,
+        standing_head: StandingHeadSource | None = None,
     ) -> None:
         self._budget_overrides = dict(budget_overrides or {})
         self._record = record
         self._lineage = lineage
+        self._rollup = rollup
+        self._standing_head = standing_head
         # Tools no turn is offered in this process: `record_query` without its
         # Record read (`[record_query] enabled = false`, the shipped default).
         # Withheld from every surface and from the gate's digest, so an
@@ -243,6 +253,8 @@ class ToolRegistry:
         # model can route to and never use.
         self._withheld: frozenset[str] = (
             (frozenset() if record is not None else frozenset({"record_query"}))
+            | (frozenset() if rollup is not None else frozenset({"rollup_read"}))
+            | (frozenset() if standing_head is not None else frozenset({"standing_read"}))
             | (frozenset() if computer is not None else COMPUTER_TOOLS)
         )
         self._transit = transit if transit is not None else TransitClient()
@@ -683,7 +695,7 @@ class ToolRegistry:
         verb and its subject, not its usage rules.
         """
         return "\n".join(self._digest_lines(
-            self.read_only_tools() - {LOADER_TOOL} - self._withheld,
+            self.read_only_tools() - {LOADER_TOOL} - self._withheld - DREAMER_LOOP_TOOLS,
         ))
 
     def _digest_lines(
@@ -1034,6 +1046,8 @@ class ToolRegistry:
             rooms=self._rooms,
             record=self._record,
             lineage=self._lineage,
+            rollup=self._rollup,
+            standing_head=self._standing_head,
             versions=self._versions,
             giphy_source=self._giphy,
             reaction_picker=self._reaction,

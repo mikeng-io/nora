@@ -372,3 +372,39 @@ async def test_a_name_off_the_shelf_is_left_unknown():
     await agent.invoke_async("play something")
     assert "play_music" not in model.offered[1]
     assert any("Unknown tool" in r.get("text", "") for r in model.results)
+
+
+# ---- the two Dreamer-only reads of PR B (DEC-245) -----------------------------------------
+
+_LOOP_ONLY = ("rollup_read", "standing_read")
+
+
+def test_the_dreamer_loop_reads_are_never_a_tag_turns_tools():
+    """`rollup_read` supersedes `where_been`'s 90-day cap for a Dreamer adaptor
+    only, and `standing_read` is the session's own position: a reply neither
+    pays their prompt nor can route to them, in a Discord room or a Signal one."""
+    from nora.agent.surface import DREAMER_LOOP_TOOLS
+
+    assert set(_LOOP_ONLY) == DREAMER_LOOP_TOOLS <= DREAMER_ONLY_TOOLS
+    for platform in ("signal", "discord"):        # `None` is the DECLARED table: everything
+        tag = ToolScope(platform=platform, dreamer=False)
+        assert not any(tag.admits(n) for n in _LOOP_ONLY), platform
+        assert all(ToolScope(platform=platform, dreamer=True).admits(n) for n in _LOOP_ONLY)
+
+
+def test_the_relevance_gates_capability_digest_does_not_offer_what_a_reply_cannot_do():
+    from nora.agent.registry import ToolRegistry
+
+    wired = ToolRegistry(rollup=object(), standing_head=object())
+    digest = wired.capability_digest()
+    assert not any(n in digest for n in _LOOP_ONLY)
+    assert "where_been" in digest, "positive control: the digest lists the tag path's reads"
+
+
+def test_each_read_is_withheld_from_every_surface_until_its_read_is_wired():
+    from nora.agent.registry import ToolRegistry
+
+    assert set(_LOOP_ONLY) <= ToolRegistry()._withheld
+    assert ToolRegistry(rollup=object())._withheld & set(_LOOP_ONLY) == {"standing_read"}
+    assert ToolRegistry(standing_head=object())._withheld & set(_LOOP_ONLY) == {"rollup_read"}
+    assert not ToolRegistry(rollup=object(), standing_head=object())._withheld & set(_LOOP_ONLY)

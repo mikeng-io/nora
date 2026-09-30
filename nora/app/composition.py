@@ -148,6 +148,7 @@ from nora.infra.sql.reasoning_strip import SqlReasoningStripStore
 from nora.infra.sql.record_query import SqlRecordQuery
 from nora.infra.sql.reminders import SqlReminderStore
 from nora.infra.sql.revisions import SqlRevisionStore
+from nora.infra.sql.rollup_read import SqlRollupRead
 from nora.infra.sql.source_health import SqlSourceHealthLog
 from nora.infra.sql.standing import SqlStandingStore
 from nora.infra.sql.stimuli import SqlStimulusStore
@@ -2871,6 +2872,11 @@ async def build_dependencies(
         # withholds the tool from every turn.
         record=SqlRecordQuery(engine) if cfg.record_query.enabled else None,
         lineage=lineage,
+        # Dreamer-only reads (`nora.agent.surface.DREAMER_ONLY_TOOLS`): the
+        # current Rollup build's rows and the Standing head. SELECTs, so no
+        # flag: no tag path is offered either.
+        rollup=SqlRollupRead(engine),
+        standing_head=standing_store,
         route=route_client, vision=vision_client,
         describe_models=_describe_models(cfg),
         describe_providers=_describe_providers(cfg),

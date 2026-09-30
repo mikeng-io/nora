@@ -51,7 +51,12 @@ from nora.domain.lineage import (
     own_room_lineage,
     room_key,
 )
-from nora.domain.standing import Standing, working_set_from_json, working_set_to_json
+from nora.domain.standing import (
+    Standing,
+    StandingHead,
+    working_set_from_json,
+    working_set_to_json,
+)
 from nora.infra.sql.citation import record_message_citation
 from nora.infra.sql.schema import MESSAGES, STANDING, STANDING_REVISION
 
@@ -139,6 +144,50 @@ class SqlStandingStore:
         if row is None:
             return None
         return _standing(row)
+
+    async def read_head(
+        self, *, platform: str, conversation_id: str
+    ) -> StandingHead | None:
+        """The head and the id of the `standing_revision` row that IS it, or
+        `None` when the room has no head.
+
+        The head and its revision are written in ONE transaction (`write`), so
+        the head's revision is the chain's newest by the same order
+        `read_as_of` uses. It is returned only when that row matches the head
+        on `updated_at`, `fold_count` and `body`; a chain that does not end at
+        the head (a room that predates the chain, a head edited outside
+        `write`) gives `revision_id=None` rather than another position's id.
+        SELECT only: reading a head must not fold, revise or migrate it."""
+        head = await self.read(platform=platform, conversation_id=conversation_id)
+        if head is None:
+            return None
+        stmt = (
+            sa.select(
+                STANDING_REVISION.c.id, STANDING_REVISION.c.updated_at,
+                STANDING_REVISION.c.fold_count, STANDING_REVISION.c.body,
+            )
+            .where(
+                STANDING_REVISION.c.platform == platform,
+                STANDING_REVISION.c.conversation_id == conversation_id,
+            )
+            .order_by(
+                STANDING_REVISION.c.updated_at.desc(),
+                STANDING_REVISION.c.fold_count.desc(),
+                STANDING_REVISION.c.id.desc(),
+            )
+            .limit(1)
+        )
+        async with self._engine.connect() as conn:
+            newest = (await conn.execute(stmt)).one_or_none()
+        matches = (
+            newest is not None
+            and newest.updated_at == head.updated_at
+            and newest.fold_count == head.fold_count
+            and newest.body == head.body
+        )
+        return StandingHead(
+            standing=head, revision_id=str(newest.id) if matches and newest else None,
+        )
 
     async def read_as_of(
         self, *, platform: str, conversation_id: str, before_ms: int

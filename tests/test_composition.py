@@ -2085,6 +2085,17 @@ async def test_session_mode_shadow_builds_one_runner_and_hands_its_hook_to_the_e
     assert agent._memory_tools == MEMORY_TOOLS
     assert agent._read_tool_budgets["note_read"] > 0
     assert set(agent._read_tool_budgets) <= runner._read_only_tools
+    # PR B (DEC-245): the two new reads are wired and BUILT through the real
+    # registry (a tool whose read the composition root did not hand the registry
+    # is withheld from every surface and would be «wired» in name only), and the
+    # ceilings are the per-ITEM allowances a session scales by its agenda.
+    from nora.app.cognition_wiring import COGNITION_TOOL_CALLS_PER_ITEM
+
+    unit, home = next(iter(runner._home_rooms.items()))
+    built = {t.tool_name for t in runner._read_tools_for(unit, [home])}
+    assert {"rollup_read", "standing_read"} <= built
+    for name in ("rollup_read", "standing_read", "event_search"):
+        assert agent._read_tool_budgets[name] == COGNITION_TOOL_CALLS_PER_ITEM[name], name
     # Read tools only: the registry's table also names the tag path's
     # `remind`/`note_create`, whose arguments differ from the session's own
     # verbs of those names, and R-99 would veto every call to them.
@@ -2120,7 +2131,8 @@ async def test_the_sessions_read_tools_are_the_catalogue_less_what_a_flag_withho
     assert "record_query" in on.cognition_runner._read_only_tools
     wired = off.cognition_runner._read_only_tools
     assert {"note_read", "about", "where_been", "event_search"} <= wired
-    assert not {"rollup_read", "memo_read", "character_read"} & wired    # not built yet
+    assert {"rollup_read", "standing_read"} <= wired                    # PR B, DEC-245
+    assert not {"memo_read", "character_read", "social_items"} & wired  # not built yet
     # Built for a real room they are real, read-only tools, and only wired ones.
     built = on.cognition_runner._read_tools_for("friends", [Room("signal", "g1")])
     names = {t.tool_name for t in built}

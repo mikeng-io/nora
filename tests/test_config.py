@@ -1181,7 +1181,16 @@ def test_every_budget_block_the_template_declares_is_pinned_with_its_reasoning(
     assert (cognition.turns, cognition.total_tokens) == (24, 1_000_000)
     assert (cognition.output_tokens, cognition.timeout_seconds) == (12_000, 600.0)
     assert (cognition.max_memory_calls, cognition.max_tool_calls) == (6, 60)
-    assert cognition.tool_calls == {}
+    # The per-ITEM allowance of each read tool (M12): a session's ceiling is
+    # this times its agenda's item count. At least a tag turn's number, raised
+    # where one item needs more reads. The code states the same table
+    # (`COGNITION_TOOL_CALLS_PER_ITEM`, held equal in
+    # `tests/unit/test_cognition_wiring.py`).
+    assert cognition.tool_calls == {
+        "rollup_read": 4, "standing_read": 1, "event_search": 3, "where_been": 8,
+        "routine_read": 8, "note_read": 4, "note_search": 3, "about": 4,
+        "ask_memory": 4, "search_memory": 4, "search_memory_workspace": 4,
+    }
     # NOTE-CANDIDATES, pinned 2026-09-17 — declared in the template only
     # because the DEPLOYMENT sets it (it was set live while chasing #291 and
     # the template did not follow, which is the drift
@@ -2052,3 +2061,15 @@ def test_session_mode_refuses_a_value_outside_off_and_shadow(toml_path):
     toml_path.write_text(_set_key(text, "session_mode", '"live"'))
     with pytest.raises(ConfigError):
         load(toml_path)
+
+
+def test_the_cognition_template_states_the_same_per_item_table_the_code_defaults_to(toml_path):
+    """`config.example.toml` and the code state ONE table. `record_query` is not
+    in the template because it is held only with its flag, and an override for
+    a tool the session does not hold refuses to start."""
+    from nora.app.cognition_wiring import COGNITION_TOOL_CALLS_PER_ITEM
+
+    template = load(toml_path).dreamer.budgets["cognition"].tool_calls
+    assert template == {
+        n: v for n, v in COGNITION_TOOL_CALLS_PER_ITEM.items() if n != "record_query"
+    }

@@ -1,0 +1,247 @@
+[
+ {
+  "name": "rollup_read: a unit row of a superseded build is read (build filter dropped)",
+  "file": "nora/infra/sql/rollup_read.py",
+  "old": "            table.c.build_id == current_build_id(), table.c.unit == q.unit,\n",
+  "new": "            table.c.unit == q.unit,\n",
+  "target": "tests/integration/test_rollup_read.py::test_a_superseded_build_is_never_read"
+ },
+ {
+  "name": "rollup_read: a person-scoped row of a superseded build is read",
+  "file": "nora/infra/sql/rollup_read.py",
+  "old": "            table.c.build_id == current_build_id(),\n            table.c.subject_id.in_(q.subjects or (\"\",)),\n",
+  "new": "            table.c.subject_id.in_(q.subjects or (\"\",)),\n",
+  "target": "tests/integration/test_rollup_read.py::test_a_superseded_build_is_never_read"
+ },
+ {
+  "name": "rollup_read: another unit's rows are read (the unit boundary, DEC-231)",
+  "file": "nora/infra/sql/rollup_read.py",
+  "old": "            table.c.build_id == current_build_id(), table.c.unit == q.unit,\n",
+  "new": "            table.c.build_id == current_build_id(),\n",
+  "target": "tests/integration/test_rollup_read.py::test_the_unit_is_the_read_boundary"
+ },
+ {
+  "name": "rollup_read: the interval is not applied (a row outside it is returned)",
+  "file": "nora/infra/sql/rollup_read.py",
+  "old": "            table.c.valid_from_ms < q.end_ms, table.c.valid_to_ms >= q.start_ms,\n",
+  "new": "",
+  "target": "tests/integration/test_rollup_read.py::test_the_interval_overlaps_and_the_page_says_when_there_is_more"
+ },
+ {
+  "name": "rollup_read: the page never says there is more",
+  "file": "nora/infra/sql/rollup_read.py",
+  "old": "        more = len(rows) > q.limit\n",
+  "new": "        more = False\n",
+  "target": "tests/integration/test_rollup_read.py::test_the_interval_overlaps_and_the_page_says_when_there_is_more"
+ },
+ {
+  "name": "rollup_read: a row's lineage is not applied (every row shown)",
+  "file": "nora/agent/tools.py",
+  "old": "        shown, withheld = visible_rows(got.rows, target)\n",
+  "new": "        shown, withheld = list(got.rows), 0\n",
+  "target": "tests/integration/test_rollup_read.py::test_a_room_that_may_not_be_shown_a_row_is_told_rows_were_left_out_and_nothing_else"
+ },
+ {
+  "name": "rollup_read: unknown or failing lineage passes (the row filter always true)",
+  "file": "nora/agent/rollup_read.py",
+  "old": "        if section_permits(r.lineage.section(ROW), target, origin=None)\n",
+  "new": "        if True\n",
+  "target": "tests/integration/test_rollup_read.py::test_a_room_that_may_not_be_shown_a_row_is_told_rows_were_left_out_and_nothing_else"
+ },
+ {
+  "name": "rollup_read: a name resolves among everyone, not this room's people (R-21)",
+  "file": "nora/agent/tools.py",
+  "old": "            matches = view.find(name)\n            if not matches:\n                _record(metrics, \"rollup_read\"",
+  "new": "            matches = tuple(p for p in persons.by_person.values() if p.name == name)\n            if not matches:\n                _record(metrics, \"rollup_read\"",
+  "target": "tests/integration/test_rollup_read.py::test_a_name_resolves_only_among_this_rooms_people"
+ },
+ {
+  "name": "rollup_read: a build that does not exist reads as an empty interval",
+  "file": "nora/agent/tools.py",
+  "old": "        if got.build_id is None or got.through_ms is None:\n",
+  "new": "        if got.through_ms is None:\n",
+  "target": "tests/integration/test_rollup_read.py::test_no_current_build_is_unavailable_not_nothing_found"
+ },
+ {
+  "name": "rollup_read: an end date no longer includes its whole day",
+  "file": "nora/agent/rollup_read.py",
+  "old": "            end += _MS_DAY if end_bare else 0\n",
+  "new": "            end += 0\n",
+  "target": "tests/unit/test_rollup_read_interval.py::test_a_range_of_dates_includes_the_whole_end_day"
+ },
+ {
+  "name": "rollup_read: an empty interval is accepted (never a silent read)",
+  "file": "nora/agent/rollup_read.py",
+  "old": "    if end <= start:\n",
+  "new": "    if end < start:\n",
+  "target": "tests/unit/test_rollup_read_interval.py::test_anything_else_is_refused"
+ },
+ {
+  "name": "rollup_read: an unlabelled place is guessed as a home",
+  "file": "nora/agent/rollup_read.py",
+  "old": "    what = {\"home\": \"home\", \"work\": \"work\"}.get(kind or \"\", \"an unlabelled place\")\n",
+  "new": "    what = {\"home\": \"home\", \"work\": \"work\"}.get(kind or \"\", \"home\")\n",
+  "target": "tests/unit/test_rollup_read_interval.py::test_a_place_is_words_and_an_unlabelled_one_says_so"
+ },
+ {
+  "name": "rollup_read: the row drops its citation key",
+  "file": "nora/agent/rollup_read.py",
+  "old": "        \"kind\": row.kind, \"subject\": row.subject,\n",
+  "new": "        \"kind\": row.kind,\n",
+  "target": "tests/unit/test_rollup_read_interval.py::test_a_row_carries_the_key_a_note_cites_it_by"
+ },
+ {
+  "name": "rollup_read: a hidden message is read into the daybook (the builder's hidden filter)",
+  "file": "nora/infra/sql/rollups.py",
+  "old": "                MESSAGES.c.id <= mark.message_id,\n                MESSAGES.c.hidden_at.is_(None),\n            )\n            .order_by(MESSAGES.c.id, quoted.c.id)",
+  "new": "                MESSAGES.c.id <= mark.message_id,\n            )\n            .order_by(MESSAGES.c.id, quoted.c.id)",
+  "target": "tests/integration/test_rollup_read.py::test_a_message_hidden_after_a_build_stops_counting_at_the_next_one"
+ },
+ {
+  "name": "standing_read: an unsupported head is returned",
+  "file": "nora/agent/standing_read.py",
+  "old": "    if standing.unsupported_at is not None:\n",
+  "new": "    if False:\n",
+  "target": "tests/infra/test_standing_read.py::test_an_unsupported_head_is_not_returned"
+ },
+ {
+  "name": "standing_read: a section that fails lineage is shown",
+  "file": "nora/agent/standing_read.py",
+  "old": "    if allowed[HOLD_OPEN] and standing.hold_open is not None:\n",
+  "new": "    if standing.hold_open is not None:\n",
+  "target": "tests/infra/test_standing_read.py::test_a_section_that_fails_lineage_is_withheld_and_the_rest_is_shown"
+ },
+ {
+  "name": "standing_read: a surprise (exclude_persons) is not applied",
+  "file": "nora/agent/standing_read.py",
+  "old": "        exclude_persons=standing.exclude_persons,\n",
+  "new": "        exclude_persons=(),\n",
+  "target": "tests/infra/test_standing_read.py::test_a_surprise_withholds_every_section_at_once"
+ },
+ {
+  "name": "standing_read: a head whose chain does not end at it is given the newest revision's id",
+  "file": "nora/infra/sql/standing.py",
+  "old": "            standing=head, revision_id=str(newest.id) if matches and newest else None,\n",
+  "new": "            standing=head, revision_id=str(newest.id) if newest else None,\n",
+  "target": "tests/infra/test_standing_read.py::test_a_chain_that_does_not_end_at_the_head_gives_no_id_never_another_positions"
+ },
+ {
+  "name": "standing_read: the revision id is not exposed",
+  "file": "nora/agent/standing_read.py",
+  "old": "            \"revision\": head.revision_id, \"updated\": iso(standing.updated_at), **out,\n",
+  "new": "            \"updated\": iso(standing.updated_at), **out,\n",
+  "target": "tests/infra/test_standing_read.py::test_the_tool_shows_the_sections_and_the_revision_it_stands_at"
+ },
+ {
+  "name": "standing_read: a failing store reads as no position (nothing_found, not unavailable)",
+  "file": "nora/agent/tools.py",
+  "old": "            log.exception(\"standing_read failed\")\n            _record(metrics, \"standing_read\", \"unavailable\")\n            return {\"status\": \"unavailable\", \"note\": _STANDING_OFF}\n",
+  "new": "            log.exception(\"standing_read failed\")\n            return {\"status\": \"nothing_found\", \"note\": _STANDING_NONE}\n",
+  "target": "tests/infra/test_standing_read.py::test_a_failing_store_is_unavailable_not_nothing_found"
+ },
+ {
+  "name": "surface: a tag turn is offered the Dreamer loop's reads",
+  "file": "nora/agent/surface.py",
+  "old": "DREAMER_LOOP_TOOLS: frozenset[str] = frozenset({\"rollup_read\", \"standing_read\"})",
+  "new": "DREAMER_LOOP_TOOLS: frozenset[str] = frozenset()",
+  "target": "tests/unit/test_tool_surface.py::test_the_dreamer_loop_reads_are_never_a_tag_turns_tools"
+ },
+ {
+  "name": "registry: the gate's capability digest offers a tool a reply cannot call",
+  "file": "nora/agent/registry.py",
+  "old": " - self._withheld - DREAMER_LOOP_TOOLS,\n",
+  "new": " - self._withheld,\n",
+  "target": "tests/unit/test_tool_surface.py::test_the_relevance_gates_capability_digest_does_not_offer_what_a_reply_cannot_do"
+ },
+ {
+  "name": "registry: rollup_read is offered with no read wired",
+  "file": "nora/agent/registry.py",
+  "old": "            | (frozenset() if rollup is not None else frozenset({\"rollup_read\"}))\n",
+  "new": "",
+  "target": "tests/unit/test_tool_surface.py::test_each_read_is_withheld_from_every_surface_until_its_read_is_wired"
+ },
+ {
+  "name": "composition: the registry is not handed the Rollup read",
+  "file": "nora/app/composition.py",
+  "old": "        rollup=SqlRollupRead(engine),\n",
+  "new": "",
+  "target": "tests/test_composition.py::test_session_mode_shadow_builds_one_runner_and_hands_its_hook_to_the_evaluator"
+ },
+ {
+  "name": "composition: the registry is not handed the Standing head",
+  "file": "nora/app/composition.py",
+  "old": "        standing_head=standing_store,\n",
+  "new": "",
+  "target": "tests/test_composition.py::test_session_mode_shadow_builds_one_runner_and_hands_its_hook_to_the_evaluator"
+ },
+ {
+  "name": "M12: the per-tool ceiling is not scaled by the agenda",
+  "file": "nora/app/cognition_agent_runner.py",
+  "old": "                    self._read_tool_budgets[n] * items if n in self._read_tool_budgets\n",
+  "new": "                    self._read_tool_budgets[n] if n in self._read_tool_budgets\n",
+  "target": "tests/unit/test_cognition_wiring.py::test_an_agenda_of_n_items_gets_n_times_the_per_item_ceilings"
+ },
+ {
+  "name": "M12: the pass-wide tool ceiling does not grow with the agenda (per-tool goes inert)",
+  "file": "nora/app/cognition_agent_runner.py",
+  "old": "            else budget.max_tool_calls * items,\n",
+  "new": "            else budget.max_tool_calls,\n",
+  "target": "tests/unit/test_cognition_wiring.py::test_the_pass_wide_ceilings_scale_with_the_agenda_too"
+ },
+ {
+  "name": "M12: the memory ceiling does not grow with the agenda",
+  "file": "nora/app/cognition_agent_runner.py",
+  "old": "            else budget.max_memory_calls * items,\n",
+  "new": "            else budget.max_memory_calls,\n",
+  "target": "tests/unit/test_cognition_wiring.py::test_the_pass_wide_ceilings_scale_with_the_agenda_too"
+ },
+ {
+  "name": "M12: close may have fewer calls than the agenda has items",
+  "file": "nora/app/cognition_agent_runner.py",
+  "old": "                    else max(self._tool_budget, items)\n",
+  "new": "                    else self._tool_budget\n",
+  "target": "tests/unit/test_cognition_wiring.py::test_an_agenda_of_n_items_gets_n_times_the_per_item_ceilings"
+ },
+ {
+  "name": "M12: an unreadable agenda size reads as more than one item",
+  "file": "nora/app/cognition_agent_runner.py",
+  "old": "        return max(1, int(trace_attributes.get(ITEMS_ATTRIBUTE, \"1\")))\n",
+  "new": "        return int(trace_attributes.get(ITEMS_ATTRIBUTE, \"1\"))\n",
+  "target": "tests/unit/test_cognition_wiring.py::test_an_agenda_size_that_is_absent_or_unreadable_is_one_item_never_more"
+ },
+ {
+  "name": "M12: the session does not say how many items its agenda holds",
+  "file": "nora/app/cognition_session.py",
+  "old": "                        \"cognition.items\": str(len(items)),\n",
+  "new": "",
+  "target": "tests/unit/test_cognition_wiring.py::test_an_agenda_of_n_items_gets_n_times_the_per_item_ceilings"
+ },
+ {
+  "name": "M12: the adaptor's per-item default sits under the deployment's override",
+  "file": "nora/app/cognition_wiring.py",
+  "old": "            (layer[name] for layer in (adaptor_overrides, adaptor_defaults, overrides)\n",
+  "new": "            (layer[name] for layer in (adaptor_overrides, overrides, adaptor_defaults)\n",
+  "target": "tests/unit/test_cognition_wiring.py::test_read_tool_budgets_layer_the_adaptor_default_between_the_deployment_and_the_operator"
+ },
+ {
+  "name": "M12: the runner is not given the per-item defaults",
+  "file": "nora/app/cognition_wiring.py",
+  "old": "        adaptor_defaults=COGNITION_TOOL_CALLS_PER_ITEM, adaptor_overrides=tool_calls,\n",
+  "new": "        adaptor_overrides=tool_calls,\n",
+  "target": "tests/test_composition.py::test_session_mode_shadow_builds_one_runner_and_hands_its_hook_to_the_evaluator"
+ },
+ {
+  "name": "M12: the template's per-item table drifts from the code's",
+  "file": "config.example.toml",
+  "old": "event_search = 3\nwhere_been = 8\n",
+  "new": "event_search = 1\nwhere_been = 8\n",
+  "target": "tests/test_config.py::test_the_cognition_template_states_the_same_per_item_table_the_code_defaults_to"
+ },
+ {
+  "name": "audit: the rollup_read audit line is dropped",
+  "file": "nora/app/cognition_wiring.py",
+  "old": "    \"rollup_read\": \"SQL SELECT of the CURRENT rollup build's rows (`rollup_build` \"\n                   \"status=current) and derived places; counters only. It starts, \"\n                   \"advances and switches no build, and folds nothing. No write.\",\n",
+  "new": "",
+  "target": "tests/unit/test_cognition_wiring.py::test_every_tool_in_the_catalogue_has_an_audited_side_effect_line"
+ }
+]

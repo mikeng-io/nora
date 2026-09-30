@@ -212,6 +212,18 @@ unit's rooms was `up` throughout. Withheld deviations are counted
   Character line about routine or closeness cites the rhythm or the tie
   ([10](10-tiers.md) §2 rule 5).
 
+**As built (step 3, PR B, DEC-245).** `rollup_read` reads the current build
+for the calling room's unit (`nora/infra/sql/rollup_read.py`) and renders
+each row with its citation key, a `through` stamp and no coordinate
+(`nora/agent/rollup_read.py`). Kinds: stay, trip, daybook, colocation,
+outing, tie; the forecasting aggregates stay behind `routine_read` and
+`response` is the Lessons adaptor's. A person resolves among the calling
+room's people; every row passes lineage for that room or is withheld and
+counted. The tool is Dreamer-only (`nora/agent/surface.py`
+`DREAMER_LOOP_TOOLS`), so the tag path keeps `where_been`'s 90 days. A hidden
+message stops contributing when its row is next recomputed, not before, which
+`through` makes visible.
+
 ## 6. Play sources
 
 | source | gives | status |

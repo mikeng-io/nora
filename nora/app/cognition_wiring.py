@@ -88,13 +88,15 @@ COGNITION_READ_CATALOGUE: frozenset[str] = frozenset({
 READ_TOOL_AUDIT: Mapping[str, str] = {
     "record_query": "SQL read of messages, edits, reactions, deletes and the media "
                     "index (`MediaJoin.enrich`); counters only. No write.",
-    "rollup_read": "not built yet; audit it when it lands (a Rollup read must not "
-                   "trigger a rebuild).",
+    "rollup_read": "SQL SELECT of the CURRENT rollup build's rows (`rollup_build` "
+                   "status=current) and derived places; counters only. It starts, "
+                   "advances and switches no build, and folds nothing. No write.",
     "event_search": "SQL read of the unit's gatherings; counters only. No write.",
     "memo_read": "not built yet; audit it when it lands.",
     "character_read": "not built yet; audit it when it lands.",
-    "standing_read": "not built yet; audit it when it lands (a Standing read must "
-                     "not fold).",
+    "standing_read": "SQL SELECT of one `standing` head and the newest "
+                     "`standing_revision` row (its id only); counters only. It folds, "
+                     "revises and migrates nothing. No write.",
     "social_items": "not built yet; audit it when it lands (an ingested-items read "
                     "must not fetch from the network).",
     "where_been": "SQL read of derived presence (stays, trips, places) and the "
@@ -151,21 +153,48 @@ def read_surface(*, read_only: frozenset[str], enabled_flags: Collection[str]) -
     )
 
 
+#: The Cognition session's per-ITEM call allowance of each read tool (M12).
+#: `NativeTool.budget` is a tag turn's number (`event_search` 1, `note_search`
+#: 2, `search_memory` 4): a reply that reads one thing before answering. A
+#: session reads an AGENDA, one item after another, and each item needs the
+#: same handful of reads again, so a session's ceiling for a tool is this
+#: number times its agenda's item count (`nora.app.cognition_agent_runner.
+#: agenda_items`, `LiveCognitionAgentRunner._guard`). Never below the table's:
+#: where a tag turn's number already covers one item it is kept, and where it
+#: does not (`event_search` reads a place, then a date, then a person) it is
+#: raised. `[dreamer.budgets.cognition.tool_calls]` overrides any line (and
+#: `config.example.toml` states the same table, held equal by
+#: `tests/unit/test_cognition_budgets.py`). A number here is a starting guess a
+#: shadow week sizes: a ceiling is not a reservation, so headroom costs
+#: nothing until a session spends it.
+COGNITION_TOOL_CALLS_PER_ITEM: Mapping[str, int] = {
+    "record_query": 4, "rollup_read": 4, "standing_read": 1, "event_search": 3,
+    "where_been": 8, "routine_read": 8, "note_read": 4, "note_search": 3,
+    "about": 4, "ask_memory": 4, "search_memory": 4, "search_memory_workspace": 4,
+}
+
+
 def read_tool_budgets(
     names: Collection[str], *, table: Mapping[str, int],
     overrides: Mapping[str, int] | None = None,
+    adaptor_defaults: Mapping[str, int] | None = None,
     adaptor_overrides: Mapping[str, int] | None = None,
 ) -> dict[str, int]:
-    """Each read tool's per-pass call ceiling, three layers, widest first (the
-    tool table, the deployment's `[llm.budgets]`, this adaptor's
-    `[dreamer.budgets.cognition.tool_calls]`), the same order
-    `nora.agent.dreamer._tool_budgets` applies. A tool with no table row is
-    absent, and absent is default-deny in the guard."""
+    """Each read tool's per-item call allowance, four layers, widest first (the
+    tool table, the deployment's `[llm.budgets]`, this adaptor's own defaults,
+    this adaptor's `[dreamer.budgets.cognition.tool_calls]`), the order
+    `nora.agent.dreamer._tool_budgets` applies with the adaptor's code defaults
+    added between the deployment and the operator's word for this adaptor. A
+    tool with no table row is absent, and absent is default-deny in the guard."""
     out: dict[str, int] = {}
     for name in sorted(names):
         if name not in table:
             continue
-        out[name] = (adaptor_overrides or {}).get(name, (overrides or {}).get(name, table[name]))
+        out[name] = next(
+            (layer[name] for layer in (adaptor_overrides, adaptor_defaults, overrides)
+             if layer is not None and name in layer),
+            table[name],
+        )
     return out
 
 
@@ -385,7 +414,7 @@ def build_cognition_runner(
     check_tool_call_overrides(tool_calls, held=surface.wired)
     budgets = read_tool_budgets(
         surface.wired, table=registry_table, overrides=llm_budgets,
-        adaptor_overrides=tool_calls,
+        adaptor_defaults=COGNITION_TOOL_CALLS_PER_ITEM, adaptor_overrides=tool_calls,
     )
     agent_runner = LiveCognitionAgentRunner(
         models=models, retry=retry, metrics=metrics,
@@ -452,7 +481,7 @@ def build_cognition_runner(
 
 __all__ = [
     "COGNITION_ADAPTOR_NAME", "COGNITION_OBJECTIVE", "COGNITION_READ_CATALOGUE",
-    "AgendaSkills", "CognitionShutdown", "ReadSurface", "build_cognition_runner",
-    "cognition_budget", "read_surface", "read_tool_budgets", "read_tools_for",
-    "require_session_hook", "units_with_home_rooms",
+    "COGNITION_TOOL_CALLS_PER_ITEM", "AgendaSkills", "CognitionShutdown", "ReadSurface",
+    "build_cognition_runner", "cognition_budget", "read_surface", "read_tool_budgets",
+    "read_tools_for", "require_session_hook", "units_with_home_rooms",
 ]
