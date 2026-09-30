@@ -724,8 +724,8 @@ class CognitionSessionRunner:
                     system_prompt=system_prompt, prompt=prompt, tools=tools,
                     trace_attributes={
                         "cognition.unit": unit, "cognition.session_id": str(session_id),
-                        # The agenda's size: the runner scales its per-item call
-                        # ceilings by it (`ITEMS_ATTRIBUTE`, M12).
+                        # The agenda's size, for the trace (no call ceiling
+                        # scales by it: DEC-247).
                         "cognition.items": str(len(items)),
                     },
                 ),

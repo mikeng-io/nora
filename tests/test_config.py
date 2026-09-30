@@ -1165,31 +1165,23 @@ def test_every_budget_block_the_template_declares_is_pinned_with_its_reasoning(
         "note_read": 16, "lookup_person": 12, "ask_memory": 8,
         "search_memory_workspace": 8, "about": 8, "note_search": 4, "remind": 6,
     }
-    # COGNITION, pinned 2026-09-30 (migration step 3a-iii). NOT measurements:
-    # room to take one. The proactive block's shape (a loop that reads and then
-    # writes, 24 turns, 1M total tokens as the safety net and `turns` the real
-    # bound) with a longer clock, because a session reads and writes across up
-    # to 12 agenda items. 600 s stays under the wake's own 900 s by more than
-    # `SESSION_TIMEOUT_MARGIN_SECONDS` (the runner refuses to start otherwise)
-    # and under the 720 s the deployment's proactive block already holds, so
-    # the derived unit hold (`dreamer_max_unit_hold_seconds`) does not rise.
-    # `output_tokens` 12,000 is above proactive's 10,000 for the writes it
-    # carries (notes, events, a Standing body). The two per-pass read ceilings
-    # are starting guesses that `nora_dream_guard_vetoes_total{adaptor=
-    # "cognition"}` sizes after the shadow week. It rides `[dreamer] model`.
+    # COGNITION (DEC-247): bounded by rounds, tokens and time, each at least
+    # 10x the tag turn's, and by NO call ceiling. The template states the
+    # code's own defaults and carries none of the three call-ceiling keys.
+    from nora.config import (
+        COGNITION_OUTPUT_TOKENS,
+        COGNITION_TIMEOUT_SECONDS,
+        COGNITION_TOTAL_TOKENS,
+        COGNITION_TURNS,
+    )
+
     cognition = budgets["cognition"]
-    assert (cognition.turns, cognition.total_tokens) == (24, 1_000_000)
-    assert (cognition.output_tokens, cognition.timeout_seconds) == (12_000, 600.0)
-    assert (cognition.max_memory_calls, cognition.max_tool_calls) == (6, 60)
-    # The per-ITEM allowance of each read tool (M12): a session's ceiling is
-    # this times its agenda's item count. At least a tag turn's number, raised
-    # where one item needs more reads. The code states the same table
-    # (`COGNITION_TOOL_CALLS_PER_ITEM`, held equal in
-    # `tests/unit/test_cognition_wiring.py`).
-    assert cognition.tool_calls == {
-        "rollup_read": 4, "standing_read": 1, "event_search": 3, "where_been": 8,
-        "routine_read": 8, "note_read": 4, "note_search": 3, "about": 4,
-        "ask_memory": 4, "search_memory": 4, "search_memory_workspace": 4,
+    assert (cognition.turns, cognition.total_tokens) == (COGNITION_TURNS, COGNITION_TOTAL_TOKENS)
+    assert (cognition.output_tokens, cognition.timeout_seconds) == (
+        COGNITION_OUTPUT_TOKENS, COGNITION_TIMEOUT_SECONDS,
+    )
+    assert cognition.model_fields_set == {
+        "turns", "total_tokens", "output_tokens", "timeout_seconds",
     }
     # NOTE-CANDIDATES, pinned 2026-09-17 — declared in the template only
     # because the DEPLOYMENT sets it (it was set live while chasing #291 and
@@ -2063,13 +2055,52 @@ def test_session_mode_refuses_a_value_outside_off_and_shadow(toml_path):
         load(toml_path)
 
 
-def test_the_cognition_template_states_the_same_per_item_table_the_code_defaults_to(toml_path):
-    """`config.example.toml` and the code state ONE table. `record_query` is not
-    in the template because it is held only with its flag, and an override for
-    a tool the session does not hold refuses to start."""
-    from nora.app.cognition_wiring import COGNITION_TOOL_CALLS_PER_ITEM
+#: The tag turn's own loop bounds on the live deployment, read from norty's
+#: config.toml on 2026-10-01: `[llm.limits]` turns / total_tokens / output_tokens
+#: and `[llm] timeout_seconds` (the tag turn's whole-loop clock), and `[llm]
+#: max_tokens`. DEC-247: a Cognition session's are at least 10x each.
+_TAG_TURN = {"turns": 20, "total_tokens": 1_024_000, "output_tokens": 12_000,
+             "timeout_seconds": 360.0}
 
-    template = load(toml_path).dreamer.budgets["cognition"].tool_calls
-    assert template == {
-        n: v for n, v in COGNITION_TOOL_CALLS_PER_ITEM.items() if n != "record_query"
-    }
+
+def test_the_cognition_bounds_are_at_least_ten_times_the_tag_turns(toml_path):
+    from nora.config import DreamBudgetConfig
+
+    cfg = load(toml_path)
+    template = cfg.dreamer.budgets["cognition"]
+    # The template, the code defaults (a deployment with no block, which the
+    # config refuses in shadow mode but `budget_for` still answers) and the
+    # shipped tag-turn values the template's own `[llm.limits]` carries.
+    default = cfg.dreamer.model_copy(update={"budgets": {}}).budget_for("cognition")
+    assert isinstance(default, DreamBudgetConfig)
+    for got in (template, default):
+        for field, tag in _TAG_TURN.items():
+            assert getattr(got, field) >= 10 * tag, (field, getattr(got, field), tag)
+    for field in ("turns", "total_tokens", "output_tokens"):
+        assert getattr(template, field) >= 10 * getattr(cfg.llm.limits, field), field
+    assert template.timeout_seconds >= 10 * cfg.llm.timeout_seconds
+
+
+def test_the_wakes_timeout_stays_above_the_sessions_by_the_margin(toml_path):
+    from nora.app.cognition_session import SESSION_TIMEOUT_MARGIN_SECONDS
+
+    cfg = load(toml_path)
+    assert (
+        cfg.dreamer.budgets["cognition"].timeout_seconds
+        <= cfg.cognition.session_timeout_seconds - SESSION_TIMEOUT_MARGIN_SECONDS
+    )
+
+
+@pytest.mark.parametrize("key", ["max_memory_calls = 6\n", "max_tool_calls = 60\n", None])
+def test_a_cognition_block_that_sets_a_call_ceiling_refuses_to_load(toml_path, key):
+    """DEC-247: the keys the operator's block carried before are refused, not
+    ignored: an ignored ceiling is one the operator believes binds."""
+    text = toml_path.read_text()
+    marker = "[dreamer.budgets.cognition]\n"
+    assert marker in text
+    if key is None:                       # the per-tool table
+        toml_path.write_text(text + "\n[dreamer.budgets.cognition.tool_calls]\nabout = 4\n")
+    else:
+        toml_path.write_text(text.replace(marker, marker + key, 1))
+    with pytest.raises(ConfigError, match="no call ceiling of any kind"):
+        load(toml_path)

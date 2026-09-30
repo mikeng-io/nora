@@ -1,0 +1,107 @@
+[
+ {
+  "name": "the guard vetoes a call over a tool's count even with per_tool_ceilings off",
+  "file": "nora/agent/dream_guard.py",
+  "old": "        if self._per_tool_ceilings and self._ledger.at_ceiling(tool_name):",
+  "new": "        if self._ledger.at_ceiling(tool_name):",
+  "target": "tests/unit/test_cognition_no_call_ceilings.py::test_the_session_guard_is_the_same_class_with_the_ceiling_switched_off"
+ },
+ {
+  "name": "the session's guard is built with per-tool ceilings on",
+  "file": "nora/app/cognition_agent_runner.py",
+  "old": "            per_tool_ceilings=False,\n",
+  "new": "            per_tool_ceilings=True,\n",
+  "target": "tests/unit/test_cognition_no_call_ceilings.py::test_fifty_calls_of_one_tool_are_not_vetoed"
+ },
+ {
+  "name": "the session's guard is given a pass-wide and memory ceiling again",
+  "file": "nora/app/cognition_agent_runner.py",
+  "old": "            per_tool_ceilings=False,\n        )",
+  "new": "            per_tool_ceilings=False, pass_budget=10, memory_budget=10,\n            memory_tools=frozenset({\"about\"}),\n        )",
+  "target": "tests/unit/test_cognition_no_call_ceilings.py::test_fifty_calls_of_one_tool_are_not_vetoed"
+ },
+ {
+  "name": "the session's guard drops R-99 (no accepted argument names)",
+  "file": "nora/app/cognition_agent_runner.py",
+  "old": "            param_names=self._param_names,\n            per_tool_ceilings=False,",
+  "new": "            per_tool_ceilings=False,",
+  "target": "tests/unit/test_cognition_no_call_ceilings.py::test_a_session_still_refuses_an_argument_the_tool_does_not_declare"
+ },
+ {
+  "name": "every other adaptor's guard loses its per-tool ceiling by default",
+  "file": "nora/agent/dream_guard.py",
+  "old": "        per_tool_ceilings: bool = True,",
+  "new": "        per_tool_ceilings: bool = False,",
+  "target": "tests/unit/test_cognition_no_call_ceilings.py::test_every_other_adaptor_keeps_its_per_tool_ceiling"
+ },
+ {
+  "name": "the session's budget carries the pass-wide tool ceiling again",
+  "file": "nora/app/cognition_wiring.py",
+  "old": "        timeout_seconds=b.timeout_seconds,\n    )",
+  "new": "        timeout_seconds=b.timeout_seconds, max_tool_calls=b.max_tool_calls,\n    )",
+  "target": "tests/unit/test_cognition_wiring.py::test_the_session_budget_carries_every_field_the_dreamer_budget_gives_it"
+ },
+ {
+  "name": "the session's round cap is back at a tag turn's (turns constant)",
+  "file": "nora/config.py",
+  "old": "COGNITION_TURNS = 200",
+  "new": "COGNITION_TURNS = 20",
+  "target": "tests/test_config.py::test_the_cognition_bounds_are_at_least_ten_times_the_tag_turns"
+ },
+ {
+  "name": "the session's total-token default is under 10x",
+  "file": "nora/config.py",
+  "old": "COGNITION_TOTAL_TOKENS = 10_240_000",
+  "new": "COGNITION_TOTAL_TOKENS = 1_024_000",
+  "target": "tests/test_config.py::test_the_cognition_bounds_are_at_least_ten_times_the_tag_turns"
+ },
+ {
+  "name": "the session's output-token default is under 10x",
+  "file": "nora/config.py",
+  "old": "COGNITION_OUTPUT_TOKENS = 120_000",
+  "new": "COGNITION_OUTPUT_TOKENS = 12_000",
+  "target": "tests/test_config.py::test_the_cognition_bounds_are_at_least_ten_times_the_tag_turns"
+ },
+ {
+  "name": "the session's clock default is under 10x",
+  "file": "nora/config.py",
+  "old": "COGNITION_TIMEOUT_SECONDS = 3600.0",
+  "new": "COGNITION_TIMEOUT_SECONDS = 360.0",
+  "target": "tests/test_config.py::test_the_cognition_bounds_are_at_least_ten_times_the_tag_turns"
+ },
+ {
+  "name": "the template's round cap is under 10x",
+  "file": "config.example.toml",
+  "old": "turns = 200\ntotal_tokens = 10240000",
+  "new": "turns = 24\ntotal_tokens = 10240000",
+  "target": "tests/test_config.py::test_the_cognition_bounds_are_at_least_ten_times_the_tag_turns"
+ },
+ {
+  "name": "the template's clock is under 10x",
+  "file": "config.example.toml",
+  "old": "timeout_seconds = 3600.0\n\n\n# Lineage",
+  "new": "timeout_seconds = 300.0\n\n\n# Lineage",
+  "target": "tests/test_config.py::test_the_cognition_bounds_are_at_least_ten_times_the_tag_turns"
+ },
+ {
+  "name": "a cognition block with a call ceiling loads (silently inert)",
+  "file": "nora/config.py",
+  "old": "        if stale:\n            raise ValueError(\n                f\"[dreamer.budgets.cognition] sets",
+  "new": "        if False:\n            raise ValueError(\n                f\"[dreamer.budgets.cognition] sets",
+  "target": "tests/test_config.py::test_a_cognition_block_that_sets_a_call_ceiling_refuses_to_load"
+ },
+ {
+  "name": "the wake's timeout default falls back under the session clock",
+  "file": "nora/config.py",
+  "old": "session_timeout_seconds: float = Field(default=3900.0, gt=0)",
+  "new": "session_timeout_seconds: float = Field(default=900.0, gt=0)",
+  "target": "tests/test_config.py::test_the_wakes_timeout_stays_above_the_sessions_by_the_margin"
+ },
+ {
+  "name": "the composition root hands the session the class defaults, not the block",
+  "file": "nora/app/composition.py",
+  "old": "budget=cognition_budget(cfg.dreamer.budget_for(COGNITION_ADAPTOR_NAME)),",
+  "new": "budget=cognition_budget(DreamBudgetConfig()),",
+  "target": "tests/test_composition.py::test_session_mode_shadow_builds_one_runner_and_hands_its_hook_to_the_evaluator"
+ }
+]
