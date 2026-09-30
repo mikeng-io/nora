@@ -2358,9 +2358,10 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     _CounterSpec(
         "nora_cognition_stimuli_skipped_total",
         "Wakes that skipped stimuli a session could not read, by reason: "
-        "unreadable_rollup is a Rollup stimulus whose ref did not parse or named "
-        "a person the roster does not know (DEC-245). It counts the wakes, and the "
-        "skipped ids are on the session row (agenda.skipped_stimulus_ids).",
+        "unreadable_rollup is a Rollup stimulus whose ref did not parse (consumed); "
+        "roster_miss_rollup names a person the roster does not know yet (retained "
+        "as a waiting carry, DEC-245). It counts the wakes, and the skipped ids "
+        "are on the session row (agenda.skipped_stimulus_ids, retained_stimulus_ids).",
         ("reason",),
     ),
     _CounterSpec(

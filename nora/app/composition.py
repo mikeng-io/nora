@@ -4473,6 +4473,9 @@ async def build_dependencies(
                 homes=homes, units=cognition_wakeable,
                 skills=agenda_skills,
                 grounder=grounder,
+                person_known=lambda person_id: persons.by_person.get(
+                    persons.subject_id_for(person_id),
+                ) is not None,
                 render_budget=RenderBudget(
                     record_chars=cfg.cognition.record_chars,
                     message_chars=cfg.cognition.message_chars,

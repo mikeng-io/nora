@@ -103,11 +103,12 @@ def _wake_detail(raw: Any) -> dict[str, object]:
 
 
 def _detail(raw: Any) -> dict[str, object]:
-    """asyncpg hands `jsonb` back as text unless a codec is registered, and
-    this engine registers none."""
+    """The jsonb object, from either form a row was written in: an object (now)
+    or a jsonb STRING holding the JSON (every row written before the double
+    encoding was fixed; also, on some drivers, the text of the column)."""
     if raw is None:
         return {}
-    if isinstance(raw, str):
+    while isinstance(raw, str):
         raw = json.loads(raw)
     return dict(raw)
 
@@ -373,7 +374,14 @@ class SqlStimulusStore:
                     pending.append(
                         replace(row, waits=True) if row.id in waiting else row,
                     )
+            # ONE bound for the whole read, oldest first, the same in both stores
+            # (`InMemoryStimulusStore.view`, bound by the contract suite): the
+            # side doors are not exempt from `limit`. Oldest-first is what keeps
+            # a truncated read safe: whatever is cut has a higher id than
+            # everything shown, and a wake's `through_stimulus_id` is the
+            # highest id it claimed, so the cut stimuli stay pending.
             pending.sort(key=lambda x: x.id)
+            del pending[limit:]
             activity_q = activity_query(unit=unit)
             activity = (await conn.execute(activity_q)).scalar_one_or_none()
             recent = (await conn.execute(_recent_wakes_query(unit, mode))).all()
@@ -505,11 +513,12 @@ class SqlStimulusStore:
             stimulus_count=wake.stimulus_count, eligible_count=wake.eligible_count,
             oldest_pending_ms=wake.oldest_pending_ms,
             cut_cooldown=int(wake.cut_cooldown),
-            # JSON text cast to jsonb: the detail is a small flat mapping and
-            # this keeps the dialect's JSON serializer out of the question.
-            detail=sa.cast(
-                json.dumps(_with_unclaimed(wake), sort_keys=True), COGNITION_WAKE.c.detail.type,
-            ),
+            # The mapping AS ITSELF: the JSONB type serializes what it is
+            # handed. `sa.cast(json.dumps(...), JSONB)` stored a jsonb STRING
+            # holding the JSON (`jsonb_typeof = 'string'`, so `detail->'unclaimed'`
+            # read NULL). Rows written that way stay strings; `_detail` reads
+            # either.
+            detail=_with_unclaimed(wake),
             at_ms=wake.at_ms, recorded_at=_at(recorded_at_ms), tracked=int(wake.tracked),
         ).returning(COGNITION_WAKE.c.id)
         async with self._engine.begin() as conn:

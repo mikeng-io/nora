@@ -87,7 +87,7 @@ from nora.agent.cognition_remind_mirror import (
     dry_run_remind_cancel,
     dry_run_remind_move,
 )
-from nora.domain.cognition_ground import Grounding
+from nora.domain.cognition_ground import Grounding, rollup_status
 from nora.domain.cognition_pace import (
     DEFAULT_MAX_SELF_WAKES_PER_DAY,
     PENDING_WINDOW_SECONDS,
@@ -408,6 +408,7 @@ class CognitionSessionRunner:
         skill_versions_for: SkillVersionsFor | None = None,
         tz: tzinfo = UTC, render_budget: RenderBudget | None = None,
         model_window_tokens: int | None = None, overflow_window_fraction: float = 0.8,
+        person_known: Callable[[str], bool] | None = None,
     ) -> None:
         """`doctrine_source`, when given, is read at the start of EVERY session
         and replaces `doctrine_text`/`doctrine_sha256` (which then serve only
@@ -429,6 +430,10 @@ class CognitionSessionRunner:
         `WakePolicy.session_timeout_seconds`, the wake's own clock): both are
         refused HERE, at startup, not discovered per wake.
 
+        `person_known(person_id)` is the roster question a Rollup stimulus is
+        judged readable by (`nora.domain.cognition_ground.rollup_status`); None
+        knows everyone, so only a ref that does not parse is unreadable.
+
         `model_window_tokens` (None: unknown) and `overflow_window_fraction`
         are what a context overflow is PROVEN against (DEC-244): without a
         known window no overflow is ever the agenda's, and every one is
@@ -441,6 +446,7 @@ class CognitionSessionRunner:
         self._home_rooms = home_rooms
         self._read_tools_for = read_tools_for
         self._grounder = grounder
+        self._person_known = person_known or (lambda _person_id: True)
         self._render_budget = render_budget or RenderBudget()
         self._read_only_tools = read_only_tools
         self._skill_text_for = skill_text_for
@@ -533,14 +539,58 @@ class CognitionSessionRunner:
             last_looked_ms = (
                 None if view.last_session is None else view.last_session.ended_at_ms
             )
+            # A Rollup stimulus a session cannot READ is not an agenda item
+            # (DEC-245): until `rollup_read` exists a session judges from the
+            # ref's fields alone, and an item it cannot read is one it would
+            # answer wrong at a rate nothing reports. Readability is decided
+            # from the stimulus and the roster (`rollup_status`), NEVER from
+            # what the grounder built: a readable rollup the agenda cut at
+            # `max_items` has no grounding line and is DEFERRED like any item.
+            # Two kinds of unreadable, two fates, both RECORDED on the session
+            # row (`agenda.skipped_stimulus_ids`) and counted:
+            #   malformed   the ref can never be read: consumed.
+            #   roster_miss a person the roster does not know YET: RETAINED, as a
+            #               carry row with `waits`, so it is never consumed
+            #               unseen and never raises the `rollup` trigger (a
+            #               waiting stimulus does not wake), and it is an agenda
+            #               item again in the first session after the roster
+            #               knows the person.
+            malformed: set[int] = set()
+            retained: set[int] = set()
+            for s in view.pending:
+                if s.kind != "rollup":
+                    continue
+                status = rollup_status(s, self._person_known)
+                if status == "malformed":
+                    malformed.add(s.id)
+                elif status == "roster_miss":
+                    retained.add(s.id)
+            skipped = frozenset(malformed | retained)
+            pending = [s for s in view.pending if s.id not in skipped]
+            if malformed:
+                self._inc("nora_cognition_stimuli_skipped_total", reason="unreadable_rollup")
+            if retained:
+                self._inc("nora_cognition_stimuli_skipped_total", reason="roster_miss_rollup")
+            retain_carries = [
+                NewCarry(
+                    unit=unit, stimulus_id=sid, strike=view.carry.get(sid, 0),
+                    state="carried", session_id=None, waits=True,
+                )
+                for sid in sorted(retained)
+            ]
             situation = build_situation(
-                unit=unit, pending=view.pending, home_room=home_room, now_ms=now_ms,
+                unit=unit, pending=pending, home_room=home_room, now_ms=now_ms,
                 last_session_ms=last_looked_ms, max_items=self._max_items,
                 strikes=view.carry,
             )
             if situation.agenda.is_empty:
                 self._inc("nora_cognition_session_skipped_total", reason="empty_agenda")
-                await self._finish(wake_id, unit, None, "closed", "empty agenda")
+                await self._finish(
+                    wake_id, unit, None, "closed",
+                    "empty agenda" if not skipped else
+                    f"empty agenda: {len(skipped)} rollup stimulus(es) unreadable",
+                    carries=retain_carries,
+                )
                 return None
 
             doctrine_text, doctrine_sha256 = self._doctrine()
@@ -549,36 +599,14 @@ class CognitionSessionRunner:
                 {} if self._skill_versions_for is None
                 else dict(self._skill_versions_for(kinds))
             )
-            # GROUNDED BEFORE ANYTHING IS RECORDED (30 §1, #637 review major 2):
-            # the Record rows that raised each item and the Register index
-            # lines. A read that fails raises here, so the wake is recorded
-            # `failed` and its stimuli stay pending: a session never runs on
-            # bare counts it cannot judge from.
-            grounding = await self._grounder(unit, situation.agenda.items, view.pending)
-            # A Rollup stimulus whose row cannot be READ is not an agenda item
-            # (DEC-245): until `rollup_read` exists a session judges from the
-            # ref's fields alone, and an item it cannot read is one it would
-            # answer wrong at a rate nothing reports. It is skipped, and the
-            # skip is RECORDED on the session row (`skipped_stimulus_ids`) and
-            # counted, so it is never a silent consumption.
-            skipped = frozenset(
-                s.id for s in view.pending
-                if s.kind == "rollup" and s.ref not in grounding.rollups
-            )
-            if skipped:
-                self._inc("nora_cognition_stimuli_skipped_total", reason="unreadable_rollup")
-                situation = build_situation(
-                    unit=unit, pending=[s for s in view.pending if s.id not in skipped],
-                    home_room=home_room, now_ms=now_ms, last_session_ms=last_looked_ms,
-                    max_items=self._max_items, strikes=view.carry,
-                )
-                if situation.agenda.is_empty:
-                    self._inc("nora_cognition_session_skipped_total", reason="empty_agenda")
-                    await self._finish(
-                        wake_id, unit, None, "closed",
-                        f"empty agenda: {len(skipped)} rollup stimulus(es) unreadable",
-                    )
-                    return None
+            # GROUNDED AFTER THE SKIP, BEFORE ANYTHING IS RECORDED (30 §1, #637
+            # review major 2): the agenda is final, so the grounding's per-item
+            # index (her own sends) is the index the render reads, and an item
+            # promoted from `deferred` by a skip is grounded. A read that
+            # fails raises here, so the wake is recorded `failed` and its
+            # stimuli stay pending: a session never runs on bare counts it
+            # cannot judge from.
+            grounding = await self._grounder(unit, situation.agenda.items, pending)
             session = NewCognitionSession(
                 unit=unit, mode="shadow", started_at_ms=now_ms,
                 from_stimulus_id=min(s.id for s in view.pending),
@@ -588,6 +616,7 @@ class CognitionSessionRunner:
                     "items": [i.as_dict() for i in situation.agenda.items],
                     "deferred_stimulus_ids": list(situation.agenda.deferred_stimulus_ids),
                     "skipped_stimulus_ids": sorted(skipped),
+                    "retained_stimulus_ids": sorted(retained),
                 },
                 doctrine_sha256=doctrine_sha256, skill_versions=skill_versions,
                 config_revision_id=None, model_id=self._model_id,
@@ -600,7 +629,7 @@ class CognitionSessionRunner:
             return await self._run_session(
                 unit=unit, view=view, situation=situation, session_id=session_id,
                 wake_id=wake_id, now_ms=now_ms, doctrine_text=doctrine_text,
-                grounding=grounding,
+                grounding=grounding, retained=sorted(retained),
             )
         except asyncio.CancelledError:
             await self._shielded_finish(
@@ -736,6 +765,7 @@ class CognitionSessionRunner:
     async def _run_session(
         self, *, unit: str, view: UnitView, situation: Situation, session_id: int,
         wake_id: int, now_ms: int, doctrine_text: str, grounding: Grounding,
+        retained: Sequence[int] = (),
     ) -> CognitionSessionOutcome:
         items = situation.agenda.items
         state = _RunState(
@@ -773,6 +803,15 @@ class CognitionSessionRunner:
             ) from exc
 
         carries = await self._settle(state=state, situation=situation, view=view)
+        # A Rollup stimulus the roster cannot read YET is retained, not consumed
+        # (see `on_wake`): it waits, and returns as an item once it is readable.
+        carries.extend(
+            NewCarry(
+                unit=unit, stimulus_id=sid, strike=view.carry.get(sid, 0),
+                state="carried", session_id=session_id, waits=True,
+            )
+            for sid in retained
+        )
         recorded = await self._finish(
             wake_id, unit, session_id, "closed", result.stop_reason or "", carries=carries,
         )

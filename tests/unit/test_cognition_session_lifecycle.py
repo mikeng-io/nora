@@ -196,7 +196,7 @@ def _rig(
     read_only_tools: frozenset[str] = frozenset(), max_self_wakes: int = 5,
     max_self_wakes_per_day: int = 12,
     model_window_tokens: int | None = None, overflow_window_fraction: float = 0.8,
-    grounder: Any = None,
+    grounder: Any = None, person_known: Callable[[str], bool] | None = None,
 ) -> Rig:
     ledger = InMemoryCognitionDryRunStore()
     stimuli = InMemoryStimulusStore(ledger=ledger)
@@ -227,7 +227,7 @@ def _rig(
         max_self_wakes=max_self_wakes, max_self_wakes_per_day=max_self_wakes_per_day,
         metrics=metrics, mint_ref=_counter(), clock=clock,
         model_window_tokens=model_window_tokens,
-        overflow_window_fraction=overflow_window_fraction,
+        overflow_window_fraction=overflow_window_fraction, person_known=person_known,
     )
     ev = WakeEvaluator(
         store=stimuli, units=lambda: units, policy=policy, metrics=metrics, tz=HK,

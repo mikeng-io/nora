@@ -332,7 +332,13 @@ class WakeEvaluator:
                 timeout=self._timeout,
             )
             live = unit in self._live and not self._live[unit].done()
-            return await self._strike_failed(replace(view, tracked=tracked, live=live), now_ms)
+            # M8: no skill for `time` yet, so a `time` stimulus that is ALREADY
+            # pending (raised before the gate, or by the previous deploy) must
+            # not wake a session either: not raising a floor is half of it.
+            inert = frozenset({"time"}) if tracked and not self._floors_ready else frozenset()
+            return await self._strike_failed(
+                replace(view, tracked=tracked, live=live, inert_kinds=inert), now_ms,
+            )
         except Exception:
             log.exception("wake evaluator: could not read unit %s; skipped this tick", unit)
             self._metrics.inc("nora_errors_total", stage="cognition_wake")

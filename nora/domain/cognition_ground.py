@@ -29,7 +29,7 @@ and any row of a room that is not one of the unit's rooms. Framework-free, per
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Literal
 
@@ -133,6 +133,26 @@ def parse_rollup_ref(stimulus: Stimulus) -> RollupRef | None:
     except ValueError:
         return None
     return None
+
+
+RollupStatus = Literal["readable", "roster_miss", "malformed"]
+
+
+def rollup_status(stimulus: Stimulus, known: Callable[[str], bool]) -> RollupStatus:
+    """Whether a session can READ a Rollup stimulus, decided from the stimulus
+    and the roster alone, never from what a grounder happened to build (DEC-245).
+
+    `malformed`: the ref is not one of the three shapes; it can never be read.
+    `roster_miss`: it parses but names a person `known` does not: readable once
+    the roster knows them, so it is retained, not consumed. `readable`
+    otherwise. A rollup cut by `max_items` is `readable` (it is DEFERRED, like
+    any item), which is the case the earlier grounder-keyed test lost."""
+    parsed = parse_rollup_ref(stimulus)
+    if parsed is None:
+        return "malformed"
+    if not all(known(p) for p in parsed.person_ids):
+        return "roster_miss"
+    return "readable"
 
 
 @dataclass(frozen=True, slots=True)

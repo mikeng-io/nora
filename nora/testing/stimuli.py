@@ -131,10 +131,13 @@ class InMemoryStimulusStore:
                 mark_wake = wake
                 break
         mark = Watermark.of(mark_wake)
+        # The range read: the watermark's OWN test (id and time), which does not
+        # know the wake's `unclaimed` list, limited like the SQL read.
         pending = [
             s for s in self.stimuli
             if s.unit == unit and s.id not in self.uncommitted and self._live(s.id)
-            and s.pending_since_ms <= now_ms and not mark.consumed(s)
+            and s.pending_since_ms <= now_ms
+            and not (s.id <= mark.through_stimulus_id and s.pending_since_ms <= mark.through_ms)
         ][:limit]
         current: dict[int, NewCarry] = {}
         for _, wake_id, carry in self.carries:
@@ -143,11 +146,18 @@ class InMemoryStimulusStore:
         carried = {
             i: c for i, c in current.items() if c.state == "carried" and self._live(i)
         }
+        # The two side doors past the range read: what a closed session carried
+        # and what the watermark's wake left unclaimed. Then ONE bound, oldest
+        # first: the same as `SqlStimulusStore.view`.
         have = {s.id for s in pending}
         for s in self.stimuli:
-            if s.unit == unit and s.id in carried and s.id not in have:
-                pending.append(replace(s, waits=True) if carried[s.id].waits else s)
+            if s.unit != unit or s.id in have or not self._live(s.id):
+                continue
+            if s.id in carried or s.id in mark.unclaimed:
+                waits = s.id in carried and carried[s.id].waits
+                pending.append(replace(s, waits=True) if waits else s)
         pending.sort(key=lambda x: x.id)
+        del pending[limit:]
         activity = [
             s.recorded_at_ms for s in self.stimuli
             if s.unit == unit and s.kind == "message" and s.id not in self.uncommitted

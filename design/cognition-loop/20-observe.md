@@ -230,7 +230,8 @@ a name this table leaves open:
   unseen.
 - **As built (the cognition-input PR, DEC-245): the input, and the claim.** A
   `rollup`, `time` or `self` wake claims only its own kind (above). A `time` floor
-  raises NO stimulus for a unit whose wakes start sessions until the `time` agenda
+  raises NO stimulus, and a `time` stimulus already pending wakes nothing and is
+  claimed by nothing, for a unit whose wakes start sessions until the `time` agenda
   kind has a skill (`AgendaSkills.by_kind`): the item was «a time stimulus is due:
   floor» with nothing to act on (M8). A unit that only records would-wakes still
   raises its floors, because sizing them is what shadow is for. A closed or

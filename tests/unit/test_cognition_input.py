@@ -61,8 +61,8 @@ async def test_a_unit_that_never_ran_a_session_says_it_is_the_first_look_however
 
 # ---- B2: a rollup the session cannot read is not an agenda item ---------------------------
 
-def _rollup(unit: str, ref: str, at: int) -> NewStimulus:
-    return NewStimulus(unit=unit, kind="rollup", item="deviation_silence", ref=ref, at_ms=at,
+def _rollup(unit: str, ref: str, at: int, item: str = "deviation_silence") -> NewStimulus:
+    return NewStimulus(unit=unit, kind="rollup", item=item, ref=ref, at_ms=at,
                        person_id="ada")
 
 
@@ -71,9 +71,17 @@ def _readable(ref: str) -> RollupLine:
                       start_ms=T, end_ms=T + HOUR * 1000)
 
 
-async def test_an_unreadable_rollup_is_skipped_and_recorded_and_a_readable_one_is_an_item():
-    good, bad = "deviation|silence|ada|1", "deviation|silence|ghost|2"
-    rig = _rig(grounder=StaticGrounder(Grounding(rollups={good: _readable(good)})))
+KNOWN = {"ada"}
+BAD = "deviation|silence|ghost|2"          # a person the roster does not know
+
+
+def _known(person_id: str) -> bool:
+    return person_id in KNOWN
+
+
+async def test_a_malformed_rollup_is_skipped_recorded_and_consumed_and_a_readable_one_is_an_item():
+    good, bad = "deviation|silence|ada|1", "deviation|silence||2"     # no person: never readable
+    rig = _rig(person_known=_known)
     for ref in (good, bad):
         await rig.stimuli.append(stimulus=_rollup("u1", ref, T), recorded_at_ms=T)
     rig.clock.advance(120)
@@ -83,13 +91,93 @@ async def test_an_unreadable_rollup_is_skipped_and_recorded_and_a_readable_one_i
     (item,) = session.agenda["items"]
     assert item["stimulus_ids"] == [1]
     assert session.agenda["skipped_stimulus_ids"] == [2]        # recorded, never silent
+    assert session.agenda["retained_stimulus_ids"] == []
     assert rig.metrics.get("nora_cognition_stimuli_skipped_total", reason="unreadable_rollup") == 1
+    assert rig.ends() == ["closed"]
+    assert 2 not in {sid for sid, *_ in rig.carried()}          # consumed: no carry, no wedge
+    view = await rig.stimuli.view(unit="u1", mode="shadow", now_ms=rig.clock.ms, limit=10)
+    assert 2 not in {x.id for x in view.pending}
+
+
+async def test_a_readable_rollup_cut_by_max_items_is_deferred_and_carried_not_skipped():
+    """B1 (the strongest-tier review of #646). The old test asked the GROUNDER
+    whether a rollup was readable, and the grounder only builds lines for the items
+    the agenda kept: a readable rollup cut at `max_items` was labelled unreadable,
+    dropped from `deferred` and lost, with no carry. Two readable deviation rollups,
+    room for one."""
+    rig = _rig(person_known=_known, max_items=1)
+    for ref, item in (("deviation|silence|ada|1", "deviation_silence"),
+                      ("deviation|anomaly|ada|2", "deviation_anomaly")):     # two ITEMS
+        await rig.stimuli.append(stimulus=_rollup("u1", ref, T, item), recorded_at_ms=T)
+    rig.clock.advance(120)
+    await rig.tick()
+    await rig.settle()
+    (_, session, _), = rig.ledger.sessions
+    assert len(session.agenda["items"]) == 1
+    assert session.agenda["deferred_stimulus_ids"] == [2]
+    assert session.agenda["skipped_stimulus_ids"] == []
+    assert rig.metrics.get("nora_cognition_stimuli_skipped_total", reason="unreadable_rollup") == 0
+    assert (2, 1, "carried", False) in rig.carried()             # returned to the next agenda
+    view = await rig.stimuli.view(unit="u1", mode="shadow", now_ms=rig.clock.ms, limit=10)
+    assert 2 in {x.id for x in view.pending}          # not consumed
+
+
+async def test_a_rollup_the_roster_does_not_know_yet_is_retained_and_returns_once_it_does():
+    """The choice (DEC-245): a roster miss is not permanent. The stimulus is
+    RETAINED as a carry row that waits, so it is never consumed unseen, never
+    raises the `rollup` trigger (a waiting stimulus does not wake), and is an
+    agenda item again in the first session after the roster knows the person."""
+    KNOWN.discard("ghost")
+    rig = _rig(person_known=_known)
+    await rig.stimuli.append(stimulus=_rollup("u1", BAD, T), recorded_at_ms=T)
+    rig.clock.advance(120)
+    await rig.tick()
+    await rig.settle()
+    assert rig.agent.calls == 0 and rig.ends() == ["closed"]
+    assert rig.carried() == [(1, 0, "carried", True)]
+    assert rig.metrics.get("nora_cognition_stimuli_skipped_total",
+                           reason="roster_miss_rollup") == 1
+    # ... it is still pending, and it does NOT wake the unit again, however long we wait
+    for _ in range(3):
+        rig.clock.advance(6 * HOUR)
+        assert await rig.tick() == []
+    view = await rig.stimuli.view(unit="u1", mode="shadow", now_ms=rig.clock.ms, limit=10)
+    assert [(x.id, x.waits) for x in view.pending] == [(1, True)]
+    # The roster learns her; the next wake for any reason shows it as an item.
+    KNOWN.add("ghost")
+    try:
+        await rig.say()
+        rig.clock.advance(1)
+        await rig.tick()
+        await rig.settle()
+    finally:
+        KNOWN.discard("ghost")
+    (_, session, _) = rig.ledger.sessions[-1]
+    assert any(1 in i["stimulus_ids"] for i in session.agenda["items"])
+    assert session.agenda["skipped_stimulus_ids"] == []
+
+
+async def test_a_roster_miss_rides_a_session_that_runs_and_is_retained_beside_its_carries():
+    """The same retention when the session DOES run for another reason: the
+    skipped rollup is written as a waiting carry in the wake's close, next to the
+    item's own outcome, and is not an item of this session."""
+    rig = _rig(person_known=_known)
+    await rig.stimuli.append(stimulus=_rollup("u1", BAD, T), recorded_at_ms=T)
+    await rig.say()
+    rig.clock.advance(1900)
+    await rig.tick()
+    await rig.settle()
+    (_, session, _), = rig.ledger.sessions
+    assert [i["kind"] for i in session.agenda["items"]] == ["message"]
+    assert session.agenda["skipped_stimulus_ids"] == [1]
+    assert session.agenda["retained_stimulus_ids"] == [1]
+    assert (1, 0, "carried", True) in rig.carried()
     assert rig.ends() == ["closed"]
 
 
 async def test_a_wake_whose_only_rollups_are_unreadable_makes_no_model_call():
-    rig = _rig(grounder=StaticGrounder(Grounding()))
-    await rig.stimuli.append(stimulus=_rollup("u1", "deviation|silence|ghost|1", T),
+    rig = _rig(person_known=_known)
+    await rig.stimuli.append(stimulus=_rollup("u1", "deviation|silence||1", T),
                              recorded_at_ms=T)
     rig.clock.advance(120)
     await rig.tick()
@@ -177,3 +265,21 @@ async def test_striking_a_failing_rollup_wake_never_strikes_the_messages_it_left
     assert rig.stimuli.retracted == {rolled}        # the rollup it claimed, and nothing else
     view = await rig.stimuli.view(unit="u1", mode="shadow", now_ms=rig.clock.ms, limit=10)
     assert [s.id for s in view.pending] == [message]
+
+
+def test_an_outcome_row_written_before_0082_reads_no_cause_and_a_failure_keeps_its_own():
+    """M2 (strongest-tier review of #646): 0082 rewrites no row (the table is
+    append-only), so a closed or cancelled outcome written with `infra` is
+    normalised when it is READ."""
+    from nora.domain.stimuli import wake_state
+
+    def cause(outcome: str, stored: str) -> str:
+        state = wake_state(tracked=True, recorded_at_ms=1, outcome=outcome, outcome_at_ms=2,
+                           stale_before_ms=None, cause=stored)
+        assert state is not None
+        return state.cause
+
+    assert cause("closed", "infra") == "none"
+    assert cause("cancelled", "infra") == "none"
+    assert cause("failed", "infra") == "infra"
+    assert cause("timeout", "agenda") == "agenda"

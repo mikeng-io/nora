@@ -5,10 +5,10 @@ reason (m2 of the 2026-09-30 cognition-loop review, DEC-245).
 read `cause = 'infra'`: «the world failed» on a session that succeeded, and
 every count of infra failures had to remember to filter on the outcome. A wake
 that closed (or was cancelled by a shutdown) now records `none`. The check
-gains the value; rows written before this migration keep what they carry, except
-that the closed and cancelled ones are set to `none` here, because their cause
-was never a fact (`nora.domain.stimuli.wake_state` reads a closed wake's cause
-nowhere, so no decision changes).
+gains the value. `cognition_wake_outcome` is APPEND_ONLY (10 §8), so this migration
+rewrites NO row: a closed or cancelled outcome written before it keeps its
+`infra`, and every reader normalises on read (`nora.domain.stimuli.stored_cause`,
+applied in `wake_state`), because that cause was never a fact.
 
 Revision ID: 0082_cognition_cause_none
 Revises: 0081_computer_events
@@ -33,18 +33,15 @@ def upgrade() -> None:
         "ck_cognition_wake_outcome_cause", "cognition_wake_outcome",
         "cause IN ('infra', 'agenda', 'none')",
     )
-    op.execute(
-        "UPDATE cognition_wake_outcome SET cause = 'none' "
-        "WHERE outcome IN ('closed', 'cancelled') AND cause = 'infra'"
-    )
 
 
 def downgrade() -> None:
-    op.execute("UPDATE cognition_wake_outcome SET cause = 'infra' WHERE cause = 'none'")
+    # No UPDATE (append-only): NOT VALID leaves rows written with `none` alone
+    # and still refuses one in a new row.
     op.drop_constraint(
         "ck_cognition_wake_outcome_cause", "cognition_wake_outcome", type_="check",
     )
     op.create_check_constraint(
         "ck_cognition_wake_outcome_cause", "cognition_wake_outcome",
-        "cause IN ('infra', 'agenda')",
+        "cause IN ('infra', 'agenda')", postgresql_not_valid=True,
     )

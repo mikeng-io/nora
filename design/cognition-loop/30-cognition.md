@@ -53,10 +53,15 @@ handed.** Each of these was found by reading the input before the instruction
 - **A Rollup item is spelled out from its ref**: who (the roster name, resolved
   at read time and never serialized), what kind (co-location, arrival, silence,
   anomaly), the interval, and the place when the ref names one. **A Rollup
-  stimulus whose ref cannot be read (unparseable, or a person the roster does not
-  know) is not an agenda item** until `rollup_read` exists: it is skipped, counted
-  (`nora_cognition_stimuli_skipped_total`) and recorded on the session row
-  (`agenda.skipped_stimulus_ids`), and consumed, so it wedges nothing.
+  stimulus whose ref cannot be read is not an agenda item** until `rollup_read`
+  exists. Readability comes from the stimulus and the roster, never from what the
+  grounder built (a readable rollup cut at `max_items` is DEFERRED like any item).
+  A ref that does not parse is skipped, counted
+  (`nora_cognition_stimuli_skipped_total`), recorded on the session row
+  (`agenda.skipped_stimulus_ids`) and consumed. A person the roster does not know
+  YET is not permanent: the stimulus is retained as a waiting carry
+  (`agenda.retained_stimulus_ids`), so it never starts a wake, wedges nothing and
+  is an item again once the roster knows the person.
 - **Her own sends are part of the situation (D1, operator 2026-09-30).** Inside
   each message item's window (from `own_send_lookback_seconds`, 1800 s, before its
   oldest message until now, at most `own_sends_max`, 6) her own delivered sends in

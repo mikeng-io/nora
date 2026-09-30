@@ -264,7 +264,7 @@ async def _none(*a: Any, **k: Any) -> Any:
     return ()
 
 
-def _runner(agent: _Agent, grounder: Any) -> tuple[CognitionSessionRunner, InMemoryStimulusStore,
+def _runner(agent: _Agent, grounder: Any, **kw: Any) -> tuple[CognitionSessionRunner, InMemoryStimulusStore,
                                                      InMemoryCognitionDryRunStore]:
     ledger = InMemoryCognitionDryRunStore()
     stimuli = InMemoryStimulusStore(ledger=ledger)
@@ -279,7 +279,8 @@ def _runner(agent: _Agent, grounder: Any) -> tuple[CognitionSessionRunner, InMem
         pending_self_wakes=_none, pending_mirrored_reminds=_none, session_mode="shadow",
         budget=AdaptorBudget(turns=4, total_tokens=1000, output_tokens=100, timeout_seconds=30),
         cooldown_seconds=300.0, units=("u",), session_timeout_seconds=900.0,
-        max_items=12, max_strikes=3, clock=lambda: NOW / 1000, tz=HK,
+        max_items=kw.pop("max_items", 12), max_strikes=3, clock=lambda: NOW / 1000, tz=HK,
+        **kw,
     )
     return runner, stimuli, ledger
 
@@ -898,3 +899,110 @@ def test_a_send_of_hers_from_another_room_is_never_rendered_under_an_item():
     g = Grounding(records={s.ref: _rec(s, author="Ada", text="hello")}, own_sends={0: (stray,)})
     prompt = _prompt([s], g)
     assert "the other room's line" not in prompt and "Nora (you)" not in prompt
+
+
+# ---- M1 (strongest-tier review of #646): grounded AFTER the skip -----------------------------------
+
+def _known_person(person_id: str) -> bool:
+    return person_id in _PERSONS.by_person
+
+
+async def _wake_through_the_real_grounder(
+    records: _Records, pending: Sequence[Stimulus], *, max_items: int = 12, **kw: Any,
+) -> tuple[str, Grounding]:
+    agent = _Agent()
+    runner, _stimuli, ledger = _runner(
+        agent, _own_grounder(records, own_send_lookback_seconds=120, **kw),
+        max_items=max_items, person_known=_known_person,
+    )
+    view = UnitView(unit="u", pending=tuple(pending), last_activity_ms=None, last_wake=None)
+    await runner.on_wake(unit="u", view=view, now_ms=NOW, wake_id=1)
+    assert len(agent.prompts) == 1
+    return agent.prompts[0], ledger.sessions[0][1]
+
+
+async def test_an_unreadable_rollup_sorting_first_does_not_shift_her_own_sends_onto_the_wrong_room():
+    """Own sends are keyed by the agenda index the grounder saw. The skip rebuilt
+    the agenda AFTER the grounding, so with an unreadable rollup at index 0 every
+    room item moved up one and read the neighbour's sends (or none). Two rooms,
+    each with a send of hers that only its own item may show."""
+    ghost = Stimulus(id=1, unit="u", kind="rollup", item="deviation_silence",
+                     ref=f"deviation|silence|nobody|{_at(60)}", at_ms=_at(30),
+                     recorded_at_ms=_at(30))
+    a, b = _stim(2, A, ago=20, mid=101), _stim(3, B, ago=15, mid=102)
+    records = _Records(
+        [_hit(101, A, name="Ada", body="in room a"), _hit(102, B, name="Ben", body="in room b")],
+        own=[_own(900, A, ago=21, body="ASKED-IN-A"), _own(950, B, ago=16, body="ASKED-IN-B")],
+    )
+    prompt, _ = await _wake_through_the_real_grounder(
+        records, [ghost, a, b],
+        room_label=lambda platform, cid: {"room-a": "Room A", "room-b": "Room B"}[cid],
+    )
+    blocks: dict[str, str] = {}
+    current = ""
+    for line in prompt.splitlines():
+        if line[:1].isdigit() and "[room «" in line:
+            current = "Room A" if "«Room A»" in line else "Room B"
+        if current:
+            blocks[current] = blocks.get(current, "") + line + "\n"
+    assert "ASKED-IN-A" in blocks["Room A"] and "ASKED-IN-B" not in blocks["Room A"]
+    assert "ASKED-IN-B" in blocks["Room B"] and "ASKED-IN-A" not in blocks["Room B"]
+
+
+async def test_two_same_room_items_after_a_skip_each_get_their_own_window():
+    ghost = Stimulus(id=1, unit="u", kind="rollup", item="deviation_silence",
+                     ref=f"deviation|silence|nobody|{_at(60)}", at_ms=_at(30),
+                     recorded_at_ms=_at(30))
+    old, fresh = _stim(2, A, ago=100, mid=101), _stim(3, A, ago=20, mid=102)
+    records = _Records([_hit(101, A), _hit(102, A)], own=[
+        _own(900, A, ago=60, body="between them"), _own(901, A, ago=21, body="just before"),
+    ])
+    agent = _Agent()
+    runner, _s, ledger = _runner(
+        agent, _own_grounder(records, own_send_lookback_seconds=120), person_known=_known_person,
+    )
+    view = UnitView(unit="u", pending=(ghost, old, fresh), last_activity_ms=None, last_wake=None,
+                    carry={2: 1})           # `old` is a returning item: its own item, own window
+    await runner.on_wake(unit="u", view=view, now_ms=NOW, wake_id=1)
+    shown = ledger.sessions[0][1].situation["grounding"]["own_sends"]
+    assert {k: [m["message_id"] for m in v] for k, v in shown.items()} == {
+        "0": [900, 901], "1": [901],
+    }
+
+
+async def test_an_item_promoted_from_deferred_by_a_skip_is_grounded():
+    """`max_items=1`: the unreadable rollup takes the only slot on the first
+    agenda, the room item is deferred. Skipping the rollup promotes the room item,
+    and it must be read like any item (before, the grounder never saw it)."""
+    ghost = Stimulus(id=1, unit="u", kind="rollup", item="deviation_silence",
+                     ref=f"deviation|silence|nobody|{_at(60)}", at_ms=_at(30),
+                     recorded_at_ms=_at(30))
+    a = _stim(2, A, ago=20, mid=101)
+    records = _Records([_hit(101, A, name="Ada", body="promoted words")],
+                       own=[_own(900, A, ago=21, body="PROMOTED-OWN")])
+    prompt, row = await _wake_through_the_real_grounder(records, [ghost, a], max_items=1)
+    assert "promoted words" in prompt and "PROMOTED-OWN" in prompt
+    assert [r["message_id"] for r in row.situation["grounding"]["records"]] == [101]
+
+
+async def test_her_send_that_quotes_a_withdrawn_message_renders_without_the_quoted_text():
+    """D1 (strongest-tier review of #646). A send of hers that REPLIES to a message
+    `nora person forget` has since hidden carries a pointer (`quoted_ts`) and, in
+    its raw envelope, the quoted words. The session is shown her words and nothing
+    of the quote: neither the pointer's target (the Record read excludes the hidden
+    row) nor the words the envelope copied."""
+    s = _stim(1, A, ago=20, mid=101)
+    envelope = '{"quote": {"id": 555, "text": "FORGOTTEN-PERSONS-WORDS", "author": "+852000"}}'
+    row = TranscriptRow(
+        id=900, sender_id="nora", sender_name="Nora", ts=_at(25), body="sounds good, friday then",
+        is_nora=True, delivery_status=DeliveryStatus.SENT, raw_json=envelope,
+        quoted_ts=555,                                    # the hidden message's ts
+    )
+    records = _Records([_hit(101, A, name="Ada", body="yes")], own=[
+        RecordHit(platform=A.platform, conversation_id=A.conversation_id, row=row, deleted=False),
+    ])
+    g = await _ground_own(records, [s])
+    prompt = _prompt([s], g)
+    assert "sounds good, friday then" in prompt                 # her own words are shown
+    assert "FORGOTTEN-PERSONS-WORDS" not in prompt
+    assert "FORGOTTEN-PERSONS-WORDS" not in repr(g.as_dict()) and "555" not in repr(g.as_dict())

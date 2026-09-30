@@ -542,3 +542,53 @@ async def test_a_unit_that_only_records_would_wakes_still_raises_its_floor():
     )
     await ev.tick()
     assert {s.unit for s in store.stimuli} == {"b"}
+
+
+async def test_a_time_stimulus_already_pending_wakes_no_session_while_no_skill_ships():
+    """M8, the other half (strongest-tier review of #646): not RAISING a floor
+    is not enough. A floor raised before the gate (or by the previous deploy) is
+    already pending, and it woke a session all the same. It stays pending, is
+    never claimed and never consumed, and wakes the moment the kind is ready."""
+    seen: list[list[str]] = []
+
+    async def hook(*, unit, view, wake_id, now_ms):
+        seen.append([s.kind for s in view.pending])
+
+    ev, store, clock = _floor_setup(floors_ready=False)
+    ev._on_wake = hook
+    await store.append(stimulus=NewStimulus(
+        unit="nora", kind="time", item="floor", ref="floor:07:00@2026-09-28",
+        at_ms=clock.ms - 60_000, due_ms=clock.ms - 60_000,
+    ), recorded_at_ms=clock.ms)
+    assert await ev.tick() == []
+    assert store.wakes == [] and seen == []
+    view = await store.view(unit="nora", mode="shadow", now_ms=clock.ms, limit=10)
+    assert [s.kind for s in view.pending] == ["time"]          # kept, not consumed
+    ev._floors_ready = True
+    assert len(await ev.tick()) == 1
+    await ev.drain()
+    assert seen == [["time"]]
+
+
+async def test_a_pending_time_stimulus_does_not_ride_a_room_wake_when_its_kind_is_inert():
+    seen: list[list[str]] = []
+
+    async def hook(*, unit, view, wake_id, now_ms):
+        seen.append([s.kind for s in view.pending])
+
+    ev, store, clock = _floor_setup(floors_ready=False)
+    ev._on_wake = hook
+    await store.append(stimulus=NewStimulus(
+        unit="nora", kind="time", item="floor", ref="floor:07:00@2026-09-28",
+        at_ms=clock.ms - 60_000, due_ms=clock.ms - 60_000,
+    ), recorded_at_ms=clock.ms)
+    await store.append(stimulus=NewStimulus(
+        unit="nora", kind="message", item="message", ref="messages:1", at_ms=clock.ms,
+        platform="signal", conversation_id="g1",
+    ), recorded_at_ms=clock.ms)
+    clock.advance(1900)                      # past `quiet_seconds`: the room has settled
+    assert len(await ev.tick()) == 1
+    await ev.drain()
+    assert seen == [["message"]]
+    view = await store.view(unit="nora", mode="shadow", now_ms=clock.ms, limit=10)
+    assert [s.kind for s in view.pending] == ["time"]          # listed unclaimed, still pending

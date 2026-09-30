@@ -455,7 +455,10 @@ def wake_state(
         return LastSession(
             state="closed" if outcome == "closed" else "failed",
             started_at_ms=recorded_at_ms, ended_at_ms=outcome_at_ms, outcome=outcome,
-            cause=cause or DEFAULT_FAILURE_CAUSE,
+            # Normalised on READ: an outcome row written before 0082 carries
+            # `infra` for a closed or cancelled wake, and the append-only table
+            # is never rewritten to say otherwise (10 §8).
+            cause=stored_cause(outcome, cause or DEFAULT_FAILURE_CAUSE),
         )
     if not tracked or stale_before_ms is None:
         return None
@@ -498,6 +501,13 @@ class UnitView:
     #: is exactly what they read and never a stimulus that arrived since, nor
     #: one only an infrastructure-failed wake claimed.
     failed_mark: Watermark | None = None
+    #: Stimulus kinds that stay pending but neither wake the unit nor are
+    #: claimed by any wake (M8, DEC-245): a `time` stimulus, while no skill
+    #: ships for the `time` agenda kind, is a floor the session would be handed
+    #: and could do nothing with. Pending ones (raised before the gate, or by an
+    #: earlier deploy) are listed as unclaimed by every wake, so they are never
+    #: consumed unseen and act again the moment the kind is ready.
+    inert_kinds: frozenset[str] = frozenset()
 
     @property
     def watermark(self) -> Watermark:
@@ -662,7 +672,7 @@ def _trigger(view: UnitView, policy: WakePolicy, now_ms: int) -> WakeReason | No
     `reply_quiet_seconds` rides the next wake and never starts one. Quiet is
     measured from the unit's newest person-authored item, `waits` ones
     included: a room still replying to her is not a quiet room."""
-    eligible = [s for s in view.pending if not s.waits]
+    eligible = [s for s in view.pending if not s.waits and s.kind not in view.inert_kinds]
     if not eligible:
         return None
     quiet_ms = (
@@ -716,7 +726,10 @@ def decide(view: UnitView, policy: WakePolicy, now_ms: int) -> Verdict:
     cut = False
     cooling = _cooling(view, policy, now_ms)
     if cooling or _backing_off(view, policy, now_ms):
-        strong = any(is_strong(s.cues) for s in view.pending if not s.waits)
+        strong = any(
+            is_strong(s.cues) for s in view.pending
+            if not s.waits and s.kind not in view.inert_kinds
+        )
         last_cut = view.last_wake is not None and view.last_wake.cut_cooldown
         quiet_ms = (
             None if view.last_activity_ms is None else now_ms - view.last_activity_ms
@@ -748,9 +761,15 @@ def decide(view: UnitView, policy: WakePolicy, now_ms: int) -> Verdict:
         # What the range covers and the wake did NOT take (D2): listed, so the
         # watermark leaves them pending. Above `through` they are pending
         # anyway.
-        unclaimed_ids=tuple(
-            s.id for s in view.pending if s.id not in taken and s.id <= through
-        ),
+        unclaimed_ids=tuple(sorted(
+            {s.id for s in view.pending if s.id not in taken and s.id <= through}
+            # Carried forward from the watermark's own list, WHETHER OR NOT this
+            # read shows them: a truncated read (`limit`) cuts the newest, and a
+            # stimulus the view did not show cannot be claimed here, so dropping
+            # it from the list would consume it unseen under this wake's range
+            # (found by the tracked-wake property test, seed 9 at limit 3).
+            | {u for u in view.watermark.unclaimed if u not in taken and u <= through}
+        )),
     )
 
 
@@ -770,6 +789,7 @@ def claim(view: UnitView, reason: WakeReason) -> list[Stimulus]:
     stimuli left over are recorded on the wake (`NewWake.unclaimed_ids`) so the
     watermark never passes them: the claim is a SET, and no stimulus is lost or
     processed twice."""
+    live = [s for s in view.pending if s.kind not in view.inert_kinds]
     if reason in _OWN_KIND_REASONS:
-        return [s for s in view.pending if s.kind == reason and not s.waits]
-    return list(view.pending)
+        return [s for s in live if s.kind == reason and not s.waits]
+    return live
