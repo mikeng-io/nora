@@ -4278,3 +4278,41 @@ ASSESS_REPORT = sa.Table(
 IDX_ASSESS_REPORT_KIND_RUN = sa.Index(
     "idx_assess_report_kind_run", ASSESS_REPORT.c.kind, ASSESS_REPORT.c.run_at_ms,
 )
+
+
+# `computer_events` — the computer audit log (design/sandbox-runtime §12,
+# DEC-243): one row per computer tool call on every return path, written by
+# Nora's tools, never by `computerd`. `detail` holds the command or path in
+# full, output LENGTHS and a 500-character head of stdout/stderr, never a
+# command's whole output (`nora.domain.computer_events`). Append-only, the
+# `tool_call_log` shape; `created_at` is its system time.
+COMPUTER_EVENTS = sa.Table(
+    "computer_events",
+    METADATA,
+    sa.Column("id", pg.UUID(as_uuid=True), primary_key=True),
+    sa.Column(
+        "created_at", sa.DateTime(timezone=True), nullable=False,
+        server_default=sa.text("now()"),
+    ),
+    sa.Column("platform", sa.Text, nullable=False),
+    sa.Column("conversation_id", sa.Text, nullable=False),
+    sa.Column("conversation_type", sa.Text, nullable=False),
+    sa.Column("tag_id", sa.Text, nullable=False),
+    sa.Column("scope", sa.Text, nullable=False),
+    sa.Column("tool", sa.Text, nullable=False),
+    sa.Column("status", sa.Text, nullable=False),
+    sa.Column("exit_code", sa.Integer, nullable=True),
+    sa.Column("duration_ms", sa.Integer, nullable=True),
+    sa.Column(
+        "detail", pg.JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"),
+    ),
+)
+
+# An ascending composite, not `tool_call_log`'s hand-written `created_at DESC`
+# expression index: a btree scans backwards for `ORDER BY created_at DESC`
+# at the same cost, and a plain index is one Alembic autogenerate can see, so
+# it needs no `_DESC_EXPRESSION_INDEXES` exemption and no parity row.
+IDX_COMPUTER_EVENTS_CONV_TS = sa.Index(
+    "idx_computer_events_conv_ts",
+    COMPUTER_EVENTS.c.conversation_id, COMPUTER_EVENTS.c.created_at,
+)

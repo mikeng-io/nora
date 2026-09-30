@@ -1873,7 +1873,15 @@ class SandboxRuntime(Protocol):
     R-27 without a try/except.
     """
 
-    async def run(self, *, scope: str, command: str, timeout_s: float) -> RunResult: ...
+    async def run(
+        self, *, scope: str, command: str, timeout_s: float,
+        limits: Mapping[str, int] | None = None,
+    ) -> RunResult:
+        """`limits` is the RESERVED per-command resource slot (`[computer]
+        limits`): sent only when it names at least one limit, and ignored by
+        computerd today (operator 2026-09-30: the computer is semi-trusted,
+        so no limits are applied)."""
+        ...
 
     async def read(
         self, *, scope: str, path: str, offset: int = 0, limit: int | None = None,

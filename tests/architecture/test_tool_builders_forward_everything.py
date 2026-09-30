@@ -90,6 +90,11 @@ _SPECS_ONLY = frozenset({
     # knows what was deferred; a `build_tools` caller has no shelf to pass,
     # and `load_tools` answers `unavailable` without one.
     "shelf",
+    # Nora's computer (design/sandbox-runtime, DEC-243): the runtime, its
+    # audit store and its bounds, threaded from the composition root through
+    # `ToolRegistry.build` like `compute_backend`. Its tests build the specs
+    # directly (tests/unit/test_computer_tools.py).
+    "computer", "computer_events", "computer_settings",
 })
 
 

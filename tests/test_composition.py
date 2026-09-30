@@ -851,6 +851,23 @@ async def test_compute_refuses_to_start_without_its_host_injected_values(
         await build_dependencies(on)
 
 
+@pytest.mark.parametrize("token", [None, "", "   "])
+async def test_computer_refuses_to_start_without_its_token(cfg, monkeypatch, token):
+    """`[computer] enabled` with computerd's bearer token unset or blank
+    refuses to start (R-5), the `[compute]` discipline: otherwise every
+    computer call would answer `unavailable` from computerd's 401, in front of
+    the group, for a fault only the operator can fix. The variable NAME is
+    read off `cfg` (DEC-8)."""
+    on = override_config(cfg, {"computer.enabled": True, "heartbeat.enabled": False})
+    if token is None:
+        monkeypatch.delenv(cfg.computer.token_env, raising=False)
+    else:
+        monkeypatch.setenv(cfg.computer.token_env, token)
+
+    with pytest.raises(StartupError, match=cfg.computer.token_env):
+        await build_dependencies(on)
+
+
 @pytest.mark.parametrize("base_url", [
     "http://localhost:20128/v1",               # right port, a host the proxy never allows
     "http://host.docker.internal:8000/v1",     # Honcho's port

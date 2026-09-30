@@ -300,6 +300,12 @@ class Computer:
             raise RefusedError("command must be a non-empty string")
         timeout = min(max(_float(body.get("timeout_s"), 120.0), 1.0), MAX_RUN_SECONDS)
         limit = _limit(body.get("max_output_chars"), MAX_OUTPUT_CHARS, default=8000)
+        # `body["limits"]` (cpu_seconds, max_processes, max_file_bytes) is a
+        # RESERVED field: Nora sends it only when `[computer] limits` names
+        # one, and it is deliberately NOT applied here. The operator ruled on
+        # 2026-09-30 that the computer is semi-trusted, so no per-command
+        # resource limit is enforced; the slot exists so that turning limits
+        # on later is config plus one change here (setrlimit in a preexec).
         await asyncio.to_thread(self._ensure_scope, scope)
         workdir = self.root / scope
         env = {k: v for k, v in os.environ.items() if k != TOKEN_ENV}

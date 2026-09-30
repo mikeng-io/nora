@@ -124,6 +124,7 @@ $$;
 );
 );
 );
+);
 ADD CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num);
 ADD CONSTRAINT analytics_watermark_pkey PRIMARY KEY (deriver_name, subject_id);
 ADD CONSTRAINT artifacts_pkey PRIMARY KEY (id);
@@ -142,6 +143,7 @@ ADD CONSTRAINT cognition_wake_outcome_pkey PRIMARY KEY (id);
 ADD CONSTRAINT cognition_wake_pkey PRIMARY KEY (id);
 ADD CONSTRAINT cognition_would_write_pkey PRIMARY KEY (id);
 ADD CONSTRAINT compute_jobs_pkey PRIMARY KEY (id);
+ADD CONSTRAINT computer_events_pkey PRIMARY KEY (id);
 ADD CONSTRAINT config_revision_pkey PRIMARY KEY (id);
 ADD CONSTRAINT consolidation_watermark_pkey PRIMARY KEY (consolidator_name, scope_id);
 ADD CONSTRAINT culture_head_revision_id_fkey FOREIGN KEY (head_revision_id) REFERENCES public.culture_revision(id);
@@ -261,6 +263,7 @@ ALTER TABLE ONLY public.cognition_wake_outcome
 ALTER TABLE ONLY public.cognition_would_write
 ALTER TABLE ONLY public.cognition_would_write
 ALTER TABLE ONLY public.compute_jobs
+ALTER TABLE ONLY public.computer_events
 ALTER TABLE ONLY public.config_revision
 ALTER TABLE ONLY public.consolidation_watermark
 ALTER TABLE ONLY public.culture
@@ -608,6 +611,7 @@ CREATE INDEX idx_cognition_wake_unit_mode_id ON public.cognition_wake USING btre
 CREATE INDEX idx_cognition_would_write_session ON public.cognition_would_write USING btree (session_id);
 CREATE INDEX idx_cognition_would_write_unit_recorded ON public.cognition_would_write USING btree (unit, recorded_at);
 CREATE INDEX idx_compute_jobs_state ON public.compute_jobs USING btree (state);
+CREATE INDEX idx_computer_events_conv_ts ON public.computer_events USING btree (conversation_id, created_at);
 CREATE INDEX idx_config_revision_file_loaded ON public.config_revision USING btree (file, loaded_at);
 CREATE INDEX idx_culture_revision_key_written ON public.culture_revision USING btree (culture_key, written_at DESC, id DESC);
 CREATE INDEX idx_decision_log_conv_ts ON public.decision_log USING btree (conversation_id, ts DESC, id DESC);
@@ -681,6 +685,7 @@ CREATE TABLE public.cognition_wake (
 CREATE TABLE public.cognition_wake_outcome (
 CREATE TABLE public.cognition_would_write (
 CREATE TABLE public.compute_jobs (
+CREATE TABLE public.computer_events (
 CREATE TABLE public.config_revision (
 CREATE TABLE public.consolidation_watermark (
 CREATE TABLE public.culture (
@@ -1186,7 +1191,9 @@ conversation_id text NOT NULL,
 conversation_id text NOT NULL,
 conversation_id text NOT NULL,
 conversation_id text NOT NULL,
+conversation_id text NOT NULL,
 conversation_id text,
+conversation_type text NOT NULL,
 conversation_type text NOT NULL,
 conversation_type text NOT NULL,
 conversation_type text NOT NULL,
@@ -1209,6 +1216,7 @@ created_at timestamp with time zone DEFAULT now() NOT NULL
 created_at timestamp with time zone DEFAULT now() NOT NULL,
 created_at timestamp with time zone DEFAULT now() NOT NULL,
 created_at timestamp with time zone DEFAULT now() NOT NULL,
+created_at timestamp with time zone DEFAULT now() NOT NULL,
 created_at timestamp with time zone NOT NULL,
 created_at timestamp with time zone NOT NULL,
 created_at_ms bigint NOT NULL,
@@ -1222,6 +1230,7 @@ describe_model text,
 description text DEFAULT ''::text NOT NULL,
 description text NOT NULL,
 description text,
+detail jsonb DEFAULT '{}'::jsonb NOT NULL
 detail jsonb DEFAULT '{}'::jsonb NOT NULL,
 detail jsonb DEFAULT '{}'::jsonb NOT NULL,
 detail text DEFAULT ''::text NOT NULL,
@@ -1243,6 +1252,7 @@ duplicate_id uuid NOT NULL,
 duplicate_title text NOT NULL,
 duration_mad_ms bigint,
 duration_median_ms bigint,
+duration_ms integer,
 dwell_ms bigint DEFAULT 0 NOT NULL,
 edits integer NOT NULL,
 eligible_count integer NOT NULL,
@@ -1271,6 +1281,7 @@ exclude_persons text[] DEFAULT '{}'::text[] NOT NULL,
 exclude_persons text[] DEFAULT '{}'::text[] NOT NULL,
 exclude_persons text[] DEFAULT '{}'::text[] NOT NULL,
 exclude_persons text[] DEFAULT '{}'::text[] NOT NULL,
+exit_code integer,
 expires_at bigint
 extractor_confidence double precision NOT NULL,
 extractor_confidence double precision NOT NULL,
@@ -1364,6 +1375,7 @@ id uuid DEFAULT gen_random_uuid() NOT NULL,
 id uuid DEFAULT gen_random_uuid() NOT NULL,
 id uuid DEFAULT gen_random_uuid() NOT NULL,
 id uuid DEFAULT gen_random_uuid() NOT NULL,
+id uuid NOT NULL,
 id uuid NOT NULL,
 id uuid NOT NULL,
 id uuid NOT NULL,
@@ -1599,6 +1611,7 @@ platform text NOT NULL,
 platform text NOT NULL,
 platform text NOT NULL,
 platform text NOT NULL,
+platform text NOT NULL,
 platform text,
 platform_message_id text,
 pos_id bigint NOT NULL,
@@ -1726,6 +1739,7 @@ saved_place_id text,
 saved_place_id text,
 scope text DEFAULT ''::text NOT NULL,
 scope text NOT NULL,
+scope text NOT NULL,
 scope_id text NOT NULL,
 scope_id text NOT NULL,
 scope_id text NOT NULL,
@@ -1784,6 +1798,7 @@ status text NOT NULL,
 status text NOT NULL,
 status text NOT NULL,
 status text NOT NULL,
+status text NOT NULL,
 status text,
 stay_count integer NOT NULL,
 stay_ms bigint NOT NULL,
@@ -1829,6 +1844,7 @@ table_name text NOT NULL,
 tag_id text NOT NULL,
 tag_id text NOT NULL,
 tag_id text NOT NULL,
+tag_id text NOT NULL,
 tag_id text,
 tags_sha256 text,
 task text NOT NULL,
@@ -1846,6 +1862,7 @@ title text NOT NULL,
 title text NOT NULL,
 title text NOT NULL,
 title text,
+tool text NOT NULL,
 tool_input jsonb NOT NULL,
 tool_name text NOT NULL,
 tool_result jsonb NOT NULL,

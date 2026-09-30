@@ -46,6 +46,15 @@ _CHARSET = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 VERBS: tuple[str, ...] = (
     "read", "fetch", "search", "list", "create", "update", "cancel", "send",
     "query", "propose", "revise", "set_status", "rsvp",
+    # Nora's computer (design/sandbox-runtime §4, DEC-243): the coding-agent
+    # convention, Claude Code's Bash/Read/Write/Edit (and Pi's core set).
+    # `run` executes a command: the operator chose all-bash execution on
+    # 2026-09-30, because restricting the language is not restricting the
+    # capability, so there is one runner, not a tool per language. `write`
+    # replaces a whole file and `edit` swaps one exact match, two different
+    # operations none of `create`/`update` names: `create` implies the thing
+    # is new, and `update` a record's fields.
+    "run", "write", "edit",
 )
 
 

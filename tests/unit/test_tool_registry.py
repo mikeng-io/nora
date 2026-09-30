@@ -150,6 +150,8 @@ def test_the_registry_exposes_every_declared_tool():
         "event_search", "suggest_venue",
         # Nora Compute spec §4 (Task 5).
         "make_artifact",
+        # Nora's computer (design/sandbox-runtime §4, DEC-243).
+        "computer_run", "computer_read", "computer_write", "computer_edit",
         # DEC-97: what she is running, and what was in an earlier version.
         "version",
         # The note tier's four verbs (note-tier spec §5.2/§6).
@@ -240,6 +242,13 @@ def test_budgets_match_todays_table():
         # note describes for a recall verb — run once, notice a different
         # `limit` is needed, run once more.
         "recall_lookups": 2,
+        # Nora's computer (design/sandbox-runtime §4). `computer_run` 12: a
+        # write, run, read the error, fix, run again loop, twice in a turn.
+        # `computer_read` 8: a few files or one long file read on. `write` 8:
+        # a small project is several files. `edit` 8: patches across a few
+        # files, or a fix after a run.
+        "computer_run": 12, "computer_read": 8, "computer_write": 8,
+        "computer_edit": 8,
         # The one tool whose budget is sized by the QUESTION rather than by
         # cost: it is a pure function with no network and no clock, so four
         # calls are four model round trips and nothing else.
@@ -710,6 +719,9 @@ ACT_VERBS = frozenset({
     "remind", "cancel_reminder",
     "event_propose", "event_revise", "event_rsvp", "event_set_status",
     "make_artifact",
+    # design/sandbox-runtime §4: a command, a file write and a file edit all
+    # change the room's workspace.
+    "computer_run", "computer_write", "computer_edit",
     "send_reply", "send_to", "send_gif",
     # DEC-137: generation is an external side effect (provider call +
     # artifact hosting), never a read — the Dreamer may not generate.
@@ -786,6 +798,10 @@ READ_ONLY = frozenset({
     "instagram_read",
     # R-86 again (P11): a one-row vocabulary, and the same GET-only client.
     "instagram_search",
+    # design/sandbox-runtime §4: reads a file in the room's own workspace and
+    # writes nothing there (its audit row is a log of the call, like
+    # `_log_call`, not an effect of it). Eligible, not granted.
+    "computer_read",
 })
 
 

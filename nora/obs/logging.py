@@ -142,6 +142,18 @@ def bind_tag_id(tag_id: str) -> None:
     structlog.contextvars.bind_contextvars(tag_id=tag_id)
 
 
+def current_tag_id() -> str:
+    """The tag bound by `bind_tag_id` in this context, or `""` when none is.
+
+    The one reader of the binding outside the log pipeline: a tool closure
+    runs in a task that copied the tag's context (see
+    `nora.agent.tools._log_call`), so this names the turn a tool call ran
+    under without the tool taking it as an argument. Empty outside a tag
+    (a fire turn or a Dreamer pass binds none)."""
+    value = structlog.contextvars.get_contextvars().get("tag_id")
+    return value if isinstance(value, str) else ""
+
+
 def clear_tag_id() -> None:
     structlog.contextvars.clear_contextvars()
 

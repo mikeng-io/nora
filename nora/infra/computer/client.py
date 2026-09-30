@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from typing import Any, TypeVar
 
 import aiohttp
@@ -86,12 +86,23 @@ class ComputerdRuntime:
 
     # -- the port ---------------------------------------------------------
 
-    async def run(self, *, scope: str, command: str, timeout_s: float) -> RunResult:
+    async def run(
+        self, *, scope: str, command: str, timeout_s: float,
+        limits: Mapping[str, int] | None = None,
+    ) -> RunResult:
+        payload: dict[str, Any] = {
+            "scope": scope, "command": command, "timeout_s": timeout_s,
+            "max_output_chars": self._max_output_chars,
+        }
+        # The reserved slot goes on the wire only when it names a limit, so
+        # an unconfigured `[computer] limits` sends exactly what it sent
+        # before the slot existed.
+        if limits:
+            payload["limits"] = dict(limits)
+
         async def body() -> RunResult:
             reply = await self._post_json(
-                "run", {"scope": scope, "command": command, "timeout_s": timeout_s,
-                        "max_output_chars": self._max_output_chars},
-                deadline_s=timeout_s + _RUN_SLACK_SECONDS,
+                "run", payload, deadline_s=timeout_s + _RUN_SLACK_SECONDS,
             )
             return RunResult(
                 status=_status(reply.get("status")),

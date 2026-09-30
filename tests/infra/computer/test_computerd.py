@@ -221,3 +221,36 @@ async def test_a_hostile_reply_never_raises_out_of_the_client():
             assert result.status is SandboxStatus.UNAVAILABLE
     finally:
         await server.close()
+
+
+async def test_the_reserved_limits_slot_goes_on_the_wire_only_when_set():
+    """`[computer] limits` is reserved (operator 2026-09-30): unset, the run
+    body is exactly what it was before the slot existed; set, it carries only
+    the limits named."""
+    from aiohttp import web
+    bodies: list[dict] = []
+
+    async def run(request: web.Request) -> web.Response:
+        bodies.append(await request.json())
+        return web.json_response({"status": "ok", "exit_code": 0, "stdout": "", "stderr": ""})
+    app = web.Application()
+    app.router.add_post("/v1/run", run)
+    server = TestServer(app)
+    await server.start_server()
+    try:
+        runtime = ComputerdRuntime(base_url=str(server.make_url("")), token=TOKEN)
+        await runtime.run(scope=SCOPE, command="true", timeout_s=1)
+        await runtime.run(scope=SCOPE, command="true", timeout_s=1, limits={})
+        await runtime.run(scope=SCOPE, command="true", timeout_s=1, limits={"cpu_seconds": 5})
+    finally:
+        await server.close()
+    assert ["limits" in b for b in bodies] == [False, False, True]
+    assert bodies[2]["limits"] == {"cpu_seconds": 5}
+
+
+async def test_computerd_accepts_and_ignores_the_limits_slot(served):
+    runtime, _server, _root = served
+    got = await runtime.run(scope=SCOPE, command="echo ran", timeout_s=5,
+                            limits={"cpu_seconds": 1, "max_processes": 1})
+    assert got.status is SandboxStatus.OK
+    assert got.stdout == "ran\n"

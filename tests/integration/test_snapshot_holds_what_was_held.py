@@ -305,6 +305,11 @@ APPEND: dict[str, Callable[[int], dict[str, Any]]] = {
         "id": _uuid("tc", n), "conversation_id": "g1", "conversation_type": "group",
         "tag_id": f"t{n}", "tool_name": "now", "tool_input": {}, "tool_result": {"n": n},
     },
+    "computer_events": lambda n: {
+        "id": _uuid("ce", n), "platform": "signal", "conversation_id": "g1",
+        "conversation_type": "group", "tag_id": f"t{n}", "scope": "ab" * 16,
+        "tool": "computer_run", "status": "ok", "detail": {"command": f"echo {n}"},
+    },
     "revision_blob": lambda n: {"sha256": f"{n:064x}", "content": f"text {n}"},
     "doctrine_revision": lambda n: {
         "corpus": "doctrine", "content_sha256": f"{n:064x}", "files": {}, "loaded_at": T0,

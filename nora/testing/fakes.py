@@ -6,7 +6,7 @@ import fnmatch
 import hashlib
 import json
 import re
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from datetime import datetime
 from typing import Any
@@ -27,6 +27,7 @@ from nora.domain.computer import (
     RunResult,
     SandboxStatus,
 )
+from nora.domain.computer_events import ComputerEvent, normalise_computer_event
 from nora.domain.media import (
     MediaBlob,
     MediaBytes,
@@ -1661,6 +1662,35 @@ class FakeToolCallLogStore:
         return rows[:limit]
 
 
+class FakeComputerEventStore:
+    """In-memory `ComputerEventStore`. Bound to
+    `nora.infra.sql.computer_events.SqlComputerEventStore` by
+    `tests/contract/test_computer_event_store_contract.py`.
+
+    `fail = True` makes `append` raise, the storage-failure case the
+    computer tools must survive without losing the turn's result.
+    """
+
+    def __init__(self) -> None:
+        self.events: list[ComputerEvent] = []
+        self.fail = False
+
+    async def append(self, event: ComputerEvent) -> None:
+        if self.fail:
+            raise RuntimeError("fake computer_events append failure")
+        self.events.append(normalise_computer_event(event))
+
+    async def recent(
+        self, *, conversation_id: str, since: datetime, limit: int,
+    ) -> list[ComputerEvent]:
+        rows = [
+            e for e in self.events
+            if e.conversation_id == conversation_id and e.created_at >= since
+        ]
+        rows.sort(key=lambda e: e.created_at, reverse=True)
+        return rows[:limit]
+
+
 class FakeSocialProvider:
     """In-memory `SocialProvider`, bound to `OpenCliBridgeClient`,
     `InstagramSocialClient` and `SocialRouter` by
@@ -1839,6 +1869,9 @@ class FakeSandboxRuntime:
     def __init__(self) -> None:
         self.files_by_scope: dict[str, dict[str, bytes]] = {}
         self.runs: list[tuple[str, str]] = []
+        # Every `run` call as it arrived, refused ones included: what a test
+        # reads to see the timeout and the reserved `limits` slot.
+        self.run_calls: list[dict[str, object]] = []
         self.down = False
         self._scripted: dict[str, RunResult] = {}
 
@@ -1854,7 +1887,12 @@ class FakeSandboxRuntime:
             return SandboxStatus.DENIED
         return None
 
-    async def run(self, *, scope: str, command: str, timeout_s: float) -> RunResult:
+    async def run(
+        self, *, scope: str, command: str, timeout_s: float,
+        limits: Mapping[str, int] | None = None,
+    ) -> RunResult:
+        self.run_calls.append({"scope": scope, "command": command,
+                               "timeout_s": timeout_s, "limits": limits})
         if (refusal := self._refusal(scope)) is not None:
             return RunResult(status=refusal, reason="fake refusal")
         self.runs.append((scope, command))

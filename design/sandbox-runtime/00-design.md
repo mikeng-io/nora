@@ -153,10 +153,13 @@ the routing cost.
 | `computer_run(command, timeout?)` | bash in the room's workspace: python/uv, node, git, ffmpeg, curl. One tool, not one per language |
 | `computer_read(path, offset?, limit?)` | text as a tagged, bounded block; images and PDFs go through her existing vision path |
 | `computer_write(path, content)` / `computer_edit(path, old, new)` | create or patch files; edit makes multi-step work cheap |
-| `computer_files(pattern?)` | list or glob the workspace |
 | `computer_browse(action, …)` | `goto` / `snapshot` (accessibility tree) / `click` / `type` / `screenshot`, the Playwright-MCP shape, tree first |
 | `computer_import(ref)` | chat attachment, media ref or blob key → `inbox/` |
 | `computer_export(path, to, title?, artifact_id?)` | `to="link"` → Drop (new link, or the same link revised); `to="chat"` → sent as an attachment to the room; `to="keep"` → private blob + manifest (§6, §7) |
+
+**No `computer_files`** (operator, 2026-09-30): listing and search go
+through `computer_run` (`ls`, `find`, `rg`), so S2b ships four file and shell
+tools, Pi's core set: run, read, write, edit.
 
 `make_artifact` is **no longer a tool**. It becomes the `document-creation` runtime
 skill (§6).
@@ -165,7 +168,7 @@ skill (§6).
   `media_*`. They are cheaper, and none of them needs a computer.
 - **`computer_browse`** is for pages that are JavaScript-heavy, interactive
   or behind a login.
-- **Measurement:** eight tools is a real routing cost (ADR 0015), so the
+- **Measurement:** seven tools is a real routing cost (ADR 0015), so the
   `tool_selection` measurement runs before and after they are added.
 
 ## 5. The VM image
