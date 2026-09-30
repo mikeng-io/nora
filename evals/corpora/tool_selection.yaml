@@ -408,6 +408,42 @@ cases:
     metadata: {tools: [computer_export], not_tools: [document_publish]}
     snapshot: *room_a
 
+  # A question the chat answers. Graded like the other negatives, on a tool she
+  # MAY reach for (`web_search` or `weather`: this grader needs one acceptable
+  # tool, so «answered from memory with no call» grades FAIL here, which is a
+  # limit of the instrument and not a defect to tune against). What the case
+  # measures is `not_tools`: a short factual question does not become a document.
+  - name: route_quick_question_not_a_document
+    entry: tag
+    expect: reply
+    mention: true
+    input: 東京十二月冷唔冷？簡單答我就得
+    metadata: {tools: [web_search, weather], not_tools: [document_publish, document_read]}
+    snapshot: *room_a
+
+  # Changing a document she did not just make. ORDER, not choice: `document_read`
+  # must run before any `document_publish`, because a publish that names a
+  # `document_id` must carry the revision she read (`base_revision`). The id in
+  # the input exists in no sandbox (nothing seeds a document into the clone), so
+  # the read honestly answers `not_found`; what passes is reading first and not
+  # publishing over an id she could not read. LIMIT, stated: live, the id comes
+  # from her own earlier publish result in the window, here it arrives typed in
+  # the message, so this measures the order and not whether she finds the id.
+  # The `args_include` check is deliberately absent: with `not_found` she has no
+  # revision to pass, so a publish here would be the error, not the pass.
+  - name: route_document_read_before_edit
+    entry: tag
+    expect: reply
+    mention: true
+    input: >-
+      add a section on visas to the document you made, id
+      3f9c1d52-7a4e-4b8e-9f06-2d1c5a7b8e10
+    metadata:
+      tools: [document_read]
+      not_tools: [make_artifact]
+      before: {document_read: [document_publish]}
+    snapshot: *room_a
+
   # --- the room tools (design/self-awareness/07) ----------------------------------
   # A same-domain pair (ADR 0015 §1), and each has a neighbour it could steal
   # from: `room_list` from `group_members` (who is HERE vs which rooms exist),

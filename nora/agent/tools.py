@@ -14279,8 +14279,9 @@ Args:
         """Publish a document to the web app, a plan, report or itinerary people
         open later. Call this when somebody asks for one. Returns where to open it.
 
-        MUST: a document is a JSON spec, never HTML, markup or a file. Call with
-        no `spec` first to read the component catalog, then send the spec.
+        MUST: a document is a JSON spec, never HTML, markup or a file. Load the
+        document-creation skill before you write one, then call with no `spec`
+        to read the component catalog, then send the spec.
 
         MUST: to change a document, pass its `document_id` and the `revision`
         `document_read` gave you as `base_revision`.
