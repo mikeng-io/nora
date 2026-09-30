@@ -248,12 +248,15 @@ def test_the_whole_corpus_is_accounted_for() -> None:
     p-value, a CSV table), three negatives where maths, a web page and a
     picture must NOT reach `computer_run`, and a named-file `computer_read`
     left UNANCHORED until S2b-2's <computer> block; the positives measure the
-    `[computer] enabled` arm only), plus `tool_selection_cognition`'s 5
+    `[computer] enabled` arm only), plus `tool_reporting`'s
+    `report_computer_run_in_own_words` (2026-09-30, S2b-2: after a run she
+    answers in her own words, not the bare stdout; computer-on arm only), plus
+    `tool_selection_cognition`'s 5
     (2026-09-30, PR B «what she can read»: `rollup_read` against `record_query`
     twice and against `where_been` past its 90 days, and `standing_read` read
     before `standing_revise` and against `note_read`/`note_search`); a change to it
     is a change to what the suite claims to measure and belongs in a commit that
     says so. Recomputed with `census()` at each merge, never summed."""
     totals = [census(n) for n in CORPORA]
-    assert sum(c.total for c in totals) == 274
-    assert sum(c.active + c.parked for c in totals) == 274
+    assert sum(c.total for c in totals) == 275
+    assert sum(c.active + c.parked for c in totals) == 275

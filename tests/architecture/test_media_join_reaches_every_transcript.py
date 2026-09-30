@@ -50,6 +50,10 @@ _TRANSCRIPT_READS = ("recent", "since", "since_including_nora", "unattributed")
 #: Inverted, a new module reading the record store appears in the discovered
 #: set and has to be classified — joined, or exempted here with a sentence.
 _NOT_A_BUILDER = {
+    # design/sandbox-runtime §15.3: `recent` here is `ComputerEventStore`'s,
+    # the computer audit (commands and their exit codes), never a message
+    # row; no transcript body reaches the `<computer>` block through it.
+    "nora/engagement/computer_context.py": "reads computer audit rows, not messages",
     # The OPERATOR's surface, not a model's: `nora persons pending` lists rows
     # whose sender maps to nobody so a human can add them to identity.toml. A
     # human reading `[image a3f2c1]` in a CLI table is not being told a photo

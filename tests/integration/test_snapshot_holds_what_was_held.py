@@ -233,6 +233,13 @@ ROWS: dict[str, Callable[[int], dict[str, Any]]] = {
         "id": _uuid("event", i), "conversation_id": "g1", "title": f"event {i}",
         "created_by": "p", "status": "proposed", "created_at": T0,
     },
+    # design/sandbox-runtime §15.2 (0082): one open session per scope.
+    "computer_sessions": lambda i: {
+        "id": _uuid("cs", i), "platform": "signal", "conversation_id": f"g{i}",
+        "scope": f"{i:02x}" * 16, "objective": f"task {i}", "status": "open",
+        "created_at": T0, "updated_at": T0, "last_activity_at": T0,
+        "actor": "tag", "created_by_tag": f"t{i}",
+    },
 }
 
 #: The column each revision moves, and to what.
@@ -244,6 +251,7 @@ REVISE: dict[str, tuple[str, Callable[[int], Any]]] = {
     "note_candidate": ("occurrence_count", lambda i: 10 + i),
     "note": ("strikes", lambda i: 1 + i),
     "culture": ("updated_at", lambda i: MS0 + 1000 + i),
+    "computer_sessions": ("objective", lambda i: f"task {i}, continued"),
     "standing": ("body", lambda i: f"revised position {i}"),
     "reminders": ("state", lambda i: "cancelled"),
     "compute_jobs": ("state", lambda i: "firing"),

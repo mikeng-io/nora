@@ -195,6 +195,7 @@ def test_the_registry_exposes_every_declared_tool():
         "make_artifact",
         # Nora's computer (design/sandbox-runtime §4, DEC-243).
         "computer_run", "computer_read", "computer_write", "computer_edit",
+        "computer_session_list",
         # DEC-97: what she is running, and what was in an earlier version.
         "version",
         # The note tier's four verbs (note-tier spec §5.2/§6).
@@ -292,6 +293,10 @@ def test_budgets_match_todays_table():
         # files, or a fix after a run.
         "computer_run": 12, "computer_read": 8, "computer_write": 8,
         "computer_edit": 8,
+        # design/sandbox-runtime §15.2: sessions are derived by code, so the
+        # one session tool reads. One call answers «what were you doing»; a
+        # second is a different status filter.
+        "computer_session_list": 2,
         # The one tool whose budget is sized by the QUESTION rather than by
         # cost: it is a pure function with no network and no clock, so four
         # calls are four model round trips and nothing else.
@@ -856,6 +861,9 @@ READ_ONLY = frozenset({
     # writes nothing there (its audit row is a log of the call, like
     # `_log_call`, not an effect of it). Eligible, not granted.
     "computer_read",
+    # design/sandbox-runtime §15.2: reads Nora's own session rows and the
+    # room's observed state; writes nothing.
+    "computer_session_list",
 })
 
 

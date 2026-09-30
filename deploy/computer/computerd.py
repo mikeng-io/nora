@@ -42,6 +42,14 @@ What it guarantees, whatever the caller sends:
   run that carries its exit code. A bad token is HTTP 401, not a `denied`: it
   is a configuration fault, never an answer.
 
+- **What the computer holds, read fresh** (`/v1/state`, design §15.1): a
+  scope's newest files (path, size, mtime; never through a link) and its
+  tmux sessions, listed as the scope's own user on the scope's own socket,
+  which is where every `run` puts a `tmux new`. A session is `running` when
+  a pane runs a non-shell command OR its process has any child: a `bash
+  train.sh`, a `bash -c` chain or a backgrounded server all show `bash` as
+  the foreground command. Nothing here kills a session or deletes a file.
+
 Dependencies: the standard library and aiohttp, nothing from `nora`.
 """
 
@@ -53,14 +61,15 @@ import contextlib
 import errno
 import fnmatch
 import hashlib
+import heapq
 import hmac
 import os
 import pwd
 import re
 import secrets
 import signal
-import subprocess
 import stat
+import subprocess
 import tempfile
 import threading
 import time
@@ -80,6 +89,25 @@ MAX_TRANSFER_BYTES = 50 * 1024 * 1024
 MAX_LIST_ENTRIES = 1000
 MAX_RUN_SECONDS = 900
 MATCH_ALL = frozenset({"", "*", "**", "**/*"})
+# The observed-state read (`/v1/state`, design/sandbox-runtime §15.1): the
+# newest files it returns, and how many entries it will walk to find them.
+MAX_STATE_FILES = 50
+MAX_STATE_WALK = 20_000
+# Directories the state read never walks into: tool caches and environments,
+# not work anyone would name. Dot-directories (`.venv`, `.git`, `.cache`,
+# `.tmp`) are skipped by their leading dot.
+STATE_SKIP_DIRS = frozenset({"node_modules", "__pycache__"})
+TMUX_SECONDS = 10.0
+TMUX_SESSIONS_FORMAT = "#{session_name}\t#{session_created}\t#{session_attached}"
+TMUX_PANES_FORMAT = (
+    "#{session_name}\t#{pane_dead}\t#{pane_current_command}\t#{pane_pid}"
+)
+# A pane whose foreground command is one of these is waiting at a prompt:
+# nothing is running in it.
+IDLE_COMMANDS = frozenset({"bash", "sh", "dash", "zsh", "fish", "login"})
+# What tmux prints when there is no server on the socket: nothing is running.
+TMUX_NO_SERVER = ("no server running", "error connecting", "no such file or directory",
+                  "connection refused")
 
 # The token this process was started with never reaches a child process.
 TOKEN_ENV = "COMPUTERD_TOKEN"  # noqa: S105 - the variable NAME, not a secret
@@ -159,12 +187,33 @@ class Owner:
 
 
 class Computer:
-    def __init__(self, *, root: Path, token: str, isolate_scopes: bool = True) -> None:
+    def __init__(
+        self, *, root: Path, token: str, isolate_scopes: bool = True,
+        tmux_root: Path | None = None, tmux_bin: str = "tmux",
+        proc_root: Path = Path("/proc"),
+    ) -> None:
         if not token:
             raise ValueError("computerd needs a non-empty token")
         self.root = root
         self._token = token
         self.owner = Owner(isolate=isolate_scopes)
+        # Where each scope's tmux server keeps its socket: `TMUX_TMPDIR` is
+        # `<tmux_root>/<scope>` for every command and every tmux read, so a
+        # room's `tmux new -d` and the state read find the same server, and
+        # one room's server is never another's (the socket is also under the
+        # scope user's own `tmux-<uid>`). Under `root` by default, which is
+        # root-owned, so no command can plant it; a test passes a short path,
+        # because a Unix socket path is capped near 104 bytes.
+        self.tmux_root = tmux_root if tmux_root is not None else root / ".tmux"
+        self.tmux_bin = tmux_bin
+        self.proc_root = proc_root
+        self.tmux_root.mkdir(mode=0o755, parents=True, exist_ok=True)
+        if stat.S_ISLNK(os.lstat(self.tmux_root).st_mode):
+            raise ValueError(f"{self.tmux_root} is a link; refusing to start")
+        # Traversable by every scope user (each one's own directory under it
+        # is `0o700`), writable by computerd alone; set explicitly, because
+        # `mkdir`'s mode is cut by the umask and an existing one keeps its own.
+        os.chmod(self.tmux_root, 0o755)  # noqa: S103 - a directory, root-writable only
 
     # -- request plumbing -------------------------------------------------
 
@@ -357,14 +406,8 @@ class Computer:
         # on later is config plus one change here (setrlimit in a preexec).
         await asyncio.to_thread(self._ensure_scope, scope)
         workdir = self.root / scope
-        env = {k: v for k, v in os.environ.items() if k != TOKEN_ENV}
-        # HOME is the room's own directory, so a profile or cache one room's
-        # command writes is not read by every other room's.
-        env.update(HOME=str(workdir), PWD=str(workdir), TMPDIR=str(workdir / ".tmp"))
-        user: dict[str, Any] = {}
-        ids = self.owner.ids(scope)
-        if ids is not None:
-            user = {"user": ids[0], "group": ids[1], "extra_groups": []}
+        env = self._env(scope)
+        user = self._user(scope)
         started = time.monotonic()
         with tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err:
             try:
@@ -396,6 +439,26 @@ class Computer:
             return {"status": "unavailable", "reason": f"timed out after {timeout:g}s", **fields}
         return {"status": "ok", **fields}
 
+    def _env(self, scope: str) -> dict[str, str]:
+        """A command's environment: computerd's own minus its token. HOME is
+        the room's own directory, so a profile or cache one room's command
+        writes is not read by every other room's; TMUX_TMPDIR is the room's
+        tmux directory (see `__init__`). SHELL is bash because a scope user's
+        login shell is `nologin`, and tmux runs a pane's command through
+        SHELL, falling back to that login shell: without it every `tmux new`
+        exits at once and takes its server with it (measured 2026-09-30)."""
+        workdir = self.root / scope
+        env = {k: v for k, v in os.environ.items() if k != TOKEN_ENV}
+        env.update(HOME=str(workdir), PWD=str(workdir), TMPDIR=str(workdir / ".tmp"),
+                   TMUX_TMPDIR=str(self.tmux_root / scope), SHELL="/bin/bash")
+        return env
+
+    def _user(self, scope: str) -> dict[str, Any]:
+        ids = self.owner.ids(scope)
+        if ids is None:
+            return {}
+        return {"user": ids[0], "group": ids[1], "extra_groups": []}
+
     def _ensure_scope(self, scope: str) -> None:
         """The scope directory and its `.tmp`, both `0o700` and the scope
         user's. Re-asserted on every run, so a directory made before per-scope
@@ -410,6 +473,164 @@ class Computer:
         with self._dir(scope, [], create=True) as fd:
             os.fchmod(fd, 0o700)
             self.owner.chown_fd(fd, scope)
+        # The room's tmux directory, walked like a scope directory: opened
+        # from `tmux_root` without following a link, `0o700`, the scope
+        # user's. `tmux_root` is root's, so no command can pre-create it.
+        root_fd = os.open(self.tmux_root, _DIR_FLAGS)
+        try:
+            with contextlib.suppress(FileExistsError):
+                os.mkdir(scope, 0o700, dir_fd=root_fd)
+            fd = os.open(scope, _DIR_FLAGS, dir_fd=root_fd)
+            try:
+                os.fchmod(fd, 0o700)
+                self.owner.chown_fd(fd, scope)
+            finally:
+                os.close(fd)
+        finally:
+            os.close(root_fd)
+
+    # -- observed state (design/sandbox-runtime §15.1) ---------------------
+
+    def recent_files(self, scope: str) -> dict[str, Any]:
+        """The newest regular files under the scope, newest first, capped at
+        `MAX_STATE_FILES`: path, size and mtime (epoch seconds). Links are
+        listed never and followed never (`lstat`, `followlinks=False`);
+        dot-files, dot-directories and `STATE_SKIP_DIRS` are not walked. At
+        most `MAX_STATE_WALK` entries are looked at; `truncated` says the
+        walk stopped there, so the list may miss a newer file."""
+        base = self.root / scope
+        try:
+            if not stat.S_ISDIR(os.lstat(base).st_mode):
+                return {"files": [], "files_truncated": False}
+        except FileNotFoundError:
+            return {"files": [], "files_truncated": False}
+        newest: list[tuple[float, str, int]] = []
+        walked, truncated = 0, False
+        for current, dirs, names in os.walk(base, followlinks=False):
+            dirs[:] = sorted(
+                d for d in dirs if not d.startswith(".") and d not in STATE_SKIP_DIRS
+            )
+            for name in names:
+                if name.startswith("."):
+                    continue
+                walked += 1
+                if walked > MAX_STATE_WALK:
+                    truncated = True
+                    break
+                try:
+                    info = os.lstat(Path(current) / name)
+                except OSError:
+                    continue
+                if not stat.S_ISREG(info.st_mode):
+                    continue
+                rel = str((Path(current) / name).relative_to(base))
+                item = (info.st_mtime, rel, info.st_size)
+                if len(newest) < MAX_STATE_FILES:
+                    heapq.heappush(newest, item)
+                else:
+                    heapq.heappushpop(newest, item)
+            if truncated:
+                break
+        ordered = sorted(newest, reverse=True)
+        return {
+            "files": [{"path": p, "size": size, "mtime": mtime} for mtime, p, size in ordered],
+            "files_truncated": truncated,
+        }
+
+    async def _tmux(self, scope: str, *args: str) -> tuple[int, str, str]:
+        """`tmux ARGS` as the scope's own user, on the scope's own socket.
+        Raises `FileNotFoundError` when there is no tmux binary."""
+        proc = await asyncio.create_subprocess_exec(
+            self.tmux_bin, *args, env=self._env(scope), cwd="/",
+            stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE, start_new_session=True, **self._user(scope),
+        )
+        try:
+            out, err = await asyncio.wait_for(proc.communicate(), TMUX_SECONDS)
+        except TimeoutError:
+            with contextlib.suppress(ProcessLookupError):
+                os.killpg(proc.pid, signal.SIGKILL)
+            await proc.wait()
+            raise
+        return (proc.returncode if proc.returncode is not None else -1,
+                out.decode("utf-8", errors="replace"), err.decode("utf-8", errors="replace"))
+
+    async def tmux_sessions(self, scope: str) -> dict[str, Any]:
+        """The scope's tmux sessions: name, created (epoch seconds), attached,
+        and `running`, which is true when any pane is alive with a
+        foreground command that is not a shell at its prompt. `tmux` is None
+        (with `tmux_reason`) when they could not be listed, which a reader
+        must treat as unknown, never as none."""
+        try:
+            rc, out, err = await self._tmux(scope, "list-sessions", "-F", TMUX_SESSIONS_FORMAT)
+            if rc != 0:
+                if any(m in err.lower() for m in TMUX_NO_SERVER):
+                    return {"tmux": []}
+                return {"tmux": None, "tmux_reason": f"tmux exited {rc}: {err.strip()[:200]}"}
+            prc, pout, perr = await self._tmux(scope, "list-panes", "-a", "-F", TMUX_PANES_FORMAT)
+        except FileNotFoundError:
+            return {"tmux": None, "tmux_reason": "tmux is not installed"}
+        except (TimeoutError, OSError) as exc:
+            return {"tmux": None, "tmux_reason": f"{type(exc).__name__}: {exc}"}
+        if prc != 0:
+            return {"tmux": None, "tmux_reason": f"tmux exited {prc}: {perr.strip()[:200]}"}
+        running: set[str] = set()
+        parents = await asyncio.to_thread(child_parents, self.proc_root)
+        for line in pout.splitlines():
+            parts = line.split("\t")
+            if len(parts) == 4 and pane_running(
+                dead=parts[1] == "1", command=parts[2], pid=_int(parts[3], 0), parents=parents,
+            ):
+                running.add(parts[0])
+        sessions: list[dict[str, Any]] = []
+        for line in out.splitlines():
+            parts = line.split("\t")
+            if len(parts) != 3:
+                continue
+            name, created, attached = parts
+            sessions.append({"name": name, "created": _int(created, 0),
+                             "attached": _int(attached, 0) > 0, "running": name in running})
+        return {"tmux": sessions}
+
+    async def state(self, scope: str, body: dict[str, Any]) -> dict[str, Any]:
+        files = await asyncio.to_thread(self.recent_files, scope)
+        return {"status": "ok", **files, **await self.tmux_sessions(scope)}
+
+
+def child_parents(proc_root: Path) -> frozenset[int]:
+    """Every pid that has at least one child, read from `/proc/<pid>/stat`
+    (field 4 is the parent). Empty when there is no `/proc` (not Linux): a
+    pane is then running only by its foreground command."""
+    parents: set[int] = set()
+    try:
+        entries = list(os.scandir(proc_root))
+    except OSError:
+        return frozenset()
+    for entry in entries:
+        if not entry.name.isdigit():
+            continue
+        try:
+            with open(os.path.join(entry.path, "stat"), encoding="utf-8",
+                      errors="replace") as f:
+                raw = f.read()
+        except OSError:
+            continue
+        # `pid (comm) state ppid ...`; comm may hold spaces and parentheses,
+        # so split after the LAST `)`.
+        fields = raw[raw.rfind(")") + 1:].split()
+        if len(fields) >= 2 and fields[1].isdigit():
+            parents.add(int(fields[1]))
+    return frozenset(parents)
+
+
+def pane_running(*, dead: bool, command: str, pid: int, parents: frozenset[int]) -> bool:
+    """A pane is running a job when it is alive and either its foreground
+    command is not a shell at a prompt, or its process has ANY child. The
+    second catches what the first cannot: `bash train.sh`, `bash -c 'a && b'`
+    and a server backgrounded from the shell all show `bash` in front."""
+    if dead:
+        return False
+    return command not in IDLE_COMMANDS or pid in parents
 
 
 def _previous_sha256(dfd: int, name: str) -> str | None:
@@ -476,8 +697,12 @@ def _limit(raw: Any, ceiling: int, *, default: int | None = None) -> int:
     return min(value, ceiling)
 
 
-def create_app(*, root: Path, token: str, isolate_scopes: bool = True) -> web.Application:
-    computer = Computer(root=root, token=token, isolate_scopes=isolate_scopes)
+def create_app(
+    *, root: Path, token: str, isolate_scopes: bool = True,
+    tmux_root: Path | None = None, tmux_bin: str = "tmux", proc_root: Path = Path("/proc"),
+) -> web.Application:
+    computer = Computer(root=root, token=token, isolate_scopes=isolate_scopes,
+                        tmux_root=tmux_root, tmux_bin=tmux_bin, proc_root=proc_root)
     file_ops: dict[str, Callable[[str, dict[str, Any]], Any]] = {
         "read": computer.read, "write": computer.write, "edit": computer.edit,
         "files": computer.files, "fetch": computer.fetch,
@@ -521,6 +746,8 @@ def create_app(*, root: Path, token: str, isolate_scopes: bool = True) -> web.Ap
                 raise RefusedError("scope must be a lowercase hex key")
             if op == "run":
                 return answer(await computer.run(scope, body))
+            if op == "state":
+                return answer(await computer.state(scope, body))
             handler = file_ops.get(op)
             if handler is None:
                 return web.json_response({"status": "unknown operation"}, status=404)

@@ -173,6 +173,9 @@ def build_offline_pipeline(
         # below: the eval subject (`nora.subject`) reconstructs a room's real
         # account at a real instant, and this harness has no store to hold one.
         culture=None,
+        # `<computer>` (design/sandbox-runtime §15.3) — `None`: this harness
+        # has no computer, and an eval's VM workspace would be empty anyway.
+        computer=None,
     )
 
     def _spawn(coro: Coroutine[Any, Any, None]) -> None:
@@ -264,6 +267,8 @@ def build_offline_pipeline(
             # `tests/architecture/test_assembler_parity.py` enforces).
             media_join=media_join,
             # Same reason, same instance, for DEC-195's resolver.
+            # `<computer>`: `None`, the assembler's reason above.
+            computer=None,
             quote_window=quote_window,
             doctrine_store=doctrine_store, metrics=metrics,
             runner=runner, adapters={adapter.platform: adapter},
