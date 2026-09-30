@@ -1,0 +1,6 @@
+# nora-render's Python dependencies (deploy/computer/render/nora_render.py),
+# pinned to the versions the repo's own lock resolves so the gate tests the
+# same code the image runs. Compile with:
+#   uv pip compile requirements.in --generate-hashes --python-version 3.14 -o requirements.txt
+markdown-it-py==4.2.0
+pygments==2.20.0

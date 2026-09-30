@@ -33,6 +33,31 @@ RUN python3 -m venv /opt/computerd/venv \
     && /opt/computerd/venv/bin/pip install --no-cache-dir --require-hashes \
         -r /opt/computerd/requirements.txt
 
+# nora-render (design/sandbox-runtime §5, S3a): Smith's renderers as one CLI,
+# `nora-render markdown|report|mermaid|chart|map IN OUT` (render/nora_render.py).
+# Its Python dependencies by hash in their own venv, like computerd's.
+# mermaid-cli by `npm ci` from render/package-lock.json, whose integrity
+# hashes pin every package; its postinstall fetches the Chromium it draws
+# with, at build time, into /opt/nora-render/puppeteer (the libraries below
+# are what that Chromium links against). At run time only `map` reaches the
+# network (maps.googleapis.com, which the deny-all policy refuses until the
+# operator allows it: README.md).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libasound2t64 libatk-bridge2.0-0t64 libatk1.0-0t64 libcairo2 libcups2t64 \
+        libdrm2 libgbm1 libnss3 libpango-1.0-0 libxcomposite1 libxdamage1 \
+        libxfixes3 libxkbcommon0 libxrandr2 \
+    && rm -rf /var/lib/apt/lists/*
+COPY render/requirements.txt render/package.json render/package-lock.json /opt/nora-render/
+RUN python3 -m venv /opt/nora-render/venv \
+    && /opt/nora-render/venv/bin/pip install --no-cache-dir --require-hashes \
+        -r /opt/nora-render/requirements.txt
+RUN cd /opt/nora-render \
+    && PUPPETEER_CACHE_DIR=/opt/nora-render/puppeteer npm ci --omit=dev --no-audit --no-fund \
+    && chmod -R a+rX /opt/nora-render
+COPY render/nora_render.py render/page_shell.py render/nora-render render/mmdc /opt/nora-render/
+RUN ln -s /opt/nora-render/nora-render /usr/local/bin/nora-render \
+    && ln -s /opt/nora-render/mmdc /usr/local/bin/mmdc
+
 # The operator's user, for an interactive `sbx exec`. /workspace is root-owned
 # so a command cannot swap a room's directory for a link; computerd creates
 # each room's directory 0700, owned by that room's own system user

@@ -34,7 +34,6 @@ from nora.doctrine.loader import DoctrineStore
 from nora.domain.computer import (
     BytesResult,
     ComputerToolSettings,
-    SandboxStatus,
     computer_scope,
 )
 from nora.domain.computer_exports import sniff_export_type

@@ -1,0 +1,5 @@
+#!/bin/sh
+# nora-render on Nora's computer: the CLI in its own venv, so a project's
+# `pip install` can never break it (deploy/computer/Dockerfile).
+export PUPPETEER_CACHE_DIR=/opt/nora-render/puppeteer
+exec /opt/nora-render/venv/bin/python /opt/nora-render/nora_render.py "$@"
