@@ -55,14 +55,13 @@ import json
 import mimetypes
 import re
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
-    from nora.domain.models import TranscriptRow
-    from nora.domain.ports import MediaLookup, MediaObjectStore
+    from nora.domain.ports import MediaLookup, MediaObjectStore, RecordStore
 
 # How much of the sha256 rides in the rendered placeholder. Six hex characters
 # is a handle, not an identity: it is what makes `[image a3f2c1]` legible in a
@@ -538,39 +537,95 @@ async def resolve_room_media(
     })
 
 
+#: How far back a room's media can be resolved or searched, and how many
+#: media-bearing message rows one read takes. ONE pair of numbers for
+#: `media_fetch`, `computer_import`, `media_search`'s room scope and the
+#: documents' Image resolver, so the windows cannot drift apart. 500 rows is a
+#: cap, not a reservation: one room holds far fewer in 90 days.
+ROOM_MEDIA_DAYS = 90
+ROOM_MEDIA_ROWS = 500
+_MS_PER_DAY = 86_400_000
+
+
 @dataclass(frozen=True)
-class RoomPhoto:
-    """One picture or clip somebody sent in a room, as the ROOM'S OWN message
-    row records it: the content address, its recorded type and when it was
-    sent. The message row, not the media index, is the authority for which
-    room sent it (design/artifact §25): an index row keeps only the first room
-    a byte string was seen in. Carries no sender, by design."""
+class Sighting:
+    """One content address as THIS room's own message rows record it: its
+    recorded type and filename, when it was last sent, and whether EVERY
+    sighting of it was a shared item's cover (`MediaBlob.role`; the same bytes
+    sent as a photo too make it somebody's picture). `cover_body` is the body
+    of the newest row that held it as a cover, for the link that row carries.
+    The message row, not the media index, is the authority for which room sent
+    it (design/artifact §25). Carries no sender, by design."""
 
     sha256: str
     media_type: str
+    filename: str
     sent_ms: int
+    cover: bool
+    cover_body: str = ""
 
     @property
     def handle(self) -> str:
         return self.sha256[:HANDLE_CHARS]
 
 
-def room_photos(rows: Iterable[TranscriptRow]) -> list[RoomPhoto]:
-    """The distinct pictures and clips in `rows` (one room's message rows,
-    newest first), each at its NEWEST sighting. A re-sent photo is one entry,
-    dated by its latest sending. Stickers are not separable from photos in
-    `media_json` and stay in; a shared item's cover image is a preview of
-    something posted elsewhere, not a thing a member sent, and is dropped, as
-    are voice notes and documents."""
-    seen: dict[str, RoomPhoto] = {}
-    for row in rows:
+async def room_sightings(
+    store: RecordStore, *, conversation_id: str, now_ms: int,
+    window: int = 0, days: int = ROOM_MEDIA_DAYS,
+) -> list[Sighting]:
+    """Every distinct blob this ONE room's message rows hold, newest sighting
+    first: the `window` newest rows (`recent`, which includes her own sent
+    rows; 0 skips it) plus every human row with media in the last `days`
+    (`media_rows`, which reaches past any window). The conversation is the
+    caller's own, never a model argument. RAISES when the store cannot be read:
+    a caller maps that to `unavailable`, never to «no such picture». The one
+    resolver `media_fetch`, `computer_import`, room search and the documents'
+    Image resolver share."""
+    days = max(1, min(days, ROOM_MEDIA_DAYS))
+    rows = {
+        r.id: r
+        for r in (await store.recent(conversation_id=conversation_id, limit=window)
+                  if window > 0 else [])
+    }
+    for r in await store.media_rows(
+        conversation_id=conversation_id, since_ts=now_ms - days * _MS_PER_DAY,
+        limit=ROOM_MEDIA_ROWS,
+    ):
+        rows.setdefault(r.id, r)
+    seen: dict[str, Sighting] = {}
+    for row in sorted(rows.values(), key=lambda r: (r.ts, r.id), reverse=True):
         for blob in blobs_from_media_json(row.media_json):
-            if blob.role == COVER_ROLE or blob.sha256 in seen:
-                continue
-            if parse_media_type(blob.media_type)[0] not in ("image", "video"):
-                continue
-            seen[blob.sha256] = RoomPhoto(blob.sha256, blob.media_type, row.ts)
+            is_cover = blob.role == COVER_ROLE
+            old = seen.get(blob.sha256)
+            if old is None:
+                seen[blob.sha256] = Sighting(
+                    blob.sha256, blob.media_type, blob.filename or "", row.ts,
+                    is_cover, (row.body or "") if is_cover else "",
+                )
+            elif old.cover and not is_cover:
+                seen[blob.sha256] = replace(old, cover=False, cover_body="")
+            elif old.cover and is_cover and not old.cover_body:
+                seen[blob.sha256] = replace(old, cover_body=row.body or "")
     return list(seen.values())
+
+
+def code_matches(sightings: Iterable[Sighting], code: str) -> dict[str, Sighting]:
+    """The sightings whose sha256 starts with `code` (already reduced to hex by
+    `handle_hex`), keyed by the full sha256: one blob seen in several rows is
+    one match, and two blobs sharing a 6-hex prefix are two. More than one is
+    AMBIGUOUS, for the caller to refuse with the candidates, never to pick."""
+    return {s.sha256: s for s in sightings if s.sha256.startswith(code)}
+
+
+def room_photos(sightings: Iterable[Sighting]) -> list[Sighting]:
+    """The sightings people SENT as pictures or clips: a shared item's cover is
+    a preview of something posted elsewhere, and voice notes and documents are
+    not photos. Stickers are not separable from photos in `media_json` and stay
+    in."""
+    return [
+        s for s in sightings
+        if not s.cover and parse_media_type(s.media_type)[0] in ("image", "video")
+    ]
 
 
 def reading_matches(obj: MediaObject, query: str) -> bool:

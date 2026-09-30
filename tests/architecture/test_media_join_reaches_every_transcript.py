@@ -50,6 +50,10 @@ _TRANSCRIPT_READS = ("recent", "since", "since_including_nora", "unattributed")
 #: Inverted, a new module reading the record store appears in the discovered
 #: set and has to be classified — joined, or exempted here with a sentence.
 _NOT_A_BUILDER = {
+    # `room_sightings` reads `media_json` for content addresses (which blob a
+    # room sent, and when), never a rendered transcript: no row body reaches a
+    # model through it except a shared item's own link, read by `media_fetch`.
+    "nora/domain/media.py": "resolves media codes from media_json, hands no transcript to a model",
     # design/sandbox-runtime §15.3: `recent` here is `ComputerEventStore`'s,
     # the computer audit (commands and their exit codes), never a message
     # row; no transcript body reaches the `<computer>` block through it.

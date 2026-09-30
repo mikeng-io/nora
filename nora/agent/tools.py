@@ -122,20 +122,22 @@ from ..domain.linkedin_links import is_handle as _is_linkedin_handle
 from ..domain.linkedin_links import parse_link as _parse_linkedin_link
 from ..domain.media import (
     COMPUTER_MEDIA_SOURCE,
-    COVER_ROLE,
     HANDLE_CHARS,
     MEDIA_FETCH_CALLERS,
+    ROOM_MEDIA_DAYS,
     GifCandidate,
     MediaBlob,
     MediaObject,
-    RoomPhoto,
+    Sighting,
     VideoReadingKey,
     born_in_room,
+    code_matches,
     handle_hex,
     label_from_media_type,
     reading_matches,
     resolve_media_type,
     room_photos,
+    room_sightings,
     sniff_media_type,
 )
 from ..domain.media import LABELS as MEDIA_LABELS
@@ -3778,12 +3780,12 @@ _COVER_NOTE = (
 # with nothing saying the sender is already looking at the thing
 # (design/proposed/32-shared-media-register.md). The hedge stays: a vision
 # model wrote this about somebody else's bytes.
-#: `media_search`'s bounds: the longest look-back a model may ask for, and how
-#: many message rows the `room` scope reads for it. 500 rows of media-bearing
-#: messages is far past what 90 days of one room holds, and a cap, not a
-#: reservation.
-_MEDIA_SEARCH_MAX_DAYS = 90
-_ROOM_MEDIA_ROWS = 500
+#: `media_search`'s longest look-back a model may ask for: the room media
+#: reach every resolver shares (`nora.domain.media.ROOM_MEDIA_DAYS`).
+_MEDIA_SEARCH_MAX_DAYS = ROOM_MEDIA_DAYS
+#: How much of a stored reading a room-search result carries when the object
+#: has no description (a video's reading is all `content`).
+_ROOM_EXCERPT_CHARS = 240
 _MS_PER_DAY = 86_400_000
 
 _MEDIA_READING_NOTE = (
@@ -4167,32 +4169,6 @@ _EXPORT_TITLE_CHARS = 200
 
 #: The characters a kept file-name suffix may carry into `inbox/`.
 _INBOX_SUFFIX = re.compile(r"\.[A-Za-z0-9]{1,8}")
-
-
-def _media_in_view(rows: Sequence[Any], hex_handle: str) -> dict[str, tuple[str, str]]:
-    """Every distinct blob in `rows`' `media_json` whose sha256 starts with
-    `hex_handle`: sha256 -> (media type, filename). The resolution
-    `media_fetch` does WITHIN this conversation (R-21, DEC-24), so a code
-    from another room does not resolve here. Keyed by the full sha256, so
-    one blob seen in several rows is one match and two blobs sharing the
-    prefix are two."""
-    found: dict[str, tuple[str, str]] = {}
-    for row in rows:
-        raw = getattr(row, "media_json", None)
-        if not raw:
-            continue
-        try:
-            blobs = json.loads(raw)
-        except (ValueError, TypeError):
-            continue
-        for blob in blobs if isinstance(blobs, list) else ():
-            if not isinstance(blob, dict):
-                continue
-            sha = str(blob.get("sha256", ""))
-            if sha.startswith(hex_handle):
-                found.setdefault(sha, (str(blob.get("media_type", "")),
-                                       str(blob.get("filename") or "")))
-    return found
 
 
 def _inbox_path(sha256: str, media_type: str, filename: str) -> str:
@@ -8352,8 +8328,9 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             # resolved-then-refused. Wrapped, because a tool never raises
             # into the loop (`test_a_tool_never_raises_...`).
             try:
-                rows = await store.recent(
-                    conversation_id=bound_conversation_id, limit=_media_window,
+                seen = await room_sightings(
+                    store, conversation_id=bound_conversation_id,
+                    now_ms=_now_ms(), window=_media_window,
                 )
             except Exception:
                 log.exception("media_fetch failed to read the transcript")
@@ -8365,43 +8342,21 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                             "it showed.",
                 }
 
-            # Every distinct blob in view whose sha256 starts with the handle.
-            # A dict keyed by full sha256 dedups the same blob appearing in
-            # several rows (a forwarded meme) while KEEPING two different
-            # blobs that share the 6-hex prefix apart — 24 bits collide, and
-            # `media.py` says so.
-            matches: dict[str, str] = {}
-            # Whether EVERY sighting of that blob in view was a shared item's
-            # cover (`MediaBlob.role`). Every, not any: the same bytes sent
-            # as a photo too make the handle somebody's picture as well, and
-            # the note below would then be a claim about the wrong one. An
-            # absent role (every row written before it existed) is an
-            # ordinary attachment.
-            covers: dict[str, bool] = {}
-            # The post or reel link on a row that holds that blob AS A
-            # COVER, when the row's line carries one: the legacy shape, a
-            # link and its cover side by side (see `_shared_page_link`).
-            cover_links: dict[str, str] = {}
-            for row in rows:
-                if not row.media_json:
-                    continue
-                try:
-                    blobs = json.loads(row.media_json)
-                except (ValueError, TypeError):
-                    continue
-                for blob in blobs if isinstance(blobs, list) else ():
-                    if not isinstance(blob, dict):
-                        continue
-                    sha = str(blob.get("sha256", ""))
-                    if sha.startswith(hex_handle):
-                        matches.setdefault(sha, str(blob.get("media_type", "")))
-                        covers[sha] = covers.get(sha, True) and (
-                            blob.get("role") == COVER_ROLE
-                        )
-                        if blob.get("role") == COVER_ROLE and sha not in cover_links:
-                            page_link = _shared_page_link(row.body)
-                            if page_link:
-                                cover_links[sha] = page_link
+            # Every distinct blob in this room whose sha256 starts with the
+            # handle: the window in view PLUS the room's last 90 days of sent
+            # media, through the one resolver `computer_import`, room search
+            # and the documents share. Keyed by full sha256, so a forwarded
+            # meme is one match while two blobs sharing the 6-hex prefix stay
+            # two: 24 bits collide, and `media.py` says so. Whether every
+            # sighting was a shared item's cover, and the link a cover's row
+            # carried, ride on the sighting.
+            matches = code_matches(seen, hex_handle)
+            covers = {sha: sg.cover for sha, sg in matches.items()}
+            cover_links = {
+                sha: link for sha, sg in matches.items()
+                if sg.cover and sg.cover_body
+                and (link := _shared_page_link(sg.cover_body))
+            }
 
             if not matches:
                 _record_media(metrics, "nothing_found", candidates=0)
@@ -8422,7 +8377,8 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                             "one they mean.",
                 }
 
-            sha256, media_type = next(iter(matches.items()))
+            sha256 = next(iter(matches))
+            media_type = matches[sha256].media_type
             serve_code = sha256[:HANDLE_CHARS]
             is_cover = covers.get(sha256, False)
 
@@ -9346,11 +9302,10 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                         "plainly, and do not say there are no photos.",
             }
         try:
-            rows = await store.media_rows(
-                conversation_id=bound_conversation_id,
-                since_ts=_now_ms() - span * _MS_PER_DAY, limit=_ROOM_MEDIA_ROWS,
-            )
-            photos = room_photos(rows)
+            photos = room_photos(await room_sightings(
+                store, conversation_id=bound_conversation_id,
+                now_ms=_now_ms(), days=span,
+            ))
             look = await index.lookup(
                 sha256s=tuple(p.sha256 for p in photos),
             )
@@ -9391,7 +9346,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             "results": shown, "note": note,
         }
 
-    def _room_result(photo: RoomPhoto, obj: MediaObject | None) -> dict[str, object]:
+    def _room_result(photo: Sighting, obj: MediaObject | None) -> dict[str, object]:
         """One room photo for the model: its marker code, kind, when it was
         sent and its stored reading. The reading goes through the same
         identifier screen every serve of media does."""
@@ -9402,10 +9357,14 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         }
         if obj is not None and obj.comprehended:
             entry["title"] = obj.title
-            if scan_identifiers(obj.description) is not None:
+            # A video's reading lives in `content` (timecoded) with an empty
+            # `description`, so the excerpt falls back to it: without it the
+            # model would see a clip that matched a word and nothing saying why.
+            text = obj.description or obj.content[:_ROOM_EXCERPT_CHARS]
+            if scan_identifiers(text) is not None:
                 entry["withheld"] = True
-            else:
-                entry["description"] = obj.description
+            elif text:
+                entry["description"] = text
         else:
             entry["read"] = False
         return entry
@@ -14299,8 +14258,9 @@ Args:
                 matches: dict[str, tuple[str, str]] = {}
                 if len(hex_handle) >= HANDLE_CHARS and store is not None:
                     try:
-                        rows = await store.recent(
-                            conversation_id=bound_conversation_id, limit=_media_window,
+                        seen = await room_sightings(
+                            store, conversation_id=bound_conversation_id,
+                            now_ms=_now_ms(), window=_media_window,
                         )
                     except Exception:
                         log.exception("computer_import failed to read the transcript")
@@ -14309,7 +14269,10 @@ Args:
                         return {"status": "unavailable", "reason": "the chat could not be read",
                                 "note": "I couldn't look up that file just now. Say so; "
                                         "don't guess what it holds."}
-                    matches = _media_in_view(rows, hex_handle)
+                    matches = {
+                        sha: (sg.media_type, sg.filename)
+                        for sha, sg in code_matches(seen, hex_handle).items()
+                    }
                 if not matches:
                     outcome, row = "nothing_found", {"code": hex_handle}
                     return {"status": "nothing_found", "code": hex_handle,

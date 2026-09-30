@@ -214,3 +214,93 @@ async def test_a_run_with_no_room_cannot_search_a_room(persons, world):
     await _send(world, "unit-key", DINNER)
     out = await _tool(persons, world, room_id="unit-key", platform="")(scope="room")
     assert out["status"] == "unavailable" and "results" not in out
+
+
+# ---- videos: found by their stored reading ---------------------------------
+
+CLIP = "c4" * 32
+
+
+async def test_a_room_video_is_found_by_a_word_from_its_reading(persons, world):
+    """A video's automatic reading is `content` (timecoded) beside an empty
+    `description`; `video_readings` is a composite-keyed cache of deliberate
+    reads that holds nothing the index lacks."""
+    world["media"].objs[CLIP] = MediaObject(
+        sha256=CLIP, media_type="video/mp4", size=4, source="inbound", title="a clip",
+        description="", content="00:03 somebody blows out the candles on a birthday cake",
+        describe_model="m", provenance={"conversation_id": ROOM_A}, created_at_ms=NOW_MS)
+    await _send(world, ROOM_B, CLIP, media_type="video/mp4", days_ago=4)
+    out = await _room(persons, world, query="candles")
+    assert [(r["handle"], r["kind"]) for r in out["results"]] == [(CLIP[:6], "video")]
+    assert "blows out the candles" in out["results"][0]["description"]
+
+
+async def test_a_video_sent_in_another_room_is_not_found(persons, world):
+    world["media"].objs[CLIP] = MediaObject(
+        sha256=CLIP, media_type="video/mp4", size=4, source="inbound", title="a clip",
+        description="", content="00:03 candles on a cake", provenance={}, created_at_ms=NOW_MS)
+    await _send(world, ROOM_A, CLIP, media_type="video/mp4")
+    assert (await _room(persons, world, query="candles"))["results"] == []
+
+
+# ---- a code room search returned resolves in media_fetch -------------------
+
+from nora.testing import FakeBlobStore  # noqa: E402
+from tests.test_media_fetch import PNG_SHA, RED_PNG, CountingVision  # noqa: E402
+
+
+def _fetch(persons, world, room_id: str = ROOM_B):
+    blobs = FakeBlobStore()
+    blobs.blobs[PNG_SHA] = RED_PNG
+    specs = build_tool_specs(
+        store=world["store"], conversation_id=room_id, conversation_type="group",
+        persons=persons, honcho=None, deliverer=None, metrics=Metrics(),
+        room=Room(platform="signal", conversation_id=room_id,
+                  roster_source=FakeRosterSource(groups={}), persons=persons),
+        transit_source=None, media_store=world["media"], clock=lambda: NOW,
+        vision_source=CountingVision(), blob_store=blobs,
+        describe_models={"image": "test/image-model"}, context_window=40,
+    )
+    return next(s for s in specs if s.name == "media_fetch").call
+
+
+async def _bury(world, room: str, count: int = 400) -> None:
+    """Text rows newer than the photo, so it is far outside `recent`'s window."""
+    for i in range(count):
+        await world["store"].append(message=NormalizedMessage(
+            "signal", room, "group", "+10000000001", "Someone",
+            NOW_MS - 1000 + i, f"chatter {i}", {}))
+
+
+async def test_a_code_found_by_room_search_30_days_back_resolves_in_media_fetch(persons, world):
+    _read(world, PNG_SHA, title="a dinner table", description="noodles")
+    await _send(world, ROOM_B, PNG_SHA, days_ago=30, media_type="image/png")
+    await _bury(world, ROOM_B)
+    found = await _room(persons, world, query="dinner")
+    code = found["results"][0]["handle"]
+    out = await _fetch(persons, world)(code=code)
+    assert out["status"] == "ok" and out["code"] == code
+
+
+async def test_the_same_code_from_another_room_does_not_resolve(persons, world):
+    await _send(world, ROOM_B, PNG_SHA, days_ago=30, media_type="image/png")
+    out = await _fetch(persons, world, room_id=ROOM_A)(code=PNG_SHA[:6])
+    assert out["status"] == "nothing_found"
+
+
+async def test_a_handle_matching_two_old_photos_is_refused_with_the_candidates(persons, world):
+    one, two = "ab12cd" + "0" * 58, "ab12cd" + "1" * 58
+    await _send(world, ROOM_B, one, days_ago=20, media_type="image/png")
+    await _send(world, ROOM_B, two, days_ago=25, media_type="image/png")
+    await _bury(world, ROOM_B)
+    out = await _fetch(persons, world)(code="ab12cd")
+    assert out["status"] == "ambiguous" and out["could_be"] == ["ab12cd", "ab12cd"]
+
+
+async def test_media_beyond_90_days_is_not_found(persons, world):
+    await _send(world, ROOM_B, PNG_SHA, days_ago=100, media_type="image/png")
+    await _send(world, ROOM_B, "12" * 32, days_ago=85, media_type="image/png")
+    await _bury(world, ROOM_B)
+    out = await _fetch(persons, world)(code=PNG_SHA[:6])
+    assert out["status"] == "nothing_found"
+    assert (await _fetch(persons, world)(code="121212"))["status"] != "nothing_found"
