@@ -288,7 +288,7 @@ async def read_closes(
             continue
         closes.append(Close(
             session_id=r.session_id, room=cid, reason=r.reason, at_ms=_ms(r.recorded_at),
-            kind=r.kind, cited=_cited(item),
+            kind=r.kind, cited=_cited(item) if isinstance(item, dict) else frozenset(),
         ))
     return closes, unreadable
 
