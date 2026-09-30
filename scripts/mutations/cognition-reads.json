@@ -59,7 +59,7 @@
   "name": "rollup_read: a build that does not exist reads as an empty interval",
   "file": "nora/agent/tools.py",
   "old": "        if got.build_id is None or got.through_ms is None:\n",
-  "new": "        if got.through_ms is None:\n",
+  "new": "        if got.build_id is None and got.rows:\n",
   "target": "tests/integration/test_rollup_read.py::test_no_current_build_is_unavailable_not_nothing_found"
  },
  {
@@ -228,7 +228,7 @@
   "file": "nora/app/cognition_wiring.py",
   "old": "        adaptor_defaults=COGNITION_TOOL_CALLS_PER_ITEM, adaptor_overrides=tool_calls,\n",
   "new": "        adaptor_overrides=tool_calls,\n",
-  "target": "tests/test_composition.py::test_session_mode_shadow_builds_one_runner_and_hands_its_hook_to_the_evaluator"
+  "target": "tests/test_composition.py::test_a_cognition_budget_with_no_tool_calls_runs_on_the_per_item_defaults"
  },
  {
   "name": "M12: the template's per-item table drifts from the code's",

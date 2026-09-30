@@ -2140,6 +2140,27 @@ async def test_the_sessions_read_tools_are_the_catalogue_less_what_a_flag_withho
     assert {"note_read", "record_query"} <= names
 
 
+async def test_a_cognition_budget_with_no_tool_calls_runs_on_the_per_item_defaults(
+    cfg, tmp_path,
+):
+    """M12 (DEC-245): the template states the per-item table, but a deployment
+    that carries a bare `[dreamer.budgets.cognition]` block must not fall back to
+    a tag turn's numbers (`event_search` 1). The code's own defaults are the
+    layer under the operator's word."""
+    from nora.agent.tools import NATIVE_TOOLS
+    from nora.app.cognition_wiring import COGNITION_TOOL_CALLS_PER_ITEM
+
+    (tmp_path / "policy.toml").write_text(_HOME_POLICY)
+    bare = cfg.dreamer.budgets["cognition"].model_copy(update={"tool_calls": {}})
+    deps = await build_dependencies(override_config(cfg, {
+        **_SESSION_ON, "dreamer.budgets": {**cfg.dreamer.budgets, "cognition": bare},
+    }))
+    got = deps.cognition_runner._agent_runner._read_tool_budgets
+    assert NATIVE_TOOLS["event_search"].budget == 1, "positive control: the tag turn's number"
+    assert got["event_search"] == COGNITION_TOOL_CALLS_PER_ITEM["event_search"] == 3
+    assert got["note_search"] == COGNITION_TOOL_CALLS_PER_ITEM["note_search"]
+
+
 async def test_the_configured_model_window_reaches_the_runner_the_overflow_proof_reads(
     cfg, tmp_path,
 ):
