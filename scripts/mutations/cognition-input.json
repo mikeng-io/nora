@@ -18,7 +18,7 @@
     "file": "nora/domain/stimuli.py",
     "old": "            and stimulus.id not in self.unclaimed\n        )",
     "new": "        )",
-    "target": "tests/contract/test_stimulus_store_contract.py -k unclaimed"
+    "target": "tests/unit/test_wake_evaluator.py -k unclaimed_id_is_not_consumed"
   },
   {
     "name": "Watermark.consumed: a failing wake's strike reaches only what it claimed",
@@ -200,7 +200,7 @@
     "file": "nora/app/cognition_session.py",
     "old": "            grounding = await self._grounder(unit, situation.agenda.items, pending)",
     "new": "            grounding = await self._grounder(unit, build_situation(unit=unit, pending=view.pending, home_room=home_room, now_ms=now_ms, last_session_ms=last_looked_ms, max_items=self._max_items, strikes=view.carry).agenda.items, pending)",
-    "target": "tests/unit/test_cognition_grounding.py -k \"sorting_first or same_room_items_after or promoted\""
+    "target": "tests/unit/test_cognition_grounding.py -k sorting_first"
   },
   {
     "name": "migration 0082: no UPDATE of the append-only outcome table",
@@ -263,7 +263,7 @@
     "file": "nora/app/wake.py",
     "old": "            inert = frozenset({\"time\"}) if tracked and not self._floors_ready else frozenset()",
     "new": "            inert = frozenset()",
-    "target": "tests/unit/test_wake_evaluator.py -k \"already_pending\""
+    "target": "tests/unit/test_wake_evaluator.py -k already_pending"
   },
   {
     "name": "claim: an inert kind is never claimed by a room wake",
@@ -278,5 +278,12 @@
     "old": "    eligible = [s for s in view.pending if not s.waits and s.kind not in view.inert_kinds]",
     "new": "    eligible = [s for s in view.pending if not s.waits]",
     "target": "tests/unit/test_wake_evaluator.py -k already_pending"
+  },
+  {
+    "name": "runner: the grounder runs BEFORE the skip (M1: an item promoted from deferred is ungrounded)",
+    "file": "nora/app/cognition_session.py",
+    "old": "            grounding = await self._grounder(unit, situation.agenda.items, pending)",
+    "new": "            grounding = await self._grounder(unit, build_situation(unit=unit, pending=view.pending, home_room=home_room, now_ms=now_ms, last_session_ms=last_looked_ms, max_items=self._max_items, strikes=view.carry).agenda.items, pending)",
+    "target": "tests/unit/test_cognition_grounding.py -k promoted"
   }
 ]

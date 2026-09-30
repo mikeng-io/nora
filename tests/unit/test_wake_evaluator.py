@@ -592,3 +592,12 @@ async def test_a_pending_time_stimulus_does_not_ride_a_room_wake_when_its_kind_i
     assert seen == [["message"]]
     view = await store.view(unit="nora", mode="shadow", now_ms=clock.ms, limit=10)
     assert [s.kind for s in view.pending] == ["time"]          # listed unclaimed, still pending
+
+
+def test_an_unclaimed_id_is_not_consumed_by_the_range_that_covers_it():
+    from nora.domain.stimuli import Stimulus, Watermark
+
+    s = Stimulus(id=3, unit="nora", kind="message", item="message", ref="messages:3",
+                 at_ms=10, recorded_at_ms=10)
+    assert Watermark(5, 100).consumed(s) is True
+    assert Watermark(5, 100, frozenset({3})).consumed(s) is False
