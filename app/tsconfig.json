@@ -6,6 +6,7 @@
     "skipLibCheck": true,
     "strict": true,
     "noEmit": true,
+    "allowImportingTsExtensions": true,
     "noUncheckedIndexedAccess": false,
     "noFallthroughCasesInSwitch": true,
     "esModuleInterop": true,
