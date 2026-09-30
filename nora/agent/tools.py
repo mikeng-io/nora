@@ -1696,6 +1696,10 @@ NATIVE_TOOL_BUDGETS: Mapping[str, int] = {
 #: any GIF follows them.
 ALONE_MAX_CHARS = 20
 
+# The in-flight `finished` audit appends (see `_computer_finish`), held so a
+# cancelled turn cannot let one be garbage-collected before it lands.
+_AUDIT_TASKS: set[asyncio.Future[None]] = set()
+
 HOT_TOOLS: frozenset[str] = frozenset({
     "web_search", "send_reply", "note_read", "web_fetch", "now", "search_memory",
 })
@@ -5311,11 +5315,10 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         """Work out a number exactly. Use this for ALL arithmetic, however easy
         it looks: call it whenever a number needs computing.
 
-        Never state a computed number that did not come from a tool: this one,
-        or computer_run for data work (many values, statistics, fitting, a
-        file). A number computer_run printed is already computed: report it,
-        do not recompute it here. This one checks the arithmetic, not the
-        question: divide by 5 when six people ate and you get an exact answer
+        Never state a computed number that did not come from a tool. A number
+        another tool already printed, such as a command on your computer, is
+        computed: report it, do not recompute it here. This one checks the
+        arithmetic, not the question: divide by 5 when six people ate and you get an exact answer
         to the wrong sum, so count first.
 
         Returns `status`: ok or refused, with a `note` on how to report it.
@@ -12766,7 +12769,13 @@ Args:
                 tool, operation_id, "finished", status, started=started,
                 finished=finished or now_fn(), result=result, output_ref=output_ref,
             )
-            await asyncio.shield(asyncio.ensure_future(computer_events.append(row)))
+            task = asyncio.ensure_future(computer_events.append(row))
+            # A strong reference until it finishes: a shielded task the caller
+            # stops awaiting on cancellation is otherwise only weakly held by
+            # the loop and can be collected mid-write (asyncio docs, "Important").
+            _AUDIT_TASKS.add(task)
+            task.add_done_callback(_AUDIT_TASKS.discard)
+            await asyncio.shield(task)
         except asyncio.CancelledError:
             raise
         except Exception:

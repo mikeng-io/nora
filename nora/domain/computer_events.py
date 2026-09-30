@@ -20,7 +20,7 @@ itself.
 A row holds the FULL input (`request`) and points at the FULL output
 (`output_ref`, blobs in the content-addressed `BlobStore`): the operator's
 requirement is a complete trail, who, when, how and what, with Postgres as
-the record of truth. A trigger (migration `0080_computer_events`) refuses
+the record of truth. A trigger (migration `0081_computer_events`) refuses
 UPDATE, DELETE and TRUNCATE; it guards against bugs and mistaken statements,
 not against the table's owner, who can drop it (see the migration).
 
@@ -54,7 +54,9 @@ CALL_PATHS: frozenset[str] = frozenset({"direct", "subagent"})
 PHASES: frozenset[str] = frozenset({"started", "finished"})
 
 #: The `status` of a `started` row, and of a `finished` row whose call was
-#: cancelled (the turn's deadline, a shutdown) before it answered.
+#: cancelled (the turn's deadline) before it answered. A process shutdown cancels
+#: the append itself, so it leaves an orphaned `started` row instead: the
+#: crash marker `orphaned_starts` finds.
 STARTED = "started"
 CANCELLED = "cancelled"
 

@@ -137,11 +137,17 @@ class Owner:
             try:
                 entry = pwd.getpwnam(name)
             except KeyError:
-                subprocess.run(  # noqa: S603 - fixed argv, the name is hex
-                    ["useradd", "--system", "--no-create-home", "--user-group",  # noqa: S607
-                     "--shell", "/usr/sbin/nologin", "--home-dir", "/nonexistent", name],
-                    check=True, capture_output=True,
-                )
+                try:
+                    subprocess.run(  # noqa: S603 - fixed argv, the name is hex
+                        ["useradd", "--system", "--no-create-home", "--user-group",  # noqa: S607
+                         "--shell", "/usr/sbin/nologin", "--home-dir", "/nonexistent", name],
+                        check=True, capture_output=True,
+                    )
+                except subprocess.CalledProcessError:
+                    # Another computerd process created it first: the user now
+                    # exists, which is the state wanted. Anything else raises
+                    # KeyError below and the call answers unavailable.
+                    pass
                 entry = pwd.getpwnam(name)
             self._ids[scope] = (entry.pw_uid, entry.pw_gid)
             return self._ids[scope]
@@ -393,9 +399,14 @@ class Computer:
     def _ensure_scope(self, scope: str) -> None:
         """The scope directory and its `.tmp`, both `0o700` and the scope
         user's. Re-asserted on every run, so a directory made before per-scope
-        users existed is closed and handed over too."""
+        users existed is closed and handed over too. Files INSIDE such a
+        directory keep their old owner: the deploy recreates the VM, so none
+        exist (deploy/computer/README.md)."""
         with self._dir(scope, [".tmp"], create=True) as tmp_fd:
             os.fchmod(tmp_fd, 0o700)
+            # Handed over as well: a `.tmp` made before per-scope users (owned
+            # by `computer`) would leave TMPDIR unwritable for the room's user.
+            self.owner.chown_fd(tmp_fd, scope)
         with self._dir(scope, [], create=True) as fd:
             os.fchmod(fd, 0o700)
             self.owner.chown_fd(fd, scope)

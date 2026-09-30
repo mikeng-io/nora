@@ -27,7 +27,7 @@ separate role or an external copy; that is not built.
 `nora.infra.sql.history.APPEND_ONLY` names its system time, `created_at`.
 
 Revision ID: 0081_computer_events
-Revises: 0079_cognition_pace_remind
+Revises: 0080_cognition_outcome_cause
 Create Date: 2026-09-30
 """
 

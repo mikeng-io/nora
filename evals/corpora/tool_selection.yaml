@@ -243,11 +243,11 @@ cases:
   # and then stops, so an edit case would grade
   # the missing state, not the routing.
   #
-  # No case for `computer_read` yet either, for the same reason: measured
-  # 0/5 on the ON arm (2026-09-30), because nothing in the turn says the file
-  # exists. It returns with S2b-2's <computer> block, which tells the turn what
-  # the workspace holds. That is unfinished work, not a parking reason (P-B
-  # was rejected, design/evaluation/11).
+  # `route_computer_read_named_file` is UNANCHORED on purpose, so it ERRORs
+  # visibly rather than being deleted: nothing in a turn says the file exists
+  # until S2b-2's <computer> block renders the workspace, and an anchor cannot
+  # carry that state. It is owed work, not a parking reason (P-B was
+  # rejected, design/evaluation/11). It gains its anchor with S2b-2.
   # A trend's slope on eight numbers is a few `calculate` expressions, a
   # correct route; the first version of this case expected the computer for it
   # and measured the expectation (0/5, every draw used calculate). A p-value
@@ -271,6 +271,13 @@ cases:
       highest average: city,temp\nHK,31\nTaipei,29\nHK,30\nTokyo,27\nTaipei,33
     metadata: {tools: [computer_run], not_tools: [calculate]}
     snapshot: *room_a
+
+  - name: route_computer_read_named_file
+    entry: tag
+    expect: reply
+    mention: true
+    input: 你部電腦入面個notes.md寫咗啲咩？讀俾我聽
+    metadata: {tools: [computer_read], not_tools: [note_read, web_fetch]}
 
   - name: route_calculate_not_the_computer
     entry: tag

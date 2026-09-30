@@ -298,7 +298,12 @@ def test_the_lifecycle_script_starts_computerd_with_flags_it_accepts():
     import shlex
 
     script = (COMPUTERD.parent / "nora-computer").read_text()
-    match = re.search(r"computerd\.py((?:\s*\\\n)?[^<>&']*)[<>]", script)
-    assert match, "nora-computer no longer starts computerd.py where expected"
+    # Anchored on the `exec sbx exec` that starts computerd: the first
+    # `computerd.py` in the script is a `pkill` pattern, and matching that
+    # parsed an empty argv, so the test passed with the bad flag present.
+    match = re.search(
+        r"exec sbx exec[^\n]*\\\n[^\n]*?/computerd\.py([^<>&'\n\\]*)", script,
+    )
+    assert match, "nora-computer no longer execs computerd.py where expected"
     argv = shlex.split(match.group(1).replace("\\\n", " "))
     load_computerd().build_parser().parse_args(argv)  # SystemExit on an unknown flag

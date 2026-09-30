@@ -39,6 +39,7 @@ nothing on the host reads.
 | want | run |
 |---|---|
 | state | `nora-computer status` |
+| stop it | `systemctl --user stop nora-computer` FIRST, then `nora-computer stop`: while the unit runs, `Restart=always` and its `sbx exec` start the VM again within seconds |
 | logs | `journalctl --user -u nora-computer -n 50`; computerd's own output is in the unit's journal (it runs in the foreground) |
 | new image | `nora-computer build`, `nora-computer destroy`, then `systemctl --user restart nora-computer`. **Destroy deletes /workspace**: export what matters first |
 | what the network refused | `sbx policy log nora-computer` |
@@ -49,3 +50,21 @@ hand on a headless host (the script sets it): the desktop keyring is locked.
 Under sbx a TCP connect succeeds to any address, so health is always an HTTP
 body from `/v1/health`, never a port check.
 
+
+## Upgrading from the S2a timer (once)
+
+S2a made the sandbox with `sbx create`, which sandboxd auto-stops, and ran a
+minute timer. The new unit needs a sandbox created detached:
+
+```bash
+systemctl --user disable --now nora-computer.timer 2>/dev/null
+rm -f ~/.config/systemd/user/nora-computer.timer
+deploy/computer/nora-computer build
+deploy/computer/nora-computer destroy          # deletes /workspace: export anything that matters first
+ln -sf ~/workspace/nora/deploy/computer/nora-computer.service ~/.config/systemd/user/
+systemctl --user daemon-reload && systemctl --user enable --now nora-computer.service
+deploy/computer/nora-computer status           # sandbox=running computerd=healthy
+```
+
+Destroying is also what makes the per-room users clean: a workspace made
+before them would keep files owned by the shared `computer` user.
