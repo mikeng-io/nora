@@ -151,7 +151,7 @@
   "file": "nora/app/gatherings.py",
   "old": "    if not parts:\n        return None\n    return EventEvidence(",
   "new": "    return None\n    return EventEvidence(",
-  "target": "tests/infra/test_event_citations.py::test_the_tag_path_writes_record_the_room_and_no_edge"
+  "target": "tests/infra/test_event_citations.py::test_a_tag_turn_s_event_cites_the_message_that_raised_it_and_rests_on_its_room"
  },
  {
   "name": "E1a: the cascade skips events",
@@ -242,7 +242,7 @@
   "file": "nora/app/heartbeat.py",
   "old": "            if row.kind == GATHERING_KIND and self._gatherings is not None:",
   "new": "            if False:",
-  "target": "tests/unit/test_event_evidence_d.py::test_the_heartbeat_cancels_a_withdrawn_gatherings_reminder_and_fires_a_standing_one"
+  "target": "tests/unit/test_event_evidence_d.py::test_a_marked_events_reminder_is_held_not_fired_and_not_cancelled"
  },
  {
   "name": "review #669: a marked event's reminder is cancelled instead of held",
