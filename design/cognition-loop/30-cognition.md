@@ -104,7 +104,7 @@ versions injected, the config revision in force, and the model id and route
 
 | class | verbs | leaves the session how |
 |---|---|---|
-| **read** | every read tool the registry admits (`read_only_tools()`) except the live social reads ([20](20-observe.md) §2), plus the warehouse queries of [15](15-map.md) §4: `record_query`, `rollup_read`, `event_search`, `memo_read`, `character_read`, `standing_read`, `social_items` | returns into context, filtered by the item's room |
+| **read** | every read tool the registry admits (`read_only_tools()`) except the live social reads ([20](20-observe.md) §2), plus the Notebook and Rollup reads of [15](15-map.md) §4: `record_query`, `rollup_read`, `event_search`, `memo_read`, `character_read`, `standing_read`, `social_items` | returns into context, filtered by the item's room |
 | **write** | one family per tier: Register (`note_create`, `note_update`, `memo_write`, `memo_withdraw`, `event_propose` (status `staged` or `proposed`), `event_revise`, `event_set_status`), Standing (`standing_revise`); each takes `base_revision_id`. Character's and Lessons' verbs belong to their own adaptors ([50](50-character-and-standing.md) §6) | code validates, then commits (§3) |
 | **act** | `remind(at, room, brief)`, the one act verb; `room` is the agenda item's bound room. `remind_move(reminder_id, at, why)` and `remind_cancel(reminder_id, why)` for reminders Cognition itself wrote, never a person's | a reminder row; the fire path composes it when due |
 | **pace** | `wake_at(at, subject_rows, why)`, `wake_move(wake_id, at, why)`, `wake_cancel(wake_id, why)` | write verbs on the unit's stimulus table, not a tier: a `self` stimulus due at `at` ([20](20-observe.md) §3); nothing leaves for a room |
@@ -132,18 +132,26 @@ already holds, so adding `brief` changes a shared tool and is measured with
 **A person's reminder after cognition revises its event** fires with the
 event's current revision. If cognition cancelled the event, the reminder is
 kept and fires flagged as being about a cancelled event: only the tag path
-cancels a reminder a person set. The senders stay those of R-1b: the tag
+cancels a reminder a person set. **Amended by DEC-249 for after E2**
+([05](05-data-model.md) §7): `remind` and `cancel_reminder` stay on the tag
+turn as machinery (they change a reminder row, not the Notebook), and
+Cognition may also cancel a reminder a person set when it cancels that
+reminder's event on `told` evidence (a person's cancellation in words is
+Record it reads). The senders stay those of R-1b: the tag
 path, the fire path and, since DEC-212, the public summons.
 
 **Self-wakes are not acts** ([20](20-observe.md) §3 defines the pace verbs,
 their guards and their surfacing).
 
-**Which layer holds what** ([55](55-self.md) §6). The pace verbs and `remind_move`/`remind_cancel` belong to
+**Which holds what, the conscious or the subconscious** ([55](55-self.md) §6). The pace verbs and `remind_move`/`remind_cancel` belong to
 the subconscious only: no tag or fire turn holds them, and neither can read
 an agenda or a pending self-wake. `remind` is the bridge: Cognition holds it
-to reach the conscious layer, and the tag turn holds it for a reminder a
+to reach the conscious, and the tag turn holds it for a reminder a
 person asks for. The write verbs on the Register and room Standing are held
-by both layers; that is shared state, not a command.
+by both the conscious and the subconscious; that is shared state, not a command. **Amended by DEC-249**
+([05](05-data-model.md) §7): from the cut-over only the subconscious writes
+the Notebook (one writer per tier), and the tag turn hands off through a strong-cue stimulus
+instead of holding these write verbs.
 
 **The grant.** The runtime's ceiling today is "may look, may not act": every
 read verb and one act verb (DEC-162). A new DEC at step 0 extends it by
@@ -183,7 +191,7 @@ it can rewrite, and counted by rule; never silently dropped.
 1. **Citations resolve** to ids this session was shown or fetched, and every
    citation chain ends in Record ids; a Rollup key qualifies
    ([10](10-tiers.md) §2 rule 2).
-2. **Citations point down** ([10](10-tiers.md) §2 rule 1).
+2. **Citations reach only the Record and the Rollup; links point down** ([10](10-tiers.md) §2 rule 1, amended by DEC-249).
 3. **Authorship** per the echo rule ([10](10-tiers.md) §2 rule 4);
    non-member social text alone is refused ([20](20-observe.md) §2).
 4. **Schema** ([12](12-schemas.md)): headings, cited lines, absolute dates (a
@@ -213,7 +221,9 @@ it can rewrite, and counted by rule; never silently dropped.
     "cancelled?".
 12. **Own misreads only.** `event_set_status(evicted)` is refused on an event
     whose first revision Cognition did not write; `remind_move` and
-    `remind_cancel` are refused on a reminder Cognition did not write.
+    `remind_cancel` are refused on a reminder Cognition did not write, except
+    (after E2, DEC-249) `remind_cancel` on a person's reminder whose event
+    Cognition cancels in the same session on `told` evidence.
 
 **The pace verbs** (`wake_at`, `wake_move`, `wake_cancel`) pass checks 1
 (their subject rows resolve to ids shown or fetched) and 10 (provenance and
@@ -229,8 +239,9 @@ schema, mode or lineage: they write a stimulus, not a tier.
 - a value that is only abduced goes out as a question: code sets the brief's
   intent to `ask`;
 - an act whose only citations are non-member social text is refused;
-- cognition never cancels a reminder a person set; only a tag-path revision
-  does, and a reminder about a row is cancelled before it fires when that
+- cognition never cancels a reminder a person set, except with the event it
+  cancels on `told` evidence (after E2, DEC-249); a tag-path revision or
+  `cancel_reminder` does, and a reminder about a row is cancelled before it fires when that
   row is retired or revised on the tag path (DEC-162 D11).
 
 **Deviation is a stimulus, not a rule.** No gate is specific to it. It enters
@@ -314,7 +325,7 @@ cut-over ([70](70-migration.md)).
   gates step 7).
 - **A cheap reader** samples finished sessions for writes whose citations do
   not say what the write claims. It reports; it never edits.
-- **Data-quality checks, nightly, in code** (the analogue of warehouse tests):
+- **Data-quality checks, nightly, in code** (the analogue of a data team's quality tests):
   citations that no longer resolve; one happening written as two events
   across rooms; a Rollup row a rebuild computes differently; a happened event
   whose place differs from its outing's; sections past their age horizon; an
@@ -342,7 +353,9 @@ cut-over ([70](70-migration.md)).
 
 - **The tag path** — the reflex. It answers when called, reads what cognition
   wrote, writes through the same verbs, and its debrief keeps revising the
-  room's Standing inside the reply slot, through `standing_revise`.
+  room's Standing inside the reply slot, through `standing_revise`. Both writes
+  move behind Cognition at or after the cut-over (DEC-249,
+  [05](05-data-model.md) §9 E2).
 - **The slow adaptors and Assess** — Character, Lessons and Assess are other
   jobs on other timescales ([00](00-intent.md) §3,
   [50](50-character-and-standing.md) §6). Cognition reads what they write.

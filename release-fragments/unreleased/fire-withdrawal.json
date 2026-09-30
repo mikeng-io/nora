@@ -1,0 +1,1 @@
+{"type": "fix", "summary": "A reminder-fired turn no longer shows Nora a position or account of the room that was withdrawn.", "details": ["The fire turn now drops a withdrawn Standing or culture head by the same rule a tag reply uses, instead of rendering it into every fire."], "limitations": []}

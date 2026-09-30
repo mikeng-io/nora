@@ -55,11 +55,13 @@ import json
 import mimetypes
 import re
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from nora.domain.ports import MediaLookup, MediaObjectStore
+    from collections.abc import Iterable
+
+    from nora.domain.ports import MediaLookup, MediaObjectStore, RecordStore
 
 # How much of the sha256 rides in the rendered placeholder. Six hex characters
 # is a handle, not an identity: it is what makes `[image a3f2c1]` legible in a
@@ -533,6 +535,124 @@ async def resolve_room_media(
         sha: o for sha, o in found.objects.items()
         if born_in_room(o, platform=platform, conversation_id=conversation_id)
     })
+
+
+#: How far back a room's media can be resolved or searched, and how many
+#: media-bearing message rows one read takes. ONE pair of numbers for
+#: `media_fetch`, `computer_import`, `media_search`'s room scope and the
+#: documents' Image resolver, so the windows cannot drift apart. 1000 rows:
+#: the busiest real room holds about 410 in 90 days (norty, 2026-10-01), so
+#: this is 2.4 times that, and a row is a few hundred bytes. It is a cap, not a
+#: reservation; a read that hits it says so (`RoomSightings.truncated`).
+ROOM_MEDIA_DAYS = 90
+ROOM_MEDIA_ROWS = 1000
+_MS_PER_DAY = 86_400_000
+
+
+@dataclass(frozen=True)
+class Sighting:
+    """One content address as THIS room's own message rows record it: its
+    recorded type and filename, when it was last sent, and whether EVERY
+    sighting of it was a shared item's cover (`MediaBlob.role`; the same bytes
+    sent as a photo too make it somebody's picture). `cover_body` is the body
+    of the newest row that held it as a cover, for the link that row carries.
+    The message row, not the media index, is the authority for which room sent
+    it (design/artifact §25). Carries no sender, by design."""
+
+    sha256: str
+    media_type: str
+    filename: str
+    sent_ms: int
+    cover: bool
+    cover_body: str = ""
+
+    @property
+    def handle(self) -> str:
+        return self.sha256[:HANDLE_CHARS]
+
+
+@dataclass(frozen=True)
+class RoomSightings:
+    """`room_sightings`' answer. `truncated` says the row cap cut the read
+    short: media older than the newest `ROOM_MEDIA_ROWS` rows was NOT looked
+    at, so a code that is not found is «could not check that far», never «no
+    such picture»."""
+
+    sightings: list[Sighting]
+    truncated: bool = False
+
+
+async def room_sightings(
+    store: RecordStore, *, conversation_id: str, now_ms: int,
+    window: int = 0, days: int = ROOM_MEDIA_DAYS,
+) -> RoomSightings:
+    """Every distinct blob this ONE room's message rows hold, newest sighting
+    first: the `window` newest rows (`recent`, which includes her own sent
+    rows; 0 skips it) plus every human row with media in the last `days`
+    (`media_rows`, which reaches past any window). The conversation is the
+    caller's own, never a model argument. RAISES when the store cannot be read:
+    a caller maps that to `unavailable`, never to «no such picture». The one
+    resolver `media_fetch`, `computer_import`, room search and the documents'
+    Image resolver share."""
+    days = max(1, min(days, ROOM_MEDIA_DAYS))
+    rows = {
+        r.id: r
+        for r in (await store.recent(conversation_id=conversation_id, limit=window)
+                  if window > 0 else [])
+    }
+    # Over-fetch by one: a full answer means there may be more behind it.
+    fetched = await store.media_rows(
+        conversation_id=conversation_id, since_ts=now_ms - days * _MS_PER_DAY,
+        limit=ROOM_MEDIA_ROWS + 1,
+    )
+    truncated = len(fetched) > ROOM_MEDIA_ROWS
+    for r in fetched[:ROOM_MEDIA_ROWS]:
+        rows.setdefault(r.id, r)
+    seen: dict[str, Sighting] = {}
+    for row in sorted(rows.values(), key=lambda r: (r.ts, r.id), reverse=True):
+        for blob in blobs_from_media_json(row.media_json):
+            is_cover = blob.role == COVER_ROLE
+            old = seen.get(blob.sha256)
+            if old is None:
+                seen[blob.sha256] = Sighting(
+                    blob.sha256, blob.media_type, blob.filename or "", row.ts,
+                    is_cover, (row.body or "") if is_cover else "",
+                )
+            elif old.cover and not is_cover:
+                seen[blob.sha256] = replace(old, cover=False, cover_body="")
+            elif old.cover and is_cover and not old.cover_body:
+                seen[blob.sha256] = replace(old, cover_body=row.body or "")
+    return RoomSightings(list(seen.values()), truncated)
+
+
+def code_matches(sightings: Iterable[Sighting], code: str) -> dict[str, Sighting]:
+    """The sightings whose sha256 starts with `code` (already reduced to hex by
+    `handle_hex`), keyed by the full sha256: one blob seen in several rows is
+    one match, and two blobs sharing a 6-hex prefix are two. More than one is
+    AMBIGUOUS, for the caller to refuse with the candidates, never to pick."""
+    return {s.sha256: s for s in sightings if s.sha256.startswith(code)}
+
+
+def room_photos(sightings: Iterable[Sighting]) -> list[Sighting]:
+    """The sightings people SENT as pictures or clips: a shared item's cover is
+    a preview of something posted elsewhere, and voice notes and documents are
+    not photos. Stickers are not separable from photos in `media_json` and stay
+    in."""
+    return [
+        s for s in sightings
+        if not s.cover and parse_media_type(s.media_type)[0] in ("image", "video")
+    ]
+
+
+def reading_matches(obj: MediaObject, query: str) -> bool:
+    """Whether every word of `query` is a case-insensitive substring of the
+    object's title, description or content: the comprehension fields, the same
+    three `SqlMediaObjectStore.search` reads, and NOT its provenance text (an
+    inbound row's provenance names a room, which a query must not match on).
+    An empty query matches everything."""
+    words = [w.casefold() for w in query.split() if w]
+    hay = (obj.title.casefold(), obj.description.casefold(), obj.content.casefold())
+    return all(any(w in h for h in hay) for w in words)
 
 
 def label_from_media_type(media_type: str) -> str:

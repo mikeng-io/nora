@@ -184,8 +184,20 @@ class SqlMediaObjectStore:
 
     async def search(
         self, *, query: str, limit: int = 20,
-        sources: tuple[str, ...] = (),
+        sources: tuple[str, ...] = (), since_ms: int = 0,
     ) -> tuple[MediaObject, ...]:
+        """`lookup_search` without the availability axis: an unreadable index
+        is `()`, the same as no match. A caller that must tell them apart
+        (`media_search`) uses `lookup_search`."""
+        found = await self.lookup_search(
+            query=query, limit=limit, sources=sources, since_ms=since_ms,
+        )
+        return tuple(found.objects.values())
+
+    async def lookup_search(
+        self, *, query: str, limit: int = 20,
+        sources: tuple[str, ...] = (), since_ms: int = 0,
+    ) -> MediaLookup:
         """Text search over description + generated provenance text, newest
         first. Empty query → the most recent `limit` objects. Multi-word
         queries AND all words (each as a substring) — "birthday card miles"
@@ -232,6 +244,8 @@ class SqlMediaObjectStore:
             )
         if sources:
             conditions.append(MEDIA_OBJECTS.c.source.in_(sources))
+        if since_ms > 0:
+            conditions.append(MEDIA_OBJECTS.c.created_at_ms >= since_ms)
         stmt = sa.select(MEDIA_OBJECTS)
         if conditions:
             stmt = stmt.where(sa.and_(*conditions))
@@ -240,9 +254,11 @@ class SqlMediaObjectStore:
             async with self._engine.connect() as conn:
                 rows = (await conn.execute(stmt)).all()
         except Exception:
-            log.exception("media_objects search failed; treating as empty")
-            return ()
-        return tuple(_row_to_object(r) for r in rows)
+            log.exception("media_objects search failed; the index cannot read")
+            return MediaLookup(available=False, reason="store")
+        return MediaLookup(
+            available=True, objects={r.sha256: _row_to_object(r) for r in rows},
+        )
 
     async def get(self, *, sha256: str) -> MediaObject | None:
         stmt = sa.select(MEDIA_OBJECTS).where(

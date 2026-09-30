@@ -31,6 +31,15 @@ revision chain the culture store already has, design/culture-tier/).
 `character_revise` for a person refuses anyone who is not a listed person of
 the unit's rooms.
 
+**In the data model** ([05](05-data-model.md) §2) every account is an entry
+of the Notebook's Character tier: culture is the Character of a room or the
+unit, on the same machinery as a person's or Nora's. **Amended by DEC-249**
+([05](05-data-model.md) §5): evidence is only the Record and the Rollup. The
+Register rows and members' Characters named in "evidence it reads" above are
+read as context and linked, never cited; an account cites Record ids and
+Rollup keys. The same holds for Standing below, which links to Character and
+Lessons and cites the Record and Rollup.
+
 Character is descriptive. What Nora has learned to *do* in a unit ("two
 options, not five") is a lesson, in the Lessons tier ([10](10-tiers.md) §1,
 [12](12-schemas.md) §4a), not a line of her Character.
@@ -57,9 +66,10 @@ the tag path's debrief, both through `standing_revise`:
 | **unit** | new | what she is following, what she is watching for, what she owes |
 | **person** | new | her position toward one person: what is between them, what she owes them, how they receive her |
 
-Its modes are `deduced`, `abduced` and `said` ([10](10-tiers.md) §4). It may
-cite every tier below it, including Character and Lessons ("they tend to change plans
-late, so I hold this one loosely").
+Its modes are `deduced`, `abduced` and `said` ([10](10-tiers.md) §4). It
+cites the Record and the Rollup, and may **link** to a Character line or a
+lesson ("they tend to change plans late, so I hold this one loosely"), never
+cite one (DEC-249, [10](10-tiers.md) §2 rule 1).
 
 **The head stops being a lossy fold, which reverses standing-compact.**
 Standing already keeps its history: `standing_revision` (migration 0059,
