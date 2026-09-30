@@ -35,3 +35,28 @@ printed `ok`, nothing after it ran, the live config was untouched). Put
 `</dev/null` on every `docker compose exec`, `docker exec -i` and `docker
 compose run` in a heredoc (`cp`, `logs`, `up -d` and `inspect` measured
 harmless), and read the log for `VAL_RC=` / `UP_RC=`, never the ssh rc alone.
+
+## Other step 3 failures
+
+- `FETCH_FAILED` with `Permission denied (publickey)`: rerun with `ssh -A`.
+- `FF_FAILED` on untracked files in the way: move them aside and tell the
+  operator; never `git clean` (they may be someone's).
+- `UP_RC` nonzero with `container name ... is already in use`: step 7.
+
+## LIVE_CONFIG_REFUSED_BY_NEW_IMAGE
+
+Step 3 validates the live `config.toml` against the freshly built image before
+recreating anything. On 2026-10-01 DEC-247 (commit f4f2439c) removed
+`max_memory_calls` and `max_tool_calls` from `[dreamer.budgets.cognition]`.
+The live file still had them, and the next deploy, which was someone else's,
+crash-looped nora, presence and analytics for about 3 minutes. Apply the key
+change through step 5's validated copy, then rerun step 3. A merge that removes
+or renames a config key should say so in its release fragment.
+
+## Other images
+
+Other images: ADD the service to the build and up lines (voice:
+`nora voice-sidecar voice-wake` together). `verify-deploy.py` sees only
+`nora:latest`, so read each other image back per container, as
+`docs/runbook.md` 3b shows: `docker inspect --format '{{.Image}}' <svc>` must
+equal `docker image inspect <svc-image> --format '{{.Id}}'`.

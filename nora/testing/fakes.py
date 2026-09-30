@@ -27,17 +27,29 @@ from nora.domain.computer import (
     OpResult,
     RunResult,
     SandboxStatus,
+    ScopeProcess,
     StateFile,
     StateResult,
     TmuxSession,
 )
 from nora.domain.computer_events import ComputerEvent, normalise_computer_event
+from nora.domain.computer_exports import ComputerExport, normalise_export
 from nora.domain.computer_sessions import (
     EXPIRED,
     OPEN,
     ComputerSession,
     ensure_utc_event,
     normalise_session,
+)
+from nora.domain.documents import (
+    DocumentExistsError,
+    DocumentSummary,
+    RevisionIn,
+    RevisionOutcome,
+    RevisionRecord,
+    RoomKey,
+    StoredDocument,
+    VisiblePage,
 )
 from nora.domain.media import (
     MediaBlob,
@@ -1186,6 +1198,15 @@ class FakeMediaObjectStore:
         hits = [o for o in self.objs.values() if o.sha256.startswith(handle)]
         return tuple(self._newest_first(hits)[:limit])
 
+    async def lookup_prefix(self, *, handle: str, limit: int = 100) -> MediaLookup:
+        """Mirrors `SqlMediaObjectStore.lookup_prefix`: `fail=True` is
+        `available=False` with no objects, never an empty success."""
+        if self.fail:
+            return MediaLookup(available=False, reason="store")
+        hits = [o for o in self.objs.values() if o.sha256.startswith(handle)]
+        return MediaLookup(available=True,
+                           objects={o.sha256: o for o in self._newest_first(hits)[:limit]})
+
 
 class FakeReverseGeocoder:
     """In-memory `ReverseGeocoder`, bound to the Google and HK-gov backends by
@@ -1673,6 +1694,36 @@ class FakeToolCallLogStore:
         return rows[:limit]
 
 
+class FakeComputerExportStore:
+    """In-memory `ComputerExportStore`. Bound to
+    `nora.infra.sql.computer_exports.SqlComputerExportStore` by
+    `tests/contract/test_computer_export_store_contract.py`.
+
+    `fail_record` makes `record` raise (the export already happened: the
+    tool must still answer); `fail_read` makes `for_artifact` raise (a
+    revision whose owner cannot be read must not go ahead).
+    """
+
+    def __init__(self) -> None:
+        self.exports: list[ComputerExport] = []
+        self.fail_record = False
+        self.fail_read = False
+
+    async def record(self, export: ComputerExport) -> None:
+        if self.fail_record:
+            raise RuntimeError("fake computer_exports record failure")
+        if any(e.id == export.id for e in self.exports):
+            raise RuntimeError("duplicate id")
+        self.exports.append(normalise_export(export))
+
+    async def for_artifact(self, *, artifact_id: str) -> ComputerExport | None:
+        if self.fail_read:
+            raise RuntimeError("fake computer_exports read failure")
+        rows = [e for e in self.exports if e.artifact_id == artifact_id]
+        rows.sort(key=lambda e: (e.created_at, str(e.id)))
+        return rows[0] if rows else None
+
+
 class FakeComputerEventStore:
     """In-memory `ComputerEventStore`. Bound to
     `nora.infra.sql.computer_events.SqlComputerEventStore` by
@@ -2005,6 +2056,11 @@ class FakeSandboxRuntime:
         self.mtimes: dict[str, dict[str, datetime]] = {}
         self.tmux_by_scope: dict[str, dict[str, TmuxSession]] = {}
         self.tmux_unknown = False
+        # Processes a scope's user owns, as computerd reads them from /proc:
+        # only what a test starts with `start_process` (the fake runs
+        # nothing). `processes_unknown = True` is a /proc it cannot read.
+        self.processes_by_scope: dict[str, list[ScopeProcess]] = {}
+        self.processes_unknown = False
         self._clock = clock or (lambda: datetime.now(UTC))
         self._last_mtime: datetime | None = None
         self.runs: list[tuple[str, str]] = []
@@ -2137,6 +2193,24 @@ class FakeSandboxRuntime:
             name=name, created=created or self._clock(), attached=False, running=running,
         )
 
+    def start_process(
+        self, scope: str, command: str, *, pid: int | None = None,
+        started: datetime | None = None,
+    ) -> None:
+        """A process owned by `scope`'s user, running until `stop_process`
+        (a `nohup … &` job: no tmux session)."""
+        procs = self.processes_by_scope.setdefault(scope, [])
+        at = started or self._clock()
+        procs.append(ScopeProcess(
+            pid=pid if pid is not None else 1000 + len(procs), command=command[:80],
+            started=at, elapsed_seconds=max(0, int((self._clock() - at).total_seconds())),
+        ))
+
+    def stop_process(self, scope: str, pid: int) -> None:
+        self.processes_by_scope[scope] = [
+            p for p in self.processes_by_scope.get(scope, []) if p.pid != pid
+        ]
+
     async def state(self, *, scope: str) -> StateResult:
         if (refusal := self._refusal(scope)) is not None:
             return StateResult(status=refusal, reason="fake refusal")
@@ -2151,9 +2225,16 @@ class FakeSandboxRuntime:
         tmux = None if self.tmux_unknown else tuple(
             sorted(self.tmux_by_scope.get(scope, {}).values(), key=lambda t: t.created)
         )
+        procs = sorted(self.processes_by_scope.get(scope, []), key=lambda p: p.started,
+                       reverse=True)
         return StateResult(
             status=SandboxStatus.OK, files=tuple(visible[:FAKE_MAX_STATE_FILES]),
             tmux=tmux, tmux_reason="tmux is not installed" if tmux is None else None,
+            processes=None if self.processes_unknown else tuple(
+                procs[:FAKE_MAX_STATE_PROCESSES]),
+            processes_truncated=(not self.processes_unknown
+                                 and len(procs) > FAKE_MAX_STATE_PROCESSES),
+            processes_reason="/proc could not be read" if self.processes_unknown else None,
         )
 
     def _stamp(self) -> datetime:
@@ -2187,6 +2268,7 @@ def _fake_matches(rel: str, pattern: str) -> bool:
 
 FAKE_MAX_READ_CHARS = 200_000  # computerd's MAX_READ_CHARS
 FAKE_MAX_STATE_FILES = 50  # computerd's MAX_STATE_FILES
+FAKE_MAX_STATE_PROCESSES = 20  # computerd's MAX_STATE_PROCESSES
 FAKE_STATE_SKIP_DIRS = frozenset({"node_modules", "__pycache__"})  # STATE_SKIP_DIRS
 
 
@@ -2199,3 +2281,107 @@ def _fake_path(path: str) -> str | None:
     if not parts or ".." in parts:
         return None
     return "/".join(parts)
+
+
+class FakeDocumentStore:
+    """In-memory `DocumentStore`. Bound to `nora.infra.sql.documents.SqlDocumentStore`
+    by `tests/contract/test_document_store_contract.py`: the same visibility rule,
+    the same compare-and-swap on the revision number, the same ordering.
+
+    Time is a counter, not the wall clock, so two writes never share an instant
+    and "most recently updated first" is decidable in a test."""
+
+    def __init__(self) -> None:
+        self._rooms: dict[UUID, tuple[str, str, str, datetime]] = {}
+        self._revisions: dict[UUID, list[tuple[RevisionIn, datetime]]] = {}
+        self._tick = 0
+
+    def _now(self) -> datetime:
+        self._tick += 1
+        return datetime(2026, 10, 1, tzinfo=UTC) + timedelta(microseconds=self._tick)
+
+    def _stored(self, document_id: UUID) -> StoredDocument | None:
+        head = self._rooms.get(document_id)
+        if head is None:
+            return None
+        platform, conversation_id, created_by, created_at = head
+        revision, recorded_at = self._revisions[document_id][-1]
+        number = len(self._revisions[document_id])
+        return StoredDocument(
+            summary=DocumentSummary(
+                id=document_id, platform=platform, conversation_id=conversation_id,
+                created_by=created_by, title=revision.title, revision=number,
+                created_at=created_at, updated_at=recorded_at,
+            ),
+            spec=json.loads(json.dumps(revision.spec)), text=revision.text,
+            sha256=revision.sha256, media=tuple(revision.media),
+            written_by=revision.written_by,
+        )
+
+    @staticmethod
+    def _sees(summary: DocumentSummary, person_id: str, rooms: frozenset[RoomKey]) -> bool:
+        return summary.created_by == person_id or (
+            summary.platform, summary.conversation_id
+        ) in rooms
+
+    async def create(
+        self, *, document_id: UUID, platform: str, conversation_id: str, created_by: str,
+        revision: RevisionIn,
+    ) -> StoredDocument:
+        if document_id in self._rooms:
+            raise DocumentExistsError(str(document_id))
+        now = self._now()
+        self._rooms[document_id] = (platform, conversation_id, created_by, now)
+        self._revisions[document_id] = [(revision, now)]
+        stored = self._stored(document_id)
+        if stored is None:
+            raise RuntimeError("unreachable: the document was just written")
+        return stored
+
+    async def add_revision(
+        self, *, document_id: UUID, base_revision: int, revision: RevisionIn
+    ) -> RevisionOutcome:
+        if document_id not in self._rooms:
+            return RevisionOutcome("not_found")
+        if len(self._revisions[document_id]) != base_revision:
+            return RevisionOutcome("conflict")
+        self._revisions[document_id].append((revision, self._now()))
+        return RevisionOutcome("ok", self._stored(document_id))
+
+    async def get(self, *, document_id: UUID) -> StoredDocument | None:
+        return self._stored(document_id)
+
+    async def history(self, *, document_id: UUID) -> tuple[RevisionRecord, ...]:
+        return tuple(
+            RevisionRecord(
+                revision=i, title=r.title, sha256=r.sha256, written_by=r.written_by,
+                recorded_at=at,
+            )
+            for i, (r, at) in enumerate(self._revisions.get(document_id, []), start=1)
+        )
+
+    async def list_visible(
+        self, *, person_id: str, rooms: frozenset[RoomKey], limit: int, offset: int
+    ) -> VisiblePage:
+        seen = [
+            d.summary for doc_id in self._rooms
+            if (d := self._stored(doc_id)) is not None
+            and self._sees(d.summary, person_id, rooms)
+        ]
+        seen.sort(key=lambda s: (-s.updated_at.timestamp(), str(s.id)))
+        # The same bounds as `SqlDocumentStore.list_visible`.
+        limit = min(max(limit, 0), 1_000)
+        offset = min(max(offset, 0), 2**31 - 1)
+        return VisiblePage(items=tuple(seen[offset : offset + limit] if limit > 0 else ()),
+                           total=len(seen))
+
+    async def get_visible(
+        self, *, document_id: UUID, person_id: str, rooms: frozenset[RoomKey]
+    ) -> StoredDocument | None:
+        stored = self._stored(document_id)
+        if stored is None or not self._sees(stored.summary, person_id, rooms):
+            return None
+        return stored
+
+    async def aclose(self) -> None:
+        return None

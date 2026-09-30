@@ -45,6 +45,10 @@ def test_doctrine_read_boundary():
         PKG / "skills" / "loader.py",
         PKG / "instructions" / "frontmatter.py",
         PKG / "compute" / "smith" / "agent.py",
+        # `documents/catalog-prompt.md` is a GENERATED prompt fragment (the catalog a
+        # model writes a document against), not a doctrine file; its one reader is
+        # `nora.documents.catalog_prompt`, which reads nothing else.
+        PKG / "documents" / "__init__.py",
     }
     offenders = []
     for path in _python_files():

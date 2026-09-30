@@ -10,8 +10,8 @@ rewrites NO row: a closed or cancelled outcome written before it keeps its
 `infra`, and every reader normalises on read (`nora.domain.stimuli.stored_cause`,
 applied in `wake_state`), because that cause was never a fact.
 
-Revision ID: 0083_cognition_cause_none
-Revises: 0082_computer_sessions
+Revision ID: 0085_cognition_cause_none
+Revises: 0084_documents
 Create Date: 2026-09-30
 """
 
@@ -19,8 +19,8 @@ from __future__ import annotations
 
 from alembic import op
 
-revision = "0083_cognition_cause_none"
-down_revision = "0082_computer_sessions"
+revision = "0085_cognition_cause_none"
+down_revision = "0084_documents"
 branch_labels = None
 depends_on = None
 

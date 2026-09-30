@@ -254,9 +254,17 @@ def test_the_whole_corpus_is_accounted_for() -> None:
     `tool_selection_cognition`'s 5
     (2026-09-30, PR B «what she can read»: `rollup_read` against `record_query`
     twice and against `where_been` past its 90 days, and `standing_read` read
-    before `standing_revise` and against `note_read`/`note_search`); a change to it
+    before `standing_revise` and against `note_read`/`note_search`), plus
+    `tool_selection`'s 2 S3a cases (2026-10-01, design/sandbox-runtime §7: a
+    simulation that is `computer_run`'s, never `calculate`'s (it first also
+    required a computer-use skill load; measured 1/5 and dropped as a wrong
+    expectation, operator 2026-10-01), and a `computer_import` of a sent file
+    against `media_fetch`; computer-on arm only), plus 5 `tool_selection` cases
+    for `document_publish` (design/artifact §26: two positives on the documents-on
+    arm, three negatives: a count, a picture, a CSV file handed over with
+    `computer_export`); a change to it
     is a change to what the suite claims to measure and belongs in a commit that
     says so. Recomputed with `census()` at each merge, never summed."""
     totals = [census(n) for n in CORPORA]
-    assert sum(c.total for c in totals) == 275
-    assert sum(c.active + c.parked for c in totals) == 275
+    assert sum(c.total for c in totals) == 282
+    assert sum(c.active + c.parked for c in totals) == 282

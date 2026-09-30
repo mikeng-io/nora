@@ -23,12 +23,14 @@ from aiohttp import web
 from nora.agent.whereis import Circle, PresenceReader
 from nora.app.gatherings import GatheringService
 from nora.doctrine.loader import DoctrineStore
+from nora.domain.documents import DocumentStore, RoomKey
 from nora.domain.ports import MemoryStore, RecordStore
 from nora.domain.reminders import ReminderStore
 from nora.domain.rollup import NoRollupBuildError
 from nora.infra.sql.mobility import SqlMobilityStore
 from nora.persons import Persons
 from nora.web.doctrine import build_doctrine_payload
+from nora.web.documents import build_document_payload, build_documents_payload
 from nora.web.games import (
     GamesUnavailableError,
     PulseGamesClient,
@@ -209,9 +211,13 @@ def register_web_routes(
     skills_dir: Path, events: GatheringService, doctrine_store: DoctrineStore,
     mobility: SqlMobilityStore | None = None,
     workspaces_of: Callable[[str], tuple[str, ...]] | None = None,
+    documents: DocumentStore | None = None,
+    rooms_of: Callable[[str], frozenset[RoomKey]] | None = None,
 ) -> None:
     app["web_store"] = store
     app["web_workspaces_of"] = workspaces_of
+    app["web_documents"] = documents
+    app["web_rooms_of"] = rooms_of
     app["web_honcho"] = honcho
     app["web_reminders"] = reminders
     app["web_persons"] = persons
@@ -603,6 +609,56 @@ def register_web_routes(
             return web.json_response({"status": "not_found"}, status=404)
         return web.json_response(body)
 
+    def _documents_unavailable() -> web.Response:
+        return web.json_response(
+            {"status": "unavailable", "note": "documents are not available"}, status=503,
+        )
+
+    async def documents_list(request: web.Request) -> web.Response:
+        # Viewer-scoped like `events_list`: `personId` comes from the session through the
+        # portal's proxy (a browser-supplied one is dropped there) and must be a person
+        # this deployment knows.
+        a = request.app
+        if a["web_documents"] is None or a["web_rooms_of"] is None:
+            return _documents_unavailable()
+        person_id = request.query.get("personId")
+        if not person_id or a["web_persons"].by_person.get(person_id) is None:
+            return web.json_response(
+                {"status": "refused", "note": "a valid personId is required"}, status=400,
+            )
+        try:
+            page = _int_query(request, "page", _DEFAULT_PAGE)
+            page_size = _int_query(request, "pageSize", _DEFAULT_PAGE_SIZE)
+        except _BadQueryError as exc:
+            return web.json_response({"error": f"invalid {exc}"}, status=400)
+        body = await build_documents_payload(
+            store=a["web_documents"], rooms_of=a["web_rooms_of"], persons=a["web_persons"],
+            person_id=person_id, page=page, page_size=page_size,
+        )
+        return web.json_response(body)
+
+    async def documents_detail(request: web.Request) -> web.Response:
+        a = request.app
+        if a["web_documents"] is None or a["web_rooms_of"] is None:
+            return _documents_unavailable()
+        person_id = request.query.get("personId")
+        if not person_id or a["web_persons"].by_person.get(person_id) is None:
+            return web.json_response(
+                {"status": "refused", "note": "a valid personId is required"}, status=400,
+            )
+        try:
+            document_id = UUID(request.match_info["id"])
+        except ValueError:
+            return web.json_response({"status": "refused", "note": "bad id"}, status=400)
+        body = await build_document_payload(
+            store=a["web_documents"], rooms_of=a["web_rooms_of"], persons=a["web_persons"],
+            person_id=person_id, document_id=document_id,
+        )
+        if body is None:
+            # Never a distinct "forbidden": an id must not confirm a document exists.
+            return web.json_response({"status": "not_found"}, status=404)
+        return web.json_response(body)
+
     app.router.add_get("/app/v1/status", status)
     app.router.add_get("/app/v1/skills", skills)
     app.router.add_get("/app/v1/tools", tools)
@@ -638,3 +694,5 @@ def register_web_routes(
     app.router.add_get("/app/v1/presence/{person_id}/history", presence_history)
     app.router.add_get("/app/v1/events", events_list)
     app.router.add_get("/app/v1/events/{id}", events_detail)
+    app.router.add_get("/app/v1/documents", documents_list)
+    app.router.add_get("/app/v1/documents/{id}", documents_detail)

@@ -321,6 +321,24 @@ APPEND: dict[str, Callable[[int], dict[str, Any]]] = {
         "trace_id": "", "span_id": "", "status": "ok",
         "request": {"command": f"echo {n}"},
     },
+    # ADR 0020 (0084_documents): a document's identity and one snapshot per revision.
+    "documents": lambda n: {
+        "id": _uuid("doc", n), "platform": "signal", "conversation_id": "g1",
+        "created_by": "ken",
+    },
+    "document_revision": lambda n: {
+        "document_id": _uuid("doc", n), "revision": 1, "title": f"doc {n}",
+        "spec": {"version": 1}, "text": f"doc {n}", "sha256": f"{n:064x}",
+        "written_by": "tag",
+    },
+    # design/sandbox-runtime §6 (0083): one row per file that left the computer.
+    "computer_exports": lambda n: {
+        "id": _uuid("cx", n), "platform": "signal", "conversation_id": "g1",
+        "scope": "ab" * 16, "path": f"out/{n}.png", "destination": "link",
+        "sha256": f"{n:064x}", "size_bytes": n, "media_type": "image/png",
+        "title": f"page {n}", "tag_id": f"t{n}", "operation_id": _uuid("cx-op", n),
+        "artifact_id": f"art_{n}", "url": f"https://example.invalid/{n}",
+    },
     "revision_blob": lambda n: {"sha256": f"{n:064x}", "content": f"text {n}"},
     "doctrine_revision": lambda n: {
         "corpus": "doctrine", "content_sha256": f"{n:064x}", "files": {}, "loaded_at": T0,

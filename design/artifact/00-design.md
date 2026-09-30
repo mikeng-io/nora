@@ -262,7 +262,8 @@ S4 needs nothing from the sandbox session; the `path` form of `document_publish`
    `identity.toml`). `nora/web/memory.py` already scopes a read by viewer through
    `workspaces_of_person`; documents need the room-level analogue. Recommend:
    a document is visible to **its requester and to the persons its room names**, computed at
-   read time from current policy (so removing someone revokes access, not a stored snapshot);
+   read time from the loaded policy (so removing someone revokes access once the policy reloads, at the next
+   restart; not a stored snapshot);
    for a `"*"` room, **the requester only** (fail closed, because membership there cannot be
    enumerated). Everyone else gets 404, the same answer the proxy gives for a bad id.
 2. **Spec authority.** json-render's native spec, or a Nora envelope
@@ -840,3 +841,97 @@ judged.
 The pipeline is now, in this order and for this reason: parse, shape, characters, strip terminal codes,
 normalise, schema, rules, then text and the canonical form. Every step that changes a string runs
 before the step that judges it, so what is stored is what was judged.
+
+## 25. W4a: the store, the publish service and the read API (2026-10-01)
+
+**Built** (PR for W4a): `nora/domain/documents.py` (the `DocumentStore` port, in its own module as
+`nora.domain.compute` is, so it adds nothing to `ports.py`), migration `0084_documents`,
+`nora/infra/sql/documents.py`, `FakeDocumentStore`, `nora/app/documents_service.py`
+(`DocumentService.publish`, `rooms_named`), `nora/web/documents.py` with `GET /app/v1/documents` and
+`/app/v1/documents/{id}`, and two rows in the portal's proxy table. No tool, portal page or skill yet.
+
+**Storage.** `documents` (identity: id, room, creator; `recorded_at` is when it first existed) and
+`document_revision` (one full snapshot per revision: title, the checked spec as jsonb, the search text,
+sha256, the full sha256 of every picture it names, who wrote it). Both are **append-only**, so neither
+changes in place and neither needs the row-history trigger; the current document is the highest
+revision, which removes the head pointer that could drift. `(document_id, revision)` is the primary
+key, so two revisions from one base resolve to one winner and one `conflict` (the contract suite races
+six writers and expects exactly one).
+
+**Visibility is in the read.** A person reads what they created plus what was made in a room that names
+them; the rooms come from the current policy at the moment of each request (`rooms_named`), so removing a
+person from a room revokes access when the policy is reloaded (`policy.toml` is read once at startup, so in
+practice at the next restart, not at the next request), and a `persons = "*"` room names nobody. A document
+you may not read is `404`, never `403`, and is indistinguishable from an unknown id. The room's chat id is
+never in the payload, only its platform.
+
+**Media, settling §16's two open questions for inbound photos.** An inbound photo is recorded as a
+sha256 in `messages.media_json`, which is what `[image a3f2c1: …]` renders from; it is resolvable, and it
+carries its room because the message row does. So a code resolves against the document's own room's
+message rows (`recent`, over the same window `media_fetch` scans), plus media-index rows born in the
+room (`provenance.platform` and `provenance.conversation_id`; any source).
+The message row is the authority for a photo people sent, not the index row: an index row keeps only the
+FIRST room a byte string was seen in (first source wins), so a photo re-sent to room B would be wrongly
+refused by provenance. A row with no room (a sticker, a comprehension-born row) never resolves: fail
+closed. A code that matches no picture is `media_unknown`; one that matches more than one is
+`media_ambiguous` and names the candidates' 8-character handles; nothing is ever picked. A photo older
+than the window is not found (the operator's decision is pending on that; not built).
+Each Image's code is then **rewritten to the full sha256** and the document is checked again, so what is
+stored is what was judged. The index half is the sandbox session's `resolve_room_media` (its #649), used as
+is for each of the room's ids: a code resolves only in the room it was born in whatever its source, and an
+index that cannot be read is `unavailable` (nothing saved), never "no such picture"; so there is one resolver.
+
+**Revisions.** A revision must be made in the room the document was made in, so a room cannot overwrite
+another room's document; from any other room the answer is `no_such_document`, the same as for an
+id that is no document at all, so an id never confirms that a document exists elsewhere. Anyone in that room may revise; the
+creator stays the creator. The Page title is the document's title (no separate `title` argument, which
+serialises one fact once).
+
+**Review of PR 654 (2026-10-01), what it changed.** Publishing needs a known person (`unknown_person`);
+an edit must name the revision it read (`base_revision_required`) and a stale one is a `conflict` that says
+which revision is current, so an old edit can no longer win as the next revision; every stored media entry
+is a full 64-hex sha256 and a revision is at most 1 MiB of JSON, both enforced by a CHECK in the database as
+well as in the service; the list endpoint clamps `limit` and `offset` (and the page number is capped at
+100,000) so an absurd value answers a page, not a 500. A room is matched by its conversation id alone, not by
+platform, because conversation ids are unique across platforms by the same convention `media_fetch` relies
+on; if that ever stops being true, the room key here must gain the platform. Not covered: `nora person
+forget` does not reach documents, and a message the platform deleted may still be resolvable by `recent`;
+these are issues #655 and #656.
+
+**Not built, on purpose.** The media byte route (W5, with the portal), the tool and its routing eval
+(W4b), search, the `path` form of publishing (it waits on the sandbox session's audited reader). The
+migration is `0084_documents`, after the sandbox session's `0083_computer_exports` (#649).
+
+## 26. W4b: the tools the model publishes with (2026-10-01)
+
+Two tools over the W4a service, both in `nora/agent/tools.py`, both withheld from every turn unless
+`[documents] enabled` (ships false, like `[record_query]`): the portal pages that open a document are a
+later step, so a model that published one now would hand people a path that shows nothing.
+
+**`document_publish(spec, document_id?, base_revision?)`**, level 3, budget 4, an act (not read-only,
+`non_idempotent`, never retried). `spec` is the JSON object, or the same as text. It calls
+`DocumentService.publish` with the requester's person id (the room's tagger); a turn with no tagger (a
+fire, a Dreamer pass) stores nothing and says so, because a document is published for the person who asked.
+The catalog is learned from the tool, not from memory: a call with no `spec` answers `bad_arguments` with
+the generated catalog prompt (`DocumentService.catalog`) in a `catalog` field, paid only by the call that
+needs it and never by every turn. The MUST rule (a document is a JSON spec, never HTML, markup or a file)
+is in the description, with one line in `conduct.md` (version 34) that names no tool and forbids nothing
+when the tool is absent, because doctrine is bind-mounted and goes live at the next pull, before the image.
+
+**Statuses, and why these words.** `ok` carries `document_id`, `revision` and the portal `url`, and a note
+that says it is under Documents for people signed in and not a public link. A refusal with findings, a
+missing or stale `base_revision` and a malformed id are `bad_arguments` (a mistake in the call, correctable
+on the next turn; `refused` is R-31's disclosure veto and would read as «I may not say»). A document of
+another room is `not_found`, the same as an unknown id. A store or checker that failed is `unavailable`:
+nothing is known to be stored.
+
+**`document_read(document_id)`**, level 1, budget 2, read-only. Editing needs the current spec and revision,
+and a model does not remember either across turns, so this is the minimum that makes `base_revision`
+usable. A spec over 40,000 characters of JSON is named and left out (never cut in half), with the revision,
+so the model can republish the whole document against it.
+
+**Not built.** The `path` form (waits on #649's audited reader). No routing result: the `route_document_*`
+cases are in `tool_selection`, the two positives need a subject with `[documents] enabled` (the eval
+subject is the deployment's config, which has it off), so they are NOT RUN; the three negatives (a count, a
+picture, a CSV file) pass trivially while it is off. The skill that teaches composing a good document, the
+portal routes and the media byte route are W5 and after.

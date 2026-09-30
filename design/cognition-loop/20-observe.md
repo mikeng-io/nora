@@ -235,7 +235,7 @@ a name this table leaves open:
   kind has a skill (`AgendaSkills.by_kind`): the item was «a time stimulus is due:
   floor» with nothing to act on (M8). A unit that only records would-wakes still
   raises its floors, because sizing them is what shadow is for. A closed or
-  cancelled outcome records `cause = none` (migration 0083), never `infra`.
+  cancelled outcome records `cause = none` (migration 0085), never `infra`.
 - An adapter connected but silent for `PlatformSilent`'s 900 s is recorded
   `stale`, not `up`.
 - `nora_cognition_wake_total` carries `mode` beside `reason`, and

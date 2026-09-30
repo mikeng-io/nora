@@ -193,6 +193,10 @@ async def test_by_prefix_surfaces_every_collision_newest_first(store):
     hits = await store.by_prefix(handle="aabbcc")
     assert [h.sha256 for h in hits] == [CAT_TWIN, CAT]
     assert [h.sha256 for h in await store.by_prefix(handle="aabbcc", limit=1)] == [CAT_TWIN]
+    found = await store.lookup_prefix(handle="aabbcc")
+    assert found.available and set(found.objects) == {h.sha256 for h in hits}
+    empty = await store.lookup_prefix(handle="ffffff")
+    assert (empty.available, dict(empty.objects)) == (True, {})
 
 
 async def test_an_unreachable_database_answers_false_and_empty_and_never_raises(broken):
@@ -204,6 +208,10 @@ async def test_an_unreachable_database_answers_false_and_empty_and_never_raises(
     assert await broken.get(sha256=CAT) is None
     assert await broken.search(query="cat") == ()
     assert await broken.by_prefix(handle="aabbcc") == ()
+    # `lookup_prefix` carries the axis `by_prefix` collapses: unreachable is
+    # `available=False`, never an empty success.
+    unread = await broken.lookup_prefix(handle="aabbcc")
+    assert (unread.available, dict(unread.objects)) == (False, {})
     # `comprehend` runs in a SPAWNED task, where an exception would surface
     # only as a done-callback log line. A lost comprehension costs one re-read
     # on the next sighting and must never cost anything else.

@@ -274,7 +274,7 @@ _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
 _AMBIGUOUS: frozenset[str] = frozenset(
     {
         "aclose", "append", "claim", "create", "delete",
-        "describe", "enqueue", "get", "lookup", "mark", "put", "read",
+        "describe", "enqueue", "get", "history", "lookup", "mark", "put", "read",
         "recent", "record", "record_wake", "resolve", "rsvps_for", "save", "search",
         "sweep_firing", "update", "apply",
     }
@@ -296,8 +296,9 @@ _AMBIGUOUS: frozenset[str] = frozenset(
 _STORE_MODULES: frozenset[str] = frozenset(
     {
         "announcements.py", "assess.py", "audit.py", "cognition_dry_run.py",
-        "compute_jobs.py", "computer_events.py", "computer_sessions.py",
-        "culture.py", "decision_log.py", "dream_schedule.py",
+        "compute_jobs.py", "computer_events.py", "computer_exports.py",
+        "computer_sessions.py",
+        "culture.py", "decision_log.py", "documents.py", "dream_schedule.py",
         "gatherings.py", "geocode_cache.py", "language.py",
         "media_descriptions.py", "media_objects.py", "mobility.py",
         "music_queue.py", "music_session.py", "notes.py",

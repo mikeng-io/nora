@@ -478,7 +478,7 @@ def wake_state(
         return LastSession(
             state="closed" if outcome == "closed" else "failed",
             started_at_ms=recorded_at_ms, ended_at_ms=outcome_at_ms, outcome=outcome,
-            # Normalised on READ: an outcome row written before 0083 carries
+            # Normalised on READ: an outcome row written before 0085 carries
             # `infra` for a closed or cancelled wake, and the append-only table
             # is never rewritten to say otherwise (10 §8).
             cause=stored_cause(outcome, cause or DEFAULT_FAILURE_CAUSE),

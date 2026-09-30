@@ -1462,6 +1462,14 @@ class MediaObjectStore(Protocol):
 
     async def by_prefix(self, *, handle: str, limit: int = 20) -> tuple[MediaObject, ...]: ...
 
+    async def lookup_prefix(self, *, handle: str, limit: int = 100) -> MediaLookup:
+        """`by_prefix` with the availability axis `lookup` has: every object
+        whose sha256 starts with `handle`, or `available=False` (and no
+        objects) when the index could not be read. For a caller that must say
+        «I couldn't check» rather than «there is no such picture»
+        (`resolve_room_media`). Never raises."""
+        ...
+
 
 @runtime_checkable
 class Transcriber(Protocol):
@@ -1769,6 +1777,8 @@ class ArtifactIngest(Protocol):
     `tests/contract/test_artifact_ingest_contract.py`, the same as every other
     port's fake. `DropArtifactIngest` has no caller anywhere in this repo yet;
     that wiring is Compute's, not this port's.
+    (S3a, 2026-10-01: `computer_export` is now its caller, design/
+    sandbox-runtime §6; the paragraph above is its history.)
 
     `data` is `bytes`, matching `BlobStore.put` exactly — not a path (the
     caller and `drop` are different containers with no shared filesystem

@@ -2269,8 +2269,13 @@ class ComputerContextConfig(BaseModel):
     max_open_sessions: int = Field(default=5, gt=0)
     max_lapsed_sessions: int = Field(default=3, ge=0)
     max_tmux: int = Field(default=5, ge=0)
+    # Processes the room's user owns (a `nohup … &` job has no tmux session).
+    max_processes: int = Field(default=5, ge=0)
     max_files: int = Field(default=8, ge=0)
     max_runs: int = Field(default=5, ge=0)
+    # The newest Drop links the room made (`computer_export`, S3a), each with
+    # the artifact_id a revision needs to keep the same link.
+    max_links: int = Field(default=3, ge=0)
     max_tokens: int = Field(default=400, gt=0)
     read_timeout_seconds: float = Field(default=1.5, gt=0)
     state_cache_seconds: float = Field(default=30.0, ge=0)
@@ -2307,6 +2312,11 @@ class ComputerConfig(BaseModel):
     max_run_timeout_seconds: int = Field(default=900, gt=0)
     max_output_chars: int = Field(default=8000, gt=0)
     max_read_chars: int = Field(default=20000, gt=0)
+    # `computer_export` / `computer_import` (design/sandbox-runtime §6, §7):
+    # the largest file either moves. At most computerd's own transfer cap
+    # (`MAX_TRANSFER_BYTES`, 50 MiB), which would refuse a larger one anyway.
+    export_max_bytes: int = Field(default=25 * 1024 * 1024, gt=0, le=50 * 1024 * 1024)
+    import_max_bytes: int = Field(default=25 * 1024 * 1024, gt=0, le=50 * 1024 * 1024)
     limits: ComputerLimitsConfig = ComputerLimitsConfig()
     sessions: ComputerSessionsConfig = ComputerSessionsConfig()
     context: ComputerContextConfig = ComputerContextConfig()
@@ -3724,6 +3734,21 @@ class RecordQueryConfig(BaseModel):
     enabled: bool = False
 
 
+class DocumentsConfig(BaseModel):
+    """`document_publish` and `document_read` (design/artifact/00-design.md §26).
+
+    **Ships OFF.** Off, neither tool is in any turn's tools, catalogue or the
+    Relevance Gate's capability digest. A published document is opened in the web
+    app, and the portal's document pages are a later step; until they ship, a model
+    that published one would hand people a path that shows nothing. Turn it on
+    after the portal routes exist and the `route_document_*` tool_selection cases
+    have run."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    enabled: bool = False
+
+
 class LoggingConfig(BaseModel):
     """Where the log goes is no longer a setting: it goes to stdout.
 
@@ -4058,6 +4083,8 @@ class Config(BaseModel):
     lineage: LineageConfig = LineageConfig()
     # Optional and defaulted — see `RecordQueryConfig`. Ships OFF.
     record_query: RecordQueryConfig = RecordQueryConfig()
+    # Optional and defaulted — see `DocumentsConfig`. Ships OFF.
+    documents: DocumentsConfig = DocumentsConfig()
     identity_file: Path
     policy_file: Path
     obs: ObsConfig

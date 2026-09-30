@@ -203,11 +203,11 @@
     "target": "tests/unit/test_cognition_grounding.py -k sorting_first"
   },
   {
-    "name": "migration 0083: no UPDATE of the append-only outcome table",
-    "file": "nora/infra/sql/migrations/versions/0083_cognition_cause_none.py",
+    "name": "migration 0085: no UPDATE of the append-only outcome table",
+    "file": "nora/infra/sql/migrations/versions/0085_cognition_cause_none.py",
     "old": "        \"cause IN ('infra', 'agenda', 'none')\",\n    )\n",
     "new": "        \"cause IN ('infra', 'agenda', 'none')\",\n    )\n    op.execute(\"UPDATE cognition_wake_outcome SET cause = 'none' WHERE outcome IN ('closed', 'cancelled') AND cause = 'infra'\")\n",
-    "target": "tests/infra/test_alembic.py -k 0083"
+    "target": "tests/infra/test_alembic.py -k 0085"
   },
   {
     "name": "wake_state: an old closed outcome row is normalised to no cause on read",

@@ -19,6 +19,7 @@ from typing import Any, cast
 
 import aiohttp
 
+from nora.domain.models import strip_mention_placeholders
 from nora.domain.ports import MemoryHealth, MessageHits, Recollection
 
 log = logging.getLogger("nora.honcho")
@@ -1466,7 +1467,7 @@ class HonchoClient:
             peer, content = m.get("peer_id"), m.get("content")
             if not isinstance(peer, str) or not isinstance(content, str):
                 continue
-            text = content.replace("￼", "").strip()   # drop the media placeholder
+            text = strip_mention_placeholders(content)   # drop the placeholder
             if text:
                 out.append((peer, text))
         return MessageHits(reachable=True, hits=tuple(out))

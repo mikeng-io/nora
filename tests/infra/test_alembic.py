@@ -614,15 +614,15 @@ def test_0067_keys_a_pre_existing_summons_row_on_a_legacy_message_id(pg_url):
     assert current_revision(pg_url) == head_revision()
 
 
-def test_0083_rewrites_no_outcome_row_and_a_downgrade_survives_a_none_row(pg_url):
-    """`cognition_wake_outcome` is APPEND_ONLY (10 §8): 0083 only widens the check.
+def test_0085_rewrites_no_outcome_row_and_a_downgrade_survives_a_none_row(pg_url):
+    """`cognition_wake_outcome` is APPEND_ONLY (10 §8): 0085 only widens the check.
     A closed outcome written before it keeps `infra` (readers normalise, see
     `wake_state`), and going back down does not UPDATE the `none` rows a newer
     deploy wrote (the restored check is NOT VALID: it still refuses a new one)."""
     from alembic import command as alembic_command
 
     run_migrations(pg_url)
-    alembic_command.downgrade(alembic_config(pg_url), "0082_computer_sessions")
+    alembic_command.downgrade(alembic_config(pg_url), "0084_documents")
     engine = sa.create_engine(sync_url_for(pg_url))
     try:
         with engine.begin() as conn:
@@ -650,7 +650,7 @@ def test_0083_rewrites_no_outcome_row_and_a_downgrade_survives_a_none_row(pg_url
     finally:
         engine.dispose()
 
-    alembic_command.downgrade(alembic_config(pg_url), "0082_computer_sessions")
+    alembic_command.downgrade(alembic_config(pg_url), "0084_documents")
     engine = sa.create_engine(sync_url_for(pg_url))
     try:
         with engine.begin() as conn:
