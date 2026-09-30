@@ -1711,7 +1711,9 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "cites_nora (an id of one of Nora's own messages), misattributed (a "
         "name that wrote none of the ids its line cites), unknown_owner (an "
         "## Owed owner the pass did not show as a sender, or Nora), bad_date "
-        "(a malformed or impossible date, or the wrong weekday). One sample "
+        "(a malformed or impossible date, or the wrong weekday), "
+        "unknown_rollup_key (a Rollup row the pass did not read; no "
+        "note-candidates pass reads one). One sample "
         "per refused candidate; the candidate is not written. An update's body "
         "is checked here too since design 42 S4a, as a restatement.",
         ("rule",),

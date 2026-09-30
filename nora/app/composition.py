@@ -4547,9 +4547,13 @@ async def build_dependencies(
                 metrics=metrics, tools=dream_tools, instructions=dreamer_instructions,
                 dry_run_store=dry_run_store, stimulus_store=stimulus_store,
                 note_titles=_note_titles, proposed_events_in=_proposed_events,
-                standing_of=lambda platform, conversation_id: standing_store.read(
+                # The HEAD with its `standing_revision` id: the token a
+                # `standing_revise` base is checked against (M6, DEC-249).
+                standing_of=lambda platform, conversation_id: standing_store.read_head(
                     platform=platform, conversation_id=conversation_id,
                 ),
+                roster_of=_roster_names_of(rosters, persons, registry.self_aliases()),
+                nora_names=frozenset({cfg.doctrine.display_name}),
                 homes=homes, units=cognition_wakeable,
                 # No skill ships for any agenda kind in this step: the table is
                 # where each lands (`AgendaSkills`).
@@ -4681,6 +4685,27 @@ async def _tell_about_lost_jobs(
             metrics.inc("nora_compute_lost_told_total", outcome="failed_error")
         finally:
             slots.release_and_dispatch(key)
+
+
+def _roster_names_of(
+    rosters: Mapping[str, RosterSource], persons: Persons, self_ids: frozenset[str],
+) -> Callable[[str, str], Awaitable[Mapping[str, str] | None]]:
+    """A cognition session's roster seam: the room's roster NAMES with their
+    person ids, read through the same `Room` the tag path resolves a room with
+    (Nora's own accounts are not members: `self_ids`). `None` when the roster
+    cannot be read, so a note write can say `unavailable` instead of refusing
+    every owner against an empty room (M3)."""
+
+    async def roster_of(platform: str, conversation_id: str) -> Mapping[str, str] | None:
+        view = await Room(
+            platform=platform, conversation_id=conversation_id,
+            roster_source=rosters.get(platform), persons=persons, self_ids=self_ids,
+        ).members()
+        if not view.available:
+            return None
+        return {p.name: p.person_id for p in view.people}
+
+    return roster_of
 
 
 async def _presence_preflight(
