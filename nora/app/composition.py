@@ -104,7 +104,7 @@ from nora.engagement.stages.debrief import Completion as DebriefCompletion
 from nora.engagement.stages.debrief import Wiring as DebriefWiring
 from nora.infra.blobs import FilesystemBlobStore, RustfsBlobStore
 from nora.infra.blobs.cipher import BlobCipher
-from nora.infra.compute.docker_backend import LocalDockerBackend
+from nora.infra.compute.docker_backend import LocalDockerBackend, egress_refusal
 from nora.infra.honcho import HonchoClient
 from nora.infra.music import YtDlpSource
 from nora.infra.sql import SqlRecordStore, create_sql_engine, run_migrations
@@ -896,6 +896,24 @@ def _check_compute_secrets(
             "Maps key its map-rendering skill uses, and the model key Smith "
             "itself runs on. Starting without them would fail every job at "
             "run time instead of here; refusing to start"
+        )
+
+
+def _check_compute_egress(cfg: Config) -> None:
+    """The endpoints a compute job is handed must be ones `compute-egress`
+    lets it reach, checked at BOOT for `_check_compute_secrets`' reason: a job
+    whose model URL is off the allowlist fails every time, in front of the
+    group, as a proxy 403. Tracing is checked only when it is forwarded."""
+    urls = [cfg.llm.base_url.rstrip("/") + "/chat/completions"]
+    if cfg.obs.tracing.enabled and cfg.obs.tracing.exporter == "otlp_http":
+        urls.append(cfg.obs.tracing.endpoint)
+    refusals = [r for r in (egress_refusal(u) for u in urls) if r]
+    if refusals:
+        raise StartupError(
+            "[compute] enabled = true but a compute job could not reach: "
+            + "; ".join(refusals)
+            + " — widen deploy/compute-egress/squid.conf and EGRESS_ALLOWLIST "
+            "together, or point the endpoint at an allowed one; refusing to start"
         )
 
 
@@ -2586,6 +2604,7 @@ async def build_dependencies(
         _check_compute_secrets(
             drop_token=drop_token, maps_key=maps_key, model_api_key=api_key, cfg=cfg,
         )
+        _check_compute_egress(cfg)
         compute_backend = LocalDockerBackend(
             docker_client=docker.from_env(),
             drop_internal_url=cfg.shortener.base_url,

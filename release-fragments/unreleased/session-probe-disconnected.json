@@ -1,0 +1,1 @@
+{"type": "none", "reason": "Internal ops probe (nora/infra/social/session_probe, run by a host systemd timer): it now treats an authenticated-but-disconnected Instagram bridge as down after two consecutive runs and drops the always-429 instagram whoami check. No Nora runtime, prompt, tool or config behaviour changes.", "details": [], "limitations": []}
