@@ -375,3 +375,14 @@ def test_a_rows_origin_may_be_a_room_key_or_a_bare_id():
     assert entry_permits(unresolved("a"), _in(A), origin="a")
     assert entry_permits(unresolved("signal:a"), _in(A), origin="signal:a")
     assert not entry_permits(unresolved("discord:a"), _in(A), origin="discord:a")
+
+
+def test_a_room_with_nobody_resolved_verifies_nothing_so_no_cross_room_entry_shows():
+    """An available, fully named roster with NO person in it is «could not verify»,
+    never a vacuous subset (review of #647, M2): `frozenset() <= anything`."""
+    empty = LiveRoom(person_ids=frozenset())
+    assert not entry_permits(message("signal:a"), _in(B, live=empty), origin="a")
+    assert not entry_permits(
+        LineageEntry(kind="presence", subject="p1", origin="a"), _in(B, live=empty),
+        origin="a",
+    )

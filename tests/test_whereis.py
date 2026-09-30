@@ -19,7 +19,7 @@ import json
 import pytest
 
 from nora.agent.room import Room
-from nora.agent.whereis import Circle, Whereis, check_disclosure_invariant
+from nora.agent.whereis import Circle, DisclosureGuard, Whereis, check_disclosure_invariant
 from nora.domain.presence import PresenceFix, WireState
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.migrations_runner import run_migrations
@@ -1269,3 +1269,12 @@ async def test_r47_holds_in_an_ordinary_untrusted_room(persons, store):
         "a circle member absent from the room must be askable about in an "
         "ORDINARY room, not only in a location-trusted one"
     )
+
+
+def test_the_disclosure_guard_never_permits_a_room_with_no_resolved_people():
+    """`frozenset() <= circle` is true of every circle, and an empty roster is what
+    a room of only unmapped accounts reads as: vacuous truth verified nothing
+    (review of #647, M2). Every caller passes its roster through this guard."""
+    guard = DisclosureGuard(Circle(circle_id="c", person_ids=frozenset({"p1", "p2"})))
+    assert guard.permits(frozenset({"p1"}))
+    assert not guard.permits(frozenset())

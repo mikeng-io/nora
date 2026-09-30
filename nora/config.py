@@ -3054,6 +3054,12 @@ class DreamBudgetConfig(BaseModel):
     #: configuration under which the adaptor can never legitimately do its job
     #: — a boot failure is the honest answer to it, the same posture
     #: `output_tokens = 0` gets by being `ge=1` above.
+    #:
+    #: **For the `cognition` adaptor this number is PER AGENDA ITEM**, like
+    #: `max_tool_calls` below and every `tool_calls` entry: a session reads an
+    #: agenda one item after another, so its pass-wide memory ceiling is this
+    #: times the item count (`LiveCognitionAgentRunner._guard`). Raising it for
+    #: any other adaptor raises one pass's ceiling, as documented above.
     max_memory_calls: int = Field(default=2, ge=1)
 
     #: **The per-adaptor delta over the per-tool call ceilings** — a tool name
@@ -3100,6 +3106,12 @@ class DreamBudgetConfig(BaseModel):
     #: One pass's tool calls over EVERY verb together (design/dreamer-agent-
     #: loop/43 §4) -> `AdaptorBudget.max_tool_calls`. Unset is no pass-wide
     #: ceiling, which is every adaptor's behaviour before this field existed.
+    #:
+    #: **For the `cognition` adaptor this number is PER AGENDA ITEM**: the
+    #: session's pass-wide ceiling is this times its agenda's item count, so a
+    #: ten-item agenda under `max_tool_calls = 60` may make 600 calls, not 60
+    #: (`nora.app.cognition_agent_runner.LiveCognitionAgentRunner._guard`).
+    #: Size it as «the calls one item may cost», never as a session total.
     max_tool_calls: int | None = Field(default=None, ge=1)
 
     @field_validator("tool_calls")

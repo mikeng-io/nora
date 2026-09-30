@@ -993,6 +993,13 @@ WITHHELD_TOOLS: Mapping[str, str] = {
     "linkedin_search": "reads through the social bridge's session; unprompted lookup undecided",
     "x_read": "reads through the social bridge's session; unprompted lookup undecided",
     "x_search": "reads through the social bridge's session; unprompted lookup undecided",
+    # SCOPE: the Cognition session's two reads (`nora.agent.surface.
+    # DREAMER_LOOP_TOOLS`, DEC-246). Both run lineage for the room the tool is
+    # bound to, and this pass is scope-keyed with no home-room grant, so the
+    # room they answer for is not one it was handed. Named here AND refused by
+    # `tool_subset_faults`, so a derived grant cannot bring them back.
+    "rollup_read": "Cognition-only: lineage binds it to a room this pass has no grant for",
+    "standing_read": "Cognition-only: lineage binds it to a room this pass has no grant for",
 }
 
 

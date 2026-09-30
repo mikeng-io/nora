@@ -264,7 +264,9 @@ class DisclosureGuard:
     Fail-closed by construction:
     - an empty or unknown circle never permits (nothing to be a subset of);
     - a room that could not be read (unavailable/degraded) never permits — the
-      subset cannot be VERIFIED, and an unverifiable invariant refuses.
+      subset cannot be VERIFIED, and an unverifiable invariant refuses;
+    - a room with NO resolved people never permits: an empty set is a subset of
+      everything, which verifies nothing.
     """
 
     def __init__(self, circle: Circle) -> None:
@@ -272,6 +274,12 @@ class DisclosureGuard:
 
     def permits(self, room_person_ids: frozenset[str]) -> bool:
         if not self._circle.person_ids:
+            return False
+        if not room_person_ids:
+            # Vacuous truth is not verification: `frozenset() <= anything`, and
+            # an empty roster is what a room with only unmapped accounts (or
+            # none resolved) reads as. Nothing to check the circle against is
+            # «could not verify», so it refuses (#647 M2).
             return False
         return room_person_ids <= self._circle.person_ids
 
