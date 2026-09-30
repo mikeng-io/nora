@@ -1242,6 +1242,13 @@ hand in that Chrome and the session persists in the profile. The VNC password
 lives only in the service's private configuration — never paste it into the
 repo, an issue, or a chat log.
 
+**Are the logins still alive?** `nora-session-probe.timer` (unit in
+`deploy/session-probe/`) checks Chrome's Instagram, X and LinkedIn session
+cookies every ~10 minutes, keeps the `instagram-bridge` cookie jar in step with
+Chrome's, and alerts to the review channel when a session needs a human login
+in VNC. Evidence is one JSON line per run in
+`~/.local/state/nora/session-probe.jsonl`; see `deploy/session-probe/README.md`.
+
 **Diagnose OpenCLI:**
 
 ```bash
