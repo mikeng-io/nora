@@ -17,7 +17,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from nora.domain.gatherings import Gathering, GatheringStatus
+from nora.domain.gatherings import FieldMeta, Gathering, GatheringStatus
 from tests.unit.test_cognition_session_verbs_c import (
     KEY,
     _read_tool,
@@ -241,6 +241,23 @@ async def test_a_staged_or_confirmed_event_can_be_revised():
     assert {c["venue_text"] for c in _candidates(store)} == {"place three"}
     # Only the place was stated, so only the place carries the stated mode.
     assert [m["field"] for m in _candidates(store)[0]["field_meta"]] == ["place"]
+
+
+async def test_a_revision_keeps_what_the_fields_it_leaves_alone_already_stated():
+    current = _event(field_meta=(FieldMeta("place", "told", "high"),))
+    answers: list[Any] = []
+
+    async def behave(by: dict[str, Any], tools: list[Any]) -> None:
+        answers.append(await by["event_revise"](
+            event_id=str(current.id), reasoning="deduced", confidence="medium",
+            cited_ids=["101"], when=WHEN,
+        ))
+
+    store, _ = await _session(behave, events=(current,))
+    [candidate] = _candidates(store)
+    assert {m["field"]: (m["reasoning"], m["confidence"]) for m in candidate["field_meta"]} == {
+        "start": ("deduced", "medium"), "place": ("told", "high"),
+    }
 
 
 async def test_an_unknown_event_reads_not_found_and_a_finished_one_does_not_move():

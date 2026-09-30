@@ -39,7 +39,7 @@
   "file": "nora/agent/cognition_dry_run.py",
   "old": "            field_meta=merge_field_meta(current.field_meta, meta),",
   "new": "            field_meta=meta,",
-  "target": "tests/unit/test_event_evidence_d.py::test_a_write_restates_its_own_fields_and_leaves_the_rest tests/unit/test_cognition_session_events_d.py::test_a_staged_or_confirmed_event_can_be_revised"
+  "target": "tests/unit/test_event_evidence_d.py::test_a_write_restates_its_own_fields_and_leaves_the_rest tests/unit/test_cognition_session_events_d.py::test_a_staged_or_confirmed_event_can_be_revised tests/unit/test_cognition_session_events_d.py::test_a_revision_keeps_what_the_fields_it_leaves_alone_already_stated"
  },
  {
   "name": "M4: a session reads proposed events only",
