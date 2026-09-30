@@ -24,13 +24,17 @@ from nora.agent.whereis import Circle, PresenceReader
 from nora.app.gatherings import GatheringService
 from nora.doctrine.loader import DoctrineStore
 from nora.domain.documents import DocumentStore, RoomKey
-from nora.domain.ports import MemoryStore, RecordStore
+from nora.domain.ports import BlobStore, MemoryStore, RecordStore
 from nora.domain.reminders import ReminderStore
 from nora.domain.rollup import NoRollupBuildError
 from nora.infra.sql.mobility import SqlMobilityStore
 from nora.persons import Persons
 from nora.web.doctrine import build_doctrine_payload
-from nora.web.documents import build_document_payload, build_documents_payload
+from nora.web.documents import (
+    build_document_media,
+    build_document_payload,
+    build_documents_payload,
+)
 from nora.web.games import (
     GamesUnavailableError,
     PulseGamesClient,
@@ -213,11 +217,13 @@ def register_web_routes(
     workspaces_of: Callable[[str], tuple[str, ...]] | None = None,
     documents: DocumentStore | None = None,
     rooms_of: Callable[[str], frozenset[RoomKey]] | None = None,
+    blobs: BlobStore | None = None,
 ) -> None:
     app["web_store"] = store
     app["web_workspaces_of"] = workspaces_of
     app["web_documents"] = documents
     app["web_rooms_of"] = rooms_of
+    app["web_blobs"] = blobs
     app["web_honcho"] = honcho
     app["web_reminders"] = reminders
     app["web_persons"] = persons
@@ -659,6 +665,42 @@ def register_web_routes(
             return web.json_response({"status": "not_found"}, status=404)
         return web.json_response(body)
 
+    async def documents_media(request: web.Request) -> web.Response:
+        # One picture of one document. The same viewer rule as the detail route, plus: the
+        # picture must be one the document names, and its bytes must BE a raster picture
+        # (read off the bytes). Every refusal is the same 404; `Content-Security-Policy:
+        # sandbox` and `nosniff` keep a mislabelled file from ever running on this origin.
+        a = request.app
+        if a["web_documents"] is None or a["web_rooms_of"] is None:
+            return _documents_unavailable()
+        person_id = request.query.get("personId")
+        if not person_id or a["web_persons"].by_person.get(person_id) is None:
+            return web.json_response(
+                {"status": "refused", "note": "a valid personId is required"}, status=400,
+            )
+        try:
+            document_id = UUID(request.match_info["id"])
+        except ValueError:
+            return web.json_response({"status": "refused", "note": "bad id"}, status=400)
+        found = await build_document_media(
+            store=a["web_documents"], rooms_of=a["web_rooms_of"], blobs=a["web_blobs"],
+            person_id=person_id, document_id=document_id, sha=request.match_info["sha"],
+        )
+        if found.status == "unavailable":
+            return _documents_unavailable()
+        if found.status == "not_found":
+            return web.json_response({"status": "not_found"}, status=404)
+        return web.Response(
+            body=found.data,
+            content_type=found.media_type,
+            headers={
+                "X-Content-Type-Options": "nosniff",
+                "Content-Security-Policy": "sandbox; default-src 'none'",
+                "Cache-Control": "private, no-store",
+                "Content-Disposition": "inline",
+            },
+        )
+
     app.router.add_get("/app/v1/status", status)
     app.router.add_get("/app/v1/skills", skills)
     app.router.add_get("/app/v1/tools", tools)
@@ -696,3 +738,4 @@ def register_web_routes(
     app.router.add_get("/app/v1/events/{id}", events_detail)
     app.router.add_get("/app/v1/documents", documents_list)
     app.router.add_get("/app/v1/documents/{id}", documents_detail)
+    app.router.add_get("/app/v1/documents/{id}/media/{sha}", documents_media)

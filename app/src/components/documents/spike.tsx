@@ -2,7 +2,9 @@
 
 // W2 fixture page, not product: renders a demo document through DocumentView.
 // `?demo=<name>` picks one; `sink` is a hostile-markdown fixture the e2e reads.
-// Deleted with the route when W5 ships the real pages.
+// Stays as the fixture route (dev and e2e only; the real pages are /documents and
+// /documents/<id>): the hostile and failure cases need a document the checker would
+// never have stored.
 import Link from "next/link";
 import { MermaidBlock } from "./blocks";
 import { DocumentView } from "./registry";
