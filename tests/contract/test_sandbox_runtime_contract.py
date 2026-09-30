@@ -293,3 +293,20 @@ async def test_tmux_sessions_are_per_room(runtime):
     await start_job(runtime, SCOPE, "mine", running=True)
     other = await runtime.state(scope=OTHER)
     assert other.tmux == ()
+
+
+async def test_state_lists_a_process_the_room_owns_outside_tmux(runtime):
+    """A `nohup … &` job: no tmux session, still a process of the room's
+    user. computerd lists processes only when scopes are isolated (root, in
+    the image); here it runs as a normal user, so it must answer None
+    (unknown, never an empty list) rather than every room's processes."""
+    scope = "cd" * 16
+    if isinstance(runtime, FakeSandboxRuntime):
+        runtime.start_process(scope, "python tick.py", pid=159)
+        got = await runtime.state(scope=scope)
+        assert got.processes is not None
+        assert [p.command for p in got.processes] == ["python tick.py"]
+        return
+    got = await runtime.state(scope=scope)
+    assert got.status is SandboxStatus.OK and got.processes is None
+    assert got.processes_reason

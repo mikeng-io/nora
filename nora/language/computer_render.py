@@ -5,7 +5,11 @@ A deterministic window, never a model's fold, over `ComputerView`:
 - open tasks: the `max_open_sessions` newest, then «+N more»;
 - lapsed tasks (expired within `lapsed_visible`): `max_lapsed_sessions`;
 - tmux sessions: `max_tmux`, newest first, running or idle;
+- processes the room's user owns (`nohup … &` jobs have no tmux session):
+  `max_processes`, newest first;
 - files changed within `recent_file_days`: `max_files`, newest first;
+- links the room made with `computer_export` (S3a): `max_links`, newest
+  first, each with the artifact_id that revises it under the same link;
 - recent commands: `max_runs`, the command cut to 80 characters, with its
   exit code.
 
@@ -120,12 +124,34 @@ def render_computer(view: ComputerView | None) -> ContextBlock | None:
         if view.tmux is None:
             lines.append(_Line(f"running jobs could not be listed, checked {age(now, now)}",
                                None))
+        # Processes the room's user owns, jobs with or without tmux. The
+        # command is as given: `render_bullets` escapes every line once.
+        procs = view.processes or ()
+        for proc in procs[: caps.max_processes]:
+            lines.append(_Line(f"process {proc.pid} `{proc.command}` · running · "
+                               f"started {age(proc.started, now)}", proc.started))
+        if len(procs) > caps.max_processes:
+            lines.append(_more(len(procs) - caps.max_processes, "processes",
+                               min(p.started for p in procs[caps.max_processes:]), now))
+        if view.processes is None:
+            lines.append(_Line(f"running processes could not be listed, checked "
+                               f"{age(now, now)}", None))
         for f in view.files[: caps.max_files]:
             lines.append(_Line(f"file {f.path} · {_size(f.size)} · changed {age(f.mtime, now)}",
                                f.mtime))
         if len(view.files) > caps.max_files:
             lines.append(_more(len(view.files) - caps.max_files, "recent files",
                                min(f.mtime for f in view.files[caps.max_files:]), now))
+
+    for link in view.links[: caps.max_links]:
+        title = f'"{link.title}"' if link.title else "(untitled)"
+        made = "revised" if link.revised else "made"
+        lines.append(_Line(f"link {title} · artifact_id {link.artifact_id} · {link.url} · "
+                           f"from {link.path or '(unknown path)'} · {made} {age(link.at, now)}",
+                           link.at))
+    if len(view.links) > caps.max_links:
+        lines.append(_more(len(view.links) - caps.max_links, "links",
+                           min(link.at for link in view.links[caps.max_links:]), now))
 
     for r in view.runs[: caps.max_runs]:
         outcome = (f"exit {r.exit_code}" if r.exit_code is not None

@@ -1,0 +1,17 @@
+{
+  "type": "feature",
+  "summary": "Nora can send files out of her computer (as a Drop link, as an attachment in the room, or kept privately) and copy a file someone sent into it, and she can draw charts and diagrams there with nora-render.",
+  "details": [
+    "computer_export sends files, never web pages: pictures, PDF, CSV, markdown, text and JSON. Every file is checked on Nora's side first: a 25 MB cap, a sha256 computed on the bytes she received, and a type read from the bytes themselves.",
+    "An HTML page is refused whatever its name, and an SVG may be attached or kept but never published as a link.",
+    "A room can revise only a link it made itself; the link stays the same and opens the new version. Links and their ids show in the <computer> block.",
+    "A link or an attachment goes out only when somebody asked in that turn; fire turns and background passes may only keep a file.",
+    "computer_import copies an attachment from the conversation into inbox/ on her computer.",
+    "Every export and import writes two audit rows, and every export that reached its destination is recorded in the new computer_exports table.",
+    "The computer-use runtime skill carries the judgement: when to use the computer, projects, long jobs, files in and out, and that a document's page is not the computer's to write."
+  ],
+  "limitations": [
+    "make_artifact and Smith still exist until S3b; an artifact Smith made cannot be revised through computer_export.",
+    "The VM image must be rebuilt (nora-computer build) for nora-render to exist on the computer."
+  ]
+}

@@ -321,3 +321,14 @@ async def test_the_list_says_running_unknown_when_the_machine_cannot_be_read(per
     runtime.tmux_unknown = True
     [entry] = (await tools["computer_session_list"](status="open"))["sessions"]
     assert entry["status"] == "running unknown"
+
+
+async def test_the_objective_never_starts_with_the_mention_placeholder(persons, kit):
+    """FALSIFIER (live read-back, 2026-10-01): the @-mention that engaged her
+    reaches the message as U+FFFC, and the objective began with it."""
+    runtime, events, sessions = kit
+    tools = _tools(persons, runtime=runtime, events=events, sessions=sessions,
+                   question="￼  run tick.py every minute ￼")
+    await tools["computer_run"](command="echo hi")
+    [session] = sessions.sessions.values()
+    assert session.objective == "run tick.py every minute"

@@ -89,6 +89,7 @@ from nora.domain.compute import ComputeJobStore
 from nora.domain.computer import ComputerToolSettings
 from nora.domain.computer_context import ComputerContextCaps
 from nora.domain.computer_events import ComputerEventStore
+from nora.domain.computer_exports import ComputerExportStore
 from nora.domain.computer_leases import ComputerLeases
 from nora.domain.computer_sessions import ComputerSessionStore
 from nora.domain.decision_log import DecisionLogRecorder
@@ -96,6 +97,7 @@ from nora.domain.gatherings import GatheringStatus
 from nora.domain.media_join import MediaJoin
 from nora.domain.models import PersonRef
 from nora.domain.ports import (
+    ArtifactIngest,
     BlobStore,
     ComputeBackend,
     ContextAssembler,
@@ -135,6 +137,7 @@ from nora.infra.sql.announcements import SqlAnnouncementLog
 from nora.infra.sql.cognition_dry_run import SqlCognitionDryRunStore
 from nora.infra.sql.compute_jobs import SqlComputeJobStore
 from nora.infra.sql.computer_events import SqlComputerEventStore
+from nora.infra.sql.computer_exports import SqlComputerExportStore
 from nora.infra.sql.computer_sessions import SqlComputerSessionStore
 from nora.infra.sql.culture import SqlCultureStore
 from nora.infra.sql.decision_log import SqlDecisionLogStore
@@ -2774,10 +2777,33 @@ async def build_dependencies(
         max_run_timeout_seconds=cfg.computer.max_run_timeout_seconds,
         max_output_chars=cfg.computer.max_output_chars,
         max_read_chars=cfg.computer.max_read_chars,
+        export_max_bytes=cfg.computer.export_max_bytes,
+        import_max_bytes=cfg.computer.import_max_bytes,
         limits=cfg.computer.limits.as_pairs(),
         idle_after_minutes=cfg.computer.sessions.idle_after_minutes,
         lapsed_visible_hours=cfg.computer.sessions.lapsed_visible_hours,
     )
+    # `computer_export` (design/sandbox-runtime §6): its record of what left the
+    # computer, built unconditionally like the audit store, and its link
+    # destination, `DropArtifactIngest`, ONLY when the computer is on. Drop's
+    # internal listener and its token are `[shortener]`'s pair, the one
+    # `LocalDockerBackend` already reuses for the same listener. A missing
+    # token leaves the link destination `unavailable`, never the boot: `chat`
+    # and `keep` do not need Drop.
+    computer_exports: ComputerExportStore = SqlComputerExportStore(engine)
+    artifact_ingest: ArtifactIngest | None = None
+    if computer is not None:
+        drop_token = os.environ.get(cfg.shortener.token_env, "")
+        if drop_token:
+            from nora.infra.drop import DropArtifactIngest
+            artifact_ingest = DropArtifactIngest(
+                base_url=cfg.shortener.base_url, token=drop_token,
+            )
+        else:
+            log.warning(
+                "computer enabled but %s is unset: computer_export to a link stays "
+                "unavailable", cfg.shortener.token_env,
+            )
     # `nora.agent` may not import `nora.config` (import-linter's "only app and
     # __main__ read config") — this is the conversion point, the same shape
     # `ReminderCaps(**cfg.reminders.model_dump())` already uses just below.
@@ -2975,6 +3001,7 @@ async def build_dependencies(
         computer=computer, computer_events=computer_events,
         computer_settings=computer_settings,
         computer_sessions=computer_sessions, computer_leases=computer_leases,
+        computer_exports=computer_exports, artifact_ingest=artifact_ingest,
         # §9's caps as the DOMAIN value, the SAME `reminder_caps` instance
         # `GatheringService` was built with above — see that variable's own
         # comment for why they must not be two separately constructed copies.
