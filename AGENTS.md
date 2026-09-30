@@ -129,7 +129,7 @@ below names it (operator ruling, 2026-09-30).
 | review of an off-by-default or additive change | default |
 | review of a change live on merge that touches disclosure, a lock or concurrency path, a migration on a hot table, or starts spending model calls | strongest |
 | build with no spec (design judgement), a design bundle, or its audit | strongest |
-| a default-tier build or fix drew a BLOCKER twice in the same area | next round strongest |
+| a default-tier build or fix drew a BLOCKER, or a data-loss finding (input silently dropped or never seen), twice in the same area | next round strongest |
 | one tier's quota is exhausted | the other, and say so in the report |
 
 Every change still gets an independent review by a fresh agent, never the one
