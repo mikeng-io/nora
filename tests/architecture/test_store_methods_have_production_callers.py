@@ -189,17 +189,6 @@ class _Pin(NamedTuple):
 # the artifact that gets re-derived from scratch by the next session that
 # notices one of them.
 _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
-    ("cognition_dry_run.py", "pending_self_wakes"): _Pin(
-        "deferred_consumer",
-        "The unit's LIVE pending self-wakes (per wake_ref, the newest transition "
-        "decides: not fired, not cancelled, not superseded). The session runner "
-        "takes it as its `pending_self_wakes` seam (`nora.app.cognition_session."
-        "CognitionSessionRunner`), a constructor argument the composition root "
-        "fills with THIS method when it wires the session hook; wiring is a "
-        "separate PR from step 3a-ii (DEC-242, open choice a), so until then no "
-        "production module names it. The contract suite proves it against both "
-        "implementations.",
-    ),
     ("culture.py", "chain"): _Pin(
         "deferred_consumer",
         "The revision chain, newest first, walked through parent links. The "

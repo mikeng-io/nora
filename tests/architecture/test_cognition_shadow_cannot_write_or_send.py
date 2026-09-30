@@ -94,7 +94,8 @@ _REMIND_AGENT_ALLOWED: frozenset[str] = frozenset({
 _SESSION_RUNNER_ALLOWED: frozenset[str] = frozenset({
     "nora.agent.cognition_dry_run", "nora.agent.cognition_pace",
     "nora.agent.cognition_remind_mirror", "nora.domain.cognition_pace",
-    "nora.domain.cognition_remind", "nora.domain.cognition_session",
+    "nora.domain.cognition_ground", "nora.domain.cognition_remind",
+    "nora.domain.cognition_render", "nora.domain.cognition_session",
     "nora.domain.gatherings", "nora.domain.note_body", "nora.domain.ports",
     "nora.domain.standing", "nora.domain.stimuli",
 })

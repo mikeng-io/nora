@@ -212,6 +212,22 @@ a name this table leaves open:
   `stale`, not `up`.
 - `nora_cognition_wake_total` carries `mode` beside `reason`, and
   `nora_cognition_wake_deferred_total{brake}` counts unit-ticks a brake held.
+- **As built (step 3a-iii review, DEC-244): failures back off, then strike.** A
+  session that failed or timed out is not retried at the cooldown for ever (283 a
+  day were measured). After `n` consecutive failed or timed-out wakes the unit's
+  next wake waits `cooldown_seconds * 2 ** (n - 1)`, capped at
+  `backoff_max_seconds` (6 h); a `closed` wake resets it, a shutdown's `cancelled`
+  wake neither counts nor resets, and a strong cue never cuts a backoff (brake
+  `backoff`). After `max_consecutive_failures` (5) AGENDA failures the stimuli
+  those wakes claimed are struck (retracted, reason `failed`); **an infrastructure
+  failure (a provider outage, a kill, a database error, a timeout) backs the unit
+  off and is never struck, however many in a row** (second review of #637: a
+  ~90-minute outage would have retracted real human messages). Each failed
+  outcome records its `cause`, `infra` or `agenda` (migration 0080,
+  `nora.domain.stimuli.classify_failure`, the table in DEC-244); unknown is
+  `infra`. Always failing because of its agenda: 5 sessions and then none for a
+  static agenda; 10 on the first day and 4 a day after, with something new always
+  pending.
 
 ### Self-wakes: Cognition paces itself
 

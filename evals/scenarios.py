@@ -307,10 +307,11 @@ CORPUS_ENTRY: dict[str, str] = {
     "proactive_act": "proactive_act",
     "tool_selection": "tag",
     # S2 over the Cognition catalogue (design/cognition-loop/30-cognition.md
-    # §2/§4; migration step 3a-ii). `entry: dreamer` is loadable/censusable
-    # today; running it needs a registered `cognition` Dreamer adaptor,
-    # which this step does not add (`nora.app.cognition_session` is a
-    # standalone runner) — see the corpus file's own header.
+    # §2/§4; migration steps 3a-ii and 3a-iii). `entry: dreamer` with
+    # `category: cognition` is driven by `evals.rebuilt.entry._cognition_probe`
+    # through `CognitionSessionRunner.probe`, on the runner the subject's
+    # composition builds under `[cognition] session_mode = "shadow"`; with
+    # sessions off in the eval config the case is an ERROR, never a pass.
     "tool_selection_cognition": "dreamer",
     # design/self-awareness/05: what she says about WHERE she is. A tag, and
     # judged — "did she reply" says nothing about whether the reply named the

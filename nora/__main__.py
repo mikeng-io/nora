@@ -403,6 +403,13 @@ class App:
         await recorder.watch()
 
     async def shutdown(self) -> None:
+        # The shadow Cognition sessions first: they hold the model client and
+        # the database this method closes below, and a session cancelled here
+        # records itself `cancelled` (its stimuli stay pending) instead of
+        # vanishing with its wake reading «in flight». The evaluator's loop was
+        # already cancelled by `run`; `CognitionShutdown` is idempotent.
+        if self.deps.cognition_shutdown is not None:
+            await self.deps.cognition_shutdown()
         if self._health_runner is not None:
             await self._health_runner.cleanup()
         await self.deps.client.close()

@@ -14,6 +14,7 @@ import itertools
 from collections.abc import Sequence
 
 from nora.domain.cognition_pace import PaceRow, PendingSelfWake, fold_self_wakes
+from nora.domain.cognition_remind import MirrorRow, PendingMirroredRemind, fold_pending_reminds
 from nora.domain.ports import (
     NewCognitionPace,
     NewCognitionRemindMirror,
@@ -106,6 +107,24 @@ class InMemoryCognitionDryRunStore:
             if p.unit == unit and p.verb == "wake_at" and p.outcome == "recorded"
             and at >= since_ms
         )
+
+    async def pending_mirrored_reminds(
+        self, *, unit: str, now_ms: int,
+    ) -> Sequence[PendingMirroredRemind]:
+        mine = [m for _, m, _ in self.remind_mirrors if m.unit == unit]
+        wanted = {
+            m.reminder_ref for m in mine
+            if m.outcome == "recorded" and m.verb in ("remind", "remind_move")
+            and m.at_ms is not None and m.at_ms >= now_ms and m.reminder_ref is not None
+        }
+        return fold_pending_reminds([
+            MirrorRow(
+                reminder_ref=m.reminder_ref, verb=m.verb, outcome=m.outcome,
+                platform=m.platform, conversation_id=m.conversation_id,
+                subject_rows=m.subject_rows, at_ms=m.at_ms, session_id=m.session_id,
+            )
+            for m in mine if m.outcome == "recorded" and m.reminder_ref in wanted
+        ], now_ms=now_ms)
 
     async def aclose(self) -> None:
         return None

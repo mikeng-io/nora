@@ -446,3 +446,59 @@ async def test_another_groups_rooms_are_not_even_counted(engine, said, policy, p
     )
     assert {m["room"] for m in result["messages"]} == {"Other group"}
     assert "note" not in result
+
+
+# ---- `by_refs`: the rows a stimulus names, for the Cognition session's grounding --------
+
+
+async def test_by_refs_reads_the_named_messages_in_the_named_rooms_only(engine, said):
+    store = SqlRecordQuery(engine)
+    hits = await store.by_refs(
+        [("messages", said["a_camp"]), ("messages", said["b_line"]),
+         ("messages", said["d_line"])],
+        [("signal", "ROOM-A"), ("discord", "ROOM-B")],
+    )
+    got = {(h.table, h.row_id): h.hit for h in hits}
+    assert set(got) == {("messages", said["a_camp"]), ("messages", said["b_line"])}
+    # ROOM-D was not one of the rooms handed in: never selected
+    assert said["d_line"] not in {h.row_id for h in hits}
+    assert got[("messages", said["a_camp"])].row.body == "我今日去咗大步行，好攰"
+    assert got[("messages", said["a_camp"])].platform == "signal"
+
+
+async def test_by_refs_never_returns_a_message_the_withdrawal_cascade_hid(engine, said):
+    """`nora person forget` sets `messages.hidden_at`: the message is ABSENT
+    from the read (not returned and blanked), like every transcript read."""
+    async with engine.begin() as conn:
+        await conn.execute(sa.text("UPDATE messages SET hidden_at = 1 WHERE id = :id"),
+                           {"id": said["a_hotel"]})
+    hits = await SqlRecordQuery(engine).by_refs(
+        [("messages", said["a_hotel"]), ("messages", said["a_camp"])], [("signal", "ROOM-A")],
+    )
+    assert [h.row_id for h in hits] == [said["a_camp"]]
+
+
+async def test_by_refs_resolves_a_reaction_and_a_delete_row_to_their_message(engine, said):
+    async with engine.connect() as conn:
+        reaction_id = (await conn.execute(sa.text(
+            "SELECT id FROM message_reaction WHERE message_id = :m AND emoji = '👍' LIMIT 1"
+        ), {"m": said["a_camp"]})).scalar_one()
+        delete_id = (await conn.execute(sa.text(
+            "SELECT id FROM message_delete WHERE message_id = :m"
+        ), {"m": said["a_other"]})).scalar_one()
+    hits = await SqlRecordQuery(engine).by_refs(
+        [("message_reaction", reaction_id), ("message_delete", delete_id)],
+        [("signal", "ROOM-A")],
+    )
+    by_table = {h.table: h for h in hits}
+    assert by_table["message_reaction"].emoji == "👍"
+    assert by_table["message_reaction"].hit.row.id == said["a_camp"]
+    assert by_table["message_delete"].hit.row.id == said["a_other"]
+    assert by_table["message_delete"].hit.deleted is True
+
+
+async def test_by_refs_with_nothing_to_read_reads_nothing(engine, said):
+    store = SqlRecordQuery(engine)
+    assert await store.by_refs([], [("signal", "ROOM-A")]) == ()
+    assert await store.by_refs([("messages", said["a_camp"])], []) == ()
+    assert await store.by_refs([("messages", 10**9)], [("signal", "ROOM-A")]) == ()

@@ -38,7 +38,9 @@ from nora.agent import factory
 from nora.agent.dream_guard import DreamGuard
 from nora.agent.ports import ToolSpec, adapt
 from nora.app.cognition_session import AdaptorBudget, CognitionRunResult
+from nora.domain.turn_deadline import turn_deadline
 from nora.obs.metrics import Metrics
+from nora.obs.tracing import TRACE_KIND, annotate, span
 
 log = logging.getLogger("nora.app.cognition_agent_runner")
 
@@ -80,12 +82,27 @@ class LiveCognitionAgentRunner:
     def __init__(
         self, *, models: Any, retry: factory.RetryPolicy, metrics: Metrics | None = None,
         agent_name: str = "cognition", tool_budget: int = DEFAULT_TOOL_BUDGET,
+        read_tool_budgets: Mapping[str, int] | None = None,
+        param_names: Mapping[str, frozenset[str]] | None = None,
+        result_caps: Mapping[str, int] | None = None,
+        memory_tools: frozenset[str] = frozenset(),
     ) -> None:
+        """`read_tool_budgets`: the per-tool call ceiling of each READ tool
+        (the registry's own table with the deployment's and this adaptor's
+        overrides applied, `nora.app.cognition_wiring`); a tool absent from it
+        (the session's own verbs) runs on `tool_budget`. `param_names`,
+        `result_caps` and `memory_tools` are the three ceilings every other
+        Dreamer sample builds its guard with (R-99, the result size cap, the
+        per-pass memory ceiling); left out, the guard holds none of them."""
         self._models = models
         self._retry = retry
         self._metrics = metrics if metrics is not None else Metrics()
         self._agent_name = agent_name
         self._tool_budget = tool_budget
+        self._read_tool_budgets = dict(read_tool_budgets or {})
+        self._param_names = param_names
+        self._result_caps = dict(result_caps or {})
+        self._memory_tools = memory_tools
 
     async def run(
         self, *, system_prompt: str, prompt: str, tools: list[Any],
@@ -95,9 +112,42 @@ class LiveCognitionAgentRunner:
         tools = as_strands_tools(tools)
         guard = DreamGuard(
             adaptor="cognition",
-            budgets=dict.fromkeys(tool_names, self._tool_budget),
+            budgets={n: self._read_tool_budgets.get(n, self._tool_budget) for n in tool_names},
             metrics=self._metrics,
+            result_caps=self._result_caps,
+            memory_tools=self._memory_tools,
+            memory_budget=budget.max_memory_calls,
+            pass_budget=budget.max_tool_calls,
+            param_names=self._param_names,
         )
+        # ONE root span per session, its stages its children (AGENTS.md,
+        # instruments): `nora.trace_kind = generation` is what keeps the trace
+        # in Langfuse, exactly as `DreamerRuntime.run` declares it for every
+        # other adaptor, and `nora.outcome` is the reading a session's fate
+        # needs without opening the model call.
+        with span(
+            "dream:cognition",
+            **{TRACE_KIND: "generation", "nora.dreamer.adaptor": "cognition",
+               **{f"nora.{k}": v for k, v in trace_attributes.items()}},
+        ):
+            try:
+                result = await self._invoke(
+                    system_prompt=system_prompt, prompt=prompt, tools=tools, guard=guard,
+                    budget=budget, trace_attributes=trace_attributes,
+                )
+            except TimeoutError:
+                annotate(**{"nora.outcome": "timeout"})
+                raise
+            except Exception:
+                annotate(**{"nora.outcome": "failed"})
+                raise
+            annotate(**{"nora.outcome": "ok"})
+        return CognitionRunResult(stop_reason=getattr(result, "stop_reason", None))
+
+    async def _invoke(
+        self, *, system_prompt: str, prompt: str, tools: list[Any], guard: DreamGuard,
+        budget: AdaptorBudget, trace_attributes: Mapping[str, str],
+    ) -> Any:
         agent = factory.create_dream_agent(
             model=self._models.create(), system_prompt=system_prompt, tools=tools,
             guard=guard, trace_attributes=dict(trace_attributes), retry=self._retry,
@@ -110,16 +160,17 @@ class LiveCognitionAgentRunner:
         # one that ran: items closed `waiting` with a strike, the watermark
         # moved past stimuli nobody looked at.
         try:
-            result = await asyncio.wait_for(
-                factory.invoke(
-                    agent, prompt, invocation_state={},
-                    limits=factory.build_limits(
-                        output_tokens=budget.output_tokens, turns=budget.turns,
-                        total_tokens=budget.total_tokens,
+            with turn_deadline(budget.timeout_seconds):
+                return await asyncio.wait_for(
+                    factory.invoke(
+                        agent, prompt, invocation_state={},
+                        limits=factory.build_limits(
+                            output_tokens=budget.output_tokens, turns=budget.turns,
+                            total_tokens=budget.total_tokens,
+                        ),
                     ),
-                ),
-                timeout=budget.timeout_seconds,
-            )
+                    timeout=budget.timeout_seconds,
+                )
         except TimeoutError:
             log.error("cognition session timed out after %.0fs", budget.timeout_seconds)
             self._metrics.inc("nora_errors_total", stage="cognition_session")
@@ -128,4 +179,3 @@ class LiveCognitionAgentRunner:
             log.exception("cognition session failed")
             self._metrics.inc("nora_errors_total", stage="cognition_session")
             raise
-        return CognitionRunResult(stop_reason=getattr(result, "stop_reason", None))
