@@ -36,6 +36,7 @@
     "map": "地圖",
     "people": "朋友",
     "plans": "約",
+    "documents": "文件",
     "games": "遊戲",
     "nora": "關於佢",
     "memory": "佢記得你乜",
@@ -229,6 +230,24 @@
     "answerInChat": "回覆喺群組度搞，同 Nora 講就得。",
     "plannedBy": "{name} 喺 {date} 搞嘅。",
     "you": "你"
+  },
+  "documents": {
+    "title": "文件",
+    "lede": "Nora 為你所在群組整理的文件：旅程、比較、總結。喺群組叫佢寫，呢度睇。",
+    "emptyTitle": "未有文件",
+    "empty": "Nora 為你所在群組寫好文件，就會喺呢度出現。",
+    "byIn": "{name} · {platform}",
+    "revisionN": "第 {n} 版",
+    "updated": "{ago}更新",
+    "page": "第 {page} / {pages} 頁",
+    "previous": "上一頁",
+    "next": "下一頁",
+    "pages": "頁數",
+    "back": "文件",
+    "notFoundTitle": "唔係你可以睇嘅文件",
+    "notFound": "你可以開自己叫佢寫、或者喺你所在群組寫嘅文件。呢份唔喺入面，或者已經冇咗。",
+    "made": "{name} 喺 {platform} 叫佢寫",
+    "madeRevised": "{name} 喺 {platform} 叫佢寫 · 第 {n} 版，{ago}更新"
   },
   "map": {
     "title": "大家喺邊",

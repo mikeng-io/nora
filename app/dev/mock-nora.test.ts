@@ -9,6 +9,7 @@ import {
   StatusSchema,
   ToolsSchema,
 } from "../src/lib/api/nora";
+import { DocumentDetailSchema, DocumentsPageSchema } from "../src/lib/api/documents";
 import { PersonProfileSchema, PlanDetailSchema, PlansSchema, RosterSchema } from "../src/lib/api/people";
 import {
   DerivedPlacesSchema,
@@ -97,9 +98,9 @@ describe("status/memory/doctrine/skills/tools", () => {
     expect(data.map((s) => s.name)).toEqual(["identity", "voice", "silence", "conduct", "capability", "constraints"]);
   });
 
-  it("GET /skills matches SkillsSchema and includes the two real repo skills", () => {
+  it("GET /skills matches SkillsSchema and includes the three real repo skills", () => {
     const data = expectOk("/app/v1/skills", {}, SkillsSchema);
-    expect(data.map((s) => s.name).sort()).toEqual(["image-generation", "navigation"]);
+    expect(data.map((s) => s.name).sort()).toEqual(["computer-use", "image-generation", "navigation"]);
     for (const skill of data) expect(skill.instructions?.length ?? 0).toBeGreaterThan(0);
   });
 
@@ -140,6 +141,49 @@ describe("persons", () => {
     const { status, body } = call("/app/v1/persons/nobody");
     expect(status).toBe(404);
     expect(body).toEqual({ error: "not found" });
+  });
+});
+
+// ------------------------------------------------------------- documents
+
+describe("documents", () => {
+  const LISBON = "5b6f0c3a-2d41-4e8b-9c77-1a2b3c4d5e01";
+  const MEIS = "5b6f0c3a-2d41-4e8b-9c77-1a2b3c4d5e04";
+
+  it("lists only what the viewer may read, newest first, matching DocumentsPageSchema", () => {
+    const miles = expectOk("/app/v1/documents", { personId: "miles" }, DocumentsPageSchema);
+    expect(miles.documents.map((d) => d.title)).toEqual(["Lisbon in December", "Kitchen rota", "From a newer catalog"]);
+    const mei = expectOk("/app/v1/documents", { personId: "mei" }, DocumentsPageSchema);
+    expect(mei.documents.map((d) => d.title)).toEqual(["Lisbon in December", "Mei's surprise"]);
+  });
+
+  it("a person nobody knows, or no person, is a fail-closed 400", () => {
+    expect(call("/app/v1/documents").status).toBe(400);
+    expect(call("/app/v1/documents", { personId: "nobody" }).status).toBe(400);
+  });
+
+  it("an unreadable document answers exactly like an unknown id", () => {
+    const hidden = call(`/app/v1/documents/${MEIS}`, { personId: "miles" });
+    const unknown = call("/app/v1/documents/00000000-0000-4000-8000-000000000000", { personId: "miles" });
+    expect(hidden.status).toBe(404);
+    expect(hidden).toEqual(unknown);
+  });
+
+  it("serves a readable document whole, and its picture only to a reader who it names", () => {
+    const doc = expectOk(`/app/v1/documents/${LISBON}`, { personId: "miles" }, DocumentDetailSchema);
+    expect(doc.media).toHaveLength(1);
+    const pic = call(`/app/v1/documents/${LISBON}/media/${doc.media[0]}`, { personId: "miles" });
+    expect(pic.status).toBe(200);
+    expect(pic.contentType).toBe("image/png");
+    expect(Buffer.isBuffer(pic.bytes)).toBe(true);
+    // Not named by the document: no picture. Not a reader: no picture.
+    expect(call(`/app/v1/documents/${LISBON}/media/${"c".repeat(64)}`, { personId: "miles" }).status).toBe(404);
+    expect(call(`/app/v1/documents/${MEIS}/media/${doc.media[0]}`, { personId: "miles" }).status).toBe(404);
+  });
+
+  it("MOCK_FAIL=documents is a 503, never an empty list", () => {
+    process.env.MOCK_FAIL = "documents";
+    expect(call("/app/v1/documents", { personId: "miles" }).status).toBe(503);
   });
 });
 
