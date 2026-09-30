@@ -13,7 +13,13 @@ import re
 from dataclasses import dataclass
 
 from ...domain.media import MediaRef, label_for, render_placeholder, resolve_media_type
-from ...domain.models import EditTarget, NormalizedMessage, Quote, Touch
+from ...domain.models import (
+    MENTION_PLACEHOLDER,
+    EditTarget,
+    NormalizedMessage,
+    Quote,
+    Touch,
+)
 
 log = logging.getLogger("nora.signal.parser")
 
@@ -22,7 +28,7 @@ log = logging.getLogger("nora.signal.parser")
 # mention; the identity lives in the parallel `mentions` array. Written as an
 # escape, not as the literal character: ￼ renders as a box or as nothing at all
 # depending on the font, so a reader cannot verify a literal one by eye.
-PLACEHOLDER = "\ufffc"
+PLACEHOLDER = MENTION_PLACEHOLDER
 
 
 # signal-cli 0.14.7's JSON-RPC `JsonAttachment` does NOT carry a voice-note

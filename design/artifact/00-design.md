@@ -845,7 +845,7 @@ before the step that judges it, so what is stored is what was judged.
 ## 25. W4a: the store, the publish service and the read API (2026-10-01)
 
 **Built** (PR for W4a): `nora/domain/documents.py` (the `DocumentStore` port, in its own module as
-`nora.domain.compute` is, so it adds nothing to `ports.py`), migration `0083_documents`,
+`nora.domain.compute` is, so it adds nothing to `ports.py`), migration `0084_documents`,
 `nora/infra/sql/documents.py`, `FakeDocumentStore`, `nora/app/documents_service.py`
 (`DocumentService.publish`, `rooms_named`), `nora/web/documents.py` with `GET /app/v1/documents` and
 `/app/v1/documents/{id}`, and two rows in the portal's proxy table. No tool, portal page or skill yet.
@@ -869,7 +869,7 @@ never in the payload, only its platform.
 sha256 in `messages.media_json`, which is what `[image a3f2c1: …]` renders from; it is resolvable, and it
 carries its room because the message row does. So a code resolves against the document's own room's
 message rows (`recent`, over the same window `media_fetch` scans), plus media-index rows born in the
-room (`provenance.platform` and `provenance.conversation_id`; sources `generated`, `inbound`, `computer`).
+room (`provenance.platform` and `provenance.conversation_id`; any source).
 The message row is the authority for a photo people sent, not the index row: an index row keeps only the
 FIRST room a byte string was seen in (first source wins), so a photo re-sent to room B would be wrongly
 refused by provenance. A row with no room (a sticker, a comprehension-born row) never resolves: fail
@@ -877,8 +877,9 @@ closed. A code that matches no picture is `media_unknown`; one that matches more
 `media_ambiguous` and names the candidates' 8-character handles; nothing is ever picked. A photo older
 than the window is not found (the operator's decision is pending on that; not built).
 Each Image's code is then **rewritten to the full sha256** and the document is checked again, so what is
-stored is what was judged. The sandbox session's `resolve_room_media` (its #649) covers the index half;
-once #649 lands the service uses it instead of its own loop, so there is one resolver.
+stored is what was judged. The index half is the sandbox session's `resolve_room_media` (its #649), used as
+is for each of the room's ids: a code resolves only in the room it was born in whatever its source, and an
+index that cannot be read is `unavailable` (nothing saved), never "no such picture"; so there is one resolver.
 
 **Revisions.** A revision must be made in the room the document was made in, so a room cannot overwrite
 another room's document; from any other room the answer is `no_such_document`, the same as for an
@@ -899,4 +900,4 @@ these are issues #655 and #656.
 
 **Not built, on purpose.** The media byte route (W5, with the portal), the tool and its routing eval
 (W4b), search, the `path` form of publishing (it waits on the sandbox session's audited reader). The
-migration is `0083_documents` until #649 lands, then `0084`.
+migration is `0084_documents`, after the sandbox session's `0083_computer_exports` (#649).

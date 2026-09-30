@@ -49,6 +49,14 @@ def scope_key(scope: str) -> str:
     return f"scope:{scope}"
 
 
+def lease_key(scope: str, session_id: UUID | None) -> str:
+    """THE key a call on a room's workspace locks (design/sandbox-runtime
+    §15.4): its session's when the room has one open, else the scope's. One
+    function for every caller (the computer tools and `WorkspaceReader`), so
+    a reader and a writer of the same room can never lock different keys."""
+    return session_key(session_id) if session_id is not None else scope_key(scope)
+
+
 @dataclass(frozen=True)
 class Lease:
     """A held lease. `waited_ms` is how long acquiring it took."""

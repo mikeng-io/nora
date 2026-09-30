@@ -14,7 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
-from nora.domain.computer import StateFile, TmuxSession
+from nora.domain.computer import ScopeProcess, StateFile, TmuxSession
 from nora.domain.computer_sessions import ComputerSession, SessionProgress, ShownStatus
 
 
@@ -28,8 +28,10 @@ class ComputerContextCaps:
     max_open_sessions: int = 5
     max_lapsed_sessions: int = 3
     max_tmux: int = 5
+    max_processes: int = 5
     max_files: int = 8
     max_runs: int = 5
+    max_links: int = 3
     max_tokens: int = 400
     read_timeout_seconds: float = 1.5
     state_cache_seconds: float = 30.0
@@ -59,6 +61,21 @@ class RunLine:
 
 
 @dataclass(frozen=True)
+class LinkLine:
+    """One Drop link the room made with `computer_export(to="link")`, from
+    its two audit rows: the link's `artifact_id` (what a revision passes to
+    keep the same link), its `url`, the title and workspace `path` it was
+    made from, whether this was a revision, and when."""
+
+    artifact_id: str
+    url: str
+    title: str
+    path: str
+    revised: bool
+    at: datetime
+
+
+@dataclass(frozen=True)
 class ComputerView:
     """Everything one render needs. Sessions and runs are newest first and
     NOT yet capped: the renderer applies the caps, so it can say how many it
@@ -70,6 +87,10 @@ class ComputerView:
     open_sessions: tuple[SessionLine, ...] = ()
     lapsed_sessions: tuple[SessionLine, ...] = ()
     tmux: tuple[TmuxSession, ...] | None = None
+    #: Every process the room's user owns, newest first; None: not read.
+    processes: tuple[ScopeProcess, ...] | None = None
+    processes_truncated: bool = False
     files: tuple[StateFile, ...] = ()
     runs: tuple[RunLine, ...] = ()
+    links: tuple[LinkLine, ...] = ()
     machine_read: bool = True

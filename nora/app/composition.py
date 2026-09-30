@@ -35,7 +35,6 @@ from opentelemetry.util.types import AttributeValue
 
 from nora.agent import factory, tool_choice
 from nora.agent.dreamer import (
-    MEMORY_TOOLS,
     TOOL_RESULT_CAPS,
     AdaptorBudget,
     AdaptorGrant,
@@ -59,7 +58,7 @@ from nora.agent.telemetry import (
     start_raw_model_span,
 )
 from nora.agent.telemetry import timed as telemetry_timed
-from nora.agent.tools import LOAD_TRANSCRIPT_MAX, NATIVE_TOOLS, OriginRoom
+from nora.agent.tools import LOAD_TRANSCRIPT_MAX, OriginRoom
 from nora.agent.whereis import Circle, check_disclosure_invariant, circles_from_persons
 from nora.app.cognition_grounding import build_grounder
 from nora.app.cognition_session import CognitionSessionRunner
@@ -91,6 +90,7 @@ from nora.domain.compute import ComputeJobStore
 from nora.domain.computer import ComputerToolSettings
 from nora.domain.computer_context import ComputerContextCaps
 from nora.domain.computer_events import ComputerEventStore
+from nora.domain.computer_exports import ComputerExportStore
 from nora.domain.computer_leases import ComputerLeases
 from nora.domain.computer_sessions import ComputerSessionStore
 from nora.domain.decision_log import DecisionLogRecorder
@@ -99,6 +99,7 @@ from nora.domain.gatherings import GatheringStatus
 from nora.domain.media_join import MediaJoin
 from nora.domain.models import PersonRef
 from nora.domain.ports import (
+    ArtifactIngest,
     BlobStore,
     ComputeBackend,
     ContextAssembler,
@@ -138,6 +139,7 @@ from nora.infra.sql.announcements import SqlAnnouncementLog
 from nora.infra.sql.cognition_dry_run import SqlCognitionDryRunStore
 from nora.infra.sql.compute_jobs import SqlComputeJobStore
 from nora.infra.sql.computer_events import SqlComputerEventStore
+from nora.infra.sql.computer_exports import SqlComputerExportStore
 from nora.infra.sql.computer_sessions import SqlComputerSessionStore
 from nora.infra.sql.culture import SqlCultureStore
 from nora.infra.sql.decision_log import SqlDecisionLogStore
@@ -2795,10 +2797,33 @@ async def build_dependencies(
         max_run_timeout_seconds=cfg.computer.max_run_timeout_seconds,
         max_output_chars=cfg.computer.max_output_chars,
         max_read_chars=cfg.computer.max_read_chars,
+        export_max_bytes=cfg.computer.export_max_bytes,
+        import_max_bytes=cfg.computer.import_max_bytes,
         limits=cfg.computer.limits.as_pairs(),
         idle_after_minutes=cfg.computer.sessions.idle_after_minutes,
         lapsed_visible_hours=cfg.computer.sessions.lapsed_visible_hours,
     )
+    # `computer_export` (design/sandbox-runtime §6): its record of what left the
+    # computer, built unconditionally like the audit store, and its link
+    # destination, `DropArtifactIngest`, ONLY when the computer is on. Drop's
+    # internal listener and its token are `[shortener]`'s pair, the one
+    # `LocalDockerBackend` already reuses for the same listener. A missing
+    # token leaves the link destination `unavailable`, never the boot: `chat`
+    # and `keep` do not need Drop.
+    computer_exports: ComputerExportStore = SqlComputerExportStore(engine)
+    artifact_ingest: ArtifactIngest | None = None
+    if computer is not None:
+        drop_token = os.environ.get(cfg.shortener.token_env, "")
+        if drop_token:
+            from nora.infra.drop import DropArtifactIngest
+            artifact_ingest = DropArtifactIngest(
+                base_url=cfg.shortener.base_url, token=drop_token,
+            )
+        else:
+            log.warning(
+                "computer enabled but %s is unset: computer_export to a link stays "
+                "unavailable", cfg.shortener.token_env,
+            )
     # `nora.agent` may not import `nora.config` (import-linter's "only app and
     # __main__ read config") — this is the conversion point, the same shape
     # `ReminderCaps(**cfg.reminders.model_dump())` already uses just below.
@@ -2996,6 +3021,7 @@ async def build_dependencies(
         computer=computer, computer_events=computer_events,
         computer_settings=computer_settings,
         computer_sessions=computer_sessions, computer_leases=computer_leases,
+        computer_exports=computer_exports, artifact_ingest=artifact_ingest,
         # §9's caps as the DOMAIN value, the SAME `reminder_caps` instance
         # `GatheringService` was built with above — see that variable's own
         # comment for why they must not be two separately constructed copies.
@@ -4516,7 +4542,6 @@ async def build_dependencies(
                 cfg=cfg, models=dream_models,
                 retry=factory.build_retry_policy(timeout_seconds=tier.timeout_seconds),
                 metrics=metrics, tools=dream_tools, instructions=dreamer_instructions,
-                registry_table={n: t.budget for n, t in NATIVE_TOOLS.items()},
                 dry_run_store=dry_run_store, stimulus_store=stimulus_store,
                 note_titles=_note_titles, proposed_events_in=_proposed_events,
                 standing_of=lambda platform, conversation_id: standing_store.read(
@@ -4535,9 +4560,7 @@ async def build_dependencies(
                 surface=surface, clock=lambda: clock().timestamp(),
                 model_id=dream_model, model_route=cfg.llm.base_url,
                 budget=cognition_budget(cfg.dreamer.budget_for(COGNITION_ADAPTOR_NAME)),
-                tool_calls=cfg.dreamer.budget_for(COGNITION_ADAPTOR_NAME).tool_calls,
-                llm_budgets=cfg.llm.budgets, result_caps=TOOL_RESULT_CAPS,
-                memory_tools=MEMORY_TOOLS,
+                result_caps=TOOL_RESULT_CAPS,
             )
 
     # The wake evaluator, after the Dreamer block so `session_mode = "shadow"`

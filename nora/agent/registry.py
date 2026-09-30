@@ -37,11 +37,13 @@ from strands.tools.decorator import FunctionToolMetadata
 from ..domain.compute import ComputeJobStore
 from ..domain.computer import ComputerToolSettings
 from ..domain.computer_events import ComputerEventStore
+from ..domain.computer_exports import ComputerExportStore
 from ..domain.computer_leases import ComputerLeases
 from ..domain.computer_sessions import ComputerSessionStore
 from ..domain.media_join import MediaJoin
 from ..domain.models import PersonRef, TranscriptRow
 from ..domain.ports import (
+    ArtifactIngest,
     BlobStore,
     ComputeBackend,
     DiscordPresenceSource,
@@ -220,6 +222,11 @@ class ToolRegistry:
         # in-process lock a lock.
         computer_sessions: ComputerSessionStore | None = None,
         computer_leases: ComputerLeases | None = None,
+        # `computer_export`'s record of what left the computer (always built
+        # by the composition root) and its link destination, Drop (`None`
+        # without Drop's token: a link export then answers `unavailable`).
+        computer_exports: ComputerExportStore | None = None,
+        artifact_ingest: ArtifactIngest | None = None,
         clock: Callable[[], datetime] = utc_now,
         mcp_tools: Mapping[str, McpToolGroup] | None = None,
         versions: VersionManifest | None = None,
@@ -449,6 +456,8 @@ class ToolRegistry:
         self._computer_settings = computer_settings
         self._computer_sessions = computer_sessions
         self._computer_leases = computer_leases
+        self._computer_exports = computer_exports
+        self._artifact_ingest = artifact_ingest
         # §9's three anti-runaway caps, as the DOMAIN value — never
         # `nora.config.RemindersConfig`. Import-linter's "only app and __main__
         # read config" contract names `nora.agent` as a source module and
@@ -1067,6 +1076,8 @@ class ToolRegistry:
             computer_settings=self._computer_settings,
             computer_sessions=self._computer_sessions,
             computer_leases=self._computer_leases,
+            computer_exports=self._computer_exports,
+            artifact_ingest=self._artifact_ingest,
             music=self._music,
             online_source=self._online, voice_source=self._voice,
             presence=self._discord_presence,

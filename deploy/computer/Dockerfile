@@ -33,6 +33,28 @@ RUN python3 -m venv /opt/computerd/venv \
     && /opt/computerd/venv/bin/pip install --no-cache-dir --require-hashes \
         -r /opt/computerd/requirements.txt
 
+# nora-render (design/sandbox-runtime §5, S3a): Smith's image renderers as
+# one CLI, `nora-render chart|mermaid IN OUT` (render/nora_render.py),
+# standard-library Python on the image's python3. Each makes a picture, never
+# a page: documents are the document path's (ADR 0020). librsvg's
+# rsvg-convert turns a chart's SVG into a PNG. mermaid-cli comes by `npm ci`
+# from render/package-lock.json, whose integrity hashes pin every package;
+# its postinstall fetches the Chromium it draws with, at build time, into
+# /opt/nora-render/puppeteer (the libraries below are what that Chromium
+# links against). Nothing here reaches the network at run time.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libasound2t64 libatk-bridge2.0-0t64 libatk1.0-0t64 libcairo2 libcups2t64 \
+        libdrm2 libgbm1 libnss3 libpango-1.0-0 libxcomposite1 libxdamage1 \
+        libxfixes3 libxkbcommon0 libxrandr2 librsvg2-bin \
+    && rm -rf /var/lib/apt/lists/*
+COPY render/package.json render/package-lock.json /opt/nora-render/
+RUN cd /opt/nora-render \
+    && PUPPETEER_CACHE_DIR=/opt/nora-render/puppeteer npm ci --omit=dev --no-audit --no-fund \
+    && chmod -R a+rX /opt/nora-render
+COPY render/nora_render.py render/nora-render render/mmdc /opt/nora-render/
+RUN ln -s /opt/nora-render/nora-render /usr/local/bin/nora-render \
+    && ln -s /opt/nora-render/mmdc /usr/local/bin/mmdc
+
 # The operator's user, for an interactive `sbx exec`. /workspace is root-owned
 # so a command cannot swap a room's directory for a link; computerd creates
 # each room's directory 0700, owned by that room's own system user

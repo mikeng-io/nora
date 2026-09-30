@@ -44,29 +44,10 @@ from nora.obs.tracing import TRACE_KIND, annotate, span
 
 log = logging.getLogger("nora.app.cognition_agent_runner")
 
-#: One name for every tool this adaptor may hold, budgeted generously and
-#: uniformly (`DreamGuard`'s per-tool ledger needs a key for anything it is
-#: asked to admit; a tool absent here is refused outright). Sized as a
-#: STARTING guess like every other number in this migration — a shadow
-#: week's `nora_dream_guard_vetoes_total{adaptor="cognition"}` is what would
-#: size it for real.
+#: The `ToolSpec.budget` a session's own verbs are adapted with. Metadata
+#: only: a session's guard holds no per-tool ceiling (DEC-247), so this number
+#: vetoes nothing.
 DEFAULT_TOOL_BUDGET = 20
-
-#: The trace attribute the session sets to its agenda's size
-#: (`nora.app.cognition_session._run_session`). It is a trace attribute
-#: because that is the one string channel the runner already receives per run
-#: and Langfuse already shows, so a session's ceilings and its item count read
-#: side by side. Absent or unreadable means ONE item: a probe, or a caller that
-#: does not say, gets the smallest ceiling, never a larger one by guess.
-ITEMS_ATTRIBUTE = "cognition.items"
-
-
-def agenda_items(trace_attributes: Mapping[str, str]) -> int:
-    """The agenda's item count from `trace_attributes`, at least 1."""
-    try:
-        return max(1, int(trace_attributes.get(ITEMS_ATTRIBUTE, "1")))
-    except (TypeError, ValueError):
-        return 1
 
 
 def as_strands_tools(tools: list[Any]) -> list[Any]:
@@ -97,32 +78,21 @@ class LiveCognitionAgentRunner:
 
     def __init__(
         self, *, models: Any, retry: factory.RetryPolicy, metrics: Metrics | None = None,
-        agent_name: str = "cognition", tool_budget: int = DEFAULT_TOOL_BUDGET,
-        read_tool_budgets: Mapping[str, int] | None = None,
+        agent_name: str = "cognition",
         param_names: Mapping[str, frozenset[str]] | None = None,
         result_caps: Mapping[str, int] | None = None,
-        memory_tools: frozenset[str] = frozenset(),
     ) -> None:
-        """`read_tool_budgets`: the per-ITEM call allowance of each READ tool
-        (the registry's own table with the deployment's and this adaptor's
-        layers applied, `nora.app.cognition_wiring`); a session's ceiling for
-        the tool is that allowance times its agenda's item count (M12: the
-        table's numbers are a tag turn's, and an agenda is several items
-        read one after another). A tool absent from it (the session's own
-        verbs) runs on `tool_budget`, and never on fewer calls than the
-        agenda has items, since `close` is called once per item. `param_names`,
-        `result_caps` and `memory_tools` are the three ceilings every other
-        Dreamer sample builds its guard with (R-99, the result size cap, the
-        per-pass memory ceiling); left out, the guard holds none of them."""
+        """`param_names` and `result_caps` are two of the ceilings every other
+        Dreamer sample builds its guard with (R-99, the result size cap); left
+        out, the guard holds neither. The third, the per-pass memory ceiling,
+        is not built: a session has no per-tool, memory or pass-wide call
+        ceiling (DEC-247), only the loop's rounds, tokens and clock."""
         self._models = models
         self._retry = retry
         self._metrics = metrics if metrics is not None else Metrics()
         self._agent_name = agent_name
-        self._tool_budget = tool_budget
-        self._read_tool_budgets = dict(read_tool_budgets or {})
         self._param_names = param_names
         self._result_caps = dict(result_caps or {})
-        self._memory_tools = memory_tools
 
     async def run(
         self, *, system_prompt: str, prompt: str, tools: list[Any],
@@ -130,7 +100,7 @@ class LiveCognitionAgentRunner:
     ) -> CognitionRunResult:
         tool_names = [getattr(t, "tool_name", None) or t.__name__ for t in tools]
         tools = as_strands_tools(tools)
-        guard = self._guard(tool_names, budget=budget, items=agenda_items(trace_attributes))
+        guard = self._guard(tool_names)
         # ONE root span per session, its stages its children (AGENTS.md,
         # instruments): `nora.trace_kind = generation` is what keeps the trace
         # in Langfuse, exactly as `DreamerRuntime.run` declares it for every
@@ -155,30 +125,20 @@ class LiveCognitionAgentRunner:
             annotate(**{"nora.outcome": "ok"})
         return CognitionRunResult(stop_reason=getattr(result, "stop_reason", None))
 
-    def _guard(self, tool_names: list[str], *, budget: AdaptorBudget, items: int) -> DreamGuard:
-        """One `DreamGuard` for a session of `items` agenda items. Every
-        call ceiling scales with `items`: the per-tool ones, and the pass-wide
-        memory and total ones (`[dreamer.budgets.cognition]` `max_memory_calls`
-        and `max_tool_calls` are per item too), because a per-tool ceiling
-        under a pass ceiling that does not grow is inert (the shared ceiling
-        binds first and the per-tool number reads as decoration)."""
+    def _guard(self, tool_names: list[str]) -> DreamGuard:
+        """One `DreamGuard` for a session, with NO call ceiling of any kind
+        (DEC-247): not per tool, not over the memory cluster, not over every
+        verb. A session is bounded by `AdaptorBudget`'s rounds, tokens and wall
+        clock alone. What the guard still does is the safety half: R-7 (a tool
+        the session does not hold), R-99 (an argument a tool does not declare)
+        and the result size cap."""
         return DreamGuard(
             adaptor="cognition",
-            budgets={
-                n: (
-                    self._read_tool_budgets[n] * items if n in self._read_tool_budgets
-                    else max(self._tool_budget, items)
-                )
-                for n in tool_names
-            },
+            budgets=dict.fromkeys(tool_names, 0),
             metrics=self._metrics,
             result_caps=self._result_caps,
-            memory_tools=self._memory_tools,
-            memory_budget=None if budget.max_memory_calls is None
-            else budget.max_memory_calls * items,
-            pass_budget=None if budget.max_tool_calls is None
-            else budget.max_tool_calls * items,
             param_names=self._param_names,
+            per_tool_ceilings=False,
         )
 
     async def _invoke(

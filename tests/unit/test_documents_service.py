@@ -227,12 +227,14 @@ async def test_a_picture_with_no_room_on_it_never_resolves() -> None:
         assert result.status == "refused", provenance
 
 
-async def test_a_source_the_rule_does_not_name_never_resolves() -> None:
-    odd = _object(
+async def test_a_picture_born_in_this_room_resolves_whatever_its_source() -> None:
+    # The room match is the security property, not the source (the sandbox session's
+    # `resolve_room_media`, used as is): a fetched picture born here is this room's.
+    fetched = _object(
         DRAWING, source="fetched", provenance={"platform": "signal", "conversation_id": "room-1"}
     )
-    svc, _ = _service(objs=(odd,))
-    assert (await _publish(svc, _doc(_image("9b8c7d")))).status == "refused"
+    svc, _ = _service(objs=(fetched,))
+    assert (await _publish(svc, _doc(_image("9b8c7d")))).status == "ok"
 
 
 async def test_a_room_that_cannot_be_read_is_unavailable_never_a_guess() -> None:
@@ -242,13 +244,14 @@ async def test_a_room_that_cannot_be_read_is_unavailable_never_a_guess() -> None
     assert (
         await store.list_visible(person_id="ken", rooms=frozenset(), limit=10, offset=0)
     ).total == 0
-    down, _ = _service(rooms={"room-1": [[PHOTO]]}, fail_media=False)
-    down._media = FakeMediaObjectStore(
-        fail=True
-    )  # the index answering empty is "nothing found", not down
+    down, dstore = _service(rooms={"room-1": [[PHOTO]]}, fail_media=False)
+    down._media = FakeMediaObjectStore(fail=True)
+    # An index that cannot be read is "could not check", never "no such picture", and
+    # never a reason to trust the room's rows alone: nothing is saved.
+    assert (await _publish(down, _doc(_image("a3f2c1")))).status == "unavailable"
     assert (
-        await _publish(down, _doc(_image("a3f2c1")))
-    ).status == "ok"  # the room's own rows still resolve it
+        await dstore.list_visible(person_id="ken", rooms=frozenset(), limit=10, offset=0)
+    ).total == 0
 
 
 async def test_what_is_stored_was_judged_and_its_hash_is_of_the_rewritten_form() -> None:

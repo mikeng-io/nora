@@ -300,11 +300,18 @@ def test_the_guard_has_no_terminal_verb_and_nothing_that_could_end_a_turn():
     refuses a call and rewrites its result, and the pass runs on until the
     model stops asking (`test_the_configured_pass_ceiling_binds_through_the_
     real_loop` finishes `ok` past the cap).
+
+    `per_tool_ceilings` (DEC-247) is the opposite direction and is argued the
+    same way: it only SWITCHES OFF one veto (a per-tool count), for the
+    Cognition session alone. It adds no terminal verb and no model-call hook
+    and ends nothing, so a guard with it off is a guard with one rule fewer,
+    not a `ReplyGuard` with a turn-ending power
+    (`tests/unit/test_cognition_no_call_ceilings.py`).
     """
     params = inspect.signature(DreamGuard.__init__).parameters
     assert set(params) == {
         "self", "adaptor", "budgets", "metrics", "result_caps",
-        "memory_tools", "memory_budget", "param_names", "pass_budget",
+        "memory_tools", "memory_budget", "param_names", "pass_budget", "per_tool_ceilings",
     }
     assert all(
         p.kind is inspect.Parameter.KEYWORD_ONLY

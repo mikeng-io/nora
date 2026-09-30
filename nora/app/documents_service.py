@@ -41,6 +41,7 @@ from uuid import UUID, uuid4
 
 from nora.documents.check import Checked, Finding, check_document
 from nora.domain.documents import DocumentStore, RevisionIn, RoomKey
+from nora.domain.media import resolve_room_media
 from nora.domain.ports import MediaObjectStore
 from nora.policy import Policy
 
@@ -141,16 +142,16 @@ class DocumentService:
                         # Only a real content address: a malformed entry is not a picture.
                         if _SHA.match(sha) and sha.startswith(code):
                             found.add(sha)
-            for obj in await self._media.by_prefix(handle=code, limit=20):
-                born = obj.provenance or {}
-                if (
-                    obj.source in ("generated", "inbound", "computer")
-                    and born.get("platform") == platform
-                    and born.get("conversation_id") in ids
-                    and _SHA.match(obj.sha256)
-                    and obj.sha256.startswith(code)
-                ):
-                    found.add(obj.sha256)
+            for cid in sorted(ids):
+                # The one resolver the sandbox session shares: a code resolves only in the
+                # room it was born in, and an index that cannot be read is `unavailable`,
+                # never "no such picture".
+                look = await resolve_room_media(
+                    self._media, code=code, platform=platform, conversation_id=cid
+                )
+                if not look.available:
+                    return None
+                found.update(sha for sha in look.objects if _SHA.match(sha))
         except Exception:  # noqa: BLE001 - a store that is down is `unavailable`, not a guess
             return None
         return found

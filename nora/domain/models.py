@@ -130,6 +130,20 @@ class Touch:
     removed: bool = False
 
 
+#: What Signal puts in a message body where an @-mention's name appears
+#: (U+FFFC, OBJECT REPLACEMENT CHARACTER): the body's only trace of a
+#: mention, the identity being in `NormalizedMessage.mentions`. Written as an
+#: escape because the literal renders as a box or as nothing.
+MENTION_PLACEHOLDER = "\ufffc"
+
+
+def strip_mention_placeholders(text: str) -> str:
+    """`text` without its mention placeholders and the whitespace they leave
+    at either end: what a message SAYS, for a place that quotes it back
+    (the Honcho search feed, a computer session's objective)."""
+    return text.replace(MENTION_PLACEHOLDER, "").strip()
+
+
 @dataclass(frozen=True)
 class NormalizedMessage:
     platform: str                  # "signal"

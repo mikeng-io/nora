@@ -51,6 +51,17 @@ Under sbx a TCP connect succeeds to any address, so health is always an HTTP
 body from `/v1/health`, never a port check.
 
 
+## nora-render
+
+`nora-render chart|mermaid IN OUT` (`render/`) is Smith's image renderers as
+one CLI: each makes a picture (SVG, or PNG for a link or the chat), never a
+page. A document, maps included, is the document path's (ADR 0020), not the
+computer's. Both run offline: `chart` is standard-library Python (its PNG
+through librsvg's `rsvg-convert`), and `mermaid` is mermaid-cli with its own
+Chromium, both in the image. Measured 2026-10-01 in a throwaway `docker run
+--network=none`. There is no map renderer, so the computer needs no Google
+host allowed and no Maps key.
+
 ## Upgrading from the S2a timer (once)
 
 S2a made the sandbox with `sbx create`, which sandboxd auto-stops, and ran a

@@ -303,6 +303,46 @@ cases:
     metadata: {tools: [generate_image], not_tools: [computer_run]}
     snapshot: *room_a
 
+  # --- S3a: files in and out of the computer, and the computer-use skill -----
+  # ON ARM ONLY, like the computer-positive cases above: with `[computer]` off
+  # the tools are withheld and these FAIL by construction. No export-to-link
+  # case: a document is the document path's (ADR 0020, operator 2026-10-01),
+  # not `computer_export`'s.
+  #
+  # A simulation is code, never a sum: computer_run chosen for it over
+  # calculate. This was `route_computer_run_loads_computer_use`, which also
+  # required a `computer-use` skill load before the run. Measured 2026-10-01
+  # on the eval VM at b2492770, n=5: the route right in every draw, the skill
+  # loaded in 1 of 5. Operator decision the same day: the expectation was
+  # wrong, not the model. What she must know (files only, no web pages, no
+  # internet, import and export) is in the tools' descriptions and results;
+  # the skill is guidance for multi-step project work, and a one-shot job
+  # does not need it. So the case measures the route only, not a skill load.
+  - name: route_computer_run_simulation
+    entry: tag
+    expect: reply
+    mention: true
+    input: >-
+      write a python script on your computer that simulates rolling two dice
+      100000 times and tells me how often the total is 7, then run it
+    metadata: {tools: [computer_run], not_tools: [calculate]}
+    snapshot: *room_a
+
+  # Import of a sent file. The anchor carries no attachment of this code, so
+  # a correct turn calls `computer_import` and gets an honest
+  # `nothing_found`: graded on the call, like the other tools here that
+  # answer `unavailable` in the sandbox. `media_fetch` is the sibling it
+  # could steal from (it reads a picture; it cannot put a file on the
+  # computer).
+  - name: route_computer_import_attachment
+    entry: tag
+    expect: reply
+    mention: true
+    input: >-
+      [file 3fa9c2] 呢個CSV放入你部電腦，用python計每個城市嘅平均溫度
+    metadata: {tools: [computer_import], not_tools: [media_fetch]}
+    snapshot: *room_a
+
   # --- the room tools (design/self-awareness/07) ----------------------------------
   # A same-domain pair (ADR 0015 §1), and each has a neighbour it could steal
   # from: `room_list` from `group_members` (who is HERE vs which rooms exist),

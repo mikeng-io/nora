@@ -385,3 +385,84 @@ def test_the_ceiling_counts_the_escaped_text():
                  caps=ComputerContextCaps(max_tokens=150))
     body = render_computer(view).body
     assert estimate_tokens(body) <= 150
+
+
+# -- links (S3a) ---------------------------------------------------------------
+
+
+def _export_rows(path: str, at: datetime, *, status="ok", artifact_id="art_1",
+                 revised=False, title="Trip report"):
+    op = uuid.uuid4()
+    common = {"operation_id": op, "actor": "tag", "requester_person_id": None,
+              "platform": "signal", "conversation_id": ROOM, "conversation_type": "group",
+              "tag_id": "t", "scope": SCOPE, "tool": "computer_export", "path": "direct",
+              "trace_id": "", "span_id": ""}
+    result = {"to": "link", "title": title}
+    if status == "ok":
+        result |= {"artifact_id": artifact_id, "url": f"https://nora.example.net/drop/{artifact_id}",
+                   "revised": revised}
+    return [
+        ComputerEvent(id=uuid.uuid4(), phase="started", created_at=at, started_at=at,
+                      finished_at=None, status="started",
+                      request={"path": path, "to": "link"}, **common),
+        ComputerEvent(id=uuid.uuid4(), phase="finished", created_at=at, started_at=at,
+                      finished_at=at, status=status, result=result, **common),
+    ]
+
+
+async def test_a_link_the_room_made_shows_with_the_artifact_id_that_revises_it():
+    """A revision in a later turn needs the artifact_id, and the turn keeps
+    nothing: the block carries it, from the audit rows, newest per link."""
+    events = FakeComputerEventStore()
+    for row in (*_export_rows("out/r.html", NOW - timedelta(hours=2)),
+                *_export_rows("out/r.html", NOW - timedelta(minutes=10), revised=True),
+                *_export_rows("out/x.html", NOW - timedelta(minutes=5), status="refused",
+                              artifact_id="art_theirs")):
+        await events.append(row)
+    view = await _reader(FakeSandboxRuntime(clock=lambda: NOW), FakeComputerSessionStore(),
+                         events).read(platform="signal", conversation_id=ROOM)
+    body = render_computer(view).body
+    assert ('link "Trip report" · artifact_id art_1 · https://nora.example.net/drop/art_1 · '
+            "from out/r.html · revised 10 min ago") in body
+    assert body.count("artifact_id art_1") == 1
+    assert "art_theirs" not in body
+
+
+def test_links_are_capped_with_a_line_saying_how_many_more():
+    from nora.domain.computer_context import LinkLine
+
+    view = _view(
+        links=tuple(LinkLine(f"art_{i}", f"https://d/{i}", f"page {i}", f"out/{i}.html",
+                             False, NOW - timedelta(minutes=i)) for i in range(5)),
+        caps=ComputerContextCaps(max_tokens=100_000),
+    )
+    body = render_computer(view).body
+    assert body.count("link \"page") == 3 and "+2 more links" in body
+
+
+# -- processes outside tmux (live read-back, 2026-10-01) ----------------------
+
+
+async def test_a_nohup_job_shows_as_running_and_keeps_its_task_active():
+    """FALSIFIER: the block's running section and the session status read
+    processes as well as tmux. A `nohup … &` job has no tmux session."""
+    runtime = FakeSandboxRuntime(clock=lambda: NOW)
+    runtime.start_process(SCOPE, "python tick.py --every 60", pid=159,
+                          started=NOW - timedelta(minutes=17))
+    sessions = FakeComputerSessionStore()
+    await _open_session(sessions)  # last active 3 h ago: idle without a job
+    view = await _reader(runtime, sessions, FakeComputerEventStore()).read(
+        platform="signal", conversation_id=ROOM)
+    body = render_computer(view).body
+    assert "process 159 `python tick.py --every 60` · running · started 17 min ago" in body
+    assert "open task, active," in body
+
+
+def test_a_command_is_escaped_exactly_once():
+    """`&` and `>` reach the prompt as `&amp;` and `&gt;` once: the renderer
+    escapes each line (`render_bullets`), nothing escapes it before."""
+    view = _view(runs=(RunLine("python a.py > out.txt && echo ok", 0, True, NOW),),
+                 caps=ComputerContextCaps(max_tokens=100_000))
+    body = render_computer(view).body
+    assert "python a.py &gt; out.txt &amp;&amp; echo ok" in body
+    assert "&amp;gt;" not in body and "&amp;amp;" not in body
