@@ -13,3 +13,10 @@ that catalog by `npm run documents:emit`; do not edit them:
 
 `check` is the one place a document is judged on Nora's side.
 """
+
+from importlib import resources
+
+
+def catalog_prompt() -> str:
+    """The generated catalog prompt: what a model is told to write a document against."""
+    return resources.files(__name__).joinpath("catalog-prompt.md").read_text("utf-8")

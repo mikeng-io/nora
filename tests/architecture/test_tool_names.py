@@ -65,6 +65,13 @@ VERBS: tuple[str, ...] = (
     # The pair is Claude Code's and the design's own words for the two
     # directions.
     "export", "import",
+    # Documents (design/artifact §26, ADR 0020): `publish` makes a written piece
+    # readable in the web app AND is how it is revised, one act with two
+    # outcomes (a new document, or the next revision of one). `create` would
+    # say the thing is always new and `update` that a record's fields change;
+    # neither says that the result is now for other people to open, which is
+    # the point and the reason the model must be told what it may put in it.
+    "publish",
 )
 
 

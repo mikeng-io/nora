@@ -3724,6 +3724,21 @@ class RecordQueryConfig(BaseModel):
     enabled: bool = False
 
 
+class DocumentsConfig(BaseModel):
+    """`document_publish` and `document_read` (design/artifact/00-design.md §26).
+
+    **Ships OFF.** Off, neither tool is in any turn's tools, catalogue or the
+    Relevance Gate's capability digest. A published document is opened in the web
+    app, and the portal's document pages are a later step; until they ship, a model
+    that published one would hand people a path that shows nothing. Turn it on
+    after the portal routes exist and the `route_document_*` tool_selection cases
+    have run."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    enabled: bool = False
+
+
 class LoggingConfig(BaseModel):
     """Where the log goes is no longer a setting: it goes to stdout.
 
@@ -4058,6 +4073,8 @@ class Config(BaseModel):
     lineage: LineageConfig = LineageConfig()
     # Optional and defaulted — see `RecordQueryConfig`. Ships OFF.
     record_query: RecordQueryConfig = RecordQueryConfig()
+    # Optional and defaulted — see `DocumentsConfig`. Ships OFF.
+    documents: DocumentsConfig = DocumentsConfig()
     identity_file: Path
     policy_file: Path
     obs: ObsConfig

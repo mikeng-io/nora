@@ -2267,6 +2267,17 @@ async def test_units_without_a_home_room_stay_in_the_evaluator_and_are_gauged(cf
     assert "wedding" in list(deps.wake_evaluator._units())
 
 
+async def test_the_document_tools_reach_the_registry_only_while_documents_are_on(cfg):
+    """design/artifact §26: `[documents] enabled` ships false, and off the registry is
+    built with no document service, so no turn is offered `document_publish` or
+    `document_read`. The portal pages that open a document are a later step, and a
+    published document with nowhere to open it is worse than no tool."""
+    off = await build_dependencies(cfg)
+    assert off.engagement._tool_registry._documents is None
+    on = await build_dependencies(override_config(cfg, {"documents.enabled": True}))
+    assert on.engagement._tool_registry._documents is on.document_service
+
+
 async def test_computer_sweeper_and_block_exist_only_while_on(cfg, monkeypatch):
     """Design/sandbox-runtime §15.2: composition builds the session sweeper
     (and `__main__` spawns its loop) only under `[computer] enabled`."""

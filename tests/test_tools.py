@@ -202,6 +202,8 @@ def test_every_declared_tool_is_built(wiring):
         # Nora's computer (design/sandbox-runtime §4, DEC-243).
         "computer_run", "computer_read", "computer_write", "computer_edit",
         "computer_export", "computer_import", "computer_session_list",
+        # design/artifact §26: a document is published to the web app, read back to edit.
+        "document_publish", "document_read",
         # DEC-97: what she is running, and what was in an earlier version.
         "version",
         # The note tier's four verbs (note-tier spec §5.2/§6).

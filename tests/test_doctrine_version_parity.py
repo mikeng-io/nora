@@ -256,7 +256,7 @@ PINNED: dict[str, tuple[int, str]] = {
     # opened by translating the vision reading back, item by item, to the
     # person who had sent it. The tool notes were reframed in the same change;
     # this reaches the answers that read only a transcript placeholder.
-    "conduct": (33, "b1c1de0176fe1f5fe872dab1c66305da8e8c8d37914365dea1c84954a3ea3296"),
+    "conduct": (34, "9dac6dfe1c9e64a0c98a2dd8c1a213a0607e73f3cedddf7793846240d58ce648"),
     # NOT Nora's: the Relevance Gate's instruction, pinned here like any other
     # authored file so a silent edit to what the gate is told is impossible.
     # v5 (2026-09-10, issue #144): the digest v4 pointed at is not shipped —

@@ -901,3 +901,37 @@ these are issues #655 and #656.
 **Not built, on purpose.** The media byte route (W5, with the portal), the tool and its routing eval
 (W4b), search, the `path` form of publishing (it waits on the sandbox session's audited reader). The
 migration is `0084_documents`, after the sandbox session's `0083_computer_exports` (#649).
+
+## 26. W4b: the tools the model publishes with (2026-10-01)
+
+Two tools over the W4a service, both in `nora/agent/tools.py`, both withheld from every turn unless
+`[documents] enabled` (ships false, like `[record_query]`): the portal pages that open a document are a
+later step, so a model that published one now would hand people a path that shows nothing.
+
+**`document_publish(spec, document_id?, base_revision?)`**, level 3, budget 4, an act (not read-only,
+`non_idempotent`, never retried). `spec` is the JSON object, or the same as text. It calls
+`DocumentService.publish` with the requester's person id (the room's tagger); a turn with no tagger (a
+fire, a Dreamer pass) stores nothing and says so, because a document is published for the person who asked.
+The catalog is learned from the tool, not from memory: a call with no `spec` answers `bad_arguments` with
+the generated catalog prompt (`DocumentService.catalog`) in a `catalog` field, paid only by the call that
+needs it and never by every turn. The MUST rule (a document is a JSON spec, never HTML, markup or a file)
+is in the description, with one line in `conduct.md` (version 34) that names no tool and forbids nothing
+when the tool is absent, because doctrine is bind-mounted and goes live at the next pull, before the image.
+
+**Statuses, and why these words.** `ok` carries `document_id`, `revision` and the portal `url`, and a note
+that says it is under Documents for people signed in and not a public link. A refusal with findings, a
+missing or stale `base_revision` and a malformed id are `bad_arguments` (a mistake in the call, correctable
+on the next turn; `refused` is R-31's disclosure veto and would read as «I may not say»). A document of
+another room is `not_found`, the same as an unknown id. A store or checker that failed is `unavailable`:
+nothing is known to be stored.
+
+**`document_read(document_id)`**, level 1, budget 2, read-only. Editing needs the current spec and revision,
+and a model does not remember either across turns, so this is the minimum that makes `base_revision`
+usable. A spec over 40,000 characters of JSON is named and left out (never cut in half), with the revision,
+so the model can republish the whole document against it.
+
+**Not built.** The `path` form (waits on #649's audited reader). No routing result: the `route_document_*`
+cases are in `tool_selection`, the two positives need a subject with `[documents] enabled` (the eval
+subject is the deployment's config, which has it off), so they are NOT RUN; the three negatives (a count, a
+picture, a CSV file) pass trivially while it is off. The skill that teaches composing a good document, the
+portal routes and the media byte route are W5 and after.

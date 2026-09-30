@@ -1198,12 +1198,14 @@ def test_the_digest_is_derived_from_the_registry_and_read_only():
     """
     from nora.agent.registry import ToolRegistry
 
-    # A Record read and a computer wired, so neither `record_query` nor the
-    # computer tools are withheld (each is offered only when configured;
-    # `test_tool_registry.py` pins that).
+    # A Record read, a computer and a document service wired, so neither
+    # `record_query`, the computer tools nor `document_read` are withheld (each is
+    # offered only when configured; `test_tool_registry.py` pins that).
     from nora.testing import FakeSandboxRuntime
 
-    registry = ToolRegistry(record=object(), computer=FakeSandboxRuntime())
+    registry = ToolRegistry(
+        record=object(), computer=FakeSandboxRuntime(), documents=object(),
+    )
     digest = registry.capability_digest()
     named = {line.split(" — ")[0].removeprefix("- ").strip()
              for line in digest.splitlines() if line.strip()}

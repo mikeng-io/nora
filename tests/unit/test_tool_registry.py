@@ -68,6 +68,9 @@ _RECORD = object()
 #: The same for the two Dreamer-only reads (`rollup_read`, `standing_read`).
 _ROLLUP = object()
 _STANDING = object()
+#: The document service, never called: both document tools are offered only when one
+#: is wired (`[documents] enabled`).
+_DOCUMENTS = object()
 
 
 def test_record_query_is_offered_only_when_its_record_read_is_wired():
@@ -80,6 +83,21 @@ def test_record_query_is_offered_only_when_its_record_read_is_wired():
     on = ToolRegistry(record=_RECORD)
     assert "record_query" in {t.tool_name for t in _built_tools(on)}
     assert "record_query" in on.capability_digest()
+
+
+def test_the_document_tools_are_offered_only_when_documents_are_wired():
+    """`[documents] enabled = false` (the shipped default) builds the registry with
+    no document service, and then no turn and no gate digest carries either tool:
+    the portal pages that open a document ship later. Wired, both are offered."""
+    names = {"document_publish", "document_read"}
+    off = ToolRegistry()
+    assert names.isdisjoint({t.tool_name for t in _built_tools(off)})
+    assert "document_read" not in off.capability_digest()
+    on = ToolRegistry(documents=_DOCUMENTS)
+    assert names <= {t.tool_name for t in _built_tools(on)}
+    # The digest lists what she can ANSWER: the read, never the act.
+    assert "document_read" in on.capability_digest()
+    assert "document_publish" not in on.capability_digest()
 
 
 def _surface(registry: ToolRegistry, *, defer: bool):
@@ -133,7 +151,7 @@ def _built_tools(registry: ToolRegistry, *, dream_adaptor: str = "proactive") ->
 def test_the_registry_exposes_every_declared_tool():
     tools = _built_tools(ToolRegistry(
         record=_RECORD, rollup=_ROLLUP, standing_head=_STANDING,
-        computer=FakeSandboxRuntime(),
+        computer=FakeSandboxRuntime(), documents=_DOCUMENTS,
     ))
     assert {t.tool_name for t in tools} == {
         # DEC-146: the window-scoped rung below `load_transcript`.
@@ -196,6 +214,8 @@ def test_the_registry_exposes_every_declared_tool():
         # Nora's computer (design/sandbox-runtime §4, DEC-243).
         "computer_run", "computer_read", "computer_write", "computer_edit",
         "computer_export", "computer_import", "computer_session_list",
+        # design/artifact §26: a document is published to the web app, read back to edit.
+        "document_publish", "document_read",
         # DEC-97: what she is running, and what was in an earlier version.
         "version",
         # The note tier's four verbs (note-tier spec §5.2/§6).
@@ -300,6 +320,8 @@ def test_budgets_match_todays_table():
         # one session tool reads. One call answers «what were you doing»; a
         # second is a different status filter.
         "computer_session_list": 2,
+        # design/artifact §26: no-spec catalog read, publish, a fix, an edit; a read.
+        "document_publish": 4, "document_read": 2,
         # The one tool whose budget is sized by the QUESTION rather than by
         # cost: it is a pure function with no network and no clock, so four
         # calls are four model round trips and nothing else.
@@ -502,7 +524,7 @@ def test_adapting_produces_objects_the_agent_factory_accepts():
     )
     tools = _built_tools(ToolRegistry(
         record=_RECORD, rollup=_ROLLUP, standing_head=_STANDING,
-        computer=FakeSandboxRuntime(),
+        computer=FakeSandboxRuntime(), documents=_DOCUMENTS,
     ))
     agent = factory.create_agent(
         model=model, system_prompt="p", tools=tools, pre_fill=[],
@@ -784,6 +806,8 @@ ACT_VERBS = frozenset({
     # S3a: an export publishes (a Drop link, an attachment) or stores, and an
     # import writes into the workspace.
     "computer_export", "computer_import",
+    # design/artifact §26: commits a document other people can open.
+    "document_publish",
     "send_reply", "send_to", "send_gif",
     # DEC-137: generation is an external side effect (provider call +
     # artifact hosting), never a read — the Dreamer may not generate.
@@ -870,6 +894,8 @@ READ_ONLY = frozenset({
     # design/sandbox-runtime §15.2: reads Nora's own session rows and the
     # room's observed state; writes nothing.
     "computer_session_list",
+    # design/artifact §26: reads one document of the room; writes nothing.
+    "document_read",
 })
 
 
