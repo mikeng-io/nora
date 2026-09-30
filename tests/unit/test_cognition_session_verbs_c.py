@@ -586,13 +586,13 @@ async def test_a_carried_id_and_a_fetched_message_are_per_room_too():
     answers: dict[str, Any] = {}
 
     async def behave(by: dict[str, Any], tools: list[Any]) -> None:
-        await _stream(by["note_read"], query="x", room="signal:room-a")
-        answers["b"] = await by["note_create"](**NOTE, body=body, room="signal:room-b")
+        await _stream(by["note_read"], query="x", room="signal:room-b")   # the SECOND room
         answers["a"] = await by["note_create"](**NOTE, body=body, room="signal:room-a")
+        answers["b"] = await by["note_create"](**NOTE, body=body, room="signal:room-b")
 
     await _session(behave, rooms=(A, B), reads=[carried])
-    assert answers["b"]["reason"] == "unknown_id"
-    assert answers["a"]["status"] == "ok", answers["a"]
+    assert answers["a"]["reason"] == "unknown_id"
+    assert answers["b"]["status"] == "ok", answers["b"]
 
 
 async def test_a_read_that_names_no_room_on_the_agenda_keeps_nothing():
