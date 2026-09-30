@@ -171,7 +171,7 @@ home dirs. This is what "per-tool scope rules" means.
 | Tool | Scope | Rule |
 | --- | --- | --- |
 | `media_fetch <handle>` | **conversation-scoped** | only blobs referenced by THIS conversation's rows (`media_json` scan, R-21/DEC-24 unchanged — the privacy boundary is preserved) |
-| `media_search <query>` | **custody-scoped, global** | only `source IN (generated, fetched)` — Nora's own media; never inbound rows (other people's photos are not her library) |
+| `media_search <query>` | **custody-scoped, global** | only `source IN (generated, fetched)` — Nora's own media; never inbound rows (other people's photos are not her library). **Amended in part 2026-10-01 (DEC-248): this is the default `library` scope; a second `room` scope also finds photos people sent in the calling room, found through that room's own message rows.** |
 | `media_send <handle>` | **custody-scoped** | only `source IN (generated, fetched)` — she cannot forward bytes she does not hold |
 | `media_generate` | N/A | the only creation entry; on success writes object + description + delivers |
 

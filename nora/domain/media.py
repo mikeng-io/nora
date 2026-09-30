@@ -59,6 +59,9 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
+
+    from nora.domain.models import TranscriptRow
     from nora.domain.ports import MediaLookup, MediaObjectStore
 
 # How much of the sha256 rides in the rendered placeholder. Six hex characters
@@ -533,6 +536,52 @@ async def resolve_room_media(
         sha: o for sha, o in found.objects.items()
         if born_in_room(o, platform=platform, conversation_id=conversation_id)
     })
+
+
+@dataclass(frozen=True)
+class RoomPhoto:
+    """One picture or clip somebody sent in a room, as the ROOM'S OWN message
+    row records it: the content address, its recorded type and when it was
+    sent. The message row, not the media index, is the authority for which
+    room sent it (design/artifact §25): an index row keeps only the first room
+    a byte string was seen in. Carries no sender, by design."""
+
+    sha256: str
+    media_type: str
+    sent_ms: int
+
+    @property
+    def handle(self) -> str:
+        return self.sha256[:HANDLE_CHARS]
+
+
+def room_photos(rows: Iterable[TranscriptRow]) -> list[RoomPhoto]:
+    """The distinct pictures and clips in `rows` (one room's message rows,
+    newest first), each at its NEWEST sighting. A re-sent photo is one entry,
+    dated by its latest sending. Stickers are not separable from photos in
+    `media_json` and stay in; a shared item's cover image is a preview of
+    something posted elsewhere, not a thing a member sent, and is dropped, as
+    are voice notes and documents."""
+    seen: dict[str, RoomPhoto] = {}
+    for row in rows:
+        for blob in blobs_from_media_json(row.media_json):
+            if blob.role == COVER_ROLE or blob.sha256 in seen:
+                continue
+            if parse_media_type(blob.media_type)[0] not in ("image", "video"):
+                continue
+            seen[blob.sha256] = RoomPhoto(blob.sha256, blob.media_type, row.ts)
+    return list(seen.values())
+
+
+def reading_matches(obj: MediaObject, query: str) -> bool:
+    """Whether every word of `query` is a case-insensitive substring of the
+    object's title, description or content: the comprehension fields, the same
+    three `SqlMediaObjectStore.search` reads, and NOT its provenance text (an
+    inbound row's provenance names a room, which a query must not match on).
+    An empty query matches everything."""
+    words = [w.casefold() for w in query.split() if w]
+    hay = (obj.title.casefold(), obj.description.casefold(), obj.content.casefold())
+    return all(any(w in h for h in hay) for w in words)
 
 
 def label_from_media_type(media_type: str) -> str:

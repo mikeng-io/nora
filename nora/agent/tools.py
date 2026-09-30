@@ -128,11 +128,14 @@ from ..domain.media import (
     GifCandidate,
     MediaBlob,
     MediaObject,
+    RoomPhoto,
     VideoReadingKey,
     born_in_room,
     handle_hex,
     label_from_media_type,
+    reading_matches,
     resolve_media_type,
+    room_photos,
     sniff_media_type,
 )
 from ..domain.media import LABELS as MEDIA_LABELS
@@ -1052,7 +1055,10 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
                                  output_contract="three_state", level=3),
     # media_search / media_send (DEC-138 — unified media index): READ side
     # of Nora's OWN stored media (source ∈ generated/fetched) — no provider
-    # call, no quota. search is read-only; send delivers a stored attachment
+    # call, no quota. `media_search(scope="room")` also finds photos PEOPLE
+    # SENT in the calling room (DEC-138 amended 2026-10-01), through that
+    # room's own message rows; `media_send` still delivers only her own.
+    # search is read-only; send delivers a stored attachment
     # (an act verb, like send_gif). Budget 2 each: one search + one send per
     # turn. `images_lookup`/`images_resend` were renamed here (DEC-138) so
     # the media surface stays ONE family: media_fetch (this conversation's
@@ -3772,6 +3778,14 @@ _COVER_NOTE = (
 # with nothing saying the sender is already looking at the thing
 # (design/proposed/32-shared-media-register.md). The hedge stays: a vision
 # model wrote this about somebody else's bytes.
+#: `media_search`'s bounds: the longest look-back a model may ask for, and how
+#: many message rows the `room` scope reads for it. 500 rows of media-bearing
+#: messages is far past what 90 days of one room holds, and a cap, not a
+#: reservation.
+_MEDIA_SEARCH_MAX_DAYS = 90
+_ROOM_MEDIA_ROWS = 500
+_MS_PER_DAY = 86_400_000
+
 _MEDIA_READING_NOTE = (
     "A vision model's notes on media somebody sent or linked, so you can see "
     "it too; whoever sent it has usually seen the thing itself. Take them as "
@@ -9229,21 +9243,29 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
     # search by what the media WAS ("the birthday card for Miles"), then send
     # the stored bytes — no regeneration, no quota burn. The rename from
     # images_lookup/images_resend (DEC-138) keeps the media surface ONE
-    # family; the scope is custody (source ∈ generated/fetched), never
-    # inbound (other people's photos are not Nora's library).
+    # family; the default scope is custody (source ∈ generated/fetched).
+    # Other people's photos are not Nora's library, so they are a SEPARATE
+    # scope (`room`), limited to the calling room and never a model argument.
 
-    async def media_search(query: str = "") -> dict:
-        """Find previously stored media in Nora's own library. Use this when
-        somebody asks you to resend, reuse, or point at an image you made or
-        fetched earlier.
+    async def media_search(
+        query: str = "", scope: Literal["library", "room"] = "library",
+        days: int = 0,
+    ) -> dict:
+        """Find stored media. Use this when somebody asks you to resend an
+        image you made or fetched, or to find photos sent in this chat that
+        are out of view.
 
         It reaches back days, and nothing is regenerated.
 
         Returns `status`: ok or unavailable, with a `note` on how to report it.
 
         Args:
-            query: Words from the original prompt, title or description. Empty
-                returns the most recent media.
+            query: Words from the prompt, title or description. Empty returns
+                the most recent media.
+            scope: `library` is media you made or fetched. `room` is photos and
+                clips people sent in this chat, never another chat's.
+            days: How far back to look, 1 to 90. Empty is no limit for `library`
+                and 90 for `room`.
         """
         if media_store is None:
             return {
@@ -9251,12 +9273,18 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 "note": "I can't look up my stored media right now. Say "
                         "so plainly, and do not invent an image.",
             }
+        span = min(days, _MEDIA_SEARCH_MAX_DAYS) if days > 0 else 0
+        if scope == "room":
+            return await _media_search_room(
+                media_store, query, span or _MEDIA_SEARCH_MAX_DAYS,
+            )
         try:
             # Custody-scoped (DEC-138): Nora's OWN media only — generated or
-            # fetched; never inbound (other people's photos are not her
-            # library).
-            found = await media_store.search(
+            # fetched. Photos people sent are the other scope, and only ever
+            # this room's (DEC-138, amended 2026-10-01).
+            found = await media_store.lookup_search(
                 query=query, limit=10, sources=("generated", "fetched"),
+                since_ms=_now_ms() - span * _MS_PER_DAY if span else 0,
             )
         except Exception:
             log.exception("media_search: store search failed")
@@ -9265,6 +9293,13 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 "note": "I can't look up my media right now. Say "
                         "so plainly.",
             }
+        if not found.available:
+            # An index that could not be read is not an empty library.
+            return {
+                "status": "unavailable",
+                "note": "I can't look up my media right now. Say so plainly, "
+                        "and do not say there is nothing.",
+            }
         results = [
             {
                 "handle": obj.handle,
@@ -9272,7 +9307,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 "prompt": obj.prompt,
                 "created_at_ms": obj.created_at_ms,
             }
-            for obj in found
+            for obj in found.objects.values()
         ]
         # ADR 0015 §3: the reporting rule rides with the answer, split on
         # whether anything matched.
@@ -9286,6 +9321,94 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 "image exists that the search did not return."
             ),
         }
+
+    async def _media_search_room(
+        index: MediaObjectStore, query: str, span: int,
+    ) -> dict:
+        """`media_search`'s `room` scope: pictures and clips PEOPLE SENT in
+        THIS conversation, found through this conversation's own message rows
+        (`media_rows`), never through the media index's provenance, which
+        names only the first room a byte string was seen in. The room is
+        `bound_conversation_id`, never an argument. Text comes from the media
+        index by content address, when a row exists. No sender is returned."""
+        unreadable = {
+            "status": "unavailable",
+            "note": "I can't look through the photos sent here right now. Say "
+                    "so plainly, and do not say there are none.",
+        }
+        if not room.platform:
+            # A background run with no room (a Dreamer unit keyed by name): its
+            # conversation slot is a key, not a chat, so there is nothing to
+            # look through and an empty answer would be a false «none».
+            return {
+                "status": "unavailable",
+                "note": "There is no chat in this run to look through. Say so "
+                        "plainly, and do not say there are no photos.",
+            }
+        try:
+            rows = await store.media_rows(
+                conversation_id=bound_conversation_id,
+                since_ts=_now_ms() - span * _MS_PER_DAY, limit=_ROOM_MEDIA_ROWS,
+            )
+            photos = room_photos(rows)
+            look = await index.lookup(
+                sha256s=tuple(p.sha256 for p in photos),
+            )
+        except Exception:
+            log.exception("media_search: room media read failed")
+            return unreadable
+        if not look.available:
+            return unreadable
+        results: list[dict[str, object]] = []
+        unread = 0
+        asked = bool(query.strip())
+        for photo in photos:
+            obj = look.objects.get(photo.sha256)
+            read = obj is not None and obj.comprehended
+            if not asked or (read and obj is not None and reading_matches(obj, query)):
+                results.append(_room_result(photo, obj))
+            elif not read:
+                # A photo nothing has read cannot match words; count it so
+                # «no match» is not heard as «no such photo».
+                unread += 1
+        shown = results[:10]
+        note = (
+            "Photos people sent in this chat, newest first. Each description is "
+            "a vision model's notes, how it looks and not a fact. Say what you "
+            "found and never claim a photo this list does not hold. Do not name "
+            "who sent one."
+            if shown else
+            "No photo sent in this chat matched. Say so, and do not say a photo "
+            "exists that the search did not return."
+        )
+        if unread:
+            note += (
+                f" {unread} photo(s) in this period have not been read yet, so "
+                "a word search could not match them. Say so if it matters."
+            )
+        return {
+            "status": "ok", "scope": "room", "days": span,
+            "results": shown, "note": note,
+        }
+
+    def _room_result(photo: RoomPhoto, obj: MediaObject | None) -> dict[str, object]:
+        """One room photo for the model: its marker code, kind, when it was
+        sent and its stored reading. The reading goes through the same
+        identifier screen every serve of media does."""
+        entry: dict[str, object] = {
+            "handle": photo.handle,
+            "kind": label_from_media_type(photo.media_type),
+            "sent": _been_iso(photo.sent_ms),
+        }
+        if obj is not None and obj.comprehended:
+            entry["title"] = obj.title
+            if scan_identifiers(obj.description) is not None:
+                entry["withheld"] = True
+            else:
+                entry["description"] = obj.description
+        else:
+            entry["read"] = False
+        return entry
 
     async def media_send(handle: str) -> dict:
         """Send a previously stored media object (from `media_search`) to this

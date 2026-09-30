@@ -905,3 +905,33 @@ cases:
       not_tools: [web_fetch, x_read, instagram_search]
       before: {instagram_read: [media_fetch]}
     snapshot: *room_a
+
+  # media_search, room scope (DEC-138, amended 2026-10-01): photos PEOPLE SENT
+  # in this room that have scrolled out of view. `media_search` is the target;
+  # `media_fetch` is the sibling that only reads a picture already in view, and
+  # cannot look for one. The negative is that sibling's own case: a photo in
+  # view, asked about by its marker, stays on `media_fetch` and never searches.
+  # Unmeasured until run: the operator did not ask for a run with this change.
+  - name: route_media_search_room_photos_english
+    entry: tag
+    expect: reply
+    mention: true
+    input: find the photos from the dinner last week
+    metadata: {tools: [media_search], not_tools: [media_fetch, web_search]}
+    snapshot: *room_a
+
+  - name: route_media_search_room_photos_yue
+    entry: tag
+    expect: reply
+    mention: true
+    input: 搵返上個星期食飯嗰幾張相
+    metadata: {tools: [media_search], not_tools: [media_fetch, web_search]}
+    snapshot: *room_a
+
+  - name: route_media_fetch_photo_in_view_not_search
+    entry: tag
+    expect: reply
+    mention: true
+    input: what is in this one [image a3f2c1]
+    metadata: {tools: [media_fetch], not_tools: [media_search]}
+    snapshot: *room_a
